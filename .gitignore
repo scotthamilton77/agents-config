@@ -1,0 +1,25 @@
+# Environment variables
+.env
+.credentials.json
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.worktrees/
+
+# Local settings
+settings.local.json
+
+# OS specific
+.DS_Store
+
+# Windows Zone.Identifier files (created when copying from Windows to WSL)
+*:Zone.Identifier
+
+# DevContainer environment variables (contains secrets)
+.devcontainer/.env
