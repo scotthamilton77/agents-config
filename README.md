@@ -1,6 +1,6 @@
-# claude-config
+# agents-config
 
-Versioned collection of agents, skills, and commands for AI coding assistants. Currently focused on Claude Code, with plans to support Gemini and Codex.
+Versioned collection of agents, skills, and commands for AI coding assistants. Currently supports Claude Code, with planned support for other AI assistants (Gemini, Codex, etc.).
 
 ## What's Inside
 
@@ -83,8 +83,8 @@ cp src/user/.claude/settings.json.template ~/.claude/settings.json
 cd /path/to/your/project
 
 # Copy what you need
-cp -r /path/to/claude-config/src/user/.claude/agents .claude/
-cp -r /path/to/claude-config/src/user/.claude/skills .claude/
+cp -r /path/to/agents-config/src/user/.claude/agents .claude/
+cp -r /path/to/agents-config/src/user/.claude/skills .claude/
 ```
 
 ### Customizing Templates
