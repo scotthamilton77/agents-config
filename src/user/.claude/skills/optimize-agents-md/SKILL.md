@@ -21,7 +21,30 @@ description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent
 
 ## The Optimization Process
 
-### 1. Inventory the Hierarchy
+### 0. Verify Freshness
+
+Before optimizing, ensure the target file is **up to date, accurate, and complete** — as if it were generated fresh right now via an init command.
+
+- Read the target file and the codebase it governs
+- Cross-reference: does the file reflect the *current* project state? (stack versions, directory structure, tooling, conventions)
+- Flag stale, missing, or contradictory content — fix before optimizing
+- If the file is severely outdated, regenerate from scratch rather than patching
+
+**The trap:** Optimizing a stale file produces a tighter version of wrong instructions.
+
+### 1. Scope Discovery (Ask 5 Questions)
+
+**Before touching the file, use AskUserQuestion to ask these 5 questions.** Answers shape every optimization decision.
+
+1. **What is this?** — "What does this project/package/folder do? One sentence."
+2. **Who works here?** — "Who are the agents and humans working in this codebase? What roles?"
+3. **What's the stack?** — "What are the key technologies, frameworks, and versions?"
+4. **What goes wrong?** — "What mistakes does Claude keep making, or what instructions get ignored?"
+5. **What's sacred?** — "Any rules, conventions, or constraints that must never be removed?"
+
+Use AskUserQuestion to present all 5 at once. Wait for answers before proceeding.
+
+### 2. Inventory the Hierarchy
 
 ```
 ~/.claude/CLAUDE.md           # Broadest: universal personal rules
@@ -33,7 +56,7 @@ project/feature/CLAUDE.md     # Scoped: package-specific rules
 - Read target file AND all parent/child files
 - Note what's already covered at other levels
 
-### 2. Eliminate Ruthlessly
+### 3. Eliminate Ruthlessly
 
 **Delete entirely:**
 
@@ -57,7 +80,7 @@ project/feature/CLAUDE.md     # Scoped: package-specific rules
 | Commands Claude can't guess | Non-standard build/test commands |
 | Post-training knowledge | Explicitly tagged version info, breaking changes |
 
-### 3. Transform Weak to Strong
+### 4. Transform Weak to Strong
 
 | Before (weak) | After (strong) |
 |---------------|----------------|
@@ -67,7 +90,7 @@ project/feature/CLAUDE.md     # Scoped: package-specific rules
 | "Follow project structure" | "New features: `/src/features/<name>/[components,hooks,services]`" |
 | "Be careful with dependencies" | "No new deps without checking latest version from web" |
 
-### 4. Apply Progressive Disclosure
+### 5. Apply Progressive Disclosure
 
 Move heavy content out of main file:
 
@@ -86,7 +109,7 @@ See @README.md for project overview
 Git workflow: @docs/git-instructions.md
 ```
 
-### 5. Optimize Structure
+### 6. Optimize Structure
 
 **Target: <100 lines total**
 
@@ -125,7 +148,7 @@ Single sentence: what Claude is in this context
 - Navigation within sections
 - Reference material meant to be scanned
 
-### 6. Monorepo Specifics
+### 7. Monorepo Specifics
 
 | Level | Content |
 |-------|---------|
@@ -154,6 +177,28 @@ When presenting optimized file:
 2. **Transformations**: Weak directives made strong
 3. **Hierarchy notes**: What was delegated up/down
 4. **Token savings**: Original vs optimized line count
+
+## Post-Optimization: Development Acceleration
+
+After presenting the optimized file(s), ask the user:
+
+> "Want help optimizing your entire development workflow for this project?"
+
+**If yes**, launch a subagent (Task tool, `subagent_type: "general-purpose"`) with all relevant context (project purpose, stack, team, scope answers from Step 1) and this prompt:
+
+```
+You're my co-founder. Create a master plan with a knowledge base directory
+for each section. Attach context markdown files to every part. You're building
+the skeleton that Claude Code will use to build everything 10x faster.
+Suggest skills to integrate, automations to build or any tool that'd 10x
+our speed. Suggest when to use a project or Claude Code.
+```
+
+**When the subagent completes:**
+1. Read and analyze its output
+2. Summarize a report to the user: what was created, key insights, directory structure
+3. Present your top 3-5 recommendations ranked by impact
+4. Note any skills or automations that could be built immediately
 
 ## Example Transformation
 
