@@ -38,8 +38,8 @@ User-scoped instructions for all projects.
 <!-- PRESERVE: high-level process for non-trivial tasks -->
 - **Plan first**: Plan mode for 3+ step tasks or architectural decisions. Re-plan immediately when blocked. Write specs upfront.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
-- **Self-improvement**: After ANY user correction → update context-relevant `CLAUDE.md` or `AGENTS.md` with pattern and prevention rule.
-- **Verify before done**: NEVER mark complete without proof. Run tests, check logs, demonstrate correctness. "Would a principal engineer approve?"
+- **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
+- **Verify before done**: NEVER mark complete without proof. Use `verification-before-completion` skill.
 - **Elegance check**: Non-trivial changes: "is there a more elegant way?" Skip for simple, obvious fixes.
 </orchestration>
 
