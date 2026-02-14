@@ -4,15 +4,12 @@ User-scoped instructions for all projects.
 
 <persona>
 <!-- PRESERVE: user interaction preferences -->
-
 @AGENT-PERSONA.md
 @USER-PERSONA.md
-
 </persona>
 
 <laws>
 <!-- Strict precedence: 0 > 1 > 2 > 3. Report conflicts immediately. -->
-
 - **L0 Codebase**: Block architectural drift, duplication, design violations
 - **L1 Safety**: No vulnerabilities, bugs, or uncritical validation of user assumptions
 - **L2 Obey**: Follow instructions unless L0/L1 violated—propose alternatives
@@ -20,10 +17,10 @@ User-scoped instructions for all projects.
 </laws>
 
 <constraints>
-
-- **Minimal edits**: Change only what's necessary
+- **Minimal edits**: Change only what's necessary—no over-engineering
 - **Parallel ops**: Independent tool calls in single message
-- **Closed-loop**: Debug and verify independently—user shouldn't provide logs
+- **Closed-loop**: Debug, fix, and verify independently—zero context switching from user
+- **Root causes**: Find root causes, no temporary fixes—principal engineer standards
 - **Dependencies**: context7 lookup mandatory for post-training-cutoff versions
 - **Observability**: Log extensively in new/changed code
 - **Testing**: Single-test runs preferred; edge cases + error paths
@@ -33,62 +30,52 @@ User-scoped instructions for all projects.
 
 <workflow>
 <!-- PRESERVE: development process requirements -->
-
 1. Format → Lint → Type-check → Test
 2. Commits: semantic prefix (feat|fix|docs|refactor|test|chore)
-3. **Git safety**: No hard resets, force pushes, amends without explicit approval
-4. **Coordination**: Never `git restore` another agent's files—ask first
-
 </workflow>
+
+<orchestration>
+<!-- PRESERVE: high-level process for non-trivial tasks -->
+- **Plan first**: Plan mode for 3+ step tasks or architectural decisions. Re-plan immediately when blocked. Write specs upfront.
+- **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
+- **Self-improvement**: After ANY user correction → update context-relevant `CLAUDE.md` or `AGENTS.md` with pattern and prevention rule.
+- **Verify before done**: NEVER mark complete without proof. Run tests, check logs, demonstrate correctness. "Would a principal engineer approve?"
+- **Elegance check**: Non-trivial changes: "is there a more elegant way?" Skip for simple, obvious fixes.
+</orchestration>
 
 <delegation>
 <!-- PRESERVE: development process delegation requirements -->
+MANDATORY delegation—do not attempt these directly:
+- Planning → `brainstorming` skill
+- Implementation → `test-driven-development` skill first, then domain skills (e.g. `typescript-developer`)
+- Code review → `code-reviewer` agent, then `code-simplifier` agent
+- Tests → `writing-unit-tests` + `testing-anti-patterns` skills
 
-During implementation, delegate to specialized subagents and use specialized skills based on their expertise:
-- Planning → use `brainstorming` skill
-- Test-driven Development → use `test-driven-development` skill
-- Implementation → use appropriate skills or agents as fits the task and technology (e.g. `typescript-developer`)
-- Code review  → use `code-simplifier` and `code-reviewer` agents
-- Writing Tests → `writing-unit-tests` and `testing-anti-patterns` skills
-Do not attempt these tasks directly. Always delegate to the appropriate specialist.
+**Before presenting work to user**: ALWAYS run `code-reviewer` then `code-simplifier`. No exceptions.
 </delegation>
 
 <git_commits>
 <!-- PRESERVE: sandbox workaround for heredoc temp files -->
+Sandbox mode: heredocs fail with "can't create temp file."
+1. Simple: `git commit -m "fix(scope): message"`
+2. Multi-line: `git commit -m "fix(scope): summary" -m "Co-Authored-By: ..."`
+3. Complex: use `dangerouslyDisableSandbox: true` (git is safe)
 
-When committing in sandbox mode, heredocs fail with "can't create temp file for here document".
-
-**Solutions** (in order of preference):
-1. Use simple `-m` for single-line messages: `git commit -m "fix(scope): message"`
-2. Use multiple `-m` flags for multi-line:
-   ```bash
-   git commit -m "fix(scope): summary" -m "Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
-   ```
-3. For complex messages, use `dangerouslyDisableSandbox: true` since git is safe
-
-**Never use heredoc syntax** (`<<EOF`, `<<'EOF'`) for commit messages in this project.
+**NEVER use heredoc syntax** (`<<EOF`, `<<'EOF'`) for commit messages.
 </git_commits>
 
 <beads>
 <!-- PRESERVE: task tracking workflow (run with dangerouslyDisableSandbox: true) -->
+`bd <command> [args]` — Types: bug | feature | task | epic | chore
+Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low".
 
-**Invocation**: `bd <command> [args]`
-
-**Issue types**: bug | feature | task | epic | chore
-
-**Priority**: 0-4 or P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low".
-
-**Workflow**:
-- `bd ready` → find unblocked work
-- `bd update <id> --status=in_progress` → claim
-- `bd close <id>` → complete (batch: `bd close <id1> <id2> ...`)
-- `bd sync` → push to remote at session end
+**Workflow**: `bd ready` → `bd update <id> --status=in_progress` → `bd close <id>` → `bd sync`
 
 **Rules**:
 - Use bd for ALL tracking, `--json` for programmatic use
 - No markdown TODO lists unless user explicitly requests
 - Discovered work → new bead with `discovered-from:<parent-id>` dep, don't fix inline
-- Code tasks acceptance criteria: "Build passes. Typecheck passes. Tests pass."
+- Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default—only explicit deps create sequence
 
 **Parent/child workflow** (you forget this):
