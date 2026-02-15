@@ -78,3 +78,60 @@ The command invokes the `optimize-agents-md` skill for guidance on optimization 
 ## File Location
 
 `src/user/.claude/commands/refresh-agents-md.md`
+
+---
+
+# Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Create a single command file that instructs Claude to refresh all CLAUDE.md/AGENTS.md files across a project.
+
+**Architecture:** A markdown command file following existing patterns (implement-bead.md, optimize-my-agent.md). The command orchestrates three phases: parallel discovery, map confirmation, and sequential updates.
+
+**Tech Stack:** Markdown (Claude Code command format)
+
+---
+
+### Task 1: Write the command file
+
+**Files:**
+- Create: `src/user/.claude/commands/refresh-agents-md.md`
+
+**Step 1: Draft the complete command file**
+
+Write `src/user/.claude/commands/refresh-agents-md.md` with these sections, following the structure of `implement-bead.md` as a pattern:
+
+1. **Title and purpose** — one-line description of what the command does
+2. **Step 0 — Parse Input** — extract time range and focus areas from `$ARGUMENTS`, with defaults
+3. **Step 1 — Parallel Discovery** — dispatch 3 parallel subagents (git analyzer, file inventory, directory discovery) using `dispatching-parallel-agents` skill
+4. **Step 2 — Present Refresh Map** — format and present the discovery results, get user approval
+5. **Step 3 — Sequential Updates** — root-first processing, invoke `optimize-agents-md` skill principles (skip scope questions), present diffs for approval
+6. **Step 4 — Commit** — offer to commit all changes
+
+Key details to include:
+- `$ARGUMENTS` parsing: time range defaults to 30 days, focus areas are optional free text
+- Git analysis: `git log --since` with `--stat`, `--name-status` for structural changes
+- File inventory: glob for `**/CLAUDE.md` and `**/AGENTS.md`
+- Directory discovery heuristics: package manifests, architectural zones, distinct test/build configs
+- Confirmation gate between discovery and updates
+- Hierarchy ordering: sort by path depth, process shallowest first
+- For each file: read context, apply optimize-agents-md validation checklist, present diff before writing
+- CLAUDE.md role: ensure it points to AGENTS.md (typically just `Refer to the @AGENTS.md file in the same directory.`)
+- AGENTS.md role: the real content — apply full optimization principles
+- Under 200 lines per file target from optimize-agents-md skill
+
+**Step 2: Review against existing commands**
+
+Compare the draft against `implement-bead.md` and `optimize-my-agent.md` for:
+- Consistent tone and structure
+- Proper use of `$ARGUMENTS`
+- Appropriate skill references (use `@skill-name` syntax where referencing skills)
+- Clear stop-and-ask-user gates
+
+**Step 3: Commit**
+
+```
+git add src/user/.claude/commands/refresh-agents-md.md
+git commit -m "feat: add refresh-agents-md command"
+```
