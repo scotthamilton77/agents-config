@@ -6,13 +6,27 @@ This file provides guidance to AI agents when working with code in this reposito
 
 This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. The primary content is markdown files intended to be copied to `~/.claude/` (user-level) or `.claude/` (project-level) directories.
 
+## Prerequisites (Plugins)
+
+This configuration assumes the following Claude Code plugins are installed:
+
+- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides skills referenced throughout the templates: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, writing-plans, code-reviewer, code-simplifier, and others
+- **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used in the `<beads>` section of the AGENTS.md template
+
 ## Repository Structure
 
+- `scripts/` - Installation and maintenance scripts
+  - `install.sh` - Syncs `src/user/.claude/` into `~/.claude/` with intelligent merge
+- `docs/plans/` - Design documents for features in development
 - `src/user/.claude/` - User-level config (copies to `~/.claude/`)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
   - `commands/` - Slash command definitions
-  - `*.template` - Templates users customize after copying
+  - `AGENT-PERSONA.md.template` - Agent persona/personality template
+  - `USER-PERSONA.md.template` - User persona template
+  - `AGENTS.md.template` - Main user AGENTS.md template
+  - `CLAUDE.md.template` - CLAUDE.md template (points to AGENTS.md)
+  - `settings.json.template` - Permission presets and experimental features
   - `AGENTS.md` - Installation instructions for this folder
 
 ## File Formats
