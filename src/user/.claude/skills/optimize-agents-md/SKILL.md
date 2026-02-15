@@ -1,6 +1,6 @@
 ---
 name: optimize-agents-md
-description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent behavior degrades, when AGENT.md or CLAUDE.md files exceed 100 lines, or when merging redundant instructions across hierarchy.  Use when the user asks to update or optimize AGENTS.md or CLAUDE.md files.
+description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent behavior degrades, when AGENT.md or CLAUDE.md files exceed 200 lines, or when merging redundant instructions across hierarchy.  Use when the user asks to update or optimize AGENTS.md or CLAUDE.md files.
 ---
 
 # Optimize AGENTS.md / CLAUDE.md
@@ -13,7 +13,7 @@ description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent
 
 ## When to Use
 
-- AGENTS.md or CLAUDE.md exceeds 100 lines
+- AGENTS.md or CLAUDE.md exceeds 200 lines
 - Agent ignores instructions (file too long, rules getting lost)
 - Agent asks questions answered in the file (phrasing ambiguous)
 - Merging instructions from multiple sources
@@ -111,7 +111,7 @@ Git workflow: @docs/git-instructions.md
 
 ### 6. Optimize Structure
 
-**Target: <100 lines total**
+**Target: <200 lines total**
 
 **Format rules:**
 - Bullet points over paragraphs
@@ -166,7 +166,7 @@ Before finalizing:
 - [ ] No child overlap (concerns delegated appropriately)
 - [ ] Every directive has concrete action or threshold
 - [ ] File paths are exact, not illustrative
-- [ ] <100 lines total
+- [ ] <200 lines total
 - [ ] Can answer: "Would removing this cause Claude to make mistakes?"
 
 ## Output Format
@@ -254,7 +254,7 @@ React component architect for /dashboard feature
 ## Red Flags
 
 If you see these in an AGENTS.md, it needs optimization:
-- File over 100 lines
+- File over 200 lines
 - Multiple rules saying similar things differently
 - Instructions like "be careful", "try to", "consider"
 - File paths that might be stale
