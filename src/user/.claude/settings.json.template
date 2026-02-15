@@ -1,5 +1,8 @@
 {
-  "env": {},
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(black:*)",
@@ -47,6 +50,22 @@
       "WebFetch(domain:docs.anthropic.com)",
       "WebSearch"
     ],
-    "deny": []
+    "deny": [
+      "Bash(rm -rf /:*)",
+      "Read(~/.zshrc)",
+      "Read(~/.bashrc)",
+      "Read(~/.bash_profile)",
+      "Read(~/.profile)",
+      "Read(~/.secrets)",
+      "Read(.env)",
+      "Read(~/.ssh/*)",
+      "Read(/etc/shadow)",
+      "Read(/etc/passwd)",
+      "Write(/etc/*)",
+      "Write(/bin/*)",
+      "Write(/usr/bin/*)",
+      "Write(/sbin/*)",
+      "Write(/usr/sbin/*)"
+    ]
   }
 }
