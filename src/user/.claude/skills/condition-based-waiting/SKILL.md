@@ -5,11 +5,9 @@ description: Use when tests have race conditions, timing dependencies, or incons
 
 # Condition-Based Waiting
 
-## Overview
+## Core Principle
 
-Flaky tests often guess at timing with arbitrary delays. This creates race conditions where tests pass on fast machines but fail under load or in CI.
-
-**Core principle:** Wait for the actual condition you care about, not a guess about how long it takes.
+Wait for the actual condition you care about, not a guess about how long it takes.
 
 ## When to Use
 
@@ -41,12 +39,12 @@ digraph when_to_use {
 ## Core Pattern
 
 ```typescript
-// ❌ BEFORE: Guessing at timing
+// BEFORE: Guessing at timing
 await new Promise((r) => setTimeout(r, 50));
 const result = getResult();
 expect(result).toBeDefined();
 
-// ✅ AFTER: Waiting for condition
+// AFTER: Waiting for condition
 await waitFor(() => getResult() !== undefined);
 const result = getResult();
 expect(result).toBeDefined();
@@ -64,41 +62,26 @@ expect(result).toBeDefined();
 
 ## Implementation
 
-Generic polling function:
+Generic polling function — poll condition, timeout with descriptive error:
 
 ```typescript
 async function waitFor<T>(
   condition: () => T | undefined | null | false,
   description: string,
   timeoutMs = 5000
-): Promise<T> {
-  const startTime = Date.now();
-
-  while (true) {
-    const result = condition();
-    if (result) return result;
-
-    if (Date.now() - startTime > timeoutMs) {
-      throw new Error(`Timeout waiting for ${description} after ${timeoutMs}ms`);
-    }
-
-    await new Promise((r) => setTimeout(r, 10)); // Poll every 10ms
-  }
-}
+): Promise<T>
 ```
 
-See @example.ts for complete implementation with domain-specific helpers (`waitForEvent`, `waitForEventCount`, `waitForEventMatch`) from actual debugging session.
+See @example.ts for complete implementation with domain-specific helpers (`waitForEvent`, `waitForEventCount`, `waitForEventMatch`).
 
 ## Common Mistakes
 
-**❌ Polling too fast:** `setTimeout(check, 1)` - wastes CPU
-**✅ Fix:** Poll every 10ms
-
-**❌ No timeout:** Loop forever if condition never met
-**✅ Fix:** Always include timeout with clear error
-
-**❌ Stale data:** Cache state before loop
-**✅ Fix:** Call getter inside loop for fresh data
+| Mistake | Symptom | Fix |
+| --- | --- | --- |
+| Polling too fast (`setTimeout(check, 1)`) | CPU spike, event loop starvation | Poll every 10ms |
+| No timeout on polling loop | Test hangs forever if condition never met | Always include timeout with descriptive error message |
+| Caching state before loop | Condition never sees updated value | Call getter inside loop for fresh data each iteration |
+| Vague timeout error message | "Timeout" with no context on what failed | Include condition description and elapsed time in error |
 
 ## When Arbitrary Timeout IS Correct
 
@@ -115,11 +98,24 @@ await new Promise((r) => setTimeout(r, 200)); // Then: wait for timed behavior
 2. Based on known timing (not guessing)
 3. Comment explaining WHY
 
-## Real-World Impact
+## Red Flags / Rationalizations
 
-From debugging session (2025-10-03):
+| What you hear | Why it is wrong | What to do instead |
+| --- | --- | --- |
+| "Just add a 500ms sleep, it works on my machine" | Timing varies across machines, CI, load | Poll for the actual condition |
+| "The flaky test only fails sometimes, increase the timeout" | Longer timeout masks the race condition, slows the suite | Find what state you are actually waiting for and poll it |
+| "We need sleep here because the event loop needs to flush" | If you need a microtask flush, use `await Promise.resolve()` or `process.nextTick` | Use the correct flush mechanism, not arbitrary delay |
+| "It is only 50ms, it will not slow anything down" | 50ms x 200 tests = 10 seconds; it adds up fast | Condition-based waits resolve as soon as ready |
+| "The API needs time to process" | The API has a detectable state change when done | Poll for the response, state, or side-effect |
 
-- Fixed 15 flaky tests across 3 files
-- Pass rate: 60% → 100%
-- Execution time: 40% faster
-- No more race conditions
+## Verification Checklist
+
+Before marking a timing fix complete:
+
+- [ ] No arbitrary `setTimeout`/`sleep` without a comment explaining known timing requirement
+- [ ] Every `waitFor` call includes a descriptive `description` parameter
+- [ ] Every `waitFor` call has a finite timeout (no infinite polling)
+- [ ] Condition function reads fresh state on each poll (no stale closures)
+- [ ] Tests pass reliably in 10 consecutive runs, not just once
+- [ ] Tests pass under parallel execution (`--parallel` / `--concurrent`)
+- [ ] Any remaining arbitrary timeouts document the known interval they depend on

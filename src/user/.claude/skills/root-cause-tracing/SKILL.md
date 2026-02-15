@@ -5,11 +5,9 @@ description: Use when errors occur deep in execution and you need to trace back 
 
 # Root Cause Tracing
 
-## Overview
+## Core Principle
 
-Bugs often manifest deep in the call stack (git init in wrong directory, file created in wrong location, database opened with wrong path). Your instinct is to fix where the error appears, but that's treating a symptom.
-
-**Core principle:** Trace backward through the call chain until you find the original trigger, then fix at the source.
+**Trace backward through the call chain until you find the original trigger, then fix at the source.** Never fix where the error appears — that is treating a symptom.
 
 ## When to Use
 
@@ -34,6 +32,12 @@ digraph when_to_use {
 - Stack trace shows long call chain
 - Unclear where invalid data originated
 - Need to find which test/code triggers the problem
+
+**Do NOT use when:**
+
+- Error is at the entry point with an obvious cause
+- Stack trace is one level deep and the fix is clear
+- Problem is a simple typo or syntax error
 
 ## The Tracing Process
 
@@ -96,7 +100,12 @@ async function gitInit(directory: string) {
 }
 ```
 
-**Critical:** Use `console.error()` in tests (not logger - may not show)
+**Tips for effective instrumentation:**
+
+- **Use `console.error()`** in tests, not logger — logger output may be suppressed
+- **Log before** the dangerous operation, not just after it fails
+- **Include context:** directory, cwd, environment variables, timestamps
+- **Capture stack:** `new Error().stack` shows the complete call chain
 
 **Run and capture:**
 
@@ -128,7 +137,7 @@ Runs tests one-by-one, stops at first polluter. See script for usage.
 
 **Trace chain:**
 
-1. `git init` runs in `process.cwd()` ← empty cwd parameter
+1. `git init` runs in `process.cwd()` — empty cwd parameter
 2. WorktreeManager called with empty projectDir
 3. Session.create() passed empty string
 4. Test accessed `context.tempDir` before beforeEach
@@ -147,42 +156,28 @@ Runs tests one-by-one, stops at first polluter. See script for usage.
 
 ## Key Principle
 
-```dot
-digraph principle {
-    "Found immediate cause" [shape=ellipse];
-    "Can trace one level up?" [shape=diamond];
-    "Trace backwards" [shape=box];
-    "Is this the source?" [shape=diamond];
-    "Fix at source" [shape=box];
-    "Add validation at each layer" [shape=box];
-    "Bug impossible" [shape=doublecircle];
-    "NEVER fix just the symptom" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
+**NEVER fix just where the error appears.** Trace back to find the original trigger. Once found, fix at the source AND add validation at each layer you traced through so the bug becomes impossible.
 
-    "Found immediate cause" -> "Can trace one level up?";
-    "Can trace one level up?" -> "Trace backwards" [label="yes"];
-    "Can trace one level up?" -> "NEVER fix just the symptom" [label="no"];
-    "Trace backwards" -> "Is this the source?";
-    "Is this the source?" -> "Trace backwards" [label="no - keeps going"];
-    "Is this the source?" -> "Fix at source" [label="yes"];
-    "Fix at source" -> "Add validation at each layer";
-    "Add validation at each layer" -> "Bug impossible";
-}
-```
+## Red Flags: Rationalizations to Resist
 
-**NEVER fix just where the error appears.** Trace back to find the original trigger.
+| Rationalization | Why It's Wrong |
+|---|---|
+| "I can see the fix right here" | You're looking at the symptom, not the cause |
+| "Adding a null check will handle it" | Null checks at the crash site mask upstream bugs |
+| "The error message tells me what to do" | Error messages describe symptoms, not sources |
+| "It's faster to just fix it here" | Faster now, but the same class of bug will recur |
+| "The stack trace is too deep to follow" | Add instrumentation — that's what it's for |
+| "It only fails in this one test" | The test is exposing a real code path problem |
+| "A try/catch will make it safe" | Swallowing errors hides root causes from future debugging |
 
-## Stack Trace Tips
+## Verification Checklist
 
-**In tests:** Use `console.error()` not logger - logger may be suppressed
-**Before operation:** Log before the dangerous operation, not after it fails
-**Include context:** Directory, cwd, environment variables, timestamps
-**Capture stack:** `new Error().stack` shows complete call chain
+Before marking the fix complete:
 
-## Real-World Impact
-
-From debugging session (2025-10-03):
-
-- Found root cause through 5-level trace
-- Fixed at source (getter validation)
-- Added 4 layers of defense
-- 1847 tests passed, zero pollution
+- [ ] Traced the full call chain from symptom to original trigger
+- [ ] Fix is applied at the source, not at the symptom point
+- [ ] Defense-in-depth: added validation at intermediate layers
+- [ ] Invalid state is now impossible (not just caught)
+- [ ] Removed all temporary debug instrumentation
+- [ ] Existing tests pass with the fix applied
+- [ ] Added or updated tests that would catch this class of bug

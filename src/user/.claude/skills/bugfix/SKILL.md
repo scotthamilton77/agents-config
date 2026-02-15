@@ -5,17 +5,9 @@ description: Use when encountering a bug with unclear origins, when multiple fil
 
 # Bugfix
 
-## Overview
+**Core principle:** Gather evidence from three angles in parallel, synthesize into a root cause analysis, THEN fix. Sequential investigation wastes hours — parallel evidence gathering catches what single-threaded debugging misses.
 
-Bugs with unclear origins waste hours when investigated sequentially. You read one file, form a theory, discover it's wrong, read another file, repeat.
-
-**Core principle:** Gather evidence from three angles in parallel, synthesize into a root cause analysis, THEN fix. Never propose a fix before synthesis.
-
-**Iron Law:**
-
-```
-NO FIX WITHOUT PARALLEL EVIDENCE FIRST
-```
+**Iron Law:** `NO FIX WITHOUT PARALLEL EVIDENCE FIRST`
 
 ## When to Use
 
@@ -87,17 +79,7 @@ Return: Annotated data flow showing the path and suspect points.
 
 **Why this matters:** Reading code reveals assumptions. Combined with git history and test results, it pinpoints where assumptions break.
 
-### Dispatching the Threads
-
-Spawn all three as parallel subagent tasks in a single message. Each thread is independent — no shared state between them.
-
-```
-Task 1: "Git archaeology on [affected files] — last 20 commits"
-Task 2: "Write minimal failing test reproducing [exact symptom]"
-Task 3: "Trace data flow from [entry point] to [failure point]"
-```
-
-**WAIT for all three to complete.** Do not proceed to synthesis if any thread is still running.
+Spawn all three as parallel subagent tasks in a single message. Each thread is independent — no shared state between them. **WAIT for all three to complete.** Do not proceed to synthesis if any thread is still running.
 
 ## Synthesis Gate
 
@@ -129,6 +111,11 @@ digraph synthesis {
 
 **Honesty clause:** If a thread's findings are inconclusive, say so. "Git history shows no relevant changes in the last 20 commits" is a valid finding. "I couldn't reproduce the failure" is a valid finding. Do NOT speculate to fill gaps.
 
+**Fallback:** If root cause remains unclear after synthesis, escalate to complementary skills:
+- `root-cause-tracing` — deep call-stack investigation
+- `systematic-debugging` — full sequential 4-phase approach
+- `condition-based-waiting` — timing/race condition analysis
+
 ## Implementation Phase
 
 Only after synthesis identifies a root cause:
@@ -147,8 +134,8 @@ If you catch yourself:
 - Skipping git archaeology because "it's probably not a recent change"
 - Writing a test that passes instead of fails
 - Speculating about root cause when a thread was inconclusive
-- Making multiple changes at once instead of a single focused fix
-- Committing with failing tests because "only unrelated tests fail"
+- Making multiple changes instead of a single focused fix
+- Committing with failing tests ("only unrelated tests fail")
 - Treating a user's diagnosis as confirmed without thread evidence
 - Skipping threads because "production is down"
 
@@ -179,11 +166,14 @@ If you catch yourself:
 | **Verify** | Run failing test + full suite | Green across the board |
 | **Commit** | Only if all tests pass | Clean commit with context |
 
-## Fallback
+## Verification Checklist
 
-If after synthesis the root cause remains unclear:
-- Use `root-cause-tracing` for deep call-stack investigation
-- Use `systematic-debugging` for the full sequential 4-phase approach
-- Use `condition-based-waiting` if timing/race conditions are involved
+Before claiming the bug is fixed:
+- [ ] All three threads completed (none skipped)
+- [ ] Synthesis explicitly correlates findings from all threads
+- [ ] Root cause stated with evidence, not speculation
+- [ ] Fix addresses root cause, not just symptom
+- [ ] Original failing test now passes
+- [ ] Full test suite passes with no regressions
+- [ ] Commit includes only the focused fix
 
-These are complements, not competitors. Use whichever tool fits the evidence.

@@ -16,6 +16,12 @@ description: Use when receiving any correction, repeated mistake, or behavioral 
 - Post-incident review of what went wrong
 - User provides a preference you didn't know about
 
+## When NOT to Use
+
+- One-off factual correction ("that endpoint is /v2 not /v1")
+- Already covered by existing rules
+- Obvious from the codebase itself
+
 ## The Process
 
 ### 1. Acknowledge briefly
@@ -29,6 +35,7 @@ Don't grovel. One sentence, then act.
 | Project convention (naming, patterns, structure) | Project `CLAUDE.md` or `AGENTS.md` |
 | Cross-project preference (style, behavior, workflow) | User `~/.claude/AGENTS.md` |
 | Tool/environment quirk | Nearest relevant config file |
+| Useful context, not a rule (insights, gotchas, history) | `~/.claude/projects/*/memory/MEMORY.md` |
 
 Before adding a rule, check if a related rule already exists. If so, strengthen it instead of creating a duplicate.
 
@@ -40,7 +47,9 @@ Before adding a rule, check if a related rule already exists. If so, strengthen 
 - **Actionable**: Clear what to do instead
 - **Compact**: One line, fits existing section structure
 
-**Bad rules:** "Be more careful with X", "Remember to Y", "Try to Z"
+**Example transformation:**
+- Bad: "Be more careful with imports"
+- Good: "Always use absolute imports from `@/` — never relative paths crossing module boundaries"
 
 ### 4. Consolidate
 
@@ -52,18 +61,6 @@ Before adding a rule, check if a related rule already exists. If so, strengthen 
 
 Write the rule, then proceed. Don't let self-improvement derail the work.
 
-## Decision Threshold
-
-Write a persistent rule when:
-- The mistake could recur in a future session
-- The correction reflects a preference Claude can't infer from code
-- You've been corrected about the same thing before
-
-Skip when:
-- One-off factual correction ("that endpoint is /v2 not /v1")
-- Already covered by existing rules
-- Obvious from the codebase
-
 ## Anti-Patterns
 
 | Pattern | Problem |
@@ -73,7 +70,7 @@ Skip when:
 | Adding without checking existing rules | Rule bloat degrades agent performance |
 | Recording every minor correction | Signal-to-noise ratio drops |
 
-## Red Flags - You're Skipping This
+## Red Flags — You're Skipping This
 
 - You acknowledged a correction but didn't open any config file
 - You said "noted" or "understood" without writing anything
@@ -82,3 +79,11 @@ Skip when:
 - You wrote a rule but didn't check for existing related rules first
 
 **All of these mean: STOP. Open the config file. Write the rule. Then continue.**
+
+## Verification Checklist
+
+- [ ] Rule is written to a persistent file (not just acknowledged in conversation)
+- [ ] Checked for existing related rules — no duplicates introduced
+- [ ] Rule is specific and falsifiable (not "be more careful")
+- [ ] Rule is in the correct scope (project vs. user-level vs. memory)
+- [ ] Continued with the original task after writing the rule

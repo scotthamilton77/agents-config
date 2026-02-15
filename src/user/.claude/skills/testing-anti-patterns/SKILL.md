@@ -5,13 +5,7 @@ description: Use when writing or changing tests, adding mocks, or tempted to add
 
 # Testing Anti-Patterns
 
-## Overview
-
-Tests must verify real behavior, not mock behavior. Mocks are a means to isolate, not the thing being tested.
-
-**Core principle:** Test what the code does, not what the mocks do.
-
-**Following strict TDD prevents these anti-patterns.**
+**Core principle:** Tests must verify real behavior, not mock behavior. Mocks isolate — they are never the thing under test.
 
 ## The Iron Laws
 
@@ -21,12 +15,18 @@ Tests must verify real behavior, not mock behavior. Mocks are a means to isolate
 3. NEVER mock without understanding dependencies
 ```
 
+## When NOT to Use
+
+- **Throwaway prototypes or spikes** — mock freely when exploring; discard code after
+- **Testing the mock library itself** — if you maintain a mock/stub framework, testing mock behavior is the point
+- **Contracts already enforced by types** — if the type system guarantees the structure, a gate-function check is overhead
+
 ## Anti-Pattern 1: Testing Mock Behavior
 
 **The violation:**
 
 ```typescript
-// ❌ BAD: Testing that the mock exists
+// BAD: Testing that the mock exists
 test('renders sidebar', () => {
   render(<Page />);
   expect(screen.getByTestId('sidebar-mock')).toBeInTheDocument();
@@ -39,12 +39,12 @@ test('renders sidebar', () => {
 - Test passes when mock is present, fails when it's not
 - Tells you nothing about real behavior
 
-**your human partner's correction:** "Are we testing the behavior of a mock?"
+**Ask yourself:** "Am I testing the behavior of a mock?"
 
 **The fix:**
 
 ```typescript
-// ✅ GOOD: Test real component or don't mock it
+// GOOD: Test real component or don't mock it
 test('renders sidebar', () => {
   render(<Page />);  // Don't mock sidebar
   expect(screen.getByRole('navigation')).toBeInTheDocument();
@@ -71,7 +71,7 @@ BEFORE asserting on any mock element:
 **The violation:**
 
 ```typescript
-// ❌ BAD: destroy() only used in tests
+// BAD: destroy() only used in tests
 class Session {
   async destroy() {
     // Looks like production API!
@@ -94,7 +94,7 @@ afterEach(() => session.destroy());
 **The fix:**
 
 ```typescript
-// ✅ GOOD: Test utilities handle test cleanup
+// GOOD: Test utilities handle test cleanup
 // Session has no destroy() - it's stateless in production
 
 // In test-utils/
@@ -130,7 +130,7 @@ BEFORE adding any method to production class:
 **The violation:**
 
 ```typescript
-// ❌ BAD: Mock breaks test logic
+// BAD: Mock breaks test logic
 test('detects duplicate server', () => {
   // Mock prevents config write that test depends on!
   vi.mock('ToolCatalog', () => ({
@@ -151,13 +151,13 @@ test('detects duplicate server', () => {
 **The fix:**
 
 ```typescript
-// ✅ GOOD: Mock at correct level
+// GOOD: Mock at correct level
 test('detects duplicate server', () => {
   // Mock the slow part, preserve behavior test needs
   vi.mock('MCPServerManager'); // Just mock slow server startup
 
   await addServer(config); // Config written
-  await addServer(config); // Duplicate detected ✓
+  await addServer(config); // Duplicate detected
 });
 ```
 
@@ -192,7 +192,7 @@ BEFORE mocking any method:
 **The violation:**
 
 ```typescript
-// ❌ BAD: Partial mock - only fields you think you need
+// BAD: Partial mock - only fields you think you need
 const mockResponse = {
   status: 'success',
   data: { userId: '123', name: 'Alice' },
@@ -214,7 +214,7 @@ const mockResponse = {
 **The fix:**
 
 ```typescript
-// ✅ GOOD: Mirror real API completeness
+// GOOD: Mirror real API completeness
 const mockResponse = {
   status: 'success',
   data: { userId: '123', name: 'Alice' },
@@ -246,8 +246,8 @@ BEFORE creating mock responses:
 **The violation:**
 
 ```
-✅ Implementation complete
-❌ No tests written
+Implementation complete
+No tests written
 "Ready for testing"
 ```
 
@@ -276,20 +276,13 @@ TDD cycle:
 - Mocks missing methods real components have
 - Test breaks when mock changes
 
-**your human partner's question:** "Do we need to be using a mock here?"
+**Ask yourself:** "Do we need to be using a mock here?"
 
 **Consider:** Integration tests with real components often simpler than complex mocks
 
 ## TDD Prevents These Anti-Patterns
 
-**Why TDD helps:**
-
-1. **Write test first** → Forces you to think about what you're actually testing
-2. **Watch it fail** → Confirms test tests real behavior, not mocks
-3. **Minimal implementation** → No test-only methods creep in
-4. **Real dependencies** → You see what the test actually needs before mocking
-
-**If you're testing mock behavior, you violated TDD** - you added mocks without watching test fail against real code first.
+Strict TDD (write test, watch it fail, implement, refactor) naturally prevents most of the above because you see real behavior before introducing mocks. See the `test-driven-development` skill for the full process.
 
 ## Quick Reference
 
@@ -311,10 +304,14 @@ TDD cycle:
 - Can't explain why mock is needed
 - Mocking "just to be safe"
 
-## The Bottom Line
+## Verification Checklist
 
-**Mocks are tools to isolate, not things to test.**
+Before considering test code complete, confirm:
 
-If TDD reveals you're testing mock behavior, you've gone wrong.
-
-Fix: Test real behavior or question why you're mocking at all.
+- [ ] Every assertion targets real behavior, not mock presence
+- [ ] No production method exists solely for test use
+- [ ] Each mock's side effects are understood and accounted for
+- [ ] Mock data structures mirror complete real-world schemas
+- [ ] Mock setup is shorter than (or proportional to) test logic
+- [ ] You can explain in one sentence why each mock exists
+- [ ] Tests fail when the feature under test is broken (not just when mocks change)

@@ -19,6 +19,12 @@ description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent
 - Merging instructions from multiple sources
 - Periodic maintenance (treat like code review)
 
+## When NOT to Use
+
+- File is under 100 lines and agent behavior is correct — leave it alone
+- File was just created and hasn't been tested with real agent interactions yet
+- The problem is a missing skill or agent, not a bloated config file
+
 ## The Optimization Process
 
 ### 0. Verify Freshness
@@ -55,6 +61,7 @@ project/feature/CLAUDE.md     # Scoped: package-specific rules
 
 - Read target file AND all parent/child files
 - Note what's already covered at other levels
+- **Monorepo projects:** Root level holds monorepo purpose, navigation hints, and shared tools. Package level holds package purpose, stack, and package-specific conventions. Don't overload any level — agent sees ALL merged files in context.
 
 ### 3. Eliminate Ruthlessly
 
@@ -140,22 +147,7 @@ Single sentence: what Claude is in this context
 </context>
 ```
 
-**When to use XML tags:**
-- Major functional sections needing clear boundaries
-- Content that must not bleed into adjacent content
-
-**When to use markdown:**
-- Navigation within sections
-- Reference material meant to be scanned
-
-### 7. Monorepo Specifics
-
-| Level | Content |
-|-------|---------|
-| Root | Monorepo purpose, navigation hints, shared tools |
-| Package | Package purpose, stack, package-specific conventions |
-
-Don't overload any level. Agent sees ALL merged files in context.
+Use XML tags for major sections needing clear boundaries. Use markdown headings for navigation and scannable reference material.
 
 ## Validation Checklist
 
@@ -178,31 +170,9 @@ When presenting optimized file:
 3. **Hierarchy notes**: What was delegated up/down
 4. **Token savings**: Original vs optimized line count
 
-## Post-Optimization: Development Acceleration
-
-After presenting the optimized file(s), ask the user:
-
-> "Want help optimizing your entire development workflow for this project?"
-
-**If yes**, launch a subagent (Task tool, `subagent_type: "general-purpose"`) with all relevant context (project purpose, stack, team, scope answers from Step 1) and this prompt:
-
-```
-You're my co-founder. Create a master plan with a knowledge base directory
-for each section. Attach context markdown files to every part. You're building
-the skeleton that Claude Code will use to build everything 10x faster.
-Suggest skills to integrate, automations to build or any tool that'd 10x
-our speed. Suggest when to use a project or Claude Code.
-```
-
-**When the subagent completes:**
-1. Read and analyze its output
-2. Summarize a report to the user: what was created, key insights, directory structure
-3. Present your top 3-5 recommendations ranked by impact
-4. Note any skills or automations that could be built immediately
-
 ## Example Transformation
 
-### Before (92 lines, low efficacy)
+### Before
 ```markdown
 You are a helpful coding assistant for this React project.
 
@@ -215,7 +185,7 @@ Be thoughtful about performance.
 ...
 ```
 
-### After (23 lines, high efficacy)
+### After
 ```markdown
 React component architect for /dashboard feature
 
