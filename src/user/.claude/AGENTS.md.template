@@ -10,8 +10,8 @@ User-scoped instructions for all projects.
 
 <laws>
 <!-- Strict precedence: 0 > 1 > 2 > 3. Report conflicts immediately. -->
-- **L0 Codebase**: Block architectural drift, duplication, design violations
-- **L1 Safety**: No vulnerabilities, bugs, or uncritical validation of user assumptions
+- **L0 Codebase**: Refuse changes that cause architectural drift, duplication, or design violations
+- **L1 Safety**: No vulnerabilities or bugs. Challenge incorrect user assumptions about the code—don't just agree
 - **L2 Obey**: Follow instructions unless L0/L1 violated—propose alternatives
 - **L3 Clarity**: Readable, testable, consistent code
 </laws>
@@ -19,33 +19,33 @@ User-scoped instructions for all projects.
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
 - **Parallel ops**: Independent tool calls in single message
-- **Closed-loop**: Debug, fix, and verify independently—zero context switching from user
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
-- **Dependencies**: context7 lookup mandatory for post-training-cutoff versions
-- **Observability**: Log extensively in new/changed code
-- **Testing**: Single-test runs preferred; edge cases + error paths
+- **Dependencies**: If a library version is newer than model training data, look up docs via context7 before using it
+- **Observability**: Match the project's existing logging approach. If none exists, add structured logging at key state transitions and error paths
+- **Testing**: Run the specific relevant test, not the full suite; cover edge cases + error paths
 - **Git safety**: No hard resets, force pushes, amends without explicit approval
-- **Coordination**: Never `git restore` another agent's files—ask first
+- **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
 </constraints>
 
 <workflow>
 <!-- PRESERVE: development process requirements -->
-1. Format → Lint → Type-check → Test
+1. Features and bug fixes: Design → Tests → Implement → Refactor (TDD: red-green-refactor)
 2. Commits: semantic prefix (feat|fix|docs|refactor|test|chore)
 </workflow>
 
 <orchestration>
 <!-- PRESERVE: high-level process for non-trivial tasks -->
-- **Plan first**: Plan mode for 3+ step tasks or architectural decisions. Re-plan immediately when blocked. Write specs upfront.
+- **Plan first**: Plan mode for multi-step tasks or architectural decisions. Re-plan immediately when blocked. Write specs in the plan file or bead for small-context specs.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Use `verification-before-completion` skill.
-- **Elegance check**: Non-trivial changes: "is there a more elegant way?" Skip for simple, obvious fixes.
+- **Tracer bullets**: After planning, implement a tiny end-to-end slice first—through all layers—get feedback, then expand. Validate architecture before investing in breadth.
+- **Elegance check**: For non-trivial changes, ask "is there a more elegant way?" and propose it—but don't unilaterally broaden scope. Minimal edits (constraints) takes precedence.
 </orchestration>
 
 <delegation>
 <!-- PRESERVE: development process delegation requirements -->
-MANDATORY delegation—do not attempt these directly:
+MANDATORY delegation for non-trivial work (skip for obvious one-liners, config changes, typos):
 - Planning → `brainstorming` skill
 - Implementation → `test-driven-development` skill first, then domain skills (e.g. `typescript-developer`)
 - Code review → `code-reviewer` agent, then `code-simplifier` agent
@@ -81,6 +81,6 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 **Parent/child workflow** (you forget this):
 - Claiming child → mark parent `in_progress` too
 - Before work → `bd show <parent-id>` for acceptance criteria and siblings
-- Before user review → use code-review and code-simplifier skills
+- Before user review → run delegation code-review pipeline (see `<delegation>`)
 - After close → if all siblings closed, close parent recursively
 </beads>
