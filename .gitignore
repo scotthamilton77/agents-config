@@ -23,3 +23,14 @@ settings.local.json
 
 # DevContainer environment variables (contains secrets)
 .devcontainer/.env
+# >>> sidekick
+.sidekick/logs/
+.sidekick/sessions/
+.sidekick/state/
+.sidekick/setup-status.json
+.sidekick/.env
+.sidekick/.env.local
+.sidekick/sidekick*.pid
+.sidekick/sidekick*.token
+.sidekick/*.local.yaml
+# <<< sidekick
