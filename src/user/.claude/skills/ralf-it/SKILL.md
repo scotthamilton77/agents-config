@@ -113,6 +113,10 @@ Create an isolated worktree for all RALF work. All subagents work in this worktr
 
 Prepare the `.ralf/` directory for foreign agent artifacts. This runs once, after worktree creation, before any implementation work.
 
+**Variables:**
+- `{session_id}`: The main RALF controller's session ID (prevents cross-session collisions)
+- `{timestamp}`: Format `YYYYMMDD-HHmmss` (prevents cross-run collisions within a session)
+
 **`.ralf/` directory structure:**
 
 ```

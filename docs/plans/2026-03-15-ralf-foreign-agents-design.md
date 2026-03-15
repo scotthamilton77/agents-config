@@ -42,8 +42,10 @@ Final:     Final Review, Report (unchanged, adds foreign agent section)
 └── {session_id}/
     ├── prompt-codex-{timestamp}.md         # instruction file for Codex
     ├── prompt-gemini-{timestamp}.md        # instruction file for Gemini
-    ├── codex-review-{timestamp}.md         # Codex review output
-    └── gemini-review-{timestamp}.md        # Gemini review output
+    ├── codex-review-{timestamp}.md         # Codex review output (stdout capture)
+    ├── gemini-review-{timestamp}.md        # Gemini review output (stdout capture)
+    ├── codex-errors-{timestamp}.log        # Codex stderr capture
+    └── gemini-errors-{timestamp}.log       # Gemini stderr capture
 ```
 
 - `{session_id}`: Main agent's session ID (prevents cross-session collisions)
@@ -155,10 +157,10 @@ All failures degrade gracefully to a standard fresh-eyes iteration.
 
 ```markdown
 ### Foreign Agent Participation
-- **Iteration 1 (Codex):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED]
+- **Iteration 1 (Codex):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED/NO_OUTPUT]
   - Findings: [N] ([accepted]/[rejected])
   - Notable: [most impactful accepted recommendation, if any]
-- **Iteration 2 (Gemini):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED]
+- **Iteration 2 (Gemini):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED/NO_OUTPUT]
   - Findings: [N] ([accepted]/[rejected])
   - Notable: [most impactful accepted recommendation, if any]
 ```

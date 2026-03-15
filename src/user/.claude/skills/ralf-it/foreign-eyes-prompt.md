@@ -56,9 +56,9 @@ Agent tool (general-purpose, mode: "auto"):
     - CLI invocation (gemini): gemini -p "" --approval-mode plan -o text < {prompt_file} > {review_file} 2>{error_file}
     - Timeout: 600000ms (10 minutes)
     - Session directory: .ralf/{session_id}/
-    - Instruction file: .ralf/{session_id}/prompt-{agent_name}-{timestamp}.md
-    - Review file: .ralf/{session_id}/{agent_name}-review-{timestamp}.md
-    - Error log: .ralf/{session_id}/{agent_name}-errors-{timestamp}.log
+    - Instruction file: .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md
+    - Review file: .ralf/{session_id}/{agent_lower}-review-{timestamp}.md
+    - Error log: .ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
 
     ## Quality Criteria
 
@@ -77,7 +77,7 @@ Agent tool (general-purpose, mode: "auto"):
 
     1. Read the original spec and Definition of Done above carefully
     2. IMMEDIATELY write the foreign agent instruction file to:
-       .ralf/{session_id}/prompt-{agent_name}-{timestamp}.md
+       .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md
 
        Use the template from ./foreign-agent-prompt.md, filling in the DoD and spec
        from the ORIGINAL task above (NOT your own interpretation or summary).
@@ -104,12 +104,12 @@ Agent tool (general-purpose, mode: "auto"):
 
        For codex:
        ```bash
-       codex exec -s read-only - < .ralf/{session_id}/prompt-{agent_name}-{timestamp}.md > .ralf/{session_id}/{agent_name}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_name}-errors-{timestamp}.log
+       codex exec -s read-only - < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
        ```
 
        For gemini:
        ```bash
-       gemini -p "" --approval-mode plan -o text < .ralf/{session_id}/prompt-{agent_name}-{timestamp}.md > .ralf/{session_id}/{agent_name}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_name}-errors-{timestamp}.log
+       gemini -p "" --approval-mode plan -o text < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
        ```
 
     9. Wait for the command to complete
@@ -177,7 +177,7 @@ Agent tool (general-purpose, mode: "auto"):
     - Findings: [N] total ([critical] / [major] / [minor] / [nit])
     - Accepted: [list of recommendations applied, with reasoning]
     - Rejected: [list of recommendations not applied, with reasoning]
-    - Review file: .ralf/{session_id}/{agent_name}-review-{timestamp}.md
+    - Review file: .ralf/{session_id}/{agent_lower}-review-{timestamp}.md
 
     ### Remaining Concerns
     - [Anything the user should know about]
