@@ -44,9 +44,12 @@ digraph ralf_process {
     align [label="1. Align on Definition of Done with user"];
     ask_iters [label="2. Ask user for max iterations (default 5)"];
     worktree [label="3. Create worktree\n(using-git-worktrees skill)"];
+    foreign_setup [label="3b. Foreign agent setup\n(.ralf/ directory, gitignore ceremony)"];
     implement [label="4. Dispatch implementation subagent(s)\n(./implementer-prompt.md)"];
     quality_gate [label="5. Quality Gate:\ncode-reviewer agent\ncode-simplifier agent\nbuild + typecheck + lint + test"];
-    fresh_eyes [label="6. Dispatch FRESH-EYES subagent\n(./fresh-eyes-prompt.md)\nTold: 'task may be started but\nunsure if truly done or acceptable quality'"];
+    iter_check [label="Iteration 1 or 2?" shape=diamond];
+    foreign_eyes [label="6a. Dispatch FOREIGN-EYES subagent\n(./foreign-eyes-prompt.md)\nIter 1: Codex review\nIter 2: Gemini review"];
+    fresh_eyes [label="6b. Dispatch FRESH-EYES subagent\n(./fresh-eyes-prompt.md)\nPure Claude fresh-eyes"];
     significant [label="Significant work done?" shape=diamond];
     under_max [label="Under max iterations?" shape=diamond];
     ask_more [label="Report status, ask user\nif they want more cycles" shape=box];
@@ -55,13 +58,17 @@ digraph ralf_process {
 
     align -> ask_iters;
     ask_iters -> worktree;
-    worktree -> implement;
+    worktree -> foreign_setup;
+    foreign_setup -> implement;
     implement -> quality_gate;
-    quality_gate -> fresh_eyes;
+    quality_gate -> iter_check;
+    iter_check -> foreign_eyes [label="yes - iteration 1 or 2"];
+    iter_check -> fresh_eyes [label="no - iteration 3+"];
+    foreign_eyes -> significant;
     fresh_eyes -> significant;
     significant -> under_max [label="yes"];
     significant -> final_review [label="no - converged"];
-    under_max -> quality_gate [label="yes - loop back\n(new fresh-eyes next)"];
+    under_max -> quality_gate [label="yes - loop back\n(new eyes next)"];
     under_max -> ask_more [label="no - max reached"];
     ask_more -> quality_gate [label="user says continue"];
     ask_more -> final_review [label="user says stop"];
@@ -102,6 +109,44 @@ Store the answer as `MAX_ITERATIONS`. Proceed with default if user says "default
 
 Create an isolated worktree for all RALF work. All subagents work in this worktree.
 
+### Step 3b: Foreign Agent Setup
+
+Prepare the `.ralf/` directory for foreign agent artifacts. This runs once, after worktree creation, before any implementation work.
+
+**`.ralf/` directory structure:**
+
+```
+.ralf/
+├── .no-gitignore-prompt                    # marker: stop asking about .gitignore
+└── {session_id}/
+    ├── prompt-codex-{timestamp}.md         # instruction file for Codex
+    ├── prompt-gemini-{timestamp}.md        # instruction file for Gemini
+    ├── codex-review-{timestamp}.md         # Codex review output (stdout capture)
+    ├── gemini-review-{timestamp}.md        # Gemini review output (stdout capture)
+    ├── codex-errors-{timestamp}.log        # Codex stderr capture
+    └── gemini-errors-{timestamp}.log       # Gemini stderr capture
+```
+
+**Gitignore ceremony:**
+
+1. Check if `.ralf` or `.ralf/` appears in `.gitignore`
+2. If present: proceed silently
+3. If missing: check for `.ralf/.no-gitignore-prompt` marker
+   - If marker exists: skip silently
+   - Otherwise ask user: "Add `.ralf/` to `.gitignore`?"
+     - If yes: append `.ralf/` to `.gitignore`
+     - If no: ask "Stop asking?" — if yes, create `.ralf/.no-gitignore-prompt` marker file
+4. Create `.ralf/{session_id}/` directory
+
+**Foreign CLI invocations reference:**
+
+| Agent | Command |
+|-------|---------|
+| Codex | `codex exec -s read-only - < {prompt_file} > {review_file} 2>{error_file}` |
+| Gemini | `gemini -p "" --approval-mode plan -o text < {prompt_file} > {review_file} 2>{error_file}` |
+
+Both use a 10-minute timeout (600000ms) and run in read-only/plan mode (cannot modify source files).
+
 ### Step 4: Dispatch Implementation Subagent(s)
 
 Dispatch one or more subagents to execute the initial implementation using `./implementer-prompt.md`.
@@ -123,22 +168,38 @@ Run these in sequence:
 
 If the code-reviewer or code-simplifier finds significant issues, have them fix what they can. Record what was found for the fresh-eyes subagent.
 
-### Step 6: Dispatch Fresh-Eyes Subagent
+### Step 6: Dispatch Eyes Subagent (Foreign or Fresh)
 
-This is the core RALF innovation. Dispatch a **brand new** subagent using `./fresh-eyes-prompt.md`.
+This is the core RALF innovation. Dispatch a **brand new** subagent for each iteration. The controller selects the prompt template based on iteration number:
 
-Key properties of the fresh-eyes dispatch:
+**Iteration routing:**
+
+| Iteration | Template | Foreign Agent |
+|-----------|----------|---------------|
+| 1 | `./foreign-eyes-prompt.md` with `{agent_name}=Codex`, `{agent_lower}=codex` | Codex |
+| 2 | `./foreign-eyes-prompt.md` with `{agent_name}=Gemini`, `{agent_lower}=gemini` | Gemini |
+| 3+ | `./fresh-eyes-prompt.md` | None (pure Claude) |
+
+**Rules based on MAX_ITERATIONS:**
+- `MAX_ITERATIONS == 1`: Only Codex gets a foreign-eyes pass
+- `MAX_ITERATIONS == 2`: Codex then Gemini
+- `MAX_ITERATIONS >= 3`: Codex, Gemini, then pure Claude for the rest
+
+**If a foreign agent fails** (unavailable, timeout, quota exhausted, no output), the iteration degrades to a pure fresh-eyes pass. The iteration still counts. The failure is reported in the final report.
+
+Key properties of every eyes dispatch (foreign or fresh):
 - **New subagent** — no context from previous implementation (fresh perspective)
 - **Told the task may be incomplete** — not told "verify this is done," but rather "this may have been started, assess and complete it"
 - **No iteration count exposed** — do NOT tell the subagent which iteration it is or how many have run. Knowing "iteration 3 of 5" biases toward shallower assessment ("others already checked this"). The controller tracks iterations internally; the subagent should approach every assessment as if it's the first.
 - **Given the original spec/plan** — not the previous agent's summary
 - **Empowered to change anything** — not just review, but fix
 
-The fresh-eyes subagent reports back:
+The subagent reports back:
 - What it found (issues, gaps, incomplete work)
 - What it changed
 - Whether it considers the work complete
 - Any remaining concerns
+- Foreign agent review status and accepted/rejected recommendations (iterations 1-2 only)
 
 ### Step 7: Evaluate and Loop
 
@@ -185,9 +246,18 @@ Present a complete report to the user:
 
 ### Iteration Summary
 - **Initial implementation:** [what was built]
-- **Iteration 1:** [what fresh-eyes found and fixed]
-- **Iteration 2:** [what fresh-eyes found and fixed]
+- **Iteration 1 (+ Codex review):** [fresh-eyes findings] + [Codex findings]
+- **Iteration 2 (+ Gemini review):** [fresh-eyes findings] + [Gemini findings]
+- **Iteration 3+:** [standard fresh-eyes findings]
 - ...
+
+### Foreign Agent Participation
+- **Iteration 1 (Codex):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED/NO_OUTPUT]
+  - Findings: [N] ([accepted]/[rejected])
+  - Notable: [most impactful accepted recommendation, if any]
+- **Iteration 2 (Gemini):** [COMPLETED/UNAVAILABLE/TIMED_OUT/QUOTA_EXCEEDED/NO_OUTPUT]
+  - Findings: [N] ([accepted]/[rejected])
+  - Notable: [most impactful accepted recommendation, if any]
 
 ### Quality Status
 - Build: PASS/FAIL
@@ -199,6 +269,9 @@ Present a complete report to the user:
 ### Files Changed
 [list of files]
 
+### Foreign Agent Artifacts
+Review files preserved at: .ralf/{session_id}/
+
 ### Remaining Concerns
 [any issues the user should be aware of]
 ```
@@ -208,7 +281,9 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 ## Prompt Templates
 
 - `./implementer-prompt.md` — Dispatch initial implementation subagent(s)
-- `./fresh-eyes-prompt.md` — Dispatch fresh-eyes refinement subagent
+- `./fresh-eyes-prompt.md` — Dispatch fresh-eyes refinement subagent (iteration 3+)
+- `./foreign-eyes-prompt.md` — Dispatch foreign-eyes subagent (iterations 1-2, includes foreign CLI review)
+- `./foreign-agent-prompt.md` — Template for instruction file written to `.ralf/` for foreign CLI consumption
 
 ## Quick Reference
 
@@ -222,6 +297,11 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 | Fresh-eyes only cosmetic | Counts as converged, exit loop |
 | Build/test fails in gate | Fix before dispatching fresh-eyes |
 | Task is trivial | Don't use RALF-IT, just do it |
+| Foreign agent quota hit | Degrade to pure fresh-eyes, report quota status |
+| Foreign agent times out | Degrade to pure fresh-eyes, report timeout |
+| Foreign agent unavailable | Degrade to pure fresh-eyes, report unavailable |
+| MAX_ITERATIONS is 1 | Only Codex gets foreign-eyes pass |
+| MAX_ITERATIONS is 2 | Codex then Gemini |
 
 ## Red Flags
 
@@ -235,6 +315,11 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 - Run fresh-eyes subagents in parallel (they'd conflict)
 - Skip the final review pass (last chance to catch issues)
 - Exceed max iterations without asking the user
+- Write the foreign agent instruction file after doing implementation work (context contamination)
+- Let a foreign agent modify source files directly (review document only — enforced by read-only sandbox)
+- Trust foreign agent recommendations blindly (evaluate each against spec/DoD)
+- Skip an iteration because the foreign agent failed (degrade to pure fresh-eyes)
+- Expose iteration count to foreign agents (no bias)
 
 **Always:**
 - Get DoD confirmation before starting
@@ -242,6 +327,11 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 - Give fresh-eyes the ORIGINAL spec, not the previous agent's summary
 - Track iteration count and report it
 - Exit early when converged (don't waste iterations)
+- Write the instruction file from clean spec context before implementation
+- Set a 10-minute timeout on foreign CLI invocation
+- Check for token quota exhaustion patterns in CLI output
+- Report foreign agent status even when it fails (visibility)
+- Preserve all `.ralf/` artifacts for debugging
 
 ## Integration
 
@@ -255,6 +345,10 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 
 **Subagents should use:**
 - **superpowers:test-driven-development** — TDD for implementation
+
+**Foreign agent CLIs (iterations 1-2 only):**
+- **Codex CLI** — `codex exec -s read-only` (read-only sandbox)
+- **Gemini CLI** — `gemini --approval-mode plan` (read-only plan mode)
 
 **RALF-IT replaces these for complex work:**
 - **superpowers:subagent-driven-development** — RALF-IT adds iterative refinement on top
