@@ -110,9 +110,8 @@ New prompt template: `foreign-agent-prompt.md`
 You are reviewing code in this repository as an external reviewer.
 
 ## CRITICAL INSTRUCTIONS
-- Do NOT modify any source files
-- Write your complete review to: {review_file_path}
-- If you cannot write to that file, output your review to stdout
+- Do NOT modify any source files — you are running in read-only mode
+- Output your complete review to stdout (it will be captured automatically)
 
 ## Definition of Done
 {DoD}
@@ -208,11 +207,22 @@ Review files preserved at: .ralf/{session_id}/
 |---|---|
 | `SKILL.md` | Updated loop description, new foreign agent configuration section, updated report template, new red flags, CLI discovery notes |
 
-## CLI Discovery (Implementation Time)
+## CLI Discovery (Verified)
 
-Run `codex --help` and `gemini --help` to determine:
-- Flag for file-based prompt input vs. inline prompt
-- Flag for non-interactive/full-auto mode
-- Output behavior (stdout vs. file writing)
+### Codex
+- **Non-interactive:** `codex exec` subcommand
+- **Sandbox:** `-s read-only` (prevents all file writes — foreign agent cannot touch source)
+- **Prompt input:** `-` flag reads prompt from stdin
+- **Full invocation:** `codex exec -s read-only - < {prompt_file} > {review_file} 2>{error_file}`
+- **Timeout:** Bash timeout at 600000ms (10 minutes)
 
-Document actual invocation syntax in `foreign-eyes-prompt.md` once verified.
+### Gemini
+- **Non-interactive:** `-p ""` flag triggers headless mode
+- **Read-only:** `--approval-mode plan` (read-only mode, can read but not write)
+- **Output format:** `-o text` for plain text output
+- **Prompt input:** stdin is appended to `-p` prompt
+- **Full invocation:** `gemini -p "" --approval-mode plan -o text < {prompt_file} > {review_file} 2>{error_file}`
+- **Timeout:** Bash timeout at 600000ms (10 minutes)
+
+### Common Pattern
+Both CLIs: stdin prompt, read-only sandbox, stdout captured to review file, stderr captured separately for error detection. The Claude subagent checks stderr for quota/rate-limit patterns before reading the review file.
