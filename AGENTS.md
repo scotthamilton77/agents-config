@@ -4,7 +4,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Purpose
 
-This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. The primary content is markdown files intended to be copied to `~/.claude/` (user-level) or `.claude/` (project-level) directories.
+This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, and **Google Gemini CLI**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
 ## Prerequisites (Plugins)
 
@@ -16,18 +16,26 @@ This configuration assumes the following Claude Code plugins are installed:
 ## Repository Structure
 
 - `scripts/` - Installation and maintenance scripts
-  - `install.sh` - Syncs `src/user/.claude/` into `~/.claude/` with intelligent merge
+  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` override
 - `docs/plans/` - Design documents for features in development
-- `src/user/.claude/` - User-level config (copies to `~/.claude/`)
+- `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
-  - `commands/` - Slash command definitions
+  - `INSTRUCTIONS.md.template` - Shared laws, constraints, workflow, orchestration
   - `AGENT-PERSONA.md.template` - Agent persona/personality template
   - `USER-PERSONA.md.template` - User persona template
-  - `AGENTS.md.template` - Main user AGENTS.md template
-  - `CLAUDE.md.template` - CLAUDE.md template (points to AGENTS.md)
+- `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
+  - `commands/` - Slash command definitions (`.md`)
+  - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
+  - `CLAUDE.md.template` - Points to AGENTS.md
+  - `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, beads, git)
   - `settings.json.template` - Permission presets and experimental features
-  - `AGENTS.md` - Installation instructions for this folder
+- `src/user/.codex/` - **Codex-specific** content (copies to `~/.codex/`)
+  - `AGENTS.md.template` - Codex instruction file (refs shared + Codex extensions)
+  - `CODEX-EXTENSIONS.md.template` - Codex-specific sections (placeholder)
+- `src/user/.gemini/` - **Gemini-specific** content (copies to `~/.gemini/`)
+  - `GEMINI.md.template` - Gemini instruction file (refs shared + Gemini extensions)
+  - `GEMINI-EXTENSIONS.md.template` - Gemini-specific sections (placeholder)
 
 ## File Formats
 
