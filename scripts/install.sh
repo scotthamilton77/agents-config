@@ -54,10 +54,18 @@ for arg in "$@"; do
         --help|-h)
             echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--help|-h]"
             echo ""
+            echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
+            echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
+            echo ""
+            echo "Shared content (skills, agents, instructions, personas) from src/user/.agents/"
+            echo "is installed into all detected tools. Tool-specific content from src/user/.<tool>/"
+            echo "is installed only into that tool's directory."
+            echo ""
+            echo "Options:"
             echo "  --dry-run          Show what would be done without making changes"
             echo "  --yes, -y          Auto-accept all prompts"
             echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini"
-            echo "                     Default: auto-detect installed tools"
+            echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
