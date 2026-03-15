@@ -223,17 +223,16 @@ sync_templates() {
                 info "$target_name differs from installed version:"
                 diff --color=auto -u "$dest_file" "$template" || true
                 echo
-                if confirm "Overwrite $dest_file with $label version?"; then
-                    if [[ "$DRY_RUN" == true ]]; then
-                        ok "Would update $target_name"
-                    else
-                        backup "$dest_file"
-                        cp "$template" "$dest_file"
-                        ok "Updated $target_name"
-                    fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would update $target_name [$label]"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif confirm "Overwrite $dest_file with $label version?"; then
+                    backup "$dest_file"
+                    cp "$template" "$dest_file"
+                    ok "Updated $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
-                    warn "Skipped $target_name"
+                    warn "Skipped $target_name [$label]"
                     (( tool_skipped[$CURRENT_TOOL]++ )) || true
                 fi
             fi
@@ -265,7 +264,7 @@ sync_directory() {
 
     header "Syncing $dir_name/ ($label)"
 
-    mkdir -p "$dest_parent"
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_parent"
 
     # Sync each item (subdirectory or file) from source
     for item in "$src_parent"/*; do
@@ -300,17 +299,16 @@ sync_directory() {
                     diff --color=auto -u "$dest_item" "$item" || true
                 fi
                 echo
-                if confirm "Replace $dir_name/$item_name? (removes existing, copies fresh)"; then
-                    if [[ "$DRY_RUN" == true ]]; then
-                        ok "Would update $dir_name/$item_name"
-                    else
-                        rm -rf "$dest_item"
-                        cp -R "$item" "$dest_item"
-                        ok "Updated $dir_name/$item_name"
-                    fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would update $dir_name/$item_name [$label]"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif confirm "Replace $dir_name/$item_name? (removes existing, copies fresh)"; then
+                    rm -rf "$dest_item"
+                    cp -R "$item" "$dest_item"
+                    ok "Updated $dir_name/$item_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
-                    warn "Skipped $dir_name/$item_name"
+                    warn "Skipped $dir_name/$item_name [$label]"
                     (( tool_skipped[$CURRENT_TOOL]++ )) || true
                 fi
             fi
@@ -404,20 +402,19 @@ sync_settings_file() {
                 info "Proposed $target_name changes:"
                 diff --color=auto -u <(printf '%s\n' "$current") <(printf '%s\n' "$proposed") || true
                 echo
-                if confirm "Apply merged $target_name?"; then
-                    if [[ "$DRY_RUN" == true ]]; then
-                        ok "Would merge $target_name"
-                    else
-                        backup "$dest_file"
-                        local tmp
-                        tmp="$(mktemp)"
-                        printf '%s\n' "$merged_json" | jq . > "$tmp"
-                        mv "$tmp" "$dest_file"
-                        ok "Merged $target_name"
-                    fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would merge $target_name [$label]"
+                    (( tool_merged[$CURRENT_TOOL]++ )) || true
+                elif confirm "Apply merged $target_name?"; then
+                    backup "$dest_file"
+                    local tmp
+                    tmp="$(mktemp)"
+                    printf '%s\n' "$merged_json" | jq . > "$tmp"
+                    mv "$tmp" "$dest_file"
+                    ok "Merged $target_name [$label]"
                     (( tool_merged[$CURRENT_TOOL]++ )) || true
                 else
-                    warn "Skipped $target_name merge"
+                    warn "Skipped $target_name merge [$label]"
                     (( tool_skipped[$CURRENT_TOOL]++ )) || true
                 fi
             fi
@@ -445,17 +442,16 @@ sync_settings_file() {
                 info "$target_name differs from installed version:"
                 diff --color=auto -u "$dest_file" "$template" || true
                 echo
-                if confirm "Overwrite $dest_file with template version?"; then
-                    if [[ "$DRY_RUN" == true ]]; then
-                        ok "Would update $target_name"
-                    else
-                        backup "$dest_file"
-                        cp "$template" "$dest_file"
-                        ok "Updated $target_name"
-                    fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would update $target_name [$label]"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif confirm "Overwrite $dest_file with template version?"; then
+                    backup "$dest_file"
+                    cp "$template" "$dest_file"
+                    ok "Updated $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
-                    warn "Skipped $target_name"
+                    warn "Skipped $target_name [$label]"
                     (( tool_skipped[$CURRENT_TOOL]++ )) || true
                 fi
             fi
@@ -474,7 +470,7 @@ install_tool() {
 
     header "$tool"
 
-    mkdir -p "$dest_dir"
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
 
     # Phase 1: Shared templates (.agents/*.md.template -> ~/.<tool>/)
     info "Phase 1: Shared templates"
