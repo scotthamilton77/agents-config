@@ -1,11 +1,13 @@
 ---
 name: bugfix
+model: opus
+argument-hint: "[error message, file path, or symptom description]"
 description: Use when encountering a bug with unclear origins, when multiple files could be involved, or when the symptom does not obviously point to a single root cause
 ---
 
 # Bugfix
 
-**Core principle:** Gather evidence from three angles in parallel, synthesize into a root cause analysis, THEN fix. Sequential investigation wastes hours — parallel evidence gathering catches what single-threaded debugging misses.
+**Core principle:** Gather evidence from three angles in parallel, synthesize into a root cause analysis, THEN fix. Sequential investigation wastes hours — parallel evidence gathering catches what single-threaded debugging misses. Use ultrathink for deep reasoning during synthesis.
 
 **Iron Law:** `NO FIX WITHOUT PARALLEL EVIDENCE FIRST`
 

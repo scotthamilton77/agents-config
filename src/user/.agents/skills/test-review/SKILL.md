@@ -1,5 +1,8 @@
 ---
 name: test-review
+model: opus
+context: fork
+agent: general-purpose
 description: Use when doing code review of unit or integration tests, reviewing test quality in a PR, auditing test patterns across a package or codebase, or when test failures seem caused by test design rather than production bugs
 ---
 

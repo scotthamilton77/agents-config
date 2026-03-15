@@ -1,5 +1,7 @@
 ---
 name: self-improving-agent
+model: sonnet
+allowed-tools: Read, Write, Edit, Glob, Grep
 description: Use when receiving any correction, repeated mistake, or behavioral feedback from the user - ensures lessons persist beyond the current conversation as actionable prevention rules
 ---
 

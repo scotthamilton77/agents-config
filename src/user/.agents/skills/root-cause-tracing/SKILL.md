@@ -1,5 +1,6 @@
 ---
 name: root-cause-tracing
+model: opus
 description: Use when errors occur deep in execution and you need to trace back to find the original trigger - systematically traces bugs backward through call stack, adding instrumentation when needed, to identify source of invalid data or incorrect behavior
 ---
 
@@ -7,7 +8,7 @@ description: Use when errors occur deep in execution and you need to trace back 
 
 ## Core Principle
 
-**Trace backward through the call chain until you find the original trigger, then fix at the source.** Never fix where the error appears — that is treating a symptom.
+**Trace backward through the call chain until you find the original trigger, then fix at the source.** Never fix where the error appears — that is treating a symptom. Use ultrathink for deep causal reasoning.
 
 ## When to Use
 
@@ -123,7 +124,7 @@ npm test 2>&1 | grep 'DEBUG git init'
 
 If something appears during tests but you don't know which test:
 
-Use the bisection script: @find-polluter.sh
+Use the bisection script at `${CLAUDE_SKILL_DIR}/find-polluter.sh`:
 
 ```bash
 ./find-polluter.sh '.git' 'src/**/*.test.ts'

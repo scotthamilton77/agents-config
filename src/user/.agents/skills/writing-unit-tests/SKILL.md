@@ -1,5 +1,7 @@
 ---
 name: writing-unit-tests
+model: sonnet
+argument-hint: "[file or function to test]"
 description: Use when writing unit tests, reviewing test code, or when asked to add tests to complex/untestable code
 ---
 

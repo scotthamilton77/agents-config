@@ -1,5 +1,7 @@
 ---
 name: ralf-it
+model: opus
+argument-hint: "[task-id, plan file, or description]"
 description: Use when executing tasks, implementing plans, designs, or complex multi-step work - iterative refinement with fresh-eyes subagents that catch what the first pass missed
 ---
 
@@ -7,7 +9,7 @@ description: Use when executing tasks, implementing plans, designs, or complex m
 
 Execute work through iterative refinement cycles where each cycle dispatches a fresh-eyes subagent to find and fix what the previous pass missed. Produces substantially higher quality than single-pass execution.
 
-**Core principle:** Fresh subagent per refinement cycle + quality gates between cycles = converging on excellence.
+**Core principle:** Fresh subagent per refinement cycle + quality gates between cycles = converging on excellence. Use ultrathink for synthesis and evaluation decisions.
 
 **Announce at start:** "I'm using RALF-IT to execute this with iterative refinement."
 
@@ -153,7 +155,7 @@ Both use a 10-minute timeout (600000ms) and run in read-only/plan mode (cannot m
 
 ### Step 4: Dispatch Implementation Subagent(s)
 
-Dispatch one or more subagents to execute the initial implementation using `./implementer-prompt.md`.
+Dispatch one or more subagents to execute the initial implementation using `${CLAUDE_SKILL_DIR}/implementer-prompt.md`.
 
 - For plans with multiple independent tasks, dispatch per task (sequentially, not parallel — avoid conflicts)
 - For single tasks, dispatch one implementer
@@ -180,9 +182,9 @@ This is the core RALF innovation. Dispatch a **brand new** subagent for each ite
 
 | Iteration | Template | Foreign Agent |
 |-----------|----------|---------------|
-| 1 | `./foreign-eyes-prompt.md` with `{agent_name}=Codex`, `{agent_lower}=codex` | Codex |
-| 2 | `./foreign-eyes-prompt.md` with `{agent_name}=Gemini`, `{agent_lower}=gemini` | Gemini |
-| 3+ | `./fresh-eyes-prompt.md` | None (pure Claude) |
+| 1 | `${CLAUDE_SKILL_DIR}/foreign-eyes-prompt.md` with `{agent_name}=Codex`, `{agent_lower}=codex` | Codex |
+| 2 | `${CLAUDE_SKILL_DIR}/foreign-eyes-prompt.md` with `{agent_name}=Gemini`, `{agent_lower}=gemini` | Gemini |
+| 3+ | `${CLAUDE_SKILL_DIR}/fresh-eyes-prompt.md` | None (pure Claude) |
 
 **Rules based on MAX_ITERATIONS:**
 - `MAX_ITERATIONS == 1`: Only Codex gets a foreign-eyes pass
@@ -284,10 +286,10 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 
 ## Prompt Templates
 
-- `./implementer-prompt.md` — Dispatch initial implementation subagent(s)
-- `./fresh-eyes-prompt.md` — Dispatch fresh-eyes refinement subagent (iteration 3+)
-- `./foreign-eyes-prompt.md` — Dispatch foreign-eyes subagent (iterations 1-2, includes foreign CLI review)
-- `./foreign-agent-prompt.md` — Template for instruction file written to `.ralf/` for foreign CLI consumption
+- `${CLAUDE_SKILL_DIR}/implementer-prompt.md` — Dispatch initial implementation subagent(s)
+- `${CLAUDE_SKILL_DIR}/fresh-eyes-prompt.md` — Dispatch fresh-eyes refinement subagent (iteration 3+)
+- `${CLAUDE_SKILL_DIR}/foreign-eyes-prompt.md` — Dispatch foreign-eyes subagent (iterations 1-2, includes foreign CLI review)
+- `${CLAUDE_SKILL_DIR}/foreign-agent-prompt.md` — Template for instruction file written to `.ralf/` for foreign CLI consumption
 
 ## Quick Reference
 

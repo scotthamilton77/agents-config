@@ -1,5 +1,7 @@
 ---
 name: condition-based-waiting
+model: sonnet
+user-invocable: false
 description: Use when tests have race conditions, timing dependencies, or inconsistent pass/fail behavior - replaces arbitrary timeouts with condition polling to wait for actual state changes, eliminating flaky tests from timing guesses
 ---
 
@@ -72,7 +74,7 @@ async function waitFor<T>(
 ): Promise<T>
 ```
 
-See @example.ts for complete implementation with domain-specific helpers (`waitForEvent`, `waitForEventCount`, `waitForEventMatch`).
+See `${CLAUDE_SKILL_DIR}/example.ts` for complete implementation with domain-specific helpers (`waitForEvent`, `waitForEventCount`, `waitForEventMatch`).
 
 ## Common Mistakes
 
