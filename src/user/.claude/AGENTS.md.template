@@ -36,6 +36,7 @@ User-scoped instructions for all projects.
 <orchestration>
 <!-- PRESERVE: high-level process for non-trivial tasks -->
 - **Plan first**: Plan mode for multi-step tasks or architectural decisions. Re-plan immediately when blocked. Write specs in the plan file or bead for small-context specs.
+- **Decide, don't defer**: When presenting plans or designs for review, use your best judgment on implementation details. Only escalate decisions to the user when the answer could clarify a requirement or substantively impact architecture.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Use `verification-before-completion` skill.
