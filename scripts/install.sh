@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "Error: Bash 4.0+ required (found ${BASH_VERSION}). Install via: brew install bash" >&2
+    exit 1
+fi
+
 # --------------------------------------------------------------------------
 # install.sh — Sync agent config into tool-specific home directories
 #
@@ -521,15 +526,7 @@ install_tool() {
 
 # ── Main loop ─────────────────────────────────────────────────────────────
 
-SKIPPED_TOOLS=()
-
 for tool in "${TOOLS[@]}"; do
-    src_tool_dir="$SRC_USER/.$tool"
-    # Require either shared content or tool-specific content to proceed
-    if [[ ! -d "$src_tool_dir" ]] && [[ ! -d "$SRC_SHARED" ]]; then
-        SKIPPED_TOOLS+=("$tool")
-        continue
-    fi
     install_tool "$tool"
 done
 
