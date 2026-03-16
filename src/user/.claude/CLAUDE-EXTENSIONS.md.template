@@ -8,11 +8,21 @@ the shared instructions in @INSTRUCTIONS.md.
 MANDATORY delegation for non-trivial work (skip for obvious one-liners, config changes, typos):
 - Planning → `brainstorming` skill
 - Implementation → `test-driven-development` skill first, then domain skills (e.g. `typescript-developer`)
-- Code review → `code-reviewer` agent, then `code-simplifier` agent
 - Tests → `writing-unit-tests` + `testing-anti-patterns` skills
-
-**Before presenting work to user**: ALWAYS run `code-reviewer` then `code-simplifier`. No exceptions.
 </delegation>
+
+<completion-gate>
+<!-- PRESERVE: unified verification pipeline before claiming work is complete -->
+MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typos):
+
+1. `code-reviewer` agent — review changes against plan and standards
+2. Address any findings from code-reviewer
+3. `code-simplifier` agent — simplify/refine changed code
+4. Address any findings from code-simplifier
+5. `verification-before-completion` skill — run tests, build, lint; evidence before claims
+
+No exceptions. No partial runs. Each step feeds the next.
+</completion-gate>
 
 <git_commits>
 <!-- PRESERVE: sandbox workaround for heredoc temp files -->
@@ -41,6 +51,6 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 **Parent/child workflow** (you forget this):
 - Claiming child → mark parent `in_progress` too
 - Before work → `bd show <parent-id>` for acceptance criteria and siblings
-- Before user review → run delegation code-review pipeline (see `<delegation>`)
+- Before user review → run `<completion-gate>` pipeline
 - After close → if all siblings closed, close parent recursively
 </beads>
