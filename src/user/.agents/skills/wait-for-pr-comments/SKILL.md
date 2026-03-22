@@ -31,10 +31,9 @@ digraph when_to_use {
 }
 ```
 
-## When NOT to Use
-
+**Don't use when:**
 - PR is a draft not ready for review
-- You need to monitor multiple PRs simultaneously (one PR per invocation)
+- Multiple PRs need monitoring simultaneously (one PR per invocation)
 - CI/CD status checks are the concern, not human review comments
 - PR is already merged or closed
 
@@ -73,14 +72,7 @@ Determine PR number from (in order):
    ```
    gh api repos/{owner}/{repo}/pulls/{number}/comments --jq 'length'
    ```
-2. Convert interval to cron expression:
-
-   | Interval | Cron Expression |
-   |----------|-----------------|
-   | `1m` | `*/1 * * * *` |
-   | `2m` | `*/2 * * * *` |
-   | `5m` | `*/5 * * * *` |
-
+2. Convert interval to cron: `Nm` → `*/N * * * *`
 3. Calculate max iterations: `ceil(max-duration / interval)`
 4. Create cron job via `CronCreate` with this prompt template:
 
@@ -123,14 +115,11 @@ Step 5: If count == baseline AND iteration < max_iterations:
 
 ### Phase 4: Re-poll (single round)
 
-1. Record new baseline (post-fix comment count)
-2. Create new cron job with same interval/duration
-3. New comments during re-poll are **reported but NOT auto-fixed** (prevents recursive loops)
-4. When complete → cancel cron, proceed to Phase 5
+Same cron setup with new baseline (post-fix count). New comments during re-poll are **reported but NOT auto-fixed** (prevents recursive loops). When complete → cancel cron, proceed to Phase 5.
 
 ### Phase 5: Final Report
 
-Always deliver a structured report. See Report Templates below.
+Deliver a structured report using the templates below.
 
 ## Report Templates
 
@@ -210,9 +199,7 @@ When matched, it outputs context for Claude:
 PR activity detected: #<number> (<url>). Run /wait-for-pr-comments to monitor for review comments.
 ```
 
-The hook **suggests** invocation — it does not force it. User retains control.
-
-Hook configuration lives in `settings.json.template` under the `hooks.PostToolUse` key. The script is Claude-specific but ships in shared `.agents/skills/` to avoid install clobber; it is inert in non-Claude environments.
+The hook **suggests** invocation — it does not force it. User retains control. Configuration lives in `settings.json.template` under `hooks.PostToolUse`. The script ships in shared `.agents/skills/` to avoid install clobber; inert in non-Claude environments.
 
 ## Quick Reference
 
