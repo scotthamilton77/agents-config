@@ -63,5 +63,19 @@
       "Write(/sbin/*)",
       "Write(/usr/sbin/*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/wait-for-pr-comments/detect-pr-push.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
