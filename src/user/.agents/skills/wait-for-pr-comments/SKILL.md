@@ -33,7 +33,7 @@ digraph when_to_use {
 
 **Don't use when:**
 - PR is a draft not ready for review
-- Multiple PRs need monitoring simultaneously (one PR per invocation)
+- Monitoring multiple PRs in one invocation (invoke separately per PR — each gets its own cron job)
 - CI/CD status checks are the concern, not human review comments
 - PR is already merged or closed
 
