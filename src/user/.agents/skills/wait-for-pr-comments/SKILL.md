@@ -62,9 +62,10 @@ Five phases. Always cancel cron jobs before exiting any phase on error.
 ### Phase 1: PR Detection
 
 Determine PR number from (in order):
-1. Hook-injected context — pattern match `PR activity detected: #<number>`
+1. Explicit argument — PR number or URL passed to the skill
 2. Current branch — `gh pr view --json number,title,url`
-3. If no PR found → report error and stop
+3. Hook-injected context — pattern match `PR activity detected: #<number>`
+4. If no PR found → report error and stop
 
 ### Phase 2: Initial Polling
 
