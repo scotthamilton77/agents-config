@@ -1,6 +1,6 @@
 # agents-config
 
-Versioned collection of agents, skills, and commands for AI coding assistants. Currently supports Claude Code, with planned support for other AI assistants (Gemini, Codex, etc.).
+Versioned collection of agents, skills, and commands for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, and **Google Gemini CLI**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
 ## Prerequisites
 
@@ -15,20 +15,30 @@ Without these plugins, the `<orchestration>`, `<delegation>`, and `<beads>` sect
 
 ```
 scripts/
-└── install.sh                 # Sync src/ into ~/.claude/ with merge logic
+└── install.sh                      # Multi-tool installer with auto-detection
 docs/
-└── plans/                     # Design documents for features in development
+├── plans/                          # Design documents for features in development
+└── specs/                          # Design specifications for implemented features
 src/
-└── user/.claude/              # User-level config (→ ~/.claude/)
-    ├── agents/                # Role-based agent definitions
-    ├── commands/              # Slash commands
-    ├── skills/                # Methodology guides with examples
-    ├── AGENT-PERSONA.md.template   # Agent persona/personality
-    ├── USER-PERSONA.md.template    # User persona
-    ├── AGENTS.md.template          # Main user AGENTS.md
-    ├── CLAUDE.md.template          # Points to AGENTS.md
-    ├── CLAUDE.md                   # Points to AGENTS.md
-    └── settings.json.template      # Permissions & experimental features
+└── user/
+    ├── .agents/                    # Shared content (copied into all detected tools)
+    │   ├── agents/                 # Role-based agent definitions
+    │   ├── skills/                 # Methodology guides with examples
+    │   ├── INSTRUCTIONS.md.template      # Shared laws, constraints, workflow
+    │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
+    │   └── USER-PERSONA.md.template      # User persona
+    ├── .claude/                    # Claude-specific (→ ~/.claude/)
+    │   ├── commands/               # Slash commands
+    │   ├── AGENTS.md.template      # Claude instruction file
+    │   ├── CLAUDE.md.template      # Points to AGENTS.md
+    │   ├── CLAUDE-EXTENSIONS.md.template  # Claude-specific sections
+    │   └── settings.json.template  # Permissions & experimental features
+    ├── .codex/                     # Codex-specific (→ ~/.codex/)
+    │   ├── AGENTS.md.template      # Codex instruction file
+    │   └── CODEX-EXTENSIONS.md.template   # Codex-specific sections
+    └── .gemini/                    # Gemini-specific (→ ~/.gemini/)
+        ├── GEMINI.md.template      # Gemini instruction file
+        └── GEMINI-EXTENSIONS.md.template  # Gemini-specific sections
 ```
 
 ### Agents
@@ -49,9 +59,12 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 | `bugfix` | Parallel debugging investigation with systematic root-cause analysis |
 | `condition-based-waiting` | Replace flaky timeouts with condition polling |
 | `optimize-agents-md` | Meta-skill for improving agent definitions |
+| `ralf-it` | Iterative refinement with fresh-eyes subagents that catch what the first pass missed |
 | `root-cause-tracing` | Systematic debugging methodology |
 | `self-improving-agent` | Persist lessons from user corrections as actionable rules |
+| `test-review` | Code review of unit/integration tests for quality and design issues |
 | `testing-anti-patterns` | Common testing mistakes and how to avoid them |
+| `wait-for-pr-comments` | Poll for PR review comments, auto-fix unambiguous feedback |
 | `writing-unit-tests` | Test behavior, not implementation; when to refuse testing untestable code |
 
 ### Commands
@@ -60,14 +73,21 @@ Slash commands that can be invoked directly:
 
 - `/implement-bead <id-or-description>` - Implement a bead end-to-end with TDD, verification, and code review
 - `/optimize-my-agent <path>` - Analyze and improve an agent definition file
+- `/optimize-my-skill <path>` - Analyze and improve a skill definition
+- `/refresh-agents-md` - Regenerate AGENTS.md from current repo state
 
 ### Templates
 
-- `AGENTS.md.template` - Base instructions including persona references, laws, constraints, orchestration, delegation, and workflow
-- `AGENT-PERSONA.md.template` - Agent personality and behavioral traits (referenced from AGENTS.md via `@AGENT-PERSONA.md`)
-- `USER-PERSONA.md.template` - User description and interaction preferences (referenced from AGENTS.md via `@USER-PERSONA.md`)
+**Shared** (in `src/user/.agents/`):
+- `INSTRUCTIONS.md.template` - Shared laws, constraints, workflow, and orchestration
+- `AGENT-PERSONA.md.template` - Agent personality and behavioral traits (referenced via `@AGENT-PERSONA.md`)
+- `USER-PERSONA.md.template` - User description and interaction preferences (referenced via `@USER-PERSONA.md`)
+
+**Claude-specific** (in `src/user/.claude/`):
+- `AGENTS.md.template` - Claude instruction file referencing shared content + Claude extensions
 - `CLAUDE.md.template` - Minimal file that points to AGENTS.md
-- `settings.json.template` - Pre-configured permission allowlists and experimental features (agent teams)
+- `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, beads, git commits)
+- `settings.json.template` - Pre-configured permission allowlists and experimental features
 
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
@@ -93,27 +113,36 @@ Slash commands that can be invoked directly:
 ```
 
 The install script:
-- Copies `*.md.template` files to `~/.claude/` (stripping `.template` suffix), with diff preview and confirmation for existing files
+- Auto-detects installed tools (Claude Code, Codex CLI, Gemini CLI) or use `--tools=` to override
+- Copies shared content (`src/user/.agents/`) into all detected tools
+- Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
+- Copies `*.md.template` files (stripping `.template` suffix), with diff preview and confirmation for existing files
 - Syncs `agents/`, `skills/`, and `commands/` directories using hash comparison per item
 - Union-merges `settings.json.template` into existing `settings.json` (preserves your values, adds new keys/entries)
 - Creates timestamped backups before overwriting anything
-- Warns about items in `~/.claude/` that aren't tracked in the project
+- Warns about items that aren't tracked in the project
 
-Requires `jq` for JSON merging.
+Requires `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
 
 ### Manual
 
 ```bash
-# Copy agents, skills, commands
-cp -r src/user/.claude/agents ~/.claude/
-cp -r src/user/.claude/skills ~/.claude/
+# Copy shared content (agents, skills)
+cp -r src/user/.agents/agents ~/.claude/
+cp -r src/user/.agents/skills ~/.claude/
+
+# Copy Claude-specific content (commands)
 cp -r src/user/.claude/commands ~/.claude/
 
-# Copy and customize templates
+# Copy and customize shared templates
+cp src/user/.agents/INSTRUCTIONS.md.template ~/.claude/INSTRUCTIONS.md
+cp src/user/.agents/AGENT-PERSONA.md.template ~/.claude/AGENT-PERSONA.md
+cp src/user/.agents/USER-PERSONA.md.template ~/.claude/USER-PERSONA.md
+
+# Copy and customize Claude-specific templates
 cp src/user/.claude/AGENTS.md.template ~/.claude/AGENTS.md
-cp src/user/.claude/AGENT-PERSONA.md.template ~/.claude/AGENT-PERSONA.md
-cp src/user/.claude/USER-PERSONA.md.template ~/.claude/USER-PERSONA.md
 cp src/user/.claude/CLAUDE.md.template ~/.claude/CLAUDE.md
+cp src/user/.claude/CLAUDE-EXTENSIONS.md.template ~/.claude/CLAUDE-EXTENSIONS.md
 cp src/user/.claude/settings.json.template ~/.claude/settings.json
 ```
 
@@ -123,8 +152,9 @@ cp src/user/.claude/settings.json.template ~/.claude/settings.json
 cd /path/to/your/project
 
 # Copy what you need
-cp -r /path/to/agents-config/src/user/.claude/agents .claude/
-cp -r /path/to/agents-config/src/user/.claude/skills .claude/
+cp -r /path/to/agents-config/src/user/.agents/agents .claude/
+cp -r /path/to/agents-config/src/user/.agents/skills .claude/
+cp -r /path/to/agents-config/src/user/.claude/commands .claude/
 ```
 
 ### Customizing Templates
@@ -151,9 +181,9 @@ Project-level settings override user-level. Use user-level for your personal wor
 
 ### Under Consideration
 
+- [x] **Gemini support** - Equivalent configurations for Google's Gemini
+- [x] **Codex support** - Equivalent configurations for OpenAI's Codex
 - [ ] **Templatized extensions** - Selectable "extensions" (task tracker, language preferences) that can be applied during installation
-- [ ] **Gemini support** - Equivalent configurations for Google's Gemini
-- [ ] **Codex support** - Equivalent configurations for OpenAI's Codex
 - [ ] **Update mechanism** - Pull latest versions without clobbering customizations
 - [ ] **Selective install** - Choose which agents/skills to install
 - [ ] **Agent marketplace** - Community-contributed agents and skills

@@ -18,6 +18,7 @@ This configuration assumes the following Claude Code plugins are installed:
 - `scripts/` - Installation and maintenance scripts
   - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` override
 - `docs/plans/` - Design documents for features in development
+- `docs/specs/` - Design specifications for implemented features
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
@@ -46,7 +47,7 @@ This configuration assumes the following Claude Code plugins are installed:
 name: agent-name
 description: One-line description
 model: sonnet | opus | haiku | inherit
-color: purple | indigo | blue | green | yellow | orange | red
+color: purple | indigo | blue | green | yellow | orange | red | cyan | teal | pink
 ---
 ```
 
