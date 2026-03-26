@@ -1,9 +1,23 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# Re-exec with bash or zsh if running under a basic POSIX shell
+if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    elif command -v zsh >/dev/null 2>&1; then
+        exec zsh "$0" "$@"
+    else
+        echo "Error: bash or zsh is required but neither was found." >&2
+        exit 1
+    fi
+fi
+
 set -euo pipefail
 
-if ((BASH_VERSINFO[0] < 4)); then
-    echo "Error: Bash 4.0+ required (found ${BASH_VERSION}). Install via: brew install bash" >&2
-    exit 1
+# Unmatched globs expand to nothing (not an error or literal)
+if [ -n "${BASH_VERSION:-}" ]; then
+    shopt -s nullglob
+elif [ -n "${ZSH_VERSION:-}" ]; then
+    setopt nullglob
 fi
 
 # --------------------------------------------------------------------------
@@ -106,7 +120,7 @@ fi
 
 # ── Paths ─────────────────────────────────────────────────────────────────
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_USER="$PROJECT_ROOT/src/user"
 SRC_SHARED="$SRC_USER/.agents"
@@ -126,7 +140,11 @@ ALL_TOOLS=(claude codex gemini)
 TOOLS=()
 
 if [[ -n "$TOOLS_OVERRIDE" ]]; then
-    IFS=',' read -ra TOOLS <<< "$TOOLS_OVERRIDE"
+    if [ -n "${BASH_VERSION:-}" ]; then
+        IFS=',' read -ra TOOLS <<< "$TOOLS_OVERRIDE"
+    else
+        IFS=',' read -rA TOOLS <<< "$TOOLS_OVERRIDE"
+    fi
     # Validate each requested tool
     for tool in "${TOOLS[@]}"; do
         local_valid=false
@@ -205,16 +223,16 @@ sync_templates() {
     local src_dir="$1"
     local dest_dir="$2"
     local label="$3"    # e.g. "shared" or "claude-specific"
-
     local found=false
+    local basename_template target_name dest_file src_hash dst_hash
+
     for template in "$src_dir"/*.md.template; do
         [[ -f "$template" ]] || continue
         found=true
-        local basename_template
         basename_template="$(basename "$template")"
         # Strip .template suffix -> target filename
-        local target_name="${basename_template%.template}"
-        local dest_file="$dest_dir/$target_name"
+        target_name="${basename_template%.template}"
+        dest_file="$dest_dir/$target_name"
 
         if [[ ! -f "$dest_file" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
@@ -225,7 +243,6 @@ sync_templates() {
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
-            local src_hash dst_hash
             src_hash="$(compute_hash "$template")"
             dst_hash="$(compute_hash "$dest_file")"
 
@@ -267,9 +284,9 @@ sync_directory() {
     local src_base="$2"   # parent of the dir_name (e.g. SRC_SHARED or SRC_TOOL)
     local dest_base="$3"  # dest tool dir (e.g. ~/.claude)
     local label="$4"      # e.g. "shared" or "claude-specific"
-
     local src_parent="$src_base/$dir_name"
     local dest_parent="$dest_base/$dir_name"
+    local item_name dest_item src_hash dest_hash
 
     if [[ ! -d "$src_parent" ]]; then
         return
@@ -282,11 +299,9 @@ sync_directory() {
     # Sync each item (subdirectory or file) from source
     for item in "$src_parent"/*; do
         [[ -e "$item" ]] || continue
-        local item_name
         item_name="$(basename "$item")"
-        local dest_item="$dest_parent/$item_name"
+        dest_item="$dest_parent/$item_name"
 
-        local src_hash
         src_hash="$(compute_hash "$item")"
 
         if [[ ! -e "$dest_item" ]]; then
@@ -298,7 +313,6 @@ sync_directory() {
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
-            local dest_hash
             dest_hash="$(compute_hash "$dest_item")"
 
             if [[ "$src_hash" == "$dest_hash" ]]; then
@@ -331,7 +345,6 @@ sync_directory() {
     # Warn about items in dest that aren't in source
     for dest_item in "$dest_parent"/*; do
         [[ -e "$dest_item" ]] || continue
-        local item_name
         item_name="$(basename "$dest_item")"
         if [[ ! -e "$src_parent/$item_name" ]]; then
             warn "$dir_name/$item_name exists in ~/.$CURRENT_TOOL but not in $label source (keeping)"
