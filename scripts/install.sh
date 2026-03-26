@@ -1,12 +1,22 @@
 #!/bin/sh
-# Re-exec with bash or zsh if running under a basic POSIX shell
-if [ -z "${BASH_VERSION:-}" ] && [ -z "${ZSH_VERSION:-}" ]; then
-    if command -v bash >/dev/null 2>&1; then
-        exec bash "$0" "$@"
-    elif command -v zsh >/dev/null 2>&1; then
+# Re-exec with zsh or bash 4+ if running under a shell that lacks associative arrays.
+# macOS /bin/sh is bash 3.2 (no declare -A), so we check version too.
+_need_reexec=0
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _need_reexec=0  # zsh supports associative arrays
+elif [ -n "${BASH_VERSION:-}" ]; then
+    _major="${BASH_VERSION%%.*}"
+    [ "$_major" -lt 4 ] && _need_reexec=1
+else
+    _need_reexec=1  # unknown shell
+fi
+if [ "$_need_reexec" = "1" ]; then
+    if command -v zsh >/dev/null 2>&1; then
         exec zsh "$0" "$@"
+    elif bash_path="$(command -v bash 2>/dev/null)" && [ "$("$bash_path" -c 'echo ${BASH_VERSINFO[0]}')" -ge 4 ] 2>/dev/null; then
+        exec "$bash_path" "$0" "$@"
     else
-        echo "Error: bash or zsh is required but neither was found." >&2
+        echo "Error: zsh or bash 4+ is required but neither was found." >&2
         exit 1
     fi
 fi
