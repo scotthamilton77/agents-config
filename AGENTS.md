@@ -70,6 +70,7 @@ Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
 
 ## Development Notes
 
+- **NEVER run `install.sh` automatically** — only the user runs the installer, and only when they explicitly say so
 - No build system, tests, or linting - this is pure documentation
 - Changes should follow existing formatting conventions in each file type
 - Agent descriptions should include concrete usage examples in the frontmatter

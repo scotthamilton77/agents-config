@@ -2,11 +2,7 @@
 
 User-scoped instructions for all projects.
 
-<persona>
-<!-- PRESERVE: user interaction preferences -->
 Read the contents of @AGENT-PERSONA.md for agent personality.
 Read the contents of @USER-PERSONA.md for user context.
-</persona>
-
 Read the contents of @INSTRUCTIONS.md for shared laws, constraints, workflow, and orchestration.
 Read the contents of @CLAUDE-EXTENSIONS.md for Claude-specific configuration.
