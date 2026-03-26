@@ -32,7 +32,7 @@ src/
     │   ├── AGENTS.md.template      # Claude instruction file
     │   ├── CLAUDE.md.template      # Points to AGENTS.md
     │   ├── CLAUDE-EXTENSIONS.md.template  # Claude-specific sections
-    │   └── settings.json.template  # Permissions & experimental features
+    │   └── settings.json.template  # Permissions, hooks & experimental features
     ├── .codex/                     # Codex-specific (→ ~/.codex/)
     │   ├── AGENTS.md.template      # Codex instruction file
     │   └── CODEX-EXTENSIONS.md.template   # Codex-specific sections
@@ -87,7 +87,7 @@ Slash commands that can be invoked directly:
 - `AGENTS.md.template` - Claude instruction file referencing shared content + Claude extensions
 - `CLAUDE.md.template` - Minimal file that points to AGENTS.md
 - `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, beads, git commits)
-- `settings.json.template` - Pre-configured permission allowlists and experimental features
+- `settings.json.template` - Pre-configured permission allowlists, hooks, and experimental features
 
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
@@ -122,7 +122,7 @@ The install script:
 - Creates timestamped backups before overwriting anything
 - Warns about items that aren't tracked in the project
 
-Requires `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
+Requires bash or zsh, plus `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
 
 ### Manual
 
@@ -159,12 +159,19 @@ cp -r /path/to/agents-config/src/user/.claude/commands .claude/
 
 ### Customizing Templates
 
-The `.template` files are starting points. After copying:
+The `.template` files ship with the author's personal configuration and must be customized after installation.
 
-1. Edit `AGENT-PERSONA.md` and `USER-PERSONA.md` to reflect your preferences
-2. Edit `AGENTS.md` to adjust laws, constraints, and workflow sections
-3. Edit `settings.json` to match your permission needs
-4. Keep `CLAUDE.md` as-is (it just points to `AGENTS.md`)
+**Must personalize** (these contain the author's identity):
+1. **`USER-PERSONA.md`** — Replace entirely with your own name, role, and interaction preferences
+2. **`AGENT-PERSONA.md`** — Defines the AI's personality and expertise claims. Adjust to your preferred style
+
+**Adjust to your workflow:**
+3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
+4. **Tool-specific extensions** (`CLAUDE-EXTENSIONS.md`, `CODEX-EXTENSIONS.md`, or `GEMINI-EXTENSIONS.md`) — For Claude: the `<delegation>` and `<completion-gate>` sections reference superpowers skills; the `<beads>` section assumes [beads](https://github.com/steveyegge/beads). Remove sections for plugins you don't use
+5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
+
+**No changes needed:**
+- `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — Thin wrappers that reference the files above
 
 ## Scope: User vs Project
 

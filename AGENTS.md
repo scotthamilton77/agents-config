@@ -30,7 +30,7 @@ This configuration assumes the following Claude Code plugins are installed:
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, beads, git)
-  - `settings.json.template` - Permission presets and experimental features
+  - `settings.json.template` - Permission presets, hooks, and experimental features
 - `src/user/.codex/` - **Codex-specific** content (copies to `~/.codex/`)
   - `AGENTS.md.template` - Codex instruction file (refs shared + Codex extensions)
   - `CODEX-EXTENSIONS.md.template` - Codex-specific sections (placeholder)
