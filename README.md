@@ -64,7 +64,7 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 | `self-improving-agent` | Persist lessons from user corrections as actionable rules |
 | `test-review` | Code review of unit/integration tests for quality and design issues |
 | `testing-anti-patterns` | Common testing mistakes and how to avoid them |
-| `wait-for-pr-comments` | Poll for PR review comments, auto-fix unambiguous feedback |
+| `wait-for-pr-comments` | Copilot-aware PR review monitoring via background agents; auto-fix unambiguous feedback |
 | `writing-unit-tests` | Test behavior, not implementation; when to refuse testing untestable code |
 
 ### Commands
@@ -86,13 +86,13 @@ Slash commands that can be invoked directly:
 **Claude-specific** (in `src/user/.claude/`):
 - `AGENTS.md.template` - Claude instruction file referencing shared content + Claude extensions
 - `CLAUDE.md.template` - Minimal file that points to AGENTS.md
-- `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, beads, git commits)
+- `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, completion-gate, delivery, git commits, beads)
 - `settings.json.template` - Pre-configured permission allowlists, hooks, and experimental features
 
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
 > - The `<beads>` section assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
-> - The `<orchestration>` and `<delegation>` sections assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
+> - The `<orchestration>`, `<delegation>`, and `<delivery>` sections assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
 > - Various constraints have a TypeScript/Node.js bias
 >
 > You'll want to customize or remove these sections to match your own workflow.
@@ -167,7 +167,7 @@ The `.template` files ship with the author's personal configuration and must be 
 
 **Adjust to your workflow:**
 3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
-4. **Tool-specific extensions** (`CLAUDE-EXTENSIONS.md`, `CODEX-EXTENSIONS.md`, or `GEMINI-EXTENSIONS.md`) — For Claude: the `<delegation>` and `<completion-gate>` sections reference superpowers skills; the `<beads>` section assumes [beads](https://github.com/steveyegge/beads). Remove sections for plugins you don't use
+4. **Tool-specific extensions** (`CLAUDE-EXTENSIONS.md`, `CODEX-EXTENSIONS.md`, or `GEMINI-EXTENSIONS.md`) — For Claude: `<delegation>` and `<completion-gate>` reference superpowers skills; `<delivery>` wires worktree isolation, PR creation, and Copilot review monitoring; `<beads>` assumes [beads](https://github.com/steveyegge/beads). Remove sections for plugins you don't use
 5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
 
 **No changes needed:**
