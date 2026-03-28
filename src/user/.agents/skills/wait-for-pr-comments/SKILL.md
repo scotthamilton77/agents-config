@@ -46,11 +46,11 @@ digraph when_to_use {
 | interval | `1m` | `Nm` where N >= 1 | Minimum 1m (cron granularity) |
 | max-duration | `7m` | `Nm` where N >= 1 | Total polling window per round |
 
-Note: `interval`/`max-duration` apply to **standard review polling** (Phase 5). Copilot monitoring phases use fixed intervals regardless of these arguments.
+Note: `interval`/`max-duration` apply to the **re-poll phase** (Phase 5) after fixes are pushed. Copilot monitoring phases use fixed intervals regardless of these arguments.
 
 ## The Process
 
-Seven phases. Phases 3–4 run via background agent (non-blocking). Always cancel cron jobs before exiting any phase on error.
+Six phases. Phase 3 runs via background agent (non-blocking). If Copilot never shows up as a reviewer, the skill aborts and reports — no fallback polling. Always cancel cron jobs before exiting any phase on error.
 
 ### Phase 1: PR Detection
 
@@ -97,7 +97,7 @@ Check: gh api repos/{owner}/{repo}/pulls/{number}/requested_reviewers \
 - After 3 checks with count == 0: report "copilot_not_requested" and exit
 ```
 
-If the background agent exits with `copilot_not_requested` → skip to Phase 5 (standard review polling).
+If the background agent exits with `copilot_not_requested` → Phase 6 (Final Report, no-show variant). **No fallback polling.** Copilot was a no-show — tell the user and stop.
 
 ---
 
@@ -145,8 +145,8 @@ Check: gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 
 When the background agent completes:
 - `copilot_review_found` → Phase 4 (Triage & Fix)
-- `copilot_review_timeout` → Phase 7 (Final Report, timeout variant)
-- `copilot_not_requested` → Phase 5 (Standard Review Polling)
+- `copilot_review_timeout` → Phase 6 (Final Report, timeout variant)
+- `copilot_not_requested` → Phase 6 (Final Report, no-show variant)
 
 ### Phase 4: Triage & Fix (Copilot review path)
 
@@ -159,53 +159,40 @@ When the background agent completes:
 3. For each item (Copilot + human): assess if fixable unambiguously
 4. Fix what can be fixed, record what was skipped and why
 5. Commit and push fixes
-6. Proceed to Phase 6 (Re-poll)
+6. Proceed to Phase 5 (Re-poll)
 
 **Error handling:**
 - Commit fails: report error with details, skip push, go to final report
 - `git push` fails: report error, include local commit SHA for manual push
 - PR closed/merged during polling: detect via `gh pr view --json state`, report and stop
 
-### Phase 5: Standard Review Polling (fallback)
+### Phase 5: Re-poll (single round)
 
-Used when Copilot was not requested within 1 minute. Same CronCreate-based mechanism as before.
+After pushing fixes, monitor for follow-up comments from any reviewer (Copilot or human).
 
-1. Record baseline comment count:
-   ```
-   gh api repos/{owner}/{repo}/pulls/{number}/comments --jq 'length'
-   ```
-2. Convert interval to cron: `Nm` → `*/N * * * *`
+1. Record new baseline: current comment count via `gh api repos/{owner}/{repo}/pulls/{number}/comments --jq 'length'`
+2. Convert `interval` to cron: `Nm` → `*/N * * * *`
 3. Calculate max iterations: `ceil(max-duration / interval)`
-4. Create cron job via `CronCreate` with this prompt template:
+4. Create cron job via `CronCreate` with prompt:
 
 ```
-PR comment check for #<number>.
-Started: <ISO-8601 timestamp>. Interval: <N>m. Max duration: <M>m.
-Baseline: <count> review comments.
+Re-poll for PR #<number> after fixes pushed.
+Started: <ISO-8601>. Interval: <N>m. Max duration: <M>m. Baseline: <count>.
 
-Step 1: Calculate iteration from elapsed time:
-  iteration = floor((now - start_time) / interval) + 1
-  max_iterations = ceil(max_duration / interval)
+Step 1: iteration = floor((now - start_time) / interval) + 1
 
 Step 2: Run: gh api repos/{owner}/{repo}/pulls/{number}/comments --jq 'length'
 
-Step 3: If count > baseline — new comments found.
-  Look up this job's ID via CronList, cancel with CronDelete,
-  fetch new comments, invoke wait-for-pr-comments triage.
+Step 3: count > baseline → CronList + CronDelete this job, report new comments (do NOT auto-fix).
 
-Step 4: If count == baseline AND iteration >= max_iterations:
-  Look up this job's ID via CronList, cancel with CronDelete,
-  report no comments — PR is ready to merge.
+Step 4: count == baseline AND iteration >= max_iterations → CronList + CronDelete, report clean.
 
-Step 5: If count == baseline AND iteration < max_iterations:
-  Do nothing — wait for next cron fire.
+Step 5: count == baseline AND iteration < max_iterations → wait for next fire.
 ```
 
-### Phase 6: Re-poll (single round)
+New comments during re-poll are **reported but NOT auto-fixed** (prevents recursive loops). When complete → cancel cron, proceed to Phase 6.
 
-Same cron setup with new baseline (post-fix count). New comments during re-poll are **reported but NOT auto-fixed** (prevents recursive loops). When complete → cancel cron, proceed to Phase 7.
-
-### Phase 7: Final Report
+### Phase 6: Final Report
 
 Deliver a structured report using the templates below.
 
@@ -225,19 +212,7 @@ Track background agent status in session memory. Once the background agent repor
 
 ## Report Templates
 
-**Variant 1 — Clean pass (no comments):**
-
-```markdown
-## PR Comment Watch Complete
-
-**PR:** #<number> — "<title>"
-**Monitored:** <N> polls over <duration>
-**Result:** No review comments received
-
-Ready to merge.
-```
-
-**Variant 2 — All fixed, re-poll clean:**
+**Variant 1 — All fixed, re-poll clean:**
 
 ```markdown
 ## PR Comment Watch Complete
@@ -254,7 +229,7 @@ Ready to merge.
 All review feedback addressed. Ready to merge.
 ```
 
-**Variant 3 — Items need attention:**
+**Variant 2 — Items need attention:**
 
 ```markdown
 ## PR Comment Watch Complete
@@ -277,7 +252,7 @@ All review feedback addressed. Ready to merge.
 What would you like to do about the remaining items?
 ```
 
-**Variant 4 — Copilot review received:**
+**Variant 3 — Copilot review received:**
 
 ```markdown
 ## PR Comment Watch Complete
@@ -299,7 +274,18 @@ What would you like to do about the remaining items?
 What would you like to do about the remaining items?
 ```
 
-**Variant 5 — Copilot timeout:**
+**Variant 4 — Copilot no-show (not requested within 1 minute):**
+
+```markdown
+## PR Comment Watch Complete
+
+**PR:** #<number> — "<title>"
+**Copilot status:** Not added as a reviewer within 1 minute
+
+Copilot review was never requested for this PR. Add Copilot as a reviewer and re-run, or proceed without automated review.
+```
+
+**Variant 5 — Copilot timeout (requested but no review after 10 minutes):**
 
 ```markdown
 ## PR Comment Watch Complete
@@ -320,8 +306,8 @@ Copilot may still be queued. Check `/pulls/{number}/reviews` manually or re-requ
 | `git push` fails (auth, remote rejection) | Report error, include local commit SHA for manual push |
 | PR closed or merged during polling | Detect via `gh pr view --json state`, report and stop |
 | CronCreate/CronDelete unavailable | Report tool unavailability, stop |
-| Background agent unavailable | Fall back to CronCreate for all phases |
-| Copilot not requested within 1 minute | Fall back to standard review polling (Phase 5) |
+| Background agent unavailable | Fall back to CronCreate for Copilot polling phases |
+| Copilot not requested within 1 minute | Report no-show, abort polling, hand back to user |
 | Copilot review not received after 10 minutes | Report timeout variant, hand back to user |
 
 Always cancel active cron jobs before stopping on error.
@@ -347,7 +333,7 @@ The hook **suggests** invocation — it does not force it. User retains control.
 | Pushed fixes to existing PR | Hook detects push, suggests skill |
 | Copilot assigned as reviewer | Enters Copilot-aware monitoring (Phase 3) |
 | Copilot already assigned at skill start | Skips request detection, starts at Sub-phase B |
-| Copilot not assigned within 1 min | Falls back to standard polling (Phase 5) |
+| Copilot not assigned within 1 min | Report no-show, abort — no fallback polling |
 | User wants to merge while monitoring active | Warn — Copilot review may be imminent |
 | Copilot review found in /pulls/{n}/reviews | Triage review body + inline comments |
 | Copilot review timeout (10 min) | Report timeout, ask user how to proceed |
@@ -374,3 +360,4 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 | "I'll poll Copilot synchronously instead of background agent" | That blocks the user. Background agents are required for Copilot phases. |
 | "copilot_work_started never appeared, so Copilot isn't working" | Proceed to Sub-phase C anyway — the event may have already fired before the skill ran. |
 | "Phase C timed out so it's safe to merge" | Report the timeout and ask the user — don't authorize merging on their behalf. |
+| "Copilot was a no-show, I'll poll for human comments instead" | No fallback. Report the no-show and stop. The user decides what's next. |
