@@ -25,6 +25,7 @@ Tool-agnostic principles for all AI coding assistants.
 <!-- PRESERVE: development process requirements -->
 1. Features and bug fixes: Design → Tests → Implement → Refactor (TDD: red-green-refactor)
 2. Commits: semantic prefix (feat|fix|docs|refactor|test|chore)
+3. Delivery: Worktree → Branch → PR → Review feedback → Merge
 </workflow>
 
 <orchestration>
@@ -35,5 +36,6 @@ Tool-agnostic principles for all AI coding assistants.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Use `verification-before-completion` skill.
 - **Tracer bullets**: After planning, implement a tiny end-to-end slice first—through all layers—get feedback, then expand. Validate architecture before investing in breadth.
+- **Isolate work**: Non-trivial changes go in a worktree or feature branch—never commit directly to main.
 - **Elegance check**: For non-trivial changes, ask "is there a more elegant way?" and propose it—but don't unilaterally broaden scope. Minimal edits (constraints) takes precedence.
 </orchestration>

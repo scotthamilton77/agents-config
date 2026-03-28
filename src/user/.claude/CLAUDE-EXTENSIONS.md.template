@@ -24,6 +24,17 @@ MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typ
 No exceptions. No partial runs. Each step feeds the next.
 </completion-gate>
 
+<delivery>
+<!-- PRESERVE: post-verification delivery pipeline -->
+After `<completion-gate>` passes for non-trivial work:
+
+1. `using-git-worktrees` skill — isolate work if not already in a worktree
+2. `finishing-a-development-branch` skill — create PR, push branch
+3. `wait-for-pr-comments` skill — monitor for Copilot review, triage feedback
+
+Do NOT merge or clean up worktrees/branches until Copilot review completes or times out.
+</delivery>
+
 <git_commits>
 <!-- PRESERVE: sandbox workaround for heredoc temp files -->
 Sandbox mode: heredocs fail with "can't create temp file."
