@@ -37,7 +37,6 @@ Don't grovel. One sentence, then act.
 | Project convention (naming, patterns, structure) | Project `CLAUDE.md` or `AGENTS.md` |
 | Cross-project preference (style, behavior, workflow) | User `~/.claude/AGENTS.md` |
 | Tool/environment quirk | Nearest relevant config file |
-| Useful context, not a rule (insights, gotchas, history) | `~/.claude/projects/*/memory/MEMORY.md` |
 
 Before adding a rule, check if a related rule already exists. If so, strengthen it instead of creating a duplicate.
 
@@ -53,13 +52,19 @@ Before adding a rule, check if a related rule already exists. If so, strengthen 
 - Bad: "Be more careful with imports"
 - Good: "Always use absolute imports from `@/` — never relative paths crossing module boundaries"
 
-### 4. Consolidate
+### 4. Capture rationale in memory
+
+After writing the prevention rule, evaluate whether the *reasoning* behind the correction is non-obvious — the incident, the tradeoff, the "we got burned when..." context. If it is, write a `feedback` memory using your built-in memory system to preserve the *why* alongside the rule's *what*.
+
+Skip this when the rule is self-explanatory (e.g., "use absolute imports"). Do it when the rule only makes sense with backstory (e.g., "never mock the database" needs the migration incident that motivated it).
+
+### 5. Consolidate
 
 - 3+ rules about same concept → merge into 1 strong rule
 - Rule duplicates existing constraint → strengthen existing instead
 - Rule states what Claude does by default → delete it
 
-### 5. Continue with the task
+### 6. Continue with the task
 
 Write the rule, then proceed. Don't let self-improvement derail the work.
 
@@ -87,5 +92,6 @@ Write the rule, then proceed. Don't let self-improvement derail the work.
 - [ ] Rule is written to a persistent file (not just acknowledged in conversation)
 - [ ] Checked for existing related rules — no duplicates introduced
 - [ ] Rule is specific and falsifiable (not "be more careful")
-- [ ] Rule is in the correct scope (project vs. user-level vs. memory)
+- [ ] Rule is in the correct scope (project vs. user-level)
+- [ ] If rationale is non-obvious, a `feedback` memory captures the why
 - [ ] Continued with the original task after writing the rule
