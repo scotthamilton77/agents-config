@@ -62,11 +62,15 @@ Determine PR number from (in order):
 
 ### Phase 2: Copilot Reviewer Check
 
-Immediately after PR detection, check if Copilot is already assigned:
+Immediately after PR detection, check the events stream for a Copilot review request (the `requested_reviewers` REST endpoint is unreliable for auto-assigned Copilot — it often returns empty):
 
 ```
-gh api repos/{owner}/{repo}/pulls/{number}/requested_reviewers \
-  --jq '[.users[].login] | map(select(test("copilot"; "i"))) | length'
+gh api repos/{owner}/{repo}/issues/{number}/events \
+  --jq '[.[] | select(
+    .event == "review_requested" and
+    .requested_reviewer.login and
+    (.requested_reviewer.login | test("copilot"; "i"))
+  )] | length'
 ```
 
 - **Count > 0**: Copilot already requested → dispatch Phase 3 background agent starting at Sub-phase B (skip request detection)
@@ -87,17 +91,23 @@ The agent runs three sequential sub-phases:
 **Sub-phase A — Request detection (20s × 3, max 1 minute)**
 
 ```
-Poll up to 3 times for Copilot being added as a reviewer.
+Poll up to 3 times for a Copilot review_requested event in the PR events stream.
 Between each check: sleep 20 seconds (Bash: sleep 20).
 
-Check: gh api repos/{owner}/{repo}/pulls/{number}/requested_reviewers \
-         --jq '[.users[].login] | map(select(test("copilot"; "i"))) | length'
+Check: gh api repos/{owner}/{repo}/issues/{number}/events \
+         --jq '[.[] | select(
+           .event == "review_requested" and
+           .requested_reviewer.login and
+           (.requested_reviewer.login | test("copilot"; "i"))
+         )] | length'
 
 - count > 0: proceed to Sub-phase B
 - After 3 checks with count == 0: report "copilot_not_requested" and exit
 ```
 
 If the background agent exits with `copilot_not_requested` → Phase 6 (Final Report, no-show variant). **No fallback polling.** Copilot was a no-show — tell the user and stop.
+
+**Note — Copilot identity varies by endpoint:** Events use `login: "Copilot"` (`type: "Bot"`); reviews and comments use `login: "copilot-pull-request-reviewer[bot]"` (`type: "Bot"`). The case-insensitive `test("copilot"; "i")` filter matches both.
 
 ---
 
