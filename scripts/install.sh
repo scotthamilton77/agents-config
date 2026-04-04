@@ -524,9 +524,9 @@ install_tool() {
         sync_templates "$src_tool" "$dest_dir" "$tool-specific"
     fi
 
-    # Phase 5: Tool-specific subdirs (commands/, skills/, agents/)
+    # Phase 5: Tool-specific subdirs (commands/, skills/, agents/, rules/)
     if [[ -d "$src_tool" ]]; then
-        for subdir in commands skills agents; do
+        for subdir in commands skills agents rules; do
             sync_directory "$subdir" "$src_tool" "$dest_dir" "$tool-specific"
         done
     fi
