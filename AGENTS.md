@@ -27,9 +27,10 @@ This configuration assumes the following Claude Code plugins are installed:
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
+  - `rules/` - Claude-specific workflow rules (delegation, completion-gate, delivery, git-commits, beads)
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
-  - `CLAUDE-EXTENSIONS.md.template` - Claude-specific sections (delegation, completion-gate, delivery, git, beads)
+  - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
   - `settings.json.template` - Permission presets, hooks, and experimental features
 - `src/user/.codex/` - **Codex-specific** content (copies to `~/.codex/`)
   - `AGENTS.md.template` - Codex instruction file (refs shared + Codex extensions)
