@@ -1,3 +1,6 @@
 # Gemini-Specific Extensions
 
-<!-- Add Gemini-specific workflow sections here as needed -->
+<completion-gate>
+<!-- Implements shared <verification-checklist> — add Gemini-specific tools below -->
+See INSTRUCTIONS.md `<verification-checklist>` for the 10 required steps.
+</completion-gate>

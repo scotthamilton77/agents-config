@@ -28,9 +28,10 @@ description: Use when about to declare work complete or report final status to t
 Locate verification workflow definitions from your memory. These describe the steps required before work can be declared complete.
 
 **Check in order:**
-1. **Memory files** — re-read them now if not freshly loaded
-2. **Project-level instructions** (AGENTS.md, CLAUDE.md, etc.) — look for verification, completion-gate, or delivery sections
-3. **User-level instructions** — workflows that apply across all projects
+1. **Shared rules** — look for `<verification-checklist>` in instruction files (always loaded)
+2. **Tool extensions** — `<completion-gate>` and `<delivery>` for tool-specific implementation
+3. **Project config** — project-level overrides or additions (AGENTS.md, CLAUDE.md, etc.)
+4. **Memory files** — any supplemental verification workflows
 
 **If no verification workflows found anywhere:**
 
@@ -95,16 +96,11 @@ If discovered work is unrecorded, **record it now** (create beads, issues, or me
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.
 
-## Memory Dependency
+## Source Dependency
 
-This skill is only as good as the verification workflows in memory. If yours are missing or thin, suggest the user create them. Effective entries include:
+The canonical checklist lives in `<verification-checklist>` in shared instructions — always loaded, always available. Tool extensions provide the "how" (which skills/agents implement each step). Project config and memory can add or override steps.
 
-- **Each discrete step** (e.g., "run code-reviewer agent", "run code-simplifier", "run tests + build + lint")
-- **Step ordering** — some steps depend on prior steps
-- **Scope** — all-projects vs. project-specific
-- **What evidence looks like** — command output, review results, commit SHAs
-
-Verification workflows belong in persistent memory (user-level for cross-project, project-level for project-specific). They should NOT live only in conversation context where they'll be lost to compaction.
+If `<verification-checklist>` is missing from your loaded instructions, warn the user — the shared instruction files may not be installed. Fall back to tool extensions and memory, but flag the gap.
 
 ## Red Flags — STOP
 

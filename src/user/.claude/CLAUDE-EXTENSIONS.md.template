@@ -12,25 +12,30 @@ MANDATORY delegation for non-trivial work (skip for obvious one-liners, config c
 </delegation>
 
 <completion-gate>
-<!-- PRESERVE: unified verification pipeline before claiming work is complete -->
+<!-- PRESERVE: implements shared <verification-checklist> steps 1–5 with Claude-specific tools -->
 MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typos):
 
-1. `code-reviewer` agent — review changes against plan and standards
-2. Address any findings from code-reviewer
-3. `code-simplifier` agent — simplify/refine changed code
-4. Address any findings from code-simplifier
-5. `verification-before-completion` skill — run tests, build, lint; evidence before claims
+1. `code-reviewer` agent — review changes against plan and standards (checklist step 1)
+2. Address any findings from code-reviewer (checklist step 2)
+3. `code-simplifier` agent — simplify/refine changed code (checklist step 3)
+4. Address any findings from code-simplifier (checklist step 4)
+5. `verify-checklist` skill — run tests, build, lint; evidence before claims; structured completion report (checklist step 5)
 
 No exceptions. No partial runs. Each step feeds the next.
+
+**HARD STOP**: After this gate, you MUST run `<delivery>` before calling work complete.
+DO NOT commit to main. DO NOT push directly. `finishing-a-development-branch` is NEXT.
 </completion-gate>
 
 <delivery>
-<!-- PRESERVE: post-verification delivery pipeline -->
+<!-- PRESERVE: implements shared <verification-checklist> steps 6–8 with Claude-specific tools -->
 After `<completion-gate>` passes for non-trivial work:
 
-1. `using-git-worktrees` skill — isolate work if not already in a worktree
-2. `finishing-a-development-branch` skill — create PR, push branch
-3. `wait-for-pr-comments` skill — monitor for Copilot review, triage feedback
+1. `using-git-worktrees` skill — isolate work if not already in a worktree (checklist step 6)
+2. `finishing-a-development-branch` skill — create PR, push branch (checklist step 7)
+3. `wait-for-pr-comments` skill — monitor for Copilot review, triage feedback (checklist step 8)
+
+Housekeeping (checklist steps 9–10) applies throughout: record discovered work, update memory.
 
 Do NOT merge or clean up worktrees/branches until Copilot review completes or times out.
 </delivery>

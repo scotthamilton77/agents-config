@@ -1,3 +1,6 @@
 # Codex-Specific Extensions
 
-<!-- Add Codex-specific workflow sections here as needed -->
+<completion-gate>
+<!-- Implements shared <verification-checklist> — add Codex-specific tools below -->
+See INSTRUCTIONS.md `<verification-checklist>` for the 10 required steps.
+</completion-gate>
