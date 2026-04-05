@@ -1,6 +1,5 @@
 ---
 name: wait-for-pr-comments
-argument-hint: "[interval] [max-duration] (defaults: 1m 7m)"
 description: >
   Use after creating or updating a PR to poll for review comments,
   auto-fix unambiguous feedback, and report results. Auto-triggered
@@ -36,20 +35,9 @@ digraph when_to_use {
 - CI/CD status checks are the concern, not review comments
 - PR is already merged or closed
 
-## Arguments
-
-**Positional:** `/wait-for-pr-comments [interval] [max-duration]`
-
-| Argument | Default | Format | Constraint |
-|----------|---------|--------|------------|
-| interval | `1m` | `Nm` where N >= 1 | Minimum 1m |
-| max-duration | `7m` | `Nm` where N >= 1 | Total re-poll window |
-
-Note: `interval`/`max-duration` apply to the **re-poll phase** (Phase 4) after fixes are pushed. Copilot monitoring uses fixed intervals regardless.
-
 ## The Process
 
-Five phases. Phases 2 and 4 run bash scripts in the background (non-blocking, zero API tokens). If Copilot never shows up as a reviewer, the skill aborts and reports — no fallback polling.
+Five phases. Phases 2 and 4 run bash scripts in the background (non-blocking, zero API tokens). If Copilot never shows up as a reviewer, the skill aborts and reports — no fallback polling. Phase 4 uses a fixed 30-second window (3 × 10s polls) to detect whether Copilot will re-review after fixes are pushed.
 
 ### Phase 1: PR Detection
 
@@ -99,33 +87,37 @@ The script JSON output contains `reviews`, `inline_comments`, and `human_comment
 3. For each item (Copilot + human): assess if fixable unambiguously
 4. Fix what can be fixed, record what was skipped and why
 5. Commit and push fixes
-6. Proceed to Phase 4 (Re-poll)
+6. Proceed to Phase 4 (Re-review Detection)
 
 **Error handling:**
 - Commit fails: report error with details, skip push, go to final report
 - `git push` fails: report error, include local commit SHA for manual push
 - PR closed/merged: detect via `gh pr view --json state`, report and stop
 
-### Phase 4: Re-poll (Background Script)
+### Phase 4: Copilot Re-review Detection (Background Script)
 
-After pushing fixes, monitor for follow-up comments.
+After pushing fixes, check whether Copilot will perform a second review pass. Copilot does not automatically re-review on new commits — this phase detects if one was explicitly re-requested (e.g., via `gh pr edit {number} --add-reviewer "@copilot"`).
 
-1. Record baseline: `gh api repos/{owner}/{repo}/pulls/{number}/comments --jq 'length'`
-2. Convert arguments to seconds: `interval_secs = N * 60`, `max_duration_secs = M * 60`
-3. **Launch re-poll script** in background:
+1. **Get last commit timestamp:**
    ```
-   Bash(command: "${CLAUDE_SKILL_DIR}/poll-new-comments.sh {owner/repo} {number} {baseline} {interval_secs} {max_duration_secs}",
+   gh api repos/{owner}/{repo}/pulls/{number}/commits \
+     --jq '.[-1].commit.author.date'
+   ```
+
+2. **Launch re-review detection script** in background:
+   ```
+   Bash(command: "${CLAUDE_SKILL_DIR}/poll-copilot-rereview-start.sh {owner/repo} {number} {last-commit-timestamp}",
         run_in_background: true)
    ```
-4. **When the script completes**, read its stdout:
+   The script polls every 10 seconds for 30 seconds, looking for a `copilot_work_started` event that postdates the last commit timestamp.
+
+3. **When the script completes**, check exit code:
 
    | Exit code | Status | Action |
    |-----------|--------|--------|
-   | 0 | `new_comments_found` | Report new comments (do NOT auto-fix) → Phase 5 |
-   | 1 | `no_new_comments` | Report clean → Phase 5 |
-   | 3 | Error | Report error → Phase 5 |
-
-New comments during re-poll are **reported but NOT auto-fixed** (prevents recursive loops).
+   | 0 | `copilot_rereview_started` | Launch `poll-copilot-review.sh {owner/repo} {number} --skip-request-check` in background → when complete, triage results as Phase 3 |
+   | 1 | `no_rereview_started` | → Phase 5 (no re-review variant) |
+   | 3 | Error | → Phase 5 (error variant) |
 
 ### Phase 5: Final Report
 
@@ -147,7 +139,7 @@ Once the script completes (any outcome), the guard is lifted.
 
 ## Report Templates
 
-**Variant 1 — All fixed, re-poll clean:**
+**Variant 1 — All fixed, no Copilot re-review:**
 
 ```markdown
 ## PR Comment Watch Complete
@@ -159,7 +151,7 @@ Once the script completes (any outcome), the guard is lifted.
 
 ### Status
 - Fixes pushed in commit `<sha>`
-- Re-poll: No new comments after <duration>
+- Copilot re-review: None detected within 30s window
 
 All review feedback addressed. Ready to merge.
 ```
@@ -177,12 +169,9 @@ All review feedback addressed. Ready to merge.
 ### Skipped (<count>)
 - **@<author>** (<location>): "<comment summary>" → <reason skipped>
 
-### New During Re-poll (<count>)
-- **@<author>** (<location>): "<comment summary>"
-
 ### Status
 - Fixes pushed in commit `<sha>`
-- Re-poll: <status>
+- Copilot re-review: <status>
 
 What would you like to do about the remaining items?
 ```
@@ -266,8 +255,8 @@ The hook **suggests** invocation — it does not force it. User retains control.
 | User wants to merge while script running | Warn — Copilot review may be imminent |
 | Copilot review found | Script exits code 0 — parse JSON, triage & fix |
 | Copilot review timeout (10 min) | Script exits code 1 — report timeout |
-| New comments found during re-poll | Report only, do not auto-fix |
-| All comments fixed, re-poll clean | Report ready to merge |
+| Copilot re-review starts within 30s | Launch `poll-copilot-review.sh --skip-request-check` → triage as Phase 3 |
+| No Copilot re-review within 30s | Report no re-review detected, proceed to Phase 5 |
 | Error at any phase | Report error, stop |
 
 ## Red Flags
@@ -277,9 +266,8 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 | Rationalization | Why it's wrong |
 |-----------------|----------------|
 | "I'll fix this ambiguous comment anyway" | Ambiguous = needs human decision. Report it, don't guess. |
-| "Re-poll found issues, I'll fix those too" | Re-poll comments are report-only. No recursive fix loops. |
-| "I'll skip re-poll since all comments were trivial" | Always re-poll after pushing fixes. Reviewers may respond. |
-| "I'll keep polling past max-duration" | Respect the time bound. Report and hand back to user. |
+| "I'll skip Phase 4 since the fixes were trivial" | Always run Phase 4 after pushing fixes — a re-review may have been requested. |
+| "I'll keep polling past the 30s window" | Fixed window is fixed. Report no re-review and hand back to user. |
 | "I'll poll Copilot inline instead of the background script" | That blocks the user and wastes API tokens. Background scripts are required. |
 | "I'll monitor multiple PRs at once" | One PR per invocation. Suggest parallel invocations instead. |
 | "The push failed but I'll continue anyway" | Report the failure with commit SHA so user can push manually. |
