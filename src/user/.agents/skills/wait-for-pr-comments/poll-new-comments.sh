@@ -18,6 +18,9 @@
 
 set -euo pipefail
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
@@ -33,8 +36,7 @@ BASELINE="$3"
 INTERVAL="$4"
 MAX_DURATION="$5"
 
-# Validate owner/repo format
-[[ "$REPO" == */* ]] || { echo "Error: first argument must be owner/repo" >&2; exit 3; }
+validate_repo "$REPO"
 
 # Validate numeric arguments
 for arg in "$PR" "$BASELINE" "$INTERVAL" "$MAX_DURATION"; do
@@ -44,29 +46,9 @@ done
 [[ "$INTERVAL" -gt 0 ]] || { echo "Error: interval must be > 0" >&2; exit 3; }
 [[ "$MAX_DURATION" -gt 0 ]] || { echo "Error: max-duration must be > 0" >&2; exit 3; }
 
-# ── Helper functions ──────────────────────────────────────────────────────────
-
-gh_api() {
-    local result exit_code=0
-    result=$(gh api "$@" 2>/dev/null) || exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        echo "gh api failed (exit $exit_code)" >&2
-        return 1
-    fi
-    printf '%s' "$result"
-}
-
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
-if ! gh auth status &>/dev/null; then
-    echo "Error: gh auth failed — not authenticated" >&2
-    exit 3
-fi
-
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is required but not found" >&2
-    exit 3
-fi
+preflight_checks
 
 # ── Calculate iterations ─────────────────────────────────────────────────────
 

@@ -21,6 +21,9 @@
 
 set -euo pipefail
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
@@ -38,8 +41,7 @@ if [[ $# -ge 3 && "$3" == "--skip-request-check" ]]; then
     SKIP_REQUEST=true
 fi
 
-# Validate owner/repo format
-[[ "$REPO" == */* ]] || { echo "Error: first argument must be owner/repo" >&2; exit 3; }
+validate_repo "$REPO"
 
 # Validate PR number is a positive integer
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
@@ -54,17 +56,6 @@ COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGI
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 
-# Wrapped gh api — keeps stderr separate from stdout to avoid JSON contamination
-gh_api() {
-    local result exit_code=0
-    result=$(gh api "$@" 2>/dev/null) || exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        echo "gh api failed (exit $exit_code)" >&2
-        return 1
-    fi
-    printf '%s' "$result"
-}
-
 pr_is_open() {
     local state
     state=$(gh_api "repos/${REPO}/pulls/${PR}" --jq '.state') || return 1
@@ -73,15 +64,7 @@ pr_is_open() {
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
-if ! gh auth status &>/dev/null; then
-    echo "Error: gh auth failed — not authenticated" >&2
-    exit 3
-fi
-
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is required but not found" >&2
-    exit 3
-fi
+preflight_checks
 
 # ── Sub-phase A: Request detection (20s × 3, max ~1 minute) ──────────────────
 

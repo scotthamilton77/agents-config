@@ -20,6 +20,9 @@
 
 set -euo pipefail
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
@@ -33,33 +36,13 @@ REPO="$1"
 PR="$2"
 AFTER="$3"
 
-[[ "$REPO" == */* ]] || { echo "Error: first argument must be owner/repo" >&2; exit 3; }
+validate_repo "$REPO"
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
 [[ -n "$AFTER" ]] || { echo "Error: after-timestamp must not be empty" >&2; exit 3; }
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
-if ! gh auth status &>/dev/null; then
-    echo "Error: gh auth failed — not authenticated" >&2
-    exit 3
-fi
-
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is required but not found" >&2
-    exit 3
-fi
-
-# ── Helper functions ──────────────────────────────────────────────────────────
-
-gh_api() {
-    local result exit_code=0
-    result=$(gh api "$@" 2>/dev/null) || exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        echo "gh api failed (exit $exit_code)" >&2
-        return 1
-    fi
-    printf '%s' "$result"
-}
+preflight_checks
 
 # ── Poll loop (sleep first, then check) ──────────────────────────────────────
 
