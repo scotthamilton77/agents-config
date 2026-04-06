@@ -11,3 +11,5 @@ After completion gate passes for non-trivial work:
 Housekeeping (checklist steps 9–10) applies throughout: record discovered work, update memory.
 
 Do NOT merge or clean up worktrees/branches until Copilot review completes or times out.
+
+**PR comments**: Check for BOTH top-level AND inline review comments (e.g., Copilot inline suggestions) before marking a PR as review-complete. Inline comments are easy to miss—always verify both.

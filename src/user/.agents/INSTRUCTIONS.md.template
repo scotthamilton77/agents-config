@@ -17,7 +17,9 @@ Tool-agnostic principles for all AI coding assistants.
 - **Dependencies**: If a library version is newer than model training data, look up docs via context7 before using it
 - **Observability**: Match the project's existing logging approach. If none exists, add structured logging at key state transitions and error paths
 - **Testing**: Run the specific relevant test, not the full suite; cover edge cases + error paths
-- **Git safety**: No hard resets, force pushes, amends without explicit approval
+- **Git safety**: No hard resets, force pushes, amends without explicit approval. Never run `git clean -fd` without explicit user approval—it destroys untracked files irreversibly
+- **Worktree hygiene**: Always run tests and builds from the correct worktree directory, not the main tree
+- **Database safety**: Never copy Dolt or SQLite databases while WAL is locked; never run DB operations from worktree directories if the DB lives in the main tree
 - **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
 </constraints>
 
