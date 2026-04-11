@@ -12,6 +12,7 @@ Tool-agnostic principles for all AI coding assistants.
 
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
+- **Informed edits**: Research the codebase before editing - never change code you haven't read
 - **Parallel ops**: Independent tool calls in single message
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
 - **Dependencies**: If a library version is newer than model training data, look up docs via context7 before using it
