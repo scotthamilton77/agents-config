@@ -148,10 +148,14 @@ Prepare the `.ralf/` directory for foreign agent artifacts. This runs once, afte
 
 | Agent | Command |
 |-------|---------|
-| Codex | `codex exec -s read-only - < {prompt_file} > {review_file} 2>{error_file}` |
+| Codex | `CODEX_HOME="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}"; node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.4 < {prompt_file} > {review_file} 2>{error_file}` |
 | Gemini | `gemini -p "" --approval-mode plan -o text < {prompt_file} > {review_file} 2>{error_file}` |
 
-Both use a 10-minute timeout (600000ms) and run in read-only/plan mode (cannot modify source files).
+Both use a 10-minute timeout (600000ms) and run read-only — neither can modify source files.
+
+**Codex model:** pass `--model gpt-5.4` (primary reviewer default). See `~/.claude/rules/codex-routing.md` for alternatives.
+
+**Plugin prerequisite:** install the Claude Code Codex plugin and run `/codex:setup` once per environment. If the plugin is absent, the Codex path degrades cleanly to pure fresh-eyes.
 
 ### Step 4: Dispatch Implementation Subagent(s)
 
@@ -353,7 +357,7 @@ After reporting, use **superpowers:finishing-a-development-branch** to present m
 - **superpowers:test-driven-development** — TDD for implementation
 
 **Foreign agent CLIs (iterations 1-2 only):**
-- **Codex CLI** — `codex exec -s read-only` (read-only sandbox)
+- **Codex** — Claude Code Codex plugin via `codex-companion.mjs task` (read-only sandbox; see `~/.claude/rules/codex-routing.md`)
 - **Gemini CLI** — `gemini --approval-mode plan` (read-only plan mode)
 
 **RALF-IT replaces these for complex work:**
