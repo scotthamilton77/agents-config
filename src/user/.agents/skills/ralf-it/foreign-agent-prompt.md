@@ -8,8 +8,8 @@ the file.
 **Written to:** `.ralf/{session_id}/prompt-{agent}-{timestamp}.md`
 
 **Consumed by:**
-- **Codex:** `codex-companion.mjs task < <path>` (read-only sandbox)
-- **Gemini:** `gemini -p "" --approval-mode plan -o text < <path>` (plan mode)
+- **Codex:** `codex-companion.mjs task < path` (read-only sandbox)
+- **Gemini:** `gemini -p "" --approval-mode plan -o text < path` (plan mode)
 
 **Critical:** This file is written BEFORE the subagent does any implementation work,
 so it reflects the clean spec/DoD without implementation bias.
