@@ -52,7 +52,8 @@ Agent tool (general-purpose, mode: "auto"):
     ## Foreign Agent Configuration
 
     - Agent: {agent_name}
-    - CLI invocation (codex): codex exec -s read-only - < {prompt_file} > {review_file} 2>{error_file}
+    - CLI invocation (codex): CODEX_HOME="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}"; node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.4 < {prompt_file} > {review_file} 2>{error_file}
+      (model selection: `~/.claude/rules/codex-routing.md`)
     - CLI invocation (gemini): gemini -p "" --approval-mode plan -o text < {prompt_file} > {review_file} 2>{error_file}
     - Timeout: 600000ms (10 minutes)
     - Session directory: .ralf/{session_id}/
@@ -104,7 +105,8 @@ Agent tool (general-purpose, mode: "auto"):
 
        For codex:
        ```bash
-       codex exec -s read-only - < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
+       CODEX_HOME="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}"
+       node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.4 < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
        ```
 
        For gemini:
@@ -118,12 +120,13 @@ Agent tool (general-purpose, mode: "auto"):
 
         **Detect these failures and degrade to pure fresh-eyes (skip Phase 4):**
 
-        a. CLI not found — stderr contains "command not found"
+        a. Runtime not found — stderr contains "command not found", or (for Codex) the companion script path resolved from `$CODEX_HOME` does not exist (plugin not installed at either `$CLAUDE_PLUGIN_ROOT` or the marketplace fallback)
         b. Timeout — Bash timeout exceeded
         c. Token quota exhausted — stderr contains any of: "quota", "rate limit",
            "rate_limit", "exceeded", "429", "resource_exhausted", "too many requests"
-        d. No review output — review file is empty or does not exist
-        e. Unparseable output — review file exists but cannot be meaningfully interpreted
+        d. Auth failure (Codex) — stderr mentions missing or unauthenticated Codex; remediation is `/codex:setup`
+        e. No review output — review file is empty or does not exist
+        f. Unparseable output — review file exists but cannot be meaningfully interpreted
 
         If any failure is detected: record the failure status, skip Phase 4 entirely,
         and proceed to Phase 5 with the foreign agent status set appropriately.

@@ -1,11 +1,15 @@
 # RALF-IT Foreign Agent Instruction File Template
 
-This template is used by the foreign-eyes subagent to create the instruction file that gets
-piped to a foreign CLI (Codex/Gemini) via stdin. The subagent fills in `{dod}` and `{spec}`
-from the original task before writing the file.
+This template is used by the foreign-eyes subagent to create the instruction file handed
+to a foreign CLI (Codex via the Claude Code Codex plugin, or Gemini via the `gemini`
+binary). The subagent fills in `{dod}` and `{spec}` from the original task before writing
+the file.
 
 **Written to:** `.ralf/{session_id}/prompt-{agent}-{timestamp}.md`
-**Consumed by:** Foreign CLI via stdin redirect
+
+**Consumed by:**
+- **Codex:** `codex-companion.mjs task < path` (read-only sandbox)
+- **Gemini:** `gemini -p "" --approval-mode plan -o text < path` (plan mode)
 
 **Critical:** This file is written BEFORE the subagent does any implementation work,
 so it reflects the clean spec/DoD without implementation bias.
