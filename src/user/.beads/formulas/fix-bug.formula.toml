@@ -1,0 +1,289 @@
+# fix-bug.formula.toml
+#
+# Bug-fix workflow that enforces systematic diagnosis before any code changes.
+# The cardinal sin of bug fixing is patching the symptom. This formula
+# enforces root-cause identification as a hard gate before touching code.
+#
+# Phases:
+#   1. Diagnose  — reproduce, locate root cause (NOT symptom)
+#   2. Isolation — worktree setup, claim bead
+#   3. Fix       — regression test (red) → fix (green)
+#   4. Gate      — code-review → simplify → verify with evidence
+#   5. Delivery  — PR → await review
+#   6. Housekeep — close bead, record memory, file discovered work
+#
+# Usage:
+#   bd mol wisp create fix-bug \
+#     --var bug="Login fails when username contains an apostrophe" \
+#     --var bead-id=proj-17
+#
+# Or as a persistent mol (for complex bugs that span sessions):
+#   bd mol pour fix-bug \
+#     --var bug="Login fails when username contains an apostrophe" \
+#     --var bead-id=proj-17
+
+formula     = "fix-bug"
+description = "Bug fix: diagnose root cause → regression test → fix → completion gate → PR → close"
+type        = "workflow"
+phase       = "vapor"   # wisp by default — one bug, one run
+version     = 1
+
+[vars.bug]
+description = "Short description of the bug (e.g. 'Login fails when username contains apostrophe')"
+required    = true
+
+[vars.bead-id]
+description = "Bead ID tracking this bug (e.g. proj-17). Must already exist."
+required    = true
+
+# =============================================================================
+# Phase 1: Diagnose
+# =============================================================================
+
+[[steps]]
+id    = "reproduce"
+title = "Reproduce: confirm the bug exists and is consistent"
+description = """
+Before touching any code, reproduce the bug reliably.
+
+Skill: superpowers:systematic-debugging
+
+Steps:
+1. Find or write a minimal reproduction case
+2. Confirm it fails consistently (not flaky)
+3. Note the exact failure: error message, stack trace, wrong output
+4. Note the expected correct behavior
+
+Write reproduction steps back to the bead:
+  bd update {{bead-id}} --notes "Repro: <steps>\nActual: <what happens>\nExpected: <what should happen>"
+
+If you cannot reproduce the bug, stop and ask the user for more
+information. Do not proceed on assumption.
+"""
+
+[[steps]]
+id    = "root-cause"
+title = "Root cause: find the source, not the symptom"
+needs = ["reproduce"]
+description = """
+Trace the failure backward to the original invalid state or wrong assumption.
+
+Skill: superpowers:root-cause-tracing (if the call stack is deep or unclear)
+
+Rules:
+- A symptom is WHERE it breaks. A root cause is WHY it breaks.
+- Do not patch the first place you see the problem — trace further back.
+- Read the code path. Do not assume.
+- If the root cause is in a dependency you do not own, note that explicitly.
+
+Ask: "What invariant was violated? Where was it first violated?"
+
+Write the root cause back to the bead before continuing:
+  bd update {{bead-id}} --notes "Root cause: <explanation>"
+
+If the root cause is significantly different from the bead description,
+flag it with bd human before proceeding:
+  bd human {{bead-id}}
+"""
+
+# =============================================================================
+# Phase 2: Isolation
+# =============================================================================
+
+[[steps]]
+id    = "worktree"
+title = "Set up isolated git worktree"
+needs = ["root-cause"]
+description = """
+Invoke the using-git-worktrees skill to create an isolated branch.
+
+Skill: superpowers:using-git-worktrees
+
+- Branch from main (never from another feature branch)
+- Verify you are IN the worktree directory before writing any code
+- Confirm no leftover state from other work
+
+Then claim the bead:
+  bd update {{bead-id}} --status in_progress
+
+If the bead has a parent, mark that in_progress too.
+"""
+
+# =============================================================================
+# Phase 3: Fix — Regression Test First, Then Fix
+# =============================================================================
+
+[[steps]]
+id    = "write-regression-test"
+title = "Write a failing regression test that proves the bug"
+needs = ["worktree"]
+description = """
+Write a test that FAILS in the current codebase because of the bug.
+
+Skills: superpowers:writing-unit-tests, superpowers:testing-anti-patterns
+
+This test is your proof that:
+  (a) the bug exists and is reproducible in the test suite
+  (b) your fix actually addresses it (when it turns green)
+  (c) the bug will never silently return (regression protection)
+
+The test should target the ROOT CAUSE location, not just the surface
+symptom. Testing at the wrong layer creates false confidence.
+
+Run the test and confirm it FAILS:
+  go test ./...           (or equivalent)
+
+If the test passes before any fix, either the bug is already fixed
+(investigate) or the test is wrong (fix the test).
+"""
+
+[[steps]]
+id    = "implement-fix"
+title = "Implement the fix (green phase)"
+needs = ["write-regression-test"]
+description = """
+Fix the root cause identified in the diagnose phase.
+
+Rules:
+- Fix the ROOT CAUSE, not the symptom
+- Minimum change that makes the regression test pass
+- Do not refactor unrelated code while fixing the bug
+- Do not add features while fixing the bug
+- If the fix requires a larger change than expected, stop and consult
+  the user before proceeding (scope creep hides in bug fixes)
+
+Run the full test suite — not just the new test:
+  go test ./...   (or equivalent)
+
+A bug fix that breaks other tests is not a fix. It is a new bug.
+
+This step is complete only when:
+  [ ] The regression test passes (the bug is fixed)
+  [ ] All existing tests still pass (nothing regressed)
+"""
+
+# =============================================================================
+# Phase 4: Completion Gate
+# =============================================================================
+
+[[steps]]
+id    = "code-review"
+title = "Completion gate: code review"
+needs = ["implement-fix"]
+description = """
+Dispatch code-reviewer subagent against ALL changed files.
+
+Agent: superpowers:code-reviewer
+Scope: every file changed since branch creation, reviewed against:
+  - The root cause identified in the diagnose phase
+  - Whether the fix addresses the cause or just the symptom
+  - SOLID and DRY principles
+  - Security implications (bug fixes can introduce new vulnerabilities)
+  - Whether the regression test is meaningful and at the right layer
+
+Address ALL findings. Pay particular attention to any finding that
+suggests the fix is treating a symptom rather than a root cause.
+"""
+
+[[steps]]
+id    = "simplify"
+title = "Completion gate: simplify"
+needs = ["code-review"]
+description = """
+Dispatch code-simplifier subagent against changed code.
+
+Agent: code-simplifier:code-simplifier
+
+Bug fixes are often hasty. The code-simplifier catches the
+"it works, ship it" carelessness that bug pressure creates.
+
+Address findings. Re-run tests after any changes.
+"""
+
+[[steps]]
+id    = "verify"
+title = "Completion gate: verify with evidence"
+needs = ["simplify"]
+description = """
+Run the full verification suite. Evidence required — no claims without output.
+
+Skill: superpowers:verification-before-completion
+
+Required gates — show actual command output for each:
+  [ ] Regression test passes  → show output
+  [ ] Full test suite passes  → show output
+  [ ] Build succeeds          → show output
+  [ ] Lint clean              → show output
+  [ ] Type check clean        → show output
+
+HARD STOP: After this gate, do NOT commit to main and do NOT push
+directly. The next step is create-pr. Go there next.
+"""
+
+# =============================================================================
+# Phase 5: Delivery
+# =============================================================================
+
+[[steps]]
+id    = "create-pr"
+title = "Create pull request"
+needs = ["verify"]
+description = """
+Invoke the finishing-a-development-branch skill.
+
+Skill: superpowers:finishing-a-development-branch
+
+PR body must include:
+- What the bug was (symptom)
+- Root cause (the actual problem)
+- How the fix addresses the root cause
+- How to verify: reference the regression test by name
+- Linked to {{bead-id}}
+
+Do NOT merge. Await review in the next step.
+"""
+
+[[steps]]
+id    = "await-review"
+title = "Await PR review and triage feedback"
+needs = ["create-pr"]
+description = """
+Invoke the wait-for-pr-comments skill.
+
+Skill: superpowers:wait-for-pr-comments
+
+- Wait for Copilot review to complete (or time out)
+- Check BOTH top-level PR comments AND inline review comments
+  (inline comments are easy to miss — always verify both)
+- Auto-fix unambiguous feedback
+- Report findings and triage results to the user
+
+Do NOT merge or clean up the worktree until review is complete.
+"""
+
+# =============================================================================
+# Phase 6: Housekeeping
+# =============================================================================
+
+[[steps]]
+id    = "housekeeping"
+title = "Housekeeping: close, remember, file discovered work"
+needs = ["await-review"]
+description = """
+Complete the lifecycle and preserve context for future sessions.
+
+1. Close the bead:
+     bd close {{bead-id}} --reason "Fixed: <one sentence root cause summary>"
+
+2. If all siblings in a parent epic are now closed, close the parent.
+
+3. Record any non-obvious insights (root cause patterns are worth preserving):
+     bd remember "Bugs in <subsystem> are often caused by <pattern>"
+
+4. File any new bugs or tech debt discovered during the fix:
+     bd create "Tech debt: ..." -t chore -p 3
+     bd dep add <new-id> {{bead-id}} --type discovered-from
+
+5. Burn this wisp (if running as vapor):
+     bd mol burn <this-mol-id>
+"""

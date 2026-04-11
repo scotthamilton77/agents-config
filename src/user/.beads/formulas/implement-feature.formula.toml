@@ -1,0 +1,302 @@
+# implement-feature.formula.toml
+#
+# Encodes the full TDD feature workflow from INSTRUCTIONS.md,
+# completion-gate.md, delivery.md, and delegation.md into a
+# single reusable molecule.
+#
+# This is the molecule-equivalent of the /implement-bead slash command,
+# but with persistent state tracking across sessions and hard gate
+# enforcement — steps cannot be skipped or reordered.
+#
+# Phases:
+#   1. Intent     — brainstorm requirements, write acceptance criteria
+#   2. Isolation  — worktree setup, claim bead
+#   3. TDD        — red (failing tests) → green (implement) → refactor
+#   4. Gate       — code-review → simplify → verify with evidence
+#   5. Delivery   — PR → await review
+#   6. Housekeep  — close bead, record memory, file discovered work
+#
+# Usage:
+#   bd mol wisp create implement-feature \
+#     --var feature="Add rate limiting to the API" \
+#     --var bead-id=proj-42
+#
+# Or as a persistent mol (survives squash/resume across sessions):
+#   bd mol pour implement-feature \
+#     --var feature="Add rate limiting to the API" \
+#     --var bead-id=proj-42
+
+formula      = "implement-feature"
+description  = "TDD feature implementation: brainstorm → worktree → red/green/refactor → completion gate → PR → close"
+type         = "workflow"
+phase        = "vapor"   # wisp by default — one feature, one run, then burn
+version      = 1
+
+[vars.feature]
+description = "Short description of the feature being implemented (e.g. 'Add dark mode toggle')"
+required    = true
+
+[vars.bead-id]
+description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
+required    = true
+
+# =============================================================================
+# Phase 1: Intent
+# =============================================================================
+
+[[steps]]
+id    = "brainstorm"
+title = "Brainstorm: requirements for {{feature}}"
+description = """
+Invoke the brainstorming skill BEFORE any design, tests, or code.
+
+Skill: superpowers:brainstorming
+
+Questions to resolve:
+- What problem does this actually solve?
+- Who uses it and how?
+- What does "done" look like? (acceptance criteria)
+- What are the edge cases and error paths?
+- Any architectural implications or constraints?
+- Is there a simpler approach that solves the same problem?
+
+Output: written acceptance criteria and a clear implementation plan.
+
+Write criteria back to the bead so it persists across sessions:
+  bd update {{bead-id}} --acceptance="<one line per criterion>"
+
+If anything is ambiguous or contradictory, stop and ask the user
+before proceeding to the next step.
+"""
+
+# =============================================================================
+# Phase 2: Isolation
+# =============================================================================
+
+[[steps]]
+id    = "worktree"
+title = "Set up isolated git worktree"
+needs = ["brainstorm"]
+description = """
+Invoke the using-git-worktrees skill to create an isolated branch.
+
+Skill: superpowers:using-git-worktrees
+
+- Branch from main (never from another feature branch)
+- Verify you are IN the worktree directory before writing any code
+- Confirm no leftover state from other work
+
+Then claim the bead:
+  bd update {{bead-id}} --status in_progress
+
+If the bead has a parent epic, mark that in_progress too:
+  bd show {{bead-id}}   # check for parent
+  bd update <parent-id> --status in_progress
+"""
+
+# =============================================================================
+# Phase 3: TDD — Red / Green / Refactor
+# =============================================================================
+
+[[steps]]
+id    = "write-tests"
+title = "Write failing tests (red phase)"
+needs = ["worktree"]
+description = """
+Write tests FIRST. No implementation code at this step.
+
+Skills: superpowers:writing-unit-tests, superpowers:testing-anti-patterns
+
+Rules:
+- Tests must be written against the acceptance criteria from the brainstorm step
+- Cover: happy path, edge cases, error paths
+- Do NOT mock what you have not verified you understand
+- Do NOT write test-only methods in production code
+
+Run the tests and confirm they FAIL. Failure is correct here.
+
+  go test ./...           # Go projects
+  pnpm test               # Node/TypeScript projects
+  pytest                  # Python projects
+
+If a test passes before any implementation, either the test is wrong
+or the feature already exists. Investigate before continuing.
+"""
+
+[[steps]]
+id    = "implement"
+title = "Implement {{feature}} (green phase)"
+needs = ["write-tests"]
+description = """
+Write the minimum code to make all failing tests pass.
+
+Skills: superpowers:test-driven-development, then domain skill
+  (e.g. typescript-developer, backend-developer, etc.)
+
+Rules:
+- Minimum viable implementation — write only what tests require
+- No speculative features, no over-engineering
+- No abstractions for hypothetical future requirements
+
+Run tests after each meaningful change:
+  go test ./...   (or equivalent)
+
+This step is complete only when all tests are GREEN.
+"""
+
+[[steps]]
+id    = "refactor"
+title = "Refactor for clarity (refactor phase)"
+needs = ["implement"]
+description = """
+Clean up the implementation without changing observable behavior.
+Tests must remain green throughout.
+
+Skill: code-simplifier:code-simplifier (run as subagent)
+
+Look for:
+- Duplication (three similar lines is a smell; two is acceptable)
+- Names that require a comment to understand
+- Logic that could be expressed more simply
+- Dead code
+
+Re-run tests after every change. If tests break, you changed behavior.
+Undo the change and try again.
+
+This step is NOT about adding features or improving performance.
+It is about making the code readable by the next person (who is you,
+in six months, having forgotten everything).
+"""
+
+# =============================================================================
+# Phase 4: Completion Gate
+# =============================================================================
+
+[[steps]]
+id    = "code-review"
+title = "Completion gate: code review"
+needs = ["refactor"]
+description = """
+Dispatch code-reviewer subagent against ALL changed files.
+
+Agent: superpowers:code-reviewer
+Scope: every file changed since branch creation, reviewed against:
+  - The implementation plan from the brainstorm step
+  - SOLID and DRY principles
+  - Security by design (OWASP top 10, input validation, no injection paths)
+  - Architectural consistency with the rest of the codebase
+  - The standards in INSTRUCTIONS.md
+
+Address ALL findings before proceeding. If a finding is deferred,
+document the rationale explicitly.
+
+For high-stakes changes (security-sensitive, architecture shifts):
+  /codex:adversarial-review --wait --model gpt-5.4
+"""
+
+[[steps]]
+id    = "simplify"
+title = "Completion gate: simplify"
+needs = ["code-review"]
+description = """
+Dispatch code-simplifier subagent against changed code.
+
+Agent: code-simplifier:code-simplifier
+
+This step exists because the implementing agent always misses
+at least one DRY violation or clarity issue. It is not optional.
+
+Address ALL findings. Re-run tests after any changes made here.
+"""
+
+[[steps]]
+id    = "verify"
+title = "Completion gate: verify with evidence"
+needs = ["simplify"]
+description = """
+Run the full verification suite. Evidence is required — no claims without output.
+
+Skill: superpowers:verification-before-completion
+
+Required gates — show the actual command output for each:
+  [ ] Tests pass        → run test suite, paste output
+  [ ] Build succeeds    → run build, paste output
+  [ ] Lint clean        → run linter, paste output
+  [ ] Type check clean  → run type checker, paste output
+
+Do NOT mark this step complete unless all four gates show clean output.
+"I believe it passes" is not evidence. Run the commands.
+
+HARD STOP: After this gate, do NOT commit to main and do NOT push
+directly. The next step is create-pr. Go there next.
+"""
+
+# =============================================================================
+# Phase 5: Delivery
+# =============================================================================
+
+[[steps]]
+id    = "create-pr"
+title = "Create pull request"
+needs = ["verify"]
+description = """
+Invoke the finishing-a-development-branch skill.
+
+Skill: superpowers:finishing-a-development-branch
+
+- Push the branch to origin
+- Create a PR with a clear summary linked to {{bead-id}}
+- PR title should be ≤70 characters
+- PR body should include: what changed, why, and how to test it
+
+Do NOT merge. Do NOT squash. Await review in the next step.
+"""
+
+[[steps]]
+id    = "await-review"
+title = "Await PR review and triage feedback"
+needs = ["create-pr"]
+description = """
+Invoke the wait-for-pr-comments skill.
+
+Skill: superpowers:wait-for-pr-comments
+
+- Wait for Copilot review to complete (or time out)
+- Check BOTH top-level PR comments AND inline review comments
+  (inline comments are easy to miss — always verify both)
+- Auto-fix unambiguous feedback
+- Report findings and triage results to the user
+
+Do NOT merge or clean up the worktree until review is complete
+or has explicitly timed out.
+"""
+
+# =============================================================================
+# Phase 6: Housekeeping
+# =============================================================================
+
+[[steps]]
+id    = "housekeeping"
+title = "Housekeeping: close, remember, file discovered work"
+needs = ["await-review"]
+description = """
+Complete the lifecycle and preserve context for future sessions.
+
+1. Close the bead:
+     bd close {{bead-id}} --reason "Implemented and PR merged"
+
+2. If all siblings in a parent epic are now closed, close the parent:
+     bd show {{bead-id}}    # check for parent
+     bd list --parent=<parent-id>  # check siblings
+
+3. Record any non-obvious decisions or hard-won insights:
+     bd remember "insight about this system or pattern"
+     bd decision record --title="Why we chose X over Y"
+
+4. File any work discovered during implementation:
+     bd create "Found: ..." -t bug -p 1
+     bd dep add <new-id> {{bead-id}} --type discovered-from
+
+5. Burn this wisp (if running as vapor):
+     bd mol burn <this-mol-id>
+"""
