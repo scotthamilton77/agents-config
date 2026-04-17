@@ -16,7 +16,7 @@ This configuration assumes the following Claude Code plugins are installed:
 ## Repository Structure
 
 - `scripts/` - Installation and maintenance scripts
-  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` override
+  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` and `--plugins=` overrides
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications for implemented features
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
@@ -27,7 +27,7 @@ This configuration assumes the following Claude Code plugins are installed:
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
-  - `rules/` - Claude-specific workflow rules (delegation, completion-gate, delivery, git-commits, beads)
+  - `rules/` - Claude-specific workflow rules (delegation, completion-gate, delivery, git-commits)
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
@@ -38,6 +38,9 @@ This configuration assumes the following Claude Code plugins are installed:
 - `src/user/.gemini/` - **Gemini-specific** content (copies to `~/.gemini/`)
   - `GEMINI.md.template` - Gemini instruction file (refs shared + Gemini extensions)
   - `GEMINI-EXTENSIONS.md.template` - Gemini-specific sections (placeholder)
+- `src/plugins/` - **Optional plugin content** (installed only when detected)
+  - `beads/` - beads plugin: Claude rules, commands, formulas
+  - See `src/plugins/AGENTS.md` for plugin authoring conventions
 
 ## File Formats
 

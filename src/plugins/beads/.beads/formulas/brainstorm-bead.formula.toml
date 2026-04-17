@@ -1,0 +1,192 @@
+# brainstorm-bead.formula.toml
+#
+# Interactive brainstorming and spec-writing for a placeholder bead.
+# Produces a fully spec'd bead marked implementation-ready.
+#
+# Execution model: this formula is executed by the MAIN AGENT (not subagents)
+# because it requires interactive conversation with the user. The exception
+# is the ralf-spec-review step, which dispatches a fresh-eyes subagent.
+#
+# Phases:
+#   1. Assess    — read bead, identify gaps and questions
+#   2. Discuss   — interactive session with user (brainstorming skill)
+#   3. Write     — produce spec and acceptance criteria
+#   4. Review    — RALF fresh-eyes adversarial review of the spec document
+#   5. Finalize  — address findings, mark bead implementation-ready
+#
+# Usage:
+#   bd mol wisp create brainstorm-bead --var bead-id=proj-42
+
+formula     = "brainstorm-bead"
+description = "Interactive spec-writing: assess gaps → discuss with user → write spec → RALF spec review → mark implementation-ready"
+type        = "workflow"
+phase       = "vapor"
+version     = 1
+
+[vars.bead-id]
+description = "Bead ID to brainstorm (e.g. proj-42). Must already exist."
+required    = true
+
+# =============================================================================
+# Phase 1: Assess
+# =============================================================================
+
+[[steps]]
+id    = "assess"
+title = "Assess: read bead, identify what's missing"
+description = """
+Read the bead fully. Understand what it is and what's unclear.
+
+  bd show {{bead-id}}
+
+Identify:
+- What is the core problem or goal?
+- What requirements are stated vs. implied vs. missing?
+- What acceptance criteria exist (if any)?
+- What architectural or integration questions are unresolved?
+- What constraints (tech, product, time) apply?
+- What are the likely edge cases and error paths?
+
+Prepare a list of questions for the user, applying the QUESTION FILTER:
+  Only include questions where:
+  (a) the answer has significant architectural or requirements implications
+      not already specified in the bead or codebase, OR
+  (b) there are conflicting directions that require human resolution.
+  Decide everything else yourself. Do NOT include questions you can
+  answer from the codebase, existing instructions, or standard
+  engineering judgment.
+
+If the bead is already fully specified (no real questions remain), skip
+to write-spec. This step can complete quickly if the bead is well-written.
+"""
+
+# =============================================================================
+# Phase 2: Discuss
+# =============================================================================
+
+[[steps]]
+id    = "discuss"
+title = "Discuss: interactive brainstorming session with user"
+needs = ["assess"]
+description = """
+Invoke the brainstorming skill for an interactive design conversation.
+
+Skill: superpowers:brainstorming
+
+Present only the filtered questions from the assess step. Work through them
+with the user collaboratively. Let the conversation evolve — new questions
+may emerge as answers are given.
+
+QUESTION FILTER reminder (applies throughout this conversation):
+  Ask only when the answer has significant architectural/requirements
+  implications, or when there is conflicting direction. Decide everything
+  else yourself. Do NOT ask questions the user shouldn't need to answer.
+
+By the end of this step, you should have clear answers to:
+- What the feature/fix does and doesn't do
+- Who uses it and how
+- Acceptance criteria (specific, testable)
+- Key design decisions and their rationale
+- Out-of-scope items explicitly called out
+
+ESCALATION CHECKLIST — before proceeding to write-spec:
+  [ ] All critical questions answered?          NO → continue discussing
+  [ ] Acceptance criteria clear and testable?   NO → clarify with user
+  [ ] Scope boundaries agreed?                  NO → clarify with user
+  [ ] Otherwise: PROCEED
+"""
+
+# =============================================================================
+# Phase 3: Write Spec
+# =============================================================================
+
+[[steps]]
+id    = "write-spec"
+title = "Write spec and acceptance criteria to bead"
+needs = ["discuss"]
+description = """
+Produce a complete spec and write it back to the bead.
+
+Write the spec as a structured document covering:
+- Summary: what this does in 1-3 sentences
+- Background / motivation: why this is needed
+- Requirements: the must-haves
+- Out of scope: what this explicitly does NOT do
+- Acceptance criteria: specific, testable conditions for done
+- Design notes: key decisions made during brainstorming
+- Open questions: anything still unresolved (if any)
+
+Write back to the bead:
+  bd update {{bead-id}} --acceptance="<one line per acceptance criterion>"
+  bd update {{bead-id}} --notes="<full spec document>"
+
+If the spec required closing existing technical ambiguity, note it:
+  bd decision record --title="<decision>" --notes="<rationale>"
+
+Do NOT start implementing. Do NOT create a worktree. This is a spec step.
+"""
+
+# =============================================================================
+# Phase 4: RALF Spec Review
+# =============================================================================
+
+[[steps]]
+id    = "ralf-spec-review"
+title = "Adversarial spec review: fresh-eyes passes on the written spec"
+needs = ["write-spec"]
+description = """
+Dispatch a fresh-eyes subagent to adversarially review the spec for
+completeness, ambiguity, feasibility, and consistency.
+
+This is NOT a RALF-IT code review. It is a document review.
+Dispatch the subagent with these instructions:
+
+  "Review the spec for bead {{bead-id}} as a skeptical senior engineer.
+   Read it with: bd show {{bead-id}}
+   Assess:
+   - Are the acceptance criteria complete and testable?
+   - Are there gaps, contradictions, or ambiguities?
+   - Are there unstated assumptions that could cause implementation surprises?
+   - Is anything out-of-scope that should be in scope, or vice versa?
+   - Are there feasibility concerns with the approach described?
+   Report findings as a structured list. Do NOT implement anything."
+
+Review the subagent's findings. For each finding:
+  - If valid and addressable: note what needs revision
+  - If invalid or already covered: note why
+
+If significant findings exist, return to write-spec to revise.
+Run at most 2 spec review cycles. If still imperfect after 2 cycles,
+proceed with remaining concerns documented as open questions in the bead.
+
+A perfect spec is not required. A clear enough spec is.
+"""
+
+# =============================================================================
+# Phase 5: Finalize
+# =============================================================================
+
+[[steps]]
+id    = "finalize"
+title = "Finalize: address findings, mark bead implementation-ready"
+needs = ["ralf-spec-review"]
+description = """
+Incorporate any valid spec review findings into the bead, then mark it ready.
+
+1. Update the bead with any spec revisions from the review:
+     bd update {{bead-id}} --acceptance="<revised criteria>"
+     bd update {{bead-id}} --notes="<revised spec>"
+
+2. Add labels to mark the bead's state:
+     bd label add {{bead-id}} brainstormed
+     bd label add {{bead-id}} implementation-ready
+
+3. Report to the user:
+     "Bead {{bead-id}} is now implementation-ready.
+      Acceptance criteria: [list]
+      It will be picked up by the next run-queue cycle,
+      or you can start it manually with the implement-bead skill."
+
+4. Burn this wisp:
+     bd mol burn <this-mol-id>
+"""

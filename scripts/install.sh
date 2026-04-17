@@ -34,25 +34,31 @@ fi
 # install.sh — Sync agent config into tool-specific home directories
 #
 # Supports: Claude (~/.claude/), Codex (~/.codex/), Gemini (~/.gemini/)
+# Plugins:  beads (~/.beads/formulas/, tool rules/commands)
 #
 # Source layout:
 #   src/user/.agents/          Shared content (agents, skills, templates)
 #   src/user/.claude/          Claude-specific overrides & extensions
 #   src/user/.codex/           Codex-specific overrides & extensions
 #   src/user/.gemini/          Gemini-specific overrides & extensions
+#   src/plugins/<name>/        Optional plugin content (beads, etc.)
 #
 # Per-tool install phases (in order):
-#   1. Shared templates   .agents/*.template → ~/.<tool>/
-#   2. Shared skills      .agents/skills/    → ~/.<tool>/skills/
-#   3. Shared agents      .agents/agents/    → ~/.<tool>/agents/
-#   4. Tool templates     .<tool>/*.template → ~/.<tool>/
-#   5. Tool subdirs       .<tool>/{commands,skills,agents}/ → ~/.<tool>/
-#   6. Settings merge     *.json.template → union-merge; *.toml.template → copy
+#   1. Stage shared templates   .agents/*.md.template → staging/<tool>/
+#   2. Stage shared skills/agents .agents/{skills,agents}/ → staging/<tool>/
+#   3. Stage tool templates     .<tool>/*.md.template → staging/<tool>/
+#   4. Stage tool subdirs       .<tool>/{commands,skills,agents,rules}/ → staging/<tool>/
+#   5. Stage tool settings      .<tool>/*.json.template → staging/<tool>/
+#   6. Overlay active plugins   src/plugins/<name>/.<tool>/ → staging/<tool>/
+#   7. Sync staging → ~/.<tool>/ (hash-compare, diff, confirm)
+#
+# For beads plugin: staging/<beads>/formulas/ → ~/.beads/formulas/
 #
 # Flags:
 #   --dry-run            Show what would be done without making changes
 #   --yes, -y            Auto-accept all prompts
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
+#   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
 #   --help, -h           Show this help
 # --------------------------------------------------------------------------
 
@@ -69,14 +75,17 @@ RESET='\033[0m'
 DRY_RUN=false
 AUTO_YES=false
 TOOLS_OVERRIDE=""
+PLUGINS_OVERRIDE=""
+PLUGINS_FLAG_SET=false
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run)     DRY_RUN=true ;;
         --yes|-y)      AUTO_YES=true ;;
         --tools=*)     TOOLS_OVERRIDE="${arg#--tools=}" ;;
+        --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}"; PLUGINS_FLAG_SET=true ;;
         --help|-h)
-            echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--help|-h]"
+            echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--plugins=PLUGINS] [--help|-h]"
             echo ""
             echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
             echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
@@ -90,6 +99,8 @@ for arg in "$@"; do
             echo "  --yes, -y          Auto-accept all prompts"
             echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini"
             echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
+            echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
+            echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
@@ -134,6 +145,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_USER="$PROJECT_ROOT/src/user"
 SRC_SHARED="$SRC_USER/.agents"
+SRC_PLUGINS="$PROJECT_ROOT/src/plugins"
 
 if [[ ! -d "$SRC_SHARED" ]]; then
     err "Shared source directory not found: $SRC_SHARED"
@@ -144,27 +156,52 @@ if [[ "$DRY_RUN" == true ]]; then
     info "DRY RUN -- no changes will be made"
 fi
 
+# ── Utility: return 0 if $1 appears in the remaining arguments ────────────────
+#
+# Usage: in_list "needle" "${haystack[@]}"
+
+in_list() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+# ── Utility: check if a plugin is in the active PLUGINS array ─────────────────
+
+plugin_enabled() {
+    in_list "$1" "${PLUGINS[@]}"
+}
+
+# ── Utility: split a comma-separated string into a named array ────────────────
+#
+# Handles the bash (read -ra) vs zsh (read -rA) split. The target array name
+# is passed as $2; the caller does not need to pre-declare it.
+
+split_csv() {
+    local csv="$1"
+    local _arrname="$2"
+    if [ -n "${BASH_VERSION:-}" ]; then
+        IFS=',' read -ra "$_arrname" <<< "$csv"
+    else
+        IFS=',' read -rA "$_arrname" <<< "$csv"
+    fi
+}
+
 # ── Tool detection ────────────────────────────────────────────────────────
 
 ALL_TOOLS=(claude codex gemini)
 TOOLS=()
+ALL_PLUGINS=(beads)
+PLUGINS=()
 
 if [[ -n "$TOOLS_OVERRIDE" ]]; then
-    if [ -n "${BASH_VERSION:-}" ]; then
-        IFS=',' read -ra TOOLS <<< "$TOOLS_OVERRIDE"
-    else
-        IFS=',' read -rA TOOLS <<< "$TOOLS_OVERRIDE"
-    fi
-    # Validate each requested tool
+    split_csv "$TOOLS_OVERRIDE" TOOLS
     for tool in "${TOOLS[@]}"; do
-        local_valid=false
-        for valid in "${ALL_TOOLS[@]}"; do
-            if [[ "$tool" == "$valid" ]]; then
-                local_valid=true
-                break
-            fi
-        done
-        if [[ "$local_valid" != true ]]; then
+        if ! in_list "$tool" "${ALL_TOOLS[@]}"; then
             err "Unknown tool: $tool (valid: ${ALL_TOOLS[*]})"
             exit 1
         fi
@@ -173,18 +210,51 @@ else
     # Auto-detect: always include claude, add others if their dir exists
     TOOLS=(claude)
     for tool in codex gemini; do
-        if [[ -d "$HOME/.$tool" ]]; then
-            TOOLS+=("$tool")
-        fi
+        [[ -d "$HOME/.$tool" ]] && TOOLS+=("$tool")
     done
 fi
 
 info "Tools: ${TOOLS[*]}"
 
+# ── Plugin detection ─────────────────────────────────────────────────────────
+
+if [[ "$PLUGINS_FLAG_SET" == true ]]; then
+    # --plugins= with empty value means "no plugins"
+    [[ -n "$PLUGINS_OVERRIDE" ]] && split_csv "$PLUGINS_OVERRIDE" PLUGINS
+    for plugin in "${PLUGINS[@]}"; do
+        if ! in_list "$plugin" "${ALL_PLUGINS[@]}"; then
+            err "Unknown plugin: $plugin (valid: ${ALL_PLUGINS[*]})"
+            exit 1
+        fi
+    done
+    # Warn about explicitly excluded plugins (already-installed files are not removed)
+    for plugin in "${ALL_PLUGINS[@]}"; do
+        if ! in_list "$plugin" "${PLUGINS[@]}"; then
+            warn "Plugin '$plugin' excluded via --plugins= — files already installed are not removed."
+        fi
+    done
+else
+    # Auto-detect: enable beads if bd is on PATH or ~/.beads/ exists
+    if command -v bd &>/dev/null || [[ -d "$HOME/.beads" ]]; then
+        PLUGINS+=(beads)
+    fi
+fi
+
+# Normalize PLUGINS: deduplicate and sort for deterministic alphabetical collision resolution
+if [[ ${#PLUGINS[@]} -gt 0 ]]; then
+    if [ -n "${BASH_VERSION:-}" ]; then
+        readarray -t PLUGINS < <(printf '%s\n' "${PLUGINS[@]}" | sort -u)
+    else
+        PLUGINS=($(printf '%s\n' "${PLUGINS[@]}" | sort -u))
+    fi
+fi
+
+info "Plugins: ${PLUGINS[*]:-none}"
+
 # ── Per-tool counters ─────────────────────────────────────────────────────
 
 declare -A tool_installed tool_updated tool_skipped tool_merged tool_backed_up
-for tool in "${ALL_TOOLS[@]}"; do
+for tool in "${ALL_TOOLS[@]}" "${ALL_PLUGINS[@]}"; do
     tool_installed[$tool]=0
     tool_updated[$tool]=0
     tool_skipped[$tool]=0
@@ -222,6 +292,318 @@ compute_hash() {
     else
         echo "none"
     fi
+}
+
+# ── Utility: resolve a staging collision ──────────────────────────────────────
+#
+# file_type composite strings:
+#   rules.md      → append with --- separator
+#   commands.md, skills.md, agents.md → fatal (unique names required)
+#   settings.json → union-merge (same jq logic as sync_settings_file)
+#   toml          → last-wins + warn
+#   dir           → fatal (unique directory names required)
+#   other         → last-wins silently (tool templates overwrite shared)
+
+resolve_collision() {
+    local existing="$1"
+    local incoming="$2"
+    local file_type="$3"
+
+    case "$file_type" in
+        rules.md)
+            printf '\n---\n' >> "$existing"
+            cat "$incoming" >> "$existing"
+            ;;
+        commands.md|skills.md|agents.md)
+            err "Fatal collision: $(basename "$incoming") exists in both base and plugin content. Files in commands/, skills/, and agents/ must use unique names."
+            exit 1
+            ;;
+        settings.json)
+            local merged_json
+            merged_json="$(jq -s '
+                def union_arrays: [.[0], .[1]] | add | unique;
+                def deep_merge:
+                    if (.[0] | type) == "object" and (.[1] | type) == "object" then
+                        .[0] as $a | .[1] as $b |
+                        ($a | keys) + ($b | keys) | unique | map(. as $k |
+                            if ($a | has($k)) and ($b | has($k)) then
+                                if ($a[$k] | type) == "array" and ($b[$k] | type) == "array" then
+                                    {($k): ([$a[$k], $b[$k]] | union_arrays)}
+                                elif ($a[$k] | type) == "object" and ($b[$k] | type) == "object" then
+                                    {($k): ([$a[$k], $b[$k]] | deep_merge)}
+                                else
+                                    {($k): $a[$k]}
+                                end
+                            elif ($a | has($k)) then
+                                {($k): $a[$k]}
+                            else
+                                {($k): $b[$k]}
+                            end
+                        ) | add
+                    else
+                        .[0]
+                    end;
+                [.[0], .[1]] | deep_merge
+            ' "$existing" "$incoming")"
+            printf '%s\n' "$merged_json" | jq . > "$existing"
+            ;;
+        toml)
+            warn "TOML collision: $(basename "$incoming") — later plugin overwrites earlier (alphabetical order)"
+            cp "$incoming" "$existing"
+            ;;
+        dir)
+            err "Fatal collision: directory $(basename "$incoming") exists in both base and plugin content (or two plugins). Skill and agent directories must use unique names."
+            exit 1
+            ;;
+        other)
+            cp "$incoming" "$existing"
+            ;;
+        *)
+            err "resolve_collision: unknown file_type '$file_type'"
+            exit 1
+            ;;
+    esac
+}
+
+# ── Utility: classify a file for collision resolution ─────────────────────────
+#
+# Returns the file_type string expected by resolve_collision().
+# parent_dir is the name of the containing directory (e.g., "rules", "commands").
+# Pass "" for files that are not inside a named subdir (e.g., top-level templates).
+
+classify_file() {
+    local filepath="$1"
+    local parent_dir="$2"
+    local basename
+    basename="$(basename "$filepath")"
+
+    if [[ -d "$filepath" ]]; then
+        echo "dir"
+    elif [[ "$basename" == settings.json.template ]]; then
+        echo "settings.json"
+    elif [[ "$basename" == *.toml.template || "$basename" == *.toml ]]; then
+        echo "toml"
+    elif [[ "$basename" == *.md && -n "$parent_dir" ]]; then
+        echo "${parent_dir}.md"
+    else
+        echo "other"
+    fi
+}
+
+# ── Utility: copy one item (file or dir) into staging, resolving collisions ───
+
+stage_item() {
+    local src="$1"
+    local dest="$2"
+    local file_type="$3"
+
+    if [[ ! -e "$dest" ]]; then
+        if [[ -d "$src" ]]; then
+            cp -R "$src" "$dest"
+        else
+            cp "$src" "$dest"
+        fi
+    else
+        resolve_collision "$dest" "$src" "$file_type"
+    fi
+}
+
+# ── Utility: stage all items from one source subdir into a staging subdir ─────
+
+stage_content_from_dir() {
+    local src_parent="$1"   # parent containing the named subdir
+    local staging_parent="$2"  # staging parent to copy into
+    local dir_name="$3"        # subdir name: skills, rules, commands, agents
+
+    local src_dir="$src_parent/$dir_name"
+    local staging_dir="$staging_parent/$dir_name"
+
+    [[ -d "$src_dir" ]] || return 0
+
+    mkdir -p "$staging_dir"
+
+    local item_name file_type
+    for item in "$src_dir"/*; do
+        [[ -e "$item" ]] || continue
+        item_name="$(basename "$item")"
+        file_type="$(classify_file "$item" "$dir_name")"
+        stage_item "$item" "$staging_dir/$item_name" "$file_type"
+    done
+}
+
+# ── Install one tool via staging ──────────────────────────────────────────────
+
+stage_and_install_tool() {
+    local tool="$1"
+    local dest_dir="$HOME/.$tool"
+    local src_tool="$SRC_USER/.$tool"
+    local staging="$STAGING_DIR/$tool"
+    # Hoist all loop-internal locals to function scope — see commit 2fe276d:
+    # zsh prints the variable's value when `local` is re-invoked in a loop.
+    local file_type plugin_tool_dir plugin_agents_dir
+
+    CURRENT_TOOL="$tool"
+    header "$tool"
+
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
+    mkdir -p "$staging"
+
+    # ── Phase 1: Stage shared templates (.agents/*.md.template → staging/) ───
+    info "Phase 1: Shared templates"
+    for template in "$SRC_SHARED"/*.md.template; do
+        [[ -f "$template" ]] || continue
+        stage_item "$template" "$staging/$(basename "$template")" "other"
+    done
+
+    # ── Phase 2: Stage shared skills and agents ───────────────────────────────
+    info "Phase 2: Shared skills and agents"
+    stage_content_from_dir "$SRC_SHARED" "$staging" "skills"
+    stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
+
+    # Note: $SRC_SHARED/*.json.template (shared settings) are intentionally not staged here.
+    # Shared settings are not used today; tool-specific settings are handled in Phase 5.
+
+    # ── Phases 3-5: Stage tool-specific content (templates, subdirs, settings) ─
+    if [[ -d "$src_tool" ]]; then
+        info "Phase 3: Tool-specific templates"
+        for template in "$src_tool"/*.md.template; do
+            [[ -f "$template" ]] || continue
+            stage_item "$template" "$staging/$(basename "$template")" "other"
+        done
+
+        for subdir in commands skills agents rules; do
+            stage_content_from_dir "$src_tool" "$staging" "$subdir"
+        done
+
+        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
+            [[ -f "$settings_file" ]] || continue
+            file_type="$(classify_file "$settings_file" "")"
+            stage_item "$settings_file" "$staging/$(basename "$settings_file")" "$file_type"
+        done
+    fi
+
+    # ── Phase 6: Overlay active plugins (alphabetical order) ─────────────────
+    for plugin in "${PLUGINS[@]}"; do
+        plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
+        plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
+
+        if [[ -d "$plugin_tool_dir" ]]; then
+            for subdir in rules commands skills agents; do
+                stage_content_from_dir "$plugin_tool_dir" "$staging" "$subdir"
+            done
+            # Plugin settings injection (MCP servers, hooks, permissions)
+            for settings_file in "$plugin_tool_dir"/*.json.template; do
+                [[ -f "$settings_file" ]] || continue
+                stage_item "$settings_file" "$staging/$(basename "$settings_file")" "settings.json"
+            done
+        fi
+
+        if [[ -d "$plugin_agents_dir" ]]; then
+            for subdir in skills agents; do
+                stage_content_from_dir "$plugin_agents_dir" "$staging" "$subdir"
+            done
+        fi
+    done
+
+    # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
+    info "Phase 7: Sync to $dest_dir"
+
+    # Sync templates: staging has *.md.template; sync_templates strips the suffix
+    sync_templates "$staging" "$dest_dir" "staged"
+
+    # Sync subdirectories
+    for subdir in rules commands skills agents; do
+        [[ -d "$staging/$subdir" ]] || continue
+        sync_directory "$subdir" "$staging" "$dest_dir" "staged"
+    done
+
+    # Sync settings files (union-merges staged template with installed settings)
+    for settings_file in "$staging"/*.json.template "$staging"/*.toml.template; do
+        [[ -f "$settings_file" ]] || continue
+        sync_settings_file "$settings_file" "$dest_dir" "staged"
+    done
+}
+
+# ── Install beads formulas via staging ───────────────────────────────────────
+
+stage_and_install_beads() {
+    local dest_formulas="$HOME/.beads/formulas"
+    local staging_formulas="$STAGING_DIR/.beads/formulas"
+
+    header "beads formulas"
+    CURRENT_TOOL="beads"
+
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_formulas"
+    mkdir -p "$staging_formulas"
+
+    # Stage formulas from all active plugins with a .beads/formulas/ subdir
+    local plugin_formulas formula_name
+    for plugin in "${PLUGINS[@]}"; do
+        plugin_formulas="$SRC_PLUGINS/$plugin/.beads/formulas"
+        [[ -d "$plugin_formulas" ]] || continue
+
+        for formula in "$plugin_formulas"/*.toml; do
+            [[ -f "$formula" ]] || continue
+            formula_name="$(basename "$formula")"
+            stage_item "$formula" "$staging_formulas/$formula_name" "toml"
+        done
+    done
+
+    # Sync staged formulas → ~/.beads/formulas/
+    local found_any=false
+    local name dest_file src_hash dst_hash
+    for formula in "$staging_formulas"/*.toml; do
+        [[ -f "$formula" ]] || continue
+        found_any=true
+        name="$(basename "$formula")"
+        dest_file="$dest_formulas/$name"
+
+        if [[ ! -f "$dest_file" ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                ok "Would install formulas/$name (new)"
+            else
+                cp "$formula" "$dest_file"
+                ok "Installed formulas/$name (new)"
+            fi
+            (( tool_installed[beads]++ )) || true
+        else
+            src_hash="$(compute_hash "$formula")"
+            dst_hash="$(compute_hash "$dest_file")"
+
+            if [[ "$src_hash" == "$dst_hash" ]]; then
+                ok "formulas/$name is up to date"
+                (( tool_skipped[beads]++ )) || true
+            else
+                info "formulas/$name differs:"
+                diff --color=auto -u "$dest_file" "$formula" || true
+                echo
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would update formulas/$name"
+                    (( tool_updated[beads]++ )) || true
+                elif confirm "Overwrite ~/.beads/formulas/$name?"; then
+                    backup "$dest_file"
+                    cp "$formula" "$dest_file"
+                    ok "Updated formulas/$name"
+                    (( tool_updated[beads]++ )) || true
+                else
+                    warn "Skipped formulas/$name"
+                    (( tool_skipped[beads]++ )) || true
+                fi
+            fi
+        fi
+    done
+
+    [[ "$found_any" == false ]] && info "No formula files staged"
+
+    # Warn about formulas in dest that aren't in staged source
+    local extra_name
+    for dest_file in "$dest_formulas"/*.toml; do
+        [[ -f "$dest_file" ]] || continue
+        extra_name="$(basename "$dest_file")"
+        if [[ ! -f "$staging_formulas/$extra_name" ]]; then
+            warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source (keeping)"
+        fi
+    done
 }
 
 # ── Sync templates from a source dir into a dest dir ──────────────────────
@@ -495,77 +877,26 @@ sync_settings_file() {
     fi
 }
 
-# ── Install everything for one tool ───────────────────────────────────────
+# ── Staging directory (cleaned up on exit) ────────────────────────────────────
 
-install_tool() {
-    local tool="$1"
-    local dest_dir="$HOME/.$tool"
-    local src_tool="$SRC_USER/.$tool"
-
-    CURRENT_TOOL="$tool"
-
-    header "$tool"
-
-    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
-
-    # Phase 1: Shared templates (.agents/*.md.template -> ~/.<tool>/)
-    info "Phase 1: Shared templates"
-    sync_templates "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 2: Shared skills (.agents/skills/ -> ~/.<tool>/skills/)
-    sync_directory "skills" "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 3: Shared agents (.agents/agents/ -> ~/.<tool>/agents/)
-    sync_directory "agents" "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 4: Tool-specific templates (.<tool>/*.md.template -> ~/.<tool>/)
-    if [[ -d "$src_tool" ]]; then
-        info "Phase 4: Tool-specific templates"
-        sync_templates "$src_tool" "$dest_dir" "$tool-specific"
-    fi
-
-    # Phase 5: Tool-specific subdirs (commands/, skills/, agents/, rules/)
-    if [[ -d "$src_tool" ]]; then
-        for subdir in commands skills agents rules; do
-            sync_directory "$subdir" "$src_tool" "$dest_dir" "$tool-specific"
-        done
-    fi
-
-    # Phase 6: Settings merge (*.json.template and *.toml.template)
-    local settings_found=false
-    # Shared settings files
-    for settings_file in "$SRC_SHARED"/*.json.template "$SRC_SHARED"/*.toml.template; do
-        [[ -f "$settings_file" ]] || continue
-        if [[ "$settings_found" == false ]]; then
-            header "Settings ($tool)"
-            settings_found=true
-        fi
-        sync_settings_file "$settings_file" "$dest_dir" "shared"
-    done
-    # Tool-specific settings files
-    if [[ -d "$src_tool" ]]; then
-        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
-            [[ -f "$settings_file" ]] || continue
-            if [[ "$settings_found" == false ]]; then
-                header "Settings ($tool)"
-                settings_found=true
-            fi
-            sync_settings_file "$settings_file" "$dest_dir" "$tool-specific"
-        done
-    fi
-}
+STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
 # ── Main loop ─────────────────────────────────────────────────────────────
 
 for tool in "${TOOLS[@]}"; do
-    install_tool "$tool"
+    stage_and_install_tool "$tool"
 done
+
+if plugin_enabled "beads"; then
+    stage_and_install_beads
+fi
 
 # ── Summary ──────────────────────────────────────────────────────────────
 
 header "Summary"
 
-for tool in "${TOOLS[@]}"; do
+for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
     printf "\n${BOLD}-- %s --${RESET}\n" "$tool"
     printf "  Installed:  %s\n" "${tool_installed[$tool]}"
     printf "  Updated:    %s\n" "${tool_updated[$tool]}"
@@ -574,18 +905,14 @@ for tool in "${TOOLS[@]}"; do
     printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
 done
 
-# Show tools that were in ALL_TOOLS but not in TOOLS (auto-detect skipped)
+# Show tools and plugins that were in ALL_* but not active (auto-detect skipped)
 for tool in "${ALL_TOOLS[@]}"; do
-    in_tools=false
-    for t in "${TOOLS[@]}"; do
-        if [[ "$t" == "$tool" ]]; then
-            in_tools=true
-            break
-        fi
-    done
-    if [[ "$in_tools" == false ]]; then
+    in_list "$tool" "${TOOLS[@]}" || \
         printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
-    fi
+done
+for plugin in "${ALL_PLUGINS[@]}"; do
+    in_list "$plugin" "${PLUGINS[@]}" || \
+        printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
 done
 
 echo ""
