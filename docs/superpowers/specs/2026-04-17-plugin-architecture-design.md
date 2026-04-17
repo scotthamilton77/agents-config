@@ -44,12 +44,11 @@ src/plugins/
       skills/                            ← FUTURE: beads skills land here (separate agent's work)
 ```
 
-**Plugin content is subdirectory-based only.** Plugins install content into tool subdirs (e.g., `rules/`, `commands/`, `skills/`, `agents/`) and the `.beads/formulas/` target. Plugins do **not** install:
-- Root-level tool templates (`*.md.template`)
-- Settings files (`*.json.template`, `*.toml.template`)
-- Any file with a `.template` extension (template rendering is base-content only)
+**Plugin content is subdirectory-based only.** Plugins install content into tool subdirs (e.g., `rules/`, `commands/`, `skills/`, `agents/`) and the `.beads/formulas/` target. Plugins **may** provide `settings.json.template` in a tool subdir to inject MCP servers, hooks, permissions, or other settings — these are union-merged into the assembled settings during staging. Plugins do **not** install:
+- Root-level tool identity templates (`AGENTS.md.template`, `CLAUDE.md.template`, etc.)
+- Any non-settings `.template` file (template rendering for identity files is base-content only)
 
-This keeps plugin content composable without template-merge complexity.
+Settings injection is explicit and composable: plugin settings are union-merged on top of base settings, plugins alphabetically.
 
 ### What Moves
 
@@ -139,6 +138,7 @@ for each active tool:
      a. For each plugin, if .<tool>/ subdir exists in plugin:
         - Copy plugin's .<tool>/{rules,commands,skills,agents}/ into staging
         - On file/dir collision, apply collision resolution (see below)
+        - If plugin has .<tool>/settings.json.template: union-merge into staged settings.json
      b. For each plugin, if .agents/ subdir exists in plugin:
         - Copy plugin's .agents/{skills,agents}/ into staging (for this tool)
         - On file/dir collision, apply collision resolution (see below)
@@ -172,10 +172,9 @@ Plugin subdirectory files should use unique names by convention (see `src/plugin
 |-----------|-----------|
 | `.md` in `rules/` only | Base first, plugins alphabetically — **append** with `\n---\n` separator |
 | `.md` in `commands/`, `agents/`, `skills/` | **Fatal error** — must use unique names |
+| `settings.json.template` | **Union-merge** — base first, plugins alphabetically; same jq logic as existing `sync_settings_file()` |
 | `.toml` (formulas) | Last-wins alphabetically + **warn** |
 | Directories (skill dirs, agent dirs) | **Fatal error** — same-named directories between a plugin and base content, or across plugins, is a bug |
-
-Note: plugins cannot provide `.json` settings files (forbidden by plugin scope rules above), so JSON union-merge applies only to base content and is not a collision scenario.
 
 ### When a Plugin Is Disabled
 
@@ -228,7 +227,7 @@ Documents for agents and plugin authors:
 
 1. **Unique filenames are required** for commands, skills, agents, and non-rules markdown. Name plugin files `<plugin>-<thing>.md` or place them in plugin-owned subdirs. Accidental collisions are a fatal install error.
 2. **Rule file collisions are intentional-append only.** Two plugins (or a plugin + base) may both provide `rules/some-rule.md` only when the intent is to extend shared behavior. Alphabetical plugin order determines append sequence.
-3. **Plugin scope is subdirectory content only.** Supported targets: `.<tool>/rules/`, `.<tool>/commands/`, `.<tool>/skills/`, `.<tool>/agents/`, `.agents/skills/`, `.agents/agents/`, `.beads/formulas/`. Explicitly forbidden: any file with a `.template` extension, `*.json` settings files.
+3. **Plugin scope is subdirectory content only.** Supported targets: `.<tool>/rules/`, `.<tool>/commands/`, `.<tool>/skills/`, `.<tool>/agents/`, `.<tool>/settings.json.template` (union-merged), `.agents/skills/`, `.agents/agents/`, `.beads/formulas/`. Explicitly forbidden: identity template files (`AGENTS.md.template`, `CLAUDE.md.template`, etc.) and any non-settings `.template` file.
 4. **Directory collisions are fatal** — a plugin may not define a skill or agent directory whose name matches an existing base skill/agent or another plugin's skill/agent.
 5. **`.beads/AGENTS.md` is repository documentation only** — it is not installed to any target directory.
 6. **Detection:** `install.sh` auto-detects a plugin if its sentinel condition is met (e.g., `bd` on PATH or `~/.beads/` exists for beads). Override with `--plugins=`. An explicit `--plugins=` list disables auto-detection entirely.
