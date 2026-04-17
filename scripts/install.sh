@@ -512,6 +512,88 @@ stage_and_install_tool() {
     done
 }
 
+# ── Install beads formulas via staging ───────────────────────────────────────
+
+stage_and_install_beads() {
+    local dest_formulas="$HOME/.beads/formulas"
+    local staging_formulas="$STAGING_DIR/.beads/formulas"
+
+    header "beads formulas"
+    CURRENT_TOOL="beads"
+
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_formulas"
+    mkdir -p "$staging_formulas"
+
+    # Stage formulas from all active plugins with a .beads/formulas/ subdir
+    for plugin in "${PLUGINS[@]}"; do
+        local plugin_formulas="$SRC_PLUGINS/$plugin/.beads/formulas"
+        [[ -d "$plugin_formulas" ]] || continue
+
+        for formula in "$plugin_formulas"/*.toml; do
+            [[ -f "$formula" ]] || continue
+            local name
+            name="$(basename "$formula")"
+            stage_item "$formula" "$staging_formulas/$name" "toml"
+        done
+    done
+
+    # Sync staged formulas → ~/.beads/formulas/
+    local found_any=false
+    for formula in "$staging_formulas"/*.toml; do
+        [[ -f "$formula" ]] || continue
+        found_any=true
+        local name dest_file src_hash dst_hash
+        name="$(basename "$formula")"
+        dest_file="$dest_formulas/$name"
+
+        if [[ ! -f "$dest_file" ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                ok "Would install formulas/$name (new)"
+            else
+                cp "$formula" "$dest_file"
+                ok "Installed formulas/$name (new)"
+            fi
+            (( tool_installed[beads]++ )) || true
+        else
+            src_hash="$(compute_hash "$formula")"
+            dst_hash="$(compute_hash "$dest_file")"
+
+            if [[ "$src_hash" == "$dst_hash" ]]; then
+                ok "formulas/$name is up to date"
+                (( tool_skipped[beads]++ )) || true
+            else
+                info "formulas/$name differs:"
+                diff --color=auto -u "$dest_file" "$formula" || true
+                echo
+                if [[ "$DRY_RUN" == true ]]; then
+                    ok "Would update formulas/$name"
+                    (( tool_updated[beads]++ )) || true
+                elif confirm "Overwrite ~/.beads/formulas/$name?"; then
+                    backup "$dest_file"
+                    cp "$formula" "$dest_file"
+                    ok "Updated formulas/$name"
+                    (( tool_updated[beads]++ )) || true
+                else
+                    warn "Skipped formulas/$name"
+                    (( tool_skipped[beads]++ )) || true
+                fi
+            fi
+        fi
+    done
+
+    [[ "$found_any" == false ]] && info "No formula files staged"
+
+    # Warn about formulas in dest that aren't in staged source
+    for dest_file in "$dest_formulas"/*.toml; do
+        [[ -f "$dest_file" ]] || continue
+        local name
+        name="$(basename "$dest_file")"
+        if [[ ! -f "$staging_formulas/$name" ]]; then
+            warn "formulas/$name exists in ~/.beads/formulas but not in plugin source (keeping)"
+        fi
+    done
+}
+
 # ── Sync templates from a source dir into a dest dir ──────────────────────
 #
 # Handles *.md.template files: strip .template suffix, confirm-on-diff.
