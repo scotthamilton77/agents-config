@@ -76,15 +76,16 @@ DRY_RUN=false
 AUTO_YES=false
 TOOLS_OVERRIDE=""
 PLUGINS_OVERRIDE=""
+PLUGINS_FLAG_SET=false
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run)     DRY_RUN=true ;;
         --yes|-y)      AUTO_YES=true ;;
         --tools=*)     TOOLS_OVERRIDE="${arg#--tools=}" ;;
-        --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}" ;;
+        --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}"; PLUGINS_FLAG_SET=true ;;
         --help|-h)
-            echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--help|-h]"
+            echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--plugins=PLUGINS] [--help|-h]"
             echo ""
             echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
             echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
@@ -196,11 +197,15 @@ info "Tools: ${TOOLS[*]}"
 
 # ── Plugin detection ─────────────────────────────────────────────────────────
 
-if [[ -n "$PLUGINS_OVERRIDE" ]]; then
-    if [ -n "${BASH_VERSION:-}" ]; then
-        IFS=',' read -ra PLUGINS <<< "$PLUGINS_OVERRIDE"
+if [[ "$PLUGINS_FLAG_SET" == true ]]; then
+    if [[ -z "$PLUGINS_OVERRIDE" ]]; then
+        PLUGINS=()  # --plugins= with empty value means no plugins
     else
-        IFS=',' read -rA PLUGINS <<< "$PLUGINS_OVERRIDE"
+        if [ -n "${BASH_VERSION:-}" ]; then
+            IFS=',' read -ra PLUGINS <<< "$PLUGINS_OVERRIDE"
+        else
+            IFS=',' read -rA PLUGINS <<< "$PLUGINS_OVERRIDE"
+        fi
     fi
     # Validate each requested plugin
     for plugin in "${PLUGINS[@]}"; do
@@ -230,6 +235,15 @@ else
     # Auto-detect: enable beads if bd is on PATH or ~/.beads/ exists
     if command -v bd &>/dev/null || [[ -d "$HOME/.beads" ]]; then
         PLUGINS+=(beads)
+    fi
+fi
+
+# Normalize PLUGINS: deduplicate and sort for deterministic alphabetical collision resolution
+if [[ ${#PLUGINS[@]} -gt 0 ]]; then
+    if [ -n "${BASH_VERSION:-}" ]; then
+        readarray -t PLUGINS < <(printf '%s\n' "${PLUGINS[@]}" | sort -u)
+    else
+        PLUGINS=($(printf '%s\n' "${PLUGINS[@]}" | sort -u))
     fi
 fi
 
