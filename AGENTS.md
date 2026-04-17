@@ -16,7 +16,7 @@ This configuration assumes the following Claude Code plugins are installed:
 ## Repository Structure
 
 - `scripts/` - Installation and maintenance scripts
-  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` override
+  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=` and `--plugins=` overrides
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications for implemented features
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)

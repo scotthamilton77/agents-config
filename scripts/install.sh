@@ -156,6 +156,41 @@ if [[ "$DRY_RUN" == true ]]; then
     info "DRY RUN -- no changes will be made"
 fi
 
+# ── Utility: return 0 if $1 appears in the remaining arguments ────────────────
+#
+# Usage: in_list "needle" "${haystack[@]}"
+
+in_list() {
+    local needle="$1"
+    shift
+    local item
+    for item in "$@"; do
+        [[ "$item" == "$needle" ]] && return 0
+    done
+    return 1
+}
+
+# ── Utility: check if a plugin is in the active PLUGINS array ─────────────────
+
+plugin_enabled() {
+    in_list "$1" "${PLUGINS[@]}"
+}
+
+# ── Utility: split a comma-separated string into a named array ────────────────
+#
+# Handles the bash (read -ra) vs zsh (read -rA) split. The target array name
+# is passed as $2; the caller does not need to pre-declare it.
+
+split_csv() {
+    local csv="$1"
+    local _arrname="$2"
+    if [ -n "${BASH_VERSION:-}" ]; then
+        IFS=',' read -ra "$_arrname" <<< "$csv"
+    else
+        IFS=',' read -rA "$_arrname" <<< "$csv"
+    fi
+}
+
 # ── Tool detection ────────────────────────────────────────────────────────
 
 ALL_TOOLS=(claude codex gemini)
@@ -164,21 +199,9 @@ ALL_PLUGINS=(beads)
 PLUGINS=()
 
 if [[ -n "$TOOLS_OVERRIDE" ]]; then
-    if [ -n "${BASH_VERSION:-}" ]; then
-        IFS=',' read -ra TOOLS <<< "$TOOLS_OVERRIDE"
-    else
-        IFS=',' read -rA TOOLS <<< "$TOOLS_OVERRIDE"
-    fi
-    # Validate each requested tool
+    split_csv "$TOOLS_OVERRIDE" TOOLS
     for tool in "${TOOLS[@]}"; do
-        local_valid=false
-        for valid in "${ALL_TOOLS[@]}"; do
-            if [[ "$tool" == "$valid" ]]; then
-                local_valid=true
-                break
-            fi
-        done
-        if [[ "$local_valid" != true ]]; then
+        if ! in_list "$tool" "${ALL_TOOLS[@]}"; then
             err "Unknown tool: $tool (valid: ${ALL_TOOLS[*]})"
             exit 1
         fi
@@ -187,9 +210,7 @@ else
     # Auto-detect: always include claude, add others if their dir exists
     TOOLS=(claude)
     for tool in codex gemini; do
-        if [[ -d "$HOME/.$tool" ]]; then
-            TOOLS+=("$tool")
-        fi
+        [[ -d "$HOME/.$tool" ]] && TOOLS+=("$tool")
     done
 fi
 
@@ -198,36 +219,17 @@ info "Tools: ${TOOLS[*]}"
 # ── Plugin detection ─────────────────────────────────────────────────────────
 
 if [[ "$PLUGINS_FLAG_SET" == true ]]; then
-    if [[ -z "$PLUGINS_OVERRIDE" ]]; then
-        PLUGINS=()  # --plugins= with empty value means no plugins
-    else
-        if [ -n "${BASH_VERSION:-}" ]; then
-            IFS=',' read -ra PLUGINS <<< "$PLUGINS_OVERRIDE"
-        else
-            IFS=',' read -rA PLUGINS <<< "$PLUGINS_OVERRIDE"
-        fi
-    fi
-    # Validate each requested plugin
+    # --plugins= with empty value means "no plugins"
+    [[ -n "$PLUGINS_OVERRIDE" ]] && split_csv "$PLUGINS_OVERRIDE" PLUGINS
     for plugin in "${PLUGINS[@]}"; do
-        local_valid=false
-        for valid in "${ALL_PLUGINS[@]}"; do
-            if [[ "$plugin" == "$valid" ]]; then
-                local_valid=true
-                break
-            fi
-        done
-        if [[ "$local_valid" != true ]]; then
+        if ! in_list "$plugin" "${ALL_PLUGINS[@]}"; then
             err "Unknown plugin: $plugin (valid: ${ALL_PLUGINS[*]})"
             exit 1
         fi
     done
-    # Warn about explicitly excluded plugins
+    # Warn about explicitly excluded plugins (already-installed files are not removed)
     for plugin in "${ALL_PLUGINS[@]}"; do
-        in_list=false
-        for p in "${PLUGINS[@]}"; do
-            [[ "$p" == "$plugin" ]] && in_list=true && break
-        done
-        if [[ "$in_list" == false ]]; then
+        if ! in_list "$plugin" "${PLUGINS[@]}"; then
             warn "Plugin '$plugin' excluded via --plugins= — files already installed are not removed."
         fi
     done
@@ -275,16 +277,6 @@ backup() {
         info "Backed up $(basename "$file") -> $(basename "$backup_file")"
         (( tool_backed_up[$CURRENT_TOOL]++ )) || true
     fi
-}
-
-# ── Utility: check if a plugin is in the active PLUGINS array ─────────────────
-
-plugin_enabled() {
-    local name="$1"
-    for p in "${PLUGINS[@]}"; do
-        [[ "$p" == "$name" ]] && return 0
-    done
-    return 1
 }
 
 # ── Utility: compute a recursive hash for a directory or file ─────────────
@@ -446,6 +438,9 @@ stage_and_install_tool() {
     local dest_dir="$HOME/.$tool"
     local src_tool="$SRC_USER/.$tool"
     local staging="$STAGING_DIR/$tool"
+    # Hoist all loop-internal locals to function scope — see commit 2fe276d:
+    # zsh prints the variable's value when `local` is re-invoked in a loop.
+    local file_type plugin_tool_dir plugin_agents_dir
 
     CURRENT_TOOL="$tool"
     header "$tool"
@@ -468,25 +463,18 @@ stage_and_install_tool() {
     # Note: $SRC_SHARED/*.json.template (shared settings) are intentionally not staged here.
     # Shared settings are not used today; tool-specific settings are handled in Phase 5.
 
-    # ── Phase 3: Stage tool-specific templates ────────────────────────────────
+    # ── Phases 3-5: Stage tool-specific content (templates, subdirs, settings) ─
     if [[ -d "$src_tool" ]]; then
         info "Phase 3: Tool-specific templates"
         for template in "$src_tool"/*.md.template; do
             [[ -f "$template" ]] || continue
             stage_item "$template" "$staging/$(basename "$template")" "other"
         done
-    fi
 
-    # ── Phase 4: Stage tool-specific subdirs ──────────────────────────────────
-    if [[ -d "$src_tool" ]]; then
         for subdir in commands skills agents rules; do
             stage_content_from_dir "$src_tool" "$staging" "$subdir"
         done
-    fi
 
-    # ── Phase 5: Stage tool-specific settings ────────────────────────────────
-    local file_type
-    if [[ -d "$src_tool" ]]; then
         for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
             [[ -f "$settings_file" ]] || continue
             file_type="$(classify_file "$settings_file" "")"
@@ -496,8 +484,8 @@ stage_and_install_tool() {
 
     # ── Phase 6: Overlay active plugins (alphabetical order) ─────────────────
     for plugin in "${PLUGINS[@]}"; do
-        local plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
-        local plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
+        plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
+        plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
 
         if [[ -d "$plugin_tool_dir" ]]; then
             for subdir in rules commands skills agents; do
@@ -917,32 +905,14 @@ for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
     printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
 done
 
-# Show tools that were in ALL_TOOLS but not in TOOLS (auto-detect skipped)
+# Show tools and plugins that were in ALL_* but not active (auto-detect skipped)
 for tool in "${ALL_TOOLS[@]}"; do
-    in_tools=false
-    for t in "${TOOLS[@]}"; do
-        if [[ "$t" == "$tool" ]]; then
-            in_tools=true
-            break
-        fi
-    done
-    if [[ "$in_tools" == false ]]; then
+    in_list "$tool" "${TOOLS[@]}" || \
         printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
-    fi
 done
-
-# Show plugins that were in ALL_PLUGINS but not in PLUGINS (auto-detect skipped)
 for plugin in "${ALL_PLUGINS[@]}"; do
-    in_plugins=false
-    for p in "${PLUGINS[@]}"; do
-        if [[ "$p" == "$plugin" ]]; then
-            in_plugins=true
-            break
-        fi
-    done
-    if [[ "$in_plugins" == false ]]; then
+    in_list "$plugin" "${PLUGINS[@]}" || \
         printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
-    fi
 done
 
 echo ""
