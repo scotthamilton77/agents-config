@@ -9,7 +9,7 @@ This configuration relies on two Claude Code plugins being installed:
 - **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, code-reviewer, code-simplifier, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
-Without these plugins, the shared `<orchestration>` section (in `INSTRUCTIONS.md`) and the Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` in `src/user/.claude/rules/`; `beads` in `src/plugins/beads/.claude/rules/`) will reference skills and commands that don't exist.
+Without these plugins, the shared `<orchestration>` section in `INSTRUCTIONS.md` and several Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.claude/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
 
 ## What's Inside
 
@@ -78,8 +78,8 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 | `self-improving-agent` | Persist lessons from user corrections as actionable rules |
 | `test-review` | Code review of unit/integration tests for quality and design issues |
 | `testing-anti-patterns` | Common testing mistakes and how to avoid them |
-| `wait-for-pr-comments` | Copilot-aware PR review monitoring via background agents; auto-fix unambiguous feedback |
 | `verify-checklist` | Structured completion auditing with evidence requirements |
+| `wait-for-pr-comments` | Copilot-aware PR review monitoring via background agents; auto-fix unambiguous feedback |
 | `writing-unit-tests` | Test behavior, not implementation; when to refuse testing untestable code |
 
 ### Commands
@@ -182,7 +182,10 @@ The `.template` files ship with the author's personal configuration and must be 
 
 **Adjust to your workflow:**
 3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
-4. **Tool-specific extensions** — For Claude: workflow rules live in `src/user/.claude/rules/` (`delegation.md`, `completion-gate.md`, `delivery.md`, `git-commits.md`, `codex-routing.md`, `subagents.md`). `delegation` and `completion-gate` reference superpowers skills; `delivery` wires worktree isolation, PR creation, and Copilot review monitoring. The `beads` plugin at `src/plugins/beads/` adds `beads.md` to `rules/` at install time and assumes [beads](https://github.com/steveyegge/beads). For Codex/Gemini: see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`. Remove rules for plugins you don't use
+4. **Tool-specific extensions** — Remove rules for plugins you don't use:
+   - **Claude:** workflow rules live in `src/user/.claude/rules/` — `delegation.md`, `completion-gate.md`, `delivery.md`, `git-commits.md`, `codex-routing.md`, `subagents.md`. `delegation` and `completion-gate` reference superpowers skills; `delivery` wires worktree isolation, PR creation, and Copilot review monitoring
+   - **Beads plugin** (`src/plugins/beads/`) — adds `beads.md` to `rules/` at install time; assumes [beads](https://github.com/steveyegge/beads)
+   - **Codex/Gemini** — see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`
 5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
 
 **No changes needed:**
