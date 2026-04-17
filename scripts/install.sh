@@ -406,16 +406,109 @@ stage_content_from_dir() {
     local src_dir="$src_parent/$dir_name"
     local staging_dir="$staging_parent/$dir_name"
 
-    [[ -d "$src_dir" ]] || return
+    [[ -d "$src_dir" ]] || return 0
 
     mkdir -p "$staging_dir"
 
+    local item_name file_type
     for item in "$src_dir"/*; do
         [[ -e "$item" ]] || continue
-        local item_name file_type
         item_name="$(basename "$item")"
         file_type="$(classify_file "$item" "$dir_name")"
         stage_item "$item" "$staging_dir/$item_name" "$file_type"
+    done
+}
+
+# ── Install one tool via staging ──────────────────────────────────────────────
+
+stage_and_install_tool() {
+    local tool="$1"
+    local dest_dir="$HOME/.$tool"
+    local src_tool="$SRC_USER/.$tool"
+    local staging="$STAGING_DIR/$tool"
+
+    CURRENT_TOOL="$tool"
+    header "$tool"
+
+    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
+    mkdir -p "$staging"
+
+    # ── Phase 1: Stage shared templates (.agents/*.md.template → staging/) ───
+    info "Phase 1: Shared templates"
+    for template in "$SRC_SHARED"/*.md.template; do
+        [[ -f "$template" ]] || continue
+        stage_item "$template" "$staging/$(basename "$template")" "other"
+    done
+
+    # ── Phase 2: Stage shared skills and agents ───────────────────────────────
+    stage_content_from_dir "$SRC_SHARED" "$staging" "skills"
+    stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
+
+    # ── Phase 3: Stage tool-specific templates ────────────────────────────────
+    if [[ -d "$src_tool" ]]; then
+        info "Phase 3: Tool-specific templates"
+        for template in "$src_tool"/*.md.template; do
+            [[ -f "$template" ]] || continue
+            stage_item "$template" "$staging/$(basename "$template")" "other"
+        done
+    fi
+
+    # ── Phase 4: Stage tool-specific subdirs ──────────────────────────────────
+    if [[ -d "$src_tool" ]]; then
+        for subdir in commands skills agents rules; do
+            stage_content_from_dir "$src_tool" "$staging" "$subdir"
+        done
+    fi
+
+    # ── Phase 5: Stage tool-specific settings ────────────────────────────────
+    if [[ -d "$src_tool" ]]; then
+        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
+            [[ -f "$settings_file" ]] || continue
+            local file_type
+            file_type="$(classify_file "$settings_file" "")"
+            stage_item "$settings_file" "$staging/$(basename "$settings_file")" "$file_type"
+        done
+    fi
+
+    # ── Phase 6: Overlay active plugins (alphabetical order) ─────────────────
+    for plugin in "${PLUGINS[@]}"; do
+        local plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
+        local plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
+
+        if [[ -d "$plugin_tool_dir" ]]; then
+            for subdir in rules commands skills agents; do
+                stage_content_from_dir "$plugin_tool_dir" "$staging" "$subdir"
+            done
+            # Plugin settings injection (MCP servers, hooks, permissions)
+            for settings_file in "$plugin_tool_dir"/*.json.template; do
+                [[ -f "$settings_file" ]] || continue
+                stage_item "$settings_file" "$staging/$(basename "$settings_file")" "settings.json"
+            done
+        fi
+
+        if [[ -d "$plugin_agents_dir" ]]; then
+            for subdir in skills agents; do
+                stage_content_from_dir "$plugin_agents_dir" "$staging" "$subdir"
+            done
+        fi
+    done
+
+    # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
+    info "Phase 7: Sync to $dest_dir"
+
+    # Sync templates: staging has *.md.template; sync_templates strips the suffix
+    sync_templates "$staging" "$dest_dir" "staged"
+
+    # Sync subdirectories
+    for subdir in rules commands skills agents; do
+        [[ -d "$staging/$subdir" ]] || continue
+        sync_directory "$subdir" "$staging" "$dest_dir" "staged"
+    done
+
+    # Sync settings files (union-merges staged template with installed settings)
+    for settings_file in "$staging"/*.json.template "$staging"/*.toml.template; do
+        [[ -f "$settings_file" ]] || continue
+        sync_settings_file "$settings_file" "$dest_dir" "staged"
     done
 }
 
@@ -750,10 +843,15 @@ install_tool() {
     fi
 }
 
+# ── Staging directory (cleaned up on exit) ────────────────────────────────────
+
+STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+
 # ── Main loop ─────────────────────────────────────────────────────────────
 
 for tool in "${TOOLS[@]}"; do
-    install_tool "$tool"
+    stage_and_install_tool "$tool"
 done
 
 # ── Summary ──────────────────────────────────────────────────────────────
