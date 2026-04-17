@@ -57,9 +57,15 @@ fi
 # Flags:
 #   --dry-run            Show what would be done without making changes
 #   --yes, -y            Auto-accept all prompts
+#   --verbose, -v        Show per-file progress (phases, up-to-date, installed)
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
 #   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
 #   --help, -h           Show this help
+#
+# Output modes:
+#   Default: only warnings, errors, diffs-needing-decision, and a terse summary.
+#   --verbose: full per-file chatter (phases, "up to date", installed, etc.).
+#   --yes (quiet): also suppresses diffs since no confirmation is needed.
 # --------------------------------------------------------------------------
 
 # ── Colors & helpers ─────────────────────────────────────────────────────
@@ -74,6 +80,7 @@ RESET='\033[0m'
 
 DRY_RUN=false
 AUTO_YES=false
+VERBOSE=false
 TOOLS_OVERRIDE=""
 PLUGINS_OVERRIDE=""
 PLUGINS_FLAG_SET=false
@@ -82,10 +89,11 @@ for arg in "$@"; do
     case "$arg" in
         --dry-run)     DRY_RUN=true ;;
         --yes|-y)      AUTO_YES=true ;;
+        --verbose|-v)  VERBOSE=true ;;
         --tools=*)     TOOLS_OVERRIDE="${arg#--tools=}" ;;
         --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}"; PLUGINS_FLAG_SET=true ;;
         --help|-h)
-            echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--plugins=PLUGINS] [--help|-h]"
+            echo "Usage: install.sh [--dry-run] [--yes|-y] [--verbose|-v] [--tools=TOOLS] [--plugins=PLUGINS] [--help|-h]"
             echo ""
             echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
             echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
@@ -96,7 +104,8 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --dry-run          Show what would be done without making changes"
-            echo "  --yes, -y          Auto-accept all prompts"
+            echo "  --yes, -y          Auto-accept all prompts (suppresses diffs in quiet mode)"
+            echo "  --verbose, -v      Show per-file progress (phases, up-to-date, installed, diffs)"
             echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini"
             echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
@@ -108,17 +117,33 @@ for arg in "$@"; do
     esac
 done
 
+# Diffs are shown in verbose mode, or when the user is about to be prompted for
+# confirmation (they need to see the change to decide). Quiet + dry-run gives a
+# summary preview only — use --verbose for per-file diffs.
+SHOW_DIFFS=false
+if [[ "$VERBOSE" == true ]]; then
+    SHOW_DIFFS=true
+elif [[ "$AUTO_YES" == false && "$DRY_RUN" == false ]]; then
+    SHOW_DIFFS=true
+fi
+
 info()  { printf "${CYAN}i${RESET}  %s\n" "$*"; }
 ok()    { printf "${GREEN}+${RESET}  %s\n" "$*"; }
 warn()  { printf "${YELLOW}!${RESET}  %s\n" "$*"; }
 err()   { printf "${RED}x${RESET}  %s\n" "$*" >&2; }
 header(){ printf "\n${BOLD}-- %s --${RESET}\n" "$*"; }
 
+# Verbose-only variants: silent unless --verbose. Use these for per-file chatter
+# (phase announcements, "up to date" confirmations, install/update progress).
+vinfo()   { [[ "$VERBOSE" == true ]] && info   "$@"; return 0; }
+vok()     { [[ "$VERBOSE" == true ]] && ok     "$@"; return 0; }
+vheader() { [[ "$VERBOSE" == true ]] && header "$@"; return 0; }
+
 # Ask y/n, default to No. Auto-accepts with --yes, warns in non-interactive mode.
 confirm() {
     local prompt="$1"
     if [[ "$AUTO_YES" == true ]]; then
-        info "(auto-yes) $prompt"
+        vinfo "(auto-yes) $prompt"
         return 0
     fi
     if [[ ! -t 0 ]]; then
@@ -154,6 +179,8 @@ fi
 
 if [[ "$DRY_RUN" == true ]]; then
     info "DRY RUN -- no changes will be made"
+elif [[ "$AUTO_YES" == true && "$VERBOSE" == false ]]; then
+    info "Auto-yes mode -- prompts and diffs suppressed"
 fi
 
 # ── Utility: return 0 if $1 appears in the remaining arguments ────────────────
@@ -214,7 +241,7 @@ else
     done
 fi
 
-info "Tools: ${TOOLS[*]}"
+vinfo "Tools: ${TOOLS[*]}"
 
 # ── Plugin detection ─────────────────────────────────────────────────────────
 
@@ -249,7 +276,7 @@ if [[ ${#PLUGINS[@]} -gt 0 ]]; then
     fi
 fi
 
-info "Plugins: ${PLUGINS[*]:-none}"
+vinfo "Plugins: ${PLUGINS[*]:-none}"
 
 # ── Per-tool counters ─────────────────────────────────────────────────────
 
@@ -274,7 +301,7 @@ backup() {
         timestamp="$(date +%Y%m%d-%H%M%S)"
         local backup_file="${file}.backup-${timestamp}"
         cp "$file" "$backup_file"
-        info "Backed up $(basename "$file") -> $(basename "$backup_file")"
+        vinfo "Backed up $(basename "$file") -> $(basename "$backup_file")"
         (( tool_backed_up[$CURRENT_TOOL]++ )) || true
     fi
 }
@@ -443,20 +470,20 @@ stage_and_install_tool() {
     local file_type plugin_tool_dir plugin_agents_dir
 
     CURRENT_TOOL="$tool"
-    header "$tool"
+    vheader "$tool"
 
     [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
     mkdir -p "$staging"
 
     # ── Phase 1: Stage shared templates (.agents/*.md.template → staging/) ───
-    info "Phase 1: Shared templates"
+    vinfo "Phase 1: Shared templates"
     for template in "$SRC_SHARED"/*.md.template; do
         [[ -f "$template" ]] || continue
         stage_item "$template" "$staging/$(basename "$template")" "other"
     done
 
     # ── Phase 2: Stage shared skills and agents ───────────────────────────────
-    info "Phase 2: Shared skills and agents"
+    vinfo "Phase 2: Shared skills and agents"
     stage_content_from_dir "$SRC_SHARED" "$staging" "skills"
     stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
 
@@ -465,7 +492,7 @@ stage_and_install_tool() {
 
     # ── Phases 3-5: Stage tool-specific content (templates, subdirs, settings) ─
     if [[ -d "$src_tool" ]]; then
-        info "Phase 3: Tool-specific templates"
+        vinfo "Phase 3: Tool-specific templates"
         for template in "$src_tool"/*.md.template; do
             [[ -f "$template" ]] || continue
             stage_item "$template" "$staging/$(basename "$template")" "other"
@@ -506,7 +533,7 @@ stage_and_install_tool() {
     done
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
-    info "Phase 7: Sync to $dest_dir"
+    vinfo "Phase 7: Sync to $dest_dir"
 
     # Sync templates: staging has *.md.template; sync_templates strips the suffix
     sync_templates "$staging" "$dest_dir" "staged"
@@ -530,7 +557,7 @@ stage_and_install_beads() {
     local dest_formulas="$HOME/.beads/formulas"
     local staging_formulas="$STAGING_DIR/.beads/formulas"
 
-    header "beads formulas"
+    vheader "beads formulas"
     CURRENT_TOOL="beads"
 
     [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_formulas"
@@ -560,10 +587,10 @@ stage_and_install_beads() {
 
         if [[ ! -f "$dest_file" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
-                ok "Would install formulas/$name (new)"
+                vok "Would install formulas/$name (new)"
             else
                 cp "$formula" "$dest_file"
-                ok "Installed formulas/$name (new)"
+                vok "Installed formulas/$name (new)"
             fi
             (( tool_installed[beads]++ )) || true
         else
@@ -571,19 +598,21 @@ stage_and_install_beads() {
             dst_hash="$(compute_hash "$dest_file")"
 
             if [[ "$src_hash" == "$dst_hash" ]]; then
-                ok "formulas/$name is up to date"
+                vok "formulas/$name is up to date"
                 (( tool_skipped[beads]++ )) || true
             else
-                info "formulas/$name differs:"
-                diff --color=auto -u "$dest_file" "$formula" || true
-                echo
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "formulas/$name differs:"
+                    diff --color=auto -u "$dest_file" "$formula" || true
+                    echo
+                fi
                 if [[ "$DRY_RUN" == true ]]; then
-                    ok "Would update formulas/$name"
+                    vok "Would update formulas/$name"
                     (( tool_updated[beads]++ )) || true
                 elif confirm "Overwrite ~/.beads/formulas/$name?"; then
                     backup "$dest_file"
                     cp "$formula" "$dest_file"
-                    ok "Updated formulas/$name"
+                    vok "Updated formulas/$name"
                     (( tool_updated[beads]++ )) || true
                 else
                     warn "Skipped formulas/$name"
@@ -593,7 +622,7 @@ stage_and_install_beads() {
         fi
     done
 
-    [[ "$found_any" == false ]] && info "No formula files staged"
+    [[ "$found_any" == false ]] && vinfo "No formula files staged"
 
     # Warn about formulas in dest that aren't in staged source
     local extra_name
@@ -628,10 +657,10 @@ sync_templates() {
 
         if [[ ! -f "$dest_file" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
-                ok "Would install $target_name (new, $label)"
+                vok "Would install $target_name (new, $label)"
             else
                 cp "$template" "$dest_file"
-                ok "Installed $target_name (new, $label)"
+                vok "Installed $target_name (new, $label)"
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
@@ -639,19 +668,21 @@ sync_templates() {
             dst_hash="$(compute_hash "$dest_file")"
 
             if [[ "$src_hash" == "$dst_hash" ]]; then
-                ok "$target_name is up to date"
+                vok "$target_name is up to date"
                 (( tool_skipped[$CURRENT_TOOL]++ )) || true
             else
-                info "$target_name differs from installed version:"
-                diff --color=auto -u "$dest_file" "$template" || true
-                echo
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "$target_name differs from installed version:"
+                    diff --color=auto -u "$dest_file" "$template" || true
+                    echo
+                fi
                 if [[ "$DRY_RUN" == true ]]; then
-                    ok "Would update $target_name [$label]"
+                    vok "Would update $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 elif confirm "Overwrite $dest_file with $label version?"; then
                     backup "$dest_file"
                     cp "$template" "$dest_file"
-                    ok "Updated $target_name [$label]"
+                    vok "Updated $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
                     warn "Skipped $target_name [$label]"
@@ -662,7 +693,7 @@ sync_templates() {
     done
 
     if [[ "$found" == false ]]; then
-        info "No .md.template files in $label source"
+        vinfo "No .md.template files in $label source"
     fi
 }
 
@@ -684,7 +715,7 @@ sync_directory() {
         return
     fi
 
-    header "Syncing $dir_name/ ($label)"
+    vheader "Syncing $dir_name/ ($label)"
 
     [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_parent"
 
@@ -698,33 +729,35 @@ sync_directory() {
 
         if [[ ! -e "$dest_item" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
-                ok "Would install $dir_name/$item_name (new)"
+                vok "Would install $dir_name/$item_name (new)"
             else
                 cp -R "$item" "$dest_item"
-                ok "Installed $dir_name/$item_name (new)"
+                vok "Installed $dir_name/$item_name (new)"
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
             dest_hash="$(compute_hash "$dest_item")"
 
             if [[ "$src_hash" == "$dest_hash" ]]; then
-                ok "$dir_name/$item_name is up to date"
+                vok "$dir_name/$item_name is up to date"
                 (( tool_skipped[$CURRENT_TOOL]++ )) || true
             else
-                warn "$dir_name/$item_name has changed"
-                if [[ -d "$item" ]]; then
-                    diff -rq "$dest_item" "$item" 2>/dev/null || true
-                else
-                    diff --color=auto -u "$dest_item" "$item" || true
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    warn "$dir_name/$item_name has changed"
+                    if [[ -d "$item" ]]; then
+                        diff -rq "$dest_item" "$item" 2>/dev/null || true
+                    else
+                        diff --color=auto -u "$dest_item" "$item" || true
+                    fi
+                    echo
                 fi
-                echo
                 if [[ "$DRY_RUN" == true ]]; then
-                    ok "Would update $dir_name/$item_name [$label]"
+                    vok "Would update $dir_name/$item_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 elif confirm "Replace $dir_name/$item_name? (removes existing, copies fresh)"; then
                     rm -rf "$dest_item"
                     cp -R "$item" "$dest_item"
-                    ok "Updated $dir_name/$item_name [$label]"
+                    vok "Updated $dir_name/$item_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
                     warn "Skipped $dir_name/$item_name [$label]"
@@ -764,10 +797,10 @@ sync_settings_file() {
         # JSON union-merge
         if [[ ! -f "$dest_file" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
-                ok "Would install $target_name (new)"
+                vok "Would install $target_name (new)"
             else
                 cp "$template" "$dest_file"
-                ok "Installed $target_name (new)"
+                vok "Installed $target_name (new)"
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
@@ -814,14 +847,16 @@ sync_settings_file() {
             proposed="$(printf '%s\n' "$merged_json" | jq -S .)"
 
             if [[ "$current" == "$proposed" ]]; then
-                ok "$target_name is up to date"
+                vok "$target_name is up to date"
                 (( tool_skipped[$CURRENT_TOOL]++ )) || true
             else
-                info "Proposed $target_name changes:"
-                diff --color=auto -u <(printf '%s\n' "$current") <(printf '%s\n' "$proposed") || true
-                echo
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "Proposed $target_name changes:"
+                    diff --color=auto -u <(printf '%s\n' "$current") <(printf '%s\n' "$proposed") || true
+                    echo
+                fi
                 if [[ "$DRY_RUN" == true ]]; then
-                    ok "Would merge $target_name [$label]"
+                    vok "Would merge $target_name [$label]"
                     (( tool_merged[$CURRENT_TOOL]++ )) || true
                 elif confirm "Apply merged $target_name?"; then
                     backup "$dest_file"
@@ -829,7 +864,7 @@ sync_settings_file() {
                     tmp="$(mktemp)"
                     printf '%s\n' "$merged_json" | jq . > "$tmp"
                     mv "$tmp" "$dest_file"
-                    ok "Merged $target_name [$label]"
+                    vok "Merged $target_name [$label]"
                     (( tool_merged[$CURRENT_TOOL]++ )) || true
                 else
                     warn "Skipped $target_name merge [$label]"
@@ -842,10 +877,10 @@ sync_settings_file() {
         # TOML: plain copy (merge is out of scope)
         if [[ ! -f "$dest_file" ]]; then
             if [[ "$DRY_RUN" == true ]]; then
-                ok "Would install $target_name (new)"
+                vok "Would install $target_name (new)"
             else
                 cp "$template" "$dest_file"
-                ok "Installed $target_name (new)"
+                vok "Installed $target_name (new)"
             fi
             (( tool_installed[$CURRENT_TOOL]++ )) || true
         else
@@ -854,19 +889,21 @@ sync_settings_file() {
             dst_hash="$(compute_hash "$dest_file")"
 
             if [[ "$src_hash" == "$dst_hash" ]]; then
-                ok "$target_name is up to date"
+                vok "$target_name is up to date"
                 (( tool_skipped[$CURRENT_TOOL]++ )) || true
             else
-                info "$target_name differs from installed version:"
-                diff --color=auto -u "$dest_file" "$template" || true
-                echo
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "$target_name differs from installed version:"
+                    diff --color=auto -u "$dest_file" "$template" || true
+                    echo
+                fi
                 if [[ "$DRY_RUN" == true ]]; then
-                    ok "Would update $target_name [$label]"
+                    vok "Would update $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 elif confirm "Overwrite $dest_file with template version?"; then
                     backup "$dest_file"
                     cp "$template" "$dest_file"
-                    ok "Updated $target_name [$label]"
+                    vok "Updated $target_name [$label]"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
                 else
                     warn "Skipped $target_name [$label]"
@@ -894,26 +931,54 @@ fi
 
 # ── Summary ──────────────────────────────────────────────────────────────
 
-header "Summary"
+if [[ "$VERBOSE" == true ]]; then
+    header "Summary"
 
-for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
-    printf "\n${BOLD}-- %s --${RESET}\n" "$tool"
-    printf "  Installed:  %s\n" "${tool_installed[$tool]}"
-    printf "  Updated:    %s\n" "${tool_updated[$tool]}"
-    printf "  Merged:     %s\n" "${tool_merged[$tool]}"
-    printf "  Backed up:  %s\n" "${tool_backed_up[$tool]}"
-    printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
-done
+    for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
+        printf "\n${BOLD}-- %s --${RESET}\n" "$tool"
+        printf "  Installed:  %s\n" "${tool_installed[$tool]}"
+        printf "  Updated:    %s\n" "${tool_updated[$tool]}"
+        printf "  Merged:     %s\n" "${tool_merged[$tool]}"
+        printf "  Backed up:  %s\n" "${tool_backed_up[$tool]}"
+        printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
+    done
 
-# Show tools and plugins that were in ALL_* but not active (auto-detect skipped)
-for tool in "${ALL_TOOLS[@]}"; do
-    in_list "$tool" "${TOOLS[@]}" || \
-        printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
-done
-for plugin in "${ALL_PLUGINS[@]}"; do
-    in_list "$plugin" "${PLUGINS[@]}" || \
-        printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
-done
+    # Show tools and plugins that were in ALL_* but not active (auto-detect skipped)
+    for tool in "${ALL_TOOLS[@]}"; do
+        in_list "$tool" "${TOOLS[@]}" || \
+            printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
+    done
+    for plugin in "${ALL_PLUGINS[@]}"; do
+        in_list "$plugin" "${PLUGINS[@]}" || \
+            printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
+    done
 
-echo ""
-ok "Done."
+    echo ""
+    ok "Done."
+else
+    # Quiet summary: one line per target with non-zero changes; "all up to date" otherwise.
+    total_changes=0
+    summary_lines=()
+    for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
+        changed=$(( ${tool_installed[$tool]} + ${tool_updated[$tool]} + ${tool_merged[$tool]} ))
+        (( total_changes += changed )) || true
+        if (( changed > 0 )); then
+            parts=()
+            (( ${tool_installed[$tool]}  > 0 )) && parts+=("${tool_installed[$tool]} installed")
+            (( ${tool_updated[$tool]}    > 0 )) && parts+=("${tool_updated[$tool]} updated")
+            (( ${tool_merged[$tool]}     > 0 )) && parts+=("${tool_merged[$tool]} merged")
+            (( ${tool_backed_up[$tool]}  > 0 )) && parts+=("${tool_backed_up[$tool]} backed up")
+            summary_lines+=("${tool}: $(IFS=', '; printf '%s' "${parts[*]}")")
+        fi
+    done
+
+    echo ""
+    if (( total_changes == 0 )); then
+        ok "All files up to date — no changes made."
+    else
+        ok "Done."
+        for line in "${summary_lines[@]}"; do
+            printf "   %s\n" "$line"
+        done
+    fi
+fi
