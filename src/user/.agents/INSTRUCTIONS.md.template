@@ -19,6 +19,7 @@ Tool-agnostic principles for all AI coding assistants.
 - **Observability**: Match the project's existing logging approach. If none exists, add structured logging at key state transitions and error paths
 - **Testing**: Run the specific relevant test, not the full suite; cover edge cases + error paths
 - **Git safety**: No hard resets, force pushes, amends without explicit approval. Never run `git clean -fd` without explicit user approval—it destroys untracked files irreversibly
+- **No unauthorized merges**: Creating a PR is not authorization to merge. Merge only when the user explicitly says so ("go ahead and merge", "merge it", etc.). When in doubt, they have not authorized it.
 - **Worktree hygiene**: Always run tests and builds from the correct worktree directory, not the main tree
 - **Database safety**: Never copy Dolt or SQLite databases while WAL is locked; never run DB operations from worktree directories if the DB lives in the main tree
 - **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
@@ -34,7 +35,7 @@ Tool-agnostic principles for all AI coding assistants.
 <orchestration>
 <!-- PRESERVE: high-level process for non-trivial tasks -->
 - **Plan first**: Plan mode for multi-step tasks or architectural decisions. Re-plan immediately when blocked. Write specs in the plan file for small-context specs.
-- **Decide, don't defer**: Use your best judgment on implementation details and non-architectural questions. Only escalate to the user when the answer could clarify a requirement or substantively impact architecture. Don't ask clarifying questions for decisions you can reasonably make yourself.
+- **Decide, don't defer**: Use your best judgment on implementation details and non-architectural questions. Only escalate to the user when: (a) the answer has significant architectural or requirements implications not already specified, or (b) there are conflicting directions that require human resolution. Decide everything else yourself. Do not ask questions you can answer from the codebase, existing instructions, or standard engineering judgment.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Audit against `<verification-checklist>`. Use `verify-checklist` skill for structured reporting.

@@ -66,7 +66,12 @@ The script checks three things:
 | 2 | `unseen_comments` | Review comments exist that the agent hasn't triaged |
 | 3 | (error) | Script failure -- report error, do not merge |
 
-**On exit 0:** Proceed with the merge. If `pending_reviewers` in the JSON is non-empty, mention the human reviewers but do not block.
+**On exit 0:** Do NOT merge automatically. Present a summary of the eligibility check result and wait for explicit user authorization:
+
+> "PR #N is eligible to merge — all reviews complete, all comments triaged.
+> Ready when you are. Just say the word."
+
+Authorized phrases: "go ahead and merge", "merge it", "ship it", "yes merge". "ok" and "sure" are not sufficient — the user must indicate intent to merge. If `pending_reviewers` in the JSON is non-empty, mention the human reviewers but do not block.
 
 **On exit 1 or 2:** Block the merge and warn the user (see below).
 

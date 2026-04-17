@@ -191,7 +191,7 @@ Skip them for:
 - Work that takes under 5 minutes and fits in one agent turn
 - Exploratory spikes where the outcome is unknown
 
-For those cases, use the `/implement-bead` slash command directly.
+For those cases, use the `/implement-bead` slash command directly (invokes `beads-start-bead`).
 
 ---
 
@@ -214,9 +214,11 @@ bd mol distill <epic-id>
 
 ## Relationship to the Slash Commands
 
-The `/implement-bead` slash command in `.claude/commands/implement-bead.md`
-does the same work as `implement-feature.formula.toml` — but as a single
-agent turn with no persistent state tracking.
+The `/implement-bead` slash command routes to the `beads-start-bead` skill,
+which evaluates the bead and either wisps the brainstorm-bead formula (if
+spec is incomplete) or invokes `beads-implement-bead` directly (if the bead
+is already `implementation-ready`). Use it for quick, focused work in a
+single session where the bead is already well-understood.
 
 Use the slash command for quick, focused work in a fresh session where
 you know you will finish in one go.
