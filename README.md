@@ -9,7 +9,7 @@ This configuration relies on two Claude Code plugins being installed:
 - **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, code-reviewer, code-simplifier, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
-Without these plugins, the `<orchestration>`, `<delegation>`, and `<beads>` sections of the AGENTS.md template will reference skills and commands that don't exist.
+Without these plugins, the shared `<orchestration>` section (in `INSTRUCTIONS.md`) and the Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` in `src/user/.claude/rules/`; `beads` in `src/plugins/beads/.claude/rules/`) will reference skills and commands that don't exist.
 
 ## What's Inside
 
@@ -20,36 +20,48 @@ docs/
 ├── plans/                          # Design documents for features in development
 └── specs/                          # Design specifications for implemented features
 src/
-└── user/
-    ├── .agents/                    # Shared content (copied into all detected tools)
-    │   ├── agents/                 # Role-based agent definitions
-    │   ├── skills/                 # Methodology guides with examples
-    │   ├── INSTRUCTIONS.md.template      # Shared laws, constraints, workflow
-    │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
-    │   └── USER-PERSONA.md.template      # User persona
-    ├── .claude/                    # Claude-specific (→ ~/.claude/)
-    │   ├── commands/               # Slash commands
-    │   ├── rules/                  # Workflow rules (delegation, completion-gate, delivery, git-commits, beads)
-    │   ├── AGENTS.md.template      # Claude instruction file
-    │   ├── CLAUDE.md.template      # Points to AGENTS.md
-    │   ├── CLAUDE-EXTENSIONS.md.template  # Stub header (content moved to rules/)
-    │   └── settings.json.template  # Permissions, hooks & experimental features
-    ├── .codex/                     # Codex-specific (→ ~/.codex/)
-    │   ├── AGENTS.md.template      # Codex instruction file
-    │   └── CODEX-EXTENSIONS.md.template   # Codex-specific sections
-    └── .gemini/                    # Gemini-specific (→ ~/.gemini/)
-        ├── GEMINI.md.template      # Gemini instruction file
-        └── GEMINI-EXTENSIONS.md.template  # Gemini-specific sections
+├── user/
+│   ├── .agents/                    # Shared content (copied into all detected tools)
+│   │   ├── agents/                 # Role-based agent definitions
+│   │   ├── skills/                 # Methodology guides with examples
+│   │   ├── INSTRUCTIONS.md.template      # Shared laws, constraints, workflow
+│   │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
+│   │   └── USER-PERSONA.md.template      # User persona
+│   ├── .claude/                    # Claude-specific (→ ~/.claude/)
+│   │   ├── commands/               # Slash commands
+│   │   ├── rules/                  # Workflow rules (delegation, completion-gate, delivery, git-commits, codex-routing, subagents)
+│   │   ├── AGENTS.md.template      # Claude instruction file
+│   │   ├── CLAUDE.md.template      # Points to AGENTS.md
+│   │   ├── CLAUDE-EXTENSIONS.md.template  # Stub header (content moved to rules/)
+│   │   └── settings.json.template  # Permissions, hooks & experimental features
+│   ├── .codex/                     # Codex-specific (→ ~/.codex/)
+│   │   ├── AGENTS.md.template      # Codex instruction file
+│   │   └── CODEX-EXTENSIONS.md.template   # Codex-specific sections
+│   └── .gemini/                    # Gemini-specific (→ ~/.gemini/)
+│       ├── GEMINI.md.template      # Gemini instruction file
+│       └── GEMINI-EXTENSIONS.md.template  # Gemini-specific sections
+└── plugins/                        # Optional plugin content (installed only when auto-detected)
+    └── beads/                      # beads plugin: Claude rules, commands, formulas
 ```
 
 ### Agents
 
-Role-specific configurations that define expertise areas, behavioral patterns, and domain knowledge. Each agent includes:
+Role-specific configurations that define expertise areas, behavioral patterns, and domain knowledge. Each agent file has YAML frontmatter (name, description, model, color) followed by role definition, domain-specific standards, and boundaries. See [`src/user/.agents/agents/`](./src/user/.agents/agents/) for the full set.
 
-- **Frontmatter**: name, description, usage examples, model hints
-- **Role definition**: What the agent specializes in
-- **Standards**: Domain-specific best practices
-- **Boundaries**: What the agent should and shouldn't do
+Shipping agents:
+
+- `api-developer`
+- `backend-developer`
+- `code-debugger`
+- `code-documenter`
+- `code-refactor`
+- `code-reviewer`
+- `data-scientist`
+- `database-designer`
+- `frontend-developer`
+- `javascript-developer`
+- `tech-lead`
+- `typescript-developer`
 
 ### Skills
 
@@ -74,7 +86,6 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 
 Slash commands that can be invoked directly:
 
-- `/implement-bead <id-or-description>` - Implement a bead end-to-end with TDD, verification, and code review
 - `/optimize-my-agent <path>` - Analyze and improve an agent definition file
 - `/optimize-my-skill <path>` - Analyze and improve a skill definition
 - `/refresh-agents-md` - Regenerate AGENTS.md from current repo state
@@ -94,11 +105,11 @@ Slash commands that can be invoked directly:
 
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
-> - The `<beads>` section assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
-> - The `<orchestration>`, `<delegation>`, and `<delivery>` sections assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
+> - The `beads` plugin (under `src/plugins/beads/`) assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
+> - The `<orchestration>` section (in `INSTRUCTIONS.md`) and the `delegation`, `completion-gate`, and `delivery` rules (in `src/user/.claude/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
 > - Various constraints have a TypeScript/Node.js bias
 >
-> You'll want to customize or remove these sections to match your own workflow.
+> You'll want to customize or remove these to match your own workflow.
 
 ## Installation
 
@@ -134,8 +145,9 @@ Requires bash or zsh, plus `jq` for JSON merging. Use `--dry-run` to preview cha
 cp -r src/user/.agents/agents ~/.claude/
 cp -r src/user/.agents/skills ~/.claude/
 
-# Copy Claude-specific content (commands)
+# Copy Claude-specific content (commands and workflow rules)
 cp -r src/user/.claude/commands ~/.claude/
+cp -r src/user/.claude/rules ~/.claude/
 
 # Copy and customize shared templates
 cp src/user/.agents/INSTRUCTIONS.md.template ~/.claude/INSTRUCTIONS.md
@@ -170,7 +182,7 @@ The `.template` files ship with the author's personal configuration and must be 
 
 **Adjust to your workflow:**
 3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
-4. **Tool-specific extensions** — For Claude: workflow rules live in `rules/` (delegation, completion-gate, delivery, git-commits, beads). `<delegation>` and `<completion-gate>` reference superpowers skills; `<delivery>` wires worktree isolation, PR creation, and Copilot review monitoring; `<beads>` assumes [beads](https://github.com/steveyegge/beads). For Codex/Gemini: see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`. Remove sections for plugins you don't use
+4. **Tool-specific extensions** — For Claude: workflow rules live in `src/user/.claude/rules/` (`delegation.md`, `completion-gate.md`, `delivery.md`, `git-commits.md`, `codex-routing.md`, `subagents.md`). `delegation` and `completion-gate` reference superpowers skills; `delivery` wires worktree isolation, PR creation, and Copilot review monitoring. The `beads` plugin at `src/plugins/beads/` adds `beads.md` to `rules/` at install time and assumes [beads](https://github.com/steveyegge/beads). For Codex/Gemini: see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`. Remove rules for plugins you don't use
 5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
 
 **No changes needed:**
