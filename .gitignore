@@ -11,6 +11,7 @@
 *.sln
 *.sw?
 .worktrees/
+.ralf/
 
 # Local settings
 settings.local.json
