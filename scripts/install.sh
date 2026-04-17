@@ -69,12 +69,14 @@ RESET='\033[0m'
 DRY_RUN=false
 AUTO_YES=false
 TOOLS_OVERRIDE=""
+PLUGINS_OVERRIDE=""
 
 for arg in "$@"; do
     case "$arg" in
         --dry-run)     DRY_RUN=true ;;
         --yes|-y)      AUTO_YES=true ;;
         --tools=*)     TOOLS_OVERRIDE="${arg#--tools=}" ;;
+        --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}" ;;
         --help|-h)
             echo "Usage: install.sh [--dry-run] [--yes|-y] [--tools=TOOLS] [--help|-h]"
             echo ""
@@ -90,6 +92,8 @@ for arg in "$@"; do
             echo "  --yes, -y          Auto-accept all prompts"
             echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini"
             echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
+            echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
+            echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
@@ -134,6 +138,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_USER="$PROJECT_ROOT/src/user"
 SRC_SHARED="$SRC_USER/.agents"
+SRC_PLUGINS="$PROJECT_ROOT/src/plugins"
 
 if [[ ! -d "$SRC_SHARED" ]]; then
     err "Shared source directory not found: $SRC_SHARED"
@@ -148,6 +153,8 @@ fi
 
 ALL_TOOLS=(claude codex gemini)
 TOOLS=()
+ALL_PLUGINS=(beads)
+PLUGINS=()
 
 if [[ -n "$TOOLS_OVERRIDE" ]]; then
     if [ -n "${BASH_VERSION:-}" ]; then
@@ -181,10 +188,51 @@ fi
 
 info "Tools: ${TOOLS[*]}"
 
+# ── Plugin detection ─────────────────────────────────────────────────────────
+
+if [[ -n "$PLUGINS_OVERRIDE" ]]; then
+    if [ -n "${BASH_VERSION:-}" ]; then
+        IFS=',' read -ra PLUGINS <<< "$PLUGINS_OVERRIDE"
+    else
+        IFS=',' read -rA PLUGINS <<< "$PLUGINS_OVERRIDE"
+    fi
+    # Validate each requested plugin
+    for plugin in "${PLUGINS[@]}"; do
+        local_valid=false
+        for valid in "${ALL_PLUGINS[@]}"; do
+            if [[ "$plugin" == "$valid" ]]; then
+                local_valid=true
+                break
+            fi
+        done
+        if [[ "$local_valid" != true ]]; then
+            err "Unknown plugin: $plugin (valid: ${ALL_PLUGINS[*]})"
+            exit 1
+        fi
+    done
+    # Warn about explicitly excluded plugins
+    for plugin in "${ALL_PLUGINS[@]}"; do
+        in_list=false
+        for p in "${PLUGINS[@]}"; do
+            [[ "$p" == "$plugin" ]] && in_list=true && break
+        done
+        if [[ "$in_list" == false ]]; then
+            warn "Plugin '$plugin' excluded via --plugins= — files already installed are not removed."
+        fi
+    done
+else
+    # Auto-detect: enable beads if bd is on PATH or ~/.beads/ exists
+    if command -v bd &>/dev/null || [[ -d "$HOME/.beads" ]]; then
+        PLUGINS+=(beads)
+    fi
+fi
+
+info "Plugins: ${PLUGINS[*]:-none}"
+
 # ── Per-tool counters ─────────────────────────────────────────────────────
 
 declare -A tool_installed tool_updated tool_skipped tool_merged tool_backed_up
-for tool in "${ALL_TOOLS[@]}"; do
+for tool in "${ALL_TOOLS[@]}" "${ALL_PLUGINS[@]}"; do
     tool_installed[$tool]=0
     tool_updated[$tool]=0
     tool_skipped[$tool]=0
@@ -207,6 +255,16 @@ backup() {
         info "Backed up $(basename "$file") -> $(basename "$backup_file")"
         (( tool_backed_up[$CURRENT_TOOL]++ )) || true
     fi
+}
+
+# ── Utility: check if a plugin is in the active PLUGINS array ─────────────────
+
+plugin_enabled() {
+    local name="$1"
+    for p in "${PLUGINS[@]}"; do
+        [[ "$p" == "$name" ]] && return 0
+    done
+    return 1
 }
 
 # ── Utility: compute a recursive hash for a directory or file ─────────────
