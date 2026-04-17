@@ -34,25 +34,31 @@ fi
 # install.sh — Sync agent config into tool-specific home directories
 #
 # Supports: Claude (~/.claude/), Codex (~/.codex/), Gemini (~/.gemini/)
+# Plugins:  beads (~/.beads/formulas/, tool rules/commands)
 #
 # Source layout:
 #   src/user/.agents/          Shared content (agents, skills, templates)
 #   src/user/.claude/          Claude-specific overrides & extensions
 #   src/user/.codex/           Codex-specific overrides & extensions
 #   src/user/.gemini/          Gemini-specific overrides & extensions
+#   src/plugins/<name>/        Optional plugin content (beads, etc.)
 #
 # Per-tool install phases (in order):
-#   1. Shared templates   .agents/*.template → ~/.<tool>/
-#   2. Shared skills      .agents/skills/    → ~/.<tool>/skills/
-#   3. Shared agents      .agents/agents/    → ~/.<tool>/agents/
-#   4. Tool templates     .<tool>/*.template → ~/.<tool>/
-#   5. Tool subdirs       .<tool>/{commands,skills,agents}/ → ~/.<tool>/
-#   6. Settings merge     *.json.template → union-merge; *.toml.template → copy
+#   1. Stage shared templates   .agents/*.md.template → staging/<tool>/
+#   2. Stage shared skills/agents .agents/{skills,agents}/ → staging/<tool>/
+#   3. Stage tool templates     .<tool>/*.md.template → staging/<tool>/
+#   4. Stage tool subdirs       .<tool>/{commands,skills,agents,rules}/ → staging/<tool>/
+#   5. Stage tool settings      .<tool>/*.json.template → staging/<tool>/
+#   6. Overlay active plugins   src/plugins/<name>/.<tool>/ → staging/<tool>/
+#   7. Sync staging → ~/.<tool>/ (hash-compare, diff, confirm)
+#
+# For beads plugin: staging/<beads>/formulas/ → ~/.beads/formulas/
 #
 # Flags:
 #   --dry-run            Show what would be done without making changes
 #   --yes, -y            Auto-accept all prompts
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
+#   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
 #   --help, -h           Show this help
 # --------------------------------------------------------------------------
 
@@ -336,7 +342,7 @@ resolve_collision() {
             printf '%s\n' "$merged_json" | jq . > "$existing"
             ;;
         toml)
-            warn "TOML collision: $(basename "$incoming") — plugin overwrites base (alphabetical order)"
+            warn "TOML collision: $(basename "$incoming") — later plugin overwrites earlier (alphabetical order)"
             cp "$incoming" "$existing"
             ;;
         dir)
@@ -441,8 +447,12 @@ stage_and_install_tool() {
     done
 
     # ── Phase 2: Stage shared skills and agents ───────────────────────────────
+    info "Phase 2: Shared skills and agents"
     stage_content_from_dir "$SRC_SHARED" "$staging" "skills"
     stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
+
+    # Note: $SRC_SHARED/*.json.template (shared settings) are intentionally not staged here.
+    # Shared settings are not used today; tool-specific settings are handled in Phase 5.
 
     # ── Phase 3: Stage tool-specific templates ────────────────────────────────
     if [[ -d "$src_tool" ]]; then

@@ -26,7 +26,7 @@ Each plugin directory follows this layout (all subdirs are optional):
 - **Commands, skills, agents:** use a `<plugin>-<name>` prefix. Same-named items are a fatal install error.
 - **Rules:** collisions are allowed — content is appended with a `---` separator, base first then plugins alphabetically.
 - **Settings:** always union-merged (base first, plugins alphabetically). Use for MCP, hooks, permissions.
-- **`.template` files:** only `settings.json.template` is supported. Identity templates (AGENTS.md.template, etc.) are forbidden in plugins.
+- **`.template` files:** only `settings.json.template` is supported and processed. Other `.template` files in plugin directories are not installed (install.sh ignores them).
 
 ## Collision Resolution
 
