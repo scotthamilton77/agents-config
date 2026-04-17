@@ -865,66 +865,6 @@ sync_settings_file() {
     fi
 }
 
-# ── Install everything for one tool ───────────────────────────────────────
-
-install_tool() {
-    local tool="$1"
-    local dest_dir="$HOME/.$tool"
-    local src_tool="$SRC_USER/.$tool"
-
-    CURRENT_TOOL="$tool"
-
-    header "$tool"
-
-    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
-
-    # Phase 1: Shared templates (.agents/*.md.template -> ~/.<tool>/)
-    info "Phase 1: Shared templates"
-    sync_templates "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 2: Shared skills (.agents/skills/ -> ~/.<tool>/skills/)
-    sync_directory "skills" "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 3: Shared agents (.agents/agents/ -> ~/.<tool>/agents/)
-    sync_directory "agents" "$SRC_SHARED" "$dest_dir" "shared"
-
-    # Phase 4: Tool-specific templates (.<tool>/*.md.template -> ~/.<tool>/)
-    if [[ -d "$src_tool" ]]; then
-        info "Phase 4: Tool-specific templates"
-        sync_templates "$src_tool" "$dest_dir" "$tool-specific"
-    fi
-
-    # Phase 5: Tool-specific subdirs (commands/, skills/, agents/, rules/)
-    if [[ -d "$src_tool" ]]; then
-        for subdir in commands skills agents rules; do
-            sync_directory "$subdir" "$src_tool" "$dest_dir" "$tool-specific"
-        done
-    fi
-
-    # Phase 6: Settings merge (*.json.template and *.toml.template)
-    local settings_found=false
-    # Shared settings files
-    for settings_file in "$SRC_SHARED"/*.json.template "$SRC_SHARED"/*.toml.template; do
-        [[ -f "$settings_file" ]] || continue
-        if [[ "$settings_found" == false ]]; then
-            header "Settings ($tool)"
-            settings_found=true
-        fi
-        sync_settings_file "$settings_file" "$dest_dir" "shared"
-    done
-    # Tool-specific settings files
-    if [[ -d "$src_tool" ]]; then
-        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
-            [[ -f "$settings_file" ]] || continue
-            if [[ "$settings_found" == false ]]; then
-                header "Settings ($tool)"
-                settings_found=true
-            fi
-            sync_settings_file "$settings_file" "$dest_dir" "$tool-specific"
-        done
-    fi
-}
-
 # ── Staging directory (cleaned up on exit) ────────────────────────────────────
 
 STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
@@ -936,11 +876,15 @@ for tool in "${TOOLS[@]}"; do
     stage_and_install_tool "$tool"
 done
 
+if plugin_enabled "beads"; then
+    stage_and_install_beads
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────
 
 header "Summary"
 
-for tool in "${TOOLS[@]}"; do
+for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
     printf "\n${BOLD}-- %s --${RESET}\n" "$tool"
     printf "  Installed:  %s\n" "${tool_installed[$tool]}"
     printf "  Updated:    %s\n" "${tool_updated[$tool]}"
@@ -960,6 +904,20 @@ for tool in "${ALL_TOOLS[@]}"; do
     done
     if [[ "$in_tools" == false ]]; then
         printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
+    fi
+done
+
+# Show plugins that were in ALL_PLUGINS but not in PLUGINS (auto-detect skipped)
+for plugin in "${ALL_PLUGINS[@]}"; do
+    in_plugins=false
+    for p in "${PLUGINS[@]}"; do
+        if [[ "$p" == "$plugin" ]]; then
+            in_plugins=true
+            break
+        fi
+    done
+    if [[ "$in_plugins" == false ]]; then
+        printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
     fi
 done
 
