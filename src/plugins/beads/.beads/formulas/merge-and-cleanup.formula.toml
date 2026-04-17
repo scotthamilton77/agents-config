@@ -1,0 +1,226 @@
+# merge-and-cleanup.formula.toml
+#
+# Completes a PR that has been reviewed and is ready to merge.
+#
+# This formula exists because agents frequently skip completion gates
+# (code review, simplification, test verification) during feature and
+# bug work, and because merges have been authorized prematurely. It is
+# designed to run standalone — as a trust-but-verify workflow — even
+# when the implementing agent claimed to have done everything correctly.
+#
+# Phases:
+#   1. Retroactive gate  — verify completion gate evidence; run if missing
+#   2. PR review         — retrieve and triage ALL comments (top-level + inline)
+#   3. Address feedback  — fix blocking comments
+#   4. Merge auth        — HARD GATE: explicit user authorization required
+#   5. Merge             — merge the PR
+#   6. Cleanup           — branches, worktrees, bead
+#
+# Usage:
+#   bd mol wisp create merge-and-cleanup \
+#     --var pr="123" \
+#     --var bead-id=proj-42
+
+formula     = "merge-and-cleanup"
+description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
+type        = "workflow"
+phase       = "vapor"
+version     = 1
+
+[vars.pr]
+description = "PR number to merge (e.g. '123')"
+required    = true
+
+[vars.bead-id]
+description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
+required    = true
+
+# =============================================================================
+# Phase 1: Retroactive Gate
+# =============================================================================
+
+[[steps]]
+id    = "retroactive-gate"
+title = "Verify: completion gate was actually run"
+description = """
+Before touching this PR, verify that the mandatory completion gate
+was run. Do not take the implementing agent's word for it — look for
+evidence in the PR activity and git history.
+
+1. Find the branch for this PR:
+     gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
+
+2. Check the PR timeline for evidence of each gate:
+     gh pr view {{pr}} --comments     # look for code-reviewer output
+     gh pr checks {{pr}}              # CI results
+
+3. Check git log for quality gate commits:
+     git log origin/<branch> --oneline
+
+Evidence required for each gate:
+  [ ] Code review ran       (PR comment from code-reviewer, or CI check)
+  [ ] Simplification ran    (PR comment from code-simplifier, or commit)
+  [ ] Build passed          (CI output or manual run evidence)
+  [ ] Tests passed          (CI output or manual run evidence)
+
+If ALL four gates have evidence: PROCEED to check-pr-comments.
+
+If ANY gate is missing: run the missing steps now, before proceeding:
+  - Code review:    dispatch superpowers:code-reviewer subagent
+  - Simplify:       dispatch code-simplifier:code-simplifier subagent
+  - Build/test:     run build + typecheck + lint + tests; show output
+
+This formula exists specifically because gates get skipped.
+The retroactive check is not optional and cannot be skipped.
+"""
+
+# =============================================================================
+# Phase 2: PR Review
+# =============================================================================
+
+[[steps]]
+id    = "check-pr-comments"
+title = "Retrieve and triage ALL PR comments"
+needs = ["retroactive-gate"]
+description = """
+Retrieve ALL comments on this PR. Both sources are required — do not
+rely on memory or assumption about what comments exist.
+
+Run these commands and record their full output:
+
+  # Top-level review comments and summary comments
+  gh pr view {{pr}} --comments
+
+  # Inline review comments (line-by-line, file-by-file)
+  gh api repos/{owner}/{repo}/pulls/{{pr}}/comments
+
+Triage each comment into one of:
+  [ ] Blocking     — must be addressed before merge
+  [ ] Non-blocking — can merge with a note
+  [ ] Already addressed
+  [ ] Requires user input (architectural or ambiguous)
+
+If any comment requires user input:
+  Report the comment text and wait for user guidance before proceeding.
+  Do NOT make architectural decisions to unblock a merge.
+
+This step is complete when you have run both commands and triaged
+every comment. "I don't recall any comments" is not acceptable —
+run the commands.
+"""
+
+[[steps]]
+id    = "address-feedback"
+title = "Address all blocking feedback"
+needs = ["check-pr-comments"]
+description = """
+Fix all comments triaged as Blocking in the previous step.
+
+For each blocking comment:
+  - If fix is clear and unambiguous: implement, commit, push
+  - If fix is architectural or ambiguous: escalate to user first
+
+After making fixes, re-run the relevant tests and build to confirm
+nothing was broken by the fix. Show output.
+
+Do NOT address non-blocking comments unless the user has asked.
+Do NOT add features while addressing review comments.
+Do NOT refactor code unrelated to the comment being addressed.
+
+If no blocking comments were found, this step completes immediately.
+"""
+
+# =============================================================================
+# Phase 3: Merge Authorization
+# =============================================================================
+
+[[steps]]
+id    = "merge-authorization"
+title = "GATE: Explicit merge authorization required — STOP"
+needs = ["address-feedback"]
+description = """
+HARD STOP. Do not run any merge command until the user explicitly
+authorizes it in this session.
+
+Present this summary to the user:
+
+  PR #{{pr}} is ready to merge.
+  ─────────────────────────────
+  Completion gate: VERIFIED [or: ran retroactively — list what ran]
+  Review comments: N blocking addressed, M non-blocking noted
+  Build:  PASS
+  Tests:  PASS
+
+  Awaiting your authorization to merge.
+
+Wait for explicit authorization. Examples of sufficient authorization:
+  "go ahead and merge"
+  "merge it"
+  "ship it"
+  "merge PR"
+
+Examples of INSUFFICIENT authorization:
+  "ok"
+  "sure"
+  "looks good"
+  "sounds right"
+
+When in doubt: they have not authorized it. Ask again.
+
+This gate exists because merges have been performed without explicit
+authorization, causing irreversible state changes.
+"""
+
+# =============================================================================
+# Phase 4: Merge
+# =============================================================================
+
+[[steps]]
+id    = "merge"
+title = "Merge PR #{{pr}}"
+needs = ["merge-authorization"]
+description = """
+Merge the PR using the project's standard merge strategy.
+
+  gh pr merge {{pr}} --squash   # default; use --merge or --rebase per project convention
+
+If the merge fails due to conflicts:
+  STOP. Do not resolve conflicts automatically. Report to the user —
+  conflicts require human judgment about which changes take precedence.
+
+After a successful merge, confirm:
+  gh pr view {{pr}} --json mergedAt | jq '.mergedAt'
+"""
+
+# =============================================================================
+# Phase 5: Cleanup
+# =============================================================================
+
+[[steps]]
+id    = "cleanup"
+title = "Cleanup: branches, worktrees, bead"
+needs = ["merge"]
+description = """
+Clean up all artifacts from the merged work.
+
+1. Delete remote branch (if not auto-deleted by GitHub):
+     gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
+     gh api repos/{owner}/{repo}/git/refs/heads/<branch> -X DELETE
+
+2. Delete local branch:
+     git branch -d <branch>
+
+3. Remove worktree if one exists for this branch:
+     git worktree list
+     git worktree remove <path>   # only if a worktree existed
+
+4. Close the bead:
+     bd close {{bead-id}} --reason "Merged PR #{{pr}}"
+
+5. If all siblings in a parent epic are now closed, close the parent:
+     bd show {{bead-id}}
+     bd list --parent=<parent-id>
+
+6. Burn this wisp:
+     bd mol burn <this-mol-id>
+"""
