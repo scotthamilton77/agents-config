@@ -17,11 +17,6 @@
 #   6. Housekeep  — close bead, record memory, file discovered work
 #
 # Usage:
-#   bd mol wisp create implement-feature \
-#     --var feature="Add rate limiting to the API" \
-#     --var bead-id=proj-42
-#
-# Or as a persistent mol (survives squash/resume across sessions):
 #   bd mol pour implement-feature \
 #     --var feature="Add rate limiting to the API" \
 #     --var bead-id=proj-42
@@ -29,7 +24,7 @@
 formula      = "implement-feature"
 description  = "TDD feature implementation: brainstorm → worktree → red/green/refactor → completion gate → PR → close"
 type         = "workflow"
-phase        = "vapor"   # wisp by default — one feature, one run, then burn
+phase        = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
 version      = 1
 
 [vars.feature]

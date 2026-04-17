@@ -117,7 +117,7 @@ brainstorm → worktree → write-tests (red)
 
 **Invoke**:
 ```bash
-bd mol wisp create implement-feature \
+bd mol pour implement-feature \
   --var feature="Add rate limiting to the API" \
   --var bead-id=proj-42
 ```
@@ -153,7 +153,7 @@ articulate the root cause, you do not understand the bug well enough to fix it.
 
 **Invoke**:
 ```bash
-bd mol wisp create fix-bug \
+bd mol pour fix-bug \
   --var bug="Login fails when username contains apostrophe" \
   --var bead-id=proj-17
 ```

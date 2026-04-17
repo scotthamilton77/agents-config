@@ -13,11 +13,6 @@
 #   6. Housekeep — close bead, record memory, file discovered work
 #
 # Usage:
-#   bd mol wisp create fix-bug \
-#     --var bug="Login fails when username contains an apostrophe" \
-#     --var bead-id=proj-17
-#
-# Or as a persistent mol (for complex bugs that span sessions):
 #   bd mol pour fix-bug \
 #     --var bug="Login fails when username contains an apostrophe" \
 #     --var bead-id=proj-17
@@ -25,7 +20,7 @@
 formula     = "fix-bug"
 description = "Bug fix: diagnose root cause → regression test → fix → completion gate → PR → close"
 type        = "workflow"
-phase       = "vapor"   # wisp by default — one bug, one run
+phase       = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
 version     = 1
 
 [vars.bug]
