@@ -41,7 +41,7 @@ src/
 │       ├── GEMINI.md.template      # Gemini instruction file
 │       └── GEMINI-EXTENSIONS.md.template  # Gemini-specific sections
 └── plugins/                        # Optional plugin content (installed only when auto-detected)
-    └── beads/                      # beads plugin: Claude rules, commands, formulas
+    └── beads/                      # beads plugin: skills, Claude rules, formulas
 ```
 
 ### Agents

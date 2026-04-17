@@ -39,7 +39,7 @@ This configuration assumes the following Claude Code plugins are installed:
   - `GEMINI.md.template` - Gemini instruction file (refs shared + Gemini extensions)
   - `GEMINI-EXTENSIONS.md.template` - Gemini-specific sections (placeholder)
 - `src/plugins/` - **Optional plugin content** (installed only when detected)
-  - `beads/` - beads plugin: Claude rules, commands, formulas
+  - `beads/` - beads plugin: skills, Claude rules, formulas
   - See `src/plugins/AGENTS.md` for plugin authoring conventions
 
 ## File Formats
