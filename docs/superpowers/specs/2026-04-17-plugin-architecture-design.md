@@ -44,7 +44,12 @@ src/plugins/
       skills/                            ← FUTURE: beads skills land here (separate agent's work)
 ```
 
-**Plugin content is subdirectory-based only.** Plugins do not install root-level tool templates (e.g., `AGENTS.md.template`) or settings files (`.json.template`, `.toml.template`). That scope is reserved for `src/user/.<tool>/` content. This keeps plugin content composable without requiring template-merge logic.
+**Plugin content is subdirectory-based only.** Plugins install content into tool subdirs (e.g., `rules/`, `commands/`, `skills/`, `agents/`) and the `.beads/formulas/` target. Plugins do **not** install:
+- Root-level tool templates (`*.md.template`)
+- Settings files (`*.json.template`, `*.toml.template`)
+- Any file with a `.template` extension (template rendering is base-content only)
+
+This keeps plugin content composable without template-merge complexity.
 
 ### What Moves
 
@@ -60,7 +65,7 @@ src/plugins/
 
 ### What Changes in Shared Content
 
-- `INSTRUCTIONS.md.template` line 37: remove "or bead" — stripped to "Write specs in the plan file for small-context specs." The beads rule file absorbs any beads-specific orchestration guidance.
+- `INSTRUCTIONS.md.template` line 37: remove "or bead" — stripped to "Write specs in the plan file for small-context specs." The instruction is **relocated** (not deleted) — `src/plugins/beads/.claude/rules/beads.md` should include explicit guidance that specs for beads work can be written into the bead itself.
 
 ---
 
@@ -90,11 +95,17 @@ Mirrors the existing `--tools=` flag parser exactly:
 
 The install.sh is refactored around a **staging pattern**: content is assembled into a tmp tree before any comparison or copy to the target `~/.<tool>/` directories. This requires new staging helpers in addition to the existing sync functions.
 
+**Cleanup:** The staging directory is always removed via a `trap` registered at script start, ensuring cleanup on both normal exit and error:
+```sh
+STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+```
+
 **Per-tool install flow (replacing the current per-tool loop):**
 
 ```
 for each active tool:
-  1. Create staging dir: /tmp/agents-config-install-<timestamp>/<tool>/
+  1. Create tool staging dir: $STAGING_DIR/<tool>/
   2. Stage base content:
      a. Render shared templates (.agents/*.md.template → staging/)
      b. Copy shared skills  (.agents/skills/ → staging/skills/)
@@ -104,21 +115,29 @@ for each active tool:
   3. Overlay active plugins (alphabetical plugin order):
      a. For each plugin, if .<tool>/ subdir exists in plugin:
         - Copy plugin's .<tool>/{rules,commands,skills,agents}/ into staging
-        - On file collision, apply collision resolution (see below)
+        - On file/dir collision, apply collision resolution (see below)
      b. For each plugin, if .agents/ subdir exists in plugin:
         - Copy plugin's .agents/{skills,agents}/ into staging (for this tool)
-  4. Sync staging/<tool>/ → ~/.<tool>/ using existing compute_hash + sync logic
-  5. Clean up staging dir
-```
-
-**For `.beads/` plugin content** (separate from tool staging):
-```
-for each active plugin with a .beads/ subdir:
-  Stage formulas: plugin/.beads/formulas/*.toml → /tmp/.beads/formulas/
-  After all plugins: sync /tmp/.beads/formulas/ → ~/.beads/formulas/
+        - On file/dir collision, apply collision resolution (see below)
+  4. Sync $STAGING_DIR/<tool>/ → ~/.<tool>/ using existing compute_hash + sync logic
 ```
 
 The existing `compute_hash()`, `sync_directory()`, `sync_settings_file()`, and `sync_templates()` functions remain reusable for the final staging→target sync step. **New helpers are required** for the staging assembly phase: a `stage_file()` function that copies a file into the staging tree and a `resolve_collision()` function that applies the collision table below.
+
+**`.beads/` content — separate staging path:**
+
+The `.beads/` target (`~/.beads/formulas/`) has a fundamentally different structure from tool directories (formulas-only, flat, no subdir hierarchy). It is staged and synced separately:
+
+```
+if beads plugin is active:
+  Stage formulas: $STAGING_DIR/.beads/formulas/
+  For each plugin with .beads/formulas/:
+    Copy *.toml into staging, applying TOML collision resolution
+  Sync $STAGING_DIR/.beads/formulas/ → ~/.beads/formulas/
+  using existing compute_hash + sync logic
+```
+
+This is implemented as `stage_and_install_beads()` — a parallel to `stage_and_install_tool()` but scoped to the formulas-only target. The staging and sync primitives are reused; only the source/target paths differ.
 
 ### Collision Resolution
 
@@ -127,10 +146,11 @@ Plugin subdirectory files should use unique names by convention (see `src/plugin
 | File type | Resolution |
 |-----------|-----------|
 | `.md` in `rules/` only | Base first, plugins alphabetically — **append** with `\n---\n` separator |
-| `.md` in `commands/`, `agents/`, `skills/` | **Fatal error** — commands and skill files must use unique names |
-| `.json` (settings) | **Union-merge** — existing logic, unchanged |
+| `.md` in `commands/`, `agents/`, `skills/` | **Fatal error** — must use unique names |
 | `.toml` (formulas) | Last-wins alphabetically + **warn** |
-| Directories (skill dirs, agent dirs) | **Fatal error** — same-named directories across plugins is a bug |
+| Directories (skill dirs, agent dirs) | **Fatal error** — same-named directories between a plugin and base content, or across plugins, is a bug |
+
+Note: plugins cannot provide `.json` settings files (forbidden by plugin scope rules above), so JSON union-merge applies only to base content and is not a collision scenario.
 
 ### When a Plugin Is Disabled
 
@@ -141,35 +161,37 @@ Behavior:
 - Files are left in place
 - A future `--prune-plugins` flag may automate removal (out of scope here)
 
-### New Function: `install_plugin(plugin_name)`
+### New Functions
 
-Replaces the current `install_beads()`. Called inside the per-tool loop to overlay plugin content into the staging tree.
+**`stage_and_install_tool(tool)`** — replaces `install_tool()`. Creates staging for one tool, assembles base + plugin content, resolves collisions, then syncs staging to `~/.<tool>/`.
 
-Responsibilities:
-- For each tool subdir (`.claude/`, `.codex/`, `.gemini/`) present in the plugin, copies its subdirs (`rules/`, `commands/`, `skills/`, `agents/`) into the staging tree with collision resolution applied
-- **Only for tools currently being installed** — if user runs `--tools=claude`, plugin codex/gemini content is ignored
-- For `.agents/` subdir: copies shared skills/agents into staging for each active tool
-- Does NOT handle root-level templates or settings files (those are base content only)
+**`stage_and_install_beads()`** — replaces `install_beads()`. Stages beads formula files, then syncs to `~/.beads/formulas/`. Separate from the per-tool loop because the target structure is formulas-only.
 
-**`.beads/` content is handled separately** (not inside `install_plugin()`): a dedicated `install_plugin_beads_formulas()` step assembles formula files into a tmp `.beads/` staging dir and syncs to `~/.beads/formulas/` after all tools complete.
+**`stage_file(src, staging_dir)`** — copies a single file into staging, applying `resolve_collision()` if the target already exists.
+
+**`resolve_collision(existing, incoming, file_type)`** — applies the collision table: append for rules `.md`, fatal for commands/skills/agents `.md`, last-wins-warn for `.toml`, fatal for directories.
+
+**`plugin_enabled(plugin_name)`** — returns true if the named plugin is in the active `PLUGINS` array.
 
 ### Main Loop (Revised)
 
 ```sh
+# Register staging cleanup trap
+STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+
 # For each tool: stage base + plugins, then sync to target
 for tool in "${TOOLS[@]}"; do
-    stage_and_install_tool "$tool"   # new function replacing install_tool()
+    stage_and_install_tool "$tool"
 done
 
 # For beads: stage formulas, sync to ~/.beads/
 if plugin_enabled "beads"; then
-    install_plugin_beads_formulas
+    stage_and_install_beads
 fi
 
 # Summary...
 ```
-
-`stage_and_install_tool()` handles phases 1–5 from the staging flow above, including overlaying all active plugins for that tool.
 
 Summary counters extended to include active plugins, same pattern as tools today.
 
@@ -179,10 +201,10 @@ Summary counters extended to include active plugins, same pattern as tools today
 
 Documents for agents and plugin authors:
 
-1. **Unique filenames are required** for commands, skills, agents, and templates. Name plugin files `<plugin>-<thing>.md` or place them in plugin-owned subdirs. Accidental collisions are a fatal install error.
+1. **Unique filenames are required** for commands, skills, agents, and non-rules markdown. Name plugin files `<plugin>-<thing>.md` or place them in plugin-owned subdirs. Accidental collisions are a fatal install error.
 2. **Rule file collisions are intentional-append only.** Two plugins (or a plugin + base) may both provide `rules/some-rule.md` only when the intent is to extend shared behavior. Alphabetical plugin order determines append sequence.
-3. **Plugin scope is subdirectory content only.** Supported: `.<tool>/rules/`, `.<tool>/commands/`, `.<tool>/skills/`, `.<tool>/agents/`, `.agents/skills/`, `.agents/agents/`, `.beads/formulas/`. Not supported: root-level `*.md.template`, `*.json.template`, `*.toml.template`.
-4. **Skills/agent directory collisions are fatal** — two plugins may not define the same skill or agent directory name.
+3. **Plugin scope is subdirectory content only.** Supported targets: `.<tool>/rules/`, `.<tool>/commands/`, `.<tool>/skills/`, `.<tool>/agents/`, `.agents/skills/`, `.agents/agents/`, `.beads/formulas/`. Explicitly forbidden: any file with a `.template` extension, `*.json` settings files.
+4. **Directory collisions are fatal** — a plugin may not define a skill or agent directory whose name matches an existing base skill/agent or another plugin's skill/agent.
 5. **`.beads/AGENTS.md` is repository documentation only** — it is not installed to any target directory.
 6. **Detection:** `install.sh` auto-detects a plugin if its sentinel condition is met (e.g., `bd` on PATH or `~/.beads/` exists for beads). Override with `--plugins=`. An explicit `--plugins=` list disables auto-detection entirely.
 
