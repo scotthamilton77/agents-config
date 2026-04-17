@@ -1,7 +1,7 @@
 # src/user/.claude/ — Claude Code Content
 
 Claude-specific content that `scripts/install.sh` copies into `~/.claude/`
-when Claude Code is detected on the system.
+by default.
 
 ## What lives here
 

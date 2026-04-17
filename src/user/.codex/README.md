@@ -1,7 +1,8 @@
 # src/user/.codex/ — OpenAI Codex CLI Content
 
 Codex-specific content that `scripts/install.sh` copies into `~/.codex/` when
-the OpenAI Codex CLI is detected on the system.
+Codex is selected, either explicitly via `--tools=codex` or automatically
+because `~/.codex/` already exists.
 
 ## What lives here
 

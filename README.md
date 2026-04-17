@@ -9,7 +9,7 @@ This configuration relies on two Claude Code plugins being installed:
 - **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, code-reviewer, code-simplifier, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
-Without these plugins, the shared `<orchestration>` section in `INSTRUCTIONS.md` and several Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.claude/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
+Without these plugins, the shared `<orchestration>` section in `src/user/.agents/INSTRUCTIONS.md.template` (installed as `INSTRUCTIONS.md` in the target tool config directory) and several Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.claude/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
 
 ## What's Inside
 

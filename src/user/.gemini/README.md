@@ -1,7 +1,8 @@
 # src/user/.gemini/ — Google Gemini CLI Content
 
 Gemini-specific content that `scripts/install.sh` copies into `~/.gemini/`
-when the Google Gemini CLI is detected on the system.
+when Gemini is selected by the installer, such as when `~/.gemini/` already
+exists or when the user passes `--tools=gemini`.
 
 ## What lives here
 
