@@ -1,7 +1,7 @@
 # Plugin Architecture Design
 
 **Date:** 2026-04-17
-**Status:** Approved
+**Status:** Approved — amended 2026-04-17 (fresh-eyes pass)
 **Goal:** Partially isolate beads-related content into a `src/plugins/` namespace and feature-flag it in `install.sh`. This is *partial* isolation — beads skills in `src/user/.agents/skills/` are deferred to a separate agent's work and remain installed unconditionally until that work lands.
 
 ---
@@ -11,7 +11,7 @@
 Beads-related content is currently scattered across shared and tool-specific source directories:
 
 - `src/user/.beads/` — formulas and AGENTS.md (already partially isolated)
-- `src/user/.agents/skills/{create-bead,start-bead,implement-bead,run-queue}/` — beads skills in the *shared* skills dir, installed unconditionally (**not addressed in this spec**)
+- `src/user/.agents/skills/beads/{create-bead,start-bead,implement-bead,run-queue}/` — beads skills grouped under a `beads/` subdirectory within the shared skills dir, installed unconditionally (**not addressed in this spec**). Note: these were relocated from flat `src/user/.agents/skills/{name}/` paths to `src/user/.agents/skills/beads/{name}/` by a prior agent; the spec treats this as WIP, not yet committed.
 - `src/user/.claude/rules/beads.md` — Claude-specific, but not gated
 - `src/user/.claude/commands/implement-bead.md` — Claude-specific, but not gated
 - `src/user/.agents/INSTRUCTIONS.md.template` line 37 — "or bead" reference in shared content
@@ -55,13 +55,13 @@ This keeps plugin content composable without template-merge complexity.
 
 | From | To |
 |------|----|
-| `src/user/.beads/` | `src/plugins/beads/.beads/` |
+| `src/user/.beads/` (entire directory, including `AGENTS.md` and `formulas/`) | `src/plugins/beads/.beads/` |
 | `src/user/.claude/rules/beads.md` | `src/plugins/beads/.claude/rules/beads.md` |
 | `src/user/.claude/commands/implement-bead.md` | `src/plugins/beads/.claude/commands/implement-bead.md` |
 
 ### What Stays (Untouched)
 
-- `src/user/.agents/skills/{create-bead,start-bead,implement-bead,run-queue}/` — WIP from a separate agent; will migrate to `src/plugins/beads/.agents/skills/` in that agent's work. No changes here.
+- `src/user/.agents/skills/beads/{create-bead,start-bead,implement-bead,run-queue}/` — WIP from a separate agent (currently untracked, grouped under a `beads/` subdir); will migrate to `src/plugins/beads/.agents/skills/` in that agent's work. No changes here.
 
 ### What Changes in Shared Content
 
@@ -71,25 +71,48 @@ This keeps plugin content composable without template-merge complexity.
 
 ## install.sh Changes
 
-### New Flag: `--plugins=`
+### New Path Variable
 
-Mirrors the existing `--tools=` flag parser exactly:
+Add alongside the existing path declarations near the top of install.sh:
 
 ```sh
---plugins=beads,foo    # explicit list; replaces auto-detection entirely
-                       # --plugins= (empty) means no plugins
+SRC_PLUGINS="$PROJECT_ROOT/src/plugins"
+ALL_PLUGINS=(beads)
+PLUGINS=()
+PLUGINS_OVERRIDE=""
 ```
 
-**Parser semantics** (same as `--tools=`):
-- Explicit list replaces auto-detection entirely
+### New Flag: `--plugins=`
+
+Mirrors the existing `--tools=` flag parser exactly. Add to the `for arg in "$@"` loop:
+
+```sh
+--plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}" ;;
+```
+
+Add to the `--help` output:
+
+```
+  --plugins=PLUGINS  Comma-separated plugins: beads
+                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)
+```
+
+**Parser semantics** (same as `--tools=`, runs after arg parsing):
+- If `PLUGINS_OVERRIDE` is set (even empty), use it as the explicit list — replaces auto-detection entirely
 - Unknown plugin names are a fatal error with a clear message
 - Duplicates are silently deduplicated
 - `--plugins=` with empty value means no plugins installed
-- Summary output reports both enabled and skipped plugins
+- Summary output: active plugins listed; skipped plugins shown with `(not detected, skipped)` in the same DIM format used for tools
 
 **Auto-detection (when `--plugins=` is absent):**
 - If `bd` is on PATH **or** `~/.beads/` exists → beads auto-enabled
 - Same pattern as Codex/Gemini auto-detection today
+
+**Plugin disable warning:** When a previously-detected plugin is now not detected and `--plugins=` is absent (i.e., auto-detection produces no match), emit:
+
+```
+warn "Plugin 'beads' not detected (bd not on PATH and ~/.beads/ not found) — skipping. Files already installed are not removed."
+```
 
 ### Staging + Sync Flow
 
@@ -124,6 +147,8 @@ for each active tool:
 
 The existing `compute_hash()`, `sync_directory()`, `sync_settings_file()`, and `sync_templates()` functions remain reusable for the final staging→target sync step. **New helpers are required** for the staging assembly phase: a `stage_file()` function that copies a file into the staging tree and a `resolve_collision()` function that applies the collision table below.
 
+**Confirmation flow:** The staging phase itself is **silent** — no interactive prompts. All `confirm()` prompts happen only in the final staging→target sync step (step 4 above), which reuses `sync_directory()` / `sync_templates()` unchanged. The staging phase aborts via `err + exit 1` only on fatal collision errors.
+
 **`.beads/` content — separate staging path:**
 
 The `.beads/` target (`~/.beads/formulas/`) has a fundamentally different structure from tool directories (formulas-only, flat, no subdir hierarchy). It is staged and synced separately:
@@ -157,8 +182,8 @@ Note: plugins cannot provide `.json` settings files (forbidden by plugin scope r
 When auto-detection stops matching (e.g., `bd` is removed) or a user passes `--plugins=` without listing a previously-enabled plugin, the install.sh **does not remove** previously installed plugin files. Removal is risky (user may have customized them).
 
 Behavior:
-- install.sh warns: `"Plugin 'beads' is not enabled but files may still be installed in ~/.<tool>/. Remove them manually if no longer needed."`
-- Files are left in place
+- install.sh emits the warning described in the `--plugins=` section above (auto-detection miss) **or**, if explicitly excluded via `--plugins=`, warns: `"Plugin 'beads' excluded via --plugins= but files may still be installed in ~/.<tool>/. Remove them manually if no longer needed."`
+- Files are left in place in both cases
 - A future `--prune-plugins` flag may automate removal (out of scope here)
 
 ### New Functions
@@ -169,7 +194,7 @@ Behavior:
 
 **`stage_file(src, staging_dir)`** — copies a single file into staging, applying `resolve_collision()` if the target already exists.
 
-**`resolve_collision(existing, incoming, file_type)`** — applies the collision table: append for rules `.md`, fatal for commands/skills/agents `.md`, last-wins-warn for `.toml`, fatal for directories.
+**`resolve_collision(existing, incoming, file_type)`** — applies the collision table. `file_type` is a composite string encoding both the file extension and the parent directory context, e.g. `rules.md`, `commands.md`, `skills.md`, `agents.md`, `toml`, `dir`. This disambiguates `.md` files in `rules/` (append) from `.md` files in `commands/` or `skills/` (fatal). Callers must pass the appropriate string — the function does a simple switch/case match, not path inspection.
 
 **`plugin_enabled(plugin_name)`** — returns true if the named plugin is in the active `PLUGINS` array.
 
@@ -212,7 +237,7 @@ Documents for agents and plugin authors:
 
 ## Out of Scope
 
-- Moving beads skills (`create-bead`, `start-bead`, `implement-bead`, `run-queue`) — handled by a separate agent's work; they remain in `src/user/.agents/skills/` until that work lands
+- Moving beads skills (`create-bead`, `start-bead`, `implement-bead`, `run-queue`) — handled by a separate agent's work; they currently sit in `src/user/.agents/skills/beads/` (untracked) and will be committed to `src/plugins/beads/.agents/skills/` in that agent's work
 - Any plugin beyond beads — architecture supports it, implementation deferred
 - Plugin versioning or dependency resolution between plugins
 - Automated removal of previously-installed plugin files (`--prune-plugins`)
