@@ -461,10 +461,10 @@ stage_and_install_tool() {
     fi
 
     # ── Phase 5: Stage tool-specific settings ────────────────────────────────
+    local file_type
     if [[ -d "$src_tool" ]]; then
         for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
             [[ -f "$settings_file" ]] || continue
-            local file_type
             file_type="$(classify_file "$settings_file" "")"
             stage_item "$settings_file" "$staging/$(basename "$settings_file")" "$file_type"
         done
@@ -525,24 +525,24 @@ stage_and_install_beads() {
     mkdir -p "$staging_formulas"
 
     # Stage formulas from all active plugins with a .beads/formulas/ subdir
+    local plugin_formulas formula_name
     for plugin in "${PLUGINS[@]}"; do
-        local plugin_formulas="$SRC_PLUGINS/$plugin/.beads/formulas"
+        plugin_formulas="$SRC_PLUGINS/$plugin/.beads/formulas"
         [[ -d "$plugin_formulas" ]] || continue
 
         for formula in "$plugin_formulas"/*.toml; do
             [[ -f "$formula" ]] || continue
-            local name
-            name="$(basename "$formula")"
-            stage_item "$formula" "$staging_formulas/$name" "toml"
+            formula_name="$(basename "$formula")"
+            stage_item "$formula" "$staging_formulas/$formula_name" "toml"
         done
     done
 
     # Sync staged formulas → ~/.beads/formulas/
     local found_any=false
+    local name dest_file src_hash dst_hash
     for formula in "$staging_formulas"/*.toml; do
         [[ -f "$formula" ]] || continue
         found_any=true
-        local name dest_file src_hash dst_hash
         name="$(basename "$formula")"
         dest_file="$dest_formulas/$name"
 
@@ -584,12 +584,12 @@ stage_and_install_beads() {
     [[ "$found_any" == false ]] && info "No formula files staged"
 
     # Warn about formulas in dest that aren't in staged source
+    local extra_name
     for dest_file in "$dest_formulas"/*.toml; do
         [[ -f "$dest_file" ]] || continue
-        local name
-        name="$(basename "$dest_file")"
-        if [[ ! -f "$staging_formulas/$name" ]]; then
-            warn "formulas/$name exists in ~/.beads/formulas but not in plugin source (keeping)"
+        extra_name="$(basename "$dest_file")"
+        if [[ ! -f "$staging_formulas/$extra_name" ]]; then
+            warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source (keeping)"
         fi
     done
 }
