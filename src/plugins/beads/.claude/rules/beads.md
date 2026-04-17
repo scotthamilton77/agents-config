@@ -13,6 +13,7 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 - Discovered work → new bead with `discovered-from:<parent-id>` dep, don't fix inline
 - Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default — only explicit deps create sequence
+- For bead-tracked work, specs may be written directly into the bead description (`bd update <id> --description "..."`) — the bead is the plan file
 
 **Parent/child workflow** (you forget this):
 - Claiming child → mark parent `in_progress` too
