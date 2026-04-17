@@ -282,6 +282,143 @@ compute_hash() {
     fi
 }
 
+# ── Utility: resolve a staging collision ──────────────────────────────────────
+#
+# file_type composite strings:
+#   rules.md      → append with --- separator
+#   commands.md, skills.md, agents.md → fatal (unique names required)
+#   settings.json → union-merge (same jq logic as sync_settings_file)
+#   toml          → last-wins + warn
+#   dir           → fatal (unique directory names required)
+#   other         → last-wins silently (tool templates overwrite shared)
+
+resolve_collision() {
+    local existing="$1"
+    local incoming="$2"
+    local file_type="$3"
+
+    case "$file_type" in
+        rules.md)
+            printf '\n---\n' >> "$existing"
+            cat "$incoming" >> "$existing"
+            ;;
+        commands.md|skills.md|agents.md)
+            err "Fatal collision: $(basename "$incoming") exists in both base and plugin content. Files in commands/, skills/, and agents/ must use unique names."
+            exit 1
+            ;;
+        settings.json)
+            local merged_json
+            merged_json="$(jq -s '
+                def union_arrays: [.[0], .[1]] | add | unique;
+                def deep_merge:
+                    if (.[0] | type) == "object" and (.[1] | type) == "object" then
+                        .[0] as $a | .[1] as $b |
+                        ($a | keys) + ($b | keys) | unique | map(. as $k |
+                            if ($a | has($k)) and ($b | has($k)) then
+                                if ($a[$k] | type) == "array" and ($b[$k] | type) == "array" then
+                                    {($k): ([$a[$k], $b[$k]] | union_arrays)}
+                                elif ($a[$k] | type) == "object" and ($b[$k] | type) == "object" then
+                                    {($k): ([$a[$k], $b[$k]] | deep_merge)}
+                                else
+                                    {($k): $a[$k]}
+                                end
+                            elif ($a | has($k)) then
+                                {($k): $a[$k]}
+                            else
+                                {($k): $b[$k]}
+                            end
+                        ) | add
+                    else
+                        .[0]
+                    end;
+                [.[0], .[1]] | deep_merge
+            ' "$existing" "$incoming")"
+            printf '%s\n' "$merged_json" | jq . > "$existing"
+            ;;
+        toml)
+            warn "TOML collision: $(basename "$incoming") — plugin overwrites base (alphabetical order)"
+            cp "$incoming" "$existing"
+            ;;
+        dir)
+            err "Fatal collision: directory $(basename "$incoming") exists in both base and plugin content (or two plugins). Skill and agent directories must use unique names."
+            exit 1
+            ;;
+        other)
+            cp "$incoming" "$existing"
+            ;;
+        *)
+            err "resolve_collision: unknown file_type '$file_type'"
+            exit 1
+            ;;
+    esac
+}
+
+# ── Utility: classify a file for collision resolution ─────────────────────────
+#
+# Returns the file_type string expected by resolve_collision().
+# parent_dir is the name of the containing directory (e.g., "rules", "commands").
+# Pass "" for files that are not inside a named subdir (e.g., top-level templates).
+
+classify_file() {
+    local filepath="$1"
+    local parent_dir="$2"
+    local basename
+    basename="$(basename "$filepath")"
+
+    if [[ -d "$filepath" ]]; then
+        echo "dir"
+    elif [[ "$basename" == settings.json.template ]]; then
+        echo "settings.json"
+    elif [[ "$basename" == *.toml.template || "$basename" == *.toml ]]; then
+        echo "toml"
+    elif [[ "$basename" == *.md && -n "$parent_dir" ]]; then
+        echo "${parent_dir}.md"
+    else
+        echo "other"
+    fi
+}
+
+# ── Utility: copy one item (file or dir) into staging, resolving collisions ───
+
+stage_item() {
+    local src="$1"
+    local dest="$2"
+    local file_type="$3"
+
+    if [[ ! -e "$dest" ]]; then
+        if [[ -d "$src" ]]; then
+            cp -R "$src" "$dest"
+        else
+            cp "$src" "$dest"
+        fi
+    else
+        resolve_collision "$dest" "$src" "$file_type"
+    fi
+}
+
+# ── Utility: stage all items from one source subdir into a staging subdir ─────
+
+stage_content_from_dir() {
+    local src_parent="$1"   # parent containing the named subdir
+    local staging_parent="$2"  # staging parent to copy into
+    local dir_name="$3"        # subdir name: skills, rules, commands, agents
+
+    local src_dir="$src_parent/$dir_name"
+    local staging_dir="$staging_parent/$dir_name"
+
+    [[ -d "$src_dir" ]] || return
+
+    mkdir -p "$staging_dir"
+
+    for item in "$src_dir"/*; do
+        [[ -e "$item" ]] || continue
+        local item_name file_type
+        item_name="$(basename "$item")"
+        file_type="$(classify_file "$item" "$dir_name")"
+        stage_item "$item" "$staging_dir/$item_name" "$file_type"
+    done
+}
+
 # ── Sync templates from a source dir into a dest dir ──────────────────────
 #
 # Handles *.md.template files: strip .template suffix, confirm-on-diff.
