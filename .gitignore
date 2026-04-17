@@ -35,3 +35,8 @@ settings.local.json
 .sidekick/sidekick*.token
 .sidekick/*.local.yaml
 # <<< sidekick
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
