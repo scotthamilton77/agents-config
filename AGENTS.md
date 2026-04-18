@@ -80,6 +80,16 @@ Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
 - Agent descriptions should include concrete usage examples in the frontmatter
 - Skills should be opinionated and actionable, not generic advice
 
+## Worktree Convention
+
+All git worktrees for this project **must** be created inside `.claude/worktrees/`. This is the Claude Code native convention and overrides any skill that suggests a different location.
+
+- **Correct path:** `.claude/worktrees/<branch-name>/`
+- **Preferred method:** Use Claude Code's native `EnterWorktree` tool — it places worktrees here automatically
+- **Manual fallback:** `git worktree add .claude/worktrees/<name> -b <branch>`
+
+> **Override note:** The superpowers `using-git-worktrees` skill defaults to `.worktrees/` at the project root. Disregard that default here — `.claude/worktrees/` is the convention for this project regardless of what any skill specifies.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
