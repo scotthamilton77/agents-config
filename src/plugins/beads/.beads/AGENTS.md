@@ -225,10 +225,7 @@ matching from natural language:
 (if spec is incomplete), invokes `implement-bead` (if `implementation-ready`),
 or executes inline (if trivial).
 
-Use the slash command for quick, focused work in a fresh session where
-you know you will finish in one go.
-
-Use the formula (molecule) when:
+Use a formula (molecule) when:
 - The work spans multiple sessions
 - You want gate enforcement (steps that literally cannot be skipped)
 - You want `bd mol current` to tell a new session where to resume
