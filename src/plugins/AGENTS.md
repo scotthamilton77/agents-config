@@ -23,7 +23,7 @@ Each plugin directory follows this layout (all subdirs are optional):
 
 ## Naming Convention
 
-- **Commands, skills, agents:** use a `<plugin>-<name>` prefix. Same-named items are a fatal install error.
+- **Commands, skills, agents:** pick names that are unambiguous in the global skill namespace. Same-named items across plugins (or plugin vs base) are a fatal install error. A `<plugin>-<name>` prefix is a safe fallback when a shorter name would collide or read ambiguously; prefer domain-obvious names (e.g. `start-bead`) when they are self-describing.
 - **Rules:** collisions are allowed — content is appended with a `---` separator, base first then plugins alphabetically.
 - **Settings:** always union-merged (base first, plugins alphabetically). Use for MCP, hooks, permissions.
 - **`.template` files:** only `settings.json.template` is supported and processed. Other `.template` files in plugin directories are not installed (install.sh ignores them).
