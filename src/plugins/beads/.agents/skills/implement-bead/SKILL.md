@@ -1,5 +1,5 @@
 ---
-name: beads-implement-bead
+name: implement-bead
 description: >
   Use when a bead has the implementation-ready label and is ready for
   autonomous execution. Pours the appropriate formula, then orchestrates
