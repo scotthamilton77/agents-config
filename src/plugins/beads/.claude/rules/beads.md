@@ -5,7 +5,7 @@ Task tracking workflow (run with `dangerouslyDisableSandbox: true`).
 `bd <command> [args]` — Types: bug | feature | task | epic | chore
 Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low".
 
-**Basic workflow**: `bd ready` → pick a bead → `beads-start-bead <id>` → molecule executes → `merge-and-cleanup`
+**Basic workflow**: `bd ready` → pick a bead → `start-bead <id>` → molecule executes → `merge-and-cleanup`
 
 **Rules**:
 - Use bd for ALL tracking, `--json` for programmatic use
@@ -42,7 +42,7 @@ bd ready --json | jq '[.[] | select(.labels | index("implementation-ready") | no
 Beads that are open and unblocked but NOT yet implementation-ready —
 these are candidates for a brainstorming session.
 
-Implementation-ready beads are in the `beads-run-queue` pipeline and do
+Implementation-ready beads are in the `run-queue` pipeline and do
 not need manual attention.
 
 When the user says "bd ready" in a **directed context** (e.g. run-queue
@@ -57,7 +57,7 @@ Labels track a bead's state through the pipeline:
 | Label | Set by | Meaning |
 |-------|--------|---------|
 | `brainstormed` | brainstorm-bead formula (finalize step) | Spec written and reviewed |
-| `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for beads-implement-bead / beads-run-queue |
+| `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `human` | Any agent via `bd human <id>` | Needs human attention |
 
 Label commands:
@@ -74,10 +74,10 @@ bd ready --label <label>
 
 The full bead lifecycle runs through four skills:
 
-1. **`beads-create-bead`** — capture an idea as a placeholder (fast, no spec)
-2. **`beads-start-bead`** — route to brainstorm or implement based on readiness
-3. **`beads-implement-bead`** — pour formula, orchestrate subagents through DAG
-4. **`beads-run-queue`** — autonomous loop: find implementation-ready beads, process them
+1. **`create-bead`** — capture an idea as a placeholder (fast, no spec)
+2. **`start-bead`** — route to brainstorm or implement based on readiness
+3. **`implement-bead`** — pour formula, orchestrate subagents through DAG
+4. **`run-queue`** — autonomous loop: find implementation-ready beads, process them
 
 Plus formulas:
 - `brainstorm-bead` — interactive spec writing + RALF spec review → `implementation-ready`
@@ -89,8 +89,8 @@ Plus formulas:
 
 ## Session Separation
 
-**`beads-run-queue` runs in a dedicated Claude session.**
-Do NOT run beads-run-queue in the same session where brainstorming is happening.
+**`run-queue` runs in a dedicated Claude session.**
+Do NOT run run-queue in the same session where brainstorming is happening.
 The polling loop and background subagents will interrupt interactive conversations.
 
 - Brainstorming session: interactive, user present, no background work

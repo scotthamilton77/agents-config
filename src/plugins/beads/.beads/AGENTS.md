@@ -191,7 +191,7 @@ Skip them for:
 - Work that takes under 5 minutes and fits in one agent turn
 - Exploratory spikes where the outcome is unknown
 
-For those cases, use the `/implement-bead` slash command directly (invokes `beads-start-bead`).
+For those cases, say "start on &lt;id&gt;" or similar — the `start-bead` skill will route to inline execution for trivial work.
 
 ---
 
@@ -212,13 +212,18 @@ bd mol distill <epic-id>
 
 ---
 
-## Relationship to the Slash Commands
+## Skill Activation
 
-The `/implement-bead` slash command routes to the `beads-start-bead` skill,
-which evaluates the bead and either wisps the brainstorm-bead formula (if
-spec is incomplete) or invokes `beads-implement-bead` directly (if the bead
-is already `implementation-ready`). Use it for quick, focused work in a
-single session where the bead is already well-understood.
+There is no slash command for this workflow. The skills activate via intent
+matching from natural language:
+
+- "create a bead for X" → `create-bead`
+- "start on &lt;id&gt;" / "work on &lt;id&gt;" → `start-bead` (routes to brainstorm, implement, or inline)
+- "process the queue" / "start implementing beads" → `run-queue`
+
+`start-bead` evaluates the bead and either wisps the `brainstorm-bead` formula
+(if spec is incomplete), invokes `implement-bead` (if `implementation-ready`),
+or executes inline (if trivial).
 
 Use the slash command for quick, focused work in a fresh session where
 you know you will finish in one go.

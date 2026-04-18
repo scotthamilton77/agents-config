@@ -4,9 +4,9 @@
 # completion-gate.md, delivery.md, and delegation.md into a
 # single reusable molecule.
 #
-# This is the molecule-equivalent of the /implement-bead slash command,
-# but with persistent state tracking across sessions and hard gate
-# enforcement — steps cannot be skipped or reordered.
+# Provides persistent state tracking across sessions and hard gate
+# enforcement — steps cannot be skipped or reordered. Instantiated by
+# the `implement-bead` skill (or directly via `bd mol pour`).
 #
 # Phases:
 #   1. Intent     — brainstorm requirements, write acceptance criteria

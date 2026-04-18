@@ -1,5 +1,5 @@
 ---
-name: beads-create-bead
+name: create-bead
 description: >
   Use when the user wants to capture an idea, feature, bug, task, chore, or
   enhancement as a tracked work item. Creates a lightweight placeholder bead

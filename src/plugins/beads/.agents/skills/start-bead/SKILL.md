@@ -1,5 +1,5 @@
 ---
-name: beads-start-bead
+name: start-bead
 description: >
   Use when the user points at a specific bead and wants to start work on it,
   or when routing a bead from create to the right workflow. Evaluates the bead

@@ -1,5 +1,5 @@
 ---
-name: beads-run-queue
+name: run-queue
 description: >
   Use when the user says "start implementing beads", "process the queue",
   "work through the backlog", or similar. Autonomously finds implementation-ready
