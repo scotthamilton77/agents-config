@@ -121,6 +121,7 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:finishing-a-development-branch`
 - `superpowers:requesting-code-review`
 - `superpowers:receiving-code-review`
+- `superpowers:wait-for-pr-comments`
 - `superpowers:dispatching-parallel-agents`
 
 ### Off-limits for bead-tracked work (compete with bead lifecycle)

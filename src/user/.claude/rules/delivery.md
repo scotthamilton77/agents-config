@@ -37,7 +37,7 @@ Creating a PR is NOT authorization to merge. But PR creation itself is AUTOMATIC
 Check for BOTH top-level AND inline review comments (e.g., Copilot inline suggestions) before marking a PR as review-complete. Inline comments are easy to miss — always run both commands:
 
 ```
-gh pr view <PR> --comments
+gh pr view {pr} --comments
 gh api repos/{owner}/{repo}/pulls/{pr}/comments
 ```
 

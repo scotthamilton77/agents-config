@@ -111,14 +111,16 @@ Tell the user it is a formula bug (child step beads were not materialized).
 Do NOT fall back to invoking the brainstorming skill inline — that bypasses
 the state tracking the molecule exists to provide.
 
-For other mid-run abandonment (real progress was made, but the molecule
-needs to stop), prefer:
+For mid-run abandonment of a **poured** molecule (real progress was made,
+but the molecule needs to stop), prefer:
 
 ```bash
-bd mol squash <wisp-id> --summary "Aborted: <reason>"
+bd mol squash <mol-id> --summary "Aborted: <reason>"
 ```
 
-to preserve history for debugging.
+to preserve history for debugging. Squash is only for poured molecules —
+wisps (including `brainstorm-bead`) have ephemeral state, so `bd mol burn`
+is the right recovery for any wisp abandonment.
 
 ---
 
