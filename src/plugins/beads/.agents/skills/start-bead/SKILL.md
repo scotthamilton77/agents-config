@@ -140,9 +140,9 @@ step and mark the bead (and parent chain) `in_progress` before `assess`.
 Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
 lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
 ```bash
-bd mol wisp create brainstorm-bead --var bead-id=<id>
+bd mol wisp create brainstorm-bead --var bead-id=<bead-id>
 # Capture the wisp-id from the command output, then:
-bd label add <wisp-id> for-bead-<id>
+bd label add <wisp-id> for-bead-<bead-id>
 ```
 
 Then drive the molecule as the MAIN AGENT (brainstorming requires
