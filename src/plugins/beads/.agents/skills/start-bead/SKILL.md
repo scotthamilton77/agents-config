@@ -30,17 +30,30 @@ Note: type, status, labels, AC, description, dependencies.
 
 ### Step 2: Check for Existing Molecule
 
-Before doing anything else, check if a molecule already exists for this bead:
+Before doing anything else, check if an active molecule already exists for
+this bead. Use the `for-bead-<bead-id>` label (stamped by Route C on wisp
+and by `implement-bead` on pour) and query with `--json`:
+
 ```bash
-bd list --parent <bead-id> --type mol 2>/dev/null
-bd mol list 2>/dev/null | grep <bead-id>
+bd list --label for-bead-<bead-id> --type molecule --json \
+  | jq '[.[] | select(.status != "closed")]'
 ```
 
-If an active molecule exists → resume it:
+Why this shape — two beads motivate every character:
+- `--json` bypasses the tree-text path, which silently drops `--type` and
+  seeds the queried id into results (beads `2dx`).
+- The label is the only reliable bead→molecule edge; `bd mol pour` does
+  not set `parent = <bead-id>`, so `bd list --parent <bead-id>` returns
+  `[]` even when a molecule exists (beads `lp3`).
+
+If the result array is non-empty → resume:
 ```bash
 bd mol current <mol-id>
 ```
 Then execute the current step. Do NOT create a new molecule.
+
+See `rules/beads.md` ("Molecule → bead linkage convention") for the full
+rationale and the stamp procedure.
 
 ### Step 3: Route the Bead
 
@@ -124,9 +137,12 @@ brainstorm-bead formula's first step (`claim`) — you do not need to
 claim the bead manually here; driving the molecule will run the claim
 step and mark the bead (and parent chain) `in_progress` before `assess`.
 
-Action: wisp the brainstorm-bead formula:
+Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
+lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
 ```bash
 bd mol wisp create brainstorm-bead --var bead-id=<id>
+# Capture the wisp-id from the command output, then:
+bd label add <wisp-id> for-bead-<id>
 ```
 
 Then drive the molecule as the MAIN AGENT (brainstorming requires

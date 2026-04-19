@@ -118,6 +118,7 @@ Labels track a bead's state through the pipeline:
 | `brainstormed` | brainstorm-bead formula (finalize step) | Spec written and reviewed |
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
+| `for-bead-<bead-id>` | `start-bead` (Route C wisp) and `implement-bead` (pour) | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
 | `human` | Any agent via `bd human <id>` | Needs human attention |
 
 Label commands:
@@ -127,6 +128,49 @@ bd label remove <id> <label>
 bd label list <id>
 bd ready --label <label>
 ```
+
+---
+
+## Molecule → bead linkage convention
+
+Molecules created for a bead via `bd mol pour` or `bd mol wisp` have NO
+structural link back to the bead they were poured/wisped for: `parent`
+is `null` and neither title nor description encodes the bead id (beads
+`lp3`, upstream bug). Until `bd` fixes this, SKILLs stamp an explicit
+lookup label on the molecule immediately after pour/wisp:
+
+```bash
+bd label add <mol-id> for-bead-<bead-id>
+```
+
+The `for-bead-<bead-id>` label applies to the **molecule root**, not the
+bead itself. It is the convention behind the existence probes in
+`start-bead` Step 2 and `implement-bead` Step 2.
+
+**Existence probe** — canonical form for "does an active molecule exist
+for this bead?":
+
+```bash
+bd list --label for-bead-<bead-id> --type molecule --json \
+  | jq '[.[] | select(.status != "closed")]'
+```
+
+Two bugs make the `--json` part non-negotiable: the tree-mode text path
+silently drops `--type` / `--parent` filters and seeds the queried id
+into its output (beads `2dx`). `--json` flips `prettyFormat` off in `bd`
+and routes through the direct filtered query, so both `--label` and
+`--type` are honored.
+
+**Why label, not reparenting**: setting `parent = <bead-id>` on the
+molecule would entangle lifecycles — the I2 close-walk would cascade-close
+the bead when the molecule squashes, which is wrong (molecule steps done
+≠ bead delivered/merged). Labels are lifecycle-neutral and already the
+idiom for cross-cutting tags.
+
+**When the upstream bugs land**: once `bd` fixes `2dx` (tree path honors
+filters) and `lp3` (`bd mol pour` sets `parent = <bead-id>` or adds a
+structural edge), this convention becomes redundant. Drop the stamp and
+switch the probe to `bd list --parent <bead-id> --type molecule --json`.
 
 ---
 
