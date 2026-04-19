@@ -20,13 +20,16 @@ Address open PR review comments via per-comment subagents: clarify only when jud
 ```dot
 digraph when_to_use {
     "PR has open review comments?" [shape=diamond];
+    "PR still being polled for first review?" [shape=diamond];
     "Already auto-fixed by wait-for-pr-comments?" [shape=diamond];
     "Done — nothing to address" [shape=box];
     "Use this skill" [shape=doublecircle];
     "Use wait-for-pr-comments first" [shape=box];
 
     "PR has open review comments?" -> "Already auto-fixed by wait-for-pr-comments?" [label="yes"];
-    "PR has open review comments?" -> "Use wait-for-pr-comments first" [label="no — still polling"];
+    "PR has open review comments?" -> "PR still being polled for first review?" [label="no"];
+    "PR still being polled for first review?" -> "Use wait-for-pr-comments first" [label="yes"];
+    "PR still being polled for first review?" -> "Done — nothing to address" [label="no"];
     "Already auto-fixed by wait-for-pr-comments?" -> "Done — nothing to address" [label="all fixed"];
     "Already auto-fixed by wait-for-pr-comments?" -> "Use this skill" [label="some remain"];
 }
@@ -69,15 +72,17 @@ gh pr view <number> --comments
 gh api repos/{owner}/{repo}/pulls/<number>/comments
 
 # Review threads with thread IDs + resolution state (GraphQL — required for resolve)
+# First call: pass -F after="" (or omit; `$after: String` is nullable). Subsequent calls pass endCursor.
 gh api graphql -f query='
-  query($owner:String!,$repo:String!,$number:Int!){
+  query($owner:String!,$repo:String!,$number:Int!,$after:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$number){
-        reviewThreads(first:100){
+        reviewThreads(first:100, after:$after){
           pageInfo{ hasNextPage endCursor }
           nodes{
             id isResolved isOutdated
-            comments(first:10){
+            comments(first:100){
+              pageInfo{ hasNextPage endCursor }
               nodes{ databaseId body path line author{login} }
             }
           }
@@ -87,11 +92,12 @@ gh api graphql -f query='
         }
       }
     }
-  }' -F owner=<owner> -F repo=<repo> -F number=<number>
+  }' -F owner=<owner> -F repo=<repo> -F number=<number> -F after=<cursor-or-empty>
 ```
 
 - **Top-level review summaries** live on `reviews.nodes` (non-empty `body`), NOT on `reviewThreads`.
-- **Pagination:** if `reviewThreads.pageInfo.hasNextPage` is true, paginate with `after: $endCursor`. Don't silently truncate.
+- **Thread pagination:** loop while `reviewThreads.pageInfo.hasNextPage` is true, passing `endCursor` as the next `after`. Don't silently truncate.
+- **Per-thread comment pagination:** `comments(first:100)` covers almost every real thread; if `comments.pageInfo.hasNextPage` is true for any thread, paginate that thread separately with the same pattern — you need the latest `databaseId` to reply.
 - **Outdated threads** (`isOutdated: true` after rebase): low-priority — reply acknowledging, resolve only if the underlying concern was actually addressed.
 
 Build a working list: `{ thread_id, comment_id, author, location, body, isResolved, isOutdated }`. Drop already-resolved.
@@ -206,7 +212,7 @@ Reviewer decides whether to accept. Resolving on their behalf erases their voice
 |------|---------|
 | Top-level + summary comments | `gh pr view <n> --comments` |
 | Inline comments (REST) | `gh api repos/{owner}/{repo}/pulls/<n>/comments` |
-| Threads + IDs (GraphQL) | `gh api graphql -f query='...reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:10){nodes{databaseId body path line author{login}}}}} reviews(first:50){nodes{id state body author{login}}}...'` |
+| Threads + IDs (GraphQL) | `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!,$after:String){...reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){pageInfo{hasNextPage endCursor} nodes{databaseId body path line author{login}}}}} reviews(first:50){nodes{id state body author{login}}}...}' -F owner=<o> -F repo=<r> -F number=<n> -F after=<cursor-or-empty>` |
 | Reply to inline comment | `gh api repos/{owner}/{repo}/pulls/<n>/comments/<comment_id>/replies -F body=...` |
 | Resolve thread | `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<thread_id>` |
 | Top-level reply (no resolve) | `gh pr comment <n> --body "..."` |
@@ -239,4 +245,3 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 - **`wait-for-pr-comments`** — runs FIRST, polls and auto-fixes the unambiguous slice. This skill picks up what's left.
 - **`ralf-it`** — invoked INSIDE per-comment subagents for significant work; owns its own planning and refinement.
 - **`verify-checklist`** — per-fix (inside subagents) AND once at the end (orchestrator).
-- **`receiving-code-review`** — methodology for evaluating feedback (verify before implementing). Useful background.
