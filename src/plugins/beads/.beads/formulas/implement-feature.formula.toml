@@ -69,8 +69,7 @@ Aborting from either branch below means: leave this `confirm` step
 OPEN (do not close it), do NOT call `bd mol burn` from within this
 step, and print this one-line follow-up:
 
-  Molecule paused at confirm. Run brainstorm-bead on this bead and
-  re-attempt, or `bd mol burn <mol-id>` to discard.
+  Molecule paused at confirm. Run brainstorm-bead on this bead and re-attempt, or `bd mol burn <mol-id>` to discard.
 
 Leave the disposition (re-attempt or burn) to the operator (or to
 run-queue policy).
@@ -81,16 +80,13 @@ Detect execution mode from your own dispatch context:
   context where no human is at the keyboard):
   - Escalate the bead so a human can address it:
       bd human {{bead-id}}
-  - Note in escalation: "missing brainstormed/implementation-ready
-    labels; recommend running brainstorm-bead before implementation."
+  - Note in escalation: "missing brainstormed/implementation-ready labels; recommend running brainstorm-bead before implementation."
   - Do NOT prompt — there is no operator to answer.
   - Then abort (per the shared abort mechanism above).
 
 - INTERACTIVE mode (start-bead routed you here, or a human ran
   `bd mol pour` directly and is in conversation with you):
-  - Print a clear warning: "Bead {{bead-id}} is missing
-    brainstormed/implementation-ready labels — it has not been through
-    brainstorm-bead. Implementation may run on an incomplete spec."
+  - Print a clear warning: "Bead {{bead-id}} is missing brainstormed/implementation-ready labels — it has not been through brainstorm-bead. Implementation may run on an incomplete spec."
   - Ask the user:
     (a) Abort and route the bead through start-bead/brainstorm-bead first.
     (b) Proceed with implementation using whatever is in the bead now.
