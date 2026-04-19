@@ -19,4 +19,4 @@ No exceptions. No partial runs. Each step feeds the next.
 **HARD STOP**: After this gate, AUTOMATICALLY execute delivery steps. Do NOT pause for authorization.
 DO NOT commit to main. DO NOT push directly.
 
-Execute IN ORDER, without asking: (1) worktree if not already in one, (2) `finishing-a-development-branch`, (3) `wait-for-pr-comments`. Only pause at the merge step — see `delivery.md` for the action categorization.
+Execute IN ORDER, without asking: (1) `using-git-worktrees` if not already in one, (2) `finishing-a-development-branch`, (3) `wait-for-pr-comments`. Only pause at the merge step — see `delivery.md` for the action categorization.

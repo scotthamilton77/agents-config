@@ -150,9 +150,9 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
 | "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Next is `implement-bead`. |
 
-### Recovery: if you land in superpowers:writing-plans
+### Recovery: if you land in `superpowers:writing-plans`
 
-If you hit `writing-plans`' execute-plan vs subagent-driven-development menu
-while on a bead, STOP. The bead is the plan. Ensure `brainstormed` +
-`implementation-ready` labels exist, then invoke `implement-bead`. Pick neither
-menu option.
+If you hit `superpowers:writing-plans` and see its execute-plan vs
+`superpowers:subagent-driven-development` menu while on a bead, STOP. The
+bead is the plan. Ensure `brainstormed` + `implementation-ready` labels
+exist, then invoke `implement-bead`. Pick neither menu option.
