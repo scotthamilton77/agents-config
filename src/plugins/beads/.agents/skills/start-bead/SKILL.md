@@ -52,7 +52,20 @@ Evaluate the bead against these criteria in order:
 
 Condition: has label `implementation-ready`
 
-Action: invoke the `implement-bead` skill directly.
+Action: check for a same-session readier label.
+
+1. Get your current session ID from the `<session-info>` system tag and
+   take its first 8 hex characters (e.g. `62d06423`).
+2. Run `bd label list <bead-id>` and look for a label of the form
+   `implementation-readied-session-<your-sid-prefix>`.
+3. Decide:
+   - **Label present** (you are the session that readied this bead):
+     STOP. The default is hand-off to run-queue. Invoke `implement-bead`
+     only on explicit user authorization; silent continuation is not
+     permitted.
+   - **Label absent** (another session readied it, or it was readied via
+     a path that doesn't stamp the session label — e.g. manual
+     `bd label add` or import): invoke `implement-bead` directly.
 
 ---
 
@@ -122,6 +135,23 @@ to preserve history for debugging. Squash is only for poured molecules —
 wisps (including `brainstorm-bead`) have ephemeral state, so `bd mol burn`
 is the right recovery for any wisp abandonment.
 
+### Hand-off: stop at implementation-ready
+
+When the brainstorm formula completes and the bead has `implementation-ready`
+and `brainstormed` labels, STOP. The default path is: another agent
+(run-queue, in a dedicated session) picks up the implementation.
+
+Do NOT invoke `implement-bead` in this session unless the user:
+- Explicitly directs you to ("implement it now", "do X next"), OR
+- Explicitly agrees when you ask.
+
+Do NOT re-invoke `start-bead` on this bead in this session — that can send
+you back through Route A and blur this hand-off, especially if session
+context is lost.
+
+Asking is acceptable when the user's intent is unclear. Silent assumption
+that brainstorming means "also implement" is not.
+
 ---
 
 ### Step 4: Report routing decision
@@ -150,7 +180,8 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "This molecule looks incomplete, I'll create a new one" | Resume the existing molecule first. |
 | "The molecule looks empty, I'll just do the work inline" | STOP. 0/0 = formula bug. Burn (`bd mol burn <wisp-id>`) + report, do not bypass. |
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
-| "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Next is `implement-bead`. |
+| "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Default is hand-off to run-queue; only invoke `implement-bead` with explicit user authorization or in a separate run-queue session. |
+| "Brainstorming is done, I'll implement next as a natural continuation" | No. Default is hand-off to run-queue. Stop unless explicitly authorized. |
 
 ### Recovery: if you land in `superpowers:writing-plans`
 

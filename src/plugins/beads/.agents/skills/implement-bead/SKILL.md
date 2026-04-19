@@ -16,9 +16,20 @@ The main agent manages; subagents build.
 
 ## When to Use
 
-- Bead has label `implementation-ready`
-- Invoked by `start-bead` after routing, or by `run-queue` autonomously
-- User explicitly says "implement bead xyz" after brainstorming is complete
+The bead MUST have label `implementation-ready`. One of the following
+invocation contexts must apply:
+
+- **`run-queue` in a dedicated session** — autonomous; no per-bead user
+  authorization needed (the operator authorized the queue when they
+  started it).
+- **`start-bead` Route A** for a bead where no
+  `implementation-readied-session-<sid-prefix-8>` label matching the
+  current session's SID prefix is present (the marker for the current
+  session is absent, regardless of whether other session markers exist).
+- **In-session override** — user explicitly and affirmatively authorizes
+  implementation in the current session (e.g. "implement it now",
+  "yes, go"). Completing brainstorming in the same session is NOT
+  implicit authorization.
 
 **Do NOT use when:** bead lacks `implementation-ready` label — use `start-bead`.
 
@@ -158,3 +169,4 @@ Do NOT add them to the current molecule or fix them inline.
 | "I'll just invoke `ralf-it` / `superpowers:subagent-driven-development` / `superpowers:executing-plans` directly" | No. `implement-bead` pours a formula; those methodology skills run INSIDE molecule steps, not as peers. |
 | "The step is small — I'll skip the subagent and do it in the main agent" | No. Main agent orchestrates, subagents implement. Dispatch even for small steps. |
 | "I'll skip the formula and just run the work directly" | The formula IS the workflow. Skipping it skips the gate. |
+| "Brainstorming finished cleanly, so the user must want implementation" | No. Hand off to run-queue by default. Ask or wait for explicit authorization. |
