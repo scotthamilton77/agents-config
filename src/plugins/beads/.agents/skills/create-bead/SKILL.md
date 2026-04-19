@@ -71,10 +71,13 @@ orphan-with-`discovered-from`:
 ```bash
 PARENT=$(bd show <current-bead-id> --json | jq -r '.[0].parent // empty')
 
-# If the discovered work is a logical SIBLING SUBTASK of the current
-# bead's parent epic, create it INSIDE the epic so it lands with the
-# siblings (not as an orphan connected only by a dep link):
-if [ -n "$PARENT" ] && <new-work-is-sibling-subtask-of-$PARENT>; then
+# Decide placement via the sibling test (see rules/beads.md I3):
+# would this work have been on the parent epic's original plan, if
+# we'd thought of it then? Yes → sibling. No → orphan + discovered-from.
+IS_SIBLING_SUBTASK=false  # set to true only when the answer is yes
+
+if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
+  # Create INSIDE the parent epic as a sibling:
   bd create "<title>" -t <type> -p <priority> --parent "$PARENT"
 else
   # Otherwise create as an orphan and link with discovered-from:
