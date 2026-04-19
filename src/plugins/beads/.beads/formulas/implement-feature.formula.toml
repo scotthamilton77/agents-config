@@ -82,12 +82,19 @@ Skill: superpowers:using-git-worktrees
 - Verify you are IN the worktree directory before writing any code
 - Confirm no leftover state from other work
 
-Then claim the bead:
+Then claim the bead and walk the parent chain:
+
   bd update {{bead-id}} --status in_progress
 
-If the bead has a parent epic, mark that in_progress too:
-  bd show {{bead-id}}   # check for parent
-  bd update <parent-id> --status in_progress
+  # Walk parent chain; mark each ancestor epic in_progress
+  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+  while [ -n "$PARENT" ]; do
+    bd update "$PARENT" --status in_progress
+    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+  done
+
+If `implement-bead` already claimed the bead before pouring this
+formula, the first `bd update` is a no-op — re-running it is safe.
 """
 
 # =============================================================================
@@ -281,17 +288,41 @@ Complete the lifecycle and preserve context for future sessions.
 1. Close the bead:
      bd close {{bead-id}} --reason "Implemented and PR merged"
 
-2. If all siblings in a parent epic are now closed, close the parent:
-     bd show {{bead-id}}    # check for parent
-     bd list --parent=<parent-id>  # check siblings
+2. Walk the parent chain; close each ancestor epic whose remaining
+   children are all closed (stops at the first ancestor that still
+   has open children, or when there is no parent):
+
+     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+     while [ -n "$PARENT" ]; do
+       OPEN=$(bd list --parent="$PARENT" --status=open --json | jq 'length')
+       [ "$OPEN" = "0" ] || break
+       bd close "$PARENT" --reason "All children closed"
+       PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+     done
 
 3. Record any non-obvious decisions or hard-won insights:
      bd remember "insight about this system or pattern"
      bd decision record --title="Why we chose X over Y"
 
-4. File any work discovered during implementation:
-     bd create "Found: ..." -t bug -p 1
-     bd dep add <new-id> {{bead-id}} --type discovered-from
+4. File any work discovered during implementation. Prefer epic-sibling
+   placement over orphan-with-dep:
+
+     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+
+     # If the discovered work is a logical sibling subtask of the same
+     # parent epic, create it INSIDE the epic so it lands with the
+     # siblings (not as an orphan with only a dep link):
+     if [ -n "$PARENT" ] && <work-is-sibling-subtask-of-$PARENT>; then
+       bd create "Found: ..." -t <type> -p <prio> --parent "$PARENT"
+     else
+       # Otherwise create as an orphan and link with discovered-from:
+       NEW=$(bd create "Found: ..." -t <type> -p <prio> --json | jq -r '.id')
+       bd dep add "$NEW" {{bead-id}} --type discovered-from
+     fi
+
+   Sibling test (see rules/beads.md I3): would this discovered work
+   have been on the parent epic's original plan, if we'd thought of
+   it? Yes → sibling (--parent). No → orphan + discovered-from.
 
 5. Burn this wisp (if running as vapor):
      bd mol burn <this-mol-id>

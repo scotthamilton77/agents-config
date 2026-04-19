@@ -61,6 +61,33 @@ For child tasks under an epic:
 bd create "<title>" -t task -p <priority> --parent <epic-id>
 ```
 
+#### Placement of discovered work
+
+When a bead is captured mid-implementation — i.e. you're inside
+another in-progress bead and you hit something that needs its own
+tracked home — prefer **epic-sibling placement** over the default
+orphan-with-`discovered-from`:
+
+```bash
+PARENT=$(bd show <current-bead-id> --json | jq -r '.[0].parent // empty')
+
+# If the discovered work is a logical SIBLING SUBTASK of the current
+# bead's parent epic, create it INSIDE the epic so it lands with the
+# siblings (not as an orphan connected only by a dep link):
+if [ -n "$PARENT" ] && <new-work-is-sibling-subtask-of-$PARENT>; then
+  bd create "<title>" -t <type> -p <priority> --parent "$PARENT"
+else
+  # Otherwise create as an orphan and link with discovered-from:
+  NEW=$(bd create "<title>" -t <type> -p <priority> --json | jq -r '.id')
+  bd dep add "$NEW" <current-bead-id> --type discovered-from
+fi
+```
+
+**Sibling test** (from `rules/beads.md` I3): would this discovered
+work have been on the epic's original plan, if we'd thought of it?
+Yes → `--parent <epic-id>`. No (sub-step of the current bead, or only
+tangential) → orphan + `discovered-from`.
+
 ### Step 3: Add Preliminary Context (if provided)
 
 If the user gave requirements, constraints, or acceptance criteria, add them:

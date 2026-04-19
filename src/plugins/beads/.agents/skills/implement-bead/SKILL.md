@@ -77,11 +77,24 @@ bd mol pour fix-bug \
   --var bead-id=<bead-id>
 ```
 
-Note the molecule ID from the output. Mark the bead in_progress:
+Note the molecule ID from the output. Claim the bead and walk the
+parent chain (see `rules/beads.md` I1):
+
 ```bash
 bd update <bead-id> --status in_progress
+
+PARENT=$(bd show <bead-id> --json | jq -r '.[0].parent // empty')
+while [ -n "$PARENT" ]; do
+  bd update "$PARENT" --status in_progress
+  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+done
 ```
-If the bead has a parent, mark that in_progress too.
+
+If the bead arrived here via `start-bead` Route A after brainstorming
+in a prior session, the brainstorm-bead formula's `claim` step already
+set the bead (and ancestors) `in_progress` — re-running `bd update
+--status in_progress` is a safe no-op. Keep the walk here so the
+claim invariant holds no matter which path got us to implementation.
 
 ### Step 4: Orchestration Loop
 

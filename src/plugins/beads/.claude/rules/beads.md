@@ -10,17 +10,74 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 **Rules**:
 - Use bd for ALL tracking, `--json` for programmatic use
 - No markdown TODO lists unless user explicitly requests
-- Discovered work → create bead NOW with `discovered-from:<parent-id>` dep before continuing; don't defer and don't fix inline
 - Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default — only explicit deps create sequence
 - For bead-tracked work, specs may be written directly into the bead description (`bd update <id> --description "..."`) — the bead is the plan file
 - **`bd create` is pure capture — no claim, no implementation.** Never say "starting work" / "beginning" when the user asks to create/file/capture/track a bead. Reserve "Starting work on task [id]..." strictly for when the user explicitly directs you to START WORK on a specific bead identifier.
 
-**Parent/child workflow** (you forget this):
-- Claiming child → mark parent `in_progress` too
-- Before work → `bd show <parent-id>` for acceptance criteria and siblings
+## Parent-chain invariants
+
+These are mechanical invariants that every entry point into work on a
+bead must uphold — whether you're running a formula step, taking the
+trivial inline route in `start-bead`, or filing discovered work
+mid-implementation. "I'll just do a quick thing" is not an exemption.
+
+**I1. Claim walk — when work starts on a child, walk UP.**
+
+Before any work (including brainstorming), mark the bead AND every
+ancestor epic `in_progress`. Brainstorming is work — a bead that is
+actively being brainstormed must never appear as `open` in `bd ready`.
+
+```bash
+bd update <id> --status in_progress
+PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
+while [ -n "$PARENT" ]; do
+  bd update "$PARENT" --status in_progress
+  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+done
+```
+
+**I2. Close walk — when work completes, walk UP and close what's empty.**
+
+After closing a child, walk the parent chain and close each ancestor
+epic whose remaining children are all closed. Stop at the first
+ancestor that still has open children, or when there is no parent.
+
+```bash
+bd close <id> --reason "<summary>"
+PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
+while [ -n "$PARENT" ]; do
+  OPEN=$(bd list --parent="$PARENT" --status=open --json | jq 'length')
+  [ "$OPEN" = "0" ] || break
+  bd close "$PARENT" --reason "All children closed"
+  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+done
+```
+
+**I3. Discovered-work placement — siblings go IN the epic, not beside it.**
+
+When work is discovered mid-implementation, capture it immediately
+(don't defer, don't fix inline). Decide placement with the **sibling
+test**:
+
+> **Sibling subtask**: work the parent epic's original decomposition
+> should have included as a peer bullet — something that exists on its
+> own merits, not only because of how the current bead is being
+> implemented.
+
+- **Passes the sibling test** → create with `--parent <epic-id>` so it
+  lands in the epic alongside its siblings.
+- **Fails the sibling test** (sub-step of the current bead, or only
+  tangentially related) → create as an orphan and link with:
+  `bd dep add <new-id> <current-id> --type discovered-from`
+
+The test: "would this have been on the epic's original plan, if we'd
+thought of it?" Yes → sibling. No → orphan + dep.
+
+**Other parent/child expectations:**
 - Before user review → run completion gate pipeline
-- After close → if all siblings closed, close parent recursively
+  (I1's claim walk already surfaces the parent chain for AC / sibling
+  context — no separate `bd show <parent-id>` lookup needed)
 
 ---
 
