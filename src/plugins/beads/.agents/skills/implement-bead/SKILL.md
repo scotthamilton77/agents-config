@@ -140,7 +140,7 @@ The main agent MUST NOT:
 - Push branches
 - Make git commits
 
-All of these happen inside subagents executing formula step beads.
+All of these happen inside subagents executing molecule step beads (the runtime instances of the formula's step definitions).
 
 **No unauthorized merges.**
 The implement-feature and fix-bug formulas end at `await-review`.
@@ -155,6 +155,6 @@ Do NOT add them to the current molecule or fix them inline.
 
 | Thought | Reality |
 |---------|---------|
-| "I'll just invoke `ralf-it` / `superpowers:subagent-driven-development` / `superpowers:executing-plans` directly" | No. `implement-bead` pours a formula; those methodology skills run INSIDE formula steps, not as peers. |
+| "I'll just invoke `ralf-it` / `superpowers:subagent-driven-development` / `superpowers:executing-plans` directly" | No. `implement-bead` pours a formula; those methodology skills run INSIDE molecule steps, not as peers. |
 | "The step is small — I'll skip the subagent and do it in the main agent" | No. Main agent orchestrates, subagents implement. Dispatch even for small steps. |
 | "I'll skip the formula and just run the work directly" | The formula IS the workflow. Skipping it skips the gate. |

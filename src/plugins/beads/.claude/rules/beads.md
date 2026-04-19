@@ -104,12 +104,13 @@ The polling loop and background subagents will interrupt interactive conversatio
 Beads and superpowers are partners with distinct roles. Do not confuse them.
 
 - **Beads = OUTER lifecycle** — what work exists, its state, dependencies, and
-  multi-session persistence. The bead is the plan. Formulas drive the workflow.
+  multi-session persistence. The bead is the plan. Formulas define the workflow
+  at authoring time; at runtime the agent drives the resulting molecule.
 - **Superpowers = INNER methodology** — *how* to actually do the work at each
-  step. Skills are invoked *inside* formula steps, not as peers of the bead
+  step. Skills are invoked *inside* molecule steps, not as peers of the bead
   workflow.
 
-### Inner methodology skills (partners — use freely inside formula steps)
+### Inner methodology skills (partners — use freely inside molecule steps)
 
 - `superpowers:brainstorming`
 - `superpowers:systematic-debugging`
