@@ -138,8 +138,9 @@ Do NOT invoke `implement-bead` in this session unless the user:
 - Explicitly directs you to ("implement it now", "do X next"), OR
 - Explicitly agrees when you ask.
 
-Do NOT re-invoke `start-bead` on this bead in this session — that would
-route through Route A and bypass this hand-off.
+Do NOT re-invoke `start-bead` on this bead in this session — that can send
+you back through Route A and blur this hand-off, especially if session
+context is lost.
 
 Asking is acceptable when the user's intent is unclear. Silent assumption
 that brainstorming means "also implement" is not.

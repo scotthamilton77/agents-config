@@ -96,12 +96,13 @@ The polling loop and background subagents will interrupt interactive conversatio
 
 - Brainstorming session: interactive, user present, no background work
 - run-queue session: autonomous, separate window/terminal, no brainstorming
-- **Post-brainstorm hand-off**: Any bead newly labeled `implementation-ready`
-  in the current session is a hand-off candidate by default — regardless of
-  how the label was set (brainstorm formula, manual `bd label add`, or
-  imported). Implementation runs in a separate run-queue session.
-  Continuing to implementation in the current session requires explicit
-  user authorization per session.
+- **Post-brainstorm hand-off**: Any bead that becomes
+  `implementation-ready` in the current session is a hand-off candidate by
+  default — regardless of how the label was applied (brainstorm formula,
+  manual `bd label add`, or an import that applies the label).
+  Implementation runs in a separate run-queue session. Continuing to
+  implementation in the current session requires explicit user authorization
+  per session.
 
 ---
 

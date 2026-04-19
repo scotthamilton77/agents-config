@@ -160,4 +160,4 @@ When the queue drains, present the full summary.
 | "The user said 'ok', I'll merge this PR" | No. Merging needs explicit authorization. Never in run-queue. |
 | "This bead isn't fully ready, I'll spec it quickly" | No. Only `implementation-ready` beads belong here. |
 | "I'll process two beads at once for speed" | No. Sequential unless explicitly asked. |
-| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes implementation-ready beads only. If the spec has gaps, flag the bead for re-brainstorming and move on. |
+| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes `implementation-ready` beads only. If the spec has gaps, open a human escalation with `bd human <bead-id>` so the bead can be re-brainstormed, then skip that bead and continue with the queue. |
