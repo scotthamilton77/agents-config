@@ -52,7 +52,14 @@ Evaluate the bead against these criteria in order:
 
 Condition: has label `implementation-ready`
 
-Action: invoke the `implement-bead` skill directly.
+Action: check session context. If the `implementation-ready` label was
+applied in THIS session (e.g. the brainstorm formula just finalized this
+bead), STOP and require explicit user authorization before invoking
+`implement-bead`. Otherwise invoke `implement-bead` directly.
+
+The default in a just-brainstormed scenario is hand-off to run-queue.
+Ask the user only when intent is unclear; silent continuation is not
+permitted.
 
 ---
 
@@ -122,6 +129,22 @@ to preserve history for debugging. Squash is only for poured molecules —
 wisps (including `brainstorm-bead`) have ephemeral state, so `bd mol burn`
 is the right recovery for any wisp abandonment.
 
+### Hand-off: stop at implementation-ready
+
+When the brainstorm formula completes and the bead has `implementation-ready`
+and `brainstormed` labels, STOP. The default path is: another agent
+(run-queue, in a dedicated session) picks up the implementation.
+
+Do NOT invoke `implement-bead` in this session unless the user:
+- Explicitly directs you to ("implement it now", "do X next"), OR
+- Explicitly agrees when you ask.
+
+Do NOT re-invoke `start-bead` on this bead in this session — that would
+route through Route A and bypass this hand-off.
+
+Asking is acceptable when the user's intent is unclear. Silent assumption
+that brainstorming means "also implement" is not.
+
 ---
 
 ### Step 4: Report routing decision
@@ -151,6 +174,7 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "The molecule looks empty, I'll just do the work inline" | STOP. 0/0 = formula bug. Burn (`bd mol burn <wisp-id>`) + report, do not bypass. |
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
 | "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Next is `implement-bead`. |
+| "Brainstorming is done, I'll implement next as a natural continuation" | No. Default is hand-off to run-queue. Stop unless explicitly authorized. |
 
 ### Recovery: if you land in `superpowers:writing-plans`
 

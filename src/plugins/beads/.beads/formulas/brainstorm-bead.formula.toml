@@ -186,8 +186,18 @@ Incorporate any valid spec review findings into the bead, then mark it ready.
 3. Report to the user:
      "Bead {{bead-id}} is now implementation-ready.
       Acceptance criteria: [list]
-      It will be picked up by the next run-queue cycle,
-      or you can start it manually with the implement-bead skill."
+
+      This session stops here. Do NOT continue to implementation in this
+      session unless you explicitly authorize it. The default path is:
+      another agent (run-queue, in a dedicated session) picks up the
+      implementation.
+
+      If you want to implement now in the current session instead, say so
+      explicitly ("implement it now", "do lu3.N next", etc.) and I will
+      invoke `implement-bead`."
+
+   Then STOP. Do not invoke implement-bead unless the user replies with
+   explicit authorization within this session.
 
 4. Burn this wisp:
      bd mol burn <this-mol-id>
