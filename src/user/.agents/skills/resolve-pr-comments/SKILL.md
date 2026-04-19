@@ -46,15 +46,15 @@ digraph when_to_use {
 
 ## ID Vocabulary
 
-GitHub uses three identifiers — wrong one breaks the call.
+GitHub uses several identifiers — wrong one breaks the call.
 
 | ID | Source | Used for |
 |----|--------|----------|
 | Thread `id` (opaque node ID) | GraphQL `reviewThreads.nodes.id` | `resolveReviewThread` mutation |
-| Comment `databaseId` (numeric) | GraphQL `comments.nodes.databaseId` or REST `id` | REST replies, REST cross-references |
-| Comment node `id` (opaque) | GraphQL `comments.nodes.id` | GraphQL mutations on comments (rare here) |
-
-`<thread_id>` = node ID. `<comment_id>` = numeric `databaseId`.
+| Review-comment `databaseId` (numeric) | GraphQL `reviewThreads.nodes.comments.nodes.databaseId` or REST `id` | Inline REST replies (`/pulls/<n>/comments/<id>/replies`) |
+| Review-comment node `id` (opaque) | GraphQL `comments.nodes.id` | GraphQL mutations on comments (rare here) |
+| Review `id` (opaque node ID) | GraphQL `reviews.nodes.id` | Referencing a top-level review summary — no reply/resolve API |
+| Issue-comment `id` (numeric) | `gh pr view --comments` / REST `/issues/<n>/comments` | Top-level PR conversation comments — no threads |
 
 ## The Process
 
@@ -64,20 +64,23 @@ Six phases. Orchestrator (you) does inventory, triage, dispatch, final gate, rep
 
 Pull EVERY open thread — inline AND top-level review summaries. Skipping one looks like you ignored the reviewer.
 
-```bash
-# Top-level issue comments on the PR
-gh pr view <number> --comments
+Three feedback surfaces, three commands:
 
-# Inline review comments (REST — gives numeric comment IDs for replies)
+```bash
+# Source A: top-level issue comments on the PR (PR conversation tab)
+gh pr view <number> --comments
+# or: gh api repos/{owner}/{repo}/issues/<number>/comments
+
+# Source B: inline review comments (REST — gives numeric databaseIds for replies)
 gh api repos/{owner}/{repo}/pulls/<number>/comments
 
-# Review threads with thread IDs + resolution state (GraphQL — required for resolve)
-# First call: pass -F after="" (or omit; `$after: String` is nullable). Subsequent calls pass endCursor.
+# Source C: review threads (+ resolution state) AND review summaries (GraphQL)
+# Call with $threadsAfter=<cursor-or-empty> and $reviewsAfter=<cursor-or-empty>; loop both connections until pageInfo.hasNextPage is false.
 gh api graphql -f query='
-  query($owner:String!,$repo:String!,$number:Int!,$after:String){
+  query($owner:String!,$repo:String!,$number:Int!,$threadsAfter:String,$reviewsAfter:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$number){
-        reviewThreads(first:100, after:$after){
+        reviewThreads(first:100, after:$threadsAfter){
           pageInfo{ hasNextPage endCursor }
           nodes{
             id isResolved isOutdated
@@ -87,20 +90,37 @@ gh api graphql -f query='
             }
           }
         }
-        reviews(first:50){
+        reviews(first:100, after:$reviewsAfter){
+          pageInfo{ hasNextPage endCursor }
           nodes{ id state body author{login} submittedAt }
         }
       }
     }
-  }' -F owner=<owner> -F repo=<repo> -F number=<number> -F after=<cursor-or-empty>
+  }' -F owner=<owner> -F repo=<repo> -F number=<number> -F threadsAfter=<cursor-or-empty> -F reviewsAfter=<cursor-or-empty>
 ```
 
-- **Top-level review summaries** live on `reviews.nodes` (non-empty `body`), NOT on `reviewThreads`.
-- **Thread pagination:** loop while `reviewThreads.pageInfo.hasNextPage` is true, passing `endCursor` as the next `after`. Don't silently truncate.
-- **Per-thread comment pagination:** `comments(first:100)` covers almost every real thread; if `comments.pageInfo.hasNextPage` is true for any thread, paginate that thread separately with the same pattern — you need the latest `databaseId` to reply.
+- **Review threads** (Source C) — inline review comments grouped by thread. Can be resolved.
+- **Review summaries** (Source C, `reviews.nodes` with non-empty `body`) — top-level review bodies submitted alongside inline comments. Cannot be resolved.
+- **Top-level issue comments** (Source A) — PR conversation tab. Cannot be resolved; have no threads.
+- **Pagination (loop all three connections):** `reviewThreads`, inner `comments`, and `reviews` all expose `pageInfo{hasNextPage, endCursor}`. Pass `endCursor` as the next `after` until `hasNextPage` is false. Don't silently truncate.
 - **Outdated threads** (`isOutdated: true` after rebase): low-priority — reply acknowledging, resolve only if the underlying concern was actually addressed.
 
-Build a working list: `{ thread_id, comment_id, author, location, body, isResolved, isOutdated }`. Drop already-resolved.
+**Build an explicit, discriminated inventory** covering every feedback item you may need to answer in Phase 5. Use a `kind` discriminator and kind-specific IDs — never overload a single `comment_id`:
+
+| Field | `kind: "review_thread"` | `kind: "review_summary"` | `kind: "issue_comment"` |
+|-------|------------------------|--------------------------|-------------------------|
+| `thread_id` | GraphQL `reviewThreads.nodes.id` | — | — |
+| `reply_to_comment_id` | latest `comments.nodes.databaseId` in thread (reply target) | — | — |
+| `review_id` | — | `reviews.nodes.id` | — |
+| `issue_comment_id` | — | — | REST `id` from Source A |
+| `author`, `body`, `location` | as available | as available (location usually null) | as available (location null) |
+| `isResolved`, `isOutdated` | yes | — | — |
+
+- **Review threads:** one inventory item per non-resolved thread. `reply_to_comment_id` is the most recent comment's `databaseId` (the reply endpoint threads against the latest comment).
+- **Review summaries:** one item per `reviews.nodes` with non-empty `body`. Treat the review body as the "comment"; reply via `gh pr comment` (no thread to resolve).
+- **Issue comments:** one item per `gh pr view --comments` entry that isn't part of a review thread. Reply via `gh pr comment` referencing the original.
+
+Drop already-resolved threads from the active working set (but keep IDs handy for bookkeeping).
 
 ### Phase 2: Triage Per Comment
 
@@ -151,15 +171,21 @@ Once all subagents have reported:
 
 ### Phase 5: Reply + Resolve
 
-Reply to EVERY comment in the original inventory — fixed AND skipped. Silence reads as ignoring the reviewer.
+Reply to EVERY item in the original inventory — FIXED and SKIPPED, every `kind`. Silence reads as ignoring the reviewer. Response path depends on `kind`:
 
-**FIXED — inline review comment:**
+| `kind` | Reply endpoint | Resolvable? |
+|--------|---------------|-------------|
+| `review_thread` | `POST /pulls/<n>/comments/<reply_to_comment_id>/replies` | Yes — `resolveReviewThread` mutation if FIXED |
+| `review_summary` | `gh pr comment <n> --body "..."` (reference the review in the body) | No — no resolve API |
+| `issue_comment` | `gh pr comment <n> --body "..."` (reference `<issue_comment_id>` in the body) | No — no threads, no resolve |
+
+**`review_thread` — FIXED:**
 ```bash
-# 1. Reply on the comment thread
-gh api repos/{owner}/{repo}/pulls/<number>/comments/<comment_id>/replies \
+# 1. Reply on the thread
+gh api repos/{owner}/{repo}/pulls/<number>/comments/<reply_to_comment_id>/replies \
   -F body="Fixed in <sha>: <one-line summary>."
 
-# 2. Resolve the conversation (variable-bound mutation)
+# 2. Resolve (variable-bound mutation)
 gh api graphql -f query='
   mutation($id:ID!){
     resolveReviewThread(input:{threadId:$id}){
@@ -168,21 +194,27 @@ gh api graphql -f query='
   }' -F id=<thread_id>
 ```
 
-**FIXED — top-level review summary** (lives on `reviews.nodes`, no thread):
-```bash
-gh pr comment <number> --body "Addressed in <sha>: <summary>."
-# No resolve — top-level reviews have no resolvable thread.
-```
-
-**SKIPPED — inline** (out of scope, disagreed, deferred):
+**`review_thread` — SKIPPED** (out of scope, disagreed, deferred):
 ```bash
 # Reply with rationale — do NOT resolve
-gh api repos/{owner}/{repo}/pulls/<number>/comments/<comment_id>/replies \
+gh api repos/{owner}/{repo}/pulls/<number>/comments/<reply_to_comment_id>/replies \
   -F body="Not addressed in this PR: <reason>. <follow-up if any, e.g., tracked in bd-xxx>."
 ```
 Reviewer decides whether to accept. Resolving on their behalf erases their voice.
 
-**SKIPPED — top-level:** same `gh pr comment` form with rationale; no resolve regardless.
+**`review_summary` — FIXED or SKIPPED:**
+```bash
+# No thread to resolve. Reference the review in the body so the exchange is discoverable.
+gh pr comment <number> --body "Re: review by @<author> (<submittedAt>): <Fixed in <sha>: ...> OR <Not addressed: <reason>.>"
+```
+
+**`issue_comment` — FIXED or SKIPPED:**
+```bash
+# Issue comments have no /replies endpoint. Cross-reference the original comment in the reply body.
+gh pr comment <number> --body "Re: @<author>'s comment (https://github.com/{owner}/{repo}/pull/<n>#issuecomment-<issue_comment_id>): <Fixed in <sha>: ...> OR <Not addressed: <reason>.>"
+```
+
+**Resolve only `review_thread` items with status FIXED.** Never resolve on the reviewer's behalf when SKIPPED, and `review_summary`/`issue_comment` have no resolve concept at all.
 
 ### Phase 6: Final Report
 
@@ -210,12 +242,12 @@ Reviewer decides whether to accept. Resolving on their behalf erases their voice
 
 | Step | Command |
 |------|---------|
-| Top-level + summary comments | `gh pr view <n> --comments` |
-| Inline comments (REST) | `gh api repos/{owner}/{repo}/pulls/<n>/comments` |
-| Threads + IDs (GraphQL) | `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!,$after:String){...reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){pageInfo{hasNextPage endCursor} nodes{databaseId body path line author{login}}}}} reviews(first:50){nodes{id state body author{login}}}...}' -F owner=<o> -F repo=<r> -F number=<n> -F after=<cursor-or-empty>` |
-| Reply to inline comment | `gh api repos/{owner}/{repo}/pulls/<n>/comments/<comment_id>/replies -F body=...` |
-| Resolve thread | `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<thread_id>` |
-| Top-level reply (no resolve) | `gh pr comment <n> --body "..."` |
+| Issue comments (Source A) | `gh pr view <n> --comments` |
+| Inline review comments (Source B, REST) | `gh api repos/{owner}/{repo}/pulls/<n>/comments` |
+| Threads + summaries paginated (Source C, GraphQL) | `gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!,$threadsAfter:String,$reviewsAfter:String){...reviewThreads(first:100,after:$threadsAfter){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){pageInfo{hasNextPage endCursor} nodes{databaseId body path line author{login}}}}} reviews(first:100,after:$reviewsAfter){pageInfo{hasNextPage endCursor} nodes{id state body author{login}}}...}' -F owner=<o> -F repo=<r> -F number=<n> -F threadsAfter=<cursor-or-empty> -F reviewsAfter=<cursor-or-empty>` |
+| Reply to `review_thread` | `gh api repos/{owner}/{repo}/pulls/<n>/comments/<reply_to_comment_id>/replies -F body=...` |
+| Resolve `review_thread` | `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=<thread_id>` |
+| Reply to `review_summary` / `issue_comment` | `gh pr comment <n> --body "..."` (no resolve) |
 | Check PR state mid-flight | `gh pr view <n> --json state,mergeable,headRefOid` |
 
 ## Red Flags
@@ -232,6 +264,9 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 | "This ambiguity is too much trouble — I'll ask the user" | Read the code. Decide. Escalate only on real architectural forks. |
 | "All threads resolved → I should merge" | **Never merge without explicit authorization in the current session.** |
 | "Top-level review needs a resolve too" | Summaries have no thread — comment-only. Resolve will error. |
+| "Issue comments and review summaries are basically the same" | Different sources and IDs. `issue_comment` → `issues/<n>/comments`; `review_summary` → `reviews.nodes`. Keep `kind` explicit. |
+| "One comment_id field is enough for all feedback sources" | Overloading hides bugs in Phase 5. Store `thread_id`, `reply_to_comment_id`, `review_id`, `issue_comment_id` separately by `kind`. |
+| "reviews(first:50) without pagination is fine" | Active PRs can exceed 50 reviews. `reviews` also needs `pageInfo + after` loops. |
 | "I'll skip replies on skipped items — silence is fine" | Silence reads as ignoring the reviewer. Always reply with rationale. |
 | "Push got rejected — I'll just `--force-with-lease`" | Force-push without authorization is hard-to-reverse on shared state. Pull-rebase. |
 | "Only 100 threads max, no need to paginate" | Active reviews can exceed that. Always check `hasNextPage`. |
