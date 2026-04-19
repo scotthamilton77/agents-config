@@ -14,6 +14,7 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 - Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default — only explicit deps create sequence
 - For bead-tracked work, specs may be written directly into the bead description (`bd update <id> --description "..."`) — the bead is the plan file
+- **`bd create` is pure capture — no claim, no implementation.** Never say "starting work" / "beginning" when the user asks to create/file/capture/track a bead. Reserve "Starting work on task [id]..." strictly for when the user explicitly directs you to START WORK on a specific bead identifier.
 
 **Parent/child workflow** (you forget this):
 - Claiming child → mark parent `in_progress` too
