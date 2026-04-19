@@ -47,12 +47,66 @@ Confirm `implementation-ready` label is present. If absent, stop and invoke
 
 ### Step 2: Check for Existing Molecule
 
+Molecules have no structural parent-edge back to the bead (beads `lp3`)
+and the tree-mode text path silently drops `--type` / `--parent` filters
+(beads `2dx`). Query via the `for-bead-<bead-id>` label convention with
+`--json`:
+
 ```bash
-bd list --parent <bead-id> --type mol 2>/dev/null
+bd list --label for-bead-<bead-id> --type molecule --json \
+  | jq '[.[] | select(.status != "closed")]'
 ```
 
-If an active molecule exists for this bead: resume it (go to Step 4).
-Do NOT pour a new formula over existing in-progress work.
+Decide from the result array:
+
+- **length 0** → no active molecule. BUT if you suspect a pre-convention
+  or otherwise unlabeled molecule exists (prior activity visible in the
+  bead's history, user references one), STOP — do NOT pour over
+  unlabeled in-progress work. Escalate:
+  ```bash
+  bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
+  bd human <bead-id>
+  ```
+  Otherwise proceed to Step 3.
+
+- **length 1** → extract and resume (go to Step 4):
+  ```bash
+  MOL_ID=$(bd list --label for-bead-<bead-id> --type molecule --json \
+    | jq -r '[.[] | select(.status != "closed")] | .[0].id')
+  bd mol current "$MOL_ID"
+  ```
+  Do NOT pour a new formula over existing in-progress work.
+
+- **length 2+** → analyze first; don't escalate blindly. Multiple
+  non-closed molecules for one bead is legitimate when distinct formulas
+  coexist (a lingering brainstorm-bead wisp alongside an
+  implement-feature pour) or when parallel agents share the same Dolt
+  server. Inspect each:
+  ```bash
+  bd list --label for-bead-<bead-id> --type molecule --json \
+    | jq '[.[] | select(.status != "closed")
+               | {id, title, status, updated_at, created_at}]'
+  ```
+  Resolve if one clearly supersedes the others — an open
+  implement-feature/fix-bug pour supersedes a stale brainstorm-bead
+  wisp; a more recent pour supersedes an abandoned earlier one. Resume
+  the winner (go to Step 4) and tell the user your reasoning; the user
+  can burn the loser later.
+
+  If the molecules cannot be cleanly disambiguated, escalate WITH your
+  analysis — the human should see your read-out, not a blank flag:
+  ```bash
+  bd comments add <bead-id> "N active molecules for this bead:
+    - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
+    - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
+    Assessment: <duplicative | legacy | needs manual merge>
+    Recommended action: <resume X / burn Y / user decides>"
+  bd human <bead-id>
+  ```
+  Do NOT silently pick one.
+
+See `rules/beads.md` ("Molecule → bead linkage convention") for the
+stamp procedure applied in Step 3.
 
 ### Step 3: Pour the Formula
 
@@ -77,8 +131,15 @@ bd mol pour fix-bug \
   --var bead-id=<bead-id>
 ```
 
-Note the molecule ID from the output. Claim the bead and walk the
-parent chain (see `rules/beads.md` I1):
+Note the molecule ID from the output. Immediately stamp the bead→molecule
+lookup label so Step 2's existence probe can find this molecule on any
+future entry (see `rules/beads.md` "Molecule → bead linkage convention"):
+
+```bash
+bd label add <mol-id> for-bead-<bead-id>
+```
+
+Then claim the bead and walk the parent chain (see `rules/beads.md` I1):
 
 ```bash
 bd update <bead-id> --status in_progress

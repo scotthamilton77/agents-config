@@ -30,17 +30,72 @@ Note: type, status, labels, AC, description, dependencies.
 
 ### Step 2: Check for Existing Molecule
 
-Before doing anything else, check if a molecule already exists for this bead:
+Before doing anything else, check if an active molecule already exists for
+this bead. Use the `for-bead-<bead-id>` label (stamped by Route C on wisp
+and by `implement-bead` on pour) and query with `--json`:
+
 ```bash
-bd list --parent <bead-id> --type mol 2>/dev/null
-bd mol list 2>/dev/null | grep <bead-id>
+bd list --label for-bead-<bead-id> --type molecule --json \
+  | jq '[.[] | select(.status != "closed")]'
 ```
 
-If an active molecule exists → resume it:
-```bash
-bd mol current <mol-id>
-```
-Then execute the current step. Do NOT create a new molecule.
+Why this shape — two bugs motivate every character:
+- `--json` bypasses the tree-text path, which silently drops `--type` and
+  seeds the queried id into results (beads `2dx`).
+- The label is the only reliable bead→molecule edge; `bd mol pour` does
+  not set `parent = <bead-id>`, so `bd list --parent <bead-id>` returns
+  `[]` even when a molecule exists (beads `lp3`).
+
+Decide from the result array:
+
+- **length 0** → no active molecule. BUT if you suspect a pre-convention
+  or otherwise unlabeled molecule exists (prior activity visible in the
+  bead's history, user references one), STOP — do NOT pour/wisp over
+  unlabeled in-progress work. Escalate:
+  ```bash
+  bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
+  bd human <bead-id>
+  ```
+  Otherwise proceed to Step 3.
+
+- **length 1** → extract and resume:
+  ```bash
+  MOL_ID=$(bd list --label for-bead-<bead-id> --type molecule --json \
+    | jq -r '[.[] | select(.status != "closed")] | .[0].id')
+  bd mol current "$MOL_ID"
+  ```
+  Then execute the current step. Do NOT create a new molecule.
+
+- **length 2+** → analyze first; don't escalate blindly. Multiple
+  non-closed molecules for one bead is legitimate when distinct formulas
+  coexist (a lingering brainstorm-bead wisp alongside an
+  implement-feature pour) or when parallel agents share the same Dolt
+  server. Inspect each:
+  ```bash
+  bd list --label for-bead-<bead-id> --type molecule --json \
+    | jq '[.[] | select(.status != "closed")
+               | {id, title, status, updated_at, created_at}]'
+  ```
+  Resolve if one clearly supersedes the others — an open
+  implement-feature/fix-bug pour supersedes a stale brainstorm-bead
+  wisp; a more recent pour supersedes an abandoned earlier one. Resume
+  the winner and tell the user your reasoning in the routing message;
+  the user can burn the loser later.
+
+  If the molecules cannot be cleanly disambiguated, escalate WITH your
+  analysis — the human should see your read-out, not a blank flag:
+  ```bash
+  bd comments add <bead-id> "N active molecules for this bead:
+    - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
+    - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
+    Assessment: <duplicative | legacy | needs manual merge>
+    Recommended action: <resume X / burn Y / user decides>"
+  bd human <bead-id>
+  ```
+  Do NOT silently pick one.
+
+See `rules/beads.md` ("Molecule → bead linkage convention") for the full
+rationale and the stamp procedure.
 
 ### Step 3: Route the Bead
 
@@ -124,9 +179,12 @@ brainstorm-bead formula's first step (`claim`) — you do not need to
 claim the bead manually here; driving the molecule will run the claim
 step and mark the bead (and parent chain) `in_progress` before `assess`.
 
-Action: wisp the brainstorm-bead formula:
+Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
+lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
 ```bash
-bd mol wisp create brainstorm-bead --var bead-id=<id>
+bd mol wisp create brainstorm-bead --var bead-id=<bead-id>
+# Capture the wisp-id from the command output, then:
+bd label add <wisp-id> for-bead-<bead-id>
 ```
 
 Then drive the molecule as the MAIN AGENT (brainstorming requires
