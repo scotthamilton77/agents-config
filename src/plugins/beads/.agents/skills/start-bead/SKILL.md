@@ -78,7 +78,38 @@ Condition: ALL of the following are true:
 - No architectural implications
 - Completable in a single focused turn
 
-Action: do it inline. No formula, no molecule. Close the bead when done.
+Action: do it inline. No formula, no molecule. The inline route still
+owes the bead's lifecycle the same claim/close invariants the formulas
+enforce — do NOT skip them just because the work is small.
+
+Before starting:
+
+```bash
+bd update <id> --status in_progress
+
+# Walk parent chain; mark each ancestor epic in_progress
+PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
+while [ -n "$PARENT" ]; do
+  bd update "$PARENT" --status in_progress
+  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+done
+```
+
+After finishing:
+
+```bash
+bd close <id> --reason "<one-line summary>"
+
+# Walk parent chain; close each ancestor whose remaining children are all closed
+PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
+while [ -n "$PARENT" ]; do
+  NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
+  [ "$NON_CLOSED" = "0" ] || break
+  bd close "$PARENT" --reason "All children closed"
+  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+done
+```
+
 If in doubt, it is NOT trivial. Use Route C.
 
 ---
@@ -87,6 +118,11 @@ If in doubt, it is NOT trivial. Use Route C.
 
 Condition: anything that does not meet Route A or B criteria.
 This is the default route for feature, task, and chore beads without full specs.
+
+The bead's claim walk (I1 in `rules/beads.md`) is handled by the
+brainstorm-bead formula's first step (`claim`) — you do not need to
+claim the bead manually here; driving the molecule will run the claim
+step and mark the bead (and parent chain) `in_progress` before `assess`.
 
 Action: wisp the brainstorm-bead formula:
 ```bash

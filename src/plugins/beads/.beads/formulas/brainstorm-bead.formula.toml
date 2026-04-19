@@ -8,6 +8,7 @@
 # is the ralf-spec-review step, which dispatches a fresh-eyes subagent.
 #
 # Phases:
+#   0. Claim     — mark bead (and parent-chain epics) in_progress before any work
 #   1. Assess    — read bead, identify gaps and questions
 #   2. Discuss   — interactive session with user (brainstorming skill)
 #   3. Write     — produce spec and acceptance criteria
@@ -30,12 +31,41 @@ description = "Bead ID to brainstorm (e.g. proj-42). Must already exist."
 required    = true
 
 # =============================================================================
+# Phase 0: Claim
+# =============================================================================
+
+[[steps]]
+id    = "claim"
+title = "Claim bead and parent-chain epics"
+description = """
+Mark this bead (and any parent-chain epics) in_progress before any work.
+Brainstorming IS work — the bead's status must reflect that, so that
+`bd ready` and `bd list --status=open` never show a bead that is
+actively being brainstormed as 'available'.
+
+  bd update {{bead-id}} --status in_progress
+
+Walk the parent chain and mark each ancestor epic in_progress (stops
+when there is no parent):
+
+  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+  while [ -n "$PARENT" ]; do
+    bd update "$PARENT" --status in_progress
+    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+  done
+
+The claim is cheap even if `assess` later decides the bead needs no
+further brainstorming.
+"""
+
+# =============================================================================
 # Phase 1: Assess
 # =============================================================================
 
 [[steps]]
 id    = "assess"
 title = "Assess: read bead, identify what's missing"
+needs = ["claim"]
 description = """
 Read the bead fully. Understand what it is and what's unclear.
 

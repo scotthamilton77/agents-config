@@ -99,10 +99,19 @@ Skill: superpowers:using-git-worktrees
 - Verify you are IN the worktree directory before writing any code
 - Confirm no leftover state from other work
 
-Then claim the bead:
+Then claim the bead and walk the parent chain:
+
   bd update {{bead-id}} --status in_progress
 
-If the bead has a parent, mark that in_progress too.
+  # Walk parent chain; mark each ancestor epic in_progress
+  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+  while [ -n "$PARENT" ]; do
+    bd update "$PARENT" --status in_progress
+    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+  done
+
+If `implement-bead` already claimed the bead before pouring this
+formula, the first `bd update` is a no-op — re-running it is safe.
 """
 
 # =============================================================================
@@ -273,14 +282,39 @@ Complete the lifecycle and preserve context for future sessions.
 1. Close the bead:
      bd close {{bead-id}} --reason "Fixed: <one sentence root cause summary>"
 
-2. If all siblings in a parent epic are now closed, close the parent.
+2. Walk the parent chain; close each ancestor epic whose remaining
+   children are all closed (stops at the first ancestor that still
+   has any non-closed children, or when there is no parent):
+
+     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+     while [ -n "$PARENT" ]; do
+       NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
+       [ "$NON_CLOSED" = "0" ] || break
+       bd close "$PARENT" --reason "All children closed"
+       PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+     done
 
 3. Record any non-obvious insights (root cause patterns are worth preserving):
      bd remember "Bugs in <subsystem> are often caused by <pattern>"
 
-4. File any new bugs or tech debt discovered during the fix:
-     bd create "Tech debt: ..." -t chore -p 3
-     bd dep add <new-id> {{bead-id}} --type discovered-from
+4. File any new bugs or tech debt discovered during the fix. Prefer
+   epic-sibling placement over orphan-with-dep:
+
+     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+
+     # If the discovered work is a logical sibling subtask of the same
+     # parent epic, create it INSIDE the epic:
+     if [ -n "$PARENT" ] && <work-is-sibling-subtask-of-$PARENT>; then
+       bd create "Tech debt: ..." -t chore -p 3 --parent "$PARENT"
+     else
+       # Otherwise create as an orphan and link with discovered-from:
+       NEW=$(bd create "Tech debt: ..." -t chore -p 3 --json | jq -r '.id')
+       bd dep add "$NEW" {{bead-id}} --type discovered-from
+     fi
+
+   Sibling test (see rules/beads.md I3): would this discovered work
+   have been on the parent epic's original plan, if we'd thought of
+   it? Yes → sibling (--parent). No → orphan + discovered-from.
 
 5. Burn this wisp (if running as vapor):
      bd mol burn <this-mol-id>
