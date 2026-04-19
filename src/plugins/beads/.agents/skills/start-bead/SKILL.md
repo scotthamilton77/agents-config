@@ -52,14 +52,13 @@ Evaluate the bead against these criteria in order:
 
 Condition: has label `implementation-ready`
 
-Action: check session context. If the `implementation-ready` label was
-applied in THIS session (e.g. the brainstorm formula just finalized this
-bead), STOP and require explicit user authorization before invoking
-`implement-bead`. Otherwise invoke `implement-bead` directly.
+Action: check session context.
 
-The default in a just-brainstormed scenario is hand-off to run-queue.
-Ask the user only when intent is unclear; silent continuation is not
-permitted.
+- If the `implementation-ready` label was applied in THIS session (e.g.
+  the brainstorm formula just finalized this bead), STOP. The default is
+  hand-off to run-queue. Invoke `implement-bead` only on explicit user
+  authorization; silent continuation is not permitted.
+- Otherwise, invoke `implement-bead` directly.
 
 ---
 
