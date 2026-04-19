@@ -103,8 +103,8 @@ bd close <id> --reason "<one-line summary>"
 # Walk parent chain; close each ancestor whose remaining children are all closed
 PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
 while [ -n "$PARENT" ]; do
-  OPEN=$(bd list --parent="$PARENT" --status=open --json | jq 'length')
-  [ "$OPEN" = "0" ] || break
+  NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
+  [ "$NON_CLOSED" = "0" ] || break
   bd close "$PARENT" --reason "All children closed"
   PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
 done

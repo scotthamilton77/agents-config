@@ -284,12 +284,12 @@ Complete the lifecycle and preserve context for future sessions.
 
 2. Walk the parent chain; close each ancestor epic whose remaining
    children are all closed (stops at the first ancestor that still
-   has open children, or when there is no parent):
+   has any non-closed children, or when there is no parent):
 
      PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
      while [ -n "$PARENT" ]; do
-       OPEN=$(bd list --parent="$PARENT" --status=open --json | jq 'length')
-       [ "$OPEN" = "0" ] || break
+       NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
+       [ "$NON_CLOSED" = "0" ] || break
        bd close "$PARENT" --reason "All children closed"
        PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
      done

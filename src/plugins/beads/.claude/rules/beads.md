@@ -41,14 +41,15 @@ done
 
 After closing a child, walk the parent chain and close each ancestor
 epic whose remaining children are all closed. Stop at the first
-ancestor that still has open children, or when there is no parent.
+ancestor that still has any non-closed children (`open` or
+`in_progress`), or when there is no parent.
 
 ```bash
 bd close <id> --reason "<summary>"
 PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
 while [ -n "$PARENT" ]; do
-  OPEN=$(bd list --parent="$PARENT" --status=open --json | jq 'length')
-  [ "$OPEN" = "0" ] || break
+  NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
+  [ "$NON_CLOSED" = "0" ] || break
   bd close "$PARENT" --reason "All children closed"
   PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
 done
