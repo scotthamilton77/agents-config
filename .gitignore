@@ -11,6 +11,7 @@
 *.sln
 *.sw?
 .worktrees/
+.claude/worktrees/
 .ralf/
 
 # Local settings
