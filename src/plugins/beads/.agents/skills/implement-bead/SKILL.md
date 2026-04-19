@@ -92,8 +92,7 @@ done
 
 If the bead arrived here via `start-bead` Route A after brainstorming
 in a prior session, the brainstorm-bead formula's `claim` step already
-set the bead (and ancestors) `in_progress` — re-running `bd update
---status in_progress` is a safe no-op. Keep the walk here so the
+set the bead (and ancestors) `in_progress` — re-running `bd update --status in_progress` is a safe no-op. Keep the walk here so the
 claim invariant holds no matter which path got us to implementation.
 
 ### Step 4: Orchestration Loop
