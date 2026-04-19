@@ -55,6 +55,9 @@ dolt-server.activity
 # Backup data (auto-exported JSONL, local-only)
 backup/
 
+# JSONL export contains owner email (PII for public repo) — rely on Dolt sync instead
+issues.jsonl
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 
