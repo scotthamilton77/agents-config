@@ -1,14 +1,16 @@
 ---
 name: wait-for-pr-comments
 description: >
-  Use after creating or updating a PR to poll for review comments,
-  auto-fix unambiguous feedback, and report results. Auto-triggered
-  via PostToolUse hook on gh pr create and git push, or invoke manually.
+  Use after a PR is created or updated and its review comments
+  need monitoring. Also use when routing a PR whose open comments
+  mix trivial mechanical fixes with items that need deeper work.
 ---
 
 # wait-for-pr-comments
 
-Poll a PR for review comments, auto-fix what's unambiguous, report the rest. Copilot-aware: monitors Copilot review lifecycle via background bash scripts — zero Anthropic API tokens consumed during polling.
+Poll a PR for review comments, triage them, and report results. Copilot-aware: monitors Copilot review lifecycle via background bash scripts — zero Anthropic API tokens consumed during polling.
+
+**Scope boundary (critical):** this skill's auto-fix bucket is narrow by design — zero-risk mechanical trivia only. If a comment requires judgment, touches multiple files, asks for a refactor, or changes behavior, surface it in the Phase 5 report with a pointer to [`resolve-pr-comments`](../resolve-pr-comments/SKILL.md) — do NOT auto-fix it here.
 
 ## When to Use
 
@@ -84,10 +86,17 @@ The script JSON output contains `reviews`, `inline_comments`, and `human_comment
 
 1. Process Copilot review body and inline comments from the JSON
 2. Process any human reviewer comments from the JSON `human_comments` array
-3. For each item (Copilot + human): assess if fixable unambiguously
-4. Fix what can be fixed, record what was skipped and why
-5. Commit and push fixes
-6. Proceed to Phase 4 (Re-review Detection)
+3. **Classify each item into one of three buckets:**
+
+   | Bucket | Criteria | Action in this skill |
+   |--------|----------|----------------------|
+   | **Mechanical** | Typo fix, rename, magic-number → named constant, comment-only edit — single file, **no new runtime behavior** (no new guards, branches, error paths, call sites, or module side effects) | Auto-fix inline |
+   | **Non-trivial** | Requires judgment, touches multiple files, asks for a refactor or extraction, adds new helpers, changes behavior, or adds a new import/dependency (imports can execute top-level module code in Python, JS, etc.) | **HAND OFF** — skip the fix, record as skipped with reason `"non-trivial — use resolve-pr-comments"` |
+   | **Ambiguous** | Unclear what the reviewer wants, conflicting guidance, or an architectural question | Skip with a rationale; surface in Phase 5 for user judgment |
+
+4. Auto-fix **only** the Mechanical bucket. **If any Mechanical items were fixed**, commit + push them (use a single commit). If **zero** Mechanical items remain after classification, skip commit + push entirely and go straight to the report. Never commit anything for Non-trivial or Ambiguous items.
+5. Record Non-trivial and Ambiguous items in the skipped list. If any Non-trivial items exist, the Phase 5 report **MUST** recommend `resolve-pr-comments` as the hand-off.
+6. Proceed to Phase 4 (Re-review Detection).
 
 **Error handling:**
 - Commit fails: report error with details, skip push, go to final report
@@ -139,6 +148,8 @@ Once the script completes (any outcome), the guard is lifted.
 
 ## Report Templates
 
+**Enforcement:** if any Non-trivial items were skipped in Phase 3, the report you emit (Variants 2 or 3) MUST include the `resolve-pr-comments` hand-off pointer — the templates below already carry it in the "remaining items?" line. Variant 1 only applies when the Non-trivial bucket was empty.
+
 **Variant 1 — All fixed, no Copilot re-review:**
 
 ```markdown
@@ -150,7 +161,7 @@ Once the script completes (any outcome), the guard is lifted.
 - **@<author>** (<location>): "<comment summary>" → <what was done>
 
 ### Status
-- Fixes pushed in commit `<sha>`
+- Fixes pushed: `<sha>` — OR, if zero Mechanical items, write "No Mechanical fixes applied; all items handed off or skipped"
 - Copilot re-review: None detected within 30s window
 
 All review feedback addressed. Ready to merge.
@@ -170,10 +181,10 @@ All review feedback addressed. Ready to merge.
 - **@<author>** (<location>): "<comment summary>" → <reason skipped>
 
 ### Status
-- Fixes pushed in commit `<sha>`
+- Fixes pushed: `<sha>` — OR, if zero Mechanical items, write "No Mechanical fixes applied; all items handed off or skipped"
 - Copilot re-review: <status>
 
-What would you like to do about the remaining items?
+What would you like to do about the remaining items? For any items marked "non-trivial — use resolve-pr-comments", invoke the `resolve-pr-comments` skill to run the structured per-comment workflow (subagent-per-fix, full quality gate, reply + resolve on GitHub).
 ```
 
 **Variant 3 — Copilot review received:**
@@ -195,7 +206,7 @@ What would you like to do about the remaining items?
 ### Skipped (<count>)
 - **@<author>** (<location>): "<comment summary>" → <reason skipped>
 
-What would you like to do about the remaining items?
+What would you like to do about the remaining items? For any items marked "non-trivial — use resolve-pr-comments", invoke the `resolve-pr-comments` skill to run the structured per-comment workflow (subagent-per-fix, full quality gate, reply + resolve on GitHub).
 ```
 
 **Variant 4 — Copilot no-show:**
@@ -254,6 +265,9 @@ The hook **suggests** invocation — it does not force it. User retains control.
 | Copilot not assigned within 1 min | Script exits code 2 — report no-show, stop |
 | User wants to merge while script running | Warn — Copilot review may be imminent |
 | Copilot review found | Script exits code 0 — parse JSON, triage & fix |
+| Comment is mechanical (typo / rename / constant / comment-only; no new runtime behavior) | Auto-fix in Phase 3 |
+| Comment is non-trivial (refactor, multi-file, behavior change) | Skip + hand off to `resolve-pr-comments` in Phase 5 report |
+| Comment is ambiguous | Skip with rationale; surface in Phase 5 for user judgment |
 | Copilot review timeout (10 min) | Script exits code 1 — report timeout |
 | Copilot re-review starts within 30s | Launch `poll-copilot-review.sh --skip-request-check` → triage as Phase 3 |
 | No Copilot re-review within 30s | Report no re-review detected, proceed to Phase 5 |
@@ -266,6 +280,9 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 | Rationalization | Why it's wrong |
 |-----------------|----------------|
 | "I'll fix this ambiguous comment anyway" | Ambiguous = needs human decision. Report it, don't guess. |
+| "This refactor is small, I'll just do it here" | Refactors are non-trivial by definition. Hand off to `resolve-pr-comments`. Mechanical is narrowly defined — see the Phase 3 bucket table. |
+| "Extraction feels safe enough — fix inline" | If it crosses functions/files or changes behavior, it's not mechanical. Hand off. |
+| "Multi-file change but the edits are tiny — fits mechanical" | Multi-file = not mechanical, regardless of size. Hand off. |
 | "I'll skip Phase 4 since the fixes were trivial" | Always run Phase 4 after pushing fixes — a re-review may have been requested. |
 | "I'll keep polling past the 30s window" | Fixed window is fixed. Report no re-review and hand back to user. |
 | "I'll poll Copilot inline instead of the background script" | That blocks the user and wastes API tokens. Background scripts are required. |
@@ -274,3 +291,7 @@ If you catch yourself doing any of these, STOP — you are deviating from the pr
 | "Copilot hasn't reviewed yet, the user wants to merge" | Script is still running — issue the guard warning. |
 | "Phase C timed out so it's safe to merge" | Report the timeout and ask the user — don't authorize merging on their behalf. |
 | "Copilot was a no-show, I'll poll for human comments instead" | No fallback. Report the no-show and stop. The user decides what's next. |
+
+## Related Skills
+
+- **[`resolve-pr-comments`](../resolve-pr-comments/SKILL.md)** — structured per-comment workflow: one subagent per comment, full quality gate, reply + resolve on GitHub. Rule of thumb: if you're about to read the comment a second time to figure out what it means, or you're reaching for an editor to plan the change, it belongs there, not here.
