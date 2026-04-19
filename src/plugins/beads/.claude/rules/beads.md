@@ -96,3 +96,38 @@ The polling loop and background subagents will interrupt interactive conversatio
 
 - Brainstorming session: interactive, user present, no background work
 - run-queue session: autonomous, separate window/terminal, no brainstorming
+
+---
+
+## Skill Partnership
+
+Beads and superpowers are partners with distinct roles. Do not confuse them.
+
+- **Beads = OUTER lifecycle** — what work exists, its state, dependencies, and
+  multi-session persistence. The bead is the plan. Formulas drive the workflow.
+- **Superpowers = INNER methodology** — *how* to actually do the work at each
+  step. Skills are invoked *inside* formula steps, not as peers of the bead
+  workflow.
+
+### Inner methodology skills (partners — use freely inside formula steps)
+
+- `superpowers:brainstorming`
+- `superpowers:systematic-debugging`
+- `superpowers:root-cause-tracing`
+- `superpowers:test-driven-development`
+- `superpowers:verification-before-completion`
+- `superpowers:using-git-worktrees`
+- `superpowers:finishing-a-development-branch`
+- `superpowers:requesting-code-review`
+- `superpowers:receiving-code-review`
+- `superpowers:dispatching-parallel-agents`
+
+### Off-limits for bead-tracked work (compete with bead lifecycle)
+
+- `superpowers:writing-plans` — the bead description IS the plan
+- `superpowers:executing-plans` — `implement-bead` is the executor
+- `superpowers:subagent-driven-development` — `implement-bead` orchestrates via the formula DAG
+
+**Rule:** if you find yourself matching one of the off-limits skills while on a
+bead, STOP. The right path is `start-bead` → `brainstorm-bead` → `implement-bead`.
+Off-limits skills remain available for non-bead work.

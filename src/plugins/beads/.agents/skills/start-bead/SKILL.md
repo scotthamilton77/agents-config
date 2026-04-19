@@ -148,3 +148,12 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "This molecule looks incomplete, I'll create a new one" | Resume the existing molecule first. |
 | "The molecule looks empty, I'll just do the work inline" | STOP. 0/0 = formula bug. Burn + report, do not bypass. |
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
+| "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Next is `implement-bead`. |
+
+### Recovery: if you land in superpowers:writing-plans
+
+If, while working a bead, you find yourself at `writing-plans`' two-options
+menu (execute-plan vs. subagent-driven-development), STOP. The bead is the
+plan — you do not need another one. Confirm the bead has the
+`brainstormed` and `implementation-ready` labels (add them if missing) and
+then invoke `implement-bead`. Do not pick either menu option.

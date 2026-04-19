@@ -150,3 +150,11 @@ and is handled separately via the `merge-and-cleanup` formula.
 **Discovered work:**
 If a subagent reports discovered work, create new beads immediately.
 Do NOT add them to the current molecule or fix them inline.
+
+## Red Flags
+
+| Thought | Reality |
+|---------|---------|
+| "I'll just invoke `ralf-it` / `subagent-driven-development` / `executing-plans` directly" | No. `implement-bead` pours a formula; those methodology skills run INSIDE formula steps, not as peers. |
+| "The formula step is simple — I'll do the work in the main agent" | No. Main agent orchestrates. Dispatch a subagent even for small steps. |
+| "I'll skip the formula and just run the work" | The formula IS the workflow. Skipping it skips the gate. |
