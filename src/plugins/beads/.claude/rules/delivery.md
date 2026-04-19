@@ -8,6 +8,6 @@ For bead-tracked work, delivery runs inside formula steps, not as a peer workflo
 
 **Do NOT** invoke `finishing-a-development-branch` or `wait-for-pr-comments` as peers of the bead workflow — they run INSIDE the formula step the molecule is currently on.
 
-When the formula's current step is `create-pr`, execute it immediately — do not pause for authorization. The core `delivery.md` AUTOMATIC category applies: pause only at merge.
+When the formula's current step is `create-pr`, execute it immediately — the AUTOMATIC category in core `delivery.md` applies.
 
 If you arrive at the end of a formula step and are uncertain whether delivery has run, check via `bd show <bead-id>` and `bd mol current <mol-id>` — the molecule's next step drives the action, not your judgment.

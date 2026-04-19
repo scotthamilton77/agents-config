@@ -152,8 +152,7 @@ Exception: if it's obviously trivial, just do it without announcing.
 
 ### Recovery: if you land in superpowers:writing-plans
 
-If, while working a bead, you find yourself at `writing-plans`' two-options
-menu (execute-plan vs. subagent-driven-development), STOP. The bead is the
-plan — you do not need another one. Confirm the bead has the
-`brainstormed` and `implementation-ready` labels (add them if missing) and
-then invoke `implement-bead`. Do not pick either menu option.
+If you hit `writing-plans`' execute-plan vs subagent-driven-development menu
+while on a bead, STOP. The bead is the plan. Ensure `brainstormed` +
+`implementation-ready` labels exist, then invoke `implement-bead`. Pick neither
+menu option.

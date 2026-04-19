@@ -128,6 +128,6 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:executing-plans` — `implement-bead` is the executor
 - `superpowers:subagent-driven-development` — `implement-bead` orchestrates via the formula DAG
 
-**Rule:** if you find yourself matching one of the off-limits skills while on a
-bead, STOP. The right path is `start-bead` → `brainstorm-bead` → `implement-bead`.
-Off-limits skills remain available for non-bead work.
+**Rule:** off-limits skills compete with the bead lifecycle. On a bead, use
+`start-bead` → `brainstorm-bead` → `implement-bead` instead. Off-limits skills
+remain available for non-bead work.
