@@ -59,6 +59,7 @@ Labels track a bead's state through the pipeline:
 |-------|--------|---------|
 | `brainstormed` | brainstorm-bead formula (finalize step) | Spec written and reviewed |
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
+| `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
 | `human` | Any agent via `bd human <id>` | Needs human attention |
 
 Label commands:
@@ -97,14 +98,18 @@ The polling loop and background subagents will interrupt interactive conversatio
 - Brainstorming session: interactive, user present, no background work
 - run-queue session: autonomous, separate window/terminal, no brainstorming
 - **Post-brainstorm hand-off**: Any bead that becomes
-  `implementation-ready` in the current session is a hand-off candidate by
-  default. Implementation runs in a separate run-queue session. Continuing
-  to implementation in the current session requires explicit user
-  authorization per session. The `brainstorm-bead` formula stamps an
-  `implementation-readied-session-<sid>` label so `start-bead` Route A can
-  check this mechanically; manual `bd label add` and import paths do not
-  stamp this label, so Route A will not auto-gate them (judgment still
-  applies).
+  `implementation-ready` in the current session is a hand-off candidate
+  by default. Implementation runs in a separate run-queue session;
+  continuing in the current session requires explicit user authorization
+  per session. The rule has two enforcement tiers:
+  - **Mechanical** (brainstorm-bead formula): the formula stamps an
+    `implementation-readied-session-<sid>` label, so `start-bead` Route A
+    auto-gates against the originating session.
+  - **Advisory** (manual `bd label add`, imports, or any other path that
+    doesn't stamp the session marker): Route A cannot auto-gate, but the
+    rule still applies — the agent should honor the hand-off boundary by
+    judgment. If manual/import paths will be common in your workflow,
+    stamp a session marker yourself to make the gate mechanical.
 
 ---
 

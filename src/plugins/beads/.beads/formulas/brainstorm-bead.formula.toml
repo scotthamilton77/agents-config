@@ -187,10 +187,13 @@ Incorporate any valid spec review findings into the bead, then mark it ready.
    Where <sid> is the first 8 hex characters of your current Claude
    session ID (visible in the <session-info> system tag as `sessionId`).
    This label lets `start-bead` Route A detect that the current session
-   was the one that applied `implementation-ready`, so it can gate
-   against silent in-session continuation. If a later session re-applies
-   `implementation-ready`, it will overwrite the session marker with its
-   own — that is intentional; the label tracks the most recent readier.
+   was one that applied `implementation-ready`, so it can gate against
+   silent in-session continuation. If a later session re-applies
+   `implementation-ready`, it should stamp its own
+   `implementation-readied-session-<its-sid>` label as well; multiple
+   session-marker labels may coexist on the same bead — `bd label add` is
+   additive, not overwriting. Route A only checks whether the marker for
+   the CURRENT session is present; older markers are harmless.
 
 3. Report to the user:
      "Bead {{bead-id}} is now implementation-ready.

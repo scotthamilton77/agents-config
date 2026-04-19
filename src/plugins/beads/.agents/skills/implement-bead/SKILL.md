@@ -22,9 +22,10 @@ invocation contexts must apply:
 - **`run-queue` in a dedicated session** — autonomous; no per-bead user
   authorization needed (the operator authorized the queue when they
   started it).
-- **`start-bead` Route A** for a bead that was NOT made
-  `implementation-ready` in the current session — i.e., no
-  `implementation-readied-session-<current-sid>` label present.
+- **`start-bead` Route A** for a bead where no
+  `implementation-readied-session-<sid-prefix-8>` label matching the
+  current session's SID prefix is present (the marker for the current
+  session is absent, regardless of whether other session markers exist).
 - **In-session override** — user explicitly and affirmatively authorizes
   implementation in the current session (e.g. "implement it now",
   "yes, go"). Completing brainstorming in the same session is NOT
