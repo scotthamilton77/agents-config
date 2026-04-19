@@ -16,11 +16,19 @@ The main agent manages; subagents build.
 
 ## When to Use
 
-- Bead has label `implementation-ready`
-- Invoked by `start-bead` after routing, or by `run-queue` autonomously
-- User explicitly and affirmatively authorizes implementation in this
-  session (e.g. "implement it now", "yes, go"). Completing brainstorming
-  in the same session is NOT implicit authorization.
+The bead MUST have label `implementation-ready`. One of the following
+invocation contexts must apply:
+
+- **`run-queue` in a dedicated session** — autonomous; no per-bead user
+  authorization needed (the operator authorized the queue when they
+  started it).
+- **`start-bead` Route A** for a bead that was NOT made
+  `implementation-ready` in the current session — i.e., no
+  `implementation-readied-session-<current-sid>` label present.
+- **In-session override** — user explicitly and affirmatively authorizes
+  implementation in the current session (e.g. "implement it now",
+  "yes, go"). Completing brainstorming in the same session is NOT
+  implicit authorization.
 
 **Do NOT use when:** bead lacks `implementation-ready` label — use `start-bead`.
 

@@ -98,11 +98,13 @@ The polling loop and background subagents will interrupt interactive conversatio
 - run-queue session: autonomous, separate window/terminal, no brainstorming
 - **Post-brainstorm hand-off**: Any bead that becomes
   `implementation-ready` in the current session is a hand-off candidate by
-  default — regardless of how the label was applied (brainstorm formula,
-  manual `bd label add`, or an import that applies the label).
-  Implementation runs in a separate run-queue session. Continuing to
-  implementation in the current session requires explicit user authorization
-  per session.
+  default. Implementation runs in a separate run-queue session. Continuing
+  to implementation in the current session requires explicit user
+  authorization per session. The `brainstorm-bead` formula stamps an
+  `implementation-readied-session-<sid>` label so `start-bead` Route A can
+  check this mechanically; manual `bd label add` and import paths do not
+  stamp this label, so Route A will not auto-gate them (judgment still
+  applies).
 
 ---
 

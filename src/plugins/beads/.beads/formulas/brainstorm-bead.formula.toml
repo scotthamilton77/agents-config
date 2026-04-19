@@ -182,6 +182,15 @@ Incorporate any valid spec review findings into the bead, then mark it ready.
 2. Add labels to mark the bead's state:
      bd label add {{bead-id}} brainstormed
      bd label add {{bead-id}} implementation-ready
+     bd label add {{bead-id}} implementation-readied-session-<sid>
+
+   Where <sid> is the first 8 hex characters of your current Claude
+   session ID (visible in the <session-info> system tag as `sessionId`).
+   This label lets `start-bead` Route A detect that the current session
+   was the one that applied `implementation-ready`, so it can gate
+   against silent in-session continuation. If a later session re-applies
+   `implementation-ready`, it will overwrite the session marker with its
+   own — that is intentional; the label tracks the most recent readier.
 
 3. Report to the user:
      "Bead {{bead-id}} is now implementation-ready.

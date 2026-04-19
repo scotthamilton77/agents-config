@@ -52,13 +52,20 @@ Evaluate the bead against these criteria in order:
 
 Condition: has label `implementation-ready`
 
-Action: check session context.
+Action: check for a same-session readier label.
 
-- If the `implementation-ready` label was applied in THIS session (e.g.
-  the brainstorm formula just finalized this bead), STOP. The default is
-  hand-off to run-queue. Invoke `implement-bead` only on explicit user
-  authorization; silent continuation is not permitted.
-- Otherwise, invoke `implement-bead` directly.
+1. Get your current session ID from the `<session-info>` system tag and
+   take its first 8 hex characters (e.g. `62d06423`).
+2. Run `bd label list <bead-id>` and look for a label of the form
+   `implementation-readied-session-<your-sid-prefix>`.
+3. Decide:
+   - **Label present** (you are the session that readied this bead):
+     STOP. The default is hand-off to run-queue. Invoke `implement-bead`
+     only on explicit user authorization; silent continuation is not
+     permitted.
+   - **Label absent** (another session readied it, or it was readied via
+     a path that doesn't stamp the session label — e.g. manual
+     `bd label add` or import): invoke `implement-bead` directly.
 
 ---
 
