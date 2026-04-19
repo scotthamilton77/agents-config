@@ -69,7 +69,7 @@ tracked home — prefer **epic-sibling placement** over the default
 orphan-with-`discovered-from`:
 
 ```bash
-PARENT=$(bd show <current-bead-id> --json | jq -r '.[0].parent // empty')
+PARENT=$(bd show "<current-bead-id>" --json | jq -r '.[0].parent // empty')
 
 # Decide placement via the sibling test (see rules/beads.md I3):
 # would this work have been on the parent epic's original plan, if
@@ -78,11 +78,11 @@ IS_SIBLING_SUBTASK=false  # set to true only when the answer is yes
 
 if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
   # Create INSIDE the parent epic as a sibling:
-  bd create "<title>" -t <type> -p <priority> --parent "$PARENT"
+  bd create "<title>" -t "<type>" -p "<priority>" --parent "$PARENT"
 else
   # Otherwise create as an orphan and link with discovered-from:
-  NEW=$(bd create "<title>" -t <type> -p <priority> --json | jq -r '.id')
-  bd dep add "$NEW" <current-bead-id> --type discovered-from
+  NEW=$(bd create "<title>" -t "<type>" -p "<priority>" --json | jq -r '.id')
+  bd dep add "$NEW" "<current-bead-id>" --type discovered-from
 fi
 ```
 

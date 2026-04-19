@@ -316,10 +316,10 @@ Complete the lifecycle and preserve context for future sessions.
 
      if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
        # Create INSIDE the parent epic as a sibling:
-       bd create "Found: ..." -t <type> -p <prio> --parent "$PARENT"
+       bd create "Found: ..." -t "<type>" -p "<prio>" --parent "$PARENT"
      else
        # Otherwise create as an orphan and link with discovered-from:
-       NEW=$(bd create "Found: ..." -t <type> -p <prio> --json | jq -r '.id')
+       NEW=$(bd create "Found: ..." -t "<type>" -p "<prio>" --json | jq -r '.id')
        bd dep add "$NEW" {{bead-id}} --type discovered-from
      fi
 
