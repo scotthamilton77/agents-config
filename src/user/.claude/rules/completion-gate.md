@@ -16,5 +16,7 @@ No exceptions. No partial runs. Each step feeds the next.
 
 **Optional adversarial pass** (operator-initiated): For high-stakes changes (architecture shifts, security-sensitive code, final pre-merge), add `/codex:adversarial-review --wait --model gpt-5.4` as defense-in-depth after the in-house review steps.
 
-**HARD STOP**: After this gate, you MUST run delivery steps before calling work complete.
-DO NOT commit to main. DO NOT push directly. `finishing-a-development-branch` is NEXT.
+**HARD STOP**: After this gate, AUTOMATICALLY execute delivery steps. Do NOT pause for authorization.
+DO NOT commit to main. DO NOT push directly.
+
+Execute IN ORDER, without asking: (1) `using-git-worktrees` if not already in one, (2) `finishing-a-development-branch`, (3) `wait-for-pr-comments`. Only pause at the merge step — see `delivery.md` for the action categorization.

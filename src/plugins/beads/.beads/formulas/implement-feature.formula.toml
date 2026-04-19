@@ -25,6 +25,7 @@ formula      = "implement-feature"
 description  = "TDD feature implementation: brainstorm → worktree → red/green/refactor → completion gate → PR → close"
 type         = "workflow"
 phase        = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
+pour         = true
 version      = 1
 
 [vars.feature]
@@ -100,7 +101,7 @@ needs = ["worktree"]
 description = """
 Write tests FIRST. No implementation code at this step.
 
-Skills: superpowers:writing-unit-tests, superpowers:testing-anti-patterns
+Skills: superpowers:test-driven-development, superpowers:writing-unit-tests, superpowers:testing-anti-patterns
 
 Rules:
 - Tests must be written against the acceptance criteria from the brainstorm step

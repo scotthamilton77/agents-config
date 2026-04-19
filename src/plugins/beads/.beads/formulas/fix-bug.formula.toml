@@ -21,6 +21,7 @@ formula     = "fix-bug"
 description = "Bug fix: diagnose root cause → regression test → fix → completion gate → PR → close"
 type        = "workflow"
 phase       = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
+pour        = true
 version     = 1
 
 [vars.bug]
@@ -63,7 +64,7 @@ needs = ["reproduce"]
 description = """
 Trace the failure backward to the original invalid state or wrong assumption.
 
-Skill: superpowers:root-cause-tracing (if the call stack is deep or unclear)
+Skill: superpowers:root-cause-tracing
 
 Rules:
 - A symptom is WHERE it breaks. A root cause is WHY it breaks.
@@ -138,6 +139,8 @@ title = "Implement the fix (green phase)"
 needs = ["write-regression-test"]
 description = """
 Fix the root cause identified in the diagnose phase.
+
+Skill: superpowers:test-driven-development
 
 Rules:
 - Fix the ROOT CAUSE, not the symptom

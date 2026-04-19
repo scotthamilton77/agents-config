@@ -20,11 +20,13 @@
 #   bd mol wisp create merge-and-cleanup \
 #     --var pr="123" \
 #     --var bead-id=proj-42
+#   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "merge-and-cleanup"
 description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
 type        = "workflow"
 phase       = "vapor"
+pour        = true
 version     = 1
 
 [vars.pr]
@@ -46,6 +48,8 @@ description = """
 Before touching this PR, verify that the mandatory completion gate
 was run. Do not take the implementing agent's word for it — look for
 evidence in the PR activity and git history.
+
+Skill: superpowers:requesting-code-review (when dispatching the retroactive review)
 
 1. Find the branch for this PR:
      gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
@@ -86,6 +90,8 @@ description = """
 Retrieve ALL comments on this PR. Both sources are required — do not
 rely on memory or assumption about what comments exist.
 
+Skill: superpowers:wait-for-pr-comments
+
 Run these commands and record their full output:
 
   # Top-level review comments and summary comments
@@ -115,6 +121,8 @@ title = "Address all blocking feedback"
 needs = ["check-pr-comments"]
 description = """
 Fix all comments triaged as Blocking in the previous step.
+
+Skill: superpowers:receiving-code-review
 
 For each blocking comment:
   - If fix is clear and unambiguous: implement, commit, push
