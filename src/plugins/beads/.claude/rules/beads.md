@@ -111,7 +111,8 @@ is looking for work), use `bd ready --label implementation-ready` instead.
 
 ## Bead Lifecycle and Labels
 
-Labels track a bead's state through the pipeline:
+Labels track state through the pipeline. Most apply to beads; a few
+apply to molecules (the `Set by` and `Meaning` columns note the subject):
 
 | Label | Set by | Meaning |
 |-------|--------|---------|
@@ -136,7 +137,7 @@ bd ready --label <label>
 Molecules created for a bead via `bd mol pour` or `bd mol wisp` have NO
 structural link back to the bead they were poured/wisped for: `parent`
 is `null` and neither title nor description encodes the bead id (beads
-`lp3`, upstream bug). Until `bd` fixes this, SKILLs stamp an explicit
+`lp3`, upstream bug). Until `bd` fixes this, skills stamp an explicit
 lookup label on the molecule immediately after pour/wisp:
 
 ```bash

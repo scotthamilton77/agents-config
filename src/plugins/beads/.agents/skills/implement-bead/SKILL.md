@@ -64,8 +64,7 @@ Decide from the result array:
   bead's history, user references one), STOP — do NOT pour over
   unlabeled in-progress work. Escalate:
   ```bash
-  bd comments add <bead-id> "Probe returned no labeled molecules, but I
-    suspect an unlabeled molecule exists because: <reason>."
+  bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
   bd human <bead-id>
   ```
   Otherwise proceed to Step 3.

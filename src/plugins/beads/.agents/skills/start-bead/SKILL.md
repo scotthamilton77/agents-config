@@ -39,7 +39,7 @@ bd list --label for-bead-<bead-id> --type molecule --json \
   | jq '[.[] | select(.status != "closed")]'
 ```
 
-Why this shape — two beads motivate every character:
+Why this shape — two bugs motivate every character:
 - `--json` bypasses the tree-text path, which silently drops `--type` and
   seeds the queried id into results (beads `2dx`).
 - The label is the only reliable bead→molecule edge; `bd mol pour` does
@@ -53,8 +53,7 @@ Decide from the result array:
   bead's history, user references one), STOP — do NOT pour/wisp over
   unlabeled in-progress work. Escalate:
   ```bash
-  bd comments add <bead-id> "Probe returned no labeled molecules, but I
-    suspect an unlabeled molecule exists because: <reason>."
+  bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
   bd human <bead-id>
   ```
   Otherwise proceed to Step 3.
