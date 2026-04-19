@@ -193,7 +193,7 @@ Incorporate any valid spec review findings into the bead, then mark it ready.
       implementation.
 
       If you want to implement now in the current session instead, say so
-      explicitly ("implement it now", "do <bead-id> next", etc.) and I
+      explicitly ("implement it now", "do {{bead-id}} next", etc.) and I
       will invoke `implement-bead`."
 
    Then STOP. Do not invoke implement-bead unless the user replies with
