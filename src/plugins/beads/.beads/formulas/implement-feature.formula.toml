@@ -309,14 +309,17 @@ Complete the lifecycle and preserve context for future sessions.
 
      PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
 
-     # If the discovered work is a logical sibling subtask of the same
-     # parent epic, create it INSIDE the epic so it lands with the
-     # siblings (not as an orphan with only a dep link):
-     if [ -n "$PARENT" ] && <work-is-sibling-subtask-of-$PARENT>; then
-       bd create "Found: ..." -t <type> -p <prio> --parent "$PARENT"
+     # Decide placement via the sibling test (see rules/beads.md I3):
+     # would this work have been on the parent epic's original plan, if
+     # we'd thought of it? Yes → sibling. No → orphan + discovered-from.
+     IS_SIBLING_SUBTASK=false  # set to true only when the answer is yes
+
+     if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
+       # Create INSIDE the parent epic as a sibling:
+       bd create "Found: ..." -t "<type>" -p "<prio>" --parent "$PARENT"
      else
        # Otherwise create as an orphan and link with discovered-from:
-       NEW=$(bd create "Found: ..." -t <type> -p <prio> --json | jq -r '.id')
+       NEW=$(bd create "Found: ..." -t "<type>" -p "<prio>" --json | jq -r '.id')
        bd dep add "$NEW" {{bead-id}} --type discovered-from
      fi
 
