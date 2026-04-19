@@ -80,12 +80,45 @@ Action: wisp the brainstorm-bead formula:
 bd mol wisp create brainstorm-bead --var bead-id=<id>
 ```
 
-Then execute the formula as the MAIN AGENT (brainstorming requires
-interactive conversation with the user — do NOT dispatch a subagent).
+Then drive the molecule as the MAIN AGENT (brainstorming requires
+interactive conversation with the user — do NOT dispatch a subagent):
+
+1. `bd mol current <wisp-id>` — shows all steps with status markers
+2. For the first `[ready]` step:
+   - `bd update <step-id> --claim` — lock as in_progress
+   - `bd show <step-id>` — read the step's instructions
+   - Execute the step (interactive conversation for the discuss step)
+   - `bd close <step-id> --continue` — closes and auto-claims the next step
+3. Repeat until all steps show `[done]`.
+
+Use the step IDs reported by `bd mol current` — do NOT synthesize
+`<root>.<step>` patterns. Step IDs are independent hash-based identifiers.
 
 After the formula completes, the bead will have the `implementation-ready`
 label and will be picked up by `run-queue`, or the user can invoke
 `implement-bead` directly.
+
+### Failure mode: 0/0 steps after wisp creation
+
+If `bd mol current <wisp-id>` shows "0/0 steps complete" with no step
+list, the formula is missing `pour = true`. Recover with:
+
+```bash
+bd mol burn <wisp-id>
+```
+
+Tell the user it is a formula bug (child step beads were not materialized).
+Do NOT fall back to invoking the brainstorming skill inline — that bypasses
+the state tracking the molecule exists to provide.
+
+For other mid-run abandonment (real progress was made, but the molecule
+needs to stop), prefer:
+
+```bash
+bd mol squash <wisp-id> --summary "Aborted: <reason>"
+```
+
+to preserve history for debugging.
 
 ---
 
@@ -113,3 +146,5 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "The bead has some AC, close enough" | Has `implementation-ready` label? No? Then Route C. |
 | "I'll do a quick brainstorm in-line without the formula" | No. The formula provides state tracking and spec review. |
 | "This molecule looks incomplete, I'll create a new one" | Resume the existing molecule first. |
+| "The molecule looks empty, I'll just do the work inline" | STOP. 0/0 = formula bug. Burn + report, do not bypass. |
+| "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |

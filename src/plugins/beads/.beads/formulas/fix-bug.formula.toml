@@ -21,6 +21,7 @@ formula     = "fix-bug"
 description = "Bug fix: diagnose root cause → regression test → fix → completion gate → PR → close"
 type        = "workflow"
 phase       = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
+pour        = true
 version     = 1
 
 [vars.bug]

@@ -20,11 +20,13 @@
 #   bd mol wisp create merge-and-cleanup \
 #     --var pr="123" \
 #     --var bead-id=proj-42
+#   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "merge-and-cleanup"
 description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
 type        = "workflow"
 phase       = "vapor"
+pour        = true
 version     = 1
 
 [vars.pr]

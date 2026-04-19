@@ -16,11 +16,13 @@
 #
 # Usage:
 #   bd mol wisp create brainstorm-bead --var bead-id=proj-42
+#   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "brainstorm-bead"
 description = "Interactive spec-writing: assess gaps → discuss with user → write spec → RALF spec review → mark implementation-ready"
 type        = "workflow"
 phase       = "vapor"
+pour        = true
 version     = 1
 
 [vars.bead-id]
