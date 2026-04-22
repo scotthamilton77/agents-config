@@ -1,32 +1,33 @@
 ---
 name: code-debugger
-description: PROACTIVELY use this agent when encountering bugs, performance issues, or unexpected behavior that requires systematic investigation and root cause analysis. This agent excels at methodical problem isolation, comprehensive debugging workflows, and implementing sustainable fixes that prevent recurrence. Ideal for mysterious crashes, intermittent failures, performance degradations, integration issues, or any complex technical problem that needs forensic analysis and surgical resolution.
+description: |-
+  PROACTIVELY use this agent when encountering bugs, performance issues, or unexpected behavior that requires systematic investigation and root cause analysis. This agent excels at methodical problem isolation, comprehensive debugging workflows, and implementing sustainable fixes that prevent recurrence. Ideal for mysterious crashes, intermittent failures, performance degradations, integration issues, or any complex technical problem that needs forensic analysis and surgical resolution.
 
-Examples:
-<example>
-Context: User encounters a crash that only happens in production with no clear stack trace.
-user: "Our application crashes randomly in production but works fine locally, and the logs don't show much"
-assistant: "I'll use the code-debugger agent to systematically investigate this production-only crash with comprehensive diagnostic techniques."
-<commentary>
-The debugger will establish monitoring, create reproduction strategies, and analyze production artifacts to isolate the root cause of environment-specific issues.
-</commentary>
-</example>
-<example>
-Context: User experiences performance degradation that started recently.
-user: "The app has gotten really slow over the past week, but we haven't deployed any major changes"
-assistant: "Let me engage the code-debugger to perform performance regression analysis and identify the degradation source."
-<commentary>
-The debugger will use profiling tools, analyze historical performance data, and trace resource utilization to pinpoint what changed to cause the slowdown.
-</commentary>
-</example>
-<example>
-Context: User has an intermittent bug that's hard to reproduce.
-user: "Sometimes our API returns the wrong data, but it only happens maybe 1 in 100 requests"
-assistant: "I'll bring in the code-debugger to tackle this intermittent issue with statistical analysis and comprehensive monitoring."
-<commentary>
-The debugger will set up detailed logging, implement race condition detection, and use systematic reproduction techniques to capture the elusive bug.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User encounters a crash that only happens in production with no clear stack trace.
+  user: "Our application crashes randomly in production but works fine locally, and the logs don't show much"
+  assistant: "I'll use the code-debugger agent to systematically investigate this production-only crash with comprehensive diagnostic techniques."
+  <commentary>
+  The debugger will establish monitoring, create reproduction strategies, and analyze production artifacts to isolate the root cause of environment-specific issues.
+  </commentary>
+  </example>
+  <example>
+  Context: User experiences performance degradation that started recently.
+  user: "The app has gotten really slow over the past week, but we haven't deployed any major changes"
+  assistant: "Let me engage the code-debugger to perform performance regression analysis and identify the degradation source."
+  <commentary>
+  The debugger will use profiling tools, analyze historical performance data, and trace resource utilization to pinpoint what changed to cause the slowdown.
+  </commentary>
+  </example>
+  <example>
+  Context: User has an intermittent bug that's hard to reproduce.
+  user: "Sometimes our API returns the wrong data, but it only happens maybe 1 in 100 requests"
+  assistant: "I'll bring in the code-debugger to tackle this intermittent issue with statistical analysis and comprehensive monitoring."
+  <commentary>
+  The debugger will set up detailed logging, implement race condition detection, and use systematic reproduction techniques to capture the elusive bug.
+  </commentary>
+  </example>
 model: sonnet
 color: red
 ---

@@ -1,32 +1,33 @@
 ---
 name: data-scientist
-description: PROACTIVELY analyze data using SQL, BigQuery, and statistical methods to extract insights and drive data-driven decision making. Specializes in database analysis, data visualization, performance optimization, and predictive modeling for business intelligence.
+description: |-
+  PROACTIVELY analyze data using SQL, BigQuery, and statistical methods to extract insights and drive data-driven decision making. Specializes in database analysis, data visualization, performance optimization, and predictive modeling for business intelligence.
 
-Examples:
-<example>
-Context: User needs to analyze email processing performance metrics.
-user: "I want to understand which email categories take the longest to process"
-assistant: "I'll use the data-scientist agent to analyze email processing times by category and identify performance bottlenecks."
-<commentary>
-This requires SQL analysis of email processing data to identify patterns and optimization opportunities.
-</commentary>
-</example>
-<example>
-Context: User wants to validate system performance after changes.
-user: "Can you analyze our email classification accuracy over the past month?"
-assistant: "Let me use the data-scientist agent to examine classification accuracy metrics and trends."
-<commentary>
-Requires statistical analysis of classification results to measure system performance and identify improvement areas.
-</commentary>
-</example>
-<example>
-Context: User needs insights for system optimization.
-user: "What patterns can you find in our Gmail processing errors?"
-assistant: "I'll use the data-scientist agent to analyze error patterns and identify root causes."
-<commentary>
-Data analysis is needed to understand error frequency, types, and correlations to improve system reliability.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to analyze email processing performance metrics.
+  user: "I want to understand which email categories take the longest to process"
+  assistant: "I'll use the data-scientist agent to analyze email processing times by category and identify performance bottlenecks."
+  <commentary>
+  This requires SQL analysis of email processing data to identify patterns and optimization opportunities.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to validate system performance after changes.
+  user: "Can you analyze our email classification accuracy over the past month?"
+  assistant: "Let me use the data-scientist agent to examine classification accuracy metrics and trends."
+  <commentary>
+  Requires statistical analysis of classification results to measure system performance and identify improvement areas.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs insights for system optimization.
+  user: "What patterns can you find in our Gmail processing errors?"
+  assistant: "I'll use the data-scientist agent to analyze error patterns and identify root causes."
+  <commentary>
+  Data analysis is needed to understand error frequency, types, and correlations to improve system reliability.
+  </commentary>
+  </example>
 model: sonnet
 color: green
 ---

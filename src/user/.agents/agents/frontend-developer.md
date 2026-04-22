@@ -1,32 +1,33 @@
 ---
 name: frontend-developer
-description: PROACTIVELY build modern, responsive frontends with React, Vue, or vanilla JS. Specializes in component architecture, state management, performance optimization, and accessibility. Use for UI development, user experience improvements, and interactive web applications.
+description: |-
+  PROACTIVELY build modern, responsive frontends with React, Vue, or vanilla JS. Specializes in component architecture, state management, performance optimization, and accessibility. Use for UI development, user experience improvements, and interactive web applications.
 
-Examples:
-<example>
-Context: User needs a web interface for email management.
-user: "I need to create a dashboard for viewing and managing email categories"
-assistant: "I'll use the frontend-developer agent to build a responsive email management dashboard with proper state management and accessibility."
-<commentary>
-This requires frontend expertise for creating interactive UI components, managing complex state, and ensuring responsive design.
-</commentary>
-</example>
-<example>
-Context: User wants to improve existing UI performance.
-user: "The email list is loading slowly and the UI feels sluggish"
-assistant: "Let me use the frontend-developer agent to optimize the email list performance with virtualization and lazy loading."
-<commentary>
-Frontend performance optimization requires specialized knowledge of web vitals, rendering optimization, and efficient data loading patterns.
-</commentary>
-</example>
-<example>
-Context: User needs accessibility improvements.
-user: "We need to make our email interface accessible for screen readers"
-assistant: "I'll use the frontend-developer agent to implement WCAG compliance and ARIA labels throughout the email interface."
-<commentary>
-Accessibility requires frontend expertise in semantic HTML, ARIA patterns, and testing with assistive technologies.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs a web interface for email management.
+  user: "I need to create a dashboard for viewing and managing email categories"
+  assistant: "I'll use the frontend-developer agent to build a responsive email management dashboard with proper state management and accessibility."
+  <commentary>
+  This requires frontend expertise for creating interactive UI components, managing complex state, and ensuring responsive design.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to improve existing UI performance.
+  user: "The email list is loading slowly and the UI feels sluggish"
+  assistant: "Let me use the frontend-developer agent to optimize the email list performance with virtualization and lazy loading."
+  <commentary>
+  Frontend performance optimization requires specialized knowledge of web vitals, rendering optimization, and efficient data loading patterns.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs accessibility improvements.
+  user: "We need to make our email interface accessible for screen readers"
+  assistant: "I'll use the frontend-developer agent to implement WCAG compliance and ARIA labels throughout the email interface."
+  <commentary>
+  Accessibility requires frontend expertise in semantic HTML, ARIA patterns, and testing with assistive technologies.
+  </commentary>
+  </example>
 model: sonnet
 color: cyan
 ---

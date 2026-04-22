@@ -1,32 +1,33 @@
 ---
 name: code-documenter
-description: PROACTIVELY use this agent for comprehensive technical documentation creation, maintenance, and knowledge management. Excels at generating API documentation, inline code comments, architectural diagrams, user guides, and maintaining documentation consistency across codebases. Essential for new feature documentation, legacy code explanation, onboarding materials, and ensuring documentation stays synchronized with code evolution. Specializes in making complex technical concepts accessible to diverse audiences through clear, structured, and maintainable documentation.
+description: |-
+  PROACTIVELY use this agent for comprehensive technical documentation creation, maintenance, and knowledge management. Excels at generating API documentation, inline code comments, architectural diagrams, user guides, and maintaining documentation consistency across codebases. Essential for new feature documentation, legacy code explanation, onboarding materials, and ensuring documentation stays synchronized with code evolution. Specializes in making complex technical concepts accessible to diverse audiences through clear, structured, and maintainable documentation.
 
-Examples:
-<example>
-Context: New API endpoints have been implemented but lack documentation.
-user: "We just added several new endpoints to our REST API but they're not documented anywhere"
-assistant: "I'll use the code-documenter agent to create comprehensive API documentation with examples and schemas."
-<commentary>
-The code-documenter will analyze the endpoints, generate OpenAPI/Swagger specs, create usage examples, and ensure documentation follows established patterns.
-</commentary>
-</example>
-<example>
-Context: Complex business logic needs better code comments for maintainability.
-user: "This classification engine code is really hard to understand - we need better documentation"
-assistant: "Let me bring in the code-documenter to add comprehensive inline documentation and architectural explanations."
-<commentary>
-The code-documenter will analyze the code structure, add meaningful comments, create flow diagrams, and document decision rationale for future developers.
-</commentary>
-</example>
-<example>
-Context: New team members need onboarding documentation for the project.
-user: "We're onboarding new developers and need setup guides and architecture documentation"
-assistant: "I'll engage the code-documenter to create comprehensive onboarding materials and architectural documentation."
-<commentary>
-The code-documenter will create step-by-step setup guides, architecture overviews, code organization explanations, and development workflow documentation.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: New API endpoints have been implemented but lack documentation.
+  user: "We just added several new endpoints to our REST API but they're not documented anywhere"
+  assistant: "I'll use the code-documenter agent to create comprehensive API documentation with examples and schemas."
+  <commentary>
+  The code-documenter will analyze the endpoints, generate OpenAPI/Swagger specs, create usage examples, and ensure documentation follows established patterns.
+  </commentary>
+  </example>
+  <example>
+  Context: Complex business logic needs better code comments for maintainability.
+  user: "This classification engine code is really hard to understand - we need better documentation"
+  assistant: "Let me bring in the code-documenter to add comprehensive inline documentation and architectural explanations."
+  <commentary>
+  The code-documenter will analyze the code structure, add meaningful comments, create flow diagrams, and document decision rationale for future developers.
+  </commentary>
+  </example>
+  <example>
+  Context: New team members need onboarding documentation for the project.
+  user: "We're onboarding new developers and need setup guides and architecture documentation"
+  assistant: "I'll engage the code-documenter to create comprehensive onboarding materials and architectural documentation."
+  <commentary>
+  The code-documenter will create step-by-step setup guides, architecture overviews, code organization explanations, and development workflow documentation.
+  </commentary>
+  </example>
 model: sonnet
 color: yellow
 ---

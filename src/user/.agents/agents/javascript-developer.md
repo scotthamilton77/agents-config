@@ -1,32 +1,33 @@
 ---
 name: javascript-developer
-description: PROACTIVELY use this agent when you need expert JavaScript development focusing on modern ECMAScript features, performance optimization, and advanced async patterns. This agent excels at solving complex JavaScript challenges, optimizing performance bottlenecks, implementing cutting-edge ES2024+ features, and creating robust client-side and server-side JavaScript solutions. Ideal for async/await optimizations, memory management issues, advanced data processing with iterators/generators, Web API integrations, Node.js performance tuning, or any scenario requiring deep JavaScript language expertise and modern best practices.
+description: |-
+  PROACTIVELY use this agent when you need expert JavaScript development focusing on modern ECMAScript features, performance optimization, and advanced async patterns. This agent excels at solving complex JavaScript challenges, optimizing performance bottlenecks, implementing cutting-edge ES2024+ features, and creating robust client-side and server-side JavaScript solutions. Ideal for async/await optimizations, memory management issues, advanced data processing with iterators/generators, Web API integrations, Node.js performance tuning, or any scenario requiring deep JavaScript language expertise and modern best practices.
 
-Examples:
-<example>
-Context: User needs to optimize a slow data processing function.
-user: "My JavaScript function is processing 10,000 records and it's taking too long"
-assistant: "I'll use the javascript-developer agent to analyze and optimize this performance bottleneck."
-<commentary>
-The JavaScript developer will identify performance issues and implement optimizations using modern techniques like generators, Web Workers, or async batching.
-</commentary>
-</example>
-<example>
-Context: User wants to implement advanced async patterns.
-user: "I need to handle multiple API calls with proper error handling and cancellation"
-assistant: "Let me bring in the javascript-developer to implement robust async patterns with AbortController and Promise management."
-<commentary>
-The JavaScript developer will design elegant async solutions using Promise.allSettled, AbortController, and proper error boundaries.
-</commentary>
-</example>
-<example>
-Context: User encounters memory leaks in a complex application.
-user: "Our web app is consuming too much memory and getting slower over time"
-assistant: "I'll engage the javascript-developer to diagnose and fix memory management issues."
-<commentary>
-The JavaScript developer will analyze memory usage patterns, identify leaks, and implement WeakMap/WeakSet solutions with proper cleanup.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to optimize a slow data processing function.
+  user: "My JavaScript function is processing 10,000 records and it's taking too long"
+  assistant: "I'll use the javascript-developer agent to analyze and optimize this performance bottleneck."
+  <commentary>
+  The JavaScript developer will identify performance issues and implement optimizations using modern techniques like generators, Web Workers, or async batching.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to implement advanced async patterns.
+  user: "I need to handle multiple API calls with proper error handling and cancellation"
+  assistant: "Let me bring in the javascript-developer to implement robust async patterns with AbortController and Promise management."
+  <commentary>
+  The JavaScript developer will design elegant async solutions using Promise.allSettled, AbortController, and proper error boundaries.
+  </commentary>
+  </example>
+  <example>
+  Context: User encounters memory leaks in a complex application.
+  user: "Our web app is consuming too much memory and getting slower over time"
+  assistant: "I'll engage the javascript-developer to diagnose and fix memory management issues."
+  <commentary>
+  The JavaScript developer will analyze memory usage patterns, identify leaks, and implement WeakMap/WeakSet solutions with proper cleanup.
+  </commentary>
+  </example>
 model: sonnet
 color: yellow
 ---

@@ -1,32 +1,33 @@
 ---
 name: tech-lead
-description: PROACTIVELY use this agent when you need to orchestrate complex development tasks that require multiple specialized agents working in coordination. This agent excels at breaking down high-level goals into actionable subtasks, managing parallel workflows, and ensuring proper sequencing of development activities. Ideal for multi-faceted projects, feature implementations, debugging sessions requiring multiple perspectives, or any scenario where coordinated expertise from different domains is needed.
+description: |-
+  PROACTIVELY use this agent when you need to orchestrate complex development tasks that require multiple specialized agents working in coordination. This agent excels at breaking down high-level goals into actionable subtasks, managing parallel workflows, and ensuring proper sequencing of development activities. Ideal for multi-faceted projects, feature implementations, debugging sessions requiring multiple perspectives, or any scenario where coordinated expertise from different domains is needed.
 
-Examples:
-<example>
-Context: User wants to implement a new feature that requires both frontend and backend work.
-user: "I need to add a user authentication system to our application"
-assistant: "I'll use the tech-lead agent to break this down and coordinate the implementation."
-<commentary>
-Since this is a complex feature requiring multiple components, the tech-lead will analyze requirements and delegate to appropriate specialized agents.
-</commentary>
-</example>
-<example>
-Context: User encounters a complex bug that might involve multiple layers of the application.
-user: "The payment processing is failing intermittently and I can't figure out why"
-assistant: "Let me bring in the tech-lead to orchestrate a systematic investigation across all relevant components."
-<commentary>
-The tech-lead will coordinate debugging efforts across database, backend, and potentially frontend agents to identify the root cause.
-</commentary>
-</example>
-<example>
-Context: User wants to refactor a large codebase section.
-user: "We need to modernize our API layer to use the latest patterns"
-assistant: "I'll engage the tech-lead to plan and execute this refactoring systematically."
-<commentary>
-The tech-lead will assess the scope, create a refactoring plan, and coordinate code-refactor, code-reviewer, and api-developer agents.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User wants to implement a new feature that requires both frontend and backend work.
+  user: "I need to add a user authentication system to our application"
+  assistant: "I'll use the tech-lead agent to break this down and coordinate the implementation."
+  <commentary>
+  Since this is a complex feature requiring multiple components, the tech-lead will analyze requirements and delegate to appropriate specialized agents.
+  </commentary>
+  </example>
+  <example>
+  Context: User encounters a complex bug that might involve multiple layers of the application.
+  user: "The payment processing is failing intermittently and I can't figure out why"
+  assistant: "Let me bring in the tech-lead to orchestrate a systematic investigation across all relevant components."
+  <commentary>
+  The tech-lead will coordinate debugging efforts across database, backend, and potentially frontend agents to identify the root cause.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to refactor a large codebase section.
+  user: "We need to modernize our API layer to use the latest patterns"
+  assistant: "I'll engage the tech-lead to plan and execute this refactoring systematically."
+  <commentary>
+  The tech-lead will assess the scope, create a refactoring plan, and coordinate code-refactor, code-reviewer, and api-developer agents.
+  </commentary>
+  </example>
 model: sonnet
 color: pink
 ---

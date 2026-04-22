@@ -1,32 +1,33 @@
 ---
 name: backend-developer
-description: PROACTIVELY develop robust backend systems with focus on scalability, security, and maintainability. Specializes in API design, database optimization, server architecture, and microservices. Use for server-side development, system design, and infrastructure challenges.
+description: |-
+  PROACTIVELY develop robust backend systems with focus on scalability, security, and maintainability. Specializes in API design, database optimization, server architecture, and microservices. Use for server-side development, system design, and infrastructure challenges.
 
-Examples:
-<example>
-Context: User needs to build an email processing service.
-user: "I need to create a backend service that processes Gmail emails and stores classification results"
-assistant: "I'll use the backend-developer agent to design a scalable email processing service with proper database design and queue management."
-<commentary>
-This requires backend expertise for service architecture, database design, async processing, and API development.
-</commentary>
-</example>
-<example>
-Context: User wants to optimize system performance.
-user: "Our email classification API is too slow and can't handle the current load"
-assistant: "Let me use the backend-developer agent to analyze performance bottlenecks and implement scaling strategies."
-<commentary>
-Backend optimization requires knowledge of caching, database optimization, load balancing, and system architecture.
-</commentary>
-</example>
-<example>
-Context: User needs security improvements.
-user: "We need to secure our API endpoints and implement proper authentication"
-assistant: "I'll use the backend-developer agent to implement JWT authentication, API rate limiting, and security best practices."
-<commentary>
-Security implementation requires backend expertise in authentication, authorization, and API protection strategies.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to build an email processing service.
+  user: "I need to create a backend service that processes Gmail emails and stores classification results"
+  assistant: "I'll use the backend-developer agent to design a scalable email processing service with proper database design and queue management."
+  <commentary>
+  This requires backend expertise for service architecture, database design, async processing, and API development.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to optimize system performance.
+  user: "Our email classification API is too slow and can't handle the current load"
+  assistant: "Let me use the backend-developer agent to analyze performance bottlenecks and implement scaling strategies."
+  <commentary>
+  Backend optimization requires knowledge of caching, database optimization, load balancing, and system architecture.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs security improvements.
+  user: "We need to secure our API endpoints and implement proper authentication"
+  assistant: "I'll use the backend-developer agent to implement JWT authentication, API rate limiting, and security best practices."
+  <commentary>
+  Security implementation requires backend expertise in authentication, authorization, and API protection strategies.
+  </commentary>
+  </example>
 model: sonnet
 color: orange
 ---

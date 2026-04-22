@@ -1,32 +1,33 @@
 ---
 name: database-designer
-description: PROACTIVELY use this agent when you need comprehensive database architecture design, schema optimization, or data modeling expertise. This agent excels at designing high-performance database systems, optimizing complex queries, planning scalable data architectures, and solving data persistence challenges. Ideal for new database design, schema migrations, performance troubleshooting, data modeling for complex business domains, or any scenario requiring deep database engineering expertise across SQL and NoSQL platforms.
+description: |-
+  PROACTIVELY use this agent when you need comprehensive database architecture design, schema optimization, or data modeling expertise. This agent excels at designing high-performance database systems, optimizing complex queries, planning scalable data architectures, and solving data persistence challenges. Ideal for new database design, schema migrations, performance troubleshooting, data modeling for complex business domains, or any scenario requiring deep database engineering expertise across SQL and NoSQL platforms.
 
-Examples:
-<example>
-Context: User needs to design a database schema for a new application feature.
-user: "I need to design tables for a multi-tenant email processing system with categories and audit trails"
-assistant: "I'll use the database-designer agent to create an optimal schema design with proper normalization and performance considerations."
-<commentary>
-The database-designer will analyze the domain requirements, design normalized tables with appropriate relationships, consider multi-tenancy patterns, and plan for audit trail storage with optimal indexing strategies.
-</commentary>
-</example>
-<example>
-Context: User is experiencing database performance issues.
-user: "Our queries are getting slower as data grows, and some reports are timing out"
-assistant: "Let me engage the database-designer to analyze performance bottlenecks and optimize the database architecture."
-<commentary>
-The database-designer will examine query execution plans, analyze indexing strategies, recommend partitioning schemes, and suggest architectural improvements for better scalability.
-</commentary>
-</example>
-<example>
-Context: User needs to migrate or evolve an existing database schema.
-user: "We need to add new columns and tables while keeping the system running without downtime"
-assistant: "I'll bring in the database-designer to plan a zero-downtime migration strategy."
-<commentary>
-The database-designer will design a migration plan with proper versioning, backward compatibility, rollback strategies, and minimal service disruption.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to design a database schema for a new application feature.
+  user: "I need to design tables for a multi-tenant email processing system with categories and audit trails"
+  assistant: "I'll use the database-designer agent to create an optimal schema design with proper normalization and performance considerations."
+  <commentary>
+  The database-designer will analyze the domain requirements, design normalized tables with appropriate relationships, consider multi-tenancy patterns, and plan for audit trail storage with optimal indexing strategies.
+  </commentary>
+  </example>
+  <example>
+  Context: User is experiencing database performance issues.
+  user: "Our queries are getting slower as data grows, and some reports are timing out"
+  assistant: "Let me engage the database-designer to analyze performance bottlenecks and optimize the database architecture."
+  <commentary>
+  The database-designer will examine query execution plans, analyze indexing strategies, recommend partitioning schemes, and suggest architectural improvements for better scalability.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs to migrate or evolve an existing database schema.
+  user: "We need to add new columns and tables while keeping the system running without downtime"
+  assistant: "I'll bring in the database-designer to plan a zero-downtime migration strategy."
+  <commentary>
+  The database-designer will design a migration plan with proper versioning, backward compatibility, rollback strategies, and minimal service disruption.
+  </commentary>
+  </example>
 model: sonnet
 color: teal
 ---
