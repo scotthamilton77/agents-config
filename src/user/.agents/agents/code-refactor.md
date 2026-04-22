@@ -1,32 +1,33 @@
 ---
 name: code-refactor
-description: PROACTIVELY use this agent when you identify code smells, technical debt, performance bottlenecks, or need to modernize legacy systems. This agent excels at systematic code improvement while preserving functionality and minimizing risk. Ideal for large-scale refactoring projects, legacy code modernization, architectural improvements, or when code metrics indicate quality degradation. Use for both preventive maintenance and corrective refactoring initiatives.
+description: |-
+  PROACTIVELY use this agent when you identify code smells, technical debt, performance bottlenecks, or need to modernize legacy systems. This agent excels at systematic code improvement while preserving functionality and minimizing risk. Ideal for large-scale refactoring projects, legacy code modernization, architectural improvements, or when code metrics indicate quality degradation. Use for both preventive maintenance and corrective refactoring initiatives.
 
-Examples:
-<example>
-Context: Code review reveals significant technical debt and code smells in a critical service.
-user: "This payment service has grown unwieldy with 500-line methods and duplicated logic everywhere"
-assistant: "I'll use the code-refactor agent to systematically break down this service and eliminate the technical debt."
-<commentary>
-The code-refactor agent will assess the codebase, identify refactoring priorities, and create a safe incremental improvement plan with comprehensive testing.
-</commentary>
-</example>
-<example>
-Context: Performance issues require structural changes to the codebase.
-user: "Our API response times are degrading as the codebase grows - we need architectural improvements"
-assistant: "Let me engage the code-refactor agent to analyze performance bottlenecks and implement structural optimizations."
-<commentary>
-The agent will profile the code, identify performance anti-patterns, and refactor the architecture while maintaining all existing functionality.
-</commentary>
-</example>
-<example>
-Context: Legacy codebase needs modernization to adopt new language features and patterns.
-user: "We're still using callback-heavy code from 2018 and need to modernize to async/await patterns"
-assistant: "I'll use the code-refactor agent to systematically modernize the codebase to current standards."
-<commentary>
-The agent will create a migration plan, prioritize high-impact areas, and gradually modernize the code while ensuring comprehensive test coverage.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: Code review reveals significant technical debt and code smells in a critical service.
+  user: "This payment service has grown unwieldy with 500-line methods and duplicated logic everywhere"
+  assistant: "I'll use the code-refactor agent to systematically break down this service and eliminate the technical debt."
+  <commentary>
+  The code-refactor agent will assess the codebase, identify refactoring priorities, and create a safe incremental improvement plan with comprehensive testing.
+  </commentary>
+  </example>
+  <example>
+  Context: Performance issues require structural changes to the codebase.
+  user: "Our API response times are degrading as the codebase grows - we need architectural improvements"
+  assistant: "Let me engage the code-refactor agent to analyze performance bottlenecks and implement structural optimizations."
+  <commentary>
+  The agent will profile the code, identify performance anti-patterns, and refactor the architecture while maintaining all existing functionality.
+  </commentary>
+  </example>
+  <example>
+  Context: Legacy codebase needs modernization to adopt new language features and patterns.
+  user: "We're still using callback-heavy code from 2018 and need to modernize to async/await patterns"
+  assistant: "I'll use the code-refactor agent to systematically modernize the codebase to current standards."
+  <commentary>
+  The agent will create a migration plan, prioritize high-impact areas, and gradually modernize the code while ensuring comprehensive test coverage.
+  </commentary>
+  </example>
 model: sonnet
 color: yellow
 ---

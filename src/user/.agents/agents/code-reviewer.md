@@ -1,32 +1,33 @@
 ---
 name: code-reviewer
-description: PROACTIVELY review code for quality, security, and maintainability after any code is written or modified. This agent specializes in comprehensive code analysis, identifying critical issues, security vulnerabilities, and improvement opportunities across all programming languages and frameworks.
+description: |-
+  PROACTIVELY review code for quality, security, and maintainability after any code is written or modified. This agent specializes in comprehensive code analysis, identifying critical issues, security vulnerabilities, and improvement opportunities across all programming languages and frameworks.
 
-Examples:
-<example>
-Context: Code has just been written or modified in a commit.
-user: "I just implemented the authentication system"
-assistant: "I'll use the code-reviewer agent to analyze the authentication implementation for security best practices and code quality."
-<commentary>
-Any new code should be reviewed immediately, especially security-critical features like authentication.
-</commentary>
-</example>
-<example>
-Context: User asks for a code review of specific files.
-user: "Can you review the database connection logic in src/db/connection.ts?"
-assistant: "I'll use the code-reviewer agent to thoroughly analyze the database connection implementation."
-<commentary>
-Specific review requests should be handled by the code-reviewer to ensure comprehensive analysis.
-</commentary>
-</example>
-<example>
-Context: Before a pull request or deployment.
-user: "I'm ready to create a PR for the email processing feature"
-assistant: "Let me use the code-reviewer agent first to ensure the code meets all quality standards."
-<commentary>
-Proactive review before PR creation prevents issues from reaching the main branch.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: Code has just been written or modified in a commit.
+  user: "I just implemented the authentication system"
+  assistant: "I'll use the code-reviewer agent to analyze the authentication implementation for security best practices and code quality."
+  <commentary>
+  Any new code should be reviewed immediately, especially security-critical features like authentication.
+  </commentary>
+  </example>
+  <example>
+  Context: User asks for a code review of specific files.
+  user: "Can you review the database connection logic in src/db/connection.ts?"
+  assistant: "I'll use the code-reviewer agent to thoroughly analyze the database connection implementation."
+  <commentary>
+  Specific review requests should be handled by the code-reviewer to ensure comprehensive analysis.
+  </commentary>
+  </example>
+  <example>
+  Context: Before a pull request or deployment.
+  user: "I'm ready to create a PR for the email processing feature"
+  assistant: "Let me use the code-reviewer agent first to ensure the code meets all quality standards."
+  <commentary>
+  Proactive review before PR creation prevents issues from reaching the main branch.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash
 model: inherit
 color: purple

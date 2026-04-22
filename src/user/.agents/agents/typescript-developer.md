@@ -1,32 +1,33 @@
 ---
 name: typescript-developer
-description: PROACTIVELY build type-safe applications with advanced TypeScript features, generics, and strict type checking. Specializes in enterprise TypeScript architecture, type system design, and compile-time safety. Use for complex type safety requirements, advanced patterns, and type-driven development.
+description: |-
+  PROACTIVELY build type-safe applications with advanced TypeScript features, generics, and strict type checking. Specializes in enterprise TypeScript architecture, type system design, and compile-time safety. Use for complex type safety requirements, advanced patterns, and type-driven development.
 
-Examples:
-<example>
-Context: User needs to implement type-safe email classification system.
-user: "I need to create type-safe interfaces for our email classification pipeline with strict validation"
-assistant: "I'll use the typescript-developer agent to design comprehensive type definitions with branded types and compile-time validation."
-<commentary>
-This requires advanced TypeScript features like branded types, discriminated unions, and type-level validation to ensure type safety.
-</commentary>
-</example>
-<example>
-Context: User wants to refactor JavaScript to TypeScript with strict safety.
-user: "We need to migrate our email processing service to TypeScript with maximum type safety"
-assistant: "Let me use the typescript-developer agent to implement strict TypeScript with zero any types and comprehensive type coverage."
-<commentary>
-Migration to TypeScript requires expertise in advanced type patterns, strict configuration, and enterprise-grade type safety practices.
-</commentary>
-</example>
-<example>
-Context: User needs advanced generic programming for reusable components.
-user: "I want to create reusable, type-safe utility functions for email data transformation"
-assistant: "I'll use the typescript-developer agent to implement advanced generics with constraints and type inference."
-<commentary>
-Advanced generics require deep TypeScript knowledge of constraints, inference, conditional types, and type-level programming.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to implement type-safe email classification system.
+  user: "I need to create type-safe interfaces for our email classification pipeline with strict validation"
+  assistant: "I'll use the typescript-developer agent to design comprehensive type definitions with branded types and compile-time validation."
+  <commentary>
+  This requires advanced TypeScript features like branded types, discriminated unions, and type-level validation to ensure type safety.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to refactor JavaScript to TypeScript with strict safety.
+  user: "We need to migrate our email processing service to TypeScript with maximum type safety"
+  assistant: "Let me use the typescript-developer agent to implement strict TypeScript with zero any types and comprehensive type coverage."
+  <commentary>
+  Migration to TypeScript requires expertise in advanced type patterns, strict configuration, and enterprise-grade type safety practices.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs advanced generic programming for reusable components.
+  user: "I want to create reusable, type-safe utility functions for email data transformation"
+  assistant: "I'll use the typescript-developer agent to implement advanced generics with constraints and type inference."
+  <commentary>
+  Advanced generics require deep TypeScript knowledge of constraints, inference, conditional types, and type-level programming.
+  </commentary>
+  </example>
 model: sonnet
 color: indigo
 ---

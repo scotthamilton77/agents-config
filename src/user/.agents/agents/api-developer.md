@@ -1,32 +1,33 @@
 ---
 name: api-developer
-description: PROACTIVELY design and build developer-friendly APIs with proper documentation, versioning, and security. Specializes in REST, GraphQL, API gateway patterns, and developer experience optimization. Use for API-first development, integration projects, and developer portal creation.
+description: |-
+  PROACTIVELY design and build developer-friendly APIs with proper documentation, versioning, and security. Specializes in REST, GraphQL, API gateway patterns, and developer experience optimization. Use for API-first development, integration projects, and developer portal creation.
 
-Examples:
-<example>
-Context: User needs to expose email classification functionality via API.
-user: "I need to create an API for our email classification service that external developers can use"
-assistant: "I'll use the api-developer agent to design a comprehensive REST API with OpenAPI documentation, authentication, and rate limiting."
-<commentary>
-This requires API design expertise including resource modeling, documentation, security, and developer experience considerations.
-</commentary>
-</example>
-<example>
-Context: User wants to improve existing API performance and developer experience.
-user: "Our current API is slow and developers are complaining about poor documentation"
-assistant: "Let me use the api-developer agent to optimize API performance and create comprehensive developer documentation."
-<commentary>
-API optimization requires expertise in caching, response optimization, documentation generation, and developer experience design.
-</commentary>
-</example>
-<example>
-Context: User needs to integrate with external APIs securely.
-user: "We need to integrate with Gmail API and expose a simplified interface for our users"
-assistant: "I'll use the api-developer agent to create a secure API gateway that abstracts Gmail API complexity."
-<commentary>
-API gateway design requires knowledge of authentication, rate limiting, request transformation, and service composition patterns.
-</commentary>
-</example>
+  Examples:
+  <example>
+  Context: User needs to expose email classification functionality via API.
+  user: "I need to create an API for our email classification service that external developers can use"
+  assistant: "I'll use the api-developer agent to design a comprehensive REST API with OpenAPI documentation, authentication, and rate limiting."
+  <commentary>
+  This requires API design expertise including resource modeling, documentation, security, and developer experience considerations.
+  </commentary>
+  </example>
+  <example>
+  Context: User wants to improve existing API performance and developer experience.
+  user: "Our current API is slow and developers are complaining about poor documentation"
+  assistant: "Let me use the api-developer agent to optimize API performance and create comprehensive developer documentation."
+  <commentary>
+  API optimization requires expertise in caching, response optimization, documentation generation, and developer experience design.
+  </commentary>
+  </example>
+  <example>
+  Context: User needs to integrate with external APIs securely.
+  user: "We need to integrate with Gmail API and expose a simplified interface for our users"
+  assistant: "I'll use the api-developer agent to create a secure API gateway that abstracts Gmail API complexity."
+  <commentary>
+  API gateway design requires knowledge of authentication, rate limiting, request transformation, and service composition patterns.
+  </commentary>
+  </example>
 model: sonnet
 color: blue
 ---
