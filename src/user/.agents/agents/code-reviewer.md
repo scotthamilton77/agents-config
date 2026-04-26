@@ -29,7 +29,9 @@ description: |-
   </commentary>
   </example>
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: claude-opus-4-7[1m]
+skills: [superpowers:requesting-code-review, superpowers:receiving-code-review]
+memory: project
 color: purple
 ---
 

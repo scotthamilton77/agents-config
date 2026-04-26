@@ -1,6 +1,8 @@
 ---
 name: verify-checklist
 description: Use when about to declare work complete or report final status to the user, or when user invokes directly — audits all completed work against verification workflows stored in memory and produces a structured completion report
+context: fork
+agent: bead-verifier
 ---
 
 # Verify Checklist
