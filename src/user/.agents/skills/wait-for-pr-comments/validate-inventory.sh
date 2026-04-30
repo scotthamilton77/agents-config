@@ -68,8 +68,9 @@ run_guard "non-FIX-null-fix_outcome" \
 
 # Guard 5: FIX items must have valid fix_outcome (committed | already_addressed | failed)
 # Explicit equality checks rather than IN(...), which is jq 1.6+. macOS and some
-# Linux distros still ship jq 1.5; using IN() would make the validator abort on
-# a jq compile error before any guard ran.
+# Linux distros still ship jq 1.5; using IN() there would make Guard 5 fail to
+# compile, surfacing as a guard error from run_guard (other guards still run via
+# `|| FAIL=1`), and the validator would exit non-zero overall.
 run_guard "FIX-valid-fix_outcome" \
     '[.items[] | select(.classification == "FIX" and (.fix_outcome != "committed" and .fix_outcome != "already_addressed" and .fix_outcome != "failed"))]' || FAIL=1
 
