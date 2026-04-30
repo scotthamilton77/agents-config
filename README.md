@@ -50,18 +50,8 @@ Role-specific configurations that define expertise areas, behavioral patterns, a
 
 Shipping agents:
 
-- `api-developer`
-- `backend-developer`
-- `code-debugger`
-- `code-documenter`
-- `code-refactor`
-- `code-reviewer`
-- `data-scientist`
-- `database-designer`
-- `frontend-developer`
-- `javascript-developer`
+- `quality-reviewer`
 - `tech-lead`
-- `typescript-developer`
 
 ### Skills
 
