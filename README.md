@@ -55,11 +55,12 @@ Shipping agents:
 - `code-debugger`
 - `code-documenter`
 - `code-refactor`
-- `code-reviewer`
+- `code-simplifier`
 - `data-scientist`
 - `database-designer`
 - `frontend-developer`
 - `javascript-developer`
+- `quality-reviewer`
 - `tech-lead`
 - `typescript-developer`
 
