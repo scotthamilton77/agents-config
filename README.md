@@ -50,6 +50,7 @@ Role-specific configurations that define expertise areas, behavioral patterns, a
 
 Shipping agents:
 
+- `code-simplifier`
 - `quality-reviewer`
 - `tech-lead`
 
