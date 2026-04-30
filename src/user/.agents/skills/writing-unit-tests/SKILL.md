@@ -2,7 +2,7 @@
 name: writing-unit-tests
 model: sonnet
 argument-hint: "[file or function to test]"
-description: Use when writing unit tests, reviewing test code, or when asked to add tests to complex/untestable code
+description: Use when writing or reviewing unit tests, when test setup balloons with mocks, when CI coverage gates are pressuring anti-pattern tests, or when code resists testing — covers behavior-vs-implementation, fakes/stubs/spies/mocks hierarchy, refusal criteria, and rationalizations to reject
 ---
 
 # Writing Unit Tests
@@ -10,6 +10,21 @@ description: Use when writing unit tests, reviewing test code, or when asked to 
 ## Core Principle
 
 If you can't test it simply, the code needs refactoring — not more mocks. Test behavior, not implementation.
+
+## When to Use
+
+- About to write or modify a unit test file
+- Reviewing test code in a PR or commit
+- Asked to add tests to existing code (especially legacy or complex)
+- A coverage gate is pressuring you to ship tests
+- Tempted to add mocks to make a test pass
+
+## When NOT to Use
+
+- Throwaway prototypes or spikes — write whatever lets you learn faster
+- Generated code (e.g. ORM scaffolding) where the generator owns correctness
+- Pure config files with no logic
+- Integration / E2E tests — different discipline; this skill is unit-level
 
 ## The Iron Laws
 
@@ -19,7 +34,9 @@ If you can't test it simply, the code needs refactoring — not more mocks. Test
 3. MOCKS ARE A SMELL, NOT A SOLUTION
 ```
 
-## When to Push Back
+**Violating the letter of these laws is violating the spirit.** Naming a method `*ForTesting`, casting mocks to `any`, using regex matchers on outputs you haven't read, or filing a "follow-up to fix it later" are all violations dressed up as compliance. The discipline applies to intent, not syntax.
+
+## Refusal Criteria
 
 **REFUSE to write tests when:**
 
@@ -27,13 +44,24 @@ If you can't test it simply, the code needs refactoring — not more mocks. Test
 - Function has 10+ conditionals or early returns
 - Test setup exceeds 20 lines of mock configuration
 - You're testing "did method X get called" instead of "did it produce correct output"
+- You haven't read the code under test (loose regex matchers like `/completed|success|ok/i` are a tell)
 
 **Response:** "This code isn't testable in its current form. Let's refactor into smaller units first, then test each unit simply."
+
+### When refactor is blocked
+
+If a constraint says you can't refactor (separate ticket, frozen API, blocked on review) AND the code meets a refusal criterion:
+
+1. **Do NOT ship anti-pattern tests to satisfy a coverage gate.** Coverage from mock-forest tests is theater — it cements bad design and creates permanent maintenance burden.
+2. **Escalate**: file a blocker, request the refactor ticket be unblocked, or get an explicit waiver from the owning engineer that anti-pattern tests are acceptable for this PR.
+3. **Document the waiver in the PR description**, not buried in test comments. The reviewer needs to know they're approving anti-pattern tests, not careful TDD.
+
+"I'll file a follow-up bead to fix it later" is not a waiver. It's deferred cost that historically never gets paid.
 
 ## Behavior vs Implementation
 
 **GOOD assertions:** Output/return value, observable state change
-**BAD assertions:** Method X was called, internal execution order
+**BAD assertions:** Method X was called, internal execution order, call counts (`toHaveBeenCalledTimes`)
 
 ### Good: Behavior Tests
 
@@ -72,7 +100,7 @@ Tests that code calls a method. Breaks on any internal change. Proves nothing ab
 | **Spy** | Records calls to real object | Verifying side effects (analytics, logging) |
 | **Mock** | Verifies specific calls | Almost never — last resort |
 
-If you need 4+ mocks, the code is too coupled. Refactor it. See `testing-anti-patterns` skill for detailed mock/fake/spy/stub guidance and anti-patterns.
+If you need 5+ mocks, the code is too coupled. Refactor it. (This matches the Refusal Criteria threshold above — same "too coupled" line, different framing.) See `testing-anti-patterns` for the dedicated mock/fake/spy/stub anti-pattern catalog.
 
 ## Test Isolation
 
@@ -141,21 +169,33 @@ Each pure function is trivial to test. Integration test verifies wiring.
 | Excuse | Reality |
 |--------|---------|
 | "Team pattern requires mocking everything" | Bad patterns don't become good through repetition. Push back. |
+| "Just match the existing test pattern" | Existing patterns aren't justification — they're inheritance of past bad decisions. Escalate, don't comply. |
 | "Need 90% coverage by EOD" | Coverage without behavior verification is theater. |
+| "Coverage gate is 80% — gotta hit it" | Hitting a number with mock-forest tests is fraud against your own future self. Escalate the gate. |
 | "It's already in production" | Sunk cost. Cementing bad design costs more long-term. |
 | "Just a quick test" | Quick bad test = permanent maintenance burden. |
 | "Don't have time to refactor" | Time to write mock forest > time to extract pure function. |
+| "Can't refactor — separate ticket / blocked" | Then refuse the test. Shipping anti-pattern tests under a refactor block is worse than shipping no tests. Escalate. |
+| "I'll file a follow-up bead to fix it later" | Deferred cleanup is cleanup that won't happen. The follow-up is a graveyard. Refuse now or do it now. |
+| "Loose regex matchers are fine — I haven't read the function" | Then you're not writing a test, you're writing a snapshot. Read the code first or refuse. |
+| "`as any` to dodge typing six fakes is fine under deadline" | If the mock won't typecheck, the mock is wrong. `as any` hides the truth. |
 
 ## Red Flags — STOP
 
 If you're about to:
-- Write `expect(mock.method).toHaveBeenCalledWith(...)` as main assertion
-- Create 4+ mocks in beforeEach
+
+- Write `expect(mock.method).toHaveBeenCalledWith(...)` as your main assertion
+- Assert on call counts (`toHaveBeenCalledTimes(N)`) as primary verification
+- Create 5+ mocks in `beforeEach`
+- Cast mocks to `any` to make them typecheck
+- Use loose regex matchers (`/completed|success|ok/i`) on outputs because you haven't read the function
 - Write 20+ lines of test setup
 - Test that internal methods were called in order
 - Add tests to code you know is poorly structured
+- Justify the test by "matching the team's existing pattern"
+- Tell yourself "I'll file a follow-up bead to clean this up"
 
-**STOP. Propose refactoring instead.**
+**STOP. Propose refactoring instead, or escalate the constraint.**
 
 ## Test Suppression and Exclusion
 
@@ -204,12 +244,14 @@ it.skip('validates user input', () => {
 
 Before submitting tests:
 
-- [ ] Tests verify outputs/behavior, not method calls
+- [ ] Tests verify outputs/behavior, not method calls or call counts
 - [ ] Each test name describes the behavior being verified
 - [ ] Tests use fakes over mocks where possible
 - [ ] No test depends on another test's execution
 - [ ] Setup is under 10 lines per test
+- [ ] No `as any` casts on test doubles
+- [ ] No regex matchers covering for unread production code
 - [ ] Would these tests survive an internal refactor?
 - [ ] Any skipped tests have documented reasons and tracking issues
 
-Can't check all boxes? Refactor the code or the tests.
+Can't check all boxes? Refactor the code, refuse the test, or escalate the constraint.
