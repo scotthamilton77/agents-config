@@ -1,5 +1,7 @@
 # wait-for-pr-comments Implementation Plan
 
+> **Historical — superseded by `docs/specs/2026-04-26-pr-review-skill-redesign.md`.** This plan implemented the original `wait-for-pr-comments` skill; the skill has since been redesigned (binary FIX/SKIP/ESCALATE classification, default-on chain to `reply-and-resolve-pr-threads`, etc.). The current behavior is governed by the redesign spec at the path above.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create a skill that monitors GitHub PRs for review comments, auto-fixes unambiguous feedback, and reports results — with both manual invocation and automatic hook-based triggering.

@@ -19,7 +19,7 @@ if [[ "$command" == *"gh pr create"* ]]; then
     pr_url="$(echo "$stdout" | grep -oE 'https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -1)" || true
     if [[ -n "$pr_url" ]]; then
         pr_number="$(echo "$pr_url" | grep -oE '[0-9]+$')"
-        echo "PR activity detected: #${pr_number} (${pr_url}). Run /wait-for-pr-comments to monitor for review comments."
+        echo "PR activity detected: #${pr_number} (${pr_url}). Run /wait-for-pr-comments to respond to and acknowledge review feedback."
         exit 0
     fi
 fi
@@ -31,7 +31,7 @@ if [[ "$command" == git\ push* ]]; then
     if [[ "$pr_state" == "OPEN" ]]; then
         pr_number="$(echo "$pr_json" | jq -r '.number')"
         pr_url="$(echo "$pr_json" | jq -r '.url')"
-        echo "PR activity detected: #${pr_number} (${pr_url}). Run /wait-for-pr-comments to monitor for review comments."
+        echo "PR activity detected: #${pr_number} (${pr_url}). Run /wait-for-pr-comments to respond to and acknowledge review feedback."
     fi
 fi
 

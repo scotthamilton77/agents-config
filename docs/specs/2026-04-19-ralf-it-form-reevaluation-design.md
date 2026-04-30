@@ -1,5 +1,7 @@
 # Spec: Re-evaluate `ralf-it` form — split into `ralf-review` + `ralf-implement` (agents-config-lu3.4)
 
+> **Section R9's references to `resolve-pr-comments` are historical** — that skill has since been renamed to `reply-and-resolve-pr-threads` and redesigned per `docs/specs/2026-04-26-pr-review-skill-redesign.md`. R9's intent (boundary cleanup) was carried forward in spirit; the specifics no longer apply.
+
 ## Summary
 
 Split the current `ralf-it` skill into two explicit-invocation skills —
