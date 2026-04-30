@@ -330,7 +330,7 @@ reading-from-and-writing-to the same path is safe — no in-place corruption):
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
 
-unlink ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
+rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
 ```
 Skill A is the file's lifecycle owner — Skill B never unlinks.
 
@@ -603,7 +603,7 @@ Returns 0 if valid, non-zero with the violating item logged to stderr.
 
 ## Schema validation guards
 
-`validate-inventory.sh` runs these eight guards (Skill B Phase 0 invokes it;
+`validate-inventory.sh` runs these nine guards (Skill B Phase 0 invokes it;
 corrupt inventory → hard abort with no replies posted):
 
 1. **Schema parse + version** — JSON parses and `schema_version == 1`.
@@ -626,6 +626,12 @@ corrupt inventory → hard abort with no replies posted):
    / `fix_gate_variant` is null.
 8. **`already_addressed` requires SHA** — reject if any item has
    `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
+9. **ESCALATE must be filed** — reject if any item has
+   `classification == "ESCALATE"` and `escalation_filed != true`.
+   Interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before
+   write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled
+   ESCALATE at write time means a Skill A bug — Skill B would otherwise
+   silently skip it without a reply.
 
 On reject: log violating item to stderr; abort with no replies posted.
 

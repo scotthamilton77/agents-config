@@ -51,7 +51,10 @@ fi
 DIR_OUT="$(dirname "$PATH_OUT")"
 mkdir -p "$DIR_OUT"
 
-TMP="${PATH_OUT}.tmp.$$"
+# Real mktemp in the target directory — symlink-safe, collision-safe.
+# Restrict permissions so the transient file is never world-readable.
+umask 077
+TMP="$(mktemp "${PATH_OUT}.tmp.XXXXXXXX")"
 
 if ! jq --argjson completed "$COMPLETED" --arg phase "$PHASE" \
        '.crash_recovery = {skill_a_completed: $completed, last_completed_phase: $phase}' \
@@ -64,7 +67,10 @@ fi
 mv "$TMP" "$PATH_OUT"
 
 # Retention housekeeping: delete inventories >30 days old. Never touches files
-# newer than 30 days, so safe for crash recovery (the just-written file is
-# safe even on tmpfs systems with weird mtimes because find's -mtime test is
-# strict ">30").
-find "$DIR_OUT" -type f -name '*.json' -mtime +30 -delete 2>/dev/null || true
+# newer than 30 days, so safe for crash recovery. Hard-guarded to the canonical
+# inventory directory so a caller passing an arbitrary path can never trigger
+# deletion of unrelated JSON files.
+EXPECTED_DIR="${HOME}/.claude/state/pr-inventory"
+if [ "$DIR_OUT" = "$EXPECTED_DIR" ]; then
+    find "$EXPECTED_DIR" -type f -name '*.json' -mtime +30 -delete 2>/dev/null || true
+fi

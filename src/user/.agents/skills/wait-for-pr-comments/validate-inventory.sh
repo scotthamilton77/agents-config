@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # validate-inventory.sh — schema validation guard for the PR-review hand-off contract.
 #
-# Reads the inventory JSON file at the given path and runs eight `jq` predicates
+# Reads the inventory JSON file at the given path and runs nine `jq` predicates
 # (one per Schema Validation Guard in docs/specs/2026-04-26-pr-review-skill-redesign.md).
 # Exits 0 if all guards pass; non-zero with a human-readable error to stderr otherwise.
 #
@@ -32,7 +32,15 @@ run_guard() {
     local label="$1"; shift
     local predicate="$1"; shift
     local violators
-    violators=$(jq -c "$predicate" "$PATH_IN" 2>/dev/null || true)
+    local jq_stderr
+    jq_stderr="$(mktemp)"
+    if ! violators=$(jq -c "$predicate" "$PATH_IN" 2>"$jq_stderr"); then
+        echo "guard error [$label]: jq failed (predicate or jq feature unsupported):" >&2
+        cat "$jq_stderr" >&2
+        rm -f "$jq_stderr"
+        return 1
+    fi
+    rm -f "$jq_stderr"
     if [ -n "$violators" ] && [ "$violators" != "[]" ] && [ "$violators" != "null" ] && [ "$violators" != "false" ]; then
         echo "guard failed [$label]: $violators" >&2
         return 1
@@ -69,6 +77,14 @@ run_guard "committed-requires-all-fields" \
 # Guard 7: already_addressed requires fix_commit_sha
 run_guard "already_addressed-requires-sha" \
     '[.items[] | select(.fix_outcome == "already_addressed" and .fix_commit_sha == null)]' || FAIL=1
+
+# Guard 8: every ESCALATE item must have escalation_filed=true at write time.
+# Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER
+# before write; autonomous Phase 3.5 sets escalation_filed=true. An ESCALATE
+# with escalation_filed=false at write time means a Skill A bug — Skill B
+# would silently skip it without a reply.
+run_guard "ESCALATE-must-be-filed" \
+    '[.items[] | select(.classification == "ESCALATE" and (.escalation_filed != true))]' || FAIL=1
 
 if [ "$FAIL" -ne 0 ]; then
     echo "error: schema validation failed for $PATH_IN" >&2

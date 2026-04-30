@@ -65,7 +65,7 @@ Apply the six Phase 0 precedence rules above. After mode is resolved, run schema
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The eight guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The nine guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins.
 
 ### Phase 1 — Read inventory + verify head SHA
 
@@ -197,7 +197,7 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 
 ## Schema validation guards
 
-`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces these eight guards. Skill B Phase 0 invokes the validator and aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
+`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces these nine guards. Skill B Phase 0 invokes the validator and aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
 
 1. **Non-empty rationale** — reject if any item has `rationale == "" or null`. Rationale is user-facing for SKIP replies; an empty rationale would post an empty PR comment.
 2. **`escalation_filed` only on ESCALATE** — reject if any item has `classification != "ESCALATE"` and `escalation_filed == true`.
@@ -206,7 +206,8 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 5. **FIX items have a valid `fix_outcome`** — reject if any item has `classification == "FIX"` and `fix_outcome` is not one of `committed | already_addressed | failed`. (Skill A only writes the inventory after Phase 4 completes; every FIX item must have a non-null outcome.)
 6. **`committed` outcome carries SHA + summary + gate variant** — reject if any item has `fix_outcome == "committed"` and any of `fix_commit_sha`/`fix_summary`/`fix_gate_variant` is null.
 7. **`already_addressed` outcome carries SHA** — reject if any item has `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
-8. **Schema sanity** — reject if JSON parse fails or `schema_version != 1`.
+8. **ESCALATE must be filed** — reject if any item has `classification == "ESCALATE"` and `escalation_filed != true`. Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled ESCALATE at write time means a Skill A bug — without this guard, Skill B would silently skip the item without a reply.
+9. **Schema sanity** — reject if JSON parse fails or `schema_version != 1`.
 
 On reject: validator logs the violating item to stderr; Skill B aborts with no replies posted.
 
