@@ -17,7 +17,7 @@ description: Use when writing or changing tests, adding mocks, asserting on mock
 3. NEVER mock without understanding dependencies
 ```
 
-**Violating the letter of these laws is violating the spirit.** Naming a method `*ForTesting`, marking it `@internal`, or hiding it behind a "social contract" comment is still adding a test-only method. Asserting on `getByTestId('*-mock')` to "confirm setup worked" is still testing mock behavior. The discipline applies to intent, not syntax.
+**Violating the letter of these laws is violating the spirit.** Naming a method `*ForTesting`, marking it `@internal`, or hiding it behind a "social contract" comment is still adding a test-only method. Asserting on any `*-mock` test id (e.g. `getByTestId('sidebar-mock')`) to "confirm setup worked" is still testing mock behavior. The discipline applies to intent, not syntax.
 
 ## When to Use
 
