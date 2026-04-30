@@ -245,7 +245,7 @@ Schema (`schema_version: 1`):
     }
   ],
   "crash_recovery": {
-    "skill_a_completed": true,                // false until Phase 8 succeeds
+    "skill_a_completed": true,                // true once Phase 7 writes "complete" (and remains true through Phase 8); false only on Phase 5x partial-write
     "last_completed_phase": "8-skill-b-done"
   }
 }
