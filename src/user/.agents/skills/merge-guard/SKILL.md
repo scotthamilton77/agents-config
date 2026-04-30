@@ -82,12 +82,12 @@ Do NOT silently refuse. Present the situation and options:
 > "Hold on -- [reason from JSON `details` field]. Merging now would discard that feedback.
 >
 > Options:
-> 1. **Wait** -- I'll monitor for the review to complete (uses `wait-for-pr-comments` skill)
+> 1. **Wait** -- I'll invoke `wait-for-pr-comments` which will poll, classify, fix, push, and chain `reply-and-resolve-pr-threads` to reply and resolve every thread
 > 2. **Force merge** -- Merge anyway, skipping the pending review
 >
 > What would you like to do?"
 
-- **User chooses wait:** Invoke the `wait-for-pr-comments` skill, then re-run eligibility check before merging
+- **User chooses wait:** Invoke the `wait-for-pr-comments` skill (which by default chains internally to `reply-and-resolve-pr-threads`), then re-run eligibility check before merging
 - **User chooses force merge:** Proceed without further objection
 
 ### Human Reviewers

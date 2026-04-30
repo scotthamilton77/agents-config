@@ -120,7 +120,7 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
 | `for-bead-<bead-id>` | `start-bead` (Route C wisp) and `implement-bead` (pour) | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
-| `human` | Any agent via `bd human <id>` | Needs human attention |
+| `human` | Any agent via `bd label add <id> human` | Needs human attention. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
 
 Label commands:
 ```bash
@@ -239,6 +239,7 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:requesting-code-review`
 - `superpowers:receiving-code-review`
 - `superpowers:wait-for-pr-comments`
+- `superpowers:reply-and-resolve-pr-threads`
 - `superpowers:dispatching-parallel-agents`
 
 ### Off-limits for bead-tracked work (compete with bead lifecycle)

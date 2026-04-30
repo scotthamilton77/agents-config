@@ -70,7 +70,8 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 | `test-review` | Code review of unit/integration tests for quality and design issues |
 | `testing-anti-patterns` | Common testing mistakes and how to avoid them |
 | `verify-checklist` | Structured completion auditing with evidence requirements |
-| `wait-for-pr-comments` | Copilot-aware PR review monitoring via background agents; auto-fix unambiguous feedback |
+| `wait-for-pr-comments` | Copilot-aware PR feedback handler. Polls, classifies (FIX/SKIP/ESCALATE), fixes via per-comment subagents (or recognizes already-addressed), pushes, then chains `reply-and-resolve-pr-threads` to acknowledge every thread |
+| `reply-and-resolve-pr-threads` | Reply to every PR review thread; resolve only the FIXED ones via GraphQL. Two modes: invoked automatically by `wait-for-pr-comments` or `--resume` for crash recovery |
 | `writing-unit-tests` | Test behavior, not implementation; when to refuse testing untestable code |
 
 ### Commands

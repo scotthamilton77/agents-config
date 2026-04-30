@@ -90,7 +90,9 @@ description = """
 Retrieve ALL comments on this PR. Both sources are required — do not
 rely on memory or assumption about what comments exist.
 
-Skill: superpowers:wait-for-pr-comments
+Skill: superpowers:wait-for-pr-comments (which internally chains to
+superpowers:reply-and-resolve-pr-threads for thread reply + resolve).
+Pass: --mode autonomous --bead-id {{bead-id}}
 
 Run these commands and record their full output:
 

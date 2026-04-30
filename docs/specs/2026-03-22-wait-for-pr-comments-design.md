@@ -1,5 +1,7 @@
 # wait-for-pr-comments — Design Spec
 
+> **Historical — superseded by `docs/specs/2026-04-26-pr-review-skill-redesign.md`.** This document describes an earlier design for `wait-for-pr-comments`. The skill's current behavior is governed by the redesign spec at the path above.
+
 **Date:** 2026-03-22
 **Status:** Approved
 

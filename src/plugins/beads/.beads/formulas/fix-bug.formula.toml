@@ -78,8 +78,10 @@ Write the root cause back to the bead before continuing:
   bd update {{bead-id}} --notes "Root cause: <explanation>"
 
 If the root cause is significantly different from the bead description,
-flag it with bd human before proceeding:
-  bd human {{bead-id}}
+flag the bead for human attention before proceeding:
+  bd label add {{bead-id}} human
+  bd update {{bead-id}} --append-notes "Root cause significantly differs from bead description: <reason>"
+(NOT `bd human <id>` — that's the help command, not a label applier.)
 """
 
 # =============================================================================
@@ -252,20 +254,36 @@ Do NOT merge. Await review in the next step.
 
 [[steps]]
 id    = "await-review"
-title = "Await PR review and triage feedback"
+title = "Await PR review, address feedback, and acknowledge every thread"
 needs = ["create-pr"]
 description = """
 Invoke the wait-for-pr-comments skill.
 
 Skill: superpowers:wait-for-pr-comments
 
+Pass autonomous-mode args so the skill knows it can escalate via bd:
+  --mode autonomous --bead-id {{bead-id}}
+
 - Wait for Copilot review to complete (or time out)
 - Check BOTH top-level PR comments AND inline review comments
   (inline comments are easy to miss — always verify both)
-- Auto-fix unambiguous feedback
-- Report findings and triage results to the user
+- Classify each comment as FIX/SKIP/ESCALATE
+- Address every FIX item via per-comment subagents (or recognize as
+  already-addressed by an earlier commit)
+- Push combined commits
+- The skill internally chains to superpowers:reply-and-resolve-pr-threads
+  on completion, which replies to every thread (FIX + SKIP + ESCALATE)
+  and resolves only FIXED review_thread items via GraphQL
+
+On completion verify before considering the step done:
+  - Every thread has a reply on GitHub
+  - FIXED review_thread items are resolved
+  - Zero internal-jargon strings (no `bd`, no bead IDs, no `ESCALATE`)
+    appear in PR-public replies
 
 Do NOT merge or clean up the worktree until review is complete.
+
+Specification: docs/specs/2026-04-26-pr-review-skill-redesign.md
 """
 
 # =============================================================================
