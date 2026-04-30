@@ -17,7 +17,7 @@ description: |-
   user: "The payment processing is failing intermittently and I can't figure out why"
   assistant: "Let me bring in the tech-lead to orchestrate a systematic investigation across all relevant components."
   <commentary>
-  The tech-lead will coordinate debugging efforts across database, backend, and potentially frontend agents to identify the root cause.
+  The tech-lead will coordinate debugging efforts across the relevant layers, dispatching specialized subagents and skills as needed to identify the root cause.
   </commentary>
   </example>
   <example>
@@ -25,7 +25,7 @@ description: |-
   user: "We need to modernize our API layer to use the latest patterns"
   assistant: "I'll engage the tech-lead to plan and execute this refactoring systematically."
   <commentary>
-  The tech-lead will assess the scope, create a refactoring plan, and coordinate code-refactor, quality-reviewer, and api-developer agents.
+  The tech-lead will assess the scope, create a refactoring plan, and coordinate the appropriate skills (e.g. `simplify`, `ralf-it`) and the `quality-reviewer` agent.
   </commentary>
   </example>
 model: sonnet
