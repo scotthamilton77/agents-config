@@ -146,7 +146,7 @@ For each actionable comment, dispatch ONE subagent. Each subagent must:
    - Significant work (refactor, multi-file, new logic, behavior change) → `ralf-it` skill
    - Trivial work (typo, constant rename, missing null check) → direct implementation
 3. **Per-fix completion gate** (mandatory for non-trivial; skip for obvious one-liners):
-   - `code-reviewer` agent → address findings
+   - `quality-reviewer` agent → address findings
    - `code-simplifier` agent → address findings
    - `verify-checklist` skill → build, typecheck, lint, relevant tests pass — evidence in report
 4. **Commit** locally: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`

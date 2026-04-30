@@ -25,7 +25,7 @@ description: |-
   user: "We need to modernize our API layer to use the latest patterns"
   assistant: "I'll engage the tech-lead to plan and execute this refactoring systematically."
   <commentary>
-  The tech-lead will assess the scope, create a refactoring plan, and coordinate code-refactor, code-reviewer, and api-developer agents.
+  The tech-lead will assess the scope, create a refactoring plan, and coordinate code-refactor, quality-reviewer, and api-developer agents.
   </commentary>
   </example>
 model: sonnet

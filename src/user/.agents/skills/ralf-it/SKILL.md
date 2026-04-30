@@ -48,14 +48,14 @@ digraph ralf_process {
     worktree [label="3. Create worktree\n(using-git-worktrees skill)"];
     foreign_setup [label="3b. Foreign agent setup\n(.ralf/ directory, gitignore ceremony)"];
     implement [label="4. Dispatch implementation subagent(s)\n(./implementer-prompt.md)"];
-    quality_gate [label="5. Quality Gate:\ncode-reviewer agent\ncode-simplifier agent\nbuild + typecheck + lint + test"];
+    quality_gate [label="5. Quality Gate:\nquality-reviewer agent\ncode-simplifier agent\nbuild + typecheck + lint + test"];
     iter_check [label="Iteration 1 or 2?" shape=diamond];
     foreign_eyes [label="6a. Dispatch FOREIGN-EYES subagent\n(./foreign-eyes-prompt.md)\nIter 1: Codex review\nIter 2: Gemini review"];
     fresh_eyes [label="6b. Dispatch FRESH-EYES subagent\n(./fresh-eyes-prompt.md)\nPure Claude fresh-eyes"];
     significant [label="Significant work done?" shape=diamond];
     under_max [label="Under max iterations?" shape=diamond];
     ask_more [label="Report status, ask user\nif they want more cycles" shape=box];
-    final_review [label="Final quality gate:\ncode-reviewer + code-simplifier\naddress significant issues"];
+    final_review [label="Final quality gate:\nquality-reviewer + code-simplifier\naddress significant issues"];
     report [label="Full report to user\nwith iteration count"];
 
     align -> ask_iters;
@@ -171,12 +171,12 @@ Wait for all implementation to complete before proceeding.
 
 Run these in sequence:
 
-1. **code-reviewer agent** — Full code review against the spec/plan
+1. **quality-reviewer agent** — Full code review against the spec/plan
 2. **code-simplifier agent** — Simplify and refine for clarity
 3. **Build quality checks** — `pnpm build && pnpm typecheck && pnpm lint` (or project equivalent)
 4. **Tests** — Run the relevant test suite
 
-If the code-reviewer or code-simplifier finds significant issues, have them fix what they can. Record what was found for the fresh-eyes subagent.
+If the quality-reviewer or code-simplifier finds significant issues, have them fix what they can. Record what was found for the fresh-eyes subagent.
 
 ### Step 6: Dispatch Eyes Subagent (Foreign or Fresh)
 
@@ -238,7 +238,7 @@ IF fresh-eyes did significant work:
 
 After the loop exits:
 
-1. Run **code-reviewer agent** one final time
+1. Run **quality-reviewer agent** one final time
 2. Run **code-simplifier agent** one final time
 3. Address any significant issues they surface
 4. Run full build + typecheck + lint + test one more time
