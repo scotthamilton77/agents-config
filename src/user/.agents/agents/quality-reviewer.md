@@ -29,7 +29,11 @@ description: |-
   </commentary>
   </example>
 tools: Read, Grep, Glob, Bash
-model: inherit
+skills:
+  - superpowers:requesting-code-review
+  - superpowers:receiving-code-review
+model: opus[1m]
+memory: project
 color: purple
 ---
 

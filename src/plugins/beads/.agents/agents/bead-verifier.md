@@ -22,7 +22,6 @@ description: |-
   </example>
 tools: Read, Grep, Glob, Bash
 model: haiku
-effort: low
 skills: [superpowers:verification-before-completion]
 color: cyan
 ---
