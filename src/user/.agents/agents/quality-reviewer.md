@@ -29,9 +29,7 @@ description: |-
   </commentary>
   </example>
 tools: Read, Grep, Glob, Bash
-skills:
-  - superpowers:requesting-code-review
-  - superpowers:receiving-code-review
+skills: [superpowers:requesting-code-review, superpowers:receiving-code-review]
 model: opus[1m]
 memory: project
 color: purple
