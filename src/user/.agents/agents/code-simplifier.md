@@ -6,7 +6,7 @@ description: |-
   Examples:
   <example>
   Context: A feature has just been implemented and the quality-reviewer agent has finished its pass. The orchestrator is running the completion gate.
-  user: "quality-reviewer is done — run the simplifier next on the worktree at /Users/scott/src/projects/foo/.claude/worktrees/feat-x"
+  user: "quality-reviewer is done — run the simplifier next on the worktree at $HOME/src/projects/foo/.claude/worktrees/feat-x"
   assistant: "I'll use the code-simplifier agent against that worktree to look for clarity and duplication wins on the changed code only."
   <commentary>
   Completion-gate step 3 (simplification review) is the natural trigger. The agent must operate in the supplied worktree, not the main tree, so the orchestrator's path is load-bearing.
