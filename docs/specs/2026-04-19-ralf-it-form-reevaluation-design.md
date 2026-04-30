@@ -185,7 +185,7 @@ Check the bead's RALF signal BEFORE dispatching:
 
 - Otherwise:
     → invoke superpowers:test-driven-development, then appropriate domain skill
-      (typescript-developer, backend-developer, etc.)
+      (e.g. typescript-developer)
 
 Record the dispatch choice for audit:
 
