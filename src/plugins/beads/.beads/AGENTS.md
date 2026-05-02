@@ -110,7 +110,7 @@ brainstorm → worktree → write-tests (red)
 - Brainstorming skill runs before any code decisions
 - Worktree isolation before any code changes
 - Tests written before implementation (TDD red phase)
-- Completion gate cannot be skipped (code-reviewer → code-simplifier →
+- Completion gate cannot be skipped (quality-reviewer → simplify →
   verify-checklist, all mandatory)
 - PR created before claiming work complete
 - Copilot review awaited before merge

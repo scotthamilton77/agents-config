@@ -10,7 +10,7 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 
 This configuration assumes the following Claude Code plugins are installed:
 
-- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides skills referenced throughout the templates: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, writing-plans, code-reviewer, code-simplifier, and others
+- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides skills referenced throughout the templates: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, writing-plans, and others
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used in the `<beads>` section of the AGENTS.md template
 
 ## Repository Structure

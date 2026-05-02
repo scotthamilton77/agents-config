@@ -131,7 +131,7 @@ All reviewed code should:
 
 - **Pre-commit**: review changes before they're committed
 - **Pre-merge**: comprehensive review before PR approval
-- **Completion gate**: first step of the quality gate (before code-simplifier and verify-checklist)
+- **Completion gate**: first step of the quality gate (before the `simplify` skill and verify-checklist)
 - **Post-deployment**: spot check production code for issues
 - **Refactoring**: validate improvements maintain functionality
 - **Security updates**: review patches and dependency bumps

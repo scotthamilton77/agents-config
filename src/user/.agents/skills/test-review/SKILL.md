@@ -53,9 +53,8 @@ Before manual review, invoke these companion skills and agents for their special
 | `testing-anti-patterns` skill | Mock behavior testing, test-only production methods, mocking without understanding, incomplete mocks | Apply its gate functions to every mock and assertion |
 | `writing-unit-tests` skill | Implementation-testing, untestable code, mock overuse, poor isolation, skip hygiene | Apply its behavior-vs-implementation lens and test doubles hierarchy |
 | `quality-reviewer` agent | Security issues in test fixtures, code quality, missing edge cases | Dispatch as subagent on the test files |
-| `code-simplifier` agent | Overly complex test setup, redundant assertions, unclear test structure | Dispatch as subagent on the test files after other issues are fixed |
 
-**Workflow:** Apply `testing-anti-patterns` + `writing-unit-tests` criteria first (test-specific), then dispatch `quality-reviewer` agent (general quality), then `code-simplifier` agent (cleanup).
+**Workflow:** Apply `testing-anti-patterns` + `writing-unit-tests` criteria first (test-specific), then dispatch `quality-reviewer` agent (general quality).
 
 ### Step 3: Manual Review Against Checklist
 

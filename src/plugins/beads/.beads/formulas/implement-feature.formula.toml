@@ -185,7 +185,7 @@ description = """
 Clean up the implementation without changing observable behavior.
 Tests must remain green throughout.
 
-Skill: code-simplifier:code-simplifier (run as subagent)
+Skill: simplify
 
 Look for:
 - Duplication (three similar lines is a smell; two is acceptable)
@@ -210,9 +210,9 @@ id    = "code-review"
 title = "Completion gate: code review"
 needs = ["refactor"]
 description = """
-Dispatch code-reviewer subagent against ALL changed files.
+Dispatch quality-reviewer subagent against ALL changed files.
 
-Agent: superpowers:code-reviewer
+Agent: quality-reviewer
 Scope: every file changed since branch creation, reviewed against:
   - The implementation plan restated in the confirm step (per the bead spec)
   - SOLID and DRY principles
@@ -232,9 +232,9 @@ id    = "simplify"
 title = "Completion gate: simplify"
 needs = ["code-review"]
 description = """
-Dispatch code-simplifier subagent against changed code.
+Invoke the `simplify` skill against changed code.
 
-Agent: code-simplifier:code-simplifier
+Skill: simplify
 
 This step exists because the implementing agent always misses
 at least one DRY violation or clarity issue. It is not optional.

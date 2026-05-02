@@ -6,7 +6,7 @@ Versioned collection of agents, skills, and commands for AI coding assistants. S
 
 This configuration relies on two Claude Code plugins being installed:
 
-- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, code-reviewer, code-simplifier, finishing-a-development-branch, and more
+- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
 Without these plugins, the shared `<orchestration>` section in `src/user/.agents/INSTRUCTIONS.md.template` (installed as `INSTRUCTIONS.md` in the target tool config directory) and several Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.claude/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
@@ -50,7 +50,6 @@ Role-specific configurations that define expertise areas, behavioral patterns, a
 
 Shipping agents:
 
-- `code-simplifier`
 - `quality-reviewer`
 - `tech-lead`
 

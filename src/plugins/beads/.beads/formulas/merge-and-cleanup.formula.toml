@@ -55,23 +55,23 @@ Skill: superpowers:requesting-code-review (when dispatching the retroactive revi
      gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
 
 2. Check the PR timeline for evidence of each gate:
-     gh pr view {{pr}} --comments     # look for code-reviewer output
+     gh pr view {{pr}} --comments     # look for quality-reviewer output
      gh pr checks {{pr}}              # CI results
 
 3. Check git log for quality gate commits:
      git log origin/<branch> --oneline
 
 Evidence required for each gate:
-  [ ] Code review ran       (PR comment from code-reviewer, or CI check)
-  [ ] Simplification ran    (PR comment from code-simplifier, or commit)
+  [ ] Code review ran       (PR comment from quality-reviewer, or CI check)
+  [ ] Simplification ran    (PR comment from `simplify` skill, or commit)
   [ ] Build passed          (CI output or manual run evidence)
   [ ] Tests passed          (CI output or manual run evidence)
 
 If ALL four gates have evidence: PROCEED to check-pr-comments.
 
 If ANY gate is missing: run the missing steps now, before proceeding:
-  - Code review:    dispatch superpowers:code-reviewer subagent
-  - Simplify:       dispatch code-simplifier:code-simplifier subagent
+  - Code review:    dispatch quality-reviewer subagent
+  - Simplify:       invoke the `simplify` skill
   - Build/test:     run build + typecheck + lint + tests; show output
 
 This formula exists specifically because gates get skipped.
