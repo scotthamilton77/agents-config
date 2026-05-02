@@ -180,7 +180,7 @@ id    = "code-review"
 title = "Completion gate: code review"
 needs = ["implement-fix"]
 description = """
-Dispatch code-reviewer subagent against ALL changed files.
+Dispatch quality-reviewer subagent against ALL changed files.
 
 Agent: quality-reviewer
 Scope: every file changed since branch creation, reviewed against:
