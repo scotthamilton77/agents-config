@@ -10,7 +10,7 @@ Review all changed files for reuse, quality, and efficiency. Fix any issues foun
 
 ## Operating Discipline
 
-These rules govern HOW the simplify pass runs. They apply to every invocation regardless of dispatch shape (parallel subagents or serial in-context execution).
+These rules govern HOW the simplify pass runs. They apply to every invocation regardless of dispatch shape — see Phase 2 for parallel vs. serial execution.
 
 ### Worktree scoping
 
