@@ -63,15 +63,15 @@ Skill: superpowers:requesting-code-review (when dispatching the retroactive revi
 
 Evidence required for each gate:
   [ ] Code review ran       (PR comment from code-reviewer, or CI check)
-  [ ] Simplification ran    (PR comment from code-simplifier, or commit)
+  [ ] Simplification ran    (PR comment from `simplify` skill, or commit)
   [ ] Build passed          (CI output or manual run evidence)
   [ ] Tests passed          (CI output or manual run evidence)
 
 If ALL four gates have evidence: PROCEED to check-pr-comments.
 
 If ANY gate is missing: run the missing steps now, before proceeding:
-  - Code review:    dispatch superpowers:code-reviewer subagent
-  - Simplify:       dispatch code-simplifier:code-simplifier subagent
+  - Code review:    dispatch quality-reviewer subagent
+  - Simplify:       invoke the `simplify` skill
   - Build/test:     run build + typecheck + lint + tests; show output
 
 This formula exists specifically because gates get skipped.

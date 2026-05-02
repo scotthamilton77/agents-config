@@ -6,8 +6,8 @@ MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typ
 
 1. `quality-reviewer` agent — review changes against plan and standards (checklist step 1)
 2. Address any findings from quality-reviewer (checklist step 2)
-3. `code-simplifier` agent — simplify/refine changed code (checklist step 3)
-4. Address any findings from code-simplifier (checklist step 4)
+3. `simplify` skill — simplify/refine changed code (checklist step 3)
+4. Address any findings from the `simplify` skill (checklist step 4)
 5. `verify-checklist` skill — run tests, build, lint; evidence before claims; structured completion report (checklist step 5)
 
 No exceptions. No partial runs. Each step feeds the next.

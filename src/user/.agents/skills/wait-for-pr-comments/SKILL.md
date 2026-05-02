@@ -357,7 +357,7 @@ Each FIX item is dispatched to a dedicated subagent. The subagent:
 3. For `committed` outcome only:
    - **Verify FIRST, commit SECOND.** Subagent does not commit until its own
      verify passes.
-   - Verification: full gate (`quality-reviewer` → `code-simplifier` →
+   - Verification: full gate (`quality-reviewer` → `simplify` →
      `verify-checklist`) is **mandatory** unless lite-gate criteria met.
    - **Lite-gate eligibility self-check** — the subagent runs this BEFORE
      picking the gate variant. Conservative: any predicate uncertainty

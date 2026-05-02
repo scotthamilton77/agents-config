@@ -182,7 +182,7 @@ needs = ["implement-fix"]
 description = """
 Dispatch code-reviewer subagent against ALL changed files.
 
-Agent: superpowers:code-reviewer
+Agent: quality-reviewer
 Scope: every file changed since branch creation, reviewed against:
   - The root cause identified in the diagnose phase
   - Whether the fix addresses the cause or just the symptom
@@ -199,11 +199,11 @@ id    = "simplify"
 title = "Completion gate: simplify"
 needs = ["code-review"]
 description = """
-Dispatch code-simplifier subagent against changed code.
+Invoke the `simplify` skill against changed code.
 
-Agent: code-simplifier:code-simplifier
+Skill: simplify
 
-Bug fixes are often hasty. The code-simplifier catches the
+Bug fixes are often hasty. The `simplify` skill catches the
 "it works, ship it" carelessness that bug pressure creates.
 
 Address findings. Re-run tests after any changes.
