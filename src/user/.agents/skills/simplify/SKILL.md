@@ -44,7 +44,7 @@ Do not introduce new helpers, type aliases, or wrapper functions on speculation.
 ### Boundary rules
 
 - **No scope creep into untouched files.** Review and modify only files in the diff (or recently-modified files when no diff exists).
-- **No test rewrites.** Tests are out of scope for this skill.
+- **Tests are not refactor targets.** Do not rewrite or restructure test files. Surface flaky or over-mocked tests in the summary instead.
 - **No new dependencies.** Do not add packages, imports of new modules, or external services.
 - **No commits, no pushes.** The orchestrator owns delivery. This skill edits files in place and reports.
 
@@ -52,12 +52,12 @@ Do not introduce new helpers, type aliases, or wrapper functions on speculation.
 
 When a recurring pattern surfaces (the same anti-pattern showing up across multiple files, or a project-specific convention worth remembering):
 
-- **If the host runtime has a memory mechanism** (Claude project memory, Codex/Gemini equivalents, `bd remember`, etc.), persist the pattern there so future simplify passes — and other agents in the project — benefit from the lesson.
+- **If the host runtime has a memory mechanism** (Claude project memory, managed `MEMORY.md`, Codex/Gemini equivalents), persist the pattern there so future simplify passes — and other agents in the project — benefit from the lesson. Do NOT use `bd remember` for this — that mechanism is for bead-tracker context, not agent/project memory.
 - **If the host runtime has no persistent memory mechanism**, surface the recurring pattern in the final summary under a `Recurring pattern observed:` line so the user can record it manually. Do not silently drop the observation.
 
 ## Phase 1: Identify Changes
 
-Run `git diff` (or `git diff HEAD` if there are staged changes) to see what changed. If there are no git changes, review the most recently modified files that the user mentioned or that you edited earlier in this conversation.
+Run `git diff HEAD` to see all uncommitted changes (both staged and unstaged) since the last commit. If you only need one or the other, use `git diff` (unstaged only) or `git diff --staged` (staged only). If there are no git changes, review the most recently modified files that the user mentioned or that you edited earlier in this conversation.
 
 ## Phase 2: Review on Three Axes (Reuse, Quality, Efficiency)
 
