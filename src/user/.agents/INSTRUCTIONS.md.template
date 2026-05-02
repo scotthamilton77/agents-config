@@ -17,7 +17,7 @@ Tool-agnostic principles for all AI coding assistants.
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
 - **Dependencies**: If a library version is newer than model training data, look up docs via context7 before using it
 - **Observability**: Match the project's existing logging approach. If none exists, add structured logging at key state transitions and error paths
-- **Testing**: Run the specific relevant test, not the full suite; cover edge cases + error paths
+- **Testing**: Run the specific relevant test, not the full suite; cover edge cases + error paths. Default coverage floor: 80% line / 70% branch on changed code, measured per-PR (not per-repo). Treat the floor as a *minimum behavioral target*, not a quality bar — never ship anti-pattern tests to clear it (see `writing-unit-tests` skill). Projects may override in their own AGENTS.md.
 - **Git safety**: No hard resets, force pushes, amends without explicit approval. Never run `git clean -fd` without explicit user approval—it destroys untracked files irreversibly
 - **No unauthorized merges**: Creating a PR is not authorization to merge. Merge only when the user explicitly says so ("go ahead and merge", "merge it", etc.). When in doubt, they have not authorized it.
 - **Worktree hygiene**: Always run tests and builds from the correct worktree directory, not the main tree
