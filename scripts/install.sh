@@ -526,7 +526,10 @@ stage_and_install_tool() {
     CURRENT_TOOL="$tool"
     vheader "$tool"
 
-    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_dir"
+    # Skip dest_dir creation under --prune-only: Phase 7 is skipped, so creating
+    # ~/.<tool>/ would leave behind an empty directory on systems that didn't
+    # already have one. Staging dir is still required for scan_orphans.
+    [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true ]] && mkdir -p "$dest_dir"
     mkdir -p "$staging"
 
     # ── Phase 1: Stage shared templates (.agents/*.md.template → staging/) ───
