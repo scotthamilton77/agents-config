@@ -1090,6 +1090,20 @@ _delete_all_orphans() {
 }
 
 prune_orphans() {
+    # Non-interactive guard runs FIRST — before the empty-orphan fast path —
+    # so --prune-only without -y/--dry-run hard-fails regardless of orphan
+    # count (intent unfulfilled: caller asked for action with no auth).
+    # --dry-run and -y are themselves the auth, so they're exempt.
+    if [[ ! -t 0 && "$DRY_RUN" != true && "$AUTO_YES" != true ]]; then
+        if [[ "$PRUNE_ONLY" == true ]]; then
+            err "prune-only requires --yes or --dry-run in non-interactive mode"
+            exit 1
+        else
+            warn "prune phase requires confirmation, skipping"
+            return 0
+        fi
+    fi
+
     if [[ ${#ORPHANS[@]} -eq 0 ]]; then
         info "No orphans detected."
         return 0
@@ -1107,17 +1121,6 @@ prune_orphans() {
     if [[ "$AUTO_YES" == true ]]; then
         _delete_all_orphans
         return 0
-    fi
-
-    # Non-interactive without -y / --dry-run
-    if [[ ! -t 0 ]]; then
-        if [[ "$PRUNE_ONLY" == true ]]; then
-            err "prune-only requires --yes or --dry-run in non-interactive mode"
-            exit 1
-        else
-            warn "prune phase requires confirmation, skipping"
-            return 0
-        fi
     fi
 
     # Interactive: 3-way prompt
