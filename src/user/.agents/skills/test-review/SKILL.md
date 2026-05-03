@@ -23,7 +23,7 @@ description: Use when doing code review of unit or integration tests, reviewing 
 ## When NOT to Use
 
 - Writing tests from scratch (use `writing-unit-tests` skill instead)
-- Debugging a test failure caused by production code (use `bugfix` or `root-cause-tracing`)
+- Debugging a test failure caused by production code (use `bugfix` or `superpowers:root-cause-tracing`)
 - Throwaway spike/prototype tests
 
 ## Scope Determination
