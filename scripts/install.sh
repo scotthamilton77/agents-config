@@ -1225,13 +1225,16 @@ if [[ "$VERBOSE" == true ]]; then
         printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
     done
 
-    # Show tools and plugins that were in ALL_* but not active (auto-detect skipped)
+    # Show tools and plugins that were in ALL_* but not reported above
+    # (key off REPORT_TARGETS, not TOOLS/PLUGINS, so a plugin pruned outside
+    # the active set — e.g. beads under strict mode, AC#19 — isn't double-printed
+    # as both a real block and a "not detected, skipped" footer).
     for tool in "${ALL_TOOLS[@]}"; do
-        in_list "$tool" "${TOOLS[@]}" || \
+        in_list "$tool" "${REPORT_TARGETS[@]}" || \
             printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$tool"
     done
     for plugin in "${ALL_PLUGINS[@]}"; do
-        in_list "$plugin" "${PLUGINS[@]}" || \
+        in_list "$plugin" "${REPORT_TARGETS[@]}" || \
             printf "\n${DIM}-- %s (not detected, skipped) --${RESET}\n" "$plugin"
     done
 
