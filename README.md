@@ -114,6 +114,13 @@ Slash commands that can be invoked directly:
 
 # Install accepting all changes
 ./scripts/install.sh --yes
+
+# Install AND remove orphaned items not in the source (with backup)
+./scripts/install.sh --prune
+
+# Skip install; only scan + prune orphans
+./scripts/install.sh --prune-only --dry-run    # preview
+./scripts/install.sh --prune-only --yes        # execute
 ```
 
 The install script:
@@ -124,9 +131,37 @@ The install script:
 - Syncs `agents/`, `skills/`, and `commands/` directories using hash comparison per item
 - Union-merges `settings.json.template` into existing `settings.json` (preserves your values, adds new keys/entries)
 - Creates timestamped backups before overwriting anything
-- Warns about items that aren't tracked in the project
+- Warns about items that aren't tracked in the project (or removes them with `--prune`)
 
 Requires bash or zsh, plus `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
+
+#### Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--dry-run` | Show what would change without writing |
+| `--yes`, `-y` | Auto-accept all prompts (suppresses diffs in quiet mode) |
+| `--verbose`, `-v` | Per-file progress (phases, up-to-date, installed, diffs) |
+| `--tools=TOOLS` | Comma-separated tool list (`claude`, `codex`, `gemini`); default auto-detect |
+| `--plugins=PLUGINS` | Comma-separated plugin list (`beads`); default auto-detect; pass `--plugins=` to disable all |
+| `--prune` | After install, remove orphans under `~/.<tool>/{commands,skills,agents,rules}/` and `~/.beads/formulas/` not present in current staging (with backup) |
+| `--prune-only` | Skip install (Phase 7); only scan + prune orphans (mutually exclusive with `--prune`) |
+| `--help`, `-h` | Show help |
+
+#### Pruning orphans
+
+`--prune` and `--prune-only` identify and (optionally) remove items that exist
+in your tool config dirs but no longer exist in this repo's source — useful for
+keeping your install in sync after files are renamed or deleted upstream.
+
+- **Scope:** top-level entries directly inside `~/.<tool>/{commands,skills,agents,rules}/` and `~/.beads/formulas/`. Nothing else (top-level `*.md`, `settings.json`, `hooks/`, etc.) is ever pruned.
+- **Backups:** orphans are moved to `~/.<tool>/<namespace>-backup/<basename>.backup-<timestamp>` before deletion. The `*-backup/` siblings are themselves excluded from future scans.
+- **Modes:**
+  - `--dry-run` lists orphans and exits without changes.
+  - `--yes` backs up + deletes all orphans without prompting.
+  - Interactive (default): displays orphans, then prompts `[a]ll / [o]ne-by-one / [c]ancel`. Cancel and EOF leave everything in place.
+  - Non-interactive without `--yes` or `--dry-run`: `--prune` warns and skips the prune phase (install still runs); `--prune-only` hard-fails (exit non-zero).
+- **Beads:** `~/.beads/formulas/` is scanned whenever `--prune`/`--prune-only` is active, regardless of whether the beads plugin is auto-detected. If beads isn't an active plugin, all formulas in your dest are flagged as orphans (strict mode).
 
 ### Manual
 

@@ -60,6 +60,11 @@ fi
 #   --verbose, -v        Show per-file progress (phases, up-to-date, installed)
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
 #   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
+#   --prune              After install, remove orphans (with backup) under
+#                        ~/.<tool>/{commands,skills,agents,rules}/ and
+#                        ~/.beads/formulas/ that are not in current staging
+#   --prune-only         Skip Phase 7 (install) and only scan + prune orphans
+#                        (mutually exclusive with --prune)
 #   --help, -h           Show this help
 #
 # Output modes:
@@ -84,6 +89,8 @@ VERBOSE=false
 TOOLS_OVERRIDE=""
 PLUGINS_OVERRIDE=""
 PLUGINS_FLAG_SET=false
+PRUNE=false
+PRUNE_ONLY=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -92,8 +99,10 @@ for arg in "$@"; do
         --verbose|-v)  VERBOSE=true ;;
         --tools=*)     TOOLS_OVERRIDE="${arg#--tools=}" ;;
         --plugins=*)   PLUGINS_OVERRIDE="${arg#--plugins=}"; PLUGINS_FLAG_SET=true ;;
+        --prune)       PRUNE=true ;;
+        --prune-only)  PRUNE_ONLY=true ;;
         --help|-h)
-            echo "Usage: install.sh [--dry-run] [--yes|-y] [--verbose|-v] [--tools=TOOLS] [--plugins=PLUGINS] [--help|-h]"
+            echo "Usage: install.sh [--dry-run] [--yes|-y] [--verbose|-v] [--tools=TOOLS] [--plugins=PLUGINS] [--prune] [--prune-only] [--help|-h]"
             echo ""
             echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
             echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
@@ -110,12 +119,20 @@ for arg in "$@"; do
             echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
             echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
+            echo "  --prune            After install, remove orphans under ~/.<tool>/{commands,skills,agents,rules}/"
+            echo "                     and ~/.beads/formulas/ that are not in current staging (with backup)"
+            echo "  --prune-only       Skip install (Phase 7); only scan + prune orphans (mutually exclusive with --prune)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
         *) echo "Unknown option: $arg" >&2; exit 1 ;;
     esac
 done
+
+if [[ "$PRUNE" == true && "$PRUNE_ONLY" == true ]]; then
+    echo "Error: --prune and --prune-only are mutually exclusive." >&2
+    exit 1
+fi
 
 # Diffs are shown in verbose mode, or when the user is about to be prompted for
 # confirmation (they need to see the change to decide). Quiet + dry-run gives a
@@ -203,6 +220,12 @@ plugin_enabled() {
     in_list "$1" "${PLUGINS[@]}"
 }
 
+# True when --prune or --prune-only was passed (the two flags are mutually
+# exclusive; "active" means the prune phase will run).
+prune_active() {
+    [[ "$PRUNE" == true || "$PRUNE_ONLY" == true ]]
+}
+
 # ── Utility: split a comma-separated string into a named array ────────────────
 #
 # Handles the bash (read -ra) vs zsh (read -rA) split. The target array name
@@ -254,10 +277,16 @@ if [[ "$PLUGINS_FLAG_SET" == true ]]; then
             exit 1
         fi
     done
-    # Warn about explicitly excluded plugins (already-installed files are not removed)
+    # Warn about explicitly excluded plugins. Wording depends on whether prune is
+    # active: under --prune/--prune-only the excluded plugin's previously-installed
+    # files DO become orphans and may be removed (strict mode, AC#16).
     for plugin in "${ALL_PLUGINS[@]}"; do
         if ! in_list "$plugin" "${PLUGINS[@]}"; then
-            warn "Plugin '$plugin' excluded via --plugins= — files already installed are not removed."
+            if prune_active; then
+                warn "Plugin '$plugin' excluded via --plugins= — under --prune, previously-installed files become orphans and may be removed."
+            else
+                warn "Plugin '$plugin' excluded via --plugins= — files already installed are not removed (use --prune or --prune-only to remove orphans under strict mode)."
+            fi
         fi
     done
 else
@@ -280,30 +309,55 @@ vinfo "Plugins: ${PLUGINS[*]:-none}"
 
 # ── Per-tool counters ─────────────────────────────────────────────────────
 
-declare -A tool_installed tool_updated tool_skipped tool_merged tool_backed_up
+declare -A tool_installed tool_updated tool_skipped tool_merged tool_backed_up tool_pruned
 for tool in "${ALL_TOOLS[@]}" "${ALL_PLUGINS[@]}"; do
     tool_installed[$tool]=0
     tool_updated[$tool]=0
     tool_skipped[$tool]=0
     tool_merged[$tool]=0
     tool_backed_up[$tool]=0
+    tool_pruned[$tool]=0
 done
 
 # Current tool being processed (used by utility functions)
 CURRENT_TOOL=""
 
-# ── Utility: back up a file with timestamp ────────────────────────────────
+# ── Utility: back up a file or directory with timestamp ────────────────────
+#
+# Path-aware: if the parent dir is one of the prune-managed namespaces
+# {commands, skills, agents, rules, formulas}, route the backup into a
+# sibling <namespace>-backup/ directory under the grandparent. Otherwise,
+# fall back to in-place "<path>.backup-<timestamp>" alongside the original.
+# Handles both files (cp) and directories (cp -R).
 
 backup() {
-    local file="$1"
-    if [[ -f "$file" ]]; then
-        local timestamp
-        timestamp="$(date +%Y%m%d-%H%M%S)"
-        local backup_file="${file}.backup-${timestamp}"
-        cp "$file" "$backup_file"
-        vinfo "Backed up $(basename "$file") -> $(basename "$backup_file")"
-        (( tool_backed_up[$CURRENT_TOOL]++ )) || true
+    local target="$1"
+    [[ -e "$target" ]] || return 0
+
+    local timestamp parent grandparent base backup_dir backup_path
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    parent="$(basename "$(dirname "$target")")"
+    base="$(basename "$target")"
+
+    case "$parent" in
+        commands|skills|agents|rules|formulas)
+            grandparent="$(dirname "$(dirname "$target")")"
+            backup_dir="$grandparent/${parent}-backup"
+            backup_path="$backup_dir/${base}.backup-${timestamp}"
+            mkdir -p "$backup_dir"
+            ;;
+        *)
+            backup_path="${target}.backup-${timestamp}"
+            ;;
+    esac
+
+    if [[ -d "$target" ]]; then
+        cp -R "$target" "$backup_path"
+    else
+        cp "$target" "$backup_path"
     fi
+    vinfo "Backed up $base -> $(basename "$(dirname "$backup_path")")/$(basename "$backup_path")"
+    (( tool_backed_up[$CURRENT_TOOL]++ )) || true
 }
 
 # ── Utility: compute a recursive hash for a directory or file ─────────────
@@ -533,6 +587,13 @@ stage_and_install_tool() {
     done
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
+    # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
+    # scan_orphans has a comparison baseline, but no files are written to ~/.
+    if [[ "$PRUNE_ONLY" == true ]]; then
+        vinfo "Phase 7: skipped (--prune-only)"
+        return 0
+    fi
+
     vinfo "Phase 7: Sync to $dest_dir"
 
     # Sync templates: staging has *.md.template; sync_templates strips the suffix
@@ -575,6 +636,13 @@ stage_and_install_beads() {
             stage_item "$formula" "$staging_formulas/$formula_name" "toml"
         done
     done
+
+    # Skip the actual install when running --prune-only; staging is preserved
+    # for scan_orphans to compare against.
+    if [[ "$PRUNE_ONLY" == true ]]; then
+        vinfo "beads sync: skipped (--prune-only)"
+        return 0
+    fi
 
     # Sync staged formulas → ~/.beads/formulas/
     local found_any=false
@@ -625,14 +693,17 @@ stage_and_install_beads() {
     [[ "$found_any" == false ]] && vinfo "No formula files staged"
 
     # Warn about formulas in dest that aren't in staged source
-    local extra_name
-    for dest_file in "$dest_formulas"/*.toml; do
-        [[ -f "$dest_file" ]] || continue
-        extra_name="$(basename "$dest_file")"
-        if [[ ! -f "$staging_formulas/$extra_name" ]]; then
-            warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source (keeping)"
-        fi
-    done
+    # (suppressed when --prune/--prune-only is active — prune phase will report and act on these)
+    if ! prune_active; then
+        local extra_name
+        for dest_file in "$dest_formulas"/*.toml; do
+            [[ -f "$dest_file" ]] || continue
+            extra_name="$(basename "$dest_file")"
+            if [[ ! -f "$staging_formulas/$extra_name" ]]; then
+                warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source (keeping)"
+            fi
+        done
+    fi
 }
 
 # ── Sync templates from a source dir into a dest dir ──────────────────────
@@ -768,13 +839,16 @@ sync_directory() {
     done
 
     # Warn about items in dest that aren't in source
-    for dest_item in "$dest_parent"/*; do
-        [[ -e "$dest_item" ]] || continue
-        item_name="$(basename "$dest_item")"
-        if [[ ! -e "$src_parent/$item_name" ]]; then
-            warn "$dir_name/$item_name exists in ~/.$CURRENT_TOOL but not in $label source (keeping)"
-        fi
-    done
+    # (suppressed when --prune/--prune-only is active — prune phase will report and act on these)
+    if ! prune_active; then
+        for dest_item in "$dest_parent"/*; do
+            [[ -e "$dest_item" ]] || continue
+            item_name="$(basename "$dest_item")"
+            if [[ ! -e "$src_parent/$item_name" ]]; then
+                warn "$dir_name/$item_name exists in ~/.$CURRENT_TOOL but not in $label source (keeping)"
+            fi
+        done
+    fi
 }
 
 # ── Merge or copy a settings file ─────────────────────────────────────────
@@ -914,32 +988,227 @@ sync_settings_file() {
     fi
 }
 
+# ── Orphan scanning and pruning ───────────────────────────────────────────────
+#
+# An orphan is a top-level entry directly inside ~/.<tool>/{commands,skills,
+# agents,rules}/ or ~/.beads/formulas/ that does NOT exist in the current run's
+# staging tree. Item granularity is the top-level entry — we don't recurse into
+# nested skill directories. Legacy in-place backup files matching *.backup-*
+# (produced by older versions of backup() before the namespace refactor) are
+# skipped so they aren't treated as orphans. Sibling <namespace>-backup/ dirs
+# (the new layout) live at the GRANDPARENT level alongside the namespace, so
+# they are never visited by this scan in the first place. Anything outside
+# these scoped subdirs (top-level *.md, settings.json, hooks/, etc.) is never
+# pruned.
+
+ORPHANS=()
+
+# Append orphans found in a single dest namespace to ORPHANS, tagged with the
+# given tool/namespace labels. Skips legacy *.backup-* entries (in-place backups
+# from older backup() implementations); classifies as dir/file.
+_scan_namespace() {
+    local tool="$1" ns_label="$2" dest="$3" staging="$4"
+    [[ -d "$dest" ]] || return 0
+    local entry base kind
+    for entry in "$dest"/*; do
+        [[ -e "$entry" ]] || continue
+        base="$(basename "$entry")"
+        [[ "$base" == *.backup-* ]] && continue
+        [[ -e "$staging/$base" ]] && continue
+        if [[ -d "$entry" ]]; then kind="dir"; else kind="file"; fi
+        ORPHANS+=("$tool|$ns_label|$entry|$kind")
+    done
+}
+
+scan_orphans() {
+    ORPHANS=()
+    local tool sub
+    local prune_subdirs=(commands skills agents rules)
+
+    for tool in "${TOOLS[@]}"; do
+        for sub in "${prune_subdirs[@]}"; do
+            _scan_namespace "$tool" "$sub" "$HOME/.$tool/$sub" "$STAGING_DIR/$tool/$sub"
+        done
+    done
+
+    # ~/.beads/formulas/ — scanned whenever --prune/--prune-only runs,
+    # regardless of beads plugin auto-detection. If beads isn't an active plugin
+    # the staging dir is empty (or absent), so all dest formulas register as
+    # orphans — consistent with strict mode (AC#19).
+    _scan_namespace "beads" "formulas" "$HOME/.beads/formulas" "$STAGING_DIR/.beads/formulas"
+}
+
+# Display the orphan list grouped by tool, then namespace, with a summary count.
+_display_orphans() {
+    local last_tool="" last_ns="" tool ns path kind line
+    header "Orphans detected (${#ORPHANS[@]} total)"
+    for line in "${ORPHANS[@]}"; do
+        IFS='|' read -r tool ns path kind <<< "$line"
+        if [[ "$tool" != "$last_tool" ]]; then
+            printf "\n${BOLD}%s${RESET}\n" "$tool"
+            last_tool="$tool"
+            last_ns=""
+        fi
+        if [[ "$ns" != "$last_ns" ]]; then
+            printf "  %s/\n" "$ns"
+            last_ns="$ns"
+        fi
+        printf "    [%s] %s\n" "$kind" "$path"
+    done
+    echo ""
+}
+
+# Backup + delete one orphan, increment counter for its tool bucket.
+_delete_orphan() {
+    local tool="$1" path="$2"
+    local prev="$CURRENT_TOOL"
+    CURRENT_TOOL="$tool"
+    backup "$path"
+    rm -rf "$path"
+    (( tool_pruned[$tool]++ )) || true
+    CURRENT_TOOL="$prev"
+}
+
+# Backup + delete every orphan in ORPHANS, then report the count.
+_delete_all_orphans() {
+    local line tool ns path kind
+    for line in "${ORPHANS[@]}"; do
+        IFS='|' read -r tool ns path kind <<< "$line"
+        _delete_orphan "$tool" "$path"
+    done
+    ok "Pruned ${#ORPHANS[@]} orphan(s)."
+}
+
+prune_orphans() {
+    if [[ ${#ORPHANS[@]} -eq 0 ]]; then
+        info "No orphans detected."
+        return 0
+    fi
+
+    _display_orphans
+
+    # Dry-run: display only, no deletes/backups
+    if [[ "$DRY_RUN" == true ]]; then
+        info "Dry-run: ${#ORPHANS[@]} orphan(s) listed above; no changes made."
+        return 0
+    fi
+
+    # Auto-yes: backup + delete all without prompting
+    if [[ "$AUTO_YES" == true ]]; then
+        _delete_all_orphans
+        return 0
+    fi
+
+    # Non-interactive without -y / --dry-run
+    if [[ ! -t 0 ]]; then
+        if [[ "$PRUNE_ONLY" == true ]]; then
+            err "prune-only requires --yes or --dry-run in non-interactive mode"
+            exit 1
+        else
+            warn "prune phase requires confirmation, skipping"
+            return 0
+        fi
+    fi
+
+    # Interactive: 3-way prompt
+    local action
+    while true; do
+        printf "${YELLOW}?${RESET}  Action? [a]ll, [o]ne-by-one, [c]ancel: "
+        if ! read -r action; then
+            # EOF -> cancel
+            info "Cancelled (EOF). No changes made."
+            return 0
+        fi
+        case "$action" in
+            a|A)
+                _delete_all_orphans
+                return 0
+                ;;
+            o|O)
+                local line tool ns path kind ans quit=false
+                for line in "${ORPHANS[@]}"; do
+                    [[ "$quit" == true ]] && break
+                    IFS='|' read -r tool ns path kind <<< "$line"
+                    while true; do
+                        printf "${YELLOW}?${RESET}  Delete %s? [y/N/q] " "$path"
+                        if ! read -r ans; then
+                            ans=""  # EOF -> default skip
+                        fi
+                        case "$ans" in
+                            y|Y) _delete_orphan "$tool" "$path"; break ;;
+                            q|Q) info "Quit per-item loop; remaining orphans left in place."; quit=true; break ;;
+                            n|N|"") break ;;
+                            *)   warn "Invalid input — please answer y, N, or q." ;;
+                        esac
+                    done
+                done
+                return 0
+                ;;
+            c|C|"")
+                info "Cancelled. No changes made."
+                return 0
+                ;;
+            *)
+                warn "Invalid input — please answer a, o, or c."
+                ;;
+        esac
+    done
+}
+
 # ── Staging directory (cleaned up on exit) ────────────────────────────────────
 
 STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
 trap 'rm -rf "$STAGING_DIR"' EXIT
 
 # ── Main loop ─────────────────────────────────────────────────────────────
+#
+# Phases 1-6 (staging) always run; Phase 7 (sync to ~/) is skipped inside
+# stage_and_install_tool / stage_and_install_beads when PRUNE_ONLY=true so
+# scan_orphans still has a populated staging tree to compare against.
 
 for tool in "${TOOLS[@]}"; do
     stage_and_install_tool "$tool"
 done
 
-if plugin_enabled "beads"; then
+# Beads staging must run whenever --prune/--prune-only is active so scan_orphans
+# has a comparison baseline for ~/.beads/formulas/ (AC#19), even if beads is not
+# in the active PLUGINS array. When beads is excluded, the staging build loops
+# over an empty plugin set and produces an empty staging dir — under strict mode,
+# all dest formulas then register as orphans, which is the intended behavior.
+if plugin_enabled "beads" || prune_active; then
     stage_and_install_beads
 fi
 
+# Prune phase (post-install) — only when --prune or --prune-only is active
+if prune_active; then
+    scan_orphans
+    prune_orphans
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────
+#
+# Build the report set: active TOOLS + active PLUGINS, plus any plugin that
+# isn't in PLUGINS but accumulated activity (e.g., beads pruned when the
+# plugin wasn't auto-detected, per AC#19).
+
+REPORT_TARGETS=("${TOOLS[@]}" "${PLUGINS[@]}")
+for plugin in "${ALL_PLUGINS[@]}"; do
+    in_list "$plugin" "${REPORT_TARGETS[@]}" && continue
+    if (( ${tool_pruned[$plugin]:-0} + ${tool_backed_up[$plugin]:-0} > 0 )); then
+        REPORT_TARGETS+=("$plugin")
+    fi
+done
 
 if [[ "$VERBOSE" == true ]]; then
     header "Summary"
 
-    for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
+    for tool in "${REPORT_TARGETS[@]}"; do
         printf "\n${BOLD}-- %s --${RESET}\n" "$tool"
         printf "  Installed:  %s\n" "${tool_installed[$tool]}"
         printf "  Updated:    %s\n" "${tool_updated[$tool]}"
         printf "  Merged:     %s\n" "${tool_merged[$tool]}"
         printf "  Backed up:  %s\n" "${tool_backed_up[$tool]}"
+        printf "  Pruned:     %s\n" "${tool_pruned[$tool]}"
         printf "  Skipped:    %s\n" "${tool_skipped[$tool]}"
     done
 
@@ -959,8 +1228,8 @@ else
     # Quiet summary: one line per target with non-zero changes; "all up to date" otherwise.
     total_changes=0
     summary_lines=()
-    for tool in "${TOOLS[@]}" "${PLUGINS[@]}"; do
-        changed=$(( ${tool_installed[$tool]} + ${tool_updated[$tool]} + ${tool_merged[$tool]} ))
+    for tool in "${REPORT_TARGETS[@]}"; do
+        changed=$(( ${tool_installed[$tool]} + ${tool_updated[$tool]} + ${tool_merged[$tool]} + ${tool_pruned[$tool]} ))
         (( total_changes += changed )) || true
         if (( changed > 0 )); then
             parts=()
@@ -968,6 +1237,7 @@ else
             (( ${tool_updated[$tool]}    > 0 )) && parts+=("${tool_updated[$tool]} updated")
             (( ${tool_merged[$tool]}     > 0 )) && parts+=("${tool_merged[$tool]} merged")
             (( ${tool_backed_up[$tool]}  > 0 )) && parts+=("${tool_backed_up[$tool]} backed up")
+            (( ${tool_pruned[$tool]}     > 0 )) && parts+=("${tool_pruned[$tool]} pruned")
             summary_lines+=("${tool}: $(IFS=', '; printf '%s' "${parts[*]}")")
         fi
     done
