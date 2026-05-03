@@ -624,7 +624,14 @@ stage_and_install_beads() {
     vheader "beads formulas"
     CURRENT_TOOL="beads"
 
-    [[ "$DRY_RUN" != true ]] && mkdir -p "$dest_formulas"
+    # Only create ~/.beads/formulas/ when beads is an active plugin AND we're
+    # actually going to install (not --prune-only). Without these gates, a
+    # --prune/--prune-only run with beads disabled or absent would silently
+    # create a brand-new ~/.beads/formulas tree on machines that never had
+    # beads installed. Staging dir is still required for scan_orphans.
+    if [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true ]] && plugin_enabled "beads"; then
+        mkdir -p "$dest_formulas"
+    fi
     mkdir -p "$staging_formulas"
 
     # Stage formulas from all active plugins with a .beads/formulas/ subdir
