@@ -163,8 +163,7 @@ needs = ["write-tests"]
 description = """
 Write the minimum code to make all failing tests pass.
 
-Skills: superpowers:test-driven-development, then domain skill
-  (e.g. typescript-developer, backend-developer, etc.)
+Skills: superpowers:test-driven-development, then any applicable domain skill
 
 Rules:
 - Minimum viable implementation — write only what tests require
