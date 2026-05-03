@@ -1081,14 +1081,16 @@ scan_orphans() {
 # Array indexing uses _ARRAY_BASE so the same C-style loop works under zsh
 # (1-indexed) and bash (0-indexed).
 _display_orphans() {
-    local last_tool="" last_ns="" tool ns path kind i n stop
+    # NOTE: variable named 'orphan_path', not 'path' — see _delete_orphan
+    # comment about zsh's tied `path` ↔ `PATH` array.
+    local last_tool="" last_ns="" tool ns orphan_path kind i n stop
     n=${#ORPHAN_PATHS[@]}
     stop=$(( n + _ARRAY_BASE ))
     header "Orphans detected (${n} total)"
     for (( i = _ARRAY_BASE; i < stop; i++ )); do
         tool="${ORPHAN_TOOLS[i]}"
         ns="${ORPHAN_NS[i]}"
-        path="${ORPHAN_PATHS[i]}"
+        orphan_path="${ORPHAN_PATHS[i]}"
         kind="${ORPHAN_KINDS[i]}"
         if [[ "$tool" != "$last_tool" ]]; then
             printf "\n${BOLD}%s${RESET}\n" "$tool"
@@ -1099,18 +1101,21 @@ _display_orphans() {
             printf "  %s/\n" "$ns"
             last_ns="$ns"
         fi
-        printf "    [%s] %s\n" "$kind" "$path"
+        printf "    [%s] %s\n" "$kind" "$orphan_path"
     done
     echo ""
 }
 
 # Backup + delete one orphan, increment counter for its tool bucket.
+# NOTE: do NOT name a local 'path' here — zsh ties the lowercase `path`
+# array to PATH, so `local path=...` clobbers PATH for the function's
+# scope and any callee (e.g. `date`, `rm`) becomes "command not found".
 _delete_orphan() {
-    local tool="$1" path="$2"
+    local tool="$1" orphan_path="$2"
     local prev="$CURRENT_TOOL"
     CURRENT_TOOL="$tool"
-    backup "$path"
-    rm -rf "$path"
+    backup "$orphan_path"
+    rm -rf "$orphan_path"
     (( tool_pruned[$tool]++ )) || true
     CURRENT_TOOL="$prev"
 }
@@ -1180,20 +1185,21 @@ prune_orphans() {
                 # 2fe276d: zsh prints the variable's value when `local` is
                 # re-invoked in a loop. Array indexing is _ARRAY_BASE-aware so
                 # the loop works in both zsh (1-indexed) and bash (0-indexed).
-                local tool path ans i n stop quit=false
+                # 'orphan_path', not 'path' — zsh ties `path` to PATH; see _delete_orphan.
+                local tool orphan_path ans i n stop quit=false
                 n=${#ORPHAN_PATHS[@]}
                 stop=$(( n + _ARRAY_BASE ))
                 for (( i = _ARRAY_BASE; i < stop; i++ )); do
                     [[ "$quit" == true ]] && break
                     tool="${ORPHAN_TOOLS[i]}"
-                    path="${ORPHAN_PATHS[i]}"
+                    orphan_path="${ORPHAN_PATHS[i]}"
                     while true; do
-                        printf "${YELLOW}?${RESET}  Delete %s? [y/N/q] " "$path"
+                        printf "${YELLOW}?${RESET}  Delete %s? [y/N/q] " "$orphan_path"
                         if ! read -r ans; then
                             ans=""  # EOF -> default skip
                         fi
                         case "$ans" in
-                            y|Y) _delete_orphan "$tool" "$path"; break ;;
+                            y|Y) _delete_orphan "$tool" "$orphan_path"; break ;;
                             q|Q) info "Quit per-item loop; remaining orphans left in place."; quit=true; break ;;
                             n|N|"") break ;;
                             *)   warn "Invalid input — please answer y, N, or q." ;;
