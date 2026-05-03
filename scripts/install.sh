@@ -30,6 +30,15 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
     setopt nullglob
 fi
 
+# Index base for array indexing in C-style for-loops. zsh arrays are 1-indexed
+# by default; bash arrays are 0-indexed. Used by the parallel ORPHAN_* arrays
+# (and any future indexed iteration).
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _ARRAY_BASE=1
+else
+    _ARRAY_BASE=0
+fi
+
 # --------------------------------------------------------------------------
 # install.sh — Sync agent config into tool-specific home directories
 #
@@ -1011,11 +1020,23 @@ sync_settings_file() {
 # these scoped subdirs (top-level *.md, settings.json, hooks/, etc.) is never
 # pruned.
 
-ORPHANS=()
+# Parallel arrays — indexed orphan records. Pipe-delimited single-array storage
+# was unsafe because filenames are user-controlled and may contain `|` or
+# newlines, which would misparse via `IFS='|' read` and could end up
+# backing up / deleting the wrong target. Four arrays, indexed in lockstep:
+#   ORPHAN_TOOLS[i]  — tool bucket (e.g. "claude", "beads")
+#   ORPHAN_NS[i]     — namespace label (e.g. "commands", "formulas")
+#   ORPHAN_PATHS[i]  — absolute path to the orphan
+#   ORPHAN_KINDS[i]  — "dir" or "file"
+ORPHAN_TOOLS=()
+ORPHAN_NS=()
+ORPHAN_PATHS=()
+ORPHAN_KINDS=()
 
-# Append orphans found in a single dest namespace to ORPHANS, tagged with the
-# given tool/namespace labels. Skips legacy *.backup-* entries (in-place backups
-# from older backup() implementations); classifies as dir/file.
+# Append orphans found in a single dest namespace to the parallel ORPHAN_*
+# arrays, tagged with the given tool/namespace labels. Skips legacy *.backup-*
+# entries (in-place backups from older backup() implementations); classifies as
+# dir/file.
 _scan_namespace() {
     local tool="$1" ns_label="$2" dest="$3" staging="$4"
     [[ -d "$dest" ]] || return 0
@@ -1026,12 +1047,18 @@ _scan_namespace() {
         [[ "$base" == *.backup-* ]] && continue
         [[ -e "$staging/$base" ]] && continue
         if [[ -d "$entry" ]]; then kind="dir"; else kind="file"; fi
-        ORPHANS+=("$tool|$ns_label|$entry|$kind")
+        ORPHAN_TOOLS+=("$tool")
+        ORPHAN_NS+=("$ns_label")
+        ORPHAN_PATHS+=("$entry")
+        ORPHAN_KINDS+=("$kind")
     done
 }
 
 scan_orphans() {
-    ORPHANS=()
+    ORPHAN_TOOLS=()
+    ORPHAN_NS=()
+    ORPHAN_PATHS=()
+    ORPHAN_KINDS=()
     local tool sub
     local prune_subdirs=(commands skills agents rules)
 
@@ -1049,11 +1076,20 @@ scan_orphans() {
 }
 
 # Display the orphan list grouped by tool, then namespace, with a summary count.
+# Hoist all loop-internal locals to function scope — see commit 2fe276d:
+# zsh prints the variable's value when `local` is re-invoked in a loop.
+# Array indexing uses _ARRAY_BASE so the same C-style loop works under zsh
+# (1-indexed) and bash (0-indexed).
 _display_orphans() {
-    local last_tool="" last_ns="" tool ns path kind line
-    header "Orphans detected (${#ORPHANS[@]} total)"
-    for line in "${ORPHANS[@]}"; do
-        IFS='|' read -r tool ns path kind <<< "$line"
+    local last_tool="" last_ns="" tool ns path kind i n stop
+    n=${#ORPHAN_PATHS[@]}
+    stop=$(( n + _ARRAY_BASE ))
+    header "Orphans detected (${n} total)"
+    for (( i = _ARRAY_BASE; i < stop; i++ )); do
+        tool="${ORPHAN_TOOLS[i]}"
+        ns="${ORPHAN_NS[i]}"
+        path="${ORPHAN_PATHS[i]}"
+        kind="${ORPHAN_KINDS[i]}"
         if [[ "$tool" != "$last_tool" ]]; then
             printf "\n${BOLD}%s${RESET}\n" "$tool"
             last_tool="$tool"
@@ -1079,14 +1115,16 @@ _delete_orphan() {
     CURRENT_TOOL="$prev"
 }
 
-# Backup + delete every orphan in ORPHANS, then report the count.
+# Backup + delete every orphan, then report the count. Iterate by index across
+# the parallel ORPHAN_* arrays (zsh/bash index-base safe via _ARRAY_BASE).
 _delete_all_orphans() {
-    local line tool ns path kind
-    for line in "${ORPHANS[@]}"; do
-        IFS='|' read -r tool ns path kind <<< "$line"
-        _delete_orphan "$tool" "$path"
+    local i n stop
+    n=${#ORPHAN_PATHS[@]}
+    stop=$(( n + _ARRAY_BASE ))
+    for (( i = _ARRAY_BASE; i < stop; i++ )); do
+        _delete_orphan "${ORPHAN_TOOLS[i]}" "${ORPHAN_PATHS[i]}"
     done
-    ok "Pruned ${#ORPHANS[@]} orphan(s)."
+    ok "Pruned ${n} orphan(s)."
 }
 
 prune_orphans() {
@@ -1104,7 +1142,7 @@ prune_orphans() {
         fi
     fi
 
-    if [[ ${#ORPHANS[@]} -eq 0 ]]; then
+    if [[ ${#ORPHAN_PATHS[@]} -eq 0 ]]; then
         info "No orphans detected."
         return 0
     fi
@@ -1113,7 +1151,7 @@ prune_orphans() {
 
     # Dry-run: display only, no deletes/backups
     if [[ "$DRY_RUN" == true ]]; then
-        info "Dry-run: ${#ORPHANS[@]} orphan(s) listed above; no changes made."
+        info "Dry-run: ${#ORPHAN_PATHS[@]} orphan(s) listed above; no changes made."
         return 0
     fi
 
@@ -1138,10 +1176,17 @@ prune_orphans() {
                 return 0
                 ;;
             o|O)
-                local line tool ns path kind ans quit=false
-                for line in "${ORPHANS[@]}"; do
+                # Hoist all loop-internal locals to function scope — see commit
+                # 2fe276d: zsh prints the variable's value when `local` is
+                # re-invoked in a loop. Array indexing is _ARRAY_BASE-aware so
+                # the loop works in both zsh (1-indexed) and bash (0-indexed).
+                local tool path ans i n stop quit=false
+                n=${#ORPHAN_PATHS[@]}
+                stop=$(( n + _ARRAY_BASE ))
+                for (( i = _ARRAY_BASE; i < stop; i++ )); do
                     [[ "$quit" == true ]] && break
-                    IFS='|' read -r tool ns path kind <<< "$line"
+                    tool="${ORPHAN_TOOLS[i]}"
+                    path="${ORPHAN_PATHS[i]}"
                     while true; do
                         printf "${YELLOW}?${RESET}  Delete %s? [y/N/q] " "$path"
                         if ! read -r ans; then
