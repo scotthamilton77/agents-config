@@ -53,10 +53,11 @@ The orchestrator dispatches you with:
 2. A **stage name** — one of: `diagnose`, `red-tests`, `green-loop`.
 3. **Stage-specific inputs** — AC bullets, root-cause note, iteration number,
    previous iteration state. Read whatever the orchestrator supplies.
-4. A **step-bead ID** — close it when you are done:
-   ```bash
-   bd close <step-bead-id> --reason "<brief summary of what you did>"
-   ```
+4. A **step-bead ID** — reference it for notes and updates, but do NOT
+   close it. Step-bead lifecycle (open → close) is owned exclusively by
+   the `implement-bead` orchestrator. The orchestrator closes the step-bead
+   after you return. If you close it, `bd close` will fail (already closed)
+   or advance the molecule outside the orchestrator's control.
 
 ## Stage Behaviors
 
