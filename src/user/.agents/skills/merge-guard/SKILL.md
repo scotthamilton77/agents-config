@@ -5,7 +5,7 @@ description: >
   prevents merging while automated reviews (especially Copilot) are pending or
   review comments have not been triaged
 model: haiku
-effort: medium
+effort: low
 ---
 
 # Merge Guard
