@@ -1,0 +1,6 @@
+graphify-out/
+node_modules/
+dist/
+.git/
+.beads/
+.claude/worktrees/

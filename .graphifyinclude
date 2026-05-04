@@ -1,0 +1,7 @@
+src/user/.agents/**
+src/user/.claude/**
+src/user/.codex/**
+src/user/.gemini/**
+src/plugins/beads/.agents/**
+src/plugins/beads/.claude/**
+src/plugins/beads/.beads/**
