@@ -71,7 +71,11 @@ Read the bead and its labels:
 
 3. Read project-config.toml and verify:
    - `[gates]` section present (or stubs acceptable).
-   - Coverage report location (if absent, quality-sweep is skippable — note it).
+   - Coverage report location ([coverage].report-location): if absent, apply the
+     human-flag protocol and stop this stage:
+       bd label add {{bead-id}} human
+       bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
+     Do NOT continue to worktree creation. Exit cleanly.
    - [static-analysis] section: if absent or empty, mark quality-sweep skippable.
 
 4. Pour the formula (already poured — this step was created by the pour):
