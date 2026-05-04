@@ -1,10 +1,9 @@
 ---
 name: bead-implementor
 description: |-
-  TDD test-writing in red-tests, iterative implementation in green-loop, and
-  debugging in diagnose. Dispatched by the per-stage orchestrator (via the
-  shell driver's claude -p invocation) to do all hands-on coding work inside
-  a bead's worktree.
+  Hands-on coding subagent for the bead pipeline. Owns all implementation work
+  within a single pipeline stage: writing failing tests (red-tests), iterating
+  code to make them pass (green-loop), or diagnosing root causes (diagnose).
 
   Examples:
   <example>
