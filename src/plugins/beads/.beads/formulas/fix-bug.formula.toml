@@ -41,6 +41,9 @@ required    = true
 
 [[steps]]
 id    = "preflight"
+# name is accepted by bd (verified: bd formula show succeeds) and serves as the
+# stage-role identifier used by the shell driver (bead-driver-test.sh). It mirrors
+# id intentionally — id is the structural key; name is the human-readable label.
 name  = "preflight"
 title = "Preflight: spec validation, formula selection, worktree creation"
 description = """
