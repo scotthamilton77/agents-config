@@ -1,6 +1,7 @@
 ---
 name: ralf-it
-model: opus
+model: opus[1m]
+effort: xhigh
 argument-hint: "[task-id, plan file, or description]"
 description: Use when executing tasks, implementing plans, designs, or complex multi-step work - iterative refinement with fresh-eyes subagents that catch what the first pass missed
 ---

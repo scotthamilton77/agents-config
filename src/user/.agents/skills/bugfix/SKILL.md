@@ -1,6 +1,7 @@
 ---
 name: bugfix
-model: opus
+model: opus[1m]
+effort: xhigh
 argument-hint: "[error message, file path, or symptom description]"
 description: Use when encountering a bug with unclear origins, when multiple files could be involved, or when the symptom does not obviously point to a single root cause
 ---

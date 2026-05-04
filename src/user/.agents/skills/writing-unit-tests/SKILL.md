@@ -1,6 +1,7 @@
 ---
 name: writing-unit-tests
-model: sonnet
+model: opus[1m]
+effort: xhigh
 argument-hint: "[file or function to test]"
 description: Use when writing or reviewing unit tests, when test setup balloons with mocks, when CI coverage gates are pressuring anti-pattern tests, or when code resists testing — covers behavior-vs-implementation, fakes/stubs/spies/mocks hierarchy, refusal criteria, and rationalizations to reject
 ---

@@ -1,6 +1,5 @@
 ---
 name: testing-anti-patterns
-model: sonnet
 user-invocable: false
 description: Use when writing or changing tests, adding mocks, asserting on mock-rendered elements, considering a test-only method on a production class, or tempted to mock "to be safe" without understanding the dependency
 ---
