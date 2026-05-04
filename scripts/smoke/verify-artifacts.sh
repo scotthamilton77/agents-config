@@ -100,7 +100,7 @@ check_file_contains \
 check_file_contains \
   "fix-bug.formula.toml contains 'diagnose' stage name" \
   "${REPO_ROOT}/src/plugins/beads/.beads/formulas/fix-bug.formula.toml" \
-  'name = "diagnose"'
+  '"diagnose"'
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

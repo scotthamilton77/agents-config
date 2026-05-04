@@ -229,7 +229,7 @@ The main agent MUST NOT:
 All of these happen inside subagents executing molecule step beads (the runtime instances of the formula's step definitions).
 
 **No unauthorized merges.**
-The implement-feature and fix-bug formulas end at `await-review`.
+The implement-feature and fix-bug formulas end at `review-cycle`.
 They do NOT merge. Merging requires explicit user authorization
 and is handled separately via the `merge-and-cleanup` formula.
 

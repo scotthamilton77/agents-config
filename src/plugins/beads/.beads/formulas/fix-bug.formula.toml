@@ -41,8 +41,7 @@ required    = true
 
 [[steps]]
 id    = "preflight"
-name = "preflight"
-# stage-role name for shell driver dispatch
+name  = "preflight"
 title = "Preflight: spec validation, formula selection, worktree creation"
 description = """
 Validate the bug bead spec and create the worktree before any investigation.
@@ -109,7 +108,7 @@ git worktree? If so, skip work already done.
 
 [[steps]]
 id    = "diagnose"
-name = "diagnose"
+name  = "diagnose"
 title = "Diagnose: root-cause investigation before any code changes"
 needs = ["preflight"]
 description = """
@@ -176,7 +175,7 @@ where the prior pass left off.
 
 [[steps]]
 id    = "red-tests"
-name = "red-tests"
+name  = "red-tests"
 title = "Red-tests: write failing regression test proving the bug"
 needs = ["diagnose"]
 description = """
@@ -232,7 +231,7 @@ Check filesystem (committed test) and step-bead notes.
 
 [[steps]]
 id    = "green-loop"
-name = "green-loop"
+name  = "green-loop"
 title = "Green-loop: fix the root cause via RALF-IT"
 needs = ["red-tests"]
 description = """
@@ -292,7 +291,7 @@ Read RALF-IT-ITER: marker. Resume at n+1. Crash mid-iter: retry failed iteration
 
 [[steps]]
 id    = "quality-sweep"
-name = "quality-sweep"
+name  = "quality-sweep"
 title = "Quality-sweep: global quality gate across entire project"
 needs = ["green-loop"]
 description = """
@@ -324,7 +323,7 @@ Re-evaluates state; runs only what is not already green.
 
 [[steps]]
 id    = "verify-ac"
-name = "verify-ac"
+name  = "verify-ac"
 title = "Verify-AC: mechanical acceptance criteria validation"
 needs = ["quality-sweep"]
 description = """
@@ -361,7 +360,7 @@ Re-evaluates; continues from prior pass.
 
 [[steps]]
 id    = "create-pr"
-name = "create-pr"
+name  = "create-pr"
 title = "Create-PR: push branch and open pull request"
 needs = ["verify-ac"]
 description = """
@@ -398,7 +397,7 @@ If PR exists and CLOSED: flag-human. Do NOT reopen.
 
 [[steps]]
 id    = "review-cycle"
-name = "review-cycle"
+name  = "review-cycle"
 title = "Review-cycle: address PR review feedback"
 needs = ["create-pr"]
 description = """
@@ -431,7 +430,7 @@ Every review thread has a reply. FIXED items resolved on GitHub.
 
 [[steps]]
 id    = "merge-or-handoff"
-name = "merge-or-handoff"
+name  = "merge-or-handoff"
 title = "Merge-or-handoff: auto-merge or hand off to human"
 needs = ["review-cycle"]
 description = """
