@@ -67,10 +67,16 @@ Read the bead and its labels:
 
 3. Read project-config.toml and verify:
    - `[gates]` section present (or stubs acceptable).
-   - Coverage report location ([coverage].report-location): if absent, apply the
-     human-flag protocol and stop this stage:
+   - Coverage report location ([coverage].report-location): if absent OR empty
+     string (i.e. `report-location = ""`), apply the human-flag protocol and
+     stop this stage:
        bd label add {{bead-id}} human
+       bd label add <step-bead-id> human
        bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
+       bd update <step-bead-id> --append-notes "preflight: no coverage report location configured — molecule parked"
+     An empty string is treated the same as absent: explicit opt-out requires a
+     comment in project-config.toml — a bare empty string is ambiguous and must
+     be resolved by the human.
      Do NOT continue to worktree creation. Exit cleanly.
    - [static-analysis] section: if absent or empty, mark quality-sweep skippable.
 
