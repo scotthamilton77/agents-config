@@ -40,16 +40,18 @@ TESTEOF
 chmod +x "${SMOKE_DIR}/tests/test_hello.sh"
 
 # ---------------------------------------------------------------------------
-# project-config.toml (minimal schema — will be validated once scope item 9 lands)
+# project-config.toml (minimal subset matching actual schema per section 5.1)
 # ---------------------------------------------------------------------------
 cat > "${SMOKE_DIR}/project-config.toml" <<'CFGEOF'
 [project]
 name = "smoke-test-project"
-language = "bash"
+default-formula = "implement-feature"
 
-[bead-pipeline]
-# Smoke-only: driver path will be validated by bead-driver-test.sh
-driver = "scripts/bead-driver-test.sh"
+[gates]
+build = ""
+typecheck = ""
+lint = ""
+test = "echo 'no tests'"
 CFGEOF
 
 # ---------------------------------------------------------------------------

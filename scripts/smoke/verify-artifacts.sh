@@ -13,6 +13,9 @@
 # Usage: bash scripts/smoke/verify-artifacts.sh [REPO_ROOT]
 #   REPO_ROOT defaults to the directory two levels above this script.
 
+# -e is intentionally absent: we want ALL checks to run and accumulate into
+# PASS/FAIL counts before deciding the exit code at the end, not bail on the
+# first failed check_file / check_executable / check_file_contains call.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,7 +54,7 @@ check_file_contains() {
   local label="$1"
   local path="$2"
   local pattern="$3"
-  if [ -f "${path}" ] && grep -q "${pattern}" "${path}"; then
+  if [ -f "${path}" ] && grep -qF "${pattern}" "${path}"; then
     echo "  PASS  ${label}"
     PASS=$((PASS + 1))
   else

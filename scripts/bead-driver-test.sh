@@ -58,25 +58,12 @@ NAMESPACE_UUID="27ece4fd-4a06-49bf-a921-bf07ecb0dc10"
 
 uuidv5() {
   local name="$1"
-  # Use Python if available (most reliable cross-platform approach).
-  if command -v python3 &>/dev/null; then
-    python3 -c "import uuid; print(uuid.uuid5(uuid.UUID('${NAMESPACE_UUID}'), '${name}'))"
-    return
+  if ! command -v python3 &>/dev/null; then
+    echo "ERROR: python3 not found — required for UUIDv5 derivation" >&2
+    exit 1
   fi
-  # Fallback: derive via openssl + manual v5 encoding.
-  # RFC 4122 §4.3: SHA-1 hash of namespace bytes + name, then format.
-  local ns_hex
-  ns_hex=$(echo -n "${NAMESPACE_UUID}" | tr -d '-')
-  local hash
-  hash=$(printf '%s%s' "${ns_hex}" "${name}" | xxd -r -p | openssl sha1 -binary | xxd -p | tr -d '\n')
-  # Insert version (5) and variant bits.
-  local b0="${hash:0:8}"
-  local b1="${hash:8:4}"
-  local b2="5${hash:13:3}"  # version = 5
-  local b3
-  b3=$(printf '%02x' $(( (16#${hash:16:2} & 0x3f) | 0x80 )))
-  local b4="${hash:18:2}${hash:20:8}"
-  echo "${b0}-${b1}-${b2}-${b3}${hash:18:2}-${hash:20:12}"
+  python3 -c "import sys, uuid; print(uuid.uuid5(uuid.UUID(sys.argv[1]), sys.argv[2]))" \
+    "${NAMESPACE_UUID}" "${name}"
 }
 
 # ---------------------------------------------------------------------------
@@ -111,7 +98,12 @@ resolve_cwd() {
         return
       fi
 
-      decoded_path=$(echo "${encoded_path}" | sed 's/__/\x00/g' | sed 's/_u/_/g' | sed 's/\x00/\//g')
+      decoded_path=$(python3 -c "
+import sys
+s = sys.argv[1]
+out = s.replace('__', '\x00').replace('_u', '_').replace('\x00', '/')
+print(out)
+" "${encoded_path}")
       echo "${decoded_path}"
       ;;
   esac
@@ -156,8 +148,13 @@ while true; do
 
   echo "==> Found ${count} implementation-ready bead(s)"
 
-  # Process the highest-priority ready bead.
-  bead_id=$(echo "${ready_beads}" | python3 -c "import sys,json; beads=json.load(sys.stdin); print(beads[0]['id'] if beads else '')" 2>/dev/null || true)
+  # Process the highest-priority ready bead (lowest numeric priority value = highest urgency).
+  bead_id=$(echo "${ready_beads}" | python3 -c "
+import sys, json
+beads = json.load(sys.stdin)
+beads.sort(key=lambda b: b.get('priority', 99))
+print(beads[0]['id'] if beads else '')
+" 2>/dev/null || true)
 
   if [ -z "${bead_id}" ]; then
     echo "    Could not parse bead ID from ready list. Sleeping..." >&2
@@ -166,9 +163,27 @@ while true; do
   fi
 
   # Determine current stage from the molecule's current step.
-  stage_role=$(bd mol current "$(bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
-    | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null || true)" \
-    2>/dev/null | grep '^id:' | awk '{print $2}' || echo "preflight")
+  mol_id_for_stage=$(bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
+    | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null || true)
+  if [ -z "${mol_id_for_stage}" ]; then
+    stage_role="preflight"
+  else
+    stage_role=$(bd mol current "${mol_id_for_stage}" --json 2>/dev/null \
+      | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+steps = data if isinstance(data, list) else [data]
+ready = [s for s in steps if s.get('status') not in ('closed',) and s.get('id')]
+if not ready:
+    sys.exit('ERROR: no current step found in molecule')
+print(ready[0].get('role') or ready[0].get('id'))
+" 2>/dev/null)
+    if [ -z "${stage_role}" ]; then
+      echo "ERROR: could not determine current stage for mol ${mol_id_for_stage} — molecule may be complete or malformed" >&2
+      sleep "${POLL_INTERVAL_SECS}"
+      continue
+    fi
+  fi
 
   # Derive session ID (UUIDv5) for resumable sessions.
   session_id=$(uuidv5 "${bead_id}:${stage_role}")
