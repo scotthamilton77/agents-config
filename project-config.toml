@@ -1,0 +1,80 @@
+# project-config.toml
+# Per-project configuration for the bead pipeline architecture.
+# Lives at the repository root. Read by per-stage orchestrators to configure
+# quality gates, coverage thresholds, foreign-CLI model selection, and more.
+#
+# Schema defined in: docs/specs/bead-pipeline-architecture.md §5.1
+#
+# All sections are optional. Absent sections use per-stage defaults.
+# Stage role names (not numbers) are the authority in all section names.
+
+[project]
+name            = "agents-config"
+default-formula = "implement-feature"  # fallback when no formula-* label on bead
+
+# ---------------------------------------------------------------------------
+# [gates] — default quality-gate commands
+# Read by: green-loop (quality gate per iteration), quality-sweep
+# ---------------------------------------------------------------------------
+[gates]
+# This project is pure documentation — no build, typecheck, or lint.
+# Gates are stubs; stages detect empty commands and skip gracefully.
+build     = ""   # no build step
+typecheck = ""   # no type checker
+lint      = ""   # no linter
+test      = ""   # no automated test suite
+
+# ---------------------------------------------------------------------------
+# [coverage] — code coverage settings
+# Read by: green-loop, quality-sweep
+# ---------------------------------------------------------------------------
+[coverage]
+threshold        = 80     # percent; per-bead override: coverage-threshold-<n> label
+report-location  = ""     # no coverage report for a documentation project
+format           = ""     # n/a
+
+# ---------------------------------------------------------------------------
+# [lint-autofix] — lint auto-fix command
+# Read by: quality-sweep (runs BEFORE build/typecheck/lint/test)
+# ---------------------------------------------------------------------------
+[lint-autofix]
+command = ""   # no lint auto-fix for this project
+
+# ---------------------------------------------------------------------------
+# [static-analysis] — extra checks (semgrep, depcheck, etc.)
+# Read by: quality-sweep
+# Absent or all-empty → quality-sweep is skippable (preflight marks it so)
+# ---------------------------------------------------------------------------
+[static-analysis]
+# commands = ["semgrep --config auto ."]   # example; uncomment when needed
+
+# ---------------------------------------------------------------------------
+# [functional-tests] — UI/e2e commands
+# Read by: verify-ac
+# ---------------------------------------------------------------------------
+[functional-tests]
+# commands = ["playwright test"]   # example; uncomment when needed
+
+# ---------------------------------------------------------------------------
+# [review-requirements] — PR review defaults
+# Read by: review-cycle
+# ---------------------------------------------------------------------------
+[review-requirements]
+copilot-required         = true
+human-approvers-required = 0     # copilot-only by default; override per bead
+
+# ---------------------------------------------------------------------------
+# [foreign-cli] — foreign-CLI binary paths and model selections
+# Read by: red-tests (Codex adversarial test review),
+#          green-loop (RALF-IT foreign-eyes iterations),
+#          any stage invoking adversarial-codex
+# ---------------------------------------------------------------------------
+[foreign-cli]
+# codex_binary_path              = ""     # default: ${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs
+# gemini_binary_path             = "gemini"
+codex_red_tests_model            = "gpt-5.5"    # adversarial test review
+codex_green_loop_iter1_model     = "gpt-5.5"    # RALF-IT iter 1 implementation review
+codex_adversarial_review_model   = "gpt-5.4"    # review-level:deep only
+gemini_green_loop_iter2_model    = "gemini-2.5-pro"
+codex_max_concurrent             = 1
+gemini_max_concurrent            = 1
