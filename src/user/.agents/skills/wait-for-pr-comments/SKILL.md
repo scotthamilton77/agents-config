@@ -726,6 +726,7 @@ process.
 
 | Rationalization | Why it's wrong |
 |---|---|
+| "[Skill name] is now running!" / "[Skill name] completed!" (said after invoking the Skill tool but before making any tool calls) | **The Skill tool loads content — it does not execute anything.** Every phase of every skill must be driven explicitly via tool calls, bash commands, and API requests. Do not narrate "running" or "complete" until actual work has been done. Begin executing Phase 0 immediately after content loads; do not wait for the next human turn. |
 | "I'll skip the acknowledge step since I auto-fixed everything" | Phase 8 is **default-on**. There is no item-count guard. Even an all-fixed inventory must be handed to `reply-and-resolve-pr-threads` so threads get replied + resolved. The orphan-threads bug (lu3) was caused by exactly this rationalization. |
 | "If you see the hook's `/wait-for-pr-comments` suggestion mid-formula, just paste it" | Use the formula's invocation (with `--mode autonomous --bead-id`), NOT the hook text. The hook is interactive-default; the formula's `await-review` step is the canonical autonomous entry point. |
 | "I'll use `bd human <id>` to flag this" | **`bd human <id>` is a no-op help command.** It does not add the `human` label. Use `bd label add <id> human` followed by `bd update <id> --append-notes "..."`. |

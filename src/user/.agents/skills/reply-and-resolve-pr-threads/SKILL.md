@@ -233,6 +233,7 @@ If you catch yourself doing any of these, STOP — you are deviating from the co
 
 | Rationalization | Why it's wrong |
 |---|---|
+| "[Skill name] is now running!" / "[Skill name] completed!" (said after invoking the Skill tool but before making any tool calls) | **The Skill tool loads content — it does not execute anything.** Begin Phase 0 immediately. Do not announce progress or completion before actual tool calls (GraphQL mutations, `gh api` calls) are made. |
 | "I'll write a richer reply explaining the fix in detail" | The reply matrix is pinned. Any phrasing not in the matrix risks leaking internal jargon or making promises the orchestrator can't keep. Use the templates verbatim. |
 | "I'll resolve the SKIP threads since I replied with rationale" | SKIP replies are arguments to the reviewer, not closure. Resolving on their behalf erases their voice. **Never resolve SKIP or ESCALATE — only `kind=review_thread` AND `classification=FIX`.** |
 | "I'll resolve the `review_summary` items too — they're closed in my mind" | `review_summary` and `issue_comment` have no resolve API; the GraphQL mutation errors. Resolve only `kind=review_thread`. |
