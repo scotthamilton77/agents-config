@@ -67,6 +67,17 @@ uuidv5() {
 }
 
 # ---------------------------------------------------------------------------
+# Find the active (non-closed) molecule for a bead, via the
+# for-bead-<bead-id> label convention. Echoes the molecule ID, or empty.
+# ---------------------------------------------------------------------------
+active_mol_id() {
+  local bead_id="$1"
+  bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
+    | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null \
+    || true
+}
+
+# ---------------------------------------------------------------------------
 # cwd resolution per architecture spec section 5.4
 # ---------------------------------------------------------------------------
 resolve_cwd() {
@@ -80,8 +91,7 @@ resolve_cwd() {
     *)
       # Decode worktree-path-* label from the bead's active molecule.
       local mol_id encoded_path decoded_path
-      mol_id=$(bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
-        | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null || true)
+      mol_id=$(active_mol_id "${bead_id}")
 
       if [ -z "${mol_id}" ]; then
         # No active molecule yet — fall back to repo root (preflight will pour one).
@@ -163,8 +173,7 @@ print(beads[0]['id'] if beads else '')
   fi
 
   # Determine current stage from the molecule's current step.
-  mol_id_for_stage=$(bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
-    | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null || true)
+  mol_id_for_stage=$(active_mol_id "${bead_id}")
   if [ -z "${mol_id_for_stage}" ]; then
     stage_role="preflight"
   else

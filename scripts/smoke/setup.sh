@@ -2,9 +2,10 @@
 # scripts/smoke/setup.sh
 # Smoke test harness for the bead pipeline architecture (bead 7bk.9).
 #
-# Red-phase: sets up the scratch environment and seed bead, but does NOT
-# yet invoke bead-driver-test.sh (which doesn't exist yet).  Exits with a
-# clear TODO message so CI sees a controlled failure.
+# Sets up a scratch project directory with a minimal source/test layout,
+# a project-config.toml, an initialized beads tracker, and a seed bead.
+# Exits non-zero with a TODO marker because end-to-end driver invocation
+# is not yet wired into this harness — wire it in before flipping the exit.
 #
 # Usage: bash scripts/smoke/setup.sh
 # Environment variables:
@@ -33,7 +34,7 @@ chmod +x "${SMOKE_DIR}/src/hello.sh"
 mkdir -p "${SMOKE_DIR}/tests"
 cat > "${SMOKE_DIR}/tests/test_hello.sh" <<'TESTEOF'
 #!/usr/bin/env bash
-# Intentionally failing placeholder test (red phase)
+# Intentionally failing placeholder test — red-tests stage will replace it.
 echo "FAIL: test_hello not yet implemented"
 exit 1
 TESTEOF
@@ -81,12 +82,14 @@ fi
 echo "    Seed bead id: ${SEED_ID:-<unknown>}"
 
 # ---------------------------------------------------------------------------
-# TODO: invoke bead-driver-test.sh once scope item 4 is implemented
+# TODO: invoke scripts/bead-driver-test.sh against ${SMOKE_DIR} to exercise
+# the full pipeline end-to-end. Until that wiring lands, exit non-zero so
+# CI flags this harness as incomplete.
 # ---------------------------------------------------------------------------
 echo ""
-echo "TODO: scripts/bead-driver-test.sh does not exist yet."
-echo "      This is expected during the red phase (bead 7bk.9 scope item 4)."
-echo "      Re-run this script after the green phase to exercise the full pipeline."
+echo "TODO: end-to-end driver invocation not yet wired into this harness."
+echo "      Seed bead and scratch project are ready at: ${SMOKE_DIR}"
+echo "      Wire in: bash scripts/bead-driver-test.sh --once (with REPO_ROOT=${SMOKE_DIR})"
 echo ""
 echo "Smoke setup complete. Scratch dir: ${SMOKE_DIR}"
-exit 1  # Controlled red-phase failure — driver not yet available
+exit 1  # Controlled failure until end-to-end driver invocation is wired in.
