@@ -6,6 +6,8 @@ description: >
   (`--from-inventory`), or `--resume` for crash recovery from a partial run.
   Does not fix code. Keywords: reply, resolve, thread, acknowledge, close
   out, post fix confirmation, bookkeeping, rebut, ack.
+model: haiku
+effort: medium
 ---
 
 # reply-and-resolve-pr-threads

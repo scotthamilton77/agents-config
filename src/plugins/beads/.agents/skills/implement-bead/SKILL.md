@@ -7,6 +7,8 @@ description: >
   the ORCHESTRATOR only — all implementation work is done by subagents.
   Do NOT invoke this skill for beads that have not been through brainstorming
   (use start-bead to route correctly).
+model: sonnet[1m]
+effort: high
 ---
 
 # implement-bead

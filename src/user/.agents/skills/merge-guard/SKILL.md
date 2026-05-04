@@ -4,6 +4,8 @@ description: >
   Proactively use when about to merge a PR via gh pr merge, git merge, or any merge action -
   prevents merging while automated reviews (especially Copilot) are pending or
   review comments have not been triaged
+model: haiku
+effort: medium
 ---
 
 # Merge Guard

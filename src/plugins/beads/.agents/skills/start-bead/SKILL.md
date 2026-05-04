@@ -5,6 +5,8 @@ description: >
   or when routing a bead from create to the right workflow. Evaluates the bead
   and routes to: brainstorm formula (if spec incomplete), implement-bead skill
   (if implementation-ready), or inline execution (if trivial).
+model: opus[1m]
+effort: xhigh
 ---
 
 # start-bead

@@ -10,6 +10,8 @@ description: >
   `reply-and-resolve-pr-threads` to reply to every thread and resolve the
   FIXED ones. Keywords: respond, address, fix, handle, triage, classify, PR,
   review, Copilot, feedback.
+model: sonnet[1m]
+effort: high
 ---
 
 # wait-for-pr-comments
