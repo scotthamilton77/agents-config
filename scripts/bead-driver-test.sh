@@ -184,11 +184,17 @@ data = json.load(sys.stdin)
 steps = data if isinstance(data, list) else [data]
 ready = [s for s in steps if s.get('status') not in ('closed',) and s.get('id')]
 if not ready:
-    sys.exit('ERROR: no current step found in molecule')
+    print('__complete__')
+    sys.exit(0)
 print(ready[0].get('role') or ready[0].get('id'))
-" 2>/dev/null)
+" 2>/dev/null || true)
+    if [ "${stage_role}" = "__complete__" ]; then
+      echo "    Molecule ${mol_id_for_stage} is complete for bead ${bead_id} — skipping." >&2
+      sleep "${POLL_INTERVAL_SECS}"
+      continue
+    fi
     if [ -z "${stage_role}" ]; then
-      echo "ERROR: could not determine current stage for mol ${mol_id_for_stage} — molecule may be complete or malformed" >&2
+      echo "ERROR: could not determine current stage for mol ${mol_id_for_stage} — molecule may be malformed" >&2
       sleep "${POLL_INTERVAL_SECS}"
       continue
     fi
