@@ -28,15 +28,15 @@ Arguments: `$ARGUMENTS` receives the bead ID (e.g. `proj-42`).
   skill-lookup path; the session is interactive.
 - **Shell driver `claude -p`** — the driver spawns `claude -p --session-id
   <uuidv5> "/implement-bead <bead-id>"` from the stage's cwd. Claude Code
-  resolves this project-scoped slash command by walking up from cwd to find
-  the `.claude/` directory containing this file.
+  resolves this as a globally-installed slash command (see below).
 
-## Slash-command resolution from worktrees
+## Slash-command resolution
 
-Claude Code resolves project-scoped commands by walking up from cwd to the
-nearest `.claude/` directory. Because worktrees are full git checkouts, each
-worktree contains a copy of this file and resolution succeeds from any
-subdirectory of the worktree without additional configuration.
+This command is installed globally to `~/.claude/commands/` by the project's
+`install.sh` installer (via the beads plugin overlay phase). It is therefore
+available from any cwd — including worktree subdirectories — via Claude Code's
+global command discovery, without any project-local `.claude/` directory or
+walk-up resolution required.
 
 ## Notes
 
