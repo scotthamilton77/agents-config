@@ -72,16 +72,15 @@ Read the bead and its labels:
      bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
    Do NOT continue to worktree creation. Exit cleanly.
 
-4. Pour the formula (already poured — this step was created by the pour):
-   Stamp the molecule→bead lookup label if not already stamped:
-     bd label add <mol-id> for-bead-{{bead-id}}
+4. Stamp the molecule→bead lookup label if not already stamped:
+   bd label add <mol-id> for-bead-{{bead-id}}
 
 5. Create the worktree:
    Branch name: fix/{{bead-id}}-<slug-from-title>
    Location: <repo-root>/.claude/worktrees/<branch-name>
    Command:
      git worktree add .claude/worktrees/<branch> -b <branch>
-   CRITICAL: pour first (already done), then create worktree.
+   CRITICAL: the formula is already poured (this step was created by the pour).
    If worktree creation fails: squash the molecule and flag-human.
 
 6. Stamp the worktree-path label on the molecule:

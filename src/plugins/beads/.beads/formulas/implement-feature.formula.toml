@@ -61,13 +61,9 @@ Read the bead and its labels:
 1. Verify `brainstormed` and `implementation-ready` labels are present.
    If either is absent: apply human-flag protocol and exit.
 
-2. Select formula by reading `formula-<name>` label. Fall back to:
-   - feature → implement-feature  (this formula)
-   - task    → implement-feature
-   - chore   → implement-feature
-   - bug     → fix-bug
-   - epic    → flag-human (epics decompose into children)
-   Multiple formula labels → flag-human.
+2. Note: formula selection and pour have already happened — this step was
+   created by implement-bead pouring implement-feature. There is nothing
+   to select or pour here. Proceed directly to project-config.toml validation.
 
 3. Read project-config.toml and verify:
    - `[gates]` section present (or stubs acceptable).
@@ -78,16 +74,15 @@ Read the bead and its labels:
      Do NOT continue to worktree creation. Exit cleanly.
    - [static-analysis] section: if absent or empty, mark quality-sweep skippable.
 
-4. Pour the formula (already poured — this step was created by the pour):
-   Stamp the molecule→bead lookup label if not already stamped:
-     bd label add <mol-id> for-bead-{{bead-id}}
+4. Stamp the molecule→bead lookup label if not already stamped:
+   bd label add <mol-id> for-bead-{{bead-id}}
 
 5. Create the worktree:
    Branch name: feat/{{bead-id}}-<slug-from-title>
    Location: <repo-root>/.claude/worktrees/<branch-name>
    Command:
      git worktree add .claude/worktrees/<branch> -b <branch>
-   CRITICAL: pour the formula FIRST (already done), then create the worktree.
+   CRITICAL: the formula is already poured (this step was created by the pour).
    If worktree creation fails: squash the molecule and flag-human.
 
 6. Stamp the worktree-path label on the molecule:
