@@ -25,7 +25,7 @@
 formula     = "merge-and-cleanup"
 description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
 type        = "workflow"
-phase       = "vapor"
+phase       = "liquid"
 pour        = true
 version     = 1
 
