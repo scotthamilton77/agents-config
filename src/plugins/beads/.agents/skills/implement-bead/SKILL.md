@@ -199,9 +199,12 @@ shell driver. Driving multiple steps in a single invocation defeats the
 per-stage context-bounding and session-id resumption model.
 
 **No unauthorized merges.**
-The implement-feature and fix-bug formulas end at `review-cycle`.
-They do NOT merge. Merging requires explicit user authorization and is
-handled separately via the `merge-and-cleanup` formula.
+The implement-feature and fix-bug formulas end at `merge-or-handoff` (not
+`review-cycle`). The `merge-or-handoff` step may pour the `merge-and-cleanup`
+formula, but ONLY when the user has given explicit authorization ("go ahead and
+merge", "ship it", etc.). Completing a PR or finishing the review cycle is NOT
+authorization to merge. The `merge-and-cleanup` formula is the only authorized
+merge path — it requires explicit human sign-off before proceeding.
 
 **Discovered work:**
 If a subagent reports discovered work, create new beads immediately.
