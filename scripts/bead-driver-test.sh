@@ -69,11 +69,28 @@ uuidv5() {
 # ---------------------------------------------------------------------------
 # Find the active (non-closed) molecule for a bead, via the
 # for-bead-<bead-id> label convention. Echoes the molecule ID, or empty.
+# If >1 active molecules exist, emits a warning and returns the most-recently
+# updated one so the caller can surface the ambiguity.
 # ---------------------------------------------------------------------------
 active_mol_id() {
   local bead_id="$1"
   bd list --label "for-bead-${bead_id}" --type molecule --json 2>/dev/null \
-    | python3 -c "import sys,json; mols=[m for m in json.load(sys.stdin) if m.get('status')!='closed']; print(mols[0]['id'] if mols else '')" 2>/dev/null \
+    | python3 -c "
+import sys, json
+mols = [m for m in json.load(sys.stdin) if m.get('status') != 'closed']
+if not mols:
+    print('')
+    sys.exit(0)
+if len(mols) > 1:
+    mols.sort(key=lambda m: m.get('updated_at', ''), reverse=True)
+    print(
+        f'WARNING: {len(mols)} active molecules for bead — ambiguity detected; '
+        f'resuming most-recently-updated ({mols[0][\"id\"]}). '
+        f'Investigate: {[m[\"id\"] for m in mols]}',
+        file=sys.stderr
+    )
+print(mols[0]['id'])
+" 2>/dev/null \
     || true
 }
 
@@ -104,6 +121,7 @@ resolve_cwd() {
         | grep '^worktree-path-' | head -1 | sed 's/^worktree-path-//' || true)
 
       if [ -z "${encoded_path}" ]; then
+        # No worktree-path label — fall back to repo root (pre-worktree stages).
         echo "${REPO_ROOT}"
         return
       fi
@@ -114,6 +132,19 @@ s = sys.argv[1]
 out = s.replace('__', '\x00').replace('_u', '_').replace('\x00', '/')
 print(out)
 " "${encoded_path}")
+
+      # Validate: directory must exist.
+      if [ ! -d "${decoded_path}" ]; then
+        echo "ERROR: worktree-path label decoded to '${decoded_path}' but that directory does not exist" >&2
+        exit 1
+      fi
+
+      # Validate: path must be inside a git work tree.
+      if ! git -C "${decoded_path}" rev-parse --is-inside-work-tree &>/dev/null; then
+        echo "ERROR: decoded worktree path '${decoded_path}' is not inside a git work tree" >&2
+        exit 1
+      fi
+
       echo "${decoded_path}"
       ;;
   esac
@@ -177,6 +208,9 @@ print(beads[0]['id'] if beads else '')
   if [ -z "${mol_id_for_stage}" ]; then
     stage_role="preflight"
   else
+    # Known stage roles per architecture spec section 5.4.
+    KNOWN_STAGE_ROLES="preflight red-tests green-loop quality-sweep verify-ac create-pr review-cycle merge-or-handoff diagnose"
+
     stage_role=$(bd mol current "${mol_id_for_stage}" --json 2>/dev/null \
       | python3 -c "
 import sys, json
@@ -186,7 +220,8 @@ ready = [s for s in steps if s.get('status') not in ('closed',) and s.get('id')]
 if not ready:
     print('__complete__')
     sys.exit(0)
-print(ready[0].get('role') or ready[0].get('id'))
+role = ready[0].get('role') or ''
+print(role)
 " 2>/dev/null || true)
     if [ "${stage_role}" = "__complete__" ]; then
       echo "    Molecule ${mol_id_for_stage} is complete for bead ${bead_id} — skipping." >&2
@@ -195,6 +230,20 @@ print(ready[0].get('role') or ready[0].get('id'))
     fi
     if [ -z "${stage_role}" ]; then
       echo "ERROR: could not determine current stage for mol ${mol_id_for_stage} — molecule may be malformed" >&2
+      sleep "${POLL_INTERVAL_SECS}"
+      continue
+    fi
+
+    # Validate stage_role against the known set.
+    role_valid=false
+    for known in ${KNOWN_STAGE_ROLES}; do
+      if [ "${stage_role}" = "${known}" ]; then
+        role_valid=true
+        break
+      fi
+    done
+    if ! "${role_valid}"; then
+      echo "ERROR: derived stage role '${stage_role}' is not in the known set (${KNOWN_STAGE_ROLES}) — molecule step may be missing a role field or using a step ID instead; mol=${mol_id_for_stage}" >&2
       sleep "${POLL_INTERVAL_SECS}"
       continue
     fi
