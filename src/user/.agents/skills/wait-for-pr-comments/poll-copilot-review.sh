@@ -162,7 +162,7 @@ for i in $(seq 1 20); do
 
     # If --since-timestamp was provided, reject reviews that predate it (stale cache guard)
     if [[ -n "$SINCE" ]]; then
-        fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at >= $since)]')
+        fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')
         if [[ "$stale_count" -gt 0 ]]; then
             echo "  Attempt ${i}/20: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2

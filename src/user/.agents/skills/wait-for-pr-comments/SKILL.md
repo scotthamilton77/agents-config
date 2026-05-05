@@ -349,7 +349,14 @@ Skill(skill: "reply-and-resolve-pr-threads", args: "--from-inventory <path> [--m
 ```
 
 **On Skill B success:** the inventory file already exists on disk from Phase 7.
-Proceed to Phase 9.
+Write the intermediate completion marker so recovery knows Skill B ran:
+```bash
+~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+  complete 8-skill-b-done \
+  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
+```
+Then proceed to Phase 9.
 
 **On Skill B failure:** leave the inventory in place (last write was
 `last_completed_phase="7-write-inventory"`). Report Skill B's error with the
@@ -363,7 +370,8 @@ manually (add `--mode autonomous --bead-id <id>` if applicable)."
 After Skill B completes, verify no review threads were missed before
 considering the await-review step done.
 
-1. **Query** GraphQL for all unresolved, non-outdated review threads:
+1. **Query** GraphQL for all unresolved, non-outdated review threads
+   (paginate if >100):
    ```bash
    gh api graphql \
      -F owner="<owner>" -F repo="<repo>" -F pr="<pr-number>" \
@@ -372,19 +380,31 @@ considering the await-review step done.
        repository(owner: $owner, name: $repo) {
          pullRequest(number: $pr) {
            reviewThreads(first: 100) {
+             pageInfo { hasNextPage endCursor }
              nodes {
                id
                isResolved
                isOutdated
+               comments(first: 1) {
+                 nodes {
+                   author { login }
+                   body
+                   databaseId
+                 }
+               }
              }
            }
          }
        }
      }'
    ```
+   If `hasNextPage == true`, repeat with `-F after="<endCursor>"` and
+   accumulate nodes until exhausted.
 2. **Count** threads where `isResolved == false` and `isOutdated == false`.
 3. **If count > 0**: treat as a new review round. Return to **Phase 3
-   (round +1)** with the unresolved threads as new inventory items.
+   (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
+   query's `comments` preview is for triage only; the canonical source for
+   inventory construction remains the same Phase 3 fetch paths used in round 1).
 4. **If count == 0**: write final completion state and clean up:
    ```bash
    ~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
@@ -789,7 +809,7 @@ process.
 | "A subagent committed twice — I'll just keep both commits" | Audit guard violated (`expected exactly one commit`). Re-classify to ESCALATE; if commits are stale/broken, `git reset --soft <pre_subagent_sha>` + `git stash push --include-untracked` to isolate. **Never `git reset --hard`.** |
 | "I'll let the agent write its own classification rationale, blank if needed" | Empty rationale is rejected by validation guard 1 (SKIP rationale becomes the public reply). Retry per-item classification with an explicit prompt until rationale is non-empty. |
 | "Phase 5a verify failed but the fixes look fine — push anyway" | No. 5x failures abort the chain. Invoke `write-inventory.sh partial 5a-verify-failed <path>` and report. Skill B is NOT invoked on Phase 5x failure. |
-| "I'll keep polling past the re-review window" | Phase 6 uses a fixed 60s window (20s pre-sleep + 6 × 10s polls). Do not extend ad-hoc. If Copilot has not started by then, exit Phase 6 normally and proceed to Phase 7. |
+| "I'll keep polling past the re-review window" | Phase 6 uses a fixed 80s max window (20s pre-sleep + 6 × 10s polls). Do not extend ad-hoc. If Copilot has not started by then, exit Phase 6 normally and proceed to Phase 7. |
 | "I'll merge while the polling script is still running" | Don't. Issue the guard warning; the review could arrive any moment. |
 | "I'll classify already-addressed items as their own bucket" | Already-addressed is NOT a classification. Classify FIX; the per-comment subagent returns `fix_outcome="already_addressed"` with the existing commit SHA. |
 | "Round 4 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 3 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
