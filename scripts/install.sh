@@ -126,7 +126,8 @@ for arg in "$@"; do
             echo "  --yes, -y          Auto-accept all prompts (suppresses diffs in quiet mode)"
             echo "  --verbose, -v      Show per-file progress (phases, up-to-date, installed, diffs)"
             echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini,opencode"
-            echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ or ~/.config/<tool>/ exists)"
+            echo "                     Default: auto-detect (claude always; others if ~/.<tool>/ exists;"
+            echo "                     opencode also if ~/.config/opencode/ exists or opencode is on PATH)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
             echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
             echo "  --prune            After install, remove orphans under ~/.<tool>/{commands,skills,agents,rules}/"
@@ -454,6 +455,10 @@ resolve_collision() {
             ' "$existing" "$incoming")"
             printf '%s\n' "$merged_json" | jq . > "$existing"
             ;;
+        jsonc)
+            warn "JSONC collision: $(basename "$incoming") — later plugin overwrites earlier (alphabetical order)"
+            cp "$incoming" "$existing"
+            ;;
         toml)
             warn "TOML collision: $(basename "$incoming") — later plugin overwrites earlier (alphabetical order)"
             cp "$incoming" "$existing"
@@ -625,7 +630,10 @@ stage_and_install_tool() {
     # ── Phase 2: Stage shared skills and agents ───────────────────────────────
     vinfo "Phase 2: Shared skills and agents"
     stage_content_from_dir "$SRC_SHARED" "$staging" "skills"
-    stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
+    # OpenCode: skip shared agents (frontmatter format differs)
+    if [[ "$tool" != "opencode" ]]; then
+        stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
+    fi
 
     # Note: $SRC_SHARED/*.json.template (shared settings) are intentionally not staged here.
     # Shared settings are not used today; tool-specific settings are handled in Phase 5.
@@ -696,6 +704,10 @@ stage_and_install_tool() {
 
     # Sync subdirectories
     for subdir in rules commands skills agents; do
+        # OpenCode: skip agents (frontmatter format differs; see OPENCODE-EXTENSIONS.md)
+        if [[ "$tool" == "opencode" && "$subdir" == "agents" ]]; then
+            continue
+        fi
         [[ -d "$staging/$subdir" ]] || continue
         sync_directory "$subdir" "$staging" "$dest_dir" "staged"
     done
