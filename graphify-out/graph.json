@@ -142,38 +142,47 @@
     {
       "label": "example.ts",
       "file_type": "code",
-      "source_file": "example.ts",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
       "source_location": "L1",
-      "id": "example_ts",
-      "community": 10,
+      "id": "users_scott_src_projects_agents_config_src_user_agents_skills_condition_based_waiting_example_ts",
+      "community": 11,
       "norm_label": "example.ts"
     },
     {
       "label": "waitForEvent()",
       "file_type": "code",
-      "source_file": "example.ts",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
       "source_location": "L20",
       "id": "condition_based_waiting_example_waitforevent",
-      "community": 10,
+      "community": 11,
       "norm_label": "waitforevent()"
     },
     {
       "label": "waitForEventCount()",
       "file_type": "code",
-      "source_file": "example.ts",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
       "source_location": "L60",
       "id": "condition_based_waiting_example_waitforeventcount",
-      "community": 10,
+      "community": 11,
       "norm_label": "waitforeventcount()"
     },
     {
       "label": "waitForEventMatch()",
       "file_type": "code",
-      "source_file": "example.ts",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
       "source_location": "L111",
       "id": "condition_based_waiting_example_waitforeventmatch",
-      "community": 10,
+      "community": 11,
       "norm_label": "waitforeventmatch()"
+    },
+    {
+      "label": "example.ts",
+      "file_type": "code",
+      "source_file": "example.ts",
+      "source_location": "L1",
+      "community": 11,
+      "norm_label": "example.ts",
+      "id": "example_ts"
     },
     {
       "label": "AGENTS.md (project root)",
@@ -184,9 +193,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "agents_md_project",
-      "community": 2,
-      "norm_label": "agents.md (project root)"
+      "community": 4,
+      "norm_label": "agents.md (project root)",
+      "id": "agents_md_project"
     },
     {
       "label": "CLAUDE.md (project root)",
@@ -197,9 +206,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "claude_md_project",
-      "community": 2,
-      "norm_label": "claude.md (project root)"
+      "community": 4,
+      "norm_label": "claude.md (project root)",
+      "id": "claude_md_project"
     },
     {
       "label": "CONTRIBUTING.md",
@@ -210,9 +219,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "contributing_md",
-      "community": 2,
-      "norm_label": "contributing.md"
+      "community": 4,
+      "norm_label": "contributing.md",
+      "id": "contributing_md"
     },
     {
       "label": "README.md",
@@ -223,9 +232,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "readme_md",
-      "community": 0,
-      "norm_label": "readme.md"
+      "community": 4,
+      "norm_label": "readme.md",
+      "id": "readme_md"
     },
     {
       "label": "Project Purpose: multi-tool agents-config",
@@ -236,9 +245,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "agents_md_project_purpose",
-      "community": 2,
-      "norm_label": "project purpose: multi-tool agents-config"
+      "community": 4,
+      "norm_label": "project purpose: multi-tool agents-config",
+      "id": "agents_md_project_purpose"
     },
     {
       "label": "Repository Structure (src/user, src/plugins)",
@@ -249,9 +258,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "agents_md_repo_structure",
-      "community": 2,
-      "norm_label": "repository structure (src/user, src/plugins)"
+      "community": 4,
+      "norm_label": "repository structure (src/user, src/plugins)",
+      "id": "agents_md_repo_structure"
     },
     {
       "label": "Session Completion Workflow",
@@ -262,9 +271,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "agents_md_session_completion",
-      "community": 2,
-      "norm_label": "session completion workflow"
+      "community": 4,
+      "norm_label": "session completion workflow",
+      "id": "agents_md_session_completion"
     },
     {
       "label": "scripts/install.sh",
@@ -275,9 +284,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_install_sh",
-      "community": 5,
-      "norm_label": "scripts/install.sh"
+      "community": 6,
+      "norm_label": "scripts/install.sh",
+      "id": "concept_install_sh"
     },
     {
       "label": "obra/superpowers plugin",
@@ -288,9 +297,9 @@
       "captured_at": null,
       "author": "obra",
       "contributor": null,
-      "id": "concept_obra_superpowers",
-      "community": 2,
-      "norm_label": "obra/superpowers plugin"
+      "community": 4,
+      "norm_label": "obra/superpowers plugin",
+      "id": "concept_obra_superpowers"
     },
     {
       "label": "steveyegge/beads plugin",
@@ -301,9 +310,9 @@
       "captured_at": null,
       "author": "steveyegge",
       "contributor": null,
-      "id": "concept_steveyegge_beads",
-      "community": 2,
-      "norm_label": "steveyegge/beads plugin"
+      "community": 1,
+      "norm_label": "steveyegge/beads plugin",
+      "id": "concept_steveyegge_beads"
     },
     {
       "label": "Shared content (src/user/.agents/)",
@@ -314,9 +323,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_shared_content",
-      "community": 2,
-      "norm_label": "shared content (src/user/.agents/)"
+      "community": 4,
+      "norm_label": "shared content (src/user/.agents/)",
+      "id": "concept_shared_content"
     },
     {
       "label": "Claude-specific content (src/user/.claude/)",
@@ -327,9 +336,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_claude_specific",
-      "community": 2,
-      "norm_label": "claude-specific content (src/user/.claude/)"
+      "community": 4,
+      "norm_label": "claude-specific content (src/user/.claude/)",
+      "id": "concept_claude_specific"
     },
     {
       "label": "Codex-specific content (src/user/.codex/)",
@@ -340,9 +349,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_codex_specific",
-      "community": 2,
-      "norm_label": "codex-specific content (src/user/.codex/)"
+      "community": 4,
+      "norm_label": "codex-specific content (src/user/.codex/)",
+      "id": "concept_codex_specific"
     },
     {
       "label": "Gemini-specific content (src/user/.gemini/)",
@@ -353,9 +362,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_gemini_specific",
-      "community": 2,
-      "norm_label": "gemini-specific content (src/user/.gemini/)"
+      "community": 4,
+      "norm_label": "gemini-specific content (src/user/.gemini/)",
+      "id": "concept_gemini_specific"
     },
     {
       "label": "src/plugins/ directory (optional plugin content)",
@@ -366,9 +375,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_plugins_dir",
-      "community": 2,
-      "norm_label": "src/plugins/ directory (optional plugin content)"
+      "community": 1,
+      "norm_label": "src/plugins/ directory (optional plugin content)",
+      "id": "concept_plugins_dir"
     },
     {
       "label": "beads plugin (src/plugins/beads/)",
@@ -379,9 +388,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_beads_plugin",
-      "community": 2,
-      "norm_label": "beads plugin (src/plugins/beads/)"
+      "community": 1,
+      "norm_label": "beads plugin (src/plugins/beads/)",
+      "id": "concept_beads_plugin"
     },
     {
       "label": "bd command (beads CLI)",
@@ -392,9 +401,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_bd_command",
-      "community": 2,
-      "norm_label": "bd command (beads cli)"
+      "community": 1,
+      "norm_label": "bd command (beads cli)",
+      "id": "concept_bd_command"
     },
     {
       "label": "INSTRUCTIONS.md.template",
@@ -405,9 +414,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_instructions_template",
-      "community": 0,
-      "norm_label": "instructions.md.template"
+      "community": 4,
+      "norm_label": "instructions.md.template",
+      "id": "concept_instructions_template"
     },
     {
       "label": "AGENT-PERSONA.md.template",
@@ -418,9 +427,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_agent_persona_template",
-      "community": 0,
-      "norm_label": "agent-persona.md.template"
+      "community": 4,
+      "norm_label": "agent-persona.md.template",
+      "id": "concept_agent_persona_template"
     },
     {
       "label": "USER-PERSONA.md.template",
@@ -431,9 +440,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_user_persona_template",
-      "community": 0,
-      "norm_label": "user-persona.md.template"
+      "community": 4,
+      "norm_label": "user-persona.md.template",
+      "id": "concept_user_persona_template"
     },
     {
       "label": "settings.json.template",
@@ -444,9 +453,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_settings_json_template",
-      "community": 0,
-      "norm_label": "settings.json.template"
+      "community": 4,
+      "norm_label": "settings.json.template",
+      "id": "concept_settings_json_template"
     },
     {
       "label": "quality-reviewer agent",
@@ -457,9 +466,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_quality_reviewer_agent",
-      "community": 0,
-      "norm_label": "quality-reviewer agent"
+      "community": 4,
+      "norm_label": "quality-reviewer agent",
+      "id": "concept_quality_reviewer_agent"
     },
     {
       "label": "tech-lead agent",
@@ -470,9 +479,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_tech_lead_agent",
-      "community": 0,
-      "norm_label": "tech-lead agent"
+      "community": 4,
+      "norm_label": "tech-lead agent",
+      "id": "concept_tech_lead_agent"
     },
     {
       "label": "bugfix skill",
@@ -483,9 +492,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_bugfix",
-      "community": 0,
-      "norm_label": "bugfix skill"
+      "community": 8,
+      "norm_label": "bugfix skill",
+      "id": "concept_skill_bugfix"
     },
     {
       "label": "ralf-it skill",
@@ -496,9 +505,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_ralf_it",
-      "community": 8,
-      "norm_label": "ralf-it skill"
+      "community": 1,
+      "norm_label": "ralf-it skill",
+      "id": "concept_skill_ralf_it"
     },
     {
       "label": "ralf-review skill",
@@ -509,9 +518,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_ralf_review",
-      "community": 8,
-      "norm_label": "ralf-review skill"
+      "community": 1,
+      "norm_label": "ralf-review skill",
+      "id": "concept_skill_ralf_review"
     },
     {
       "label": "ralf-implement skill",
@@ -522,9 +531,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_ralf_implement",
-      "community": 8,
-      "norm_label": "ralf-implement skill"
+      "community": 1,
+      "norm_label": "ralf-implement skill",
+      "id": "concept_skill_ralf_implement"
     },
     {
       "label": "systematic-debugging skill (superpowers)",
@@ -535,9 +544,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_systematic_debugging",
-      "community": 0,
-      "norm_label": "systematic-debugging skill (superpowers)"
+      "community": 8,
+      "norm_label": "systematic-debugging skill (superpowers)",
+      "id": "concept_skill_systematic_debugging"
     },
     {
       "label": "root-cause-tracing skill",
@@ -548,9 +557,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_root_cause_tracing",
-      "community": 0,
-      "norm_label": "root-cause-tracing skill"
+      "community": 8,
+      "norm_label": "root-cause-tracing skill",
+      "id": "concept_skill_root_cause_tracing"
     },
     {
       "label": "writing-unit-tests skill",
@@ -561,9 +570,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_writing_unit_tests",
-      "community": 0,
-      "norm_label": "writing-unit-tests skill"
+      "community": 8,
+      "norm_label": "writing-unit-tests skill",
+      "id": "concept_skill_writing_unit_tests"
     },
     {
       "label": "dispatching-parallel-agents skill",
@@ -574,9 +583,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_dispatching_parallel_agents",
-      "community": 0,
-      "norm_label": "dispatching-parallel-agents skill"
+      "community": 8,
+      "norm_label": "dispatching-parallel-agents skill",
+      "id": "concept_skill_dispatching_parallel_agents"
     },
     {
       "label": "condition-based-waiting skill",
@@ -587,9 +596,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_condition_based_waiting",
-      "community": 0,
-      "norm_label": "condition-based-waiting skill"
+      "community": 8,
+      "norm_label": "condition-based-waiting skill",
+      "id": "concept_skill_condition_based_waiting"
     },
     {
       "label": "optimize-agents-md skill",
@@ -600,9 +609,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_optimize_agents_md",
-      "community": 0,
-      "norm_label": "optimize-agents-md skill"
+      "community": 8,
+      "norm_label": "optimize-agents-md skill",
+      "id": "concept_skill_optimize_agents_md"
     },
     {
       "label": "refresh-agents-md command",
@@ -613,9 +622,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_command_refresh_agents_md",
-      "community": 0,
-      "norm_label": "refresh-agents-md command"
+      "community": 8,
+      "norm_label": "refresh-agents-md command",
+      "id": "concept_command_refresh_agents_md"
     },
     {
       "label": "Three Parallel Investigation Threads",
@@ -626,9 +635,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_three_thread_investigation",
-      "community": 0,
-      "norm_label": "three parallel investigation threads"
+      "community": 8,
+      "norm_label": "three parallel investigation threads",
+      "id": "concept_three_thread_investigation"
     },
     {
       "label": "Synthesis Gate (root cause before fix)",
@@ -639,9 +648,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_synthesis_gate",
-      "community": 0,
-      "norm_label": "synthesis gate (root cause before fix)"
+      "community": 8,
+      "norm_label": "synthesis gate (root cause before fix)",
+      "id": "concept_synthesis_gate"
     },
     {
       "label": "Two-Phase Refresh (parallel discovery + sequential updates)",
@@ -652,9 +661,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_two_phase_refresh",
-      "community": 0,
-      "norm_label": "two-phase refresh (parallel discovery + sequential updates)"
+      "community": 8,
+      "norm_label": "two-phase refresh (parallel discovery + sequential updates)",
+      "id": "concept_two_phase_refresh"
     },
     {
       "label": "jq union merge for settings.json",
@@ -665,9 +674,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_jq_merge",
-      "community": 5,
-      "norm_label": "jq union merge for settings.json"
+      "community": 6,
+      "norm_label": "jq union merge for settings.json",
+      "id": "concept_jq_merge"
     },
     {
       "label": "SHA-256 hash-based directory sync",
@@ -678,9 +687,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_sha256_hash_sync",
-      "community": 5,
-      "norm_label": "sha-256 hash-based directory sync"
+      "community": 6,
+      "norm_label": "sha-256 hash-based directory sync",
+      "id": "concept_sha256_hash_sync"
     },
     {
       "label": "Template sync (.template suffix stripping)",
@@ -691,9 +700,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_template_sync",
-      "community": 5,
-      "norm_label": "template sync (.template suffix stripping)"
+      "community": 6,
+      "norm_label": "template sync (.template suffix stripping)",
+      "id": "concept_template_sync"
     },
     {
       "label": "Multi-Tool Install Architecture",
@@ -704,9 +713,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_multi_tool_install",
-      "community": 5,
-      "norm_label": "multi-tool install architecture"
+      "community": 6,
+      "norm_label": "multi-tool install architecture",
+      "id": "concept_multi_tool_install"
     },
     {
       "label": "--tools= flag (claude/codex/gemini)",
@@ -717,9 +726,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_tools_flag",
-      "community": 5,
-      "norm_label": "--tools= flag (claude/codex/gemini)"
+      "community": 6,
+      "norm_label": "--tools= flag (claude/codex/gemini)",
+      "id": "concept_tools_flag"
     },
     {
       "label": "--plugins= flag",
@@ -730,9 +739,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_plugins_flag",
-      "community": 5,
-      "norm_label": "--plugins= flag"
+      "community": 6,
+      "norm_label": "--plugins= flag",
+      "id": "concept_plugins_flag"
     },
     {
       "label": "Staging pattern (assemble before sync)",
@@ -743,9 +752,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_staging_pattern",
-      "community": 5,
-      "norm_label": "staging pattern (assemble before sync)"
+      "community": 6,
+      "norm_label": "staging pattern (assemble before sync)",
+      "id": "concept_staging_pattern"
     },
     {
       "label": "Collision resolution (rules append, commands fatal, settings union-merge)",
@@ -756,9 +765,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_collision_resolution",
-      "community": 5,
-      "norm_label": "collision resolution (rules append, commands fatal, settings union-merge)"
+      "community": 6,
+      "norm_label": "collision resolution (rules append, commands fatal, settings union-merge)",
+      "id": "concept_collision_resolution"
     },
     {
       "label": "Plugin auto-detection (sentinel: bd on PATH or ~/.beads/)",
@@ -769,9 +778,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_plugin_auto_detect",
-      "community": 5,
-      "norm_label": "plugin auto-detection (sentinel: bd on path or ~/.beads/)"
+      "community": 6,
+      "norm_label": "plugin auto-detection (sentinel: bd on path or ~/.beads/)",
+      "id": "concept_plugin_auto_detect"
     },
     {
       "label": "resolve_collision() function",
@@ -782,9 +791,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_resolve_collision_fn",
-      "community": 5,
-      "norm_label": "resolve_collision() function"
+      "community": 6,
+      "norm_label": "resolve_collision() function",
+      "id": "concept_resolve_collision_fn"
     },
     {
       "label": "classify_file() function",
@@ -795,9 +804,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_classify_file_fn",
-      "community": 5,
-      "norm_label": "classify_file() function"
+      "community": 6,
+      "norm_label": "classify_file() function",
+      "id": "concept_classify_file_fn"
     },
     {
       "label": "stage_item() function",
@@ -808,9 +817,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_stage_item_fn",
-      "community": 5,
-      "norm_label": "stage_item() function"
+      "community": 6,
+      "norm_label": "stage_item() function",
+      "id": "concept_stage_item_fn"
     },
     {
       "label": "stage_and_install_tool() function",
@@ -821,9 +830,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_stage_and_install_tool_fn",
-      "community": 5,
-      "norm_label": "stage_and_install_tool() function"
+      "community": 6,
+      "norm_label": "stage_and_install_tool() function",
+      "id": "concept_stage_and_install_tool_fn"
     },
     {
       "label": "stage_and_install_beads() function",
@@ -834,9 +843,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_stage_and_install_beads_fn",
-      "community": 5,
-      "norm_label": "stage_and_install_beads() function"
+      "community": 6,
+      "norm_label": "stage_and_install_beads() function",
+      "id": "concept_stage_and_install_beads_fn"
     },
     {
       "label": "plugin_enabled() helper",
@@ -847,9 +856,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_plugin_enabled_fn",
-      "community": 5,
-      "norm_label": "plugin_enabled() helper"
+      "community": 6,
+      "norm_label": "plugin_enabled() helper",
+      "id": "concept_plugin_enabled_fn"
     },
     {
       "label": "Codex CLI (codex exec -s read-only)",
@@ -860,9 +869,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_codex_cli",
-      "community": 8,
-      "norm_label": "codex cli (codex exec -s read-only)"
+      "community": 1,
+      "norm_label": "codex cli (codex exec -s read-only)",
+      "id": "concept_codex_cli"
     },
     {
       "label": "Gemini CLI (gemini -p approval-mode plan)",
@@ -873,9 +882,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_gemini_cli",
-      "community": 8,
-      "norm_label": "gemini cli (gemini -p approval-mode plan)"
+      "community": 1,
+      "norm_label": "gemini cli (gemini -p approval-mode plan)",
+      "id": "concept_gemini_cli"
     },
     {
       "label": "Foreign-Eyes Subagent",
@@ -886,9 +895,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_foreign_eyes_subagent",
       "community": 8,
-      "norm_label": "foreign-eyes subagent"
+      "norm_label": "foreign-eyes subagent",
+      "id": "concept_foreign_eyes_subagent"
     },
     {
       "label": "foreign-agent-prompt.md template",
@@ -899,9 +908,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_foreign_agent_prompt_template",
       "community": 8,
-      "norm_label": "foreign-agent-prompt.md template"
+      "norm_label": "foreign-agent-prompt.md template",
+      "id": "concept_foreign_agent_prompt_template"
     },
     {
       "label": "foreign-eyes-prompt.md template",
@@ -912,9 +921,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_foreign_eyes_prompt_template",
       "community": 8,
-      "norm_label": "foreign-eyes-prompt.md template"
+      "norm_label": "foreign-eyes-prompt.md template",
+      "id": "concept_foreign_eyes_prompt_template"
     },
     {
       "label": ".ralf/{session_id}/ artifact directory",
@@ -925,9 +934,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_ralf_directory",
       "community": 8,
-      "norm_label": ".ralf/{session_id}/ artifact directory"
+      "norm_label": ".ralf/{session_id}/ artifact directory",
+      "id": "concept_ralf_directory"
     },
     {
       "label": "Graceful degradation to pure fresh-eyes",
@@ -938,9 +947,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_graceful_degradation",
       "community": 8,
-      "norm_label": "graceful degradation to pure fresh-eyes"
+      "norm_label": "graceful degradation to pure fresh-eyes",
+      "id": "concept_graceful_degradation"
     },
     {
       "label": "RALF Invariants (iteration, independence, adversarial, convergence)",
@@ -951,9 +960,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_ralf_invariants",
-      "community": 8,
-      "norm_label": "ralf invariants (iteration, independence, adversarial, convergence)"
+      "community": 1,
+      "norm_label": "ralf invariants (iteration, independence, adversarial, convergence)",
+      "id": "concept_ralf_invariants"
     },
     {
       "label": "ralf:required bead label",
@@ -964,9 +973,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_ralf_required_label",
-      "community": 8,
-      "norm_label": "ralf:required bead label"
+      "community": 1,
+      "norm_label": "ralf:required bead label",
+      "id": "concept_ralf_required_label"
     },
     {
       "label": "ralf:cycles=N bead label",
@@ -977,9 +986,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_ralf_cycles_label",
-      "community": 8,
-      "norm_label": "ralf:cycles=n bead label"
+      "community": 1,
+      "norm_label": "ralf:cycles=n bead label",
+      "id": "concept_ralf_cycles_label"
     },
     {
       "label": "wait-for-pr-comments skill (Skill A)",
@@ -990,9 +999,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_wait_for_pr_comments",
-      "community": 0,
-      "norm_label": "wait-for-pr-comments skill (skill a)"
+      "community": 5,
+      "norm_label": "wait-for-pr-comments skill (skill a)",
+      "id": "concept_skill_wait_for_pr_comments"
     },
     {
       "label": "reply-and-resolve-pr-threads skill (Skill B)",
@@ -1003,9 +1012,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_reply_and_resolve_pr_threads",
-      "community": 0,
-      "norm_label": "reply-and-resolve-pr-threads skill (skill b)"
+      "community": 5,
+      "norm_label": "reply-and-resolve-pr-threads skill (skill b)",
+      "id": "concept_skill_reply_and_resolve_pr_threads"
     },
     {
       "label": "resolve-pr-comments skill (deprecated alias)",
@@ -1016,9 +1025,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_resolve_pr_comments",
-      "community": 0,
-      "norm_label": "resolve-pr-comments skill (deprecated alias)"
+      "community": 5,
+      "norm_label": "resolve-pr-comments skill (deprecated alias)",
+      "id": "concept_skill_resolve_pr_comments"
     },
     {
       "label": "detect-pr-push.sh PostToolUse hook",
@@ -1029,9 +1038,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_detect_pr_push_hook",
-      "community": 0,
-      "norm_label": "detect-pr-push.sh posttooluse hook"
+      "community": 5,
+      "norm_label": "detect-pr-push.sh posttooluse hook",
+      "id": "concept_detect_pr_push_hook"
     },
     {
       "label": "FIX/SKIP/ESCALATE Classification",
@@ -1042,9 +1051,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_classification_fix_skip_escalate",
-      "community": 0,
-      "norm_label": "fix/skip/escalate classification"
+      "community": 5,
+      "norm_label": "fix/skip/escalate classification",
+      "id": "concept_classification_fix_skip_escalate"
     },
     {
       "label": "Per-comment subagent contract",
@@ -1055,9 +1064,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_per_comment_subagent",
-      "community": 0,
-      "norm_label": "per-comment subagent contract"
+      "community": 5,
+      "norm_label": "per-comment subagent contract",
+      "id": "concept_per_comment_subagent"
     },
     {
       "label": "fix_outcome (committed/already_addressed/failed)",
@@ -1068,9 +1077,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_fix_outcome",
-      "community": 0,
-      "norm_label": "fix_outcome (committed/already_addressed/failed)"
+      "community": 5,
+      "norm_label": "fix_outcome (committed/already_addressed/failed)",
+      "id": "concept_fix_outcome"
     },
     {
       "label": "Hand-off Contract JSON Inventory",
@@ -1081,9 +1090,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_handoff_inventory",
-      "community": 0,
-      "norm_label": "hand-off contract json inventory"
+      "community": 5,
+      "norm_label": "hand-off contract json inventory",
+      "id": "concept_handoff_inventory"
     },
     {
       "label": "write-inventory.sh helper",
@@ -1094,9 +1103,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_write_inventory_sh",
-      "community": 0,
-      "norm_label": "write-inventory.sh helper"
+      "community": 5,
+      "norm_label": "write-inventory.sh helper",
+      "id": "concept_write_inventory_sh"
     },
     {
       "label": "validate-inventory.sh helper",
@@ -1107,9 +1116,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_validate_inventory_sh",
-      "community": 0,
-      "norm_label": "validate-inventory.sh helper"
+      "community": 5,
+      "norm_label": "validate-inventory.sh helper",
+      "id": "concept_validate_inventory_sh"
     },
     {
       "label": "Mode-aware ESCALATE (interactive vs autonomous)",
@@ -1120,9 +1129,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_mode_aware_escalate",
-      "community": 0,
-      "norm_label": "mode-aware escalate (interactive vs autonomous)"
+      "community": 5,
+      "norm_label": "mode-aware escalate (interactive vs autonomous)",
+      "id": "concept_mode_aware_escalate"
     },
     {
       "label": "already_addressed SHA-discovery procedure",
@@ -1133,9 +1142,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_already_addressed",
-      "community": 0,
-      "norm_label": "already_addressed sha-discovery procedure"
+      "community": 5,
+      "norm_label": "already_addressed sha-discovery procedure",
+      "id": "concept_already_addressed"
     },
     {
       "label": "Concurrency Recovery Branch (--resume mode)",
@@ -1146,9 +1155,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_concurrency_recovery",
-      "community": 0,
-      "norm_label": "concurrency recovery branch (--resume mode)"
+      "community": 5,
+      "norm_label": "concurrency recovery branch (--resume mode)",
+      "id": "concept_concurrency_recovery"
     },
     {
       "label": "Orphaned Threads Bug (lu3 PR #11)",
@@ -1159,9 +1168,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_orphan_threads_bug",
-      "community": 0,
-      "norm_label": "orphaned threads bug (lu3 pr #11)"
+      "community": 5,
+      "norm_label": "orphaned threads bug (lu3 pr #11)",
+      "id": "concept_orphan_threads_bug"
     },
     {
       "label": "Completion Gate (review/simplify/verify)",
@@ -1172,9 +1181,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_completion_gate",
-      "community": 0,
-      "norm_label": "completion gate (review/simplify/verify)"
+      "community": 5,
+      "norm_label": "completion gate (review/simplify/verify)",
+      "id": "concept_completion_gate"
     },
     {
       "label": "Default-on Skill A \u2192 Skill B chain",
@@ -1185,9 +1194,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_default_on_chain",
-      "community": 0,
-      "norm_label": "default-on skill a \u2192 skill b chain"
+      "community": 5,
+      "norm_label": "default-on skill a \u2192 skill b chain",
+      "id": "concept_default_on_chain"
     },
     {
       "label": "create-bead skill",
@@ -1198,9 +1207,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_create_bead",
-      "community": 2,
-      "norm_label": "create-bead skill"
+      "community": 1,
+      "norm_label": "create-bead skill",
+      "id": "concept_skill_create_bead"
     },
     {
       "label": "start-bead skill",
@@ -1211,9 +1220,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_start_bead",
-      "community": 2,
-      "norm_label": "start-bead skill"
+      "community": 1,
+      "norm_label": "start-bead skill",
+      "id": "concept_skill_start_bead"
     },
     {
       "label": "implement-bead skill",
@@ -1224,9 +1233,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_implement_bead",
-      "community": 2,
-      "norm_label": "implement-bead skill"
+      "community": 1,
+      "norm_label": "implement-bead skill",
+      "id": "concept_skill_implement_bead"
     },
     {
       "label": "run-queue skill",
@@ -1237,9 +1246,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_run_queue",
-      "community": 2,
-      "norm_label": "run-queue skill"
+      "community": 1,
+      "norm_label": "run-queue skill",
+      "id": "concept_skill_run_queue"
     },
     {
       "label": "bead-verifier agent (haiku, mechanical evidence)",
@@ -1250,9 +1259,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_agent_bead_verifier",
-      "community": 0,
-      "norm_label": "bead-verifier agent (haiku, mechanical evidence)"
+      "community": 5,
+      "norm_label": "bead-verifier agent (haiku, mechanical evidence)",
+      "id": "concept_agent_bead_verifier"
     },
     {
       "label": "brainstorm-bead formula",
@@ -1263,9 +1272,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_formula_brainstorm_bead",
-      "community": 2,
-      "norm_label": "brainstorm-bead formula"
+      "community": 1,
+      "norm_label": "brainstorm-bead formula",
+      "id": "concept_formula_brainstorm_bead"
     },
     {
       "label": "implement-feature formula",
@@ -1276,9 +1285,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_formula_implement_feature",
-      "community": 2,
-      "norm_label": "implement-feature formula"
+      "community": 1,
+      "norm_label": "implement-feature formula",
+      "id": "concept_formula_implement_feature"
     },
     {
       "label": "fix-bug formula",
@@ -1289,9 +1298,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_formula_fix_bug",
-      "community": 2,
-      "norm_label": "fix-bug formula"
+      "community": 1,
+      "norm_label": "fix-bug formula",
+      "id": "concept_formula_fix_bug"
     },
     {
       "label": "merge-and-cleanup formula",
@@ -1302,9 +1311,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_formula_merge_and_cleanup",
-      "community": 2,
-      "norm_label": "merge-and-cleanup formula"
+      "community": 1,
+      "norm_label": "merge-and-cleanup formula",
+      "id": "concept_formula_merge_and_cleanup"
     },
     {
       "label": "Molecule (bd mol pour vs wisp)",
@@ -1315,9 +1324,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_molecule_pour_wisp",
-      "community": 2,
-      "norm_label": "molecule (bd mol pour vs wisp)"
+      "community": 1,
+      "norm_label": "molecule (bd mol pour vs wisp)",
+      "id": "concept_molecule_pour_wisp"
     },
     {
       "label": "for-bead-<id> molecule lookup label",
@@ -1328,9 +1337,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_for_bead_label",
-      "community": 2,
-      "norm_label": "for-bead-<id> molecule lookup label"
+      "community": 1,
+      "norm_label": "for-bead-<id> molecule lookup label",
+      "id": "concept_for_bead_label"
     },
     {
       "label": "implementation-ready label",
@@ -1341,9 +1350,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_implementation_ready_label",
-      "community": 2,
-      "norm_label": "implementation-ready label"
+      "community": 1,
+      "norm_label": "implementation-ready label",
+      "id": "concept_implementation_ready_label"
     },
     {
       "label": "implementation-readied-session-<sid> label",
@@ -1354,9 +1363,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_session_marker_label",
-      "community": 2,
-      "norm_label": "implementation-readied-session-<sid> label"
+      "community": 1,
+      "norm_label": "implementation-readied-session-<sid> label",
+      "id": "concept_session_marker_label"
     },
     {
       "label": "start-bead Route A/B/C routing",
@@ -1367,9 +1376,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_route_a_b_c",
-      "community": 2,
-      "norm_label": "start-bead route a/b/c routing"
+      "community": 1,
+      "norm_label": "start-bead route a/b/c routing",
+      "id": "concept_route_a_b_c"
     },
     {
       "label": "Orchestrator-subagent separation",
@@ -1380,9 +1389,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_orchestrator_subagent_split",
-      "community": 2,
-      "norm_label": "orchestrator-subagent separation"
+      "community": 1,
+      "norm_label": "orchestrator-subagent separation",
+      "id": "concept_orchestrator_subagent_split"
     },
     {
       "label": "Session Isolation (run-queue dedicated)",
@@ -1393,9 +1402,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_session_isolation",
-      "community": 2,
-      "norm_label": "session isolation (run-queue dedicated)"
+      "community": 1,
+      "norm_label": "session isolation (run-queue dedicated)",
+      "id": "concept_session_isolation"
     },
     {
       "label": "bd human escalation mechanism",
@@ -1406,9 +1415,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_human_escalation",
-      "community": 2,
-      "norm_label": "bd human escalation mechanism"
+      "community": 1,
+      "norm_label": "bd human escalation mechanism",
+      "id": "concept_human_escalation"
     },
     {
       "label": "Parent-chain invariants (I1, I2, I3)",
@@ -1419,9 +1428,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_parent_chain_invariants",
-      "community": 2,
-      "norm_label": "parent-chain invariants (i1, i2, i3)"
+      "community": 1,
+      "norm_label": "parent-chain invariants (i1, i2, i3)",
+      "id": "concept_parent_chain_invariants"
     },
     {
       "label": "Skill Partnership: beads OUTER + superpowers INNER",
@@ -1432,9 +1441,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_partnership",
-      "community": 2,
-      "norm_label": "skill partnership: beads outer + superpowers inner"
+      "community": 1,
+      "norm_label": "skill partnership: beads outer + superpowers inner",
+      "id": "concept_skill_partnership"
     },
     {
       "label": "merge-guard skill",
@@ -1445,9 +1454,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_merge_guard",
-      "community": 0,
-      "norm_label": "merge-guard skill"
+      "community": 4,
+      "norm_label": "merge-guard skill",
+      "id": "concept_skill_merge_guard"
     },
     {
       "label": "self-improving-agent skill",
@@ -1458,9 +1467,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_self_improving_agent",
-      "community": 0,
-      "norm_label": "self-improving-agent skill"
+      "community": 4,
+      "norm_label": "self-improving-agent skill",
+      "id": "concept_skill_self_improving_agent"
     },
     {
       "label": "test-review skill",
@@ -1471,9 +1480,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_test_review",
-      "community": 0,
-      "norm_label": "test-review skill"
+      "community": 4,
+      "norm_label": "test-review skill",
+      "id": "concept_skill_test_review"
     },
     {
       "label": "testing-anti-patterns skill",
@@ -1484,9 +1493,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_testing_anti_patterns",
-      "community": 0,
-      "norm_label": "testing-anti-patterns skill"
+      "community": 4,
+      "norm_label": "testing-anti-patterns skill",
+      "id": "concept_skill_testing_anti_patterns"
     },
     {
       "label": "verify-checklist skill",
@@ -1497,9 +1506,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skill_verify_checklist",
-      "community": 0,
-      "norm_label": "verify-checklist skill"
+      "community": 5,
+      "norm_label": "verify-checklist skill",
+      "id": "concept_skill_verify_checklist"
     },
     {
       "label": "CronCreate/CronDelete polling lifecycle",
@@ -1510,9 +1519,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_polling_cron",
-      "community": 0,
-      "norm_label": "croncreate/crondelete polling lifecycle"
+      "community": 5,
+      "norm_label": "croncreate/crondelete polling lifecycle",
+      "id": "concept_polling_cron"
     },
     {
       "label": "src/plugins/AGENTS.md (plugin authoring conventions)",
@@ -1523,681 +1532,681 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "src_plugins_agents_md",
-      "community": 5,
-      "norm_label": "src/plugins/agents.md (plugin authoring conventions)"
+      "community": 6,
+      "norm_label": "src/plugins/agents.md (plugin authoring conventions)",
+      "id": "src_plugins_agents_md"
     },
     {
       "label": "Beads Plugin Rules (beads.md)",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "plugin_beads_rules",
-      "community": 7,
-      "norm_label": "beads plugin rules (beads.md)"
+      "community": 9,
+      "norm_label": "beads plugin rules (beads.md)",
+      "id": "plugin_beads_rules"
     },
     {
       "label": "bd CLI command",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "bd_command",
-      "community": 7,
-      "norm_label": "bd cli command"
+      "community": 9,
+      "norm_label": "bd cli command",
+      "id": "bd_command"
     },
     {
       "label": "Parent-Chain Invariants",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "parent_chain_invariants",
-      "community": 7,
-      "norm_label": "parent-chain invariants"
+      "community": 9,
+      "norm_label": "parent-chain invariants",
+      "id": "parent_chain_invariants"
     },
     {
       "label": "I1 Claim Walk (walk up on start)",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "claim_walk_i1",
-      "community": 7,
-      "norm_label": "i1 claim walk (walk up on start)"
+      "community": 9,
+      "norm_label": "i1 claim walk (walk up on start)",
+      "id": "claim_walk_i1"
     },
     {
       "label": "I2 Close Walk (walk up on close)",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "close_walk_i2",
-      "community": 7,
-      "norm_label": "i2 close walk (walk up on close)"
+      "community": 9,
+      "norm_label": "i2 close walk (walk up on close)",
+      "id": "close_walk_i2"
     },
     {
       "label": "I3 Discovered-Work Placement (sibling test)",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "discovered_work_i3",
-      "community": 7,
-      "norm_label": "i3 discovered-work placement (sibling test)"
+      "community": 9,
+      "norm_label": "i3 discovered-work placement (sibling test)",
+      "id": "discovered_work_i3"
     },
     {
       "label": "Molecule to Bead Linkage Convention (for-bead label)",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "molecule_bead_linkage",
-      "community": 7,
-      "norm_label": "molecule to bead linkage convention (for-bead label)"
+      "community": 9,
+      "norm_label": "molecule to bead linkage convention (for-bead label)",
+      "id": "molecule_bead_linkage"
     },
     {
       "label": "Bead Lifecycle and Labels",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "bead_lifecycle_labels",
-      "community": 7,
-      "norm_label": "bead lifecycle and labels"
+      "community": 9,
+      "norm_label": "bead lifecycle and labels",
+      "id": "bead_lifecycle_labels"
     },
     {
       "label": "Session Separation (run-queue vs brainstorm)",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "session_separation",
-      "community": 7,
-      "norm_label": "session separation (run-queue vs brainstorm)"
+      "community": 9,
+      "norm_label": "session separation (run-queue vs brainstorm)",
+      "id": "session_separation"
     },
     {
       "label": "Beads + Superpowers Skill Partnership",
       "file_type": "rationale",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "skill_partnership",
-      "community": 1,
-      "norm_label": "beads + superpowers skill partnership"
+      "community": 0,
+      "norm_label": "beads + superpowers skill partnership",
+      "id": "skill_partnership"
     },
     {
       "label": "create-bead skill",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "skill_create_bead",
-      "community": 7,
-      "norm_label": "create-bead skill"
+      "community": 9,
+      "norm_label": "create-bead skill",
+      "id": "skill_create_bead"
     },
     {
       "label": "start-bead skill",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "skill_start_bead",
-      "community": 7,
-      "norm_label": "start-bead skill"
+      "community": 9,
+      "norm_label": "start-bead skill",
+      "id": "skill_start_bead"
     },
     {
       "label": "implement-bead skill",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "skill_implement_bead",
-      "community": 7,
-      "norm_label": "implement-bead skill"
+      "community": 9,
+      "norm_label": "implement-bead skill",
+      "id": "skill_implement_bead"
     },
     {
       "label": "run-queue skill",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "skill_run_queue",
-      "community": 7,
-      "norm_label": "run-queue skill"
+      "community": 9,
+      "norm_label": "run-queue skill",
+      "id": "skill_run_queue"
     },
     {
       "label": "brainstorm-bead formula",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "formula_brainstorm_bead",
-      "community": 7,
-      "norm_label": "brainstorm-bead formula"
+      "community": 9,
+      "norm_label": "brainstorm-bead formula",
+      "id": "formula_brainstorm_bead"
     },
     {
       "label": "implement-feature formula",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/delivery.md",
-      "id": "formula_implement_feature",
-      "community": 6,
-      "norm_label": "implement-feature formula"
+      "community": 7,
+      "norm_label": "implement-feature formula",
+      "id": "formula_implement_feature"
     },
     {
       "label": "fix-bug formula",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/delivery.md",
-      "id": "formula_fix_bug",
-      "community": 6,
-      "norm_label": "fix-bug formula"
+      "community": 7,
+      "norm_label": "fix-bug formula",
+      "id": "formula_fix_bug"
     },
     {
       "label": "merge-and-cleanup formula",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "formula_merge_and_cleanup",
-      "community": 6,
-      "norm_label": "merge-and-cleanup formula"
+      "community": 7,
+      "norm_label": "merge-and-cleanup formula",
+      "id": "formula_merge_and_cleanup"
     },
     {
       "label": "Beads-aware Delivery Addendum",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/delivery.md",
-      "id": "plugin_beads_delivery",
-      "community": 6,
-      "norm_label": "beads-aware delivery addendum"
+      "community": 7,
+      "norm_label": "beads-aware delivery addendum",
+      "id": "plugin_beads_delivery"
     },
     {
       "label": "Shared AGENTS.md (src/user/.agents)",
       "file_type": "document",
       "source_file": "src/user/.agents/AGENTS.md",
-      "id": "user_agents_md",
-      "community": 12,
-      "norm_label": "shared agents.md (src/user/.agents)"
+      "community": 13,
+      "norm_label": "shared agents.md (src/user/.agents)",
+      "id": "user_agents_md"
     },
     {
       "label": "Shared README (src/user/.agents)",
       "file_type": "document",
       "source_file": "src/user/.agents/README.md",
-      "id": "user_agents_readme",
-      "community": 11,
-      "norm_label": "shared readme (src/user/.agents)"
+      "community": 12,
+      "norm_label": "shared readme (src/user/.agents)",
+      "id": "user_agents_readme"
     },
     {
       "label": "scripts/install.sh",
       "file_type": "code",
       "source_file": "src/user/.agents/AGENTS.md",
-      "id": "install_sh",
-      "community": 12,
-      "norm_label": "scripts/install.sh"
+      "community": 13,
+      "norm_label": "scripts/install.sh",
+      "id": "install_sh"
     },
     {
       "label": "INSTRUCTIONS.md.template",
       "file_type": "document",
       "source_file": "src/user/.agents/README.md",
-      "id": "shared_instructions_template",
-      "community": 11,
-      "norm_label": "instructions.md.template"
+      "community": 12,
+      "norm_label": "instructions.md.template",
+      "id": "shared_instructions_template"
     },
     {
       "label": "AGENT-PERSONA.md.template",
       "file_type": "document",
       "source_file": "src/user/.agents/README.md",
-      "id": "agent_persona_template",
-      "community": 11,
-      "norm_label": "agent-persona.md.template"
+      "community": 12,
+      "norm_label": "agent-persona.md.template",
+      "id": "agent_persona_template"
     },
     {
       "label": "USER-PERSONA.md.template",
       "file_type": "document",
       "source_file": "src/user/.agents/README.md",
-      "id": "user_persona_template",
-      "community": 11,
-      "norm_label": "user-persona.md.template"
+      "community": 12,
+      "norm_label": "user-persona.md.template",
+      "id": "user_persona_template"
     },
     {
       "label": "quality-reviewer agent",
       "file_type": "document",
       "source_file": "src/user/.agents/agents/quality-reviewer.md",
-      "id": "agent_quality_reviewer",
-      "community": 1,
-      "norm_label": "quality-reviewer agent"
+      "community": 0,
+      "norm_label": "quality-reviewer agent",
+      "id": "agent_quality_reviewer"
     },
     {
       "label": "tech-lead agent",
       "file_type": "document",
       "source_file": "src/user/.agents/agents/tech-lead.md",
-      "id": "agent_tech_lead",
-      "community": 1,
-      "norm_label": "tech-lead agent"
+      "community": 0,
+      "norm_label": "tech-lead agent",
+      "id": "agent_tech_lead"
     },
     {
       "label": "bugfix skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/bugfix/SKILL.md",
-      "id": "skill_bugfix",
-      "community": 1,
-      "norm_label": "bugfix skill"
+      "community": 0,
+      "norm_label": "bugfix skill",
+      "id": "skill_bugfix"
     },
     {
       "label": "condition-based-waiting skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/condition-based-waiting/SKILL.md",
-      "id": "skill_condition_based_waiting",
-      "community": 1,
-      "norm_label": "condition-based-waiting skill"
+      "community": 0,
+      "norm_label": "condition-based-waiting skill",
+      "id": "skill_condition_based_waiting"
     },
     {
       "label": "merge-guard skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/merge-guard/SKILL.md",
-      "id": "skill_merge_guard",
-      "community": 6,
-      "norm_label": "merge-guard skill"
+      "community": 7,
+      "norm_label": "merge-guard skill",
+      "id": "skill_merge_guard"
     },
     {
       "label": "optimize-agents-md skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/optimize-agents-md/SKILL.md",
-      "id": "skill_optimize_agents_md",
-      "community": 3,
-      "norm_label": "optimize-agents-md skill"
+      "community": 2,
+      "norm_label": "optimize-agents-md skill",
+      "id": "skill_optimize_agents_md"
     },
     {
       "label": "ralf-it skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "skill_ralf_it",
-      "community": 1,
-      "norm_label": "ralf-it skill"
+      "community": 0,
+      "norm_label": "ralf-it skill",
+      "id": "skill_ralf_it"
     },
     {
       "label": "RALF foreign-agent prompt template",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/foreign-agent-prompt.md",
-      "id": "ralf_foreign_agent_prompt",
-      "community": 1,
-      "norm_label": "ralf foreign-agent prompt template"
+      "community": 0,
+      "norm_label": "ralf foreign-agent prompt template",
+      "id": "ralf_foreign_agent_prompt"
     },
     {
       "label": "RALF foreign-eyes subagent prompt",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/foreign-eyes-prompt.md",
-      "id": "ralf_foreign_eyes_prompt",
-      "community": 1,
-      "norm_label": "ralf foreign-eyes subagent prompt"
+      "community": 0,
+      "norm_label": "ralf foreign-eyes subagent prompt",
+      "id": "ralf_foreign_eyes_prompt"
     },
     {
       "label": "RALF fresh-eyes subagent prompt",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/fresh-eyes-prompt.md",
-      "id": "ralf_fresh_eyes_prompt",
-      "community": 1,
-      "norm_label": "ralf fresh-eyes subagent prompt"
+      "community": 0,
+      "norm_label": "ralf fresh-eyes subagent prompt",
+      "id": "ralf_fresh_eyes_prompt"
     },
     {
       "label": "RALF implementer subagent prompt",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/implementer-prompt.md",
-      "id": "ralf_implementer_prompt",
-      "community": 1,
-      "norm_label": "ralf implementer subagent prompt"
+      "community": 0,
+      "norm_label": "ralf implementer subagent prompt",
+      "id": "ralf_implementer_prompt"
     },
     {
       "label": "reply-and-resolve-pr-threads skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md",
-      "id": "skill_reply_and_resolve_pr_threads",
-      "community": 6,
-      "norm_label": "reply-and-resolve-pr-threads skill"
+      "community": 7,
+      "norm_label": "reply-and-resolve-pr-threads skill",
+      "id": "skill_reply_and_resolve_pr_threads"
     },
     {
       "label": "self-improving-agent skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/self-improving-agent/SKILL.md",
-      "id": "skill_self_improving_agent",
-      "community": 3,
-      "norm_label": "self-improving-agent skill"
+      "community": 2,
+      "norm_label": "self-improving-agent skill",
+      "id": "skill_self_improving_agent"
     },
     {
       "label": "simplify skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/simplify/SKILL.md",
-      "id": "skill_simplify",
-      "community": 1,
-      "norm_label": "simplify skill"
+      "community": 0,
+      "norm_label": "simplify skill",
+      "id": "skill_simplify"
     },
     {
       "label": "test-review skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/test-review/SKILL.md",
-      "id": "skill_test_review",
-      "community": 4,
-      "norm_label": "test-review skill"
+      "community": 3,
+      "norm_label": "test-review skill",
+      "id": "skill_test_review"
     },
     {
       "label": "testing-anti-patterns skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/testing-anti-patterns/SKILL.md",
-      "id": "skill_testing_anti_patterns",
-      "community": 4,
-      "norm_label": "testing-anti-patterns skill"
+      "community": 3,
+      "norm_label": "testing-anti-patterns skill",
+      "id": "skill_testing_anti_patterns"
     },
     {
       "label": "verify-checklist skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/verify-checklist/SKILL.md",
-      "id": "skill_verify_checklist",
-      "community": 1,
-      "norm_label": "verify-checklist skill"
+      "community": 0,
+      "norm_label": "verify-checklist skill",
+      "id": "skill_verify_checklist"
     },
     {
       "label": "wait-for-pr-comments skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "skill_wait_for_pr_comments",
-      "community": 6,
-      "norm_label": "wait-for-pr-comments skill"
+      "community": 7,
+      "norm_label": "wait-for-pr-comments skill",
+      "id": "skill_wait_for_pr_comments"
     },
     {
       "label": "writing-unit-tests skill",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/test-review/SKILL.md",
-      "id": "skill_writing_unit_tests",
-      "community": 4,
-      "norm_label": "writing-unit-tests skill"
+      "community": 3,
+      "norm_label": "writing-unit-tests skill",
+      "id": "skill_writing_unit_tests"
     },
     {
       "label": "superpowers:brainstorming",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_brainstorming",
-      "community": 1,
-      "norm_label": "superpowers:brainstorming"
+      "community": 0,
+      "norm_label": "superpowers:brainstorming",
+      "id": "superpowers_brainstorming"
     },
     {
       "label": "superpowers:systematic-debugging",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_systematic_debugging",
-      "community": 1,
-      "norm_label": "superpowers:systematic-debugging"
+      "community": 0,
+      "norm_label": "superpowers:systematic-debugging",
+      "id": "superpowers_systematic_debugging"
     },
     {
       "label": "superpowers:root-cause-tracing",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/bugfix/SKILL.md",
-      "id": "superpowers_root_cause_tracing",
-      "community": 1,
-      "norm_label": "superpowers:root-cause-tracing"
+      "community": 0,
+      "norm_label": "superpowers:root-cause-tracing",
+      "id": "superpowers_root_cause_tracing"
     },
     {
       "label": "superpowers:test-driven-development",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_tdd",
-      "community": 1,
-      "norm_label": "superpowers:test-driven-development"
+      "community": 0,
+      "norm_label": "superpowers:test-driven-development",
+      "id": "superpowers_tdd"
     },
     {
       "label": "superpowers:verification-before-completion",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_verification_before_completion",
-      "community": 13,
-      "norm_label": "superpowers:verification-before-completion"
+      "community": 14,
+      "norm_label": "superpowers:verification-before-completion",
+      "id": "superpowers_verification_before_completion"
     },
     {
       "label": "superpowers:using-git-worktrees",
       "file_type": "document",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "superpowers_using_git_worktrees",
-      "community": 1,
-      "norm_label": "superpowers:using-git-worktrees"
+      "community": 0,
+      "norm_label": "superpowers:using-git-worktrees",
+      "id": "superpowers_using_git_worktrees"
     },
     {
       "label": "superpowers:finishing-a-development-branch",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/delivery.md",
-      "id": "superpowers_finishing_dev_branch",
-      "community": 6,
-      "norm_label": "superpowers:finishing-a-development-branch"
+      "community": 7,
+      "norm_label": "superpowers:finishing-a-development-branch",
+      "id": "superpowers_finishing_dev_branch"
     },
     {
       "label": "superpowers:dispatching-parallel-agents",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_dispatching_parallel_agents",
-      "community": 1,
-      "norm_label": "superpowers:dispatching-parallel-agents"
+      "community": 0,
+      "norm_label": "superpowers:dispatching-parallel-agents",
+      "id": "superpowers_dispatching_parallel_agents"
     },
     {
       "label": "superpowers:writing-plans (off-limits for beads)",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_writing_plans",
-      "community": 1,
-      "norm_label": "superpowers:writing-plans (off-limits for beads)"
+      "community": 0,
+      "norm_label": "superpowers:writing-plans (off-limits for beads)",
+      "id": "superpowers_writing_plans"
     },
     {
       "label": "superpowers:executing-plans (off-limits for beads)",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_executing_plans",
-      "community": 1,
-      "norm_label": "superpowers:executing-plans (off-limits for beads)"
+      "community": 0,
+      "norm_label": "superpowers:executing-plans (off-limits for beads)",
+      "id": "superpowers_executing_plans"
     },
     {
       "label": "superpowers:subagent-driven-development (off-limits for beads)",
       "file_type": "document",
       "source_file": "src/plugins/beads/.claude/rules/beads.md",
-      "id": "superpowers_subagent_driven_development",
-      "community": 1,
-      "norm_label": "superpowers:subagent-driven-development (off-limits for beads)"
+      "community": 0,
+      "norm_label": "superpowers:subagent-driven-development (off-limits for beads)",
+      "id": "superpowers_subagent_driven_development"
     },
     {
       "label": "Claude Code Codex plugin",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "codex_plugin",
-      "community": 1,
-      "norm_label": "claude code codex plugin"
+      "community": 0,
+      "norm_label": "claude code codex plugin",
+      "id": "codex_plugin"
     },
     {
       "label": "codex-companion.mjs",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "codex_companion_mjs",
-      "community": 1,
-      "norm_label": "codex-companion.mjs"
+      "community": 0,
+      "norm_label": "codex-companion.mjs",
+      "id": "codex_companion_mjs"
     },
     {
       "label": "Gemini CLI",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "gemini_cli",
-      "community": 1,
-      "norm_label": "gemini cli"
+      "community": 0,
+      "norm_label": "gemini cli",
+      "id": "gemini_cli"
     },
     {
       "label": "Definition of Done Alignment (RALF Step 1)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "ralf_dod_alignment",
-      "community": 1,
-      "norm_label": "definition of done alignment (ralf step 1)"
+      "community": 0,
+      "norm_label": "definition of done alignment (ralf step 1)",
+      "id": "ralf_dod_alignment"
     },
     {
       "label": "RALF Quality Gate (between iterations)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "ralf_quality_gate",
-      "community": 1,
-      "norm_label": "ralf quality gate (between iterations)"
+      "community": 0,
+      "norm_label": "ralf quality gate (between iterations)",
+      "id": "ralf_quality_gate"
     },
     {
       "label": "RALF Iteration Routing (Codex/Gemini/Claude)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "ralf_iteration_routing",
-      "community": 1,
-      "norm_label": "ralf iteration routing (codex/gemini/claude)"
+      "community": 0,
+      "norm_label": "ralf iteration routing (codex/gemini/claude)",
+      "id": "ralf_iteration_routing"
     },
     {
       "label": "Fresh-Eyes Principle (no bias from prior context)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "ralf_fresh_eyes_principle",
-      "community": 1,
-      "norm_label": "fresh-eyes principle (no bias from prior context)"
+      "community": 0,
+      "norm_label": "fresh-eyes principle (no bias from prior context)",
+      "id": "ralf_fresh_eyes_principle"
     },
     {
       "label": ".ralf/{session_id}/ artifact directory",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "ralf_session_dir",
-      "community": 1,
-      "norm_label": ".ralf/{session_id}/ artifact directory"
+      "community": 0,
+      "norm_label": ".ralf/{session_id}/ artifact directory",
+      "id": "ralf_session_dir"
     },
     {
       "label": "Iron Law: No Fix Without Parallel Evidence",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/bugfix/SKILL.md",
-      "id": "iron_law_no_fix_without_evidence",
-      "community": 1,
-      "norm_label": "iron law: no fix without parallel evidence"
+      "community": 0,
+      "norm_label": "iron law: no fix without parallel evidence",
+      "id": "iron_law_no_fix_without_evidence"
     },
     {
       "label": "Bugfix Three Threads (git/test/dataflow)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/bugfix/SKILL.md",
-      "id": "bugfix_three_threads",
-      "community": 1,
-      "norm_label": "bugfix three threads (git/test/dataflow)"
+      "community": 0,
+      "norm_label": "bugfix three threads (git/test/dataflow)",
+      "id": "bugfix_three_threads"
     },
     {
       "label": "check-merge-eligibility.sh",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/merge-guard/SKILL.md",
-      "id": "merge_eligibility_check",
-      "community": 6,
-      "norm_label": "check-merge-eligibility.sh"
+      "community": 7,
+      "norm_label": "check-merge-eligibility.sh",
+      "id": "merge_eligibility_check"
     },
     {
       "label": "Anti-Pattern: Test-Only Production Methods",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/testing-anti-patterns/SKILL.md",
-      "id": "anti_pattern_test_only_methods",
-      "community": 4,
-      "norm_label": "anti-pattern: test-only production methods"
+      "community": 3,
+      "norm_label": "anti-pattern: test-only production methods",
+      "id": "anti_pattern_test_only_methods"
     },
     {
       "label": "Anti-Pattern: Testing Mock Behavior",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/testing-anti-patterns/SKILL.md",
-      "id": "anti_pattern_mock_behavior",
-      "community": 4,
-      "norm_label": "anti-pattern: testing mock behavior"
+      "community": 3,
+      "norm_label": "anti-pattern: testing mock behavior",
+      "id": "anti_pattern_mock_behavior"
     },
     {
       "label": "Anti-Pattern: Mocking Without Understanding",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/testing-anti-patterns/SKILL.md",
-      "id": "anti_pattern_mocking_without_understanding",
-      "community": 4,
-      "norm_label": "anti-pattern: mocking without understanding"
+      "community": 3,
+      "norm_label": "anti-pattern: mocking without understanding",
+      "id": "anti_pattern_mocking_without_understanding"
     },
     {
       "label": "Anti-Pattern: Incomplete Mocks",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/testing-anti-patterns/SKILL.md",
-      "id": "anti_pattern_incomplete_mocks",
-      "community": 4,
-      "norm_label": "anti-pattern: incomplete mocks"
+      "community": 3,
+      "norm_label": "anti-pattern: incomplete mocks",
+      "id": "anti_pattern_incomplete_mocks"
     },
     {
       "label": "Completion Gate (review/simplify/verify)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/ralf-it/SKILL.md",
-      "id": "completion_gate",
-      "community": 1,
-      "norm_label": "completion gate (review/simplify/verify)"
+      "community": 0,
+      "norm_label": "completion gate (review/simplify/verify)",
+      "id": "completion_gate"
     },
     {
       "label": "validate-inventory.sh",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "validate_inventory_sh",
-      "community": 6,
-      "norm_label": "validate-inventory.sh"
+      "community": 7,
+      "norm_label": "validate-inventory.sh",
+      "id": "validate_inventory_sh"
     },
     {
       "label": "write-inventory.sh",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "write_inventory_sh",
-      "community": 6,
-      "norm_label": "write-inventory.sh"
+      "community": 7,
+      "norm_label": "write-inventory.sh",
+      "id": "write_inventory_sh"
     },
     {
       "label": "poll-copilot-review.sh",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "poll_copilot_review_sh",
-      "community": 6,
-      "norm_label": "poll-copilot-review.sh"
+      "community": 7,
+      "norm_label": "poll-copilot-review.sh",
+      "id": "poll_copilot_review_sh"
     },
     {
       "label": "detect-pr-push.sh hook",
       "file_type": "code",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "detect_pr_push_sh",
-      "community": 6,
-      "norm_label": "detect-pr-push.sh hook"
+      "community": 7,
+      "norm_label": "detect-pr-push.sh hook",
+      "id": "detect_pr_push_sh"
     },
     {
       "label": "PR Inventory JSON Schema (Hand-off Contract)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "pr_inventory_schema",
-      "community": 6,
-      "norm_label": "pr inventory json schema (hand-off contract)"
+      "community": 7,
+      "norm_label": "pr inventory json schema (hand-off contract)",
+      "id": "pr_inventory_schema"
     },
     {
       "label": "Inventory Schema Validation Guards (9)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "schema_validation_guards",
-      "community": 6,
-      "norm_label": "inventory schema validation guards (9)"
+      "community": 7,
+      "norm_label": "inventory schema validation guards (9)",
+      "id": "schema_validation_guards"
     },
     {
       "label": "Per-Comment Subagent Contract",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "per_comment_subagent_contract",
-      "community": 6,
-      "norm_label": "per-comment subagent contract"
+      "community": 7,
+      "norm_label": "per-comment subagent contract",
+      "id": "per_comment_subagent_contract"
     },
     {
       "label": "Mode-aware ESCALATE (interactive vs autonomous)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/wait-for-pr-comments/SKILL.md",
-      "id": "mode_aware_escalate",
-      "community": 6,
-      "norm_label": "mode-aware escalate (interactive vs autonomous)"
+      "community": 7,
+      "norm_label": "mode-aware escalate (interactive vs autonomous)",
+      "id": "mode_aware_escalate"
     },
     {
       "label": "Self-Improving Prevention Rule",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/self-improving-agent/SKILL.md",
-      "id": "self_improving_rule",
-      "community": 3,
-      "norm_label": "self-improving prevention rule"
+      "community": 2,
+      "norm_label": "self-improving prevention rule",
+      "id": "self_improving_rule"
     },
     {
       "label": "Simplify Apply-vs-Flag Classification",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/simplify/SKILL.md",
-      "id": "simplify_apply_vs_flag",
-      "community": 1,
-      "norm_label": "simplify apply-vs-flag classification"
+      "community": 0,
+      "norm_label": "simplify apply-vs-flag classification",
+      "id": "simplify_apply_vs_flag"
     },
     {
       "label": "Simplify Three Axes (Reuse/Quality/Efficiency)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/simplify/SKILL.md",
-      "id": "simplify_three_axes",
-      "community": 1,
-      "norm_label": "simplify three axes (reuse/quality/efficiency)"
+      "community": 0,
+      "norm_label": "simplify three axes (reuse/quality/efficiency)",
+      "id": "simplify_three_axes"
     },
     {
       "label": "Verification Checklist (canonical)",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/verify-checklist/SKILL.md",
-      "id": "verification_checklist_concept",
-      "community": 1,
-      "norm_label": "verification checklist (canonical)"
+      "community": 0,
+      "norm_label": "verification checklist (canonical)",
+      "id": "verification_checklist_concept"
     },
     {
       "label": "Iron Law: If Removing a Line Wouldn't Cause Mistakes, Delete It",
       "file_type": "rationale",
       "source_file": "src/user/.agents/skills/optimize-agents-md/SKILL.md",
-      "id": "optimize_agents_iron_law",
-      "community": 3,
-      "norm_label": "iron law: if removing a line wouldn't cause mistakes, delete it"
+      "community": 2,
+      "norm_label": "iron law: if removing a line wouldn't cause mistakes, delete it",
+      "id": "optimize_agents_iron_law"
     },
     {
       "label": "Iron Laws of Unit Testing",
@@ -2208,9 +2217,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_iron_laws_unit_testing",
-      "community": 4,
-      "norm_label": "iron laws of unit testing"
+      "community": 3,
+      "norm_label": "iron laws of unit testing",
+      "id": "concept_iron_laws_unit_testing"
     },
     {
       "label": "Test Behavior Not Implementation",
@@ -2221,9 +2230,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_test_behavior_not_implementation",
-      "community": 4,
-      "norm_label": "test behavior not implementation"
+      "community": 3,
+      "norm_label": "test behavior not implementation",
+      "id": "concept_test_behavior_not_implementation"
     },
     {
       "label": "Test Refusal Criteria",
@@ -2234,9 +2243,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_refusal_criteria",
-      "community": 4,
-      "norm_label": "test refusal criteria"
+      "community": 3,
+      "norm_label": "test refusal criteria",
+      "id": "concept_refusal_criteria"
     },
     {
       "label": "Mocks Are A Smell",
@@ -2247,9 +2256,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_mocks_are_smell",
-      "community": 4,
-      "norm_label": "mocks are a smell"
+      "community": 3,
+      "norm_label": "mocks are a smell",
+      "id": "concept_mocks_are_smell"
     },
     {
       "label": "Test Doubles Hierarchy (Fake/Stub/Spy/Mock)",
@@ -2260,9 +2269,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_test_doubles_hierarchy",
-      "community": 4,
-      "norm_label": "test doubles hierarchy (fake/stub/spy/mock)"
+      "community": 3,
+      "norm_label": "test doubles hierarchy (fake/stub/spy/mock)",
+      "id": "concept_test_doubles_hierarchy"
     },
     {
       "label": "Test Isolation",
@@ -2273,9 +2282,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_test_isolation",
-      "community": 4,
-      "norm_label": "test isolation"
+      "community": 3,
+      "norm_label": "test isolation",
+      "id": "concept_test_isolation"
     },
     {
       "label": "Refactoring For Testability",
@@ -2286,9 +2295,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_refactoring_for_testability",
-      "community": 4,
-      "norm_label": "refactoring for testability"
+      "community": 3,
+      "norm_label": "refactoring for testability",
+      "id": "concept_refactoring_for_testability"
     },
     {
       "label": "Test Skip Hygiene",
@@ -2299,9 +2308,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_skip_hygiene",
-      "community": 4,
-      "norm_label": "test skip hygiene"
+      "community": 3,
+      "norm_label": "test skip hygiene",
+      "id": "concept_skip_hygiene"
     },
     {
       "label": "Claude AGENTS.md template",
@@ -2312,9 +2321,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "claude_agents_md_template",
-      "community": 9,
-      "norm_label": "claude agents.md template"
+      "community": 10,
+      "norm_label": "claude agents.md template",
+      "id": "claude_agents_md_template"
     },
     {
       "label": "Claude CLAUDE.md template",
@@ -2325,9 +2334,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "claude_md_template",
-      "community": 9,
-      "norm_label": "claude claude.md template"
+      "community": 10,
+      "norm_label": "claude claude.md template",
+      "id": "claude_md_template"
     },
     {
       "label": "Claude source README",
@@ -2338,9 +2347,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "claude_readme",
-      "community": 3,
-      "norm_label": "claude source readme"
+      "community": 2,
+      "norm_label": "claude source readme",
+      "id": "claude_readme"
     },
     {
       "label": "/optimize-my-agent command",
@@ -2351,9 +2360,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "command_optimize_my_agent",
-      "community": 3,
-      "norm_label": "/optimize-my-agent command"
+      "community": 2,
+      "norm_label": "/optimize-my-agent command",
+      "id": "command_optimize_my_agent"
     },
     {
       "label": "/optimize-my-skill command",
@@ -2364,9 +2373,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "command_optimize_my_skill",
-      "community": 3,
-      "norm_label": "/optimize-my-skill command"
+      "community": 2,
+      "norm_label": "/optimize-my-skill command",
+      "id": "command_optimize_my_skill"
     },
     {
       "label": "/refresh-agents-md command",
@@ -2377,9 +2386,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "command_refresh_agents_md",
-      "community": 3,
-      "norm_label": "/refresh-agents-md command"
+      "community": 2,
+      "norm_label": "/refresh-agents-md command",
+      "id": "command_refresh_agents_md"
     },
     {
       "label": "codex-routing rule",
@@ -2390,9 +2399,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_codex_routing",
-      "community": 4,
-      "norm_label": "codex-routing rule"
+      "community": 3,
+      "norm_label": "codex-routing rule",
+      "id": "rule_codex_routing"
     },
     {
       "label": "completion-gate rule",
@@ -2403,9 +2412,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_completion_gate",
-      "community": 3,
-      "norm_label": "completion-gate rule"
+      "community": 2,
+      "norm_label": "completion-gate rule",
+      "id": "rule_completion_gate"
     },
     {
       "label": "delegation rule",
@@ -2416,9 +2425,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_delegation",
-      "community": 4,
-      "norm_label": "delegation rule"
+      "community": 3,
+      "norm_label": "delegation rule",
+      "id": "rule_delegation"
     },
     {
       "label": "delivery rule",
@@ -2429,9 +2438,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_delivery",
-      "community": 3,
-      "norm_label": "delivery rule"
+      "community": 2,
+      "norm_label": "delivery rule",
+      "id": "rule_delivery"
     },
     {
       "label": "git-commits rule",
@@ -2442,9 +2451,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_git_commits",
-      "community": 3,
-      "norm_label": "git-commits rule"
+      "community": 2,
+      "norm_label": "git-commits rule",
+      "id": "rule_git_commits"
     },
     {
       "label": "subagents rule",
@@ -2455,9 +2464,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_subagents",
-      "community": 3,
-      "norm_label": "subagents rule"
+      "community": 2,
+      "norm_label": "subagents rule",
+      "id": "rule_subagents"
     },
     {
       "label": "worktrees rule",
@@ -2468,9 +2477,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "rule_worktrees",
-      "community": 3,
-      "norm_label": "worktrees rule"
+      "community": 2,
+      "norm_label": "worktrees rule",
+      "id": "rule_worktrees"
     },
     {
       "label": "Verification Checklist",
@@ -2481,9 +2490,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_verification_checklist",
-      "community": 3,
-      "norm_label": "verification checklist"
+      "community": 2,
+      "norm_label": "verification checklist",
+      "id": "concept_verification_checklist"
     },
     {
       "label": "using-git-worktrees skill",
@@ -2494,9 +2503,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_using_git_worktrees",
-      "community": 3,
-      "norm_label": "using-git-worktrees skill"
+      "community": 2,
+      "norm_label": "using-git-worktrees skill",
+      "id": "skill_using_git_worktrees"
     },
     {
       "label": "finishing-a-development-branch skill",
@@ -2507,9 +2516,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_finishing_a_development_branch",
-      "community": 3,
-      "norm_label": "finishing-a-development-branch skill"
+      "community": 2,
+      "norm_label": "finishing-a-development-branch skill",
+      "id": "skill_finishing_a_development_branch"
     },
     {
       "label": "superpowers:brainstorming skill",
@@ -2520,9 +2529,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_brainstorming",
-      "community": 4,
-      "norm_label": "superpowers:brainstorming skill"
+      "community": 3,
+      "norm_label": "superpowers:brainstorming skill",
+      "id": "skill_brainstorming"
     },
     {
       "label": "superpowers:test-driven-development skill",
@@ -2533,9 +2542,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_test_driven_development",
-      "community": 4,
-      "norm_label": "superpowers:test-driven-development skill"
+      "community": 3,
+      "norm_label": "superpowers:test-driven-development skill",
+      "id": "skill_test_driven_development"
     },
     {
       "label": "Action Categories (Automatic vs Authorized)",
@@ -2546,9 +2555,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_action_categories",
-      "community": 3,
-      "norm_label": "action categories (automatic vs authorized)"
+      "community": 2,
+      "norm_label": "action categories (automatic vs authorized)",
+      "id": "concept_action_categories"
     },
     {
       "label": "PR Comments Audit (top-level + inline)",
@@ -2559,9 +2568,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_pr_comments_audit",
-      "community": 3,
-      "norm_label": "pr comments audit (top-level + inline)"
+      "community": 2,
+      "norm_label": "pr comments audit (top-level + inline)",
+      "id": "concept_pr_comments_audit"
     },
     {
       "label": "codex-companion.mjs",
@@ -2572,9 +2581,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "tool_codex_companion",
-      "community": 4,
-      "norm_label": "codex-companion.mjs"
+      "community": 3,
+      "norm_label": "codex-companion.mjs",
+      "id": "tool_codex_companion"
     },
     {
       "label": "gpt-5.4 model",
@@ -2585,9 +2594,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "model_gpt_5_4",
-      "community": 4,
-      "norm_label": "gpt-5.4 model"
+      "community": 3,
+      "norm_label": "gpt-5.4 model",
+      "id": "model_gpt_5_4"
     },
     {
       "label": "gpt-5.4-mini model",
@@ -2598,9 +2607,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "model_gpt_5_4_mini",
-      "community": 4,
-      "norm_label": "gpt-5.4-mini model"
+      "community": 3,
+      "norm_label": "gpt-5.4-mini model",
+      "id": "model_gpt_5_4_mini"
     },
     {
       "label": "gpt-5.3-codex-spark model",
@@ -2611,9 +2620,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "model_gpt_5_3_codex_spark",
-      "community": 4,
-      "norm_label": "gpt-5.3-codex-spark model"
+      "community": 3,
+      "norm_label": "gpt-5.3-codex-spark model",
+      "id": "model_gpt_5_3_codex_spark"
     },
     {
       "label": "codex:gpt-5-4-prompting skill",
@@ -2624,9 +2633,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_codex_gpt_5_4_prompting",
-      "community": 4,
-      "norm_label": "codex:gpt-5-4-prompting skill"
+      "community": 3,
+      "norm_label": "codex:gpt-5-4-prompting skill",
+      "id": "skill_codex_gpt_5_4_prompting"
     },
     {
       "label": "Sandbox Heredoc Failure",
@@ -2637,9 +2646,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_sandbox_heredoc_failure",
-      "community": 3,
-      "norm_label": "sandbox heredoc failure"
+      "community": 2,
+      "norm_label": "sandbox heredoc failure",
+      "id": "concept_sandbox_heredoc_failure"
     },
     {
       "label": "Worktree Location Convention",
@@ -2650,9 +2659,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_worktree_location",
-      "community": 3,
-      "norm_label": "worktree location convention"
+      "community": 2,
+      "norm_label": "worktree location convention",
+      "id": "concept_worktree_location"
     },
     {
       "label": "Codex AGENTS.md template",
@@ -2663,9 +2672,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "codex_agents_md_template",
-      "community": 9,
-      "norm_label": "codex agents.md template"
+      "community": 10,
+      "norm_label": "codex agents.md template",
+      "id": "codex_agents_md_template"
     },
     {
       "label": "Codex source README",
@@ -2676,9 +2685,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "codex_readme",
-      "community": 14,
-      "norm_label": "codex source readme"
+      "community": 15,
+      "norm_label": "codex source readme",
+      "id": "codex_readme"
     },
     {
       "label": "Gemini AGENTS.md template",
@@ -2689,9 +2698,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "gemini_agents_md_template",
-      "community": 9,
-      "norm_label": "gemini agents.md template"
+      "community": 10,
+      "norm_label": "gemini agents.md template",
+      "id": "gemini_agents_md_template"
     },
     {
       "label": "Gemini source README",
@@ -2702,9 +2711,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "gemini_readme",
-      "community": 15,
-      "norm_label": "gemini source readme"
+      "community": 16,
+      "norm_label": "gemini source readme",
+      "id": "gemini_readme"
     },
     {
       "label": "Template Install Model (.template suffix)",
@@ -2715,9 +2724,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_install_model_template",
-      "community": 3,
-      "norm_label": "template install model (.template suffix)"
+      "community": 2,
+      "norm_label": "template install model (.template suffix)",
+      "id": "concept_install_model_template"
     },
     {
       "label": "Collision Rules (unique vs append vs union-merge)",
@@ -2728,9 +2737,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_collision_rules",
-      "community": 9,
-      "norm_label": "collision rules (unique vs append vs union-merge)"
+      "community": 10,
+      "norm_label": "collision rules (unique vs append vs union-merge)",
+      "id": "concept_collision_rules"
     },
     {
       "label": "Progressive Disclosure (skill levels)",
@@ -2741,9 +2750,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_progressive_disclosure",
-      "community": 3,
-      "norm_label": "progressive disclosure (skill levels)"
+      "community": 2,
+      "norm_label": "progressive disclosure (skill levels)",
+      "id": "concept_progressive_disclosure"
     },
     {
       "label": "Three-Tier Agent Boundaries (Always/Ask/Never)",
@@ -2754,9 +2763,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "concept_three_tier_boundaries",
-      "community": 3,
-      "norm_label": "three-tier agent boundaries (always/ask/never)"
+      "community": 2,
+      "norm_label": "three-tier agent boundaries (always/ask/never)",
+      "id": "concept_three_tier_boundaries"
     },
     {
       "label": "dispatching-parallel-agents skill",
@@ -2767,9 +2776,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "skill_dispatching_parallel_agents",
-      "community": 3,
-      "norm_label": "dispatching-parallel-agents skill"
+      "community": 2,
+      "norm_label": "dispatching-parallel-agents skill",
+      "id": "skill_dispatching_parallel_agents"
     },
     {
       "label": "scripts/install.sh",
@@ -2780,9 +2789,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "script_install_sh",
-      "community": 9,
-      "norm_label": "scripts/install.sh"
+      "community": 10,
+      "norm_label": "scripts/install.sh",
+      "id": "script_install_sh"
     },
     {
       "label": "src/user/.agents shared content",
@@ -2793,9 +2802,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "shared_agents_dir",
-      "community": 3,
-      "norm_label": "src/user/.agents shared content"
+      "community": 2,
+      "norm_label": "src/user/.agents shared content",
+      "id": "shared_agents_dir"
     },
     {
       "label": "INSTRUCTIONS.md (shared)",
@@ -2806,9 +2815,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "shared_instructions_md",
-      "community": 9,
-      "norm_label": "instructions.md (shared)"
+      "community": 10,
+      "norm_label": "instructions.md (shared)",
+      "id": "shared_instructions_md"
     },
     {
       "label": "CLAUDE-EXTENSIONS.md template",
@@ -2819,9 +2828,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "claude_extensions_md",
-      "community": 9,
-      "norm_label": "claude-extensions.md template"
+      "community": 10,
+      "norm_label": "claude-extensions.md template",
+      "id": "claude_extensions_md"
     },
     {
       "label": "CODEX-EXTENSIONS.md template",
@@ -2832,9 +2841,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "codex_extensions_md",
-      "community": 9,
-      "norm_label": "codex-extensions.md template"
+      "community": 10,
+      "norm_label": "codex-extensions.md template",
+      "id": "codex_extensions_md"
     },
     {
       "label": "GEMINI-EXTENSIONS.md template",
@@ -2845,9 +2854,9 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "gemini_extensions_md",
-      "community": 9,
-      "norm_label": "gemini-extensions.md template"
+      "community": 10,
+      "norm_label": "gemini-extensions.md template",
+      "id": "gemini_extensions_md"
     },
     {
       "label": "Claude settings.json template",
@@ -2858,21 +2867,51 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
-      "id": "settings_json_template",
-      "community": 3,
-      "norm_label": "claude settings.json template"
+      "community": 2,
+      "norm_label": "claude settings.json template",
+      "id": "settings_json_template"
     }
   ],
   "links": [
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
+      "source_location": "L20",
+      "weight": 1.0,
+      "source": "users_scott_src_projects_agents_config_src_user_agents_skills_condition_based_waiting_example_ts",
+      "target": "condition_based_waiting_example_waitforevent",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
+      "source_location": "L60",
+      "weight": 1.0,
+      "source": "users_scott_src_projects_agents_config_src_user_agents_skills_condition_based_waiting_example_ts",
+      "target": "condition_based_waiting_example_waitforeventcount",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/user/.agents/skills/condition-based-waiting/example.ts",
+      "source_location": "L111",
+      "weight": 1.0,
+      "source": "users_scott_src_projects_agents_config_src_user_agents_skills_condition_based_waiting_example_ts",
+      "target": "condition_based_waiting_example_waitforeventmatch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "example.ts",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "example_ts",
-      "target": "condition_based_waiting_example_waitforevent",
-      "confidence_score": 1.0
+      "target": "condition_based_waiting_example_waitforevent"
     },
     {
       "relation": "contains",
@@ -2880,9 +2919,9 @@
       "source_file": "example.ts",
       "source_location": "L60",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "example_ts",
-      "target": "condition_based_waiting_example_waitforeventcount",
-      "confidence_score": 1.0
+      "target": "condition_based_waiting_example_waitforeventcount"
     },
     {
       "relation": "contains",
@@ -2890,9 +2929,9 @@
       "source_file": "example.ts",
       "source_location": "L111",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "example_ts",
-      "target": "condition_based_waiting_example_waitforeventmatch",
-      "confidence_score": 1.0
+      "target": "condition_based_waiting_example_waitforeventmatch"
     },
     {
       "relation": "references",
@@ -6170,5 +6209,5 @@
       "source_file": "src/user/.claude/README.md"
     }
   ],
-  "built_at_commit": "622b093e3c988bf03f389e99c62587340029a8c4"
+  "built_at_commit": "cb25670616ae3631914d22e023c0da1ba6caffb9"
 }

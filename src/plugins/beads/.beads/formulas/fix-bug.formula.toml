@@ -244,55 +244,50 @@ Check filesystem (committed test) and step-bead notes.
 [[steps]]
 id    = "green-loop"
 name  = "green-loop"
-title = "Green-loop: fix the root cause via RALF-IT"
+title = "Green-loop: fix via label-driven RALF dispatch"
 needs = ["red-tests"]
 description = """
-Implement the bug fix (green phase) via RALF-IT iterative refinement.
+Implement the bug fix using label-driven skill dispatch.
 Model: claude-opus-4-7  Effort: medium
 
 ## Inputs
-- Root-cause note from diagnose step-bead notes (CRITICAL: fix the cause, not symptom)
-- Committed failing regression test from red-tests
+- Root-cause note from diagnose step-bead notes
+- Bead spec from: bd show {{bead-id}}
 - Worktree path from: worktree-path-* label on molecule
-- Prior RALF-IT state: RALF-IT-ITER:<n>/<MAX> in step-bead notes (default 0)
 
-## RALF-IT loop
+## Dispatch contract
 
-MAX_ITERATIONS = 5 (override: iteration-cap-green-loop-<n> label — SOLE override path)
+Check the bead's RALF signal before dispatching:
 
-For each iteration:
+  bd label list {{bead-id}} --json
 
-1. Dispatch bead-implementor to implement the fix:
-   - Effort: high on iter 1, medium on iters 2+
-   - MUST fix the ROOT CAUSE from the diagnose note. Do not patch symptoms.
-   - Minimum change to make the regression test pass.
-   - Do not refactor unrelated code or add features.
-   - Run full test suite — not just the regression test.
-     A fix that breaks other tests is a new bug, not a fix.
+- If label `ralf:required` is present:
+    invoke `ralf-implement` with target `{{bead-id}}`
 
-2. Run quality gate (build/typecheck/lint/test).
+    `ralf-implement` owns only the inner quality loop: iteration,
+    independence, adversarial posture, and convergence.
 
-3. Run foreign-eyes review:
-   - Iter 1: Codex (gpt-5.5)
-   - Iter 2: Gemini (gemini-2.5-pro)
-   - Iter 3+: pure-Claude fresh-eyes
-   Record degradation: FOREIGN-EYES-ITER-<n>: codex=<status>, gemini=<status>
+    Optional cycle override comes from label `ralf:cycles=N`.
+    If absent or invalid, `ralf-implement` uses its own internal default.
 
-4. When review-level:deep: run adversarial-codex after gate.
+- Otherwise:
+    invoke `superpowers:test-driven-development` first,
+    then apply the appropriate domain/debugging implementation skill.
 
-5. Persist: bd update <step-bead-id> --append-notes "RALF-IT-ITER:<n>/{{MAX}}"
+Record the dispatch decision for audit:
 
-After loop:
-- Run simplify once on the full diff.
-- Run quality-reviewer (claude-opus-4-7[1m]) on the full bead diff.
-- If foreign-eyes degraded in 2+ of N iterations: flag-human.
+  bd comments add {{bead-id}} "implement-fix: dispatched <skill-name>"
+
+Rules (regardless of dispatched path):
+- fix root cause, not just symptom
+- minimum viable fix only
+- no speculative refactors or unrelated feature work
 
 ## Definition of Done
-Regression test passes. Full test suite passes. Build/typecheck/lint pass.
-RALF-IT reports complete. Coverage meets threshold.
+Root cause fixed with regression protection and passing quality gates.
 
 ## Idempotent re-entry
-Read RALF-IT-ITER: marker. Resume at n+1. Crash mid-iter: retry failed iteration.
+Re-check labels and dispatch per current bead state at step start.
 """
 
 # =============================================================================

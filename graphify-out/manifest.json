@@ -1,254 +1,278 @@
 {
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/condition-based-waiting/example.ts": {
-    "mtime": 1773598773.6747828,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/condition-based-waiting/example.ts": {
+    "mtime": 1777973256.5162413,
     "hash": "8e502a8c1e9c7de15967202615d241d5"
   },
-  "/Users/scott/src/projects/agents-config/README.md": {
-    "mtime": 1777827819.8022661,
-    "hash": "a6af98584fac73e37b7d9dccb65c7e00"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/README.md": {
+    "mtime": 1777974617.939721,
+    "hash": "a41ed944f4a60874545cd7cfea425933"
   },
-  "/Users/scott/src/projects/agents-config/CONTRIBUTING.md": {
-    "mtime": 1776465826.9745297,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/CONTRIBUTING.md": {
+    "mtime": 1777973256.4913363,
     "hash": "3a75a7034a7cec24dca0400ae77c1beb"
   },
-  "/Users/scott/src/projects/agents-config/AGENTS.md": {
-    "mtime": 1777827819.8019128,
-    "hash": "53e6136a6a4d6bfa737bb3df9f952a8c"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/AGENTS.md": {
+    "mtime": 1777973256.49091,
+    "hash": "afbcd6886e436de60b5273f55ff12b4e"
   },
-  "/Users/scott/src/projects/agents-config/CLAUDE.md": {
-    "mtime": 1777838589.430316,
-    "hash": "3a7fbbec25220794fe66a5803f75a483"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/CLAUDE.md": {
+    "mtime": 1777973256.4911137,
+    "hash": "ed6544062db687cb420ef10493803b55"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-02-15-refresh-agents-md-design.md": {
-    "mtime": 1771156602.2594736,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-02-15-refresh-agents-md-design.md": {
+    "mtime": 1777973256.492626,
     "hash": "783f85814c935dc1df63b4bb9489813b"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-02-15-install-script-design.md": {
-    "mtime": 1771151364.3808606,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-02-15-install-script-design.md": {
+    "mtime": 1777973256.49238,
     "hash": "a541087bb7a94e91414d8c36fe9fe3f6"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-03-15-ralf-foreign-agents-design.md": {
-    "mtime": 1773592419.4005318,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-03-15-ralf-foreign-agents-design.md": {
+    "mtime": 1777973256.493063,
     "hash": "00609163e694f9d41722151eb8009b5c"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-02-15-bugfix-skill-design.md": {
-    "mtime": 1771154087.8640835,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-02-15-bugfix-skill-design.md": {
+    "mtime": 1777973256.4921992,
     "hash": "7602d1bdd9d5de45272e2f3acf49d79e"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-03-15-ralf-foreign-agents-plan.md": {
-    "mtime": 1773591619.019698,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-03-15-ralf-foreign-agents-plan.md": {
+    "mtime": 1777973256.4933228,
     "hash": "b8d3ed17025661c8585124e214650985"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-03-15-multi-tool-install-plan.md": {
-    "mtime": 1773598786.3035803,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-03-15-multi-tool-install-plan.md": {
+    "mtime": 1777973256.4928527,
     "hash": "01dbd343a6cd3882cec23a8b7d67bea4"
   },
-  "/Users/scott/src/projects/agents-config/docs/plans/2026-03-22-wait-for-pr-comments-plan.md": {
-    "mtime": 1777568074.9139426,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/plans/2026-03-22-wait-for-pr-comments-plan.md": {
+    "mtime": 1777973256.4936042,
     "hash": "6ffd3085e64c97295eac28ea35be443a"
   },
-  "/Users/scott/src/projects/agents-config/docs/specs/2026-03-22-wait-for-pr-comments-design.md": {
-    "mtime": 1777568074.9142442,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/specs/2026-03-22-wait-for-pr-comments-design.md": {
+    "mtime": 1777973256.4938285,
     "hash": "816d7166e5e1d5b164a0afc65142607b"
   },
-  "/Users/scott/src/projects/agents-config/docs/specs/2026-04-19-ralf-it-form-reevaluation-design.md": {
-    "mtime": 1777568074.9144464,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/specs/2026-04-19-ralf-it-form-reevaluation-design.md": {
+    "mtime": 1777973256.494153,
     "hash": "6ecc6d0a730b6713135cce071eb80236"
   },
-  "/Users/scott/src/projects/agents-config/docs/specs/2026-04-26-pr-review-skill-redesign.md": {
-    "mtime": 1777576735.9603713,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/specs/bead-pipeline-architecture.md": {
+    "mtime": 1777973256.495066,
+    "hash": "b99e1a584cb8128bec31a62151410ad3"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/specs/2026-04-26-pr-review-skill-redesign.md": {
+    "mtime": 1777973256.4945421,
     "hash": "476782a8684fffdd35f66b316ef22cac"
   },
-  "/Users/scott/src/projects/agents-config/docs/superpowers/plans/2026-04-17-plugin-architecture.md": {
-    "mtime": 1776436879.1170163,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/superpowers/plans/2026-04-17-plugin-architecture.md": {
+    "mtime": 1777973256.4953456,
     "hash": "9cc8d371e657ebd9f1fa20e2e962f3ab"
   },
-  "/Users/scott/src/projects/agents-config/docs/superpowers/specs/2026-04-17-plugin-architecture-design.md": {
-    "mtime": 1776430735.6215801,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/docs/superpowers/specs/2026-04-17-plugin-architecture-design.md": {
+    "mtime": 1777973256.4956489,
     "hash": "47c0ff07b0f923c1461a1010a4e7d0df"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/AGENTS.md": {
-    "mtime": 1776530654.3119028,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/AGENTS.md": {
+    "mtime": 1777973256.509728,
     "hash": "c67d876e6ed11666d4a054235434226b"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.agents/agents/bead-verifier.md": {
-    "mtime": 1777566826.0510292,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/agents/bead-verifier.md": {
+    "mtime": 1777973256.5102675,
     "hash": "ad03b723cbf4a892ab10092102351972"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.agents/skills/run-queue/SKILL.md": {
-    "mtime": 1776624625.6479766,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/agents/bead-implementor.md": {
+    "mtime": 1777973256.510056,
+    "hash": "ac00c58ef7e844559096c306e6cb25d6"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/skills/run-queue/SKILL.md": {
+    "mtime": 1777973256.5112202,
     "hash": "5a5e3af13a79cb97bd769359609e7d66"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.agents/skills/implement-bead/SKILL.md": {
-    "mtime": 1776639300.421745,
-    "hash": "8e02c83b190af0832858e43c19f227ae"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/skills/implement-bead/SKILL.md": {
+    "mtime": 1777974787.8500514,
+    "hash": "66331924eff0c831343f5785ae055666"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.agents/skills/start-bead/SKILL.md": {
-    "mtime": 1776639300.4219694,
-    "hash": "0ae359214d7f78f2d78996d843711dfc"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/skills/start-bead/SKILL.md": {
+    "mtime": 1777973256.51171,
+    "hash": "ca6d80d938c4a6f5aef6bfb20a71d5c9"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.agents/skills/create-bead/SKILL.md": {
-    "mtime": 1776633447.9461172,
-    "hash": "3cb174e0e6a57a7478f3e042ceaf4e69"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.agents/skills/create-bead/SKILL.md": {
+    "mtime": 1777973256.510562,
+    "hash": "6474f94b6784f012169133d811e8f803"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.claude/rules/beads.md": {
-    "mtime": 1777568074.91603,
-    "hash": "07bb3020a1790ec8a04197367270c75b"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.claude/rules/beads.md": {
+    "mtime": 1777974869.3041644,
+    "hash": "dde5ae1faecaab172ca0792073646030"
   },
-  "/Users/scott/src/projects/agents-config/src/plugins/beads/.claude/rules/delivery.md": {
-    "mtime": 1777568074.9161863,
-    "hash": "455547d86b4c24a531ff2d7829842b49"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.claude/rules/delivery.md": {
+    "mtime": 1777973256.513828,
+    "hash": "e41e55bffbd554456130a197582e5038"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.gemini/README.md": {
-    "mtime": 1776465826.9761138,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/plugins/beads/.claude/commands/implement-bead.md": {
+    "mtime": 1777973256.5133889,
+    "hash": "0ebbc3d32bbef7eba0eaa6b083c40df1"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.gemini/README.md": {
+    "mtime": 1777973256.526333,
     "hash": "74763a79f64443417b6a5ae62d0ea11f"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.gemini/AGENTS.md": {
-    "mtime": 1776465826.976033,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.gemini/AGENTS.md": {
+    "mtime": 1777973256.5258992,
     "hash": "13a1ca6f7241aa23c344235da429902f"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/README.md": {
-    "mtime": 1776465826.9753003,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/README.md": {
+    "mtime": 1777973256.5147178,
     "hash": "90517658baae0ae36657d3e6489d83fc"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/AGENTS.md": {
-    "mtime": 1776465826.9750981,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/AGENTS.md": {
+    "mtime": 1777973256.5143077,
     "hash": "7dd717499abbef5d2a69f19588e155d8"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/agents/tech-lead.md": {
-    "mtime": 1777565739.370022,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/agents/tech-lead.md": {
+    "mtime": 1777973256.5154376,
     "hash": "22e4e09010aff71404da2e0c65b980e0"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/agents/quality-reviewer.md": {
-    "mtime": 1777719093.694236,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/agents/quality-reviewer.md": {
+    "mtime": 1777973256.515165,
     "hash": "07bb59f340823aacc0d0df891ebe83bc"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/self-improving-agent/SKILL.md": {
-    "mtime": 1774784949.511881,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/self-improving-agent/SKILL.md": {
+    "mtime": 1777973256.518689,
     "hash": "23527820b4e0e6a64f2863739e2c5a1c"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/testing-anti-patterns/SKILL.md": {
-    "mtime": 1777576735.9609184,
-    "hash": "64a3d620d389448c7009aeb33040a81e"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/testing-anti-patterns/SKILL.md": {
+    "mtime": 1777973256.5194414,
+    "hash": "0252d85ddf632c2c9a81680de74c2e0d"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/verify-checklist/SKILL.md": {
-    "mtime": 1775313252.3338275,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/verify-checklist/SKILL.md": {
+    "mtime": 1777973256.5196621,
     "hash": "60e8982bddd8a650f01161a2bf544015"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md": {
-    "mtime": 1777719093.6951768,
-    "hash": "3d2c4dfbdebf408ca719817f488a9d6d"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md": {
+    "mtime": 1777973256.5184355,
+    "hash": "7e54596b4403561570845ff535698341"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/optimize-agents-md/SKILL.md": {
-    "mtime": 1773602631.028759,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/optimize-agents-md/SKILL.md": {
+    "mtime": 1777973256.5170064,
     "hash": "3cba86a8aec24582346160984972bbc4"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/merge-guard/SKILL.md": {
-    "mtime": 1777568074.9167583,
-    "hash": "2d2d2ff0bda2bb560753a121c00eff31"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/merge-guard/SKILL.md": {
+    "mtime": 1777973256.5165389,
+    "hash": "bf38dd6d2979734165fd0cb5f8706139"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/ralf-it/implementer-prompt.md": {
-    "mtime": 1773598773.6761422,
-    "hash": "6e92abc59b0fc1d5e36b487c3623f241"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-it/SKILL.md": {
+    "mtime": 1777974544.752329,
+    "hash": "f35a57448c891210d94680b9fe838965"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/ralf-it/foreign-agent-prompt.md": {
-    "mtime": 1775923390.9014776,
-    "hash": "73cbfcbdb7bb85976a9b79465ef5314f"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/test-review/SKILL.md": {
+    "mtime": 1777973256.5192027,
+    "hash": "24efb2b5a5d99b58c767b073dc4b01ca"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/ralf-it/foreign-eyes-prompt.md": {
-    "mtime": 1775923390.9017563,
-    "hash": "db0e741dd95f855d5bd262438b4421d8"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-implement/implementer-prompt.md": {
+    "mtime": 1777974544.74632,
+    "hash": "097e2b37168d7323d02a7321e19092e6"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/ralf-it/SKILL.md": {
-    "mtime": 1777719093.6948109,
-    "hash": "7d23eb2ee16b7c80bdceea5167234c44"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-implement/foreign-agent-prompt.md": {
+    "mtime": 1777974858.8748262,
+    "hash": "26b9036ed9a2beab5dbe426cdc4fb8b8"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/ralf-it/fresh-eyes-prompt.md": {
-    "mtime": 1773598773.6759527,
-    "hash": "f4af30ed04518a0e7f41702a9c07f991"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-implement/foreign-eyes-prompt.md": {
+    "mtime": 1777974858.8770108,
+    "hash": "b203baf9ed9006ab079c87f52dd744e1"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/test-review/SKILL.md": {
-    "mtime": 1777797289.7892063,
-    "hash": "03f9ea700a6dc11a135e3f91807b7e9a"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-implement/SKILL.md": {
+    "mtime": 1777974380.463333,
+    "hash": "e114a4d8ddd78da7be74433c6454f63f"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/condition-based-waiting/SKILL.md": {
-    "mtime": 1773602670.2229402,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-implement/fresh-eyes-prompt.md": {
+    "mtime": 1777974544.7483,
+    "hash": "9442abc739238e5912f03a83bbbdea74"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/condition-based-waiting/SKILL.md": {
+    "mtime": 1777973256.5159812,
     "hash": "508341b9914f4a19c04fd881e5107d08"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/writing-unit-tests/SKILL.md": {
-    "mtime": 1777576735.9619126,
-    "hash": "1a6a21ef52a94781249b910633b0084f"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-review/SKILL.md": {
+    "mtime": 1777974544.744051,
+    "hash": "5dff9f0183ba72ef42091d690895e08c"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/simplify/SKILL.md": {
-    "mtime": 1777712254.362319,
-    "hash": "28e9f21079b9e99d02c3dd946c4956be"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/ralf-review/fresh-eyes-prompt.md": {
+    "mtime": 1777974544.750363,
+    "hash": "be7100596a5a108ea0e2448969dd01a4"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/bugfix/SKILL.md": {
-    "mtime": 1777797289.7888162,
-    "hash": "98a2da83c88cec44cdadaeacc8a7a9a0"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/writing-unit-tests/SKILL.md": {
+    "mtime": 1777973256.521926,
+    "hash": "a0dd34a2bed925c242532c7bd5e119e6"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/SKILL.md": {
-    "mtime": 1777719093.6958513,
-    "hash": "f3b336c6adc5fce9820bf83ff0a7b5b6"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/simplify/SKILL.md": {
+    "mtime": 1777973256.5189505,
+    "hash": "d9c8cda39d45ae638d463f3100cb0dce"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/README.md": {
-    "mtime": 1776465826.9757652,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/bugfix/SKILL.md": {
+    "mtime": 1777973256.5157526,
+    "hash": "496726f07cd507d4f5e9879ff301f1f1"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.agents/skills/wait-for-pr-comments/SKILL.md": {
+    "mtime": 1777973256.519939,
+    "hash": "0207526046b5ed381fd5430a880486b7"
+  },
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/README.md": {
+    "mtime": 1777973256.5229578,
     "hash": "fc837a1187a1054134dfa92964fc31bb"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/AGENTS.md": {
-    "mtime": 1776465826.9756656,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/AGENTS.md": {
+    "mtime": 1777973256.5221138,
     "hash": "2fabfe5bfe8e1ea6a632409d7f2b0b7c"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/CLAUDE.md": {
-    "mtime": 1769341774.9758568,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/CLAUDE.md": {
+    "mtime": 1777973256.5227075,
     "hash": "70b93154244ea75ea87bf2ea1d37efc6"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/git-commits.md": {
-    "mtime": 1775319150.2889311,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/git-commits.md": {
+    "mtime": 1777973256.5245821,
     "hash": "73b81595160848ff4d601bce968716de"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/worktrees.md": {
-    "mtime": 1776539969.4664648,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/worktrees.md": {
+    "mtime": 1777973256.5249403,
     "hash": "c14dbefbf929c737559ba4e4f4a4c863"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/delegation.md": {
-    "mtime": 1777797289.7896156,
-    "hash": "ee4d6f2258ea9ab95801400b77d7eaad"
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/delegation.md": {
+    "mtime": 1777974617.9377158,
+    "hash": "d3a615ec6c66c15b158c3817f854380f"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/completion-gate.md": {
-    "mtime": 1777719093.696251,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/completion-gate.md": {
+    "mtime": 1777973256.5240576,
     "hash": "081ae508dd36303f8558a0f8e9e53a24"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/subagents.md": {
-    "mtime": 1775519843.2960289,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/subagents.md": {
+    "mtime": 1777973256.5247612,
     "hash": "940f1ecab5ec54093d29c4a2664cbbc2"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/delivery.md": {
-    "mtime": 1777568074.9180996,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/delivery.md": {
+    "mtime": 1777973256.5244107,
     "hash": "f4ea7ef2f0a30c42ae053283f9b48dd3"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/rules/codex-routing.md": {
-    "mtime": 1775923390.9018512,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/rules/codex-routing.md": {
+    "mtime": 1777973256.5238738,
     "hash": "b2cc247c8ddc11712e2c9337e30bfcb5"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/commands/optimize-my-skill.md": {
-    "mtime": 1773280274.1285594,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/commands/optimize-my-skill.md": {
+    "mtime": 1777973256.5234487,
     "hash": "2d0f9ec8cf7b6b7196162e901a048767"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/commands/optimize-my-agent.md": {
-    "mtime": 1769341774.9733803,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/commands/optimize-my-agent.md": {
+    "mtime": 1777973256.5232005,
     "hash": "e5219a1c2896dbfd90b1db1e520cc1ff"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.claude/commands/refresh-agents-md.md": {
-    "mtime": 1771156957.4539263,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.claude/commands/refresh-agents-md.md": {
+    "mtime": 1777973256.52367,
     "hash": "a0033ebbae236b575bd4d7a3593f1921"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.codex/README.md": {
-    "mtime": 1776465826.975946,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.codex/README.md": {
+    "mtime": 1777973256.525754,
     "hash": "3afaa0abf7989984659578593a219932"
   },
-  "/Users/scott/src/projects/agents-config/src/user/.codex/AGENTS.md": {
-    "mtime": 1776465826.9758666,
+  "/Users/scott/src/projects/agents-config/.claude/worktrees/feat-lu3.4-ralf-split/src/user/.codex/AGENTS.md": {
+    "mtime": 1777973256.5252874,
     "hash": "93c78c334613b78fe38bec1757aac411"
   }
 }

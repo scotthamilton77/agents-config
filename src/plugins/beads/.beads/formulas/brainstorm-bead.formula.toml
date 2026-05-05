@@ -164,34 +164,23 @@ Do NOT start implementing. Do NOT create a worktree. This is a spec step.
 
 [[steps]]
 id    = "ralf-spec-review"
-title = "Adversarial spec review: fresh-eyes passes on the written spec"
+title = "Adversarial spec review: dispatch ralf-review"
 needs = ["write-spec"]
 description = """
-Dispatch a fresh-eyes subagent to adversarially review the spec for
-completeness, ambiguity, feasibility, and consistency.
+Dispatch `ralf-review` against this bead's spec target.
 
-This is NOT a RALF-IT code review. It is a document review.
-Dispatch the subagent with these instructions:
+Skill: ralf-review
+Target: {{bead-id}}
 
-  "Review the spec for bead {{bead-id}} as a skeptical senior engineer.
-   Read it with: bd show {{bead-id}}
-   Assess:
-   - Are the acceptance criteria complete and testable?
-   - Are there gaps, contradictions, or ambiguities?
-   - Are there unstated assumptions that could cause implementation surprises?
-   - Is anything out-of-scope that should be in scope, or vice versa?
-   - Are there feasibility concerns with the approach described?
-   Report findings as a structured list. Do NOT implement anything."
+`ralf-review` runs bounded adversarial fresh-eyes cycles against the spec
+(completeness, ambiguity, feasibility, consistency).
 
-Review the subagent's findings. For each finding:
-  - If valid and addressable: note what needs revision
-  - If invalid or already covered: note why
+Review reported findings:
+- if findings are valid and actionable, return to write-spec and revise
+- if findings are non-significant, proceed
 
-If significant findings exist, return to write-spec to revise.
-Run at most 2 spec review cycles. If still imperfect after 2 cycles,
-proceed with remaining concerns documented as open questions in the bead.
-
-A perfect spec is not required. A clear enough spec is.
+Run at most 2 spec-review cycles. If concerns remain after cycle cap,
+document them explicitly as open questions in the bead notes.
 """
 
 # =============================================================================
@@ -200,47 +189,42 @@ A perfect spec is not required. A clear enough spec is.
 
 [[steps]]
 id    = "finalize"
-title = "Finalize: address findings, mark bead implementation-ready"
+title = "Finalize: apply review findings, triage RALF, mark implementation-ready"
 needs = ["ralf-spec-review"]
 description = """
-Incorporate any valid spec review findings into the bead, then mark it ready.
+Incorporate valid spec-review findings, perform RALF triage, then mark ready.
 
-1. Update the bead with any spec revisions from the review:
+1. Update bead acceptance + notes with final spec revisions:
      bd update {{bead-id}} --acceptance="<revised criteria>"
      bd update {{bead-id}} --notes="<revised spec>"
 
-2. Add labels to mark the bead's state:
+2. RALF triage — if implementation risk warrants iterative refinement,
+   stamp RALF labels.
+
+   If the spec involves any of the following:
+   - security-sensitive code
+   - authentication/authorization
+   - payment processing
+   - data migration
+   - architectural shift
+   - multi-file coordinated change
+   - explicit user directive for RALF
+
+   then:
+     bd label add {{bead-id}} ralf:required
+
+   Optional cycle override (when a non-default cycle count is justified):
+     bd label remove {{bead-id}} ralf:cycles=*
+     bd label add {{bead-id}} ralf:cycles=N
+
+3. Add standard readiness labels:
      bd label add {{bead-id}} brainstormed
      bd label add {{bead-id}} implementation-ready
      bd label add {{bead-id}} implementation-readied-session-<sid>
 
-   Where <sid> is the first 8 hex characters of your current Claude
-   session ID (visible in the <session-info> system tag as `sessionId`).
-   This label lets `start-bead` Route A detect that the current session
-   was one that applied `implementation-ready`, so it can gate against
-   silent in-session continuation. If a later session re-applies
-   `implementation-ready`, it should stamp its own
-   `implementation-readied-session-<its-sid>` label as well; multiple
-   session-marker labels may coexist on the same bead — `bd label add` is
-   additive, not overwriting. Route A only checks whether the marker for
-   the CURRENT session is present; older markers are harmless.
+4. Report implementation-ready hand-off and stop unless user explicitly
+   authorizes immediate implementation in the current session.
 
-3. Report to the user:
-     "Bead {{bead-id}} is now implementation-ready.
-      Acceptance criteria: [list]
-
-      This session stops here. Do NOT continue to implementation in this
-      session unless you explicitly authorize it. The default path is:
-      another agent (run-queue, in a dedicated session) picks up the
-      implementation.
-
-      If you want to implement now in the current session instead, say so
-      explicitly ("implement it now", "do {{bead-id}} next", etc.) and I
-      will invoke `implement-bead`."
-
-   Then STOP. Do not invoke `implement-bead` unless the user replies with
-   explicit authorization within this session.
-
-4. Burn this wisp:
+5. Burn this wisp:
      bd mol burn <this-mol-id>
 """

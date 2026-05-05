@@ -183,64 +183,49 @@ Check filesystem (committed tests) and step-bead notes. Continue from prior stat
 [[steps]]
 id    = "green-loop"
 name  = "green-loop"
-title = "Green-loop: RALF-IT implementation until tests pass"
+title = "Green-loop: implement via label-driven RALF dispatch"
 needs = ["red-tests"]
 description = """
-Implement the feature (TDD green phase) via RALF-IT iterative refinement.
+Implement the feature using label-driven skill dispatch.
 Model: claude-opus-4-7  Effort: medium
 
-## Preloaded skills
-RALF-IT methodology (embedded in controller)
-
 ## Inputs
-- Committed failing tests from red-tests stage
 - Bead spec from: bd show {{bead-id}}
 - Worktree path from: worktree-path-* label on molecule
-- Prior RALF-IT state: RALF-IT-ITER:<n>/<MAX> in step-bead notes (default 0)
 
-## RALF-IT loop
+## Dispatch contract
 
-MAX_ITERATIONS = 5 (override: iteration-cap-green-loop-<n> label — SOLE override path)
+Check the bead's RALF signal before dispatching:
 
-For each iteration:
+  bd label list {{bead-id}} --json
 
-1. Dispatch bead-implementor to write minimum code to make tests pass:
-   - Effort: high on iter 1, medium on iters 2+
-   - Pass: worktree path, bead spec, iteration number, prior state
+- If label `ralf:required` is present:
+    invoke `ralf-implement` with target `{{bead-id}}`
 
-2. Run quality gate (build/typecheck/lint/test) — from project-config.toml [gates].
-   Gate must pass before review.
+    `ralf-implement` owns only the inner quality loop: iteration,
+    independence, adversarial posture, and convergence.
 
-3. Run foreign-eyes review:
-   - Iter 1: Codex (gpt-5.5, or codex_green_loop_iter1_model from project-config.toml)
-   - Iter 2: Gemini (gemini-2.5-pro, or gemini_green_loop_iter2_model)
-   - Iter 3+: pure-Claude fresh-eyes subagent
-   Record degradation: FOREIGN-EYES-ITER-<n>: codex=<status>, gemini=<status>
+    Optional cycle override comes from label `ralf:cycles=N`.
+    If absent or invalid, `ralf-implement` uses its own internal default.
 
-4. When review-level:deep: run /codex:adversarial-review --model gpt-5.4 after gate.
-   When review-level:none: skip per-iteration code-review and simplify.
+- Otherwise:
+    invoke `superpowers:test-driven-development` first,
+    then the appropriate domain skill for implementation.
 
-5. Persist iteration marker AFTER iteration completes:
-   bd update <step-bead-id> --append-notes "RALF-IT-ITER:<n>/{{MAX}}"
+Record the dispatch decision for audit:
 
-6. Converge or loop: if reviewers approve and tests green, exit loop.
-   Otherwise continue to next iteration.
+  bd comments add {{bead-id}} "implement: dispatched <skill-name>"
 
-After loop:
-- Run simplify skill once on the full diff (not per-iteration).
-- Run quality-reviewer (claude-opus-4-7[1m]) on the full bead diff.
-- If foreign-eyes degraded in 2+ of N iterations: flag-human.
-  Stamp: foreign-eyes-degraded:<n>/<N> on source bead.
-
-Coverage threshold: from project-config.toml [coverage].threshold (default 80%)
-or coverage-threshold-<n> label on bead.
+Rules (regardless of dispatched path):
+- minimum viable implementation only
+- no speculative features
+- no over-engineering for hypothetical requirements
 
 ## Definition of Done
-RALF-IT reports complete; tests green; coverage meets target; build/typecheck/lint pass.
+Required feature behavior implemented with passing quality gates.
 
 ## Idempotent re-entry
-Read RALF-IT-ITER: marker from step-bead notes. Resume at n+1.
-Crash mid-iteration: marker at prior value, retry failed iteration.
+Re-check labels and dispatch per current bead state at step start.
 """
 
 # =============================================================================
@@ -356,7 +341,7 @@ superpowers:finishing-a-development-branch
 2. PR body MUST include:
    - Bead reference: {{bead-id}} and bead title
    - AC (full list with [m]/[h] tags)
-   - RALF-IT iteration summary (from green-loop step-bead notes)
+   - implementation iteration summary (from green-loop step-bead notes)
    - verify-ac validation report
    - Bug beads filed during verify-ac (if any)
    - Human-required AC follow-up bead references (if any [h] lines)
