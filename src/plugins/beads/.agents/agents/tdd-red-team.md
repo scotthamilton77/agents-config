@@ -10,7 +10,7 @@ description: |-
   Examples:
   <example>
   Context: implement-feature red-tests stage — multi-AC failing tests for a feature bead.
-  user: "Author failing tests for these AC bullets in the worktree at /tmp/wt-foo. Test command: pytest -q. Report path: /repo/.beads/worker-audit/agents-config-mol-x.r1/tdd-red-team.yaml"
+  user: "Author failing tests for these AC bullets in the worktree at /tmp/wt-foo. Test command: pytest -q. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/tdd-red-team.yaml"
   assistant: "Dispatching tdd-red-team to write the AC-driven failing tests, run pytest to confirm they fail, commit tests-only, and emit the worker-report YAML."
   <commentary>
   This is the canonical implement-feature dispatch: the agent enumerates AC bullets, writes one or more failing tests per bullet, confirms failure, and reports.
@@ -18,7 +18,7 @@ description: |-
   </example>
   <example>
   Context: fix-bug red-tests stage — single regression test capturing a diagnosed bug.
-  user: "Write a regression test capturing this bug in the worktree at /tmp/wt-bar. Root cause note: <upstream-diagnoser-output>. Test command: npm test. Report path: /repo/.beads/worker-audit/agents-config-mol-y.r1/tdd-red-team.yaml"
+  user: "Write a regression test capturing this bug in the worktree at /tmp/wt-bar. Root cause note: <upstream-diagnoser-output>. Test command: npm test. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/tdd-red-team.yaml"
   assistant: "Dispatching tdd-red-team in fix-bug mode to write a single failing regression test, confirm failure, commit, and emit the report."
   <commentary>
   fix-bug mode is single-regression: one targeted failing test that captures the symptom, informed by the upstream diagnoser's root_cause_note.

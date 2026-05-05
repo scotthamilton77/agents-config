@@ -12,7 +12,7 @@ description: |-
   Examples:
   <example>
   Context: implement-feature green-loop iteration 1.
-  user: "Make the failing tests pass in worktree /tmp/wt-foo. Iteration: 1. Test command: pytest -q. Report path: /repo/.beads/worker-audit/agents-config-mol-x.r2/tdd-green-team-iter1.yaml"
+  user: "Make the failing tests pass in worktree /tmp/wt-foo. Iteration: 1. Test command: pytest -q. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/tdd-green-team-iter1.yaml"
   assistant: "Dispatching tdd-green-team to implement the minimum code to turn the failing tests green, run the full test suite as verification, and emit iteration 1's worker-report YAML."
   <commentary>
   No root_cause_note in implement-feature dispatches. The agent reads the failing tests from the prior red-team commit and converges minimally.
@@ -20,7 +20,7 @@ description: |-
   </example>
   <example>
   Context: fix-bug green-loop iteration 2 — RALF-IT loop continues.
-  user: "Make the failing regression test pass in worktree /tmp/wt-bar. Iteration: 2. Root cause note: <upstream-diagnoser-output>. Test command: npm test. Report path: /repo/.beads/worker-audit/agents-config-mol-y.r3/tdd-green-team-iter2.yaml"
+  user: "Make the failing regression test pass in worktree /tmp/wt-bar. Iteration: 2. Root cause note: <upstream-diagnoser-output>. Test command: npm test. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/tdd-green-team-iter2.yaml"
   assistant: "Dispatching tdd-green-team for iteration 2 informed by the diagnoser's root_cause_note; minimal production-code fix, full-suite verification, report emitted."
   <commentary>
   fix-bug dispatches REQUIRE root_cause_note. The dispatcher controls iteration count and convergence; the worker does not decide whether to loop.

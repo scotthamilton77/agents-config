@@ -11,7 +11,7 @@ description: |-
   Examples:
   <example>
   Context: fix-bug diagnose stage — failing test plus stack trace.
-  user: "Diagnose the bug in worktree /tmp/wt-bar. Bug description: <text>. Failing test: tests/test_foo.py::test_bar. Report path: /repo/.beads/worker-audit/agents-config-mol-y.r1/bug-diagnoser.yaml"
+  user: "Diagnose the bug in worktree /tmp/wt-bar. Bug description: <text>. Failing test: tests/test_foo.py::test_bar. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/bug-diagnoser.yaml"
   assistant: "Dispatching bug-diagnoser to reproduce, trace to root cause, and emit a non-empty root_cause_note covering defect, symptom path, and proposed fix direction. No code commits."
   <commentary>
   Diagnoser is single-shot, no iteration. Output is the root_cause_note that downstream tdd-red-team and tdd-green-team consume via the dispatcher's task spec.
@@ -19,7 +19,7 @@ description: |-
   </example>
   <example>
   Context: fix-bug diagnose stage — root cause cannot be identified within scope.
-  user: "Diagnose the intermittent failure in worktree /tmp/wt-baz. Bug description: <text>. Report path: /repo/.beads/worker-audit/agents-config-mol-z.r1/bug-diagnoser.yaml"
+  user: "Diagnose the intermittent failure in worktree /tmp/wt-baz. Bug description: <text>. Report path: <repo-root>/.beads/worker-audit/<step-bead-id>/bug-diagnoser.yaml"
   assistant: "Dispatching bug-diagnoser; if the root cause is unclear it returns status: needs_human with a precise escalation rather than a vague root_cause_note."
   <commentary>
   When the diagnoser cannot identify a root cause, it sets status: needs_human and explains what is unclear — downstream stages cannot make architectural decisions on its behalf.
