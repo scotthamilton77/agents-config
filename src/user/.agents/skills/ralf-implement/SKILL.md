@@ -41,11 +41,12 @@ The caller may pass an explicit max cycle count. If absent, use the default. Rej
 Per cycle:
 1. Implement/fix in current working copy.
 2. Run project quality checks relevant to changed scope.
-3. Run fresh-eyes pass:
+3. Run the mandatory completion gate for changed work: `quality-reviewer` → `simplify` → `verify-checklist`.
+4. Run fresh-eyes pass:
    - cycle 1: foreign-eyes via Codex
    - cycle 2: foreign-eyes via Gemini
    - cycle 3+: pure-Claude fresh-eyes
-4. Apply valid findings and continue until converged.
+5. Apply valid findings and continue until converged.
 
 Foreign-agent failures degrade cleanly to pure fresh-eyes; cycle still counts.
 
@@ -66,6 +67,7 @@ Produce a structured report with:
 - **Cycles run:** `<n>/<max>`
 - **Severity counts:** blocking, critical, major, minor
 - **Foreign-eyes status:** per cycle, including degraded Codex/Gemini runs
+- **Completion gate evidence:** `quality-reviewer`, `simplify`, and `verify-checklist` status for changed work
 - **Changes applied:** significant fixes or completion work
 - **Remaining concerns:** grouped by severity
 

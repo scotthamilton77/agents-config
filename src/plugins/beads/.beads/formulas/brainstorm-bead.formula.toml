@@ -234,7 +234,16 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    Optional cycle override (when a non-default cycle count is justified):
      bd label add {{bead-id}} ralf:cycles=N
 
-3. Add standard readiness labels:
+3. Create required follow-up child beads before readiness:
+   - For every acceptance-criteria line tagged `[h]`, create a child bead
+     under `{{bead-id}}`, label it `human`, and link the source criterion in
+     the child description. These children block later Gate 2 closure until
+     closed with `verified-by-human`.
+   - Create the merge gate child `merge-{{bead-id}}` under `{{bead-id}}` if it
+     does not already exist. This child is closed only by merge-and-cleanup
+     after merge + branch/worktree cleanup.
+
+4. Add standard readiness labels:
      bd label add {{bead-id}} brainstormed
      bd label add {{bead-id}} implementation-ready
      bd label add {{bead-id}} implementation-readied-session-<sid>
@@ -242,9 +251,9 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    `<sid>` is the first 8 hex chars of the session ID that applied
    `implementation-ready`; `start-bead` Route A uses it for same-session gating.
 
-4. Report implementation-ready hand-off and stop unless user explicitly
+5. Report implementation-ready hand-off and stop unless user explicitly
    authorizes immediate implementation in the current session.
 
-5. Burn this wisp:
+6. Burn this wisp:
      bd mol burn <this-mol-id>
 """

@@ -56,6 +56,7 @@ Agent tool (general-purpose, mode: "auto"):
     - Code matches project patterns
     - No TODO/FIXME/HACK comments are introduced unless explicitly required
     - No dead code or unused imports are introduced
+    - Completion gate runs: `quality-reviewer` → `simplify` → `verify-checklist`
 
     ## Your job
     1. Read the original spec and Definition of Done above carefully.
@@ -66,8 +67,9 @@ Agent tool (general-purpose, mode: "auto"):
     6. Invoke the foreign CLI, then evaluate recommendations as advice.
     7. Apply only recommendations that improve target compliance and quality.
     8. Re-run affected quality checks after applying recommendations.
-    9. Commit changes if any were made.
-    10. Report honestly; you have no obligation to agree the work is complete.
+    9. Run the completion gate: `quality-reviewer` → `simplify` → `verify-checklist`.
+    10. Commit changes if any were made.
+    11. Report honestly; you have no obligation to agree the work is complete.
 
     Foreign recommendations are advisory. You are the decision maker; accept or
     reject each recommendation against the spec, DoD, and project patterns.
@@ -118,6 +120,11 @@ Agent tool (general-purpose, mode: "auto"):
     - Error log: `.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log`
     - Accepted recommendations: [list]
     - Rejected recommendations: [list + rationale]
+
+    ### Completion Gate
+    - Quality review: PASS/FAIL
+    - Simplify: PASS/FAIL
+    - Verify checklist: PASS/FAIL
 
     ### Remaining Concerns
     - [Any unresolved risks, grouped by severity]

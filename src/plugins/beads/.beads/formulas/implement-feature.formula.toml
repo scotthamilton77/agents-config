@@ -211,6 +211,10 @@ Check the bead's RALF signal before dispatching:
     step-bead notes, including cycles run, score, severity counts, and
     foreign-eyes status/degradation for every Codex/Gemini cycle.
 
+    If the score is `FAIL`, stop this step: label both the source bead and the
+    green-loop step bead `human`, append the unresolved blocking/critical/major
+    concerns to both notes, and do not advance to `quality-sweep`.
+
 - Otherwise:
     invoke `superpowers:test-driven-development` first,
     then the appropriate domain skill for implementation.
@@ -227,6 +231,13 @@ Persist step output before closing green-loop. Here `<step-bead-id>` is the curr
 
   bd update <step-bead-id> --append-notes "IMPLEMENTATION-REPORT: score=<PASS|PASS_WITH_RESERVATIONS|FAIL>; cycles=<n>/<max>; severity=blocking:<n>,critical:<n>,major:<n>,minor:<n>; summary=<summary from dispatched skill>"
   bd update <step-bead-id> --append-notes "FOREIGN-EYES: cycle-1=<COMPLETED|UNAVAILABLE|TIMED_OUT|QUOTA_EXCEEDED|AUTH_FAILED|NO_OUTPUT|UNUSABLE_OUTPUT|NOT_RUN>; cycle-2=<...>; degraded=<list or none>"
+
+Before closing green-loop, ensure the dispatched implementation path has run
+and recorded the mandatory completion gate for its own changes:
+`quality-reviewer` → `simplify` → `verify-checklist`. If gate evidence is
+missing, run it now and append the evidence to the step-bead notes. If any
+gate step fails, label both the source bead and step bead `human`, append the
+failure evidence to both notes, and do not advance to `quality-sweep`.
 
 Rules (regardless of dispatched path):
 - minimum viable implementation only

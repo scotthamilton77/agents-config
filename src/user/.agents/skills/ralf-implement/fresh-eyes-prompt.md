@@ -37,6 +37,7 @@ Agent tool (general-purpose, mode: "auto"):
     - Code matches project patterns
     - No TODO/FIXME/HACK comments are introduced unless explicitly required
     - No dead code or unused imports are introduced
+    - Completion gate runs: `quality-reviewer` → `simplify` → `verify-checklist`
 
     ## Your Job
 
@@ -45,8 +46,9 @@ Agent tool (general-purpose, mode: "auto"):
     3. Compare against DoD and quality criteria
     4. Apply required fixes or completion work
     5. Run build + typecheck + lint + tests
-    6. Commit changes if any were made
-    7. Report honestly; you have no obligation to agree the work is complete
+    6. Run the completion gate: `quality-reviewer` → `simplify` → `verify-checklist`
+    7. Commit changes if any were made
+    8. Report honestly; you have no obligation to agree the work is complete
 
     ## Report Format
 
@@ -68,6 +70,11 @@ Agent tool (general-purpose, mode: "auto"):
     - Typecheck: PASS/FAIL
     - Lint: PASS/FAIL
     - Tests: PASS/FAIL ([N] tests)
+
+    ### Completion Gate
+    - Quality review: PASS/FAIL
+    - Simplify: PASS/FAIL
+    - Verify checklist: PASS/FAIL
 
     ### Remaining Concerns
     - [Any unresolved risks, grouped by severity]
