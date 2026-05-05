@@ -172,9 +172,9 @@ human rather than proceed. These include:
 
 Escalate with:
 ```bash
-bd human <bead-id>            # flags this bead for human attention
+bd label add <bead-id> human  # flags this bead for human attention
 bd human list                 # Scott: see all escalated items
-bd human respond <bead-id>    # Scott: provide guidance and close the flag
+bd update <bead-id> --append-notes "<guidance>"  # Scott: provide guidance
 ```
 
 Agents: do NOT guess through an escalation point. Park the question, move

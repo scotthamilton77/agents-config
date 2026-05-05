@@ -124,10 +124,11 @@ bd human list --json
 If new escalations exist since last check:
 - Pause the queue
 - Present the escalated items to the user
-- Wait for the user to respond/dismiss each one:
+- Record the user's guidance and clear the `human` label when the escalation
+  is resolved:
   ```bash
-  bd human respond <id>   # after getting user's response
-  bd human dismiss <id>   # if user says ignore it
+  bd update <id> --append-notes "<guidance>"
+  bd label remove <id> human
   ```
 - Resume the queue after escalations are cleared
 
@@ -160,4 +161,4 @@ When the queue drains, present the full summary.
 | "The user said 'ok', I'll merge this PR" | No. Merging needs explicit authorization. Never in run-queue. |
 | "This bead isn't fully ready, I'll spec it quickly" | No. Only `implementation-ready` beads belong here. |
 | "I'll process two beads at once for speed" | No. Sequential unless explicitly asked. |
-| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes `implementation-ready` beads only. If the spec has gaps, open a human escalation with `bd human <bead-id>` so the bead can be re-brainstormed, then skip that bead and continue with the queue. |
+| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes `implementation-ready` beads only. If the spec has gaps, open a human escalation with `bd label add <bead-id> human` plus `bd update <bead-id> --append-notes "<reason>"` so the bead can be re-brainstormed, then skip that bead and continue with the queue. |

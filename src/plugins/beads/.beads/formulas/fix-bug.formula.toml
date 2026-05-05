@@ -273,9 +273,11 @@ Check the bead's RALF signal before dispatching:
     step-bead notes, including cycles run, score, severity counts, and
     foreign-eyes status/degradation for every Codex/Gemini cycle.
 
-    If the score is `FAIL`, stop this step: label both the source bead and the
-    green-loop step bead `human`, append the unresolved blocking/critical/major
-    concerns to both notes, and do not advance to `quality-sweep`.
+    If the score is `FAIL`, or if the score is `PASS_WITH_RESERVATIONS` with
+    unresolved major concerns, stop this step: label both the source bead and
+    the green-loop step bead `human`, append the unresolved blocking/critical/major
+    concerns to both notes, and do not advance to `quality-sweep` until the
+    caller explicitly decides whether to revise, defer, or accept the residual risk.
 
 - Otherwise:
     invoke `superpowers:test-driven-development` first,
@@ -475,8 +477,9 @@ All of: zero open Copilot threads, zero open human-author threads, all CI green,
 1. Re-run clean-check immediately before merge.
 2. Pour merge-and-cleanup (phase: liquid — NOT vapor).
 3. Drive merge-and-cleanup: merge PR, delete branch, remove worktree, I2 close-walk.
-   Gate 2 inside merge-and-cleanup blocks until all [h] children closed with
-   verified-by-human label AND merge-{source-id} child closed.
+   Gate 2 inside merge-and-cleanup blocks until all [h] children are closed
+   with verified-by-human label, then closes merge-{source-id} after merge +
+   cleanup so the source bead can close.
 
 ## Hand-off path (default)
 1. bd update {{bead-id}} --status open

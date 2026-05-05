@@ -56,7 +56,7 @@ Decide from the result array:
   unlabeled in-progress work. Escalate:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
-  bd human <bead-id>
+  bd label add <bead-id> human
   ```
   Otherwise proceed to Step 3.
 
@@ -92,7 +92,7 @@ Decide from the result array:
     - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
     Assessment: <duplicative | legacy | needs manual merge>
     Recommended action: <resume X / burn Y / user decides>"
-  bd human <bead-id>
+  bd label add <bead-id> human
   ```
   Do NOT silently pick one.
 

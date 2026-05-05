@@ -31,6 +31,11 @@ Agent tool (general-purpose, mode: "auto"):
     - Error log: `.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log`
     - Timeout: 600000ms (10 minutes)
 
+    Create the session directory before writing files or running CLI redirects:
+    ```bash
+    mkdir -p .ralf/{session_id}
+    ```
+
     Write the foreign instruction file before inspecting or changing code. Use
     `./foreign-agent-prompt.md`, filling in the original Definition of Done and
     original spec exactly enough that the foreign reviewer sees the clean target.
@@ -60,7 +65,7 @@ Agent tool (general-purpose, mode: "auto"):
 
     ## Your job
     1. Read the original spec and Definition of Done above carefully.
-    2. Immediately write the foreign instruction file before inspecting code.
+    2. Create `.ralf/{session_id}` with `mkdir -p`, then immediately write the foreign instruction file before inspecting code.
     3. Inspect current implementation state against the DoD and quality criteria.
     4. Fix, complete, or improve whatever is necessary.
     5. Run build, typecheck, lint, and tests.

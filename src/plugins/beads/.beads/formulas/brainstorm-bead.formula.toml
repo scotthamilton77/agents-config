@@ -234,14 +234,21 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    Optional cycle override (when a non-default cycle count is justified):
      bd label add {{bead-id}} ralf:cycles=N
 
-3. Create required follow-up child beads before readiness:
-   - For every acceptance-criteria line tagged `[h]`, create a child bead
-     under `{{bead-id}}`, label it `human`, and link the source criterion in
-     the child description. These children block later Gate 2 closure until
-     closed with `verified-by-human`.
+3. Reconcile required follow-up child beads before readiness:
+   - List existing open child beads under `{{bead-id}}` that carry the `human`
+     label and represent `[Human verify]` follow-ups.
+   - For every acceptance-criteria line currently tagged `[h]`, ensure exactly
+     one matching child bead exists under `{{bead-id}}`, label it `human`, and
+     link the source criterion in the child description. These children block
+     later Gate 2 closure until closed with `verified-by-human`.
+   - For every existing `[Human verify]` child whose source criterion is no
+     longer tagged `[h]` because it was removed, reworded, or downgraded to
+     `[m]`, close it with reason "AC re-classified to [m] or removed; follow-up
+     no longer needed." Then create any replacement child needed for the current
+     `[h]` text. Re-running finalize with unchanged AC must be a no-op.
    - Create the merge gate child `merge-{{bead-id}}` under `{{bead-id}}` if it
-     does not already exist. This child is closed only by merge-and-cleanup
-     after merge + branch/worktree cleanup.
+     does not already exist, and label it `merge-gate`. This child is closed
+     only by merge-and-cleanup after merge + branch/worktree cleanup.
 
 4. Add standard readiness labels:
      bd label add {{bead-id}} brainstormed
