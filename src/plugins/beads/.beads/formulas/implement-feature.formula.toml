@@ -69,8 +69,9 @@ Read the bead and its labels:
    - `[gates]` section present (or stubs acceptable).
    - Coverage applicability ([coverage].applicable): if explicitly set to `false`,
      coverage does NOT apply to this project (docs-only repos, config repos, etc.).
-     Skip the report-location check entirely and proceed to step 4. Note in your
-     close-reason that coverage is opt-out for this project.
+     Skip the report-location check entirely and proceed to step 4. Record this
+     by running:
+       bd update <step-bead-id> --append-notes "preflight: coverage opt-out (project-config has [coverage].applicable = false) — skipped report-location check"
    - Coverage report location ([coverage].report-location): only checked when
      `[coverage].applicable` is true OR absent (default). If absent OR empty
      string (i.e. `report-location = ""`), apply the human-flag protocol and
