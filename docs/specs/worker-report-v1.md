@@ -343,16 +343,31 @@ step-bead together guarantee the failure is visible to anyone running
 
 ### 4.1 Required-field minimum for the orchestrator
 
-For a report to be considered well-formed, the orchestrator MUST be
-able to read at minimum:
+For a report to be considered well-formed against the shared core, the
+orchestrator MUST be able to read at minimum:
 
 - `status`
 
 `status` missing — or unparseable as YAML — triggers the synthesis
-path. Other required fields (§1.2 and per-agent extensions) are
-contract obligations enforced by review, not by the runtime: the
-orchestrator survives an incomplete report; full compliance is a review
-concern.
+path.
+
+**Per-agent specs may add their own runtime-required fields.** A
+per-agent spec that names additional fields the orchestrator MUST
+runtime-check (and, on miss, treat the report as `status: failed` and
+synthesize) overrides the shared-core minimum for reports of that
+agent. The current set:
+
+| Spec | Runtime-required (orchestrator) | On miss |
+|------|---------------------------------|---------|
+| `worker-report-v1` (shared core) | `status` | synthesize |
+| `tdd-red-report-v1` | `status` | synthesize |
+| `tdd-green-report-v1` | `status` | synthesize |
+| `bug-diagnoser-report-v1` | `status`, `root_cause_note` (non-empty) | synthesize + escalate |
+
+All other contract fields (the rest of §1.2, plus any per-agent
+non-runtime-required fields) are contract obligations enforced by
+review, not by the runtime: the orchestrator survives an incomplete
+report; full compliance is a review concern.
 
 ### 4.2 Out of scope: orchestrator self-crash
 
