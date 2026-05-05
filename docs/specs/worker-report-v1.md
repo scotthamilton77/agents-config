@@ -269,7 +269,7 @@ status: failed
 gate_status: fail
 evidence: {}
 escalations:
-  - reason: "Worker crashed" | "Worker emitted malformed report"
+  - reason: "Worker crashed"   # or "Worker emitted malformed report" for parse failures
     detail: |
       <full diagnostic context: worker process exit code, stderr tail,
        parse error, and — for malformed — the raw bytes of the file
