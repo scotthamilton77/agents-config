@@ -26,15 +26,22 @@ test      = ""   # no automated test suite
 
 # ---------------------------------------------------------------------------
 # [coverage] — code coverage settings
-# Read by: green-loop, quality-sweep
+# Read by: green-loop, quality-sweep, preflight
 # ---------------------------------------------------------------------------
 [coverage]
-threshold        = 80     # percent; per-bead override: coverage-threshold-<n> label
-# report-location: empty string is treated as absent — preflight will apply the
-# human-flag protocol. Set a real path (e.g. coverage/lcov.info) or remove this
-# key to trigger the protocol. This project has no test suite or coverage tooling,
-# so the human-flag protocol is the expected outcome for any bead that reaches preflight.
-report-location  = ""     # empty string treated as absent — preflight applies human-flag protocol
+# applicable: explicit opt-out for the preflight coverage check, intended for
+# projects with no coverage tooling (docs-only repos, config repos, etc.).
+# Default is true (treated as true when absent). When false, preflight does
+# NOT fire the human-flag protocol on missing/empty report-location and
+# proceeds to worktree creation. When true (or absent), the existing
+# semantics apply: empty/missing report-location triggers human-flag.
+#
+# Note: green-loop and quality-sweep do NOT yet honor applicable = false —
+# they continue to enforce coverage threshold unconditionally. Wiring those
+# stages to honor the opt-out is tracked as separate follow-up work.
+applicable       = false  # this project is pure documentation — no tests, no coverage
+threshold        = 80     # percent; ignored when applicable = false; per-bead override: coverage-threshold-<n> label
+report-location  = ""     # n/a — applicable = false suppresses the human-flag protocol
 format           = ""     # n/a
 
 # ---------------------------------------------------------------------------
