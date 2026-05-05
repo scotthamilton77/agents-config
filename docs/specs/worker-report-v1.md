@@ -24,6 +24,15 @@ This document defines:
 It is documentation only — no JSON-schema enforcement, matching the
 existing spec style under `docs/specs/`.
 
+## Quick reference
+
+| | |
+|---|---|
+| **Report path** | `<repo-root>/.beads/worker-reports/<step-bead-id>/<agent-name>[-iter<N>].yaml` |
+| **Audit label** | `worker-report-<agent-name>[-iter<N>]` — stamped on the step-bead |
+| **Required fields** | `status`, `evidence`, `gate_status`, `escalations`, `discovered_work`, `commits` |
+| **Orchestrator minimum** | `status` + `gate_status` — missing either → synthesize a `status: failed` report |
+
 ## Background
 
 PR #28 introduced the per-stage `claude -p` pipeline (bead `7bk.9`).
@@ -78,9 +87,7 @@ discovered_work:
     type: bug | task | chore
     priority: 0..4
     detail: "optional context"
-    # NOTE: no parent_hint or relation field. The orchestrator owns
-    # placement per beads.md I3 (sibling test). Default is a
-    # discovered-from edge to the source bead.
+    # NOTE: no parent_hint or relation field — orchestrator decides placement
 commits:
   - sha: "full 40-char sha"
     message: "one-line commit message"
@@ -157,19 +164,19 @@ list when the worker made no commits (e.g., a diagnose-only dispatch).
 
 ### 1.2 Required vs optional summary
 
-Top-level **required** fields: `status`, `evidence`, `gate_status`,
-`escalations`, `discovered_work`, `commits`.
+| Field | Required? | Notes |
+|-------|-----------|-------|
+| `status` | required | |
+| `evidence` | required | inner blocks optional — present only when command ran |
+| `gate_status` | required | |
+| `escalations` | required | `[]` when empty |
+| `discovered_work` | required | `[]` when empty |
+| `commits` | required | `[]` when empty |
+| `iteration` | optional | omit on single-shot dispatches |
+| `root_cause_note` | optional | required for `bug-diagnoser`, optional for TDD agents |
 
-Top-level **optional** fields: `iteration`, `root_cause_note`.
-
-Within `evidence`, the `tests` / `build` / `lint` / `typecheck` blocks
-are individually optional, present only when the worker ran the
-corresponding command. Within a block, all listed sub-fields are
-required when the block is present.
-
-Empty-list-valued required fields (`escalations`, `discovered_work`,
-`commits`) are written as `[]`. An omitted required field is malformed
-(see §4).
+Within an `evidence` block, all listed sub-fields are required when the
+block is present. An omitted top-level required field is malformed.
 
 ## 2. File-based audit convention
 
@@ -204,7 +211,7 @@ control over the path scheme.
 
 After the worker exits — whether it completed normally, crashed, or
 emitted a malformed file — the orchestrator stamps a label on the
-**step-bead** (not the source bead, not the molecule):
+**step-bead** (not the source-bead, not the molecule):
 
 ```
 worker-report-<agent-name>[-iter<N>]
@@ -234,19 +241,11 @@ These labels are **forensic-only**:
   loop that runs three iterations leaves three iteration-suffixed
   labels on the step-bead. This is the desired forensic trail, not a
   bug.
-
-If filterability becomes useful later, a separate stable label (e.g.
-`worker-reported`) can be added as a sibling without disturbing the
-iteration-stamped audit labels.
-
-Note: agent names contain hyphens (`tdd-red-team`, `bug-diagnoser`), and
-the label format is also dash-separated, so the boundary between the
-agent-name segment and the `-iter<N>` suffix is not unambiguous to a
-regex parser. Audit labels are not designed to be parsed
-programmatically — the forensic-only, no-routing-filter policy means
-the boundary is never a runtime concern. If structured retrieval becomes
-necessary, use the stable companion label approach above rather than
-parsing audit labels.
+- **Not designed for programmatic parsing.** Agent names and the label
+  format both use hyphens; the boundary between agent-name and
+  `-iter<N>` is ambiguous to a regex. If structured retrieval is needed,
+  add a stable companion label (e.g. `worker-reported`) rather than
+  parsing audit labels.
 
 ## 4. Malformed and crashed-worker handling
 
@@ -258,10 +257,9 @@ Two failure modes are routine and must not derail the pipeline:
    or it parses but is missing a required field the orchestrator must
    read.
 
-In both cases the orchestrator **synthesizes** a worker-report on the
-worker's behalf, writes that synthetic report to the same path the
-worker was supposed to write, and stamps the audit label as if the
-worker had succeeded. The synthetic report has:
+In both cases the orchestrator **synthesizes** a `status: failed`
+worker-report, writes it to the orchestrator-supplied path, and stamps
+the audit label. The synthetic report has:
 
 ```yaml
 status: failed
@@ -296,12 +294,9 @@ able to read at minimum:
 - `gate_status`
 
 Either field missing — or unparseable as YAML — triggers the synthesis
-path. Other required fields (§1.2) are also part of the contract; their
-absence is a workmanship issue surfaced through code review rather than
-a runtime malformation. This is intentional two-tier validity: the
-orchestrator must survive a report that is technically incomplete, log
-the gap in the synthetic report's `escalations`, and continue. Full
-schema compliance is enforced by review, not by the runtime path.
+path. Other required fields (§1.2) are contract obligations enforced by
+review, not by the runtime: the orchestrator survives an incomplete
+report; full compliance is a review concern.
 
 ### 4.2 Out of scope: orchestrator self-crash
 
