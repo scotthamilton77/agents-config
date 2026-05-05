@@ -1,16 +1,17 @@
 # fix-bug.formula.toml
 #
-# Bug-fix workflow that enforces systematic diagnosis before any code changes.
-# The cardinal sin of bug fixing is patching the symptom. This formula
-# enforces root-cause identification as a hard gate before touching code.
+# Per-stage bug-fix pipeline for the bead architecture.
+# Extends implement-feature with a `diagnose` stage between `preflight`
+# and `red-tests` to enforce root-cause investigation before any code changes.
 #
-# Phases:
-#   1. Diagnose  — reproduce, locate root cause (NOT symptom)
-#   2. Isolation — worktree setup, claim bead
-#   3. Fix       — regression test (red) → fix (green)
-#   4. Gate      — code-review → simplify → verify with evidence
-#   5. Delivery  — PR → await review
-#   6. Housekeep — close bead, record memory, file discovered work
+# Stage sequence:
+#   preflight → diagnose → red-tests → green-loop → quality-sweep → verify-ac
+#   → create-pr → review-cycle → merge-or-handoff
+#
+# The cardinal sin of bug fixing is patching the symptom. The `diagnose`
+# stage is a hard gate: no tests are written until the root cause is identified.
+#
+# See: docs/specs/bead-pipeline-architecture.md §3 (diagnose stage)
 #
 # Usage:
 #   bd mol pour fix-bug \
@@ -18,11 +19,11 @@
 #     --var bead-id=proj-17
 
 formula     = "fix-bug"
-description = "Bug fix: diagnose root cause → regression test → fix → completion gate → PR → close"
+description = "Per-stage bug pipeline: preflight → diagnose → red-tests → green-loop → quality-sweep → verify-ac → create-pr → review-cycle → merge-or-handoff"
 type        = "workflow"
-phase       = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
+phase       = "liquid"  # persistent across sessions
 pour        = true
-version     = 1
+version     = 2
 
 [vars.bug]
 description = "Short description of the bug (e.g. 'Login fails when username contains apostrophe')"
@@ -33,311 +34,437 @@ description = "Bead ID tracking this bug (e.g. proj-17). Must already exist."
 required    = true
 
 # =============================================================================
-# Phase 1: Diagnose
+# Stage: preflight
+# Model: claude-sonnet-4-6  Effort: high
+# cwd: repo root (worktree does not yet exist; preflight creates it)
 # =============================================================================
 
 [[steps]]
-id    = "reproduce"
-title = "Reproduce: confirm the bug exists and is consistent"
+id    = "preflight"
+# name is accepted by bd (verified: bd formula show succeeds) and serves as the
+# stage-role identifier used by the shell driver (bead-driver-test.sh). It mirrors
+# id intentionally — id is the structural key; name is the human-readable label.
+name  = "preflight"
+title = "Preflight: spec validation, formula selection, worktree creation"
 description = """
-Before touching any code, reproduce the bug reliably.
+Validate the bug bead spec and create the worktree before any investigation.
+Model: claude-sonnet-4-6  Effort: high
 
-Skill: superpowers:systematic-debugging
+## Inputs
+Read the bead and its labels:
+  bd show {{bead-id}}
+  bd label list {{bead-id}}
 
-Steps:
-1. Find or write a minimal reproduction case
-2. Confirm it fails consistently (not flaky)
-3. Note the exact failure: error message, stack trace, wrong output
-4. Note the expected correct behavior
+## Actions
 
-Write reproduction steps back to the bead:
-  bd update {{bead-id}} --notes "Repro: <steps>\nActual: <what happens>\nExpected: <what should happen>"
+1. Verify `brainstormed` and `implementation-ready` labels are present.
+   If either is absent: apply human-flag protocol and exit.
 
-If you cannot reproduce the bug, stop and ask the user for more
-information. Do not proceed on assumption.
-"""
+2. Confirm bead type is `bug` (or formula-fix-bug label is present).
+   This formula is selected for bug-class beads; a feature bead routed here
+   is an error — flag-human with a clear note.
 
-[[steps]]
-id    = "root-cause"
-title = "Root cause: find the source, not the symptom"
-needs = ["reproduce"]
-description = """
-Trace the failure backward to the original invalid state or wrong assumption.
+3. Read project-config.toml and verify quality-gate config.
+   If [static-analysis] absent or empty: mark quality-sweep skippable.
+   If no coverage report location ([coverage].report-location absent OR empty
+   string, i.e. `report-location = ""`): apply the human-flag protocol and
+   stop this stage:
+     bd label add {{bead-id}} human
+     bd label add <step-bead-id> human
+     bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
+     bd update <step-bead-id> --append-notes "preflight: no coverage report location configured — molecule parked"
+   An empty string is treated the same as absent: explicit opt-out requires a
+   comment in project-config.toml — a bare empty string is ambiguous and must
+   be resolved by the human.
+   Do NOT continue to worktree creation. Exit cleanly.
 
-Skill: superpowers:root-cause-tracing
+4. Stamp the molecule→bead lookup label if not already stamped:
+   bd label add <mol-id> for-bead-{{bead-id}}
 
-Rules:
-- A symptom is WHERE it breaks. A root cause is WHY it breaks.
-- Do not patch the first place you see the problem — trace further back.
-- Read the code path. Do not assume.
-- If the root cause is in a dependency you do not own, note that explicitly.
+5. Create the worktree:
+   Branch name: fix/{{bead-id}}-<slug-from-title>
+   Location: <repo-root>/.claude/worktrees/<branch-name>
+   Command:
+     git worktree add .claude/worktrees/<branch> -b <branch>
+   CRITICAL: the formula is already poured (this step was created by the pour).
+   If worktree creation fails: squash the molecule and flag-human.
 
-Ask: "What invariant was violated? Where was it first violated?"
+6. Stamp the worktree-path label on the molecule:
+   Encoding (apply IN ORDER):  _ → _u  then  / → __
+   bd label add <mol-id> worktree-path-<encoded>
 
-Write the root cause back to the bead before continuing:
-  bd update {{bead-id}} --notes "Root cause: <explanation>"
+7. Claim the bead and walk the parent chain:
+   bd update {{bead-id}} --status in_progress
+   PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+   while [ -n "$PARENT" ]; do
+     bd update "$PARENT" --status in_progress
+     PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+   done
 
-If the root cause is significantly different from the bead description,
-flag the bead for human attention before proceeding:
-  bd label add {{bead-id}} human
-  bd update {{bead-id}} --append-notes "Root cause significantly differs from bead description: <reason>"
-(NOT `bd human <id>` — that's the help command, not a label applier.)
-"""
+## Definition of Done
+Poured molecule + worktree exists + worktree-path-* label stamped on molecule.
+OR: human label + structured gap-note + (if pour completed) molecule squashed.
 
-# =============================================================================
-# Phase 2: Isolation
-# =============================================================================
-
-[[steps]]
-id    = "worktree"
-title = "Set up isolated git worktree"
-needs = ["root-cause"]
-description = """
-Invoke the using-git-worktrees skill to create an isolated branch.
-
-Skill: superpowers:using-git-worktrees
-
-- Branch from main (never from another feature branch)
-- Verify you are IN the worktree directory before writing any code
-- Confirm no leftover state from other work
-
-Then claim the bead and walk the parent chain:
-
-  bd update {{bead-id}} --status in_progress
-
-  # Walk parent chain; mark each ancestor epic in_progress
-  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-  while [ -n "$PARENT" ]; do
-    bd update "$PARENT" --status in_progress
-    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-  done
-
-If `implement-bead` already claimed the bead before pouring this
-formula, the first `bd update` is a no-op — re-running it is safe.
+## Idempotent re-entry
+Check: does an active molecule exist? Does the worktree path decode to a real
+git worktree? If so, skip work already done.
 """
 
 # =============================================================================
-# Phase 3: Fix — Regression Test First, Then Fix
+# Stage: diagnose
+# Model: claude-sonnet-4-6  Effort: high
+# cwd: worktree (decoded from worktree-path-* label)
+#
+# This stage is SPECIFIC to fix-bug. It does NOT appear in implement-feature.
 # =============================================================================
 
 [[steps]]
-id    = "write-regression-test"
-title = "Write a failing regression test that proves the bug"
-needs = ["worktree"]
+id    = "diagnose"
+name  = "diagnose"
+title = "Diagnose: root-cause investigation before any code changes"
+needs = ["preflight"]
 description = """
-Write a test that FAILS in the current codebase because of the bug.
+Identify the root cause of the bug before writing any tests or code.
+Model: claude-sonnet-4-6  Effort: high
 
-Skills: superpowers:writing-unit-tests, superpowers:testing-anti-patterns
+## Preloaded skills
+superpowers:systematic-debugging, superpowers:root-cause-tracing
 
-This test is your proof that:
-  (a) the bug exists and is reproducible in the test suite
-  (b) your fix actually addresses it (when it turns green)
-  (c) the bug will never silently return (regression protection)
+## Inputs
+- Bug description from: bd show {{bead-id}}
+- Worktree path: decode worktree-path-* label from molecule
 
-The test should target the ROOT CAUSE location, not just the surface
-symptom. Testing at the wrong layer creates false confidence.
+## Decode worktree-path label before any work
+  1. Decode: __ → /  then  _u → _
+  2. Verify decoded path exists and is a git worktree:
+       git -C <path> rev-parse --is-inside-work-tree
+  3. Operate from that cwd.
 
-Run the test and confirm it FAILS:
-  go test ./...           (or equivalent)
+## Actions
 
-If the test passes before any fix, either the bug is already fixed
-(investigate) or the test is wrong (fix the test).
-"""
+1. Reproduce the bug reliably.
+   - Find or write a minimal reproduction case.
+   - Confirm it fails consistently (not flaky).
+   - Note: exact failure (error message, stack trace, wrong output).
+   - Note: expected correct behavior.
+   If cannot reproduce: flag-human with a note asking for more information.
 
-[[steps]]
-id    = "implement-fix"
-title = "Implement the fix (green phase)"
-needs = ["write-regression-test"]
-description = """
-Fix the root cause identified in the diagnose phase.
+2. Trace the failure backward to the root cause.
+   Apply superpowers:systematic-debugging and superpowers:root-cause-tracing.
+   - A symptom is WHERE it breaks. A root cause is WHY it breaks.
+   - Do not patch the first place you see the problem — trace further back.
+   - Read the code path. Do not assume.
+   - Ask: "What invariant was violated? Where was it first violated?"
 
-Skill: superpowers:test-driven-development
+3. Append root-cause note to step-bead:
+   bd update <step-bead-id> --append-notes "Root cause: <explanation>"
 
-Rules:
-- Fix the ROOT CAUSE, not the symptom
-- Minimum change that makes the regression test pass
-- Do not refactor unrelated code while fixing the bug
-- Do not add features while fixing the bug
-- If the fix requires a larger change than expected, stop and consult
-  the user before proceeding (scope creep hides in bug fixes)
+4. If root cause significantly differs from the bead description:
+   bd label add <step-bead-id> human
+   bd label add {{bead-id}} human
+   bd update <step-bead-id> --append-notes "Root cause significantly differs: <reason>"
+   Exit cleanly. Do NOT proceed.
 
-Run the full test suite — not just the new test:
-  go test ./...   (or equivalent)
+5. If root cause exceeds the bead's stated scope:
+   Apply human-flag protocol. Do NOT fix out-of-scope issues inline.
+   File a new bead for the out-of-scope root cause before flagging.
 
-A bug fix that breaks other tests is not a fix. It is a new bug.
+## Definition of Done
+Root-cause note appended to step-bead notes. Identified cause is consistent
+with the bead's reported symptoms. If root cause exceeds scope: flag-human.
 
-This step is complete only when:
-  [ ] The regression test passes (the bug is fixed)
-  [ ] All existing tests still pass (nothing regressed)
-"""
-
-# =============================================================================
-# Phase 4: Completion Gate
-# =============================================================================
-
-[[steps]]
-id    = "code-review"
-title = "Completion gate: code review"
-needs = ["implement-fix"]
-description = """
-Dispatch quality-reviewer subagent against ALL changed files.
-
-Agent: quality-reviewer
-Scope: every file changed since branch creation, reviewed against:
-  - The root cause identified in the diagnose phase
-  - Whether the fix addresses the cause or just the symptom
-  - SOLID and DRY principles
-  - Security implications (bug fixes can introduce new vulnerabilities)
-  - Whether the regression test is meaningful and at the right layer
-
-Address ALL findings. Pay particular attention to any finding that
-suggests the fix is treating a symptom rather than a root cause.
-"""
-
-[[steps]]
-id    = "simplify"
-title = "Completion gate: simplify"
-needs = ["code-review"]
-description = """
-Invoke the `simplify` skill against changed code.
-
-Skill: simplify
-
-Bug fixes are often hasty. The `simplify` skill catches the
-"it works, ship it" carelessness that bug pressure creates.
-
-Address findings. Re-run tests after any changes.
-"""
-
-[[steps]]
-id    = "verify"
-title = "Completion gate: verify with evidence"
-needs = ["simplify"]
-description = """
-Run the full verification suite. Evidence required — no claims without output.
-
-Skill: superpowers:verification-before-completion
-
-Required gates — show actual command output for each:
-  [ ] Regression test passes  → show output
-  [ ] Full test suite passes  → show output
-  [ ] Build succeeds          → show output
-  [ ] Lint clean              → show output
-  [ ] Type check clean        → show output
-
-HARD STOP: After this gate, do NOT commit to main and do NOT push
-directly. The next step is create-pr. Go there next.
+## Idempotent re-entry
+Check step-bead notes for existing root-cause note. If present, proceed.
+The filesystem state and step-bead notes reflect prior progress; continue from
+where the prior pass left off.
 """
 
 # =============================================================================
-# Phase 5: Delivery
+# Stage: red-tests
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "red-tests"
+name  = "red-tests"
+title = "Red-tests: write failing regression test proving the bug"
+needs = ["diagnose"]
+description = """
+Write a failing regression test targeting the root cause (not the symptom).
+Model: claude-sonnet-4-6  Effort: medium
+
+## Preloaded skills
+superpowers:test-driven-development, superpowers:writing-unit-tests,
+superpowers:testing-anti-patterns
+
+## Inputs
+- Root-cause note from diagnose step-bead notes
+- Bead AC from: bd show {{bead-id}} ([m]-tagged lines)
+- Worktree path from: worktree-path-* label on molecule
+
+## Actions
+
+1. Dispatch bead-implementor (sonnet, medium effort) to write the regression test:
+   - Test MUST target the root cause location, not the symptom surface.
+   - Testing at the wrong layer creates false confidence.
+   - Confirm test FAILS in current codebase (bug exists).
+   - Commit failing test to feature branch.
+
+2. Run Claude reviewer (test-review skill) on the written test.
+   When review-level:none: skip reviewers (test still written).
+
+3. Run Codex adversarial review (gpt-5.5).
+   Model from: project-config.toml [foreign-cli].codex_red_tests_model
+   When review-level:none: skip.
+
+4. Iteration cap: 2 (override: iteration-cap-red-tests-<n> label).
+   At cap with disagreement: record disagreement note.
+   Escalate human ONLY if BOTH reviewers agree on critical/major design flaw.
+
+5. The regression test is proof that:
+   (a) the bug exists and is reproducible in the test suite
+   (b) the fix actually addresses it (when it turns green)
+   (c) the bug cannot silently return (regression protection)
+
+## Definition of Done
+Failing regression test committed to feature branch. Reviewers approve or
+iteration cap reached with disagreement recorded.
+
+## Idempotent re-entry
+Check filesystem (committed test) and step-bead notes.
+"""
+
+# =============================================================================
+# Stage: green-loop
+# Model: claude-opus-4-7  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "green-loop"
+name  = "green-loop"
+title = "Green-loop: fix the root cause via RALF-IT"
+needs = ["red-tests"]
+description = """
+Implement the bug fix (green phase) via RALF-IT iterative refinement.
+Model: claude-opus-4-7  Effort: medium
+
+## Inputs
+- Root-cause note from diagnose step-bead notes (CRITICAL: fix the cause, not symptom)
+- Committed failing regression test from red-tests
+- Worktree path from: worktree-path-* label on molecule
+- Prior RALF-IT state: RALF-IT-ITER:<n>/<MAX> in step-bead notes (default 0)
+
+## RALF-IT loop
+
+MAX_ITERATIONS = 5 (override: iteration-cap-green-loop-<n> label — SOLE override path)
+
+For each iteration:
+
+1. Dispatch bead-implementor to implement the fix:
+   - Effort: high on iter 1, medium on iters 2+
+   - MUST fix the ROOT CAUSE from the diagnose note. Do not patch symptoms.
+   - Minimum change to make the regression test pass.
+   - Do not refactor unrelated code or add features.
+   - Run full test suite — not just the regression test.
+     A fix that breaks other tests is a new bug, not a fix.
+
+2. Run quality gate (build/typecheck/lint/test).
+
+3. Run foreign-eyes review:
+   - Iter 1: Codex (gpt-5.5)
+   - Iter 2: Gemini (gemini-2.5-pro)
+   - Iter 3+: pure-Claude fresh-eyes
+   Record degradation: FOREIGN-EYES-ITER-<n>: codex=<status>, gemini=<status>
+
+4. When review-level:deep: run adversarial-codex after gate.
+
+5. Persist: bd update <step-bead-id> --append-notes "RALF-IT-ITER:<n>/{{MAX}}"
+
+After loop:
+- Run simplify once on the full diff.
+- Run quality-reviewer (claude-opus-4-7[1m]) on the full bead diff.
+- If foreign-eyes degraded in 2+ of N iterations: flag-human.
+
+## Definition of Done
+Regression test passes. Full test suite passes. Build/typecheck/lint pass.
+RALF-IT reports complete. Coverage meets threshold.
+
+## Idempotent re-entry
+Read RALF-IT-ITER: marker. Resume at n+1. Crash mid-iter: retry failed iteration.
+"""
+
+# =============================================================================
+# Stage: quality-sweep
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "quality-sweep"
+name  = "quality-sweep"
+title = "Quality-sweep: global quality gate across entire project"
+needs = ["green-loop"]
+description = """
+Run the full project quality suite (not just changed files).
+Model: claude-haiku-4-5  Effort: medium
+
+Skippable when preflight marked it so. Also skips when review-level:none.
+
+## Order (fixed)
+1. Lint auto-fix: [lint-autofix].command (run FIRST)
+2. Build + typecheck + lint (from [gates])
+3. Static analysis ([static-analysis])
+4. Tests ([gates].test)
+
+ALWAYS end with build + tests after any code changes.
+
+## Definition of Done
+All gate commands exit zero (or stage skipped).
+
+## Idempotent re-entry
+Re-evaluates state; runs only what is not already green.
+"""
+
+# =============================================================================
+# Stage: verify-ac
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "verify-ac"
+name  = "verify-ac"
+title = "Verify-AC: mechanical acceptance criteria validation"
+needs = ["quality-sweep"]
+description = """
+Validate every [m]-tagged AC bullet against worktree state.
+Model: claude-haiku-4-5  Effort: medium
+
+Skips when review-level:none.
+
+## Actions
+
+For each [m]-tagged AC line:
+1. Dispatch bead-verifier (haiku, low effort) for shell-runnable witnesses.
+2. Assemble validation report.
+
+[h]-tagged lines: confirm human follow-up child beads exist.
+
+Run functional/e2e tests from [functional-tests] in project-config.toml.
+Failures: create bug bead per failure (label human); continue to create-pr.
+
+Persist validation report to step-bead notes AND source bead notes.
+
+## Definition of Done
+Every [m] AC bullet has explicit witness evidence.
+
+## Idempotent re-entry
+Re-evaluates; continues from prior pass.
+"""
+
+# =============================================================================
+# Stage: create-pr
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
 # =============================================================================
 
 [[steps]]
 id    = "create-pr"
-title = "Create pull request"
-needs = ["verify"]
+name  = "create-pr"
+title = "Create-PR: push branch and open pull request"
+needs = ["verify-ac"]
 description = """
-Invoke the finishing-a-development-branch skill.
+Create the pull request for the bug fix.
+Model: claude-haiku-4-5  Effort: medium
 
-Skill: superpowers:finishing-a-development-branch
+## Preloaded skills
+superpowers:finishing-a-development-branch
 
-PR body must include:
-- What the bug was (symptom)
-- Root cause (the actual problem)
+## PR body MUST include
+- Bead reference: {{bead-id}} and bead title
+- What the bug was (symptom from bead description)
+- Root cause (the actual problem, from diagnose step-bead notes)
 - How the fix addresses the root cause
 - How to verify: reference the regression test by name
-- Linked to {{bead-id}}
+- verify-ac validation report
+- Bug beads filed during verify-ac (if any)
+- Foreign-eyes status section
 
-Do NOT merge. Await review in the next step.
+## Actions
+1. Invoke superpowers:finishing-a-development-branch.
+2. Stamp pr-url-* label: bd label add <mol-id> pr-url-<encoded-url>
+
+## Idempotent re-entry
+If PR exists and OPEN: skip creation, persist URL.
+If PR exists and CLOSED: flag-human. Do NOT reopen.
 """
 
+# =============================================================================
+# Stage: review-cycle
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree
+# =============================================================================
+
 [[steps]]
-id    = "await-review"
-title = "Await PR review, address feedback, and acknowledge every thread"
+id    = "review-cycle"
+name  = "review-cycle"
+title = "Review-cycle: address PR review feedback"
 needs = ["create-pr"]
 description = """
-Invoke the wait-for-pr-comments skill.
+Drive the PR review loop until all review threads are resolved.
+Model: claude-sonnet-4-6  Effort: medium
 
-Skill: superpowers:wait-for-pr-comments
+Skips entirely when review-level:none.
 
-Pass autonomous-mode args so the skill knows it can escalate via bd:
+## Preloaded skills
+superpowers:wait-for-pr-comments (chains to superpowers:reply-and-resolve-pr-threads)
+
+## Actions
+Invoke superpowers:wait-for-pr-comments with:
   --mode autonomous --bead-id {{bead-id}}
 
-- Wait for Copilot review to complete (or time out)
-- Check BOTH top-level PR comments AND inline review comments
-  (inline comments are easy to miss — always verify both)
-- Classify each comment as FIX/SKIP/ESCALATE
-- Address every FIX item via per-comment subagents (or recognize as
-  already-addressed by an earlier commit)
-- Push combined commits
-- The skill internally chains to superpowers:reply-and-resolve-pr-threads
-  on completion, which replies to every thread (FIX + SKIP + ESCALATE)
-  and resolves only FIXED review_thread items via GraphQL
+Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).
+Persist: bd update <step-bead-id> --append-notes "REVIEW-BATCH:<n>/<MAX>"
 
-On completion verify before considering the step done:
-  - Every thread has a reply on GitHub
-  - FIXED review_thread items are resolved
-  - Zero internal-jargon strings (no `bd`, no bead IDs, no `ESCALATE`)
-    appear in PR-public replies
+If PR is CLOSED on re-entry: flag-human.
 
-Do NOT merge or clean up the worktree until review is complete.
-
-Specification: docs/specs/2026-04-26-pr-review-skill-redesign.md
+## Definition of Done
+Every review thread has a reply. FIXED items resolved on GitHub.
 """
 
 # =============================================================================
-# Phase 6: Housekeeping
+# Stage: merge-or-handoff
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: repo root
 # =============================================================================
 
 [[steps]]
-id    = "housekeeping"
-title = "Housekeeping: close, remember, file discovered work"
-needs = ["await-review"]
+id    = "merge-or-handoff"
+name  = "merge-or-handoff"
+title = "Merge-or-handoff: auto-merge or hand off to human"
+needs = ["review-cycle"]
 description = """
-Complete the lifecycle and preserve context for future sessions.
+Either auto-merge the PR or hand off to the human.
+Model: claude-haiku-4-5  Effort: medium
 
-1. Close the bead:
-     bd close {{bead-id}} --reason "Fixed: <one sentence root cause summary>"
+## Gate 1 — PR-state clean-check
+All of: zero open Copilot threads, zero open human-author threads, all CI green,
+5-minute quiet window. On timeout: NOT clean.
 
-2. Walk the parent chain; close each ancestor epic whose remaining
-   children are all closed (stops at the first ancestor that still
-   has any non-closed children, or when there is no parent):
+## Auto-merge path (auto-mergeable label present AND clean-check clean)
+1. Re-run clean-check immediately before merge.
+2. Pour merge-and-cleanup (phase: liquid — NOT vapor).
+3. Drive merge-and-cleanup: merge PR, delete branch, remove worktree, I2 close-walk.
+   Gate 2 inside merge-and-cleanup blocks until all [h] children closed with
+   verified-by-human label AND merge-{source-id} child closed.
 
-     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-     while [ -n "$PARENT" ]; do
-       NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
-       [ "$NON_CLOSED" = "0" ] || break
-       bd close "$PARENT" --reason "All children closed"
-       PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-     done
+## Hand-off path (default)
+1. bd update {{bead-id}} --status open
+2. bd label add {{bead-id}} merge-ready
+   bd label add {{bead-id}} human
 
-3. Record any non-obvious insights (root cause patterns are worth preserving):
-     bd remember "Bugs in <subsystem> are often caused by <pattern>"
-
-4. File any new bugs or tech debt discovered during the fix. Prefer
-   epic-sibling placement over orphan-with-dep:
-
-     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-
-     # Decide placement via the sibling test (see rules/beads.md I3):
-     # would this work have been on the parent epic's original plan, if
-     # we'd thought of it? Yes → sibling. No → orphan + discovered-from.
-     IS_SIBLING_SUBTASK=false  # set to true only when the answer is yes
-
-     if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
-       # Create INSIDE the parent epic as a sibling:
-       bd create "Tech debt: ..." -t chore -p 3 --parent "$PARENT"
-     else
-       # Otherwise create as an orphan and link with discovered-from:
-       NEW=$(bd create "Tech debt: ..." -t chore -p 3 --json | jq -r '.id')
-       bd dep add "$NEW" {{bead-id}} --type discovered-from
-     fi
-
-   Sibling test (see rules/beads.md I3): would this discovered work
-   have been on the parent epic's original plan, if we'd thought of
-   it? Yes → sibling (--parent). No → orphan + discovered-from.
-
-5. Burn this wisp (if running as vapor):
-     bd mol burn <this-mol-id>
+## Idempotent re-entry
+Check gh pr view --json mergedAt. If non-null: skip merge, proceed to cleanup.
 """

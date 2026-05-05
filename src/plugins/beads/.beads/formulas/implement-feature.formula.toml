@@ -1,20 +1,18 @@
 # implement-feature.formula.toml
 #
-# Encodes the full TDD feature workflow from INSTRUCTIONS.md,
-# completion-gate.md, delivery.md, and delegation.md into a
-# single reusable molecule.
+# Per-stage feature implementation pipeline for the bead architecture.
+# Each step corresponds to one stage that is driven by a separate
+# `claude -p /implement-bead <bead-id>` invocation from the shell driver.
 #
-# Provides persistent state tracking across sessions and hard gate
-# enforcement — steps cannot be skipped or reordered. Instantiated by
-# the `implement-bead` skill (or directly via `bd mol pour`).
+# Stage sequence:
+#   preflight → red-tests → green-loop → quality-sweep → verify-ac
+#   → create-pr → review-cycle → merge-or-handoff
 #
-# Phases:
-#   1. Intent     — confirm bead is brainstormed, restate plan
-#   2. Isolation  — worktree setup, claim bead
-#   3. TDD        — red (failing tests) → green (implement) → refactor
-#   4. Gate       — code-review → simplify → verify with evidence
-#   5. Delivery   — PR → await review
-#   6. Housekeep  — close bead, record memory, file discovered work
+# Note: per-step model/effort flag passthrough from the shell driver is
+# planned for bead 7bk.14. The driver does not currently read per-step
+# Model/Effort fields or pass flags to `claude -p`.
+#
+# See: docs/specs/bead-pipeline-architecture.md §3, §9.1
 #
 # Usage:
 #   bd mol pour implement-feature \
@@ -22,11 +20,11 @@
 #     --var bead-id=proj-42
 
 formula      = "implement-feature"
-description  = "TDD feature implementation: confirm → worktree → red/green/refactor → completion gate → PR → close"
+description  = "Per-stage feature pipeline: preflight → red-tests → green-loop → quality-sweep → verify-ac → create-pr → review-cycle → merge-or-handoff"
 type         = "workflow"
-phase        = "liquid"  # persistent across sessions — steps tracked as beads, synced to git
+phase        = "liquid"  # persistent across sessions
 pour         = true
-version      = 1
+version      = 2
 
 [vars.feature]
 description = "Short description of the feature being implemented (e.g. 'Add dark mode toggle')"
@@ -37,341 +35,440 @@ description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
 required    = true
 
 # =============================================================================
-# Phase 1: Intent — confirm bead is brainstormed and restate plan
+# Stage: preflight
+# Model: claude-sonnet-4-6  Effort: high
+# cwd: repo root (worktree does not yet exist; preflight creates it)
 # =============================================================================
 
 [[steps]]
-id    = "confirm"
-title = "Confirm bead is brainstormed and restate the implementation plan"
+id    = "preflight"
+# name is accepted by bd (verified: bd formula show succeeds) and serves as the
+# stage-role identifier used by the shell driver (bead-driver-test.sh). It mirrors
+# id intentionally — id is the structural key; name is the human-readable label.
+name  = "preflight"
+title = "Preflight: spec validation, formula selection, worktree creation"
 description = """
-Verify that bead {{bead-id}} has been through brainstorm-bead and that
-the spec exists in the bead. NEVER invoke superpowers:brainstorming —
-the bead description IS the plan.
+Validate the bead spec and create the worktree before any implementation work.
+Model: claude-sonnet-4-6  Effort: high
 
-Read bead and labels:
-
+## Inputs
+Read the bead and its labels:
   bd show {{bead-id}}
   bd label list {{bead-id}}
 
-== HAPPY PATH (both `brainstormed` AND `implementation-ready` labels present) ==
+## Actions
 
-1. Read the bead description and acceptance criteria.
-2. Restate the implementation plan in 1-3 sentences to prove understanding
-   (e.g. "I will modify <files> to <do X> so that <AC pass>").
-3. Mark this step done. The next step (worktree) runs.
+1. Verify `brainstormed` and `implementation-ready` labels are present.
+   If either is absent: apply human-flag protocol and exit.
 
-DO NOT call `bd update {{bead-id}} --acceptance` or `--notes` —
-brainstorm-bead already wrote the spec; rewriting it would destroy it.
+2. Note: formula selection and pour have already happened — this step was
+   created by implement-bead pouring implement-feature. There is nothing
+   to select or pour here. Proceed directly to project-config.toml validation.
 
-== MISSING-LABEL PATH (either label absent) ==
+3. Read project-config.toml and verify:
+   - `[gates]` section present (or stubs acceptable).
+   - Coverage report location ([coverage].report-location): if absent OR empty
+     string (i.e. `report-location = ""`), apply the human-flag protocol and
+     stop this stage:
+       bd label add {{bead-id}} human
+       bd label add <step-bead-id> human
+       bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
+       bd update <step-bead-id> --append-notes "preflight: no coverage report location configured — molecule parked"
+     An empty string is treated the same as absent: explicit opt-out requires a
+     comment in project-config.toml — a bare empty string is ambiguous and must
+     be resolved by the human.
+     Do NOT continue to worktree creation. Exit cleanly.
+   - [static-analysis] section: if absent or empty, mark quality-sweep skippable.
 
-Aborting from either branch below means: leave this `confirm` step
-OPEN (do not close it), do NOT call `bd mol burn` from within this
-step, and print this one-line follow-up:
+4. Stamp the molecule→bead lookup label if not already stamped:
+   bd label add <mol-id> for-bead-{{bead-id}}
 
-  Molecule paused at confirm. Run brainstorm-bead on this bead and re-attempt, or `bd mol burn <mol-id>` to discard.
+5. Create the worktree:
+   Branch name: feat/{{bead-id}}-<slug-from-title>
+   Location: <repo-root>/.claude/worktrees/<branch-name>
+   Command:
+     git worktree add .claude/worktrees/<branch> -b <branch>
+   CRITICAL: the formula is already poured (this step was created by the pour).
+   If worktree creation fails: squash the molecule and flag-human.
 
-Leave the disposition (re-attempt or burn) to the operator (or to
-run-queue policy).
+6. Stamp the worktree-path label on the molecule:
+   Encoding (apply IN ORDER):
+     _ → _u
+     / → __
+   Then: bd label add <mol-id> worktree-path-<encoded>
 
-Detect execution mode from your own dispatch context:
+7. Claim the bead and walk the parent chain:
+   bd update {{bead-id}} --status in_progress
+   PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+   while [ -n "$PARENT" ]; do
+     bd update "$PARENT" --status in_progress
+     PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+   done
 
-- AUTONOMOUS mode (you were dispatched by run-queue, or any
-  context where no human is at the keyboard):
-  - Escalate the bead so a human can address it:
-      bd label add {{bead-id}} human
-      bd update {{bead-id}} --append-notes "missing brainstormed/implementation-ready labels; recommend running brainstorm-bead before implementation."
-    (NOT `bd human <id>` — that's the help command, not a label applier.)
-  - Do NOT prompt — there is no operator to answer.
-  - Then abort (per the shared abort mechanism above).
+## Definition of Done
+Poured molecule + worktree exists + worktree-path-* label stamped on molecule.
+OR: human label + structured gap-note + (if pour completed) molecule squashed.
 
-- INTERACTIVE mode (start-bead routed you here, or a human ran
-  `bd mol pour` directly and is in conversation with you):
-  - Print a clear warning: "Bead {{bead-id}} is missing brainstormed/implementation-ready labels — it has not been through brainstorm-bead. Implementation may run on an incomplete spec."
-  - Ask the user:
-    (a) Abort and route the bead through start-bead/brainstorm-bead first.
-    (b) Proceed with implementation using whatever is in the bead now.
-  - On (a): abort (per the shared abort mechanism above).
-  - On (b): proceed to worktree.
+## Idempotent re-entry
+Check: does an active molecule exist? Does the worktree path decode to a real
+git worktree? If so, skip work already done.
 """
 
 # =============================================================================
-# Phase 2: Isolation
+# Stage: red-tests
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree (decoded from worktree-path-* label)
 # =============================================================================
 
 [[steps]]
-id    = "worktree"
-title = "Set up isolated git worktree"
-needs = ["confirm"]
+id    = "red-tests"
+name  = "red-tests"
+title = "Red-tests: write failing tests covering all [m] AC bullets"
+needs = ["preflight"]
 description = """
-Invoke the using-git-worktrees skill to create an isolated branch.
+Write failing tests (TDD red phase) before any implementation code.
+Model: claude-sonnet-4-6  Effort: medium
 
-Skill: superpowers:using-git-worktrees
+## Preloaded skills
+superpowers:test-driven-development, superpowers:writing-unit-tests,
+superpowers:testing-anti-patterns
 
-- Branch from main (never from another feature branch)
-- Verify you are IN the worktree directory before writing any code
-- Confirm no leftover state from other work
+## Inputs
+- Bead AC from: bd show {{bead-id}} (read [m]-tagged lines)
+- Worktree path: decode worktree-path-* label from molecule
 
-Then claim the bead and walk the parent chain:
+## Decode worktree-path label before any work
+  1. Decode: __ → /  then  _u → _
+  2. Verify decoded path exists and is a git worktree:
+       git -C <path> rev-parse --is-inside-work-tree
+  3. Operate from that cwd.
 
-  bd update {{bead-id}} --status in_progress
+## Actions
 
-  # Walk parent chain; mark each ancestor epic in_progress
-  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-  while [ -n "$PARENT" ]; do
-    bd update "$PARENT" --status in_progress
-    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-  done
+1. Dispatch bead-implementor (sonnet, medium effort) to write tests:
+   - Dispatch with: worktree path, AC bullets (all [m]-tagged lines),
+     step-bead ID, instruction to write failing tests and confirm they fail.
+   - Tests must cover: happy path, edge cases, error paths.
+   - Do NOT mock what has not been verified.
+   - Do NOT write test-only methods in production code.
 
-If `implement-bead` already claimed the bead before pouring this
-formula, the first `bd update` is a no-op — re-running it is safe.
+2. Run the Claude reviewer (test-review skill) on the written tests.
+   When review-level:none is set: skip test reviewers (tests still written).
+
+3. Run Codex adversarial review of the tests (gpt-5.5 default).
+   Model from: project-config.toml [foreign-cli].codex_red_tests_model
+   When review-level:none: skip.
+   Subject to foreign-eyes degradation tracking (FOREIGN-EYES-ITER-<n>).
+
+4. Iteration cap: 2 (override: iteration-cap-red-tests-<n> label).
+   At cap with reviewer disagreement: write disagreement note to step-bead notes.
+   Escalate human ONLY if BOTH reviewers agree on a critical/major design flaw.
+
+5. Commit failing tests to the feature branch.
+
+## Definition of Done
+Tests committed to feature branch; both reviewers approve "shippable" state
+(or iteration cap reached with disagreement note recorded).
+
+## Idempotent re-entry
+Check filesystem (committed tests) and step-bead notes. Continue from prior state.
 """
 
 # =============================================================================
-# Phase 3: TDD — Red / Green / Refactor
+# Stage: green-loop
+# Model: claude-opus-4-7  Effort: medium
+# cwd: worktree
 # =============================================================================
 
 [[steps]]
-id    = "write-tests"
-title = "Write failing tests (red phase)"
-needs = ["worktree"]
+id    = "green-loop"
+name  = "green-loop"
+title = "Green-loop: RALF-IT implementation until tests pass"
+needs = ["red-tests"]
 description = """
-Write tests FIRST. No implementation code at this step.
+Implement the feature (TDD green phase) via RALF-IT iterative refinement.
+Model: claude-opus-4-7  Effort: medium
 
-Skills: superpowers:test-driven-development, superpowers:writing-unit-tests, superpowers:testing-anti-patterns
+## Preloaded skills
+RALF-IT methodology (embedded in controller)
 
-Rules:
-- Tests must be written against the acceptance criteria on the bead (set by brainstorm-bead, restated in the confirm step)
-- Cover: happy path, edge cases, error paths
-- Do NOT mock what you have not verified you understand
-- Do NOT write test-only methods in production code
+## Inputs
+- Committed failing tests from red-tests stage
+- Bead spec from: bd show {{bead-id}}
+- Worktree path from: worktree-path-* label on molecule
+- Prior RALF-IT state: RALF-IT-ITER:<n>/<MAX> in step-bead notes (default 0)
 
-Run the tests and confirm they FAIL. Failure is correct here.
+## RALF-IT loop
 
-  go test ./...           # Go projects
-  pnpm test               # Node/TypeScript projects
-  pytest                  # Python projects
+MAX_ITERATIONS = 5 (override: iteration-cap-green-loop-<n> label — SOLE override path)
 
-If a test passes before any implementation, either the test is wrong
-or the feature already exists. Investigate before continuing.
-"""
+For each iteration:
 
-[[steps]]
-id    = "implement"
-title = "Implement {{feature}} (green phase)"
-needs = ["write-tests"]
-description = """
-Write the minimum code to make all failing tests pass.
+1. Dispatch bead-implementor to write minimum code to make tests pass:
+   - Effort: high on iter 1, medium on iters 2+
+   - Pass: worktree path, bead spec, iteration number, prior state
 
-Skills: superpowers:test-driven-development, then any applicable domain skill
+2. Run quality gate (build/typecheck/lint/test) — from project-config.toml [gates].
+   Gate must pass before review.
 
-Rules:
-- Minimum viable implementation — write only what tests require
-- No speculative features, no over-engineering
-- No abstractions for hypothetical future requirements
+3. Run foreign-eyes review:
+   - Iter 1: Codex (gpt-5.5, or codex_green_loop_iter1_model from project-config.toml)
+   - Iter 2: Gemini (gemini-2.5-pro, or gemini_green_loop_iter2_model)
+   - Iter 3+: pure-Claude fresh-eyes subagent
+   Record degradation: FOREIGN-EYES-ITER-<n>: codex=<status>, gemini=<status>
 
-Run tests after each meaningful change:
-  go test ./...   (or equivalent)
+4. When review-level:deep: run /codex:adversarial-review --model gpt-5.4 after gate.
+   When review-level:none: skip per-iteration code-review and simplify.
 
-This step is complete only when all tests are GREEN.
-"""
+5. Persist iteration marker AFTER iteration completes:
+   bd update <step-bead-id> --append-notes "RALF-IT-ITER:<n>/{{MAX}}"
 
-[[steps]]
-id    = "refactor"
-title = "Refactor for clarity (refactor phase)"
-needs = ["implement"]
-description = """
-Clean up the implementation without changing observable behavior.
-Tests must remain green throughout.
+6. Converge or loop: if reviewers approve and tests green, exit loop.
+   Otherwise continue to next iteration.
 
-Skill: simplify
+After loop:
+- Run simplify skill once on the full diff (not per-iteration).
+- Run quality-reviewer (claude-opus-4-7[1m]) on the full bead diff.
+- If foreign-eyes degraded in 2+ of N iterations: flag-human.
+  Stamp: foreign-eyes-degraded:<n>/<N> on source bead.
 
-Look for:
-- Duplication (three similar lines is a smell; two is acceptable)
-- Names that require a comment to understand
-- Logic that could be expressed more simply
-- Dead code
+Coverage threshold: from project-config.toml [coverage].threshold (default 80%)
+or coverage-threshold-<n> label on bead.
 
-Re-run tests after every change. If tests break, you changed behavior.
-Undo the change and try again.
+## Definition of Done
+RALF-IT reports complete; tests green; coverage meets target; build/typecheck/lint pass.
 
-This step is NOT about adding features or improving performance.
-It is about making the code readable by the next person (who is you,
-in six months, having forgotten everything).
+## Idempotent re-entry
+Read RALF-IT-ITER: marker from step-bead notes. Resume at n+1.
+Crash mid-iteration: marker at prior value, retry failed iteration.
 """
 
 # =============================================================================
-# Phase 4: Completion Gate
+# Stage: quality-sweep
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
 # =============================================================================
 
 [[steps]]
-id    = "code-review"
-title = "Completion gate: code review"
-needs = ["refactor"]
+id    = "quality-sweep"
+name  = "quality-sweep"
+title = "Quality-sweep: global quality gate across entire project"
+needs = ["green-loop"]
 description = """
-Dispatch quality-reviewer subagent against ALL changed files.
+Run the full project quality suite (not just changed files).
+Model: claude-haiku-4-5  Effort: medium
 
-Agent: quality-reviewer
-Scope: every file changed since branch creation, reviewed against:
-  - The implementation plan restated in the confirm step (per the bead spec)
-  - SOLID and DRY principles
-  - Security by design (OWASP top 10, input validation, no injection paths)
-  - Architectural consistency with the rest of the codebase
-  - The standards in INSTRUCTIONS.md
+Skippable when preflight marked it so (no [static-analysis] in project-config.toml,
+or empty gates). Also skips when review-level:none is set.
 
-Address ALL findings before proceeding. If a finding is deferred,
-document the rationale explicitly.
+## Order (fixed)
+1. Lint auto-fix: [lint-autofix].command from project-config.toml (run FIRST)
+2. Build + typecheck + lint (from [gates])
+3. Static analysis (from [static-analysis] — semgrep, depcheck, etc.)
+4. Tests (from [gates].test)
 
-For high-stakes changes (security-sensitive, architecture shifts):
-  /codex:adversarial-review --wait --model gpt-5.4
-"""
+ALWAYS end with build + tests after any code changes (guarantees verify-ac starts green).
 
-[[steps]]
-id    = "simplify"
-title = "Completion gate: simplify"
-needs = ["code-review"]
-description = """
-Invoke the `simplify` skill against changed code.
+## Auto-fix vs flag-human
+Auto-fix unless issues betray a design flaw requiring fundamental changes.
+Use judgment based on the size of the fix.
 
-Skill: simplify
+## Definition of Done
+All gate commands exit zero (or stage skipped per preflight / review-level:none).
 
-This step exists because the implementing agent always misses
-at least one DRY violation or clarity issue. It is not optional.
-
-Address ALL findings. Re-run tests after any changes made here.
-"""
-
-[[steps]]
-id    = "verify"
-title = "Completion gate: verify with evidence"
-needs = ["simplify"]
-description = """
-Run the full verification suite. Evidence is required — no claims without output.
-
-Skill: superpowers:verification-before-completion
-
-Required gates — show the actual command output for each:
-  [ ] Tests pass        → run test suite, paste output
-  [ ] Build succeeds    → run build, paste output
-  [ ] Lint clean        → run linter, paste output
-  [ ] Type check clean  → run type checker, paste output
-
-Do NOT mark this step complete unless all four gates show clean output.
-"I believe it passes" is not evidence. Run the commands.
-
-HARD STOP: After this gate, do NOT commit to main and do NOT push
-directly. The next step is create-pr. Go there next.
+## Idempotent re-entry
+Re-run re-evaluates state and runs only what is not already green.
 """
 
 # =============================================================================
-# Phase 5: Delivery
+# Stage: verify-ac
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "verify-ac"
+name  = "verify-ac"
+title = "Verify-AC: mechanical acceptance criteria validation"
+needs = ["quality-sweep"]
+description = """
+Validate every [m]-tagged AC bullet against worktree state.
+Model: claude-haiku-4-5  Effort: medium
+
+Skips when review-level:none.
+
+## Inputs
+- Bead AC from: bd show {{bead-id}} (parse [m] and [h] tags)
+- Worktree path from: worktree-path-* label on molecule
+- Functional tests from: project-config.toml [functional-tests]
+
+## Actions
+
+For each [m]-tagged AC line:
+1. Dispatch bead-verifier (haiku, low effort) to run shell-runnable witnesses.
+   Collect: exit code + error excerpt.
+2. Assemble validation report.
+
+[h]-tagged AC lines: do NOT validate here. Confirm that human follow-up
+child beads were filed at brainstorm-time finalize (bd list --parent {{bead-id}}
+filtered by label human). If any [h] bullet has no matching follow-up, flag-human.
+
+Run functional/e2e tests from [functional-tests] in project-config.toml.
+If functional tests fail:
+  - Create one bug bead per failure, label human.
+  - Note in step-bead. Continue to create-pr (do NOT loop back).
+
+Persist validation report to BOTH:
+  - Step-bead notes: bd update <step-bead-id> --append-notes "<report>"
+  - Source bead notes: bd update {{bead-id}} --append-notes "<report>"
+  (Report also included in PR description at create-pr.)
+
+## Definition of Done
+Every [m] AC bullet has explicit witness evidence.
+Human-review bullets have follow-up beads filed (confirm presence).
+
+## Idempotent re-entry
+Re-run re-evaluates and continues from prior pass.
+"""
+
+# =============================================================================
+# Stage: create-pr
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
 # =============================================================================
 
 [[steps]]
 id    = "create-pr"
-title = "Create pull request"
-needs = ["verify"]
+name  = "create-pr"
+title = "Create-PR: push branch and open pull request"
+needs = ["verify-ac"]
 description = """
-Invoke the finishing-a-development-branch skill.
+Create the pull request and persist its URL to the molecule.
+Model: claude-haiku-4-5  Effort: medium
 
-Skill: superpowers:finishing-a-development-branch
+## Preloaded skills
+superpowers:finishing-a-development-branch
 
-- Push the branch to origin
-- Create a PR with a clear summary linked to {{bead-id}}
-- PR title should be ≤70 characters
-- PR body should include: what changed, why, and how to test it
+## Actions
 
-Do NOT merge. Do NOT squash. Await review in the next step.
+1. Invoke superpowers:finishing-a-development-branch.
+
+2. PR body MUST include:
+   - Bead reference: {{bead-id}} and bead title
+   - AC (full list with [m]/[h] tags)
+   - RALF-IT iteration summary (from green-loop step-bead notes)
+   - verify-ac validation report
+   - Bug beads filed during verify-ac (if any)
+   - Human-required AC follow-up bead references (if any [h] lines)
+   - Foreign-eyes status section (list which iterations had degraded foreign-eyes)
+
+3. Stamp pr-url-* label on molecule:
+   Encoding: same bijection as worktree-path (though URLs rarely need it).
+   bd label add <mol-id> pr-url-<encoded-url>
+
+## PR creation failure
+Flag-human with worktree intact. Do NOT tear down the worktree.
+
+## Idempotent re-entry
+Query gh pr view first. If a PR exists for the branch and is OPEN: skip creation,
+persist URL idempotently.
+If PR exists and is CLOSED: flag-human. Do NOT auto-reopen or create a new PR.
 """
 
+# =============================================================================
+# Stage: review-cycle
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree
+# =============================================================================
+
 [[steps]]
-id    = "await-review"
-title = "Await PR review, address feedback, and acknowledge every thread"
+id    = "review-cycle"
+name  = "review-cycle"
+title = "Review-cycle: address PR review feedback"
 needs = ["create-pr"]
 description = """
-Invoke the wait-for-pr-comments skill.
+Drive the PR review loop until all review threads are resolved.
+Model: claude-sonnet-4-6  Effort: medium
 
-Skill: superpowers:wait-for-pr-comments
+Skips entirely when review-level:none.
 
-Pass autonomous-mode args so the skill knows it can escalate via bd:
+## Preloaded skills
+superpowers:wait-for-pr-comments (chains internally to superpowers:reply-and-resolve-pr-threads)
+
+## Actions
+
+Invoke superpowers:wait-for-pr-comments with:
   --mode autonomous --bead-id {{bead-id}}
 
-- Wait for Copilot review to complete (or time out)
-- Check BOTH top-level PR comments AND inline review comments
-  (inline comments are easy to miss — always verify both)
-- Classify each comment as FIX/SKIP/ESCALATE
-- Address every FIX item via per-comment subagents (or recognize as
-  already-addressed by an earlier commit)
-- Push combined commits
-- The skill internally chains to superpowers:reply-and-resolve-pr-threads
-  on completion, which replies to every thread (FIX + SKIP + ESCALATE)
-  and resolves only FIXED review_thread items via GraphQL
+The skill:
+1. Polls Copilot via background script (zero Anthropic tokens during wait).
+2. Classifies each comment: FIX / SKIP / ESCALATE.
+3. Dispatches per-comment fix subagents (sonnet) for FIX-class items.
+4. Pushes combined commits.
+5. Internally chains to superpowers:reply-and-resolve-pr-threads:
+   replies to every thread + resolves FIXED review_thread items via GraphQL.
 
-On completion verify before considering the step done:
-  - Every thread has a reply on GitHub
-  - FIXED review_thread items are resolved
-  - Zero internal-jargon strings (no `bd`, no bead IDs, no `ESCALATE`)
-    appear in PR-public replies
+One iteration = one outbound reply-batch.
+Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).
+Early exit when no remaining FIX-class items.
 
-Do NOT merge or clean up the worktree until review is complete
-or has explicitly timed out.
+Exit conditions (mutually exclusive):
+- review-exit-copilot-only (default when review-exit-human-approvers-<n> absent)
+- review-exit-human-approvers-<n>: require N human approvers
 
-Specification: docs/specs/2026-04-26-pr-review-skill-redesign.md
+Persist after each batch:
+  bd update <step-bead-id> --append-notes "REVIEW-BATCH:<n>/<MAX>"
+
+If PR is CLOSED on re-entry: flag-human. Do NOT poll a closed PR.
+
+## Definition of Done
+Every review thread has a reply. FIXED items resolved on GitHub.
+No in-flight FIX work.
 """
 
 # =============================================================================
-# Phase 6: Housekeeping
+# Stage: merge-or-handoff
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: repo root (worktree may be torn down)
 # =============================================================================
 
 [[steps]]
-id    = "housekeeping"
-title = "Housekeeping: close, remember, file discovered work"
-needs = ["await-review"]
+id    = "merge-or-handoff"
+name  = "merge-or-handoff"
+title = "Merge-or-handoff: auto-merge or hand off to human"
+needs = ["review-cycle"]
 description = """
-Complete the lifecycle and preserve context for future sessions.
+Either auto-merge the PR or hand off to the human.
+Model: claude-haiku-4-5  Effort: medium
 
-1. Close the bead:
-     bd close {{bead-id}} --reason "Implemented and PR merged"
+## Gate 1 — PR-state clean-check
+Conditions (ALL must be true for auto-merge path):
+  - Zero open Copilot review threads
+  - Zero open human-author review threads
+  - All CI checks green
+  - 5-minute quiet window with no new comments or review activity
+On wait-for-pr-comments timeout: treat clean-check as NOT clean.
 
-2. Walk the parent chain; close each ancestor epic whose remaining
-   children are all closed (stops at the first ancestor that still
-   has any non-closed children, or when there is no parent):
+## Auto-merge path (auto-mergeable label present AND clean-check clean)
+1. Re-run clean-check immediately before merge call.
+2. Pour merge-and-cleanup formula (phase: liquid — NOT vapor).
+3. Drive merge-and-cleanup:
+   - Merge the PR
+   - Delete branch (local + remote)
+   - Remove worktree (decode from worktree-path-* label)
+   - Run parent-chain I2 close-walk
+   Note: merge-and-cleanup gate-step (Gate 2) blocks until ALL [h] follow-up
+   children are closed with verified-by-human label AND the merge-{source-id}
+   child is closed.
 
-     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-     while [ -n "$PARENT" ]; do
-       NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
-       [ "$NON_CLOSED" = "0" ] || break
-       bd close "$PARENT" --reason "All children closed"
-       PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-     done
+## Hand-off path (default — auto-mergeable absent OR clean-check dirty)
+1. Transition bead to open: bd update {{bead-id}} --status open
+2. Stamp labels: bd label add {{bead-id}} merge-ready
+                 bd label add {{bead-id}} human
+   (merge-ready = why it's on human list; human = surfaces via bd human list)
+3. Note: bead is now excluded from bd ready (human label gates it).
+   Human runs /merge-and-cleanup when ready.
 
-3. Record any non-obvious decisions or hard-won insights:
-     bd remember "insight about this system or pattern"
-     bd decision record --title="Why we chose X over Y"
-
-4. File any work discovered during implementation. Prefer epic-sibling
-   placement over orphan-with-dep:
-
-     PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-
-     # Decide placement via the sibling test (see rules/beads.md I3):
-     # would this work have been on the parent epic's original plan, if
-     # we'd thought of it? Yes → sibling. No → orphan + discovered-from.
-     IS_SIBLING_SUBTASK=false  # set to true only when the answer is yes
-
-     if [ -n "$PARENT" ] && [ "$IS_SIBLING_SUBTASK" = true ]; then
-       # Create INSIDE the parent epic as a sibling:
-       bd create "Found: ..." -t "<type>" -p "<prio>" --parent "$PARENT"
-     else
-       # Otherwise create as an orphan and link with discovered-from:
-       NEW=$(bd create "Found: ..." -t "<type>" -p "<prio>" --json | jq -r '.id')
-       bd dep add "$NEW" {{bead-id}} --type discovered-from
-     fi
-
-   Sibling test (see rules/beads.md I3): would this discovered work
-   have been on the parent epic's original plan, if we'd thought of
-   it? Yes → sibling (--parent). No → orphan + discovered-from.
-
-5. Burn this wisp (if running as vapor):
-     bd mol burn <this-mol-id>
+## Idempotent re-entry
+Query gh pr view --json mergedAt first. If non-null: skip merge, proceed to cleanup.
 """

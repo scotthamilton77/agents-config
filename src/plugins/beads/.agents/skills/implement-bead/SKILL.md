@@ -2,38 +2,29 @@
 name: implement-bead
 description: >
   Use when a bead has the implementation-ready label and is ready for
-  autonomous execution. Pours the appropriate formula, then orchestrates
-  subagents through the molecule DAG step by step. The invoking agent is
-  the ORCHESTRATOR only — all implementation work is done by subagents.
-  Do NOT invoke this skill for beads that have not been through brainstorming
-  (use start-bead to route correctly).
+  autonomous execution. Drives ONE stage of the bead's molecule and exits.
+  Invoked by the shell driver via `claude -p /implement-bead <bead-id>`.
+  The invoking agent is the ORCHESTRATOR only — all implementation work
+  is done by subagents. Do NOT invoke this skill for beads that have not
+  been through brainstorming (use start-bead to route correctly).
 model: sonnet[1m]
 effort: high
 ---
 
 # implement-bead
 
-Pour a formula and orchestrate subagents through the resulting molecule DAG.
-The main agent manages; subagents build.
+Drive ONE stage of the bead's molecule DAG and exit. The shell driver
+(`scripts/bead-driver-test.sh`) calls this skill once per ready stage via
+`claude -p --session-id <uuidv5> "/implement-bead <bead-id>"`. This skill
+reads the current step, executes it, closes the step, and exits. The shell
+driver handles looping — this skill MUST NOT loop to the next step.
 
 ## When to Use
 
-The bead MUST have label `implementation-ready`. One of the following
-invocation contexts must apply:
-
-- **`run-queue` in a dedicated session** — autonomous; no per-bead user
-  authorization needed (the operator authorized the queue when they
-  started it).
-- **`start-bead` Route A** for a bead where no
-  `implementation-readied-session-<sid-prefix-8>` label matching the
-  current session's SID prefix is present (the marker for the current
-  session is absent, regardless of whether other session markers exist).
-- **In-session override** — user explicitly and affirmatively authorizes
-  implementation in the current session (e.g. "implement it now",
-  "yes, go"). Completing brainstorming in the same session is NOT
-  implicit authorization.
-
-**Do NOT use when:** bead lacks `implementation-ready` label — use `start-bead`.
+- Invoked by the shell driver via `claude -p /implement-bead <bead-id>`
+- The bead MUST have label `implementation-ready`
+- Do NOT invoke directly for beads that lack `implementation-ready` — use `start-bead`
+- Do NOT invoke in the same session where brainstorming is happening (session separation rule)
 
 ## The Process
 
@@ -67,15 +58,14 @@ Decide from the result array:
   unlabeled in-progress work. Escalate:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
-  bd human <bead-id>
+  bd label add <bead-id> human
   ```
-  Otherwise proceed to Step 3.
+  Otherwise proceed to Step 3 to pour a new molecule.
 
-- **length 1** → extract and resume (go to Step 4):
+- **length 1** → extract and go directly to Step 4 (find the current step):
   ```bash
   MOL_ID=$(bd list --label for-bead-<bead-id> --type molecule --json \
     | jq -r '[.[] | select(.status != "closed")] | .[0].id')
-  bd mol current "$MOL_ID"
   ```
   Do NOT pour a new formula over existing in-progress work.
 
@@ -89,37 +79,27 @@ Decide from the result array:
     | jq '[.[] | select(.status != "closed")
                | {id, title, status, updated_at, created_at}]'
   ```
-  Resolve if one clearly supersedes the others — an open
-  implement-feature/fix-bug pour supersedes a stale brainstorm-bead
-  wisp; a more recent pour supersedes an abandoned earlier one. Resume
-  the winner (go to Step 4) and tell the user your reasoning; the user
-  can burn the loser later.
+  Resolve if one clearly supersedes the others. Resume the winner (go to
+  Step 4) and record your reasoning. The user can burn the loser later.
 
-  If the molecules cannot be cleanly disambiguated, escalate WITH your
-  analysis — the human should see your read-out, not a blank flag:
+  If molecules cannot be cleanly disambiguated, escalate WITH your analysis:
   ```bash
-  bd comments add <bead-id> "N active molecules for this bead:
-    - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
-    - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
-    Assessment: <duplicative | legacy | needs manual merge>
-    Recommended action: <resume X / burn Y / user decides>"
-  bd human <bead-id>
+  bd comments add <bead-id> "N active molecules for this bead: ..."
+  bd label add <bead-id> human
   ```
   Do NOT silently pick one.
 
 See `rules/beads.md` ("Molecule → bead linkage convention") for the
 stamp procedure applied in Step 3.
 
-### Step 3: Pour the Formula
+### Step 3: Pour the Formula (only if no active molecule from Step 2)
 
 Select formula based on bead type:
 - `bug` → `fix-bug`
 - `feature`, `task`, `chore` → `implement-feature`
 
-Select pour vs. wisp:
-- **Pour** (default): work may span multiple sessions or is non-trivial
-- **Wisp**: only if the work is clearly completable in this single session
-  AND the user explicitly indicated so
+**Pour vs. wisp:** Default to pour (persistent across sessions). Wisp only
+if the bead is trivially small AND single-session completion is certain.
 
 ```bash
 # Default (pour — persistent across sessions)
@@ -134,8 +114,7 @@ bd mol pour fix-bug \
 ```
 
 Note the molecule ID from the output. Immediately stamp the bead→molecule
-lookup label so Step 2's existence probe can find this molecule on any
-future entry (see `rules/beads.md` "Molecule → bead linkage convention"):
+lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
 
 ```bash
 bd label add <mol-id> for-bead-<bead-id>
@@ -153,68 +132,55 @@ while [ -n "$PARENT" ]; do
 done
 ```
 
-If the bead arrived here via `start-bead` Route A after brainstorming
-in a prior session, the brainstorm-bead formula's `claim` step already
-set the bead (and ancestors) `in_progress` — re-running `bd update --status in_progress` is a safe no-op. Keep the walk here so the
-claim invariant holds no matter which path got us to implementation.
+### Step 4: Find the ONE Current Ready Step
 
-### Step 4: Orchestration Loop
+Query the molecule for its current step using `--json` (text-mode is
+unreliable — see beads bug `2dx`):
 
-Execute each molecule step by dispatching subagents. The main agent
-ONLY orchestrates — it does not write code, run tests, or create PRs.
-
+```bash
+bd mol current <mol-id> --json
 ```
-LOOP:
-  1. next_step = bd mol current <mol-id> --json
-  2. if no next step (molecule complete): exit loop
-  3. step_desc = bd show <step-bead-id>
-  4. dispatch subagent with step instructions (see below)
-  5. wait for subagent to complete and close step bead
-  6. report: "✓ <step title>" to user
-  7. check for bd human escalations: bd human list --json
-     if any new: surface to user and pause loop
-  8. go to 1
+
+If no current step is returned (molecule is complete or all steps closed),
+EXIT immediately. The shell driver will handle close-walk and cleanup.
+Do NOT squash or burn the molecule here — that is the driver's job.
+
+Extract the step bead ID from the result.
+
+### Step 5: Execute the Step
+
+Read the step bead's full description:
+
+```bash
+bd show <step-bead-id>
 ```
+
+Execute the instructions in that step bead. Dispatch subagents as needed
+per the step description. The step description is self-contained — the
+molecule's DAG enforces sequencing; you do not need to explain prior steps
+to each new subagent.
 
 **Subagent dispatch instructions** — for each step, pass:
 1. The full text of the step bead description (from `bd show <step-bead-id>`)
 2. The original bead context: title, AC, and bead ID
-3. The instruction: "Execute this step completely. When done, close the step
-   bead with `bd close <step-bead-id> --reason '<brief summary>'`.
-   Report back what you did."
+3. The cwd contract for this stage (decoded from the molecule's `worktree-path-*`
+   label for most stages; repo root for `preflight` and `merge-or-handoff`)
+4. The instruction: "Execute this step completely. Report back what you did."
 
 **Subagent isolation**: each subagent is independent and has no context
 from previous subagents. The step bead description must be self-contained.
-The molecule's DAG enforces sequencing — you do not need to re-explain
-previous steps to each new subagent.
 
-### Step 5: Molecule Complete
+### Step 6: Close the Step and EXIT
 
-When `bd mol current` returns no more steps:
+When the step is complete, close the step bead:
 
 ```bash
-bd mol squash <mol-id>   # compress to digest (pour)
-# or:
-bd mol burn <mol-id>     # discard (wisp)
+bd close <step-bead-id> --reason "<brief summary of what was done>"
 ```
 
-Report to the user:
-> "Molecule complete for <bead-id>. PR created and awaiting review.
->  Authorize merge when ready with: 'go ahead and merge PR #N'"
-
-## Pour vs. Wisp Decision Guide
-
-| Signal | Pour | Wisp |
-|--------|------|------|
-| Work may span sessions | ✓ | |
-| Complex feature, many steps | ✓ | |
-| User didn't specify | ✓ | |
-| "Quick", "small", "one-shot" in bead title | | ✓ |
-| User says "do it in this session" | | ✓ |
-| Trivial bug with obvious fix | | ✓ |
-
-**Default: Pour.** When in doubt, pour. A poured molecule that finishes in
-one session is fine. A wisped molecule that needs a second session is lost.
+Then EXIT. Do NOT loop to the next step. Do NOT call `bd mol current` again.
+The shell driver polls for the next ready step and spawns a new `claude -p`
+invocation for each subsequent stage.
 
 ## Important Constraints
 
@@ -226,12 +192,19 @@ The main agent MUST NOT:
 - Push branches
 - Make git commits
 
-All of these happen inside subagents executing molecule step beads (the runtime instances of the formula's step definitions).
+All of these happen inside subagents executing the molecule step bead's instructions.
+
+**One step per invocation.** This skill is called once per stage by the
+shell driver. Driving multiple steps in a single invocation defeats the
+per-stage context-bounding and session-id resumption model.
 
 **No unauthorized merges.**
-The implement-feature and fix-bug formulas end at `await-review`.
-They do NOT merge. Merging requires explicit user authorization
-and is handled separately via the `merge-and-cleanup` formula.
+The implement-feature and fix-bug formulas end at `merge-or-handoff` (not
+`review-cycle`). The `merge-or-handoff` step may pour the `merge-and-cleanup`
+formula, but ONLY when the user has given explicit authorization ("go ahead and
+merge", "ship it", etc.). Completing a PR or finishing the review cycle is NOT
+authorization to merge. The `merge-and-cleanup` formula is the only authorized
+merge path — it requires explicit human sign-off before proceeding.
 
 **Discovered work:**
 If a subagent reports discovered work, create new beads immediately.
@@ -241,7 +214,8 @@ Do NOT add them to the current molecule or fix them inline.
 
 | Thought | Reality |
 |---------|---------|
-| "I'll just invoke `ralf-it` / `superpowers:subagent-driven-development` / `superpowers:executing-plans` directly" | No. `implement-bead` pours a formula; those methodology skills run INSIDE molecule steps, not as peers. |
+| "I'll loop to the next step before exiting" | No. One step per invocation. Exit after closing the step. The shell driver loops. |
+| "I'll invoke `ralf-it` / `superpowers:subagent-driven-development` directly" | No. Those methodology skills run INSIDE molecule steps, not as peers. |
 | "The step is small — I'll skip the subagent and do it in the main agent" | No. Main agent orchestrates, subagents implement. Dispatch even for small steps. |
 | "I'll skip the formula and just run the work directly" | The formula IS the workflow. Skipping it skips the gate. |
-| "Brainstorming finished cleanly, so the user must want implementation" | No. Hand off to run-queue by default. Ask or wait for explicit authorization. |
+| "Brainstorming finished cleanly, so the user must want implementation" | No. Hand off to run-queue / shell driver by default. |
