@@ -82,7 +82,7 @@ Behavior:
 
 ## Stage rules
 
-- Run the project test-runner command before committing and confirm tests FAIL. The dispatcher expects the derived gate roll-up to be `fail` — specifically `evidence.tests.failing > 0`.
+- Run the project test-runner command before committing and confirm tests FAIL. The dispatcher expects the derived gate roll-up to be `fail`. Typical shape: `evidence.tests.failing > 0`. Carve-out (per `worker-report-v1.md` §1.1): if the runner exits non-zero BEFORE emitting parseable counts (compile error, missing fixtures, harness crash, etc.), set `passing: null, failing: null` and capture the runner's stderr in `escalations` with `reason: "tests-runner-unparseable"`. Both shapes derive to `fail`.
 - If the new tests unexpectedly PASS, the test does not actually test new behavior. Set `status: needs_human` and add an escalation with `reason: "red-tests-passed-unexpectedly"`. Do not commit a passing red-phase test as success.
 - `evidence.tests.passing` and `evidence.tests.failing` are required whenever the test command runs. `null` is permitted only when the runner exited non-zero before emitting parseable counts; in that case capture stderr in `escalations` with `reason: "tests-runner-unparseable"`.
 - Commits are full 40-char SHAs only.
