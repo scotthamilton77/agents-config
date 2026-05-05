@@ -151,6 +151,49 @@ superpowers:testing-anti-patterns
 
 ## Actions
 
+### Opt-out (evaluate FIRST, before any reviewer dispatch)
+
+This step has a canonical opt-out predicate. Evaluate triggers in this fixed
+order at the top of the step:
+
+1. Trigger A — no test runner. If `[gates].test == ""` in project-config.toml,
+   the project has no way to run tests. Skip with skip-note prefix
+   `red-tests opt-out: ` and trigger description:
+     red-tests opt-out: no test runner ([gates].test=='')
+
+2. Trigger B — no [m] AC lines. If the bead's `acceptance_criteria`
+   field (the canonical AC store per spec §4.1, NOT `description`) has
+   zero `[m]`-classified lines, there is nothing for tests to assert.
+   Apply the canonical line parser (`^\[(m|h)\]\s(.*)$`; untagged lines
+   default to `[m]` per §4.1's backwards-compat rule). Counting
+   `description` would both false-positive on `[m]` tokens inside notes
+   AND false-negative on canonical (non-bullet) AC formats. Pinned
+   line-anchored grep -cvE counts every non-blank line that is NOT
+   explicitly `[h]`-tagged (i.e. [m] lines plus untagged-defaults-to-[m]):
+     m_count=$(bd show {{bead-id}} --json \
+       | jq -r '.[0].acceptance_criteria // ""' \
+       | grep -cvE '^([[:space:]]*$|\[h\][[:space:]])')
+   If m_count == 0, skip with note:
+     red-tests opt-out: no [m] AC lines
+
+3. Both triggers fire (no test runner AND no [m] AC lines):
+     red-tests opt-out: both
+
+4. Otherwise, proceed with the normal red-tests behavior below.
+
+Skip mechanism (when any trigger fires):
+   bd update <step-bead-id> --append-notes "red-tests opt-out: <trigger>"
+The literal prefix `red-tests opt-out: ` is grep-able for verify-ac
+groundedness. Then close the step bead and exit; do not dispatch reviewers.
+
+Conversely: a bead with [m] ACs MUST run red-tests, regardless of project
+signals (Trigger A still skips when there is no test runner — [m] ACs in
+a runner-less project are a brainstorm-time error). There is no per-bead
+`red-tests:enable` opt-IN or `red-tests:skip` opt-OUT label. AC tagging
+is the per-bead signal.
+
+### Normal flow (when no Opt-out trigger fires)
+
 1. Dispatch bead-implementor (sonnet, medium effort) to write tests:
    - Dispatch with: worktree path, AC bullets (all [m]-tagged lines),
      step-bead ID, instruction to write failing tests and confirm they fail.
@@ -175,6 +218,8 @@ superpowers:testing-anti-patterns
 ## Definition of Done
 Tests committed to feature branch; both reviewers approve "shippable" state
 (or iteration cap reached with disagreement note recorded).
+OR step opted out per the canonical Opt-out predicate above, with the
+pinned `red-tests opt-out: ...` skip-note appended to step-bead notes.
 
 ## Idempotent re-entry
 Check filesystem (committed tests) and step-bead notes. Continue from prior state.
@@ -247,6 +292,16 @@ missing, run it now and append the evidence to the step-bead notes. If any
 gate step fails, label both the source bead and step bead `human`, append the
 failure evidence to both notes, and do not advance to `quality-sweep`.
 
+## Coverage
+
+Coverage threshold from project-config.toml [coverage].threshold (default 80%),
+overridable per-bead via the `coverage-threshold-<n>` label;
+honored only when [coverage].applicable is true or absent. When
+[coverage].applicable is explicitly false (docs-only repos, config repos, etc.),
+coverage is not a quality gate and the threshold is bypassed. See
+docs/specs/bead-pipeline-architecture.md §3 (green-loop) for the canonical
+contract.
+
 Rules (regardless of dispatched path):
 - minimum viable implementation only
 - no speculative features
@@ -284,6 +339,13 @@ or empty gates). Also skips when review-level:none is set.
 4. Tests (from [gates].test)
 
 ALWAYS end with build + tests after any code changes (guarantees verify-ac starts green).
+
+## Coverage
+
+This stage does not separately enforce a coverage threshold; coverage gating,
+if any, lives in green-loop's Definition of Done and is conditional on
+[coverage].applicable. See docs/specs/bead-pipeline-architecture.md §3
+(quality-sweep).
 
 ## Auto-fix vs flag-human
 Auto-fix unless issues betray a design flaw requiring fundamental changes.

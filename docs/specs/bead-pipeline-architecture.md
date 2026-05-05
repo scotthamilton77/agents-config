@@ -114,7 +114,9 @@ The iteration cap defaults to 2 (override via `iteration-cap-red-tests-<n>` labe
 
 When `review-level:none` is set on the source bead, the test-review skill and Codex adversarial review subagents skip; tests are still WRITTEN (TDD red phase is correctness substrate, not review depth), but no AI review of the tests runs.
 
-**Definition of Done.** Tests committed to feature branch; both reviewers approve "shippable" state (or iteration cap reached with disagreement note recorded).
+**Opt-out.** This stage has a canonical opt-out predicate evaluated FIRST in both formulas, before any reviewer dispatch. **Trigger A** (both `implement-feature` and `fix-bug` paths): if `[gates].test == ""` in `project-config.toml`, the project has no test runner; skip with note `red-tests opt-out: no test runner ([gates].test=='')`. **Trigger B** (`implement-feature` ONLY): if the bead's `acceptance_criteria` field (per §4.1's canonical AC parser, NOT `description`) has zero `[m]`-classified lines, there is nothing for tests to assert; skip with note `red-tests opt-out: no [m] AC lines`. Apply the canonical line parser (`^\[(m|h)\]\s(.*)$`; untagged lines default to `[m]` per §4.1's backwards-compat rule) to count `[m]` lines. When both triggers fire, the note is `red-tests opt-out: both`. The literal prefix `red-tests opt-out: ` is grep-able for verify-ac groundedness. Bug-class asymmetry: `fix-bug` deliberately omits Trigger B because a failing regression test is "proof that the bug cannot silently return"; allowing zero-`[m]` skip on the bug path would silently waive the regression-test invariant — a bug bead with zero `[m]` AC lines and a non-empty `[gates].test` is a brainstorm gap, not an opt-out condition. AC tagging is the per-bead signal — there is no per-bead opt-IN/opt-OUT label. The DoD reflects the opt-out branch.
+
+**Definition of Done.** Tests committed to feature branch; both reviewers approve "shippable" state (or iteration cap reached with disagreement note recorded). OR step opted out per the canonical Opt-out predicate, with the pinned `red-tests opt-out: ...` skip-note appended to step-bead notes.
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `medium`.
 
@@ -138,7 +140,7 @@ RALF-IT handles implementation subagent dispatch, the quality gate (build/typech
 
 **Foreign-eyes degradation handling.** When foreign-CLIs are unavailable (auth expired, quota exhausted, network failure), RALF-IT records the degradation per iteration in step-bead notes (`FOREIGN-EYES-ITER-<n>: codex=<status>, gemini=<status>`). At end of loop, if foreign-eyes were degraded in 2 or more of N iterations, RALF-IT flag-humans and does not mark the stage complete. A `foreign-eyes-degraded:<n>/<N>` label is stamped on the source bead; the eventual PR description includes a foreign-eyes status section so reviewers know which iterations actually had cross-tool review. The threshold is absolute (≥2), not proportional to the iteration cap: two unverified iterations is structurally unacceptable regardless of cap, because anti-bias is the JUSTIFICATION for foreign-eyes — below that bar, RALF-IT is a self-review loop branded as adversarial.
 
-**Coverage.** The threshold comes from `[coverage].threshold` in `project-config.toml` (default 80%) or the per-bead `coverage-threshold-<n>` label override. Coverage is an indicator, not a quality measure: the implementor and reviewers focus on quality of tests, not metric satisfaction. Watch for new branches introduced by implementation choices not covered by red-tests.
+**Coverage.** The threshold comes from `[coverage].threshold` in `project-config.toml` (default 80%) or the per-bead `coverage-threshold-<n>` label override. The threshold is honored only when `[coverage].applicable` is true or absent; when `[coverage].applicable` is explicitly false (docs-only repos, config repos, etc.), coverage is not a quality gate and the threshold is bypassed. Coverage is an indicator, not a quality measure: the implementor and reviewers focus on quality of tests, not metric satisfaction. Watch for new branches introduced by implementation choices not covered by red-tests.
 
 **Unverifiable/unimplementable triggers** (flag-human + abort): AC bullet requires resources the chunk cannot access (third-party API, secret, hardware); AC bullet contradicts an earlier AC bullet; implementation requires architectural changes outside the bead's stated scope; tests pass in isolation but not in integration (root cause outside bead's scope); no standard coverage report location when `[coverage].applicable` is true or absent (also caught at preflight).
 
@@ -148,7 +150,7 @@ When `review-level:none` is set, the per-iteration code-review and simplify suba
 
 **Adversarial-codex sub-step.** When `review-level:deep` is set on the source bead, green-loop's iteration includes an additional adversarial review pass invoking `/codex:adversarial-review --model gpt-5.4` after the per-iteration quality gate. Otherwise this sub-step self-skips. It is a conditional sub-component INSIDE green-loop, not a peer stage; the skip matrix in section 4.2 governs its activation.
 
-**Definition of Done.** RALF-IT reports complete; tests green; coverage meets target; build/typecheck/lint pass.
+**Definition of Done.** RALF-IT reports complete; tests green; coverage meets target (when `[coverage].applicable` is true or absent); build/typecheck/lint pass.
 
 **Orchestrator agent + model + effort.** `claude-opus-4-7`, effort `medium`. The RALF-IT controller is opus by skill frontmatter; the synthesis decisions ("converge or loop?") are the highest-leverage in the pipeline. Medium effort is sufficient because the synthesis is bounded, not novel design.
 
@@ -167,6 +169,8 @@ When `review-level:none` is set, the per-iteration code-review and simplify suba
 ### quality-sweep
 
 **Purpose.** Global quality sweep across the entire project (not just RALF-IT's changed files). Skippable when preflight has marked it so (project-config.toml introduces no checks beyond RALF-IT's gates).
+
+**Coverage.** quality-sweep does not separately enforce a coverage threshold; coverage gating, if any, lives in green-loop's Definition of Done and is conditional on `[coverage].applicable`.
 
 The order is fixed: lint auto-fixes FIRST (`[lint-autofix].command`), then build/typecheck/lint, then static-analysis (semgrep, depcheck, etc., from `[static-analysis]`), then tests. The stage ALWAYS ends with build + tests after any code changes — this guarantees `verify-ac` starts on green.
 
@@ -344,7 +348,7 @@ Cross-cutting policy is captured as bd labels on the source bead. Each label is 
 | `iteration-cap-review-cycle-<n>` | review-cycle | 5 | Override review-cycle iteration cap (one iteration = one outbound reply-batch). `<n>` is a positive integer. |
 | `review-exit-copilot-only` | review-cycle | implicit when `review-exit-human-approvers-<n>` is absent | Exit when Copilot review completes; ignore human-approver count. |
 | `review-exit-human-approvers-<n>` | review-cycle | absent | Require `<n>` human approvers (in addition to Copilot) before review-cycle exits. Mutually exclusive with `review-exit-copilot-only`. |
-| `coverage-threshold-<n>` | green-loop, quality-sweep | from `[coverage].threshold` in project-config.toml; if absent there, 80 | Override the project's default coverage threshold for this bead. `<n>` is an integer percent 0-100. |
+| `coverage-threshold-<n>` | green-loop | from `[coverage].threshold` in project-config.toml; if absent there, 80 | Override the project's default coverage threshold for this bead. `<n>` is an integer percent 0-100. |
 | `review-level:<value>` | red-tests, code-review/simplify within green-loop, verify-ac, adversarial-codex (when present) | `standard` | Gates the depth of AI review. Values: `none` (no review of any kind, including red-tests reviewers), `light` (verifier only), `standard` (full gate without adversarial Codex), `deep` (full gate plus adversarial Codex). |
 
 **Skip matrix for `review-level:*`** (single source of truth for skip behavior across all stages):
@@ -429,7 +433,7 @@ The `bead-reviewer` MUST be a different persona from `bead-specwriter` so the re
 The file `project-config.toml` lives at the project root and configures stage behavior per project. Sections:
 
 - `[gates]` — default quality-gate commands (build, typecheck, lint, test). Read by green-loop's quality gate and by quality-sweep.
-- `[coverage]` — `applicable` (default `true`), `threshold` (default 80), `report-location`, `per-module-pattern`, `format`. Read by green-loop, quality-sweep, and preflight. When `applicable = false`, the preflight stage skips the report-location check and does NOT fire the human-flag protocol on missing/empty `report-location`. Use this for docs-only or config-only repos that have no test infrastructure. **Currently the `applicable = false` opt-out applies to preflight only; green-loop and quality-sweep continue to enforce the coverage threshold unconditionally — wiring those stages to honor the opt-out is tracked as separate follow-up work.** When absent or `true`, the existing semantics apply (empty/missing `report-location` triggers human-flag).
+- `[coverage]` — `applicable` (default `true`), `threshold` (default 80), `report-location`, `per-module-pattern`, `format`. Read by green-loop, quality-sweep, and preflight. When `applicable = false`, the opt-out applies pipeline-wide: preflight skips the report-location check and does NOT fire the human-flag protocol on missing/empty `report-location`; green-loop's Definition of Done does NOT enforce the coverage threshold; quality-sweep does not separately enforce a threshold. Use this for docs-only or config-only repos that have no test infrastructure. When absent or `true`, the existing semantics apply (empty/missing `report-location` triggers human-flag, and green-loop's DoD enforces the threshold).
 - `[lint-autofix]` — `command` for the lint auto-fix step. Read by quality-sweep.
 - `[static-analysis]` — extra checks (semgrep, depcheck, etc.). Read by quality-sweep. If absent, quality-sweep is skippable.
 - `[functional-tests]` — UI/e2e commands. Read by verify-ac.

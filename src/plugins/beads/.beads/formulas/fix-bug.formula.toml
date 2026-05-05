@@ -213,6 +213,34 @@ superpowers:testing-anti-patterns
 
 ## Actions
 
+### Opt-out (evaluate FIRST, before any reviewer dispatch)
+
+This step has a canonical opt-out predicate. Evaluate at the top of the step:
+
+1. Trigger A — no test runner. If `[gates].test == ""` in project-config.toml,
+   the project has no way to run tests. Skip with skip-note prefix
+   `red-tests opt-out: ` and trigger description:
+     red-tests opt-out: no test runner ([gates].test=='')
+
+2. Otherwise, proceed with the normal red-tests behavior below.
+
+Skip mechanism (when Trigger A fires):
+   bd update <step-bead-id> --append-notes "red-tests opt-out: no test runner ([gates].test=='')"
+The literal prefix `red-tests opt-out: ` is grep-able for verify-ac
+groundedness. Then close the step bead and exit; do not dispatch reviewers.
+
+**Trigger B (no [m] AC bullets) is DELIBERATELY OMITTED on the bug path.**
+The fix-bug formula encodes a regression-test invariant: a failing
+regression test is "proof that the bug cannot silently return" (see action
+5 below). Allowing zero-[m] skip on the bug path would silently waive that
+regression-test invariant. A bug bead with zero [m] ACs and a non-empty
+[gates].test is a brainstorm gap, not an opt-out condition — the formula
+must NOT silently skip; it proceeds with normal red-tests behavior, and the
+dispatched bead-implementor will fail loudly with no [m] lines to cover,
+surfacing the gap for human resolution.
+
+### Normal flow (when no Opt-out trigger fires)
+
 1. Dispatch bead-implementor (sonnet, medium effort) to write the regression test:
    - Test MUST target the root cause location, not the symptom surface.
    - Testing at the wrong layer creates false confidence.
@@ -238,6 +266,9 @@ superpowers:testing-anti-patterns
 ## Definition of Done
 Failing regression test committed to feature branch. Reviewers approve or
 iteration cap reached with disagreement recorded.
+OR step opted out per the Trigger-A-only Opt-out predicate above (no test
+runner), with the pinned `red-tests opt-out: ...` skip-note appended to
+step-bead notes.
 
 ## Idempotent re-entry
 Check filesystem (committed test) and step-bead notes.
@@ -311,6 +342,16 @@ missing, run it now and append the evidence to the step-bead notes. If any
 gate step fails, label both the source bead and step bead `human`, append the
 failure evidence to both notes, and do not advance to `quality-sweep`.
 
+## Coverage
+
+Coverage threshold from project-config.toml [coverage].threshold (default 80%),
+overridable per-bead via the `coverage-threshold-<n>` label;
+honored only when [coverage].applicable is true or absent. When
+[coverage].applicable is explicitly false (docs-only repos, config repos, etc.),
+coverage is not a quality gate and the threshold is bypassed. See
+docs/specs/bead-pipeline-architecture.md §3 (green-loop) for the canonical
+contract.
+
 Rules (regardless of dispatched path):
 - fix root cause, not just symptom
 - minimum viable fix only
@@ -347,6 +388,13 @@ Skippable when preflight marked it so. Also skips when review-level:none.
 4. Tests ([gates].test)
 
 ALWAYS end with build + tests after any code changes.
+
+## Coverage
+
+This stage does not separately enforce a coverage threshold; coverage gating,
+if any, lives in green-loop's Definition of Done and is conditional on
+[coverage].applicable. See docs/specs/bead-pipeline-architecture.md §3
+(quality-sweep).
 
 ## Definition of Done
 All gate commands exit zero (or stage skipped).
