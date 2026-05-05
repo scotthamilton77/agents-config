@@ -66,16 +66,23 @@ Read the bead and its labels:
 
 3. Read project-config.toml and verify quality-gate config.
    If [static-analysis] absent or empty: mark quality-sweep skippable.
-   If no coverage report location ([coverage].report-location absent OR empty
-   string, i.e. `report-location = ""`): apply the human-flag protocol and
+
+   Coverage applicability ([coverage].applicable): if explicitly set to `false`,
+   coverage does NOT apply to this project (docs-only repos, config repos, etc.).
+   Skip the report-location check entirely and proceed to step 4. Note in your
+   close-reason that coverage is opt-out for this project.
+
+   Coverage report location ([coverage].report-location): only checked when
+   `[coverage].applicable` is true OR absent (default). If absent OR empty
+   string (i.e. `report-location = ""`): apply the human-flag protocol and
    stop this stage:
      bd label add {{bead-id}} human
      bd label add <step-bead-id> human
      bd update {{bead-id}} --append-notes "preflight: no coverage report location configured in project-config.toml"
      bd update <step-bead-id> --append-notes "preflight: no coverage report location configured — molecule parked"
-   An empty string is treated the same as absent: explicit opt-out requires a
-   comment in project-config.toml — a bare empty string is ambiguous and must
-   be resolved by the human.
+   An empty string is treated the same as absent: explicit opt-out requires
+   `[coverage].applicable = false` — a bare empty string is ambiguous and
+   must be resolved by the human.
    Do NOT continue to worktree creation. Exit cleanly.
 
 4. Stamp the molecule→bead lookup label if not already stamped:
