@@ -40,7 +40,7 @@ Agent tool (general-purpose, mode: "auto"):
     Codex invocation:
     ```bash
     CODEX_HOME="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}"
-    node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.4 < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
+    node "$CODEX_HOME/scripts/codex-companion.mjs" task --model gpt-5.5 < .ralf/{session_id}/prompt-{agent_lower}-{timestamp}.md > .ralf/{session_id}/{agent_lower}-review-{timestamp}.md 2>.ralf/{session_id}/{agent_lower}-errors-{timestamp}.log
     ```
 
     Gemini invocation:
