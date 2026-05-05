@@ -200,13 +200,16 @@ Check the bead's RALF signal before dispatching:
   bd label list {{bead-id}} --json
 
 - If label `ralf:required` is present:
-    invoke `ralf-implement` with target `{{bead-id}}`
+    invoke `ralf-implement` with the bead spec, Definition of Done, relevant context, quality commands, and optional max cycle count from `ralf:cycles=N`
 
     `ralf-implement` owns only the inner quality loop: iteration,
-    independence, adversarial posture, and convergence.
+    independence, adversarial posture, convergence, and structured report output.
+    It does not read bead labels or update bead state; this formula step passes
+    all needed inputs.
 
-    Optional cycle override comes from label `ralf:cycles=N`.
-    If absent or invalid, `ralf-implement` uses its own internal default.
+    After it returns, append the structured report summary to the green-loop
+    step-bead notes, including cycles run, score, severity counts, and
+    foreign-eyes status/degradation for every Codex/Gemini cycle.
 
 - Otherwise:
     invoke `superpowers:test-driven-development` first,
@@ -215,6 +218,15 @@ Check the bead's RALF signal before dispatching:
 Record the dispatch decision for audit:
 
   bd comments add {{bead-id}} "implement: dispatched <skill-name>"
+
+`bd comments add` is non-destructive: it creates a separate comment and does
+not replace issue notes. For cumulative step output, use `bd update
+--append-notes`; do not use `--notes`, which replaces existing notes.
+
+Persist step output before closing green-loop. Here `<step-bead-id>` is the current green-loop molecule step bead:
+
+  bd update <step-bead-id> --append-notes "IMPLEMENTATION-REPORT: score=<PASS|PASS_WITH_RESERVATIONS|FAIL>; cycles=<n>/<max>; severity=blocking:<n>,critical:<n>,major:<n>,minor:<n>; summary=<summary from dispatched skill>"
+  bd update <step-bead-id> --append-notes "FOREIGN-EYES: cycle-1=<COMPLETED|UNAVAILABLE|TIMED_OUT|QUOTA_EXCEEDED|AUTH_FAILED|NO_OUTPUT|UNUSABLE_OUTPUT|NOT_RUN>; cycle-2=<...>; degraded=<list or none>"
 
 Rules (regardless of dispatched path):
 - minimum viable implementation only

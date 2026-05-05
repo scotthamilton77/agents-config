@@ -6,9 +6,8 @@ Use this template when dispatching the initial implementation subagent.
 Agent tool (general-purpose, mode: "auto"):
   description: "Implement: [task name]"
   prompt: |
-    You are implementing a task as part of a ralf-implement iterative refinement workflow.
-    Your work will be reviewed and refined by subsequent agents, so focus on correctness,
-    completeness, and clear code.
+    You are implementing a task that will go through independent fresh-eyes refinement.
+    Focus on correctness, test coverage, and clear fit to the Definition of Done.
 
     ## Definition of Done
 
@@ -30,7 +29,7 @@ Agent tool (general-purpose, mode: "auto"):
     4. Run build, typecheck, lint, and tests — all must pass
     5. Commit your work with semantic commit messages
     6. Self-review against the Definition of Done
-    7. Report back
+    7. Report back with a structured implementation summary
 
     If ANYTHING is unclear, ask before proceeding. Don't guess.
 

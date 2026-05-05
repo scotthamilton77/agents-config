@@ -167,13 +167,18 @@ id    = "ralf-spec-review"
 title = "Adversarial spec review: dispatch ralf-review"
 needs = ["write-spec"]
 description = """
-Dispatch `ralf-review` against this bead's spec target.
+Dispatch `ralf-review` against the finalized spec text from this bead.
 
 Skill: ralf-review
-Target: {{bead-id}}
+Inputs:
+- target artifact: current spec and acceptance criteria from `bd show {{bead-id}}`
+- review criteria: completeness, ambiguity, feasibility, consistency, and implementability
+- context: discussion notes, known constraints, parent/child bead context, and relevant repo conventions
+- max cycles: 2
 
-`ralf-review` runs bounded adversarial fresh-eyes cycles against the spec
-(completeness, ambiguity, feasibility, consistency).
+`ralf-review` runs bounded adversarial fresh-eyes cycles against the provided spec text.
+It does not read or mutate beads; this formula step supplies all inputs and decides how
+to act on the structured report.
 
 Review reported findings:
 - if findings are valid and actionable, return to write-spec and revise
@@ -198,29 +203,44 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
      bd update {{bead-id}} --acceptance="<revised criteria>"
      bd update {{bead-id}} --notes="<revised spec>"
 
-2. RALF triage — if implementation risk warrants iterative refinement,
-   stamp RALF labels.
+2. RALF triage — first clear previous RALF implementation-routing labels,
+   then restamp only if the final spec still warrants iterative refinement:
 
-   If the spec involves any of the following:
+     bd label remove {{bead-id}} ralf:required
+     for label in $(bd label list {{bead-id}} --json | jq -r '.labels[] | select(startswith("ralf:cycles="))'); do
+       bd label remove {{bead-id}} "$label"
+     done
+
+   Use `bd label remove` before `bd label add` because `add` only appends a
+   label; it does not replace prior values. Remove `ralf:cycles=*` by listing
+   matching labels first; the `bd label remove` command accepts exact labels,
+   not shell-style wildcards. Use a POSIX shell loop rather than GNU-only
+   `xargs -r` so the command works on macOS.
+
+   Add `ralf:required` if the spec is likely to produce significant change,
+   including:
+   - more than a few lines in a single file
+   - multi-file coordinated change
    - security-sensitive code
    - authentication/authorization
    - payment processing
    - data migration
    - architectural shift
-   - multi-file coordinated change
    - explicit user directive for RALF
 
    then:
      bd label add {{bead-id}} ralf:required
 
    Optional cycle override (when a non-default cycle count is justified):
-     bd label remove {{bead-id}} ralf:cycles=*
      bd label add {{bead-id}} ralf:cycles=N
 
 3. Add standard readiness labels:
      bd label add {{bead-id}} brainstormed
      bd label add {{bead-id}} implementation-ready
      bd label add {{bead-id}} implementation-readied-session-<sid>
+
+   `<sid>` is the first 8 hex chars of the session ID that applied
+   `implementation-ready`; `start-bead` Route A uses it for same-session gating.
 
 4. Report implementation-ready hand-off and stop unless user explicitly
    authorizes immediate implementation in the current session.

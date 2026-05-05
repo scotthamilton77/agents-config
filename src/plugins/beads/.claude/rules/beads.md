@@ -119,9 +119,10 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `brainstormed` | brainstorm-bead formula (finalize step) | Spec written and reviewed |
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
+| `for-bead-<bead-id>` | `start-bead` (Route C wisp) and `implement-bead` (pour) | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
 | `human` | Any agent via `bd label add <id> human` | Needs human attention. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
-| `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Formula-step dispatches `ralf-implement` for implement stages and `ralf-review` for review stages. |
-| `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional cycle override for invoked RALF variant. Setters MUST run `bd label remove <id> ralf:cycles=*` before `bd label add <id> ralf:cycles=N`. |
+| `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Beads formula-step dispatch signal. Implement stages pass target/spec/DoD/context into `ralf-implement`; review stages pass target/criteria/context into `ralf-review`. |
+| `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional max-cycle override that the formula reads and passes to the invoked RALF skill. Setters MUST remove existing `ralf:cycles=` labels before adding a replacement; `bd label remove` accepts exact labels, so list matching labels first rather than passing a wildcard. |
 
 Label commands:
 ```bash

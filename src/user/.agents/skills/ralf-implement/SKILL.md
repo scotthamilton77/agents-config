@@ -2,7 +2,7 @@
 name: ralf-implement
 model: opus[1m]
 effort: xhigh
-argument-hint: "[bead-id or task description]"
+argument-hint: "[target + DoD + context + optional max cycles]"
 description: Explicit invocation only — iterative implementation with adversarial fresh-eyes cycles; inner-methodology only (no worktree or delivery ownership)
 ---
 
@@ -10,18 +10,18 @@ description: Explicit invocation only — iterative implementation with adversar
 
 Iterative implementation methodology for code changes. This skill owns only the inner quality loop.
 
-Caller owns outer workflow:
-- worktree setup
-- branch / PR / delivery
-- formula stage orchestration
+The caller must provide the target, Definition of Done, relevant context, and optional max cycle count. This skill owns no outer workflow state: no worktree setup, branch delivery, PR creation, tracker updates, or dispatch decisions.
 
-## Invocation guard
+## Required inputs
 
-Invoke only when one of these is true:
-- user explicitly asks for `ralf-implement`
-- a formula step dispatch contract selects `ralf-implement` (for example: `ralf:required` present on an implement step)
+The invocation must include or already have in context:
+- target task or implementation goal
+- original specification or acceptance criteria
+- Definition of Done
+- relevant architectural context and quality commands
+- optional max cycles, integer `1..20`
 
-Do not invoke as a peer workflow alongside bead orchestration.
+Fail fast when the target or Definition of Done is missing, the optional max cycle count is malformed or out of range, required referenced context cannot be read, or the project quality commands cannot be identified.
 
 ## Core invariants
 
@@ -30,33 +30,11 @@ Do not invoke as a peer workflow alongside bead orchestration.
 3. **Adversarial posture** — each pass searches for missing, weak, or incorrect behavior.
 4. **Convergence** — stop when findings are non-significant or cycle budget is exhausted.
 
-## Context and argument contract
-
-Argument accepts:
-- bead ID
-- free-text task description
-
-Bead-driven mode detection:
-- argument parses as a bead ID, and
-- `bd show <id>` succeeds
-
-No worktree checks are performed in this skill. Run against the caller-selected working copy.
-
 ## Cycle budget contract
 
 Default cycle cap: `RALF_IMPLEMENT_DEFAULT_CYCLES=3`
 
-When bead-driven, read labels:
-```bash
-bd label list <id> --json
-```
-
-Interpretation:
-- `ralf:cycles=N` where `N` is integer `1..20` overrides default
-- multiple `ralf:cycles=*` labels => warn and use default
-- malformed or out-of-range `ralf:cycles=*` => warn and use default
-
-Note: this skill reads labels; caller controls whether dispatch occurs.
+The caller may pass an explicit max cycle count. If absent, use the default. Reject malformed, duplicate, or out-of-range cycle inputs instead of guessing.
 
 ## Iteration routing
 
@@ -71,17 +49,27 @@ Per cycle:
 
 Foreign-agent failures degrade cleanly to pure fresh-eyes; cycle still counts.
 
-## Convergence exhaustion behavior
+This skill reports convergence state only. The caller decides whether to continue, defer, escalate, or accept with reservations.
 
-If max cycles are reached and significant work remains:
-- bead-driven: apply human-flag protocol on bead with summary of unresolved risks
-- standalone: ask user whether to continue with additional cycles
+## Severity rubric
+
+- **Blocking** — prevents execution, validation, installation, or required delivery.
+- **Critical** — violates explicit requirements, creates security/data-loss risk, or makes the implementation materially incorrect.
+- **Major** — leaves important behavior, edge cases, tests, maintainability, or integration contracts incomplete.
+- **Minor** — localized quality issue, documentation gap, naming issue, or small missing guard that does not threaten correctness.
 
 ## Output contract
 
-Report:
-- cycles run and convergence result
-- significant fixes applied
-- unresolved concerns (if any)
-- any foreign-eyes degradation observed
+Produce a structured report with:
+- **Score:** `PASS`, `PASS_WITH_RESERVATIONS`, or `FAIL`
+- **Score rationale:** one or two concrete sentences
+- **Cycles run:** `<n>/<max>`
+- **Severity counts:** blocking, critical, major, minor
+- **Foreign-eyes status:** per cycle, including degraded Codex/Gemini runs
+- **Changes applied:** significant fixes or completion work
+- **Remaining concerns:** grouped by severity
 
+Scoring:
+- `PASS` — final cycle found no blocking, critical, or major quality concerns.
+- `PASS_WITH_RESERVATIONS` — cycle budget was exhausted; final cycle found no blocking or critical concerns, and major concerns were low and trending toward zero.
+- `FAIL` — cycle budget was exhausted with blocking, critical, or significant major concerns still present.

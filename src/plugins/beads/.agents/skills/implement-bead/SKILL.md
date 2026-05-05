@@ -195,10 +195,13 @@ The main agent MUST NOT:
 All of these happen inside subagents executing the molecule step bead's instructions.
 
 **RALF dispatch boundary.**
-`ralf-review` and `ralf-implement` are dispatched by formula step contracts.
-They are not peer workflows to invoke manually beside `implement-bead`.
-When `ralf:required` is set and the current step contract calls for RALF,
-dispatching the required variant inside that step is mandatory.
+Formula steps do not model the RALF loop internally. They only decide whether a
+specific step needs iterative RALF refinement by inspecting `ralf:required`.
+When that label is present, the step's executing subagent invokes the appropriate
+RALF skill for that step type and passes the full inputs: target, Definition of
+Done, context, and optional max cycle count from `ralf:cycles=N`. Invoking
+`ralf-review` or `ralf-implement` beside `implement-bead` as a peer workflow is
+forbidden.
 
 **One step per invocation.** This skill is called once per stage by the
 shell driver. Driving multiple steps in a single invocation defeats the
