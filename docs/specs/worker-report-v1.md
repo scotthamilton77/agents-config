@@ -1,25 +1,33 @@
-# Spec: `worker-report-v1` — pinned schema and audit-label convention (agents-config-7bk.19.1)
+# Spec: `worker-report-v1` — shared core for worker agent reports (agents-config-7bk.19.1)
 
 ## Summary
 
-`worker-report-v1` is the pinned YAML contract that every worker agent
-(`tdd-red-team`, `tdd-green-team`, `bug-diagnoser`) returns to the
-`implement-bead` orchestrator after a single dispatch. The contract
-travels via the filesystem, not via the worker's stdout: the orchestrator
-allocates a target path under the repository root, passes that path to
-the worker as part of the task spec, and the worker writes the YAML
-report to the path before exiting. The orchestrator reads the file once
-the worker exits and stamps a forensic audit label on the step-bead so
-the report is discoverable from `bd` alone.
+`worker-report-v1` is the shared core that every worker agent's YAML
+report inherits: completion status, evidence blocks, escalations,
+discovered work, commits, and the file/label conventions that make
+reports discoverable from `bd` alone. The contract travels via the
+filesystem, not via the worker's stdout — the orchestrator allocates a
+target path under the repository root, passes it to the worker as part
+of the task spec, and the worker writes the YAML report to that path
+before exiting. The orchestrator reads the file once the worker exits
+and stamps a forensic audit label on the step-bead.
+
+Three per-agent specs extend this core with agent-specific fields and
+expectations:
+
+- [`tdd-red-report-v1.md`](./tdd-red-report-v1.md) — `tdd-red-team`
+- [`tdd-green-report-v1.md`](./tdd-green-report-v1.md) — `tdd-green-team`
+- [`bug-diagnoser-report-v1.md`](./bug-diagnoser-report-v1.md) — `bug-diagnoser`
 
 This document defines:
 
-1. The YAML schema, field-by-field.
+1. The shared core schema, field-by-field.
 2. The deterministic file-path convention.
 3. The audit-label format and policy.
 4. Orchestrator behavior on crashed or malformed workers.
 5. The worker's write-tool contract (absolute-path `Write`, not Bash
    redirection).
+6. The per-agent extension model.
 
 It is documentation only — no JSON-schema enforcement, matching the
 existing spec style under `docs/specs/`.
@@ -29,9 +37,10 @@ existing spec style under `docs/specs/`.
 | | |
 |---|---|
 | **Report path** | `<repo-root>/.beads/worker-reports/<step-bead-id>/<agent-name>[-iter<N>].yaml` |
-| **Audit label** | `worker-report-<agent-name>[-iter<N>]` — stamped on the step-bead |
-| **Required fields** | `status`, `evidence`, `gate_status`, `escalations`, `discovered_work`, `commits` |
-| **Orchestrator minimum** | `status` + `gate_status` — missing either → synthesize a `status: failed` report |
+| **Audit label** | `worker-audit-<agent-name>[-iter<N>]` — stamped on the step-bead |
+| **Required core fields** | `status`, `evidence`, `escalations`, `discovered_work`, `commits` |
+| **Orchestrator minimum** | `status` — missing → synthesize a `status: failed` report |
+| **Per-agent extensions** | `tdd-red-report-v1`, `tdd-green-report-v1`, `bug-diagnoser-report-v1` |
 
 ## Background
 
@@ -48,18 +57,19 @@ this spec directly:
   with no pinned schema. The orchestrator could not reliably parse
   completion status, evidence, escalations, discovered work, or commits.
 
-`worker-report-v1` is the contract that closes both defects: workers
-emit a structured file at a path the orchestrator chose, and the
-orchestrator — not the worker — translates that file into bead state.
+`worker-report-v1` is the contract that closes both defects. The shared
+core defines what every agent must emit; per-agent specs add the
+agent-specific output shape (e.g. `bug-diagnoser`'s `root_cause_note`).
+This split removes conditional fields from any single agent's prompt —
+each agent has exactly one concrete schema to follow, reducing
+hallucination surface.
 
-## 1. Schema
+## 1. Shared core schema
 
-A worker-report is a YAML document with the following shape. The example
-below is canonical: every field shown is part of the contract, optional
-fields are annotated, and nothing else is permitted at the top level. It
-uses schema-template notation (pipe-separated alternatives, range syntax
-for `priority`) — it is **not** copy-paste YAML. See §1.1 for the full
-field reference, including allowed enum values.
+The example below shows the shared core. It uses schema-template
+notation (pipe-separated alternatives, range syntax for `priority`) —
+it is **not** copy-paste YAML. See §1.1 for the full field reference,
+including allowed enum values.
 
 ```text
 status: complete | needs_human | failed
@@ -68,20 +78,13 @@ iteration: 1                       # optional; orchestrator-supplied for RALF-IT
 evidence:
   tests:
     command: "..."
-    exit_code: 0
-    passing: 42                    # required for green-loop convergence tracking
-    failing: 0                     # required for green-loop convergence tracking
-    output_excerpt: "..."
-  build:     { command: "...", exit_code: 0 }
-  lint:      { command: "...", exit_code: 0 }
-  typecheck: { command: "...", exit_code: 0 }
-gate_status: pass | fail | partial  # rolled-up gate verdict for orchestrator
-                                    # decision-making
-root_cause_note: |                  # optional; required for bug-diagnoser,
-                                    # optional for others. tdd-green-team in
-                                    # fix-bug receives this from the prior
-                                    # diagnose dispatch.
-  Free-text root-cause analysis.
+    exit_code: 0                   # null when skipped: true
+    skipped: false
+    passing: 42                    # null permitted only when runner exited
+    failing: 0                     # non-zero before emitting parseable counts
+  build:     { command: "...", exit_code: 0, skipped: false }
+  lint:      { command: "...", exit_code: 0, skipped: false }
+  typecheck: { command: "...", exit_code: 0, skipped: false }
 escalations:
   - reason: "one-line reason human needed"
     detail: "why this can't be resolved by the worker"
@@ -92,9 +95,12 @@ discovered_work:
     detail: "optional context"
     # NOTE: no parent_hint or relation field — orchestrator decides placement
 commits:
-  - sha: "full 40-char sha"
-    message: "one-line commit message"
+  - "0123456789abcdef0123456789abcdef01234567"  # full 40-char SHA
 ```
+
+Per-agent specs MAY add further required fields (e.g.,
+`bug-diagnoser-report-v1` adds `root_cause_note`). Per-agent specs MUST
+NOT remove or restructure the core fields above.
 
 ### 1.1 Field reference
 
@@ -102,46 +108,47 @@ commits:
 
 | Value | Meaning |
 |-------|---------|
-| `complete` | Worker finished its task. The orchestrator inspects `evidence` / `gate_status` to decide whether to advance, loop again, or stop. |
+| `complete` | Worker finished its task. The orchestrator inspects `evidence` (and the derived gate roll-up — see below) to decide whether to advance, loop again, or stop. |
 | `needs_human` | Worker hit a condition only a human can resolve. Orchestrator stamps the `human` label on the step-bead and stops. |
-| `failed` | Worker could not complete (e.g., tools unavailable, target missing). Distinct from `complete + gate_status: fail`. |
+| `failed` | Worker could not complete (e.g., tools unavailable, target missing). Distinct from `complete` with a failing derived gate. |
 
 **`iteration`** — orchestrator-supplied iteration number for RALF-IT
 loops. Omitted on single-shot dispatches. The formula step owns the
 loop; the orchestrator merely passes the current count through to the
 worker so it lands in the report and the audit label.
 
-**`evidence`** — machine-verifiable artifacts the worker produced.
+**`evidence`** — machine-verifiable artifacts the worker produced. Each
+block (`tests`, `build`, `lint`, `typecheck`) is optional at the block
+level; absence means the agent did not run that kind of check. When a
+block IS present, all listed sub-fields are required.
 
-- `evidence.tests.passing` and `evidence.tests.failing` are **required**
-  whenever a test command runs, because `green-loop` convergence is
-  measured by them. A worker that ran no tests omits the `tests` block
-  entirely. When the test runner exits non-zero before emitting parseable
-  counts (e.g., compile error, missing fixtures), set `passing: null,
-  failing: null` and capture the runner's stderr in `output_excerpt`.
-- `evidence.tests.output_excerpt` is a tail of test runner output,
-  capped to roughly 4KB. The full output should be visible in the
-  worker's commit, not duplicated into the report.
-- `build`, `lint`, `typecheck` blocks are each present only when the
-  worker ran the corresponding command. Missing blocks mean "did not
-  run", not "ran and passed".
+Within a present block:
 
-**`gate_status`** — rolled-up verdict across all evidence blocks,
-computed by the worker. Decoupled from `status` because a worker can
-finish (`status: complete`) with a failing gate (`gate_status: fail`) —
-that is the normal state during a `red-tests` dispatch.
+- `command` (string), `exit_code` (int or null), `skipped` (bool) —
+  required.
+- `skipped: true` means the gate was intentionally skipped (e.g., no
+  project lint configured); `exit_code` is `null` when skipped.
+- For the `tests` block only: `passing` (int or null), `failing` (int
+  or null) are required. `null` is permitted only when the runner exited
+  non-zero before emitting parseable counts (e.g., compile error,
+  missing fixtures). The runner's stderr in that case goes into
+  `escalations` with `reason: "tests-runner-unparseable"`.
 
-| Value | Meaning |
-|-------|---------|
-| `pass` | All evidence blocks present in the report exited 0. |
-| `fail` | At least one evidence block exited non-zero. |
-| `partial` | Some required gates were intentionally skipped (e.g., no project lint configured). |
+The full test runner / build / lint / typecheck output should be
+visible in the worker's commit. The report carries only structured
+counts and outcomes — not duplicated raw output.
 
-**`root_cause_note`** — free-text root-cause analysis. **Required for
-`bug-diagnoser`**, optional for the TDD agents. In `fix-bug`, the
-`tdd-green-team` dispatch reads the diagnose stage's note from its
-prior worker-report and may carry it forward in its own report; this
-preserves the audit trail across stages.
+**Gate-status derivation.** `worker-report-v1` does NOT include a
+`gate_status` field. The orchestrator derives the rolled-up verdict
+from the evidence blocks, which removes the conflict surface where a
+self-reported `gate_status` could disagree with the underlying counts:
+
+| Derived | When |
+|---------|------|
+| `pass` | Every present block has `exit_code == 0` AND `skipped == false` |
+| `fail` | At least one present block has `exit_code != 0` |
+| `partial` | All non-zero exits absent AND at least one block has `skipped == true` |
+| `n/a` | `evidence` is `{}` (e.g., synthetic crash report, diagnose-only dispatch) |
 
 **`escalations`** — list of issues the worker is asking the orchestrator
 to surface. Empty list when there are none. Each item is a one-line
@@ -160,26 +167,47 @@ the sibling test (see `src/plugins/beads/.claude/rules/beads.md` I3) to
 decide placement. The default — when no sibling fit is obvious — is the
 orphan + `discovered-from` form.
 
-**`commits`** — SHAs of commits the worker produced during the dispatch.
-Full 40-char SHAs only; abbreviated SHAs are malformed. The
-`message` field is the commit's first line, for human scanning. Empty
-list when the worker made no commits (e.g., a diagnose-only dispatch).
+**`commits`** — list of full 40-char SHAs the worker produced during
+the dispatch. Abbreviated SHAs are malformed. Empty list when the
+worker made no commits (e.g., a diagnose-only dispatch). Commit
+messages are queryable via `git log <sha>` and are intentionally NOT
+duplicated into the report.
 
 ### 1.2 Required vs optional summary
 
 | Field | Required? | Notes |
 |-------|-----------|-------|
 | `status` | required | |
-| `evidence` | required | inner blocks optional — present only when command ran |
-| `gate_status` | required | |
+| `evidence` | required | inner blocks optional — present only when command ran or was skipped |
 | `escalations` | required | `[]` when empty |
 | `discovered_work` | required | `[]` when empty |
 | `commits` | required | `[]` when empty |
 | `iteration` | optional | omit on single-shot dispatches |
-| `root_cause_note` | optional | required for `bug-diagnoser`, optional for TDD agents |
 
-Within an `evidence` block, all listed sub-fields are required when the
-block is present. An omitted top-level required field is malformed.
+Per-agent specs may add further required or optional fields above the
+core. Within a present `evidence` block, all listed sub-fields are
+required. An omitted top-level required field is malformed.
+
+### 1.3 Per-agent extensions
+
+| Agent | Schema | Adds |
+|-------|--------|------|
+| `tdd-red-team` | [`tdd-red-report-v1`](./tdd-red-report-v1.md) | (no additional fields; agent-specific expectations only) |
+| `tdd-green-team` | [`tdd-green-report-v1`](./tdd-green-report-v1.md) | (no additional fields; agent-specific expectations only) |
+| `bug-diagnoser` | [`bug-diagnoser-report-v1`](./bug-diagnoser-report-v1.md) | `root_cause_note` (required) |
+
+Per-agent specs describe:
+
+- Any additional required fields beyond the core.
+- Any structural deviations from the core (none currently).
+- Stage-specific orchestrator expectations (e.g., red-team expects the
+  derived gate roll-up to be `fail`, green-team expects `pass`).
+
+The core defines the structure that lets the orchestrator parse and
+audit any worker's report uniformly. Per-agent specs prevent each
+worker agent from carrying conditional logic ("am I a diagnoser? then
+also emit X") in its prompt — every agent has exactly one concrete
+schema.
 
 ## 2. File-based audit convention
 
@@ -217,12 +245,18 @@ emitted a malformed file — the orchestrator stamps a label on the
 **step-bead** (not the source-bead, not the molecule):
 
 ```
-worker-report-<agent-name>[-iter<N>]
+worker-audit-<agent-name>[-iter<N>]
 ```
 
-Examples: `worker-report-tdd-red-team`,
-`worker-report-tdd-green-team-iter2`,
-`worker-report-bug-diagnoser`.
+Examples: `worker-audit-tdd-red-team`,
+`worker-audit-tdd-green-team-iter2`,
+`worker-audit-bug-diagnoser`.
+
+The `worker-audit-` prefix is a stable namespace: filtering with
+`bd label list <step-bead-id>` and a "starts-with `worker-audit-`"
+match returns every audit label without enumerating agent names. The
+content after the prefix may evolve over future spec versions; the
+prefix is the durable retrieval handle.
 
 The label is a boolean-style marker, dash-separated. The full report
 path is fully recoverable from the label and the step-bead id via the
@@ -244,10 +278,13 @@ These labels are **forensic-only**:
   loop that runs three iterations leaves three iteration-suffixed
   labels on the step-bead. This is the desired forensic trail, not a
   bug.
-- **Not designed for programmatic parsing.** Agent names and the label
-  format both use hyphens; the boundary between agent-name and
-  `-iter<N>` is ambiguous to a regex. If structured retrieval is needed,
-  add a stable companion label (e.g. `worker-reported`) rather than
+- **Not designed for full programmatic parsing.** Agent names and the
+  label format both use hyphens; the boundary between agent-name and
+  `-iter<N>` is ambiguous to a regex. The stable `worker-audit-`
+  prefix supports namespace filtering ("starts with"), but parsing the
+  agent name + iteration out of the suffix is not a supported use case.
+  If structured retrieval beyond namespace filtering is needed, add a
+  separate stable companion label (e.g. `worker-reported`) rather than
   parsing audit labels.
 
 ## 4. Malformed and crashed-worker handling
@@ -266,7 +303,6 @@ the audit label. The synthetic report has:
 
 ```yaml
 status: failed
-gate_status: fail
 evidence: {}
 escalations:
   - reason: "Worker crashed"   # or "Worker emitted malformed report" for parse failures
@@ -278,11 +314,19 @@ discovered_work: []
 commits: []
 ```
 
-The `evidence` block is empty (`{}`) in the synthetic report because the
-orchestrator does not know which commands the worker attempted before
-crashing. The worker's process exit code belongs in `escalations.detail`,
-not in an `evidence.tests.exit_code` field — conflating the two would
-misrepresent what the test runner (if any) returned.
+The `evidence` block is empty (`{}`) because the orchestrator does not
+know which commands the worker attempted before crashing; the derived
+gate roll-up is `n/a` (see §1.1). The worker's process exit code
+belongs in `escalations.detail`, not in an `evidence.tests.exit_code`
+field — conflating the two would misrepresent what the test runner
+(if any) returned.
+
+The synthetic report contains only shared-core fields. Per-agent
+extensions (e.g. `bug-diagnoser`'s `root_cause_note`) are NOT included
+in the synthetic shape — agent-specific output is impossible to
+fabricate post-crash, and downstream consumers must treat
+`status: failed` as a signal that the agent's specific deliverables are
+unavailable.
 
 The synthetic report's existence on disk plus the audit label on the
 step-bead together guarantee the failure is visible to anyone running
@@ -294,12 +338,12 @@ For a report to be considered well-formed, the orchestrator MUST be
 able to read at minimum:
 
 - `status`
-- `gate_status`
 
-Either field missing — or unparseable as YAML — triggers the synthesis
-path. Other required fields (§1.2) are contract obligations enforced by
-review, not by the runtime: the orchestrator survives an incomplete
-report; full compliance is a review concern.
+`status` missing — or unparseable as YAML — triggers the synthesis
+path. Other required fields (§1.2 and per-agent extensions) are
+contract obligations enforced by review, not by the runtime: the
+orchestrator survives an incomplete report; full compliance is a review
+concern.
 
 ### 4.2 Out of scope: orchestrator self-crash
 
@@ -331,20 +375,22 @@ the test asserts the file appears.
 ## 6. Related work
 
 - **Epic `7bk.19`** — the parent redesign of the worker agent layer.
-- **`7bk.19.2`** — creates the three worker agents that emit
-  `worker-report-v1`.
+- **`tdd-red-report-v1`**, **`tdd-green-report-v1`**,
+  **`bug-diagnoser-report-v1`** — per-agent extensions of this core.
+- **`7bk.19.2`** — creates the three worker agents that emit the
+  per-agent reports.
 - **`7bk.19.3`** — rewrites the `implement-bead` orchestrator to
-  allocate the report path, parse the report, stamp the audit label,
-  and synthesize on crash/malformation.
+  allocate the report path, parse the report, derive the gate roll-up,
+  stamp the audit label, and synthesize on crash/malformation.
 - **`7bk.19.4`** — wires `implement-feature.formula.toml` and
   `fix-bug.formula.toml` to dispatch the new worker agents with
   explicit stage and iteration arguments.
 - **`7bk.19.5`** — updates `docs/specs/bead-pipeline-architecture.md` to
-  reference this contract from the relevant stage descriptions, and
+  reference these contracts from the relevant stage descriptions, and
   adds the smoke / tracer-bullet that proves the §5 write-tool
   contract holds in practice.
 - **`docs/specs/bead-pipeline-architecture.md`** — the canonical
-  pipeline architecture; this contract is one of the per-stage
-  state-out artifacts referenced there.
+  pipeline architecture; these contracts are the per-stage state-out
+  artifacts referenced there.
 - **`src/plugins/beads/.claude/rules/beads.md`** — the I3 sibling-test
   rule that governs how the orchestrator places `discovered_work` items.
