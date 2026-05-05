@@ -4,7 +4,7 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Purpose
 
-This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, and **Google Gemini CLI**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
 ## Prerequisites (Plugins)
 
@@ -38,6 +38,10 @@ This configuration assumes the following Claude Code plugins are installed:
 - `src/user/.gemini/` - **Gemini-specific** content (copies to `~/.gemini/`)
   - `GEMINI.md.template` - Gemini instruction file (refs shared + Gemini extensions)
   - `GEMINI-EXTENSIONS.md.template` - Gemini-specific sections (placeholder)
+- `src/user/.opencode/` - **OpenCode-specific** content (flattens to `~/.config/opencode/`)
+  - `AGENTS.md.template` - Flat instruction skeleton with dynamic-include markers
+  - `OPENCODE-EXTENSIONS.md.template` - OpenCode-specific notes and conventions
+  - `opencode.jsonc.template` - Settings (model, permissions, skills paths)
 - `src/plugins/` - **Optional plugin content** (installed only when detected)
   - `beads/` - beads plugin: skills, Claude rules, formulas
   - See `src/plugins/AGENTS.md` for plugin authoring conventions

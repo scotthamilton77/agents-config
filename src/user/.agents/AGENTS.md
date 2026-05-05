@@ -11,8 +11,10 @@ dir exists or `--tools=` selects them).
 - `agents/`, `skills/` — each top-level entry copied; **names must be unique**
   across the combined tree (shared + tool-specific + active plugins).
   Collisions in these dirs are a **fatal install error**.
-- Tool-specific files (`.claude/`, `.codex/`, `.gemini/`) overlay on top of
-  these in later phases; plugin content overlays last. Ordering matters.
+- Tool-specific files (`.claude/`, `.codex/`, `.gemini/`, `.opencode/`) overlay
+  on top of these in later phases; plugin content overlays last. Ordering matters.
+- OpenCode gets a **flat, dynamically-built AGENTS.md** (no `@` includes).
+  See `src/user/.opencode/` for details.
 
 ## Agent warnings
 
