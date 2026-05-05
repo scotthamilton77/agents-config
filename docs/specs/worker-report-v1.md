@@ -262,10 +262,15 @@ match returns every audit label without enumerating agent names. The
 content after the prefix may evolve over future spec versions; the
 prefix is the durable retrieval handle.
 
-The label is a boolean-style marker, dash-separated. The full report
-path is fully recoverable from the label and the step-bead id via the
-§2 convention; embedding the path in the label was considered and
-rejected to avoid shell-quoting and character-set friction.
+The label is a boolean-style marker, dash-separated. The label exists
+as a presence indicator (this report has been written) — not as the
+encoding of the path. Path reconstruction is the §2 convention applied
+to known inputs (`<step-bead-id>`, `<agent-name>`, optional iteration
+counter); the orchestrator already holds those inputs at dispatch time
+and does not need to parse them out of a label. Embedding the path
+itself in the label was considered and rejected to avoid shell-quoting
+and character-set friction. See §3.1 on why parsing the suffix back
+into structured pieces is not a supported retrieval pattern.
 
 ### 3.1 Audit-label policy
 
