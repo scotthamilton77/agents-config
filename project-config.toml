@@ -29,19 +29,19 @@ test      = ""   # no automated test suite
 # Read by: green-loop, quality-sweep, preflight
 # ---------------------------------------------------------------------------
 [coverage]
-# applicable: explicit opt-out for the preflight coverage check, intended for
-# projects with no coverage tooling (docs-only repos, config repos, etc.).
-# Default is true (treated as true when absent). When false, preflight does
-# NOT fire the human-flag protocol on missing/empty report-location and
-# proceeds to worktree creation. When true (or absent), the existing
-# semantics apply: empty/missing report-location triggers human-flag.
-#
-# Note: green-loop and quality-sweep do NOT yet honor applicable = false —
-# they continue to enforce coverage threshold unconditionally. Wiring those
-# stages to honor the opt-out is tracked as separate follow-up work.
+# applicable: explicit opt-out for coverage handling across pipeline stages
+# (preflight, green-loop, quality-sweep), intended for projects with no
+# coverage tooling (docs-only repos, config repos, etc.). Default is true
+# (treated as true when absent). When false:
+#   - preflight does NOT fire the human-flag protocol on missing/empty
+#     report-location and proceeds to worktree creation;
+#   - green-loop's DoD does NOT enforce the coverage threshold;
+#   - quality-sweep does not separately enforce a coverage threshold.
+# When true (or absent), the existing semantics apply: empty/missing
+# report-location triggers human-flag, and green-loop's DoD enforces threshold.
 applicable       = false  # this project is pure documentation — no tests, no coverage
 threshold        = 80     # percent; ignored when applicable = false; per-bead override: coverage-threshold-<n> label
-report-location  = ""     # n/a — applicable = false suppresses the human-flag protocol
+report-location  = ""     # n/a — applicable = false suppresses coverage handling
 format           = ""     # n/a
 
 # ---------------------------------------------------------------------------
