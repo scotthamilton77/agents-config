@@ -71,7 +71,7 @@ default). Formulas pass `--mode autonomous --bead-id {{bead-id}}` explicitly.
 
 ## Skill A: phases
 
-**8 phases total** (Phase 5 has three sub-phases). Each named phase is one
+**9 phases total** (Phase 5 has three sub-phases). Each named phase is one
 named action with one defined failure mode. Unless otherwise noted, any
 unrecoverable failure invokes `write-inventory.sh partial <phase-id> <path>`,
 reports to the caller, and aborts (Skill B is NOT invoked on Phase 5x
@@ -103,25 +103,30 @@ failure).
 Background bash — zero Anthropic tokens during the wait.
 
 1. **Quick check** whether Copilot is already a requested reviewer:
-   ```
-   gh api repos/<owner>/<repo>/issues/<n>/events \
-     --jq '[.[] | select(
-       .event == "review_requested" and
-       .requested_reviewer.login and
-       (.requested_reviewer.login | test("copilot"; "i"))
-     )] | length'
-   ```
-2. **Launch** `poll-copilot-review.sh` in the background. Pass
-   `--skip-request-check` if step 1 returned > 0.
-3. **Announce** to the user: "Copilot review monitoring is active for PR #N.
+    ```
+    gh api repos/<owner>/<repo>/issues/<n>/events \
+      --jq '[.[] | select(
+        .event == "review_requested" and
+        .requested_reviewer.login and
+        (.requested_reviewer.login | test("copilot"; "i"))
+      )] | length'
+    ```
+2. **Capture** `<polling_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
+    This timestamp anchors the stale-cache guard for re-review rounds.
+3. **Launch** `poll-copilot-review.sh` in the background. Pass
+    `--skip-request-check` if step 1 returned > 0.
+    In re-review context (round ≥ 2), also pass
+    `--since-timestamp <polling_since_timestamp>` so the script rejects
+    reviews that predate this run.
+4. **Announce** to the user: "Copilot review monitoring is active for PR #N.
    You can keep working — I'll alert you when feedback arrives. Don't merge
    or clean up the worktree/branch yet."
-4. **When the script completes**, read its stdout + check exit code:
+5. **When the script completes**, read its stdout + check exit code:
 
    | Exit | Status | Action |
    |---|---|---|
    | 0 | `copilot_review_found` | Parse JSON → record `polling.copilot_status="review_found"` → Phase 3 |
-   | 1 | `copilot_review_timeout` | Record `polling.copilot_status="timeout"` → still gather any human comments via `gh api .../pulls/<n>/comments` and `.../reviews`; if non-empty, classify them (Phase 3) and continue. If totally empty, jump to Phase 7 with empty `items` (Phase 8 still runs; Skill B replies to nothing and reports zeros). |
+    | 1 | `copilot_review_timeout` | Record `polling.copilot_status="timeout"` → still gather any human comments via `gh api .../pulls/<n>/comments` and `.../reviews`; if non-empty, classify them (Phase 3) and continue. If totally empty, jump to Phase 7 with empty `items` (Phase 8 still runs; Skill B replies to nothing and reports zeros; Phase 9 final check still runs). |
    | 2 | `copilot_not_requested` | Record `polling.copilot_status="not_requested"` → same fallback as exit 1. |
    | 3 | Error | Report stderr → abort. (No inventory written; nothing to recover.) |
 
@@ -270,8 +275,28 @@ Abort.
 
 ### Phase 6 — Re-poll for Copilot re-review
 
-Launch `poll-copilot-rereview-start.sh` (existing 30s background window).
-If a new review arrives, return to **Phase 3 (round +1)**.
+1. **Trigger a fresh review cycle** (idempotency guard):
+   ```bash
+   gh pr edit <N> --remove-reviewer @copilot
+   gh pr edit <N> --add-reviewer @copilot
+   ```
+   The `remove-reviewer` + `add-reviewer` pair reliably triggers a new
+   `review_requested` event even when Copilot is already on the list.
+   (`--add-reviewer` alone is idempotent and silently does nothing.)
+
+2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
+
+3. **Launch** `poll-copilot-rereview-start.sh` (80s max window:
+   20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
+   event that follows the fresh `review_requested`.
+
+4. **If** `copilot_work_started` detected, launch `poll-copilot-review.sh
+   --skip-request-check --since-timestamp <rereview_since_timestamp>`
+   to await the actual review. The `--since-timestamp` guard prevents the
+   stale-cache bug where the script returns the prior round's review instead
+   of the new one.
+
+5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 
 **Hard cap**: when round >= 3 AND Phase 6 detects a new review, do **one
 final Phase 3 inventory pull** (no Phase 4). Classify the round-N+1 items
@@ -324,22 +349,72 @@ Skill(skill: "reply-and-resolve-pr-threads", args: "--from-inventory <path> [--m
 ```
 
 **On Skill B success:** the inventory file already exists on disk from Phase 7.
-Read it back as the helper's stdin (the helper writes via `mktemp` + `mv`, so
-reading-from-and-writing-to the same path is safe — no in-place corruption):
+Write the intermediate completion marker so recovery knows Skill B ran:
 ```bash
 ~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
   complete 8-skill-b-done \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
-
-rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
 ```
-Skill A is the file's lifecycle owner — Skill B never unlinks.
+Then proceed to Phase 9.
 
 **On Skill B failure:** leave the inventory in place (last write was
 `last_completed_phase="7-write-inventory"`). Report Skill B's error with the
 instruction: "Invoke `reply-and-resolve-pr-threads --resume <path>`
 manually (add `--mode autonomous --bead-id <id>` if applicable)."
+
+---
+
+### Phase 9 — Final unresolved-threads verification
+
+After Skill B completes, verify no review threads were missed before
+considering the await-review step done.
+
+1. **Query** GraphQL for all unresolved, non-outdated review threads
+   (paginate if >100):
+   ```bash
+   gh api graphql \
+     -F owner="<owner>" -F repo="<repo>" -F pr="<pr-number>" \
+     -f query='
+     query($owner: String!, $repo: String!, $pr: Int!) {
+       repository(owner: $owner, name: $repo) {
+         pullRequest(number: $pr) {
+           reviewThreads(first: 100) {
+             pageInfo { hasNextPage endCursor }
+             nodes {
+               id
+               isResolved
+               isOutdated
+               comments(first: 1) {
+                 nodes {
+                   author { login }
+                   body
+                   databaseId
+                 }
+               }
+             }
+           }
+         }
+       }
+     }'
+   ```
+   If `hasNextPage == true`, repeat with `-F after="<endCursor>"` and
+   accumulate nodes until exhausted.
+2. **Count** threads where `isResolved == false` and `isOutdated == false`.
+3. **If count > 0**: treat as a new review round. Return to **Phase 3
+   (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
+   query's `comments` preview is for triage only; the canonical source for
+   inventory construction remains the same Phase 3 fetch paths used in round 1).
+4. **If count == 0**: write final completion state and clean up:
+   ```bash
+   ~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+     complete 9-final-check-done \
+     ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+     < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
+
+   rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
+   ```
+   Skill A is the file's lifecycle owner — Skill B never unlinks.
 
 ---
 
@@ -543,8 +618,8 @@ POSIX-atomic) — handled by `write-inventory.sh`.
     }
   ],
   "crash_recovery": {
-    "skill_a_completed": true,                // true once Phase 7 writes "complete" (and remains true through Phase 8); false only on Phase 5x partial-write
-    "last_completed_phase": "8-skill-b-done"
+    "skill_a_completed": true,                // true once Phase 7 writes "complete" (and remains true through Phase 9); false only on Phase 5x partial-write
+    "last_completed_phase": "9-final-check-done"
   }
 }
 ```
@@ -585,10 +660,10 @@ jq -n \
 rm -f /tmp/pr-inventory-build-<n>.json
 ```
 
-`<state>` is `complete` (Phase 7, Phase 8 success) or `partial` (Phase 5x
+`<state>` is `complete` (Phase 7 or Phase 9 success) or `partial` (Phase 5x
 failures). `<last_completed_phase>` is one of `5a-verify-failed`,
 `5b-commit-verify-failed`, `5c-push-failed`, `7-write-inventory`,
-`8-skill-b-done`.
+`8-skill-b-done`, `9-final-check-done`.
 
 **Validate inventory** — Skill B Phase 0 invokes this; pinned here so the
 agent has a copy-pasteable template:
@@ -648,7 +723,7 @@ PR, consult the inventory's `crash_recovery` block:
 |---|---|---|
 | `false` | `5a-verify-failed`, `5b-commit-verify-failed`, `5c-push-failed` | Refuse with **Message #1** (RESUME or DISCARD) |
 | `true` | `7-write-inventory` | Refuse with **Message #2** (FROM-INVENTORY only) |
-| `true` | `8-skill-b-done` | **Silent unlink** (orphan from prior crash); proceed normally |
+| `true` | `8-skill-b-done`, `9-final-check-done` | **Silent unlink** (orphan from prior crash); proceed normally |
 
 **Message #1** (partial inventory; Skill A interrupted):
 
@@ -679,8 +754,8 @@ Refused to start: an inventory exists for PR #<n> where Skill A completed but Sk
 - At Skill A startup: housekeeping ONLY (delete files >30 days, handled
   inline by `write-inventory.sh`). Never touch the inventory currently
   being recovered.
-- At Phase 8 success (after Skill B reports success): Skill A updates
-  `last_completed_phase="8-skill-b-done"` then `unlink`s.
+- At Phase 9 success (after final unresolved-threads check passes): Skill A updates
+  `last_completed_phase="9-final-check-done"` then `unlink`s.
 - Never at Phase 1 (the concurrency check refuses before any cleanup of the
   current PR's files).
 
@@ -734,12 +809,12 @@ process.
 | "A subagent committed twice — I'll just keep both commits" | Audit guard violated (`expected exactly one commit`). Re-classify to ESCALATE; if commits are stale/broken, `git reset --soft <pre_subagent_sha>` + `git stash push --include-untracked` to isolate. **Never `git reset --hard`.** |
 | "I'll let the agent write its own classification rationale, blank if needed" | Empty rationale is rejected by validation guard 1 (SKIP rationale becomes the public reply). Retry per-item classification with an explicit prompt until rationale is non-empty. |
 | "Phase 5a verify failed but the fixes look fine — push anyway" | No. 5x failures abort the chain. Invoke `write-inventory.sh partial 5a-verify-failed <path>` and report. Skill B is NOT invoked on Phase 5x failure. |
-| "I'll keep polling past the 30s re-review window" | Fixed window is fixed. Exit Phase 6 normally and proceed to Phase 7. |
+| "I'll keep polling past the re-review window" | Phase 6 uses a fixed 80s max window (20s pre-sleep + 6 × 10s polls). Do not extend ad-hoc. If Copilot has not started by then, exit Phase 6 normally and proceed to Phase 7. |
 | "I'll merge while the polling script is still running" | Don't. Issue the guard warning; the review could arrive any moment. |
 | "I'll classify already-addressed items as their own bucket" | Already-addressed is NOT a classification. Classify FIX; the per-comment subagent returns `fix_outcome="already_addressed"` with the existing commit SHA. |
 | "Round 4 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 3 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
 | "I'll inline `--mode autonomous` from the hook text" | The hook does not pass `--mode`. Autonomous mode is set ONLY by formulas (which also pass `--bead-id`). If you're invoking from chat, leave it interactive. |
-| "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after `write-inventory.sh complete 8-skill-b-done` succeeds. |
+| "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh complete 9-final-check-done` succeeds. |
 | "I'll keep the squashed commits clean — combine all subagent fixes into one" | Each subagent's commit stands alone. **No squashing.** Commit message format pinned: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`. |
 
 ---

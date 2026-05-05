@@ -54,3 +54,6 @@
 # - github.repo
 
 sync.remote: "git+https://github.com/scotthamilton77/agents-config.git"
+
+dolt:
+  port: 48128
