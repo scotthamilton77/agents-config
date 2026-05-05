@@ -27,7 +27,7 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 <owner/repo> <pr-number> [--skip-request-check]" >&2
+    echo "Usage: $0 <owner/repo> <pr-number> [--skip-request-check] [--since-timestamp <ISO-8601>]" >&2
     exit 3
 }
 
@@ -36,10 +36,26 @@ usage() {
 REPO="$1"
 PR="$2"
 SKIP_REQUEST=false
+SINCE=""
 
-if [[ $# -ge 3 && "$3" == "--skip-request-check" ]]; then
-    SKIP_REQUEST=true
-fi
+shift 2
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-request-check)
+            SKIP_REQUEST=true
+            shift
+            ;;
+        --since-timestamp)
+            [[ -n "${2:-}" ]] || { echo "Error: --since-timestamp requires a value" >&2; exit 3; }
+            SINCE="$2"
+            shift 2
+            ;;
+        *)
+            echo "Error: unknown argument: $1" >&2
+            exit 3
+            ;;
+    esac
+done
 
 validate_repo "$REPO"
 
@@ -124,6 +140,9 @@ done
 # ── Sub-phase C: Review detection (30s × 20, max ~10 minutes) ────────────────
 
 echo "Sub-phase C: Polling for Copilot review..." >&2
+if [[ -n "$SINCE" ]]; then
+    echo "  Filtering for reviews submitted after ${SINCE} (stale-cache guard)" >&2
+fi
 
 for i in $(seq 1 20); do
     # Check PR state periodically (every 5th iteration)
@@ -140,6 +159,16 @@ for i in $(seq 1 20); do
         --jq "[.[] | select(${COPILOT_REVIEW_FILTER})]") || {
         echo "Warning: reviews API failed (attempt ${i})" >&2; sleep 30; continue;
     }
+
+    # If --since-timestamp was provided, reject reviews that predate it (stale cache guard)
+    if [[ -n "$SINCE" ]]; then
+        fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
+        stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')
+        if [[ "$stale_count" -gt 0 ]]; then
+            echo "  Attempt ${i}/20: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2
+        fi
+        reviews="$fresh_reviews"
+    fi
 
     count=$(printf '%s' "$reviews" | jq '[.[] | select(.state == "COMMENTED")] | length')
 

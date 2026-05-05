@@ -1,0 +1,26 @@
+# Features Domain Defaults
+# This file provides top-level defaults for the features domain.
+#
+# Individual feature defaults are loaded from:
+#   defaults/features/{feature-name}.defaults.yaml
+#
+# Override in ~/.sidekick/features.yaml or .sidekick/features.yaml
+
+# Features are defined as a record of feature names to configs.
+# Each feature config has:
+#   enabled: boolean (default: true)
+#   settings: feature-specific settings (default: {})
+#
+# Example:
+#   statusline:
+#     enabled: true
+#     settings:
+#       format: "[{model}] | {summary}"
+#
+# No top-level defaults are required here - individual feature defaults
+# are loaded from their respective files in defaults/features/
+
+session-summary:
+  settings:
+    personas:
+      persistThroughClear: false

@@ -46,9 +46,11 @@ preflight_checks
 
 # ── Poll loop (sleep first, then check) ──────────────────────────────────────
 
-echo "Polling for Copilot re-review start (3 × 10s = 30s window, after ${AFTER})..." >&2
+echo "Polling for Copilot re-review start (20s pre-sleep + 6 × 10s = 80s max window, after ${AFTER})..." >&2
 
-for i in 1 2 3; do
+sleep 20
+
+for i in 1 2 3 4 5 6; do
     sleep 10
 
     events=$(gh_api "repos/${REPO}/issues/${PR}/events" \
@@ -59,15 +61,15 @@ for i in 1 2 3; do
 
     event_ts=$(printf '%s' "$events" | jq -r '.[0].created_at // empty')
     if [[ -n "$event_ts" ]]; then
-        echo "  Poll ${i}/3: copilot_work_started detected after ${AFTER}" >&2
+        echo "  Poll ${i}/6: copilot_work_started detected after ${AFTER}" >&2
         echo "  Copilot re-review started at ${event_ts}" >&2
         jq -n --arg ts "$event_ts" \
             '{"status": "copilot_rereview_started", "event_timestamp": $ts}'
         exit 0
     fi
-    echo "  Poll ${i}/3: no copilot_work_started event after ${AFTER}" >&2
+    echo "  Poll ${i}/6: no copilot_work_started event after ${AFTER}" >&2
 done
 
-echo "No Copilot re-review started within 30 seconds" >&2
+echo "No Copilot re-review started within polling window" >&2
 jq -n '{"status": "no_rereview_started"}'
 exit 1
