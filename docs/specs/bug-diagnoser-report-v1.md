@@ -16,7 +16,6 @@ The `bug-diagnoser-report-v1` schema is the shared core extended with
 
 ```text
 status: complete | needs_human | failed
-iteration: 1                       # optional; typically omitted (single-shot)
 evidence:                          # typically empty {} for diagnose-only
   tests:                           # OPTIONAL; present if the diagnoser
     command: "..."                 # ran tests to confirm the bug

@@ -36,9 +36,9 @@ no removed fields, no structural deviations.
 ## Worker-side notes
 
 - Each iteration is a separate dispatch with its own report file:
-  `<step-bead-id>/tdd-green-team-iter<N>.yaml`.
-- The agent receives the iteration counter from the orchestrator and
-  records it in the report's `iteration` field.
+  `<step-bead-id>/tdd-green-team-iter<N>.yaml`. The iteration counter
+  is encoded in the file path and audit label by the orchestrator; the
+  worker does not record it inside the YAML body.
 - The worker MUST run the full test command as part of its verification
   before commit; the orchestrator does not re-run tests post-dispatch.
 - When the test runner exits non-zero before emitting parseable counts

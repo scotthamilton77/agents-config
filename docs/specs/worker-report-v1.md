@@ -73,8 +73,6 @@ including allowed enum values.
 
 ```text
 status: complete | needs_human | failed
-iteration: 1                       # optional; orchestrator-supplied for RALF-IT
-                                   # loops, omitted for single-shot dispatches
 evidence:
   tests:
     command: "..."
@@ -111,11 +109,6 @@ NOT remove or restructure the core fields above.
 | `complete` | Worker finished its task. The orchestrator inspects `evidence` (and the derived gate roll-up — see below) to decide whether to advance, loop again, or stop. |
 | `needs_human` | Worker hit a condition only a human can resolve. Orchestrator stamps the `human` label on the step-bead and stops. |
 | `failed` | Worker could not complete (e.g., tools unavailable, target missing). Distinct from `complete` with a failing derived gate. |
-
-**`iteration`** — orchestrator-supplied iteration number for RALF-IT
-loops. Omitted on single-shot dispatches. The formula step owns the
-loop; the orchestrator merely passes the current count through to the
-worker so it lands in the report and the audit label.
 
 **`evidence`** — machine-verifiable artifacts the worker produced. Each
 block (`tests`, `build`, `lint`, `typecheck`) is optional at the block
@@ -186,7 +179,6 @@ duplicated into the report.
 | `escalations` | required | `[]` when empty |
 | `discovered_work` | required | `[]` when empty |
 | `commits` | required | `[]` when empty |
-| `iteration` | optional | omit on single-shot dispatches |
 
 Per-agent specs may add further required or optional fields above the
 core. Within a present `evidence` block, all listed sub-fields are
