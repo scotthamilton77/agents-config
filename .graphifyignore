@@ -4,3 +4,5 @@ dist/
 .git/
 .beads/
 .claude/worktrees/
+.worktrees/
+worktrees/
