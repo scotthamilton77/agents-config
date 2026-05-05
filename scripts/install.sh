@@ -70,8 +70,9 @@ fi
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
 #   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
 #   --prune              After install, remove orphans (with backup) under
-#                        ~/.<tool>/{commands,skills,agents,rules}/ and
-#                        ~/.beads/formulas/ that are not in current staging
+#                        ~/.<tool>/{commands,skills,agents,rules}/ (or
+#                        ~/.config/<tool>/ for OpenCode) and ~/.beads/formulas/
+#                        that are not in current staging
 #   --prune-only         Skip Phase 7 (install) and only scan + prune orphans
 #                        (mutually exclusive with --prune)
 #   --help, -h           Show this help
@@ -114,7 +115,7 @@ for arg in "$@"; do
             echo "Usage: install.sh [--dry-run] [--yes|-y] [--verbose|-v] [--tools=TOOLS] [--plugins=PLUGINS] [--prune] [--prune-only] [--help|-h]"
             echo ""
             echo "Installs shared and tool-specific agent config into ~/.<tool>/ directories"
-            echo "for Claude Code, OpenAI Codex CLI, and Google Gemini CLI."
+            echo "for Claude Code, OpenAI Codex CLI, Google Gemini CLI, and OpenCode."
             echo ""
             echo "Shared content (skills, agents, instructions, personas) from src/user/.agents/"
             echo "is installed into all detected tools. Tool-specific content from src/user/.<tool>/"
@@ -124,8 +125,8 @@ for arg in "$@"; do
             echo "  --dry-run          Show what would be done without making changes"
             echo "  --yes, -y          Auto-accept all prompts (suppresses diffs in quiet mode)"
             echo "  --verbose, -v      Show per-file progress (phases, up-to-date, installed, diffs)"
-            echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini"
-            echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ exists)"
+            echo "  --tools=TOOLS      Comma-separated tools: claude,codex,gemini,opencode"
+            echo "                     Default: auto-detect (claude always, others if ~/.<tool>/ or ~/.config/<tool>/ exists)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
             echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
             echo "  --prune            After install, remove orphans under ~/.<tool>/{commands,skills,agents,rules}/"
@@ -250,9 +251,22 @@ split_csv() {
     fi
 }
 
+# ── Utility: resolve destination directory for a tool ─────────────────────────
+#
+# OpenCode uses XDG config dir (~/.config/opencode/) instead of a dot-dir.
+
+tool_dest_dir() {
+    local tool="$1"
+    if [[ "$tool" == "opencode" ]]; then
+        echo "$HOME/.config/opencode"
+    else
+        echo "$HOME/.$tool"
+    fi
+}
+
 # ── Tool detection ────────────────────────────────────────────────────────
 
-ALL_TOOLS=(claude codex gemini)
+ALL_TOOLS=(claude codex gemini opencode)
 TOOLS=()
 ALL_PLUGINS=(beads)
 PLUGINS=()
@@ -271,6 +285,9 @@ else
     for tool in codex gemini; do
         [[ -d "$HOME/.$tool" ]] && TOOLS+=("$tool")
     done
+    if command -v opencode &>/dev/null || [[ -d "$HOME/.config/opencode" ]]; then
+        TOOLS+=(opencode)
+    fi
 fi
 
 vinfo "Tools: ${TOOLS[*]}"
@@ -471,6 +488,8 @@ classify_file() {
         echo "dir"
     elif [[ "$basename" == settings.json.template ]]; then
         echo "settings.json"
+    elif [[ "$basename" == *.jsonc.template ]]; then
+        echo "jsonc"
     elif [[ "$basename" == *.toml.template || "$basename" == *.toml ]]; then
         echo "toml"
     elif [[ "$basename" == *.md && -n "$parent_dir" ]]; then
@@ -521,11 +540,66 @@ stage_content_from_dir() {
     done
 }
 
+# ── Utility: flatten AGENTS.md.template for OpenCode ──────────────────────────
+#
+# OpenCode does not support `@` include resolution. This function reads a
+# template containing <!-- DYNAMIC-INCLUDE: path --> and
+# <!-- DYNAMIC-INCLUDE-RULES: rule1,... --> markers and produces a single
+# flat file with all references inlined.
+#
+# marker paths are relative to project_root.
+
+flatten_agents_md() {
+    local template="$1"
+    local output="$2"
+    local project_root="$3"
+
+    local line marker_path rule_names rule_file first_rule rule_name
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Extract path from <!-- DYNAMIC-INCLUDE: path --> using sed (portable bash/zsh)
+        marker_path="$(printf '%s' "$line" | sed -n "s/^<!-- DYNAMIC-INCLUDE: \(.*\) -->$/\1/p")"
+        if [[ -n "$marker_path" ]]; then
+            if [[ -f "$project_root/$marker_path" ]]; then
+                cat "$project_root/$marker_path" >> "$output"
+            else
+                warn "DYNAMIC-INCLUDE not found: $marker_path"
+            fi
+            continue
+        fi
+
+        # Extract rule list from <!-- DYNAMIC-INCLUDE-RULES: rule1,... --> using sed
+        rule_names="$(printf '%s' "$line" | sed -n "s/^<!-- DYNAMIC-INCLUDE-RULES: \(.*\) -->$/\1/p")"
+        if [[ -n "$rule_names" ]]; then
+            first_rule=true
+            # Use tr + while read for portable comma splitting (works in bash and zsh)
+            while IFS= read -r rule_name; do
+                rule_name="$(printf '%s' "$rule_name" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                [[ -n "$rule_name" ]] || continue
+                rule_file="$project_root/src/user/.claude/rules/$rule_name.md"
+                if [[ -f "$rule_file" ]]; then
+                    if [[ "$first_rule" == true ]]; then
+                        first_rule=false
+                    else
+                        printf '\n---\n' >> "$output"
+                    fi
+                    cat "$rule_file" >> "$output"
+                else
+                    warn "DYNAMIC-INCLUDE-RULES not found: $rule_name.md"
+                fi
+            done < <(printf '%s' "$rule_names" | tr ',' '\n')
+            continue
+        fi
+
+        printf '%s\n' "$line" >> "$output"
+    done < "$template"
+}
+
 # ── Install one tool via staging ──────────────────────────────────────────────
 
 stage_and_install_tool() {
     local tool="$1"
-    local dest_dir="$HOME/.$tool"
+    local dest_dir="$(tool_dest_dir "$tool")"
     local src_tool="$SRC_USER/.$tool"
     local staging="$STAGING_DIR/$tool"
     # Hoist all loop-internal locals to function scope — see commit 2fe276d:
@@ -568,7 +642,7 @@ stage_and_install_tool() {
             stage_content_from_dir "$src_tool" "$staging" "$subdir"
         done
 
-        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.toml.template; do
+        for settings_file in "$src_tool"/*.json.template "$src_tool"/*.jsonc.template "$src_tool"/*.toml.template; do
             [[ -f "$settings_file" ]] || continue
             file_type="$(classify_file "$settings_file" "")"
             stage_item "$settings_file" "$staging/$(basename "$settings_file")" "$file_type"
@@ -598,6 +672,15 @@ stage_and_install_tool() {
         fi
     done
 
+    # ── Phase 6.5: Flatten AGENTS.md for OpenCode ─────────────────────────────
+    if [[ "$tool" == "opencode" && -f "$staging/AGENTS.md.template" ]]; then
+        vinfo "Phase 6.5: Flattening AGENTS.md for OpenCode"
+        local flattened
+        flattened="$(mktemp)"
+        flatten_agents_md "$staging/AGENTS.md.template" "$flattened" "$PROJECT_ROOT"
+        mv "$flattened" "$staging/AGENTS.md.template"
+    fi
+
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
     # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
     # scan_orphans has a comparison baseline, but no files are written to ~/.
@@ -618,7 +701,7 @@ stage_and_install_tool() {
     done
 
     # Sync settings files (union-merges staged template with installed settings)
-    for settings_file in "$staging"/*.json.template "$staging"/*.toml.template; do
+    for settings_file in "$staging"/*.json.template "$staging"/*.jsonc.template "$staging"/*.toml.template; do
         [[ -f "$settings_file" ]] || continue
         sync_settings_file "$settings_file" "$dest_dir" "staged"
     done
@@ -864,7 +947,7 @@ sync_directory() {
             [[ -e "$dest_item" ]] || continue
             item_name="$(basename "$dest_item")"
             if [[ ! -e "$src_parent/$item_name" ]]; then
-                warn "$dir_name/$item_name exists in ~/.$CURRENT_TOOL but not in $label source (keeping)"
+                warn "$dir_name/$item_name exists in $(tool_dest_dir "$CURRENT_TOOL") but not in $label source (keeping)"
             fi
         done
     fi
@@ -966,6 +1049,44 @@ sync_settings_file() {
             fi
         fi
 
+    elif [[ "$basename_template" == *.jsonc.template ]]; then
+        # JSONC: plain copy (jq cannot parse JSONC comments; merge is out of scope)
+        if [[ ! -f "$dest_file" ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                vok "Would install $target_name (new)"
+            else
+                cp "$template" "$dest_file"
+                vok "Installed $target_name (new)"
+            fi
+            (( tool_installed[$CURRENT_TOOL]++ )) || true
+        else
+            local src_hash dst_hash
+            src_hash="$(compute_hash "$template")"
+            dst_hash="$(compute_hash "$dest_file")"
+
+            if [[ "$src_hash" == "$dst_hash" ]]; then
+                vok "$target_name is up to date"
+                (( tool_skipped[$CURRENT_TOOL]++ )) || true
+            else
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "$target_name differs from installed version:"
+                    diff --color=auto -u "$dest_file" "$template" || true
+                    echo
+                fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    vok "Would update $target_name [$label]"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif confirm "Overwrite $dest_file with template version?"; then
+                    backup "$dest_file"
+                    cp "$template" "$dest_file"
+                    vok "Updated $target_name [$label]"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                else
+                    warn "Skipped $target_name [$label]"
+                    (( tool_skipped[$CURRENT_TOOL]++ )) || true
+                fi
+            fi
+        fi
     elif [[ "$basename_template" == *.toml.template ]]; then
         # TOML: plain copy (merge is out of scope)
         if [[ ! -f "$dest_file" ]]; then
@@ -1064,7 +1185,7 @@ scan_orphans() {
 
     for tool in "${TOOLS[@]}"; do
         for sub in "${prune_subdirs[@]}"; do
-            _scan_namespace "$tool" "$sub" "$HOME/.$tool/$sub" "$STAGING_DIR/$tool/$sub"
+            _scan_namespace "$tool" "$sub" "$(tool_dest_dir "$tool")/$sub" "$STAGING_DIR/$tool/$sub"
         done
     done
 
