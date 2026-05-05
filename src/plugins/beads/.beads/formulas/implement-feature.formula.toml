@@ -161,18 +161,22 @@ order at the top of the step:
    `red-tests opt-out: ` and trigger description:
      red-tests opt-out: no test runner ([gates].test=='')
 
-2. Trigger B — no [m] AC bullets. If the bead's description has zero
-   [m]-tagged AC bullets, there is nothing for tests to assert. Detect via
-   the pinned line-anchored grep over the description field (NOT raw
-   `bd show` output, which would false-positive on [m] tokens inside notes
-   or comments):
+2. Trigger B — no [m] AC lines. If the bead's `acceptance_criteria`
+   field (the canonical AC store per spec §4.1, NOT `description`) has
+   zero `[m]`-classified lines, there is nothing for tests to assert.
+   Apply the canonical line parser (`^\[(m|h)\]\s(.*)$`; untagged lines
+   default to `[m]` per §4.1's backwards-compat rule). Counting
+   `description` would both false-positive on `[m]` tokens inside notes
+   AND false-negative on canonical (non-bullet) AC formats. Pinned
+   line-anchored grep -cvE counts every non-blank line that is NOT
+   explicitly `[h]`-tagged (i.e. [m] lines plus untagged-defaults-to-[m]):
      m_count=$(bd show {{bead-id}} --json \
-       | jq -r '.[0].description' \
-       | grep -cE '^[[:space:]]*[-*][[:space:]]*\[m\]')
+       | jq -r '.[0].acceptance_criteria // ""' \
+       | grep -cvE '^([[:space:]]*$|\[h\][[:space:]])')
    If m_count == 0, skip with note:
-     red-tests opt-out: no [m] AC bullets
+     red-tests opt-out: no [m] AC lines
 
-3. Both triggers fire (no test runner AND no [m] ACs):
+3. Both triggers fire (no test runner AND no [m] AC lines):
      red-tests opt-out: both
 
 4. Otherwise, proceed with the normal red-tests behavior below.
@@ -290,7 +294,8 @@ failure evidence to both notes, and do not advance to `quality-sweep`.
 
 ## Coverage
 
-Coverage threshold from project-config.toml [coverage].threshold (default 80%);
+Coverage threshold from project-config.toml [coverage].threshold (default 80%),
+overridable per-bead via the `coverage-threshold-<n>` label;
 honored only when [coverage].applicable is true or absent. When
 [coverage].applicable is explicitly false (docs-only repos, config repos, etc.),
 coverage is not a quality gate and the threshold is bypassed. See

@@ -344,7 +344,8 @@ failure evidence to both notes, and do not advance to `quality-sweep`.
 
 ## Coverage
 
-Coverage threshold from project-config.toml [coverage].threshold (default 80%);
+Coverage threshold from project-config.toml [coverage].threshold (default 80%),
+overridable per-bead via the `coverage-threshold-<n>` label;
 honored only when [coverage].applicable is true or absent. When
 [coverage].applicable is explicitly false (docs-only repos, config repos, etc.),
 coverage is not a quality gate and the threshold is bypassed. See
