@@ -3,7 +3,7 @@
 # Replaces the background agent polling in wait-for-pr-comments skill.
 # Zero Anthropic API tokens consumed — pure bash + gh CLI.
 #
-# Usage: poll-copilot-review.sh <owner/repo> <pr-number> [--skip-request-check]
+# Usage: poll-copilot-review.sh <owner/repo> <pr-number> [--skip-request-check] [--since-timestamp <ISO-8601>]
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
@@ -162,7 +162,7 @@ for i in $(seq 1 20); do
 
     # If --since-timestamp was provided, reject reviews that predate it (stale cache guard)
     if [[ -n "$SINCE" ]]; then
-        fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
+        fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at >= $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')
         if [[ "$stale_count" -gt 0 ]]; then
             echo "  Attempt ${i}/20: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2

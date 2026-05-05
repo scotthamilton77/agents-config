@@ -118,10 +118,10 @@ Background bash — zero Anthropic tokens during the wait.
     In re-review context (round ≥ 2), also pass
     `--since-timestamp <polling_since_timestamp>` so the script rejects
     reviews that predate this run.
-3. **Announce** to the user: "Copilot review monitoring is active for PR #N.
+4. **Announce** to the user: "Copilot review monitoring is active for PR #N.
    You can keep working — I'll alert you when feedback arrives. Don't merge
    or clean up the worktree/branch yet."
-4. **When the script completes**, read its stdout + check exit code:
+5. **When the script completes**, read its stdout + check exit code:
 
    | Exit | Status | Action |
    |---|---|---|
@@ -286,7 +286,7 @@ Abort.
 
 2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
-3. **Launch** `poll-copilot-rereview-start.sh` (60s background window:
+3. **Launch** `poll-copilot-rereview-start.sh` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
    event that follows the fresh `review_requested`.
 
@@ -365,7 +365,9 @@ considering the await-review step done.
 
 1. **Query** GraphQL for all unresolved, non-outdated review threads:
    ```bash
-   gh api graphql -f query='
+   gh api graphql \
+     -F owner="<owner>" -F repo="<repo>" -F pr="<pr-number>" \
+     -f query='
      query($owner: String!, $repo: String!, $pr: Int!) {
        repository(owner: $owner, name: $repo) {
          pullRequest(number: $pr) {
@@ -638,7 +640,7 @@ jq -n \
 rm -f /tmp/pr-inventory-build-<n>.json
 ```
 
-`<state>` is `complete` (Phase 7, Phase 8, or Phase 9 success) or `partial` (Phase 5x
+`<state>` is `complete` (Phase 7 or Phase 9 success) or `partial` (Phase 5x
 failures). `<last_completed_phase>` is one of `5a-verify-failed`,
 `5b-commit-verify-failed`, `5c-push-failed`, `7-write-inventory`,
 `8-skill-b-done`, `9-final-check-done`.

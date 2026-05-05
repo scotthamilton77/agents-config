@@ -9,7 +9,7 @@
 #
 # Exit codes:
 #   0 — Re-review started (JSON on stdout)
-#   1 — No re-review started within 30 seconds
+#   1 — No re-review started within polling window
 #   3 — Error (auth failure, invalid args, network issue)
 #
 # Stdout (exit 0):
