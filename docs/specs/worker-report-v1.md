@@ -145,10 +145,14 @@ self-reported `gate_status` could disagree with the underlying counts:
 
 | Derived | When |
 |---------|------|
-| `pass` | Every present block has `exit_code == 0` AND `skipped == false` |
-| `fail` | At least one present block has `exit_code != 0` |
-| `partial` | All non-zero exits absent AND at least one block has `skipped == true` |
+| `pass` | Every present block has `skipped == false` AND `exit_code == 0` |
+| `fail` | At least one present block has `skipped == false` AND `exit_code != 0` |
+| `partial` | At least one present block has `skipped == true`, AND no present block satisfies the `fail` rule |
 | `n/a` | `evidence` is `{}` (e.g., synthetic crash report, diagnose-only dispatch) |
+
+The `skipped == false` clause in the `fail` and `pass` rules ensures
+that skipped blocks (which carry `exit_code: null`) are not interpreted
+as either pass or fail — they participate only in the `partial` rule.
 
 **`escalations`** — list of issues the worker is asking the orchestrator
 to surface. Empty list when there are none. Each item is a one-line
