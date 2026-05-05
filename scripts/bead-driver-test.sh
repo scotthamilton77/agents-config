@@ -90,7 +90,7 @@ if len(mols) > 1:
         file=sys.stderr
     )
 print(mols[0]['id'])
-" 2>/dev/null \
+" \
     || true
 }
 
@@ -111,9 +111,11 @@ resolve_cwd() {
       mol_id=$(active_mol_id "${bead_id}")
 
       if [ -z "${mol_id}" ]; then
-        # No active molecule yet — fall back to repo root (preflight will pour one).
-        echo "${REPO_ROOT}"
-        return
+        # No active molecule yet — this is only valid for preflight/merge-or-handoff,
+        # but those stages are handled above by the case statement. Reaching here
+        # means an unknown stage has no molecule, which is an error.
+        echo "ERROR: no active molecule for bead ${bead_id} at stage '${stage_role}' — preflight may not have run yet" >&2
+        exit 1
       fi
 
       # Decode worktree-path label: first __ -> /, then _u -> _
@@ -121,9 +123,9 @@ resolve_cwd() {
         | grep '^worktree-path-' | head -1 | sed 's/^worktree-path-//' || true)
 
       if [ -z "${encoded_path}" ]; then
-        # No worktree-path label — fall back to repo root (pre-worktree stages).
-        echo "${REPO_ROOT}"
-        return
+        # Molecule exists but has no worktree-path label — always an error.
+        echo "ERROR: molecule ${mol_id} has no worktree-path label" >&2
+        exit 1
       fi
 
       decoded_path=$(python3 -c "

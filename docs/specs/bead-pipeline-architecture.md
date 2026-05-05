@@ -494,7 +494,7 @@ The stage-role-name component is one of: `preflight`, `diagnose`, `red-tests`, `
 
 Default invocation: `claude -p --session-id <uuidv5> "/implement-bead <bead-id>"`.
 
-`/implement-bead` is a project-scoped slash command at `src/plugins/beads/.claude/commands/implement-bead.md`. Claude Code resolves project-scoped commands by walking up from cwd to find a `.claude/` directory. Because worktrees are full git checkouts at `.claude/worktrees/<name>/`, each worktree has its own copy of the slash command file and resolution succeeds from any subdirectory of the worktree.
+The `/implement-bead` command is installed globally to `~/.claude/commands/` by `install.sh` (via the beads plugin overlay phase); it is discoverable from any cwd via Claude Code's global command lookup, not via project-local walk-up.
 
 Slash-command invocation requires slash-commands enabled (the default; broken only by `--disable-slash-commands`).
 

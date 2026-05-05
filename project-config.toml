@@ -30,12 +30,11 @@ test      = ""   # no automated test suite
 # ---------------------------------------------------------------------------
 [coverage]
 threshold        = 80     # percent; per-bead override: coverage-threshold-<n> label
-# report-location is intentionally empty: this is a pure-documentation project
-# with no test suite and therefore no coverage tooling. Preflight treats an
-# empty string as "no coverage configured" and applies the human-flag protocol
-# unless overridden. Projects with real coverage should set a path here, e.g.:
-#   report-location = "coverage/lcov.info"
-report-location  = ""     # explicit opt-out: no coverage report for a documentation project
+# report-location: empty string is treated as absent — preflight will apply the
+# human-flag protocol. Set a real path (e.g. coverage/lcov.info) or remove this
+# key to trigger the protocol. This project has no test suite or coverage tooling,
+# so the human-flag protocol is the expected outcome for any bead that reaches preflight.
+report-location  = ""     # empty string treated as absent — preflight applies human-flag protocol
 format           = ""     # n/a
 
 # ---------------------------------------------------------------------------

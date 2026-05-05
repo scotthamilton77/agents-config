@@ -8,9 +8,9 @@
 #   preflight → red-tests → green-loop → quality-sweep → verify-ac
 #   → create-pr → review-cycle → merge-or-handoff
 #
-# Per-step Model/Effort directives are consumed by the shell driver at
-# dispatch time. The driver reads the step-bead's Model/Effort fields and
-# spawns `claude -p` with the appropriate flags.
+# Note: per-step model/effort flag passthrough from the shell driver is
+# planned for bead 7bk.14. The driver does not currently read per-step
+# Model/Effort fields or pass flags to `claude -p`.
 #
 # See: docs/specs/bead-pipeline-architecture.md §3, §9.1
 #
