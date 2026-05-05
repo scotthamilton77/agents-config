@@ -180,7 +180,7 @@ Emit a structured close-out summary:
 - **@<author>** (`<kind>`, comment <id>): <classification> → reply posted [yes|no], resolved [yes|no|n/a]
 ```
 
-**Skill B does NOT unlink the inventory** — `wait-for-pr-comments` (Skill A) owns the file's lifecycle. Skill A unlinks at its own Phase 8 success after Skill B reports success. Touching the file here would race Skill A's bookkeeping.
+**Skill B does NOT unlink the inventory** — `wait-for-pr-comments` (Skill A) owns the file's lifecycle. Skill A unlinks at its own Phase 9 success after Skill B reports success and the final unresolved-threads check passes. Touching the file here would race Skill A's bookkeeping.
 
 ## Reply text templates
 
@@ -223,7 +223,8 @@ When invoked via `--resume <path>`, Phase 1.5 fires. The inventory's `crash_reco
 | `5b-commit-verify-failed` | Subagent reported a commit SHA that wasn't in `git rev-list <baseline>..HEAD`. Inventory contents are suspect for that item; others may be fine. | Same per-item probe. Items with valid SHAs in `origin/<pr-branch>` proceed. Bogus-SHA items hit the prompt. |
 | `5c-push-failed` | Verification passed; combined push failed (auth, network, non-fast-forward). Local commits exist; remote does not have them. | Same per-item probe. If operator pushed manually after the crash, every item's SHA will now be an ancestor and Phase 1.5 emits no prompts. |
 | `7-write-inventory` | Skill A completed end-to-end successfully but Skill B never ran (crash between Phase 7 write and Phase 8 invoke). | Should have come in via `--from-inventory`, not `--resume` — but if `--resume` is used here, the per-item probe will pass cleanly because the push succeeded; Phase 1.5 emits no prompts. |
-| `8-skill-b-done` | Both skills already ran to completion. Inventory is an orphan that Skill A failed to unlink. | Phase 1.5 still runs the per-item probe; expects every SHA to be present. Operator should have invoked Skill A (which silently unlinks `8-skill-b-done` orphans), not Skill B. Phase 4 reports the situation; do nothing destructive. |
+| `8-skill-b-done` | Skill B completed but Skill A's Phase 9 final check never ran (crash between Phase 8 invoke and Phase 9 final check). | Phase 1.5 still runs the per-item probe; expects every SHA to be present. Operator should re-invoke Skill A (which will run Phase 9 and unlink), not Skill B. Phase 4 reports the situation; do nothing destructive. |
+| `9-final-check-done` | Both skills and the final check already ran to completion. Inventory is an orphan that Skill A failed to unlink. | Phase 1.5 still runs the per-item probe; expects every SHA to be present. Operator should have invoked Skill A (which silently unlinks `9-final-check-done` orphans), not Skill B. Phase 4 reports the situation; do nothing destructive. |
 
 Phase 1.5's behavior is driven by the per-item `git merge-base --is-ancestor` probe, not by trusting the phase label. The label is a hint about what to expect, not a mandate.
 
@@ -248,5 +249,5 @@ If you catch yourself doing any of these, STOP — you are deviating from the co
 
 ## Related Skills
 
-- **`wait-for-pr-comments`** (Skill A) — runs FIRST. Polls Copilot, classifies (FIX/SKIP/ESCALATE), dispatches per-comment subagents, pushes combined commits, writes the inventory, then invokes this skill by default with `--from-inventory`. Owns the inventory file's full lifecycle (creation, partial-write on failure, unlink at Phase 8 success).
+- **`wait-for-pr-comments`** (Skill A) — runs FIRST. Polls Copilot, classifies (FIX/SKIP/ESCALATE), dispatches per-comment subagents, pushes combined commits, writes the inventory, then invokes this skill by default with `--from-inventory`. Owns the inventory file's full lifecycle (creation, partial-write on failure, unlink at Phase 9 success after final unresolved-threads check).
 - **`verify-checklist`** — NOT used by this skill. The combined verification gate runs in `wait-for-pr-comments` Phase 5a before the inventory is written.
