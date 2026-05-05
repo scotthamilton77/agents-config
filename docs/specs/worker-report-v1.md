@@ -36,7 +36,7 @@ existing spec style under `docs/specs/`.
 
 | | |
 |---|---|
-| **Report path** | `<repo-root>/.beads/worker-reports/<step-bead-id>/<agent-name>[-iter<N>].yaml` |
+| **Report path** | `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` |
 | **Audit label** | `worker-audit-<agent-name>[-iter<N>]` — stamped on the step-bead |
 | **Required core fields** | `status`, `evidence`, `escalations`, `discovered_work`, `commits` |
 | **Orchestrator minimum** | `status` — missing → synthesize a `status: failed` report |
@@ -212,7 +212,7 @@ follows a single deterministic convention so that anyone with a
 step-bead id can locate the report from the filesystem alone:
 
 ```
-<repo-root>/.beads/worker-reports/<step-bead-id>/<agent-name>[-iter<N>].yaml
+<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml
 ```
 
 | Component | Source | Notes |

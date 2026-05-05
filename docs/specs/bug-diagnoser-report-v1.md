@@ -106,7 +106,7 @@ All shared-core required-vs-optional rules from
     bug.
   - `green-loop` (tdd-green-team) — to inform the production-code fix.
 - Path for downstream consumption:
-  `<repo-root>/.beads/worker-reports/<step-bead-id>/bug-diagnoser.yaml`.
+  `<repo-root>/.beads/worker-audit/<step-bead-id>/bug-diagnoser.yaml`.
 
 ## Cross-stage handoff
 
