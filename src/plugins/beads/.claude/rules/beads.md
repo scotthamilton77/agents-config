@@ -119,8 +119,10 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `brainstormed` | brainstorm-bead formula (finalize step) | Spec written and reviewed |
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
-| `for-bead-<bead-id>` | `start-bead` (Route C wisp) and `implement-bead` (pour) | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
+| `for-bead-<bead-id>` | `start-bead` when it creates a brainstorm wisp, and `implement-bead` when it creates an implementation molecule | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
 | `human` | Any agent via `bd label add <id> human` | Needs human attention. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
+| `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Beads formula-step dispatch signal. Implement stages pass target/spec/DoD/context into `ralf-implement`; review stages use it only when their specific formula step explicitly reads the label and passes target/criteria/context into `ralf-review`. |
+| `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional max-cycle override that the formula reads and passes to the invoked RALF skill. Setters MUST remove existing `ralf:cycles=` labels before adding a replacement; `bd label remove` accepts exact labels, so list matching labels first rather than passing a wildcard. |
 
 Label commands:
 ```bash
@@ -186,8 +188,8 @@ The full bead lifecycle runs through four skills:
 
 Plus formulas:
 - `brainstorm-bead` — interactive spec writing + RALF spec review → `implementation-ready`
-- `implement-feature` — RALF-IT feature implementation
-- `fix-bug` — root-cause diagnosis + RALF-IT fix
+- `implement-feature` — label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
+- `fix-bug` — root-cause diagnosis + label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
 - `merge-and-cleanup` — retroactive gate + explicit auth → merge
 
 ---
@@ -241,6 +243,8 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:wait-for-pr-comments`
 - `superpowers:reply-and-resolve-pr-threads`
 - `superpowers:dispatching-parallel-agents`
+- `ralf-review`
+- `ralf-implement`
 
 ### Off-limits for bead-tracked work (compete with bead lifecycle)
 

@@ -12,9 +12,10 @@
 #   1. Retroactive gate  — verify completion gate evidence; run if missing
 #   2. PR review         — retrieve and triage ALL comments (top-level + inline)
 #   3. Address feedback  — fix blocking comments
-#   4. Merge auth        — HARD GATE: explicit user authorization required
-#   5. Merge             — merge the PR
-#   6. Cleanup           — branches, worktrees, bead
+#   4. Gate 2            — verify human follow-ups and merge-gate child
+#   5. Merge auth        — HARD GATE: explicit user authorization required
+#   6. Merge             — merge the PR
+#   7. Cleanup           — branches, worktrees, merge gate, source bead
 #
 # Usage:
 #   bd mol wisp create merge-and-cleanup \
@@ -141,13 +142,49 @@ If no blocking comments were found, this step completes immediately.
 """
 
 # =============================================================================
-# Phase 3: Merge Authorization
+# Phase 3: Source-Bead Gate
 # =============================================================================
+
+[[steps]]
+id    = "source-bead-gate"
+title = "Gate 2: verify source-bead child gates"
+needs = ["address-feedback"]
+description = """
+Before asking for merge authorization, enforce the source-bead closure gate.
+Do not merge while human follow-ups are incomplete or while the system-managed
+merge gate child is missing.
+
+1. List children of the source bead:
+     bd list --parent {{bead-id}} --json
+
+2. For every `[Human verify]` child carrying the `human` label, require BOTH:
+     - status is `closed`
+     - label `verified-by-human` is present
+
+   Use `bd label list <child-id> --json` to check labels; do not rely on
+   `bd list --parent` including label details.
+
+   A closed human follow-up without `verified-by-human` does NOT satisfy this
+   gate. If any human follow-up is open or lacks `verified-by-human`, stop:
+     bd label add {{bead-id}} human
+     bd label add <this-step-bead-id> human
+     bd update {{bead-id}} --append-notes "Merge blocked: human follow-up <child-id> is not closed with verified-by-human."
+     bd update <this-step-bead-id> --append-notes "Merge blocked: human follow-up <child-id> is not closed with verified-by-human."
+
+3. Find the system-managed merge child under `{{bead-id}}` by checking each
+   child with `bd label list <child-id> --json` for `merge-gate`. Exactly one
+   must exist, and it must still be open before the PR merge. If missing,
+   duplicated, or already closed, stop with the same human-flag protocol and
+   explain the merge-gate mismatch in notes.
+
+Do NOT close the source bead in this step. Source closure is allowed only after
+cleanup closes the `merge-gate` child and the child list has no open items.
+"""
 
 [[steps]]
 id    = "merge-authorization"
 title = "GATE: Explicit merge authorization required — STOP"
-needs = ["address-feedback"]
+needs = ["source-bead-gate"]
 description = """
 HARD STOP. Do not run any merge command until the user explicitly
 authorizes it in this session.
@@ -182,7 +219,7 @@ authorization, causing irreversible state changes.
 """
 
 # =============================================================================
-# Phase 4: Merge
+# Phase 5: Merge
 # =============================================================================
 
 [[steps]]
@@ -200,10 +237,14 @@ If the merge fails due to conflicts:
 
 After a successful merge, confirm:
   gh pr view {{pr}} --json mergedAt | jq '.mergedAt'
+
+Do NOT close the source bead here. The `merge-gate` child remains open until
+branch/worktree cleanup completes, so the source bead cannot close before the
+merge workflow has actually finished.
 """
 
 # =============================================================================
-# Phase 5: Cleanup
+# Phase 6: Cleanup
 # =============================================================================
 
 [[steps]]
@@ -224,10 +265,39 @@ Clean up all artifacts from the merged work.
      git worktree list
      git worktree remove <path>   # only if a worktree existed
 
-4. Close the bead:
-     bd close {{bead-id}} --reason "Merged PR #{{pr}}"
+4. Close the merge-gate child only after branch/worktree cleanup has
+   completed. This is the action that allows the source bead's child gate to
+   clear:
 
-5. Walk the parent chain; close each ancestor epic whose remaining
+     MERGE_GATE=""
+     for child in $(bd list --parent {{bead-id}} --json | jq -r '.[].id'); do
+       if bd label list "$child" --json | jq -e '.labels | index("merge-gate")' >/dev/null; then
+         [ -z "$MERGE_GATE" ] || { MERGE_GATE="__duplicate__"; break; }
+         MERGE_GATE="$child"
+       fi
+     done
+     [ -n "$MERGE_GATE" ] && [ "$MERGE_GATE" != "__duplicate__" ] || {
+       bd label add {{bead-id}} human
+       bd label add <this-step-bead-id> human
+       bd update {{bead-id}} --append-notes "Cleanup blocked: expected exactly one merge-gate child."
+       exit 1
+     }
+     bd close "$MERGE_GATE" --reason "PR #{{pr}} merged and cleanup completed"
+
+5. Close the source bead only after all children are closed. This preserves
+   the shift-right gate: human follow-ups plus the merge-gate child must all be
+   closed before the source can close.
+
+     NON_CLOSED=$(bd list --parent {{bead-id}} --json | jq '[.[] | select(.status != "closed")] | length')
+     [ "$NON_CLOSED" = "0" ] || {
+       bd label add {{bead-id}} human
+       bd label add <this-step-bead-id> human
+       bd update {{bead-id}} --append-notes "Cleanup blocked: source bead still has open children."
+       exit 1
+     }
+     bd close {{bead-id}} --reason "Merged PR #{{pr}} and all child gates closed"
+
+6. Walk the parent chain; close each ancestor epic whose remaining
    children are all closed (stops at the first ancestor that still
    has any non-closed children, or when there is no parent):
 
@@ -239,6 +309,6 @@ Clean up all artifacts from the merged work.
        PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
      done
 
-6. Burn this wisp:
+7. Burn this wisp:
      bd mol burn <this-mol-id>
 """

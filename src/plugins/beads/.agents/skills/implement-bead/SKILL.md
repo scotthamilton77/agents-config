@@ -194,6 +194,15 @@ The main agent MUST NOT:
 
 All of these happen inside subagents executing the molecule step bead's instructions.
 
+**RALF dispatch boundary.**
+Formula steps do not model the RALF loop internally. They only decide whether a
+specific step needs iterative RALF refinement by inspecting `ralf:required`.
+When that label is present, the step's executing subagent invokes the appropriate
+RALF skill for that step type and passes the full inputs: target, Definition of
+Done, context, and optional max cycle count from `ralf:cycles=N`. Invoking
+`ralf-review` or `ralf-implement` beside `implement-bead` as a peer workflow is
+forbidden.
+
 **One step per invocation.** This skill is called once per stage by the
 shell driver. Driving multiple steps in a single invocation defeats the
 per-stage context-bounding and session-id resumption model.
@@ -215,7 +224,8 @@ Do NOT add them to the current molecule or fix them inline.
 | Thought | Reality |
 |---------|---------|
 | "I'll loop to the next step before exiting" | No. One step per invocation. Exit after closing the step. The shell driver loops. |
-| "I'll invoke `ralf-it` / `superpowers:subagent-driven-development` directly" | No. Those methodology skills run INSIDE molecule steps, not as peers. |
+| "I'll invoke `ralf-review` or `ralf-implement` as peers of the bead workflow" | No. Those RALF skills are dispatched BY formula steps when required, not as peer workflows. |
+| "I'll invoke `superpowers:subagent-driven-development` directly" | No. The formula DAG is the orchestrator for bead-tracked work. |
 | "The step is small — I'll skip the subagent and do it in the main agent" | No. Main agent orchestrates, subagents implement. Dispatch even for small steps. |
 | "I'll skip the formula and just run the work directly" | The formula IS the workflow. Skipping it skips the gate. |
 | "Brainstorming finished cleanly, so the user must want implementation" | No. Hand off to run-queue / shell driver by default. |

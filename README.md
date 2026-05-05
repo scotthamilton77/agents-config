@@ -63,7 +63,8 @@ Deep methodology guides for specific tasks. Unlike agents (which define *who*), 
 | `condition-based-waiting` | Replace flaky timeouts with condition polling |
 | `merge-guard` | Pre-merge gate that blocks merging while automated reviews are pending or comments are unseen |
 | `optimize-agents-md` | Meta-skill for improving agent definitions |
-| `ralf-it` | Iterative refinement with fresh-eyes subagents that catch what the first pass missed |
+| `ralf-review` | Bounded adversarial fresh-eyes review cycles for specs, designs, or code targets |
+| `ralf-implement` | Iterative implementation refinement with adversarial fresh-eyes passes |
 | `self-improving-agent` | Persist lessons from user corrections as actionable rules |
 | `test-review` | Code review of unit/integration tests for quality and design issues |
 | `testing-anti-patterns` | Common testing mistakes and how to avoid them |

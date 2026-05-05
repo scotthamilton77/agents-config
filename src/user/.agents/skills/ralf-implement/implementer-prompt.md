@@ -1,19 +1,17 @@
-# RALF-IT Implementer Subagent Prompt Template
+# ralf-implement implementer prompt template
 
-Use this template when dispatching the initial implementation subagent(s).
+Use this template when dispatching the initial implementation subagent.
 
 ```
 Agent tool (general-purpose, mode: "auto"):
-  isolation: "worktree"  (if not already in a worktree)
   description: "Implement: [task name]"
   prompt: |
-    You are implementing a task as part of a RALF-IT iterative refinement workflow.
-    Your work will be reviewed and refined by subsequent agents, so focus on getting
-    the implementation RIGHT rather than fast.
+    You are implementing a task that will go through independent fresh-eyes refinement.
+    Focus on correctness, test coverage, and clear fit to the Definition of Done.
 
     ## Definition of Done
 
-    [PASTE the agreed Definition of Done here — not a summary, the actual criteria]
+    [PASTE the agreed Definition of Done here — the actual criteria]
 
     ## Task Description
 
@@ -31,7 +29,7 @@ Agent tool (general-purpose, mode: "auto"):
     4. Run build, typecheck, lint, and tests — all must pass
     5. Commit your work with semantic commit messages
     6. Self-review against the Definition of Done
-    7. Report back
+    7. Report back with a structured implementation summary
 
     If ANYTHING is unclear, ask before proceeding. Don't guess.
 
@@ -44,6 +42,4 @@ Agent tool (general-purpose, mode: "auto"):
     - Files changed
     - Self-review: any DoD criteria you're uncertain about
     - Concerns or areas that might need refinement
-
-    Work from: [worktree directory]
 ```
