@@ -56,9 +56,12 @@ orchestrator — not the worker — translates that file into bead state.
 
 A worker-report is a YAML document with the following shape. The example
 below is canonical: every field shown is part of the contract, optional
-fields are annotated, and nothing else is permitted at the top level.
+fields are annotated, and nothing else is permitted at the top level. It
+uses schema-template notation (pipe-separated alternatives, range syntax
+for `priority`) — it is **not** copy-paste YAML. See §1.1 for the full
+field reference, including allowed enum values.
 
-```yaml
+```text
 status: complete | needs_human | failed
 iteration: 1                       # optional; orchestrator-supplied for RALF-IT
                                    # loops, omitted for single-shot dispatches
