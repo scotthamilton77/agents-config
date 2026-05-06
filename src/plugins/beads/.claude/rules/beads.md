@@ -241,8 +241,8 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:finishing-a-development-branch`
 - `superpowers:requesting-code-review`
 - `superpowers:receiving-code-review`
-- `superpowers:wait-for-pr-comments`
-- `superpowers:reply-and-resolve-pr-threads`
+- `wait-for-pr-comments`
+- `reply-and-resolve-pr-threads`
 - `superpowers:dispatching-parallel-agents`
 - `ralf-review`
 - `ralf-implement`

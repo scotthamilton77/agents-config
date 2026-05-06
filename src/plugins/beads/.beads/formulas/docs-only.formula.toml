@@ -316,20 +316,12 @@ Model: claude-sonnet-4-6  Effort: medium
 Skips entirely when review-level:none.
 
 ## Preloaded skills
-superpowers:wait-for-pr-comments (chains internally to superpowers:reply-and-resolve-pr-threads)
+wait-for-pr-comments (chains internally to reply-and-resolve-pr-threads)
 
 ## Actions
 
-Invoke superpowers:wait-for-pr-comments with:
+Invoke wait-for-pr-comments with:
   --mode autonomous --bead-id {{bead-id}}
-
-The skill:
-1. Polls Copilot via background script (zero Anthropic tokens during wait).
-2. Classifies each comment: FIX / SKIP / ESCALATE.
-3. Dispatches per-comment fix subagents (sonnet) for FIX-class items.
-4. Pushes combined commits.
-5. Internally chains to superpowers:reply-and-resolve-pr-threads:
-   replies to every thread + resolves FIXED review_thread items via GraphQL.
 
 One iteration = one outbound reply-batch.
 Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).

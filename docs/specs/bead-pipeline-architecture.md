@@ -122,7 +122,7 @@ When any trigger fires, the formula executes the **reroute protocol**: clone the
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `medium`.
 
-**Preloaded skills.** `superpowers:test-driven-development`, `superpowers:writing-unit-tests`, `superpowers:testing-anti-patterns`.
+**Preloaded skills.** `superpowers:test-driven-development`, `writing-unit-tests`, `testing-anti-patterns`.
 
 **Subagents dispatched.** `bead-implementor` (sonnet) for test writing; `test-review` skill invocation by the orchestrator directly (not a subagent).
 
@@ -250,7 +250,7 @@ PR creation failure flag-humans cleanly with the worktree intact.
 
 ### review-cycle
 
-**Purpose.** Long-running PR-review cycle. The orchestrator invokes the `superpowers:wait-for-pr-comments` skill, which polls Copilot via background script (zero Anthropic tokens during the wait), classifies each comment as FIX/SKIP/ESCALATE, dispatches per-comment fix subagents, pushes combined commits, then chains internally to `superpowers:reply-and-resolve-pr-threads` to reply to every thread and resolve FIXED ones via GraphQL.
+**Purpose.** Long-running PR-review cycle. The orchestrator invokes the `wait-for-pr-comments` skill, which polls Copilot via background script (zero Anthropic tokens during the wait), classifies each comment as FIX/SKIP/ESCALATE, dispatches per-comment fix subagents, pushes combined commits, then chains internally to `reply-and-resolve-pr-threads` to reply to every thread and resolve FIXED ones via GraphQL.
 
 One iteration equals one outbound reply-batch: poll PR until new review activity or timeout, address all open FIX-class threads in one commit + reply pass, push, mark threads resolved on GitHub. The cap counts batches, not polls.
 
@@ -264,7 +264,7 @@ When `review-level:none` is set, the stage skips entirely.
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `medium`. Per-comment classification and reply composition; cost scales with comment volume.
 
-**Preloaded skills.** `superpowers:wait-for-pr-comments` (which chains to `superpowers:reply-and-resolve-pr-threads`).
+**Preloaded skills.** `wait-for-pr-comments` (which chains to `reply-and-resolve-pr-threads`).
 
 **Subagents dispatched.** Per-comment fix subagents (sonnet) for FIX-class items.
 

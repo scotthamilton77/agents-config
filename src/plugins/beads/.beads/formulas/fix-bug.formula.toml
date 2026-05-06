@@ -203,8 +203,7 @@ Write a failing regression test targeting the root cause (not the symptom).
 Model: claude-sonnet-4-6  Effort: medium
 
 ## Preloaded skills
-superpowers:test-driven-development, superpowers:writing-unit-tests,
-superpowers:testing-anti-patterns
+superpowers:test-driven-development, writing-unit-tests, testing-anti-patterns
 
 ## Inputs
 - Root-cause note from diagnose step-bead notes
@@ -607,10 +606,10 @@ Model: claude-sonnet-4-6  Effort: medium
 Skips entirely when review-level:none.
 
 ## Preloaded skills
-superpowers:wait-for-pr-comments (chains to superpowers:reply-and-resolve-pr-threads)
+wait-for-pr-comments (chains to reply-and-resolve-pr-threads)
 
 ## Actions
-Invoke superpowers:wait-for-pr-comments with:
+Invoke wait-for-pr-comments with:
   --mode autonomous --bead-id {{bead-id}}
 
 Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).
