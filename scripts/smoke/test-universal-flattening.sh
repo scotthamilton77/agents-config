@@ -4,7 +4,6 @@
 # Verifies that AGENTS.md.template (and GEMINI.md.template) are flattened
 # for all tools using the DYNAMIC-INCLUDE markers.
 #
-# This test is expected to FAIL until the universal flattening logic is implemented.
 
 set -euo pipefail
 
@@ -88,7 +87,7 @@ else
 fi
 
 if [ $FAILED -eq 1 ]; then
-    echo "==> Universal flattening test FAILED (Expected for RED step)"
+    echo "==> Universal flattening test FAILED (Regression)"
     exit 1
 else
     echo "==> Universal flattening test PASSED"
