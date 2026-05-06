@@ -399,7 +399,8 @@ mirroring the `red-tests escalate:` convention):
   bd label add <step-bead-id> human
   bd update {{bead-id}} --append-notes "green-loop defense-in-depth: red-tests escalate trigger should have fired but molecule advanced. Trigger A: no test runner. Likely manual molecule resume that bypassed reroute."
   bd update <step-bead-id> --append-notes "green-loop defense-in-depth: Trigger A: no test runner. Halted before any RALF dispatch."
-  exit
+  bd update <step-bead-id> --status open
+  exit 0
 
 Do NOT proceed with implementation. This path is unreachable in normal
 operation (the red-tests reroute burns the molecule before green-loop).

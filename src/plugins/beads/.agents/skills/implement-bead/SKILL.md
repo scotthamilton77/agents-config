@@ -36,9 +36,13 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
          formula_to_pour="$formula_names"
        else
          # Multiple distinct formula-* labels → §4.2 policy-knob collision.
+         # Per §5.6, flag-human is a pause (not a failure); exit cleanly.
+         # No step-bead exists yet (the molecule has not been poured), so
+         # only the source bead is labeled — the §5.6 step-bead path
+         # applies only after pour, and is enforced in §2 below.
          bd label add <source-bead-id> human
          bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
-         exit 1
+         exit 0
        fi
 
    If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` → flag-human (stamp `human` on the source bead, append note: "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>"`; `fix-bug` → `--var bug="<title>"`; `docs-only` → `--var topic="<title>"`. All formulas additionally take `--var bead-id=<source-bead-id>`. Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise stamp `human` on the source bead and exit).
@@ -64,9 +68,14 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
          mode="$formula_names"
        else
          # Multiple distinct formula-* labels → §4.2 policy-knob collision.
+         # Full §5.6 flag-human protocol: label BOTH source + step-bead,
+         # transition step-bead to open, exit cleanly (this is a pause,
+         # not a failure).
          bd label add <source-bead-id> human
+         bd label add <step-bead-id> human
          bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
-         exit 1
+         bd update <step-bead-id> --status open
+         exit 0
        fi
 
    On absent label (`mode` empty), fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug` | `docs-only`. (The `docs-only` mode does not have entries in §5's stage→agent map; its steps are non-RALF and dispatched directly per its formula.)
