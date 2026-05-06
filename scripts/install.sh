@@ -545,10 +545,11 @@ stage_content_from_dir() {
     done
 }
 
-# ── Utility: flatten AGENTS.md.template for OpenCode ──────────────────────────
+# ── Utility: flatten instruction templates (DYNAMIC-INCLUDE) ──────────────────
 #
-# OpenCode does not support `@` include resolution. This function reads a
-# template containing <!-- DYNAMIC-INCLUDE: path --> and
+# Some tools (like OpenCode) do not support `@` include resolution, or we want
+# a single flat file for distribution. This function reads a template
+# containing <!-- DYNAMIC-INCLUDE: path --> and
 # <!-- DYNAMIC-INCLUDE-RULES: rule1,... --> markers and produces a single
 # flat file with all references inlined.
 #
@@ -609,7 +610,7 @@ stage_and_install_tool() {
     local staging="$STAGING_DIR/$tool"
     # Hoist all loop-internal locals to function scope — see commit 2fe276d:
     # zsh prints the variable's value when `local` is re-invoked in a loop.
-    local file_type plugin_tool_dir plugin_agents_dir
+    local file_type plugin_tool_dir plugin_agents_dir flattened
 
     CURRENT_TOOL="$tool"
     vheader "$tool"
@@ -680,14 +681,15 @@ stage_and_install_tool() {
         fi
     done
 
-    # ── Phase 6.5: Flatten AGENTS.md for OpenCode ─────────────────────────────
-    if [[ "$tool" == "opencode" && -f "$staging/AGENTS.md.template" ]]; then
-        vinfo "Phase 6.5: Flattening AGENTS.md for OpenCode"
-        local flattened
-        flattened="$(mktemp)"
-        flatten_agents_md "$staging/AGENTS.md.template" "$flattened" "$PROJECT_ROOT"
-        mv "$flattened" "$staging/AGENTS.md.template"
-    fi
+    # ── Phase 6.5: Universal instruction flattening ──────────────────────────
+    for template in "$staging/AGENTS.md.template" "$staging/GEMINI.md.template"; do
+        if [[ -f "$template" ]]; then
+            vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
+            flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
+            flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
+            mv "$flattened" "$template"
+        fi
+    done
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
     # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
