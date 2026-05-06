@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Verification script for bead 7bk.19.3 [m]-tagged acceptance criteria.
-# Asserts mechanically-verifiable claims about the rewritten implement-bead
-# skill (SKILL.md) and slash command (implement-bead.md). Exits 0 if all
-# pass, 1 otherwise.
-#
-# Pre-rewrite this script intentionally fails (RED phase). Green-loop
-# rewrites the target files until every assertion passes.
+# Asserts mechanically-verifiable claims about the implement-bead skill
+# (SKILL.md) and slash command (implement-bead.md). Exits 0 on all-pass,
+# 1 otherwise.
 
 set -e
 set -u
