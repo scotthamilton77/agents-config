@@ -116,8 +116,10 @@ Model: claude-sonnet-4-6  Effort: medium
 ## Decode worktree-path label before any work
   1. Decode: __ → /  then  _u → _
   2. Verify decoded path exists and is a git worktree:
-       git -C <path> rev-parse --is-inside-work-tree
-  3. Operate from that cwd.
+       git -C "<path>" rev-parse --is-inside-work-tree
+  3. Operate from that cwd. Quote the decoded path in any subsequent
+     command that consumes it — paths with spaces or shell-special
+     characters will otherwise misparse.
 
 ## Actions
 
