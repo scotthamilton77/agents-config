@@ -78,9 +78,12 @@ assert_no_grep "worker-reports/" "$SKILL" "AC2d: SKILL.md has NO occurrences of 
 
 # AC 3 — Audit-label prefix worker-audit-, no worker-report- LABEL prefix
 # (worker-report-v1 the spec filename is allowed; ban worker-report- followed by alpha/digit
-# in a label-prefix context. Use regex that matches worker-report-[a-z0-9] but excludes v1.)
+# in a label-prefix context. Original regex `worker-report-[a-z0-9]` was contradictory with
+# AC5a's literal `worker-report-v1.md` requirement — the `v` matched. Tightened to exclude
+# the v1 spec-filename form while still catching label-prefix usages like
+# `worker-report-iter1`, `worker-report-tdd-...`, `worker-report-bug-...`, etc.)
 assert_grep "worker-audit-" "$SKILL" "AC3a: SKILL.md uses worker-audit- label prefix"
-assert_no_grep_regex "worker-report-[a-z0-9]" "$SKILL" "AC3b: SKILL.md has NO worker-report- label prefix usage"
+assert_no_grep_regex "worker-report-([a-uw-z]|v[02-9])" "$SKILL" "AC3b: SKILL.md has NO worker-report- label prefix usage"
 
 # AC 4 — Agent-tool dispatch (Agent( and subagent_type), no `claude -p` worker dispatch
 assert_grep "Agent(" "$SKILL" "AC4a: SKILL.md instructs Agent( tool dispatch"
