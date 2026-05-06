@@ -545,10 +545,11 @@ stage_content_from_dir() {
     done
 }
 
-# ── Utility: flatten AGENTS.md.template for OpenCode ──────────────────────────
+# ── Utility: flatten instruction templates (DYNAMIC-INCLUDE) ──────────────────
 #
-# OpenCode does not support `@` include resolution. This function reads a
-# template containing <!-- DYNAMIC-INCLUDE: path --> and
+# Some tools (like OpenCode) do not support `@` include resolution, or we want
+# a single flat file for distribution. This function reads a template
+# containing <!-- DYNAMIC-INCLUDE: path --> and
 # <!-- DYNAMIC-INCLUDE-RULES: rule1,... --> markers and produces a single
 # flat file with all references inlined.
 #
@@ -684,7 +685,7 @@ stage_and_install_tool() {
     for template in "$staging/AGENTS.md.template" "$staging/GEMINI.md.template"; do
         if [[ -f "$template" ]]; then
             vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
-            flattened="$(mktemp)"
+            flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
             flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
             mv "$flattened" "$template"
         fi
