@@ -242,8 +242,10 @@ bead — no `human` label, no manual intervention.
 1. The trigger note is fixed for fix-bug:
      <trigger-note> = "Trigger A: no test runner"
 
-2. Read the original bead's parent (if any) to preserve epic membership:
+2. Read the original bead's parent (if any) to preserve epic membership,
+   and its priority (so the merge-gate child created in step 4 inherits it):
        ORIG_PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+       ORIG_PRIORITY=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "P3"')
 
 3. Create the new bead as a partial copy of the original:
    - Inherit: `title`, `description`, `acceptance_criteria` from {{bead-id}}.
@@ -269,7 +271,22 @@ bead — no `human` label, no manual intervention.
    - Add a discovered-from edge:
        bd dep add <new-bead-id> {{bead-id}} --type discovered-from
 
-4. Re-parent any open `[h]` follow-up children of the original bead to
+4. Create the merge-gate child for the new bead (mirrors brainstorm-bead.finalize §4.3 — without this, merge-and-cleanup gate 2 has nothing to enforce against, and the rerouted bead cannot complete its eventual PR cycle):
+       bd create \
+         --type task \
+         --parent <new-bead-id> \
+         --title "[Merge gate] <new-bead-title>" \
+         --description "Closes when the merge-and-cleanup formula's merge step completes." \
+         --priority "$ORIG_PRIORITY"
+       # Capture the returned id and stamp the merge-gate label:
+       bd label add <new-merge-gate-id> merge-gate
+
+   `<new-bead-title>` is the title inherited from the original (already set
+   on the new bead in step 3). Do NOT label `human` (system-managed gate
+   child, not a human-attention item). Do NOT label `implementation-ready`
+   (the shell driver ignores it).
+
+5. Re-parent any open `[h]` follow-up children of the original bead to
    the new bead (so the new bead's verify-ac contract is preserved when
    it inherits `[h]` AC lines):
        for child in $(bd list --parent {{bead-id}} --label human --json \
@@ -277,13 +294,13 @@ bead — no `human` label, no manual intervention.
          bd update "$child" --parent <new-bead-id>
        done
 
-5. Stamp the original bead with the redirect marker:
+6. Stamp the original bead with the redirect marker:
        bd label add {{bead-id}} REROUTED-TO:<new-bead-id>
 
-6. Append a note to the original bead:
+7. Append a note to the original bead:
        bd update {{bead-id}} --append-notes "Rerouted to <new-bead-id>. <trigger-note>. New bead created with formula-docs-only and implementation-ready. Run-queue will pick it up in a separate session."
 
-7. Close any merge-gate child of the original bead. Iterate over all
+8. Close any merge-gate child of the original bead. Iterate over all
    matches in case duplicates exist:
        bd list --parent {{bead-id}} --label merge-gate --json \
          | jq -r '.[] | select(.status != "closed") | .id' \
@@ -291,15 +308,15 @@ bead — no `human` label, no manual intervention.
              bd close "$merge_child" --reason "Parent bead rerouted."
            done
 
-8. Close the original bead:
+9. Close the original bead:
        bd close {{bead-id}} --reason "Rerouted to <new-bead-id> (<trigger-note>)."
 
-9. Append a note to the current step-bead. The literal prefix
+10. Append a note to the current step-bead. The literal prefix
    `red-tests escalate: ` is grep-able for verify-ac groundedness and for
    green-loop's defense-in-depth check:
        bd update <step-bead-id> --append-notes "red-tests escalate: <trigger-note>. Cloned to <new-bead-id> with formula-docs-only."
 
-10. Burn the current molecule:
+11. Burn the current molecule:
        bd mol burn <mol-id>
 
 After burn, this stage and the entire molecule cease execution. Run-queue
