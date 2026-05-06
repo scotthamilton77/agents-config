@@ -1,231 +1,100 @@
 ---
 name: implement-bead
 description: >
-  Use when a bead has the implementation-ready label and is ready for
-  autonomous execution. Drives ONE stage of the bead's molecule and exits.
-  Invoked by the shell driver via `claude -p /implement-bead <bead-id>`.
-  The invoking agent is the ORCHESTRATOR only — all implementation work
-  is done by subagents. Do NOT invoke this skill for beads that have not
-  been through brainstorming (use start-bead to route correctly).
+  Use when a step-bead is ready for autonomous execution. Reads the
+  step-bead and labels, resolves execution context, decides dispatch
+  shape from metadata, and either invokes an orchestration skill
+  in-session or runs a single direct dispatch via the per-dispatch
+  primitive documented below. The invoking agent is the ORCHESTRATOR
+  only — workers are dispatched via the Agent tool from the top-level
+  session. Loop ownership lives in `ralf-implement` / `ralf-review`,
+  never in this skill.
 model: sonnet[1m]
 effort: high
 ---
 
 # implement-bead
 
-Drive ONE stage of the bead's molecule DAG and exit. The shell driver
-(`scripts/bead-driver-test.sh`) calls this skill once per ready stage via
-`claude -p --session-id <uuidv5> "/implement-bead <bead-id>"`. This skill
-reads the current step, executes it, closes the step, and exits. The shell
-driver handles looping — this skill MUST NOT loop to the next step.
+Metadata-driven dispatcher. One step-bead per invocation.
 
-## When to Use
+## 1. Resolve step-bead from source-bead-id
 
-- Invoked by the shell driver via `claude -p /implement-bead <bead-id>`
-- The bead MUST have label `implementation-ready`
-- Do NOT invoke directly for beads that lack `implementation-ready` — use `start-bead`
-- Do NOT invoke in the same session where brainstorming is happening (session separation rule)
+The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
 
-## The Process
+1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`). **If empty (first stage — no molecule yet)**: branch on the source bead's type. `epic` → flag-human (stamp `human` on the source bead, append note: "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour. Otherwise pour the correct formula — `bug` → `bd mol pour fix-bug --var bug="<title>" --var bead-id=<source-bead-id>`; `feature` / `task` / `chore` (or null) → `bd mol pour implement-feature --var feature="<title>" --var bead-id=<source-bead-id>`. Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise stamp `human` on the source bead and exit).
+2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes, matching the pattern in `scripts/bead-driver-test.sh`).
+3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
+4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
-### Step 1: Read the Bead
+## 2. Resolve execution context
 
-```bash
-bd show <bead-id>
-bd label list <bead-id>
-```
+1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: stamp `human` on BOTH the step-bead AND source bead, append diagnostic note (the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree.
+2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority: `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
+3. Repo root: `dirname "$(git -C "<worktree-path>" rev-parse --path-format=absolute --git-common-dir)"` (both `<worktree-path>` and the `$(...)` substitution must be double-quoted to survive paths with spaces or special characters).
+4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 
-Confirm `implementation-ready` label is present. If absent, stop and invoke
-`start-bead` instead.
+## 3. Decide dispatch shape from metadata
 
-### Step 2: Check for Existing Molecule
+1. If `ralf:required` is on the source bead → invoke the orchestration skill in-session: `ralf-implement` for green-loop / fix stages, `ralf-review` for review-cycle stages. Pass: spec, Definition of Done, quality commands, optional `ralf:cycles=N` cap, the doer's `subagent_type`, the worktree path, the target report path template, and reference to the per-dispatch primitive in §4. The orchestration skill substitutes `<agent-name>` and `-iter<N>` into the template per cycle when invoking the per-dispatch primitive. The orchestration skill executes as in-session skill code in this same top-level session — NOT as a subagent.
+2. Otherwise → load the appropriate execution skill for the stage (e.g. `superpowers:test-driven-development`) and run §4 once with the doer's `subagent_type` from §5.
 
-Molecules have no structural parent-edge back to the bead (beads `lp3`)
-and the tree-mode text path silently drops `--type` / `--parent` filters
-(beads `2dx`). Query via the `for-bead-<bead-id>` label convention with
-`--json`:
+This skill does NOT invoke itself recursively via `claude -p` and does NOT dispatch orchestration skills as subagents.
 
-```bash
-bd list --label for-bead-<bead-id> --type molecule --json \
-  | jq '[.[] | select(.status != "closed")]'
-```
+## 4. Per-dispatch primitive
 
-Decide from the result array:
+Inputs: `(stage, mode, iteration?, execution_context, doer_subagent_type)`.
 
-- **length 0** → no active molecule. BUT if you suspect a pre-convention
-  or otherwise unlabeled molecule exists (prior activity visible in the
-  bead's history, user references one), STOP — do NOT pour over
-  unlabeled in-progress work. Escalate:
-  ```bash
-  bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
-  bd label add <bead-id> human
-  ```
-  Otherwise proceed to Step 3 to pour a new molecule.
+1. Compute report path by substituting `<step-bead-id>`, `<agent-name>`, and (when `iteration` is supplied) `-iter<N>` into the template.
+2. Build worker task-spec: worktree path, mode-specific inputs (per per-agent specs in `worker-report-v1.md`), absolute target report path, project test-runner command, iteration counter when applicable. For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, include `root_cause_note` (and `reproduction_steps` for red-tests) retrieved per §6.
+3. Dispatch from this top-level session: `Agent({ subagent_type: <doer>, prompt: <task-spec> })`. Subagents cannot spawn subagents — Agent dispatch is valid only from the top-level session.
+4. After the worker exits, classify:
+   - Non-zero exit OR no file at target path → synthesize `status: failed` at the target path per `worker-report-v1.md` §4: `evidence: {}`, `escalations[].reason: "Worker crashed"`, `escalations[].detail`: exit code + stderr tail, `discovered_work: []`, `commits: []`.
+   - File present but unparseable as YAML or missing core required field (`status` per `worker-report-v1.md` §4.1) → synthesize `status: failed` with `escalations[].reason: "Worker emitted malformed report"` (per §4) wrapping the parse error and raw bytes in `escalations[].detail`.
+   - File present and parseable but missing a per-agent runtime-required field (e.g. `bug-diagnoser` with empty or missing `root_cause_note`) → synthesize `status: failed` with `escalations[].reason: "Worker emitted malformed report"` wrapping the missing-field name and raw bytes in `escalations[].detail`.
+   - Otherwise → read and parse the YAML.
+5. Stamp `worker-audit-<agent-name>[-iter<N>]` on the step-bead (forensic, append-only).
+6. Derive gate roll-up from the evidence blocks per `worker-report-v1.md` §1.1 (`pass` / `fail` / `partial` / `n/a`). Workers do NOT emit `gate_status`; the orchestrator derives it.
+7. Return `{ report, gate, audit_label }` to the caller.
 
-- **length 1** → extract and go directly to Step 4 (find the current step):
-  ```bash
-  MOL_ID=$(bd list --label for-bead-<bead-id> --type molecule --json \
-    | jq -r '[.[] | select(.status != "closed")] | .[0].id')
-  ```
-  Do NOT pour a new formula over existing in-progress work.
+## 5. Stage→agent map
 
-- **length 2+** → analyze first; don't escalate blindly. Multiple
-  non-closed molecules for one bead is legitimate when distinct formulas
-  coexist (a lingering brainstorm-bead wisp alongside an
-  implement-feature pour) or when parallel agents share the same Dolt
-  server. Inspect each:
-  ```bash
-  bd list --label for-bead-<bead-id> --type molecule --json \
-    | jq '[.[] | select(.status != "closed")
-               | {id, title, status, updated_at, created_at}]'
-  ```
-  Resolve if one clearly supersedes the others. Resume the winner (go to
-  Step 4) and record your reasoning. The user can burn the loser later.
+- `(red-tests, implement-feature)` → `tdd-red-team` (multi-AC mode; AC bullets in task-spec).
+- `(red-tests, fix-bug)` → `tdd-red-team` (single-regression mode; `root_cause_note` and `reproduction_steps` from upstream diagnose report).
+- `(green-loop, implement-feature)` → `tdd-green-team` (no `root_cause_note` in task-spec).
+- `(green-loop, fix-bug)` → `tdd-green-team` (with `root_cause_note` from upstream diagnose report).
+- `(diagnose, fix-bug)` → `bug-diagnoser`.
 
-  If molecules cannot be cleanly disambiguated, escalate WITH your analysis:
-  ```bash
-  bd comments add <bead-id> "N active molecules for this bead: ..."
-  bd label add <bead-id> human
-  ```
-  Do NOT silently pick one.
+## 6. Upstream report retrieval
 
-See `rules/beads.md` ("Molecule → bead linkage convention") for the
-stamp procedure applied in Step 3.
+For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagnose step's `root_cause_note`:
 
-### Step 3: Pour the Formula (only if no active molecule from Step 2)
+1. Locate the upstream step-bead-id within the same molecule: `bd list --parent <mol-id> --all --type task --json | jq -r '.[] | select(.title | startswith("Diagnose:")) | .id'`. A more robust stage label may replace this lookup later.
+2. Build the upstream report path: `<repo-root>/.beads/worker-audit/<upstream-step-bead-id>/bug-diagnoser.yaml` (no iter suffix; diagnose is direct dispatch).
+3. Read and parse the YAML; extract `root_cause_note` (and `reproduction_steps` for red-tests).
+4. Inject extracted fields into the downstream task-spec.
+5. Failure mode: if the upstream report is missing or unparseable, stamp `human` on BOTH the step-bead AND the source bead and append a missing-context detail. Do NOT proceed with an empty `root_cause_note`. The dependency is hard.
 
-Select formula based on bead type:
-- `bug` → `fix-bug`
-- `feature`, `task`, `chore` → `implement-feature`
+## 7. File discovered_work before applying status outcomes
 
-**Pour vs. wisp:** Default to pour (persistent across sessions). Wisp only
-if the bead is trivially small AND single-session completion is certain.
+1. For every non-synthetic report (status is `complete`, `needs_human`, or `failed` from the worker), file each `discovered_work` item as a new bead. Apply this step BEFORE step 8 outcomes, so any escalations may reference the newly-filed beads.
+2. Synthetic reports always have `discovered_work: []` per `worker-report-v1.md` §4 — moot but explicit.
+3. Placement decision is the orchestrator's, not the worker's. Apply the I3 sibling test from `src/plugins/beads/.claude/rules/beads.md`: passes → `bd create --parent <epic-id>`; fails → orphan + `bd dep add <new-id> <source-bead-id> --type discovered-from`. Default when no obvious sibling fit exists: orphan + `discovered-from`.
 
-```bash
-# Default (pour — persistent across sessions)
-bd mol pour implement-feature \
-  --var feature="<bead title>" \
-  --var bead-id=<bead-id>
+## 8. Apply status outcomes to the step-bead
 
-# Or for bugs:
-bd mol pour fix-bug \
-  --var bug="<bead title>" \
-  --var bead-id=<bead-id>
-```
+All `human` stamps in this section apply to BOTH the step-bead AND the source bead (human-flag protocol).
 
-Note the molecule ID from the output. Immediately stamp the bead→molecule
-lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
+1. Direct-dispatch path (no `ralf:required`) — exactly one report processed:
+   - `complete` + gate `pass` → close step-bead with summary; exit.
+   - `complete` + gate `fail` or `partial` → stamp `human` on step-bead AND source bead, append gate-fail evidence to step-bead notes, close step-bead with summary; exit.
+   - `needs_human` → stamp `human` on step-bead AND source bead, append escalations, close step-bead with summary; exit.
+   - `failed` (real or synthesized) → stamp `human` on step-bead AND source bead, append failure detail, close step-bead with summary; exit.
+2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, final derived gate, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same outcome rules above using the aggregate verdict (every `human` stamp covers BOTH step-bead AND source bead), then close the step-bead and exit. The orchestration skill stamps per-iteration audit labels during the loop; this skill closes the step-bead at the end.
 
-```bash
-bd label add <mol-id> for-bead-<bead-id>
-```
+## 9. Outcome-rule override metadata
 
-Then claim the bead and walk the parent chain (see `rules/beads.md` I1):
+Before applying §8, read the step-bead labels (per §1) for `outcome-on-fail:advance` (step-bead-scoped, NOT source-bead-scoped). When present, invert §8's `complete + gate: fail` rule from "stamp `human`, close, escalate" to "close step-bead with summary, advance" — `gate: fail` is treated as the success signal for this step. Applies on BOTH the direct dispatch path AND the orchestration (RALF-aggregate) path; the override is a single metadata-driven label read, not a formula-identity branch. The `failed` status (synthetic-on-crash and per-agent runtime-field failures) is NOT subject to the override — those still escalate per §8. Default (label absent): §8 unchanged.
 
-```bash
-bd update <bead-id> --status in_progress
+## Audit-label scope
 
-PARENT=$(bd show <bead-id> --json | jq -r '.[0].parent // empty')
-while [ -n "$PARENT" ]; do
-  bd update "$PARENT" --status in_progress
-  PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-done
-```
-
-### Step 4: Find the ONE Current Ready Step
-
-Query the molecule for its current step using `--json` (text-mode is
-unreliable — see beads bug `2dx`):
-
-```bash
-bd mol current <mol-id> --json
-```
-
-If no current step is returned (molecule is complete or all steps closed),
-EXIT immediately. The shell driver will handle close-walk and cleanup.
-Do NOT squash or burn the molecule here — that is the driver's job.
-
-Extract the step bead ID from the result.
-
-### Step 5: Execute the Step
-
-Read the step bead's full description:
-
-```bash
-bd show <step-bead-id>
-```
-
-Execute the instructions in that step bead. Dispatch subagents as needed
-per the step description. The step description is self-contained — the
-molecule's DAG enforces sequencing; you do not need to explain prior steps
-to each new subagent.
-
-**Subagent dispatch instructions** — for each step, pass:
-1. The full text of the step bead description (from `bd show <step-bead-id>`)
-2. The original bead context: title, AC, and bead ID
-3. The cwd contract for this stage (decoded from the molecule's `worktree-path-*`
-   label for most stages; repo root for `preflight` and `merge-or-handoff`)
-4. The instruction: "Execute this step completely. Report back what you did."
-
-**Subagent isolation**: each subagent is independent and has no context
-from previous subagents. The step bead description must be self-contained.
-
-### Step 6: Close the Step and EXIT
-
-When the step is complete, close the step bead:
-
-```bash
-bd close <step-bead-id> --reason "<brief summary of what was done>"
-```
-
-Then EXIT. Do NOT loop to the next step. Do NOT call `bd mol current` again.
-The shell driver polls for the next ready step and spawns a new `claude -p`
-invocation for each subsequent stage.
-
-## Important Constraints
-
-**This agent orchestrates. Subagents implement.**
-The main agent MUST NOT:
-- Write implementation code
-- Run tests directly
-- Create PRs
-- Push branches
-- Make git commits
-
-All of these happen inside subagents executing the molecule step bead's instructions.
-
-**RALF dispatch boundary.**
-Formula steps do not model the RALF loop internally. They only decide whether a
-specific step needs iterative RALF refinement by inspecting `ralf:required`.
-When that label is present, the step's executing subagent invokes the appropriate
-RALF skill for that step type and passes the full inputs: target, Definition of
-Done, context, and optional max cycle count from `ralf:cycles=N`. Invoking
-`ralf-review` or `ralf-implement` beside `implement-bead` as a peer workflow is
-forbidden.
-
-**One step per invocation.** This skill is called once per stage by the
-shell driver. Driving multiple steps in a single invocation defeats the
-per-stage context-bounding and session-id resumption model.
-
-**No unauthorized merges.**
-The implement-feature and fix-bug formulas end at `merge-or-handoff` (not
-`review-cycle`). The `merge-or-handoff` step may pour the `merge-and-cleanup`
-formula, but ONLY when the user has given explicit authorization ("go ahead and
-merge", "ship it", etc.). Completing a PR or finishing the review cycle is NOT
-authorization to merge. The `merge-and-cleanup` formula is the only authorized
-merge path — it requires explicit human sign-off before proceeding.
-
-**Discovered work:**
-If a subagent reports discovered work, create new beads immediately.
-Do NOT add them to the current molecule or fix them inline.
-
-## Red Flags
-
-| Thought | Reality |
-|---------|---------|
-| "I'll loop to the next step before exiting" | No. One step per invocation. Exit after closing the step. The shell driver loops. |
-| "I'll invoke `ralf-review` or `ralf-implement` as peers of the bead workflow" | No. Those RALF skills are dispatched BY formula steps when required, not as peer workflows. |
-| "I'll invoke `superpowers:subagent-driven-development` directly" | No. The formula DAG is the orchestrator for bead-tracked work. |
-| "The step is small — I'll skip the subagent and do it in the main agent" | No. Main agent orchestrates, subagents implement. Dispatch even for small steps. |
-| "I'll skip the formula and just run the work directly" | The formula IS the workflow. Skipping it skips the gate. |
-| "Brainstorming finished cleanly, so the user must want implementation" | No. Hand off to run-queue / shell driver by default. |
+`worker-audit-<agent-name>[-iter<N>]` labels apply ONLY to dispatches of `tdd-red-team`, `tdd-green-team`, and `bug-diagnoser` (worker-only). Review, fresh-eyes, and adversarial subagents dispatched by orchestration skills are out-of-band and are explicitly excluded from the `worker-audit-` namespace; their audit trail (if any) is the orchestration skill's concern, not this skill's.

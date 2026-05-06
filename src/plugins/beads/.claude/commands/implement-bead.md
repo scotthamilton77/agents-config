@@ -1,48 +1,24 @@
 # implement-bead
 
-Invoke the implement-bead skill for the given bead ID.
-
-This slash command is the entry point for the shell driver's per-stage
-`claude -p` invocation. It takes a single argument — the bead ID — and
-hands off to the implement-bead skill, which reads the appropriate stage
-step-bead, dispatches subagents/skills per the stage spec, persists
-state-out to bd/filesystem, and exits.
+Invoke the implement-bead skill for the given source bead.
 
 ## Invocation
 
 ```
-/implement-bead <bead-id>
+/implement-bead <source-bead-id>
 ```
 
-Arguments: `$ARGUMENTS` receives the bead ID (e.g. `proj-42`).
+`$ARGUMENTS` receives the source bead ID (the original feature/bug bead, e.g. `7bk.19.3`) — the same id the shell driver (`scripts/bead-driver-test.sh`) passes when polling `bd ready --label implementation-ready`. The skill internally resolves the molecule (via the `for-bead-<source-bead-id>` linkage label) and the current step-bead (via `bd mol current`).
 
 ## Behavior
 
-1. Parse `$ARGUMENTS` as the bead ID.
-2. Invoke the `implement-bead` skill with that bead ID.
-3. The skill drives ONE stage of the bead's active molecule and exits.
-
-## Supported invocation contexts
-
-- **Interactive Claude session** — skill is discovered via the normal
-  skill-lookup path; the session is interactive.
-- **Shell driver `claude -p`** — the driver spawns `claude -p --session-id
-  <uuidv5> "/implement-bead <bead-id>"` from the stage's cwd. Claude Code
-  resolves this as a globally-installed slash command (see below).
-
-## Slash-command resolution
-
-This command is installed globally to `~/.claude/commands/` by the project's
-`install.sh` installer (via the beads plugin overlay phase). It is therefore
-available from any cwd — including worktree subdirectories — via Claude Code's
-global command discovery, without any project-local `.claude/` directory or
-walk-up resolution required.
+1. Parse `$ARGUMENTS` as the source bead ID.
+2. Invoke the `implement-bead` skill, which resolves the active molecule and current step, dispatches a worker (or hands off to an orchestration skill), and exits.
 
 ## Notes
 
-- The driver sets cwd before spawning each `claude -p` invocation per the
-  cwd contract in the architecture spec (section 5.4).
-- The `--session-id` (UUIDv5 from namespace + `<bead-id>:<stage-role>`) enables
-  transparent resumption if the process is killed and restarted.
-- This command is a thin wrapper. All orchestration logic lives in the
-  implement-bead skill.
+- Thin wrapper. All dispatch logic lives in the implement-bead skill.
+- On first invocation for a source bead (no molecule yet), implement-bead pours the correct formula (`implement-feature` for feature/task/chore, `fix-bug` for bug) and stamps the `for-bead-<source-bead-id>` label before proceeding.
+- Workers are dispatched via the `Agent` tool (`subagent_type`) from the top-level session — NOT via `claude -p` re-entry. Subagents cannot spawn subagents.
+- Loop ownership lives in the `ralf-*` orchestration skills (`ralf-implement`, `ralf-review`), not in this skill or command. When `ralf:required` is set, implement-bead invokes the orchestration skill in-session; the orchestration skill drives convergence and per-stage iteration tracking, persisting iteration state via step-bead notes.
+- Per-stage iteration counts (`-iter<N>` suffixes on audit labels and report paths) are managed by the orchestration skill, not by this command.
