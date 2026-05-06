@@ -20,8 +20,19 @@ no removed fields, no structural deviations.
   tests (left by `tdd-red-team`, or — in `fix-bug` — the failing test
   written by `tdd-red-team` to capture the bug) pass without breaking
   existing tests.
-- **Expected derived gate roll-up: `pass`** — specifically, every
-  present `evidence` block has `exit_code == 0` and `skipped == false`.
+- **`status: complete` is per-iteration.** It signals only that the
+  agent finished its iteration's attempt at making the failing tests
+  pass — NOT loop convergence. Convergence
+  (`evidence.tests.failing == 0` from the most recent iteration) is
+  determined by `ralf-implement` across iterations, not by this agent.
+  The agent emits `status: complete` for any iteration that ran to
+  completion and recorded its evidence; it does NOT self-bound based
+  on whether its own iteration converged.
+- **Expected derived gate roll-up on convergence: `pass`** —
+  specifically, every present `evidence` block has `exit_code == 0`
+  and `skipped == false`. This is the convergence signal that
+  `ralf-implement` reads to decide whether to dispatch another
+  iteration or advance the pipeline.
 - A persistent `fail` derivation across iterations indicates the agent
   has not converged. The formula step owns iteration policy:
   - The formula step's `MAX_ITERATIONS` cap controls when the orchestrator

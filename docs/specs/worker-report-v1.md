@@ -106,7 +106,7 @@ NOT remove or restructure the core fields above.
 
 | Value | Meaning |
 |-------|---------|
-| `complete` | Worker finished its task. The orchestrator inspects `evidence` (and the derived gate roll-up — see below) to decide whether to advance, loop again, or stop. |
+| `complete` | Worker considers its stage-specific success criterion (per its per-agent spec) satisfied. The orchestrator advances the pipeline on `complete` regardless of the derived gate. Per-agent specs define what "success" means (e.g., red-team: tests fail as intended; green-team: iteration ran to completion and recorded its evidence — loop convergence is `ralf-implement`'s call, not the worker's; diagnoser: non-empty `root_cause_note`); the worker emits `needs_human` when its stage-specific criterion is not met. |
 | `needs_human` | Worker hit a condition only a human can resolve. Orchestrator stamps the `human` label on the step-bead and stops. |
 | `failed` | Worker could not complete (e.g., tools unavailable, target missing). Distinct from `complete` with a failing derived gate. |
 
