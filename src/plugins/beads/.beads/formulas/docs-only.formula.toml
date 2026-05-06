@@ -1,0 +1,396 @@
+# docs-only.formula.toml
+#
+# Per-stage pipeline for work that legitimately has no code tests:
+#   documentation edits, spec changes, prose-only refactors,
+#   config-only changes (where config has no test harness),
+#   meta/agent/skill authoring work.
+#
+# Stage sequence:
+#   preflight → apply-edits → review → verify-ac
+#   → create-pr → review-cycle → merge-or-handoff
+#
+# Deliberately omitted (vs implement-feature):
+#   - red-tests          (no test runner; nothing to assert)
+#   - green-loop         (no RALF-IT iteration; no test-driven loop)
+#   - quality-sweep      (no project-level test/lint/build gates)
+#
+# Reroute target: this formula is poured (a) directly via the
+# `formula-docs-only` label set during brainstorm-bead's finalize step,
+# or (b) automatically by the red-tests reroute handler in
+# implement-feature / fix-bug when no-tests state is detected.
+#
+# See: docs/specs/bead-pipeline-architecture.md §3 (docs-only)
+#
+# Usage:
+#   bd mol pour docs-only \
+#     --var topic="Document the bd comments vs notes distinction" \
+#     --var bead-id=proj-42
+
+formula      = "docs-only"
+description  = "Per-stage docs-only pipeline: preflight → apply-edits → review → verify-ac → create-pr → review-cycle → merge-or-handoff"
+type         = "workflow"
+phase        = "liquid"  # persistent across sessions
+pour         = true
+version      = 1
+
+[vars.topic]
+description = "Short description of the docs/spec/prose change being made (e.g. 'Document bd comments vs notes')"
+required    = true
+
+[vars.bead-id]
+description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
+required    = true
+
+# =============================================================================
+# Stage: preflight
+# Model: claude-sonnet-4-6  Effort: high
+# cwd: repo root (worktree does not yet exist; preflight creates it)
+# =============================================================================
+
+[[steps]]
+id    = "preflight"
+name  = "preflight"
+title = "Preflight: spec validation, worktree creation (no coverage check)"
+description = """
+Validate the bead spec and create the worktree before any edits.
+Model: claude-sonnet-4-6  Effort: high
+
+## Inputs
+Read the bead and its labels:
+  bd show {{bead-id}}
+  bd label list {{bead-id}}
+
+## Actions
+
+1. Verify `brainstormed` and `implementation-ready` labels are present.
+   If either is absent: apply human-flag protocol and exit.
+
+2. Note: formula selection and pour have already happened — this step was
+   created by implement-bead pouring docs-only. There is nothing to select
+   or pour here.
+
+3. Coverage and quality-gate checks are intentionally skipped: docs-only
+   is the routing target for work that has no test runner / no [m] ACs.
+   Do NOT inspect [coverage] or [gates] in project-config.toml here.
+
+4. Stamp the molecule→bead lookup label if not already stamped:
+   bd label add <mol-id> for-bead-{{bead-id}}
+
+5. Create the worktree:
+   Branch name: docs/{{bead-id}}-<slug-from-title>
+   Location: <repo-root>/.claude/worktrees/<branch-name>
+   Command:
+     git worktree add .claude/worktrees/<branch> -b <branch>
+   CRITICAL: the formula is already poured (this step was created by the pour).
+   If worktree creation fails: squash the molecule and flag-human.
+
+6. Stamp the worktree-path label on the molecule:
+   Encoding (apply IN ORDER):
+     _ → _u
+     / → __
+   Then: bd label add <mol-id> worktree-path-<encoded>
+
+7. Claim the bead and walk the parent chain:
+   bd update {{bead-id}} --status in_progress
+   PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+   while [ -n "$PARENT" ]; do
+     bd update "$PARENT" --status in_progress
+     PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+   done
+
+## Definition of Done
+Poured molecule + worktree exists + worktree-path-* label stamped on molecule.
+OR: human label + structured gap-note + (if pour completed) molecule squashed.
+
+## Idempotent re-entry
+Check: does an active molecule exist? Does the worktree path decode to a real
+git worktree? If so, skip work already done.
+"""
+
+# =============================================================================
+# Stage: apply-edits
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree (decoded from worktree-path-* label)
+# =============================================================================
+
+[[steps]]
+id    = "apply-edits"
+name  = "apply-edits"
+title = "Apply-edits: single bead-implementor pass to write/edit the docs"
+needs = ["preflight"]
+description = """
+Apply the docs/spec/prose changes via a single bead-implementor pass.
+There is no red-tests phase and no RALF-IT iteration on this formula.
+Model: claude-sonnet-4-6  Effort: medium
+
+## Inputs
+- Bead spec from: bd show {{bead-id}} (description + acceptance_criteria)
+- Worktree path: decode worktree-path-* label from molecule
+
+## Decode worktree-path label before any work
+  1. Decode: __ → /  then  _u → _
+  2. Verify decoded path exists and is a git worktree:
+       git -C <path> rev-parse --is-inside-work-tree
+  3. Operate from that cwd.
+
+## Actions
+
+1. Dispatch bead-implementor (sonnet, medium effort) with:
+   - Worktree path
+   - Full bead description and acceptance_criteria
+   - Step-bead ID
+   - Instruction: apply the documented changes; commit with a single
+     descriptive message referencing {{bead-id}}.
+   - Rules:
+     * No new code that requires a test harness.
+     * No speculative refactoring of unrelated content.
+     * Do NOT add tests scaffolding here — if tests are needed, the bead
+       was misrouted (file a follow-up bead and flag-human).
+
+2. After the worker exits, persist a one-line summary to step-bead notes:
+     bd update <step-bead-id> --append-notes "apply-edits: <summary>; files=<n>; sha=<head>"
+
+## Definition of Done
+Edits committed to the feature branch. Step-bead notes record the summary.
+
+## Idempotent re-entry
+Check filesystem (committed edits) and step-bead notes. If a commit already
+exists for this step, skip and proceed to review.
+"""
+
+# =============================================================================
+# Stage: review
+# Model: claude-opus-4-7  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "review"
+name  = "review"
+title = "Review: quality-reviewer + simplify on the diff"
+needs = ["apply-edits"]
+description = """
+Run the standard in-house review pair on the committed diff.
+Model: claude-opus-4-7  Effort: medium
+
+Skips entirely when review-level:none.
+
+## Actions
+
+1. Invoke `quality-reviewer` against the diff produced by apply-edits.
+   Address findings inline (per the receiving-code-review skill):
+   - Critical / major: fix and re-commit before proceeding.
+   - Minor: fix or record explicit deferral with rationale.
+
+2. Invoke the `simplify` skill on the same diff. Address findings the
+   same way.
+
+3. Persist the review summary:
+     bd update <step-bead-id> --append-notes "REVIEW: quality-reviewer=<n_findings>; simplify=<n_findings>; deferred=<list or none>"
+
+## Definition of Done
+All critical/major findings resolved. Deferrals recorded. Diff is committed
+and ready for verify-ac.
+
+## Idempotent re-entry
+Re-running re-evaluates the current diff; prior fixes already committed
+are picked up via filesystem state.
+"""
+
+# =============================================================================
+# Stage: verify-ac
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "verify-ac"
+name  = "verify-ac"
+title = "Verify-AC: [m] grep-witnesses if any; warn-and-pass if none"
+needs = ["review"]
+description = """
+Validate every [m]-tagged AC line if any exist; warn-and-pass otherwise.
+Model: claude-haiku-4-5  Effort: medium
+
+Skips when review-level:none.
+
+## Inputs
+- Bead AC from: bd show {{bead-id}} (parse [m] and [h] tags from
+  acceptance_criteria field per §4.1's canonical line parser)
+- Worktree path from: worktree-path-* label on molecule
+
+## Actions
+
+1. Count [m]-tagged AC lines from the acceptance_criteria field:
+     m_count=$(bd show {{bead-id}} --json \\
+       | jq -r '.[0].acceptance_criteria // ""' \\
+       | grep -cvE '^([[:space:]]*$|\\[h\\][[:space:]])')
+
+2. If m_count == 0:
+   - Log a warning to step-bead notes:
+       bd update <step-bead-id> --append-notes "verify-ac: no [m] AC lines — skipping mechanical witness verification (warn-and-pass)"
+   - Pass the step. Do NOT block.
+   - Encourages greppable landmarks (e.g. grep for a new heading in the
+     spec file) without requiring them.
+
+3. If m_count > 0:
+   For each [m]-tagged AC line, dispatch bead-verifier (haiku, low effort)
+   to run a shell-runnable witness (typically `grep` for an inserted
+   landmark, `test -f` for a new file, etc.). Collect: exit code +
+   excerpt. Assemble validation report.
+
+4. [h]-tagged AC lines: do NOT validate here. Confirm that human follow-up
+   child beads were filed at brainstorm-time finalize
+   (bd list --parent {{bead-id}} filtered by label human). If any [h]
+   bullet has no matching follow-up, flag-human.
+
+5. Persist validation report to BOTH step-bead notes AND source bead notes
+   (so it appears in the eventual PR description at create-pr).
+
+## Definition of Done
+Every [m] AC line has explicit witness evidence (m_count > 0 path)
+OR the warn-and-pass note is recorded (m_count == 0 path).
+Human-review bullets have follow-up beads filed (confirm presence).
+
+## Idempotent re-entry
+Re-run re-evaluates and continues from prior pass.
+"""
+
+# =============================================================================
+# Stage: create-pr
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "create-pr"
+name  = "create-pr"
+title = "Create-PR: push branch and open pull request"
+needs = ["verify-ac"]
+description = """
+Create the pull request and persist its URL to the molecule.
+Model: claude-haiku-4-5  Effort: medium
+
+## Preloaded skills
+superpowers:finishing-a-development-branch
+
+## Actions
+
+1. Invoke superpowers:finishing-a-development-branch.
+
+2. PR body MUST include:
+   - Bead reference: {{bead-id}} and bead title
+   - AC (full list with [m]/[h] tags)
+   - apply-edits summary (from step-bead notes)
+   - review summary (quality-reviewer + simplify findings + resolutions)
+   - verify-ac validation report (or warn-and-pass note)
+   - Human-required AC follow-up bead references (if any [h] lines)
+
+3. Stamp pr-url-* label on molecule:
+   bd label add <mol-id> pr-url-<encoded-url>
+
+## PR creation failure
+Flag-human with worktree intact. Do NOT tear down the worktree.
+
+## Idempotent re-entry
+Query gh pr view first. If a PR exists for the branch and is OPEN: skip
+creation, persist URL idempotently.
+If PR exists and is CLOSED: flag-human. Do NOT auto-reopen or create a new PR.
+"""
+
+# =============================================================================
+# Stage: review-cycle
+# Model: claude-sonnet-4-6  Effort: medium
+# cwd: worktree
+# =============================================================================
+
+[[steps]]
+id    = "review-cycle"
+name  = "review-cycle"
+title = "Review-cycle: address PR review feedback"
+needs = ["create-pr"]
+description = """
+Drive the PR review loop until all review threads are resolved.
+Model: claude-sonnet-4-6  Effort: medium
+
+Skips entirely when review-level:none.
+
+## Preloaded skills
+superpowers:wait-for-pr-comments (chains internally to superpowers:reply-and-resolve-pr-threads)
+
+## Actions
+
+Invoke superpowers:wait-for-pr-comments with:
+  --mode autonomous --bead-id {{bead-id}}
+
+The skill:
+1. Polls Copilot via background script (zero Anthropic tokens during wait).
+2. Classifies each comment: FIX / SKIP / ESCALATE.
+3. Dispatches per-comment fix subagents (sonnet) for FIX-class items.
+4. Pushes combined commits.
+5. Internally chains to superpowers:reply-and-resolve-pr-threads:
+   replies to every thread + resolves FIXED review_thread items via GraphQL.
+
+One iteration = one outbound reply-batch.
+Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).
+Early exit when no remaining FIX-class items.
+
+Exit conditions (mutually exclusive):
+- review-exit-copilot-only (default when review-exit-human-approvers-<n> absent)
+- review-exit-human-approvers-<n>: require N human approvers
+
+Persist after each batch:
+  bd update <step-bead-id> --append-notes "REVIEW-BATCH:<n>/<MAX>"
+
+If PR is CLOSED on re-entry: flag-human. Do NOT poll a closed PR.
+
+## Definition of Done
+Every review thread has a reply. FIXED items resolved on GitHub.
+No in-flight FIX work.
+"""
+
+# =============================================================================
+# Stage: merge-or-handoff
+# Model: claude-haiku-4-5  Effort: medium
+# cwd: repo root (worktree may be torn down)
+# =============================================================================
+
+[[steps]]
+id    = "merge-or-handoff"
+name  = "merge-or-handoff"
+title = "Merge-or-handoff: auto-merge or hand off to human"
+needs = ["review-cycle"]
+description = """
+Either auto-merge the PR or hand off to the human.
+Model: claude-haiku-4-5  Effort: medium
+
+## Gate 1 — PR-state clean-check
+Conditions (ALL must be true for auto-merge path):
+  - Zero open Copilot review threads
+  - Zero open human-author review threads
+  - All CI checks green
+  - 5-minute quiet window with no new comments or review activity
+On wait-for-pr-comments timeout: treat clean-check as NOT clean.
+
+## Auto-merge path (auto-mergeable label present AND clean-check clean)
+1. Re-run clean-check immediately before merge call.
+2. Pour merge-and-cleanup formula (phase: liquid — NOT vapor).
+3. Drive merge-and-cleanup:
+   - Merge the PR
+   - Delete branch (local + remote)
+   - Remove worktree (decode from worktree-path-* label)
+   - Run parent-chain I2 close-walk
+   Note: merge-and-cleanup gate-step (Gate 2) blocks until ALL [h] follow-up
+   children are closed with verified-by-human label, then closes the
+   merge-{source-id} child after merge + cleanup so the source bead can close.
+
+## Hand-off path (default — auto-mergeable absent OR clean-check dirty)
+1. Transition bead to open: bd update {{bead-id}} --status open
+2. Stamp labels: bd label add {{bead-id}} merge-ready
+                 bd label add {{bead-id}} human
+3. Note: bead is now excluded from bd ready (human label gates it).
+   Human runs /merge-and-cleanup when ready.
+
+## Idempotent re-entry
+Query gh pr view --json mergedAt first. If non-null: skip merge, proceed to cleanup.
+"""

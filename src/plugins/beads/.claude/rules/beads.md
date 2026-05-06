@@ -188,8 +188,9 @@ The full bead lifecycle runs through four skills:
 
 Plus formulas:
 - `brainstorm-bead` — interactive spec writing + RALF spec review → `implementation-ready`
-- `implement-feature` — label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
-- `fix-bug` — root-cause diagnosis + label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
+- `implement-feature` — label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills); red-tests hard-escalates + auto-reroutes to `formula-docs-only` when no test runner OR no `[m]` AC lines
+- `fix-bug` — root-cause diagnosis + label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills); red-tests hard-escalates + auto-reroutes to `formula-docs-only` when no test runner (Trigger A only — Trigger B omitted to preserve regression-test invariant)
+- `docs-only` — single-pass pipeline for work with no code tests (docs/spec/prose/config-only edits); no red-tests / no green-loop / no quality-sweep; verify-ac warn-and-passes when zero `[m]` ACs
 - `merge-and-cleanup` — retroactive gate + explicit auth → merge
 
 ---
