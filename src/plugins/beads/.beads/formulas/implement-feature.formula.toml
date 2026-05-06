@@ -276,9 +276,7 @@ Record the dispatch decision for audit:
 
   bd comments add {{bead-id}} "implement: dispatched <skill-name>"
 
-`bd comments add` is non-destructive: it creates a separate comment and does
-not replace issue notes. For cumulative step output, use `bd update
---append-notes`; do not use `--notes`, which replaces existing notes.
+`bd comments add` is non-destructive; do NOT use `--notes` (replaces notes) — use `--append-notes` for step output. See beads rules §Notes vs Comments.
 
 Persist step output before closing green-loop. Here `<step-bead-id>` is the current green-loop molecule step bead:
 
