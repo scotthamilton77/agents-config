@@ -555,6 +555,58 @@ stage_content_from_dir() {
 #
 # marker paths are relative to project_root.
 
+# ── Utility: transform Gemini agent frontmatter ────────────────────────────
+#
+# Gemini agent loader rejects Claude-specific keys (skills, color, memory)
+# and requires `tools:` to be a YAML array.
+
+transform_gemini_agent_frontmatter() {
+    local file="$1"
+    local tmp
+    tmp="$(mktemp -t gemini-agent.XXXXXX)"
+
+    # awk logic:
+    # 1. track if we are inside the frontmatter (between first and second ---)
+    # 2. inside frontmatter:
+    #    - skip skills:, color:, memory: lines and their indented blocks
+    #    - rewrite tools: "Read, Grep" -> tools: [Read, Grep]
+    # 3. outside frontmatter: pass through
+    awk '\''
+        BEGIN { count=0; skipping=0 }
+        /^---$/ { 
+            count++; 
+            skipping=0; 
+            print; 
+            next 
+        }
+        count == 1 {
+            if (skipping) {
+                if ($0 ~ /^[[:space:]]+/ || $0 ~ /^$/) { next }
+                skipping = 0
+            }
+
+            # Strip Claude-only keys and their blocks
+            if ($1 ~ /^(skills:|color:|memory:)$/) { 
+                skipping = 1
+                next 
+            }
+
+            # Transform tools: String -> [Array], but avoid block-style
+            if ($0 ~ /^tools:[[:space:]]*/) {
+                match($0, /^tools:[[:space:]]*/)
+                val = substr($0, RSTART + RLENGTH)
+                if (length(val) > 0 && val !~ /^\[/) {
+                    printf "tools: [%s]\n", val
+                    next
+                }
+            }
+        }
+        { print }
+    '\'' "$file" > "$tmp"
+
+    mv "$tmp" "$file"
+}
+
 flatten_agents_md() {
     local template="$1"
     local output="$2"
@@ -690,6 +742,15 @@ stage_and_install_tool() {
             mv "$flattened" "$template"
         fi
     done
+
+    # ── Phase 6.6: Gemini agent frontmatter transformation ──────────────────
+    if [[ "$tool" == "gemini" && -d "$staging/agents" ]]; then
+        vinfo "Phase 6.6: Transforming agent frontmatter for Gemini"
+        for agent_file in "$staging/agents"/*.md; do
+            [[ -f "$agent_file" ]] || continue
+            transform_gemini_agent_frontmatter "$agent_file"
+        done
+    fi
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
     # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
@@ -1051,7 +1112,7 @@ sync_settings_file() {
                 elif confirm "Apply merged $target_name?"; then
                     backup "$dest_file"
                     local tmp
-                    tmp="$(mktemp)"
+                    tmp="$(mktemp -t gemini-settings.XXXXXX)"
                     printf '%s\n' "$merged_json" | jq . > "$tmp"
                     mv "$tmp" "$dest_file"
                     vok "Merged $target_name [$label]"

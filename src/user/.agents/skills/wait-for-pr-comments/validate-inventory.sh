@@ -33,7 +33,7 @@ run_guard() {
     local predicate="$1"; shift
     local violators
     local jq_stderr
-    jq_stderr="$(mktemp)"
+    jq_stderr="$(mktemp -t jq-stderr.XXXXXX)"
     if ! violators=$(jq -c "$predicate" "$PATH_IN" 2>"$jq_stderr"); then
         echo "guard error [$label]: jq failed (predicate or jq feature unsupported):" >&2
         cat "$jq_stderr" >&2
