@@ -120,9 +120,10 @@ assert_grep "discovered-from" "$SKILL" "AC10b: SKILL.md references discovered-fr
 
 # AC 11 — Discovered-work ordering: BEFORE applying status outcomes
 # Approximate: SKILL.md must have a line containing both "before" and one of
-# "discovered" or "outcomes" (case-insensitive). Use awk to check single-line
-# co-occurrence — more robust than two separate greps.
-if awk 'BEGIN{IGNORECASE=1} /before/ && (/discovered/ || /outcomes/) {found=1} END{exit found?0:1}' "$SKILL" 2>/dev/null; then
+# "discovered" or "outcomes" (case-insensitive). Use grep -Ei for portability
+# across BSD awk (IGNORECASE is gawk-only) — single-line co-occurrence is
+# enforced by piping the "before" hits into a second case-insensitive grep.
+if grep -E -i 'before' "$SKILL" 2>/dev/null | grep -E -i -q 'discovered|outcomes'; then
   ok "AC11: SKILL.md mentions filing discovered_work BEFORE outcomes (single-line co-occurrence)"
 else
   bad "AC11: SKILL.md mentions filing discovered_work BEFORE outcomes"
