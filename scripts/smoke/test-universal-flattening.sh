@@ -8,8 +8,9 @@
 
 set -euo pipefail
 
-# Worktree Root (absolute path)
-WORKTREE_ROOT="/Users/scott/src/projects/agents-config/.claude/worktrees/feat/agents-config-jyb.1-universal-instruction-flattening"
+# Derive repository root from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Use a temporary directory for the test
 TEST_ROOT=$(mktemp -d /tmp/universal-flattening-test-XXXXXX)
@@ -29,7 +30,7 @@ mkdir -p "${MOCK_PROJECT}/src/user/.opencode"
 mkdir -p "${MOCK_PROJECT}/scripts"
 
 # Copy install.sh to mock project
-cp "${WORKTREE_ROOT}/scripts/install.sh" "${MOCK_PROJECT}/scripts/install.sh"
+cp "${REPO_ROOT}/scripts/install.sh" "${MOCK_PROJECT}/scripts/install.sh"
 
 # Create a content file to include
 echo "Shared Agent Content" > "${MOCK_PROJECT}/shared-content.md"
