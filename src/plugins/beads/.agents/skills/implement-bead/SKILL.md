@@ -21,7 +21,8 @@ Metadata-driven dispatcher. One step-bead per invocation.
 
 1. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>`.
 2. Run `bd show <step-bead-id> --json | jq -r '.[0].parent'` to get `<mol-id>`.
-3. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
+3. Derive `<source-bead-id>` from the molecule's `for-bead-<source-bead-id>` label (stamped by `start-bead` / `implement-bead` per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`): `bd label list <mol-id> | awk '/^for-bead-/{sub(/^for-bead-/,""); print; exit}'`.
+4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
 ## 2. Resolve execution context
 
