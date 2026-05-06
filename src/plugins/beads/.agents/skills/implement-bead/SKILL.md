@@ -30,7 +30,7 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
 
 1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: stamp `human` on BOTH the step-bead AND source bead, append diagnostic note (the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree.
 2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority: `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
-3. Repo root: `dirname $(git -C <worktree> rev-parse --path-format=absolute --git-common-dir)`.
+3. Repo root: `dirname "$(git -C "<worktree-path>" rev-parse --path-format=absolute --git-common-dir)"` (both `<worktree-path>` and the `$(...)` substitution must be double-quoted to survive paths with spaces or special characters).
 4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 
 ## 3. Decide dispatch shape from metadata
