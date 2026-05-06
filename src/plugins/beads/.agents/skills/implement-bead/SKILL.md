@@ -47,8 +47,8 @@ Inputs: `(stage, mode, iteration?, execution_context, doer_subagent_type)`.
 3. Dispatch from this top-level session: `Agent({ subagent_type: <doer>, prompt: <task-spec> })`. Subagents cannot spawn subagents — Agent dispatch is valid only from the top-level session.
 4. After the worker exits, classify:
    - Non-zero exit OR no file at target path → synthesize `status: failed` at the target path per `worker-report-v1.md` §4: `evidence: {}`, `escalations[].reason: "Worker crashed"`, `escalations[].detail`: exit code + stderr tail, `discovered_work: []`, `commits: []`.
-   - File present but unparseable as YAML or missing core required field (`status` per `worker-report-v1.md` §4.1) → synthesize `status: failed` wrapping the parse error and raw bytes.
-   - File present and parseable but missing a per-agent runtime-required field (e.g. `bug-diagnoser` with empty or missing `root_cause_note`) → synthesize `status: failed` wrapping the missing-field name and raw bytes.
+   - File present but unparseable as YAML or missing core required field (`status` per `worker-report-v1.md` §4.1) → synthesize `status: failed` with `escalations[].reason: "Worker emitted malformed report"` (per §4) wrapping the parse error and raw bytes in `escalations[].detail`.
+   - File present and parseable but missing a per-agent runtime-required field (e.g. `bug-diagnoser` with empty or missing `root_cause_note`) → synthesize `status: failed` with `escalations[].reason: "Worker emitted malformed report"` wrapping the missing-field name and raw bytes in `escalations[].detail`.
    - Otherwise → read and parse the YAML.
 5. Stamp `worker-audit-<agent-name>[-iter<N>]` on the step-bead (forensic, append-only).
 6. Derive gate roll-up from the evidence blocks per `worker-report-v1.md` §1.1 (`pass` / `fail` / `partial` / `n/a`). Workers do NOT emit `gate_status`; the orchestrator derives it.
