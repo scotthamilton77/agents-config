@@ -203,8 +203,7 @@ Write a failing regression test targeting the root cause (not the symptom).
 Model: claude-sonnet-4-6  Effort: medium
 
 ## Preloaded skills
-superpowers:test-driven-development, superpowers:writing-unit-tests,
-superpowers:testing-anti-patterns
+superpowers:test-driven-development, writing-unit-tests, testing-anti-patterns
 
 ## Inputs
 - Root-cause note from diagnose step-bead notes
@@ -213,33 +212,117 @@ superpowers:testing-anti-patterns
 
 ## Actions
 
-### Opt-out (evaluate FIRST, before any reviewer dispatch)
+### Hard-escalate + auto-reroute (evaluate FIRST, before any reviewer dispatch)
 
-This step has a canonical opt-out predicate. Evaluate at the top of the step:
+This step has a canonical escalate predicate. Evaluate at the top of the step:
 
 1. Trigger A — no test runner. If `[gates].test == ""` in project-config.toml,
-   the project has no way to run tests. Skip with skip-note prefix
-   `red-tests opt-out: ` and trigger description:
-     red-tests opt-out: no test runner ([gates].test=='')
+   the project has no way to run tests:
+     red-tests escalate: no test runner ([gates].test=='')
 
 2. Otherwise, proceed with the normal red-tests behavior below.
-
-Skip mechanism (when Trigger A fires):
-   bd update <step-bead-id> --append-notes "red-tests opt-out: no test runner ([gates].test=='')"
-The literal prefix `red-tests opt-out: ` is grep-able for verify-ac
-groundedness. Then close the step bead and exit; do not dispatch reviewers.
 
 **Trigger B (no [m] AC bullets) is DELIBERATELY OMITTED on the bug path.**
 The fix-bug formula encodes a regression-test invariant: a failing
 regression test is "proof that the bug cannot silently return" (see action
-5 below). Allowing zero-[m] skip on the bug path would silently waive that
-regression-test invariant. A bug bead with zero [m] ACs and a non-empty
-[gates].test is a brainstorm gap, not an opt-out condition — the formula
-must NOT silently skip; it proceeds with normal red-tests behavior, and the
-dispatched bead-implementor will fail loudly with no [m] lines to cover,
-surfacing the gap for human resolution.
+5 below). Allowing zero-[m] skip on the bug path — even via auto-reroute —
+would silently waive that invariant. A bug bead with zero [m] ACs and a
+non-empty [gates].test is a brainstorm gap, not an escalate condition —
+the formula must NOT silently skip or reroute; it proceeds with normal
+red-tests behavior, and the dispatched bead-implementor will fail loudly
+with no [m] lines to cover, surfacing the gap for human resolution.
 
-### Normal flow (when no Opt-out trigger fires)
+### Reroute protocol (when Trigger A fires)
+
+The bead is misrouted: a `fix-bug` molecule is running in a project with
+no test runner. Auto-reroute to the `docs-only` formula by cloning the
+bead — no `human` label, no manual intervention.
+
+1. The trigger note is fixed for fix-bug:
+     <trigger-note> = "Trigger A: no test runner"
+
+2. Read the original bead's parent (if any) to preserve epic membership,
+   and its priority (so the merge-gate child created in step 4 inherits it):
+       ORIG_PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+       ORIG_PRIORITY=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "P3"')
+
+3. Create the new bead as a partial copy of the original:
+   - Inherit: `title`, `description`, `acceptance_criteria` from {{bead-id}}.
+     Compose the `--description` value as a two-LF-separated string:
+       "⚠️ Rerouted from `{{bead-id}}` — formula corrected to `docs-only`."
+       (blank line)
+       <original description>
+     Use `printf '%s\\n\\n%s' "<warning>" "<original>"` or the `$'...\\n\\n...'`
+     form to ensure the LFs are real newlines, not literal `\\n` characters.
+   - Do NOT inherit `notes` (the new bead starts clean).
+   - Preserve epic linkage: if `ORIG_PARENT` is non-empty, pass
+     `--parent "$ORIG_PARENT"` so the rerouted-clone remains under the
+     same epic.
+   - Stamp labels on the new bead: `brainstormed`, `formula-docs-only`,
+     `implementation-ready`. `brainstormed` is honest here — the original
+     bead was already brainstormed and the reroute clones its
+     `acceptance_criteria` and `description` verbatim, so the spec carries
+     over; only the formula tag changes. Stamping `brainstormed` also
+     satisfies `docs-only`'s preflight (which strictly requires
+     `brainstormed`) so the rerouted clone runs autonomously instead of
+     flag-humaning on entry.
+   - Do NOT stamp any `implementation-readied-session-*` label.
+   - Add a discovered-from edge:
+       bd dep add <new-bead-id> {{bead-id}} --type discovered-from
+
+4. Create the merge-gate child for the new bead (mirrors brainstorm-bead.finalize §4.3 — without this, merge-and-cleanup gate 2 has nothing to enforce against, and the rerouted bead cannot complete its eventual PR cycle):
+       bd create \
+         --type task \
+         --parent <new-bead-id> \
+         --title "[Merge gate] <new-bead-title>" \
+         --description "Closes when the merge-and-cleanup formula's merge step completes." \
+         --priority "$ORIG_PRIORITY"
+       # Capture the returned id and stamp the merge-gate label:
+       bd label add <new-merge-gate-id> merge-gate
+
+   `<new-bead-title>` is the title inherited from the original (already set
+   on the new bead in step 3). Do NOT label `human` (system-managed gate
+   child, not a human-attention item). Do NOT label `implementation-ready`
+   (the shell driver ignores it).
+
+5. Re-parent any open `[h]` follow-up children of the original bead to
+   the new bead (so the new bead's verify-ac contract is preserved when
+   it inherits `[h]` AC lines):
+       for child in $(bd list --parent {{bead-id}} --label human --json \
+         | jq -r '.[] | select(.status != "closed") | .id'); do
+         bd update "$child" --parent <new-bead-id>
+       done
+
+6. Stamp the original bead with the redirect marker:
+       bd label add {{bead-id}} REROUTED-TO:<new-bead-id>
+
+7. Append a note to the original bead:
+       bd update {{bead-id}} --append-notes "Rerouted to <new-bead-id>. <trigger-note>. New bead created with formula-docs-only and implementation-ready. Run-queue will pick it up in a separate session."
+
+8. Close any merge-gate child of the original bead. Iterate over all
+   matches in case duplicates exist:
+       bd list --parent {{bead-id}} --label merge-gate --json \
+         | jq -r '.[] | select(.status != "closed") | .id' \
+         | while read -r merge_child; do
+             bd close "$merge_child" --reason "Parent bead rerouted."
+           done
+
+9. Close the original bead:
+       bd close {{bead-id}} --reason "Rerouted to <new-bead-id> (<trigger-note>)."
+
+10. Append a note to the current step-bead. The literal prefix
+   `red-tests escalate: ` is grep-able for verify-ac groundedness and for
+   green-loop's defense-in-depth check:
+       bd update <step-bead-id> --append-notes "red-tests escalate: <trigger-note>. Cloned to <new-bead-id> with formula-docs-only."
+
+11. Burn the current molecule:
+       bd mol burn <mol-id>
+
+After burn, this stage and the entire molecule cease execution. Run-queue
+in a separate session will pick up <new-bead-id> organically and pour the
+`docs-only` formula on it. No human action required.
+
+### Normal flow (when no escalate trigger fires)
 
 1. Dispatch bead-implementor (sonnet, medium effort) to write the regression test:
    - Test MUST target the root cause location, not the symptom surface.
@@ -266,9 +349,10 @@ surfacing the gap for human resolution.
 ## Definition of Done
 Failing regression test committed to feature branch. Reviewers approve or
 iteration cap reached with disagreement recorded.
-OR step opted out per the Trigger-A-only Opt-out predicate above (no test
-runner), with the pinned `red-tests opt-out: ...` skip-note appended to
-step-bead notes.
+OR step rerouted per the Trigger-A-only escalate predicate above: original
+bead closed with `REROUTED-TO:<new-id>`, new bead created with
+`formula-docs-only` + `implementation-ready`, current molecule burned, and
+`red-tests escalate: ...` note appended to step-bead notes.
 
 ## Idempotent re-entry
 Check filesystem (committed test) and step-bead notes.
@@ -293,6 +377,34 @@ Model: claude-opus-4-7  Effort: medium
 - Root-cause note from diagnose step-bead notes
 - Bead spec from: bd show {{bead-id}}
 - Worktree path from: worktree-path-* label on molecule
+
+## Defense-in-depth (re-evaluate red-tests escalate trigger)
+
+Before any implementation work, re-evaluate the red-tests Trigger A
+independently — same logic. (Trigger B is omitted on the bug path; see
+red-tests for the regression-test invariant rationale.)
+
+  # Section-body extraction: range pattern /^\\[gates\\]/,/^\\[/ is a no-op
+  # (the [gates] header satisfies BOTH boundaries on the same line).
+  test_runner=$(awk '/^\\[gates\\]/{flag=1;next} /^\\[/{flag=0} flag' project-config.toml \\
+    | awk -F'=' '/^test[[:space:]]*=/{gsub(/[[:space:]"\\047]/,"",$2); print $2}')
+
+If test_runner is empty: this molecule should not have advanced from
+red-tests. The trigger note for fix-bug is fixed: "Trigger A: no test
+runner". Halt with an explicit human-flag protocol (the literal prefix
+`green-loop defense-in-depth:` is grep-able for forensic search,
+mirroring the `red-tests escalate:` convention):
+
+  bd label add {{bead-id}} human
+  bd label add <step-bead-id> human
+  bd update {{bead-id}} --append-notes "green-loop defense-in-depth: red-tests escalate trigger should have fired but molecule advanced. Trigger A: no test runner. Likely manual molecule resume that bypassed reroute."
+  bd update <step-bead-id> --append-notes "green-loop defense-in-depth: Trigger A: no test runner. Halted before any RALF dispatch."
+  bd update <step-bead-id> --status open
+  exit 0
+
+Do NOT proceed with implementation. This path is unreachable in normal
+operation (the red-tests reroute burns the molecule before green-loop).
+It catches manual molecule resumes that bypass red-tests.
 
 ## Dispatch contract
 
@@ -493,10 +605,10 @@ Model: claude-sonnet-4-6  Effort: medium
 Skips entirely when review-level:none.
 
 ## Preloaded skills
-superpowers:wait-for-pr-comments (chains to superpowers:reply-and-resolve-pr-threads)
+wait-for-pr-comments (chains to reply-and-resolve-pr-threads)
 
 ## Actions
-Invoke superpowers:wait-for-pr-comments with:
+Invoke wait-for-pr-comments with:
   --mode autonomous --bead-id {{bead-id}}
 
 Iteration cap: 5 (override: iteration-cap-review-cycle-<n> label).

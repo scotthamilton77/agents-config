@@ -160,10 +160,44 @@ bd mol pour fix-bug \
 
 ---
 
+### `docs-only.formula.toml`
+
+**Use when**: the bead is documentation, spec, prose-only refactor,
+config-only change (where the config has no test harness), or
+meta/agent/skill authoring — work that legitimately has no code tests.
+
+**What it encodes**: a single-pass pipeline with no TDD loop:
+
+```
+preflight → apply-edits → review → verify-ac
+          → create-pr → review-cycle → merge-or-handoff
+```
+
+**Deliberately omitted** (vs `implement-feature`):
+
+- `red-tests` — no test runner, nothing to assert
+- `green-loop` — no RALF-IT iteration, no test-driven loop
+- `quality-sweep` — no project-level test/lint/build gates
+
+**Reroute target**: this formula is poured (a) directly via the
+`formula-docs-only` label set during `brainstorm-bead`'s finalize step,
+or (b) automatically by the red-tests reroute handler in
+`implement-feature` / `fix-bug` when a no-tests state is detected. See
+`bead-pipeline-architecture.md` §3 (red-tests escalate predicate).
+
+**Invoke**:
+```bash
+bd mol pour docs-only \
+  --var topic="Document the bd comments vs notes distinction" \
+  --var bead-id=proj-42
+```
+
+---
+
 ## The `bd human` Escalation Valve
 
-Both formulas have decision points where an agent should escalate to the
-human rather than proceed. These include:
+All three formulas have decision points where an agent should escalate to
+the human rather than proceed. These include:
 
 - Brainstorm reveals ambiguous or contradictory requirements
 - Root cause is significantly different from the bead description
