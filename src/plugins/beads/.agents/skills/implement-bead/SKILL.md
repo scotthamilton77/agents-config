@@ -45,7 +45,7 @@ This skill does NOT invoke itself recursively via `claude -p` and does NOT dispa
 Inputs: `(stage, mode, iteration?, execution_context, doer_subagent_type)`.
 
 1. Compute report path by substituting `<step-bead-id>`, `<agent-name>`, and (when `iteration` is supplied) `-iter<N>` into the template.
-2. Build worker task-spec: worktree path, mode-specific inputs (per per-agent specs in `worker-report-v1`), absolute target report path, project test-runner command, iteration counter when applicable. For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, include `root_cause_note` (and `reproduction_steps` for red-tests) retrieved per §6.
+2. Build worker task-spec: worktree path, mode-specific inputs (per per-agent specs in `worker-report-v1.md`), absolute target report path, project test-runner command, iteration counter when applicable. For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, include `root_cause_note` (and `reproduction_steps` for red-tests) retrieved per §6.
 3. Dispatch from this top-level session: `Agent({ subagent_type: <doer>, prompt: <task-spec> })`. Subagents cannot spawn subagents — Agent dispatch is valid only from the top-level session.
 4. After the worker exits, classify:
    - Non-zero exit OR no file at target path → synthesize `status: failed` at the target path per `worker-report-v1.md` §4: `evidence: {}`, `escalations[].reason: "Worker crashed"`, `escalations[].detail`: exit code + stderr tail, `discovered_work: []`, `commits: []`.

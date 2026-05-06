@@ -77,14 +77,24 @@ assert_grep "<agent-name>" "$SKILL" "AC2c: SKILL.md references <agent-name> plac
 assert_no_grep "worker-reports/" "$SKILL" "AC2d: SKILL.md has NO occurrences of worker-reports/"
 
 # AC 3 — Audit-label prefix worker-audit-, no worker-report- LABEL prefix
-# (worker-report-v1 the spec filename is allowed; ban worker-report- followed by alpha/digit
-# in a label-prefix context. Original regex `worker-report-[a-z0-9]` was contradictory with
-# AC5a's literal `worker-report-v1.md` requirement — the `v` matched. Tightened to exclude
-# the v1 spec-filename form while still catching label-prefix usages like
-# `worker-report-1`, `worker-report-iter1`, `worker-report-tdd-...`,
-# `worker-report-bug-...`, etc. The `[0-9]` branch covers digit-prefixed labels.)
+# Intent: ALLOW the spec-filename reference `worker-report-v1.md`; BAN every
+# other `worker-report-*` form (label prefixes like `worker-report-iter1`,
+# `worker-report-tdd-...`, `worker-report-1`, `worker-report-v1-something`,
+# etc.). Implementation: any line containing `worker-report-` is a violation
+# UNLESS the `worker-report-` token is `worker-report-v1.md` (followed by a
+# non-word boundary so `worker-report-v1.md.bak` etc. doesn't slip through,
+# and `worker-report-v1-foo` is still caught because the `.md` suffix is
+# required). Filter `worker-report-v1.md` matches out, then check for any
+# remaining `worker-report-` lines.
 assert_grep "worker-audit-" "$SKILL" "AC3a: SKILL.md uses worker-audit- label prefix"
-assert_no_grep_regex "worker-report-([0-9]|[a-uw-z]|v[02-9])" "$SKILL" "AC3b: SKILL.md has NO worker-report- label prefix usage"
+if grep -F -q "worker-report-" "$SKILL" 2>/dev/null \
+   && grep -F "worker-report-" "$SKILL" 2>/dev/null \
+      | grep -vE 'worker-report-v1\.md([^A-Za-z0-9_]|$)' \
+      | grep -q .; then
+  bad "AC3b: SKILL.md has NO worker-report- label prefix usage (only worker-report-v1.md spec reference allowed)"
+else
+  ok "AC3b: SKILL.md has NO worker-report- label prefix usage (only worker-report-v1.md spec reference allowed)"
+fi
 
 # AC 4 — Agent-tool dispatch (Agent( and subagent_type), no `claude -p` worker dispatch
 assert_grep "Agent(" "$SKILL" "AC4a: SKILL.md instructs Agent( tool dispatch"
