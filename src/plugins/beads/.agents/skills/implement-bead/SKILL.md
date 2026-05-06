@@ -32,7 +32,7 @@ Metadata-driven dispatcher. One step-bead per invocation.
 
 ## 3. Decide dispatch shape from metadata
 
-1. If `ralf:required` is on the source bead → invoke the orchestration skill in-session: `ralf-implement` for green-loop / fix stages, `ralf-review` for review-cycle stages. Pass: spec, Definition of Done, quality commands, optional `ralf:cycles=N` cap, the doer's `subagent_type`, the worktree path, the target report path template, and reference to the per-dispatch primitive in §4. The orchestration skill executes as in-session skill code in this same top-level session — NOT as a subagent.
+1. If `ralf:required` is on the source bead → invoke the orchestration skill in-session: `ralf-implement` for green-loop / fix stages, `ralf-review` for review-cycle stages. Pass: spec, Definition of Done, quality commands, optional `ralf:cycles=N` cap, the doer's `subagent_type`, the worktree path, the target report path template, and reference to the per-dispatch primitive in §4. The orchestration skill substitutes `<agent-name>` and `-iter<N>` into the template per cycle when invoking the per-dispatch primitive. The orchestration skill executes as in-session skill code in this same top-level session — NOT as a subagent.
 2. Otherwise → load the appropriate execution skill for the stage (e.g. `superpowers:test-driven-development`) and run §4 once with the doer's `subagent_type` from §5.
 
 This skill does NOT invoke itself recursively via `claude -p` and does NOT dispatch orchestration skills as subagents.
@@ -46,7 +46,8 @@ Inputs: `(stage, mode, iteration?, execution_context, doer_subagent_type)`.
 3. Dispatch from this top-level session: `Agent({ subagent_type: <doer>, prompt: <task-spec> })`. Subagents cannot spawn subagents — Agent dispatch is valid only from the top-level session.
 4. After the worker exits, classify:
    - Non-zero exit OR no file at target path → synthesize `status: failed` at the target path per `worker-report-v1.md` §4: `evidence: {}`, `escalations[].reason: "Worker crashed"`, `escalations[].detail`: exit code + stderr tail, `discovered_work: []`, `commits: []`.
-   - File present but unparseable as YAML, missing core required field (`status` per `worker-report-v1.md` §4.1), or missing a per-agent runtime-required field — specifically, `bug-diagnoser` reports with empty or missing `root_cause_note` — synthesize `status: failed` wrapping the parse error and raw bytes.
+   - File present but unparseable as YAML or missing core required field (`status` per `worker-report-v1.md` §4.1) → synthesize `status: failed` wrapping the parse error and raw bytes.
+   - File present and parseable but missing a per-agent runtime-required field (e.g. `bug-diagnoser` with empty or missing `root_cause_note`) → synthesize `status: failed` wrapping the missing-field name and raw bytes.
    - Otherwise → read and parse the YAML.
 5. Stamp `worker-audit-<agent-name>[-iter<N>]` on the step-bead (forensic, append-only).
 6. Derive gate roll-up from the evidence blocks per `worker-report-v1.md` §1.1 (`pass` / `fail` / `partial` / `n/a`). Workers do NOT emit `gate_status`; the orchestrator derives it.
@@ -64,7 +65,7 @@ Inputs: `(stage, mode, iteration?, execution_context, doer_subagent_type)`.
 
 For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagnose step's `root_cause_note`:
 
-1. Locate the upstream step-bead-id within the same molecule: `bd show <mol-id> --json | jq -r '.[0].dependents[] | select(.title | startswith("Diagnose:")) | .id'`. A more robust stage label may replace this lookup later.
+1. Locate the upstream step-bead-id within the same molecule: `bd list --parent <mol-id> --all --type task --json | jq -r '.[] | select(.title | startswith("Diagnose:")) | .id'`. A more robust stage label may replace this lookup later.
 2. Build the upstream report path: `<repo-root>/.beads/worker-audit/<upstream-step-bead-id>/bug-diagnoser.yaml` (no iter suffix; diagnose is direct dispatch).
 3. Read and parse the YAML; extract `root_cause_note` (and `reproduction_steps` for red-tests).
 4. Inject extracted fields into the downstream task-spec.
