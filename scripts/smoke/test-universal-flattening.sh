@@ -13,6 +13,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Use a temporary directory for the test
 TEST_ROOT=$(mktemp -d /tmp/universal-flattening-test-XXXXXX)
+trap 'rm -rf "$TEST_ROOT"' EXIT
 MOCK_HOME="${TEST_ROOT}/home"
 MOCK_PROJECT="${TEST_ROOT}/project"
 
