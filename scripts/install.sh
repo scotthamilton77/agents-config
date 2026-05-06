@@ -680,14 +680,16 @@ stage_and_install_tool() {
         fi
     done
 
-    # ── Phase 6.5: Flatten AGENTS.md for OpenCode ─────────────────────────────
-    if [[ "$tool" == "opencode" && -f "$staging/AGENTS.md.template" ]]; then
-        vinfo "Phase 6.5: Flattening AGENTS.md for OpenCode"
-        local flattened
-        flattened="$(mktemp)"
-        flatten_agents_md "$staging/AGENTS.md.template" "$flattened" "$PROJECT_ROOT"
-        mv "$flattened" "$staging/AGENTS.md.template"
-    fi
+    # ── Phase 6.5: Universal instruction flattening ──────────────────────────
+    for template in "$staging/AGENTS.md.template" "$staging/GEMINI.md.template"; do
+        if [[ -f "$template" ]]; then
+            vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
+            local flattened
+            flattened="$(mktemp)"
+            flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
+            mv "$flattened" "$template"
+        fi
+    done
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
     # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
