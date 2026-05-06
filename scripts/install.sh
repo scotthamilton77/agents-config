@@ -555,6 +555,45 @@ stage_content_from_dir() {
 #
 # marker paths are relative to project_root.
 
+# ── Utility: transform Gemini agent frontmatter ────────────────────────────
+#
+# Gemini agent loader rejects Claude-specific keys (skills, color, memory)
+# and requires `tools:` to be a YAML array.
+
+transform_gemini_agent_frontmatter() {
+    local file="$1"
+    local tmp
+    tmp="$(mktemp)"
+
+    # awk logic:
+    # 1. track if we are inside the frontmatter (between first and second ---)
+    # 2. inside frontmatter:
+    #    - skip skills:, color:, memory: lines
+    #    - rewrite tools: "Read, Grep" -> tools: [Read, Grep]
+    # 3. outside frontmatter: pass through
+    awk '
+        BEGIN { count=0 }
+        /^---$/ { count++; print; next }
+        count == 1 {
+            # Strip Claude-only keys
+            if ($1 ~ /^(skills:|color:|memory:)$/) { next }
+            # Transform tools: String -> [Array]
+            if ($1 == "tools:") {
+                line = $0
+                sub(/^tools:[[:space:]]*/, "", line)
+                # If already starts with [, leave it be
+                if (line !~ /^\[/) {
+                    printf "tools: [%s]\n", line
+                    next
+                }
+            }
+        }
+        { print }
+    ' "$file" > "$tmp"
+
+    mv "$tmp" "$file"
+}
+
 flatten_agents_md() {
     local template="$1"
     local output="$2"
@@ -690,6 +729,15 @@ stage_and_install_tool() {
             mv "$flattened" "$template"
         fi
     done
+
+    # ── Phase 6.6: Gemini agent frontmatter transformation ──────────────────
+    if [[ "$tool" == "gemini" && -d "$staging/agents" ]]; then
+        vinfo "Phase 6.6: Transforming agent frontmatter for Gemini"
+        for agent_file in "$staging/agents"/*.md; do
+            [[ -f "$agent_file" ]] || continue
+            transform_gemini_agent_frontmatter "$agent_file"
+        done
+    fi
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
     # Skipped under --prune-only: staging tree (Phases 1-6) is still built so
