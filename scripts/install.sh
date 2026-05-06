@@ -609,7 +609,7 @@ stage_and_install_tool() {
     local staging="$STAGING_DIR/$tool"
     # Hoist all loop-internal locals to function scope — see commit 2fe276d:
     # zsh prints the variable's value when `local` is re-invoked in a loop.
-    local file_type plugin_tool_dir plugin_agents_dir
+    local file_type plugin_tool_dir plugin_agents_dir flattened
 
     CURRENT_TOOL="$tool"
     vheader "$tool"
@@ -684,7 +684,6 @@ stage_and_install_tool() {
     for template in "$staging/AGENTS.md.template" "$staging/GEMINI.md.template"; do
         if [[ -f "$template" ]]; then
             vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
-            local flattened
             flattened="$(mktemp)"
             flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
             mv "$flattened" "$template"
