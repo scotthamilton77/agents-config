@@ -27,7 +27,7 @@ Metadata-driven dispatcher. One step-bead per invocation.
 ## 2. Resolve execution context
 
 1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C <path> rev-parse --is-inside-work-tree`.
-2. Mode: `bd show <mol-id> --json | jq -r '.[0].title'` returns the formula name. Allowed values: `implement-feature` | `fix-bug`. On ambiguous title, fall back to label probe (`formula-implement-feature` / `formula-fix-bug`).
+2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). Read via `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
 3. Repo root: `dirname $(git -C <worktree> rev-parse --path-format=absolute --git-common-dir)`.
 4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 
