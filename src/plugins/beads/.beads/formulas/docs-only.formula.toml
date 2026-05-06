@@ -1,25 +1,11 @@
 # docs-only.formula.toml
 #
-# Per-stage pipeline for work that legitimately has no code tests:
-#   documentation edits, spec changes, prose-only refactors,
-#   config-only changes (where config has no test harness),
-#   meta/agent/skill authoring work.
-#
 # Stage sequence:
 #   preflight → apply-edits → review → verify-ac
 #   → create-pr → review-cycle → merge-or-handoff
 #
-# Deliberately omitted (vs implement-feature):
-#   - red-tests          (no test runner; nothing to assert)
-#   - green-loop         (no RALF-IT iteration; no test-driven loop)
-#   - quality-sweep      (no project-level test/lint/build gates)
-#
-# Reroute target: this formula is poured (a) directly via the
-# `formula-docs-only` label set during brainstorm-bead's finalize step,
-# or (b) automatically by the red-tests reroute handler in
-# implement-feature / fix-bug when no-tests state is detected.
-#
-# See: docs/specs/bead-pipeline-architecture.md §3 (docs-only)
+# See: src/plugins/beads/.beads/AGENTS.md (rationale, omitted stages,
+# reroute paths) and docs/specs/bead-pipeline-architecture.md §3.
 #
 # Usage:
 #   bd mol pour docs-only \
