@@ -188,8 +188,9 @@ The full bead lifecycle runs through four skills:
 
 Plus formulas:
 - `brainstorm-bead` — interactive spec writing + RALF spec review → `implementation-ready`
-- `implement-feature` — label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
-- `fix-bug` — root-cause diagnosis + label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills)
+- `implement-feature` — label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills); red-tests hard-escalates + auto-reroutes to `formula-docs-only` when no test runner OR no `[m]` AC lines
+- `fix-bug` — root-cause diagnosis + label-driven implementation (`ralf-implement` when `ralf:required`, otherwise TDD + domain skills); red-tests hard-escalates + auto-reroutes to `formula-docs-only` when no test runner (Trigger A only — Trigger B omitted to preserve regression-test invariant)
+- `docs-only` — single-pass pipeline for work with no code tests (docs/spec/prose/config-only edits); no red-tests / no green-loop / no quality-sweep; verify-ac warn-and-passes when zero `[m]` ACs
 - `merge-and-cleanup` — retroactive gate + explicit auth → merge
 
 ---
@@ -240,8 +241,8 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 - `superpowers:finishing-a-development-branch`
 - `superpowers:requesting-code-review`
 - `superpowers:receiving-code-review`
-- `superpowers:wait-for-pr-comments`
-- `superpowers:reply-and-resolve-pr-threads`
+- `wait-for-pr-comments`
+- `reply-and-resolve-pr-threads`
 - `superpowers:dispatching-parallel-agents`
 - `ralf-review`
 - `ralf-implement`
@@ -255,3 +256,17 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 **Rule:** off-limits skills compete with the bead lifecycle. On a bead, use
 `start-bead` → `brainstorm-bead` → `implement-bead` instead. Off-limits skills
 remain available for non-bead work.
+
+---
+
+## Notes vs Comments: bd update semantics
+
+Three commands serve distinct roles — mixing them up causes lost context.
+
+| Command | Semantics | When to use |
+|---|---|---|
+| `bd update <id> --append-notes "..."` | Appends to existing notes | Step output, escalation context, cumulative status, run breadcrumbs |
+| `bd update <id> --notes "..."` | **Replaces** existing notes entirely | Initial bead creation, or `brainstorm-bead` spec writes — intentional overwrites only |
+| `bd comments add <id> "..."` | Creates a separate, non-destructive comment | Lifecycle audit breadcrumbs, molecule→bead tracing, events that should not pollute notes |
+
+**Footgun alert**: `--notes` is a destructive overwrite. If you mean "add to this", use `--append-notes`.

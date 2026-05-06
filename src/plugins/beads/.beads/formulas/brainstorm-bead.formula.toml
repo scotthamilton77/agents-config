@@ -207,9 +207,15 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    then restamp only if the final spec still warrants iterative refinement:
 
      bd label remove {{bead-id}} ralf:required
-     for label in $(bd label list {{bead-id}} --json | jq -r '.labels[] | select(startswith("ralf:cycles="))'); do
+     for label in $(bd label list {{bead-id}} --json | jq -r '.[] | select(startswith("ralf:cycles="))'); do
        bd label remove {{bead-id}} "$label"
      done
+
+   Note: `bd label list <id> --json` returns a flat JSON array of label
+   strings, NOT an object — the jq path is `.[]`, not `.labels[]`. The
+   prior pattern `.labels[]` returned empty and silently failed to remove
+   stale `ralf:cycles=*` labels (pre-existing bug fixed under
+   agents-config-ooun).
 
    Use `bd label remove` before `bd label add` because `add` only appends a
    label; it does not replace prior values. Remove `ralf:cycles=*` by listing
@@ -234,7 +240,82 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    Optional cycle override (when a non-default cycle count is justified):
      bd label add {{bead-id}} ralf:cycles=N
 
-3. Reconcile required follow-up child beads before readiness:
+3. Formula selection heuristic + confirm/override.
+
+   Apply a hybrid heuristic to propose a formula, then prompt the user to
+   confirm or override. Stamp the resulting `formula-<name>` label on the
+   bead BEFORE the readiness labels in step 5. The label is later read by
+   `implement-bead` before pour selection (per
+   `bead-pipeline-architecture.md` §3 preflight and §4.2).
+
+   a. Compute heuristic inputs from canonical sources only:
+
+        m_count=$(bd show {{bead-id}} --json \\
+          | jq -r '.[0].acceptance_criteria // ""' \\
+          | grep -cvE '^([[:space:]]*$|\\[h\\][[:space:]])')
+        # Section-body extraction: range pattern /^\\[gates\\]/,/^\\[/ is a no-op
+        # (the [gates] header satisfies BOTH boundaries on the same line).
+        # Use a flag-based parser instead.
+        test_runner=$(awk '/^\\[gates\\]/{flag=1;next} /^\\[/{flag=0} flag' project-config.toml \\
+          | awk -F'=' '/^test[[:space:]]*=/{gsub(/[[:space:]"\\047]/,"",$2); print $2}')
+        bead_type=$(bd show {{bead-id}} --json | jq -r '.[0].issue_type // "task"')
+
+      `m_count` MUST be counted from the `acceptance_criteria` field
+      ONLY (per spec §4.1). Counting `description` would false-positive
+      on `[m]` tokens in prose and false-negative on canonical (non-bullet)
+      AC formats.
+
+   b. Propose a formula:
+
+        if [ "$m_count" = "0" ] || [ -z "$test_runner" ]; then
+          PROPOSED="docs-only"
+          if [ "$m_count" = "0" ] && [ -z "$test_runner" ]; then
+            REASON="no [m] AC lines AND no test runner"
+          elif [ "$m_count" = "0" ]; then
+            REASON="no [m] AC lines"
+          else
+            REASON="no test runner ([gates].test=='')"
+          fi
+        elif [ "$bead_type" = "bug" ]; then
+          PROPOSED="fix-bug"
+          REASON="bug type with [m] ACs and test runner"
+        else
+          PROPOSED="implement-feature"
+          REASON="${bead_type} with [m] ACs and test runner"
+        fi
+
+   c. Prompt the user (interactive — main agent in the brainstorm session):
+
+        "Proposed formula: ${PROPOSED} (${REASON}).
+         Confirm or override [docs-only|implement-feature|fix-bug]:"
+
+      Default on bare confirm: ${PROPOSED}. Otherwise use the user's
+      typed value. Validate against the allowed set; on invalid input,
+      re-prompt rather than stamp a garbage label:
+
+        case "${CHOSEN}" in
+          docs-only|implement-feature|fix-bug) ;;
+          *) echo "Invalid formula '${CHOSEN}'; expected one of [docs-only|implement-feature|fix-bug]. Try again."
+             # re-run the prompt; do NOT stamp a label until a valid choice is given
+             ;;
+        esac
+
+      Loop until the input matches one of the three allowed values.
+
+   d. Remove any prior `formula-*` labels (collision avoidance per §4.2).
+      Note: `bd label list <id> --json` returns a flat JSON array of label
+      strings, NOT an object — the jq path is `.[]`, not `.labels[]`:
+
+        for label in $(bd label list {{bead-id}} --json \\
+          | jq -r '.[] | select(startswith("formula-"))'); do
+          bd label remove {{bead-id}} "$label"
+        done
+
+   e. Stamp the user's chosen formula:
+
+        bd label add {{bead-id}} formula-<chosen>
+
+4. Reconcile required follow-up child beads before readiness:
    - List existing open child beads under `{{bead-id}}` that carry the `human`
      label and represent `[Human verify]` follow-ups.
    - For every acceptance-criteria line currently tagged `[h]`, ensure exactly
@@ -250,7 +331,7 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
      does not already exist, and label it `merge-gate`. This child is closed
      only by merge-and-cleanup after merge + branch/worktree cleanup.
 
-4. Add standard readiness labels:
+5. Add standard readiness labels:
      bd label add {{bead-id}} brainstormed
      bd label add {{bead-id}} implementation-ready
      bd label add {{bead-id}} implementation-readied-session-<sid>
@@ -258,9 +339,9 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
    `<sid>` is the first 8 hex chars of the session ID that applied
    `implementation-ready`; `start-bead` Route A uses it for same-session gating.
 
-5. Report implementation-ready hand-off and stop unless user explicitly
+6. Report implementation-ready hand-off and stop unless user explicitly
    authorizes immediate implementation in the current session.
 
-6. Burn this wisp:
+7. Burn this wisp:
      bd mol burn <this-mol-id>
 """

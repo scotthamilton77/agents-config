@@ -98,7 +98,7 @@ The pour-vs-worktree ordering is critical: pour the formula FIRST, then create t
 
 **Idempotent re-entry.** Filesystem state and step-bead notes reflect prior progress; on re-entry the orchestrator inspects the notes and continues from where it left off.
 
-**Stage scheduling.** Whether `diagnose` runs is determined by the formula poured at preflight, not by a runtime check. The `fix-bug.formula.toml` step list includes `diagnose` at position 2 (between `preflight` and `red-tests`); the `implement-feature.formula.toml` step list does NOT include `diagnose`. preflight's formula-selection step (read `formula-<name>` label, fall back to per-bead-type defaults) determines which formula is poured. Per-bead-type fallbacks: bug → `fix-bug`; feature → `implement-feature`; task → `implement-feature`; chore → `implement-feature`; epic → flag-human (epics decompose into children; there is no formula for an epic itself).
+**Stage scheduling.** Whether `diagnose` runs is determined by the formula poured upstream of preflight, not by a runtime check. The `fix-bug.formula.toml` step list includes `diagnose` at position 2 (between `preflight` and `red-tests`); the `implement-feature.formula.toml` step list does NOT include `diagnose`. `implement-bead`'s formula-selection step (read `formula-<name>` label, fall back to per-bead-type defaults) determines which formula is poured BEFORE preflight runs; preflight itself only validates that the pour has already happened. Per-bead-type fallbacks: bug → `fix-bug`; feature → `implement-feature`; task → `implement-feature`; chore → `implement-feature`; epic → flag-human (epics decompose into children; there is no formula for an epic itself).
 
 **cwd contract.** Worktree path decoded from molecule's `worktree-path-*` label.
 
@@ -114,13 +114,15 @@ The iteration cap defaults to 2 (override via `iteration-cap-red-tests-<n>` labe
 
 When `review-level:none` is set on the source bead, the test-review skill and Codex adversarial review subagents skip; tests are still WRITTEN (TDD red phase is correctness substrate, not review depth), but no AI review of the tests runs.
 
-**Opt-out.** This stage has a canonical opt-out predicate evaluated FIRST in both formulas, before any reviewer dispatch. **Trigger A** (both `implement-feature` and `fix-bug` paths): if `[gates].test == ""` in `project-config.toml`, the project has no test runner; skip with note `red-tests opt-out: no test runner ([gates].test=='')`. **Trigger B** (`implement-feature` ONLY): if the bead's `acceptance_criteria` field (per §4.1's canonical AC parser, NOT `description`) has zero `[m]`-classified lines, there is nothing for tests to assert; skip with note `red-tests opt-out: no [m] AC lines`. Apply the canonical line parser (`^\[(m|h)\]\s(.*)$`; untagged lines default to `[m]` per §4.1's backwards-compat rule) to count `[m]` lines. When both triggers fire, the note is `red-tests opt-out: both`. The literal prefix `red-tests opt-out: ` is grep-able for verify-ac groundedness. Bug-class asymmetry: `fix-bug` deliberately omits Trigger B because a failing regression test is "proof that the bug cannot silently return"; allowing zero-`[m]` skip on the bug path would silently waive the regression-test invariant — a bug bead with zero `[m]` AC lines and a non-empty `[gates].test` is a brainstorm gap, not an opt-out condition. AC tagging is the per-bead signal — there is no per-bead opt-IN/opt-OUT label. The DoD reflects the opt-out branch.
+**Hard-escalate + auto-reroute.** This stage has a canonical escalate predicate evaluated FIRST in both formulas, before any reviewer dispatch. **Trigger A** (both `implement-feature` and `fix-bug` paths): if `[gates].test == ""` in `project-config.toml`, the project has no test runner. **Trigger B** (`implement-feature` ONLY): if the bead's `acceptance_criteria` field (per §4.1's canonical AC parser, NOT `description`) has zero `[m]`-classified lines, there is nothing for tests to assert. Apply the canonical line parser (`^\[(m|h)\]\s(.*)$`; untagged lines default to `[m]` per §4.1's backwards-compat rule) to count `[m]` lines. The literal prefix `red-tests escalate: ` is grep-able for verify-ac groundedness and for the green-loop defense-in-depth check. Bug-class asymmetry: `fix-bug` deliberately omits Trigger B because a failing regression test is "proof that the bug cannot silently return"; allowing zero-`[m]` reroute on the bug path would silently waive that invariant — a bug bead with zero `[m]` AC lines and a non-empty `[gates].test` is a brainstorm gap, not an escalate condition. AC tagging + project `[gates].test` are the only signals; there is no per-bead opt-IN/opt-OUT label.
 
-**Definition of Done.** Tests committed to feature branch; both reviewers approve "shippable" state (or iteration cap reached with disagreement note recorded). OR step opted out per the canonical Opt-out predicate, with the pinned `red-tests opt-out: ...` skip-note appended to step-bead notes.
+When any trigger fires, the formula executes the **reroute protocol**: clone the source bead (inherit `title`, `description`, `acceptance_criteria`; prepend a redirect warning to the cloned description; do NOT inherit `notes`); stamp the new bead with `formula-docs-only` and `implementation-ready`; add a `discovered-from` dep edge from the new bead to the original; mark the original with `REROUTED-TO:<new-id>`, append a reroute note, close any `merge-gate` child, then close the original; finally `bd mol burn` the current molecule. The `run-queue` in a separate session picks up the new bead organically and pours `docs-only` on it. No `human` label is applied; no human action is required. This auto-reroute supersedes the soft opt-out described in earlier revisions of this document.
+
+**Definition of Done.** Tests committed to feature branch; both reviewers approve "shippable" state (or iteration cap reached with disagreement note recorded). OR step rerouted per the canonical escalate predicate above (original closed with `REROUTED-TO`, new bead created with `formula-docs-only` + `implementation-ready`, current molecule burned, `red-tests escalate: ...` note recorded on step-bead).
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `medium`.
 
-**Preloaded skills.** `superpowers:test-driven-development`, `superpowers:writing-unit-tests`, `superpowers:testing-anti-patterns`.
+**Preloaded skills.** `superpowers:test-driven-development`, `writing-unit-tests`, `testing-anti-patterns`.
 
 **Subagents dispatched.** `bead-implementor` (sonnet) for test writing; `test-review` skill invocation by the orchestrator directly (not a subagent).
 
@@ -135,6 +137,8 @@ When `review-level:none` is set on the source bead, the test-review skill and Co
 ### green-loop
 
 **Purpose.** Implementation (green phase) via RALF-IT. The orchestrator invokes the RALF-IT skill with `MAX_ITERATIONS=5` (override via `iteration-cap-green-loop-<n>` label, the SOLE override path).
+
+**Defense-in-depth re-evaluation of red-tests escalate triggers.** Before any RALF-IT dispatch, the formula re-runs the red-tests escalate predicate independently — same logic, same `acceptance_criteria` field counting (Trigger A on both paths; Trigger B on `implement-feature` only). If any trigger fires here, the molecule should not have advanced from red-tests; the stage stamps `human` on BOTH the source bead and the green-loop step-bead, appends a defense-in-depth note, and exits. This path is unreachable in normal operation because the red-tests reroute burns the molecule before green-loop runs; it catches manual molecule resumes that bypass red-tests, ensuring the unsatisfiable-DoD contract never silently propagates downstream.
 
 RALF-IT handles implementation subagent dispatch, the quality gate (build/typecheck/lint/test) between every iteration, foreign-eyes review (Codex on iter 1, Gemini on iter 2, pure Claude fresh-eyes on iter 3+), anti-bias rules (the eyes-subagent is not told which iteration it is and is given the original spec, not a prior summary), and the final review pass.
 
@@ -246,7 +250,7 @@ PR creation failure flag-humans cleanly with the worktree intact.
 
 ### review-cycle
 
-**Purpose.** Long-running PR-review cycle. The orchestrator invokes the `superpowers:wait-for-pr-comments` skill, which polls Copilot via background script (zero Anthropic tokens during the wait), classifies each comment as FIX/SKIP/ESCALATE, dispatches per-comment fix subagents, pushes combined commits, then chains internally to `superpowers:reply-and-resolve-pr-threads` to reply to every thread and resolve FIXED ones via GraphQL.
+**Purpose.** Long-running PR-review cycle. The orchestrator invokes the `wait-for-pr-comments` skill, which polls Copilot via background script (zero Anthropic tokens during the wait), classifies each comment as FIX/SKIP/ESCALATE, dispatches per-comment fix subagents, pushes combined commits, then chains internally to `reply-and-resolve-pr-threads` to reply to every thread and resolve FIXED ones via GraphQL.
 
 One iteration equals one outbound reply-batch: poll PR until new review activity or timeout, address all open FIX-class threads in one commit + reply pass, push, mark threads resolved on GitHub. The cap counts batches, not polls.
 
@@ -260,7 +264,7 @@ When `review-level:none` is set, the stage skips entirely.
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `medium`. Per-comment classification and reply composition; cost scales with comment volume.
 
-**Preloaded skills.** `superpowers:wait-for-pr-comments` (which chains to `superpowers:reply-and-resolve-pr-threads`).
+**Preloaded skills.** `wait-for-pr-comments` (which chains to `reply-and-resolve-pr-threads`).
 
 **Subagents dispatched.** Per-comment fix subagents (sonnet) for FIX-class items.
 
@@ -308,6 +312,16 @@ The `merge-{source-id}` child bead is filed by **brainstorm-bead's finalize step
 
 **cwd contract.** Repo root (the worktree may be torn down by this stage; the merge runs from the main checkout).
 
+### docs-only formula
+
+**Purpose.** Pipeline for work that legitimately has no code tests: documentation edits, spec changes, prose-only refactors, config-only changes (where config has no test harness), meta/agent/skill authoring work. The `docs-only` formula is the routing target for two paths: (a) brainstorm-bead's `finalize` step proposes `formula-docs-only` when the heuristic fires (zero `[m]` AC lines OR `[gates].test == ""`) and the user confirms; (b) the red-tests escalate predicate in `implement-feature` / `fix-bug` auto-reroutes a misrouted bead to a freshly-cloned bead stamped `formula-docs-only` (see red-tests above).
+
+**Stage sequence.** `preflight` → `apply-edits` → `review` → `verify-ac` → `create-pr` → `review-cycle` → `merge-or-handoff`. Deliberately omitted: `red-tests`, `green-loop`, `quality-sweep` — the docs-only path has no test runner and no RALF-IT iteration loop.
+
+**Stage semantics.** `preflight` skips the coverage and `[gates]` checks (the formula is the routing target for projects/beads where those gates do not apply). `apply-edits` runs a single bead-implementor pass — no red-phase, no iteration. `review` runs the standard `quality-reviewer` + `simplify` pair on the diff. `verify-ac` counts `[m]` AC lines from the canonical `acceptance_criteria` field; if zero, it logs `verify-ac: no [m] AC lines — skipping mechanical witness verification (warn-and-pass)` to step-bead notes and passes without blocking. `create-pr`, `review-cycle`, and `merge-or-handoff` mirror the implement-feature contracts.
+
+**Reroute lineage.** The clone-and-reroute mechanic intentionally keeps the original bead's lifecycle distinct: closing the original (with `REROUTED-TO:<new-id>` label and reroute note) records the decision; the `discovered-from` dep edge from new to original preserves the audit trail. The `merge-gate` child (if present) is closed as part of the reroute so the original can close cleanly. The new bead is independently picked up by `run-queue` in a dedicated session — never by the session that just burned the misrouted molecule (no `implementation-readied-session-*` label is stamped on the new bead).
+
 ## 4. Brainstorm-bead expansion
 
 The brainstorm phase delivers shift-left by capturing post-implementation policy decisions upfront, when the human is engaged and spec context is fresh.
@@ -341,7 +355,7 @@ Cross-cutting policy is captured as bd labels on the source bead. Each label is 
 
 | Label | Read by | Default | Meaning |
 |---|---|---|---|
-| `formula-<name>` | preflight | per bead type (feature → `implement-feature`, bug → `fix-bug`, task → `implement-feature`, chore → `implement-feature`, epic → flag-human) | Selects the formula variant to pour. New variants plug in by adding a `<name>.formula.toml` and updating the formulary index. |
+| `formula-<name>` | `implement-bead` (pour selection) | per bead type (feature → `implement-feature`, bug → `fix-bug`, task → `implement-feature`, chore → `implement-feature`, epic → flag-human) | Selects the formula variant to pour. Allowed values: `implement-feature`, `fix-bug`, `docs-only`. Stamped by brainstorm-bead `finalize` (heuristic + confirm/override) on the normal path, or by the red-tests reroute handler (always `formula-docs-only`) on the auto-reroute path. New variants plug in by adding a `<name>.formula.toml` and updating the formulary index. |
 | `auto-mergeable` | merge-or-handoff | absent (hand-off path) | When present, the merge-or-handoff stage takes the auto-merge branch, subject to clean-check. |
 | `iteration-cap-red-tests-<n>` | red-tests | 2 | Override red-tests review-loop cap. `<n>` is a positive integer. |
 | `iteration-cap-green-loop-<n>` | green-loop (RALF-IT) | 5 | Override RALF-IT MAX_ITERATIONS. `<n>` is a positive integer. SOLE override path. |

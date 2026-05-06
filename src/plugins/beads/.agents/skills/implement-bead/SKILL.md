@@ -21,7 +21,31 @@ Metadata-driven dispatcher. One step-bead per invocation.
 
 The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
 
-1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`). **If empty (first stage — no molecule yet)**: branch on the source bead's type. `epic` → flag-human (stamp `human` on the source bead, append note: "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour. Otherwise pour the correct formula — `bug` → `bd mol pour fix-bug --var bug="<title>" --var bead-id=<source-bead-id>`; `feature` / `task` / `chore` (or null) → `bd mol pour implement-feature --var feature="<title>" --var bead-id=<source-bead-id>`. Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise stamp `human` on the source bead and exit).
+1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`). **If empty (first stage — no molecule yet)**: select the formula and pour. Formula selection is canonical: read the source bead's `formula-<name>` label first via the JSON array shape (per `src/plugins/beads/.claude/rules/beads.md` molecule→bead linkage convention — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing §4.2 policy-knob collisions):
+
+       formula_names=$(bd label list <source-bead-id> --json \
+         | jq -r '.[] | select(startswith("formula-"))' \
+         | sed 's/^formula-//' \
+         | sort -u)
+       formula_count=$(printf '%s\n' "$formula_names" | sed '/^$/d' | wc -l | tr -d ' ')
+
+       if [ "$formula_count" = "0" ]; then
+         # No formula-* label → fall back to type-based default below.
+         formula_to_pour=""
+       elif [ "$formula_count" = "1" ]; then
+         formula_to_pour="$formula_names"
+       else
+         # Multiple distinct formula-* labels → §4.2 policy-knob collision.
+         # Per §5.6, flag-human is a pause (not a failure); exit cleanly.
+         # No step-bead exists yet (the molecule has not been poured), so
+         # only the source bead is labeled — the §5.6 step-bead path
+         # applies only after pour, and is enforced in §2 below.
+         bd label add <source-bead-id> human
+         bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
+         exit 0
+       fi
+
+   If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` → flag-human (stamp `human` on the source bead, append note: "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>"`; `fix-bug` → `--var bug="<title>"`; `docs-only` → `--var topic="<title>"`. All formulas additionally take `--var bead-id=<source-bead-id>`. Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise stamp `human` on the source bead and exit).
 2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes, matching the pattern in `scripts/bead-driver-test.sh`).
 3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
 4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
@@ -29,7 +53,32 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
 ## 2. Resolve execution context
 
 1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: stamp `human` on BOTH the step-bead AND source bead, append diagnostic note (the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree.
-2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority: `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
+2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority via the JSON array shape (per `src/plugins/beads/.claude/rules/beads.md` molecule→bead linkage convention — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing §4.2 policy-knob collisions):
+
+       formula_names=$(bd label list <source-bead-id> --json \
+         | jq -r '.[] | select(startswith("formula-"))' \
+         | sed 's/^formula-//' \
+         | sort -u)
+       formula_count=$(printf '%s\n' "$formula_names" | sed '/^$/d' | wc -l | tr -d ' ')
+
+       if [ "$formula_count" = "0" ]; then
+         # No formula-* label → fall back to molecule title below.
+         mode=""
+       elif [ "$formula_count" = "1" ]; then
+         mode="$formula_names"
+       else
+         # Multiple distinct formula-* labels → §4.2 policy-knob collision.
+         # Full §5.6 flag-human protocol: label BOTH source + step-bead,
+         # transition step-bead to open, exit cleanly (this is a pause,
+         # not a failure).
+         bd label add <source-bead-id> human
+         bd label add <step-bead-id> human
+         bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
+         bd update <step-bead-id> --status open
+         exit 0
+       fi
+
+   On absent label (`mode` empty), fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug` | `docs-only`. (The `docs-only` mode does not have entries in §5's stage→agent map; its steps are non-RALF and dispatched directly per its formula.)
 3. Repo root: `dirname "$(git -C "<worktree-path>" rev-parse --path-format=absolute --git-common-dir)"` (both `<worktree-path>` and the `$(...)` substitution must be double-quoted to survive paths with spaces or special characters).
 4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 

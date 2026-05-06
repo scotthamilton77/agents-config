@@ -16,3 +16,8 @@ Do not wait for the files to become relevant.
 Do not announce or narrate that you are reading these files — just read them silently.
 Do not answer questions, summarize the repo, or perform any work until all four files have been read.
 If any file is missing or unreadable, stop and report that as the blocker.
+
+<!-- DYNAMIC-INCLUDE: src/user/.agents/AGENT-PERSONA.md.template -->
+<!-- DYNAMIC-INCLUDE: src/user/.agents/USER-PERSONA.md.template -->
+<!-- DYNAMIC-INCLUDE: src/user/.agents/INSTRUCTIONS.md.template -->
+<!-- DYNAMIC-INCLUDE: src/user/.codex/CODEX-EXTENSIONS.md.template -->
