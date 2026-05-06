@@ -257,7 +257,14 @@ bead — no `human` label, no manual intervention.
    - Preserve epic linkage: if `ORIG_PARENT` is non-empty, pass
      `--parent "$ORIG_PARENT"` so the rerouted-clone remains under the
      same epic.
-   - Stamp labels on the new bead: `formula-docs-only`, `implementation-ready`.
+   - Stamp labels on the new bead: `brainstormed`, `formula-docs-only`,
+     `implementation-ready`. `brainstormed` is honest here — the original
+     bead was already brainstormed and the reroute clones its
+     `acceptance_criteria` and `description` verbatim, so the spec carries
+     over; only the formula tag changes. Stamping `brainstormed` also
+     satisfies `docs-only`'s preflight (which strictly requires
+     `brainstormed`) so the rerouted clone runs autonomously instead of
+     flag-humaning on entry.
    - Do NOT stamp any `implementation-readied-session-*` label.
    - Add a discovered-from edge:
        bd dep add <new-bead-id> {{bead-id}} --type discovered-from
