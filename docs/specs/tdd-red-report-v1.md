@@ -19,13 +19,18 @@ no removed fields, no structural deviations.
 - The agent's task: add tests that capture an intended behavior NOT YET
   implemented in the codebase. The tests must FAIL when run against the
   current production code.
-- **Expected derived gate roll-up: `fail`** — specifically,
-  `evidence.tests.failing > 0`. The orchestrator does not advance the
-  pipeline on a `pass` derivation from a red-team dispatch; that
-  outcome means the new tests didn't actually test anything new.
-- The agent SHOULD flag an unexpected `pass` derivation in
-  `escalations` with `reason: "red-tests-passed-unexpectedly"`. The
-  orchestrator escalates such reports to a human.
+- **Stage-specific success criterion for `status: complete`:** the
+  derived gate roll-up is `fail` — specifically,
+  `evidence.tests.failing > 0`. The agent emits `status: complete` ONLY
+  when this criterion is satisfied. The orchestrator's outcome rule is
+  stage-blind and advances the pipeline on `complete`; the
+  stage-specific knowledge that "fail-is-success" for red-tests lives
+  here, in this agent's contract, not in the orchestrator.
+- If the test command's derived gate would be `pass` (tests passed
+  unexpectedly — meaning the new tests didn't actually test anything
+  new), the agent MUST emit `status: needs_human` with `escalations[]`
+  containing `reason: "red-tests-passed-unexpectedly"`. The agent MUST
+  NOT emit `status: complete` in this case.
 - The agent's commits MUST contain only test-file additions or
   modifications. No production-code changes are permitted in the red
   phase; production-code changes belong to `tdd-green-team`.

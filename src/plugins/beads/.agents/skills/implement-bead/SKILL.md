@@ -131,18 +131,13 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 
 ## 8. Apply status outcomes to the step-bead
 
-All `human` stamps in this section apply to BOTH the step-bead AND the source bead (human-flag protocol).
+Outcomes are stage-blind: `status` is the only outcome input. Stage-specific success criteria — including red-tests' "fail-is-success" — live in each worker's per-agent spec, which is also where the worker decides between `complete` and `needs_human` based on the derived gate. The orchestrator's derived gate roll-up is forensic context (recorded via the audit label, the report file on disk, and the `--append-notes` evidence appended on escalation paths), not an outcome branch. All `human` stamps cover BOTH the step-bead AND the source bead (human-flag protocol).
 
 1. Direct-dispatch path (no `ralf:required`) — exactly one report processed:
-   - `complete` + gate `pass` → close step-bead with summary; exit.
-   - `complete` + gate `fail` or `partial` → stamp `human` on step-bead AND source bead, append gate-fail evidence to step-bead notes, close step-bead with summary; exit.
+   - `complete` → close step-bead with summary; exit.
    - `needs_human` → stamp `human` on step-bead AND source bead, append escalations, close step-bead with summary; exit.
    - `failed` (real or synthesized) → stamp `human` on step-bead AND source bead, append failure detail, close step-bead with summary; exit.
-2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, final derived gate, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same outcome rules above using the aggregate verdict (every `human` stamp covers BOTH step-bead AND source bead), then close the step-bead and exit. The orchestration skill stamps per-iteration audit labels during the loop; this skill closes the step-bead at the end.
-
-## 9. Outcome-rule override metadata
-
-Before applying §8, read the step-bead labels (per §1) for `outcome-on-fail:advance` (step-bead-scoped, NOT source-bead-scoped). When present, invert §8's `complete + gate: fail` rule from "stamp `human`, close, escalate" to "close step-bead with summary, advance" — `gate: fail` is treated as the success signal for this step. Applies on BOTH the direct dispatch path AND the orchestration (RALF-aggregate) path; the override is a single metadata-driven label read, not a formula-identity branch. The `failed` status (synthetic-on-crash and per-agent runtime-field failures) is NOT subject to the override — those still escalate per §8. Default (label absent): §8 unchanged.
+2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same status-only rules above using the aggregate verdict (every `human` stamp covers BOTH step-bead AND source bead), then close the step-bead and exit. The orchestration skill owns per-iteration gate inspection during the loop and stamps per-iteration audit labels; this skill closes the step-bead at the end.
 
 ## Audit-label scope
 
