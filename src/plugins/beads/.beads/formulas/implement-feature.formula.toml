@@ -131,7 +131,7 @@ id    = "red-tests"
 name  = "red-tests"
 title = "Red-tests: write failing tests covering all [m] AC bullets"
 needs = ["preflight"]
-description = """
+description = '''
 Write failing tests (TDD red phase) before any implementation code.
 Model: claude-sonnet-4-6  Effort: medium
 
@@ -223,7 +223,7 @@ pinned `red-tests opt-out: ...` skip-note appended to step-bead notes.
 
 ## Idempotent re-entry
 Check filesystem (committed tests) and step-bead notes. Continue from prior state.
-"""
+'''
 
 # =============================================================================
 # Stage: green-loop
