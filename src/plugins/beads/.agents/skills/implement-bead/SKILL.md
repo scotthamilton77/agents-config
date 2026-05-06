@@ -22,7 +22,7 @@ Metadata-driven dispatcher. One step-bead per invocation.
 The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
 
 1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`). **If empty (first stage — no molecule yet)**: pour the correct formula based on the source bead's type — `bug` → `bd mol pour fix-bug --var bug="<title>" --var bead-id=<source-bead-id>`; `feature` / `task` / `chore` (or null) → `bd mol pour implement-feature --var feature="<title>" --var bead-id=<source-bead-id>`. Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If non-empty, take `[0].id`.
-2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r '[.[] | select(.status != "closed")][0].id'`.
+2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes, matching the pattern in `scripts/bead-driver-test.sh`).
 3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
 4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
