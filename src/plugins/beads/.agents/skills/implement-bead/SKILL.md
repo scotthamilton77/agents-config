@@ -72,7 +72,7 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 2. Build the upstream report path: `<repo-root>/.beads/worker-audit/<upstream-step-bead-id>/bug-diagnoser.yaml` (no iter suffix; diagnose is direct dispatch).
 3. Read and parse the YAML; extract `root_cause_note` (and `reproduction_steps` for red-tests).
 4. Inject extracted fields into the downstream task-spec.
-5. Failure mode: if the upstream report is missing or unparseable, stamp `human` on the step-bead and append a missing-context detail. Do NOT proceed with an empty `root_cause_note`. The dependency is hard.
+5. Failure mode: if the upstream report is missing or unparseable, stamp `human` on BOTH the step-bead AND the source bead and append a missing-context detail. Do NOT proceed with an empty `root_cause_note`. The dependency is hard.
 
 ## 7. File discovered_work before applying status outcomes
 
@@ -82,12 +82,14 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 
 ## 8. Apply status outcomes to the step-bead
 
+All `human` stamps in this section apply to BOTH the step-bead AND the source bead (human-flag protocol).
+
 1. Direct-dispatch path (no `ralf:required`) — exactly one report processed:
    - `complete` + gate `pass` → close step-bead with summary; exit.
-   - `complete` + gate `fail` or `partial` → stamp `human`, append gate-fail evidence to step-bead notes, close step-bead with summary; exit.
-   - `needs_human` → stamp `human`, append escalations, close step-bead with summary; exit.
-   - `failed` (real or synthesized) → stamp `human`, append failure detail, close step-bead with summary; exit.
-2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, final derived gate, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same outcome rules above using the aggregate verdict, then close the step-bead and exit. The orchestration skill stamps per-iteration audit labels during the loop; this skill closes the step-bead at the end.
+   - `complete` + gate `fail` or `partial` → stamp `human` on step-bead AND source bead, append gate-fail evidence to step-bead notes, close step-bead with summary; exit.
+   - `needs_human` → stamp `human` on step-bead AND source bead, append escalations, close step-bead with summary; exit.
+   - `failed` (real or synthesized) → stamp `human` on step-bead AND source bead, append failure detail, close step-bead with summary; exit.
+2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, final derived gate, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same outcome rules above using the aggregate verdict (every `human` stamp covers BOTH step-bead AND source bead), then close the step-bead and exit. The orchestration skill stamps per-iteration audit labels during the loop; this skill closes the step-bead at the end.
 
 ## 9. Outcome-rule override metadata
 
