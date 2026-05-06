@@ -158,6 +158,29 @@ assert_line_count_le "$SLASH" 40 "AC16d: slash command ≤ 40 lines"
 assert_no_grep "bead-implementor" "$SKILL" "AC17a: SKILL.md has NO bead-implementor references"
 assert_no_grep "bead-implementor" "$SLASH" "AC17b: slash command has NO bead-implementor references"
 
+# AC 18 — Outcome-rule override metadata (PR #36 comment 3193307037)
+# 18a: SKILL.md mentions the literal label name `outcome-on-fail:advance`
+assert_grep "outcome-on-fail:advance" "$SKILL" "AC18a: SKILL.md documents outcome-on-fail:advance step-bead override"
+
+# 18b: override applies to BOTH dispatch paths — file mentions "direct" AND ("RALF" or "orchestration" or "aggregate") near the override.
+# Approximate via per-file co-occurrence: the override section must reference both the direct-dispatch and the RALF/orchestration/aggregate path.
+if grep -F -q "outcome-on-fail:advance" "$SKILL" 2>/dev/null \
+   && grep -E -i -q "direct( dispatch)?" "$SKILL" 2>/dev/null \
+   && grep -E -i -q "(RALF|ralf-aggregate|aggregate|orchestration)" "$SKILL" 2>/dev/null; then
+  ok "AC18b: SKILL.md states override applies to BOTH direct dispatch AND RALF/orchestration paths"
+else
+  bad "AC18b: SKILL.md states override applies to BOTH direct dispatch AND RALF/orchestration paths"
+fi
+
+# 18c: `failed` status is NOT subject to the override — proves correctness around synthetic-on-crash.
+# Approximate: `failed` AND "NOT" (case-insensitive) co-occur in the override context.
+if grep -F -q "failed" "$SKILL" 2>/dev/null \
+   && grep -E -i -q "(NOT subject|not subject|still escalate)" "$SKILL" 2>/dev/null; then
+  ok "AC18c: SKILL.md states failed status is NOT subject to the outcome-on-fail:advance override"
+else
+  bad "AC18c: SKILL.md states failed status is NOT subject to the outcome-on-fail:advance override"
+fi
+
 TOTAL=$((PASS + FAIL))
 printf "\nTotal: %d  Pass: %d  Fail: %d\n" "$TOTAL" "$PASS" "$FAIL"
 

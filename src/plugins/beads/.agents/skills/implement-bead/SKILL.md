@@ -89,6 +89,10 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
    - `failed` (real or synthesized) → stamp `human`, append failure detail, close step-bead with summary; exit.
 2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, final derived gate, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same outcome rules above using the aggregate verdict, then close the step-bead and exit. The orchestration skill stamps per-iteration audit labels during the loop; this skill closes the step-bead at the end.
 
+## 9. Outcome-rule override metadata
+
+Before applying §8, read the step-bead labels (per §1) for `outcome-on-fail:advance` (step-bead-scoped, NOT source-bead-scoped). When present, invert §8's `complete + gate: fail` rule from "stamp `human`, close, escalate" to "close step-bead with summary, advance" — `gate: fail` is treated as the success signal for this step. Applies on BOTH the direct dispatch path AND the orchestration (RALF-aggregate) path; the override is a single metadata-driven label read, not a formula-identity branch. The `failed` status (synthetic-on-crash and per-agent runtime-field failures) is NOT subject to the override — those still escalate per §8. Default (label absent): §8 unchanged.
+
 ## Audit-label scope
 
 `worker-audit-<agent-name>[-iter<N>]` labels apply ONLY to dispatches of `tdd-red-team`, `tdd-green-team`, and `bug-diagnoser` (worker-only). Review, fresh-eyes, and adversarial subagents dispatched by orchestration skills are out-of-band and are explicitly excluded from the `worker-audit-` namespace; their audit trail (if any) is the orchestration skill's concern, not this skill's.
