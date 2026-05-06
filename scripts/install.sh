@@ -568,28 +568,41 @@ transform_gemini_agent_frontmatter() {
     # awk logic:
     # 1. track if we are inside the frontmatter (between first and second ---)
     # 2. inside frontmatter:
-    #    - skip skills:, color:, memory: lines
+    #    - skip skills:, color:, memory: lines and their indented blocks
     #    - rewrite tools: "Read, Grep" -> tools: [Read, Grep]
     # 3. outside frontmatter: pass through
-    awk '
-        BEGIN { count=0 }
-        /^---$/ { count++; print; next }
+    awk '\''
+        BEGIN { count=0; skipping=0 }
+        /^---$/ { 
+            count++; 
+            skipping=0; 
+            print; 
+            next 
+        }
         count == 1 {
-            # Strip Claude-only keys
-            if ($1 ~ /^(skills:|color:|memory:)$/) { next }
-            # Transform tools: String -> [Array]
-            if ($1 == "tools:") {
-                line = $0
-                sub(/^tools:[[:space:]]*/, "", line)
-                # If already starts with [, leave it be
-                if (line !~ /^\[/) {
-                    printf "tools: [%s]\n", line
+            if (skipping) {
+                if ($0 ~ /^[[:space:]]+/ || $0 ~ /^$/) { next }
+                skipping = 0
+            }
+
+            # Strip Claude-only keys and their blocks
+            if ($1 ~ /^(skills:|color:|memory:)$/) { 
+                skipping = 1
+                next 
+            }
+
+            # Transform tools: String -> [Array], but avoid block-style
+            if ($0 ~ /^tools:[[:space:]]*/) {
+                match($0, /^tools:[[:space:]]*/)
+                val = substr($0, RSTART + RLENGTH)
+                if (length(val) > 0 && val !~ /^\[/) {
+                    printf "tools: [%s]\n", val
                     next
                 }
             }
         }
         { print }
-    ' "$file" > "$tmp"
+    '\'' "$file" > "$tmp"
 
     mv "$tmp" "$file"
 }
