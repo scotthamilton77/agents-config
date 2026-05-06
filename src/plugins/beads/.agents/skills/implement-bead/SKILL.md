@@ -17,17 +17,19 @@ effort: high
 
 Metadata-driven dispatcher. One step-bead per invocation.
 
-## 1. Read step-bead and labels
+## 1. Resolve step-bead from source-bead-id
 
-1. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>`.
-2. Run `bd show <step-bead-id> --json | jq -r '.[0].parent'` to get `<mol-id>`.
-3. Derive `<source-bead-id>` from the molecule's `for-bead-<source-bead-id>` label (stamped by `start-bead` / `implement-bead` per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`): `bd label list <mol-id> | awk '/^for-bead-/{sub(/^for-bead-/,""); print; exit}'`.
+The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
+
+1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq -r '[.[] | select(.status != "closed")][0].id'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads.md`).
+2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r '[.[] | select(.status != "closed")][0].id'`.
+3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
 4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
 ## 2. Resolve execution context
 
 1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C <path> rev-parse --is-inside-work-tree`.
-2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). Read via `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
+2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority: `bd label list <source-bead-id> | awk '/^formula-/{sub(/^formula-/,""); print; exit}'`. On absent or ambiguous label, fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug`.
 3. Repo root: `dirname $(git -C <worktree> rev-parse --path-format=absolute --git-common-dir)`.
 4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 

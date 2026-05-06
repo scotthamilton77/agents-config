@@ -1,19 +1,19 @@
 # implement-bead
 
-Invoke the implement-bead skill for the given step-bead ID.
+Invoke the implement-bead skill for the given source bead.
 
 ## Invocation
 
 ```
-/implement-bead <step-bead-id>
+/implement-bead <source-bead-id>
 ```
 
-`$ARGUMENTS` receives the step-bead ID.
+`$ARGUMENTS` receives the source bead ID (the original feature/bug bead, e.g. `7bk.19.3`) — the same id the shell driver (`scripts/bead-driver-test.sh`) passes when polling `bd ready --label implementation-ready`. The skill internally resolves the molecule (via the `for-bead-<source-bead-id>` linkage label) and the current step-bead (via `bd mol current`).
 
 ## Behavior
 
-1. Parse `$ARGUMENTS` as the step-bead ID.
-2. Invoke the `implement-bead` skill, which dispatches a worker (or hands off to an orchestration skill) and exits.
+1. Parse `$ARGUMENTS` as the source bead ID.
+2. Invoke the `implement-bead` skill, which resolves the active molecule and current step, dispatches a worker (or hands off to an orchestration skill), and exits.
 
 ## Notes
 
