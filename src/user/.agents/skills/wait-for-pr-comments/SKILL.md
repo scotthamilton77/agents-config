@@ -545,7 +545,7 @@ authoritative.** Do not infer mode from invocation context.
 | `--mode` value | Trigger source | Behavior on ESCALATE |
 |---|---|---|
 | `interactive` (default) | Operator in chat | Pause Phase 3.5; emit ONE batched prompt listing every ESCALATE item with rationale + a summary of FIX items as a sanity check. The user resolves each ESCALATE → `FIX-with-direction` / `SKIP-with-rationale` / `DEFER`, AND may re-classify any FIX → SKIP/ESCALATE. Reclassifications flow into the inventory before Phase 4. |
-| `autonomous` | `run-queue`, formula step, scheduled trigger | Apply `bd label add <bead-id> human` (NOT `bd human <id>` — see Red Flags), then `bd update <bead-id> --append-notes "<batched-escalate-list>"` (`--append-notes` appends; `--notes` would REPLACE existing notes). Each item formatted as: `ESCALATE: <comment_id> (@<author>): <body_excerpt> — rationale: <rationale>`. Mark each ESCALATE item `escalation_filed=true` in the inventory. Continue to Phase 4 with FIX items only. |
+| `autonomous` | `run-queue`, formula step, scheduled trigger | Apply `bd label add <bead-id> human` (NOT `bd human <id>` — see Red Flags), then `bd update <bead-id> --append-notes "<batched-escalate-list>"` (see beads rules §Notes vs Comments). Each item formatted as: `ESCALATE: <comment_id> (@<author>): <body_excerpt> — rationale: <rationale>`. Mark each ESCALATE item `escalation_filed=true` in the inventory. Continue to Phase 4 with FIX items only. |
 
 **Hard guard at Phase 1**: `--mode autonomous` requires `--bead-id <id>`
 (non-empty). Absence → fatal startup error

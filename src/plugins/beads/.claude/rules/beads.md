@@ -255,3 +255,17 @@ Beads and superpowers are partners with distinct roles. Do not confuse them.
 **Rule:** off-limits skills compete with the bead lifecycle. On a bead, use
 `start-bead` → `brainstorm-bead` → `implement-bead` instead. Off-limits skills
 remain available for non-bead work.
+
+---
+
+## Notes vs Comments: bd update semantics
+
+Three commands serve distinct roles — mixing them up causes lost context.
+
+| Command | Semantics | When to use |
+|---|---|---|
+| `bd update <id> --append-notes "..."` | Appends to existing notes | Step output, escalation context, cumulative status, run breadcrumbs |
+| `bd update <id> --notes "..."` | **Replaces** existing notes entirely | Initial bead creation, or `brainstorm-bead` spec writes — intentional overwrites only |
+| `bd comments add <id> "..."` | Creates a separate, non-destructive comment | Lifecycle audit breadcrumbs, molecule→bead tracing, events that should not pollute notes |
+
+**Footgun alert**: `--notes` is a destructive overwrite. If you mean "add to this", use `--append-notes`.
