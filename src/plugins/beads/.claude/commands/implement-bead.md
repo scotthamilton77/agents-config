@@ -18,6 +18,7 @@ Invoke the implement-bead skill for the given source bead.
 ## Notes
 
 - Thin wrapper. All dispatch logic lives in the implement-bead skill.
+- On first invocation for a source bead (no molecule yet), implement-bead pours the correct formula (`implement-feature` for feature/task/chore, `fix-bug` for bug) and stamps the `for-bead-<source-bead-id>` label before proceeding.
 - Workers are dispatched via the `Agent` tool (`subagent_type`) from the top-level session — NOT via `claude -p` re-entry. Subagents cannot spawn subagents.
 - Loop ownership lives in the `ralf-*` orchestration skills (`ralf-implement`, `ralf-review`), not in this skill or command. When `ralf:required` is set, implement-bead invokes the orchestration skill in-session; the orchestration skill drives convergence and per-stage iteration tracking, persisting iteration state via step-bead notes.
 - Per-stage iteration counts (`-iter<N>` suffixes on audit labels and report paths) are managed by the orchestration skill, not by this command.
