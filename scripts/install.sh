@@ -563,7 +563,7 @@ stage_content_from_dir() {
 transform_gemini_agent_frontmatter() {
     local file="$1"
     local tmp
-    tmp="$(mktemp)"
+    tmp="$(mktemp -t gemini-agent.XXXXXX)"
 
     # awk logic:
     # 1. track if we are inside the frontmatter (between first and second ---)
@@ -1099,7 +1099,7 @@ sync_settings_file() {
                 elif confirm "Apply merged $target_name?"; then
                     backup "$dest_file"
                     local tmp
-                    tmp="$(mktemp)"
+                    tmp="$(mktemp -t gemini-settings.XXXXXX)"
                     printf '%s\n' "$merged_json" | jq . > "$tmp"
                     mv "$tmp" "$dest_file"
                     vok "Merged $target_name [$label]"
