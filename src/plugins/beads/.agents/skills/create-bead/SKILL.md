@@ -97,8 +97,9 @@ tangential) → orphan + `discovered-from`.
 
 If the user gave requirements, constraints, or acceptance criteria, add them:
 ```bash
+# Note: bd has no --append-acceptance; a repeat create will replace AC intentionally.
 bd update <id> --acceptance="<preliminary criteria>"
-bd update <id> --notes="<any additional context>"
+bd update <id> --append-notes="<any additional context>"
 ```
 
 If the bead is a dependency of other work:

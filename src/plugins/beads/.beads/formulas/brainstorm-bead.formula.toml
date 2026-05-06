@@ -149,6 +149,16 @@ Write the spec as a structured document covering:
 - Open questions: anything still unresolved (if any)
 
 Write back to the bead:
+
+⚠️ Before writing: `--notes=` REPLACES the entire notes field, and
+`--acceptance=` REPLACES the entire acceptance-criteria field. Inspect
+the current state with `bd show {{bead-id}}` first. If the bead has
+prior investigation context (notes from `create-bead`, user discussion,
+or earlier brainstorming), you MUST either:
+  (a) merge the prior content into your spec document before writing, or
+  (b) preserve it via `bd comments add {{bead-id}} "..."` BEFORE running
+      the update commands below.
+
   bd update {{bead-id}} --acceptance="<one line per acceptance criterion>"
   bd update {{bead-id}} --notes="<full spec document>"
 
