@@ -1,9 +1,9 @@
 # @file Inclusion Marker Consistency Analysis
 
 ## Summary
-This analysis inventories how instruction-file inclusion currently works across Claude Code, Codex CLI, Gemini CLI, and OpenCode in this repository. It evaluates three forward paths (status quo, full flattening, hybrid canonical startup contract), then recommends a path that improves consistency without introducing unnecessary installer complexity or runtime ambiguity.
+This analysis inventories how instruction-file inclusion currently works across Claude Code, Codex CLI, Gemini CLI, and OpenCode in this repository. It evaluates three forward paths (status quo, full flattening, hybrid canonical startup contract), then recommends a path that maximizes deterministic behavior and reduces the testing surface across all platforms.
 
-Recommendation: adopt a hybrid canonical startup contract as the cross-tool standard, keep OpenCode flattening where required, and avoid broad conversion to install-time flattening for all tools.
+Recommendation: adopt **Option B (Universal Install-Time Flattening)**. This approach treats instruction files as source code and the installer as a compiler, ensuring that every agent receives a fully resolved, flat context regardless of tool-native include capabilities.
 
 ## Scope and Method
 Source of truth is the repository templates and installer behavior:
@@ -30,7 +30,7 @@ Pattern:
   - `@CLAUDE-EXTENSIONS.md`
 
 Interpretation:
-- This is a runtime include-style instruction pattern. Whether resolution is tool-native vs prompt-level behavior is external to this repo; in-repo it is authored as a declarative include instruction.
+- This is a runtime include-style instruction pattern. It relies on the tool's runtime behavior to resolve these references.
 
 ### Gemini CLI
 File: `src/user/.gemini/GEMINI.md.template`
@@ -43,21 +43,17 @@ Pattern:
   - `@GEMINI-EXTENSIONS.md`
 
 Interpretation:
-- Same mechanism class as Claude template authoring: include-style instruction text at runtime.
+- Same mechanism class as Claude: runtime include directives.
 
 ### Codex CLI
 File: `src/user/.codex/AGENTS.md.template`
 
 Pattern:
 - No `@file` markers.
-- Explicit startup contract requiring reads from absolute `~/.codex/` paths before any action:
-  - `~/.codex/AGENT-PERSONA.md`
-  - `~/.codex/USER-PERSONA.md`
-  - `~/.codex/INSTRUCTIONS.md`
-  - `~/.codex/CODEX-EXTENSIONS.md`
+- Explicit startup contract requiring reads from absolute `~/.codex/` paths before any action.
 
 Interpretation:
-- This is explicit behavioral contract text (honor-system instruction), not token include syntax.
+- This is an "honor system" behavioral contract. It assumes the agent is disciplined enough to follow instructions to read other files.
 
 ### OpenCode
 Files:
@@ -66,168 +62,87 @@ Files:
 - `scripts/install.sh` (`flatten_agents_md`)
 
 Pattern:
-- Source template uses installer markers, not runtime includes:
+- Source template uses installer markers:
   - `<!-- DYNAMIC-INCLUDE: path -->`
   - `<!-- DYNAMIC-INCLUDE-RULES: rule1,... -->`
-- Installer resolves these markers at install time in `flatten_agents_md` and writes a single flat AGENTS file.
-- OpenCode extension notes explicitly state OpenCode reads raw text and does not follow `@` includes.
+- Installer resolves these at install time to produce a single flat file.
 
 Interpretation:
-- This is deterministic install-time generation (token replacement/flattening), not runtime include resolution.
+- This is deterministic install-time generation.
 
 ## Mechanism Classification (Resolved vs Assumed)
 
 ### Mechanism Types
 1. Runtime include-style instruction text (`@file`)
-- Present in Claude and Gemini templates.
-- Authored as include directives but relies on tool runtime behavior.
+- Present in Claude and Gemini. Relies on tool runtime.
 
 2. Explicit startup behavioral contract
-- Present in Codex template.
-- No include token semantics; explicit required read order and paths.
+- Present in Codex. Relies on agent discipline.
 
 3. Install-time flattening/token replacement
-- Present in OpenCode template + installer.
-- Fully resolved before runtime; produces static file content.
+- Present in OpenCode. Resolved by repository code (`install.sh`).
 
 ### Resolved vs Assumed in this repo
-- Resolved by repository code:
-  - OpenCode dynamic markers are resolved by installer (`scripts/install.sh`).
-- Assumed/instructional at runtime:
-  - Claude/Gemini `@file` behavior (as authored in templates).
-  - Codex startup read contract compliance.
+- **Resolved**: OpenCode dynamic markers.
+- **Assumed**: Claude/Gemini `@file` behavior and Codex startup contract compliance.
 
 ## Option Analysis
 
 ### Option A: Keep Status Quo
 Description:
-- Keep mixed approaches as-is: `@file` for Claude/Gemini, explicit startup contract for Codex, flattening for OpenCode.
+- Keep mixed approaches as-is.
 
 Benefits:
 - Zero migration cost.
-- Preserves existing per-tool idioms.
-- Avoids touching installer logic beyond OpenCode path.
+- Preserves tool-specific idioms.
 
 Risks/Tradeoffs:
-- Cross-tool semantics remain heterogeneous.
-- Documentation burden stays high (contributors must remember mechanism differences).
-- Harder to reason about behavior equivalence across tools.
+- Heterogeneous semantics.
+- Higher testing surface (must verify resolution vs contract compliance).
 
-Migration impact:
-- None.
-
-Compatibility risk:
-- None immediate.
-
-Rollback posture:
-- Not applicable (no change).
-
-### Option B: Standardize on Install-Time Flattening for All Tools
+### Option B: Standardize on Install-Time Flattening for All Tools (Recommended)
 Description:
-- Move Claude, Codex, and Gemini templates toward token markers and generate fully flattened runtime files for all tools via installer.
+- Convert Claude, Codex, and Gemini templates to use `<!-- DYNAMIC-INCLUDE -->` markers.
+- Update `install.sh` to flatten `AGENTS.md` for all tools during installation.
 
 Benefits:
-- Deterministic installed instruction files.
-- Single mechanism class for content composition.
-- Reduces ambiguity between runtime include and behavioral contracts.
+- **Deterministic Context**: Agents receive fully resolved text; no "resolution" required at runtime.
+- **Reduced Testing Surface**: One delivery mechanism to verify instead of four.
+- **Eliminates Honor System**: Removes the risk of agents failing to follow startup read instructions.
+- **Scalability**: New tools can be added by simply providing a marker-based template.
 
 Risks/Tradeoffs:
-- Higher installer complexity and maintenance burden.
-- Loses readability of human-authored top-level templates (more marker-driven wiring).
-- Potential friction with tool ecosystems that already support preferred native patterns.
-- Broader migration blast radius and higher regressions risk.
+- **Installer Complexity**: Requires moving `flatten_agents_md` from a tool-specific phase to a universal phase in `install.sh`.
+- **Read-only Artifacts**: The installed `AGENTS.md` files become generated blobs, making them harder for humans to scan compared to a list of includes.
 
 Migration impact:
-- Update template format conventions for Claude/Gemini/Codex.
-- Expand `install.sh` flatten logic beyond OpenCode path.
-- Update docs and contributor guidance.
+- Update templates for Claude/Gemini/Codex.
+- Modify `install.sh` to run flattening for all tools.
 
-Compatibility risk:
-- Medium. Requires validating generated outputs across all tool installs.
-
-Rollback posture:
-- Revert installer/template changes; restore prior templates. Straightforward but broad.
-
-### Option C: Hybrid Canonical Startup Contract (Recommended)
+### Option C: Hybrid Canonical Startup Contract
 Description:
-- Standardize the logical startup contract across tools (same required artifacts, same sequencing intent), but keep tool-appropriate delivery:
-  - OpenCode keeps install-time flattening (required by platform behavior).
-  - Codex keeps explicit startup contract style.
-  - Claude/Gemini retain `@file` authoring but align wording and referenced artifact set to the same canonical contract.
+- Standardize the *logical* contract (what to read and when) but keep tool-specific *delivery* (`@file` vs contract text).
 
 Benefits:
-- Improves behavioral consistency without forcing one technical mechanism everywhere.
-- Minimizes installer churn and migration risk.
-- Preserves each tool’s practical authoring model.
+- Improves consistency with minimal installer churn.
 
 Risks/Tradeoffs:
-- Mechanisms still differ technically.
-- Requires discipline to keep contract text aligned across templates.
-
-Migration impact:
-- Moderate template edits; minimal installer changes.
-- Add a small contract checklist in docs to prevent drift.
-
-Compatibility risk:
-- Low-to-medium; mostly textual/template alignment.
-
-Rollback posture:
-- Easy rollback by reverting template wording-only changes.
+- Technical mechanisms still differ.
+- Does not address the "honor system" weakness in Codex.
+- Testing permutations remain high (still 4 different ways to fail delivery).
 
 ## Recommendation
-Adopt Option C (Hybrid Canonical Startup Contract).
+Adopt **Option B (Universal Install-Time Flattening)**.
 
 Rationale:
-- It raises consistency where it matters (behavioral contract) while respecting unavoidable platform differences.
-- It avoids unnecessary expansion of installer flattening into tools that do not require it.
-- It keeps OpenCode’s deterministic flattening where technically required.
-
-## Proposed Canonical Contract Elements
-Use the same conceptual startup requirements across all top-level instruction templates:
-- Required artifacts to load:
-  - agent persona
-  - user persona
-  - shared instructions
-  - tool-specific extensions
-- Mandatory timing: before responding/acting.
-- Explicit blocker behavior when required artifacts are missing.
-
-Delivery per tool can remain tool-specific (`@file`, explicit absolute paths, or install-time flattening).
+- It provides the highest degree of behavioral predictability. By inlining all instructions at install time, we ensure the agent's primary context is complete and correct from the first turn.
+- It simplifies the repository's long-term maintenance by unifying the delivery mechanism, treating the installer as a compiler for our agent configurations.
 
 ## Migration Plan
-1. Define canonical startup contract language in one shared reference doc.
-2. Align these templates to that contract:
-- `src/user/.claude/AGENTS.md.template`
-- `src/user/.gemini/GEMINI.md.template`
-- `src/user/.codex/AGENTS.md.template`
-3. Keep OpenCode flattening model unchanged; only align semantics in source markers/content where needed:
-- `src/user/.opencode/AGENTS.md.template`
-- `src/user/.opencode/OPENCODE-EXTENSIONS.md.template`
-4. Add a lightweight verification check in installer smoke scripts to detect startup-contract drift.
-
-## Breaking Changes and Compatibility
-Expected breaking change level: low.
-- No required change to OpenCode flattening mechanism.
-- No required cross-tool tokenization migration.
-- Primary change is textual/contract alignment in templates.
-
-Potential compatibility concern:
-- If contract wording becomes more strict for a specific tool, behavior can shift in edge cases; validate with smoke checks after install.
-
-## Rollback Posture
-Rollback is low risk:
-- Revert template edits in one commit.
-- Re-run installer to restore prior generated outputs.
-- No data migration or schema transitions involved.
-
-## Follow-on Beads
-If recommendation is adopted:
-- Bead A: Canonical startup-contract wording and template alignment pass.
-- Bead B: Smoke-check enhancement to detect startup-contract drift across tool templates.
-- Bead C: Optional doc pass describing mechanism classes (runtime include, explicit contract, install-time flattening).
-
-If recommendation is rejected:
-- Close this bead as no-op with documented rationale and no further implementation beads.
+1. **Bead A**: Modify `scripts/install.sh` to make `flatten_agents_md` a universal installation phase rather than an OpenCode-specific one.
+2. **Bead B**: Update `src/user/.claude/AGENTS.md.template`, `src/user/.gemini/GEMINI.md.template`, and `src/user/.codex/AGENTS.md.template` to use `<!-- DYNAMIC-INCLUDE -->` markers.
+3. **Bead C**: Remove the explicit startup "honor system" instructions from the Codex template, as they are superseded by the flattened content.
+4. **Bead D**: Update smoke tests to verify the presence of inlined content in the installed files across all tools.
 
 ## Conclusion
-Token replacement/flattening is the correct mechanism for OpenCode, but it is not automatically the best universal mechanism for every tool in this repo. Standardizing the startup contract semantics while preserving tool-appropriate implementation yields the best consistency-to-risk ratio.
+Universal flattening is the superior architectural choice. It moves complexity into the installer (where it can be tested once) and out of the agent's runtime (where it manifests as flaky behavior or context loss).
