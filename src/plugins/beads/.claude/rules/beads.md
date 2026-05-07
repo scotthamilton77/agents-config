@@ -181,7 +181,9 @@ After this:
   `$HUMAN_ID`.
 - `bd ready` filters the source bead out (open blocker).
 - `bd human list` shows `$HUMAN_ID` for human triage.
-- Worktree and `worktree-path-*` molecule label preserved.
+- Worktree and `worktree-path-*` molecule label preserved IF PRESENT
+  at the point of escalation. Preflight-stage escalations may have no
+  worktree yet (per §5.6's preflight carve-out) — that is fine.
 - Reverting source `in_progress → open` does NOT revert ancestor epics
   (I1 claim-walk is upward-only; child status changes don't propagate
   up).
