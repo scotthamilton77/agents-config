@@ -120,7 +120,7 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
 | `for-bead-<bead-id>` | `start-bead` when it creates a brainstorm wisp, and `implement-bead` when it creates an implementation molecule | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
-| `human` | Any agent via `bd label add <id> human` | Needs human attention. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
+| `human` | Any agent via `bd label add <id> human`, applied **only to escalation beads or `[h]` follow-up beads** — never to source beads | **Visibility tag for `bd human list`. NOT a gate on `bd ready`** — only blocking deps gate readiness. Source beads pause via a blocking dep on a `human`-labeled escalation bead per the Human-Escalation Pattern (HEP) below. Resolution uses `bd human respond` / `bd human dismiss` (or `verified-by-human` + `bd close` for `[h]` follow-ups), never bare label removal. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
 | `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Beads formula-step dispatch signal. Implement stages pass target/spec/DoD/context into `ralf-implement`; review stages use it only when their specific formula step explicitly reads the label and passes target/criteria/context into `ralf-review`. |
 | `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional max-cycle override that the formula reads and passes to the invoked RALF skill. Setters MUST remove existing `ralf:cycles=` labels before adding a replacement; `bd label remove` accepts exact labels, so list matching labels first rather than passing a wildcard. |
 
@@ -131,6 +131,97 @@ bd label remove <id> <label>
 bd label list <id>
 bd ready --label <label>
 ```
+
+---
+
+## Human-Escalation Pattern (HEP)
+
+When an agent stage cannot proceed without human input, it must NOT
+stamp `human` on the source bead. The `human` label is a *visibility
+tag* (it surfaces beads in `bd human list`); it is **not** a gate on
+`bd ready`. The only mechanism that excludes a bead from the ready
+queue is an open blocking dependency. The pause is therefore modeled
+as a dep on a freshly-created escalation bead, not as a label on the
+source.
+
+See `docs/specs/bead-pipeline-architecture.md` §5.6 for the full
+protocol; what follows is the operational summary every agent needs.
+
+> **Rollout status (as of this rule).** The `resolve-human-bead` skill
+> and `/resolve-human-bead` slash command referenced below are
+> implementation-ready (bead `agents-config-7bk.13`) but not yet present
+> in the plugin tree. Two upstream-producer retrofits are also pending:
+> `merge-or-handoff` formula step (`agents-config-7bk.13.2`) and
+> `implement-bead` skill escalation path (`agents-config-7bk.13.3`).
+> Until they land, resolve HEP escalations using the documented
+> primitives directly: `bd human respond` / `bd human dismiss` for
+> Scenarios A–E, `bd label add verified-by-human` + `bd close` for `[h]`
+> follow-up Scenario F, and `/merge-and-cleanup` for merge-gate
+> Scenario G.
+
+> **Doc duplication note.** The escalation bash snippet below is
+> byte-identical with §5.6's; this is the lockstep boundary. **Any
+> change to the snippet here MUST land in §5.6 in the same commit, and
+> vice versa.** The surrounding prose may be condensed in this file as
+> an operational summary — divergence in prose is acceptable, divergence
+> in the snippet is a contract violation.
+
+**Escalation (when blocked):**
+
+```bash
+HUMAN_ID=$(bd create \
+    --title "Human input needed: <one-line summary>" \
+    --type task \
+    --priority "<inherited from source bead>" \
+    --description "<context: what the stage was doing, what is blocked, what is needed>" \
+    --json | jq -r '.id')
+bd label add "$HUMAN_ID" human
+bd update "$HUMAN_ID" --append-notes \
+    "Source: <source-bead-id>
+Step-bead: <step-bead-id>
+Molecule: <mol-id>
+Worktree: <worktree-path>
+Scenario hint: <one of: spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
+bd dep add "<source-bead-id>" "$HUMAN_ID"
+bd update "<source-bead-id>" --status open
+# Exit cleanly (zero exit code; stage is paused, not failed).
+```
+
+After this:
+
+- Source bead does NOT carry `human`; it has an open dep blocker on
+  `$HUMAN_ID`.
+- `bd ready` filters the source bead out (open blocker).
+- `bd human list` shows `$HUMAN_ID` for human triage.
+- Worktree and `worktree-path-*` molecule label preserved IF PRESENT
+  at the point of escalation. Preflight-stage escalations may have no
+  worktree yet (per §5.6's preflight carve-out) — that is fine.
+- Reverting source `in_progress → open` does NOT revert ancestor epics
+  (I1 claim-walk is upward-only; child status changes don't propagate
+  up).
+
+**Resolution:** never bare-remove the `human` label. Use
+`bd human respond <human-id> --response "..."` for scenarios where
+work should resume, or `bd human dismiss <human-id>` for abandonment.
+The skill `resolve-human-bead` (slash command `/resolve-human-bead`)
+walks the human through scenario diagnosis and applies the correct
+primitive. The escalation closes; the dep is satisfied; the source
+bead reappears in `bd ready` on the next poll cycle.
+
+**Special case: `[h]` follow-up beads** (architecture doc §4.3) use a
+DIFFERENT mechanism — parent-child + I2 close-walk + `verified-by-human`
+label — and gate the source bead's *closure* rather than its *readiness*.
+Do NOT use the HEP escalation procedure for shift-right verification
+beads; they have their own distinct lifecycle.
+
+**Special case: merge-gate hand-off** (`[Merge gate] <source-title>`-titled
+escalation bead carrying `human` + `merge-ready`, created by `merge-or-handoff`'s
+hand-off path). Resolution is `/merge-and-cleanup` on the source bead, NOT
+`bd human respond/dismiss` on the escalation. `resolve-human-bead` detects
+the `merge-ready` discriminator and routes accordingly.
+
+`resolve-human-bead` handles all three classes (HEP escalation, `[h]`
+follow-up, merge-gate hand-off) via class-detection.
 
 ---
 
