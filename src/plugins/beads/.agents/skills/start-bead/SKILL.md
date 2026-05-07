@@ -193,9 +193,11 @@ visited bead IDs). Do NOT modify any other bead state.
 
 ### Step 2: Check for Existing Molecule
 
-Before doing anything else, check if an active molecule already exists for
-this bead. Use the `for-bead-<bead-id>` label (stamped by Route C on wisp
-and by `implement-bead` on pour) and query with `--json`:
+Once Step 1.5 has cleared (the bead is open, or Route Z has forwarded
+to an open Y), check if an active molecule already exists for this bead
+before evaluating any of Routes A/B/C. Use the `for-bead-<bead-id>`
+label (stamped by Route C on wisp and by `implement-bead` on pour) and
+query with `--json`:
 
 ```bash
 bd list --label for-bead-<bead-id> --type molecule --json \
