@@ -120,7 +120,7 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
 | `for-bead-<bead-id>` | `start-bead` when it creates a brainstorm wisp, and `implement-bead` when it creates an implementation molecule | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
-| `human` | Any agent via `bd label add <id> human`, applied **only to escalation beads or `[h]` follow-up beads** — never to source beads | **Visibility tag for `bd human list`. NOT a gate on `bd ready`** (only blocking deps gate readiness; this is the original NHEP-motivating bug). Source beads pause via a blocking dep on a `human`-labeled escalation bead per the Human-Escalation Pattern (NHEP) below. Resolution uses `bd human respond` / `bd human dismiss` (or `verified-by-human` + `bd close` for `[h]` follow-ups), never bare label removal. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
+| `human` | Any agent via `bd label add <id> human`, applied **only to escalation beads or `[h]` follow-up beads** — never to source beads | **Visibility tag for `bd human list`. NOT a gate on `bd ready`** (only blocking deps gate readiness; this is the original HEP-motivating bug). Source beads pause via a blocking dep on a `human`-labeled escalation bead per the Human-Escalation Pattern (HEP) below. Resolution uses `bd human respond` / `bd human dismiss` (or `verified-by-human` + `bd close` for `[h]` follow-ups), never bare label removal. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
 | `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Beads formula-step dispatch signal. Implement stages pass target/spec/DoD/context into `ralf-implement`; review stages use it only when their specific formula step explicitly reads the label and passes target/criteria/context into `ralf-review`. |
 | `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional max-cycle override that the formula reads and passes to the invoked RALF skill. Setters MUST remove existing `ralf:cycles=` labels before adding a replacement; `bd label remove` accepts exact labels, so list matching labels first rather than passing a wildcard. |
 
@@ -134,7 +134,7 @@ bd ready --label <label>
 
 ---
 
-## Human-Escalation Pattern (NHEP)
+## Human-Escalation Pattern (HEP)
 
 When an agent stage cannot proceed without human input, it must NOT
 stamp `human` on the source bead. The `human` label is a *visibility
@@ -199,7 +199,7 @@ bead reappears in `bd ready` on the next poll cycle.
 **Special case: `[h]` follow-up beads** (architecture doc §4.3) use a
 DIFFERENT mechanism — parent-child + I2 close-walk + `verified-by-human`
 label — and gate the source bead's *closure* rather than its *readiness*.
-Do NOT use the NHEP escalation procedure for shift-right verification
+Do NOT use the HEP escalation procedure for shift-right verification
 beads; they have their own distinct lifecycle.
 
 **Special case: merge-gate hand-off** (`[Merge gate] <source-title>`-titled
@@ -208,7 +208,7 @@ hand-off path). Resolution is `/merge-and-cleanup` on the source bead, NOT
 `bd human respond/dismiss` on the escalation. `resolve-human-bead` detects
 the `merge-ready` discriminator and routes accordingly.
 
-`resolve-human-bead` handles all three classes (NHEP escalation, `[h]`
+`resolve-human-bead` handles all three classes (HEP escalation, `[h]`
 follow-up, merge-gate hand-off) via class-detection.
 
 ---
