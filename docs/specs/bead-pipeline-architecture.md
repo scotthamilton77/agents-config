@@ -307,7 +307,7 @@ Two distinct merge-related beads exist post-hand-off — they have different rol
 - **Hand-off escalation bead** (created at hand-off time only): blocking dep on source; gates source's READINESS; carries `human` + `merge-ready`; surfaces in `bd human list`.
 - **`merge-{source-id}` child bead** (created at brainstorm-bead.finalize per §4.3, regardless of merge path): parent-child of source; gates source's CLOSURE via I2 close-walk; carries `merge-gate` (NOT `human`); does not surface in `bd human list`.
 
-**Source-bead status revert is HEP, not an I1 exception.** Under the prior architecture this looked like an I1 violation; under HEP it is the standard escalation shape. I1's claim-walk is upward-only and does not propagate child status reverts back up the parent chain. Re-pickup by an automated agent is prevented by the open dep blocker on the hand-off escalation bead (which `bd ready` filters out via blocker-aware filtering), not by status alone.
+**Source-bead status revert.** The `in_progress → open` transition signals that this bead is paused and re-evaluable. I1's claim-walk is upward-only and does not propagate child status reverts back up the parent chain — ancestor epics retain their `in_progress` status. Re-pickup by an automated agent is prevented by the open dep blocker on the hand-off escalation bead (which `bd ready` filters out via blocker-aware filtering), not by status alone.
 
 **Definition of Done.** Appropriate path executed; if auto-merge path, PR merged + branches deleted + worktree torn down + parent-chain closed. If hand-off path, source bead status `open` + open `bd dep` blocker on a `[Merge gate]`-titled escalation bead carrying labels `human` + `merge-ready`; source bead does NOT carry `human` (single-bead invariant).
 
@@ -586,11 +586,11 @@ After this transaction:
 - **Escalation bead `$HUMAN_ID`** — status `open`, label `human`, no parent, no children. Visible in `bd human list` for triage.
 - **`bd ready`** — filters the source bead out (open blocker); shows the escalation bead (no blockers, but having `human` does not push it onto the implementation queue, since `bd ready --label implementation-ready` is the queue's filter).
 
-**Single-bead `human` invariant.** Only the escalation bead carries `human`. The source bead never carries `human`. The step-bead never carries `human`. (This is the property b416 was originally trying to enforce via a refusal gate; under HEP the property is structural rather than enforced.)
+**Single-bead `human` invariant.** Only the escalation bead carries `human`. The source bead never carries `human`. The step-bead never carries `human`. The invariant is structural: the escalation procedure is the only code path that adds the label.
 
-**Source bead status revert.** The transition `in_progress → open` is a deliberate signal that this bead is paused and re-evaluable. The I1 claim-walk invariant is upward-only (claim walks UP from child to ancestors); reverting a child does NOT revert ancestor epics. Ancestor epics retain their `in_progress` status — they remain "started," and any other in-progress children are still active.
+**Source bead status revert.** The transition `in_progress → open` signals that this bead is paused and re-evaluable. Ancestor epics retain their `in_progress` status — they remain "started," and any other in-progress children are still active.
 
-**Escalation bead lifecycle (no I1 claim-walk).** The escalation bead has no parent. It is created with status `open` (the `bd create` default) and stays `open` until `bd human respond` or `bd human dismiss` closes it. No I1 claim-walk applies because there is no ancestor chain to walk. The `human` label surfaces it in `bd human list` for human triage; a human (not an automated agent) is the intended actor.
+**Escalation bead lifecycle.** The escalation bead has no parent. It is created with status `open` (the `bd create` default) and stays `open` until `bd human respond` or `bd human dismiss` closes it. The `human` label surfaces it in `bd human list` for human triage; a human (not an automated agent) is the intended actor.
 
 **Worktree fate across the pause.** Worktree preserved if one exists at the point of escalation. Preflight-stage escalations may have no worktree yet (preflight runs before worktree creation in some flows) — that is fine; no worktree means nothing to preserve. The `worktree-path-*` label on the molecule, if present, is preserved alongside the worktree itself. The human may need to inspect uncommitted state, run failing tests interactively, or audit RALF-IT intermediate output.
 
