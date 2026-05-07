@@ -56,6 +56,8 @@ Stages are referenced by role name in all implementation surfaces (labels, formu
 
 The execution sequence for feature-class beads is: `preflight` → `red-tests` → `green-loop` → `quality-sweep` → `verify-ac` → `create-pr` → `review-cycle` → `merge-or-handoff`. Bug-class beads insert a `diagnose` stage between `preflight` and `red-tests`.
 
+**NHEP forward reference.** Several stages below mention the **NHEP (Human-Escalation Pattern)** when they cannot proceed without human input. NHEP is fully defined in §5.6; in brief: the stage creates a separate `human`-labeled escalation bead, adds a `bd dep` blocker from the source bead to the escalation bead, and reverts the source bead to status `open`. The source bead never carries `human` itself — the label is a visibility tag for `bd human list`, not a gate on `bd ready`. See §5.6 for the full procedure, resolution table (Scenarios A–G), and class taxonomy.
+
 ### preflight
 
 **Purpose.** Spec validation, formula selection, worktree creation. A fresh-eyes adversarial check on the implementation-ready bead — not a redo of brainstorming, but a defense-in-depth pass before committing any worktree resources.
