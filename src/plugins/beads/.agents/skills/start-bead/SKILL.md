@@ -161,6 +161,12 @@ strictly dominates: it detects cycles AND naturally bounds depth (chain
 length cannot exceed the number of distinct beads in the
 `produced-bead-*` graph).
 
+Concretely the agent maintains TWO views over the same data: a
+membership-style **visited-set** (used for the cycle check in invariant
+2) and an **ordered list** in chain-traversal order (used to render the
+`<ordered-list>` field of the R8 audit comment). An ordered insertion
+list with a uniqueness check satisfies both views with no extra state.
+
 The visited-set is agent-local per-invocation state; it is not
 persisted to bead state.
 
