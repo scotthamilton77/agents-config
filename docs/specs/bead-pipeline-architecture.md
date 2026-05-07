@@ -661,6 +661,20 @@ The `resolve-human-bead` skill detects which class a target bead belongs to and 
 
 > **Doc duplication note.** This HEP description is intentionally duplicated in `src/plugins/beads/.claude/rules/beads.md` ("Human-Escalation Pattern (HEP)" section) — that file carries the operational summary every agent needs, while this section (§5.6) is the architecture-of-record. **Any change here MUST land in `beads.md` in the same commit, and vice versa.** Drift between the two surfaces causes silent contract violations.
 
+#### Rollout status
+
+The architecture in this section is target state. As of this commit, the runtime surfaces below still implement the prior `human`-on-source-bead contract; this gap is staged work, not unspecified behavior:
+
+| Open bead | Surface | Gap |
+|---|---|---|
+| `agents-config-7bk.13.2` | `merge-or-handoff` step in `implement-feature.formula.toml`, `fix-bug.formula.toml`, `docs-only.formula.toml` | Hand-off path stamps `human` + `merge-ready` directly on the source bead instead of creating a `[Merge gate]` escalation bead with a dep blocker. |
+| `agents-config-7bk.13.3` | `implement-bead` skill (`SKILL.md`) — and likely `start-bead` / `run-queue` if their orchestration creates escalations directly | Escalation path labels both source and step bead with `human` instead of creating a single escalation bead with a dep blocker. |
+| `agents-config-7bk.13` | `resolve-human-bead` skill + `/resolve-human-bead` slash command | Skill and slash command referenced throughout this document and `beads.md`, but not yet present in the plugin tree. Implementation-ready (`brainstormed` + `implementation-ready` + `ralf:required`); awaits run-queue pickup. |
+
+Until the retrofits land, agents resolving HEP escalations should fall back to the documented primitives directly: `bd human respond` / `bd human dismiss` (Scenarios A–E), `bd label add verified-by-human` + `bd close` for `[h]` follow-up Scenario F, and `/merge-and-cleanup` for merge-gate Scenario G. Any source bead stamped with `human` under the prior contract should be treated as locally inconsistent and resolved by hand using those primitives.
+
+Sequencing: `agents-config-7bk.13.2` and `agents-config-7bk.13.3` land in parallel (independent file scopes — formula TOML vs. skill markdown). `agents-config-7bk.13` lands after at least one upstream producer is live, so the resolver's class-detection branches have a real escalation to round-trip against during integration testing. `agents-config-ffxh` (audit-trail closure for the `merge-and-cleanup` gate-step) follows `agents-config-7bk.13` per its own dependency graph.
+
 ### 5.7 Severity vocabulary
 
 All reviewer stages share a uniform severity vocabulary:

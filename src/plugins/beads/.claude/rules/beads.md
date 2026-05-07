@@ -147,6 +147,18 @@ source.
 See `docs/specs/bead-pipeline-architecture.md` §5.6 for the full
 protocol; what follows is the operational summary every agent needs.
 
+> **Rollout status (as of this rule).** The `resolve-human-bead` skill
+> and `/resolve-human-bead` slash command referenced below are
+> implementation-ready (bead `agents-config-7bk.13`) but not yet present
+> in the plugin tree. Two upstream-producer retrofits are also pending:
+> `merge-or-handoff` formula step (`agents-config-7bk.13.2`) and
+> `implement-bead` skill escalation path (`agents-config-7bk.13.3`).
+> Until they land, resolve HEP escalations using the documented
+> primitives directly: `bd human respond` / `bd human dismiss` for
+> Scenarios A–E, `bd label add verified-by-human` + `bd close` for `[h]`
+> follow-up Scenario F, and `/merge-and-cleanup` for merge-gate
+> Scenario G.
+
 > **Doc duplication note.** The escalation bash snippet below is
 > byte-identical with §5.6's; this is the lockstep boundary. **Any
 > change to the snippet here MUST land in §5.6 in the same commit, and
