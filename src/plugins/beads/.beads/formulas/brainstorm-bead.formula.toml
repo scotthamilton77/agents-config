@@ -267,7 +267,7 @@ Incorporate valid spec-review findings, perform RALF triage, then mark ready.
         # (the [gates] header satisfies BOTH boundaries on the same line).
         # Use a flag-based parser instead.
         test_runner=$(awk '/^\\[gates\\]/{flag=1;next} /^\\[/{flag=0} flag' project-config.toml \\
-          | awk -F'=' '/^test[[:space:]]*=/{gsub(/[[:space:]"\\047]/,"",$2); print $2}')
+          | awk -F'=' '/^test[[:space:]]*=/{sub(/#.*$/,"",$2); gsub(/[[:space:]"\\047]/,"",$2); print $2}')
         bead_type=$(bd show {{bead-id}} --json | jq -r '.[0].issue_type // "task"')
 
       `m_count` MUST be counted from the `acceptance_criteria` field
