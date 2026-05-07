@@ -310,7 +310,6 @@ resulting labels are applied to Y via step 4's --labels, not to X.
   X_TITLE=$(echo "$X_JSON" | jq -r '.[0].title')
   X_PRIORITY=$(echo "$X_JSON" | jq -r '.[0].priority')
   X_PARENT=$(echo "$X_JSON"  | jq -r '.[0].parent // empty')
-  X_DESC=$(echo "$X_JSON"    | jq -r '.[0].description // ""')
   X_NOTES=$(echo "$X_JSON"   | jq -r '.[0].notes // ""')
   X_AC=$(echo "$X_JSON"      | jq -r '.[0].acceptance_criteria // ""')
   X_TYPE=$(echo "$X_JSON"    | jq -r '.[0].issue_type // "task"')
