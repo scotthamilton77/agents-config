@@ -57,3 +57,6 @@ sync.remote: "git+https://github.com/scotthamilton77/agents-config.git"
 
 dolt:
   port: 48128
+
+export.auto: false
+import.auto: false
