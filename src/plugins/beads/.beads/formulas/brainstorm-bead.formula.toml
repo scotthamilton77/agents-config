@@ -199,159 +199,418 @@ document them explicitly as open questions in the bead notes.
 """
 
 # =============================================================================
-# Phase 5: Finalize
+# Phase 5: Finalize — produce net-new implementation bead Y, close source X
 # =============================================================================
+#
+# Phase 5 produces a NEW implementation bead Y at finalize time and CLOSES the
+# source seed bead X. X carries the brainstorming history as a frozen historical
+# record; Y carries the spec, formula choice, ralf labels, readiness markers,
+# and follow-up children. See docs/plans/2026-05-07-brainstorm-bead-x-to-y-redesign.md
+# for the full design rationale.
+#
+# Key invariants:
+#   - Y inherits X.parent (epic hierarchy carries through)
+#   - Y links back to X via `discovered-from` dep + `produced-from-<X-id>` label
+#   - X carries `produced-bead-<Y-id>` label as the canonical replay-safe marker
+#   - X is closed with reason "brainstormed; produced <Y-id>"
+#   - Re-running finalize is idempotent at every boundary
 
 [[steps]]
 id    = "finalize"
-title = "Finalize: apply review findings, triage RALF, mark implementation-ready"
+title = "Finalize: produce implementation bead Y, close source X"
 needs = ["ralf-spec-review"]
 description = """
-Incorporate valid spec-review findings, perform RALF triage, then mark ready.
+Produce a net-new implementation bead Y from the brainstormed spec on X,
+then close X. Steps below MUST be executed in order — the order is chosen
+so any failure leaves a recoverable state for replay.
 
-1. Update bead acceptance + notes with final spec revisions:
-     bd update {{bead-id}} --acceptance="<revised criteria>"
-     bd update {{bead-id}} --notes="<revised spec>"
+Throughout this step, `<X-id>` = `{{bead-id}}` (the source seed bead) and
+`<Y-id>` = the id of the new implementation bead created in step 4.
 
-2. RALF triage — first clear previous RALF implementation-routing labels,
-   then restamp only if the final spec still warrants iterative refinement:
+──────────────────────────────────────────────────────────────────────────
+STEP 1 — Pre-flight idempotency probe
+──────────────────────────────────────────────────────────────────────────
 
-     bd label remove {{bead-id}} ralf:required
-     for label in $(bd label list {{bead-id}} --json | jq -r '.[] | select(startswith("ralf:cycles="))'); do
-       bd label remove {{bead-id}} "$label"
-     done
+Detect prior partial runs before doing any new writes.
 
-   Note: `bd label list <id> --json` returns a flat JSON array of label
-   strings, NOT an object — the jq path is `.[]`, not `.labels[]`. The
-   prior pattern `.labels[]` returned empty and silently failed to remove
-   stale `ralf:cycles=*` labels (pre-existing bug fixed under
-   agents-config-ooun).
+  # 1a. Has X already been stamped with a produced-bead-* marker?
+  PRODUCED_MARKER=$(bd label list {{bead-id}} --json \\
+    | jq -r '.[] | select(startswith("produced-bead-"))' | head -1)
 
-   Use `bd label remove` before `bd label add` because `add` only appends a
-   label; it does not replace prior values. Remove `ralf:cycles=*` by listing
-   matching labels first; the `bd label remove` command accepts exact labels,
-   not shell-style wildcards. Use a POSIX shell loop rather than GNU-only
-   `xargs -r` so the command works on macOS.
+  if [ -n "$PRODUCED_MARKER" ]; then
+    # X has been stamped by a prior run. Extract the existing Y-id from the
+    # label suffix and skip ahead to step 8 (close X + I2 close-walk) and
+    # step 9 (burn wisp). Steps 2-7 are already done.
+    Y_ID="${PRODUCED_MARKER#produced-bead-}"
+    echo "Replay: produced-bead-$Y_ID already on {{bead-id}}; resuming at step 8."
+    # GOTO step 8.
+  else
+    # 1b. No produced-bead marker. Probe for an orphan Y from a run that
+    # crashed AFTER step 4 (Y created) but BEFORE step 7 (X stamped).
+    ORPHAN_Y=$(bd list --label produced-from-{{bead-id}} --json \\
+      | jq '[.[] | select(.status != "closed")]')
+    ORPHAN_COUNT=$(echo "$ORPHAN_Y" | jq 'length')
 
-   Add `ralf:required` if the spec is likely to produce significant change,
-   including:
-   - more than a few lines in a single file
-   - multi-file coordinated change
-   - security-sensitive code
-   - authentication/authorization
-   - payment processing
-   - data migration
-   - architectural shift
-   - explicit user directive for RALF
+    case "$ORPHAN_COUNT" in
+      0) ;;  # fresh run; proceed to step 2
+      1) Y_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
+         echo "Replay: orphan Y=$Y_ID found (produced-from-{{bead-id}}); resuming at step 5."
+         # GOTO step 5 with the existing Y_ID.
+         ;;
+      *) bd label add {{bead-id}} human
+         bd comments add {{bead-id}} \\
+           "finalize halted: $ORPHAN_COUNT non-closed beads carry produced-from-{{bead-id}}; manual triage required."
+         echo "ERROR: multiple orphan Y candidates; escalated to human."
+         exit 1 ;;
+    esac
+  fi
 
-   then:
-     bd label add {{bead-id}} ralf:required
+  # IMPORTANT: do NOT pass `--type *` to bd list — `*` is rejected as
+  # `invalid issue type "*"`. Omitting --type matches all types, which is
+  # the intended behavior for the orphan probe above.
 
-   Optional cycle override (when a non-default cycle count is justified):
-     bd label add {{bead-id}} ralf:cycles=N
+──────────────────────────────────────────────────────────────────────────
+STEP 2 — Pre-flight children check
+──────────────────────────────────────────────────────────────────────────
 
-3. Formula selection heuristic + confirm/override.
+Classify X's existing children against the §4 allowlist. Any non-allowlisted
+child halts finalize for human triage.
 
-   Apply a hybrid heuristic to propose a formula, then prompt the user to
-   confirm or override. Stamp the resulting `formula-<name>` label on the
-   bead BEFORE the readiness labels in step 5. The label is later read by
-   `implement-bead` before pour selection (per
-   `bead-pipeline-architecture.md` §3 preflight and §4.2).
+  CHILDREN_JSON=$(bd list --parent={{bead-id}} --json)
 
-   a. Compute heuristic inputs from canonical sources only:
+  # Allowlist: child carries label `merge-gate`, OR child carries label
+  # `human` (representing a [Human verify] follow-up). Anything else is
+  # unexpected.
+  UNEXPECTED=$(echo "$CHILDREN_JSON" \\
+    | jq -r '[.[] | select(.status != "closed")
+                  | select((.labels | index("merge-gate") | not)
+                          and (.labels | index("human") | not))
+                  | .id] | join(",")')
 
-        m_count=$(bd show {{bead-id}} --json \\
-          | jq -r '.[0].acceptance_criteria // ""' \\
-          | grep -cvE '^([[:space:]]*$|\\[h\\][[:space:]])')
-        # Section-body extraction: range pattern /^\\[gates\\]/,/^\\[/ is a no-op
-        # (the [gates] header satisfies BOTH boundaries on the same line).
-        # Use a flag-based parser instead.
-        test_runner=$(awk '/^\\[gates\\]/{flag=1;next} /^\\[/{flag=0} flag' project-config.toml \\
-          | awk -F'=' '/^test[[:space:]]*=/{sub(/#.*$/,"",$2); gsub(/[[:space:]"\\047]/,"",$2); print $2}')
-        bead_type=$(bd show {{bead-id}} --json | jq -r '.[0].issue_type // "task"')
+  if [ -n "$UNEXPECTED" ]; then
+    bd label add {{bead-id}} human
+    bd comments add {{bead-id}} \\
+      "finalize halted: {{bead-id}} has unexpected children [$UNEXPECTED]; brainstorming a bead with non-formula children is not supported. Triage manually."
+    echo "ERROR: unexpected children under {{bead-id}}: $UNEXPECTED"
+    exit 1
+  fi
 
-      `m_count` MUST be counted from the `acceptance_criteria` field
-      ONLY (per spec §4.1). Counting `description` would false-positive
-      on `[m]` tokens in prose and false-negative on canonical (non-bullet)
-      AC formats.
+──────────────────────────────────────────────────────────────────────────
+STEP 3 — Compute Y's fields (interactive: RALF triage + formula selection)
+──────────────────────────────────────────────────────────────────────────
 
-   b. Propose a formula:
+Compute the values that go into the atomic `bd create` call in step 4. The
+RALF triage and formula-selection prompt remain interactive (main agent in
+the brainstorm session) — they only differ from the old design in that the
+resulting labels are applied to Y via step 4's --labels, not to X.
 
-        if [ "$m_count" = "0" ] || [ -z "$test_runner" ]; then
-          PROPOSED="docs-only"
-          if [ "$m_count" = "0" ] && [ -z "$test_runner" ]; then
-            REASON="no [m] AC lines AND no test runner"
-          elif [ "$m_count" = "0" ]; then
-            REASON="no [m] AC lines"
-          else
-            REASON="no test runner ([gates].test=='')"
-          fi
-        elif [ "$bead_type" = "bug" ]; then
-          PROPOSED="fix-bug"
-          REASON="bug type with [m] ACs and test runner"
-        else
-          PROPOSED="implement-feature"
-          REASON="${bead_type} with [m] ACs and test runner"
+3a. Read X's identity fields:
+
+  X_JSON=$(bd show {{bead-id}} --json)
+  X_TITLE=$(echo "$X_JSON" | jq -r '.[0].title')
+  X_PRIORITY=$(echo "$X_JSON" | jq -r '.[0].priority')
+  X_PARENT=$(echo "$X_JSON"  | jq -r '.[0].parent // empty')
+  X_DESC=$(echo "$X_JSON"    | jq -r '.[0].description // ""')
+  X_NOTES=$(echo "$X_JSON"   | jq -r '.[0].notes // ""')
+  X_AC=$(echo "$X_JSON"      | jq -r '.[0].acceptance_criteria // ""')
+  X_TYPE=$(echo "$X_JSON"    | jq -r '.[0].issue_type // "task"')
+
+3b. Compute Y's title with idempotent guard against double-prefix on replay:
+
+  # Defensive trim — leading whitespace would otherwise let the case below
+  # fall through and double-prefix.
+  X_TITLE_TRIMMED=$(printf %s "$X_TITLE" | awk '{$1=$1; print}')
+  case "$X_TITLE_TRIMMED" in
+    '[Impl] '*) Y_TITLE="$X_TITLE_TRIMMED" ;;     # already prefixed; replay-safe
+    *)          Y_TITLE="[Impl] $X_TITLE_TRIMMED" ;;
+  esac
+
+3c. RALF triage — recompute fresh; do NOT carry X's stale ralf:* labels:
+
+  # Reset locals (X's ralf:* labels are NEVER copied to Y; the deny-list in
+  # §6.1 enforces this on the label-copy path in step 3f).
+  RALF_REQUIRED=""
+  RALF_CYCLES=""
+
+  # Apply RALF heuristic: stamp ralf:required if the spec warrants iterative
+  # refinement. Triggers (any one is sufficient):
+  #   - more than a few lines in a single file
+  #   - multi-file coordinated change
+  #   - security-sensitive code
+  #   - authentication/authorization
+  #   - payment processing
+  #   - data migration
+  #   - architectural shift
+  #   - explicit user directive for RALF
+  # The agent decides based on the final spec text. If yes:
+  #   RALF_REQUIRED="ralf:required"
+  # Optional cycle override (only when justified):
+  #   RALF_CYCLES="ralf:cycles=N"
+
+3d. Formula selection heuristic + interactive confirm/override:
+
+  m_count=$(printf %s "$X_AC" \\
+    | grep -cvE '^([[:space:]]*$|\\[h\\][[:space:]])')
+  # Section-body extraction: range pattern /^\\[gates\\]/,/^\\[/ is a no-op
+  # (the [gates] header satisfies BOTH boundaries on the same line). Use a
+  # flag-based parser instead.
+  test_runner=$(awk '/^\\[gates\\]/{flag=1;next} /^\\[/{flag=0} flag' project-config.toml \\
+    | awk -F'=' '/^test[[:space:]]*=/{sub(/#.*$/,"",$2); gsub(/[[:space:]"\\047]/,"",$2); print $2}')
+
+  if [ "$m_count" = "0" ] || [ -z "$test_runner" ]; then
+    PROPOSED="docs-only"
+    if [ "$m_count" = "0" ] && [ -z "$test_runner" ]; then
+      REASON="no [m] AC lines AND no test runner"
+    elif [ "$m_count" = "0" ]; then
+      REASON="no [m] AC lines"
+    else
+      REASON="no test runner ([gates].test=='')"
+    fi
+  elif [ "$X_TYPE" = "bug" ]; then
+    PROPOSED="fix-bug"
+    REASON="bug type with [m] ACs and test runner"
+  else
+    PROPOSED="implement-feature"
+    REASON="${X_TYPE} with [m] ACs and test runner"
+  fi
+
+  # Interactive prompt — re-prompt on invalid input; do NOT stamp until valid:
+  #   "Proposed formula: ${PROPOSED} (${REASON}).
+  #    Confirm or override [docs-only|implement-feature|fix-bug]:"
+  # Bare confirm → ${PROPOSED}; otherwise use typed value.
+  # Loop until CHOSEN is one of: docs-only | implement-feature | fix-bug.
+  CHOSEN="${PROPOSED}"  # placeholder — actual value comes from interactive prompt
+
+3e. Derive Y's `type` from CHOSEN:
+
+  case "$CHOSEN" in
+    implement-feature) Y_TYPE="feature" ;;
+    fix-bug)           Y_TYPE="bug" ;;
+    docs-only)         Y_TYPE="task" ;;
+  esac
+
+3f. Compute custom-label set to copy X→Y (filtered through §6.1 deny-list):
+
+  # Deny-list regex (extended-regex):
+  #   ^(brainstormed|implementation-ready|implementation-readied-session-.*|formula-.*|produced-(from|bead)-.*|for-bead-.*|ralf:.*|merge-gate|human)$
+  COPY_LABELS=$(bd label list {{bead-id}} --json \\
+    | jq -r '.[]' \\
+    | grep -Ev '^(brainstormed|implementation-ready|implementation-readied-session-.*|formula-.*|produced-(from|bead)-.*|for-bead-.*|ralf:.*|merge-gate|human)$' \\
+    | paste -sd, -)
+
+3g. Get current session SID prefix (first 8 hex chars of session ID):
+
+  SID="<first-8-hex-of-current-session-id>"  # main agent fills this in
+
+3h. Assemble the full label string for Y (comma-joined, dropping empties):
+
+  Y_LABELS="produced-from-{{bead-id}},formula-${CHOSEN},brainstormed,implementation-ready,implementation-readied-session-${SID}"
+  [ -n "$RALF_REQUIRED" ] && Y_LABELS="$Y_LABELS,$RALF_REQUIRED"
+  [ -n "$RALF_CYCLES" ]   && Y_LABELS="$Y_LABELS,$RALF_CYCLES"
+  [ -n "$COPY_LABELS" ]   && Y_LABELS="$Y_LABELS,$COPY_LABELS"
+
+──────────────────────────────────────────────────────────────────────────
+STEP 4 — Create Y atomically
+──────────────────────────────────────────────────────────────────────────
+
+Create Y in a SINGLE `bd create` call so identity, labels, and the
+discovered-from edge to X are established together (no orphan-Y window).
+
+  # Write spec/AC to temp files (avoid huge --description / --acceptance
+  # arg overflow on long specs):
+  printf %s "$X_NOTES" > /tmp/y-spec.md
+  printf %s "$X_AC"    > /tmp/y-ac.md
+
+  # Build PARENT_ARG conditionally — bd rejects empty --parent.
+  PARENT_ARG=""
+  [ -n "$X_PARENT" ] && PARENT_ARG="--parent $X_PARENT"
+
+  Y_CREATE_JSON=$(bd create \\
+    --type "$Y_TYPE" \\
+    --priority "$X_PRIORITY" \\
+    $PARENT_ARG \\
+    --title "$Y_TITLE" \\
+    --description "$(cat /tmp/y-spec.md)" \\
+    --acceptance "$(cat /tmp/y-ac.md)" \\
+    --labels "$Y_LABELS" \\
+    --deps "discovered-from:{{bead-id}}" \\
+    --no-inherit-labels \\
+    --json)
+
+  # bd create --json returns a single object (NOT an array); the id is at .id.
+  Y_ID=$(echo "$Y_CREATE_JSON" | jq -r '.id')
+
+  if [ -z "$Y_ID" ] || [ "$Y_ID" = "null" ]; then
+    echo "ERROR: bd create did not return a Y id; aborting."
+    exit 1
+  fi
+
+Notes on this step:
+
+- `--no-inherit-labels` prevents X.parent's labels from leaking onto Y; Y's
+  labels are EXACTLY what `--labels` lists.
+- Field-vs-flag mapping: the `acceptance_criteria` bead field is set via
+  `bd create --acceptance "..."` (NOT `--acceptance-criteria`).
+- I1 claim-walk: Y is created `open` here; it is not yet "starting work,"
+  so I1 does NOT require a fresh claim-walk against Y. Y.parent = X.parent,
+  which X's Phase 0 claim already marked in_progress and walked. The next
+  agent (run-queue / implement-bead) that claims Y will run its own
+  claim-walk per I1.
+- `for-bead-{{bead-id}}` molecule label staleness: the running wisp still
+  bears `for-bead-{{bead-id}}` after Y is created. Step 9 burns the wisp
+  immediately after step 8, so the staleness window is bounded to the
+  remainder of finalize (a single agent turn). No external start-bead /
+  implement-bead call can race with finalize, so no `for-bead-<Y-id>` stamp
+  is needed on the doomed wisp.
+
+──────────────────────────────────────────────────────────────────────────
+STEP 5 — Create children under Y (migrate first, then fresh-create)
+──────────────────────────────────────────────────────────────────────────
+
+5a. Migrate any allowlisted pre-existing children of X to Y:
+
+  echo "$CHILDREN_JSON" | jq -r '.[] | select(.status != "closed")
+                                     | select((.labels | index("merge-gate"))
+                                             or (.labels | index("human")))
+                                     | .id' \\
+  | while read -r child_id; do
+      bd update "$child_id" --parent "$Y_ID"
+
+      # If this is a merge-gate child whose title encodes the OLD X-id, rename it.
+      child_labels=$(bd label list "$child_id" --json | jq -r '.[]')
+      child_title=$(bd show "$child_id" --json | jq -r '.[0].title')
+      if echo "$child_labels" | grep -qx 'merge-gate' \\
+        && [ "$child_title" = "merge-{{bead-id}}" ]; then
+        bd update "$child_id" --title "merge-$Y_ID"
+      fi
+    done
+
+5b. Fresh-create what's still missing under Y:
+
+  # Probe for merge-<Y_ID> child; create only if absent.
+  EXISTING_GATE=$(bd list --parent "$Y_ID" --label merge-gate --json \\
+    | jq '[.[] | select(.status != "closed")] | length')
+  if [ "$EXISTING_GATE" = "0" ]; then
+    bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
+      --title "merge-$Y_ID" \\
+      --description "Merge gate child for $Y_ID. Closed only by merge-and-cleanup after merge + branch/worktree cleanup." \\
+      --labels "merge-gate" \\
+      --no-inherit-labels
+  fi
+
+  # For each [h] AC line in Y's acceptance_criteria, ensure exactly one
+  # human-verify child exists. Iterate the AC and create only what's missing.
+  printf %s "$X_AC" \\
+    | awk '/^\\[h\\][[:space:]]/{sub(/^\\[h\\][[:space:]]+/,""); print}' \\
+    | while IFS= read -r ac_line; do
+        # Probe for an existing human child whose description references this AC line.
+        EXISTING=$(bd list --parent "$Y_ID" --label human --json \\
+          | jq --arg ac "$ac_line" \\
+               '[.[] | select(.status != "closed") | select(.description | contains($ac))] | length')
+        if [ "$EXISTING" = "0" ]; then
+          bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
+            --title "[Human verify] $ac_line" \\
+            --description "Human verification required for: $ac_line" \\
+            --labels "human" \\
+            --no-inherit-labels
         fi
+      done
 
-   c. Prompt the user (interactive — main agent in the brainstorm session):
+──────────────────────────────────────────────────────────────────────────
+STEP 6 — Migrate edges from X to Y per §3 mechanical rubric
+──────────────────────────────────────────────────────────────────────────
 
-        "Proposed formula: ${PROPOSED} (${REASON}).
-         Confirm or override [docs-only|implement-feature|fix-bug]:"
+For each dep edge on X (excluding the parent-child edge, already preserved
+via Y.parent = X.parent), apply the rubric:
 
-      Default on bare confirm: ${PROPOSED}. Otherwise use the user's
-      typed value. Validate against the allowed set; on invalid input,
-      re-prompt rather than stamp a garbage label:
+  | dep_type                                                                 | linked status         | action          |
+  |--------------------------------------------------------------------------|-----------------------|-----------------|
+  | blocks, blocked-by                                                       | any                   | migrate to Y    |
+  | tracks, until, caused-by, validates, relates-to, supersedes              | any                   | migrate to Y    |
+  | discovered-from, related                                                 | linked is closed      | keep on X       |
+  | discovered-from, related                                                 | linked is open / wip  | migrate to Y    |
 
-        case "${CHOSEN}" in
-          docs-only|implement-feature|fix-bug) ;;
-          *) echo "Invalid formula '${CHOSEN}'; expected one of [docs-only|implement-feature|fix-bug]. Try again."
-             # re-run the prompt; do NOT stamp a label until a valid choice is given
-             ;;
-        esac
+The `Y discovered-from {{bead-id}}` edge is already in place from step 4
+(`--deps discovered-from:{{bead-id}}`); do NOT add it again here.
 
-      Loop until the input matches one of the three allowed values.
+Cost bound: at most N = len(X.dependencies) - 1 `bd show` calls (excluding
+the parent edge). Typical N < 10. If any `bd show` fails mid-loop, error
+out clearly; replay handles the rest via the step-1 idempotency probe.
 
-   d. Remove any prior `formula-*` labels (collision avoidance per §4.2).
-      Note: `bd label list <id> --json` returns a flat JSON array of label
-      strings, NOT an object — the jq path is `.[]`, not `.labels[]`:
+  # bd's dependency JSON shape (verified against current CLI):
+  #   { "issue_id": "<X-id>", "depends_on_id": "<target>", "type": "<dep-type>", ... }
+  # The parent edge is encoded as type="parent-child" (NOT "parent"); skip it.
+  bd show {{bead-id}} --json \\
+    | jq -r '.[0].dependencies // [] | .[] | "\\(.type)\\t\\(.depends_on_id)"' \\
+  | while IFS=$'\\t' read -r dep_type target_id; do
+      [ "$dep_type" = "parent-child" ] && continue
+      [ "$dep_type" = "discovered-from" ] && [ "$target_id" = "{{bead-id}}" ] && continue
+      case "$dep_type" in
+        blocks|blocked-by|tracks|until|caused-by|validates|relates-to|supersedes)
+          MIGRATE=1 ;;
+        discovered-from|related)
+          target_status=$(bd show "$target_id" --json | jq -r '.[0].status // "open"')
+          [ "$target_status" = "closed" ] && MIGRATE=0 || MIGRATE=1 ;;
+        *)
+          # Unknown dep type — be conservative; migrate by default and log.
+          echo "WARN: unknown dep_type '$dep_type' on edge {{bead-id}} -> $target_id; migrating to Y by default."
+          MIGRATE=1 ;;
+      esac
+      if [ "$MIGRATE" = "1" ]; then
+        bd dep add "$Y_ID" "$target_id" --type "$dep_type" || \\
+          echo "WARN: bd dep add $Y_ID $target_id --type $dep_type failed; continuing."
+        # `bd dep remove` is positional-only (issue-id, depends-on-id); no --type flag.
+        bd dep remove "{{bead-id}}" "$target_id" || \\
+          echo "WARN: bd dep remove {{bead-id}} $target_id failed; continuing."
+      fi
+    done
 
-        for label in $(bd label list {{bead-id}} --json \\
-          | jq -r '.[] | select(startswith("formula-"))'); do
-          bd label remove {{bead-id}} "$label"
-        done
+──────────────────────────────────────────────────────────────────────────
+STEP 7 — Stamp produced-bead-<Y-id> on X (replay-safe boundary)
+──────────────────────────────────────────────────────────────────────────
 
-   e. Stamp the user's chosen formula:
+The label is the canonical replay-safe marker — set it BEFORE the
+breadcrumb comment so a comment failure does not block forward progress.
 
-        bd label add {{bead-id}} formula-<chosen>
+  bd label add {{bead-id}} "produced-bead-$Y_ID"
 
-4. Reconcile required follow-up child beads before readiness:
-   - List existing open child beads under `{{bead-id}}` that carry the `human`
-     label and represent `[Human verify]` follow-ups.
-   - For every acceptance-criteria line currently tagged `[h]`, ensure exactly
-     one matching child bead exists under `{{bead-id}}`, label it `human`, and
-     link the source criterion in the child description. These children block
-     later Gate 2 closure until closed with `verified-by-human`.
-   - For every existing `[Human verify]` child whose source criterion is no
-     longer tagged `[h]` because it was removed, reworded, or downgraded to
-     `[m]`, close it with reason "AC re-classified to [m] or removed; follow-up
-     no longer needed." Then create any replacement child needed for the current
-     `[h]` text. Re-running finalize with unchanged AC must be a no-op.
-   - Create the merge gate child `merge-{{bead-id}}` under `{{bead-id}}` if it
-     does not already exist, and label it `merge-gate`. This child is closed
-     only by merge-and-cleanup after merge + branch/worktree cleanup.
+  # Best-effort breadcrumb (comment failure does NOT block step 8):
+  TODAY=$(date -u +%Y-%m-%d)
+  bd comments add {{bead-id}} "Brainstormed; produced $Y_ID on $TODAY" \\
+    || echo "WARN: comment breadcrumb failed; continuing (label is the canonical marker)."
 
-5. Add standard readiness labels:
-     bd label add {{bead-id}} brainstormed
-     bd label add {{bead-id}} implementation-ready
-     bd label add {{bead-id}} implementation-readied-session-<sid>
+──────────────────────────────────────────────────────────────────────────
+STEP 8 — Close X with reason; run I2 close-walk
+──────────────────────────────────────────────────────────────────────────
 
-   `<sid>` is the first 8 hex chars of the session ID that applied
-   `implementation-ready`; `start-bead` Route A uses it for same-session gating.
+  bd close {{bead-id}} --reason "brainstormed; produced $Y_ID"
 
-6. Report implementation-ready hand-off and stop unless user explicitly
-   authorizes immediate implementation in the current session.
+  # I2 close-walk (per beads.md): walk the parent chain and close each
+  # ancestor whose remaining children are all closed. Y is now an open
+  # child of X.parent (Y.parent = X.parent), so the walk halts at X.parent
+  # — which is the correct outcome (the epic still has active work via Y).
+  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
+  while [ -n "$PARENT" ]; do
+    NON_CLOSED=$(bd list --parent="$PARENT" --json \\
+      | jq '[.[] | select(.status != "closed")] | length')
+    [ "$NON_CLOSED" = "0" ] || break
+    bd close "$PARENT" --reason "All children closed"
+    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+  done
 
-7. Burn this wisp:
-     bd mol burn <this-mol-id>
+──────────────────────────────────────────────────────────────────────────
+STEP 9 — Burn the wisp; report hand-off
+──────────────────────────────────────────────────────────────────────────
+
+  bd mol burn <this-mol-id>
+
+Report to the user:
+  "Brainstorming complete for {{bead-id}} (now closed).
+   Implementation bead: $Y_ID — labels: brainstormed, implementation-ready,
+   formula-${CHOSEN}, implementation-readied-session-${SID}.
+   Default hand-off is to run-queue (separate session). Continuing to
+   implementation in this session requires explicit authorization."
+
+STOP unless the user explicitly authorizes immediate implementation in the
+current session.
 """
