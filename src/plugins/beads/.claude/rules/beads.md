@@ -147,31 +147,32 @@ source.
 See `docs/specs/bead-pipeline-architecture.md` §5.6 for the full
 protocol; what follows is the operational summary every agent needs.
 
-> **Doc duplication note.** The escalation procedure below is intentionally
-> duplicated from §5.6. Architecture-of-record lives in §5.6; this file
-> carries the operational summary. **Any change here MUST land in §5.6 in
-> the same commit, and vice versa.** Drift between the two surfaces causes
-> silent contract violations.
+> **Doc duplication note.** The escalation bash snippet below is
+> byte-identical with §5.6's; this is the lockstep boundary. **Any
+> change to the snippet here MUST land in §5.6 in the same commit, and
+> vice versa.** The surrounding prose may be condensed in this file as
+> an operational summary — divergence in prose is acceptable, divergence
+> in the snippet is a contract violation.
 
 **Escalation (when blocked):**
 
 ```bash
 HUMAN_ID=$(bd create \
-    --title "Human input needed: <summary>" \
+    --title "Human input needed: <one-line summary>" \
     --type task \
-    --priority "<inherit from source>" \
-    --description "<what was happening, what is blocked, what is needed>" \
+    --priority "<inherited from source bead>" \
+    --description "<context: what the stage was doing, what is blocked, what is needed>" \
     --json | jq -r '.id')
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
-    "Source: <source-id>
+    "Source: <source-bead-id>
+Step-bead: <step-bead-id>
 Molecule: <mol-id>
-Step-bead: <step-id>
 Worktree: <worktree-path>
 Scenario hint: <one of: spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-bd dep add "<source-id>" "$HUMAN_ID"
-bd update "<source-id>" --status open
-# Exit cleanly. Molecule retains current step state.
+bd dep add "<source-bead-id>" "$HUMAN_ID"
+bd update "<source-bead-id>" --status open
+# Exit cleanly (zero exit code; stage is paused, not failed).
 ```
 
 After this:
