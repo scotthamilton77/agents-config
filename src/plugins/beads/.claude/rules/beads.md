@@ -120,7 +120,7 @@ apply to molecules (the `Set by` and `Meaning` columns note the subject):
 | `implementation-ready` | brainstorm-bead formula (finalize step) | Ready for implement-bead / run-queue |
 | `implementation-readied-session-<sid>` | brainstorm-bead formula (finalize step) | Marks a session that applied `implementation-ready`; used by `start-bead` Route A for same-session gating. `<sid>` is the first 8 hex chars of the applying session's ID. |
 | `for-bead-<bead-id>` | `start-bead` when it creates a brainstorm wisp, and `implement-bead` when it creates an implementation molecule | Applied to the molecule (not the bead). Gives `start-bead` / `implement-bead` a reliable lookup edge from bead to molecule — see "Molecule → bead linkage convention" below. |
-| `human` | Any agent via `bd label add <id> human`, applied **only to escalation beads or `[h]` follow-up beads** — never to source beads | **Visibility tag for `bd human list`. NOT a gate on `bd ready`** — only blocking deps gate readiness. Source beads pause via a blocking dep on a `human`-labeled escalation bead per the Human-Escalation Pattern (HEP) below. Resolution uses `bd human respond` / `bd human dismiss` (or `verified-by-human` + `bd close` for `[h]` follow-ups), never bare label removal. Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
+| `human` | Any agent via `bd label add <id> human`, applied **only to escalation beads or `[h]` follow-up beads** — never to source beads | **Visibility tag for `bd human list`. NOT a gate on `bd ready`** — only blocking deps gate readiness. Source beads pause via a blocking dep on a `human`-labeled escalation bead per the Human-Escalation Pattern (HEP) below. Resolution depends on the bead's class: `bd human respond` / `bd human dismiss` for HEP escalations (Scenarios A–E); `bd label add verified-by-human` + `bd close` for `[h]` follow-ups (Scenario F); `/merge-and-cleanup` on the source bead for the merge-gate hand-off sub-class — `human` + `merge-ready`, `[Merge gate] <source-title>` (Scenario G). Never bare-remove the label, except via the legacy-state migration carve-out documented in HEP "Legacy state during rollout" below (the only sanctioned exception). Note: `bd human <id>` (no subcommand) is the help command, NOT a label applier — use `bd label add <id> human` instead, then `bd update <id> --append-notes "..."` to attach context. |
 | `ralf:required` | `brainstorm-bead` formula (finalize step) or manual label set | Beads formula-step dispatch signal. Implement stages pass target/spec/DoD/context into `ralf-implement`; review stages use it only when their specific formula step explicitly reads the label and passes target/criteria/context into `ralf-review`. |
 | `ralf:cycles=N` | Any actor setting an override (typically `brainstorm-bead.finalize`) | Optional max-cycle override that the formula reads and passes to the invoked RALF skill. Setters MUST remove existing `ralf:cycles=` labels before adding a replacement; `bd label remove` accepts exact labels, so list matching labels first rather than passing a wildcard. |
 
@@ -158,6 +158,36 @@ protocol; what follows is the operational summary every agent needs.
 > Scenarios A–E, `bd label add verified-by-human` + `bd close` for `[h]`
 > follow-up Scenario F, and `/merge-and-cleanup` for merge-gate
 > Scenario G.
+>
+> **Legacy state during rollout.** If you encounter a *source* bead
+> stamped `human` (the prior contract before HEP), treat it as
+> locally-inconsistent state. The Scenario primitives in the
+> resolution table above are *resolution* verbs that operate on an
+> existing escalation bead — they do NOT create one — so legacy state
+> needs different migration steps:
+>
+> **(a) Work should resume under the new contract.** Run the HEP
+> escalation snippet below to create a fresh escalation bead, dep the
+> source on it, and revert source to `open`; then bare-remove `human`
+> from the source bead (`bd label remove <source-id> human`). The
+> escalation bead now follows the normal HEP lifecycle and is resolved
+> via the matching Scenario primitive (`bd human respond` /
+> `bd human dismiss`, or `/merge-and-cleanup` for merge-gate intent).
+>
+> **(b) Source bead is being abandoned.** Bare-remove `human` from the
+> source bead, then `bd close <source-id> --reason "<why>"`. No
+> escalation bead is needed since no resumption is intended.
+>
+> **(c) Apparent `[h]` follow-up intent.** Unlikely under the legacy
+> contract — `[h]` follow-ups are created with parent-child structure
+> by `brainstorm-bead.finalize`, not by stamping `human` on a source
+> bead. If you encounter this case, treat it as broken state and
+> consult the user before acting.
+>
+> Bare removal of `human` from a source bead is acceptable here (and
+> ONLY here) *because* the source-bead label is itself out-of-contract.
+> New escalations created after this rule is in force MUST use HEP and
+> never stamp the source bead.
 
 > **Doc duplication note.** The escalation bash snippet below is
 > byte-identical with §5.6's; this is the lockstep boundary. **Any
@@ -180,7 +210,7 @@ bd update "$HUMAN_ID" --append-notes \
     "Source: <source-bead-id>
 Step-bead: <step-bead-id>
 Molecule: <mol-id>
-Worktree: <worktree-path>
+Worktree: <worktree-path, or 'N/A' if no worktree exists yet (e.g. preflight escalation before worktree creation)>
 Scenario hint: <one of: spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
 bd dep add "<source-bead-id>" "$HUMAN_ID"
 bd update "<source-bead-id>" --status open
