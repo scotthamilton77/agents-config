@@ -622,7 +622,7 @@ The user (or any human) invokes `/resolve-human-bead <id>`. The skill detects th
 
 `bd human respond` adds the response as a comment AND closes the escalation bead with reason "Responded". `bd human dismiss` closes with reason "Dismissed" and an optional note. Closing the escalation removes the dep blocker, so the source bead unblocks and reappears in `bd ready` on the next poll cycle. There is no push-notification; resumption is poll-driven and naturally handled by the production shell driver (or `run-queue` until the driver achieves parity per §7).
 
-**Bare label removal is prohibited.** `bd label remove <human-id> human` would leave the escalation bead open (still in `bd human list`), with no audit comment, no closure reason, and no dep resolution. Always go through `bd human respond` or `bd human dismiss` for HEP escalations, and through `verified-by-human` + `bd close` for `[h]` follow-ups.
+**Bare label removal is prohibited.** `bd label remove <human-id> human` would leave the escalation bead open with the dep blocker still active on the source, no audit comment, and no closure reason — the bead disappears from `bd human list` (which is label-driven) but the source remains paused with no way to discover why. Always go through `bd human respond` or `bd human dismiss` for HEP escalations, and through `verified-by-human` + `bd close` for `[h]` follow-ups.
 
 **Source-bead audit trail.** The dep-edge `<source> → <human>` persists after the escalation closes. Any agent picking up the source bead later can reconstruct the trail: `bd show <source>` shows the dep; `bd show <human>` and `bd comments list <human>` show the response.
 
