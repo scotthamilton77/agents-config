@@ -583,11 +583,16 @@ out clearly; replay handles the rest via the step-1 idempotency probe.
           MIGRATE=1 ;;
       esac
       if [ "$MIGRATE" = "1" ]; then
-        bd dep add "$Y_ID" "$target_id" --type "$dep_type" || \\
-          echo "WARN: bd dep add $Y_ID $target_id --type $dep_type failed; continuing."
-        # `bd dep remove` is positional-only (issue-id, depends-on-id); no --type flag.
-        bd dep remove "{{bead-id}}" "$target_id" || \\
-          echo "WARN: bd dep remove {{bead-id}} $target_id failed; continuing."
+        # Gate the X-side remove on a successful Y-side add: if `bd dep add`
+        # fails for any reason (not just "already exists"), keep the original
+        # edge on X to preserve dep graph integrity. Don't drop edges.
+        if bd dep add "$Y_ID" "$target_id" --type "$dep_type"; then
+          # `bd dep remove` is positional-only (issue-id, depends-on-id); no --type flag.
+          bd dep remove "{{bead-id}}" "$target_id" || \\
+            echo "WARN: bd dep remove {{bead-id}} $target_id failed; X edge to $target_id retained."
+        else
+          echo "WARN: bd dep add $Y_ID $target_id --type $dep_type failed; not removing X edge to preserve dep graph."
+        fi
       fi
     done
 
