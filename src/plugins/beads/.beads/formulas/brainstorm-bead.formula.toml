@@ -379,7 +379,13 @@ resulting labels are applied to Y via step 4's --labels, not to X.
   #    Confirm or override [docs-only|implement-feature|fix-bug]:"
   # Bare confirm → ${PROPOSED}; otherwise use typed value.
   # Loop until CHOSEN is one of: docs-only | implement-feature | fix-bug.
-  CHOSEN="${PROPOSED}"  # placeholder — actual value comes from interactive prompt
+  CHOSEN="<INTERACTIVE_REQUIRED:formula-selection>"  # main agent MUST replace via interactive prompt
+  # If CHOSEN still contains "<INTERACTIVE_REQUIRED" at finalize time, abort with explicit error
+  # (the case statement in 3e will fall through to no Y_TYPE assignment, and step 4's
+  # bd create will fail on empty --type — but better to fail loudly here):
+  case "$CHOSEN" in
+    '<INTERACTIVE_REQUIRED'*) echo "ERROR: formula selection placeholder not replaced by interactive prompt"; exit 1 ;;
+  esac
 
 3e. Derive Y's `type` from CHOSEN:
 
@@ -400,7 +406,12 @@ resulting labels are applied to Y via step 4's --labels, not to X.
 
 3g. Get current session SID prefix (first 8 hex chars of session ID):
 
-  SID="<first-8-hex-of-current-session-id>"  # main agent fills this in
+  SID="<INTERACTIVE_REQUIRED:session-id-prefix-8-hex>"  # main agent MUST replace with first 8 hex chars of current session ID
+  # Guard: if the placeholder survived to here, abort loudly rather than stamp
+  # a malformed implementation-readied-session-* label that breaks start-bead Route A.
+  case "$SID" in
+    '<INTERACTIVE_REQUIRED'*) echo "ERROR: SID placeholder not replaced — agent must fill in first 8 hex chars of current session ID"; exit 1 ;;
+  esac
 
 3h. Assemble the full label string for Y (comma-joined, dropping empties):
 
@@ -469,6 +480,12 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
 
 5a. Migrate any allowlisted pre-existing children of X to Y:
 
+  # Re-fetch children: step 1's orphan-Y resume path (ORPHAN_COUNT==1, "GOTO step 5")
+  # skips step 2, so CHILDREN_JSON may be unset on entry. This is idempotent and
+  # cheap (one bd list call), so always re-fetch here regardless of how step 5
+  # was reached.
+  CHILDREN_JSON=$(bd list --parent={{bead-id}} --json)
+
   echo "$CHILDREN_JSON" | jq -r '.[] | select(.status != "closed")
                                      | select((.labels | index("merge-gate"))
                                              or (.labels | index("human")))
@@ -503,10 +520,15 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
   printf %s "$X_AC" \\
     | awk '/^\\[h\\][[:space:]]/{sub(/^\\[h\\][[:space:]]+/,""); print}' \\
     | while IFS= read -r ac_line; do
-        # Probe for an existing human child whose description references this AC line.
+        # Probe for an existing human child by exact title match. Title is the
+        # canonical identity: step 5b creates "[Human verify] $ac_line" titles,
+        # and step 5a migrates pre-existing X children that should already use
+        # the same canonical title format. Description-based matching was
+        # fragile because migrated children may not encode the AC text in
+        # description, leading to spurious duplicate creation.
         EXISTING=$(bd list --parent "$Y_ID" --label human --json \\
-          | jq --arg ac "$ac_line" \\
-               '[.[] | select(.status != "closed") | select(.description | contains($ac))] | length')
+          | jq --arg title "[Human verify] $ac_line" \\
+               '[.[] | select(.status != "closed") | select(.title == $title)] | length')
         if [ "$EXISTING" = "0" ]; then
           bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
             --title "[Human verify] $ac_line" \\
@@ -538,10 +560,10 @@ the parent edge). Typical N < 10. If any `bd show` fails mid-loop, error
 out clearly; replay handles the rest via the step-1 idempotency probe.
 
   # bd's dependency JSON shape (verified against current CLI):
-  #   { "issue_id": "<X-id>", "depends_on_id": "<target>", "type": "<dep-type>", ... }
-  # The parent edge is encoded as type="parent-child" (NOT "parent"); skip it.
+  #   { "id": "<target>", "dependency_type": "<dep-type>", "title": ..., "status": ..., ... }
+  # The parent edge is encoded as dependency_type="parent-child" (NOT "parent"); skip it.
   bd show {{bead-id}} --json \\
-    | jq -r '.[0].dependencies // [] | .[] | "\\(.type)\\t\\(.depends_on_id)"' \\
+    | jq -r '.[0].dependencies // [] | .[] | "\\(.dependency_type)\\t\\(.id)"' \\
   | while IFS=$'\\t' read -r dep_type target_id; do
       [ "$dep_type" = "parent-child" ] && continue
       [ "$dep_type" = "discovered-from" ] && [ "$target_id" = "{{bead-id}}" ] && continue
