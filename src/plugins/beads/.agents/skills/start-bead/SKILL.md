@@ -30,6 +30,161 @@ bd label list <bead-id>
 
 Note: type, status, labels, AC, description, dependencies.
 
+### Step 1.5: Closed-bead preflight
+
+Before the molecule existence probe (Step 2), short-circuit on closed
+beads. All current routes assume an open bead; Step 2 in particular
+would mis-handle stale `for-bead-<X-id>` molecules on a closed X (e.g.,
+a brainstorm-bead wisp left over after the source bead closed). The
+preflight runs BEFORE Step 2 so closed-bead handling cannot fall
+through to molecule resumption or Routes A/B/C.
+
+This section also documents **Route Z**: the forward path when a closed
+source bead carries `produced-bead-<Y-id>` (stamped by the
+brainstorm-bead redesign in `agents-config-12q7` when finalize closes X
+and creates a new implementation bead Y). Route Z forwards routing to Y
+so the user lands on the active bead instead of dead-ending on the
+closed source.
+
+#### Original-target convention
+
+Across Route Z re-entries, the agent maintains a reference to the bead
+ID the user **originally** invoked `start-bead` against. The R5/R7/R8
+audit comments (dangling label, multiple labels, cycle) target the
+**original** target — not the intermediate chain bead where the halt
+was detected. The friendly-exit message (R6), in contrast, uses the
+**current** target (relevant at the tail of a chain X → Y → Z when Z
+is closed without `produced-bead-*`).
+
+#### R2: Status check (gate)
+
+If `status != "closed"`, proceed to Step 2 unchanged. Open beads pass
+through Step 1.5 with no side effects. Otherwise (`status == "closed"`),
+evaluate `produced-bead-*` labels (R3–R8 below).
+
+#### R3: Produced-bead-* extraction probe (closed bead only)
+
+Use the JSON contract — NOT the text-formatted `bd label list` output,
+which has no documented stability contract:
+
+```bash
+PRODUCED=$(bd show "<X-id>" --json \
+  | jq -r '.[0].labels[]? | select(startswith("produced-bead-")) | sub("^produced-bead-"; "")')
+COUNT=$(printf '%s\n' "$PRODUCED" | grep -c .)
+```
+
+Branch on `COUNT`:
+
+- `COUNT == 0` → R6 friendly-exit path.
+- `COUNT == 1` → R4 forward path with the single Y-id in `$PRODUCED`.
+- `COUNT >= 2` → R7 multiple-labels halt.
+
+#### R4: Forward path (Route Z) — re-enter Step 1 with Y as new target
+
+When `COUNT == 1`, take `<Y-id>` (the single value in `$PRODUCED`) and
+verify Y exists with the exact probe:
+
+```bash
+bd show "<Y-id>" --json 2>/dev/null \
+  | jq -e --arg yid "<Y-id>" '.[0].id == $yid' >/dev/null
+```
+
+- **Probe succeeds** → forward: set `target = <Y-id>` and **re-enter
+  Step 1** with `<Y-id>` as the new target. Re-entry at Step 1 (NOT
+  Step 3) ensures Y also passes through the closed-bead preflight
+  (chain handling), the molecule existence probe (Y might have an
+  active `implement-feature` pour), and full route evaluation.
+- **Probe fails** → R5 dangling-label halt.
+
+Forwarding is agent prose, NOT a Skill-tool re-invocation and NOT a
+child-process recursion — the agent simply continues with the new
+target.
+
+#### R5: Dangling-label halt
+
+When the `produced-bead-<Y-id>` label points to a non-existent Y,
+add an audit comment on the **original target** (not the intermediate
+chain bead where the halt was detected):
+
+```bash
+bd comments add <original-target-id> "Route Z halt (dangling label): produced-bead-<Y-id> on <intermediate-X-id> points to non-existent <Y-id>. Investigate label correctness or bead deletion."
+```
+
+Emit agent reply text:
+
+> `start-bead halted: bead <intermediate-X-id> carries produced-bead-<Y-id> but <Y-id> does not exist. Investigate the label and re-invoke start-bead when fixed.`
+
+Do NOT add `human` to any bead (HEP non-applicability — Route Z's
+failure modes don't fit the HEP escalation pattern: the source bead is
+closed, `start-bead` is interactive routing, the user is present to
+read the audit comment + reply directly). Do NOT modify any other bead
+state.
+
+#### R6: Closed-without-produced-bead friendly exit
+
+When the bead is closed and has NO `produced-bead-*` label, emit agent
+reply text using the **current** target's id (NOT the original — this
+matters when arriving here at the tail of a chain):
+
+> `Bead <current-target-id> is closed. Did you mean a different bead?`
+
+The exact suffix `is closed. Did you mean a different bead?` is
+canonical and verifiable; the `<current-target-id>` prefix is templated
+with the actual id at runtime.
+
+A bead closed normally (work completed, superseded, abandoned) is not
+an error condition — the user has just pointed at a finished bead. Do
+NOT modify any bead state. Do NOT add `human`. Do NOT add an audit
+comment. `start-bead` exits cleanly (no Step 2, no Step 3).
+
+Stale unlabeled molecules on a closed bead are NOT investigated by
+Route Z — closed beads are terminal from start-bead's perspective. Use
+`bd mol list` if cleanup is needed.
+
+#### R7: Multiple-labels halt
+
+When X carries `>= 2` `produced-bead-*` labels, add an audit comment on
+the **original target**:
+
+```bash
+bd comments add <original-target-id> "Route Z halt (multiple labels): <intermediate-X-id> carries N produced-bead-* labels: <list>. Cannot determine which Y is canonical. Manual triage required."
+```
+
+Emit agent reply text naming the conflicting labels. Do NOT modify any
+other bead state.
+
+#### R8: Cycle detection via visited-set
+
+The agent maintains a **visited-set** of bead IDs across the whole
+`start-bead` invocation. NOT a depth/hop counter — a visited-set
+strictly dominates: it detects cycles AND naturally bounds depth (chain
+length cannot exceed the number of distinct beads in the
+`produced-bead-*` graph).
+
+The visited-set is agent-local per-invocation state; it is not
+persisted to bead state.
+
+**Three loop invariants (all MUST hold):**
+
+1. On the very first entry to Step 1.5 for a given `start-bead`
+   invocation, the visited-set is initialized with the **original
+   target's id** BEFORE R3 evaluates.
+2. At the **top of every Step 1.5 R3 evaluation** (i.e., on initial
+   entry AND on every re-entry triggered by R4 forwarding), the agent
+   checks whether the current target is already in the visited-set.
+3. R4 forwarding adds `<Y-id>` to the visited-set BEFORE re-entering
+   Step 1, so the next Step 1.5 evaluation sees Y as visited.
+
+When the current target is already in the visited-set, halt with an
+audit comment on the **original target**:
+
+```bash
+bd comments add <original-target-id> "Route Z halt (cycle): produced-bead-* chain visits <current-target-id> twice. Chain so far: <ordered-list>. Manual triage required."
+```
+
+Emit agent reply text naming the cycle path (the ordered list of
+visited bead IDs). Do NOT modify any other bead state.
+
 ### Step 2: Check for Existing Molecule
 
 Before doing anything else, check if an active molecule already exists for
@@ -260,11 +415,15 @@ Exception: if it's obviously trivial, just do it without announcing.
 
 ## Routing Decision Table
 
-| Has `implementation-ready` label | Trivial | Route |
-|---|---|---|
-| Yes | — | implement-bead |
-| No | Yes | Inline |
-| No | No | Brainstorm formula |
+| Status | Has `produced-bead-*` | Has `implementation-ready` | Trivial | Route |
+|--------|-----------------------|----------------------------|---------|-------|
+| closed | yes (exactly 1)       | —                          | —       | **Z** (forward to Y) |
+| closed | no                    | —                          | —       | exit (friendly message) |
+| open   | —                     | yes                        | —       | A |
+| open   | —                     | no                         | yes     | B |
+| open   | —                     | no                         | no      | C |
+
+*"A closed bead with ≥2 `produced-bead-*` labels does NOT route — it halts per R7 (multiple-labels manual triage)."*
 
 ## Red Flags
 
@@ -278,6 +437,7 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
 | "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Default is hand-off to run-queue; only invoke `implement-bead` with explicit user authorization or in a separate run-queue session. |
 | "Brainstorming is done, I'll implement next as a natural continuation" | No. Default is hand-off to run-queue. Stop unless explicitly authorized. |
+| The bead is closed, just give up | Run Step 1.5. If produced-bead-<Y> exists, Route Z forwards to Y. Otherwise, friendly exit referencing the current target. Never silently fall through. |
 
 ### Recovery: if you land in `superpowers:writing-plans`
 
