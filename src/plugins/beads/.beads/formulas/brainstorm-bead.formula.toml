@@ -426,10 +426,15 @@ STEP 4 — Create Y atomically
 Create Y in a SINGLE `bd create` call so identity, labels, and the
 discovered-from edge to X are established together (no orphan-Y window).
 
-  # Write spec/AC to temp files (avoid huge --description / --acceptance
-  # arg overflow on long specs):
-  printf %s "$X_NOTES" > /tmp/y-spec.md
-  printf %s "$X_AC"    > /tmp/y-ac.md
+  # Write spec/AC to per-process temp files via mktemp (avoid collision on
+  # concurrent runs and avoid huge --description / --acceptance arg overflow
+  # on long specs). The EXIT trap cleans them up regardless of how the step
+  # exits.
+  Y_SPEC=$(mktemp)
+  Y_AC=$(mktemp)
+  trap 'rm -f "$Y_SPEC" "$Y_AC"' EXIT
+  printf %s "$X_NOTES" > "$Y_SPEC"
+  printf %s "$X_AC"    > "$Y_AC"
 
   # Build PARENT_ARG conditionally — bd rejects empty --parent.
   PARENT_ARG=""
@@ -440,8 +445,8 @@ discovered-from edge to X are established together (no orphan-Y window).
     --priority "$X_PRIORITY" \\
     $PARENT_ARG \\
     --title "$Y_TITLE" \\
-    --description "$(cat /tmp/y-spec.md)" \\
-    --acceptance "$(cat /tmp/y-ac.md)" \\
+    --description "$(cat "$Y_SPEC")" \\
+    --acceptance "$(cat "$Y_AC")" \\
     --labels "$Y_LABELS" \\
     --deps "discovered-from:{{bead-id}}" \\
     --no-inherit-labels \\
