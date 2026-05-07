@@ -56,7 +56,7 @@ Stages are referenced by role name in all implementation surfaces (labels, formu
 
 The execution sequence for feature-class beads is: `preflight` → `red-tests` → `green-loop` → `quality-sweep` → `verify-ac` → `create-pr` → `review-cycle` → `merge-or-handoff`. Bug-class beads insert a `diagnose` stage between `preflight` and `red-tests`.
 
-**HEP forward reference.** Several stages below mention the **HEP (Human-Escalation Pattern)** when they cannot proceed without human input. HEP is fully defined in §5.6; in brief: the stage creates a separate `human`-labeled escalation bead, adds a `bd dep` blocker from the source bead to the escalation bead, and reverts the source bead to status `open`. The source bead never carries `human` itself — the label is a visibility tag for `bd human list`, not a gate on `bd ready`. See §5.6 for the full procedure, resolution table (Scenarios A–G), and class taxonomy.
+**HEP forward reference.** Several stages below mention the **HEP (Human-Escalation Pattern)** when they cannot proceed without human input. HEP is fully defined in §5.6; in brief: the stage creates a separate `human`-labeled escalation bead, adds a `bd dep` blocker from the source bead to the escalation bead, and reverts the source bead to status `open`. The source bead never carries `human` itself — the label is a visibility tag for `bd human list`, not a gate on `bd ready`. **The verb `flag-human` used throughout this document is shorthand for "execute the HEP escalation procedure (§5.6)" — it is not a separate protocol and never stamps `human` on the source bead.** See §5.6 for the full procedure, resolution table (Scenarios A–G), and class taxonomy.
 
 ### preflight
 
@@ -66,7 +66,7 @@ The orchestrator selects the formula by reading the bead's `formula-<name>` labe
 
 The pour-vs-worktree ordering is critical: pour the formula FIRST, then create the worktree. If pour fails, no worktree is created and there is nothing to clean up. If worktree creation fails after pour, `bd mol squash <mol-id>` the molecule with the failure summary and flag-human; never leave a poured molecule without a worktree.
 
-**Definition of Done.** Poured molecule + worktree exists + `worktree-path-*` label stamped on the molecule. OR `human` label + structured gap-note + (if pour completed) molecule squashed.
+**Definition of Done.** Poured molecule + worktree exists + `worktree-path-*` label stamped on the molecule. OR HEP escalation per §5.6 (escalation bead's notes carry the structured gap-note) + (if pour completed) molecule squashed.
 
 **Orchestrator agent + model + effort.** `claude-sonnet-4-6`, effort `high`. The architectural decisions made here govern the entire pipeline run; bad choices corrupt every downstream stage. Stage is short, so absolute cost of effort:high is small.
 
@@ -206,7 +206,7 @@ When `review-level:none` is set on the source bead, the entire stage skips.
 
 Additional functional/UI tests from `[functional-tests]` in `project-config.toml` (e2e, UI tests) run here. Validation report persists to BOTH the bead's notes AND the eventual PR description.
 
-If functional tests fail at this stage: create one bug bead per failure, flag each as `human`-needed, note in PR comments. Do NOT loop back; do NOT auto-revert. The molecule continues to `create-pr`.
+If functional tests fail at this stage: create one bug bead per failure (plain bug type, no `human` label — these are sibling bugs, not HEP escalations), note in PR comments so the human reviewer sees them alongside the PR. The bug beads are tracked normally via `bd ready` / parent-epic filters, NOT via `bd human list` (they are not human-attention escalations; the PR comments are the surfacing channel). Do NOT loop back; do NOT auto-revert. The molecule continues to `create-pr`.
 
 When `review-level:none` is set, the entire stage skips.
 
@@ -572,7 +572,7 @@ bd update "$HUMAN_ID" --append-notes \
     "Source: <source-bead-id>
 Step-bead: <step-bead-id>
 Molecule: <mol-id>
-Worktree: <worktree-path>
+Worktree: <worktree-path, or 'N/A' if no worktree exists yet (e.g. preflight escalation before worktree creation)>
 Scenario hint: <one of: spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
 bd dep add "<source-bead-id>" "$HUMAN_ID"
 bd update "<source-bead-id>" --status open
@@ -586,7 +586,7 @@ After this transaction:
 - **Escalation bead `$HUMAN_ID`** — status `open`, label `human`, no parent, no children. Visible in `bd human list` for triage.
 - **`bd ready`** — filters the source bead out (open blocker); shows the escalation bead (no blockers, but having `human` does not push it onto the implementation queue, since `bd ready --label implementation-ready` is the queue's filter).
 
-**Single-bead `human` invariant.** Only the escalation bead carries `human`. The source bead never carries `human`. The step-bead never carries `human`. The invariant is structural: the escalation procedure is the only code path that adds the label.
+**Single-bead `human` invariant (HEP scope).** Within an HEP pause, only the escalation bead carries `human`. The source bead never carries `human`. The step-bead never carries `human`. The invariant is structural: HEP is the only code path that introduces `human` *as part of pausing a source bead*. Note that `[h]` follow-up beads (defined in §4.3, created at brainstorm-bead.finalize) also carry `human` — those are a separate class with their own lifecycle and do not fall under this invariant. The contract is therefore: every `human`-labeled bead is either an HEP escalation (this section, including the merge-gate hand-off sub-class) or an `[h]` follow-up (§4.3); no source bead ever carries `human`.
 
 **Source bead status revert.** The transition `in_progress → open` signals that this bead is paused and re-evaluable. Ancestor epics retain their `in_progress` status — they remain "started," and any other in-progress children are still active.
 
