@@ -659,8 +659,6 @@ These two beads serve different gates: the hand-off escalation bead gates source
 
 The `resolve-human-bead` skill detects which class a target bead belongs to and applies the right resolution path. Class detection priority: (1) merge-gate hand-off sub-class (`merge-ready` label discriminator) → Scenario G; (2) `[h]` follow-up (`parent` set + `[Human verify]` title prefix + `human`) → Scenario F; (3) HEP escalation (incoming `bd dep` from non-closed source + `human`, no other discriminator) → Scenarios A–E.
 
-> **Doc duplication note.** This HEP description is intentionally duplicated in `src/plugins/beads/.claude/rules/beads-labels.md` ("Human-Escalation Pattern (HEP)" section) — that file carries the operational summary every agent needs, while this section (§5.6) is the architecture-of-record. **Any change here MUST land in `beads-labels.md` in the same commit, and vice versa.** Drift between the two surfaces causes silent contract violations.
-
 #### Rollout status
 
 The architecture in this section is target state. As of this commit, the runtime surfaces below still implement the prior `human`-on-source-bead contract; this gap is staged work, not unspecified behavior:

@@ -47,7 +47,7 @@ done
 
 **I3. Discovered-work placement — siblings go IN the epic, not beside it.**
 
-When work is discovered mid-implementation, capture it immediately. **Sibling test**: "would this have been on the epic's original plan?"
+When work is discovered mid-implementation that does not fit the spirit of the current scope's requirements, capture it immediately. **Sibling test**: "would this have been on the epic's original plan?"
 - Yes → `bd create --parent <epic-id>`
 - No → `bd create` (orphan) + `bd dep add <new-id> <current-id> --type discovered-from`
 
@@ -66,6 +66,16 @@ bd ready --json | jq '[.[] | select(.labels | index("implementation-ready") | no
 ```
 
 In a **directed context** (e.g. run-queue), use `bd ready --label implementation-ready` instead.
+
+## Notes vs Comments
+
+| Command | Semantics | When to use |
+|---|---|---|
+| `bd update <id> --append-notes "..."` | Appends to notes | Step output, escalation context, run breadcrumbs |
+| `bd update <id> --notes "..."` | **Replaces** notes entirely | Initial creation or intentional spec overwrites only |
+| `bd comments add <id> "..."` | Non-destructive comment | Lifecycle audit, molecule→bead tracing |
+
+**Footgun**: `--notes` is a destructive overwrite. Use `--append-notes` to add.
 
 ## Session Separation
 
