@@ -151,6 +151,38 @@ BD_FIXTURE=$F assert_decision "closed with produced-bead- (empty Y) -> halt erro
     "decision=halt reason=error message=invalid-produced-bead-label-empty-y original=target intermediate=target" \
     -- target
 
+# --- Error-branch coverage: protect the caller-visible decision format -----
+# Each test below pins a distinct error-halt branch so future refactors
+# cannot silently drop or rename the decision/exit-code contract.
+# The assert_decision harness already inlines the non-zero exit code as
+# "EXIT:<n>" into the captured output, so the substring match below
+# validates BOTH the decision line and the non-zero exit signal.
+
+# --- Test 8: missing target id (no positional arg) → halt error ------------
+# No fixture needed — helper short-circuits before any bd call.
+assert_decision "missing target id -> halt error" \
+    "decision=halt reason=error message=missing-target-id" \
+    --
+
+# --- Test 9: unknown flag → halt error -------------------------------------
+# No fixture needed — helper rejects unknown flags during arg parsing.
+assert_decision "unknown flag -> halt error" \
+    "decision=halt reason=error message=unknown-flag:--bogus=x" \
+    -- target --bogus=x
+
+# --- Test 10: extra positional arg → halt error ----------------------------
+# No fixture needed — helper rejects extra positionals during arg parsing.
+assert_decision "extra positional arg -> halt error" \
+    "decision=halt reason=error message=extra-positional:extra" \
+    -- target extra
+
+# --- Test 11: bd-show failure (target bead missing) → halt error -----------
+# Empty fixture dir → mock bd exits 1 → helper emits bd-show-failed.
+F=$(new_fixture)
+BD_FIXTURE=$F assert_decision "bd show failure on missing target -> halt error" \
+    "decision=halt reason=error message=bd-show-failed:target" \
+    -- target
+
 # --- Summary ---------------------------------------------------------------
 TOTAL=$((PASS + FAIL))
 printf '\n%d/%d passed, %d failed\n' "$PASS" "$TOTAL" "$FAIL"
