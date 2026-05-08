@@ -30,11 +30,76 @@ bd label list <bead-id>
 
 Note: type, status, labels, AC, description, dependencies.
 
+### Step 1.5: Closed-bead preflight
+
+Closed beads can carry a forwarding pointer to a derivative bead via a
+`produced-bead-<Y-id>` label, stamped by upstream workflows when a bead
+is closed and a new bead is produced from it. This preflight runs
+before the molecule existence probe (Step 2) so closed beads with such
+a pointer don't silently fall through to molecule resumption or
+Routes A/B/C.
+
+The logic lives in a sibling helper script that is pure-read (no `bd`
+writes) and emits a single `decision=...` line on stdout. The agent
+runs the helper alongside the skill and acts on the returned decision.
+
+The helper exits non-zero on the `decision=halt reason=error` branch
+(per its F6 contract). Under `set -e` this would abort the caller before
+it could read the decision line, so capture stdout with a `|| true`
+guard to preserve the line on every exit code:
+
+```bash
+# Safe capture: preserve stdout even when the helper exits non-zero on
+# the error halt branch (set -e contexts).
+decision_line=$(./closed-bead-preflight.sh <target-id> 2>/dev/null) \
+  || true
+
+# On a forward, the next call passes the original target and updated chain
+# (same safe-capture pattern):
+decision_line=$(./closed-bead-preflight.sh <Y-id> \
+    --original=<original-id> --chain=<csv> 2>/dev/null) \
+  || true
+```
+
+Interpret `decision_line`:
+
+| Decision | Action |
+|----------|--------|
+| `decision=proceed` | Fall through to Step 2 unchanged. |
+| `decision=forward target=<Y> chain=<csv>` | Re-enter Step 1 with `<target> = <Y>`; pass `--chain=<csv>` and the unchanged `--original=<id>` to the helper on the next invocation. The original target stays fixed across forwards. |
+| `decision=friendly-exit current=<bead-id>` | Emit `Bead <bead-id> is closed. Did you mean a different bead?` to the user; stop. |
+| `decision=halt reason=dangling original=<id> intermediate=<X> y=<Y>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=multiple original=<id> intermediate=<X> labels=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=cycle original=<id> chain=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=error message=<terse>` | The probe failed (e.g. `bd show` returned non-zero). Surface the message; stop. |
+
+Audit-comment templates — always target the **original** target, not
+the intermediate chain bead:
+
+```bash
+# dangling
+bd comments add <original-id> "Route Z halt (dangling label): produced-bead-<Y> on <intermediate> points to non-existent <Y>. Investigate label correctness or bead deletion."
+
+# multiple
+bd comments add <original-id> "Route Z halt (multiple labels): <intermediate> carries N produced-bead-* labels: <list>. Cannot determine which Y is canonical. Manual triage required."
+
+# cycle
+bd comments add <original-id> "Route Z halt (cycle): produced-bead-* chain visits a bead twice. Chain so far: <ordered-list>. Manual triage required."
+```
+
+The friendly-exit suffix `is closed. Did you mean a different bead?`
+is the helper's exact deterministic output for the no-`produced-bead-*`
+branch on a closed bead, and it is the canonical phrasing the agent
+relays to the user. Do NOT add `human` to any bead in any branch — the
+user is present to read audit comments and the reply directly.
+
 ### Step 2: Check for Existing Molecule
 
-Before doing anything else, check if an active molecule already exists for
-this bead. Use the `for-bead-<bead-id>` label (stamped by Route C on wisp
-and by `implement-bead` on pour) and query with `--json`:
+Once Step 1.5 has cleared (the bead is open, or Route Z has forwarded
+to an open Y), check if an active molecule already exists for this bead
+before evaluating any of Routes A/B/C. Use the `for-bead-<bead-id>`
+label (stamped by Route C on wisp and by `implement-bead` on pour) and
+query with `--json`:
 
 ```bash
 bd list --label for-bead-<bead-id> --type molecule --json \
@@ -260,11 +325,15 @@ Exception: if it's obviously trivial, just do it without announcing.
 
 ## Routing Decision Table
 
-| Has `implementation-ready` label | Trivial | Route |
-|---|---|---|
-| Yes | — | implement-bead |
-| No | Yes | Inline |
-| No | No | Brainstorm formula |
+| Status | Has `produced-bead-*` | Has `implementation-ready` | Trivial | Route |
+|--------|-----------------------|----------------------------|---------|-------|
+| closed | yes (exactly 1)       | —                          | —       | **Z** (forward to Y) |
+| closed | no                    | —                          | —       | exit (friendly message) |
+| open   | —                     | yes                        | —       | A |
+| open   | —                     | no                         | yes     | B |
+| open   | —                     | no                         | no      | C |
+
+*"A closed bead with ≥2 `produced-bead-*` labels does NOT route — it halts."*
 
 ## Red Flags
 
@@ -278,6 +347,7 @@ Exception: if it's obviously trivial, just do it without announcing.
 | "I'll make up step IDs — they look like `<root>.<step>`" | No. Use IDs from `bd mol current` output. |
 | "After brainstorming, I should invoke `writing-plans` next" | No. The bead is the plan. Default is hand-off to run-queue; only invoke `implement-bead` with explicit user authorization or in a separate run-queue session. |
 | "Brainstorming is done, I'll implement next as a natural continuation" | No. Default is hand-off to run-queue. Stop unless explicitly authorized. |
+| The bead is closed, just give up | Run Step 1.5. If the helper says forward, route to the new target. Otherwise, friendly exit. Never silently fall through. |
 
 ### Recovery: if you land in `superpowers:writing-plans`
 
