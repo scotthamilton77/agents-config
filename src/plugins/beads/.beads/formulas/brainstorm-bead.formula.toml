@@ -234,8 +234,25 @@ STEP 1 — Pre-flight idempotency probe
 Detect prior partial runs before doing any new writes.
 
   # 1a. Has X already been stamped with a produced-bead-* marker?
-  PRODUCED_MARKER=$(bd label list {{bead-id}} --json \\
-    | jq -r '.[] | select(startswith("produced-bead-"))' | head -1)
+  # Collect into JSON array so we can detect >1 without silently dropping extras.
+  PRODUCED_LABELS=$(bd label list {{bead-id}} --json \\
+    | jq -c '[.[] | select(startswith("produced-bead-"))]')
+  PRODUCED_COUNT=$(echo "$PRODUCED_LABELS" | jq 'length')
+
+  if [ "$PRODUCED_COUNT" -gt 1 ]; then
+    # HEP: multiple produced-bead-* labels — ambiguous canonical Y; escalate.
+    X_PRIORITY_ESC=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "2"')
+    ESC_ID=$(bd create --type task --priority "$X_PRIORITY_ESC" \\
+      --title "Manual triage: multiple produced-bead labels on {{bead-id}}" \\
+      --description "finalize halted: $PRODUCED_COUNT produced-bead-* labels found on {{bead-id}}; cannot determine canonical Y. Remove all but the correct produced-bead-<Y-id> label and re-run finalize." \\
+      --labels "human" --no-inherit-labels \\
+      --json | jq -r '.id')
+    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    echo "PAUSED: multiple produced-bead-* labels on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
+    exit 0
+  fi
+
+  PRODUCED_MARKER=$(echo "$PRODUCED_LABELS" | jq -r '.[0] // empty')
 
   if [ -n "$PRODUCED_MARKER" ]; then
     # X has been stamped by a prior run. Extract the existing Y-id from the
@@ -243,6 +260,9 @@ Detect prior partial runs before doing any new writes.
     # step 9 (burn wisp). Steps 2-7 are already done.
     Y_ID="${PRODUCED_MARKER#produced-bead-}"
     echo "Replay: produced-bead-$Y_ID already on {{bead-id}}; resuming at step 8."
+    # Derive CHOSEN and SID from Y's labels (step 3 was skipped on this replay path).
+    CHOSEN=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+    SID=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
     # GOTO step 8.
   else
     # 1b. No produced-bead marker. Probe for an orphan Y from a run that
@@ -255,13 +275,25 @@ Detect prior partial runs before doing any new writes.
       0) ;;  # fresh run; proceed to step 2
       1) Y_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
          echo "Replay: orphan Y=$Y_ID found (produced-from-{{bead-id}}); resuming at step 5."
+         # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
+         X_JSON_R=$(bd show {{bead-id}} --json)
+         X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
+         X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
+         # Derive CHOSEN and SID from Y's labels for use in step 9 report.
+         CHOSEN=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+         SID=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
          # GOTO step 5 with the existing Y_ID.
          ;;
-      *) bd label add {{bead-id}} human
-         bd comments add {{bead-id}} \\
-           "finalize halted: $ORPHAN_COUNT non-closed beads carry produced-from-{{bead-id}}; manual triage required."
-         echo "ERROR: multiple orphan Y candidates; escalated to human."
-         exit 1 ;;
+      *) # HEP: create escalation bead + blocking dep; exit 0 so bd ready gating works.
+         X_PRIORITY_ESC=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "2"')
+         ESC_ID=$(bd create --type task --priority "$X_PRIORITY_ESC" \\
+           --title "Manual triage: $ORPHAN_COUNT orphan Y beads for {{bead-id}}" \\
+           --description "finalize halted: $ORPHAN_COUNT non-closed beads carry label produced-from-{{bead-id}}. Determine the canonical Y, close or delete the others, then re-run finalize." \\
+           --labels "human" --no-inherit-labels \\
+           --json | jq -r '.id')
+         bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+         echo "PAUSED: multiple orphan Y candidates for {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
+         exit 0 ;;
     esac
   fi
 
@@ -288,11 +320,16 @@ child halts finalize for human triage.
                   | .id] | join(",")')
 
   if [ -n "$UNEXPECTED" ]; then
-    bd label add {{bead-id}} human
-    bd comments add {{bead-id}} \\
-      "finalize halted: {{bead-id}} has unexpected children [$UNEXPECTED]; brainstorming a bead with non-formula children is not supported. Triage manually."
-    echo "ERROR: unexpected children under {{bead-id}}: $UNEXPECTED"
-    exit 1
+    # HEP: create escalation bead + blocking dep; exit 0 so bd ready gating works.
+    X_PRIORITY_ESC=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "2"')
+    ESC_ID=$(bd create --type task --priority "$X_PRIORITY_ESC" \\
+      --title "Manual triage: unexpected children on {{bead-id}}" \\
+      --description "finalize halted: {{bead-id}} has unexpected non-formula children [$UNEXPECTED]. Triage or close these children, then re-run finalize." \\
+      --labels "human" --no-inherit-labels \\
+      --json | jq -r '.id')
+    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    echo "PAUSED: unexpected children on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
+    exit 0
   fi
 
 ──────────────────────────────────────────────────────────────────────────
@@ -426,9 +463,8 @@ STEP 4 — Create Y atomically
 Create Y in a SINGLE `bd create` call so identity, labels, and the
 discovered-from edge to X are established together (no orphan-Y window).
 
-  # Write spec/AC to per-process temp files via mktemp (avoid collision on
-  # concurrent runs and avoid huge --description / --acceptance arg overflow
-  # on long specs). The EXIT trap cleans them up regardless of how the step
+  # Write spec/AC to per-process temp files via mktemp (avoid content collision
+  # on concurrent runs). The EXIT trap cleans them up regardless of how the step
   # exits.
   Y_SPEC=$(mktemp)
   Y_AC=$(mktemp)
@@ -568,7 +604,7 @@ out clearly; replay handles the rest via the step-1 idempotency probe.
   # The parent edge is encoded as dependency_type="parent-child" (NOT "parent"); skip it.
   bd show {{bead-id}} --json \\
     | jq -r '.[0].dependencies // [] | .[] | "\\(.dependency_type)\\t\\(.id)"' \\
-  | while IFS=$'\\t' read -r dep_type target_id; do
+  | while IFS="$(printf '\\t')" read -r dep_type target_id; do
       [ "$dep_type" = "parent-child" ] && continue
       [ "$dep_type" = "discovered-from" ] && [ "$target_id" = "{{bead-id}}" ] && continue
       case "$dep_type" in
