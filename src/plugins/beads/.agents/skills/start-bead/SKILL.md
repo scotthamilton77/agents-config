@@ -43,12 +43,22 @@ The logic lives in a sibling helper script that is pure-read (no `bd`
 writes) and emits a single `decision=...` line on stdout. The agent
 runs the helper alongside the skill and acts on the returned decision.
 
-```bash
-decision_line=$(./closed-bead-preflight.sh <target-id>)
+The helper exits non-zero on the `decision=halt reason=error` branch
+(per its F6 contract). Under `set -e` this would abort the caller before
+it could read the decision line, so capture stdout with a `|| true`
+guard to preserve the line on every exit code:
 
-# On a forward, the next call passes the original target and updated chain:
+```bash
+# Safe capture: preserve stdout even when the helper exits non-zero on
+# the error halt branch (set -e contexts).
+decision_line=$(./closed-bead-preflight.sh <target-id> 2>/dev/null) \
+  || true
+
+# On a forward, the next call passes the original target and updated chain
+# (same safe-capture pattern):
 decision_line=$(./closed-bead-preflight.sh <Y-id> \
-    --original=<original-id> --chain=<csv>)
+    --original=<original-id> --chain=<csv> 2>/dev/null) \
+  || true
 ```
 
 Interpret `decision_line`:
