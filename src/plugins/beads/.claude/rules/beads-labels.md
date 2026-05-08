@@ -55,17 +55,17 @@ Full protocol: `docs/specs/bead-pipeline-architecture.md` §5.6. The escalation 
 
 ## Molecule → Bead Linkage
 
-Molecules have no structural link to their source bead (upstream bug `lp3`). Stamp a label immediately after pour/wisp:
+Molecules have no structural link to their source bead. Stamp a label immediately after pour/wisp:
 
 ```bash
 bd label add <mol-id> for-bead-<bead-id>
 ```
 
-**Existence probe** — always use `--json` (tree mode silently drops `--type`/`--label` filters, bug `2dx`):
+**Existence probe** — always use `--json` (tree mode silently drops `--type`/`--label` filters):
 
 ```bash
 bd list --label for-bead-<bead-id> --type molecule --json \
   | jq '[.[] | select(.status != "closed")]'
 ```
 
-When upstream bugs `lp3` and `2dx` are fixed, drop the stamp and switch probe to `bd list --parent <bead-id> --type molecule --json`.
+When `bd mol pour` gains a native parent link and the tree-mode filter bug is fixed, drop the stamp and switch probe to `bd list --parent <bead-id> --type molecule --json`.
