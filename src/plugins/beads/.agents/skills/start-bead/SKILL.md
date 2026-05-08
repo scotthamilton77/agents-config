@@ -161,7 +161,7 @@ Decide from the result array:
   ```
   Do NOT silently pick one.
 
-See `rules/beads.md` ("Molecule → bead linkage convention") for the full
+See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
 rationale and the stamp procedure.
 
 ### Step 3: Route the Bead
@@ -247,7 +247,7 @@ claim the bead manually here; driving the molecule will run the claim
 step and mark the bead (and parent chain) `in_progress` before `assess`.
 
 Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
-lookup label (see `rules/beads.md` "Molecule → bead linkage convention"):
+lookup label (see `rules/beads-labels.md` "Molecule → bead linkage convention"):
 ```bash
 bd mol wisp create brainstorm-bead --var bead-id=<bead-id>
 # Capture the wisp-id from the command output, then:
