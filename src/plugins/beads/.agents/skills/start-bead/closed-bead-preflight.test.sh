@@ -140,6 +140,17 @@ BD_FIXTURE=$F assert_decision "closed with produced-bead-Y already in chain -> h
     "decision=halt reason=cycle original=Y chain=Y,current,Y" \
     -- current --original=Y --chain=Y
 
+# --- Test 7: closed, label "produced-bead-" (empty Y) → halt error ---------
+# An invalid label like "produced-bead-" (no Y suffix) MUST NOT silently
+# collapse to friendly-exit — it is an invalid forward pointer and must
+# halt with an explicit error so the operator can investigate label
+# correctness.
+F=$(new_fixture)
+write_bead "$F" target closed "produced-bead-"
+BD_FIXTURE=$F assert_decision "closed with produced-bead- (empty Y) -> halt error" \
+    "decision=halt reason=error message=invalid-produced-bead-label-empty-y original=target intermediate=target" \
+    -- target
+
 # --- Summary ---------------------------------------------------------------
 TOTAL=$((PASS + FAIL))
 printf '\n%d/%d passed, %d failed\n' "$PASS" "$TOTAL" "$FAIL"

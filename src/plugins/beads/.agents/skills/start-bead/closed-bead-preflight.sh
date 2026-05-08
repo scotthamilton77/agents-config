@@ -84,26 +84,31 @@ if [ "$STATUS" != "closed" ]; then
     exit 0
 fi
 
-# --- Extract produced-bead-* Y-ids -----------------------------------------
-PRODUCED=$(printf '%s' "$TARGET_JSON" \
-    | jq -r '.[0].labels[]? | select(startswith("produced-bead-")) | sub("^produced-bead-"; "")' \
+# --- Count produced-bead-* labels (with prefix intact) ---------------------
+# Count BEFORE stripping the prefix so that an invalid label like
+# "produced-bead-" (empty Y) is still counted — its emptiness is
+# diagnosed below as an explicit error halt rather than silently
+# collapsing to COUNT=0 and friendly-exiting.
+COUNT=$(printf '%s' "$TARGET_JSON" \
+    | jq '[.[0].labels[]? | select(startswith("produced-bead-"))] | length' \
     2>/dev/null) || {
     printf 'decision=halt reason=error message=jq-labels-failed:%s\n' "$TARGET"
     exit 1
 }
-
-# Count non-empty lines.
-if [ -z "$PRODUCED" ]; then
-    COUNT=0
-else
-    COUNT=$(printf '%s\n' "$PRODUCED" | grep -c .)
-fi
 
 # --- Closed, no produced-bead-* → friendly exit ----------------------------
 if [ "$COUNT" -eq 0 ]; then
     printf 'decision=friendly-exit current=%s\n' "$TARGET"
     exit 0
 fi
+
+# --- Extract Y-ids (strip prefix) for downstream branches ------------------
+PRODUCED=$(printf '%s' "$TARGET_JSON" \
+    | jq -r '.[0].labels[]? | select(startswith("produced-bead-")) | sub("^produced-bead-"; "")' \
+    2>/dev/null) || {
+    printf 'decision=halt reason=error message=jq-labels-failed:%s\n' "$TARGET"
+    exit 1
+}
 
 # --- Closed, multiple produced-bead-* → halt -------------------------------
 if [ "$COUNT" -ge 2 ]; then
@@ -115,6 +120,14 @@ fi
 
 # --- COUNT == 1: cycle / dangling / forward branches ------------------------
 Y=$PRODUCED
+
+# Validate Y is non-empty. An empty Y means the label was literally
+# "produced-bead-" with no suffix — invalid forward pointer, halt.
+if [ -z "$Y" ]; then
+    printf 'decision=halt reason=error message=invalid-produced-bead-label-empty-y original=%s intermediate=%s\n' \
+        "$ORIGINAL" "$TARGET"
+    exit 1
+fi
 
 # Cycle check: Y already in (chain ∪ {target}).
 # We compare against the chain extended with the current target, since
