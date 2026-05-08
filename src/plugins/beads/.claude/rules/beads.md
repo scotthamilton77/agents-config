@@ -9,6 +9,8 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 
 **Rules**:
 - Use bd for ALL tracking, `--json` for programmatic use
+  - `bd show --json` emits literal newlines in `notes`/`description`/`acceptance_criteria` strings — jq rejects them. Use Python: `bd show <id> --json | python3 -c "import sys,json; d=json.load(sys.stdin)[0]; print(d.get('notes',''))"`
+  - Single-line fields (`id`, `title`, `status`, `labels`, `dependencies`) are safe for jq
 - No markdown TODO lists unless user explicitly requests
 - Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default — only explicit deps create sequence
