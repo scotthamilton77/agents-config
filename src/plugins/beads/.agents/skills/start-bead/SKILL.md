@@ -68,9 +68,9 @@ Interpret `decision_line`:
 | `decision=proceed` | Fall through to Step 2 unchanged. |
 | `decision=forward target=<Y> chain=<csv>` | Re-enter Step 1 with `<target> = <Y>`; pass `--chain=<csv>` and the unchanged `--original=<id>` to the helper on the next invocation. The original target stays fixed across forwards. |
 | `decision=friendly-exit current=<bead-id>` | Emit `Bead <bead-id> is closed. Did you mean a different bead?` to the user; stop. |
-| `decision=halt reason=dangling intermediate=<X> y=<Y>` | Emit reply text and add an audit comment on the **original target** (template below). |
-| `decision=halt reason=multiple intermediate=<X> labels=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
-| `decision=halt reason=cycle chain=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=dangling original=<id> intermediate=<X> y=<Y>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=multiple original=<id> intermediate=<X> labels=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
+| `decision=halt reason=cycle original=<id> chain=<csv>` | Emit reply text and add an audit comment on the **original target** (template below). |
 | `decision=halt reason=error message=<terse>` | The probe failed (e.g. `bd show` returned non-zero). Surface the message; stop. |
 
 Audit-comment templates — always target the **original** target, not
