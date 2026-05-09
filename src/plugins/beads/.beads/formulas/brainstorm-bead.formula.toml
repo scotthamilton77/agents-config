@@ -163,10 +163,10 @@ or earlier brainstorming), you MUST either:
   bd update {{bead-id}} --notes="<full spec document>"
 
 If the spec required closing existing technical ambiguity, record it:
-  ~/.beads/scripts/bd-record-decision.sh \
-    --bead-id {{bead-id}} \
-    --title "<brief decision statement>" \
-    --notes "<rationale>" \
+  ~/.beads/scripts/bd-record-decision.sh \\
+    --bead-id {{bead-id}} \\
+    --title "<brief decision statement>" \\
+    --notes "<rationale>" \\
     --implemented      # decision resolved in this spec; closes the decision bead
     --needs-approval   # impacts future work; keeps open and flags for human review
 
