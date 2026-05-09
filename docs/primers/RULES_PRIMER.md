@@ -1,86 +1,122 @@
 # Rules Files — Context Primer
 
 > Use this document to orient yourself to rules files before auditing or writing rules.
+> Reference: [Claude Code memory docs — organize rules with `.claude/rules/`](https://code.claude.com/docs/en/memory)
 
 ---
 
-## What Rules Are and Why They Exist
+## What Rules Are
 
-**Rules** are normative constraints — always-on guidance that is present in the agent's context regardless of what task is being performed. They encode "how we work here": process requirements, tool conventions, safety boundaries, and workflow patterns that apply to every task.
+**Rules** are markdown files in `.claude/rules/` that Claude Code loads into the agent's context. Rules without a `paths` frontmatter field are loaded at session start with the same priority as `.claude/CLAUDE.md`. Rules with a `paths` field are **path-scoped**: they only enter context when Claude reads files matching the configured glob patterns.
 
-Rules differ from skills and instructions in key ways:
+> Quoted directly from the official docs:
+> *"Rules load into context every session or when matching files are opened. For task-specific instructions that don't need to be in context all the time, use skills instead, which only load when you invoke them or when Claude determines they're relevant to your prompt."*
 
-| Content type | Scope | When active |
-|-------------|-------|-------------|
-| `INSTRUCTIONS.md` | Shared across ALL tools (Claude, Codex, Gemini) | Always — loaded at session start |
-| Rules files | Claude-specific (or tool-specific) constraints | Always — referenced from AGENTS.md |
-| Skills | Tool-specific methodology guides | On-demand — agent invokes when relevant |
-
-Rules are loaded into the agent's context at session start via AGENTS.md references. An agent reading a rules file is not deciding whether to follow it — it is always in effect, for every task.
+Rules are a Claude Code-specific construct. In this project, rules are authored Claude-specifically, but their substantive content is intended to be **universal in applicability**: the install pipeline will eventually embed rule content into the AGENTS.md instruction files for Codex, Gemini, and other tools. Author rules accordingly — the constraint or convention should be tool-agnostic in spirit, even though the file lives under `.claude/rules/`.
 
 ---
 
 ## File Format
 
-Plain markdown. No frontmatter required.
+Plain markdown. YAML frontmatter is **required only for path-scoped rules**.
+
+### Always-loaded rule (no frontmatter)
 
 ```markdown
 # Rule Name
 
 One-line statement of what this rule governs.
 
-Core constraint statement — what the agent always does or never does.
+Core constraint — what the agent always does or never does.
 
 ## When this applies
-Specific situations where this rule is active (may be "all non-trivial work").
+Specific situations or "all non-trivial work".
 
-## Action categories / What to do
+## What to do
 Explicit prescriptions: "always X before Y", "never Z without explicit authorization".
-
-## Examples / Edge cases
-Optional: concrete scenarios that clarify the rule's application.
 ```
+
+### Path-scoped rule (with `paths` frontmatter)
+
+```markdown
+---
+paths:
+  - "src/api/**/*.ts"
+  - "src/api/**/*.tsx"
+---
+
+# API Development Rules
+
+- All API endpoints must include input validation
+- Use the standard error response format
+- Include OpenAPI documentation comments
+```
+
+Path-scoped rules trigger when Claude reads files matching the patterns. Glob syntax supports brace expansion: `"src/**/*.{ts,tsx}"`.
 
 ---
 
-## Rules in This Repository
+## How Rules Load
 
-| File | Governs |
-|------|---------|
-| `completion-gate.md` | Mandatory quality gate steps before delivery: quality-reviewer → simplify → verify-checklist |
-| `delivery.md` | PR and branch workflow; automatic vs. authorization-required action categories |
-| `delegation.md` | Which skill to use for planning, implementation, and testing |
-| `git-commits.md` | Commit message format; heredoc prohibition in sandbox mode |
-| `worktrees.md` | Worktree creation location (always `.claude/worktrees/`, never elsewhere) |
-| `subagents.md` | Rules for dispatching and managing subagents |
-| `codex-routing.md` | How to route work to Codex models via the Claude Code Codex plugin |
-| `beads.md` _(plugin)_ | Full bead lifecycle, parent-chain invariants, session separation rules |
+| Rule type | When loaded |
+|-----------|-------------|
+| Rule with no `paths` field | Every session, at startup, like `.claude/CLAUDE.md` |
+| Rule with `paths` field | Only when Claude reads a file matching one of the patterns |
+
+User-level rules in `~/.claude/rules/` apply to every project. Project-level rules in `<project>/.claude/rules/` are loaded for that project specifically. **Project rules have higher priority than user rules** when both apply.
+
+`.claude/rules/` supports symlinks for sharing a rule set across projects.
 
 ---
 
-## Instruction Hierarchy
+## Rules vs. Skills: When to Use Which
 
-```
-User explicit instructions (CLAUDE.md / AGENTS.md directives, user messages)  ← highest priority
-    ↓
-Superpowers skills (override default behavior where specified)
-    ↓
-Rules files (always-on normative constraints)
-    ↓
-Default system behavior                                                         ← lowest priority
-```
+This is the most important authoring decision. The official guidance:
 
-Rules override default behavior but yield to user instructions. When a rule conflicts with an explicit user direction, follow the user direction and note the conflict.
+| Use a **rule** when | Use a **skill** when |
+|--------------------|----------------------|
+| Constraint must be in context for every relevant session | Methodology should load only when explicitly invoked |
+| Content is normative — "always", "never", "must" | Content is prescriptive process — "do this, then this" |
+| One sentence captures the essence; reader follows it directly | A checklist, decision tree, or multi-step workflow is needed |
+| Violating it breaks workflow safety or correctness | Skipping it loses quality but does not break things |
+
+If a rule has grown to 5+ steps of methodology, the methodology belongs in a skill. The rule then becomes: `"Always run the X skill before Y"` — and the X skill carries the process.
 
 ---
 
-## Collision / Append Model
+## Best Practices
 
-Rules files with the same name across source trees are **appended** (not overwritten) during install:
+- **Single purpose**: one file, one concern. Do not mix two policies into one rule file.
+- **Normative language**: say "always", "never", "must", "must not". Advisory language ("should", "consider", "it's good to") indicates the content belongs in a skill, not a rule.
+- **Action-oriented**: every rule must answer "what does the agent DO differently because of this rule?"
+- **No methodology duplication**: if a skill encodes the how-to, the rule references the skill — it does not repeat the skill's instructions.
+- **Authority grounding for hard constraints**: state the consequence or reason. `"Never commit to main — direct commits bypass PR review and break the audit trail"` is more durable than `"Never commit to main"`.
+- **Path-scope when applicable**: if a rule only matters for a subset of files, add a `paths` field rather than burning context on every session.
+- **Prefer helper scripts to inline shell sequences**: when a rule prescribes a deterministic command sequence, point to a helper script rather than embedding the sequence in prose. Prose-prescribed sequences drift; scripts are deterministic.
+
+---
+
+## How Rules Are Organized in This Project
+
+Rules in this project are sourced under `src/` and installed into the user-level Claude Code rules directory by `scripts/install.sh`.
+
+### Source layout
+
+```
+src/user/.claude/rules/            # Shared rules — install to ~/.claude/rules/
+  <rule-name>.md
+
+src/plugins/<plugin>/.claude/rules/   # Plugin rules — appended to base on install
+  <rule-name>.md
+```
+
+### Collision / append model
+
+Rule files with the same name across source trees (base + active plugins) are **appended** during install, not overwritten:
 
 ```
 base:    src/user/.claude/rules/completion-gate.md
-plugin:  src/plugins/beads/.agents/rules/completion-gate.md
+plugin:  src/plugins/beads/.claude/rules/completion-gate.md
 
 result:  ~/.claude/rules/completion-gate.md
          = base content
@@ -88,36 +124,16 @@ result:  ~/.claude/rules/completion-gate.md
            (plugin content appended)
 ```
 
-This means a plugin can EXTEND an existing rule by adding clauses. The base content always lands first; plugins append alphabetically.
+The base content always lands first; plugins append alphabetically.
 
-**Consequence for authors**:
-- Do not duplicate base rule content in plugin additions — the append model handles it
-- Plugin additions should be purely additive (new clauses, new contexts) not replacements
+**Consequences for authors**:
+- Plugin additions must be purely additive (new clauses, new contexts) — not replacements
+- Do not duplicate base rule content in plugin additions; the append model handles it
 - Read the base rule before writing a plugin extension to avoid contradictions
 
----
+### Future intent (cross-tool embedding)
 
-## Rules vs. Skills: When to Use Which
-
-| Use a **rule** when | Use a **skill** when |
-|--------------------|----------------------|
-| Constraint applies to ALL tasks regardless of context | Methodology applies only when a specific situation arises |
-| Content is normative ("must", "never", "always") | Content is prescriptive process ("do this, then this") |
-| Violating it breaks the workflow or creates risk | Skipping it loses quality but doesn't break things |
-| One sentence captures the essence | A checklist or decision tree is needed |
-
-If a rule has grown to 5+ steps of methodology, consider whether the methodology belongs in a skill that the rule references: `"Always run the X skill before Y"` is a rule; the X skill's process is a skill.
-
----
-
-## Best Practices
-
-- **Single purpose**: one file, one concern. `completion-gate.md` governs the gate; `delivery.md` governs the pipeline. Don't mix.
-- **Normative language**: say "always", "never", "must", "must not" — not "should", "consider", or "it's good to". Advisory language belongs in skills or INSTRUCTIONS.md.
-- **Action-oriented**: every rule should be answerable: "what does the agent DO differently because of this rule?"
-- **No methodology duplication**: if a skill encodes the how-to, the rule says "invoke skill X for Y" — it does not repeat the skill's instructions.
-- **Authority grounding**: for hard constraints, state the consequence or reason. `"Never commit to main — direct commits bypass PR review and break the audit trail"` is better than just `"Never commit to main"`.
-- **Explicit action categories**: for actions that are sometimes automatic and sometimes require authorization, create an explicit table (see `delivery.md` for a good example).
+Rules are currently a Claude Code-only construct, but the install pipeline is intended to eventually embed rule content into AGENTS.md instruction files for Codex, Gemini, and other tools so the same constraints apply across all agents. Author rules with universal applicability in mind: the substantive guidance should be tool-agnostic, even though the file format and loading mechanism are Claude-specific.
 
 ---
 
@@ -126,22 +142,11 @@ If a rule has grown to 5+ steps of methodology, consider whether the methodology
 | Issue | Symptom | Fix |
 |-------|---------|-----|
 | Duplicates skill content | Rule re-describes methodology a skill already encodes | Replace with "invoke skill X"; remove duplication |
-| Advisory vs. normative drift | "Should", "consider", "it's good to" language | Rewrite as "always", "never", "must" — or move to a skill |
+| Advisory vs. normative drift | "Should", "consider", "it's good to" language in a rule file | Rewrite as "always", "never", "must" |
 | Mixed concerns | One file governs both completion AND delivery | Split into two focused files |
-| No consequence grounding | Hard constraint with no "why" anchor | Add one-line rationale ("because X would happen otherwise") |
-| Over-specified how-to | Rule includes 10-step methodology inline | Extract to skill; rule becomes "invoke skill X" |
-| Beads concepts in non-plugin rules | `bd` commands or bead IDs in `~/.claude/rules/` (not a plugin rule) | Move to plugin rules (`src/plugins/beads/.agents/rules/`) |
+| No consequence grounding | Hard constraint with no "why" anchor | Add one-line rationale |
+| Over-specified how-to | Rule includes a 10-step methodology inline | Extract to skill; rule becomes "invoke skill X" |
+| Inline shell sequences | Rule prescribes a deterministic command sequence in prose | Move to a helper script; rule references the script |
+| Missing path scope | Rule only matters for a subset of files but loads every session | Add `paths` frontmatter to scope it |
+| Tool-specific phrasing where universal would do | Rule guidance reads as Claude-Code-only when it could apply to any agent | Rephrase substantive content as tool-agnostic |
 | Plugin rule contradicts base | Plugin addition conflicts with the base rule it appends to | Rewrite as extension, not contradiction |
-
----
-
-## File Locations
-
-```
-src/user/.claude/rules/            # Installs to ~/.claude/rules/ (user-scoped, always active)
-  <rule-name>.md
-
-src/plugins/<plugin>/
-  .agents/rules/                   # Plugin-specific rules (active only when plugin detected)
-  <rule-name>.md                   # Appended to base rule of same name on install
-```

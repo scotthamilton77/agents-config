@@ -9,11 +9,11 @@
 A **slash command** is a user-initiated entry point — a `/command` the user types directly in their prompt. Commands exist to give users repeatable workflows that are too complex to type ad-hoc but too situation-specific to warrant a permanent agent definition. They are the external user interface to the system.
 
 Commands differ from skills and agents in a critical way:
-- **Skills** are invoked by agents, autonomously, during task execution
+- **Skills** are invoked by agents, autonomously, during task execution, although users can explicitly reference a skill (e.g. 'use the /special-skill to ...' - arguably that could be a command if relatively simple, but skills bring other benefits such as progressive context reading)
 - **Commands** are invoked by USERS, explicitly, at the start of a workflow
 - **Agents** are dispatched by orchestrators for role-specific subwork
 
-Commands should be lean and delegating: parse the user's intent, extract `$ARGUMENTS`, then hand off to skills or agents that perform the actual work. A command that contains 200 lines of methodology has confused itself with a skill.
+Commands should be lean and delegating: parse the user's intent, extract `$ARGUMENTS`, then execute in-agent for relatively simple tasks, or hand off to skills or agents for complex work. A command that contains 200 lines of methodology has potentially confused itself with a skill.
 
 ---
 
@@ -85,7 +85,7 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 
 - **Lean body**: under 80 lines. Complex methodology belongs in a skill; complex role work belongs in an agent.
 - **Explicit `$ARGUMENTS` documentation**: what forms are accepted, what the defaults are, what happens on empty input.
-- **Delegate, don't inline**: use `Skill({ skill: "name" })` or dispatch an agent rather than re-implementing methodology inline.
+- **Delegate, don't inline complexity**: use `Skill({ skill: "name" })` or dispatch an agent rather than re-implementing methodology inline.
 - **Single purpose**: one command, one workflow. Complex branching logic is a signal to split into multiple commands.
 - **Graceful empty args**: if `$ARGUMENTS` is optional, define the default behavior explicitly. If required, emit a clear usage message.
 
@@ -95,10 +95,9 @@ Always document what happens when `$ARGUMENTS` is empty. Commands that fail sile
 
 | Criterion | Command | Skill | Agent |
 |-----------|---------|-------|-------|
-| Who triggers it | User (explicit `/cmd`) | Agent (autonomous, when relevant) | Orchestrator (dispatched) |
+| Who triggers it | User (explicit `/cmd`) | Agent (autonomous, when relevant) or user (explicit) | Orchestrator (dispatched) or user (explicit) |
 | Runs in | Current session (inline) | Current session (loaded) | New isolated context |
-| Typical body length | Short (< 80 lines) | Medium (50-200 lines) | Long (role charter) |
-| Contains methodology? | No — delegates | Yes — is the methodology | No — delegates to skills |
+| Contains methodology? | Only simple — delegates complex | Yes — is the methodology | No — delegates to skills |
 
 ---
 
