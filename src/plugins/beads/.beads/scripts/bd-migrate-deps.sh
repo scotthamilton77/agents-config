@@ -7,8 +7,8 @@
 #
 # Symmetric rubric (applies in BOTH directions):
 #   dep_type                                                  | linked status   | action
-#   blocks (or "blocked-by" for legacy edges created with     | any             | migrate
-#     `bd dep add --type blocked-by`; normalized on write)    |                 |
+#   blocks (or "blocked-by" emitted by bd dep list depending   | any             | migrate
+#     on traversal perspective; normalized to blocks on write) |                 |
 #   tracks, until, caused-by, validates, relates-to,          | any             | migrate
 #     supersedes                                              |                 |
 #   discovered-from, related                                  | closed          | keep on X
@@ -98,8 +98,8 @@ done
 #   $4 = direction    ("out" for X -> OTHER, "in" for OTHER -> X)
 #
 # For each migrated edge:
-#   - Normalizes "blocked-by" → "blocks" before calling bd dep add (bd dep add
-#     does not accept "blocked-by"; bd reports it for both ends of a blocks edge).
+#   - Normalizes "blocked-by" → "blocks" before calling bd dep add. bd dep list
+#     emits "blocked-by" for blocks edges depending on traversal perspective.
 #   - Outbound: bd dep add <Y> <OTHER> --type <T>; on success → bd dep remove <X> <OTHER>
 #   - Inbound:  bd dep add <OTHER> <Y> --type <T>; on success → bd dep remove <OTHER> <X>
 #     (positional convention: arg1 is the dependent bead, arg2 is the blocker/target)
