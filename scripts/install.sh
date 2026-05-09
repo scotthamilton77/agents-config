@@ -62,6 +62,7 @@ fi
 #   7. Sync staging → ~/.<tool>/ (hash-compare, diff, confirm)
 #
 # For beads plugin: staging/<beads>/formulas/ → ~/.beads/formulas/
+#                   staging/<beads>/scripts/   → ~/.beads/scripts/  (chmod +x on install)
 #
 # Flags:
 #   --dry-run            Show what would be done without making changes
@@ -881,6 +882,82 @@ stage_and_install_beads() {
             fi
         done
     fi
+
+    # ── Sync beads scripts → ~/.beads/scripts/ ───────────────────────────────
+    # Scripts are installed with chmod +x. Not tracked by --prune (scripts are
+    # rare and hand-managed; add _scan_namespace call here if that changes).
+    local dest_scripts staging_scripts plugin_scripts_dir found_any_script
+    local script_name dest_script script_src_hash script_dst_hash
+    dest_scripts="$HOME/.beads/scripts"
+    staging_scripts="$STAGING_DIR/.beads/scripts"
+
+    for plugin in "${PLUGINS[@]}"; do
+        plugin_scripts_dir="$SRC_PLUGINS/$plugin/.beads/scripts"
+        [[ -d "$plugin_scripts_dir" ]] || continue
+        mkdir -p "$staging_scripts"
+        for script in "$plugin_scripts_dir"/*.sh; do
+            [[ -f "$script" ]] || continue
+            script_name="$(basename "$script")"
+            stage_item "$script" "$staging_scripts/$script_name" "other"
+        done
+    done
+
+    if [[ ! -d "$staging_scripts" ]]; then
+        vinfo "No beads scripts staged"
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true ]] && plugin_enabled "beads"; then
+        mkdir -p "$dest_scripts"
+    fi
+
+    found_any_script=false
+    for script in "$staging_scripts"/*.sh; do
+        [[ -f "$script" ]] || continue
+        found_any_script=true
+        script_name="$(basename "$script")"
+        dest_script="$dest_scripts/$script_name"
+
+        if [[ ! -f "$dest_script" ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                vok "Would install scripts/$script_name (new)"
+            else
+                cp "$script" "$dest_script"
+                chmod +x "$dest_script"
+                vok "Installed scripts/$script_name (new)"
+            fi
+            (( tool_installed[beads]++ )) || true
+        else
+            script_src_hash="$(compute_hash "$script")"
+            script_dst_hash="$(compute_hash "$dest_script")"
+
+            if [[ "$script_src_hash" == "$script_dst_hash" ]]; then
+                vok "scripts/$script_name is up to date"
+                (( tool_skipped[beads]++ )) || true
+            else
+                if [[ "$SHOW_DIFFS" == true ]]; then
+                    info "scripts/$script_name differs:"
+                    diff --color=auto -u "$dest_script" "$script" || true
+                    echo
+                fi
+                if [[ "$DRY_RUN" == true ]]; then
+                    vok "Would update scripts/$script_name"
+                    (( tool_updated[beads]++ )) || true
+                elif confirm "Overwrite ~/.beads/scripts/$script_name?"; then
+                    backup "$dest_script"
+                    cp "$script" "$dest_script"
+                    chmod +x "$dest_script"
+                    vok "Updated scripts/$script_name"
+                    (( tool_updated[beads]++ )) || true
+                else
+                    warn "Skipped scripts/$script_name"
+                    (( tool_skipped[beads]++ )) || true
+                fi
+            fi
+        fi
+    done
+
+    [[ "$found_any_script" == false ]] && vinfo "No script files staged"
 }
 
 # ── Sync templates from a source dir into a dest dir ──────────────────────
