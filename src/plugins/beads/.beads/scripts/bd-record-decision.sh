@@ -19,7 +19,8 @@ set -euo pipefail
 BEAD_ID=""
 TITLE=""
 NOTES=""
-OUTCOME=""
+IMPLEMENTED=false
+NEEDS_APPROVAL=false
 
 usage() {
     echo "Usage: $(basename "$0") --bead-id <id> --title <text> --notes <text> (--implemented | --needs-approval)" >&2
@@ -31,17 +32,27 @@ while [[ $# -gt 0 ]]; do
         --bead-id)        BEAD_ID="$2";       shift 2 ;;
         --title)          TITLE="$2";         shift 2 ;;
         --notes)          NOTES="$2";         shift 2 ;;
-        --implemented)    OUTCOME="implemented";    shift ;;
-        --needs-approval) OUTCOME="needs-approval"; shift ;;
+        --implemented)    IMPLEMENTED=true;   shift ;;
+        --needs-approval) NEEDS_APPROVAL=true; shift ;;
         -h|--help)        usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
 done
 
-[[ -z "$BEAD_ID" ]]  && { echo "Error: --bead-id is required" >&2;  usage; }
-[[ -z "$TITLE" ]]    && { echo "Error: --title is required" >&2;    usage; }
-[[ -z "$NOTES" ]]    && { echo "Error: --notes is required" >&2;    usage; }
-[[ -z "$OUTCOME" ]]  && { echo "Error: --implemented or --needs-approval is required" >&2; usage; }
+[[ -z "$BEAD_ID" ]] && { echo "Error: --bead-id is required" >&2; usage; }
+[[ -z "$TITLE" ]]   && { echo "Error: --title is required" >&2;   usage; }
+[[ -z "$NOTES" ]]   && { echo "Error: --notes is required" >&2;   usage; }
+
+if [[ "$IMPLEMENTED" == true && "$NEEDS_APPROVAL" == true ]]; then
+    echo "Error: --implemented and --needs-approval are mutually exclusive" >&2
+    usage
+fi
+if [[ "$IMPLEMENTED" == false && "$NEEDS_APPROVAL" == false ]]; then
+    echo "Error: one of --implemented or --needs-approval is required" >&2
+    usage
+fi
+
+OUTCOME=$([[ "$IMPLEMENTED" == true ]] && echo "implemented" || echo "needs-approval")
 
 # Create the decision bead and capture its ID
 CREATE_OUTPUT=$(bd create "$TITLE" --type decision 2>&1)

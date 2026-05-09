@@ -168,7 +168,7 @@ If the spec required closing existing technical ambiguity, record it:
     --title "<brief decision statement>" \
     --notes "<rationale>" \
     --implemented      # decision resolved in this spec; closes the decision bead
-  # --needs-approval   # impacts future work; keeps open and flags for human review
+    --needs-approval   # impacts future work; keeps open and flags for human review
 
 Do NOT start implementing. Do NOT create a worktree. This is a spec step.
 """
