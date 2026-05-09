@@ -2,7 +2,7 @@
 
 Task tracking workflow (run with `dangerouslyDisableSandbox: true`).
 
-`bd <command> [args]` — Types: bug | feature | task | epic | chore
+`bd <command> [args]` — Types: bug | feature | task | epic | chore | decision
 Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low".
 
 **Basic workflow**: `bd ready` → pick a bead → `start-bead <id>` → molecule executes → `merge-and-cleanup`

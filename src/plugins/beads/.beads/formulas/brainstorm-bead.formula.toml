@@ -162,8 +162,14 @@ or earlier brainstorming), you MUST either:
   bd update {{bead-id}} --acceptance="<one line per acceptance criterion>"
   bd update {{bead-id}} --notes="<full spec document>"
 
-If the spec required closing existing technical ambiguity, note it:
-  bd decision record --title="<decision>" --notes="<rationale>"
+If the spec required closing existing technical ambiguity, record it:
+  ~/.beads/scripts/bd-record-decision.sh \\
+    --bead-id {{bead-id}} \\
+    --title "<brief decision statement>" \\
+    --notes "<rationale>" \\
+    # choose one:
+    --implemented      # decision resolved in this spec; closes the decision bead
+    --needs-approval   # impacts future work; keeps open and flags for human review
 
 Do NOT start implementing. Do NOT create a worktree. This is a spec step.
 """
