@@ -572,7 +572,7 @@ transform_gemini_agent_frontmatter() {
     #    - skip skills:, color:, memory: lines and their indented blocks
     #    - rewrite tools: "Read, Grep" -> tools: [Read, Grep]
     # 3. outside frontmatter: pass through
-    awk '\''
+    awk '
         BEGIN { count=0; skipping=0 }
         /^---$/ { 
             count++; 
@@ -603,7 +603,7 @@ transform_gemini_agent_frontmatter() {
             }
         }
         { print }
-    '\'' "$file" > "$tmp"
+    ' "$file" > "$tmp"
 
     mv "$tmp" "$file"
 }
@@ -959,7 +959,9 @@ stage_and_install_beads() {
         fi
     done
 
-    [[ "$found_any_script" == false ]] && vinfo "No script files staged"
+    if [[ "$found_any_script" == false ]]; then
+        vinfo "No script files staged"
+    fi
 }
 
 # ── Sync templates from a source dir into a dest dir ──────────────────────
