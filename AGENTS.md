@@ -6,6 +6,40 @@ This file provides guidance to AI agents when working with code in this reposito
 
 This is a versioned collection of agents, skills, commands, and templates for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
 
+## Vision & Mission
+
+**Vision** — Make AI software development reliably autonomous. Concentrate human time *upstream* (brainstorming, design, judgment) and at thin verification gates (validation testing, exception handling); have agents execute implementation and machine-verifiable QA in the background, including overnight.
+
+**Target operating ratio (aspirational, not yet measured)** — roughly **85% / 5% / 10%** of human time on brainstorming / troubleshooting escalations / validation testing, with a noticeably shorter idea-to-shippable cycle time than naked-LLM use.
+
+**Mission** — Ship a portable discipline layer (agents, skills, commands, formulas, plugins) that makes that operating ratio achievable on any major AI coding assistant. The mechanism rests on five load-bearing commitments:
+
+1. **Frontload human creativity & judgment** via rigorous brainstorming and a spec-readiness gate
+2. **Make AI good at saying "no, not ready"** — bounce under-specified work back BEFORE implementation, with structured feedback on what is missing
+3. **Substitute adversarial cross-model review** for human review wherever quality permits (RALF, foreign-CLI configs, codex adversarial review)
+4. **Guardrail every completion claim with mechanical evidence** (completion gate, verify-checklist)
+5. **Persist context** (beads, memories, formulas) so work survives compaction, agent handoff, and overnight runs
+
+### Current state — work in progress
+
+The architecture is in place; several keystone enablers are tracked but **not yet shipped**. Treat the vision as direction; treat the rules-as-written as the current contract.
+
+Search current work with: `bd list --label vision-85-5-10`. Major gaps as of 2026-05:
+
+- **Brainstorm-readiness gate** — the "no, not ready" mechanism is implicit, not enforced
+- **Persona vs orchestration** guidance on decide-vs-escalate is not yet reconciled
+- **85/5/10 instrumentation** — aspirational, not measured
+- **Spec post-mortem** feedback loop — not built; failures do not automatically improve future brainstorming
+- **Risk-tiered auto-merge** for low-risk PR classes — not defined; every PR waits on a human "ship it"
+- **Wall-clock pipelining** across external waits (CI, Copilot, GitHub) — future work
+
+### Implications for agents working in *this* repo
+
+- **File beads for harness friction you discover** — refining this discipline layer IS the work; capture is not a tangent
+- **Surface rule conflicts**, do not paper over them; if persona and orchestration disagree, say so
+- **When proposing new skills, agents, or rules, ask**: does this advance the 85/5/10 ratio, or accidentally regress it?
+- **Distinguish the destination from the contract** in your reasoning: don't behave as if a vision-tagged enabler exists when it doesn't, but do let the vision break ties when the rules are silent
+
 ## Prerequisites (Plugins)
 
 This configuration assumes the following Claude Code plugins are installed:

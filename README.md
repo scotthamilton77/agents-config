@@ -1,6 +1,38 @@
 # agents-config
 
-Versioned collection of agents, skills, and commands for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, and **Google Gemini CLI**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+Versioned collection of agents, skills, and commands for AI coding assistants. Supports **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI**, and **OpenCode**. Shared content is installed to all detected tools; tool-specific content goes only where it belongs.
+
+## Vision
+
+**The goal**: make AI software development reliably autonomous, so humans spend most of their time *upstream* — on brainstorming, design, and judgment — and very little time downstream chasing the AI's mistakes.
+
+If the harness works as intended, an idealized "day in the life" looks like:
+
+- **~85% of human time** in brainstorming and design — articulating intent, pinning requirements, choosing trade-offs
+- **~5% of human time** triaging escalations from autonomous runs — when an agent legitimately cannot decide on its own
+- **~10% of human time** doing validation testing that machines genuinely cannot do (UX feel, requirements alignment, edge-case judgment)
+- **Cycle time from idea to shippable software is noticeably shorter** than naked-LLM use, because implementation and machine-verifiable QA happen in the background, including overnight
+
+The five load-bearing convictions behind this:
+
+1. **Methodology is the moat, not the model.** Skills define HOW (TDD, brainstorming, verification, adversarial review); agents define WHO; the underlying model is interchangeable.
+2. **AI must be good at saying "no, not ready."** Under-specified work should bounce back to the human BEFORE implementation, with structured feedback on what is missing — not after a wasted autonomous run.
+3. **Adversarial cross-model review is a first-class substitute for human review.** Different models have different blind spots; multi-model dialectic catches what a single model misses (RALF, foreign-CLI, codex adversarial review).
+4. **Evidence before assertion, always.** Mechanical gates (tests, build, lint, review) sit between "I think this works" and "this is done."
+5. **Persistent context survives compaction.** Beads, memories, formulas, and audit logs let work span sessions, agents, and overnight cranking without losing thread.
+
+### Current state
+
+This is a work in progress. The architecture is in place; several keystone enablers toward the vision are filed but not yet shipped — tracked under the `vision-85-5-10` bead label. Notable current gaps:
+
+- The "no, not ready" brainstorm-readiness gate is implicit, not enforced
+- Persona and orchestration guidance give subtly conflicting decide-vs-escalate direction
+- The 85/5/10 ratio is not yet instrumented — aspirational, not measured
+- No spec post-mortem feedback loop yet — failures don't automatically improve future brainstorming
+- Auto-merge policy for low-risk PR classes is not defined — every PR waits on a human "ship it"
+- Autonomous work runs sequentially through external waits (CI, review polling); no pipelining yet
+
+If you are using this repo, treat the vision as direction and the rules-as-written as the current contract. Contributions toward the vision-tagged work are welcome.
 
 ## Prerequisites
 
