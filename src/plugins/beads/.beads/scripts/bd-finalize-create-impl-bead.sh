@@ -15,7 +15,7 @@
 #   bd-finalize-create-impl-bead.sh \
 #     --source-bead-id <id> \
 #     --type <feature|bug|task> \
-#     --priority <0-4> \
+#     --priority <0-4|P0-P4> \
 #     --title <text> \
 #     --labels <csv> \
 #     --spec-file <path> \
@@ -23,10 +23,10 @@
 #     [--parent <id>]
 #
 # Output (stdout, one line):
-#   result=created  y_id=<id>                                    # fresh creation
-#   result=exists   y_id=<id>                                    # pre-existing; skipped create
-#   result=escalate message=<N non-closed impl beads for <id>>   # exit 1; human triage needed
-#   result=error    message=<text>                               # exit 1; fatal
+#   result=created  y_id=<id>              # fresh creation
+#   result=exists   y_id=<id>              # pre-existing; skipped create
+#   result=escalate count=<N> source=<id>  # exit 1; human triage needed
+#   result=error    message=<token>        # exit 1; fatal (hyphen-separated, no spaces)
 #
 # Exit: 0 on result=created|exists; 1 on result=escalate|error.
 
@@ -46,7 +46,7 @@ usage() {
 Usage: bd-finalize-create-impl-bead.sh \
   --source-bead-id <id> \
   --type <feature|bug|task> \
-  --priority <0-4> \
+  --priority <0-4|P0-P4> \
   --title <text> \
   --labels <csv> \
   --spec-file <path> \
@@ -80,8 +80,8 @@ Options:
 Output (one line on stdout):
   result=created  y_id=<id>
   result=exists   y_id=<id>
-  result=escalate message=<text>
-  result=error    message=<text>
+  result=escalate count=<N> source=<id>
+  result=error    message=<hyphen-separated-token>
 EOF
     exit 1
 }
@@ -152,7 +152,7 @@ ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | jq '[.[] | select(.status != "closed
 }
 
 if [[ "$ORPHAN_COUNT" -ge 2 ]]; then
-    printf 'result=escalate message=%d non-closed impl beads found for %s\n' "$ORPHAN_COUNT" "$SOURCE_BEAD_ID"
+    printf 'result=escalate count=%d source=%s\n' "$ORPHAN_COUNT" "$SOURCE_BEAD_ID"
     exit 1
 fi
 

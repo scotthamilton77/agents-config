@@ -9,7 +9,7 @@
 #   bd-claim-walk.sh --bead-id <id>
 #
 # Output (stdout, one line):
-#   walked=<N>   number of beads marked in_progress (1 = just the target, no parent)
+#   walked=<N>   chain depth traversed (includes beads already in_progress/closed that were skipped)
 #
 # Exit: 0 on success; non-zero on error.
 
@@ -32,7 +32,7 @@ Options:
   -h, --help       Show this help
 
 Output (one line on stdout):
-  walked=<N>   number of beads marked in_progress (target + ancestors)
+  walked=<N>   chain depth traversed (includes already-in_progress/closed beads that were skipped)
 EOF
     exit 1
 }
