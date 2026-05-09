@@ -7,8 +7,8 @@
 #
 # Symmetric rubric (applies in BOTH directions):
 #   dep_type                                                  | linked status   | action
-#   blocks ("blocked-by" at read level — bd emits this for    | any             | migrate
-#     either end of a blocks edge in both --direction= modes) |                 |
+#   blocks (or "blocked-by" for legacy edges created with     | any             | migrate
+#     `bd dep add --type blocked-by`; normalized on write)    |                 |
 #   tracks, until, caused-by, validates, relates-to,          | any             | migrate
 #     supersedes                                              |                 |
 #   discovered-from, related                                  | closed          | keep on X
@@ -113,6 +113,12 @@ migrate_edge() {
     # and the §4 children-placement step of brainstorm-bead.
     [[ "$dep_type" == "parent-child" ]] && return 0
 
+    # Skip edges to the migration target itself — applies to both the inbound
+    # Y-discovered-from-X seed link and any pre-wired outbound X→Y edges.
+    # bd's add-side would reject the resulting Y→Y self-loop with an error,
+    # but skipping here avoids a noisy WARN for a valid graph state.
+    [[ "$other_id" == "$TARGET" ]] && return 0
+
     # Defensive guard: skip self-loops (other == X). Should not occur in
     # a well-formed graph, but bd dep list could surface one if somehow created.
     [[ "$other_id" == "$SOURCE" ]] && return 0
@@ -136,9 +142,10 @@ migrate_edge() {
 
     [[ "$migrate" == "1" ]] || return 0
 
-    # Normalize the wire-format "blocked-by" to the write-format "blocks"
-    # before calling bd dep add (in BOTH legs — bd emits "blocked-by" for
-    # either end of a blocks edge, regardless of traversal direction).
+    # Normalize "blocked-by" → "blocks" before calling bd dep add.
+    # `bd dep add --type blocked-by` is accepted and stores edges with
+    # dependency_type="blocked-by"; normalizing to the canonical "blocks"
+    # ensures migrated edges have the standard shape.
     local add_type="$dep_type"
     [[ "$add_type" == "blocked-by" ]] && add_type="blocks"
 
@@ -171,19 +178,22 @@ migrate_edge() {
 # `bd dep list <X> --direction=down --json` returns one entry per outbound
 # edge with .id (other end), .dependency_type, and .status (of the other end).
 OUT_JSON=$(bd dep list "$SOURCE" --direction=down --json)
+# Pre-render to variable so jq parse failures propagate via set -e rather than
+# silently producing zero iterations from inside a process-substitution subshell.
+OUT_TSV=$(printf '%s' "$OUT_JSON" | jq -r '.[] | "\(.dependency_type)\t\(.id)\t\(.status // "open")"')
 while IFS=$'\t' read -r dep_type other_id other_status; do
+    # Guard against empty lines from a zero-item list or malformed records.
     [[ -z "$dep_type" ]] && continue
     migrate_edge "$dep_type" "$other_id" "$other_status" "out"
-done < <(printf '%s' "$OUT_JSON" | jq -r '.[] | "\(.dependency_type)\t\(.id)\t\(.status // "open")"')
+done <<< "$OUT_TSV"
 
 # ── Inbound: OTHER -> X edges ───────────────────────────────────────────────
 # `bd dep list <X> --direction=up --json` returns one entry per inbound edge
 # with the same shape (.id is the OTHER bead — i.e. the source of the inbound edge).
-# Skip any edge where source == Y: that's the freshly-created
-# Y-discovered-from-X seed link from brainstorm-bead Step 4, which must remain.
+# migrate_edge skips the Y-discovered-from-X seed link (other_id == TARGET).
 IN_JSON=$(bd dep list "$SOURCE" --direction=up --json)
+IN_TSV=$(printf '%s' "$IN_JSON" | jq -r '.[] | "\(.dependency_type)\t\(.id)\t\(.status // "open")"')
 while IFS=$'\t' read -r dep_type other_id other_status; do
     [[ -z "$dep_type" ]] && continue
-    [[ "$other_id" == "$TARGET" ]] && continue
     migrate_edge "$dep_type" "$other_id" "$other_status" "in"
-done < <(printf '%s' "$IN_JSON" | jq -r '.[] | "\(.dependency_type)\t\(.id)\t\(.status // "open")"')
+done <<< "$IN_TSV"
