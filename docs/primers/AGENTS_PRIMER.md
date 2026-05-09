@@ -18,7 +18,7 @@ A subagent dispatched via the `Agent` tool runs in parallel with the orchestrato
 
 - **Subagents cannot spawn other subagents.** If a workflow needs nested delegation, use skills or chain subagents from the main conversation.
 - **Subagents start in the main conversation's working directory.** `cd` commands do not persist between Bash calls within the subagent and do not affect the parent. Use `isolation: worktree` to give the subagent an isolated copy of the repository.
-- **Subagents receive only their system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt or the parent's CLAUDE.md context.
+- **Subagents receive only their system prompt** (the file body) plus basic environment details — not the full Claude Code system prompt or the parent's CLAUDE.md/AGENTS.md context.  This is important if that context contains information the subagent should know - the main agent will need to specifically provide such or tell the subagent to read it explicitly.
 - **Plugin subagents do not support `hooks`, `mcpServers`, or `permissionMode`** for security reasons. These fields are ignored when an agent is loaded from a plugin.
 
 ---
