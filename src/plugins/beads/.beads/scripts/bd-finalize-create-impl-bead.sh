@@ -3,13 +3,12 @@
 #
 # Wraps brainstorm-bead formula Step 4 ("Create Y atomically") in a single
 # idempotent command. The LLM issues one invocation; the script handles the
-# intra-step orphan guard (probe → create-or-short-circuit) so the formula
-# cannot produce duplicate implementation beads via parallel tool-call batching.
+# intra-step orphan guard (probe → create-or-short-circuit), escalation
+# bookkeeping (human label + audit comment on source bead), and all error
+# paths — so the formula needs no case statement or extra bd calls.
 #
-# Before calling bd create, the script probes for an existing non-closed bead
-# carrying the produced-from-<source-bead-id> label. If one exists, it returns
-# that bead's ID instead of creating a new one (result=exists). If two or more
-# exist, it exits non-zero so finalize can escalate to human triage.
+# Callers invoke as:
+#   Y_ID=$(bd-finalize-create-impl-bead.sh --source-bead-id X ...) || exit 1
 #
 # Usage:
 #   bd-finalize-create-impl-bead.sh \
@@ -22,13 +21,12 @@
 #     --ac-file <path> \
 #     [--parent <id>]
 #
-# Output (stdout, one line):
-#   result=created  y_id=<id>              # fresh creation
-#   result=exists   y_id=<id>              # pre-existing; skipped create
-#   result=escalate count=<N> source=<id>  # exit 1; human triage needed
-#   result=error    message=<token>        # exit 1; fatal (hyphen-separated, no spaces)
+# Output:
+#   stdout (exit 0): the new (or pre-existing) implementation bead ID — nothing else
+#   stderr (exit 1): diagnostic message; source bead has been labelled 'human'
+#                    and an audit comment added (escalate case only)
 #
-# Exit: 0 on result=created|exists; 1 on result=escalate|error.
+# Exit: 0 on success; 1 on any failure.
 
 set -euo pipefail
 
@@ -77,11 +75,9 @@ Options:
   --parent          Parent bead ID; omit if source bead has no parent (optional)
   -h, --help        Show this help
 
-Output (one line on stdout):
-  result=created  y_id=<id>
-  result=exists   y_id=<id>
-  result=escalate count=<N> source=<id>
-  result=error    message=<hyphen-separated-token>
+Output:
+  stdout (exit 0): the new or pre-existing implementation bead ID (one line)
+  stderr (exit 1): diagnostic; source bead gets 'human' label + audit comment on escalate
 EOF
     exit 1
 }
@@ -126,14 +122,14 @@ for _flag_var in SOURCE_BEAD_ID TYPE PRIORITY TITLE LABELS SPEC_FILE AC_FILE; do
     fi
 done
 
-[[ -f "$SPEC_FILE" ]] || { printf 'result=error message=spec-file-not-found:%s\n' "$SPEC_FILE"; exit 1; }
-[[ -f "$AC_FILE"   ]] || { printf 'result=error message=ac-file-not-found:%s\n'   "$AC_FILE";   exit 1; }
+[[ -f "$SPEC_FILE" ]] || { echo "Error: spec-file not found: $SPEC_FILE" >&2; exit 1; }
+[[ -f "$AC_FILE"   ]] || { echo "Error: ac-file not found: $AC_FILE" >&2;       exit 1; }
 
 # Validate that --labels includes produced-from-<source-bead-id> — required for the
 # intra-step orphan probe to find this bead on any subsequent retry.
 case ",${LABELS}," in
     *,"produced-from-${SOURCE_BEAD_ID}",*) ;;
-    *)  printf 'result=error message=labels-must-include-produced-from-%s\n' "$SOURCE_BEAD_ID"
+    *)  echo "Error: --labels must include produced-from-${SOURCE_BEAD_ID}" >&2
         exit 1 ;;
 esac
 
@@ -143,22 +139,27 @@ esac
 # even if Step 1b's top-of-finalize probe was bypassed, this probe fires
 # immediately before bd create and catches any bead that exists in the gap.
 ORPHAN_JSON=$(bd list --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null) || {
-    printf 'result=error message=bd-list-failed-for-orphan-probe\n'
+    echo "Error: bd list failed during orphan probe" >&2
     exit 1
 }
 ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || {
-    printf 'result=error message=jq-parse-failed-on-orphan-probe\n'
+    echo "Error: jq parse failed on orphan probe output" >&2
     exit 1
 }
 
 if [[ "$ORPHAN_COUNT" -ge 2 ]]; then
-    printf 'result=escalate count=%d source=%s\n' "$ORPHAN_COUNT" "$SOURCE_BEAD_ID"
+    # Multiple orphan impl beads exist — escalate to human; all bookkeeping done here.
+    bd label add "$SOURCE_BEAD_ID" human || true
+    bd comments add "$SOURCE_BEAD_ID" \
+        "finalize halted: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; manual triage required." || true
+    echo "Error: ${ORPHAN_COUNT} non-closed impl beads found for ${SOURCE_BEAD_ID}; source bead flagged for human triage" >&2
     exit 1
 fi
 
 if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
+    # Pre-existing impl bead found — idempotent resume; output its ID.
     EXISTING_ID=$(printf '%s' "$ORPHAN_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
-    printf 'result=exists y_id=%s\n' "$EXISTING_ID"
+    printf '%s\n' "$EXISTING_ID"
     exit 0
 fi
 
@@ -177,7 +178,7 @@ CREATE_JSON=$(bd create \
     --deps "discovered-from:${SOURCE_BEAD_ID}" \
     --no-inherit-labels \
     --json) || {
-    printf 'result=error message=bd-create-failed\n'
+    echo "Error: bd create failed" >&2
     exit 1
 }
 
@@ -186,8 +187,8 @@ CREATE_JSON=$(bd create \
 Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r '(.[0].id // .id) // empty' 2>/dev/null)
 
 if [[ -z "$Y_ID" || "$Y_ID" == "null" ]]; then
-    printf 'result=error message=bd-create-returned-no-id\n'
+    echo "Error: bd create returned no id" >&2
     exit 1
 fi
 
-printf 'result=created y_id=%s\n' "$Y_ID"
+printf '%s\n' "$Y_ID"

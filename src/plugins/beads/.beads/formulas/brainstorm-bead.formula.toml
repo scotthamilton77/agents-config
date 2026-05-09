@@ -460,9 +460,8 @@ STEP 4 — Create implementation bead via helper script (idempotent)
 
 ⚠️  CRITICAL — SEQUENTIAL CALL: Issue the script invocation below as a
 SINGLE, ISOLATED tool call. Do NOT batch it with any other tool call in
-the same message. Wait for the `result=...` line before proceeding.
-This is the mutation that creates the implementation bead; parallel
-dispatch can produce duplicate beads even if the rest of finalize is correct.
+the same message. The script creates the implementation bead; parallel
+dispatch can produce duplicates even if everything else is correct.
 
 Write spec and AC to temp files, then invoke the script:
 
@@ -472,12 +471,11 @@ Write spec and AC to temp files, then invoke the script:
   printf %s "$X_NOTES" > "$Y_SPEC"
   printf %s "$X_AC"    > "$Y_AC"
 
-  # Use an array for the optional --parent flag to avoid word-splitting on the value.
+  # Array for the optional --parent flag (avoids word-splitting on the value).
   PARENT_FLAG=()
   [ -n "$X_PARENT" ] && PARENT_FLAG=(--parent "$X_PARENT")
 
-  # || true: the script exits 1 on result=escalate|result=error; we parse RESULT below.
-  RESULT=$(~/.beads/scripts/bd-finalize-create-impl-bead.sh \\
+  Y_ID=$(~/.beads/scripts/bd-finalize-create-impl-bead.sh \\
     --source-bead-id "{{bead-id}}" \\
     --type "$Y_TYPE" \\
     --priority "$X_PRIORITY" \\
@@ -485,33 +483,19 @@ Write spec and AC to temp files, then invoke the script:
     --labels "$Y_LABELS" \\
     --spec-file "$Y_SPEC" \\
     --ac-file "$Y_AC" \\
-    "${PARENT_FLAG[@]}") || true
-  # OUTPUT CONTRACT: result=<verb> y_id=<id>  (space-separated; verb is first word)
-
-  case "${RESULT%% *}" in
-    result=created|result=exists)
-      Y_ID="${RESULT#* y_id=}"
-      echo "Implementation bead: $Y_ID (${RESULT%% *})"
-      ;;
-    result=escalate|result=error)
-      bd label add {{bead-id}} human
-      bd comments add {{bead-id}} "finalize halted at step 4: $RESULT"
-      echo "ERROR: $RESULT"
-      exit 1
-      ;;
-    *)
-      echo "ERROR: unexpected output from bd-finalize-create-impl-bead.sh: $RESULT"
-      exit 1
-      ;;
-  esac
+    "${PARENT_FLAG[@]}") || exit 1
+  echo "Implementation bead: $Y_ID"
 
 Notes on this step:
 
+- The script outputs just the Y bead ID on success (exit 0). On failure
+  (exit 1), it writes diagnostics to stderr. For the escalate case
+  (multiple orphan impl beads), it also adds the 'human' label and an
+  audit comment to {{bead-id}} before exiting — no extra bd calls needed here.
 - The script probes for an existing non-closed bead carrying
-  produced-from-{{bead-id}} before issuing bd create. If one exists,
-  it returns result=exists with that id rather than creating a new bead.
-  This is the second line of defence against duplicate impl beads; Step 1b
-  is the first.
+  produced-from-{{bead-id}} before issuing bd create. If one exists, it
+  returns that bead's ID (idempotent resume). This is the second line of
+  defence against duplicate impl beads; Step 1b is the first.
 - `--no-inherit-labels` (inside the script) prevents X.parent's labels
   from leaking onto Y; Y's labels are EXACTLY what `--labels` lists.
 - I1 claim-walk: Y is created `open` here; it is not yet "starting work,"
