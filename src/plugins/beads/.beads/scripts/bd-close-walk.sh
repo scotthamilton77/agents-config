@@ -72,14 +72,20 @@ if [[ "$STATUS" != "closed" ]]; then
     CLOSED+=("$BEAD_ID")
 fi
 
-# I2 ancestor walk: close each parent whose children are all now closed
+# I2 ancestor walk: close each parent whose children are all now closed.
+# Read status + next parent in one bd show call so replay-safe skips are free.
 while [[ -n "$PARENT" ]]; do
-    NON_CLOSED=$(bd list --parent="$PARENT" --json \
-        | jq '[.[] | select(.status != "closed")] | length')
-    [[ "$NON_CLOSED" == "0" ]] || break
-    bd close "$PARENT" --reason "All children closed"
-    CLOSED+=("$PARENT")
-    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
+    PARENT_SHOW=$(bd show "$PARENT" --json)
+    PARENT_STATUS=$(printf '%s' "$PARENT_SHOW" | jq -r '.[0].status // "open"')
+    NEXT_PARENT=$(printf '%s' "$PARENT_SHOW" | jq -r '.[0].parent // empty')
+    if [[ "$PARENT_STATUS" != "closed" ]]; then
+        NON_CLOSED=$(bd list --parent="$PARENT" --json \
+            | jq '[.[] | select(.status != "closed")] | length')
+        [[ "$NON_CLOSED" == "0" ]] || break
+        bd close "$PARENT" --reason "All children closed"
+        CLOSED+=("$PARENT")
+    fi
+    PARENT="$NEXT_PARENT"
 done
 
 # Guard against bash 3.x empty-array unbound-variable error under set -u

@@ -24,8 +24,8 @@ Usage: bd-claim-walk.sh --bead-id <id>
 Mark a bead and all ancestor epics in_progress (Beads I1 claim walk).
 
 Walks UP the parent chain from <id>, marking each bead in_progress until
-there are no more parents. Idempotent — already-in_progress beads are
-updated without error.
+there are no more parents. Idempotent — already-in_progress and closed
+beads are skipped without error.
 
 Options:
   --bead-id <id>   ID of the bead whose work is starting (required)

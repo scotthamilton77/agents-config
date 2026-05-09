@@ -64,9 +64,9 @@ implementation beads.
 
 Options:
   --source-bead-id  ID of the brainstorm seed bead — used for the orphan probe
-                    and the produced-from dep edge (required)
+                    and to stamp the produced-from label on Y (required)
   --type            Bead type: feature, bug, or task (required)
-  --priority        Priority 0-4 (required)
+  --priority        Priority: integer 0-4 or P0-P4 format (required)
   --title           Title for the new implementation bead (required)
   --labels          Comma-separated labels to apply; must include
                     produced-from-<source-bead-id> and other finalize labels (required)
