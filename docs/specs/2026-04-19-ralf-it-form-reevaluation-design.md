@@ -294,7 +294,15 @@ Rewritten delegation rule reflects the two-skill split:
   | `ralf:required` | `brainstorm-bead.finalize` (or manual) | Formula step dispatches `ralf-implement` (implement step) or `ralf-review` (review step) |
   | `ralf:cycles=N` | `brainstorm-bead.finalize` (or manual) | Override `MAX_ITERATIONS` (optional; skill default otherwise). Setters MUST remove any existing `ralf:cycles=*` first. |
 
-### R12. `bd decision` record
+### R12. Decision record (`bd create --type decision`)
+
+`decision` is an issue **type**, not a CLI namespace — there is no
+`bd decision record` subcommand. Create the record with:
+
+```bash
+bd create 'RALF split into ralf-review + ralf-implement; both inner-methodology only' --type decision
+# aliases: --type dec, --type adr
+```
 
 - Title: "RALF split into ralf-review + ralf-implement; both inner-methodology only"
 - Notes: Two-worlds collapsed to one family of two skills. `ralf-review`
