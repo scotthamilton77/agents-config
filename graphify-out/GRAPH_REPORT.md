@@ -1,30 +1,35 @@
-# Graph Report - /Users/scott/src/projects/agents-config  (2026-05-03)
+# Graph Report - agents-config  (2026-05-09)
 
 ## Corpus Check
-- 63 files · ~66,654 words
+- 1 files · ~90,439 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
 - 243 nodes · 327 edges · 15 communities detected
 - Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 38 edges (avg confidence: 0.85)
-- Token cost: 312,162 input · 78,040 output
+- Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `f066933d`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_PR Review Automation|PR Review Automation]]
-- [[_COMMUNITY_RALF Multi-Agent Refinement|RALF Multi-Agent Refinement]]
-- [[_COMMUNITY_Project Config & Beads Workflow|Project Config & Beads Workflow]]
-- [[_COMMUNITY_AGENTS.md Curation Commands|AGENTS.md Curation Commands]]
-- [[_COMMUNITY_Unit Testing & Mocks|Unit Testing & Mocks]]
-- [[_COMMUNITY_Multi-Tool Installer Internals|Multi-Tool Installer Internals]]
-- [[_COMMUNITY_PRMerge Formulas & Guards|PR/Merge Formulas & Guards]]
-- [[_COMMUNITY_Beads Lifecycle Invariants|Beads Lifecycle Invariants]]
-- [[_COMMUNITY_RALF Foreign-Agent Integration|RALF Foreign-Agent Integration]]
-- [[_COMMUNITY_Tool-Specific AGENTS.md Templates|Tool-Specific AGENTS.md Templates]]
-- [[_COMMUNITY_Shared Persona Templates|Shared Persona Templates]]
-- [[_COMMUNITY_Install ↔ Shared AGENTS|Install ↔ Shared AGENTS]]
-- [[_COMMUNITY_Verification Before Completion|Verification Before Completion]]
-- [[_COMMUNITY_Codex Source README|Codex Source README]]
-- [[_COMMUNITY_Gemini Source README|Gemini Source README]]
+- [[_COMMUNITY_Community 0|Community 0]]
+- [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
+- [[_COMMUNITY_Community 3|Community 3]]
+- [[_COMMUNITY_Community 4|Community 4]]
+- [[_COMMUNITY_Community 5|Community 5]]
+- [[_COMMUNITY_Community 6|Community 6]]
+- [[_COMMUNITY_Community 7|Community 7]]
+- [[_COMMUNITY_Community 8|Community 8]]
+- [[_COMMUNITY_Community 9|Community 9]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `ralf-it skill` - 19 edges
@@ -63,47 +68,47 @@
 
 ## Communities (16 total, 4 thin omitted)
 
-### Community 0 - "PR Review Automation"
+### Community 0 - "Community 0"
 Cohesion: 0.06
 Nodes (36): bead-verifier agent (haiku, mechanical evidence), already_addressed SHA-discovery procedure, FIX/SKIP/ESCALATE Classification, refresh-agents-md command, Completion Gate (review/simplify/verify), Concurrency Recovery Branch (--resume mode), Default-on Skill A → Skill B chain, detect-pr-push.sh PostToolUse hook (+28 more)
 
-### Community 1 - "RALF Multi-Agent Refinement"
+### Community 1 - "Community 1"
 Cohesion: 0.07
 Nodes (35): quality-reviewer agent, tech-lead agent, Bugfix Three Threads (git/test/dataflow), codex-companion.mjs, Claude Code Codex plugin, Completion Gate (review/simplify/verify), Gemini CLI, Iron Law: No Fix Without Parallel Evidence (+27 more)
 
-### Community 2 - "Project Config & Beads Workflow"
+### Community 2 - "Community 2"
 Cohesion: 0.09
 Nodes (32): AGENTS.md (project root), Project Purpose: multi-tool agents-config, Repository Structure (src/user, src/plugins), Session Completion Workflow, CLAUDE.md (project root), bd command (beads CLI), beads plugin (src/plugins/beads/), Claude-specific content (src/user/.claude/) (+24 more)
 
-### Community 3 - "AGENTS.md Curation Commands"
+### Community 3 - "Community 3"
 Cohesion: 0.1
 Nodes (26): Claude source README, /optimize-my-agent command, /optimize-my-skill command, /refresh-agents-md command, Action Categories (Automatic vs Authorized), Template Install Model (.template suffix), PR Comments Audit (top-level + inline), Progressive Disclosure (skill levels) (+18 more)
 
-### Community 4 - "Unit Testing & Mocks"
+### Community 4 - "Community 4"
 Cohesion: 0.1
 Nodes (24): Anti-Pattern: Incomplete Mocks, Anti-Pattern: Testing Mock Behavior, Anti-Pattern: Mocking Without Understanding, Anti-Pattern: Test-Only Production Methods, Iron Laws of Unit Testing, Mocks Are A Smell, Refactoring For Testability, Test Refusal Criteria (+16 more)
 
-### Community 5 - "Multi-Tool Installer Internals"
+### Community 5 - "Community 5"
 Cohesion: 0.15
 Nodes (17): classify_file() function, Collision resolution (rules append, commands fatal, settings union-merge), scripts/install.sh, jq union merge for settings.json, Multi-Tool Install Architecture, Plugin auto-detection (sentinel: bd on PATH or ~/.beads/), plugin_enabled() helper, --plugins= flag (+9 more)
 
-### Community 6 - "PR/Merge Formulas & Guards"
+### Community 6 - "Community 6"
 Cohesion: 0.15
 Nodes (17): detect-pr-push.sh hook, fix-bug formula, implement-feature formula, merge-and-cleanup formula, check-merge-eligibility.sh, Mode-aware ESCALATE (interactive vs autonomous), Per-Comment Subagent Contract, Beads-aware Delivery Addendum (+9 more)
 
-### Community 7 - "Beads Lifecycle Invariants"
+### Community 7 - "Community 7"
 Cohesion: 0.19
 Nodes (14): bd CLI command, Bead Lifecycle and Labels, I1 Claim Walk (walk up on start), I2 Close Walk (walk up on close), I3 Discovered-Work Placement (sibling test), brainstorm-bead formula, Molecule to Bead Linkage Convention (for-bead label), Parent-Chain Invariants (+6 more)
 
-### Community 8 - "RALF Foreign-Agent Integration"
+### Community 8 - "Community 8"
 Cohesion: 0.21
 Nodes (13): Codex CLI (codex exec -s read-only), foreign-agent-prompt.md template, foreign-eyes-prompt.md template, Foreign-Eyes Subagent, Gemini CLI (gemini -p approval-mode plan), Graceful degradation to pure fresh-eyes, ralf:cycles=N bead label, .ralf/{session_id}/ artifact directory (+5 more)
 
-### Community 9 - "Tool-Specific AGENTS.md Templates"
+### Community 9 - "Community 9"
 Cohesion: 0.36
 Nodes (10): Claude AGENTS.md template, CLAUDE-EXTENSIONS.md template, Claude CLAUDE.md template, Codex AGENTS.md template, CODEX-EXTENSIONS.md template, Collision Rules (unique vs append vs union-merge), Gemini AGENTS.md template, GEMINI-EXTENSIONS.md template (+2 more)
 
-### Community 11 - "Shared Persona Templates"
+### Community 11 - "Community 11"
 Cohesion: 0.5
 Nodes (4): AGENT-PERSONA.md.template, INSTRUCTIONS.md.template, Shared README (src/user/.agents), USER-PERSONA.md.template
 
@@ -115,17 +120,17 @@ Nodes (4): AGENT-PERSONA.md.template, INSTRUCTIONS.md.template, Shared README (s
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Claude source README` connect `AGENTS.md Curation Commands` to `Tool-Specific AGENTS.md Templates`, `Unit Testing & Mocks`?**
+- **Why does `Claude source README` connect `Community 3` to `Community 9`, `Community 4`?**
   _High betweenness centrality (0.082) - this node is a cross-community bridge._
-- **Why does `ralf-it skill` connect `RALF Multi-Agent Refinement` to `Unit Testing & Mocks`, `PR/Merge Formulas & Guards`?**
+- **Why does `ralf-it skill` connect `Community 1` to `Community 4`, `Community 6`?**
   _High betweenness centrality (0.081) - this node is a cross-community bridge._
-- **Why does `delegation rule` connect `Unit Testing & Mocks` to `RALF Multi-Agent Refinement`, `AGENTS.md Curation Commands`?**
+- **Why does `delegation rule` connect `Community 4` to `Community 1`, `Community 3`?**
   _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `implement-bead skill` (e.g. with `beads plugin (src/plugins/beads/)` and `ralf-implement skill`) actually correct?**
   _`implement-bead skill` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `CLAUDE.md (project root)`, `Project Purpose: multi-tool agents-config`, `Repository Structure (src/user, src/plugins)` to the rest of the system?**
   _114 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `PR Review Automation` be split into smaller, more focused modules?**
+- **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.06 - nodes in this community are weakly interconnected._
-- **Should `RALF Multi-Agent Refinement` be split into smaller, more focused modules?**
+- **Should `Community 1` be split into smaller, more focused modules?**
   _Cohesion score 0.07 - nodes in this community are weakly interconnected._
