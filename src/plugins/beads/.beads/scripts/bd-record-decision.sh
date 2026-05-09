@@ -29,10 +29,16 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --bead-id)        BEAD_ID="$2";       shift 2 ;;
-        --title)          TITLE="$2";         shift 2 ;;
-        --notes)          NOTES="$2";         shift 2 ;;
-        --implemented)    IMPLEMENTED=true;   shift ;;
+        --bead-id)
+            [[ $# -ge 2 ]] || { echo "Error: --bead-id requires a value" >&2; usage; }
+            BEAD_ID="$2"; shift 2 ;;
+        --title)
+            [[ $# -ge 2 ]] || { echo "Error: --title requires a value" >&2; usage; }
+            TITLE="$2"; shift 2 ;;
+        --notes)
+            [[ $# -ge 2 ]] || { echo "Error: --notes requires a value" >&2; usage; }
+            NOTES="$2"; shift 2 ;;
+        --implemented)    IMPLEMENTED=true;    shift ;;
         --needs-approval) NEEDS_APPROVAL=true; shift ;;
         -h|--help)        usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
@@ -54,13 +60,10 @@ fi
 
 OUTCOME=$([[ "$IMPLEMENTED" == true ]] && echo "implemented" || echo "needs-approval")
 
-# Create the decision bead and capture its ID
-CREATE_OUTPUT=$(bd create "$TITLE" --type decision 2>&1)
-echo "$CREATE_OUTPUT"
-
-DEC_ID=$(echo "$CREATE_OUTPUT" | sed -n 's/.*Created issue: \([^ ]*\).*/\1/p')
+# Create the decision bead and capture its ID via --json (stable; avoids text-format fragility)
+DEC_ID=$(bd create "$TITLE" --type decision --json | jq -r '(.[0].id // .id) // empty')
 if [[ -z "$DEC_ID" ]]; then
-    echo "Error: could not extract decision bead ID from bd create output" >&2
+    echo "Error: could not extract decision bead ID from bd create --json output" >&2
     exit 1
 fi
 
