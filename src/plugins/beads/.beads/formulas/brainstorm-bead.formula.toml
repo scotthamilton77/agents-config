@@ -578,8 +578,9 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
 STEP 6 — Migrate edges from X to Y per §3 mechanical rubric
 ──────────────────────────────────────────────────────────────────────────
 
-For each dep edge on X (excluding the parent-child edge, already preserved
-via Y.parent = X.parent), apply the rubric:
+For each dep edge involving X (in BOTH directions — outbound X→OTHER and
+inbound OTHER→X — excluding the parent-child edge, already preserved via
+Y.parent = X.parent), apply the rubric:
 
   | dep_type                                                                 | linked status         | action          |
   |--------------------------------------------------------------------------|-----------------------|-----------------|
@@ -588,45 +589,23 @@ via Y.parent = X.parent), apply the rubric:
   | discovered-from, related                                                 | linked is closed      | keep on X       |
   | discovered-from, related                                                 | linked is open / wip  | migrate to Y    |
 
+"Linked bead" = the bead at the other end of the edge from X's perspective
+(the target for outbound, the source for inbound).
+
 The `Y discovered-from {{bead-id}}` edge is already in place from step 4
-(`--deps discovered-from:{{bead-id}}`); do NOT add it again here.
+(`--deps discovered-from:{{bead-id}}`); the helper detects and skips it
+on the inbound leg, so it is never re-added.
 
-Cost bound: at most N = len(X.dependencies) - 1 `bd show` calls (excluding
-the parent edge). Typical N < 10. If any `bd show` fails mid-loop, error
-out clearly; replay handles the rest via the step-1 idempotency probe.
+Cost bound: O(N_out + N_in) — exactly two `bd dep list` calls capture all
+edges and their statuses inline via the `.status` field. No per-edge
+`bd show` status calls. Plus O(N_migrated) `bd dep add` / `bd dep remove`
+pairs. Typical total << 40 bd calls. The helper is fully idempotent —
+already-migrated edges no longer appear in X's dep list (in either
+direction), so a replay is a no-op for them.
 
-  # bd's dependency JSON shape (verified against current CLI):
-  #   { "id": "<target>", "dependency_type": "<dep-type>", "title": ..., "status": ..., ... }
-  # The parent edge is encoded as dependency_type="parent-child" (NOT "parent"); skip it.
-  bd show {{bead-id}} --json \\
-    | jq -r '.[0].dependencies // [] | .[] | "\\(.dependency_type)\\t\\(.id)"' \\
-  | while IFS="$(printf '\\t')" read -r dep_type target_id; do
-      [ "$dep_type" = "parent-child" ] && continue
-      [ "$dep_type" = "discovered-from" ] && [ "$target_id" = "{{bead-id}}" ] && continue
-      case "$dep_type" in
-        blocks|blocked-by|tracks|until|caused-by|validates|relates-to|supersedes)
-          MIGRATE=1 ;;
-        discovered-from|related)
-          target_status=$(bd show "$target_id" --json | jq -r '.[0].status // "open"')
-          [ "$target_status" = "closed" ] && MIGRATE=0 || MIGRATE=1 ;;
-        *)
-          # Unknown dep type — be conservative; migrate by default and log.
-          echo "WARN: unknown dep_type '$dep_type' on edge {{bead-id}} -> $target_id; migrating to Y by default."
-          MIGRATE=1 ;;
-      esac
-      if [ "$MIGRATE" = "1" ]; then
-        # Gate the X-side remove on a successful Y-side add: if `bd dep add`
-        # fails for any reason (not just "already exists"), keep the original
-        # edge on X to preserve dep graph integrity. Don't drop edges.
-        if bd dep add "$Y_ID" "$target_id" --type "$dep_type"; then
-          # `bd dep remove` is positional-only (issue-id, depends-on-id); no --type flag.
-          bd dep remove "{{bead-id}}" "$target_id" || \\
-            echo "WARN: bd dep remove {{bead-id}} $target_id failed; X edge to $target_id retained."
-        else
-          echo "WARN: bd dep add $Y_ID $target_id --type $dep_type failed; not removing X edge to preserve dep graph."
-        fi
-      fi
-    done
+  ~/.beads/scripts/bd-migrate-deps.sh \\
+    --source "{{bead-id}}" \\
+    --target "$Y_ID"
 
 ──────────────────────────────────────────────────────────────────────────
 STEP 7 — Stamp produced-bead-<Y-id> on X (replay-safe boundary)
