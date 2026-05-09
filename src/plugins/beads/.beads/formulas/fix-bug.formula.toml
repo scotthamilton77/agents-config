@@ -102,12 +102,7 @@ Read the bead and its labels:
    bd label add <mol-id> worktree-path-<encoded>
 
 7. Claim the bead and walk the parent chain:
-   bd update {{bead-id}} --status in_progress
-   PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-   while [ -n "$PARENT" ]; do
-     bd update "$PARENT" --status in_progress
-     PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-   done
+   ~/.beads/scripts/bd-claim-walk.sh --bead-id {{bead-id}}
 
 ## Definition of Done
 Poured molecule + worktree exists + worktree-path-* label stamped on molecule.

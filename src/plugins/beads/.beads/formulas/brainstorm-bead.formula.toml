@@ -43,19 +43,11 @@ Brainstorming IS work — the bead's status must reflect that, so that
 `bd ready` and `bd list --status=open` never show a bead that is
 actively being brainstormed as 'available'.
 
-  bd update {{bead-id}} --status in_progress
+  ~/.beads/scripts/bd-claim-walk.sh --bead-id {{bead-id}}
 
-Walk the parent chain and mark each ancestor epic in_progress (stops
-when there is no parent):
-
-  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-  while [ -n "$PARENT" ]; do
-    bd update "$PARENT" --status in_progress
-    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-  done
-
-The claim is cheap even if `assess` later decides the bead needs no
-further brainstorming.
+The claim walk marks this bead and all ancestor epics in_progress.
+Read the `walked=N` output to confirm the chain depth. The claim is
+cheap even if `assess` later decides the bead needs no further brainstorming.
 """
 
 # =============================================================================
@@ -463,51 +455,49 @@ resulting labels are applied to Y via step 4's --labels, not to X.
   [ -n "$COPY_LABELS" ]   && Y_LABELS="$Y_LABELS,$COPY_LABELS"
 
 ──────────────────────────────────────────────────────────────────────────
-STEP 4 — Create Y atomically
+STEP 4 — Create implementation bead via helper script (idempotent)
 ──────────────────────────────────────────────────────────────────────────
 
-Create Y in a SINGLE `bd create` call so identity, labels, and the
-discovered-from edge to X are established together (no orphan-Y window).
+⚠️  CRITICAL — SEQUENTIAL CALL: Issue the script invocation below as a
+SINGLE, ISOLATED tool call. Do NOT batch it with any other tool call in
+the same message. The script creates the implementation bead; parallel
+dispatch can produce duplicates even if everything else is correct.
 
-  # Write spec/AC to per-process temp files via mktemp (avoid content collision
-  # on concurrent runs). The EXIT trap cleans them up regardless of how the step
-  # exits.
+Write spec and AC to temp files, then invoke the script:
+
   Y_SPEC=$(mktemp)
   Y_AC=$(mktemp)
   trap 'rm -f "$Y_SPEC" "$Y_AC"' EXIT
   printf %s "$X_NOTES" > "$Y_SPEC"
   printf %s "$X_AC"    > "$Y_AC"
 
-  # Build PARENT_ARG conditionally — bd rejects empty --parent.
-  PARENT_ARG=""
-  [ -n "$X_PARENT" ] && PARENT_ARG="--parent $X_PARENT"
+  # Array for the optional --parent flag (avoids word-splitting on the value).
+  PARENT_FLAG=()
+  [ -n "$X_PARENT" ] && PARENT_FLAG=(--parent "$X_PARENT")
 
-  Y_CREATE_JSON=$(bd create \\
+  Y_ID=$(~/.beads/scripts/bd-finalize-create-impl-bead.sh \\
+    --source-bead-id "{{bead-id}}" \\
     --type "$Y_TYPE" \\
     --priority "$X_PRIORITY" \\
-    $PARENT_ARG \\
     --title "$Y_TITLE" \\
-    --description "$(cat "$Y_SPEC")" \\
-    --acceptance "$(cat "$Y_AC")" \\
     --labels "$Y_LABELS" \\
-    --deps "discovered-from:{{bead-id}}" \\
-    --no-inherit-labels \\
-    --json)
-
-  # bd create --json returns a single object (NOT an array); the id is at .id.
-  Y_ID=$(echo "$Y_CREATE_JSON" | jq -r '.id')
-
-  if [ -z "$Y_ID" ] || [ "$Y_ID" = "null" ]; then
-    echo "ERROR: bd create did not return a Y id; aborting."
-    exit 1
-  fi
+    --spec-file "$Y_SPEC" \\
+    --ac-file "$Y_AC" \\
+    "${PARENT_FLAG[@]}") || exit 1
+  echo "Implementation bead: $Y_ID"
 
 Notes on this step:
 
-- `--no-inherit-labels` prevents X.parent's labels from leaking onto Y; Y's
-  labels are EXACTLY what `--labels` lists.
-- Field-vs-flag mapping: the `acceptance_criteria` bead field is set via
-  `bd create --acceptance "..."` (NOT `--acceptance-criteria`).
+- The script outputs just the Y bead ID on success (exit 0). On failure
+  (exit 1), it writes diagnostics to stderr. For the escalate case
+  (multiple orphan impl beads), it also adds the 'human' label and an
+  audit comment to {{bead-id}} before exiting — no extra bd calls needed here.
+- The script probes for an existing non-closed bead carrying
+  produced-from-{{bead-id}} before issuing bd create. If one exists, it
+  returns that bead's ID (idempotent resume). This is the second line of
+  defence against duplicate impl beads; Step 1b is the first.
+- `--no-inherit-labels` (inside the script) prevents X.parent's labels
+  from leaking onto Y; Y's labels are EXACTLY what `--labels` lists.
 - I1 claim-walk: Y is created `open` here; it is not yet "starting work,"
   so I1 does NOT require a fresh claim-walk against Y. Y.parent = X.parent,
   which X's Phase 0 claim already marked in_progress and walked. The next
@@ -656,20 +646,13 @@ breadcrumb comment so a comment failure does not block forward progress.
 STEP 8 — Close X with reason; run I2 close-walk
 ──────────────────────────────────────────────────────────────────────────
 
-  bd close {{bead-id}} --reason "brainstormed; produced $Y_ID"
+  ~/.beads/scripts/bd-close-walk.sh \\
+    --bead-id "{{bead-id}}" \\
+    --reason "brainstormed; produced $Y_ID"
 
-  # I2 close-walk (per beads.md): walk the parent chain and close each
-  # ancestor whose remaining children are all closed. Y is now an open
-  # child of X.parent (Y.parent = X.parent), so the walk halts at X.parent
-  # — which is the correct outcome (the epic still has active work via Y).
-  PARENT=$(bd show {{bead-id}} --json | jq -r '.[0].parent // empty')
-  while [ -n "$PARENT" ]; do
-    NON_CLOSED=$(bd list --parent="$PARENT" --json \\
-      | jq '[.[] | select(.status != "closed")] | length')
-    [ "$NON_CLOSED" = "0" ] || break
-    bd close "$PARENT" --reason "All children closed"
-    PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
-  done
+  # The I2 ancestor walk halts at X.parent because Y is now an open child
+  # of X.parent (Y.parent = X.parent) — the epic still has active work via Y.
+  # Read the `closed=...` output for the audit trail.
 
 ──────────────────────────────────────────────────────────────────────────
 STEP 9 — Burn the wisp; report hand-off
