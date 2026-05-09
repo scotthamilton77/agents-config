@@ -167,6 +167,7 @@ If the spec required closing existing technical ambiguity, record it:
     --bead-id {{bead-id}} \\
     --title "<brief decision statement>" \\
     --notes "<rationale>" \\
+    # choose one:
     --implemented      # decision resolved in this spec; closes the decision bead
     --needs-approval   # impacts future work; keeps open and flags for human review
 

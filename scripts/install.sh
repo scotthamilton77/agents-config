@@ -933,7 +933,7 @@ stage_and_install_beads() {
 
             if [[ "$script_src_hash" == "$script_dst_hash" ]]; then
                 # Content matches but exec bit may have been lost — restore it without a full copy.
-                [[ -x "$dest_script" ]] || { chmod +x "$dest_script"; vinfo "Restored +x on scripts/$script_name"; }
+                [[ "$DRY_RUN" == true ]] || { [[ -x "$dest_script" ]] || { chmod +x "$dest_script"; vinfo "Restored +x on scripts/$script_name"; }; }
                 vok "scripts/$script_name is up to date"
                 (( tool_skipped[beads]++ )) || true
             else
