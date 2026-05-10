@@ -1327,10 +1327,11 @@ _load_prune_list() {
 _load_prune_list
 
 _in_prune_list() {
-    local tool="$1" ns="$2" base="$3" entry
+    local tool="$1" ns="$2" base="$3" key entry
+    key="$tool/$ns/$base"
     for entry in "${PRUNE_LIST[@]}"; do
-        [[ "$entry" == "$tool/$ns/$base" ]] && return 0
-        [[ "$entry" == "*/$ns/$base"     ]] && return 0
+        # shellcheck disable=SC2254
+        case "$key" in ($entry) return 0;; esac
     done
     return 1
 }
