@@ -49,7 +49,7 @@ bd export -o issues.backup.jsonl
 wc -l issues.backup.jsonl
 ```
 
-Expected: file exists, line count ≥ 374 (the snapshot total at planning time; should be slightly higher if il69 spawned more closures). If line count <100, STOP — the export silently failed.
+Expected: file exists, line count ≥ 374 (the snapshot total at planning time; should be slightly higher if il69 spawned additional follow-up beads after planning). If line count <100, STOP — the export silently failed.
 
 - [ ] **Step 3: Verify snapshot is valid JSONL and counts match**
 
