@@ -30,7 +30,7 @@ Housekeeping (checklist steps 9–10) applies throughout: record discovered work
 
 Creating a PR is NOT authorization to merge. But PR creation itself is AUTOMATIC — **do not pause for it**. Pause only at the merge step.
 
-**Red flag**: "Ready when you are" / "ready for delivery" / "awaiting your go-ahead" BEFORE PR creation → STOP. Delivery is automatic. Execute `finishing-a-development-branch` now. Only pause AT the merge step. When in doubt at the merge step, the user has not authorized it.
+**Red flag**: "Ready when you are" / "ready for delivery" / "awaiting your go-ahead" BEFORE PR creation → STOP. Delivery is automatic. Execute `superpowers:finishing-a-development-branch` now. Only pause AT the merge step. When in doubt at the merge step, the user has not authorized it.
 
 ## PR comments
 
