@@ -937,7 +937,11 @@ while idx < len(all_strategic):
     beads.extend(items)
     idx = idx + (len(all_strategic[idx:]) - len(s)) + end
 
-milestone_ids = set([milestones.get(k) for k in ('M1_ID','M2_ID','M3_ID','M4_ID','POSTMVP_ID','SPIKES_ID')])
+required_keys = ('M1_ID','M2_ID','M3_ID','M4_ID','POSTMVP_ID','SPIKES_ID')
+missing = [k for k in required_keys if k not in milestones or milestones[k] is None]
+if missing:
+    raise SystemExit(f"audit aborted: required milestone IDs missing from /tmp/phase5b-id-map.txt: {missing}")
+milestone_ids = {milestones[k] for k in required_keys}
 strategic = [b for b in beads if b.get('issue_type') not in ('molecule',) and not b['id'].startswith('agents-config-mol-')]
 orphaned_strategic = []
 for b in strategic:
