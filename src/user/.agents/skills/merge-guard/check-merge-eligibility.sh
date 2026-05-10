@@ -51,6 +51,9 @@ COMMENTS_SEEN="$3"
 COPILOT_LOGIN_FILTER='test("copilot"; "i")'
 
 # ── Helper functions ──────────────────────────────────────────────────────────
+# NOTE: gh_api(), gh-auth check, and jq availability check duplicate logic in
+# the canonical wait-for-pr-comments/lib.sh. Keep this file in sync when
+# behavior changes there; consider promoting lib.sh to a shared location.
 
 gh_api() {
     local result exit_code=0

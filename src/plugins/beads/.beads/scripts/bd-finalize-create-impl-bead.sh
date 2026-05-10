@@ -116,7 +116,7 @@ done
 # Validate required args
 for _flag_var in SOURCE_BEAD_ID TYPE PRIORITY TITLE LABELS SPEC_FILE AC_FILE; do
     if [[ -z "${!_flag_var}" ]]; then
-        _flag_name=$(echo "$_flag_var" | tr '[:upper:]_' '[:lower:]-')
+        _flag_name=$(echo "$_flag_var" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
         echo "Error: --${_flag_name} is required" >&2
         usage
     fi

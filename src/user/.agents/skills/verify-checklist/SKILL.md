@@ -60,9 +60,9 @@ Collect before writing the report:
 - **PRs** — Branch names, PR URLs/numbers, current status
 - **Remaining work** — Anything incomplete if this was a partial delivery
 - **Discovered work** — Issues found but not addressed during implementation
-- **Where recorded** — Bead IDs, issue numbers, memory entries for each discovered item
+- **Where recorded** — IDs in the project's tracking system, issue numbers, memory entries for each discovered item
 
-If discovered work is unrecorded, **record it now** (create beads, issues, or memory entries as appropriate for the project). Unrecorded work is lost work.
+If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work.
 
 ### 4. Produce the Report
 
@@ -91,7 +91,7 @@ If discovered work is unrecorded, **record it now** (create beads, issues, or me
 ### Discovered Work
 | Item | Recorded In |
 |------|-------------|
-| [description] | bead:ID / issue:#N / memory / backlog |
+| [description] | id in the project's tracking system / issue:#N / memory / backlog |
 ```
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.

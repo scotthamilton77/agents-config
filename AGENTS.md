@@ -88,10 +88,17 @@ This configuration assumes the following Claude Code plugins are installed:
 ---
 name: agent-name
 description: One-line description
-model: sonnet | opus | haiku | inherit
+model: sonnet | opus | haiku | inherit          # optional; common subset — see AGENTS_PRIMER.md for full list (e.g. opus[1m], sonnet[1m])
 color: purple | indigo | blue | green | yellow | orange | red | cyan | teal | pink
+tools: Read, Grep, Glob, Bash                   # optional — comma-separated allow-list
+disallowedTools: Write, Edit                    # optional — explicit deny-list
+skills: [skill-name, plugin:skill-name]         # optional — preloaded skills
+effort: low | medium | high | xhigh             # optional — reasoning budget
+memory: <path-or-key>                           # optional — persistent memory namespace
 ---
 ```
+
+See `docs/primers/AGENTS_PRIMER.md` for the full schema and field semantics.
 
 Followed by role definition, standards, and boundaries.
 
@@ -101,6 +108,7 @@ Followed by role definition, standards, and boundaries.
 ---
 name: skill-name
 description: When to use this skill
+# optional fields: model, effort, allowed-tools — see docs/primers/SKILLS_PRIMER.md
 ---
 ```
 

@@ -7,12 +7,12 @@ set -euo pipefail
 input="$(cat)"
 
 # Extract tool name — only care about Bash
-tool_name="$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null)" || exit 0
+tool_name="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)" || exit 0
 [[ "$tool_name" == "Bash" ]] || exit 0
 
 # Extract command and stdout
-command="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)" || exit 0
-stdout="$(echo "$input" | jq -r '.tool_output.stdout // empty' 2>/dev/null)" || exit 0
+command="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)" || exit 0
+stdout="$(printf '%s' "$input" | jq -r '.tool_output.stdout // empty' 2>/dev/null)" || exit 0
 
 # Pattern 1: gh pr create — look for PR URL in stdout
 if [[ "$command" == *"gh pr create"* ]]; then

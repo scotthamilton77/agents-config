@@ -7,6 +7,13 @@
 #
 # Usage:
 #   validate-inventory.sh <inventory_json_path>
+#
+# Exit codes:
+#   0  — all guards pass
+#   1  — validation failed (one or more guards rejected the input)
+#   64 — wrong arg count (EX_USAGE)
+#   65 — jq write failed (EX_DATAERR)
+#   66 — input file not found (EX_NOINPUT)
 
 set -euo pipefail
 

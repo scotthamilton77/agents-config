@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # poll-ready-beads.sh [max-minutes]
 #
 # Polls for implementation-ready beads at 10-minute intervals.
@@ -12,6 +13,11 @@
 #   ./poll-ready-beads.sh 60        # poll for up to 60 minutes
 
 MAX_MINUTES="${1:-}"
+if [[ -n "$MAX_MINUTES" ]] && ! [[ "$MAX_MINUTES" =~ ^[0-9]+$ ]]; then
+    echo "Error: max-minutes must be a non-negative integer, got: '$MAX_MINUTES'" >&2
+    echo "Usage: $0 [max-minutes]" >&2
+    exit 2
+fi
 INTERVAL_SECONDS=600   # 10 minutes
 ELAPSED_SECONDS=0
 
@@ -19,7 +25,7 @@ trap 'echo "Interrupted."; exit 2' INT TERM
 
 while true; do
     RESULT=$(bd ready --label implementation-ready --json 2>/dev/null)
-    COUNT=$(echo "$RESULT" | jq 'length' 2>/dev/null || echo "0")
+    COUNT=$(echo "$RESULT" | jq 'length' 2>/dev/null) || COUNT="0"
 
     if [ "$COUNT" -gt 0 ]; then
         echo "$RESULT"

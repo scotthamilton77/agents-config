@@ -23,7 +23,31 @@ IMPLEMENTED=false
 NEEDS_APPROVAL=false
 
 usage() {
-    echo "Usage: $(basename "$0") --bead-id <id> --title <text> --notes <text> (--implemented | --needs-approval)" >&2
+    cat >&2 <<'EOF'
+Usage: bd-record-decision.sh --bead-id <id> --title <text> --notes <text> (--implemented | --needs-approval)
+
+Record an architectural decision as a tracked bead, linked to the source
+bead via a discovered-from dependency, with one of two terminal outcomes.
+
+Options:
+  --bead-id <id>    Source bead the decision arose from (required)
+  --title <text>    One-line decision summary (required)
+  --notes <text>    Decision context and rationale (required)
+  --implemented     Decision is resolved in the current spec or work; closes
+                    the decision bead immediately. Mutually exclusive with
+                    --needs-approval.
+  --needs-approval  Decision impacts future work and requires human sign-off;
+                    keeps the bead open and adds the 'human' label. Mutually
+                    exclusive with --implemented.
+  -h, --help        Show this help
+
+Output (one line on stdout):
+  decision-id=<id>  ID of the newly-created decision bead
+
+Exit codes:
+  0  decision recorded
+  1  invalid arguments or bd CLI failure
+EOF
     exit 1
 }
 
