@@ -53,19 +53,7 @@ When work is discovered mid-implementation that does not fit the spirit of the c
 
 ## "bd ready" / "what's next" Behavior
 
-When user runs `bd ready` or asks what to work on **without specifying a direction**, show TWO lists:
-
-**List 1 — Needs your attention** (show first; address before List 2):
-```bash
-bd human list
-```
-
-**List 2 — Ready to brainstorm:**
-```bash
-bd ready --json | jq '[.[] | select(.labels | index("implementation-ready") | not)]'
-```
-
-In a **directed context** (e.g. run-queue), use `bd ready --label implementation-ready` instead.
+Use the `whats-next` skill. It handles mode selection (human-triage + brainstorm list vs. implementation-ready list), sort order, and empty-section suppression. `run-queue` is exempt — it calls `bd ready --label implementation-ready` directly in its autonomous context.
 
 ## Notes vs Comments
 
