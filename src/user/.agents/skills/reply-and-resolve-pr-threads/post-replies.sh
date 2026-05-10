@@ -89,7 +89,7 @@ while IFS= read -r item; do
   # Only FIX and SKIP classifications get replies via this helper.
   # ESCALATE items are handled separately (escalation notice posted in-model).
   if [ "$classification" != "FIX" ] && [ "$classification" != "SKIP" ]; then
-    echo "POSTED $cid (skipped: classification=$classification)"
+    echo "FILTERED $cid (classification=$classification)"
     continue
   fi
 
