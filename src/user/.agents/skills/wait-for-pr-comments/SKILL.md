@@ -225,14 +225,10 @@ After all FIX items processed, the inventory carries each item's
 
 Run `verify-checklist` across all `committed`-outcome subagents' work.
 
-**On failure:** build the inventory body (mirror the Phase 7 builder block —
-the temp file may not exist yet at this point) and write it as `partial`:
+**On failure:** build the inventory body and write it as `partial`:
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -249,7 +245,7 @@ Report to caller; abort (Skill B is NOT invoked).
 Confirm each FIX/`committed` item's `fix_commit_sha` is in
 `git rev-list <phase4_baseline_sha>..HEAD`.
 
-**On mismatch:** build the inventory body (same `jq -n` block as Phase 5a)
+**On mismatch:** build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a)
 and invoke:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -265,8 +261,7 @@ Report to caller; abort.
 
 Run `git push`.
 
-**On failure:** keep local commits. Build the inventory body (same `jq -n`
-block as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
+**On failure:** keep local commits. Build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
 (no remote update happened), then:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -323,15 +318,11 @@ normally and proceed to Phase 7.
 
 ### Phase 7 — Write inventory
 
-Build the JSON body via `jq` pipeline (NO heredoc — sandbox-blocked per
-`git-commits.md`); write atomically via the helper:
+Build the inventory body via helper and write atomically:
 
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -381,36 +372,12 @@ manually (add `--mode autonomous --bead-id <id>` if applicable)."
 After Skill B completes, verify no review threads were missed before
 considering the await-review step done.
 
-1. **Query** GraphQL for all unresolved, non-outdated review threads
-   (paginate if >100):
+1. **Query** for all unresolved, non-outdated review threads (pagination handled internally):
    ```bash
-   gh api graphql \
-     -F owner="<owner>" -F repo="<repo>" -F pr="<pr-number>" \
-     -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             pageInfo { hasNextPage endCursor }
-             nodes {
-               id
-               isResolved
-               isOutdated
-               comments(first: 1) {
-                 nodes {
-                   author { login }
-                   body
-                   databaseId
-                 }
-               }
-             }
-           }
-         }
-       }
-     }'
+   ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR"
+   # stdout: {count: N, thread_ids: ["<graphql-thread-id>", ...]}
    ```
-   If `hasNextPage == true`, repeat with `-F after="<endCursor>"` and
-   accumulate nodes until exhausted.
 2. **Count** threads where `isResolved == false` and `isOutdated == false`.
 3. **If count > 0**: treat as a new review round. Return to **Phase 3
    (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
@@ -680,11 +647,8 @@ POSIX-atomic) — handled by `write-inventory.sh`.
 Phase 8 success):
 
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -727,8 +691,7 @@ ${CLAUDE_SKILL_DIR}/audit-subagent-report.sh \
 # exit 2 = schema violation {field,message}
 ```
 
-**Build inventory body** (Phases 5a / 5b / 5c / 7 / 8 — replaces the inline
-`jq -n` block):
+**Build inventory body** (Phases 5a / 5b / 5c / 7 / 8):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \

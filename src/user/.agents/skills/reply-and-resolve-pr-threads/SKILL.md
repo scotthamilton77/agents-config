@@ -138,15 +138,12 @@ Reply body text is taken **only** from the pinned reply matrix in §"Reply text 
 
 ### Phase 3 — Resolve only FIX `review_thread`s
 
-GraphQL mutation, variable-bound:
+Invoke the resolve helper against the inventory (handles the GraphQL mutation per-thread internally):
 
 ```bash
-gh api graphql -f query='
-  mutation($id:ID!){
-    resolveReviewThread(input:{threadId:$id}){
-      thread{ isResolved }
-    }
-  }' -F id=<thread_id>
+${CLAUDE_SKILL_DIR}/resolve-threads.sh --inventory <inventory-path>
+# per-thread output: RESOLVED <thread_id> or FAILED <thread_id> <reason>
+# exit 0 if all resolved or none to resolve; exit 1 if any failed
 ```
 
 **Resolve target set:** items with `kind == "review_thread"` AND `classification == "FIX"` AND a non-null `fix_outcome` (i.e., `committed` or `already_addressed`). All four conditions must hold.
