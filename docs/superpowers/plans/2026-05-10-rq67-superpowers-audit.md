@@ -4,7 +4,7 @@
 
 **Goal:** Fix all broken and wrong-namespace superpowers skill references in this repo, and retire two in-repo skills that duplicate superpowers-bundled content.
 
-**Architecture:** Pure documentation changes — no code, no build system. Each task edits markdown files and verifies via grep. The repo has no test runner; verification is manual grep assertions. Each task ends with a commit.
+**Architecture:** Pure documentation changes — no code, no build system. Each task edits markdown files and verifies via grep. No automated tests apply to this change; verification is via grep assertions. Each task ends with a commit.
 
 **Tech Stack:** Markdown, bash (grep/rm), git
 

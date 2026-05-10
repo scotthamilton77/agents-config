@@ -27,8 +27,7 @@ description: |-
 tools: Read, Edit, Write, Grep, Glob, Bash
 skills:
   - superpowers:test-driven-development
-  - superpowers:writing-unit-tests
-  - superpowers:testing-anti-patterns
+  - writing-unit-tests
   - superpowers:using-git-worktrees
 model: opus
 effort: high
@@ -61,7 +60,7 @@ Inputs:
 
 Behavior:
 
-- Apply `superpowers:writing-unit-tests` and `superpowers:testing-anti-patterns`. No mock-driven design. No test-only methods on production classes.
+- Apply `writing-unit-tests` and `superpowers:test-driven-development`. No mock-driven design. No test-only methods on production classes.
 - For each AC bullet, author one or more focused failing tests covering happy path, edge cases, and error paths as appropriate to the bullet.
 - Commit tests-only. Production-code changes in this dispatch are a contract violation; if you find yourself wanting to change production code, stop and surface that need via `escalations` instead.
 

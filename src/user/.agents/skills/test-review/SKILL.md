@@ -24,7 +24,7 @@ description: Use when doing code review of unit or integration tests, reviewing 
 ## When NOT to Use
 
 - Writing tests from scratch (use `writing-unit-tests` skill instead)
-- Debugging a test failure caused by production code (use `bugfix` or `superpowers:root-cause-tracing`)
+- Debugging a test failure caused by production code (use `bugfix` or `superpowers:systematic-debugging`)
 - Throwaway spike/prototype tests
 
 ## Scope Determination
@@ -51,11 +51,11 @@ Before manual review, invoke these companion skills and agents for their special
 
 | Skill/Agent | What It Catches | How to Use |
 |---|---|---|
-| `testing-anti-patterns` skill | Mock behavior testing, test-only production methods, mocking without understanding, incomplete mocks | Apply its gate functions to every mock and assertion |
+| `superpowers:test-driven-development` skill | Mock behavior testing, test-only production methods, mocking without understanding, incomplete mocks | Apply its gate functions to every mock and assertion |
 | `writing-unit-tests` skill | Implementation-testing, untestable code, mock overuse, poor isolation, skip hygiene | Apply its behavior-vs-implementation lens and test doubles hierarchy |
 | `quality-reviewer` agent | Security issues in test fixtures, code quality, missing edge cases | Dispatch as subagent on the test files |
 
-**Workflow:** Apply `testing-anti-patterns` + `writing-unit-tests` criteria first (test-specific), then dispatch `quality-reviewer` agent (general quality).
+**Workflow:** Apply `superpowers:test-driven-development` + `writing-unit-tests` criteria first (test-specific), then dispatch `quality-reviewer` agent (general quality).
 
 ### Step 3: Manual Review Against Checklist
 
