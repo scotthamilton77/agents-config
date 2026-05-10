@@ -258,7 +258,7 @@ bd dep add "$M2_ID" "$M1_ID"
 bd dep add "$M3_ID" "$M2_ID"
 bd dep add "$M4_ID" "$M3_ID"
 bd dep add "$POSTMVP_ID" "$M4_ID"
-echo "Dependency chain wired: M1 → M2 → M3 → M4 → Post-MVP"
+echo "Dependency chain wired: M2 depends on M1; M3 depends on M2; M4 depends on M3; Post-MVP depends on M4"
 ```
 
 Expected: each `bd dep add` succeeds silently. SPIKES_ID is intentionally NOT in the chain (research spikes run opportunistically per Scott's directive).
@@ -276,7 +276,7 @@ import sys, json
 d = json.load(sys.stdin)[0]
 print(f'  type={d.get(\"issue_type\")} status={d.get(\"status\")} parent={d.get(\"parent\",\"orphan\")}')
 print(f'  title={d.get(\"title\")[:80]}')
-print(f'  deps_in={[x.get(\"id\") if isinstance(x,dict) else x for x in d.get(\"dependencies\",[])]}')"
+print(f'  deps_out={[x.get(\"id\") if isinstance(x,dict) else x for x in d.get(\"dependencies\",[])]}')"
 done
 ```
 
