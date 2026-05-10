@@ -1,6 +1,9 @@
 # Comprehensive Audit of Agent-Facing Content — Design
 
-**Bead**: `agents-config-acmh` (closed; this spec is the implementation guide consumed by `agents-config-il69`)
+**Beads**:
+  - **Design source**: `agents-config-acmh` (closed). This spec was authored under acmh's brainstorm-bead molecule; the historical record lives there.
+  - **Run target**: `agents-config-il69` (open). The execution sequence in §13 operates on `agents-config-il69` — that is the bead the orchestrator drives `in_progress`, the canonical fallback target for the §13 Step 6 approval comment, and the parent under which run-time discovered work is filed (per §13 Step 9). Step 9 also files follow-up Tier-2 / Tier-3 beads as children of `agents-config-acmh` (the design epic) per beads invariant I3 — design-epic children, not run-bead children. The two parentage rules are deliberate and disjoint: discovered-during-execution → il69; planned-Tier-2/Tier-3-deferrals → acmh.
+
 **Status**: Spec — finalized through 4 ralf-review cycles (cycles 1–2 inline, cycles 3–4 belt-and-suspenders post-close)
 **Date**: 2026-05-09 (initial); 2026-05-10 (cycle 3+4 patch pass)
 **Authors**: Scott Hamilton (architect) + Claude Opus 4.7 (1M context, brainstorm partner)
@@ -433,7 +436,7 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 | 2 | All 6 Phase 2 use-case adversarial files exist at `docs/audits/phase2/<use-case-slug>.md` |
 | 3 | Phase 3 outputs complete: `by-category/<category>.md` per category, `by-file/<file-slug>.md` per source file with ≥1 finding, `decisions.md`, `REMEDIATION_PLAN.md` |
 | 4 | Every finding has all schema fields populated, including non-empty `Vision-advancement` |
-| 5 | User has reviewed `REMEDIATION_PLAN.md` and approved the Tier 1 fix list — evidenced by an explicit `APPROVED <SHA>` marker line at the top of `REMEDIATION_PLAN.md` (canonical, lookup first), OR a comment on `agents-config-acmh` recording the approval and the worktree HEAD SHA (fallback). If both are present and the SHAs disagree, the orchestrator MUST surface to the user rather than guess. |
+| 5 | User has reviewed `REMEDIATION_PLAN.md` and approved the Tier 1 fix list — evidenced by an explicit `APPROVED <SHA>` marker line at the top of `REMEDIATION_PLAN.md` (canonical, lookup first), OR a comment on `agents-config-il69` recording the approval and the worktree HEAD SHA (fallback). If both are present and the SHAs disagree, the orchestrator MUST surface to the user rather than guess. |
 | 6 | All approved Tier 1 fixes applied to source files |
 | 7 | `scripts/install.sh --dry-run` passes after Tier 1 fixes |
 | 8 | One follow-up bead filed per category that has ≥1 Tier 2 finding (categories with zero Tier 2 findings produce no bead — this is acceptable; the absence is recorded in `REMEDIATION_PLAN.md`) |
@@ -450,7 +453,7 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 - Extract AGENTS.md vision section by H2 boundary: from the line beginning `## Vision & Mission` through the last line before the next H2 header (`^## ` at column 0). The H3 subsections inside (`### Current state…`, `### Implications for agents working in *this* repo`) are part of the extracted block. Line numbers MUST NOT be hard-coded.
 - Print the first and last extracted line for the user to eyeball before continuing — confirms the H2 boundary detection landed on the right section
 - Verify `docs/audits/` is absent (or, if present, that the user has explicitly authorized overwrite — the orchestrator surfaces and pauses on first-run conflict)
-- Confirm bead `agents-config-acmh` is `in_progress` with no active molecule conflict
+- Confirm bead `agents-config-il69` (the run target per the header) is `in_progress` with no active molecule conflict
 - Create worktree at `.claude/worktrees/acmh-comprehensive-audit`
 
 ### Step 0.5 — Pin audit-input SHA and resolve file scope
@@ -504,12 +507,12 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 - Orchestrator presents `REMEDIATION_PLAN.md`
 - **Marker format (operationally meaningful only)**: markers MUST appear at column 0 in `REMEDIATION_PLAN.md`. The `<SHA>` in the `APPROVED` marker MUST be a 40-character lowercase hex git SHA equal to `AUDIT_INPUT_SHA`. The orchestrator validates each `F<n>` referenced in `DEMOTE`/`DROP` against the live REMEDIATION_PLAN finding list; unknown F-ids surface to the user before any Tier 1 application begins.
 - User actions:
-  * **Approve**: add `APPROVED <SHA>` marker line as the first non-blank line of `REMEDIATION_PLAN.md` (canonical, lookup first), OR post a bd comment on `agents-config-acmh` whose body matches `^APPROVED <40-hex-SHA>$` (fallback) per AC #5. If both are present and the SHAs disagree, the orchestrator surfaces.
+  * **Approve**: add `APPROVED <SHA>` marker line as the first non-blank line of `REMEDIATION_PLAN.md` (canonical, lookup first), OR post a bd comment on `agents-config-il69` whose body matches `^APPROVED <40-hex-SHA>$` (fallback) per AC #5. If both are present and the SHAs disagree, the orchestrator surfaces.
   * **Demote a Tier 1 to Tier 2**: add a marker line in `REMEDIATION_PLAN.md` of the form `DEMOTE F<n>: tier=2 reason=<text>` — the orchestrator parses these post-approval and reflects each in `decisions.md` as `Type: user-gate-demotion`. Editing diffs directly without a `DEMOTE` marker is NOT a supported demotion mechanism (the orchestrator will not reverse-engineer free-form edits).
   * **Drop a finding**: marker line `DROP F<n>: reason=<text>` (recorded as `Type: user-gate-drop`)
   * **Request schema fixes**: surface as a comment on the bead; orchestrator returns to Step 5 with the request
   * **Direct edit of `REMEDIATION_PLAN.md`**: only the `APPROVED`, `DEMOTE`, and `DROP` markers are operationally meaningful; prose edits are advisory and do not alter the orchestrator's behavior
-- **No-action / silence behavior**: the gate does NOT auto-timeout. If no approval marker appears, the orchestrator parks indefinitely with the bead `agents-config-acmh` in `in_progress` and the worktree retained. Resumption requires the user to re-invoke the orchestrator with one of the marker actions above present in `REMEDIATION_PLAN.md` or as a bd comment. The orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter; no Tier 1 application proceeds without an explicit `APPROVED` marker. (Rationale: the project's vision explicitly accepts overnight / multi-day cadences; an auto-timeout would conflict with that. Aborting cleanly is the user's job — `bd close --reason ...` if abandoning.)
+- **No-action / silence behavior**: the gate does NOT auto-timeout. If no approval marker appears, the orchestrator parks indefinitely with the bead `agents-config-il69` in `in_progress` and the worktree retained. Resumption requires the user to re-invoke the orchestrator with one of the marker actions above present in `REMEDIATION_PLAN.md` or as a bd comment on `agents-config-il69`. The orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter; no Tier 1 application proceeds without an explicit `APPROVED` marker. (Rationale: the project's vision explicitly accepts overnight / multi-day cadences; an auto-timeout would conflict with that. Aborting cleanly is the user's job — `bd close agents-config-il69 --reason ...` if abandoning.)
 - **Worktree source-drift invariant** (per §6 AUDIT INPUT SHA contract): at approval-marker parse time, the orchestrator runs `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`. Empty diff = invariant holds; audit-output commits do NOT violate it. If non-empty (in-scope source files modified during the gate), resolution paths:
   * **"proceed against new tree"** — orchestrator pins `AUDIT_INPUT_SHA_v2 = <new HEAD>` in `decisions.md` (`Type: sha-drift`), re-runs Phase 1 categories whose §4 globs intersect the changed paths against `AUDIT_INPUT_SHA_v2`, re-runs all 6 Phase 2 reviewers (their inputs include all Phase 1 outputs), and re-runs Phase 3 in full. Subsequent SHA-drift detection during the re-audit pins as v3, etc. Stale v1 outputs from re-run categories are deleted, NOT merged.
   * **"re-audit"** — full re-dispatch from Step 0.5 with a new `AUDIT_INPUT_SHA`
