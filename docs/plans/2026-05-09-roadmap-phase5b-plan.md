@@ -106,7 +106,7 @@ Run:
             agents-config-td39 agents-config-ukzs agents-config-z7a \
             agents-config-syod agents-config-l0v0 agents-config-zetc \
             agents-config-cx6 agents-config-717 agents-config-mptb \
-            agents-config-7bk.19.9; do
+            agents-config-7bk.19.9 agents-config-il69; do
     echo "--- $id ---"
     bd show "$id" --json 2>/dev/null | python3 -c "
 import sys, json
@@ -602,7 +602,7 @@ source <(grep "^M1_ID=" /tmp/phase5b-id-map.txt)
 for id in agents-config-hft agents-config-d3s1 agents-config-jp9w \
           agents-config-2yyb agents-config-nbrd agents-config-19n9 \
           agents-config-e2l agents-config-clz agents-config-f298 \
-          agents-config-2gzy; do
+          agents-config-2gzy agents-config-il69; do
   bd update "$id" --parent "$M1_ID"
 done
 bd list --parent "$M1_ID" --json | python3 -c "
@@ -610,7 +610,7 @@ import sys, json
 print(f'M1 children: {len(json.load(sys.stdin))}')"
 ```
 
-Expected: M1 child count matches Section 8's "direct children" list — jyb, acmh, 7bk.4, 7bk.17, hft, d3s1, jp9w, 2yyb, nbrd, 19n9, e2l, clz, f298, 2gzy = 14 children.
+Expected: M1 active children (open + in_progress) count = 13: acmh, 7bk.4, 7bk.17, hft, d3s1, jp9w, 2yyb, nbrd, 19n9, e2l, clz, f298, 2gzy. Plus closed-but-parented historical beads: jyb, il69. Total visible with `--status closed`: 15.
 
 - [ ] **Step 2: Reparent M3 orphans**
 
