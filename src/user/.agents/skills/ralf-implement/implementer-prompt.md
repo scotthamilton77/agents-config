@@ -31,7 +31,7 @@ Agent tool (general-purpose, mode: "auto"):
     6. Self-review against the Definition of Done
     7. Report back with a structured implementation summary
 
-    If unclear, apply the canonical decision matrix. Don't guess.
+    If anything is unclear, apply the canonical decision matrix. Don't guess.
 
     ## Report Format
 
