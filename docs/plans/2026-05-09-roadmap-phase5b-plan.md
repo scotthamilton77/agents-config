@@ -861,6 +861,19 @@ Expected: each of the 11 beads has the vision-85-5-10 label (6 pre-existing KEEP
 
 ## Task 15: Cleanup suspect open molecules
 
+The two stale molecules are referenced as `agents-config-mol-dxvo` and `agents-config-mol-miv9h` (the full bd-stored IDs). The roadmap doc Section 8 uses the same prefixed form. Before acting, confirm the IDs exist and their parent beads are closed:
+
+```bash
+bd list --type molecule --status open --json | python3 -c "
+import sys, json
+beads = json.load(sys.stdin)
+for b in beads:
+    if 'mol-dxvo' in b['id'] or 'mol-miv9h' in b['id']:
+        print(b['id'], b.get('status'), [l for l in b.get('labels',[]) if l.startswith('for-bead-')])"
+```
+
+**Why `bd close` (not `bd mol squash` / `bd mol burn`):** `bd mol squash` condenses a completed molecule to a digest; `bd mol burn` discards an *ephemeral* wisp. Neither maps to "abandoned stale persistent mol whose source bead is already closed." `bd close` is the correct primitive — it sets status=closed with a reason, leaves the molecule visible for audit-trail purposes, and was confirmed to work on persistent mols during Phase 5b execution.
+
 - [ ] **Step 1: Verify mol-dxvo and mol-miv9h status**
 
 Run:
@@ -1058,7 +1071,7 @@ Phase 5b beadification complete.
 
 **Labels:** 5 vision-85-5-10 ADDs (7bk.11, 7bk.12, 7bk.13, 7bk.20, 7bk.25). All 6 pre-existing labels confirmed correct (KEEP).
 
-**Stale molecules closed:** mol-dxvo, mol-miv9h.
+**Stale molecules closed:** agents-config-mol-dxvo, agents-config-mol-miv9h.
 
 **Audit artifacts:** `/tmp/phase5b-audit.txt` shows the new tree; `/tmp/phase5b-id-map.txt` records the new bead IDs.
 
