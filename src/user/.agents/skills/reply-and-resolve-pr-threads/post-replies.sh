@@ -79,10 +79,25 @@ while IFS= read -r item; do
   [ -n "$item" ] || continue
   cid="$(echo "$item" | jq -r '.comment_id // empty')"
   kind="$(echo "$item" | jq -r '.kind // empty')"
-  body="$(echo "$item" | jq -r '.reply_body // .fix_summary // "Addressed."')"
+  classification="$(echo "$item" | jq -r '.classification // ""')"
 
   if [ -n "$cid" ] && [ -n "$skipset" ] && [[ "$skipset" == *",$cid,"* ]]; then
     echo "SKIPPED $cid"
+    continue
+  fi
+
+  # Only FIX and SKIP classifications get replies via this helper.
+  # ESCALATE items are handled separately (escalation notice posted in-model).
+  if [ "$classification" != "FIX" ] && [ "$classification" != "SKIP" ]; then
+    echo "POSTED $cid (skipped: classification=$classification)"
+    continue
+  fi
+
+  # reply_body is required — caller (Skill B Phase 2) renders templates.
+  body="$(echo "$item" | jq -r '.reply_body // empty')"
+  if [ -z "$body" ]; then
+    echo "FAILED $cid reply_body_missing"
+    any_failed=1
     continue
   fi
 
@@ -96,12 +111,18 @@ while IFS= read -r item; do
     fi
   else
     # Default: review_thread (or unknown kind treated as such).
-    if gh api graphql -f query='mutation($tid:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$tid,body:$body}){comment{id}}}' \
-      -f tid="$(echo "$item" | jq -r '.thread_id // empty')" \
-      -f body="$body" >/dev/null 2>&1; then
+    # Use REST replies endpoint: POST /repos/{o}/{r}/pulls/{n}/comments/{reply_to_comment_id}/replies
+    reply_to="$(echo "$item" | jq -r '.reply_to_comment_id // empty')"
+    if [ -z "$reply_to" ]; then
+      echo "FAILED $cid reply_to_comment_id_missing"
+      any_failed=1
+      continue
+    fi
+    if gh api "repos/$OWNER/$REPO/pulls/$PR/comments/${reply_to}/replies" \
+      --method POST -f body="$body" >/dev/null 2>&1; then
       echo "POSTED $cid"
     else
-      echo "FAILED $cid gh-graphql-reply-failed"
+      echo "FAILED $cid gh-rest-reply-failed"
       any_failed=1
     fi
   fi

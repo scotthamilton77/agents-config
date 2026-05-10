@@ -64,6 +64,35 @@ rc_skip=$?
 assert "--skip-comment-ids is not rejected as unknown flag (rc != 2)" \
   "[ \$rc_skip -ne 2 ]"
 
+# Behavior test: items missing reply_body must emit FAILED <cid> reply_body_missing
+# and the process must exit 1 (any_failed). Fixture INV has c1 and c2 with
+# classification=FIX but no reply_body field.
+INV_NO_BODY="$TMP/inv-no-body.json"
+cat >"$INV_NO_BODY" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {"comment_id": "c1", "classification": "FIX", "fix_outcome": "committed"}
+  ]
+}
+JSON
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_NO_BODY" --owner o --repo r --pr 1 \
+  > "$TMP/nobody-out.txt" 2>&1
+rc_nobody=$?
+if [ "$rc_nobody" = "1" ]; then
+  echo "  ok: missing reply_body causes exit 1"
+else
+  echo "  FAIL: missing reply_body should exit 1, got $rc_nobody"
+  FAIL=1
+fi
+if grep -q 'FAILED c1 reply_body_missing' "$TMP/nobody-out.txt"; then
+  echo "  ok: emits FAILED <cid> reply_body_missing"
+else
+  echo "  FAIL: missing FAILED c1 reply_body_missing output; got: $(cat "$TMP/nobody-out.txt")"
+  FAIL=1
+fi
+
 # Failure path: invoking without --inventory must fail (flag validation)
 if "$SCRIPT" --owner o --repo r --pr 1 2>/dev/null; then
   echo "  FAIL: accepted invocation without --inventory"

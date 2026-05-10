@@ -51,9 +51,13 @@ trap 'rm -f "$TMP"' EXIT
 
 jq -c '
   .items[]?
-  | select((.classification // "") == "FIX")
-  | select(((.kind // "review_thread") == "review_thread"))
-  | select((.thread_id // "") != "")
+  | select(
+      ((.classification // "") == "FIX") and
+      ((.kind // "review_thread") == "review_thread") and
+      ((.thread_id // "") != "") and
+      ((.fix_outcome // null) != null) and
+      ((.fix_outcome // "") != "failed")
+    )
 ' "$INV" > "$TMP"
 
 while IFS= read -r item; do

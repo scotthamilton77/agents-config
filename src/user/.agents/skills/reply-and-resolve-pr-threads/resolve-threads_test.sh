@@ -27,7 +27,8 @@ assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
 assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'input|output|exit'"
 assert "accepts --inventory flag" "grep -q -- '--inventory' '$SCRIPT'"
 
-# Inventory fixture: one FIX item with a thread_id ready to resolve.
+# Inventory fixture: one FIX item with fix_outcome=committed (should resolve)
+# plus one FIX item with fix_outcome=failed (should NOT resolve).
 INV="$TMP/inv.json"
 cat >"$INV" <<'JSON'
 {
@@ -39,6 +40,12 @@ cat >"$INV" <<'JSON'
       "classification": "FIX",
       "fix_outcome": "committed",
       "thread_id": "THREAD_ABC123"
+    },
+    {
+      "comment_id": "c2",
+      "classification": "FIX",
+      "fix_outcome": "failed",
+      "thread_id": "THREAD_DEF456"
     }
   ]
 }
@@ -59,10 +66,16 @@ PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV" > "$TMP/out.txt" 2>&1
 rc_happy=$?
 assert "exits 0 on happy path with fake gh" "[ \$rc_happy -eq 0 ]"
 if grep -q 'RESOLVED THREAD_ABC123' "$TMP/out.txt"; then
-  echo "  ok: emits RESOLVED <thread_id> line"
+  echo "  ok: emits RESOLVED <thread_id> line for committed item"
 else
   echo "  FAIL: missing RESOLVED <thread_id> output; got: $(cat "$TMP/out.txt")"
   FAIL=1
+fi
+if grep -q 'THREAD_DEF456' "$TMP/out.txt"; then
+  echo "  FAIL: failed-outcome thread should NOT be resolved; got: $(cat "$TMP/out.txt")"
+  FAIL=1
+else
+  echo "  ok: failed-outcome thread is filtered out (not resolved)"
 fi
 
 # Failure path: missing required flag

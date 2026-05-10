@@ -105,10 +105,11 @@ else
   FAIL=1
 fi
 
-# --- Exit-0 fixture: audit pass ---
-# Valid schema and ancestry check passes (HEAD is trivially an ancestor of
-# itself, and fix_commit_sha exists). Pass HEAD as both fix_commit_sha and
-# pre/baseline sha so all ancestry checks succeed.
+# --- Exit-0 fixture: audit pass (committed outcome) ---
+# For `committed`, the fix is a NEW commit AFTER pre_sha — so fix_commit_sha
+# must NOT be an ancestor of pre_sha. Set pre_sha=HEAD~1 and fix_sha=HEAD:
+# is-ancestor(HEAD, HEAD~1) is FALSE → audit passes.
+PARENT_SHA="$(git -C "$WT" rev-parse HEAD~1 2>/dev/null || echo "$HEAD_SHA")"
 AUDIT_PASS="$TMP/audit-pass.json"
 cat >"$AUDIT_PASS" <<JSON
 {
@@ -123,15 +124,71 @@ cat >"$AUDIT_PASS" <<JSON
 }
 JSON
 
-"$SCRIPT" --pre-sha "$HEAD_SHA" \
+"$SCRIPT" --pre-sha "$PARENT_SHA" \
           --baseline-sha "$HEAD_SHA" \
           --report "$AUDIT_PASS" \
           --worktree-root "$WT" > "$TMP/out-pass.json" 2>&1
 rc_pass=$?
 if [ "$rc_pass" = "0" ]; then
-  echo "  ok: valid+ancestry-clean report exits 0"
+  echo "  ok: valid+ancestry-clean report exits 0 (committed)"
 else
   echo "  FAIL: valid+ancestry-clean report should exit 0, got $rc_pass (output: $(cat "$TMP/out-pass.json"))"
+  FAIL=1
+fi
+
+# --- Exit-0 fixture: audit pass (already_addressed outcome) ---
+# For `already_addressed`, the fix predates the session — so fix_commit_sha
+# must be an ancestor of baseline_sha. Set baseline=HEAD and fix=HEAD~1:
+# is-ancestor(HEAD~1, HEAD) is TRUE → audit passes.
+AUDIT_PASS_AA="$TMP/audit-pass-aa.json"
+cat >"$AUDIT_PASS_AA" <<JSON
+{
+  "schema_version": 1,
+  "comment_id": "c2",
+  "classification": "FIX",
+  "fix_outcome": "already_addressed",
+  "fix_commit_sha": "$PARENT_SHA",
+  "fix_summary": "addressed in earlier commit"
+}
+JSON
+
+"$SCRIPT" --pre-sha "$HEAD_SHA" \
+          --baseline-sha "$HEAD_SHA" \
+          --report "$AUDIT_PASS_AA" \
+          --worktree-root "$WT" > "$TMP/out-pass-aa.json" 2>&1
+rc_pass_aa=$?
+if [ "$rc_pass_aa" = "0" ]; then
+  echo "  ok: already_addressed report exits 0 when fix is ancestor of baseline"
+else
+  echo "  FAIL: already_addressed report should exit 0, got $rc_pass_aa (output: $(cat "$TMP/out-pass-aa.json"))"
+  FAIL=1
+fi
+
+# --- Exit-1 fixture: committed but fix_sha predates pre_sha (wrong direction) ---
+# fix=HEAD~1, pre=HEAD → is-ancestor(HEAD~1, HEAD) is TRUE → audit must FAIL.
+AUDIT_FAIL_DIR="$TMP/audit-fail-dir.json"
+cat >"$AUDIT_FAIL_DIR" <<JSON
+{
+  "schema_version": 1,
+  "comment_id": "c3",
+  "classification": "FIX",
+  "fix_outcome": "committed",
+  "fix_commit_sha": "$PARENT_SHA",
+  "fix_summary": "wrong direction",
+  "fix_gate_variant": "fast",
+  "verification_evidence": {"test_command": "bash test.sh", "output": "ok"}
+}
+JSON
+
+"$SCRIPT" --pre-sha "$HEAD_SHA" \
+          --baseline-sha "$HEAD_SHA" \
+          --report "$AUDIT_FAIL_DIR" \
+          --worktree-root "$WT" > "$TMP/out-fail-dir.json" 2>&1
+rc_fail_dir=$?
+if [ "$rc_fail_dir" = "1" ]; then
+  echo "  ok: committed report with fix predating pre_sha exits 1"
+else
+  echo "  FAIL: committed-predates-pre report should exit 1, got $rc_fail_dir"
   FAIL=1
 fi
 

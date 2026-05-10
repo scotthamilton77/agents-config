@@ -102,7 +102,7 @@ fi
 
 # --- Audit checks (only for outcomes that claim a commit exists) ---
 case "$FIX_OUTCOME" in
-  committed|already_addressed)
+  committed)
     FIX_SHA="$(jq -r '.fix_commit_sha' "$REPORT")"
 
     # SHA must exist in the worktree.
@@ -111,11 +111,27 @@ case "$FIX_OUTCOME" in
         "fix_commit_sha $FIX_SHA does not exist in worktree $WT_ROOT"
     fi
 
-    # SHA must be an ancestor of (or equal to) pre_sha — that is, the fix
-    # is reachable from the post-fix HEAD claimed by the subagent.
-    if ! git -C "$WT_ROOT" merge-base --is-ancestor "$FIX_SHA" "$PRE_SHA" 2>/dev/null; then
-      emit_audit_violation "fix_commit_not_in_history" \
-        "fix_commit_sha $FIX_SHA is not an ancestor of pre-sha $PRE_SHA"
+    # For committed: the fix is a NEW commit made AFTER pre_sha. It must NOT
+    # be an ancestor of pre_sha (otherwise it predates the subagent's run).
+    if git -C "$WT_ROOT" merge-base --is-ancestor "$FIX_SHA" "$PRE_SHA" 2>/dev/null; then
+      emit_audit_violation "fix_commit_predates_subagent" \
+        "fix_commit_sha $FIX_SHA predates or equals pre-sha $PRE_SHA (must be a newer commit)"
+    fi
+    ;;
+  already_addressed)
+    FIX_SHA="$(jq -r '.fix_commit_sha' "$REPORT")"
+
+    # SHA must exist in the worktree.
+    if ! git -C "$WT_ROOT" cat-file -e "${FIX_SHA}^{commit}" 2>/dev/null; then
+      emit_audit_violation "fix_commit_sha_not_found" \
+        "fix_commit_sha $FIX_SHA does not exist in worktree $WT_ROOT"
+    fi
+
+    # For already_addressed: the fix predates the session start, so it MUST be
+    # an ancestor of baseline_sha (it existed before the session).
+    if ! git -C "$WT_ROOT" merge-base --is-ancestor "$FIX_SHA" "$BASELINE_SHA" 2>/dev/null; then
+      emit_audit_violation "fix_commit_not_in_baseline" \
+        "fix_commit_sha $FIX_SHA is not an ancestor of baseline-sha $BASELINE_SHA"
     fi
     ;;
 esac

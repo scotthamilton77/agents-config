@@ -70,8 +70,14 @@ if [ -z "$PR_NUMBER" ] || [ -z "$OWNER" ] || [ -z "$REPO" ]; then
   exit 1
 fi
 
-INVENTORY_PATH="/tmp/pr-${PR_NUMBER}-inventory.json"
-CONCURRENCY_STATE="/tmp/pr-${PR_NUMBER}-state.json"
+INVENTORY_DIR="$HOME/.claude/state/pr-inventory"
+mkdir -p "$INVENTORY_DIR" 2>/dev/null || true
+# Get head SHA (short) from PR; falls back to "unknown" if gh fails. The path
+# is a detection hint for concurrency probing, not a write target.
+HEAD_SHA="$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER" --jq '.head.sha' 2>/dev/null | head -c 12)"
+[ -n "$HEAD_SHA" ] || HEAD_SHA="unknown"
+INVENTORY_PATH="$INVENTORY_DIR/${OWNER}-${REPO}-${PR_NUMBER}-${HEAD_SHA}.json"
+CONCURRENCY_STATE="$INVENTORY_DIR/${OWNER}-${REPO}-${PR_NUMBER}-${HEAD_SHA}.state.json"
 
 jq -nc \
   --argjson pr "$PR_NUMBER" \

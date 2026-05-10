@@ -283,12 +283,14 @@ Abort.
 
 1. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
-   gh pr edit <N> --remove-reviewer @copilot
-   gh pr edit <N> --add-reviewer @copilot
+   ${CLAUDE_SKILL_DIR}/request-rereview.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR"
+   # exit 0 on success; exit 1 on gh failure
    ```
-   The `remove-reviewer` + `add-reviewer` pair reliably triggers a new
-   `review_requested` event even when Copilot is already on the list.
-   (`--add-reviewer` alone is idempotent and silently does nothing.)
+   The helper performs the `remove-reviewer` + `add-reviewer` pair which
+   reliably triggers a new `review_requested` event even when Copilot is
+   already on the list. (`--add-reviewer` alone is idempotent and silently
+   does nothing.)
 
 2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
@@ -701,8 +703,8 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 ```
 
-**Request Copilot re-review** (Phase 6 — replaces the remove+add `gh pr edit`
-pair):
+**Request Copilot re-review** (Phase 6 — replaces the legacy remove+add
+reviewer pair):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/request-rereview.sh \

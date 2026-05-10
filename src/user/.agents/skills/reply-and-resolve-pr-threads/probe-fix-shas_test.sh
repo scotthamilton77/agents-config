@@ -31,7 +31,7 @@ assert "accepts --items flag" "grep -q -- '--items' '$SCRIPT'"
 # Items fixture: one nonexistent SHA so the script's existence-check has
 # something to classify as "missing". Real probe uses git locally; no network.
 ITEMS="$TMP/items.json"
-echo '[{"comment_id":"c1","fix_sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' >"$ITEMS"
+echo '[{"comment_id":"c1","fix_commit_sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' >"$ITEMS"
 
 # Happy path: with the fixture, expect JSON output containing
 # present/missing buckets. The SHA is bogus so it should be reported as
