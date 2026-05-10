@@ -48,6 +48,9 @@ POLL_COUNT="${POLL_COUNT:-6}"
 validate_repo "$REPO"
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
 [[ -n "$AFTER" ]] || { echo "Error: after-timestamp must not be empty" >&2; exit 3; }
+[[ "$INITIAL_SLEEP" =~ ^[0-9]+$ ]] || { echo "Error: INITIAL_SLEEP must be a non-negative integer" >&2; exit 3; }
+[[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || { echo "Error: POLL_INTERVAL must be a non-negative integer" >&2; exit 3; }
+[[ "$POLL_COUNT" =~ ^[0-9]+$ ]] || { echo "Error: POLL_COUNT must be a non-negative integer" >&2; exit 3; }
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
