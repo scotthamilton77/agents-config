@@ -298,6 +298,7 @@ BRAINSTORM_ID=$(bd create \
   --title "Brainstorm-readiness gate (epic)" \
   --type epic \
   --parent "$M2_ID" \
+  --no-inherit-labels \
   --priority 1 \
   --description "Domain epic anchoring the brainstorm-readiness gate, AC classification + policy-knob capture at brainstorm time, the bead-spec agent, the spec post-mortem feedback loop, and grill-me adversarial questioning. Children: owqa (verify-brainstorm gate), 7bk.12 (expand brainstorm-bead — reparented out of 7bk), 7bk.25 (Phase 3 bead-spec agent — reparented out of 7bk), 4htl (spec post-mortem), sxfk (grill-me integration). Per round-2 review redirect c4." \
   --acceptance "All children closed: owqa, 7bk.12, 7bk.25, 4htl, sxfk. The brainstorm-readiness gate is mechanical (verifiable per parent feature M2's AC)." \
@@ -305,9 +306,9 @@ BRAINSTORM_ID=$(bd create \
 echo "BRAINSTORM_ID=$BRAINSTORM_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
-Note: per memory `bd-create-parent-inherits-labels`, this child inherits any labels M2 carries. M2 was created with no labels in Task 3, so this is a no-op concern. But if M2 has labels by the time this runs, audit and strip inherited labels that don't apply.
+Note: per memory `bd-create-parent-inherits-labels`, parented creates inherit parent labels by default. The `--no-inherit-labels` flag added above prevents that explicitly. The audit step below stays as a defensive double-check (cheap, surfaces version-skew bugs early).
 
-- [ ] **Step 2: Audit and strip any inherited labels**
+- [ ] **Step 2: Verify no inherited labels (defensive)**
 
 Run:
 ```bash
@@ -315,7 +316,7 @@ source <(grep "^BRAINSTORM_ID=" /tmp/phase5b-id-map.txt)
 bd label list "$BRAINSTORM_ID"
 ```
 
-Expected: empty (no labels). If any labels appear that shouldn't be on a brand-new placeholder, run `bd label remove "$BRAINSTORM_ID" <label>` for each.
+Expected: empty (no labels). With `--no-inherit-labels` in Step 1 this should always be the case; if labels appear, the bd CLI version may have changed semantics — investigate before proceeding.
 
 ---
 
@@ -333,6 +334,7 @@ GAP2_ID=$(bd create \
   --title "Define PR classification policy for RALF-only vs human-required review" \
   --type feature \
   --parent "$POSTMVP_ID" \
+  --no-inherit-labels \
   --priority 2 \
   --description "Vision-Gap-2 from the 2026-05-09 roadmap. RALF substitutes cross-model review for human review (commitment 3), but no open bead defines the decision rule for which PR classes get RALF-only vs human-required review. This is the prerequisite for agents-config-td39 (risk-tiered auto-merge): without a classification policy, the tiering has nothing to tier against. Output: a documented PR-classification policy keyed off blast radius, file types touched, and security surface — specific enough that a script can read a PR diff and emit a tier verdict." \
   --acceptance "A docs artifact (in this repo) defines PR classification rules with concrete examples per tier. A script (or specification) exists that maps a PR diff to a tier verdict (RALF-only / RALF + human / human-required). agents-config-td39 references this policy as its blocker dep." \
@@ -349,6 +351,7 @@ GAP3_ID=$(bd create \
   --title "Memory/context compaction governance for overnight runs" \
   --type feature \
   --parent "$M4_ID" \
+  --no-inherit-labels \
   --priority 1 \
   --description "Vision-Gap-3 from the 2026-05-09 roadmap. Beads persist work; formulas persist process. But agent memory (MEMORY.md, mempalace) is not governed during overnight runs — what gets written, what gets pruned, what survives a compaction event. This silently undermines commitment 5's 'work survives overnight runs' promise. This bead must pass through the M2 brainstorm-readiness gate before implementation begins (self-referential: the M2 gate informs how this work gets specced)." \
   --acceptance "Memory governance rules documented for overnight runs (write-policy, prune-policy, compaction-survival contract). A synthetic compaction event mid-run is recoverable: bead state, memory artifacts, and molecule progress can all be reconstructed post-compaction. Verified by running an overnight smoke that triggers a synthetic compaction." \
@@ -365,6 +368,7 @@ FEEDBACK_ID=$(bd create \
   --title "Spike: feedback loops at points of greatest realization + processing/improvement mechanism" \
   --type task \
   --parent "$SPIKES_ID" \
+  --no-inherit-labels \
   --priority 2 \
   --description "Research spike per Scott's round-2 ask. Beyond agents-config-4htl (spec post-mortem), the roadmap currently has no built-in feedback hooks at strategic 'points of greatest realization' — moments in the bead workflow where lessons surface and could be captured. Examples: PR review (Copilot finds an anti-pattern → did our tests catch this?), HEP escalation (worker hit a decision point → was the spec under-specified?), overnight-run completion (what unexpected outcomes emerged?), bead closure (did the AC accurately predict success criteria?). Spike investigates: (1) what 'points of greatest realization' map to in the actual bead workflow; (2) what mechanisms could capture lessons at those points (hooks, audit beads, memory writes); (3) how to process and act on captures (likely overlaps with Vision-Gap-3 memory governance). Outcome: produce concrete adoption beads per identified hook, OR close as deferred if cost/benefit doesn't pencil." \
   --acceptance "Spike outcome documented: (a) list of identified feedback points; (b) per-point capture mechanism proposal; (c) processing/improvement mechanism proposal; (d) per-point verdict — file concrete adoption bead, or close as deferred. Spike itself closes when all verdicts are applied." \
