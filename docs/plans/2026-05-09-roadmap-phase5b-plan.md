@@ -187,8 +187,8 @@ M2_ID=$(bd create \
   --title "Milestone M2 — Brainstorm-readiness gate" \
   --type feature \
   --priority 1 \
-  --description "Top-level milestone-anchor for M2: makes commitment 2 ('make AI good at saying no, not ready') mechanical via a verify-brainstorm gate at bd update --status implementation-ready, plus AC classification + auto-merge knob capture at brainstorm time, plus spec post-mortem feedback loop. Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M2." \
-  --acceptance "verify-brainstorm skill exists and rejects under-specified beads at bd update --status implementation-ready. brainstorm-bead formula captures AC classification + auto-merge knobs + review depth. bead-spec agent + bead-assess + bead-write-spec skills exist. spec post-mortem skill (4htl) ships and is invoked on bug-fix and feature-completion paths. grill-me skill (sxfk) integrated into brainstorm-bead workflow." \
+  --description "Top-level milestone-anchor for M2: makes commitment 2 ('make AI good at saying no, not ready') mechanical via a verify-brainstorm gate that fires when the implementation-ready label is being added (bd label add <id> implementation-ready), plus AC classification + auto-merge knob capture at brainstorm time, plus spec post-mortem feedback loop. Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M2." \
+  --acceptance "verify-brainstorm skill exists and rejects under-specified beads when bd label add <id> implementation-ready is invoked on them. brainstorm-bead formula captures AC classification + auto-merge knobs + review depth. bead-spec agent + bead-assess + bead-write-spec skills exist. spec post-mortem skill (4htl) ships and is invoked on bug-fix and feature-completion paths. grill-me skill (sxfk) integrated into brainstorm-bead workflow." \
   --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "M2_ID=$M2_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
