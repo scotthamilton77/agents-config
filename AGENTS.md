@@ -88,7 +88,7 @@ This configuration assumes the following Claude Code plugins are installed:
 ---
 name: agent-name
 description: One-line description
-model: sonnet | opus | haiku | inherit          # required
+model: sonnet | opus | haiku | inherit          # optional; common subset — see AGENTS_PRIMER.md for full list (e.g. opus[1m], sonnet[1m])
 color: purple | indigo | blue | green | yellow | orange | red | cyan | teal | pink
 tools: Read, Grep, Glob, Bash                   # optional — comma-separated allow-list
 disallowedTools: Write, Edit                    # optional — explicit deny-list
