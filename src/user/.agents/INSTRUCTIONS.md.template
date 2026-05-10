@@ -70,7 +70,7 @@ domain and are not affected by this change.
 <orchestration>
 <!-- PRESERVE: high-level process for non-trivial tasks -->
 - **Plan first**: Plan mode for multi-step tasks or architectural decisions. Re-plan immediately when blocked. Write specs in the plan file for small-context specs.
-- **Decide, don't defer**: apply the canonical decision matrix.
+- **Decide, don't defer**: Apply the canonical decision matrix.
   Quadrants `verify-facts` and `decide-in-scope` resolve without the user.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
