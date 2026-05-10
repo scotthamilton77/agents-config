@@ -115,8 +115,7 @@ digraph synthesis {
 **Honesty clause:** If a thread's findings are inconclusive, say so. "Git history shows no relevant changes in the last 20 commits" is a valid finding. "I couldn't reproduce the failure" is a valid finding. Do NOT speculate to fill gaps.
 
 **Fallback:** If root cause remains unclear after synthesis, escalate to complementary skills:
-- `superpowers:systematic-debugging` — full sequential 4-phase approach (includes root-cause tracing)
-- `condition-based-waiting` — timing/race condition analysis
+- `superpowers:systematic-debugging` — full sequential 4-phase approach (includes root-cause tracing and condition-based waiting)
 
 ## Implementation Phase
 
