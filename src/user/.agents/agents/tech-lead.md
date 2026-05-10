@@ -84,8 +84,8 @@ tech-lead orchestrator:
 - Multiple subagents report conflicting recommendations
 - Team appears stuck after multiple attempts (loop detection)
 
-The architectural-decisions, resource-constraints, and
-ambiguous-requirements bullets dropped here are already covered by the
+The architectural decisions, resource constraints, and
+ambiguous requirements bullets dropped here are already covered by the
 `escalate-architectural` quadrant of the canonical decision matrix.
 
 ## Communication Protocols
