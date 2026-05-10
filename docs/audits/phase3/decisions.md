@@ -281,6 +281,104 @@ D31: brainstorm-bead discuss step QUESTION FILTER — DISAGREE upheld; keep self
 
 ---
 
+## Post-User-Gate Resolutions (Tier 1 application phase)
+
+These entries record decisions made between the user APPROVED gate and the
+Tier 1 application commits. They cover (a) findings already resolved upstream
+by main commit `d0a98bd` (rq67 superpowers audit fix), which merged into the
+audit worktree branch BEFORE Tier 1 application; (b) findings made obsolete
+by file deletions in that same merge; (c) findings the user explicitly dropped
+or demoted via in-document `[DROP]` / `[NOTE]` annotations; and (d) findings
+the aggregator reclassified to Tier 2 because they require design judgment
+rather than mechanical edits.
+
+The user APPROVED marker still anchors to AUDIT_INPUT_SHA `af9c1bf`. The
+working-tree-aware drift check ran clean against that SHA at gate-release
+time (HEAD `4aa0d2b`); main was THEN merged into the worktree branch (HEAD
+`2c54f53`) to bring in the rq67 fixes already shipped, before any Tier 1 edit.
+
+---
+
+D32: F1 agents (bead-implementor — superpowers:root-cause-tracing)
+  Type: manual-fix-up
+  Sources: phase1/agents.md:F1, phase2/multi-agent-dispatch.md:F6
+  Resolution: dropped
+  Rationale: Already resolved upstream by main commit d0a98bd (#57, rq67 superpowers audit). The merged worktree state has zero `superpowers:root-cause-tracing` references in `bead-implementor.md`. No edit applied.
+
+---
+
+D33: F2 agents (bug-diagnoser — superpowers:root-cause-tracing)
+  Type: manual-fix-up
+  Sources: phase1/agents.md:F2, phase2/multi-agent-dispatch.md:F6
+  Resolution: dropped
+  Rationale: Already resolved upstream by main commit d0a98bd. Zero `superpowers:root-cause-tracing` references remain in `bug-diagnoser.md`. No edit applied.
+
+---
+
+D34: F3 agents (writing-unit-tests / testing-anti-patterns wrong namespace)
+  Type: manual-fix-up
+  Sources: phase1/agents.md:F3, phase2/multi-agent-dispatch.md:F7
+  Resolution: dropped
+  Rationale: Already resolved upstream by main commit d0a98bd. The d0a98bd commit additionally retired `testing-anti-patterns/SKILL.md` entirely (deleted on main). Worktree references in `bead-implementor.md`, `tdd-red-team.md`, `tdd-green-team.md` are now correctly namespaced (or removed). No edit applied.
+
+---
+
+D35: F11 formulas (name field mirroring id)
+  Type: manual-fix-up
+  Sources: phase1/formulas.md:F11
+  Resolution: dropped
+  Rationale: Re-grep of `^name = ` lines in `implement-feature.formula.toml` and `fix-bug.formula.toml` returned zero matches at the post-merge SHA. Either already removed upstream or the audit captured a pre-current state of these formulas. No edit needed.
+
+---
+
+D36: F23 skills (bugfix — superpowers:root-cause-tracing)
+  Type: manual-fix-up
+  Sources: phase2/escalation-edge-recovery.md:F7
+  Resolution: dropped
+  Rationale: Already resolved upstream by main commit d0a98bd. The post-merge `bugfix/SKILL.md` has zero `superpowers:root-cause-tracing` references. No edit applied.
+
+---
+
+D37: F14 skills (condition-based-waiting — user-invocable: false)
+  Type: manual-fix-up
+  Sources: phase1/skills.md:F14
+  Resolution: dropped
+  Rationale: The entire `condition-based-waiting/` skill directory was deleted by main commit d0a98bd. The frontmatter field is moot. No edit applied.
+
+---
+
+D38: F12 scripts (lib.sh — validate_repo / preflight_checks doc comments)
+  Type: manual-fix-up
+  Sources: phase1/scripts.md:F12
+  Resolution: dropped
+  Rationale: Re-inspection of `wait-for-pr-comments/lib.sh` shows both helpers already carry descriptive doc comments naming exit-code behavior ("Validate owner/repo format — exits 3 on failure" / "Pre-flight: verify gh auth and jq availability — exits 3 on failure"). The audit's recommended additions are functionally equivalent to the existing comments; no value in re-wording.
+
+---
+
+D39: F18 skills (run-queue description — second-person imperative)
+  Type: user-gate-drop
+  Sources: phase1/skills.md:F18
+  Resolution: dropped
+  Rationale: User in-document `[NOTE]` on the Tier 2 Skills section: "we're going to replace the run-queue skill with a script-orchestrated process; we can defer all run-queue modifications or even just delete the skill now." Per-line description-grammar fix is moot when the entire skill is on the chopping block. Folded into Tier 2 follow-up bead "Replace run-queue skill with script-orchestrated process" (which supersedes F17 start-bead-route-into, F22 PR-artifact-mismatch, F25 paired-resolution).
+
+---
+
+D40: F6 templates (OpenCode AGENTS.md.template missing subtitle)
+  Type: user-gate-drop
+  Sources: phase1/templates.md:F6
+  Resolution: dropped
+  Rationale: User in-document `[DROP]` annotation: "The subtitle would only be useful for human readers." Templates can carry a non-human-readable bare heading; no semantic loss. No edit applied.
+
+---
+
+D41: F24 skills (human-label semantics contradiction)
+  Type: user-gate-demotion
+  Sources: phase2/escalation-edge-recovery.md:F8
+  Resolution: demoted-to-tier2
+  Rationale: Re-evaluation against the user's `[NOTE]` ("Pretty sure bd ready will report on human-labeled beads; one must filter to either list only human or not-human beads") establishes the contract direction (human is a visibility tag, NOT a readiness gate; consumers must filter explicitly). However, the actual remediation requires rewriting formula step prose in `docs-only.formula.toml` (lines 367-372) and `implement-feature.formula.toml` (lines 660-666) to reflect the not-a-gate semantics AND deciding whether the hand-off path needs a real blocking dep added. That is design-judgment work spanning two formulas plus a possible new blocking-dep convention — not a mechanical Tier-1 edit. Demoted to Tier 2 with the user's NOTE captured as the design direction.
+
+---
+
 ## Summary of Decision Types
 
 | Type | Count |
@@ -290,5 +388,8 @@ D31: brainstorm-bead discuss step QUESTION FILTER — DISAGREE upheld; keep self
 | tier1-promotion | 1 (D22) |
 | oos-promotion | 5 (D25, D26, D27, D28, D29) |
 | tierC-demotion | 1 (D30) |
+| manual-fix-up (post-gate, main-merge supersession) | 6 (D32–D37, D38) |
+| user-gate-drop | 2 (D39, D40) |
+| user-gate-demotion | 1 (D41) |
 
-Total decisions: 26
+Total decisions: 35
