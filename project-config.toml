@@ -22,7 +22,7 @@ default-formula = "implement-feature"  # fallback when no formula-* label on bea
 build     = ""   # no build step
 typecheck = ""   # no type checker
 lint      = ""   # no linter
-test      = "find src/user/.agents/skills -name '*_test.sh' -print0 | sort -z | xargs -0 -n1 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\"' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines, POSIX-compatible
+test      = "find src/user/.agents/skills -name '*_test.sh' -print0 | sort -z | xargs -0 -n1 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\"' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines (find -print0 / sort -z / xargs -0 are common GNU/BSD extensions, not POSIX; portable on macOS + Linux)
 
 # ---------------------------------------------------------------------------
 # [coverage] — code coverage settings

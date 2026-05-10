@@ -212,7 +212,11 @@ ${CLAUDE_SKILL_DIR}/post-replies.sh \
   --inventory "$INVENTORY_FILE" \
   --owner "$OWNER" --repo "$REPO" --pr "$PR" \
   [--skip-comment-ids "<csv>"]
-# per item: POSTED <id> / FAILED <id> <reason> / SKIPPED <id>
+# per item, one of:
+#   POSTED <comment_id>
+#   FAILED <comment_id> <reason>
+#   SKIPPED <comment_id>            # matched --skip-comment-ids
+#   FILTERED <comment_id> (classification=<class>)  # classification != FIX|SKIP
 ```
 
 **NOT idempotent** — on a partial-run retry, the caller MUST pass

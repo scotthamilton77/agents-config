@@ -49,13 +49,23 @@ done
   exit 2
 }
 
+GH_ERR="$(mktemp)"
+trap 'rm -f "$GH_ERR"' EXIT
+
+ACTUAL=""
 attempt=0
 while [ "$attempt" -lt 3 ]; do
-  RESPONSE="$(gh api "repos/$OWNER/$REPO/pulls/$PR" 2>/dev/null || echo '{}')"
-  ACTUAL="$(echo "$RESPONSE" | jq -r '.headRefOid // .head.sha // empty' 2>/dev/null || true)"
-
-  if [ -n "$ACTUAL" ] && [ "$ACTUAL" = "$EXPECTED" ]; then
-    exit 0
+  # Distinguish a successful gh call (where SHA might legitimately mismatch and
+  # we should retry for eventual consistency) from a failed gh call (auth /
+  # network / 5xx) where we should fail fast instead of looping.
+  if RESPONSE="$(gh api "repos/$OWNER/$REPO/pulls/$PR" 2>"$GH_ERR")"; then
+    ACTUAL="$(echo "$RESPONSE" | jq -r '.headRefOid // .head.sha // empty' 2>/dev/null || true)"
+    if [ -n "$ACTUAL" ] && [ "$ACTUAL" = "$EXPECTED" ]; then
+      exit 0
+    fi
+  else
+    echo "error: gh api failed for repos/$OWNER/$REPO/pulls/$PR: $(cat "$GH_ERR")" >&2
+    exit 1
   fi
 
   attempt=$((attempt + 1))

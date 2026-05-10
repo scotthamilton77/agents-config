@@ -45,25 +45,26 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Resolve PR number/owner/repo using gh
+# Resolve PR number/owner/repo using gh. Use mktemp + trap to avoid the
+# predictable-path symlink / race issues of /tmp/.pr-ctx.$$.
+TMP_CTX="$(mktemp)"
+trap 'rm -f "$TMP_CTX"' EXIT
+
 if [ -n "$PR_INPUT" ]; then
-  if ! gh pr view "$PR_INPUT" --json number,headRepository,headRepositoryOwner > /tmp/.pr-ctx.$$ 2>/dev/null; then
+  if ! gh pr view "$PR_INPUT" --json number,headRepository,headRepositoryOwner > "$TMP_CTX" 2>/dev/null; then
     echo "error: gh pr view failed for '$PR_INPUT'" >&2
-    rm -f /tmp/.pr-ctx.$$
     exit 1
   fi
 else
-  if ! gh pr view --json number,headRepository,headRepositoryOwner > /tmp/.pr-ctx.$$ 2>/dev/null; then
+  if ! gh pr view --json number,headRepository,headRepositoryOwner > "$TMP_CTX" 2>/dev/null; then
     echo "error: gh pr view failed (no PR detected for current branch)" >&2
-    rm -f /tmp/.pr-ctx.$$
     exit 1
   fi
 fi
 
-PR_NUMBER="$(jq -r '.number // empty' /tmp/.pr-ctx.$$)"
-OWNER="$(jq -r '.headRepositoryOwner.login // empty' /tmp/.pr-ctx.$$)"
-REPO="$(jq -r '.headRepository.name // empty' /tmp/.pr-ctx.$$)"
-rm -f /tmp/.pr-ctx.$$
+PR_NUMBER="$(jq -r '.number // empty' "$TMP_CTX")"
+OWNER="$(jq -r '.headRepositoryOwner.login // empty' "$TMP_CTX")"
+REPO="$(jq -r '.headRepository.name // empty' "$TMP_CTX")"
 
 if [ -z "$PR_NUMBER" ] || [ -z "$OWNER" ] || [ -z "$REPO" ]; then
   echo "error: could not resolve pr_number/owner/repo" >&2
