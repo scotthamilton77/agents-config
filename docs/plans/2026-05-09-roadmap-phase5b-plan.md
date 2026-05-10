@@ -6,7 +6,7 @@
 
 **Architecture:** Pure bd CLI operations driven from `dangerouslyDisableSandbox: true` Bash. The fail-safe is `bd export -o issues.backup.jsonl` as Task 1 — every later task can be undone by `bd import` of the backup if anything goes wrong. Tasks are sequenced so that parents exist before children reference them, and heterogeneous epics' children are redistributed before the epic itself is rescoped.
 
-**Tech Stack:** `bd` CLI (beads issue tracker); jq for JSON-array fields (id, title, status, labels); `python3` for fields with embedded newlines (notes, description, acceptance_criteria) per memory `bd-show-json-returns-array`.
+**Tech Stack:** `bd` CLI (beads issue tracker); jq for single-line JSON fields (id, title, status, labels); `python3` for fields with embedded literal newlines that break jq parsing (notes, description, acceptance_criteria) per `src/plugins/beads/.claude/rules/beads.md` ("`bd show --json` emits literal newlines in `notes`/`description`/`acceptance_criteria`").
 
 **Reference:** Roadmap doc at `docs/plans/2026-05-09-roadmap.md` Sections 6-8 (the spec); design at `docs/plans/2026-05-09-roadmap-analysis-design.md`; round-3 review history.
 
