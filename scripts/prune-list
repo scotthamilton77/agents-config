@@ -1,0 +1,9 @@
+# prune-list — paths this repo previously installed and has since removed.
+# Format: tool/namespace/basename  OR  */namespace/basename  (all tools)
+# Add an entry here when removing a skill/agent/command/rule from src/user/.
+
+# Retired in d0a98bd: superpowers audit — condition-based-waiting removed
+*/skills/condition-based-waiting
+
+# Retired in d0a98bd: superpowers audit — testing-anti-patterns removed
+*/skills/testing-anti-patterns
