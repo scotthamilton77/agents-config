@@ -37,17 +37,15 @@ echo '[{"comment_id":"c1","classification":"FIX"}]' >"$ITEMS"
 echo '{"number":42,"owner":"o","repo":"r","head_sha":"abc"}' >"$PR"
 echo '{"started_at":"2026-05-10T00:00:00Z","duration_s":12}' >"$POLLING"
 
-# Happy path: outputs JSON containing required top-level keys
-OUTPUT="$("$SCRIPT" --items "$ITEMS" --pr "$PR" --polling "$POLLING" 2>/dev/null || true)"
-if [ -n "$OUTPUT" ] && echo "$OUTPUT" | grep -q '"schema_version"' \
-   && echo "$OUTPUT" | grep -q '"pr"' \
-   && echo "$OUTPUT" | grep -q '"polling"' \
-   && echo "$OUTPUT" | grep -q '"items"'; then
-  echo "  ok: output contains schema_version, pr, polling, items keys"
-else
-  echo "  FAIL: output missing required top-level keys (got: $OUTPUT)"
-  FAIL=1
-fi
+# Happy path: outputs JSON with required top-level structure.
+# Capture rc explicitly — no `|| true` masking real exit codes.
+"$SCRIPT" --items "$ITEMS" --pr "$PR" --polling "$POLLING" > "$TMP/out.json" 2>&1
+rc=$?
+assert "exits 0 on valid inputs" "[ \$rc -eq 0 ]"
+assert "output has schema_version=1" "jq -e '.schema_version == 1' '$TMP/out.json' >/dev/null 2>&1"
+assert "output has pr object" "jq -e '(.pr | type) == \"object\"' '$TMP/out.json' >/dev/null 2>&1"
+assert "output has polling object" "jq -e '(.polling | type) == \"object\"' '$TMP/out.json' >/dev/null 2>&1"
+assert "output has items array" "jq -e '(.items | type) == \"array\"' '$TMP/out.json' >/dev/null 2>&1"
 
 # Failure path: missing --items must error
 if "$SCRIPT" --pr "$PR" --polling "$POLLING" 2>/dev/null; then

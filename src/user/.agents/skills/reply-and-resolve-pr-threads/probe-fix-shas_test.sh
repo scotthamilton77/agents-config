@@ -28,9 +28,19 @@ assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'inp
 assert "accepts --branch flag" "grep -q -- '--branch' '$SCRIPT'"
 assert "accepts --items flag" "grep -q -- '--items' '$SCRIPT'"
 
-# Minimal inventory fixture
+# Items fixture: one nonexistent SHA so the script's existence-check has
+# something to classify as "missing". Real probe uses git locally; no network.
 ITEMS="$TMP/items.json"
 echo '[{"comment_id":"c1","fix_sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' >"$ITEMS"
+
+# Happy path: with the fixture, expect JSON output containing
+# present/missing buckets. The SHA is bogus so it should be reported as
+# missing, but the structure must still be well-formed.
+"$SCRIPT" --branch main --items "$ITEMS" > "$TMP/out.json" 2>&1
+rc_happy=$?
+assert "exits 0 on happy path" "[ \$rc_happy -eq 0 ]"
+assert "output has present key" "jq -e 'has(\"present\")' '$TMP/out.json' >/dev/null 2>&1"
+assert "output has missing key" "jq -e 'has(\"missing\")' '$TMP/out.json' >/dev/null 2>&1"
 
 # Failure path: missing flags
 if "$SCRIPT" 2>/dev/null; then
@@ -40,8 +50,8 @@ else
   echo "  ok: rejects missing required flags"
 fi
 
-# Failure path: unknown flag rejected
-if "$SCRIPT" --branch main --items "$ITEMS" --bogus 2>/dev/null; then
+# Failure path: unknown flag (--bogus FIRST so it's seen before any I/O)
+if "$SCRIPT" --bogus --branch main --items "$ITEMS" 2>/dev/null; then
   echo "  FAIL: accepted unknown flag"
   FAIL=1
 else

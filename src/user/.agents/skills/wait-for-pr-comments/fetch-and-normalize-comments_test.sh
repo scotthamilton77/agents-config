@@ -6,6 +6,8 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$HERE/fetch-and-normalize-comments.sh"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 FAIL=0
 
 assert() {
@@ -27,6 +29,23 @@ assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
 assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
 assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
 
+# --- Fake-gh shim for happy path ---
+FAKEBIN="$TMP/bin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/gh" <<'FAKE'
+#!/usr/bin/env bash
+# Fake gh — returns an empty (but well-formed) review-comments page.
+# Real script will paginate and normalize; an empty page is a valid result.
+echo '[]'
+FAKE
+chmod +x "$FAKEBIN/gh"
+
+# Happy path: with fake gh, expect a JSON array on stdout.
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --owner o --repo r --pr 1 > "$TMP/out.json" 2>&1
+rc_happy=$?
+assert "exits 0 on happy path with fake gh" "[ \$rc_happy -eq 0 ]"
+assert "output is a JSON array" "jq -e 'type == \"array\"' '$TMP/out.json' >/dev/null 2>&1"
+
 # Failure path: missing required flag must fail
 if "$SCRIPT" 2>/dev/null; then
   echo "  FAIL: accepted invocation with no flags"
@@ -35,8 +54,8 @@ else
   echo "  ok: rejects missing required flags"
 fi
 
-# Failure path: unknown flag rejected
-if "$SCRIPT" --owner o --repo r --pr 1 --bogus 2>/dev/null; then
+# Failure path: unknown flag (--bogus FIRST so flag-parser sees it before I/O)
+if "$SCRIPT" --bogus --owner o --repo r --pr 1 2>/dev/null; then
   echo "  FAIL: accepted unknown flag --bogus"
   FAIL=1
 else

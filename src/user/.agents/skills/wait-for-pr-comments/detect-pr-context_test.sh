@@ -32,13 +32,16 @@ assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'inp
 # Named flags only
 assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
 
-# Happy path: invoking without args runs (we don't care about the gh result,
-# only that flag parsing works and the script is callable)
-output=$("$SCRIPT" --pr 1 2>&1) || true
-assert "produces some output when invoked with --pr" "[ -n \"\$output\" ] || [ -f '$SCRIPT' ]"
+# Happy path: invocation with --pr must either produce JSON-shaped output
+# containing the expected context keys, or exit non-zero. A passing
+# invocation that emits no recognizable output is a contract violation.
+output=$("$SCRIPT" --pr 1 2>&1); rc=$?
+assert "exits non-zero or emits pr_number/owner/repo in JSON output" \
+  "echo \"\$output\" | grep -qE '\"pr_number\"|\"owner\"|\"repo\"' || [ \$rc -ne 0 ]"
 
-# Failure path: unknown flag should be rejected
-if "$SCRIPT" --bogus-flag-xyz 2>/dev/null; then
+# Failure path: unknown flag should be rejected (--bogus FIRST so it's seen
+# before any valid flag, preventing I/O before flag validation)
+if "$SCRIPT" --bogus-flag-xyz --pr 1 2>/dev/null; then
   echo "  FAIL: accepted unknown flag --bogus-flag-xyz"
   FAIL=1
 else

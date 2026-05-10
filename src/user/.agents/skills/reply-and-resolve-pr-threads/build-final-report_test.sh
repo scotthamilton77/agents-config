@@ -39,12 +39,15 @@ cat >"$INV" <<'JSON'
 }
 JSON
 
-# Happy path: produces non-empty output on stdout
-OUTPUT="$("$SCRIPT" --inventory "$INV" 2>/dev/null || true)"
-if [ -n "$OUTPUT" ]; then
-  echo "  ok: produces non-empty output on happy path"
+# Happy path: output must reference the fixture's comment_id (c1).
+# Capture rc explicitly — no `|| true` masking real exit codes.
+"$SCRIPT" --inventory "$INV" > "$TMP/out.txt" 2>&1
+rc_happy=$?
+assert "exits 0 on valid inventory" "[ \$rc_happy -eq 0 ]"
+if grep -q 'c1' "$TMP/out.txt"; then
+  echo "  ok: report references fixture comment_id"
 else
-  echo "  FAIL: produced empty output on happy path"
+  echo "  FAIL: report missing fixture comment_id; got: $(cat "$TMP/out.txt")"
   FAIL=1
 fi
 

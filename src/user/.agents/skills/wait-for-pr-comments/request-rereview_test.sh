@@ -6,6 +6,8 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$HERE/request-rereview.sh"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 FAIL=0
 
 assert() {
@@ -28,6 +30,21 @@ assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
 assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
 assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
 
+# --- Fake-gh shim: any gh invocation succeeds with empty stdout ---
+FAKEBIN="$TMP/bin"
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/gh" <<'FAKE'
+#!/usr/bin/env bash
+# Fake gh — accepts remove+add reviewer calls, exits 0.
+exit 0
+FAKE
+chmod +x "$FAKEBIN/gh"
+
+# Happy path: with fake gh, request-rereview should exit 0.
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --owner o --repo r --pr 1 > "$TMP/out.txt" 2>&1
+rc_happy=$?
+assert "exits 0 on happy path with fake gh" "[ \$rc_happy -eq 0 ]"
+
 # Failure path: missing required flag must error
 if "$SCRIPT" 2>/dev/null; then
   echo "  FAIL: accepted invocation with no flags"
@@ -36,8 +53,8 @@ else
   echo "  ok: rejects missing required flags"
 fi
 
-# Failure path: unknown flag rejected
-if "$SCRIPT" --owner o --repo r --pr 1 --bogus 2>/dev/null; then
+# Failure path: unknown flag (--bogus FIRST so it's seen before any I/O)
+if "$SCRIPT" --bogus --owner o --repo r --pr 1 2>/dev/null; then
   echo "  FAIL: accepted unknown flag"
   FAIL=1
 else
