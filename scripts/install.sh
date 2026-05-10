@@ -70,11 +70,11 @@ fi
 #   --verbose, -v        Show per-file progress (phases, up-to-date, installed)
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
 #   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
-#   --prune              After install, remove orphans (with backup) under
+#   --prune              After install, remove retired paths listed in scripts/prune-list (with backup) under
 #                        ~/.<tool>/{commands,skills,agents,rules}/ (or
 #                        ~/.config/<tool>/ for OpenCode) and ~/.beads/formulas/
 #                        that are not in current staging
-#   --prune-only         Skip Phase 7 (install) and only scan + prune orphans
+#   --prune-only         Skip Phase 7 (install) and only scan + remove retired paths listed in scripts/prune-list
 #                        (mutually exclusive with --prune)
 #   --help, -h           Show this help
 #
@@ -131,9 +131,8 @@ for arg in "$@"; do
             echo "                     opencode also if ~/.config/opencode/ exists or opencode is on PATH)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
             echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
-            echo "  --prune            After install, remove orphans under ~/.<tool>/{commands,skills,agents,rules}/"
-            echo "                     and ~/.beads/formulas/ that are not in current staging (with backup)"
-            echo "  --prune-only       Skip install (Phase 7); only scan + prune orphans (mutually exclusive with --prune)"
+            echo "  --prune            After install, remove retired paths listed in scripts/prune-list (with backup)"
+            echo "  --prune-only       Skip install (Phase 7); scan + remove retired paths from scripts/prune-list (mutually exclusive with --prune)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
