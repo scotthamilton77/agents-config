@@ -768,7 +768,7 @@ stage_and_install_tool() {
                 if [[ "$DRY_RUN" == true && -f "$inc_counterpart" ]]; then
                     vok "Would remove $(basename "$inc_counterpart") (spurious standalone from prior install)"
                     (( tool_updated[$CURRENT_TOOL]++ )) || true
-                elif [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true && -f "$inc_counterpart" ]]; then
+                elif [[ "$DRY_RUN" != true && -f "$inc_counterpart" ]]; then
                     backup "$inc_counterpart"
                     rm "$inc_counterpart"
                     vok "Removed $(basename "$inc_counterpart") (spurious standalone from prior install)"
