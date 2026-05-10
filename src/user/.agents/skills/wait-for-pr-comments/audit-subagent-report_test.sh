@@ -81,7 +81,7 @@ cat >"$AUDIT_FAIL" <<JSON
   "fix_outcome": "committed",
   "fix_commit_sha": "$NONEXISTENT_SHA",
   "fix_summary": "claimed but unverifiable",
-  "fix_gate_variant": "fast",
+  "fix_gate_variant": "lite",
   "verification_evidence": {"test_command": "bash test.sh", "output": "ok"}
 }
 JSON
@@ -119,7 +119,7 @@ cat >"$AUDIT_PASS" <<JSON
   "fix_outcome": "committed",
   "fix_commit_sha": "$HEAD_SHA",
   "fix_summary": "fixed and verified",
-  "fix_gate_variant": "fast",
+  "fix_gate_variant": "lite",
   "verification_evidence": {"test_command": "bash test.sh", "output": "ok"}
 }
 JSON
@@ -175,7 +175,7 @@ cat >"$AUDIT_FAIL_DIR" <<JSON
   "fix_outcome": "committed",
   "fix_commit_sha": "$PARENT_SHA",
   "fix_summary": "wrong direction",
-  "fix_gate_variant": "fast",
+  "fix_gate_variant": "lite",
   "verification_evidence": {"test_command": "bash test.sh", "output": "ok"}
 }
 JSON

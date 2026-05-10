@@ -4,7 +4,7 @@
 #
 # Inputs:
 #   --pre-sha       <sha>   HEAD SHA before fix subagent ran
-#   --baseline-sha  <sha>   merge-base / base branch SHA
+#   --baseline-sha  <sha>   phase4_baseline_sha — the HEAD SHA captured at Phase 4 start, before any fix subagents run
 #   --report        <file>  JSON file produced by the fix subagent
 #   --worktree-root <path>  absolute path to the worktree (git -C target)
 #
@@ -72,7 +72,7 @@ FIX_OUTCOME="$(jq -r '.fix_outcome // empty' "$REPORT" 2>/dev/null || true)"
 [ -n "$FIX_OUTCOME" ] || emit_schema_violation "fix_outcome" "missing required field"
 
 case "$FIX_OUTCOME" in
-  committed|deferred|already_addressed|escalated|abandoned) ;;
+  committed|deferred|already_addressed|escalated|abandoned|failed) ;;
   *) emit_schema_violation "fix_outcome" "invalid enum value: $FIX_OUTCOME" ;;
 esac
 
@@ -90,7 +90,7 @@ esac
 if [ "$FIX_OUTCOME" = "committed" ]; then
   FIX_VARIANT="$(jq -r '.fix_gate_variant // empty' "$REPORT" 2>/dev/null || true)"
   case "$FIX_VARIANT" in
-    fast|full) ;;
+    lite|full) ;;
     *) emit_schema_violation "fix_gate_variant" "required when fix_outcome=committed; got: $FIX_VARIANT" ;;
   esac
 
@@ -116,6 +116,23 @@ case "$FIX_OUTCOME" in
     if git -C "$WT_ROOT" merge-base --is-ancestor "$FIX_SHA" "$PRE_SHA" 2>/dev/null; then
       emit_audit_violation "fix_commit_predates_subagent" \
         "fix_commit_sha $FIX_SHA predates or equals pre-sha $PRE_SHA (must be a newer commit)"
+    fi
+
+    # Fix commit must be reachable from current HEAD
+    if ! git -C "$WT_ROOT" merge-base --is-ancestor "$FIX_SHA" HEAD 2>/dev/null; then
+      emit_audit_violation "fix_commit_not_in_head" \
+        "fix_commit_sha $FIX_SHA is not an ancestor of current HEAD"
+    fi
+
+    # Exactly one new commit since pre_sha, and it must match the reported SHA
+    COMMIT_COUNT=$(git -C "$WT_ROOT" rev-list "${PRE_SHA}..HEAD" --count 2>/dev/null)
+    ACTUAL_FIX_SHA=$(git -C "$WT_ROOT" rev-list "${PRE_SHA}..HEAD" 2>/dev/null | head -1)
+    if [ "$COMMIT_COUNT" != "1" ]; then
+      emit_audit_violation "unexpected_commit_count" \
+        "expected exactly 1 new commit since pre-sha $PRE_SHA; got $COMMIT_COUNT"
+    elif [ "$ACTUAL_FIX_SHA" != "$FIX_SHA" ]; then
+      emit_audit_violation "fix_commit_sha_mismatch" \
+        "reported fix_commit_sha $FIX_SHA differs from actual new commit $ACTUAL_FIX_SHA"
     fi
     ;;
   already_addressed)
