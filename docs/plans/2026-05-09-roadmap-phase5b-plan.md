@@ -171,8 +171,8 @@ M1_ID=$(bd create \
   --title "Milestone M1 — Stabilize, finish in-flight, ship immediate accelerators" \
   --type feature \
   --priority 1 \
-  --description "Top-level milestone-anchor for the M1 scope per the 2026-05-09 roadmap. Children include domain epics (jyb, acmh) and orphan beads addressing the stability bar (hft, d3s1), in-flight non-MVP-critical work (jp9w, 2yyb), and the immediate-accelerator set (nbrd, 19n9, e2l, clz, f298, 2gzy). Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M1." \
-  --acceptance "agents-config-hft closed (notes-overwrite bug fixed). agents-config-d3s1 closed (persona vs orchestration reconciled). All currently-in-progress non-MVP-critical beads closed (jp9w, jyb's children, 2yyb). All immediate-accelerator beads closed (nbrd, 19n9, e2l, clz, f298, 2gzy)." \
+  --description "Top-level milestone-anchor for the M1 scope per the 2026-05-09 roadmap. Children include domain epics (jyb, acmh, il69) and orphan beads addressing the stability bar (hft, d3s1), in-flight non-MVP-critical work (jp9w, 2yyb), and the immediate-accelerator set (nbrd, 19n9, e2l, clz, f298, 2gzy). Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M1." \
+  --acceptance "agents-config-hft closed (notes-overwrite bug fixed). agents-config-d3s1 closed (persona vs orchestration reconciled). agents-config-il69 fully wrapped — all Tier 1 audit findings closed and Tier 2/Tier 3 follow-ups (acmh.* set) closed or moved to their proper milestones. All currently-in-progress non-MVP-critical beads closed (jp9w, jyb's children, 2yyb). All immediate-accelerator beads closed (nbrd, 19n9, e2l, clz, f298, 2gzy)." \
   --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
 echo "M1_ID=$M1_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
