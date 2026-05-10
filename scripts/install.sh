@@ -745,7 +745,7 @@ stage_and_install_tool() {
         while IFS= read -r inc_path; do
             inc_base="$(basename "$inc_path")"
             include_only_staged+=("$staging/$inc_base")
-        done < <(grep -oE 'DYNAMIC-INCLUDE: [^ ]+' "$template" | sed 's/DYNAMIC-INCLUDE: //')
+        done < <(sed -n 's/^<!-- DYNAMIC-INCLUDE: \(.*\) -->$/\1/p' "$template")
 
         vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
         flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
