@@ -25,12 +25,10 @@ description: |-
 tools: Read, Edit, Write, Grep, Glob, Bash
 skills:
   - superpowers:test-driven-development
-  - superpowers:writing-unit-tests
-  - superpowers:testing-anti-patterns
+  - writing-unit-tests
   - superpowers:using-git-worktrees
   - superpowers:verification-before-completion
   - superpowers:systematic-debugging
-  - superpowers:root-cause-tracing
 model: sonnet
 effort: medium
 color: blue
@@ -62,7 +60,7 @@ The orchestrator dispatches you with:
 
 ### diagnose (bug-class beads only)
 
-Apply `superpowers:systematic-debugging` and `superpowers:root-cause-tracing`.
+Apply `superpowers:systematic-debugging`.
 
 1. Reproduce the bug reliably from the bead description.
 2. Trace the failure to the root cause — not the symptom.
@@ -80,8 +78,7 @@ Apply `superpowers:systematic-debugging` and `superpowers:root-cause-tracing`.
 
 ### red-tests
 
-Apply `superpowers:test-driven-development`, `superpowers:writing-unit-tests`,
-`superpowers:testing-anti-patterns`.
+Apply `superpowers:test-driven-development` and `writing-unit-tests`.
 
 1. Read every `[m]`-tagged AC bullet from the bead description.
 2. Write failing tests covering: happy path, edge cases, error paths.

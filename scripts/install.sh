@@ -70,11 +70,11 @@ fi
 #   --verbose, -v        Show per-file progress (phases, up-to-date, installed)
 #   --tools=claude,...   Comma-separated list of tools (default: auto-detect)
 #   --plugins=beads,...  Comma-separated list of plugins (default: auto-detect)
-#   --prune              After install, remove orphans (with backup) under
+#   --prune              After install, remove retired paths listed in scripts/prune-list (with backup) under
 #                        ~/.<tool>/{commands,skills,agents,rules}/ (or
 #                        ~/.config/<tool>/ for OpenCode) and ~/.beads/formulas/
 #                        that are not in current staging
-#   --prune-only         Skip Phase 7 (install) and only scan + prune orphans
+#   --prune-only         Skip Phase 7 (install) and only scan + remove retired paths listed in scripts/prune-list
 #                        (mutually exclusive with --prune)
 #   --help, -h           Show this help
 #
@@ -131,9 +131,8 @@ for arg in "$@"; do
             echo "                     opencode also if ~/.config/opencode/ exists or opencode is on PATH)"
             echo "  --plugins=PLUGINS  Comma-separated plugins: beads"
             echo "                     Default: auto-detect (enabled if bd is on PATH or ~/.beads/ exists)"
-            echo "  --prune            After install, remove orphans under ~/.<tool>/{commands,skills,agents,rules}/"
-            echo "                     and ~/.beads/formulas/ that are not in current staging (with backup)"
-            echo "  --prune-only       Skip install (Phase 7); only scan + prune orphans (mutually exclusive with --prune)"
+            echo "  --prune            After install, remove retired paths listed in scripts/prune-list (with backup)"
+            echo "  --prune-only       Skip install (Phase 7); scan + remove retired paths from scripts/prune-list (mutually exclusive with --prune)"
             echo "  --help, -h         Show this help"
             exit 0
             ;;
@@ -1310,6 +1309,32 @@ ORPHAN_NS=()
 ORPHAN_PATHS=()
 ORPHAN_KINDS=()
 
+PRUNE_LIST=()
+
+_load_prune_list() {
+    local list_file
+    list_file="$SCRIPT_DIR/prune-list"
+    [[ -f "$list_file" ]] || return 0
+    local line
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        line="${line#"${line%%[! ]*}"}"
+        line="${line%"${line##*[! ]}"}"
+        [[ -n "$line" ]] && PRUNE_LIST+=("$line")
+    done < "$list_file"
+}
+_load_prune_list
+
+_in_prune_list() {
+    local tool="$1" ns="$2" base="$3" key entry
+    key="$tool/$ns/$base"
+    for entry in "${PRUNE_LIST[@]}"; do
+        # shellcheck disable=SC2254
+        case "$key" in ($entry) return 0;; esac
+    done
+    return 1
+}
+
 # Append orphans found in a single dest namespace to the parallel ORPHAN_*
 # arrays, tagged with the given tool/namespace labels. Skips legacy *.backup-*
 # entries (in-place backups from older backup() implementations); classifies as
@@ -1323,6 +1348,7 @@ _scan_namespace() {
         base="$(basename "$entry")"
         [[ "$base" == *.backup-* ]] && continue
         [[ -e "$staging/$base" ]] && continue
+        _in_prune_list "$tool" "$ns_label" "$base" || continue
         if [[ -d "$entry" ]]; then kind="dir"; else kind="file"; fi
         ORPHAN_TOOLS+=("$tool")
         ORPHAN_NS+=("$ns_label")
