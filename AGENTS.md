@@ -125,6 +125,7 @@ Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
 - Changes should follow existing formatting conventions in each file type
 - Agent descriptions should include concrete usage examples in the frontmatter
 - Skills should be opinionated and actionable, not generic advice
+- **No file-path citations in specs or prose** — `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
