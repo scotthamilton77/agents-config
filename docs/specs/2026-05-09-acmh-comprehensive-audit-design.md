@@ -1,8 +1,8 @@
 # Comprehensive Audit of Agent-Facing Content — Design
 
-**Bead**: `agents-config-acmh`
-**Status**: Spec — pending adversarial review and finalize
-**Date**: 2026-05-09
+**Bead**: `agents-config-acmh` (closed; this spec is the implementation guide consumed by `agents-config-il69`)
+**Status**: Spec — finalized through 4 ralf-review cycles (cycles 1–2 inline, cycles 3–4 belt-and-suspenders post-close)
+**Date**: 2026-05-09 (initial); 2026-05-10 (cycle 3+4 patch pass)
 **Authors**: Scott Hamilton (architect) + Claude Opus 4.7 (1M context, brainstorm partner)
 
 **Related beads**:
@@ -154,16 +154,32 @@ Every subagent in Phases 1, 2, and 3 receives a dispatch prompt structured as:
 
 ```
 === PROJECT CONTEXT ===
-[Vision & Mission section from AGENTS.md, extracted by section header
- (from "## Vision & Mission" through the end of "## Implications for
- agents working in *this* repo"), injected verbatim by the orchestrator
- at dispatch time. Line numbers MUST NOT be hard-coded; the orchestrator
- extracts by header so the boundaries survive AGENTS.md edits.]
+[Vision & Mission section from AGENTS.md, extracted by H2 boundary.
+ Extraction rule: from the line beginning `## Vision & Mission` through
+ the last line before the next H2 header (regex: `^## ` at column 0).
+ The H3 subsections inside it (`### Current state…`, `### Implications
+ for agents working in *this* repo`) are part of the extracted block by
+ construction. Injected verbatim by the orchestrator at dispatch time.
+ Line numbers MUST NOT be hard-coded; the H2 boundary rule survives
+ AGENTS.md edits. Step 0 verification prints the first and last
+ extracted line for the user to eyeball before any phase dispatches.]
 
 === AUDIT INPUT SHA ===
 [The full git SHA the orchestrator pinned at Step 0.5. All file paths
- in the brief resolve against this SHA. If the worktree HEAD has moved
- by dispatch time, the orchestrator MUST refuse to dispatch and surface.]
+ in the brief resolve against this SHA.
+
+ Drift check (scoped, NOT a HEAD-equality check): at dispatch time and
+ at each verification step, the orchestrator runs
+   `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`
+ where `<resolved-source-paths>` is the union of file lists resolved at
+ Step 0.5 (i.e., the §4 globs at the pinned SHA). Empty diff = invariant
+ holds. Audit outputs under `docs/audits/**` are intentionally excluded
+ from this check by construction — they are not in §4 source scope and
+ must not be expected to match `AUDIT_INPUT_SHA`. The orchestrator's
+ own `Commit Phase N outputs` operations move the worktree HEAD; that
+ is expected and does NOT violate the invariant. Only changes to
+ in-scope source files do. If the diff is non-empty for any in-scope
+ path, the orchestrator MUST refuse to dispatch and surface.]
 
 === ROLE PRIMERS ===
 [All subagents (Phase 1, 2, 3) read all 5 primers in docs/primers/
@@ -258,7 +274,25 @@ docs/audits/
     └── REMEDIATION_PLAN.md          # the actionable handoff: Tier 1 inline + Tier 2 deferred
 ```
 
-**File-slug algorithm**: For a source path `<full-path>`, the slug is computed deterministically as: strip leading `src/`, replace `/` with `--`, replace `.` (in extensions) with `-`. Example: `src/user/.agents/skills/writing-unit-tests/SKILL.md` → `user--.agents--skills--writing-unit-tests--SKILL-md.md`. If two distinct paths produce the same slug (rare but possible with dotfile/regular-file collisions), append a 6-char hash of the full path before the `.md` extension. The orchestrator MUST use this algorithm; auditors do not name `by-file/` files themselves.
+**File-slug algorithm**: For a source path `<full-path>`, the slug is computed deterministically by the orchestrator as follows. Auditors do not name `by-file/` files themselves.
+
+1. **Normalize**: take `<full-path>` as the path relative to the repo root (no leading `./`).
+2. **Strip prefix**: if the path starts with `src/`, strip that prefix. Paths outside `src/` (e.g., the live root `AGENTS.md`) are processed as-is from this step.
+3. **Path-separator substitution**: replace each `/` with `--`.
+4. **Dot substitution**: replace **every** `.` with `-`. There is no "in extensions" distinction — leading-dot directories (`.agents`, `.beads`, `.claude`), middle dots (`SKILL.md.template`), and final extension dots are all treated identically. This is a deliberate simplification; the rule is unambiguous and operator-implementable.
+5. **Append `.md`** to produce the slug.
+6. **Collision resolution**: if two distinct in-scope paths produce the same step-5 result, the orchestrator appends an 8-character hash before the `.md`: `<base>-<hash>.md`, where `<hash>` is the first 8 lowercase hex characters of `sha256(<full-path>)`. If two paths still collide after the 8-char hash (vanishingly rare; collision resistance ~10⁹), append a numeric tiebreak `-<n>` where `<n>` ≥ 2 in lexicographic path-sort order. Both the hash function (sha256) and encoding (lowercase hex, first 8 chars) are pinned by spec — alternative implementations are not permitted.
+
+**Worked examples**:
+
+| Source path | Slug |
+|---|---|
+| `src/user/.agents/skills/writing-unit-tests/SKILL.md` | `user---agents--skills--writing-unit-tests--SKILL-md.md` |
+| `src/user/.agents/agents/quality-reviewer.md` | `user---agents--agents--quality-reviewer-md.md` |
+| `src/user/.claude/rules/completion-gate.md` | `user---claude--rules--completion-gate-md.md` |
+| `src/plugins/beads/.beads/scripts/finalize-create-impl-bead.sh` | `plugins--beads---beads--scripts--finalize-create-impl-bead-sh.md` |
+| `AGENTS.md` (root, outside `src/`) | `AGENTS-md.md` |
+| `src/user/.agents/INSTRUCTIONS.md.template` | `user---agents--INSTRUCTIONS-md-template.md` |
 
 ## 8. Finding Schema
 
@@ -301,6 +335,32 @@ Phase 3 findings additionally include:
   Rationale: <one sentence: why the aggregator chose this disposition>
   Sources: phase1/<file>:F<n>, phase2/<file>:F<n>
 ```
+
+### `decisions.md` entry schema
+
+`decisions.md` is the conflict-resolution and audit-trail log. Every entry uses this structure (Step 5 verification depends on this schema being literal — alternative shapes fail the verifiable checks):
+
+```
+D<n>: <one-line summary>
+  Type: conflict-resolution | tier1-promotion | tierC-demotion | oos-promotion |
+        sha-drift | tier1-revert | user-gate-demotion | user-gate-drop |
+        vision-alignment-failure | manual-fix-up
+  Sources: phase1/<file>:F<n>, phase2/<file>:F<n>     (as applicable; "none" for oos-promotion or sha-drift)
+  Resolution: <accepted | merged | dropped | deferred | promoted-to-tier1 |
+              demoted-to-tier2 | reverted | flagged-for-human>
+  Rationale: <one paragraph — why this disposition>
+  Snippet: (REQUIRED for tier1-promotion only; omit otherwise)
+    Before: <verbatim source-text excerpt at AUDIT_INPUT_SHA>
+    After:  <verbatim replacement text>
+```
+
+**Step 5 verifiable checks reference this schema literally**:
+- "Every Phase 2 finding with `Verdict: DISAGREE` or `PARTIAL` has a `decisions.md` entry whose `Sources:` field includes the corresponding `phase2/<file>:F<n>`" (mechanical grep against entry `Sources:` lines).
+- "Every promoted Tier 2 → Tier 1 has `Type: tier1-promotion` AND a non-empty `Snippet:` block" (mechanical parse).
+- "Every Tier-C demotion to DROPPED has `Type: tierC-demotion` with a `Rationale:` line" (mechanical parse).
+- "For each `Snippet: Before:` block, `git grep -F "<Before>"` against `AUDIT_INPUT_SHA` returns ≥1 match" (defends against hallucinated promotion snippets; if zero matches, the aggregator demotes the promotion back to Tier 2 with a follow-on `Type: tier1-revert` entry).
+
+User-authored entries (the manual fix-up path in §13 Step 5) MUST follow the same schema with `Type: manual-fix-up`. The orchestrator parses the manual entries identically to aggregator entries. Free-form prose insertions are ignored by Step 5 verification.
 
 ## 9. Severity Tiers
 
@@ -387,7 +447,9 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 
 ### Step 0 — Preflight
 - Verify all 5 primers exist at `docs/primers/` (SKILLS, AGENTS, COMMANDS, RULES, FORMULAS)
-- Extract AGENTS.md vision section by header (`## Vision & Mission` through end of `## Implications for agents working in *this* repo`) into orchestrator context — line numbers MUST NOT be hard-coded
+- Extract AGENTS.md vision section by H2 boundary: from the line beginning `## Vision & Mission` through the last line before the next H2 header (`^## ` at column 0). The H3 subsections inside (`### Current state…`, `### Implications for agents working in *this* repo`) are part of the extracted block. Line numbers MUST NOT be hard-coded.
+- Print the first and last extracted line for the user to eyeball before continuing — confirms the H2 boundary detection landed on the right section
+- Verify `docs/audits/` is absent (or, if present, that the user has explicitly authorized overwrite — the orchestrator surfaces and pauses on first-run conflict)
 - Confirm bead `agents-config-acmh` is `in_progress` with no active molecule conflict
 - Create worktree at `.claude/worktrees/acmh-comprehensive-audit`
 
@@ -405,15 +467,18 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 
 ### Step 2 — Phase 1 verification
 - Confirm all 7 output files exist (a "Findings: none" file is a valid output and counts as exists)
-- Spot-check schema compliance (every finding has all fields, including non-empty Vision-advancement and a declared tier A/B/C)
-- Verify `AUDIT_INPUT_SHA` is still the worktree HEAD; if not, surface and pause
+- **Schema check**: every finding parses against the §8 schema — every required field non-empty, `Severity ∈ {Critical, High, Medium, Low}`, `Tier ∈ {1, 2}`, `Vision-advancement-tier ∈ {A, B, C}`, `Vision-advancement` non-empty. Reject any output failing this and re-dispatch (subject to Step 1 retry cap). "Findings: none" outputs are exempt from per-finding checks but their summary paragraph MUST contain ≥3 distinct exact-substring matches from the category's resolved file list.
+- **Source-drift check (scoped, NOT HEAD-equality)**: run `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`. Empty diff = invariant holds; the orchestrator's own commits of audit outputs do NOT trigger this (they are outside §4 source scope). If non-empty, surface and pause per the §6 AUDIT INPUT SHA contract.
 - If any subagent failed: re-dispatch up to the Step 1 retry cap (idempotent — outputs go to same path)
 - Commit Phase 1 outputs
 
 ### Step 3 — Phase 2 dispatch (parallel)
-- Dispatch 6 Codex subagents via the Claude Code Codex plugin (`codex-companion.mjs`, never the raw `codex` binary). Default model: `gpt-5.4` (per `codex-routing.md`: best fit for adversarial / cross-subsystem review). If a newer model becomes available and `codex-routing.md` is updated to list it, that becomes the default; the spec does not pin a future-tense version number.
+- Dispatch 6 Codex subagents via the Claude Code Codex plugin (`codex-companion.mjs`, never the raw `codex` binary).
+- **Model resolution**: the orchestrator reads `codex-routing.md` at dispatch time and selects the model it currently lists for adversarial / cross-subsystem review (today, 2026-05: `gpt-5.4`). The spec does NOT hard-pin a literal version string — `codex-routing.md` is the authority. The resolved model name appears in the dispatch log and is recorded once in `REMEDIATION_PLAN.md` header metadata for audit-trail purposes.
+- **Fallback on plugin rejection**: if the resolved model is rejected by the Codex plugin at dispatch time (returned error), the orchestrator MUST surface to the user and pause. The orchestrator MUST NOT silently substitute another model — quality of adversarial review depends on the model class. The user explicitly authorizes a fallback model (or aborts) before dispatch resumes.
 - Each gets: `AUDIT_INPUT_SHA` + vision + all 5 primers + all 7 Phase 1 outputs + use-case brief + the categories-touched list from §11 + output path
 - Each writes to its assigned `phase2/<use-case>.md`. Reviewers do not see each other's outputs by design.
+- **Pre-dispatch source-drift check**: run the same scoped diff as Step 2's source-drift check; refuse to dispatch on non-empty diff.
 - Per-phase max retry: 3 per subagent (same policy as Phase 1).
 
 ### Step 4 — Phase 2 verification
@@ -428,23 +493,25 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 - Aggregator MUST enforce the Vision-advancement rubric (§2): if more than 30% of accepted findings carry tier C, demote per the §2 ascending-severity / descending-document-order algorithm, including the terminal "vision-alignment failure of the audit itself" surface case
 - Aggregator handles cross-category reclassification findings (e.g. "this skill should be a script") — both the source-category `by-category/` output and the target-category `by-category/` output reference the finding via cross-link; the canonical entry lives in the source category
 - Aggregator MAY promote OOS entries from Phase 2 reviewers to real findings only via an explicit `decisions.md` entry that constructs the missing schema fields itself
-- Verifiable checks (after Phase 3 returns):
-  * Every Phase 2 finding with `Verdict: DISAGREE` or `PARTIAL` has a corresponding `decisions.md` entry with explicit Resolution + Rationale
-  * Tier-C share of accepted findings ≤ 30% OR terminal vision-alignment-failure surface is present
-  * Every promoted Tier 2 → Tier 1 has an attached before/after snippet in `decisions.md`
-- **Phase 3 retry cap**: 2 attempts. On second verification failure, the orchestrator surfaces the missing-entry list to the user as a manual fix-up task; user edits `decisions.md` directly and the orchestrator re-runs Step 5 verification only (NOT a third Phase 3 dispatch).
+- Verifiable checks (after Phase 3 returns; all parse against the §8.5 `decisions.md` schema):
+  * Every Phase 2 finding with `Verdict: DISAGREE` or `PARTIAL` has a `decisions.md` entry whose `Sources:` line includes the corresponding `phase2/<file>:F<n>` (mechanical grep)
+  * Tier-C share of accepted findings ≤ 30% OR terminal vision-alignment-failure surface is present (mechanical count over `Vision-advancement-tier:` declarations of accepted findings; tier C cap enforced per §2)
+  * Every promoted Tier 2 → Tier 1 has a `decisions.md` entry with `Type: tier1-promotion` and a non-empty `Snippet:` block whose `Before:` block matches at least one `git grep -F` occurrence in the source tree at `AUDIT_INPUT_SHA` (defends against hallucinated snippets; zero matches → automatic demotion back to Tier 2 with a follow-on `Type: tier1-revert` entry)
+- **Phase 3 retry cap**: 2 attempts. On second verification failure, the orchestrator surfaces the missing-entry list to the user as a manual fix-up task. The user edits `decisions.md` directly using the §8.5 schema with `Type: manual-fix-up`. The orchestrator confirms via `git diff` that ONLY `docs/audits/phase3/decisions.md` was modified (no source files touched). It then re-runs Step 5 verification ONCE. If verification still fails, the orchestrator surfaces the still-missing list and halts the bead in `in_progress`; the user must re-invoke the orchestrator with corrected entries (no auto-loop, no third Phase 3 dispatch).
 - Commit Phase 3 outputs
 
 ### Step 6 — USER REVIEW GATE
 - Orchestrator presents `REMEDIATION_PLAN.md`
+- **Marker format (operationally meaningful only)**: markers MUST appear at column 0 in `REMEDIATION_PLAN.md`. The `<SHA>` in the `APPROVED` marker MUST be a 40-character lowercase hex git SHA equal to `AUDIT_INPUT_SHA`. The orchestrator validates each `F<n>` referenced in `DEMOTE`/`DROP` against the live REMEDIATION_PLAN finding list; unknown F-ids surface to the user before any Tier 1 application begins.
 - User actions:
-  * **Approve**: add `APPROVED <SHA>` marker line at the top of `REMEDIATION_PLAN.md` (canonical) or post a bd comment on `agents-config-acmh` (fallback) per AC #5
-  * **Demote a Tier 1 to Tier 2**: add a marker line in `REMEDIATION_PLAN.md` of the form `DEMOTE F<n>: tier=2 reason=<text>` — the orchestrator parses these post-approval and reflects each in `decisions.md`. Editing diffs directly without a `DEMOTE` marker is NOT a supported demotion mechanism (the orchestrator will not reverse-engineer free-form edits).
-  * **Drop a finding**: marker line `DROP F<n>: reason=<text>`
+  * **Approve**: add `APPROVED <SHA>` marker line as the first non-blank line of `REMEDIATION_PLAN.md` (canonical, lookup first), OR post a bd comment on `agents-config-acmh` whose body matches `^APPROVED <40-hex-SHA>$` (fallback) per AC #5. If both are present and the SHAs disagree, the orchestrator surfaces.
+  * **Demote a Tier 1 to Tier 2**: add a marker line in `REMEDIATION_PLAN.md` of the form `DEMOTE F<n>: tier=2 reason=<text>` — the orchestrator parses these post-approval and reflects each in `decisions.md` as `Type: user-gate-demotion`. Editing diffs directly without a `DEMOTE` marker is NOT a supported demotion mechanism (the orchestrator will not reverse-engineer free-form edits).
+  * **Drop a finding**: marker line `DROP F<n>: reason=<text>` (recorded as `Type: user-gate-drop`)
   * **Request schema fixes**: surface as a comment on the bead; orchestrator returns to Step 5 with the request
   * **Direct edit of `REMEDIATION_PLAN.md`**: only the `APPROVED`, `DEMOTE`, and `DROP` markers are operationally meaningful; prose edits are advisory and do not alter the orchestrator's behavior
-- **Worktree-HEAD invariant**: the worktree HEAD SHA at approval MUST equal `AUDIT_INPUT_SHA`. If the user (or another agent) modified source files during the gate, the orchestrator detects the SHA drift and surfaces. Resolution paths:
-  * **"proceed against new tree"** — orchestrator records `AUDIT_INPUT_SHA_v2 = <new HEAD>` in `decisions.md`, re-runs Phase 1+2 on the affected categories against `AUDIT_INPUT_SHA_v2`, and re-runs Phase 3 in full (because Phase 3's inputs changed). Subsequent SHA-drift detection during the re-audit pins as v3, etc.
+- **No-action / silence behavior**: the gate does NOT auto-timeout. If no approval marker appears, the orchestrator parks indefinitely with the bead `agents-config-acmh` in `in_progress` and the worktree retained. Resumption requires the user to re-invoke the orchestrator with one of the marker actions above present in `REMEDIATION_PLAN.md` or as a bd comment. The orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter; no Tier 1 application proceeds without an explicit `APPROVED` marker. (Rationale: the project's vision explicitly accepts overnight / multi-day cadences; an auto-timeout would conflict with that. Aborting cleanly is the user's job — `bd close --reason ...` if abandoning.)
+- **Worktree source-drift invariant** (per §6 AUDIT INPUT SHA contract): at approval-marker parse time, the orchestrator runs `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`. Empty diff = invariant holds; audit-output commits do NOT violate it. If non-empty (in-scope source files modified during the gate), resolution paths:
+  * **"proceed against new tree"** — orchestrator pins `AUDIT_INPUT_SHA_v2 = <new HEAD>` in `decisions.md` (`Type: sha-drift`), re-runs Phase 1 categories whose §4 globs intersect the changed paths against `AUDIT_INPUT_SHA_v2`, re-runs all 6 Phase 2 reviewers (their inputs include all Phase 1 outputs), and re-runs Phase 3 in full. Subsequent SHA-drift detection during the re-audit pins as v3, etc. Stale v1 outputs from re-run categories are deleted, NOT merged.
   * **"re-audit"** — full re-dispatch from Step 0.5 with a new `AUDIT_INPUT_SHA`
 - **No source files touched until user approves**
 
@@ -492,10 +559,15 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 | Phase 3 tier-C demotion algorithm reaches the terminal "all Critical/High tier-C and no tier-A/B" state | Stop demoting; surface to user as a vision-alignment failure of the audit itself; flag prominently in `REMEDIATION_PLAN.md` |
 | Phase 3 finds tier-C share > 30% after first pass | Aggregator demotes lowest-severity tier-C findings to DROPPED until threshold is met (per §2 rubric). Each demotion recorded in `decisions.md`. |
 | Tier 1 fix breaks `install.sh --dry-run` | Revert that category's commit; demote affected findings to Tier 2 with rationale in `decisions.md` |
-| Source file modified by another agent during Phase 1/2 | Detected via `AUDIT_INPUT_SHA` mismatch; orchestrator surfaces and pauses. User must explicitly authorize re-running affected categories' Phase 1+2 against the new state, or restoring the SHA. |
-| Source file modified during user-review gate | Same SHA-mismatch detection as above; orchestrator surfaces at approval time. User chooses "proceed against new tree" (re-runs affected categories) or "re-audit" (full re-dispatch from Step 0.5). |
-| User demotes Tier 1 finding to Tier 2 at review gate | Orchestrator records demotion in `decisions.md`, updates REMEDIATION_PLAN, files affected category's follow-up bead |
+| Source file modified by another agent during Phase 1/2 | Detected via the §6 scoped source-drift check (`git diff --name-only AUDIT_INPUT_SHA HEAD -- <source-paths>` is non-empty). Orchestrator surfaces and pauses. User must explicitly authorize re-running affected categories' Phase 1+2 against the new state, or restoring the source files. |
+| Source file modified during user-review gate | Same scoped source-drift check at approval-marker parse time; orchestrator surfaces. User chooses "proceed against new tree" (re-runs categories whose globs intersect the changed paths + all 6 Phase 2 + Phase 3) or "re-audit" (full re-dispatch from Step 0.5). |
+| User does not respond at the review gate | Orchestrator parks indefinitely with bead `in_progress`. No auto-timeout. Resumption requires the user re-invoking the orchestrator with an `APPROVED` marker present (or `bd close` to abort). Orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter. |
+| User-supplied marker references unknown F-id | Orchestrator surfaces unrecognized F-ids before any Tier 1 application begins; waits for the user to correct the marker or remove it. |
+| User demotes Tier 1 finding to Tier 2 at review gate | Orchestrator records demotion in `decisions.md` as `Type: user-gate-demotion`, updates REMEDIATION_PLAN, files affected category's follow-up bead |
+| User-authored manual fix-up to `decisions.md` (Step 5 retry exhaustion) | Orchestrator confirms via `git diff` that ONLY `decisions.md` was touched (no source files); user-authored entries MUST follow the §8.5 schema with `Type: manual-fix-up`. Re-runs Step 5 verification once after the user signals fix-up complete. If verification still fails, surface the still-missing list and halt; user re-invokes when ready (no auto-loop). |
 | Codex plugin unavailable for Phase 2 | Pause; surface to user; do not silently substitute another model |
+| Codex plugin rejects the resolved model name | Pause; surface to user with the rejection error; do not silently substitute. User explicitly authorizes a fallback model name (recorded in `decisions.md`) or aborts. |
+| `docs/audits/` already exists at Step 0 | Surface and pause. User explicitly authorizes overwrite (e.g., a re-run after manual cleanup) before Step 0 proceeds. |
 | Soft-budget tripwire | If any phase exceeds 2× the Phase token estimate in §15, surface to user with current spend + projection before continuing |
 
 ## 15. Resource Budget
