@@ -1,4 +1,4 @@
-# Optimize Agent.md
+# Optimize My Agent
 
 You are an expert at writing effective agent instruction files. Your task is to analyze and optimize the agent.md file at: $ARGUMENTS
 

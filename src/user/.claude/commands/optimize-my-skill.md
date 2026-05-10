@@ -70,7 +70,7 @@ Skills use a three-level progressive disclosure system to minimize token usage:
 Assess:
 
 - [ ] **SKILL.md is the only `.md` file**: No README.md inside the skill folder (all docs go in SKILL.md or references/)
-- [ ] **SKILL.md size**: Under 5,000 words. If over, flag sections that should move to `references/`
+- [ ] **SKILL.md size**: Under 500 lines. If over, flag sections that should move to `references/`
 - [ ] **Heavy content in references/**: Detailed docs, API guides, lengthy examples belong in `references/`, linked from SKILL.md
 - [ ] **Scripts in scripts/**: Executable code (Python, Bash) for deterministic operations lives in `scripts/`
 - [ ] **Templates in assets/**: Templates, fonts, icons used in output belong in `assets/`
@@ -97,7 +97,7 @@ Assess:
 - [ ] Missing decision trees for ambiguous situations
 - [ ] No red flags section (skill gets rationalized away)
 - [ ] Body content duplicates what's in the frontmatter description
-- [ ] SKILL.md over 5,000 words without using references/ for overflow
+- [ ] SKILL.md over 500 lines without using references/ for overflow
 - [ ] README.md inside the skill folder
 - [ ] XML angle brackets in frontmatter
 
@@ -220,7 +220,7 @@ How to confirm the skill was applied correctly.
 ### Key Principles
 
 1. **Descriptions are discovery hooks**: They tell Claude WHEN to invoke, not WHAT the skill does. Claude reads the body for the "what."
-2. **Progressive disclosure saves tokens**: Frontmatter is always loaded, body only when triggered, linked files only when needed. Keep SKILL.md under 5,000 words.
+2. **Progressive disclosure saves tokens**: Frontmatter is always loaded, body only when triggered, linked files only when needed. Keep SKILL.md under 500 lines.
 3. **Opinionated > generic**: "Never mock more than 2 dependencies" beats "use mocks judiciously."
 4. **Decision trees > paragraphs**: Ambiguity is where skills fail. Trees eliminate it.
 5. **Negative triggers prevent over-firing**: "Do NOT use for X" in descriptions is as important as "Use when Y."
