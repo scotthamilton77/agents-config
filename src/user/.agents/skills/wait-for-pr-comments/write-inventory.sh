@@ -20,6 +20,11 @@
 #      the same filesystem).
 #   5. Runs retention housekeeping: delete files older than 30 days in the
 #      inventory directory. Never touches files newer than 30 days.
+#
+# Exit codes:
+#   0  — write succeeded
+#   64 — invalid args: wrong count, unknown state, or empty phase/path (EX_USAGE)
+#   65 — jq parse/write failed (EX_DATAERR)
 
 set -euo pipefail
 

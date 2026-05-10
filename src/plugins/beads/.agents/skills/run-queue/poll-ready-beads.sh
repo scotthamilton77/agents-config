@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # poll-ready-beads.sh [max-minutes]
 #
 # Polls for implementation-ready beads at 10-minute intervals.
@@ -19,7 +20,7 @@ trap 'echo "Interrupted."; exit 2' INT TERM
 
 while true; do
     RESULT=$(bd ready --label implementation-ready --json 2>/dev/null)
-    COUNT=$(echo "$RESULT" | jq 'length' 2>/dev/null || echo "0")
+    COUNT=$(echo "$RESULT" | jq 'length' 2>/dev/null) || COUNT="0"
 
     if [ "$COUNT" -gt 0 ]; then
         echo "$RESULT"
