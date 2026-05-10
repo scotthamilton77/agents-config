@@ -758,11 +758,13 @@ Run:
 ```bash
 bd dep add agents-config-4htl agents-config-owqa
 bd dep add agents-config-7bk.12 agents-config-owqa
-bd dep add agents-config-xshc agents-config-7bk
-echo "3 ADD edges applied"
+# bd dep add agents-config-xshc agents-config-7bk  # OMITTED: bd schema rejects task→non-task deps
+echo "2 of 3 ADD edges applied (xshc → 7bk omitted — see note below)"
 ```
 
 Note: `bd dep add <issue> <depends-on>` means `<issue>` depends on `<depends-on>` (i.e., `<depends-on>` blocks `<issue>`). So `bd dep add 4htl owqa` means 4htl depends on owqa shipping first — which matches the rationale: 4htl audits against owqa's standard.
+
+**Why xshc → 7bk is omitted:** bd's dep-type checker rejects edges where the dependent is `type=task` and the depends-on is anything non-task (the error message says "tasks can only block other tasks, not epics", but the rule applies to features as well). xshc is a task; 7bk is an epic. The semantic intent — "xshc instrumentation cannot mine pipeline data until 7bk ships its worker fleet" — is preserved transitively by xshc's parent (M4) depending on M3 (the milestone feature whose AC includes worker-report-v1 schema in use across stages). Mid-execution this constraint surfaces; the orchestrator should `bd update agents-config-xshc --append-notes "<rationale>"` to record the deviation in the bead's audit trail.
 
 - [ ] **Step 2: REMOVE edges (3 total)**
 
