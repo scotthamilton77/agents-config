@@ -171,18 +171,37 @@ Every subagent in Phases 1, 2, and 3 receives a dispatch prompt structured as:
 [The full git SHA the orchestrator pinned at Step 0.5. All file paths
  in the brief resolve against this SHA.
 
- Drift check (scoped, NOT a HEAD-equality check): at dispatch time and
- at each verification step, the orchestrator runs
-   `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`
- where `<resolved-source-paths>` is the union of file lists resolved at
- Step 0.5 (i.e., the §4 globs at the pinned SHA). Empty diff = invariant
- holds. Audit outputs under `docs/audits/**` are intentionally excluded
- from this check by construction — they are not in §4 source scope and
- must not be expected to match `AUDIT_INPUT_SHA`. The orchestrator's
- own `Commit Phase N outputs` operations move the worktree HEAD; that
- is expected and does NOT violate the invariant. Only changes to
- in-scope source files do. If the diff is non-empty for any in-scope
- path, the orchestrator MUST refuse to dispatch and surface.]
+ Drift check (scoped, working-tree-aware, NOT a HEAD-equality check):
+ at dispatch time and at each verification step, the orchestrator runs
+ BOTH of the following against `<resolved-source-paths>` (the union of
+ file lists resolved at Step 0.5 from the §4 globs at the pinned SHA):
+
+   (a) `git diff --name-only AUDIT_INPUT_SHA -- <resolved-source-paths>`
+       — note: NO `HEAD` argument. This compares `AUDIT_INPUT_SHA` to
+       the working tree, so it catches BOTH committed changes (any
+       commit since the SHA) AND uncommitted index/working-tree edits
+       in tracked files. A `HEAD`-anchored diff would miss uncommitted
+       edits — a real drift hazard.
+   (b) `git ls-files --others --exclude-standard -- <resolved-source-paths>`
+       — catches untracked new files inside in-scope paths that would
+       become in-scope on a re-resolve.
+
+ Both must produce empty output. Audit outputs under `docs/audits/**`
+ are intentionally excluded from (a) and (b) by construction — they are
+ not in §4 source scope and must not be expected to match
+ `AUDIT_INPUT_SHA`. The orchestrator's own `Commit Phase N outputs`
+ operations move the worktree HEAD; that is expected and does NOT
+ violate the invariant because audit outputs are out of scope. Only
+ changes (committed, staged, unstaged, or new untracked) to IN-SCOPE
+ source files violate it. If either check produces output for any
+ in-scope path, the orchestrator MUST refuse to dispatch and surface.
+
+ Note: vision content for the `=== PROJECT CONTEXT ===` block is read
+ from the live AGENTS.md at dispatch time. AGENTS.md is itself
+ in-scope for audit-templates (per §4), so any AGENTS.md edit between
+ phases will fail the drift check above and force a `Source file
+ modified during ...` resolution path per §14 — there is no separate
+ carve-out for vision-section edits.]
 
 === ROLE PRIMERS ===
 [All subagents (Phase 1, 2, 3) read all 5 primers in docs/primers/
@@ -245,7 +264,7 @@ OOS<n>: <one-line title>
 
 Phase 3 reads OOS entries as advisory only. The aggregator MAY promote an OOS entry to a real finding only with an explicit `decisions.md` entry naming the rationale and constructing the missing schema fields (Severity, Tier, Vision-advancement, etc.) itself.
 
-Vision content is injected fresh from the live AGENTS.md at dispatch time — there is no static copy in the primers directory. If AGENTS.md updates between phases, later phases see the newer content. Section-header extraction (not line numbers) is the canonical anchor.
+Vision content is read from the live AGENTS.md at dispatch time — there is no static copy in the primers directory. Because AGENTS.md is itself in scope for audit-templates (per §4), any modification to AGENTS.md between phases will be caught by the §6 working-tree-aware drift check and force a `Source file modified during ...` resolution path per §14. The vision section is NOT carved out of the SHA invariant — drift halts the audit even if the user's intent was "just refining the vision text." Section-header extraction (the H2-boundary rule) is the canonical anchor; line numbers are never the anchor.
 
 ## 7. Outputs Structure
 
@@ -471,7 +490,7 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 ### Step 2 — Phase 1 verification
 - Confirm all 7 output files exist (a "Findings: none" file is a valid output and counts as exists)
 - **Schema check**: every finding parses against the §8 schema — every required field non-empty, `Severity ∈ {Critical, High, Medium, Low}`, `Tier ∈ {1, 2}`, `Vision-advancement-tier ∈ {A, B, C}`, `Vision-advancement` non-empty. Reject any output failing this and re-dispatch (subject to Step 1 retry cap). "Findings: none" outputs are exempt from per-finding checks but their summary paragraph MUST contain ≥3 distinct exact-substring matches from the category's resolved file list.
-- **Source-drift check (scoped, NOT HEAD-equality)**: run `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`. Empty diff = invariant holds; the orchestrator's own commits of audit outputs do NOT trigger this (they are outside §4 source scope). If non-empty, surface and pause per the §6 AUDIT INPUT SHA contract.
+- **Source-drift check (scoped, working-tree-aware)**: per the §6 AUDIT INPUT SHA contract — run BOTH `git diff --name-only AUDIT_INPUT_SHA -- <resolved-source-paths>` (no `HEAD`; catches committed + uncommitted) AND `git ls-files --others --exclude-standard -- <resolved-source-paths>` (catches untracked). Both must be empty. The orchestrator's own audit-output commits do NOT trigger this (they are outside §4 source scope). If either produces output, surface and pause.
 - If any subagent failed: re-dispatch up to the Step 1 retry cap (idempotent — outputs go to same path)
 - Commit Phase 1 outputs
 
@@ -481,7 +500,7 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 - **Fallback on plugin rejection**: if the resolved model is rejected by the Codex plugin at dispatch time (returned error), the orchestrator MUST surface to the user and pause. The orchestrator MUST NOT silently substitute another model — quality of adversarial review depends on the model class. The user explicitly authorizes a fallback model (or aborts) before dispatch resumes.
 - Each gets: `AUDIT_INPUT_SHA` + vision + all 5 primers + all 7 Phase 1 outputs + use-case brief + the categories-touched list from §11 + output path
 - Each writes to its assigned `phase2/<use-case>.md`. Reviewers do not see each other's outputs by design.
-- **Pre-dispatch source-drift check**: run the same scoped diff as Step 2's source-drift check; refuse to dispatch on non-empty diff.
+- **Pre-dispatch source-drift check**: run the same scoped working-tree-aware check as Step 2 (the two-command pair from §6); refuse to dispatch on non-empty output from either.
 - Per-phase max retry: 3 per subagent (same policy as Phase 1).
 
 ### Step 4 — Phase 2 verification
@@ -513,7 +532,7 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
   * **Request schema fixes**: surface as a comment on the bead; orchestrator returns to Step 5 with the request
   * **Direct edit of `REMEDIATION_PLAN.md`**: only the `APPROVED`, `DEMOTE`, and `DROP` markers are operationally meaningful; prose edits are advisory and do not alter the orchestrator's behavior
 - **No-action / silence behavior**: the gate does NOT auto-timeout. If no approval marker appears, the orchestrator parks indefinitely with the bead `agents-config-il69` in `in_progress` and the worktree retained. Resumption requires the user to re-invoke the orchestrator with one of the marker actions above present in `REMEDIATION_PLAN.md` or as a bd comment on `agents-config-il69`. The orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter; no Tier 1 application proceeds without an explicit `APPROVED` marker. (Rationale: the project's vision explicitly accepts overnight / multi-day cadences; an auto-timeout would conflict with that. Aborting cleanly is the user's job — `bd close agents-config-il69 --reason ...` if abandoning.)
-- **Worktree source-drift invariant** (per §6 AUDIT INPUT SHA contract): at approval-marker parse time, the orchestrator runs `git diff --name-only AUDIT_INPUT_SHA HEAD -- <resolved-source-paths>`. Empty diff = invariant holds; audit-output commits do NOT violate it. If non-empty (in-scope source files modified during the gate), resolution paths:
+- **Worktree source-drift invariant** (per §6 AUDIT INPUT SHA contract): at approval-marker parse time, the orchestrator runs BOTH `git diff --name-only AUDIT_INPUT_SHA -- <resolved-source-paths>` (no `HEAD`; catches committed + uncommitted) AND `git ls-files --others --exclude-standard -- <resolved-source-paths>`. Both must be empty; audit-output commits do NOT violate the invariant. If either produces output (in-scope source files modified during the gate), resolution paths:
   * **"proceed against new tree"** — orchestrator pins `AUDIT_INPUT_SHA_v2 = <new HEAD>` in `decisions.md` (`Type: sha-drift`), re-runs Phase 1 categories whose §4 globs intersect the changed paths against `AUDIT_INPUT_SHA_v2`, re-runs all 6 Phase 2 reviewers (their inputs include all Phase 1 outputs), and re-runs Phase 3 in full. Subsequent SHA-drift detection during the re-audit pins as v3, etc. Stale v1 outputs from re-run categories are deleted, NOT merged.
   * **"re-audit"** — full re-dispatch from Step 0.5 with a new `AUDIT_INPUT_SHA`
 - **No source files touched until user approves**
@@ -562,8 +581,8 @@ Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + the
 | Phase 3 tier-C demotion algorithm reaches the terminal "all Critical/High tier-C and no tier-A/B" state | Stop demoting; surface to user as a vision-alignment failure of the audit itself; flag prominently in `REMEDIATION_PLAN.md` |
 | Phase 3 finds tier-C share > 30% after first pass | Aggregator demotes lowest-severity tier-C findings to DROPPED until threshold is met (per §2 rubric). Each demotion recorded in `decisions.md`. |
 | Tier 1 fix breaks `install.sh --dry-run` | Revert that category's commit; demote affected findings to Tier 2 with rationale in `decisions.md` |
-| Source file modified by another agent during Phase 1/2 | Detected via the §6 scoped source-drift check (`git diff --name-only AUDIT_INPUT_SHA HEAD -- <source-paths>` is non-empty). Orchestrator surfaces and pauses. User must explicitly authorize re-running affected categories' Phase 1+2 against the new state, or restoring the source files. |
-| Source file modified during user-review gate | Same scoped source-drift check at approval-marker parse time; orchestrator surfaces. User chooses "proceed against new tree" (re-runs categories whose globs intersect the changed paths + all 6 Phase 2 + Phase 3) or "re-audit" (full re-dispatch from Step 0.5). |
+| Source file modified by another agent during Phase 1/2 | Detected via the §6 working-tree-aware drift check (`git diff --name-only AUDIT_INPUT_SHA -- <source-paths>` non-empty OR `git ls-files --others --exclude-standard -- <source-paths>` non-empty — covers committed, staged, unstaged, and untracked changes). Orchestrator surfaces and pauses. User must explicitly authorize re-running affected categories' Phase 1+2 against the new state, or restoring the source files. |
+| Source file modified during user-review gate | Same working-tree-aware drift check at approval-marker parse time; orchestrator surfaces. User chooses "proceed against new tree" (re-runs categories whose globs intersect the changed paths + all 6 Phase 2 + Phase 3) or "re-audit" (full re-dispatch from Step 0.5). |
 | User does not respond at the review gate | Orchestrator parks indefinitely with bead `in_progress`. No auto-timeout. Resumption requires the user re-invoking the orchestrator with an `APPROVED` marker present (or `bd close` to abort). Orchestrator surfaces the parked state once on initial post-Phase-3 hand-off and remains silent thereafter. |
 | User-supplied marker references unknown F-id | Orchestrator surfaces unrecognized F-ids before any Tier 1 application begins; waits for the user to correct the marker or remove it. |
 | User demotes Tier 1 finding to Tier 2 at review gate | Orchestrator records demotion in `decisions.md` as `Type: user-gate-demotion`, updates REMEDIATION_PLAN, files affected category's follow-up bead |
