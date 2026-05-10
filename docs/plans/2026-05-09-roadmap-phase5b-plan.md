@@ -995,7 +995,7 @@ import sys, json
 print('  M1 ready children:', len(json.load(sys.stdin)))"
 ```
 
-Expected: M2-tracking, M3-tracking, M4-tracking, Post-MVP-tracking should NOT be in `bd ready` output (blocked by their dep on the prior milestone). M1-tracking and Research-spikes-tracking can appear (no incoming dep).
+Expected: the M2, M3, M4, and Post-MVP milestone-feature beads should NOT be in `bd ready` output (blocked by their dep on the prior milestone). The M1 milestone-feature bead and Research-spikes bucket bead can appear (no incoming dep).
 
 - [ ] **Step 5: Confirm 7bk and acmh title rescopes are visible**
 
