@@ -772,11 +772,26 @@ Run:
 ```bash
 bd dep remove agents-config-mptb agents-config-gmxo 2>&1 || echo "edge already absent"
 bd dep remove agents-config-76r agents-config-7bk.9 2>&1 || echo "edge already absent"
-bd dep remove agents-config-7bk.19.9 agents-config-7bk.19.5 2>&1 || echo "edge already absent (ghost id)"
+
+# For the ghost edge: Fork-B observed the dep stored as bare `7bk.19.5`
+# (missing `agents-config-` prefix). Probe deps first, then attempt both
+# possible forms — bd's CLI may normalize the prefix on lookup OR may
+# require the exact stored value. Whichever matches wins.
+echo "Probing 7bk.19.9 deps before removal:"
+bd show agents-config-7bk.19.9 --json | python3 -c "
+import sys, json
+d = json.load(sys.stdin)[0]
+deps = [x.get('id') if isinstance(x, dict) else x for x in d.get('dependencies', [])]
+print(f'  current deps: {deps}')
+ghost_candidates = [x for x in deps if '7bk.19.5' in x]
+print(f'  ghost candidates: {ghost_candidates}')"
+bd dep remove agents-config-7bk.19.9 agents-config-7bk.19.5 2>&1 || \
+  bd dep remove agents-config-7bk.19.9 7bk.19.5 2>&1 || \
+  echo "edge already absent or stored under unrecognized id"
 echo "REMOVE edges processed"
 ```
 
-Note: the third edge references a ghost id (`7bk.19.5` without the `agents-config-` prefix) per Fork-B — `bd dep remove` may fail because the edge form is malformed. If failure persists, manually inspect 7bk.19.9's deps and remove the malformed entry via the bd CLI's available primitives.
+Note: the third edge was originally observed as a ghost id (`7bk.19.5` without the `agents-config-` prefix) per Fork-B. The probe-and-fallback above tries the prefixed form first (which bd typically normalizes), then the bare form. In observed Phase 5b execution the prefixed form succeeded — bd's CLI normalized the lookup — but the defensive procedure protects against future bd-CLI versions that don't.
 
 - [ ] **Step 3: Verify edges**
 
