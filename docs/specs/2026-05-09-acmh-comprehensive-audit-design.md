@@ -47,7 +47,9 @@ To prevent vacuous "removes noise" filler, every finding's `Vision-advancement` 
 | **B** | Ties to a vision gap labeled `vision-85-5-10` (named work-in-progress in AGENTS.md "Current state") | "Advances the brainstorm-readiness gate gap: this rule's normative phrasing makes the gate enforceable instead of advisory." |
 | **C** | Generic "reduces noise / improves clarity" with no specific commitment or gap named | "Removes filler that distracts agents." |
 
-Phase 3 acceptance rule: at most **30%** of *accepted* findings (after MERGED/DROPPED resolution) may be tier C. If the C share exceeds 30%, the aggregator must demote the lowest-severity tier-C findings to DROPPED until the threshold is met. This prevents the field from collapsing into a per-finding tax.
+When a finding could plausibly claim either A or B, prefer **A** — the more specific tier wins.
+
+Phase 3 acceptance rule: at most **30%** of *accepted* findings (after MERGED/DROPPED resolution) may be tier C. If the C share exceeds 30%, the aggregator demotes tier-C findings to DROPPED in **ascending severity order**, breaking ties by **descending document order** within the source file (deterministic). Demotion continues until the ratio drops to ≤ 30% OR all remaining tier-C findings are Critical/High AND no tier-A/B findings exist — in that terminal case the aggregator stops demoting and **surfaces the result to the user as a vision-alignment failure of the audit itself** (recorded in `decisions.md` and flagged in `REMEDIATION_PLAN.md`). Each demotion records a `decisions.md` entry with rationale.
 
 ## 3. Audit Dimensions
 
@@ -92,7 +94,7 @@ The following content is in scope. Each row maps to one Phase 1 subagent.
 | audit-rules | `src/user/.claude/rules/*.md`; `src/plugins/beads/.claude/rules/*.md` |
 | audit-formulas | `src/plugins/beads/.beads/formulas/*.formula.toml` — step prose noise audit |
 | audit-scripts | `src/plugins/beads/.beads/scripts/*.sh` — interface quality (feeds 2gzy) |
-| audit-templates | `src/user/.agents/INSTRUCTIONS.md.template`; `AGENTS.md.template` (all platforms); `settings.json.template` |
+| audit-templates | `src/user/.agents/INSTRUCTIONS.md.template`; `AGENTS.md.template` (all platforms); `settings.json.template`; the live root `AGENTS.md` (non-vision sections only — vision-section findings are recommendation-only per §16) |
 
 ### Tier 3 bd-sequence absorption (from xacz)
 
@@ -112,9 +114,12 @@ A three-phase pipeline. Multi-dimensional review by design — each phase compen
                              ▼ (Phase 1 outputs verified)
 ┌─────────────────────────────────────────────────────────────────┐
 │ Phase 2 — Adversarial use-case reviews                          │
-│   6 × Codex GPT-5.5, dispatched in parallel                     │
+│   6 × Codex (gpt-5.4 per §6), dispatched in parallel            │
 │   Each: vision + all primers + all Phase 1 outputs              │
-│   Each reviews findings through one cross-cutting use case      │
+│   Reviewers operate on Phase 1 findings + primers + vision —    │
+│   they do NOT re-audit source files. Source-omission gaps are   │
+│   surfaced (if at all) by inter-reviewer disagreement on Phase 1│
+│   coverage, resolved at Phase 3.                                │
 │   Output: docs/audits/phase2/<use-case>.md                      │
 └────────────────────────────┬────────────────────────────────────┘
                              ▼ (Phase 2 outputs verified)
@@ -161,14 +166,13 @@ Every subagent in Phases 1, 2, and 3 receives a dispatch prompt structured as:
  by dispatch time, the orchestrator MUST refuse to dispatch and surface.]
 
 === ROLE PRIMERS ===
-[Read these files before beginning:
-  Phase 1 category auditors:
-    - docs/primers/<CATEGORY>_PRIMER.md (their primary category)
-    - Adjacent primers where the category boundary matters
-      (e.g. audit-rules also reads SKILLS_PRIMER.md for the rules-vs-skills line;
-       audit-agents also reads SKILLS_PRIMER.md for skills-listed-in-frontmatter)
-  Phase 2 use-case reviewers: all 5 primers + all 7 Phase 1 outputs
-  Phase 3 aggregator: all 5 primers + all 7 Phase 1 + all 6 Phase 2 outputs]
+[All subagents (Phase 1, 2, 3) read all 5 primers in docs/primers/
+ (SKILLS, AGENTS, COMMANDS, RULES, FORMULAS). Phase 1 auditors need the
+ full set because the §3 "right tool for the job" dimension requires
+ evaluating skill↔rule↔command↔agent↔shell-script reclassification —
+ which demands understanding all content-type charters, not just the
+ auditor's primary category. Phase 2 also receives all 7 Phase 1 outputs.
+ Phase 3 also receives all 7 Phase 1 + all 6 Phase 2 outputs.]
 
 === TASK BRIEF ===
 - Files in scope (RESOLVED exact paths — the orchestrator enumerates the
@@ -181,22 +185,46 @@ Every subagent in Phases 1, 2, and 3 receives a dispatch prompt structured as:
   by audit-scripts.
 - For Phase 2 reviewers: the categories-touched list from §11 column 3.
   The reviewer MUST restrict counter-findings to those categories;
-  observations outside scope go in an "Out of scope" section, advisory
-  only. Phase 2 reviewers do NOT see each other's outputs — inter-reviewer
-  conflicts are resolved by Phase 3.
-- Audit dimensions (from §3)
+  observations outside scope go in an "Out of scope" section using the
+  out-of-scope schema below. Phase 2 reviewers do NOT see each other's
+  outputs — inter-reviewer conflicts are resolved by Phase 3.
+- Phase 1 isolation: auditors run in parallel and do NOT read each other's
+  outputs; the orchestrator dispatches all 7 in a single message and only
+  commits Phase 1 outputs after all 7 return (per §13 Step 2).
+- Audit dimensions (§3 BOTH tables — dimension table AND "acid test by
+  content type" table — must be inlined in the brief verbatim by the
+  orchestrator; the orchestrator MUST NOT summarize or paraphrase. Step 2
+  / Step 4 verification confirms both tables are literally present in
+  the dispatch prompt.)
 - Output file path
-- Finding schema (from §8)
+- Finding schema (§8 inlined verbatim)
 - Constraints:
   * NO source-file modifications during audit (Phase 1, 2, 3 are read-only on source)
   * Every finding must include a non-empty Vision-advancement field with a
-    declared tier (A, B, or C — see §2 rubric)
+    declared tier (A, B, or C — see §2 rubric); tier-A is preferred when
+    both A and B could apply
   * Output file must be valid markdown with the schema fields populated
   * Zero-findings result is a valid output: write a "Findings: none" block
-    with one paragraph summarizing what was reviewed and why nothing was
-    flagged. Do NOT invent findings to fill the file.
+    with one paragraph summarizing what was reviewed (the paragraph MUST
+    name concrete files from the resolved file list — generic prose is
+    not acceptable and will fail Step 2/Step 4 verification) and why
+    nothing was flagged. Do NOT invent findings to fill the file.
 - Reporting format expectations
 ```
+
+### Phase 2 out-of-scope schema
+
+Phase 2 observations that fall outside the reviewer's `categories-touched` list are recorded in an "Out of scope" section of the reviewer's output file using a constrained schema (NOT the §8 finding schema):
+
+```
+OOS<n>: <one-line title>
+  File: <path>:<lines>
+  Outside-scope: <reason — which category and why it's outside this reviewer's lens>
+  Observation: <what was noticed>
+  Suggested follow-up: <which Phase 2 reviewer or Phase 1 category should address>
+```
+
+Phase 3 reads OOS entries as advisory only. The aggregator MAY promote an OOS entry to a real finding only with an explicit `decisions.md` entry naming the rationale and constructing the missing schema fields (Severity, Tier, Vision-advancement, etc.) itself.
 
 Vision content is injected fresh from the live AGENTS.md at dispatch time — there is no static copy in the primers directory. If AGENTS.md updates between phases, later phases see the newer content. Section-header extraction (not line numbers) is the canonical anchor.
 
@@ -230,6 +258,8 @@ docs/audits/
     └── REMEDIATION_PLAN.md          # the actionable handoff: Tier 1 inline + Tier 2 deferred
 ```
 
+**File-slug algorithm**: For a source path `<full-path>`, the slug is computed deterministically as: strip leading `src/`, replace `/` with `--`, replace `.` (in extensions) with `-`. Example: `src/user/.agents/skills/writing-unit-tests/SKILL.md` → `user--.agents--skills--writing-unit-tests--SKILL-md.md`. If two distinct paths produce the same slug (rare but possible with dotfile/regular-file collisions), append a 6-char hash of the full path before the `.md` extension. The orchestrator MUST use this algorithm; auditors do not name `by-file/` files themselves.
+
 ## 8. Finding Schema
 
 Every finding in every output file uses this structure:
@@ -242,11 +272,17 @@ F<n>: <one-line title>
   Tier: 1 (mechanical, inline) | 2 (design, deferred)
   Issue: <what's wrong>
   Recommendation: <what to do>
-  Vision-advancement-tier: A | B | C    (per §2 rubric)
+  Vision-advancement-tier: A | B | C    (per §2 rubric; A preferred when both A and B apply)
   Vision-advancement: <one sentence — MANDATORY non-empty.
                       Tier A names a load-bearing commitment + mechanism;
                       Tier B names a `vision-85-5-10`-labeled gap;
                       Tier C is generic "reduces noise / improves clarity".>
+  Promotion-eligible: yes | no    (Tier 2 findings only — "yes" means the
+                      Issue/Recommendation are concrete enough that the
+                      Phase 3 aggregator could construct a before/after
+                      snippet and promote to Tier 1 if appropriate. "no"
+                      means the finding genuinely requires design judgment.
+                      Tier 1 findings omit this field.)
   Related: F<n>, F<n>
 ```
 
@@ -306,7 +342,11 @@ Tier 1 is restricted to edits that a regex or trivial AST transform could perfor
 
 **The line**: Tier 1 = a regex or unambiguous edit with a verified before/after snippet on file. Tier 2 = anything requiring judgment.
 
-**Default-to-Tier-2 rule**: If a Phase 1 auditor is uncertain whether a finding qualifies for Tier 1, classify as Tier 2. Phase 3 aggregator may **promote** a Tier 2 finding to Tier 1 only when the finding includes an explicit pattern match + before/after snippet; the aggregator may **never demote** a Tier 1 to Tier 2 silently — demotion requires a `decisions.md` entry with rationale. This asymmetry biases the system toward fewer false Tier 1s.
+**Default-to-Tier-2 rule**: If a Phase 1 auditor is uncertain whether a finding qualifies for Tier 1, classify as Tier 2 with `Promotion-eligible: yes` (per §8) when the Issue/Recommendation are concrete enough that an aggregator could mechanically synthesize a before/after snippet. The Phase 3 aggregator may **promote** a Tier 2 finding to Tier 1 by:
+- Constructing the before/after snippet itself when `Promotion-eligible: yes`, OR
+- Using a pre-existing snippet supplied by the auditor.
+
+Promotion is recorded in `decisions.md` with the constructed snippet attached. The aggregator may **never demote** a Tier 1 to Tier 2 silently — demotion requires a `decisions.md` entry with rationale. This asymmetry biases the system toward fewer false Tier 1s while preserving an aggregator path to fix obvious Tier 2 misclassifications.
 
 If a Tier 1 fix turns out to break `install.sh --dry-run`, the orchestrator reverts and demotes to Tier 2 (recorded in `decisions.md`).
 
@@ -314,7 +354,7 @@ If a Tier 1 fix turns out to break `install.sh --dry-run`, the orchestrator reve
 
 The six use cases are deliberately uneven — each touches the categories it actually exercises in real agent workflows. None is required to touch all categories. Use case 5 explicitly bundles three sub-questions and is therefore expected to produce a deeper output than the others; this asymmetry is accepted by design rather than split.
 
-Phase 2 reviewers run in parallel and do **not** see each other's outputs — inter-reviewer disagreements are surfaced and resolved by Phase 3 against `decisions.md`. Each reviewer's brief includes the categories-touched list from the table below; counter-findings outside that list go into an "Out of scope" advisory section, not into the main findings.
+Each Phase 2 reviewer sees: vision + all 5 primers + all 7 Phase 1 outputs + their own use-case brief. They do **NOT** see other Phase 2 reviewers' outputs. Inter-reviewer disagreements are surfaced and resolved by Phase 3 against `decisions.md`. Each reviewer's brief includes the categories-touched list from the table below; counter-findings outside that list go into an "Out of scope" advisory section using the OOS schema in §6, not into the main findings.
 
 | # | Use Case | Categories touched | Adversarial lens |
 |---|----------|-------------------|------------------|
@@ -333,7 +373,7 @@ Phase 2 reviewers run in parallel and do **not** see each other's outputs — in
 | 2 | All 6 Phase 2 use-case adversarial files exist at `docs/audits/phase2/<use-case-slug>.md` |
 | 3 | Phase 3 outputs complete: `by-category/<category>.md` per category, `by-file/<file-slug>.md` per source file with ≥1 finding, `decisions.md`, `REMEDIATION_PLAN.md` |
 | 4 | Every finding has all schema fields populated, including non-empty `Vision-advancement` |
-| 5 | User has reviewed `REMEDIATION_PLAN.md` and approved the Tier 1 fix list — evidenced by a comment on `agents-config-acmh` recording the approval and the worktree HEAD SHA at approval time, OR an explicit "APPROVED <SHA>" marker line at the top of `REMEDIATION_PLAN.md` |
+| 5 | User has reviewed `REMEDIATION_PLAN.md` and approved the Tier 1 fix list — evidenced by an explicit `APPROVED <SHA>` marker line at the top of `REMEDIATION_PLAN.md` (canonical, lookup first), OR a comment on `agents-config-acmh` recording the approval and the worktree HEAD SHA (fallback). If both are present and the SHAs disagree, the orchestrator MUST surface to the user rather than guess. |
 | 6 | All approved Tier 1 fixes applied to source files |
 | 7 | `scripts/install.sh --dry-run` passes after Tier 1 fixes |
 | 8 | One follow-up bead filed per category that has ≥1 Tier 2 finding (categories with zero Tier 2 findings produce no bead — this is acceptable; the absence is recorded in `REMEDIATION_PLAN.md`) |
@@ -383,17 +423,29 @@ Phase 2 reviewers run in parallel and do **not** see each other's outputs — in
 ### Step 5 — Phase 3 aggregation (serial)
 - Dispatch 1 Sonnet 1M subagent
 - Inputs: `AUDIT_INPUT_SHA` + vision + all 5 primers + all 7 Phase 1 + all 6 Phase 2 outputs
-- Outputs: `by-category/`, `by-file/`, `decisions.md`, `REMEDIATION_PLAN.md`
+- Outputs: `by-category/`, `by-file/` (using the file-slug algorithm in §7), `decisions.md`, `REMEDIATION_PLAN.md`
 - Conflict-resolution rule: aggregator decides AND states why; never "reviewer wins" silently
-- Aggregator MUST enforce the Vision-advancement rubric (§2): if more than 30% of accepted findings carry tier C, demote the lowest-severity tier-C findings to DROPPED until the threshold is met (record each demotion in `decisions.md`)
-- Verifiable check: every Phase 2 finding with `Verdict: DISAGREE` or `PARTIAL` must have a corresponding `decisions.md` entry with explicit Resolution + Rationale; missing entries are a verification failure that returns to Step 5 dispatch
+- Aggregator MUST enforce the Vision-advancement rubric (§2): if more than 30% of accepted findings carry tier C, demote per the §2 ascending-severity / descending-document-order algorithm, including the terminal "vision-alignment failure of the audit itself" surface case
+- Aggregator handles cross-category reclassification findings (e.g. "this skill should be a script") — both the source-category `by-category/` output and the target-category `by-category/` output reference the finding via cross-link; the canonical entry lives in the source category
+- Aggregator MAY promote OOS entries from Phase 2 reviewers to real findings only via an explicit `decisions.md` entry that constructs the missing schema fields itself
+- Verifiable checks (after Phase 3 returns):
+  * Every Phase 2 finding with `Verdict: DISAGREE` or `PARTIAL` has a corresponding `decisions.md` entry with explicit Resolution + Rationale
+  * Tier-C share of accepted findings ≤ 30% OR terminal vision-alignment-failure surface is present
+  * Every promoted Tier 2 → Tier 1 has an attached before/after snippet in `decisions.md`
+- **Phase 3 retry cap**: 2 attempts. On second verification failure, the orchestrator surfaces the missing-entry list to the user as a manual fix-up task; user edits `decisions.md` directly and the orchestrator re-runs Step 5 verification only (NOT a third Phase 3 dispatch).
 - Commit Phase 3 outputs
 
 ### Step 6 — USER REVIEW GATE
 - Orchestrator presents `REMEDIATION_PLAN.md`
-- User can: approve, demote any Tier 1 finding to Tier 2 (recorded in `decisions.md`), drop findings, request schema fixes, or edit `REMEDIATION_PLAN.md` directly (post-approval, the edited file is canonical)
-- Approval is evidenced per AC #5: comment on `agents-config-acmh` recording the approval and the worktree HEAD SHA, OR an "APPROVED <SHA>" marker line at the top of `REMEDIATION_PLAN.md`
-- **Worktree-HEAD invariant**: the worktree HEAD SHA at approval MUST equal `AUDIT_INPUT_SHA`. If the user (or another agent) modified source files during the gate, the orchestrator detects the SHA drift and surfaces; user must explicitly say "proceed against new tree" (orchestrator records the drift in `decisions.md` and re-runs Phase 1+2 on the affected categories) or "re-audit" (full re-dispatch from Step 0.5)
+- User actions:
+  * **Approve**: add `APPROVED <SHA>` marker line at the top of `REMEDIATION_PLAN.md` (canonical) or post a bd comment on `agents-config-acmh` (fallback) per AC #5
+  * **Demote a Tier 1 to Tier 2**: add a marker line in `REMEDIATION_PLAN.md` of the form `DEMOTE F<n>: tier=2 reason=<text>` — the orchestrator parses these post-approval and reflects each in `decisions.md`. Editing diffs directly without a `DEMOTE` marker is NOT a supported demotion mechanism (the orchestrator will not reverse-engineer free-form edits).
+  * **Drop a finding**: marker line `DROP F<n>: reason=<text>`
+  * **Request schema fixes**: surface as a comment on the bead; orchestrator returns to Step 5 with the request
+  * **Direct edit of `REMEDIATION_PLAN.md`**: only the `APPROVED`, `DEMOTE`, and `DROP` markers are operationally meaningful; prose edits are advisory and do not alter the orchestrator's behavior
+- **Worktree-HEAD invariant**: the worktree HEAD SHA at approval MUST equal `AUDIT_INPUT_SHA`. If the user (or another agent) modified source files during the gate, the orchestrator detects the SHA drift and surfaces. Resolution paths:
+  * **"proceed against new tree"** — orchestrator records `AUDIT_INPUT_SHA_v2 = <new HEAD>` in `decisions.md`, re-runs Phase 1+2 on the affected categories against `AUDIT_INPUT_SHA_v2`, and re-runs Phase 3 in full (because Phase 3's inputs changed). Subsequent SHA-drift detection during the re-audit pins as v3, etc.
+  * **"re-audit"** — full re-dispatch from Step 0.5 with a new `AUDIT_INPUT_SHA`
 - **No source files touched until user approves**
 
 ### Step 7 — Tier 1 application (serial by category)
@@ -409,6 +461,7 @@ Phase 2 reviewers run in parallel and do **not** see each other's outputs — in
 ### Step 9 — Follow-up bead filing
 - One per category with ≥1 Tier 2 finding (skip empties)
 - One Tier 3 bd-sequences bead (children-check + label-copy-filter)
+- All follow-up beads are filed as children of `agents-config-acmh` (`bd create --parent agents-config-acmh`) per beads invariant I3 — they are scoped reductions of acmh's original audit work, not orphan siblings. After `bd create --parent`, audit and strip inherited lifecycle labels (per the documented `bd-create-parent-inherits-labels` quirk).
 - Each bead's description references its Phase 3 by-category file as the spec
 
 ### Step 10 — Adjacency notifications
@@ -433,8 +486,10 @@ Phase 2 reviewers run in parallel and do **not** see each other's outputs — in
 |---------|----------|
 | Phase 1 subagent crashes or returns malformed output | Re-dispatch with same prompt (idempotent — overwrites the file). Cap: 3 attempts per subagent; on cap, surface to user. |
 | Phase 2 subagent disagrees with Phase 1 entirely | That's the design — Phase 3 aggregator resolves with `decisions.md` entry |
-| Phase 1 or Phase 2 subagent legitimately finds nothing | Subagent writes a "Findings: none" file with one paragraph summarizing what was reviewed and why nothing was flagged. Phase 3 accepts this and notes it in `decisions.md`. Empty files are a valid output, NOT a re-dispatch trigger. |
+| Phase 1 or Phase 2 subagent legitimately finds nothing | Subagent writes a "Findings: none" file with one paragraph summarizing what was reviewed (paragraph MUST name concrete files from the resolved file list) and why nothing was flagged. Phase 3 accepts this and notes it in `decisions.md`. Empty files are a valid output, NOT a re-dispatch trigger. Step 2/Step 4 verification spot-checks the paragraph for concrete file references; generic prose fails verification. |
 | Phase 3 aggregator can't resolve a conflict from evidence | Flag in `decisions.md` as "needs human"; surface in REMEDIATION_PLAN for user review |
+| Phase 3 verification fails (missing decisions.md entries, tier-C share violation, missing promotion snippet) | Re-dispatch Phase 3. Cap: 2 attempts. On second failure, surface the missing-entry list to user as manual fix-up; user edits `decisions.md` directly; orchestrator re-runs Step 5 verification only (no third dispatch). |
+| Phase 3 tier-C demotion algorithm reaches the terminal "all Critical/High tier-C and no tier-A/B" state | Stop demoting; surface to user as a vision-alignment failure of the audit itself; flag prominently in `REMEDIATION_PLAN.md` |
 | Phase 3 finds tier-C share > 30% after first pass | Aggregator demotes lowest-severity tier-C findings to DROPPED until threshold is met (per §2 rubric). Each demotion recorded in `decisions.md`. |
 | Tier 1 fix breaks `install.sh --dry-run` | Revert that category's commit; demote affected findings to Tier 2 with rationale in `decisions.md` |
 | Source file modified by another agent during Phase 1/2 | Detected via `AUDIT_INPUT_SHA` mismatch; orchestrator surfaces and pauses. User must explicitly authorize re-running affected categories' Phase 1+2 against the new state, or restoring the SHA. |
@@ -449,12 +504,12 @@ This is an expensive audit by design. The user accepted this cost in choosing th
 
 | Phase | Workers × Model | Rough token estimate (per worker) | Order-of-magnitude total |
 |-------|----------------|-----------------------------------|--------------------------|
-| Phase 1 | 7 × Opus 1M @ xhigh effort | ~100k–250k input + ~30k–60k output (reads ~10–30 source files + 1–3 primers + vision) | ~2M tokens |
+| Phase 1 | 7 × Opus 1M @ xhigh effort | ~150k–350k input + ~30k–60k output (reads ~10–30 source files + all 5 primers + vision) | ~3M tokens |
 | Phase 2 | 6 × Codex (`gpt-5.4`) | ~80k–150k input + ~15k–30k output (reads all 5 primers + all 7 Phase 1 outputs) | ~1M tokens |
 | Phase 3 | 1 × Sonnet 1M | ~300k–500k input + ~50k–100k output (must hold all 13 prior outputs) | ~600k tokens |
 | Tier 1 fixes | up to 7 × Sonnet (serial by default, parallel only when scope-disjoint) | ~20k–50k input + ~10k–20k output per category | ~300k tokens |
 
-These are ±50% estimates, intended only for runaway detection (per the §14 soft-budget tripwire at 2× per-phase). They are NOT a precision budget — the user accepted this cost class.
+These are ±50% estimates, intended only for runaway detection (per the §14 soft-budget tripwire at 2× per-phase). They are NOT a precision budget — the user accepted this cost class. Tier 1 fix tokens are spent only after the §13 Step 6 user-approval gate; users who shrink the Tier 1 list at the gate proportionally reduce that row.
 
 ## 16. Out of Scope
 
