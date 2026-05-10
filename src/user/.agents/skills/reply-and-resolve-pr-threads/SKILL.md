@@ -6,7 +6,7 @@ description: >
   (`--from-inventory`), or `--resume` for crash recovery from a partial run.
   Does not fix code. Keywords: reply, resolve, thread, acknowledge, close
   out, post fix confirmation, bookkeeping, rebut, ack.
-model: opus[1m]
+model: sonnet[1m]
 effort: low
 ---
 
@@ -181,6 +181,63 @@ Emit a structured close-out summary:
 ```
 
 **Skill B does NOT unlink the inventory** — `wait-for-pr-comments` (Skill A) owns the file's lifecycle. Skill A unlinks at its own Phase 9 success after Skill B reports success and the final unresolved-threads check passes. Touching the file here would race Skill A's bookkeeping.
+
+## Helper-script invocation patterns
+
+All inline GraphQL/jq blocks have been factored into helpers. Each phase
+invokes the relevant helper; the SKILL.md prose above narrates *what* the
+phase does, while these reference invocations are the canonical *how*.
+
+**Verify PR head SHA** (Phase 1 — replaces inline `gh api` + retry loop):
+
+```bash
+${CLAUDE_SKILL_DIR}/verify-head-sha.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  --expected-sha "$EXPECTED_SHA"
+# exit 0 = match; exit 1 = persistent mismatch after retries
+```
+
+**Probe per-item fix SHAs against the PR branch** (Phase 1.5 — replaces
+inline `git merge-base --is-ancestor` loop):
+
+```bash
+${CLAUDE_SKILL_DIR}/probe-fix-shas.sh \
+  --branch "$PR_BRANCH" \
+  --items "$INVENTORY_FILE"
+# stdout: {present: [...], missing: [...]}
+```
+
+**Post replies for every inventory item** (Phase 2 — replaces inline
+per-`kind` `gh api` blocks):
+
+```bash
+${CLAUDE_SKILL_DIR}/post-replies.sh \
+  --inventory "$INVENTORY_FILE" \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  [--skip-comment-ids "<csv>"]
+# per item: POSTED <id> / FAILED <id> <reason> / SKIPPED <id>
+```
+
+**NOT idempotent** — on a partial-run retry, the caller MUST pass
+`--skip-comment-ids` with the csv of already-posted comment_ids.
+
+**Resolve FIX review threads** (Phase 3 — replaces inline GraphQL
+`resolveReviewThread` block):
+
+```bash
+${CLAUDE_SKILL_DIR}/resolve-threads.sh \
+  --inventory "$INVENTORY_FILE"
+# per thread: RESOLVED <thread_id> / FAILED <thread_id> <reason>
+```
+
+**Build the final operator-facing report** (Phase 4 — replaces inline
+markdown template):
+
+```bash
+${CLAUDE_SKILL_DIR}/build-final-report.sh \
+  --inventory "$INVENTORY_FILE"
+# stdout: markdown summary including every item's comment_id
+```
 
 ## Reply text templates
 
