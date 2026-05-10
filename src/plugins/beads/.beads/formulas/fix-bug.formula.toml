@@ -8,8 +8,8 @@
 #   preflight → diagnose → red-tests → green-loop → quality-sweep → verify-ac
 #   → create-pr → review-cycle → merge-or-handoff
 #
-# The cardinal sin of bug fixing is patching the symptom. The `diagnose`
-# stage is a hard gate: no tests are written until the root cause is identified.
+# The `diagnose` stage is a hard gate: no tests are written until the root
+# cause is identified.
 #
 # See: docs/specs/bead-pipeline-architecture.md §3 (diagnose stage)
 #
@@ -131,7 +131,7 @@ Identify the root cause of the bug before writing any tests or code.
 Model: claude-sonnet-4-6  Effort: high
 
 ## Preloaded skills
-superpowers:systematic-debugging, superpowers:root-cause-tracing
+superpowers:systematic-debugging
 
 ## Inputs
 - Bug description from: bd show {{bead-id}}
@@ -153,7 +153,7 @@ superpowers:systematic-debugging, superpowers:root-cause-tracing
    If cannot reproduce: flag-human with a note asking for more information.
 
 2. Trace the failure backward to the root cause.
-   Apply superpowers:systematic-debugging and superpowers:root-cause-tracing.
+   Apply superpowers:systematic-debugging.
    - A symptom is WHERE it breaks. A root cause is WHY it breaks.
    - Do not patch the first place you see the problem — trace further back.
    - Read the code path. Do not assume.

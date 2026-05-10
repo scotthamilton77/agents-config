@@ -9,8 +9,8 @@
 #   → create-pr → review-cycle → merge-or-handoff
 #
 # Note: per-step model/effort flag passthrough from the shell driver is
-# planned for bead 7bk.14. The driver does not currently read per-step
-# Model/Effort fields or pass flags to `claude -p`.
+# planned but not yet implemented. The driver does not currently read
+# per-step Model/Effort fields or pass flags to `claude -p`.
 #
 # See: docs/specs/bead-pipeline-architecture.md §3, §9.1
 #

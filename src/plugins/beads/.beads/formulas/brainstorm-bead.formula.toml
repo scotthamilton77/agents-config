@@ -39,15 +39,11 @@ id    = "claim"
 title = "Claim bead and parent-chain epics"
 description = """
 Mark this bead (and any parent-chain epics) in_progress before any work.
-Brainstorming IS work — the bead's status must reflect that, so that
-`bd ready` and `bd list --status=open` never show a bead that is
-actively being brainstormed as 'available'.
 
   ~/.beads/scripts/bd-claim-walk.sh --bead-id {{bead-id}}
 
 The claim walk marks this bead and all ancestor epics in_progress.
-Read the `walked=N` output to confirm the chain depth. The claim is
-cheap even if `assess` later decides the bead needs no further brainstorming.
+Read the `walked=N` output to confirm the chain depth.
 """
 
 # =============================================================================
