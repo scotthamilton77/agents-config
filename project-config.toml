@@ -22,7 +22,7 @@ default-formula = "implement-feature"  # fallback when no formula-* label on bea
 build     = ""   # no build step
 typecheck = ""   # no type checker
 lint      = ""   # no linter
-test      = ""   # no automated test suite
+test      = "bash -c 'for f in $(find src/user/.agents/skills -name \"*_test.sh\" | sort); do echo \"[TEST] $f\"; bash \"$f\" || exit 1; done'"   # skill smoke tests (added by abn9.4)
 
 # ---------------------------------------------------------------------------
 # [coverage] — code coverage settings
