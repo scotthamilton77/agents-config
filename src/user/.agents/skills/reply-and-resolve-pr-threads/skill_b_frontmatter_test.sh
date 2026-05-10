@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Frontmatter contract test for Skill B (reply-and-resolve-pr-threads).
 # Asserts AC8: model: sonnet[1m], effort: low.
-# Currently fails because model is opus[1m] (effort is already low).
 
 set -u
 

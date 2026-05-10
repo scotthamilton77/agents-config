@@ -450,10 +450,10 @@ every report via `audit-subagent-report.sh` (exit 2 on schema violation, exit
 ```yaml
 fields:
   comment_id:      string  (required)
-  fix_outcome:     enum    (required) [committed | deferred | already_addressed | escalated | abandoned]
+  fix_outcome:     enum    (required) [committed | already_addressed | failed | deferred | escalated | abandoned]
   fix_summary:     string  (required)
   fix_commit_sha:  string  (required when fix_outcome in {committed, already_addressed})
-  fix_gate_variant: enum   (required when fix_outcome == committed) [fast | full]
+  fix_gate_variant: enum   (required when fix_outcome == committed) [lite | full]
   verification_evidence:
     test_command:  string  (required when fix_outcome == committed)
     output:        string  (required when fix_outcome == committed)
@@ -687,8 +687,10 @@ ${CLAUDE_SKILL_DIR}/fetch-and-normalize-comments.sh \
 ${CLAUDE_SKILL_DIR}/audit-subagent-report.sh \
   --pre-sha "$PRE_SHA" \
   --baseline-sha "$BASELINE_SHA" \
-  --report "$REPORT_JSON" \
+  --report "$REPORT_FILE" \
   --worktree-root "$WT_ROOT"
+# NOTE: --report takes a FILE PATH containing the subagent's JSON report,
+# not inline JSON. ($REPORT_FILE is a path on disk.)
 # exit 0 = pass; exit 1 = audit violation {violation,rationale};
 # exit 2 = schema violation {field,message}
 ```

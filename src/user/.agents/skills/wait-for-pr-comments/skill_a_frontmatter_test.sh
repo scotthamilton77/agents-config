@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Frontmatter contract test for Skill A (wait-for-pr-comments).
 # Asserts AC3: model: sonnet[1m], effort: medium.
-# Currently fails because frontmatter is model: opus[1m], effort: high.
 
 set -u
 

@@ -11,10 +11,24 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$HERE/audit-subagent-report.sh"
-WT="/Users/scott/src/projects/agents-config/.claude/worktrees/feat/agents-config-abn9.4-optimize-pr-review-comments"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 FAIL=0
+
+# Build a self-contained throwaway git repo to use as --worktree-root.
+# This keeps the test portable (no hardcoded developer paths, runs on CI).
+WT="$TMP/test-repo"
+mkdir -p "$WT"
+git -C "$WT" init --quiet
+git -C "$WT" config user.email "test@test.com"
+git -C "$WT" config user.name  "Test"
+git -C "$WT" config commit.gpgsign false
+echo "initial" > "$WT/file.txt"
+git -C "$WT" add file.txt
+git -C "$WT" commit -m "initial" --quiet
+echo "second" >> "$WT/file.txt"
+git -C "$WT" add file.txt
+git -C "$WT" commit -m "second" --quiet
 
 assert() {
   if eval "$2"; then
