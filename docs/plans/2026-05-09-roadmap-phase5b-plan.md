@@ -173,7 +173,7 @@ M1_ID=$(bd create \
   --priority 1 \
   --description "Top-level milestone-anchor for the M1 scope per the 2026-05-09 roadmap. Children include domain epics (jyb, acmh, il69) and orphan beads addressing the stability bar (hft, d3s1), in-flight non-MVP-critical work (jp9w, 2yyb), and the immediate-accelerator set (nbrd, 19n9, e2l, clz, f298, 2gzy). Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M1." \
   --acceptance "agents-config-hft closed (notes-overwrite bug fixed). agents-config-d3s1 closed (persona vs orchestration reconciled). agents-config-il69 fully wrapped — all Tier 1 audit findings closed and Tier 2/Tier 3 follow-ups (acmh.* set) closed or moved to their proper milestones. All currently-in-progress non-MVP-critical beads closed (jp9w, jyb's children, 2yyb). All immediate-accelerator beads closed (nbrd, 19n9, e2l, clz, f298, 2gzy)." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "M1_ID=$M1_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -189,7 +189,7 @@ M2_ID=$(bd create \
   --priority 1 \
   --description "Top-level milestone-anchor for M2: makes commitment 2 ('make AI good at saying no, not ready') mechanical via a verify-brainstorm gate at bd update --status implementation-ready, plus AC classification + auto-merge knob capture at brainstorm time, plus spec post-mortem feedback loop. Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M2." \
   --acceptance "verify-brainstorm skill exists and rejects under-specified beads at bd update --status implementation-ready. brainstorm-bead formula captures AC classification + auto-merge knobs + review depth. bead-spec agent + bead-assess + bead-write-spec skills exist. spec post-mortem skill (4htl) ships and is invoked on bug-fix and feature-completion paths. grill-me skill (sxfk) integrated into brainstorm-bead workflow." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "M2_ID=$M2_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -203,7 +203,7 @@ M3_ID=$(bd create \
   --priority 1 \
   --description "Top-level milestone-anchor for M3: a feature bead from bd ready runs through worker-fleet implementation, completion gate, and PR creation autonomously, with HEP escalation pausing for human input only at genuine decision points. Includes the 7bk-fleet rescoped epic, gmxo (merge-gate redesign moved to MVP), 3qz, and 76r (single-context mode implemented per Q3). Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M3." \
   --acceptance "agents-config-7bk.19 closed. agents-config-7bk.13 + 7bk.20 closed (HEP rollout + lifecycle). agents-config-7bk.14 + 7bk.15 closed (per-step model/effort + cost rightsizing). agents-config-gmxo closed. agents-config-3qz closed. agents-config-76r closed (single-context mode shipped). End-to-end smoke test from fresh feature bead at bd ready to a PR opened against main passes on Claude Code." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "M3_ID=$M3_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -217,7 +217,7 @@ M4_ID=$(bd create \
   --priority 1 \
   --description "Top-level milestone-anchor for M4: a production shell driver runs unattended overnight, pulling beads from bd ready through the M3 pipeline, opening PRs, addressing Copilot review, and surfacing escalations as human-labeled beads. Includes 7bk.11 (production driver, lands LAST in MVP), xshc (instrumentation), the new memory/context-compaction governance bead (Vision-Gap-3), and acmh.9 (run-queue replacement, coordinated with 7bk.11). Reference: docs/plans/2026-05-09-roadmap.md Section 4 / M4." \
   --acceptance "agents-config-7bk.11 closed (production shell driver runs unattended ≥4h processing ≥3 brainstorm-readied feature beads end-to-end). Memory/compaction-governance bead closed (synthetic compaction event recoverable mid-run). agents-config-xshc closed (85/5/10 instrumentation produces per-overnight-run summary)." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "M4_ID=$M4_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -231,7 +231,7 @@ POSTMVP_ID=$(bd create \
   --priority 2 \
   --description "Bucket for capabilities deferred until after M1-M4 MVP ships. Includes td39 (risk-tiered auto-merge — needs M3-MVP dogfooding to inform tier classification), ukzs (wall-clock pipelining of external waits), z7a (RALF foreign-eyes hard-fail), 7bk.16 (A/B testing per-stage allocations), syod (bd native gates research), and the Vision-Gap-2 PR-classification-policy bead. Reference: docs/plans/2026-05-09-roadmap.md Section 6." \
   --acceptance "Each child bead has a verifiable AC of its own. Bucket closes when all children close." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "POSTMVP_ID=$POSTMVP_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -245,7 +245,7 @@ SPIKES_ID=$(bd create \
   --priority 3 \
   --description "Bucket for research-spike beads whose outcome is retire (won't-do) OR rescope (produce concrete adoption beads). Runs opportunistically — no milestone dep. Includes 7bk.24 (karpathy-guidelines), l0v0 (mattpocock skills), zetc (Codex 5.5 confidence-loop), cx6 (fork superpowers), 717 (residual lu3 risk-closer review), feedback-loop spike (new), acmh.2 (skillize tech-lead), acmh.5 (formulas-as-skills review). Reference: docs/plans/2026-05-09-roadmap.md Section 6." \
   --acceptance "Each spike's outcome documented (retire OR concrete adoption beads filed). Bucket closes when all child spikes have a verdict applied." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "SPIKES_ID=$SPIKES_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -301,7 +301,7 @@ BRAINSTORM_ID=$(bd create \
   --priority 1 \
   --description "Domain epic anchoring the brainstorm-readiness gate, AC classification + policy-knob capture at brainstorm time, the bead-spec agent, the spec post-mortem feedback loop, and grill-me adversarial questioning. Children: owqa (verify-brainstorm gate), 7bk.12 (expand brainstorm-bead — reparented out of 7bk), 7bk.25 (Phase 3 bead-spec agent — reparented out of 7bk), 4htl (spec post-mortem), sxfk (grill-me integration). Per round-2 review redirect c4." \
   --acceptance "All children closed: owqa, 7bk.12, 7bk.25, 4htl, sxfk. The brainstorm-readiness gate is mechanical (verifiable per parent feature M2's AC)." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "BRAINSTORM_ID=$BRAINSTORM_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -336,7 +336,7 @@ GAP2_ID=$(bd create \
   --priority 2 \
   --description "Vision-Gap-2 from the 2026-05-09 roadmap. RALF substitutes cross-model review for human review (commitment 3), but no open bead defines the decision rule for which PR classes get RALF-only vs human-required review. This is the prerequisite for agents-config-td39 (risk-tiered auto-merge): without a classification policy, the tiering has nothing to tier against. Output: a documented PR-classification policy keyed off blast radius, file types touched, and security surface — specific enough that a script can read a PR diff and emit a tier verdict." \
   --acceptance "A docs artifact (in this repo) defines PR classification rules with concrete examples per tier. A script (or specification) exists that maps a PR diff to a tier verdict (RALF-only / RALF + human / human-required). agents-config-td39 references this policy as its blocker dep." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "GAP2_ID=$GAP2_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -352,7 +352,7 @@ GAP3_ID=$(bd create \
   --priority 1 \
   --description "Vision-Gap-3 from the 2026-05-09 roadmap. Beads persist work; formulas persist process. But agent memory (MEMORY.md, mempalace) is not governed during overnight runs — what gets written, what gets pruned, what survives a compaction event. This silently undermines commitment 5's 'work survives overnight runs' promise. This bead must pass through the M2 brainstorm-readiness gate before implementation begins (self-referential: the M2 gate informs how this work gets specced)." \
   --acceptance "Memory governance rules documented for overnight runs (write-policy, prune-policy, compaction-survival contract). A synthetic compaction event mid-run is recoverable: bead state, memory artifacts, and molecule progress can all be reconstructed post-compaction. Verified by running an overnight smoke that triggers a synthetic compaction." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "GAP3_ID=$GAP3_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
@@ -368,7 +368,7 @@ FEEDBACK_ID=$(bd create \
   --priority 2 \
   --description "Research spike per Scott's round-2 ask. Beyond agents-config-4htl (spec post-mortem), the roadmap currently has no built-in feedback hooks at strategic 'points of greatest realization' — moments in the bead workflow where lessons surface and could be captured. Examples: PR review (Copilot finds an anti-pattern → did our tests catch this?), HEP escalation (worker hit a decision point → was the spec under-specified?), overnight-run completion (what unexpected outcomes emerged?), bead closure (did the AC accurately predict success criteria?). Spike investigates: (1) what 'points of greatest realization' map to in the actual bead workflow; (2) what mechanisms could capture lessons at those points (hooks, audit beads, memory writes); (3) how to process and act on captures (likely overlaps with Vision-Gap-3 memory governance). Outcome: produce concrete adoption beads per identified hook, OR close as deferred if cost/benefit doesn't pencil." \
   --acceptance "Spike outcome documented: (a) list of identified feedback points; (b) per-point capture mechanism proposal; (c) processing/improvement mechanism proposal; (d) per-point verdict — file concrete adoption bead, or close as deferred. Spike itself closes when all verdicts are applied." \
-  --json | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+  --json | python3 -c "import sys, json; d=json.load(sys.stdin); print(d['id'] if isinstance(d, dict) else d[0]['id'])")
 echo "FEEDBACK_ID=$FEEDBACK_ID" | tee -a /tmp/phase5b-id-map.txt
 ```
 
