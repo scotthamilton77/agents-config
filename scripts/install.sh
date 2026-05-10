@@ -663,7 +663,7 @@ stage_and_install_tool() {
     # Hoist all loop-internal locals to function scope — see commit 2fe276d:
     # zsh prints the variable's value when `local` is re-invoked in a loop.
     local file_type plugin_tool_dir plugin_agents_dir flattened
-    local inc_path inc_base include_only_file
+    local inc_path inc_base include_only_file inc_counterpart
     local -a include_only_staged
 
     CURRENT_TOOL="$tool"
@@ -762,6 +762,18 @@ stage_and_install_tool() {
             if [[ -f "$include_only_file" ]]; then
                 vinfo "  $(basename "$include_only_file") — inlined via DYNAMIC-INCLUDE, not installed standalone"
                 rm "$include_only_file"
+                # Also remove the installed counterpart (strip .template suffix) — targets only
+                # the known include-only files rather than expanding orphan-scan to all *.md.
+                inc_counterpart="$dest_dir/$(basename "${include_only_file%.template}")"
+                if [[ "$DRY_RUN" == true && -f "$inc_counterpart" ]]; then
+                    vok "Would remove $(basename "$inc_counterpart") (spurious standalone from prior install)"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true && -f "$inc_counterpart" ]]; then
+                    backup "$inc_counterpart"
+                    rm "$inc_counterpart"
+                    vok "Removed $(basename "$inc_counterpart") (spurious standalone from prior install)"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                fi
             fi
         done
     fi
@@ -1387,7 +1399,6 @@ scan_orphans() {
     ORPHAN_KINDS=()
     local tool sub
     local prune_subdirs=(commands skills agents rules)
-    local dest_tool staged_tool dest_md md_name
 
     for tool in "${TOOLS[@]}"; do
         for sub in "${prune_subdirs[@]}"; do
@@ -1401,24 +1412,6 @@ scan_orphans() {
     # orphans — consistent with strict mode (AC#19).
     _scan_namespace "beads" "formulas" "$HOME/.beads/formulas" "$STAGING_DIR/.beads/formulas"
 
-    # Scan top-level .md files in each tool's dest dir.
-    # An installed .md is an orphan if there is no matching .md.template in
-    # staging — catches include-only templates that were previously installed as
-    # spurious standalone files before Phase 6.75 was added.
-    for tool in "${TOOLS[@]}"; do
-        dest_tool="$(tool_dest_dir "$tool")"
-        staged_tool="$STAGING_DIR/$tool"
-        for dest_md in "$dest_tool"/*.md; do
-            [[ -f "$dest_md" ]] || continue
-            md_name="$(basename "$dest_md")"
-            if [[ ! -f "$staged_tool/${md_name}.template" ]]; then
-                ORPHAN_TOOLS+=("$tool")
-                ORPHAN_NS+=("(top-level)")
-                ORPHAN_PATHS+=("$dest_md")
-                ORPHAN_KINDS+=("file")
-            fi
-        done
-    done
 }
 
 # Display the orphan list grouped by tool, then namespace, with a summary count.
