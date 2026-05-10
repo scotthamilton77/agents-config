@@ -1310,6 +1310,31 @@ ORPHAN_NS=()
 ORPHAN_PATHS=()
 ORPHAN_KINDS=()
 
+PRUNE_LIST=()
+
+_load_prune_list() {
+    local list_file
+    list_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prune-list"
+    [[ -f "$list_file" ]] || return 0
+    local line
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        line="${line#"${line%%[! ]*}"}"
+        line="${line%"${line##*[! ]}"}"
+        [[ -n "$line" ]] && PRUNE_LIST+=("$line")
+    done < "$list_file"
+}
+_load_prune_list
+
+_in_prune_list() {
+    local tool="$1" ns="$2" base="$3" entry
+    for entry in "${PRUNE_LIST[@]}"; do
+        [[ "$entry" == "$tool/$ns/$base" ]] && return 0
+        [[ "$entry" == "*/$ns/$base"     ]] && return 0
+    done
+    return 1
+}
+
 # Append orphans found in a single dest namespace to the parallel ORPHAN_*
 # arrays, tagged with the given tool/namespace labels. Skips legacy *.backup-*
 # entries (in-place backups from older backup() implementations); classifies as
@@ -1323,6 +1348,7 @@ _scan_namespace() {
         base="$(basename "$entry")"
         [[ "$base" == *.backup-* ]] && continue
         [[ -e "$staging/$base" ]] && continue
+        _in_prune_list "$tool" "$ns_label" "$base" || continue
         if [[ -d "$entry" ]]; then kind="dir"; else kind="file"; fi
         ORPHAN_TOOLS+=("$tool")
         ORPHAN_NS+=("$ns_label")
