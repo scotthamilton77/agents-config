@@ -312,7 +312,7 @@ docs/audits/
 | `src/user/.agents/skills/writing-unit-tests/SKILL.md` | `user---agents--skills--writing-unit-tests--SKILL-md.md` |
 | `src/user/.agents/agents/quality-reviewer.md` | `user---agents--agents--quality-reviewer-md.md` |
 | `src/user/.claude/rules/completion-gate.md` | `user---claude--rules--completion-gate-md.md` |
-| `src/plugins/beads/.beads/scripts/finalize-create-impl-bead.sh` | `plugins--beads---beads--scripts--finalize-create-impl-bead-sh.md` |
+| `src/plugins/beads/.beads/scripts/bd-finalize-create-impl-bead.sh` | `plugins--beads---beads--scripts--bd-finalize-create-impl-bead-sh.md` |
 | `AGENTS.md` (root, outside `src/`) | `AGENTS-md.md` |
 | `src/user/.agents/INSTRUCTIONS.md.template` | `user---agents--INSTRUCTIONS-md-template.md` |
 
