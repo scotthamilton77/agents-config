@@ -25,8 +25,7 @@ description: |-
 tools: Read, Edit, Write, Grep, Glob, Bash
 skills:
   - superpowers:test-driven-development
-  - superpowers:writing-unit-tests
-  - superpowers:testing-anti-patterns
+  - writing-unit-tests
   - superpowers:using-git-worktrees
   - superpowers:verification-before-completion
   - superpowers:systematic-debugging
@@ -79,8 +78,7 @@ Apply `superpowers:systematic-debugging`.
 
 ### red-tests
 
-Apply `superpowers:test-driven-development`, `superpowers:writing-unit-tests`,
-`superpowers:testing-anti-patterns`.
+Apply `superpowers:test-driven-development` and `writing-unit-tests`.
 
 1. Read every `[m]`-tagged AC bullet from the bead description.
 2. Write failing tests covering: happy path, edge cases, error paths.

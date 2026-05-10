@@ -30,7 +30,6 @@ tools: Read, Edit, Write, Grep, Glob, Bash
 skills:
   - superpowers:test-driven-development
   - superpowers:verification-before-completion
-  - superpowers:testing-anti-patterns
   - superpowers:using-git-worktrees
 model: opus
 effort: high
@@ -56,7 +55,7 @@ Inputs you receive:
 
 ## Stage rules
 
-- Apply `superpowers:test-driven-development` and `superpowers:verification-before-completion`. Apply `superpowers:testing-anti-patterns` to your production code: no test-only hooks, no shortcuts that satisfy assertions while degrading design.
+- Apply `superpowers:test-driven-development` and `superpowers:verification-before-completion`. No test-only hooks, no shortcuts that satisfy assertions while degrading design.
 - Implement the minimum code to make the failing tests pass. No speculative features. No unrelated refactors.
 - Run the FULL test command as part of verification before committing. The dispatcher does NOT re-run tests after you exit; your evidence block is the only signal.
 - Expected derived gate roll-up: `pass` — every present `evidence` block has `exit_code == 0` and `skipped == false`.
