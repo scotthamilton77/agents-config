@@ -1314,7 +1314,7 @@ PRUNE_LIST=()
 
 _load_prune_list() {
     local list_file
-    list_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prune-list"
+    list_file="$SCRIPT_DIR/prune-list"
     [[ -f "$list_file" ]] || return 0
     local line
     while IFS= read -r line; do
