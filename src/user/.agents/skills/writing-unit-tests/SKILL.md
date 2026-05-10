@@ -57,7 +57,7 @@ If a constraint says you can't refactor (separate ticket, frozen API, blocked on
 2. **Escalate**: file a blocker, request the refactor ticket be unblocked, or get an explicit waiver from the owning engineer that anti-pattern tests are acceptable for this PR.
 3. **Document the waiver in the PR description**, not buried in test comments. The reviewer needs to know they're approving anti-pattern tests, not careful TDD.
 
-"I'll file a follow-up bead to fix it later" is not a waiver. It's deferred cost that historically never gets paid.
+"I'll file a follow-up ticket to fix it later" is not a waiver. It's deferred cost that historically never gets paid.
 
 ## Behavior vs Implementation
 
@@ -177,7 +177,7 @@ Each pure function is trivial to test. Integration test verifies wiring.
 | "Just a quick test" | Quick bad test = permanent maintenance burden. |
 | "Don't have time to refactor" | Time to write mock forest > time to extract pure function. |
 | "Can't refactor — separate ticket / blocked" | Then refuse the test. Shipping anti-pattern tests under a refactor block is worse than shipping no tests. Escalate. |
-| "I'll file a follow-up bead to fix it later" | Deferred cleanup is cleanup that won't happen. The follow-up is a graveyard. Refuse now or do it now. |
+| "I'll file a follow-up ticket to fix it later" | Deferred cleanup is cleanup that won't happen. The follow-up is a graveyard. Refuse now or do it now. |
 | "Loose regex matchers are fine — I haven't read the function" | Then you're not writing a test, you're writing a snapshot. Read the code first or refuse. |
 | "`as any` to dodge typing six fakes is fine under deadline" | If the mock won't typecheck, the mock is wrong. `as any` hides the truth. |
 
@@ -194,7 +194,7 @@ If you're about to:
 - Test that internal methods were called in order
 - Add tests to code you know is poorly structured
 - Justify the test by "matching the team's existing pattern"
-- Tell yourself "I'll file a follow-up bead to clean this up"
+- Tell yourself "I'll file a follow-up ticket to clean this up"
 
 **STOP. Propose refactoring instead, or escalate the constraint.**
 

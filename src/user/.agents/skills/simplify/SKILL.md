@@ -4,7 +4,6 @@ description: Review changed code for reuse, quality, and efficiency, then fix an
 model: opus[1m]
 effort: high
 ---
-<!-- Source: /simplify slash command (sidekick injection — outside this repo); Drift policy: (C) accept periodic re-sync as known cost; Last sync: 2026-05-02 -->
 
 # Simplify: Code Review and Cleanup
 
