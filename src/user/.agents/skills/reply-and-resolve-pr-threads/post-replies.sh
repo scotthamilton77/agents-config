@@ -118,6 +118,13 @@ while IFS= read -r item; do
       any_failed=1
       continue
     fi
+    # Validate reply_to_comment_id is numeric — REST endpoint /pulls/<n>/comments/<id>/replies
+    # requires the integer databaseId, not the GraphQL node id string.
+    if ! [[ "$reply_to" =~ ^[0-9]+$ ]]; then
+      echo "FAILED $cid reply_to_comment_id_not_numeric"
+      any_failed=1
+      continue
+    fi
     if gh api "repos/$OWNER/$REPO/pulls/$PR/comments/${reply_to}/replies" \
       --method POST -f body="$body" >/dev/null 2>&1; then
       echo "POSTED $cid"

@@ -55,12 +55,22 @@ done
 # Fetch review-thread comments via GraphQL (single page; production callers can paginate).
 GRAPHQL_QUERY='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){nodes{id isResolved isOutdated comments(first:100){nodes{id databaseId author{login} body}}}}}}}'
 
-THREADS_JSON="$(gh api graphql \
+# Capture stderr separately and propagate gh / network failures (do not silently swallow).
+GH_ERR="$(mktemp)"
+trap 'rm -f "$GH_ERR"' EXIT
+
+if ! THREADS_JSON="$(gh api graphql \
   -F "owner=$OWNER" -F "repo=$REPO" -F "pr=$PR" \
-  -f query="$GRAPHQL_QUERY" 2>/dev/null || echo '{}')"
+  -f query="$GRAPHQL_QUERY" 2>"$GH_ERR")"; then
+  echo "error: gh api graphql failed: $(cat "$GH_ERR")" >&2
+  exit 1
+fi
 
 # Fetch issue-level comments via REST.
-ISSUE_COMMENTS_JSON="$(gh api "repos/$OWNER/$REPO/issues/$PR/comments" 2>/dev/null || echo '[]')"
+if ! ISSUE_COMMENTS_JSON="$(gh api "repos/$OWNER/$REPO/issues/$PR/comments" 2>"$GH_ERR")"; then
+  echo "error: gh api issues comments failed: $(cat "$GH_ERR")" >&2
+  exit 1
+fi
 
 # Normalize both sources into a single array.
 echo "$THREADS_JSON" | jq --argjson issues "$ISSUE_COMMENTS_JSON" '
@@ -72,7 +82,7 @@ echo "$THREADS_JSON" | jq --argjson issues "$ISSUE_COMMENTS_JSON" '
         | map({
             kind: "review_thread",
             thread_id: $t.id,
-            reply_to_comment_id: .id,
+            reply_to_comment_id: .databaseId,
             issue_comment_id: null,
             is_outdated: ($t.isOutdated // false),
             author: (.author.login // null),
