@@ -7,14 +7,14 @@ once regardless of how many children share it), and emits JSON for the agent
 to render.
 
 Usage:
-    python3 collect.py            # default: human + brainstorm + impl lists
-    python3 collect.py --json     # same, explicit flag (no-op, always JSON)
+    python3 collect.py [--limit N]   # N=10 default; 0=no limit
 
 Exit codes:
     0 — success (JSON on stdout)
     1 — bd command unavailable or returned no data
 """
 
+import argparse
 import json
 import re
 import subprocess
@@ -157,34 +157,64 @@ def bead_sort_key(bead):
 # ---------------------------------------------------------------------------
 
 def main():
-    # Fetch source sets.
+    parser = argparse.ArgumentParser(
+        description="Fetch and filter beads for the whats-next skill."
+    )
+    parser.add_argument(
+        "--limit", type=int, default=10, metavar="N",
+        help="Max beads per section (0 = no limit, default 10)",
+    )
+    args = parser.parse_args()
+    limit = args.limit
+
+    # Fetch full source sets (needed for memoized parent lookups).
     human_raw = bd_json("list", "--label", "human", "--json")
     ready_raw = bd_json("ready", "--json")
 
     if not human_raw and not ready_raw:
         sys.exit(1)
 
-    # Apply filters and sort.
-    human_beads = [b for b in human_raw if b.get("status") != "closed"]
+    def apply_limit(lst):
+        return lst[:limit] if limit > 0 else lst
 
-    brainstorm_beads = sorted(
+    # Filter and sort all three sections, compute pre-limit totals.
+    human_sorted = sorted(
+        [b for b in human_raw if b.get("status") != "closed"],
+        key=bead_sort_key,
+    )
+    brainstorm_sorted = sorted(
         [b for b in ready_raw if is_brainstorm_candidate(b)],
         key=bead_sort_key,
     )
-
-    impl_beads = sorted(
+    impl_sorted = sorted(
         [b for b in ready_raw if is_impl_candidate(b)],
         key=bead_sort_key,
     )
 
-    # Build the shared known-bead map for memoized parent lookups.
+    totals = {
+        "human":          len(human_sorted),
+        "brainstorm":     len(brainstorm_sorted),
+        "implementation": len(impl_sorted),
+    }
+
+    # Apply limit after sorting (ancestry resolved only for displayed beads).
+    human_beads      = apply_limit(human_sorted)
+    brainstorm_beads = apply_limit(brainstorm_sorted)
+    impl_beads       = apply_limit(impl_sorted)
+
+    # Build known map from full raw sets for efficient parent lookups.
     all_fetched = human_raw + ready_raw
     known = {b["id"]: b for b in all_fetched if b.get("id")}
 
-    # Detect project prefix for display stripping.
+    # Detect project prefix.
     prefix = detect_prefix(all_fetched)
 
-    # Resolve ancestry for every bead we'll return (single memoized pass).
+    def shorten(bid):
+        if prefix and bid.startswith(prefix + "-"):
+            return bid[len(prefix) + 1:]
+        return bid
+
+    # Resolve ancestry only for the beads we'll display.
     display_ids = (
         [b["id"] for b in human_beads]
         + [b["id"] for b in brainstorm_beads]
@@ -193,23 +223,28 @@ def main():
     ancestry_map = resolve_all_ancestry(display_ids, known)
 
     def enrich(beads):
-        return [
-            {
-                "id": b["id"],
-                "priority": b.get("priority"),
-                "title": b.get("title", ""),
-                "status": b.get("status", ""),
-                "labels": b.get("labels", []),
-                "created_at": b.get("created_at", ""),
-                "ancestry": ancestry_map.get(b["id"], []),
-            }
-            for b in beads
-        ]
+        result = []
+        for b in beads:
+            anc = ancestry_map.get(b["id"], [])
+            feature    = shorten(anc[0]) if anc else ""
+            epic_chain = " → ".join(shorten(a) for a in anc[1:]) if len(anc) > 1 else ""
+            result.append({
+                "id":         b["id"],
+                "short_id":   shorten(b["id"]),
+                "priority":   b.get("priority"),
+                "title":      b.get("title", ""),
+                "labels":     b.get("labels", []),
+                "feature":    feature,
+                "epic_chain": epic_chain,
+            })
+        return result
 
     output = {
         "project_prefix": prefix,
-        "human": enrich(human_beads),
-        "brainstorm": enrich(brainstorm_beads),
+        "limit":          limit,
+        "totals":         totals,
+        "human":          enrich(human_beads),
+        "brainstorm":     enrich(brainstorm_beads),
         "implementation": enrich(impl_beads),
     }
 
