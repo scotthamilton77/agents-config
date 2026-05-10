@@ -326,8 +326,8 @@ D34: F3 agents (writing-unit-tests / testing-anti-patterns wrong namespace)
 D35: F11 formulas (name field mirroring id)
   Type: manual-fix-up
   Sources: phase1/formulas.md:F11
-  Resolution: dropped
-  Rationale: Re-grep of `^name = ` lines in `implement-feature.formula.toml` and `fix-bug.formula.toml` returned zero matches at the post-merge SHA. Either already removed upstream or the audit captured a pre-current state of these formulas. No edit needed.
+  Resolution: dropped (recommendation substantively satisfied upstream)
+  Rationale: The original audit re-verification used `^name = ` (one space) and falsely concluded the field was absent. In reality both formulas use `name  = ` (two-space column alignment), and 17 occurrences exist (8 in implement-feature.formula.toml; 9 in fix-bug.formula.toml). However, F11's recommendation was: "Confirm `name` requirement. If required, add one file-top comment explaining convention and remove per-step comment. If not required, remove all `name` fields." The clarifying comment was already added in main at base SHA `2c54f53` — present at the first step (`preflight`) of both formulas at lines 44-46, explaining: "name is accepted by bd (verified: bd formula show succeeds) and serves as the stage-role identifier used by the shell driver (bead-driver-test.sh). It mirrors id intentionally — id is the structural key; name is the human-readable label." That satisfies the "name is required, document the convention" branch of F11. The duplication of this comment across both formulas (rather than a single file-top placement) is a minor residual that can be addressed in the formulas/ Tier 2 cleanup bead (agents-config-acmh.4); it is not a Tier 1 mechanical edit. Identified by quality-reviewer H1 (post-gate review of il69 implementation).
 
 ---
 
