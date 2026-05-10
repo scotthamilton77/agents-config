@@ -5,11 +5,22 @@
 **Aggregator model**: claude-sonnet-4-6
 **Generated**: 2026-05-10
 
-[USER MARKERS — column 0 only — operationally meaningful only]
-[Add `APPROVED af9c1bfc342bf7578ad491cc63dc95b07618c851` to authorize Tier 1 fix application; SHA must equal AUDIT_INPUT_SHA]
-[Add `DEMOTE F<n>: tier=2 reason=<text>` to demote a Tier 1 finding]
-[Add `DROP F<n>: reason=<text>` to drop a finding]
-
+[USER MARKERS — NEGOTIATED IN CHAT; OPT-OUT MODEL]
+```text
+  ┌───────────────────┬──────────────────────────────────────────────────────────────────┬─────────────────────────────────┐
+  │    Annotation     │                              Effect                              │              Where              │
+  ├───────────────────┼──────────────────────────────────────────────────────────────────┼─────────────────────────────────┤
+  │ [APPROVED]        │ Assumed default (opt-out model); Apply this Tier 1 findings      │ Under any Tier 1 finding header │
+  ├───────────────────┼──────────────────────────────────────────────────────────────────┼─────────────────────────────────┤
+  │ [DEMOTE]          │ Convert to Tier 2 (file as follow-up bead, do not apply now)     │ Any tier finding                │
+  ├───────────────────┼──────────────────────────────────────────────────────────────────┼─────────────────────────────────┤
+  │ [DROP]            │ Discard entirely; record in decisions.md as Type: user-gate-drop │ Any finding                     │
+  ├───────────────────┼──────────────────────────────────────────────────────────────────┼─────────────────────────────────┤
+  │ [NOTE: <text>]    │ Assume approved, but consider note user added                    │ Any finding                     │
+  ├───────────────────┼──────────────────────────────────────────────────────────────────┼─────────────────────────────────┤
+  │ [DISCUSS: <text>] │ Pause Tier 1 application until we resolve in chat                │ Any finding                     │
+  └───────────────────┴──────────────────────────────────────────────────────────────────┴─────────────────────────────────┘
+```
 ---
 
 ## Summary
@@ -32,6 +43,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 ### Category: Agents
 
 #### F1: bead-implementor — deleted skill reference (superpowers:root-cause-tracing)
+[NOTE: A recent change merged into main reconciled our references to superpowers skills after a superpowers plugin upgrade; re-assess if this is still valid]
 - **File**: `src/plugins/beads/.agents/agents/bead-implementor.md:31,65`
 - **Category**: agent
 - **Severity**: High
@@ -40,6 +52,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/agents.md:F1, phase2/multi-agent-dispatch.md:F6
 
 #### F2: bug-diagnoser — same deleted skill reference
+[NOTE: A recent change merged into main reconciled our references to superpowers skills after a superpowers plugin upgrade; re-assess if this is still valid]
 - **File**: `src/plugins/beads/.agents/agents/bug-diagnoser.md:31,54`
 - **Category**: agent
 - **Severity**: High
@@ -48,6 +61,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/agents.md:F2, phase2/multi-agent-dispatch.md:F6
 
 #### F3: Wrong namespace for writing-unit-tests and testing-anti-patterns in bead-pipeline agents
+[NOTE: A recent change merged into main reconciled our references to superpowers skills after a superpowers plugin upgrade; re-assess if this is still valid]
 - **File**: `src/plugins/beads/.agents/agents/bead-implementor.md:28-29`, `src/plugins/beads/.agents/agents/tdd-red-team.md:30-32`, `src/plugins/beads/.agents/agents/tdd-green-team.md:33-34`
 - **Category**: agent
 - **Severity**: High
@@ -92,6 +106,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/commands.md:F3
 
 #### F8: optimize-my-agent.md heading "Agent.md" mismatches functional scope
+[NOTE: keep the "optimize my agent" paradigm for consistency with "optimize my skill"]
 - **File**: `src/user/.claude/commands/optimize-my-agent.md:1`
 - **Category**: command
 - **Severity**: Low
@@ -172,6 +187,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/rules.md:F14
 
 #### F16: worktrees.md — EnterWorktree needs Claude Code scope qualifier
+[NOTE: you should be able to generalize this, e.g. "enter the worktree using applicable agent tool" (rephrase as needed)]
 - **File**: `src/user/.claude/rules/worktrees.md:5`
 - **Category**: rule
 - **Severity**: Low
@@ -292,6 +308,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/skills.md:F10
 
 #### F14: condition-based-waiting — non-standard user-invocable: false frontmatter
+[NOTE: A recent change merged into main reconciled our references to superpowers skills after a superpowers plugin upgrade; re-assess if this is still valid]
 - **File**: `src/user/.agents/skills/condition-based-waiting/SKILL.md:3`
 - **Category**: skill
 - **Severity**: Low
@@ -308,6 +325,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/skills.md:F15
 
 #### F16: verify-checklist — bead:ID privileged in discovered-work table template
+[NOTE: Don't even mention "bead:ID" but generalize it to "id in the project's tracking system"]
 - **File**: `src/user/.agents/skills/verify-checklist/SKILL.md:65,94`
 - **Category**: skill
 - **Severity**: Medium
@@ -332,6 +350,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase1/skills.md:F19
 
 #### F23: bugfix skill — fallback ladder dead-ends on deleted skill
+[NOTE: A recent change merged into main reconciled our references to superpowers skills after a superpowers plugin upgrade; re-assess if this is still valid]
 - **File**: `src/user/.agents/skills/bugfix/SKILL.md:117-120`
 - **Category**: skill
 - **Severity**: High
@@ -340,6 +359,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 - **Source(s)**: phase2/escalation-edge-recovery.md:F7
 
 #### F24: human-label semantics contradict between formulas and rules
+[NOTE: Pretty sure bd ready will report on human-labeled beads; one must filter to either list only human or not-human beads]
 - **File**: `src/plugins/beads/.beads/formulas/docs-only.formula.toml:367-372`, `src/plugins/beads/.beads/formulas/implement-feature.formula.toml:660-666`, `src/plugins/beads/.claude/rules/beads-labels.md:10-13`
 - **Category**: skill (cross-category: formula + rule)
 - **Severity**: High
@@ -352,6 +372,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 ### Category: Templates
 
 #### F6: OpenCode AGENTS.md.template missing subtitle
+[DROP: The subtitle would only be useful for human readers.]
 - **File**: `src/user/.opencode/AGENTS.md.template:1-8`
 - **Category**: template
 - **Severity**: Low
@@ -391,6 +412,7 @@ Tier 1 findings are mechanical, inline changes that require no design judgment. 
 ## Tier 2 — Deferred (file as follow-up beads, parented to agents-config-acmh)
 
 ### Category: Agents (5 findings)
+[NOTE: tech-lead should not be an agent, but rather a skill.  Let's create a separate bead to tackle "sillizing" the tech-lead, starting with whether this is redundant with superpowers:dispatching-parallel-agents, or whether they two should be used together]
 
 Major themes: Dispatch topology for bead-pipeline worker agents is unresolved (bead-implementor vs dedicated trio). tech-lead orchestration contract needs tightening (negative dispatch triggers, caller-provided agent roster, tool enforcement).
 
@@ -413,6 +435,7 @@ Major themes: Commands exceed lean-body target by 2-3×, embedding full methodol
 - F7: refresh-agents-md.md re-implements optimize-agents-md skill principles inline
 
 ### Category: Formulas (10 findings)
+[NOTE: there's also a question to ask for each formula: what in here should be translated into one or more skills, and let the formula reference the skill?  For instance the merge-and-cleanup formula is something that I often find myself wishing was also a skill I could invoke ad-hoc.]
 
 Major themes: Large multi-step formulas contain deterministic shell sequences that should be helper scripts. Historical motivation language appears in formula headers and step prose. Reroute protocol is duplicated across formulas.
 
@@ -452,6 +475,7 @@ Major themes: poll-ready-beads.sh is the queue's idle-state backbone and has mul
 - F7: closed-bead-preflight.sh — evaluate intentional mixed positional+flag interface; document decision
 
 ### Category: Skills (15 findings)
+[NOTE: we're going to replace the run-queue skill with a script-orchestrated process; we can defer all run-queue modifications or even just delete the skill now.]
 
 Major themes: wait-for-pr-comments/reply-and-resolve-pr-threads have beads leakage into shared skill content (Critical). implement-bead has contract mismatch with ralf-implement. ralf-implement/ralf-review don't reference their supporting prompt files. Several deprecated/deleted references remain.
 
@@ -472,6 +496,9 @@ Major themes: wait-for-pr-comments/reply-and-resolve-pr-threads have beads leaka
 - F25: run-queue resolves implement-bead escalations too loosely — add paired-resolution procedure
 
 ### Category: Templates (11 findings)
+[NOTE: the templates can and should be empty when there's nothing; we can violate "markdown" standards here, e.g. it's not necessary to have a header, or content, etc.; empty template files are fine - no need to remove them.]
+[DROP F8 (settings.json.template permissions allow list empty)]
+[NOTE: file references here are ambiguous as there are multiple AGENTS.md files or INSTRUCTIONS.md files - make sure you don't lose path context when filing beads]
 
 Major themes: Codex and Gemini templates are missing all behavioral rules (Critical gap). Several stub files install meaningless headings. settings.json.template has a silently-failing hook and an empty allow list.
 
@@ -516,6 +543,7 @@ The audit specifically tasked extraction of deterministic shell sequences from f
 ## Adjacency Notifications
 
 ### agents-config-2gzy (refactor skill helper scripts to named parameters)
+[NOTE: "Share these findings with the bead's executor..." - share proactively by updating the bead's description or append comments/notes]
 
 The following script findings directly overlap with agents-config-2gzy's scope. Share these findings with the bead's executor before beginning work to avoid duplicate refactor passes:
 
@@ -526,6 +554,7 @@ Priority order (from scripts.md by-category adjacency section):
 4. **F7** (`closed-bead-preflight.sh`): intentional interface asymmetry — evaluate and document the decision; do not necessarily change the interface.
 
 ### agents-config-wmjy (brainstorm-bead §3 inbound dep retargeting)
+[NOTE: "Confirm with wmjy..." - share proactively by updating the bead's description or append comments/notes]
 
 dep-migration extraction is wmjy's responsibility. This audit's Tier 3 scope (see above) explicitly excludes that work. Confirm with wmjy that the child migration loop in brainstorm-bead finalize step is handled. This audit produces no overlapping work.
 
