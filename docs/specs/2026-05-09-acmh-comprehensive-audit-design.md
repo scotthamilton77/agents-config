@@ -358,7 +358,7 @@ Phase 3 findings additionally include:
   Sources: phase1/<file>:F<n>, phase2/<file>:F<n>
 ```
 
-### `decisions.md` entry schema
+### 8.5 `decisions.md` entry schema
 
 `decisions.md` is the conflict-resolution and audit-trail log. Every entry uses this structure (Step 5 verification depends on this schema being literal — alternative shapes fail the verifiable checks):
 
