@@ -904,15 +904,15 @@ stage_and_install_beads() {
 
     [[ "$found_any" == false ]] && vinfo "No formula files staged"
 
-    # Warn about formulas in dest that aren't in staged source
+    # Warn about formulas in dest that are retired (on prune-list) but not yet pruned
     # (suppressed when --prune/--prune-only is active — prune phase will report and act on these)
     if ! prune_active; then
         local extra_name
         for dest_file in "$dest_formulas"/*.toml; do
             [[ -f "$dest_file" ]] || continue
             extra_name="$(basename "$dest_file")"
-            if [[ ! -f "$staging_formulas/$extra_name" ]]; then
-                warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source (keeping)"
+            if [[ ! -f "$staging_formulas/$extra_name" ]] && _in_prune_list "beads" "formulas" "$extra_name"; then
+                warn "formulas/$extra_name exists in ~/.beads/formulas but not in plugin source — retired, run --prune to remove"
             fi
         done
     fi
@@ -1130,14 +1130,14 @@ sync_directory() {
         fi
     done
 
-    # Warn about items in dest that aren't in source
+    # Warn about items in dest that are retired (on prune-list) but not yet pruned
     # (suppressed when --prune/--prune-only is active — prune phase will report and act on these)
     if ! prune_active; then
         for dest_item in "$dest_parent"/*; do
             [[ -e "$dest_item" ]] || continue
             item_name="$(basename "$dest_item")"
-            if [[ ! -e "$src_parent/$item_name" ]]; then
-                warn "$dir_name/$item_name exists in $(tool_dest_dir "$CURRENT_TOOL") but not in $label source (keeping)"
+            if [[ ! -e "$src_parent/$item_name" ]] && _in_prune_list "$CURRENT_TOOL" "$dir_name" "$item_name"; then
+                warn "$dir_name/$item_name exists in $(tool_dest_dir "$CURRENT_TOOL") but not in source — retired, run --prune to remove"
             fi
         done
     fi
