@@ -55,8 +55,7 @@ jq -c '
       ((.classification // "") == "FIX") and
       ((.kind // "review_thread") == "review_thread") and
       ((.thread_id // "") != "") and
-      ((.fix_outcome // null) != null) and
-      ((.fix_outcome // "") != "failed")
+      ((.fix_outcome // "") == "committed" or (.fix_outcome // "") == "already_addressed")
     )
 ' "$INV" > "$TMP"
 
