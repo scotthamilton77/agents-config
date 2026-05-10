@@ -101,7 +101,7 @@ Tests that code calls a method. Breaks on any internal change. Proves nothing ab
 | **Spy** | Records calls to real object | Verifying side effects (analytics, logging) |
 | **Mock** | Verifies specific calls | Almost never — last resort |
 
-If you need 5+ mocks, the code is too coupled. Refactor it. (This matches the Refusal Criteria threshold above — same "too coupled" line, different framing.) See `testing-anti-patterns` for the dedicated mock/fake/spy/stub anti-pattern catalog.
+If you need 5+ mocks, the code is too coupled. Refactor it. (This matches the Refusal Criteria threshold above — same "too coupled" line, different framing.) See `superpowers:test-driven-development` for the dedicated mock/fake/spy/stub anti-pattern catalog.
 
 ## Test Isolation
 
