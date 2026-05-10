@@ -4,7 +4,7 @@
 
 **Goal:** Apply the C2 milestone-modeling decision to the bead data: create six top-level milestone/bucket features, cleave heterogeneous domain epics (7bk, acmh) along milestone lines, reparent strategic beads under their correct milestone, apply structural edge/label changes, and verify the new tree shape with bd queries.
 
-**Architecture:** Pure bd CLI operations driven from `dangerouslyDisableSandbox=true` Bash. The fail-safe is `bd export -o issues.backup.jsonl` as Task 1 — every later task can be undone by `bd import` of the backup if anything goes wrong. Tasks are sequenced so that parents exist before children reference them, and heterogeneous epics' children are redistributed before the epic itself is rescoped.
+**Architecture:** Pure bd CLI operations driven from `dangerouslyDisableSandbox: true` Bash. The fail-safe is `bd export -o issues.backup.jsonl` as Task 1 — every later task can be undone by `bd import` of the backup if anything goes wrong. Tasks are sequenced so that parents exist before children reference them, and heterogeneous epics' children are redistributed before the epic itself is rescoped.
 
 **Tech Stack:** `bd` CLI (beads issue tracker); jq for JSON-array fields (id, title, status, labels); `python3` for fields with embedded newlines (notes, description, acceptance_criteria) per memory `bd-show-json-returns-array`.
 
@@ -1081,7 +1081,7 @@ DO NOT save bead lists or transient state.
 
 ## Execution notes
 
-- **Run with `dangerouslyDisableSandbox=true`** for all bd commands per project rules.
+- **Run with `dangerouslyDisableSandbox: true`** for all bd commands per project rules.
 - **Idempotency:** `bd dep add` is idempotent (no-op if edge exists); `bd update --parent` is idempotent (no-op if parent already matches); `bd label add` is additive but harmless if applied twice. Re-running tasks is safe.
 - **Variable scope:** the `source <(grep ... /tmp/phase5b-id-map.txt)` pattern re-loads the variables in each step's subshell. Using a single long-running shell session is also fine; the file pattern is for resilience across sessions.
 - **NO bd dolt push** during this plan — that's a session-completion concern, decided after Scott reviews the audit output.
