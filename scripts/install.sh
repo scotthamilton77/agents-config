@@ -663,6 +663,8 @@ stage_and_install_tool() {
     # Hoist all loop-internal locals to function scope — see commit 2fe276d:
     # zsh prints the variable's value when `local` is re-invoked in a loop.
     local file_type plugin_tool_dir plugin_agents_dir flattened
+    local inc_path inc_base include_only_file inc_counterpart
+    local -a include_only_staged
 
     CURRENT_TOOL="$tool"
     vheader "$tool"
@@ -733,15 +735,48 @@ stage_and_install_tool() {
         fi
     done
 
-    # ── Phase 6.5: Universal instruction flattening ──────────────────────────
+    # ── Phase 6.5 + 6.75: Flatten and remove include-only templates ─────────
+    # Collect DYNAMIC-INCLUDE targets BEFORE flattening — the markers are
+    # consumed (replaced with file content) by flatten_agents_md, so they must
+    # be read from the pre-flattened staging copy.
+    include_only_staged=()
     for template in "$staging/AGENTS.md.template" "$staging/GEMINI.md.template"; do
-        if [[ -f "$template" ]]; then
-            vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
-            flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
-            flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
-            mv "$flattened" "$template"
-        fi
+        [[ -f "$template" ]] || continue
+        while IFS= read -r inc_path; do
+            inc_base="$(basename "$inc_path")"
+            include_only_staged+=("$staging/$inc_base")
+        done < <(sed -n 's/^<!-- DYNAMIC-INCLUDE: \(.*\) -->$/\1/p' "$template")
+
+        vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
+        flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
+        flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
+        mv "$flattened" "$template"
     done
+
+    # Phase 6.75: Remove include-only templates from staging.
+    # Their content is already inlined into AGENTS.md; keeping the staged copies
+    # would cause sync_templates to also install them as spurious standalone files.
+    if [[ ${#include_only_staged[@]} -gt 0 ]]; then
+        vinfo "Phase 6.75: Removing include-only templates from staging"
+        for include_only_file in "${include_only_staged[@]}"; do
+            if [[ -f "$include_only_file" ]]; then
+                vinfo "  $(basename "$include_only_file") — inlined via DYNAMIC-INCLUDE, not installed standalone"
+                rm "$include_only_file"
+                # Also remove the installed counterpart (strip .template suffix) — targets only
+                # the known include-only files rather than expanding orphan-scan to all *.md.
+                inc_counterpart="$dest_dir/$(basename "${include_only_file%.template}")"
+                if [[ "$DRY_RUN" == true && -f "$inc_counterpart" ]]; then
+                    vok "Would remove $(basename "$inc_counterpart") (spurious standalone from prior install)"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                elif [[ "$DRY_RUN" != true && "$PRUNE_ONLY" != true && -f "$inc_counterpart" ]]; then
+                    backup "$inc_counterpart"
+                    rm "$inc_counterpart"
+                    vok "Removed $(basename "$inc_counterpart") (spurious standalone from prior install)"
+                    (( tool_updated[$CURRENT_TOOL]++ )) || true
+                fi
+            fi
+        done
+    fi
 
     # ── Phase 6.6: Gemini agent frontmatter transformation ──────────────────
     if [[ "$tool" == "gemini" && -d "$staging/agents" ]]; then
@@ -1376,6 +1411,7 @@ scan_orphans() {
     # the staging dir is empty (or absent), so all dest formulas register as
     # orphans — consistent with strict mode (AC#19).
     _scan_namespace "beads" "formulas" "$HOME/.beads/formulas" "$STAGING_DIR/.beads/formulas"
+
 }
 
 # Display the orphan list grouped by tool, then namespace, with a summary count.
