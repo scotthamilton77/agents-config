@@ -30,7 +30,6 @@ skills:
   - superpowers:using-git-worktrees
   - superpowers:verification-before-completion
   - superpowers:systematic-debugging
-  - superpowers:root-cause-tracing
 model: sonnet
 effort: medium
 color: blue
@@ -62,7 +61,7 @@ The orchestrator dispatches you with:
 
 ### diagnose (bug-class beads only)
 
-Apply `superpowers:systematic-debugging` and `superpowers:root-cause-tracing`.
+Apply `superpowers:systematic-debugging`.
 
 1. Reproduce the bug reliably from the bead description.
 2. Trace the failure to the root cause — not the symptom.

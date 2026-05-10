@@ -28,7 +28,6 @@ description: |-
 tools: Read, Edit, Write, Grep, Glob, Bash
 skills:
   - superpowers:systematic-debugging
-  - superpowers:root-cause-tracing
   - superpowers:using-git-worktrees
 model: opus
 effort: high
@@ -51,7 +50,7 @@ Inputs you receive:
 
 ## Stage rules
 
-- Apply `superpowers:systematic-debugging` and `superpowers:root-cause-tracing`. Reproduce reliably. Trace to the underlying defect, not the surface symptom.
+- Apply `superpowers:systematic-debugging`. Reproduce reliably. Trace to the underlying defect, not the surface symptom.
 - **No commits.** `commits` MUST be `[]`. The diagnoser does not commit; non-empty `commits` is a contract violation.
 - **`evidence` is typically `{}`.** You do not run build / lint / typecheck gates. If you ran the project test command to confirm the bug or narrow the cause, you MAY include the `tests` block reporting the FAILING state (`failing > 0`); that is informational, not a gate. The dispatcher does not gate on diagnose-stage evidence derivation.
 - **`root_cause_note` is REQUIRED, non-empty free text.** Empty or absent `root_cause_note` is malformed and triggers a synthesized `status: failed` plus escalation by the dispatcher. The note must contain at minimum:
