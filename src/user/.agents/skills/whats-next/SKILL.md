@@ -75,6 +75,8 @@ digraph mode {
 
 **Implementation mode:** render `implementation` under **Ready to implement** only. Skip the human list.
 
+If the user did NOT explicitly ask for implementation, you should not show it.  If they asked for implementation but the list is empty, show the section with a message like "All clear — no open beads ready for implementation."
+
 ## Step 3: Present
 
 IDs are already prefix-stripped — use `short_id`, `feature`, and `epic_chain` directly.
