@@ -224,7 +224,7 @@ jq -n \
   '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
   > /tmp/pr-inventory-build-<n>.json
 
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   partial 5a-verify-failed \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
@@ -241,7 +241,7 @@ Confirm each FIX/`committed` item's `fix_commit_sha` is in
 **On mismatch:** build the inventory body (same `jq -n` block as Phase 5a)
 and invoke:
 ```bash
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   partial 5b-commit-verify-failed \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
@@ -258,7 +258,7 @@ Run `git push`.
 block as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
 (no remote update happened), then:
 ```bash
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   partial 5c-push-failed \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
@@ -323,7 +323,7 @@ jq -n \
   '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
   > /tmp/pr-inventory-build-<n>.json
 
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   complete 7-write-inventory \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
@@ -351,7 +351,7 @@ Skill(skill: "reply-and-resolve-pr-threads", args: "--from-inventory <path> [--m
 **On Skill B success:** the inventory file already exists on disk from Phase 7.
 Write the intermediate completion marker so recovery knows Skill B ran:
 ```bash
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   complete 8-skill-b-done \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
@@ -407,7 +407,7 @@ considering the await-review step done.
    inventory construction remains the same Phase 3 fetch paths used in round 1).
 4. **If count == 0**: write final completion state and clean up:
    ```bash
-   ~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+   ${CLAUDE_SKILL_DIR}/write-inventory.sh \
      complete 9-final-check-done \
      ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
      < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
@@ -652,7 +652,7 @@ jq -n \
   '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
   > /tmp/pr-inventory-build-<n>.json
 
-~/.claude/skills/wait-for-pr-comments/write-inventory.sh \
+${CLAUDE_SKILL_DIR}/write-inventory.sh \
   <state> <last_completed_phase> \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
@@ -669,7 +669,7 @@ failures). `<last_completed_phase>` is one of `5a-verify-failed`,
 agent has a copy-pasteable template:
 
 ```bash
-~/.claude/skills/wait-for-pr-comments/validate-inventory.sh \
+${CLAUDE_SKILL_DIR}/validate-inventory.sh \
   ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   || { echo "schema validation failed"; exit 1; }
 ```
