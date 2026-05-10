@@ -25,6 +25,41 @@ Tool-agnostic principles for all AI coding assistants.
 - **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
 </constraints>
 
+<decision-matrix>
+<!-- Canonical escalation hierarchy. Reference by concept, not by file path —
+     this content is flattened into all assembled instruction files at install
+     time via DYNAMIC-INCLUDE. Do not add per-tool copies. -->
+
+When facing a question or unknown, classify the situation, then act:
+
+| Situation                                                              | Action   | Quadrant                       |
+|------------------------------------------------------------------------|----------|--------------------------------|
+| Verifiable fact                                                        | Verify   | verify-facts                   |
+| In-scope decision; OR architectural but clear best option exists       | Decide   | decide-in-scope                |
+| Architectural w/ genuinely balanced trade-offs, or option-space needs human context | Escalate | escalate-architectural |
+| Conflicting directions L0–L3 precedence cannot resolve                 | Escalate | escalate-conflicting           |
+
+- **verify-facts** — the answer exists in the codebase, docs, git history, or
+  prior conversation. Read/grep/test. Do NOT ask.
+- **decide-in-scope** — implementation detail, naming, local refactor,
+  reasonable trade-off within stated requirements, OR an architectural question
+  where you can identify a clearly better option by standard engineering
+  judgment. Choose it. Do NOT ask for validation.
+- **escalate-architectural** — architectural or requirements implications where
+  a clearly better option CANNOT be identified: trade-offs are genuinely
+  balanced with no engineering-judgment winner, or the options themselves
+  depend on human context unavailable to the agent. If you can rank options,
+  you are in decide-in-scope — do NOT escalate for approval.
+- **escalate-conflicting** — instructions, constraints, or stakeholders pull
+  in incompatible directions that L0–L3 law precedence cannot resolve. Escalate,
+  surfacing the conflict with your read of each side.
+
+**Risk-asymmetric defaults are NOT escalations.** Specific rules that say
+"when in doubt, do the safe thing" (merge authorization, `git restore`
+coordination, merge-guard's `pass 0`) override the matrix on their narrow
+domain and are not affected by this change.
+</decision-matrix>
+
 <workflow>
 <!-- PRESERVE: development process requirements -->
 1. Features and bug fixes: Design → Tests → Implement → Refactor (TDD: red-green-refactor)
@@ -35,7 +70,8 @@ Tool-agnostic principles for all AI coding assistants.
 <orchestration>
 <!-- PRESERVE: high-level process for non-trivial tasks -->
 - **Plan first**: Plan mode for multi-step tasks or architectural decisions. Re-plan immediately when blocked. Write specs in the plan file for small-context specs.
-- **Decide, don't defer**: Use your best judgment on implementation details and non-architectural questions. Only escalate to the user when: (a) the answer has significant architectural or requirements implications not already specified, or (b) there are conflicting directions that require human resolution. Decide everything else yourself. Do not ask questions you can answer from the codebase, existing instructions, or standard engineering judgment.
+- **Decide, don't defer**: Apply the canonical decision matrix.
+  Quadrants `verify-facts` and `decide-in-scope` resolve without the user.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Audit against `<verification-checklist>`. Use `verify-checklist` skill for structured reporting.

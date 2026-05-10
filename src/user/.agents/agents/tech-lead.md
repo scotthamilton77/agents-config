@@ -77,12 +77,16 @@ You will:
 
 ### Decision Criteria for Human Escalation
 
-- Subagent explicitly requests human input
-- Multiple agents report conflicting recommendations
-- Critical architectural decisions with long-term implications
-- Resource constraints or technical limitations encountered
-- Ambiguous requirements needing clarification
-- Team appears stuck after multiple attempts
+Apply the canonical decision matrix. Role-specific additions for the
+tech-lead orchestrator:
+
+- A dispatched subagent explicitly requests human input
+- Multiple subagents report conflicting recommendations
+- Team appears stuck after multiple attempts (loop detection)
+
+The architectural decisions, resource constraints, and
+ambiguous requirements bullets dropped here are already covered by the
+`escalate-architectural` quadrant of the canonical decision matrix.
 
 ## Communication Protocols
 
