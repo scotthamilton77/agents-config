@@ -13,6 +13,11 @@ set -euo pipefail
 #   ./poll-ready-beads.sh 60        # poll for up to 60 minutes
 
 MAX_MINUTES="${1:-}"
+if [[ -n "$MAX_MINUTES" ]] && ! [[ "$MAX_MINUTES" =~ ^[0-9]+$ ]]; then
+    echo "Error: max-minutes must be a non-negative integer, got: '$MAX_MINUTES'" >&2
+    echo "Usage: $0 [max-minutes]" >&2
+    exit 2
+fi
 INTERVAL_SECONDS=600   # 10 minutes
 ELAPSED_SECONDS=0
 
