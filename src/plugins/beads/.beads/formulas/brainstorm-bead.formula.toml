@@ -633,7 +633,7 @@ STEP 8 — Close X with reason; run I2 close-walk
 STEP 9 — Burn the wisp; report hand-off
 ──────────────────────────────────────────────────────────────────────────
 
-  bd mol burn <this-mol-id>
+  bd mol burn <this-mol-id> --force
 
 Report to the user:
   "Brainstorming complete for {{bead-id}} (now closed).

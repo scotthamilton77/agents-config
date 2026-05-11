@@ -277,7 +277,7 @@ by cloning the bead — no `human` label, no manual intervention.
        bd update <step-bead-id> --append-notes "red-tests escalate: <trigger-note>. Cloned to <new-bead-id> with formula-docs-only."
 
 11. Burn the current molecule:
-       bd mol burn <mol-id>
+       bd mol burn <mol-id> --force
 
 After burn, this stage and the entire molecule cease execution. Run-queue
 in a separate session will pick up <new-bead-id> organically and pour the

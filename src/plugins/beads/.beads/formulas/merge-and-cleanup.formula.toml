@@ -309,5 +309,5 @@ Clean up all artifacts from the merged work.
    walk. Read the `closed=...` output for the audit trail.
 
 7. Burn this wisp:
-     bd mol burn <this-mol-id>
+     bd mol burn <this-mol-id> --force
 """
