@@ -59,7 +59,13 @@ while [ "$attempt" -lt 3 ]; do
   # we should retry for eventual consistency) from a failed gh call (auth /
   # network / 5xx) where we should fail fast instead of looping.
   if RESPONSE="$(gh api "repos/$OWNER/$REPO/pulls/$PR" 2>"$GH_ERR")"; then
-    ACTUAL="$(echo "$RESPONSE" | jq -r '.headRefOid // .head.sha // empty' 2>/dev/null || true)"
+    # Treat JSON parse failures as a hard gh-failure: a non-JSON response means
+    # gh succeeded but returned something we cannot trust, not a real SHA
+    # mismatch worth retrying.
+    if ! ACTUAL="$(printf '%s' "$RESPONSE" | jq -r '.headRefOid // .head.sha // empty' 2>"$GH_ERR")"; then
+      echo "error: jq failed to parse gh response for repos/$OWNER/$REPO/pulls/$PR: $(cat "$GH_ERR")" >&2
+      exit 1
+    fi
     if [ -n "$ACTUAL" ] && [ "$ACTUAL" = "$EXPECTED" ]; then
       exit 0
     fi

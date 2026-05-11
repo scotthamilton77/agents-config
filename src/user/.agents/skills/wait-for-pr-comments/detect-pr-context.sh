@@ -76,9 +76,13 @@ if ! mkdir -p "$INVENTORY_DIR" 2>/dev/null; then
   echo "error: failed to create state directory: $INVENTORY_DIR" >&2
   exit 1
 fi
-# Get head SHA (short) from PR; falls back to "unknown" if gh fails. The path
-# is a detection hint for concurrency probing, not a write target.
-HEAD_SHA="$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER" --jq '.head.sha' 2>/dev/null | head -c 12)"
+# Get head SHA (short) from PR. The path is a detection hint for concurrency
+# probing, not a write target, so we keep gh failures non-fatal: the `|| true`
+# stops `set -e` from aborting on a gh error, and an empty pipeline result
+# falls back to "unknown" on the next line. Without `|| true`, `set -euo
+# pipefail` would make `gh api` failures kill the helper before the fallback
+# can run.
+HEAD_SHA="$( (gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER" --jq '.head.sha' 2>/dev/null || true) | head -c 12)"
 [ -n "$HEAD_SHA" ] || HEAD_SHA="unknown"
 INVENTORY_PATH="$INVENTORY_DIR/${OWNER}-${REPO}-${PR_NUMBER}-${HEAD_SHA}.json"
 CONCURRENCY_STATE="$INVENTORY_DIR/${OWNER}-${REPO}-${PR_NUMBER}-${HEAD_SHA}.state.json"

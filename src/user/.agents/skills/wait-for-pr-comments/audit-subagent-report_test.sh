@@ -50,7 +50,9 @@ assert "accepts --report flag" "grep -q -- '--report' '$SCRIPT'"
 assert "accepts --worktree-root flag" "grep -q -- '--worktree-root' '$SCRIPT'"
 
 # --- Exit-2 fixture: schema violation — missing required field ---
-# A valid schema requires at minimum: comment_id, classification, fix_outcome.
+# The audit script validates these required top-level fields on the report:
+# schema_version, comment_id, fix_outcome, fix_summary (per audit-subagent-
+# report.sh and the documented per-comment subagent contract in SKILL.md).
 # This fixture omits comment_id, so the script must exit 2 and emit
 # {field, message} JSON on stdout.
 SCHEMA_BAD="$TMP/schema-bad.json"

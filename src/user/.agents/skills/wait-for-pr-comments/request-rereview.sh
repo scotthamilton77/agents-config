@@ -51,12 +51,18 @@ done
 
 PR_REF="$OWNER/$REPO#$PR"
 
-# Remove @copilot — tolerate "not currently a reviewer" by capturing stderr.
-gh pr edit "$PR" --repo "$OWNER/$REPO" --remove-reviewer @copilot >/dev/null 2>&1 || true
+GH_ERR="$(mktemp)"
+trap 'rm -f "$GH_ERR"' EXIT
+
+# Remove @copilot — tolerate "not currently a reviewer" (a common no-op error).
+gh pr edit "$PR" --repo "$OWNER/$REPO" --remove-reviewer @copilot >/dev/null 2>"$GH_ERR" || true
 
 sleep 2
 
-if ! gh pr edit "$PR" --repo "$OWNER/$REPO" --add-reviewer @copilot >/dev/null 2>&1; then
-  echo "error: gh pr edit --add-reviewer failed for $PR_REF" >&2
+# Add @copilot — capture stderr so callers (and operators debugging auth /
+# permission / rate-limit / invalid-PR failures) see the underlying gh message,
+# not just a generic exit code.
+if ! gh pr edit "$PR" --repo "$OWNER/$REPO" --add-reviewer @copilot >/dev/null 2>"$GH_ERR"; then
+  echo "error: gh pr edit --add-reviewer failed for $PR_REF: $(cat "$GH_ERR")" >&2
   exit 1
 fi
