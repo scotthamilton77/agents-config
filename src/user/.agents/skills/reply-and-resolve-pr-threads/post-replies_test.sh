@@ -92,6 +92,36 @@ else
   FAIL=1
 fi
 
+# Behavior test: ESCALATE+escalation_filed=true items must be POSTED
+# (not FILTERED). Use a stub gh that always succeeds.
+INV_ESCALATE="$TMP/inv-escalate.json"
+cat >"$INV_ESCALATE" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {
+      "comment_id": "cE",
+      "classification": "ESCALATE",
+      "escalation_filed": true,
+      "kind": "review_thread",
+      "reply_to_comment_id": "12345",
+      "reply_body": "Captured for follow-up; will respond on a later push to this PR or in a related issue.",
+      "rationale": "needs human review"
+    }
+  ]
+}
+JSON
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_ESCALATE" --owner o --repo r --pr 1 \
+  > "$TMP/escalate-out.txt" 2>&1
+rc_escalate=$?
+if grep -q 'POSTED cE' "$TMP/escalate-out.txt"; then
+  echo "  ok: ESCALATE+escalation_filed=true is POSTED (not FILTERED)"
+else
+  echo "  FAIL: ESCALATE+escalation_filed=true should emit POSTED cE; got: $(cat "$TMP/escalate-out.txt")"
+  FAIL=1
+fi
+
 # Failure path: invoking without --inventory must fail (flag validation)
 if "$SCRIPT" --owner o --repo r --pr 1 2>/dev/null; then
   echo "  FAIL: accepted invocation without --inventory"

@@ -21,8 +21,8 @@
 #     POSTED <comment_id>
 #     FAILED <comment_id> <reason>
 #     SKIPPED <comment_id> (matched --skip-comment-ids)
-#     FILTERED <comment_id> (classification=<value>) — item's classification is
-#       neither FIX nor SKIP (e.g., ESCALATE handled elsewhere); not an error
+#     FILTERED <comment_id> (classification=<value>) — item is not replyable
+#       (e.g., ESCALATE without escalation_filed=true); not an error
 #   exit codes:
 #     0 = all items posted (or skipped) successfully
 #     1 = at least one item failed
@@ -88,9 +88,12 @@ while IFS= read -r item; do
     continue
   fi
 
-  # Only FIX and SKIP classifications get replies via this helper.
-  # ESCALATE items are handled separately (escalation notice posted in-model).
-  if [ "$classification" != "FIX" ] && [ "$classification" != "SKIP" ]; then
+  # Only replyable items proceed: FIX, SKIP, and ESCALATE with escalation_filed=true.
+  escalation_filed="$(echo "$item" | jq -r '.escalation_filed // false')"
+  if [ "$classification" = "FIX" ] || [ "$classification" = "SKIP" ] || \
+     { [ "$classification" = "ESCALATE" ] && [ "$escalation_filed" = "true" ]; }; then
+    : # replyable — fall through to reply_body check
+  else
     echo "FILTERED $cid (classification=$classification)"
     continue
   fi

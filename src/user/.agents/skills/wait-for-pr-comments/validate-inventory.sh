@@ -97,6 +97,19 @@ run_guard "already_addressed-requires-sha" \
 run_guard "ESCALATE-must-be-filed" \
     '[.items[] | select(.classification == "ESCALATE" and (.escalation_filed != true))]' || FAIL=1
 
+# Guard 9 (renumbered): schema sanity — already handled via Guard 0 above.
+
+# Guard 10: every replyable item must have a non-empty reply_body.
+# "Replyable" means: FIX, SKIP, or ESCALATE-with-escalation_filed=true.
+# This guard runs AFTER render-reply-bodies.sh has populated reply_body;
+# it catches render failures that slipped through.
+run_guard "replyable-has-reply_body" \
+    '[.items[] | select(
+        (.classification == "FIX" or .classification == "SKIP" or
+         (.classification == "ESCALATE" and .escalation_filed == true))
+        and (.reply_body == null or .reply_body == "")
+     )]' || FAIL=1
+
 if [ "$FAIL" -ne 0 ]; then
     echo "error: schema validation failed for $PATH_IN" >&2
     exit 1

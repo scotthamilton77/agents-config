@@ -67,7 +67,7 @@ Apply the six Phase 0 precedence rules above. After mode is resolved, run schema
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The nine guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. Guards 1–9 of the ten guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins. Guard 10 (replyable items have `reply_body`) is checked in Phase 2 after `render-reply-bodies.sh` runs.
 
 ### Phase 1 — Read inventory + verify head SHA
 
@@ -204,19 +204,38 @@ ${CLAUDE_SKILL_DIR}/probe-fix-shas.sh \
 # stdout: {present: [...], missing: [...]}
 ```
 
-**Post replies for every inventory item** (Phase 2 — replaces inline
-per-`kind` `gh api` blocks):
+**Render reply bodies** (Phase 2, step 1 — populates `.reply_body` on every
+replyable item using the pinned template matrix below):
+
+```bash
+RENDERED="$(mktemp)"
+${CLAUDE_SKILL_DIR}/render-reply-bodies.sh \
+  --inventory "$INVENTORY_FILE" \
+  --out "$RENDERED"
+# exit 0 = all bodies rendered; exit 1 = render error (missing required field)
+```
+
+**Validate rendered inventory** (Phase 2, step 2 — guard 10 confirms
+`render-reply-bodies.sh` populated every replyable item):
+
+```bash
+~/.claude/skills/wait-for-pr-comments/validate-inventory.sh "$RENDERED" \
+  || { echo "post-render validation failed"; exit 1; }
+```
+
+**Post replies for every inventory item** (Phase 2, step 3 — uses rendered
+inventory so every replyable item already has `.reply_body`):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/post-replies.sh \
-  --inventory "$INVENTORY_FILE" \
+  --inventory "$RENDERED" \
   --owner "$OWNER" --repo "$REPO" --pr "$PR" \
   [--skip-comment-ids "<csv>"]
 # per item, one of:
 #   POSTED <comment_id>
 #   FAILED <comment_id> <reason>
 #   SKIPPED <comment_id>            # matched --skip-comment-ids
-#   FILTERED <comment_id> (classification=<class>)  # classification != FIX|SKIP
+#   FILTERED <comment_id> (classification=<class>)  # not replyable
 ```
 
 **NOT idempotent** — on a partial-run retry, the caller MUST pass
@@ -244,6 +263,8 @@ ${CLAUDE_SKILL_DIR}/build-final-report.sh \
 
 PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`, `phase`, `crash_recovery`, `fix_outcome`) appears in any reply.
 
+**These are the canonical templates.** `render-reply-bodies.sh` implements this matrix exactly — it is the single owner of reply text. Do not improvise alternate wording in Phase 2; use `render-reply-bodies.sh` output verbatim.
+
 | State | Reply template |
 |---|---|
 | FIX, `fix_outcome=committed` | `Fixed in <fix_commit_sha>. <fix_summary>` |
@@ -257,7 +278,7 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 
 ## Schema validation guards
 
-`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces these nine guards. Skill B Phase 0 invokes the validator and aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
+`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces ten guards. Skill B Phase 0 invokes the validator before Phase 1 (pre-render); Phase 2 invokes it again after `render-reply-bodies.sh` (post-render, to catch guard 10). Skill B aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
 
 1. **Non-empty rationale** — reject if any item has `rationale == "" or null`. Rationale is user-facing for SKIP replies; an empty rationale would post an empty PR comment.
 2. **`escalation_filed` only on ESCALATE** — reject if any item has `classification != "ESCALATE"` and `escalation_filed == true`.
@@ -268,6 +289,7 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 7. **`already_addressed` outcome carries SHA** — reject if any item has `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
 8. **ESCALATE must be filed** — reject if any item has `classification == "ESCALATE"` and `escalation_filed != true`. Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled ESCALATE at write time means a Skill A bug — without this guard, Skill B would silently skip the item without a reply.
 9. **Schema sanity** — reject if JSON parse fails or `schema_version != 1`.
+10. **Replyable items have `reply_body`** — reject if any replyable item (FIX, SKIP, or ESCALATE-with-`escalation_filed=true`) has a null or empty `reply_body`. This guard runs on the rendered inventory (after `render-reply-bodies.sh`) to confirm rendering succeeded. Guard 10 is NOT checked on the raw inventory at Phase 0 — `render-reply-bodies.sh` is what populates the field.
 
 On reject: validator logs the violating item to stderr; Skill B aborts with no replies posted.
 
