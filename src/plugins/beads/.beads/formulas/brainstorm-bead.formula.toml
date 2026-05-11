@@ -543,8 +543,13 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
   | while read -r child_id; do
       bd update "$child_id" --parent "$Y_ID"
 
-      # If this is a merge-gate child whose title encodes the OLD X-id, rename it.
-      # Dual-probe: check for BOTH old formats "merge-{{bead-id}}" and "merge-$Y_ID".
+      # If this is a merge-gate child whose title uses either legacy naming
+      # pattern, rename it to the new "[merge-gate] $TITLE_SLUG" format.
+      # Dual-probe covers BOTH legacy patterns being renamed:
+      #   - "merge-{{bead-id}}" (older X-id-based title from pre-rename formula)
+      #   - "merge-$Y_ID"       (even older Y-id-based title from earlier formula)
+      # Future readers: both legacy formats are intentionally matched so this
+      # guard handles repos that may carry either historical title.
       child_labels=$(bd label list "$child_id" --json | jq -r '.[]')
       child_title=$(bd show "$child_id" --json | jq -r '.[0].title')
       if echo "$child_labels" | grep -qx 'merge-gate' \\
