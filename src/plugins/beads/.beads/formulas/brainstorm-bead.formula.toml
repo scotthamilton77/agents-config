@@ -229,6 +229,16 @@ At the top of this step's script execution, set:
 
   TITLE_SLUG="{{title-slug}}"
 
+Note on naming scope: $TITLE_SLUG is used ONLY for children created UNDER Y
+(post-Y), namely the `[merge-gate] $TITLE_SLUG` child in step 5b and the
+`[verify] $TITLE_SLUG - $ac_line` children in step 5b. The pre-Y
+escalation beads created in steps 1 and 2 (titled "Manual triage: ...")
+are intentionally excluded from the slug convention — they are diagnostic
+HEP (halt-exit-pause) beads addressed to a human triager, not part of Y's
+work breakdown, so they keep human-readable diagnostic titles instead of
+an `[escalate] <slug>` form. There is no post-Y `[escalate]` child path
+in this formula.
+
 ──────────────────────────────────────────────────────────────────────────
 STEP 1 — Pre-flight idempotency probe
 ──────────────────────────────────────────────────────────────────────────
