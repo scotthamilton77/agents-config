@@ -262,7 +262,7 @@ slug generation algorithm:
 4. Collapse consecutive hyphens to a single hyphen
 5. Truncate to a maximum of 30 characters
 6. Strip leading and trailing hyphens
-7. Fallback: if the result is empty, use the first 30 characters of the bead-id
+7. Fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead. (Dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`.)
 
 Then drive the molecule as the MAIN AGENT (brainstorming requires
 interactive conversation with the user — do NOT dispatch a subagent):
