@@ -17,12 +17,15 @@ default-formula = "implement-feature"  # fallback when no formula-* label on bea
 # Read by: green-loop (quality gate per iteration), quality-sweep
 # ---------------------------------------------------------------------------
 [gates]
-# This project is pure documentation — no build, typecheck, or lint.
-# Gates are stubs; stages detect empty commands and skip gracefully.
+# This project is primarily documentation — no build, typecheck, or lint —
+# but it now ships an automated bash smoke-test suite for the skill helper
+# scripts under src/user/.agents/skills (added by abn9.4). The build/
+# typecheck/lint gates remain empty stubs and stages detect them as such and
+# skip gracefully; the test gate is wired up to the smoke-test runner.
 build     = ""   # no build step
 typecheck = ""   # no type checker
 lint      = ""   # no linter
-test      = ""   # no automated test suite
+test      = "find src/user/.agents/skills -name '*_test.sh' -print0 | sort -z | xargs -0 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\" || exit 1' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines (find -print0 / sort -z / xargs -0 are common GNU/BSD extensions, not POSIX; portable on macOS + Linux)
 
 # ---------------------------------------------------------------------------
 # [coverage] — code coverage settings
@@ -39,7 +42,7 @@ test      = ""   # no automated test suite
 #   - quality-sweep does not separately enforce a coverage threshold.
 # When true (or absent), the existing semantics apply: empty/missing
 # report-location triggers human-flag, and green-loop's DoD enforces threshold.
-applicable       = false  # this project is pure documentation — no tests, no coverage
+applicable       = false  # smoke tests exist (see [gates].test) but coverage tooling is intentionally not wired up for this docs-leaning repo
 threshold        = 80     # percent; ignored when applicable = false; per-bead override: coverage-threshold-<n> label
 report-location  = ""     # n/a — applicable = false suppresses coverage handling
 format           = ""     # n/a

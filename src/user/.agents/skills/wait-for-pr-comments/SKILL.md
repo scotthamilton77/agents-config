@@ -10,8 +10,8 @@ description: >
   `reply-and-resolve-pr-threads` to reply to every thread and resolve the
   FIXED ones. Keywords: respond, address, fix, handle, triage, classify, PR,
   review, Copilot, feedback.
-model: opus[1m]
-effort: high
+model: sonnet[1m]
+effort: medium
 ---
 
 # wait-for-pr-comments
@@ -201,6 +201,17 @@ re-merge any user reclassifications into the inventory before Phase 4.
 3. For each FIX item:
    - Capture `<pre_subagent_sha> = git rev-parse HEAD` BEFORE dispatch.
    - Pass `<pre_subagent_sha>` to the subagent as input context.
+   - **Dispatch with an explicit `opus` model** (do NOT inherit orchestrator):
+     ```
+     Agent({
+       subagent_type: "bead-implementor",
+       model: "opus",
+       prompt: <task-spec>
+     })
+     ```
+     The orchestrator runs on `sonnet[1m]`; the FIX subagent MUST run on
+     `opus` so fix correctness is not regressed by the orchestrator's lower
+     tier. See Red Flags.
    - Subagent runs the **Per-comment subagent contract** (below).
    - **Audit the report** using **Orchestrator-side enforcement** (below).
      Any audit violation re-classifies the item to ESCALATE with rationale
@@ -214,14 +225,10 @@ After all FIX items processed, the inventory carries each item's
 
 Run `verify-checklist` across all `committed`-outcome subagents' work.
 
-**On failure:** build the inventory body (mirror the Phase 7 builder block —
-the temp file may not exist yet at this point) and write it as `partial`:
+**On failure:** build the inventory body and write it as `partial`:
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -238,7 +245,7 @@ Report to caller; abort (Skill B is NOT invoked).
 Confirm each FIX/`committed` item's `fix_commit_sha` is in
 `git rev-list <phase4_baseline_sha>..HEAD`.
 
-**On mismatch:** build the inventory body (same `jq -n` block as Phase 5a)
+**On mismatch:** build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a)
 and invoke:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -254,8 +261,7 @@ Report to caller; abort.
 
 Run `git push`.
 
-**On failure:** keep local commits. Build the inventory body (same `jq -n`
-block as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
+**On failure:** keep local commits. Build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
 (no remote update happened), then:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -277,12 +283,14 @@ Abort.
 
 1. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
-   gh pr edit <N> --remove-reviewer @copilot
-   gh pr edit <N> --add-reviewer @copilot
+   ${CLAUDE_SKILL_DIR}/request-rereview.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR"
+   # exit 0 on success; exit 1 on gh failure
    ```
-   The `remove-reviewer` + `add-reviewer` pair reliably triggers a new
-   `review_requested` event even when Copilot is already on the list.
-   (`--add-reviewer` alone is idempotent and silently does nothing.)
+   The helper performs the `remove-reviewer` + `add-reviewer` pair which
+   reliably triggers a new `review_requested` event even when Copilot is
+   already on the list. (`--add-reviewer` alone is idempotent and silently
+   does nothing.)
 
 2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
@@ -312,15 +320,11 @@ normally and proceed to Phase 7.
 
 ### Phase 7 — Write inventory
 
-Build the JSON body via `jq` pipeline (NO heredoc — sandbox-blocked per
-`git-commits.md`); write atomically via the helper:
+Build the inventory body via helper and write atomically:
 
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -370,36 +374,12 @@ manually (add `--mode autonomous --bead-id <id>` if applicable)."
 After Skill B completes, verify no review threads were missed before
 considering the await-review step done.
 
-1. **Query** GraphQL for all unresolved, non-outdated review threads
-   (paginate if >100):
+1. **Query** for all unresolved, non-outdated review threads (pagination handled internally):
    ```bash
-   gh api graphql \
-     -F owner="<owner>" -F repo="<repo>" -F pr="<pr-number>" \
-     -f query='
-     query($owner: String!, $repo: String!, $pr: Int!) {
-       repository(owner: $owner, name: $repo) {
-         pullRequest(number: $pr) {
-           reviewThreads(first: 100) {
-             pageInfo { hasNextPage endCursor }
-             nodes {
-               id
-               isResolved
-               isOutdated
-               comments(first: 1) {
-                 nodes {
-                   author { login }
-                   body
-                   databaseId
-                 }
-               }
-             }
-           }
-         }
-       }
-     }'
+   ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR"
+   # stdout: {count: N, thread_ids: ["<graphql-thread-id>", ...]}
    ```
-   If `hasNextPage == true`, repeat with `-F after="<endCursor>"` and
-   accumulate nodes until exhausted.
 2. **Count** threads where `isResolved == false` and `isOutdated == false`.
 3. **If count > 0**: treat as a new review round. Return to **Phase 3
    (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
@@ -457,7 +437,31 @@ Each FIX item is dispatched to a dedicated subagent. The subagent:
 4. **Reports back** with: `comment_id`, `fix_outcome`, `fix_summary`,
    `fix_commit_sha` (only for `committed` and `already_addressed`),
    `fix_gate_variant` (only for `committed`), and verification evidence
-   (test command + output, only for `committed`).
+   (test command + output, only for `committed`). See **Subagent report
+   schema** below for the authoritative contract; the orchestrator validates
+   every report via `audit-subagent-report.sh`.
+
+### Subagent report schema
+
+The per-comment fix subagent returns a JSON report. The orchestrator validates
+every report via `audit-subagent-report.sh` (exit 2 on schema violation, exit
+1 on audit violation). This is the **authoritative contract**:
+
+```yaml
+fields:
+  comment_id:      string  (required)
+  fix_outcome:     enum    (required) [committed | already_addressed | failed | deferred | escalated | abandoned]
+  fix_summary:     string  (required)
+  fix_commit_sha:  string  (required when fix_outcome in {committed, already_addressed})
+  fix_gate_variant: enum   (required when fix_outcome == committed) [lite | full]
+  verification_evidence:
+    test_command:  string  (required when fix_outcome == committed)
+    output:        string  (required when fix_outcome == committed)
+```
+
+Schema mismatches → `audit-subagent-report.sh` exits 2 with
+`{field, message}` on stdout. Audit mismatches (SHA missing in worktree, SHA
+not an ancestor of the post-fix HEAD) → exit 1 with `{violation, rationale}`.
 
 ### `already_addressed` SHA-discovery procedure
 
@@ -645,11 +649,8 @@ POSIX-atomic) — handled by `write-inventory.sh`.
 Phase 8 success):
 
 ```bash
-jq -n \
-  --argjson items "$ITEMS_JSON" \
-  --argjson pr "$PR_JSON" \
-  --argjson polling "$POLLING_JSON" \
-  '{schema_version: 1, pr: $pr, polling: $polling, items: $items}' \
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" --pr "$PR_FILE" --polling "$POLLING_FILE" \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
@@ -664,6 +665,61 @@ rm -f /tmp/pr-inventory-build-<n>.json
 failures). `<last_completed_phase>` is one of `5a-verify-failed`,
 `5b-commit-verify-failed`, `5c-push-failed`, `7-write-inventory`,
 `8-skill-b-done`, `9-final-check-done`.
+
+**Detect PR context** (Phase 1):
+
+```bash
+${CLAUDE_SKILL_DIR}/detect-pr-context.sh [--pr <n-or-url>]
+# stdout: {pr_number, owner, repo, inventory_path, concurrency_state}
+```
+
+**Fetch + normalize comments** (Phase 3 inventory build):
+
+```bash
+${CLAUDE_SKILL_DIR}/fetch-and-normalize-comments.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR"
+# stdout: JSON array of normalized items (kind, thread_id, body_full, ...)
+```
+
+**Audit a per-comment subagent's report** (Phase 4, after each FIX subagent):
+
+```bash
+${CLAUDE_SKILL_DIR}/audit-subagent-report.sh \
+  --pre-sha "$PRE_SHA" \
+  --baseline-sha "$BASELINE_SHA" \
+  --report "$REPORT_FILE" \
+  --worktree-root "$WT_ROOT"
+# NOTE: --report takes a FILE PATH containing the subagent's JSON report,
+# not inline JSON. ($REPORT_FILE is a path on disk.)
+# exit 0 = pass; exit 1 = audit violation {violation,rationale};
+# exit 2 = schema violation {field,message}
+```
+
+**Build inventory body** (Phases 5a / 5b / 5c / 7 / 8):
+
+```bash
+${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
+  --items "$ITEMS_FILE" \
+  --pr "$PR_FILE" \
+  --polling "$POLLING_FILE" \
+  > /tmp/pr-inventory-build-<n>.json
+```
+
+**Request Copilot re-review** (Phase 6 — replaces the legacy remove+add
+reviewer pair):
+
+```bash
+${CLAUDE_SKILL_DIR}/request-rereview.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR"
+```
+
+**Count unresolved threads** (Phase 9 — replaces the inline GraphQL block):
+
+```bash
+${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR"
+# stdout: {count: <n>, thread_ids: [...]}
+```
 
 **Validate inventory** — Skill B Phase 0 invokes this; pinned here so the
 agent has a copy-pasteable template:
@@ -816,6 +872,7 @@ process.
 | "I'll inline `--mode autonomous` from the hook text" | The hook does not pass `--mode`. Autonomous mode is set ONLY by formulas (which also pass `--bead-id`). If you're invoking from chat, leave it interactive. |
 | "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh complete 9-final-check-done` succeeds. |
 | "I'll keep the squashed commits clean — combine all subagent fixes into one" | Each subagent's commit stands alone. **No squashing.** Commit message format pinned: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`. |
+| "I'll let the per-comment fix subagent inherit the orchestrator's model" | Wrong. The orchestrator runs `sonnet[1m]` (this skill's frontmatter). Inheriting means the fix subagent ALSO runs on `sonnet[1m]`, which regresses fix correctness — `wait-for-pr-comments` is the cheap triage tier; **fix work needs `opus`**. The Phase 4 `Agent({...})` dispatch MUST set `model: "opus"` explicitly. |
 
 ---
 

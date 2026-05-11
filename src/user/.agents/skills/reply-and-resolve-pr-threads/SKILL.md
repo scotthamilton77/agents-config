@@ -6,7 +6,7 @@ description: >
   (`--from-inventory`), or `--resume` for crash recovery from a partial run.
   Does not fix code. Keywords: reply, resolve, thread, acknowledge, close
   out, post fix confirmation, bookkeeping, rebut, ack.
-model: opus[1m]
+model: sonnet[1m]
 effort: low
 ---
 
@@ -59,15 +59,15 @@ Standalone mode is deferred to a follow-up bead.
 
 ### Phase 0 — Mode detection + schema validation
 
-Apply the six Phase 0 precedence rules above. After mode is resolved, run schema validation against the supplied path:
+Apply the six Phase 0 precedence rules above. After mode is resolved, run schema validation against the supplied path with the Phase 0 guard set:
 
 ```bash
 ~/.claude/skills/wait-for-pr-comments/validate-inventory.sh \
-  <inventory-path> \
+  --phase 0 <inventory-path> \
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The nine guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). `--phase 0` runs guards 1–9; `--phase 2` (the default) runs all ten. Guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field — Phase 0 invocations would always fail it on a raw inventory.
 
 ### Phase 1 — Read inventory + verify head SHA
 
@@ -138,15 +138,12 @@ Reply body text is taken **only** from the pinned reply matrix in §"Reply text 
 
 ### Phase 3 — Resolve only FIX `review_thread`s
 
-GraphQL mutation, variable-bound:
+Invoke the resolve helper against the inventory (handles the GraphQL mutation per-thread internally):
 
 ```bash
-gh api graphql -f query='
-  mutation($id:ID!){
-    resolveReviewThread(input:{threadId:$id}){
-      thread{ isResolved }
-    }
-  }' -F id=<thread_id>
+${CLAUDE_SKILL_DIR}/resolve-threads.sh --inventory <inventory-path>
+# per-thread output: RESOLVED <thread_id> or FAILED <thread_id> <reason>
+# exit 0 if all resolved or none to resolve; exit 1 if any failed
 ```
 
 **Resolve target set:** items with `kind == "review_thread"` AND `classification == "FIX"` AND a non-null `fix_outcome` (i.e., `committed` or `already_addressed`). All four conditions must hold.
@@ -182,9 +179,91 @@ Emit a structured close-out summary:
 
 **Skill B does NOT unlink the inventory** — `wait-for-pr-comments` (Skill A) owns the file's lifecycle. Skill A unlinks at its own Phase 9 success after Skill B reports success and the final unresolved-threads check passes. Touching the file here would race Skill A's bookkeeping.
 
+## Helper-script invocation patterns
+
+All inline GraphQL/jq blocks have been factored into helpers. Each phase
+invokes the relevant helper; the SKILL.md prose above narrates *what* the
+phase does, while these reference invocations are the canonical *how*.
+
+**Verify PR head SHA** (Phase 1 — replaces inline `gh api` + retry loop):
+
+```bash
+${CLAUDE_SKILL_DIR}/verify-head-sha.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  --expected-sha "$EXPECTED_SHA"
+# exit 0 = match; exit 1 = persistent mismatch after retries
+```
+
+**Probe per-item fix SHAs against the PR branch** (Phase 1.5 — replaces
+inline `git merge-base --is-ancestor` loop):
+
+```bash
+${CLAUDE_SKILL_DIR}/probe-fix-shas.sh \
+  --branch "$PR_BRANCH" \
+  --items "$INVENTORY_FILE"
+# stdout: {present: [...], missing: [...]}
+```
+
+**Render reply bodies** (Phase 2, step 1 — populates `.reply_body` on every
+replyable item using the pinned template matrix below):
+
+```bash
+RENDERED="$(mktemp)"
+${CLAUDE_SKILL_DIR}/render-reply-bodies.sh \
+  --inventory "$INVENTORY_FILE" \
+  --out "$RENDERED"
+# exit 0 = all bodies rendered; exit 1 = render error (missing required field)
+```
+
+**Validate rendered inventory** (Phase 2, step 2 — guard 10 confirms
+`render-reply-bodies.sh` populated every replyable item):
+
+```bash
+~/.claude/skills/wait-for-pr-comments/validate-inventory.sh "$RENDERED" \
+  || { echo "post-render validation failed"; exit 1; }
+```
+
+**Post replies for every inventory item** (Phase 2, step 3 — uses rendered
+inventory so every replyable item already has `.reply_body`):
+
+```bash
+${CLAUDE_SKILL_DIR}/post-replies.sh \
+  --inventory "$RENDERED" \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  [--skip-comment-ids "<csv>"]
+# per item, one of:
+#   POSTED <comment_id>
+#   FAILED <comment_id> <reason>
+#   SKIPPED <comment_id>            # matched --skip-comment-ids
+#   FILTERED <comment_id> (classification=<class>)  # not replyable
+```
+
+**NOT idempotent** — on a partial-run retry, the caller MUST pass
+`--skip-comment-ids` with the csv of already-posted comment_ids.
+
+**Resolve FIX review threads** (Phase 3 — replaces inline GraphQL
+`resolveReviewThread` block):
+
+```bash
+${CLAUDE_SKILL_DIR}/resolve-threads.sh \
+  --inventory "$INVENTORY_FILE"
+# per thread: RESOLVED <thread_id> / FAILED <thread_id> <reason>
+```
+
+**Build the final operator-facing report** (Phase 4 — replaces inline
+markdown template):
+
+```bash
+${CLAUDE_SKILL_DIR}/build-final-report.sh \
+  --inventory "$INVENTORY_FILE"
+# stdout: markdown summary including every item's comment_id
+```
+
 ## Reply text templates
 
 PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`, `phase`, `crash_recovery`, `fix_outcome`) appears in any reply.
+
+**These are the canonical templates.** `render-reply-bodies.sh` implements this matrix exactly — it is the single owner of reply text. Do not improvise alternate wording in Phase 2; use `render-reply-bodies.sh` output verbatim.
 
 | State | Reply template |
 |---|---|
@@ -199,7 +278,7 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 
 ## Schema validation guards
 
-`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces these nine guards. Skill B Phase 0 invokes the validator and aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
+`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces ten guards. Skill B Phase 0 invokes the validator before Phase 1 (pre-render); Phase 2 invokes it again after `render-reply-bodies.sh` (post-render, to catch guard 10). Skill B aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
 
 1. **Non-empty rationale** — reject if any item has `rationale == "" or null`. Rationale is user-facing for SKIP replies; an empty rationale would post an empty PR comment.
 2. **`escalation_filed` only on ESCALATE** — reject if any item has `classification != "ESCALATE"` and `escalation_filed == true`.
@@ -210,6 +289,7 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 7. **`already_addressed` outcome carries SHA** — reject if any item has `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
 8. **ESCALATE must be filed** — reject if any item has `classification == "ESCALATE"` and `escalation_filed != true`. Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled ESCALATE at write time means a Skill A bug — without this guard, Skill B would silently skip the item without a reply.
 9. **Schema sanity** — reject if JSON parse fails or `schema_version != 1`.
+10. **Replyable items have `reply_body`** — reject if any replyable item (FIX, SKIP, or ESCALATE-with-`escalation_filed=true`) has a null or empty `reply_body`. This guard runs on the rendered inventory (after `render-reply-bodies.sh`) to confirm rendering succeeded. Guard 10 is NOT checked on the raw inventory at Phase 0 — `render-reply-bodies.sh` is what populates the field.
 
 On reject: validator logs the violating item to stderr; Skill B aborts with no replies posted.
 
