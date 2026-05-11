@@ -53,37 +53,17 @@ done
 [ -n "$OUT" ] || { echo "error: --out is required" >&2; exit 2; }
 [ -f "$INV" ] || { echo "error: inventory file not found: $INV" >&2; exit 2; }
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+TMP_OUT="$(mktemp)"
+TMP_ERR="$(mktemp)"
+trap 'rm -f "$TMP_OUT" "$TMP_ERR"' EXIT
 
-# Walk items and validate that FIX-committed items have required fields
-# before we attempt rendering. Defense in depth: validate-inventory.sh
-# catches most of this, but render-reply-bodies is the template owner.
-any_error=0
-
-while IFS= read -r item; do
-  [ -n "$item" ] || continue
-  cid="$(echo "$item" | jq -r '.comment_id // "<?>"')"
-  classification="$(echo "$item" | jq -r '.classification // ""')"
-  fix_outcome="$(echo "$item" | jq -r '.fix_outcome // ""')"
-
-  if [ "$classification" = "FIX" ] && [ "$fix_outcome" = "committed" ]; then
-    sha="$(echo "$item" | jq -r '.fix_commit_sha // ""')"
-    summary="$(echo "$item" | jq -r '.fix_summary // ""')"
-    dup="$(echo "$item" | jq -r '.duplicate_of // ""')"
-    # duplicate_of path doesn't need sha+summary in the rendered output,
-    # but the item still needs duplicate_of to be non-empty.
-    if [ -z "$dup" ]; then
-      [ -n "$sha" ] || { echo "error: FIX-committed item $cid missing fix_commit_sha" >&2; any_error=1; }
-      [ -n "$summary" ] || { echo "error: FIX-committed item $cid missing fix_summary" >&2; any_error=1; }
-    fi
-  fi
-done < <(jq -c '.items[]?' "$INV")
-
-[ "$any_error" -eq 0 ] || exit 1
-
-# Render reply_body for each item via jq.
-# Template matrix (from SKILL.md §Reply text templates):
+# Render reply_body for each item via a single jq invocation. Validation is
+# co-located with rendering via jq's `error()` so a malformed replyable item
+# fails the whole render with a clear diagnostic — no silent pass-through and
+# no second pass that could disagree with the first.
+#
+# Template matrix (from SKILL.md §Reply text templates — this helper is the
+# single owner of the matrix):
 #   FIX + committed + duplicate_of non-null  → "Fixed via the change addressing <duplicate_of>."
 #   FIX + committed                          → "Fixed in <fix_commit_sha>. <fix_summary>"
 #   FIX + already_addressed                  → "Already addressed in <fix_commit_sha>."
@@ -93,24 +73,41 @@ done < <(jq -c '.items[]?' "$INV")
 #   ESCALATE + escalation_filed=true (other) → "Captured for follow-up; will respond on a later push to this PR or in a related issue."
 #   ESCALATE + escalation_filed != true      → (no reply_body set)
 #   anything else                            → (no reply_body set)
+#
+# Recovery DEFER/ABANDON templates from SKILL.md are NOT rendered here:
+# Phase 1.5 recovery triage in `--resume` mode reclassifies ABANDON items to
+# SKIP and stamps DEFER items with a tracking_link; by the time this helper
+# runs, those items look like ordinary SKIPs to the matrix above.
 
-jq '
+if ! jq '
   .items = [
     .items[]? |
     if .classification == "FIX" then
       if .fix_outcome == "committed" then
         if (.duplicate_of // "") != "" then
           . + {reply_body: ("Fixed via the change addressing " + .duplicate_of + ".")}
+        elif (.fix_commit_sha // "") == "" then
+          error("FIX-committed item \(.comment_id // "<?>") missing fix_commit_sha")
+        elif (.fix_summary // "") == "" then
+          error("FIX-committed item \(.comment_id // "<?>") missing fix_summary")
         else
           . + {reply_body: ("Fixed in " + .fix_commit_sha + ". " + .fix_summary)}
         end
       elif .fix_outcome == "already_addressed" then
-        . + {reply_body: ("Already addressed in " + .fix_commit_sha + ".")}
+        if (.fix_commit_sha // "") == "" then
+          error("FIX-already_addressed item \(.comment_id // "<?>") missing fix_commit_sha")
+        else
+          . + {reply_body: ("Already addressed in " + .fix_commit_sha + ".")}
+        end
       else
         .
       end
     elif .classification == "SKIP" then
-      . + {reply_body: .rationale}
+      if (.rationale // "") == "" then
+        error("SKIP item \(.comment_id // "<?>") missing rationale")
+      else
+        . + {reply_body: .rationale}
+      end
     elif .classification == "ESCALATE" and .escalation_filed == true then
       if .rationale == "exceeded re-review round cap" then
         . + {reply_body: "Round limit reached on this PR; deferring further iterations to a human reviewer."}
@@ -121,7 +118,10 @@ jq '
       .
     end
   ]
-' "$INV" > "$TMP"
+' "$INV" > "$TMP_OUT" 2> "$TMP_ERR"; then
+  cat "$TMP_ERR" >&2
+  exit 1
+fi
 
-cp "$TMP" "$OUT"
+mv "$TMP_OUT" "$OUT"
 exit 0

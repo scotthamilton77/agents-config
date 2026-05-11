@@ -115,10 +115,10 @@ JSON
 PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_ESCALATE" --owner o --repo r --pr 1 \
   > "$TMP/escalate-out.txt" 2>&1
 rc_escalate=$?
-if grep -q 'POSTED cE' "$TMP/escalate-out.txt"; then
+if [ "$rc_escalate" = "0" ] && grep -q 'POSTED cE' "$TMP/escalate-out.txt"; then
   echo "  ok: ESCALATE+escalation_filed=true is POSTED (not FILTERED)"
 else
-  echo "  FAIL: ESCALATE+escalation_filed=true should emit POSTED cE; got: $(cat "$TMP/escalate-out.txt")"
+  echo "  FAIL: ESCALATE+escalation_filed=true should exit 0 with POSTED cE; got rc=$rc_escalate, output: $(cat "$TMP/escalate-out.txt")"
   FAIL=1
 fi
 

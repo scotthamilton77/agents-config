@@ -67,7 +67,7 @@ Apply the six Phase 0 precedence rules above. After mode is resolved, run schema
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. Guards 1–9 of the ten guards the validator enforces are documented in §"Schema validation guards" below — they are the contract this skill assumes is honored before Phase 1 begins. Guard 10 (replyable items have `reply_body`) is checked in Phase 2 after `render-reply-bodies.sh` runs.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). Phase 0 checks guards 1–9; guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field.
 
 ### Phase 1 — Read inventory + verify head SHA
 
