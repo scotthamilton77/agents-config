@@ -20,7 +20,8 @@
 # Usage:
 #   bd mol wisp create merge-and-cleanup \
 #     --var pr="123" \
-#     --var bead-id=proj-42
+#     --var bead-id=proj-42 \
+#     --var title-slug=add-rate-limiting
 #   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "merge-and-cleanup"

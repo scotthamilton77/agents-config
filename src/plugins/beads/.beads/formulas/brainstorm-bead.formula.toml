@@ -16,7 +16,7 @@
 #   5. Finalize  — address findings, mark bead implementation-ready
 #
 # Usage:
-#   bd mol wisp create brainstorm-bead --var bead-id=proj-42
+#   bd mol wisp create brainstorm-bead --var bead-id=proj-42 --var title-slug=add-rate-limiting
 #   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "brainstorm-bead"

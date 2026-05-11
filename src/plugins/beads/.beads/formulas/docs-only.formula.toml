@@ -10,7 +10,8 @@
 # Usage:
 #   bd mol pour docs-only \
 #     --var topic="Document the bd comments vs notes distinction" \
-#     --var bead-id=proj-42
+#     --var bead-id=proj-42 \
+#     --var title-slug=document-comments-vs-notes
 
 formula      = "docs-only"
 description  = "Per-stage docs-only pipeline: preflight → apply-edits → review → verify-ac → create-pr → review-cycle → merge-or-handoff"

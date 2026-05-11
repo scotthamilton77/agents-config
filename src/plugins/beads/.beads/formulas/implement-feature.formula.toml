@@ -17,7 +17,8 @@
 # Usage:
 #   bd mol pour implement-feature \
 #     --var feature="Add rate limiting to the API" \
-#     --var bead-id=proj-42
+#     --var bead-id=proj-42 \
+#     --var title-slug=add-rate-limiting
 
 formula      = "implement-feature"
 description  = "Per-stage feature pipeline: preflight → red-tests → green-loop → quality-sweep → verify-ac → create-pr → review-cycle → merge-or-handoff"

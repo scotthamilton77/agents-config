@@ -16,7 +16,8 @@
 # Usage:
 #   bd mol pour fix-bug \
 #     --var bug="Login fails when username contains an apostrophe" \
-#     --var bead-id=proj-17
+#     --var bead-id=proj-17 \
+#     --var title-slug=login-apostrophe-bug
 
 formula     = "fix-bug"
 description = "Per-stage bug pipeline: preflight → diagnose → red-tests → green-loop → quality-sweep → verify-ac → create-pr → review-cycle → merge-or-handoff"
