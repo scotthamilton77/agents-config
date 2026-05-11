@@ -18,11 +18,11 @@
 #   7. Cleanup           — branches, worktrees, merge gate, source bead
 #
 # Usage:
-#   bd mol wisp create merge-and-cleanup \
+#   bd mol pour merge-and-cleanup \
 #     --var pr="123" \
 #     --var bead-id=proj-42 \
 #     --var title-slug=add-rate-limiting
-#   bd mol current <wisp-id>   # shows steps with status
+#   bd mol current <mol-id>   # shows steps with status
 
 formula     = "merge-and-cleanup"
 description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
