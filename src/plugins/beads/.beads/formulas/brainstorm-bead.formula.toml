@@ -560,7 +560,7 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
   # "merge-{{bead-id}}" AND new pattern "[merge-gate] $TITLE_SLUG" because
   # all merge-gate children carry the merge-gate label regardless of title format.
   EXISTING_GATE=$(bd list --parent "$Y_ID" --label merge-gate --json \\
-    | jq '[.[] | select(.status != "closed")] | length')
+    | jq 'length')
   if [ "$EXISTING_GATE" = "0" ]; then
     bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
       --title "[merge-gate] $TITLE_SLUG" \\
@@ -581,8 +581,7 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
         EXISTING=$(bd list --parent "$Y_ID" --label human --json \\
           | jq --arg old_title "[Human verify] $ac_line" \\
                --arg new_title "[verify] $TITLE_SLUG - $ac_line" \\
-               '[.[] | select(.status != "closed")
-                     | select(.title == $old_title or .title == $new_title)] | length')
+               '[.[] | select(.title == $old_title or .title == $new_title)] | length')
         if [ "$EXISTING" = "0" ]; then
           bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
             --title "[verify] $TITLE_SLUG - $ac_line" \\
