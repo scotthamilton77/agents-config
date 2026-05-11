@@ -18,10 +18,11 @@
 #   7. Cleanup           — branches, worktrees, merge gate, source bead
 #
 # Usage:
-#   bd mol wisp create merge-and-cleanup \
+#   bd mol pour merge-and-cleanup \
 #     --var pr="123" \
-#     --var bead-id=proj-42
-#   bd mol current <wisp-id>   # shows steps with status
+#     --var bead-id=proj-42 \
+#     --var title-slug=add-rate-limiting
+#   bd mol current <mol-id>   # shows steps with status
 
 formula     = "merge-and-cleanup"
 description = "PR merge: verify completion gate → check all comments → explicit merge auth → merge → cleanup"
@@ -38,13 +39,17 @@ required    = true
 description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
 required    = true
 
+[vars.title-slug]
+description = "Kebab-cased slug derived from the source bead/feature title (≤30 chars). Used to make step-bead titles human-readable and source-identifiable."
+required    = true
+
 # =============================================================================
 # Phase 1: Retroactive Gate
 # =============================================================================
 
 [[steps]]
 id    = "retroactive-gate"
-title = "Verify: completion gate was actually run"
+title = "[retroactive-gate] {{title-slug}}"
 description = """
 Before touching this PR, verify that the mandatory completion gate
 was run. Do not take the implementing agent's word for it — look for
@@ -85,7 +90,7 @@ The retroactive check is not optional and cannot be skipped.
 
 [[steps]]
 id    = "check-pr-comments"
-title = "Retrieve and triage ALL PR comments"
+title = "[check-pr-comments] {{title-slug}}"
 needs = ["retroactive-gate"]
 description = """
 Retrieve ALL comments on this PR. Both sources are required — do not
@@ -120,7 +125,7 @@ run the commands.
 
 [[steps]]
 id    = "address-feedback"
-title = "Address all blocking feedback"
+title = "[address-feedback] {{title-slug}}"
 needs = ["check-pr-comments"]
 description = """
 Fix all comments triaged as Blocking in the previous step.
@@ -147,7 +152,7 @@ If no blocking comments were found, this step completes immediately.
 
 [[steps]]
 id    = "source-bead-gate"
-title = "Gate 2: verify source-bead child gates"
+title = "[source-bead-gate] {{title-slug}}"
 needs = ["address-feedback"]
 description = """
 Before asking for merge authorization, enforce the source-bead closure gate.
@@ -183,7 +188,7 @@ cleanup closes the `merge-gate` child and the child list has no open items.
 
 [[steps]]
 id    = "merge-authorization"
-title = "GATE: Explicit merge authorization required — STOP"
+title = "[merge-authorization] {{title-slug}}"
 needs = ["source-bead-gate"]
 description = """
 HARD STOP. Do not run any merge command until the user explicitly
@@ -224,7 +229,7 @@ authorization, causing irreversible state changes.
 
 [[steps]]
 id    = "merge"
-title = "Merge PR #{{pr}}"
+title = "[merge] {{title-slug}}"
 needs = ["merge-authorization"]
 description = """
 Merge the PR using the project's standard merge strategy.
@@ -249,7 +254,7 @@ merge workflow has actually finished.
 
 [[steps]]
 id    = "cleanup"
-title = "Cleanup: branches, worktrees, bead"
+title = "[cleanup] {{title-slug}}"
 needs = ["merge"]
 description = """
 Clean up all artifacts from the merged work.

@@ -249,10 +249,20 @@ step and mark the bead (and parent chain) `in_progress` before `assess`.
 Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
 lookup label (see `rules/beads-labels.md` "Molecule → bead linkage convention"):
 ```bash
-bd mol wisp create brainstorm-bead --var bead-id=<bead-id>
+bd mol wisp create brainstorm-bead --var bead-id=<bead-id> --var title-slug=<slug>
 # Capture the wisp-id from the command output, then:
 bd label add <wisp-id> for-bead-<bead-id>
 ```
+
+The `<slug>` is generated from the source bead's title using the canonical
+slug generation algorithm:
+1. Lowercase the source bead's title
+2. Replace spaces with hyphens
+3. Strip all characters except a-z, 0-9, and hyphens
+4. Collapse consecutive hyphens to a single hyphen
+5. Truncate to a maximum of 30 characters
+6. Strip leading and trailing hyphens
+7. Fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead. (Dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`.)
 
 Then drive the molecule as the MAIN AGENT (brainstorming requires
 interactive conversation with the user — do NOT dispatch a subagent):

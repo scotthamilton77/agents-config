@@ -16,7 +16,7 @@
 #   5. Finalize  — address findings, mark bead implementation-ready
 #
 # Usage:
-#   bd mol wisp create brainstorm-bead --var bead-id=proj-42
+#   bd mol wisp create brainstorm-bead --var bead-id=proj-42 --var title-slug=add-rate-limiting
 #   bd mol current <wisp-id>   # shows steps with status
 
 formula     = "brainstorm-bead"
@@ -30,13 +30,17 @@ version     = 1
 description = "Bead ID to brainstorm (e.g. proj-42). Must already exist."
 required    = true
 
+[vars.title-slug]
+description = "Kebab-cased slug derived from the source bead/feature title (≤30 chars). Used to make step-bead titles human-readable and source-identifiable."
+required    = true
+
 # =============================================================================
 # Phase 0: Claim
 # =============================================================================
 
 [[steps]]
 id    = "claim"
-title = "Claim bead and parent-chain epics"
+title = "[claim] {{title-slug}}"
 description = """
 Mark this bead (and any parent-chain epics) in_progress before any work.
 
@@ -52,7 +56,7 @@ Read the `walked=N` output to confirm the chain depth.
 
 [[steps]]
 id    = "assess"
-title = "Assess: read bead, identify what's missing"
+title = "[assess] {{title-slug}}"
 needs = ["claim"]
 description = """
 Read the bead fully. Understand what it is and what's unclear.
@@ -86,7 +90,7 @@ to write-spec. This step can complete quickly if the bead is well-written.
 
 [[steps]]
 id    = "discuss"
-title = "Discuss: interactive brainstorming session with user"
+title = "[discuss] {{title-slug}}"
 needs = ["assess"]
 description = """
 Invoke the brainstorming skill for an interactive design conversation.
@@ -122,7 +126,7 @@ ESCALATION CHECKLIST — before proceeding to write-spec:
 
 [[steps]]
 id    = "write-spec"
-title = "Write spec and acceptance criteria to bead"
+title = "[write-spec] {{title-slug}}"
 needs = ["discuss"]
 description = """
 Produce a complete spec and write it back to the bead.
@@ -168,7 +172,7 @@ Do NOT start implementing. Do NOT create a worktree. This is a spec step.
 
 [[steps]]
 id    = "ralf-spec-review"
-title = "Adversarial spec review: dispatch ralf-review"
+title = "[ralf-spec-review] {{title-slug}}"
 needs = ["write-spec"]
 description = """
 Dispatch `ralf-review` against the finalized spec text from this bead.
@@ -211,7 +215,7 @@ document them explicitly as open questions in the bead notes.
 
 [[steps]]
 id    = "finalize"
-title = "Finalize: produce implementation bead Y, close source X"
+title = "[finalize] {{title-slug}}"
 needs = ["ralf-spec-review"]
 description = """
 Produce a net-new implementation bead Y from the brainstormed spec on X,
@@ -220,6 +224,20 @@ so any failure leaves a recoverable state for replay.
 
 Throughout this step, `<X-id>` = `{{bead-id}}` (the source seed bead) and
 `<Y-id>` = the id of the new implementation bead created in step 4.
+
+At the top of this step's script execution, set:
+
+  TITLE_SLUG="{{title-slug}}"
+
+Note on naming scope: $TITLE_SLUG is used ONLY for children created UNDER Y
+(post-Y), namely the `[merge-gate] $TITLE_SLUG` child in step 5b and the
+`[verify] $TITLE_SLUG - $ac_line` children in step 5b. The pre-Y
+escalation beads created in steps 1 and 2 (titled "Manual triage: ...")
+are intentionally excluded from the slug convention — they are diagnostic
+HEP (halt-exit-pause) beads addressed to a human triager, not part of Y's
+work breakdown, so they keep human-readable diagnostic titles instead of
+an `[escalate] <slug>` form. There is no post-Y `[escalate]` child path
+in this formula.
 
 ──────────────────────────────────────────────────────────────────────────
 STEP 1 — Pre-flight idempotency probe
@@ -525,23 +543,32 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
   | while read -r child_id; do
       bd update "$child_id" --parent "$Y_ID"
 
-      # If this is a merge-gate child whose title encodes the OLD X-id, rename it.
+      # If this is a merge-gate child whose title uses either legacy naming
+      # pattern, rename it to the new "[merge-gate] $TITLE_SLUG" format.
+      # Dual-probe covers BOTH legacy patterns being renamed:
+      #   - "merge-{{bead-id}}" (older X-id-based title from pre-rename formula)
+      #   - "merge-$Y_ID"       (even older Y-id-based title from earlier formula)
+      # Future readers: both legacy formats are intentionally matched so this
+      # guard handles repos that may carry either historical title.
       child_labels=$(bd label list "$child_id" --json | jq -r '.[]')
       child_title=$(bd show "$child_id" --json | jq -r '.[0].title')
       if echo "$child_labels" | grep -qx 'merge-gate' \\
-        && [ "$child_title" = "merge-{{bead-id}}" ]; then
-        bd update "$child_id" --title "merge-$Y_ID"
+        && { [ "$child_title" = "merge-{{bead-id}}" ] || [ "$child_title" = "merge-$Y_ID" ]; }; then
+        bd update "$child_id" --title "[merge-gate] $TITLE_SLUG"
       fi
     done
 
 5b. Fresh-create what's still missing under Y:
 
-  # Probe for merge-<Y_ID> child; create only if absent.
+  # Probe for merge-gate child; create only if absent.
+  # Dual-probe idempotency: the label-based probe covers BOTH old pattern
+  # "merge-{{bead-id}}" AND new pattern "[merge-gate] $TITLE_SLUG" because
+  # all merge-gate children carry the merge-gate label regardless of title format.
   EXISTING_GATE=$(bd list --parent "$Y_ID" --label merge-gate --json \\
-    | jq '[.[] | select(.status != "closed")] | length')
+    | jq 'length')
   if [ "$EXISTING_GATE" = "0" ]; then
     bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
-      --title "merge-$Y_ID" \\
+      --title "[merge-gate] $TITLE_SLUG" \\
       --description "Merge gate child for $Y_ID. Closed only by merge-and-cleanup after merge + branch/worktree cleanup." \\
       --labels "merge-gate" \\
       --no-inherit-labels
@@ -552,18 +579,17 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
   printf %s "$X_AC" \\
     | awk '/^\\[h\\][[:space:]]/{sub(/^\\[h\\][[:space:]]+/,""); print}' \\
     | while IFS= read -r ac_line; do
-        # Probe for an existing human child by exact title match. Title is the
-        # canonical identity: step 5b creates "[Human verify] $ac_line" titles,
-        # and step 5a migrates pre-existing X children that should already use
-        # the same canonical title format. Description-based matching was
-        # fragile because migrated children may not encode the AC text in
-        # description, leading to spurious duplicate creation.
+        # Probe for an existing human child by exact title match.
+        # Dual-probe idempotency: check for BOTH old pattern
+        # "[Human verify] $ac_line" AND new pattern "[verify] $TITLE_SLUG - $ac_line"
+        # (transition window dual-probe).
         EXISTING=$(bd list --parent "$Y_ID" --label human --json \\
-          | jq --arg title "[Human verify] $ac_line" \\
-               '[.[] | select(.status != "closed") | select(.title == $title)] | length')
+          | jq --arg old_title "[Human verify] $ac_line" \\
+               --arg new_title "[verify] $TITLE_SLUG - $ac_line" \\
+               '[.[] | select(.title == $old_title or .title == $new_title)] | length')
         if [ "$EXISTING" = "0" ]; then
           bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
-            --title "[Human verify] $ac_line" \\
+            --title "[verify] $TITLE_SLUG - $ac_line" \\
             --description "Human verification required for: $ac_line" \\
             --labels "human" \\
             --no-inherit-labels

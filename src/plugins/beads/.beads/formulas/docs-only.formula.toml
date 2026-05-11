@@ -10,7 +10,8 @@
 # Usage:
 #   bd mol pour docs-only \
 #     --var topic="Document the bd comments vs notes distinction" \
-#     --var bead-id=proj-42
+#     --var bead-id=proj-42 \
+#     --var title-slug=document-comments-vs-notes
 
 formula      = "docs-only"
 description  = "Per-stage docs-only pipeline: preflight → apply-edits → review → verify-ac → create-pr → review-cycle → merge-or-handoff"
@@ -27,6 +28,10 @@ required    = true
 description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
 required    = true
 
+[vars.title-slug]
+description = "Kebab-cased slug derived from the source bead/feature title (≤30 chars). Used to make step-bead titles human-readable and source-identifiable."
+required    = true
+
 # =============================================================================
 # Stage: preflight
 # Model: claude-sonnet-4-6  Effort: high
@@ -36,7 +41,7 @@ required    = true
 [[steps]]
 id    = "preflight"
 name  = "preflight"
-title = "Preflight: spec validation, worktree creation (no coverage check)"
+title = "[preflight] {{title-slug}}"
 description = """
 Validate the bead spec and create the worktree before any edits.
 Model: claude-sonnet-4-6  Effort: high
@@ -102,7 +107,7 @@ git worktree? If so, skip work already done.
 [[steps]]
 id    = "apply-edits"
 name  = "apply-edits"
-title = "Apply-edits: single bead-implementor pass to write/edit the docs"
+title = "[apply-edits] {{title-slug}}"
 needs = ["preflight"]
 description = """
 Apply the docs/spec/prose changes via a single bead-implementor pass.
@@ -155,7 +160,7 @@ exists for this step, skip and proceed to review.
 [[steps]]
 id    = "review"
 name  = "review"
-title = "Review: quality-reviewer + simplify on the diff"
+title = "[review] {{title-slug}}"
 needs = ["apply-edits"]
 description = """
 Run the standard in-house review pair on the committed diff.
@@ -194,7 +199,7 @@ are picked up via filesystem state.
 [[steps]]
 id    = "verify-ac"
 name  = "verify-ac"
-title = "Verify-AC: [m] grep-witnesses if any; warn-and-pass if none"
+title = "[verify-ac] {{title-slug}}"
 needs = ["review"]
 description = """
 Validate every [m]-tagged AC line if any exist; warn-and-pass otherwise.
@@ -253,7 +258,7 @@ Re-run re-evaluates and continues from prior pass.
 [[steps]]
 id    = "create-pr"
 name  = "create-pr"
-title = "Create-PR: push branch and open pull request"
+title = "[create-pr] {{title-slug}}"
 needs = ["verify-ac"]
 description = """
 Create the pull request and persist its URL to the molecule.
@@ -295,7 +300,7 @@ If PR exists and is CLOSED: flag-human. Do NOT auto-reopen or create a new PR.
 [[steps]]
 id    = "review-cycle"
 name  = "review-cycle"
-title = "Review-cycle: address PR review feedback"
+title = "[review-cycle] {{title-slug}}"
 needs = ["create-pr"]
 description = """
 Drive the PR review loop until all review threads are resolved.
@@ -338,7 +343,7 @@ No in-flight FIX work.
 [[steps]]
 id    = "merge-or-handoff"
 name  = "merge-or-handoff"
-title = "Merge-or-handoff: auto-merge or hand off to human"
+title = "[merge-or-handoff] {{title-slug}}"
 needs = ["review-cycle"]
 description = """
 Either auto-merge the PR or hand off to the human.
