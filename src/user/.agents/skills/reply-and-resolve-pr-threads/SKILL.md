@@ -59,15 +59,15 @@ Standalone mode is deferred to a follow-up bead.
 
 ### Phase 0 — Mode detection + schema validation
 
-Apply the six Phase 0 precedence rules above. After mode is resolved, run schema validation against the supplied path:
+Apply the six Phase 0 precedence rules above. After mode is resolved, run schema validation against the supplied path with the Phase 0 guard set:
 
 ```bash
 ~/.claude/skills/wait-for-pr-comments/validate-inventory.sh \
-  <inventory-path> \
+  --phase 0 <inventory-path> \
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). Phase 0 checks guards 1–9; guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). `--phase 0` runs guards 1–9; `--phase 2` (the default) runs all ten. Guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field — Phase 0 invocations would always fail it on a raw inventory.
 
 ### Phase 1 — Read inventory + verify head SHA
 

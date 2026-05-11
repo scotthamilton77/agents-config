@@ -1,28 +1,66 @@
 #!/usr/bin/env bash
 # validate-inventory.sh — schema validation guard for the PR-review hand-off contract.
 #
-# Reads the inventory JSON file at the given path and runs nine `jq` predicates
-# (one per Schema Validation Guard in docs/specs/2026-04-26-pr-review-skill-redesign.md).
-# Exits 0 if all guards pass; non-zero with a human-readable error to stderr otherwise.
+# Reads the inventory JSON file at the given path and runs the documented
+# `jq` predicates (one per Schema Validation Guard in
+# docs/specs/2026-04-26-pr-review-skill-redesign.md). Exits 0 if all guards
+# pass; non-zero with a human-readable error to stderr otherwise.
 #
 # Usage:
-#   validate-inventory.sh <inventory_json_path>
+#   validate-inventory.sh [--phase 0|2] <inventory_json_path>
+#
+# --phase controls which guards run:
+#   --phase 2 (default) — runs all ten guards (the full post-render contract)
+#   --phase 0           — runs guards 1–9 only, skipping guard 10
+#                         (replyable-has-reply_body). Phase 0 is invoked on
+#                         the RAW inventory before `render-reply-bodies.sh`
+#                         populates `reply_body`, so guard 10 cannot yet
+#                         apply.
 #
 # Exit codes:
-#   0  — all guards pass
+#   0  — all checked guards pass
 #   1  — validation failed (one or more guards rejected the input)
-#   64 — wrong arg count (EX_USAGE)
+#   64 — bad usage (wrong arg count, unknown flag, bad --phase value)
 #   65 — jq write failed (EX_DATAERR)
 #   66 — input file not found (EX_NOINPUT)
 
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-    echo "usage: validate-inventory.sh <inventory_json_path>" >&2
-    exit 64
-fi
+PHASE="2"
+PATH_IN=""
 
-PATH_IN="$1"
+usage() {
+    echo "usage: validate-inventory.sh [--phase 0|2] <inventory_json_path>" >&2
+    exit 64
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --phase)
+            [ "$#" -ge 2 ] || usage
+            PHASE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        --*)
+            echo "error: unknown flag: $1" >&2
+            usage
+            ;;
+        *)
+            [ -z "$PATH_IN" ] || usage
+            PATH_IN="$1"
+            shift
+            ;;
+    esac
+done
+
+[ -n "$PATH_IN" ] || usage
+case "$PHASE" in
+    0|2) ;;
+    *) echo "error: --phase must be 0 or 2 (got: $PHASE)" >&2; usage ;;
+esac
 
 if [ ! -f "$PATH_IN" ]; then
     echo "error: file not found: $PATH_IN" >&2
@@ -101,14 +139,18 @@ run_guard "ESCALATE-must-be-filed" \
 
 # Guard 10: every replyable item must have a non-empty reply_body.
 # "Replyable" means: FIX, SKIP, or ESCALATE-with-escalation_filed=true.
-# This guard runs AFTER render-reply-bodies.sh has populated reply_body;
-# it catches render failures that slipped through.
-run_guard "replyable-has-reply_body" \
-    '[.items[] | select(
-        (.classification == "FIX" or .classification == "SKIP" or
-         (.classification == "ESCALATE" and .escalation_filed == true))
-        and (.reply_body == null or .reply_body == "")
-     )]' || FAIL=1
+# This guard runs AFTER render-reply-bodies.sh has populated reply_body
+# (Phase 2 only); it catches render failures that slipped through. Phase 0
+# invocations skip it because the raw inventory does not yet carry the
+# field.
+if [ "$PHASE" = "2" ]; then
+    run_guard "replyable-has-reply_body" \
+        '[.items[] | select(
+            (.classification == "FIX" or .classification == "SKIP" or
+             (.classification == "ESCALATE" and .escalation_filed == true))
+            and (.reply_body == null or .reply_body == "")
+         )]' || FAIL=1
+fi
 
 if [ "$FAIL" -ne 0 ]; then
     echo "error: schema validation failed for $PATH_IN" >&2
