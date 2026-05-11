@@ -14,7 +14,7 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 - No markdown TODO lists unless user explicitly requests
 - Acceptance criteria: "Build passes. Typecheck passes. Tests pass."
 - Epic children parallel by default — only explicit deps create sequence
-- Specs go in the bead description (`bd update <id> --description "..."`) — the bead is the plan file
+- Specs go in bead fields (--description, --notes, --design, --acceptance) — the bead IS the plan. If a write balks at field size (TEXT holds ~65KB; unlikely but possible with very large specs), externalize to docs/beads/<short-id>-<<slug>.md and put a relative-path reference in the field. The bead remains the owner; the file is overflow storage.
 - **`bd create` is pure capture — no claim, no implementation.** Reserve "Starting work on task [id]..." for when the user explicitly directs you to START WORK on a specific bead identifier.
 
 ## Parent-chain invariants
