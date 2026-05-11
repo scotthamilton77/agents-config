@@ -80,7 +80,8 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
 
    On absent label (`mode` empty), fall back to molecule title: `bd show <mol-id> --json | jq -r '.[0].title'`. Allowed mode values: `implement-feature` | `fix-bug` | `docs-only`. (The `docs-only` mode does not have entries in §5's stage→agent map; its steps are non-RALF and dispatched directly per its formula.)
 3. Repo root: `dirname "$(git -C "<worktree-path>" rev-parse --path-format=absolute --git-common-dir)"` (both `<worktree-path>` and the `$(...)` substitution must be double-quoted to survive paths with spaces or special characters).
-4. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
+4. Worker-audit setup: run `setup-worker-audit.sh <repo-root>` (located alongside this SKILL.md). Idempotent — creates `<repo-root>/.beads/worker-audit/` and writes a `*`-pattern `.gitignore` inside it if either is absent. Call this immediately after the repo root is known, before any dispatch.
+5. Target report path template: `<repo-root>/.beads/worker-audit/<step-bead-id>/<agent-name>[-iter<N>].yaml` (per `worker-report-v1.md` §2).
 
 ## 3. Decide dispatch shape from metadata
 
