@@ -34,6 +34,10 @@ required    = true
 description = "Bead ID tracking this work (e.g. proj-42). Must already exist."
 required    = true
 
+[vars.title-slug]
+description = "Kebab-cased slug derived from the source bead/feature title (≤30 chars). Used to make step-bead titles human-readable and source-identifiable."
+required    = true
+
 # =============================================================================
 # Stage: preflight
 # Model: claude-sonnet-4-6  Effort: high
@@ -46,7 +50,7 @@ id    = "preflight"
 # stage-role identifier used by the shell driver (bead-driver-test.sh). It mirrors
 # id intentionally — id is the structural key; name is the human-readable label.
 name  = "preflight"
-title = "Preflight: spec validation, formula selection, worktree creation"
+title = "[preflight] {{title-slug}}"
 description = """
 Validate the bead spec and create the worktree before any implementation work.
 Model: claude-sonnet-4-6  Effort: high
@@ -124,7 +128,7 @@ git worktree? If so, skip work already done.
 [[steps]]
 id    = "red-tests"
 name  = "red-tests"
-title = "Red-tests: write failing tests covering all [m] AC bullets"
+title = "[red-tests] {{title-slug}}"
 needs = ["preflight"]
 description = '''
 Write failing tests (TDD red phase) before any implementation code.
@@ -327,7 +331,7 @@ Check filesystem (committed tests) and step-bead notes. Continue from prior stat
 [[steps]]
 id    = "green-loop"
 name  = "green-loop"
-title = "Green-loop: implement via label-driven RALF dispatch"
+title = "[green-loop] {{title-slug}}"
 needs = ["red-tests"]
 description = """
 Implement the feature using label-driven skill dispatch.
@@ -449,7 +453,7 @@ Re-check labels and dispatch per current bead state at step start.
 [[steps]]
 id    = "quality-sweep"
 name  = "quality-sweep"
-title = "Quality-sweep: global quality gate across entire project"
+title = "[quality-sweep] {{title-slug}}"
 needs = ["green-loop"]
 description = """
 Run the full project quality suite (not just changed files).
@@ -493,7 +497,7 @@ Re-run re-evaluates state and runs only what is not already green.
 [[steps]]
 id    = "verify-ac"
 name  = "verify-ac"
-title = "Verify-AC: mechanical acceptance criteria validation"
+title = "[verify-ac] {{title-slug}}"
 needs = ["quality-sweep"]
 description = """
 Validate every [m]-tagged AC bullet against worktree state.
@@ -544,7 +548,7 @@ Re-run re-evaluates and continues from prior pass.
 [[steps]]
 id    = "create-pr"
 name  = "create-pr"
-title = "Create-PR: push branch and open pull request"
+title = "[create-pr] {{title-slug}}"
 needs = ["verify-ac"]
 description = """
 Create the pull request and persist its URL to the molecule.
@@ -588,7 +592,7 @@ If PR exists and is CLOSED: flag-human. Do NOT auto-reopen or create a new PR.
 [[steps]]
 id    = "review-cycle"
 name  = "review-cycle"
-title = "Review-cycle: address PR review feedback"
+title = "[review-cycle] {{title-slug}}"
 needs = ["create-pr"]
 description = """
 Drive the PR review loop until all review threads are resolved.
@@ -631,7 +635,7 @@ No in-flight FIX work.
 [[steps]]
 id    = "merge-or-handoff"
 name  = "merge-or-handoff"
-title = "Merge-or-handoff: auto-merge or hand off to human"
+title = "[merge-or-handoff] {{title-slug}}"
 needs = ["review-cycle"]
 description = """
 Either auto-merge the PR or hand off to the human.
