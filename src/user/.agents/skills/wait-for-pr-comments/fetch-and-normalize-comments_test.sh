@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Smoke test for fetch-and-normalize-comments.sh
-# Helper does not exist yet — these tests MUST fail in red phase.
 
 set -u
 
@@ -34,8 +33,16 @@ FAKEBIN="$TMP/bin"
 mkdir -p "$FAKEBIN"
 cat > "$FAKEBIN/gh" <<'FAKE'
 #!/usr/bin/env bash
-# Fake gh — returns an empty (but well-formed) review-comments page.
-# Real script will paginate and normalize; an empty page is a valid result.
+# Fake gh — returns well-formed empty responses for both the GraphQL
+# review-threads query and the REST issue-comments endpoint.
+# The GraphQL path requires an object shape (data.repository.pullRequest...);
+# the REST issues path returns a JSON array.
+for arg in "$@"; do
+  if [ "$arg" = "graphql" ]; then
+    echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}'
+    exit 0
+  fi
+done
 echo '[]'
 FAKE
 chmod +x "$FAKEBIN/gh"

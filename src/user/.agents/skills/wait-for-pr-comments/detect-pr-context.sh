@@ -72,7 +72,10 @@ if [ -z "$PR_NUMBER" ] || [ -z "$OWNER" ] || [ -z "$REPO" ]; then
 fi
 
 INVENTORY_DIR="$HOME/.claude/state/pr-inventory"
-mkdir -p "$INVENTORY_DIR" 2>/dev/null || true
+if ! mkdir -p "$INVENTORY_DIR" 2>/dev/null; then
+  echo "error: failed to create state directory: $INVENTORY_DIR" >&2
+  exit 1
+fi
 # Get head SHA (short) from PR; falls back to "unknown" if gh fails. The path
 # is a detection hint for concurrency probing, not a write target.
 HEAD_SHA="$(gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER" --jq '.head.sha' 2>/dev/null | head -c 12)"

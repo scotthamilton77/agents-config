@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Smoke test for audit-subagent-report.sh
-# Helper does not exist yet — these tests MUST fail in red phase.
 #
 # Contract:
 #   exit 0 = audit pass

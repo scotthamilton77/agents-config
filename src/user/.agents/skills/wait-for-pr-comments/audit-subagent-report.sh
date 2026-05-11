@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Purpose: validate a per-comment fix subagent's report against the fix_outcome
-# schema, then run audit checks (SHA ancestry, commit count, diff hunks).
+# schema, then run audit checks (SHA ancestry, commit count).
 #
 # Inputs:
 #   --pre-sha       <sha>   HEAD SHA before fix subagent ran
@@ -15,7 +15,7 @@
 #     exit 2 → JSON {field,     message}     schema violation
 #   exit codes:
 #     0 = audit pass
-#     1 = audit failure (ancestry / commit-count / hunk-regex)
+#     1 = audit failure (ancestry / commit-count)
 #     2 = schema violation (missing/invalid required field)
 set -euo pipefail
 

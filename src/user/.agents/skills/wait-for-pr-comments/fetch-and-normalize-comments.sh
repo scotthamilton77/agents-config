@@ -103,5 +103,9 @@ echo "$THREADS_JSON" | jq --argjson issues "$ISSUE_COMMENTS_JSON" '
         body_excerpt: ((.body // "") | .[0:200]),
         body_full: (.body // "")
       });
-  if type == "array" then . else (review_items + issue_items) end
+  if type != "object" then
+    error("unexpected GraphQL response shape (expected object, got \(type))")
+  else
+    review_items + issue_items
+  end
 '

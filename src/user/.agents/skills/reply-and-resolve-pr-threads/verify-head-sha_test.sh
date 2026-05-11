@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Smoke test for verify-head-sha.sh
-# Helper does not exist yet — these tests MUST fail in red phase.
 
 set -u
 

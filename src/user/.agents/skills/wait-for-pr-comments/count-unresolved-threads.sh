@@ -55,30 +55,46 @@ QUERY='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){repository(ow
 cursor=""
 all_threads="[]"
 
+GH_ERR="$(mktemp)"
+trap 'rm -f "$GH_ERR"' EXIT
+
 while :; do
   if [ -n "$cursor" ]; then
-    PAGE="$(gh api graphql -F "owner=$OWNER" -F "repo=$REPO" -F "pr=$PR" -F "cursor=$cursor" -f query="$QUERY" 2>/dev/null || echo '')"
+    if ! PAGE="$(gh api graphql -F "owner=$OWNER" -F "repo=$REPO" -F "pr=$PR" -F "cursor=$cursor" -f query="$QUERY" 2>"$GH_ERR")"; then
+      echo "error: gh api graphql failed: $(cat "$GH_ERR")" >&2
+      exit 1
+    fi
   else
-    PAGE="$(gh api graphql -F "owner=$OWNER" -F "repo=$REPO" -F "pr=$PR" -f query="$QUERY" 2>/dev/null || echo '')"
+    if ! PAGE="$(gh api graphql -F "owner=$OWNER" -F "repo=$REPO" -F "pr=$PR" -f query="$QUERY" 2>"$GH_ERR")"; then
+      echo "error: gh api graphql failed: $(cat "$GH_ERR")" >&2
+      exit 1
+    fi
   fi
 
-  if [ -z "$PAGE" ]; then
-    echo "error: gh api graphql failed" >&2
+  if ! NODES="$(printf '%s' "$PAGE" | jq -c '.data.repository.pullRequest.reviewThreads.nodes // []' 2>"$GH_ERR")"; then
+    echo "error: jq failed to parse reviewThreads.nodes: $(cat "$GH_ERR")" >&2
+    exit 1
+  fi
+  if ! all_threads="$(jq -nc --argjson a "$all_threads" --argjson b "$NODES" '$a + $b' 2>"$GH_ERR")"; then
+    echo "error: jq failed to merge thread pages: $(cat "$GH_ERR")" >&2
     exit 1
   fi
 
-  NODES="$(echo "$PAGE" | jq -c '.data.repository.pullRequest.reviewThreads.nodes // []' 2>/dev/null || echo '[]')"
-  all_threads="$(jq -nc --argjson a "$all_threads" --argjson b "$NODES" '$a + $b')"
-
-  HAS_NEXT="$(echo "$PAGE" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' 2>/dev/null || echo false)"
+  if ! HAS_NEXT="$(printf '%s' "$PAGE" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false' 2>"$GH_ERR")"; then
+    echo "error: jq failed to read pageInfo.hasNextPage: $(cat "$GH_ERR")" >&2
+    exit 1
+  fi
   if [ "$HAS_NEXT" != "true" ]; then
     break
   fi
-  cursor="$(echo "$PAGE" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // empty')"
+  if ! cursor="$(printf '%s' "$PAGE" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor // empty' 2>"$GH_ERR")"; then
+    echo "error: jq failed to read pageInfo.endCursor: $(cat "$GH_ERR")" >&2
+    exit 1
+  fi
   [ -n "$cursor" ] || break
 done
 
-echo "$all_threads" | jq -c '
+printf '%s' "$all_threads" | jq -c '
   map(select(.isResolved == false and .isOutdated == false))
   | {count: length, thread_ids: map(.id)}
 '

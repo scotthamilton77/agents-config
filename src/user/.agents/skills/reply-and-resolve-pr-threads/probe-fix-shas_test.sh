@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Smoke test for probe-fix-shas.sh
-# Helper does not exist yet — these tests MUST fail in red phase.
 
 set -u
 
