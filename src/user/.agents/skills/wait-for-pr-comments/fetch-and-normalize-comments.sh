@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Purpose: fetch all PR review-thread comments and issue comments, normalize into a single JSON array.
+# Purpose: fetch the first page of PR review-thread comments and issue comments, normalize into a single JSON array.
+#
+# v1 scope: single-page only — reviewThreads(first:100) and comments(first:100)
+# with no pagination. PRs with more than 100 threads (or more than 100 comments
+# in any single thread) will silently produce an incomplete inventory. Pagination
+# is tracked separately and intentionally deferred.
 #
 # Inputs:
 #   --owner <o>    repository owner

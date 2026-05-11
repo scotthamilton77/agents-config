@@ -42,24 +42,27 @@ done
 [ -n "$ITEMS" ]  || { echo "error: --items is required" >&2; exit 2; }
 [ -f "$ITEMS" ]  || { echo "error: items file not found: $ITEMS" >&2; exit 2; }
 
-# Per item: classify as present/missing.
-PRESENT="[]"
-MISSING="[]"
+# Per item: classify as present/missing. Bucketed items are appended to two
+# JSONL temp files (one line per item) and slurped into arrays once at the end —
+# this keeps the loop linear in inventory size, instead of re-running
+# `jq '$a + [$i]'` on the growing accumulator for every item (O(n²)).
+TMP_ITEMS="$(mktemp)"
+TMP_PRESENT="$(mktemp)"
+TMP_MISSING="$(mktemp)"
+trap 'rm -f "$TMP_ITEMS" "$TMP_PRESENT" "$TMP_MISSING"' EXIT
 
-# Use a temp file to capture iteration output (avoids subshell variable scope).
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
-
-jq -c '.[]?' "$ITEMS" > "$TMP"
+jq -c '.[]?' "$ITEMS" > "$TMP_ITEMS"
 
 while IFS= read -r item; do
   [ -n "$item" ] || continue
   fix_sha="$(echo "$item" | jq -r '.fix_commit_sha // empty')"
   if [ -n "$fix_sha" ] && git merge-base --is-ancestor "$fix_sha" "$BRANCH" 2>/dev/null; then
-    PRESENT="$(jq -nc --argjson a "$PRESENT" --argjson i "$item" '$a + [$i]')"
+    printf '%s\n' "$item" >> "$TMP_PRESENT"
   else
-    MISSING="$(jq -nc --argjson a "$MISSING" --argjson i "$item" '$a + [$i]')"
+    printf '%s\n' "$item" >> "$TMP_MISSING"
   fi
-done < "$TMP"
+done < "$TMP_ITEMS"
 
+PRESENT="$(jq -cs '.' "$TMP_PRESENT")"
+MISSING="$(jq -cs '.' "$TMP_MISSING")"
 jq -nc --argjson p "$PRESENT" --argjson m "$MISSING" '{present: $p, missing: $m}'

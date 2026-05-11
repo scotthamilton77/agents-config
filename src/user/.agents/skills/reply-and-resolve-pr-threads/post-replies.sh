@@ -2,7 +2,7 @@
 # Purpose: post a reply to every inventory thread/comment.
 #
 # Dispatches by `kind`:
-#   review_thread → GraphQL addPullRequestReviewThreadReply mutation
+#   review_thread → REST POST /repos/{o}/{r}/pulls/{n}/comments/{reply_to_comment_id}/replies
 #   issue_comment → REST POST /repos/{o}/{r}/issues/{n}/comments
 #
 # IDEMPOTENCY: this helper is NOT idempotent. If a partial run posted some
@@ -21,6 +21,8 @@
 #     POSTED <comment_id>
 #     FAILED <comment_id> <reason>
 #     SKIPPED <comment_id> (matched --skip-comment-ids)
+#     FILTERED <comment_id> (classification=<value>) — item's classification is
+#       neither FIX nor SKIP (e.g., ESCALATE handled elsewhere); not an error
 #   exit codes:
 #     0 = all items posted (or skipped) successfully
 #     1 = at least one item failed
