@@ -227,15 +227,24 @@ reads only):
 # Bead itself carries human?
 HUMAN_SELF=$(bd label list <bead-id> --json | jq -e 'index("human")' >/dev/null && echo yes || echo no)
 
-# Bead is blocked by at least one open human-labeled blocker?
-HUMAN_BLOCKER=$(bd show <bead-id> --json \
+# How many open human-labeled blockers does this bead have?
+# Route D fires when HUMAN_BLOCKER_COUNT > 0; the count is also used in
+# the surface message so the user sees up front whether the skill will
+# pivot directly (count=1) or list-and-prompt (count>1).
+HUMAN_BLOCKER_COUNT=$(bd show <bead-id> --json \
   | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id' \
   | while read blocker; do
       BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
       [ "$BSTATE" = "closed" ] && continue
       bd label list "$blocker" --json | jq -e 'index("human")' >/dev/null && echo "$blocker"
-    done | head -1)
+    done | wc -l | tr -d ' ')
 ```
+
+Note: Route D does NOT pick a specific blocker id from this list — the
+source bead id is what gets passed to `resolve-human-bead`, and the
+skill's Probe 6 (source-bead pivot) re-runs the same detection and
+handles both the single-blocker (auto-pivot) and multi-blocker
+(list-and-prompt) cases.
 
 `select(.dependency_type=="blocks")` is the verified jq path on `bd show
 --json`'s `dependencies[]` field; `.id` is the verified id field on each
@@ -246,21 +255,36 @@ is documented in the `resolve-human-bead` skill — Route D's detection
 MUST stay in sync with it.
 
 **Action** — Route D auto-invokes the `resolve-human-bead` skill via the
-Skill tool, passing the appropriate target id:
+Skill tool, passing the **source bead id** (i.e. the `<bead-id>` that
+`start-bead` was invoked with) unconditionally — regardless of trigger
+or blocker count:
 
-- if **bead-itself-human**: pass `<bead-id>` (the bead itself).
-- else if **bead-blocked-by-human**: pass the `human`-labeled blocker's
-  id. If multiple blockers exist, defer the pick to the skill — it
-  implements list-and-prompt for the multi-blocker case.
+- **bead-itself-human** — the skill sees a `human`-labeled target and
+  proceeds with its normal class-detection path (Probes 1–5).
+- **bead-blocked-by-human** — the skill's source-bead-pivot (Probe 6)
+  re-runs the canonical detection probe on the source's blockers; if
+  exactly one open `human`-labeled blocker exists it pivots
+  automatically, and if more than one exists it lists all blockers
+  with one-line context and prompts the user to pick one per
+  invocation.
+
+Passing the source bead unconditionally keeps Route D branch-free and
+preserves the multi-blocker list-and-prompt UX — passing only the
+first blocker would bypass that prompt and silently pick one for the
+user.
 
 Merge-gate hand-off sub-class beads (also `human`-labeled) flow through
 Route D naturally — Route D dispatches to the skill, which then routes
 to Scenario G per the class-detection priority.
 
-**Surface message** — print exactly one line before invoking the skill:
+**Surface message** — print exactly one line before invoking the skill.
+For the `bead-blocked-by-human` trigger, include the count of open
+`human`-labeled blockers detected so the user sees up front whether a
+multi-blocker prompt is about to appear:
 
 ```
-Route D: <id> [is | is blocked by] human-labeled <target>. Invoking resolve-human-bead...
+Route D: <id> is human-labeled. Invoking resolve-human-bead on source...
+Route D: <id> is blocked by <N> human-labeled bead(s). Invoking resolve-human-bead on source...
 ```
 
 Then invoke the `resolve-human-bead` skill via the Skill tool. Do NOT
