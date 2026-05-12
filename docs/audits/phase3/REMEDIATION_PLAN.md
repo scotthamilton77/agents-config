@@ -1,7 +1,7 @@
 # REMEDIATION PLAN — agents-config-il69 Audit
 
 **AUDIT_INPUT_SHA**: af9c1bfc342bf7578ad491cc63dc95b07618c851
-**Phase 2 model**: gpt-5.4
+**Phase 2 model**: gpt-5.5
 **Aggregator model**: claude-sonnet-4-6
 **Generated**: 2026-05-10
 
