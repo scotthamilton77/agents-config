@@ -16,6 +16,7 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 - Epic children parallel by default — only explicit deps create sequence
 - Specs go in bead fields (--description, --notes, --design, --acceptance) — the bead IS the plan. If a write balks at field size (TEXT holds ~65KB; unlikely but possible with very large specs), externalize to docs/beads/<short-id>-<<slug>.md and put a relative-path reference in the field. The bead remains the owner; the file is overflow storage.
 - **`bd create` is pure capture — no claim, no implementation.** Reserve "Starting work on task [id]..." for when the user explicitly directs you to START WORK on a specific bead identifier.
+- When referencing any bead in conversation turn, always use the ID and title together, e.g. "bd-1234 (Implement login)"; you only need do this once per turn per bead, then you can refer to it by ID alone for the rest of the turn.
 
 ## Parent-chain invariants
 
