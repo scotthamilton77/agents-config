@@ -118,12 +118,30 @@ Decide from the result array:
 - **length 0** → no active molecule. BUT if you suspect a pre-convention
   or otherwise unlabeled molecule exists (prior activity visible in the
   bead's history, user references one), STOP — do NOT pour/wisp over
-  unlabeled in-progress work. Escalate:
+  unlabeled in-progress work. Execute the **Human-Escalation Pattern
+  (HEP)** — defined in `docs/specs/bead-pipeline-architecture.md` §5.6
+  and summarized in the **HEP section** of
+  `src/plugins/beads/.claude/rules/beads.md`. Do NOT bare-stamp `human`
+  on the source bead; the single-bead-`human` invariant requires the
+  escalation bead to be the sole carrier of `human`:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
-  bd label add <bead-id> human
+  HUMAN_ID=$(bd create \
+      --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
+      --type task \
+      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+      --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
+      --json | jq -r '.id')
+  bd label add "$HUMAN_ID" human
+  bd update "$HUMAN_ID" --append-notes \
+      "Source: <bead-id>
+  Step-bead: N/A (pre-pour)
+  Molecule: <unknown — probe returned 0 labeled molecules>
+  Worktree: N/A
+  Scenario hint: architectural-rework"
+  bd dep add "<bead-id>" "$HUMAN_ID"
   ```
-  Otherwise proceed to Step 3.
+  Exit cleanly. Otherwise proceed to Step 3.
 
 - **length 1** → extract and resume:
   ```bash
@@ -149,17 +167,35 @@ Decide from the result array:
   the winner and tell the user your reasoning in the routing message;
   the user can burn the loser later.
 
-  If the molecules cannot be cleanly disambiguated, escalate WITH your
-  analysis — the human should see your read-out, not a blank flag:
+  If the molecules cannot be cleanly disambiguated, escalate via the
+  **Human-Escalation Pattern (HEP)** — defined in
+  `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
+  **HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Do NOT
+  bare-stamp `human` on the source bead; the single-bead-`human`
+  invariant requires the escalation bead to be the sole carrier of
+  `human`. Carry your multi-molecule analysis into the escalation
+  bead's notes so the human sees your read-out, not a blank flag:
   ```bash
-  bd comments add <bead-id> "N active molecules for this bead:
-    - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
-    - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
-    Assessment: <duplicative | legacy | needs manual merge>
-    Recommended action: <resume X / burn Y / user decides>"
-  bd label add <bead-id> human
+  HUMAN_ID=$(bd create \
+      --title "Human input needed: multiple active molecules on <bead-id>" \
+      --type task \
+      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+      --description "N active molecules for this bead; cannot cleanly disambiguate.
+  - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
+  - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
+  Assessment: <duplicative | legacy | needs manual merge>
+  Recommended action: <resume X / burn Y / user decides>" \
+      --json | jq -r '.id')
+  bd label add "$HUMAN_ID" human
+  bd update "$HUMAN_ID" --append-notes \
+      "Source: <bead-id>
+  Step-bead: N/A (pre-pour)
+  Molecule: <mol-id-1>, <mol-id-2>, ...
+  Worktree: N/A
+  Scenario hint: architectural-rework"
+  bd dep add "<bead-id>" "$HUMAN_ID"
   ```
-  Do NOT silently pick one.
+  Exit cleanly. Do NOT silently pick one.
 
 See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
 rationale and the stamp procedure.
