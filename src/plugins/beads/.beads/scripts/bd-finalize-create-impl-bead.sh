@@ -184,7 +184,7 @@ CREATE_JSON=$(bd create \
 
 # bd create --json returns either an object {id:...} or array [{id:...}] depending
 # on bd version; handle both forms defensively.
-Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r '(.[0].id // .id) // empty' 2>/dev/null)
+Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r 'if type == "array" then .[0].id else .id end // empty')
 
 if [[ -z "$Y_ID" || "$Y_ID" == "null" ]]; then
     echo "Error: bd create returned no id" >&2
