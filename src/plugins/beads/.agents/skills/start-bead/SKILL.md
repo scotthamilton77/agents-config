@@ -164,6 +164,70 @@ Decide from the result array:
 See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
 rationale and the stamp procedure.
 
+### Step 2.5: Route D — bead carries `human` or is blocked by `human`
+
+Route D **AUTO-INVOKES** the `resolve-human-bead` skill in the current
+session via the Skill tool before any of Routes A/B/C are considered. The
+user sees one continuous flow — no second `/resolve-human-bead` invocation
+is required.
+
+Authority: this route implements the **Human-Escalation Pattern (HEP)**
+defined in `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized
+in the HEP section of `src/plugins/beads/.claude/rules/beads.md`. Cite
+arch §5.6 and the beads.md HEP section as authoritative.
+
+**Trigger** — fire Route D when EITHER:
+
+- **bead-itself-human** — the target bead has `human` label (i.e. the
+  bead itself carries the human-attention tag), OR
+- **bead-blocked-by-human** — the target bead has at least one open
+  `bd dep` blocker that carries `human` (a human-labeled blocker
+  paused this bead).
+
+Detection (run after Step 2's molecule probe; non-destructive `--json`
+reads only):
+
+```bash
+# Bead itself carries human?
+HUMAN_SELF=$(bd label list <bead-id> --json | jq -e 'index("human")' >/dev/null && echo yes || echo no)
+
+# Bead is blocked by at least one open human-labeled blocker?
+HUMAN_BLOCKER=$(bd show <bead-id> --json \
+  | jq -r '.[0].dependencies[]? | select(.type=="blocks") | .issue_id' \
+  | while read blocker; do
+      BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
+      [ "$BSTATE" = "closed" ] && continue
+      bd label list "$blocker" --json | jq -e 'index("human")' >/dev/null && echo "$blocker"
+    done | head -1)
+```
+
+`select(.type=="blocks")` is the verified jq path on the source's
+`dependencies[]` field; `.issue_id` is the verified id field. The
+canonical detection probe is documented in the `resolve-human-bead`
+skill — Route D's detection MUST stay in sync with it.
+
+**Action** — Route D auto-invokes the `resolve-human-bead` skill via the
+Skill tool, passing the appropriate target id:
+
+- if **bead-itself-human**: pass `<bead-id>` (the bead itself).
+- else if **bead-blocked-by-human**: pass the `human`-labeled blocker's
+  id. If multiple blockers exist, defer the pick to the skill — it
+  implements list-and-prompt for the multi-blocker case.
+
+Merge-gate hand-off sub-class beads (also `human`-labeled) flow through
+Route D naturally — Route D dispatches to the skill, which then routes
+to Scenario G per the class-detection priority.
+
+**Surface message** — print exactly one line before invoking the skill:
+
+```
+Route D: <id> [is | is blocked by] human-labeled <target>. Invoking resolve-human-bead...
+```
+
+Then invoke the `resolve-human-bead` skill via the Skill tool. Do NOT
+fall through to Routes A/B/C; Route D's dispatch is the terminal action
+for this `start-bead` invocation.
+
 ### Step 3: Route the Bead
 
 Evaluate the bead against these criteria in order:
