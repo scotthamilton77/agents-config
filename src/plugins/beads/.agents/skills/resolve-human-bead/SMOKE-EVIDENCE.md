@@ -13,7 +13,7 @@ SMOKE1=/tmp/nhep-smoke-1-cycle2-1778603362
 mkdir -p "$SMOKE1" && cd "$SMOKE1"
 bd init
 # Issue prefix: nhep-smoke-1-cycle2-1778603362
-B1=$(bd create --title "Test source" --type task --json | jq -r .id)
+B1=$(bd create --title "Test source" --type task --json | jq -r 'if type == "array" then .[0].id else .id end')
 # B1=nhep-smoke-1-cycle2-1778603362-i2o
 ```
 
@@ -29,7 +29,7 @@ H1=$(bd create \
     --type task \
     --priority "$(bd show "$B1" --json | jq -r '.[0].priority')" \
     --description "Smoke 1 cycle2 fixture: blocked on tooling-credentials" \
-    --json | jq -r .id)
+    --json | jq -r 'if type == "array" then .[0].id else .id end')
 # H1=nhep-smoke-1-cycle2-1778603362-3r7
 bd label add "$H1" human
 bd update "$H1" --append-notes "Source: $B1
@@ -168,12 +168,12 @@ time.
 SMOKE2=/tmp/nhep-smoke-2-1778601965
 mkdir -p "$SMOKE2" && cd "$SMOKE2"
 bd init
-S=$(bd create --title "Test source" --type task --json | jq -r .id)
+S=$(bd create --title "Test source" --type task --json | jq -r 'if type == "array" then .[0].id else .id end')
 # S=nhep-smoke-2-1778601965-k51
 FU=$(bd create \
     --type task \
     --title "[Human verify] Test verification AC" \
-    --parent "$S" --json | jq -r .id)
+    --parent "$S" --json | jq -r 'if type == "array" then .[0].id else .id end')
 # FU=nhep-smoke-2-1778601965-k51.1
 bd label add "$FU" human
 ```

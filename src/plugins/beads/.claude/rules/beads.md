@@ -104,9 +104,13 @@ bd update "<source-bead-id>" --status open
 ```
 
 **Single-bead `human` invariant.** Only the escalation bead carries
-`human`. The source bead never carries `human`. The step-bead never
-carries `human`. `[h]` follow-up beads (§4.3) also carry `human` but
-are a separate class with their own lifecycle.
+`human`. On HEP flag-human paths, the source bead never carries `human`
+and the step-bead never carries `human`. (Exception: the current
+`merge-or-handoff` formula implementations stamp `merge-ready` + `human`
+on the source bead directly rather than creating a separate escalation
+bead — a divergence from arch §5.6 tracked in `agents-config-g17x`.)
+`[h]` follow-up beads (§4.3) also carry `human` but are a separate
+class with their own lifecycle.
 
 **Resolution.** Use the `resolve-human-bead` skill (`/resolve-human-bead
 <bead-id>`). It detects the bead's class — merge-gate hand-off (G),
