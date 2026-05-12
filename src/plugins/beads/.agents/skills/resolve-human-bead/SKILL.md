@@ -43,9 +43,18 @@ in §5.6's "`[h]` follow-up beads are NOT HEP" subsection.
 ## 1. Class detection (priority-ordered — first match wins)
 
 Class detection ordering is **load-bearing**. Run the six probes in this
-exact order: a `[Merge gate]`-titled bead also satisfies the generic
-HEP-escalation predicate (it carries `human` + has an incoming dep edge),
-so the merge-gate probe MUST run first or scenario routing is wrong.
+exact order:
+
+- A `[Merge gate]`-titled bead also satisfies the generic HEP-escalation
+  predicate (it carries `human` + has an incoming dep edge), so the
+  merge-gate probe MUST run first or scenario routing is wrong.
+- The inconsistent-state probe MUST run BEFORE the orphan probe.
+  Probe 4 (orphaned-escalation sub-case (a)) — the escalation bead is
+  open but its source is closed — also satisfies the orphan probe's
+  "no incoming dep edge from any *open* source" predicate. If the
+  orphan probe runs first, the orphaned-escalation case is silently
+  downgraded to "treat as standalone task" and the integrity-repair
+  branch is never reached.
 
 ### Probe 1 — Merge-gate hand-off sub-class
 
@@ -82,20 +91,12 @@ Triggered when ALL of the following hold:
 
 Resolution routes to **Scenarios A–E** (depending on the user's diagnosis).
 
-### Probe 4 — Orphan human task
+### Probe 4 — Inconsistent-state repair branch
 
-Triggered when:
-
-- has `human` label
-- has no incoming `bd dep` edge from any open source
-- has no `[h]` or `[Merge gate]` discriminator
-
-Treat as a standalone task. Prompt the user for intent — most likely
-Scenario E (abandon via `bd human dismiss`), or a user-specific close.
-
-### Probe 5 — Inconsistent-state repair branch
-
-Distinct from Scenario G/G-merge above. Triggered when EITHER:
+Distinct from Scenario G/G-merge above. Evaluated BEFORE the orphan
+probe because sub-case (a) below also satisfies the orphan predicate
+("no incoming dep edge from any open source"); the orphan probe must
+not silently absorb it. Triggered when EITHER:
 
 - (a) **Orphaned escalation** — the escalation bead is `open` but its
   source bead is already `closed`. The dep blocker is moot; the
@@ -118,6 +119,19 @@ Offer concrete repair actions and let the user pick one:
 
 Always quote the exact id and reason on the repair-action confirmation
 prompt; the user attests the repair before any state change.
+
+### Probe 5 — Orphan human task
+
+Triggered when:
+
+- has `human` label
+- has no incoming `bd dep` edge from any source (open or closed) —
+  i.e., truly dep-less, not the closed-source case (which Probe 4
+  already claimed as the orphaned-escalation sub-case)
+- has no `[h]` or `[Merge gate]` discriminator
+
+Treat as a standalone task. Prompt the user for intent — most likely
+Scenario E (abandon via `bd human dismiss`), or a user-specific close.
 
 ### Probe 6 — source-bead pivot
 
