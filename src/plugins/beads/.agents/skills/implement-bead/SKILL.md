@@ -17,6 +17,50 @@ effort: high
 
 Metadata-driven dispatcher. One step-bead per invocation.
 
+## 0. Flag-human escalations use HEP
+
+Whenever this skill needs to pause a source bead pending human input —
+the verb used throughout below is **flag-human** — it executes the
+**Human-Escalation Pattern (HEP)** rather than stamping `human` directly
+on the source or step bead. HEP is defined in
+`docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
+**HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Both are
+authoritative.
+
+The HEP escalation procedure (run literally on every flag-human path
+below) is:
+
+```bash
+HUMAN_ID=$(bd create \
+    --title "Human input needed: <one-line summary>" \
+    --type task \
+    --priority "<inherited from source bead>" \
+    --description "<context: what the stage was doing, what is blocked, what is needed>" \
+    --json | jq -r '.id')
+bd label add "$HUMAN_ID" human
+bd update "$HUMAN_ID" --append-notes \
+    "Source: <source-bead-id>
+Step-bead: <step-bead-id>
+Molecule: <mol-id>
+Worktree: <worktree-path-or-N/A>
+Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
+bd dep add "<source-bead-id>" "$HUMAN_ID"
+bd update "<source-bead-id>" --status open
+# Exit cleanly (zero exit code; stage is paused, not failed).
+```
+
+After this transaction the source bead status reverts `in_progress → open`,
+the source bead's open `bd dep` blocker on `$HUMAN_ID` keeps it out of
+`bd ready --label implementation-ready`, and the escalation bead is the
+single carrier of the `human` visibility tag. The source bead and the
+step-bead MUST NOT carry the `human` label.
+
+This is a structural invariant of HEP — see arch §5.6's "Single-bead
+`human` invariant" subsection and the beads.md HEP section. Bare label
+stamps on the source bead or step bead are prohibited under HEP. The
+`resolve-human-bead` skill (and `/resolve-human-bead`) is the resolution
+path back into the autonomous queue.
+
 ## 1. Resolve step-bead from source-bead-id
 
 The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
@@ -36,23 +80,27 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
          formula_to_pour="$formula_names"
        else
          # Multiple distinct formula-* labels → §4.2 policy-knob collision.
-         # Per §5.6, flag-human is a pause (not a failure); exit cleanly.
-         # No step-bead exists yet (the molecule has not been poured), so
-         # only the source bead is labeled — the §5.6 step-bead path
-         # applies only after pour, and is enforced in §2 below.
-         bd label add <source-bead-id> human
-         bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
+         # Per §5.6 (HEP), flag-human is a pause (not a failure). Execute the
+         # HEP escalation procedure (§0 above): create a `human`-labeled
+         # escalation bead, dep-block the source bead on it, revert source
+         # to `open`. The escalation bead's notes carry the collision
+         # diagnostic. No step-bead exists yet (the molecule has not been
+         # poured), so this is a pre-pour escalation — only the escalation
+         # bead carries `human`. Exit cleanly.
+         #
+         # Diagnostic for the escalation's notes:
+         #   "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
          exit 0
        fi
 
-   If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` → flag-human (stamp `human` on the source bead, append note: "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>" --var title-slug=<slug>`; `fix-bug` → `--var bug="<title>" --var title-slug=<slug>`; `docs-only` → `--var topic="<title>" --var title-slug=<slug>`; `merge-and-cleanup` → `--var title-slug=<slug> --var pr="<pr-number>"` (where `<pr-number>` is the open PR number to merge; `bead-id` is the source bead being delivered). All formulas additionally take `--var bead-id=<source-bead-id>`. The `<slug>` is derived from the source bead's title using the canonical slug generation algorithm: (1) lowercase the title, (2) replace spaces with hyphens, (3) strip all characters except a-z, 0-9, and hyphens, (4) collapse consecutive hyphens to a single hyphen, (5) truncate to a maximum of 30 characters, (6) strip leading and trailing hyphens, (7) fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead (dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`). Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads-labels.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise stamp `human` on the source bead and exit).
+   If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` → flag-human (execute the HEP escalation procedure from §0; the escalation bead's notes record "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>" --var title-slug=<slug>`; `fix-bug` → `--var bug="<title>" --var title-slug=<slug>`; `docs-only` → `--var topic="<title>" --var title-slug=<slug>`; `merge-and-cleanup` → `--var title-slug=<slug> --var pr="<pr-number>"` (where `<pr-number>` is the open PR number to merge; `bead-id` is the source bead being delivered). All formulas additionally take `--var bead-id=<source-bead-id>`. The `<slug>` is derived from the source bead's title using the canonical slug generation algorithm: (1) lowercase the title, (2) replace spaces with hyphens, (3) strip all characters except a-z, 0-9, and hyphens, (4) collapse consecutive hyphens to a single hyphen, (5) truncate to a maximum of 30 characters, (6) strip leading and trailing hyphens, (7) fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead (dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`). Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads-labels.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise execute the HEP escalation procedure from §0 and exit).
 2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes, matching the pattern in `scripts/bead-driver-test.sh`).
 3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
 4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
 ## 2. Resolve execution context
 
-1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: stamp `human` on BOTH the step-bead AND source bead, append diagnostic note (the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree.
+1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: execute the HEP escalation procedure from §0 (escalation bead's notes record the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree. The source bead and step-bead MUST NOT carry `human` — the escalation bead is the only `human`-labeled bead in the transaction.
 2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority via the JSON array shape (per `src/plugins/beads/.claude/rules/beads-labels.md` molecule→bead linkage convention — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing §4.2 policy-knob collisions):
 
        formula_names=$(bd label list <source-bead-id> --json \
@@ -68,12 +116,15 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
          mode="$formula_names"
        else
          # Multiple distinct formula-* labels → §4.2 policy-knob collision.
-         # Full §5.6 flag-human protocol: label BOTH source + step-bead,
-         # transition step-bead to open, exit cleanly (this is a pause,
-         # not a failure).
-         bd label add <source-bead-id> human
-         bd label add <step-bead-id> human
-         bd update <source-bead-id> --append-notes "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
+         # Full §5.6 (HEP) flag-human protocol: execute the HEP escalation
+         # procedure from §0. The escalation bead is the single `human`-
+         # labeled bead; the source bead reverts to `open` via the HEP
+         # transaction; the step-bead transitions to `open` (its current
+         # work cannot proceed) but does NOT carry `human`. This is a
+         # pause, not a failure — exit cleanly.
+         #
+         # Diagnostic for the escalation's notes:
+         #   "implement-bead: multiple formula-* labels detected ($formula_names) — §4.2 collision; manual resolution required."
          bd update <step-bead-id> --status open
          exit 0
        fi
@@ -122,7 +173,7 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 2. Build the upstream report path: `<repo-root>/.beads/worker-audit/<upstream-step-bead-id>/bug-diagnoser.yaml` (no iter suffix; diagnose is direct dispatch).
 3. Read and parse the YAML; extract `root_cause_note` (and `reproduction_steps` for red-tests).
 4. Inject extracted fields into the downstream task-spec.
-5. Failure mode: if the upstream report is missing or unparseable, stamp `human` on BOTH the step-bead AND the source bead and append a missing-context detail. Do NOT proceed with an empty `root_cause_note`. The dependency is hard.
+5. Failure mode: if the upstream report is missing or unparseable, execute the HEP escalation procedure from §0 (escalation bead's notes record the missing-context detail and which upstream report path was expected). Do NOT proceed with an empty `root_cause_note`. The dependency is hard. The source bead and step-bead MUST NOT carry `human` — the escalation bead is the only `human`-labeled bead in the transaction.
 
 ## 7. File discovered_work before applying status outcomes
 
@@ -132,13 +183,13 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 
 ## 8. Apply status outcomes to the step-bead
 
-Outcomes are stage-blind: `status` is the only outcome input. Stage-specific success criteria — including red-tests' "fail-is-success" — live in each worker's per-agent spec, which is also where the worker decides between `complete` and `needs_human` based on the derived gate. The orchestrator's derived gate roll-up is forensic context (recorded via the audit label, the report file on disk, and the `--append-notes` evidence appended on escalation paths), not an outcome branch. All `human` stamps cover BOTH the step-bead AND the source bead (human-flag protocol).
+Outcomes are stage-blind: `status` is the only outcome input. Stage-specific success criteria — including red-tests' "fail-is-success" — live in each worker's per-agent spec, which is also where the worker decides between `complete` and `needs_human` based on the derived gate. The orchestrator's derived gate roll-up is forensic context (recorded via the audit label, the report file on disk, and the `--append-notes` evidence appended on escalation paths), not an outcome branch. All flag-human paths execute the HEP escalation procedure from §0 (per §5.6 and the beads.md HEP section): the escalation bead is the single `human`-labeled bead; the source bead and step-bead MUST NOT carry `human`.
 
 1. Direct-dispatch path (no `ralf:required`) — exactly one report processed:
    - `complete` → close step-bead with summary; exit.
-   - `needs_human` → stamp `human` on step-bead AND source bead, append escalations, close step-bead with summary; exit.
-   - `failed` (real or synthesized) → stamp `human` on step-bead AND source bead, append failure detail, close step-bead with summary; exit.
-2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same status-only rules above using the aggregate verdict (every `human` stamp covers BOTH step-bead AND source bead), then close the step-bead and exit. The orchestration skill owns per-iteration gate inspection during the loop and stamps per-iteration audit labels; this skill closes the step-bead at the end.
+   - `needs_human` → execute the HEP escalation procedure from §0 (the escalation bead's notes carry the worker's `escalations` array), close step-bead with summary; exit.
+   - `failed` (real or synthesized) → execute the HEP escalation procedure from §0 (the escalation bead's notes carry the failure detail), close step-bead with summary; exit.
+2. Orchestration path (RALF) — `ralf-implement` or `ralf-review` returns an aggregate verdict (final report, foreign-eyes status) on convergence or max-cycles exhaustion. Apply the same status-only rules above using the aggregate verdict (every flag-human path executes the HEP escalation procedure from §0), then close the step-bead and exit. The orchestration skill owns per-iteration gate inspection during the loop and stamps per-iteration audit labels; this skill closes the step-bead at the end.
 
 ## Audit-label scope
 

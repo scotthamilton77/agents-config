@@ -114,7 +114,14 @@ The loop continues until:
 - The polling script times out (if max-minutes was set)
 - The user says "stop" or closes the session
 
-## Handling Human Escalations
+## Handling Human Escalations (HEP)
+
+Human escalations under this skill follow the **Human-Escalation Pattern
+(HEP)** defined in `docs/specs/bead-pipeline-architecture.md` **§5.6** and
+summarized in the HEP section of `src/plugins/beads/.claude/rules/beads.md`.
+Cite arch §5.6 and the beads.md HEP section as authoritative. The
+escalation bead is the only carrier of the `human` visibility tag; no
+source bead and no step-bead ever carries `human` under HEP.
 
 At any step transition, check:
 ```bash
@@ -124,12 +131,14 @@ bd human list --json
 If new escalations exist since last check:
 - Pause the queue
 - Present the escalated items to the user
-- Record the user's guidance and clear the `human` label when the escalation
-  is resolved:
-  ```bash
-  bd update <id> --append-notes "<guidance>"
-  bd label remove <id> human
-  ```
+- Resolve each via the `resolve-human-bead` skill (or `/resolve-human-bead
+  <id>`), which closes the escalation through the audit-trail-preserving
+  primitives: `bd human respond` (Scenarios A–D), `bd human dismiss` +
+  `bd close <source-id>` (Scenario E), `verified-by-human` + plain
+  `bd close` (Scenario F), or `/merge-and-cleanup` (Scenario G).
+- Do NOT bare-remove the `human` label on the escalation bead — that
+  bypasses the audit trail per the HEP "Bare label removal is prohibited"
+  rule (§5.6).
 - Resume the queue after escalations are cleared
 
 ## Parallel Bead Execution
@@ -161,4 +170,4 @@ When the queue drains, present the full summary.
 | "The user said 'ok', I'll merge this PR" | No. Merging needs explicit authorization. Never in run-queue. |
 | "This bead isn't fully ready, I'll spec it quickly" | No. Only `implementation-ready` beads belong here. |
 | "I'll process two beads at once for speed" | No. Sequential unless explicitly asked. |
-| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes `implementation-ready` beads only. If the spec has gaps, open a human escalation with `bd label add <bead-id> human` plus `bd update <bead-id> --append-notes "<reason>"` so the bead can be re-brainstormed, then skip that bead and continue with the queue. |
+| "The bead isn't quite implementation-ready, I'll brainstorm the gap inline" | No. run-queue processes `implementation-ready` beads only. If the spec has gaps, execute the **HEP escalation procedure** per `docs/specs/bead-pipeline-architecture.md` §5.6 and the HEP section of `src/plugins/beads/.claude/rules/beads.md`: create a fresh `human`-labeled escalation bead (`bd create --type task --title "Human input needed: <gap>"` + `bd label add <human-id> human` + `bd update <human-id> --append-notes "<context>"` + `bd dep add <source-bead> <human-id>` + `bd update <source-bead> --status open`). The source bead MUST NOT be stamped with `human` — only the escalation bead carries it. Skip the source bead and continue with the queue. |
