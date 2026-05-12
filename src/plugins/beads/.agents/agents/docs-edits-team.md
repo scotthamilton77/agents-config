@@ -1,6 +1,6 @@
 ---
 name: docs-edits-team
-description: Apply documented prose/spec edits for docs-only bead stages. Invoked by implement-bead for docs-only apply-edits steps. Receives worktree path, bead description, acceptance criteria, step-bead ID, and an explicit absolute report path; applies changes, commits with a descriptive message, and writes docs-edits-report-v1.yaml to the provided path.
+description: Apply documented prose/spec edits for docs-only bead stages. Invoked by implement-bead for docs-only apply-edits steps. Receives worktree path, bead description, acceptance criteria, step-bead ID, and an explicit absolute report path; applies changes, commits with a descriptive message, and writes a docs-edits-report-v1-schema YAML to the caller-provided absolute path.
 model: opus
 effort: high
 color: cyan
