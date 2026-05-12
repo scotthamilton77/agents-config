@@ -110,7 +110,7 @@ name  = "apply-edits"
 title = "[apply-edits] {{title-slug}}"
 needs = ["preflight"]
 description = """
-Apply the docs/spec/prose changes via a single bead-implementor pass.
+Apply the docs/spec/prose changes via a single docs-edits-team pass.
 There is no red-tests phase and no RALF-IT iteration on this formula.
 Model: claude-sonnet-4-6  Effort: medium
 
@@ -128,17 +128,21 @@ Model: claude-sonnet-4-6  Effort: medium
 
 ## Actions
 
-1. Dispatch bead-implementor (sonnet, medium effort) with:
+1. Dispatch docs-edits-team (opus, high effort) with:
    - Worktree path
    - Full bead description and acceptance_criteria
    - Step-bead ID
+   - Absolute report path (per worker-report-v1 §2)
    - Instruction: apply the documented changes; commit with a single
      descriptive message referencing {{bead-id}}.
-   - Rules:
+   - Rules (enforced inside the worker prompt, restated here for
+     formula auditability):
      * No new code that requires a test harness.
      * No speculative refactoring of unrelated content.
      * Do NOT add tests scaffolding here — if tests are needed, the bead
        was misrouted (file a follow-up bead and flag-human).
+   - The worker emits a docs-edits-report-v1 YAML to the report path;
+     the orchestrator parses it after exit.
 
 2. After the worker exits, persist a one-line summary to step-bead notes:
      bd update <step-bead-id> --append-notes "apply-edits: <summary>; files=<n>; sha=<head>"

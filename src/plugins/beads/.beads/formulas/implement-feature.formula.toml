@@ -290,12 +290,17 @@ in a separate session will pick up <new-bead-id> organically and pour the
 
 ### Normal flow (when no escalate trigger fires)
 
-1. Dispatch bead-implementor (sonnet, medium effort) to write tests:
+1. Dispatch tdd-red-team (opus, high effort) in multi-AC mode to write tests:
    - Dispatch with: worktree path, AC bullets (all [m]-tagged lines),
-     step-bead ID, instruction to write failing tests and confirm they fail.
+     step-bead ID, project test-runner command, absolute report path,
+     and the explicit input mode "multi-AC mode" (one or more failing
+     tests per [m]-tagged AC bullet — see tdd-red-team.md for the
+     multi-AC vs single-regression mode contract).
    - Tests must cover: happy path, edge cases, error paths.
    - Do NOT mock what has not been verified.
    - Do NOT write test-only methods in production code.
+   - The worker emits a tdd-red-report-v1 YAML to the report path; the
+     orchestrator parses it after exit.
 
 2. Run the Claude reviewer (test-review skill) on the written tests.
    When review-level:none is set: skip test reviewers (tests still written).
