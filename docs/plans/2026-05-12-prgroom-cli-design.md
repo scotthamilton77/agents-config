@@ -1,6 +1,6 @@
 # Design: `prgroom` CLI — replace wait-for-pr-comments + reply-and-resolve-pr-threads
 
-**Status:** Draft — brainstorming in progress (Sections 1, 2, 5, 8 fleshed out; Sections 3, 4, 6, 7 sketched).
+**Status:** Draft — brainstorming in progress (Sections 1, 2, 3, 5, 8 fleshed out; Sections 4, 6, 7 sketched).
 **Date:** 2026-05-12
 **Related beads:**
 - `agents-config-d73c` (Optimize wait-for-pr-comments and reply-and-resolve-pr-threads skills) — **superseded by this design**
@@ -196,14 +196,16 @@ type PRGroomingState struct {
     PR                  PRRef           `json:"pr"`
     Phase               PRPhase         `json:"phase"`
     Round               int             `json:"round"`
-    LastPollSHA         string          `json:"last_poll_sha"`
+    LastPollSHA         string          `json:"last_poll_sha"`        // last HEAD observed by poll
+    LastPushedHeadSHA   string          `json:"last_pushed_head_sha"` // last HEAD pushed by THIS CLI; distinguishes CLI vs external pushes for Round attribution (see §3.4)
     LastPolledAt        time.Time       `json:"last_polled_at"`
     LastActivityAt      time.Time       `json:"last_activity_at"`
     HumanReviewRequired bool                       `json:"human_review_required,omitempty"`
     Reviewers           map[string]ReviewerState   `json:"reviewers"`            // keyed by reviewer Identity
     Items               []ReviewItem               `json:"items"`
     Quiescence          QuiescenceState            `json:"quiescence"`
-    LastError           string                     `json:"last_error,omitempty"`
+    LastError           string                     `json:"last_error,omitempty"` // structured error code (§3.7) for the most recent terminal-tier failure; cleared on successful cycle completion
+    LifecycleEscalationFiled bool                  `json:"lifecycle_escalation_filed,omitempty"` // per-cycle dedup for lifecycle-tier EscalationSink emits (cap-trip, terminal-user-error); reset to false when a new lifecycle gate fires
 }
 ```
 
@@ -254,7 +256,9 @@ const (
 
 **`human-gated` exits** to `fixes-pending` (human resolved the issue and may have pushed) or to `merged` (human merged directly).
 
-**`quiesced` is a true terminal that does NOT necessarily require human action.** A `quiesced` PR with all dispositions resolved, all replies posted, all FIX threads resolved, no `HumanReviewRequired` flag, and policy-satisfied CI/coverage is **auto-merge-eligible** (the merge gate is a future capability outside MVP scope; see `td39`). When `HumanReviewRequired = true` or any policy criterion fails, `quiesced` is the "we did our part — human decides whether to ship" state.
+**`quiesced` is a true terminal that does NOT necessarily require human action.** A `quiesced` PR with all dispositions resolved, all replies posted, all FIX threads resolved, and policy-satisfied CI/coverage is **auto-merge-eligible** (the merge gate is a future capability outside MVP scope; see `td39`). When a policy criterion fails (e.g., CI red), `quiesced` is the "we did our part — human decides whether to ship" state.
+
+**`HumanReviewRequired = true` always routes to `human-gated`, never to `quiesced`.** The flag's purpose is exactly to demand human review; collapsing it into `quiesced` would hide the gate. Section 3's end-of-cycle phase resolution (§3.2) reflects this — `HumanReviewRequired = true` takes precedence over the quiescence check.
 
 **`quiesced` vs `human-gated` distinction:** both are terminal-for-the-CLI states. `quiesced` = "everything we can do is done; safe to merge under policy." `human-gated` = "human judgment is required to proceed." A `quiesced` PR may auto-merge; a `human-gated` PR cannot.
 
@@ -378,19 +382,30 @@ type QuiescenceState struct {
 
 **Agent-contract callout (forward reference to Section 5):** the CLI's interactions with agent-CLIs (Contract A: cluster, Contract B: fix) need strict input/output contracts. Section 5 is the owner; the state schema above carries only the *results* (`ClusterID`, `Disposition`).
 
-### Transactional model (verb-level)
+### Transactional model (verb-level + run-aggregate)
+
+**Public verbs are locking wrappers; lifecycle work happens in lock-assuming internal functions.** Every top-level CLI verb (`poll`, `cluster`, `fix`, `push`, `reply`, `resolve`, `rereview`, `resolve-escalated`, `wait`, `status`) is implemented as a thin public function that acquires the PR lock, calls its internal lock-assuming counterpart, then releases. The internal functions are conventionally named with a `Locked` suffix (`pollLocked`, `clusterLocked`, etc.) and assume the caller already holds the PR lock for the duration of their work.
 
 ```go
-release, err := tracker.Lock(prRef)
-defer release()
+// Public locking wrapper (one per verb)
+func Poll(prRef PRRef) error {
+    release, err := tracker.Lock(prRef)
+    if err != nil { return err }
+    defer release()
+    return pollLocked(prRef)
+}
 
-state, err := tracker.Read(prRef)
-// ... mutate state in memory ...
-state.Phase = nextPhase
-state.LastActivityAt = time.Now().UTC()
-
-return tracker.Write(prRef, state)
+// Lock-assuming internal lifecycle function
+func pollLocked(prRef PRRef) error {
+    state, err := tracker.Read(prRef)
+    // ... mutate state in memory ...
+    state.Phase = nextPhase
+    state.LastActivityAt = time.Now().UTC()
+    return tracker.Write(prRef, state)
+}
 ```
+
+**`run` is the only verb that acquires the lock once and calls multiple `*Locked` internals in sequence**, so `run` does not nest lock acquisitions on itself. See §3.3 for the full `run` algorithm.
 
 Crash semantics: if the process dies between Lock and Write, the file-adapter lock is released (process-scoped); the on-disk state reflects the prior successful Write. **No partial states. No `crash_recovery` flag. Recovery = re-invoke.**
 
@@ -409,16 +424,521 @@ Crash semantics: if the process dies between Lock and Write, the file-adapter lo
 
 ---
 
-## Sections 3–7 — Open sub-designs (TBD)
+## Section 3 — Lifecycle state machine
 
-These sections are NOT YET DRAFTED. Listed here so the reviewer can leave annotations on the open questions.
+Section 2 defined the `PRPhase` values and sketched a high-level phase diagram. This section pins down every transition — which verb produces which phase change under which condition, how the `run` aggregate verb threads the lifecycle, the round-counter and hard-cap semantics, the runtime-failure tier model, and the full structured-error-code registry referenced from Section 1's precondition gating.
 
-### Section 3 — Lifecycle state machine
+### 3.1 Phase state graph
 
-- Exact phase transitions: which verb sets which `Phase`, valid transitions, terminal phases
-- Phase-to-verb mapping for `run` (when does `run` invoke `cluster` vs `fix` vs `rereview`)
-- Round-counter semantics; hard-cap behavior parallel to current Phase 6
-- Failure handling: when a verb fails (push fails, GraphQL error, gh API error), what's the next state
+Section 2's sketch expanded to label every edge with its `(verb, condition)` trigger. Every edge below is an autonomous CLI transition unless explicitly noted otherwise.
+
+```
+                          ┌─────────────────────────┐
+   first invocation  ───► │          idle           │
+                          └────────────┬────────────┘
+                                       │ poll (first push observed via gh API)
+                                       ▼
+                          ┌─────────────────────────────────────────────┐
+                          │              awaiting-review                │
+              ┌─────────► │   Round disambiguates initial vs re-review  │ ────────┐
+              │           └──────────────────┬──────────────────────────┘         │
+              │                              │ poll (new reviewer item observed)  │
+              │                              ▼                                    │
+              │           ┌─────────────────────────────────────────────┐         │
+              │           │              fixes-pending                  │         │
+              │           └──┬──────────────────────┬───────────────────┘         │
+              │              │                      │                             │
+              │              │                      │ end-of-cycle:               │
+              │ end-of-cycle:│                      │   zero commits pushed       │
+              │  ≥1 commit   │                      │   AND quiescence            │
+              │  pushed      │                      │   threshold trips (§4)      │
+              │ (Round++,    │                      │                             │
+              │  no cap trip)│                      ▼                             │
+              └──────────────┘           ┌─────────────────────────┐              │
+                                         │        quiesced         │              │
+                                         │  (terminal-for-CLI;     │              │
+                                         │   auto-merge-eligible   │              │
+                                         │   when policy permits)  │              │
+                                         └──┬──────────────────────┘              │
+                                            │                                     │
+                          ┌───── poll (PR closed via merge) ──────────────────────┘
+                          │                 │
+                          ▼                 │ poll (new reviewer item)
+                  ┌──────────────┐          ▼
+                  │    merged    │   (back to fixes-pending)
+                  │  (terminal)  │
+                  └──────────────┘
+                          ▲
+                          │ poll (PR closed via merge)
+                          │
+              ┌─────────────────────────────────────────────┐
+              │                human-gated                  │
+              │   (terminal-for-CLI; awaits human action)   │
+              └────────────────────┬────────────────────────┘
+                                   │ resolve-escalated, OR
+                                   │ poll observes external push
+                                   ▼
+                          (back to fixes-pending)
+```
+
+**Note on merge transitions (omitted from the diagram for clarity):** every non-terminal phase (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`) transitions to `merged` when `pollLocked` observes the PR closed via merge. The diagram shows only the `quiesced → merged` and `human-gated → merged` edges; `awaiting-review → merged` and `fixes-pending → merged` are equally legal and enumerated in the §3.2 matrix `poll` row.
+
+**Any non-terminal phase transitions to `human-gated` at end-of-cycle when** (priority order, applied by `resolve_end_of_cycle_phase` in §3.2):
+
+- Hard cap would be exceeded by the next push (`Round >= MaxRounds` with queued fix commits)
+- `HumanReviewRequired = true` set upstream (§4 defines the signal)
+- Any item has `Disposition.Kind == failed` produced by `CONTRACT_AUDIT_FAILED` or terminal-runtime failure (§3.6)
+- Any item has unresolved `Disposition.Kind == escalated`
+- A terminal-runtime failure occurred during the cycle
+
+**Terminal-for-CLI phases:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, or an operator-issued `resolve-escalated`.
+
+**Graph-terminal phase:** `merged` only. Both `quiesced` and `human-gated` can re-enter `fixes-pending` when new reviewer activity or escalation resolution occurs.
+
+### 3.2 Phase × verb transition matrix
+
+For every `(current phase, verb invoked)`, the next phase and side effects are pinned. The matrix covers the **11 per-PR lifecycle verbs** (`poll`, `cluster`, `fix`, `push`, `reply`, `resolve`, `rereview`, `wait`, `resolve-escalated`, `status`, `run`). The optional `sweep` verb is a cross-PR aggregator outside this per-PR matrix; it iterates open PRs and invokes `run` for each, with no phase semantics of its own.
+
+**Default behavior is "with prework" (`PRECONDITION_SELFHEAL`).** Cells marked **precondition fail** show the terminal outcome you get with `--no-prework`. Under the default self-heal path (Section 1 cross-cutting precondition gating), the verb auto-runs the missing deterministic prework and re-evaluates rather than returning the precondition error. For example, `fix` invoked in `idle` with no clusters under the default self-heal path runs `poll` → `cluster` → retries `fix`, then transitions per the `fixes-pending` row. With `--no-prework`, it returns `PRECONDITION_NO_CLUSTERS` immediately. Cells marked **no-op** mean the verb returns success (exit 0) without state change.
+
+**This matrix describes the public verb's behavior when invoked directly** (e.g., `prgroom fix <pr>` from the shell). The `run` aggregate verb (§3.3) gates internal `*Locked` lifecycle functions by phase and does not exercise the per-verb precondition self-heal path — `run` already orchestrates the prework sequence. When reconciling §3.2 and §3.3, the matrix is the **direct-invocation contract**; §3.3 is the **run-driven flow**.
+
+| Verb | from `idle` | from `awaiting-review` | from `fixes-pending` | from `quiesced` | from `human-gated` | from `merged` |
+|------|-------------|------------------------|----------------------|-----------------|--------------------|---------------|
+| `poll` | observes first push → `awaiting-review`; observes reviewer item → `fixes-pending`; else no-op | observes reviewer item → `fixes-pending`; observes PR-closed → `merged`; observes external push → Round++ if SHA changed, stay; else no-op | observes new item → stay (item appended); observes PR-closed → `merged`; observes external push → Round++ if SHA changed, stay; else no-op | observes new item → `fixes-pending`; observes PR-closed → `merged`; observes external push → `awaiting-review` (Round++ per §3.4; pushLocked's ReviewerState flip applies); else no-op | observes new item → `fixes-pending`; observes PR-closed → `merged`; observes external push → `fixes-pending` (operator resolved gate; Round++ per §3.4); else no-op | terminal; no-op |
+| `cluster` | `PRECONDITION_NO_ITEMS` | `PRECONDITION_NO_ITEMS` (by definition, `awaiting-review` has no items needing clustering; if `poll` had observed items the phase would already be `fixes-pending`) | sets `ClusterID` on unclustered items; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
+| `fix` | `PRECONDITION_NO_CLUSTERS` | `PRECONDITION_NO_CLUSTERS` | sets `Disposition.Kind` per item (`fixed`/`already_addressed`/`skipped`/`deferred`/`wont_fix`/`escalated`/`failed`); may produce commits; **no phase change** here — phase resolution happens at end-of-cycle via the priority cascade (§3.2); contract-audit failures flip the affected item to `Disposition.Kind = failed` and the resolver promotes to `human-gated` via priority 3 | terminal; no-op | terminal; no-op | terminal; no-op |
+| `push` | `PRECONDITION_NO_COMMITS` | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
+| `reply` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNREPLIED` only under `--no-prework`) unless prior round left replies pending | renders templates + posts via gh API; marks `Replied=true`; no phase change | re-applies idempotently to unreplied items; no phase change | re-applies idempotently | terminal; no-op |
+| `resolve` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNRESOLVED` only under `--no-prework`) | resolves review-threads with `Disposition.Kind ∈ {fixed, already_addressed}` AND `Resolved == false`; marks `Resolved=true`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
+| `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for `Required=true` reviewers in `{not_requested, timeout, declined}` (`pushLocked` flips stale `review_found` → `not_requested`, see §3.4); no phase change | invoked by `runLocked` immediately after a successful `pushLocked` for the same set of reviewers; no phase change | re-requests if reviewer state stale; no phase change | re-applies idempotently | terminal; no-op |
+| `wait` | sleeps; poll-event may transition phase | sleeps; poll-event may transition; hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; poll-event may transition to `fixes-pending` or `merged` | sleeps; poll-event may transition out | terminal; no-op |
+| `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition.Kind` from `escalated` to a terminal value; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition`; **only clears the `escalated` items gate** (§3.2 priority 4). Does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED` (requires `--max-rounds` raise + re-run), `HumanReviewRequired = true` (requires upstream flag clear, §4), `STATE_CORRUPT` (requires operator state-file inspection), or `failed`-items gating (requires the operator to address the underlying `failed` disposition first). After the flip: phase moves to `fixes-pending` if and only if ALL of: (a) `state.Items` has no `escalated` items remaining, (b) `state.Items` has no `failed` items, (c) `HumanReviewRequired == false`, AND (d) `state.LastError ∉ BlockingErrorCodes` (defined below). Otherwise phase stays `human-gated`. **`BlockingErrorCodes`** = { `LIFECYCLE_HARD_CAP_EXCEEDED`, `LIFECYCLE_HUMAN_REVIEW_REQUIRED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — these codes signal conditions outside `resolve-escalated`'s scope and require the recovery paths in §3.6/§3.7. ("Repo deleted" is one of the conditions classified under `RUNTIME_GH_TERMINAL`, per §3.6's example list; no distinct `RUNTIME_REPO_DELETED` code is registered.) (`CONTRACT_AUDIT_FAILED` is intentionally NOT in this set: per §3.3 `handle_verb_error`, contract-audit failures are surfaced via per-item `Disposition.Kind = failed`, not via `state.LastError`; the `failed`-items check in clause (b) handles them.) | terminal; no-op |
+| `status` | read-only | read-only | read-only | read-only | read-only | read-only |
+| `run` | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes `pollLocked` **once** to detect external transitions (e.g., operator merged externally → `merged`; new reviewer activity → `fixes-pending`). If phase advances out of `quiesced`, re-enter the lifecycle loop; otherwise return 0. | invokes `pollLocked` **once** to detect external resolutions (operator pushed a fix → `fixes-pending`; operator merged → `merged`). If phase advances out of `human-gated`, re-enter the lifecycle loop; otherwise return 0 (awaits operator action). | returns 0 immediately (graph-terminal; `merged` is absorbing) |
+
+**End-of-cycle phase resolution** (applied by `run` after each cycle via `resolve_end_of_cycle_phase`, see §3.3): from `fixes-pending` the resolver chooses the next phase by evaluating these conditions in strict priority order — the first match wins.
+
+1. Hard-cap would be exceeded by the next push (`Round >= MaxRounds` AND `has_queued_fix_commits(state)`) → `human-gated` with `LastError = LIFECYCLE_HARD_CAP_EXCEEDED`. **Check is pre-push** (§3.5), so the cap-tripping push is *not* uploaded.
+2. `HumanReviewRequired == true` set upstream → `human-gated` with `LastError = LIFECYCLE_HUMAN_REVIEW_REQUIRED`.
+3. Any item with `Disposition.Kind == failed` (regardless of underlying cause — contract audit, runtime terminal error, or agent-reported "could not converge") → `human-gated`. For runtime-terminal-user failures, `state.LastError` was already set by `handle_verb_error` (Propagate path); the resolver preserves it. For contract-audit failures and pure agent-reported failures, `state.LastError` is left unset — the per-item `Disposition.Rationale` is the source of truth for the cause. (Rationale: `handle_verb_error` only writes `state.LastError` on Propagate-tier errors; `CONTRACT_AUDIT_FAILED` returns `Continue` and surfaces the cause via per-item `Disposition`. Cross-reference §3.3 `handle_verb_error` and the §3.7 error-code registry.)
+4. Any item with unresolved `Disposition.Kind == escalated` → `human-gated`; file exactly one `EscalationSink` event per cycle (deduped across items). The `EscalationSink` always exists (Section 5: stderr is the default sink) — there is no "no resolution path" branch.
+5. ≥1 commit pushed this cycle (`Round` was incremented) → `awaiting-review`. `rereview` already invoked from within the cycle (§3.3) for required bot reviewers needing fresh review.
+6. No commits pushed this cycle AND quiescence threshold trips (§4) → `quiesced`.
+7. Otherwise (no commits pushed, quiescence did not trip) → `awaiting-review`. **Rule-7 rationale:** this covers the case where every item processed this cycle dispositioned to `skipped`/`wont_fix`/`deferred` (zero commits, no fresh work), and the §4 quiescence threshold has not yet judged the PR ready. The next cycle's `wait` either observes new reviewer activity (→ back to `fixes-pending` via `poll`) or accumulates idle time until quiescence trips. Already-processed items remain in `state.Items` with `Disposition != nil`; subsequent `clusterLocked`/`fixLocked` skip them (idempotent on dispositioned items), so re-entering `fixes-pending` only does work for NEW items.
+
+### 3.3 `run` aggregate verb algorithm
+
+`run --autonomous` is **long-running and blocking** for non-terminal phases — the invocation holds the PR lock through the cycle loop while the phase is `idle`, `awaiting-review`, or `fixes-pending`. **When the phase reaches `quiesced`, `human-gated`, or `merged`, `run` releases the lock and returns**, so external triggers (operator's `resolve-escalated`, manual push, manual merge) are free to acquire the lock and act. Each `*Locked` internal writes state to disk before returning, so a crashed process leaves the on-disk state consistent (per Section 2's transactional model) and the next `run` invocation resumes from the last successful write.
+
+`run` is the **only verb that acquires the PR lock once and calls multiple `*Locked` internals in sequence**. This is the singular exception to Section 2's "every verb acquires its own lock" rule, and is the reason the `*Locked` internal contract exists.
+
+**`*Locked` internal contract.** Each `*Locked` function:
+
+- Assumes the caller already holds the PR lock for the duration of the call.
+- Reads no state from disk; instead receives the current in-memory `*PRGroomingState` from the caller.
+- Returns `(*PRGroomingState, error)` — the (potentially) mutated state and any error tagged with its failure tier (§3.6).
+- Atomically `tracker.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
+- Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-7 re-entry path (§3.2) relies on it to avoid hot loops.
+
+**Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
+
+```text
+function exitCodeForTier(tier):
+    switch tier:
+        case PRECONDITION_USER_ERROR:    return 2   # EX_USAGE
+        case PRECONDITION_NO_WORK:       return 0   # success-no-op
+        case PRECONDITION_LOCK_HELD:     return 75  # EX_TEMPFAIL (transient-equivalent for scheduler retry)
+        case RUNTIME_TRANSIENT:          return 75  # EX_TEMPFAIL
+        case RUNTIME_TERMINAL_USER:      return 77  # EX_NOPERM
+        case CONTRACT_AUDIT_FAILED:      return 65  # EX_DATAERR
+        case STATE_CORRUPT, STATE_SCHEMA_UNKNOWN: return 78  # EX_CONFIG
+        case LIFECYCLE_CAP:              return 0   # graceful terminal exit
+        default:                         return 1   # generic failure
+```
+
+```text
+function Run(pr, mode):                       # mode ∈ {interactive, autonomous}
+    release, err := tracker.Lock(pr)          # public locking shell
+    if err != nil:
+        return exitCodeForTier(err.Tier)      # likely PRECONDITION_LOCK_HELD → 75
+    defer release()
+
+    state, err := runLocked(pr, mode)
+    if err != nil:
+        return exitCodeForTier(err.Tier)
+    return 0
+
+function runLocked(pr, mode) (*PRGroomingState, error):
+    state, err := tracker.Read(pr)
+    if errors.Is(err, ErrNotFound):
+        # First invocation against this PR — bootstrap zero-value state.
+        # Auto-bootstrap is performed regardless of --no-prework; absence of
+        # state is a discovery condition, not a precondition failure.
+        # Initialize ALL non-zero-default fields explicitly per §2 schema —
+        # SchemaVersion=1 is required (zero-default 0 would fail STATE_SCHEMA_UNKNOWN
+        # validation on next read); PR identifies the bead-tracker key; Items
+        # and Reviewers are initialized to empty containers (not nil) so subsequent
+        # appends/inserts are safe.
+        state = PRGroomingState{
+            SchemaVersion:      1,
+            PR:                 pr,
+            Phase:              "idle",
+            Round:              0,
+            LastPollSHA:        "",
+            LastPushedHeadSHA:  "",
+            Reviewers:          map[string]ReviewerState{},
+            Items:              []ReviewItem{},
+            LastError:          "",
+            LifecycleEscalationFiled: false,
+        }
+        tracker.Write(pr, state)
+    else if err != nil:
+        return state, taggedError(STATE_CORRUPT, err)
+
+    # Entry-time external-transition probe: if state is already terminal-for-CLI
+    # at entry (operator invoked `run` against a quiesced/human-gated PR), run
+    # one pollLocked first to detect external transitions (e.g., operator merged
+    # the PR externally; operator pushed a manual fix that cleared the gate).
+    # Without this, terminal-for-CLI → merged / human-gated → fixes-pending
+    # transitions are unreachable per the §3.2 matrix (the `run` row for those
+    # phases). The probe runs at most once per invocation; if pollLocked errors,
+    # follow the standard handle_verb_error pattern.
+    if state.Phase ∈ {quiesced, human-gated}:
+        state, err = pollLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)
+            return state, err
+        # If pollLocked transitioned phase to a non-terminal-for-CLI value
+        # (fixes-pending after operator fix-push, or back into awaiting-review
+        # after external push from quiesced), the loop top below re-enters the
+        # cycle. If it stayed terminal-for-CLI or advanced to merged, the
+        # loop-top check returns cleanly.
+
+    for {
+        # Terminal-for-CLI: emit any pending escalations, return.
+        # All escalation emission funnels through escalate_if_needed. It is called
+        # from two sites: HERE (clean phase transitions) and before each Propagate-
+        # return below (terminal-error transitions). Both sites are dedup-safe via
+        # the per-item EscalationFiled flag and the lifecycle LifecycleEscalationFiled
+        # flag — second invocation in the same cycle is a no-op.
+        if state.Phase ∈ {merged, quiesced, human-gated}:
+            state = escalate_if_needed(state)         # per-item + lifecycle dedup; writes state
+            return state, nil
+
+        # === Cycle start (state.Phase ∈ {idle, awaiting-review, fixes-pending}) ===
+
+        state, err = pollLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+
+        if state.Phase ∈ {merged, quiesced, human-gated}:
+            continue                          # loop top will emit + return
+
+        if state.Phase == idle:
+            if mode == interactive:
+                fmt.Fprintln(os.Stderr, "prgroom: nothing to do — PR has no commits yet (phase=idle)")
+                return state, nil
+            state, err = waitLocked(pr, state)
+            if disposition := handle_verb_error(err, &state); disposition == Propagate:
+                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                return state, err
+            continue
+
+        if state.Phase == awaiting-review:
+            if mode == interactive:
+                return state, nil             # user owns the wait
+            state, err = waitLocked(pr, state)
+            if disposition := handle_verb_error(err, &state); disposition == Propagate:
+                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                return state, err
+            continue
+
+        # === state.Phase == fixes-pending ===
+        state, err = clusterLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+
+        state, err = fixLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+
+        # Pre-push hard-cap check (§3.5). Set state ONLY; the next loop-top
+        # iteration's escalate_if_needed emits one Sink event for this gate,
+        # using state.LifecycleEscalationFiled to dedup.
+        if has_queued_fix_commits(state) AND state.Round >= MaxRounds:
+            state.Phase = "human-gated"
+            state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"
+            state.LifecycleEscalationFiled = false   # cleared so loop-top fires once
+            tracker.Write(state)
+            continue                                 # loop top emits + returns
+
+        state, err = pushLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+
+        # Post-push rereview for required bot reviewers needing fresh review.
+        # pushLocked already flipped review_found → not_requested per §3.4,
+        # so has_required_reviewers_to_refresh reduces to "any Required=true
+        # reviewers configured" after a successful push.
+        if push_uploaded_commits_this_cycle(state) AND has_required_reviewers_to_refresh(state):
+            state, err = rereviewLocked(pr, state)
+            if disposition := handle_verb_error(err, &state); disposition == Propagate:
+                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                return state, err
+
+        state, err = replyLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+        state, err = resolveLocked(pr, state)
+        if disposition := handle_verb_error(err, &state); disposition == Propagate:
+            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            return state, err
+
+        # End-of-cycle phase resolution — priority cascade per §3.2.
+        # Phase resolution sets state ONLY; loop-top emits via escalate_if_needed.
+        state.Phase = resolve_end_of_cycle_phase(state)
+        if state.Phase ∈ {human-gated} AND new_lifecycle_gate_this_cycle(state):
+            state.LifecycleEscalationFiled = false   # cleared so loop-top fires once
+        if state.Phase ∉ {human-gated}:
+            # Successful cycle completion clears any prior gating error
+            # (e.g., LIFECYCLE_HARD_CAP_EXCEEDED carried over from a previous run
+            # that the operator has since resolved out-of-band or by raising --max-rounds).
+            # See §3.5 "Recovery" bullet.
+            state.LastError = ""
+            state.LifecycleEscalationFiled = false   # reset for next gate, if any
+        tracker.Write(state)
+        continue                                     # loop top handles terminal + emits
+}
+```
+
+Notes on the rewrite vs. earlier drafts:
+
+- Every `*Locked` returns `(*PRGroomingState, error)` so `runLocked` threads in-memory state without disk re-reads. The lock guarantees no external mutation; re-reads were redundant.
+- `handle_verb_error` returns a disposition enum (`Continue` or `Propagate`) rather than `error`, eliminating the shadow / ambiguous-return pattern. Continuable errors (`CONTRACT_AUDIT_FAILED`) write state and return `Continue`; terminal-tier errors return `Propagate` and `runLocked` returns the original tagged error to `Run`, which applies `exitCodeForTier`.
+- All escalation emission flows through `escalate_if_needed`. It is called from **two** sites in `runLocked` — the loop-top terminal-for-CLI check (clean transitions to `merged`/`quiesced`/`human-gated`), and immediately before each Propagate-return after `handle_verb_error` (terminal-error paths: auth-expiry, push-rejected, state-corrupt). Both sites share the same dedup mechanism: per-item `EscalationFiled` flag, lifecycle-tier `LifecycleEscalationFiled` flag, atomic state write after emit. Calling `escalate_if_needed` twice in one cycle is a no-op the second time (both flags are already set). The cap-trip branch and end-of-cycle resolver only WRITE state (setting `LifecycleEscalationFiled = false` to invite a new emit). Crash-recovery safe modulo Sink idempotency (bd `label add` is idempotent; `--append-notes` is not — bd-adapter must use label-only emit, or content-hash dedup on notes).
+
+**Escalation emission — single-function design.** `runLocked` emits via the `EscalationSink` only through `escalate_if_needed(state)`. There are **two** call sites, both dedup-safe via `EscalationFiled`/`LifecycleEscalationFiled` flags: (1) the loop-top terminal-for-CLI check (clean transitions), and (2) immediately before each `return state, err` on Propagate paths (terminal-error transitions). `handle_verb_error` sets state and (for terminal tiers) updates `state.LastError` and `state.LifecycleEscalationFiled = false` but does NOT emit directly. The cap-trip branch and end-of-cycle resolver also only WRITE state (setting `state.LifecycleEscalationFiled = false` to invite a new emit when a fresh lifecycle gate fires). All emission funnels through one function; the dedup flags make double-invocation safe.
+
+`escalate_if_needed(state)` semantics:
+
+- Walks `state.Items`: for any item with `Disposition.Kind ∈ {escalated, failed}` AND `Disposition.EscalationFiled == false`, calls `EscalationSink.File(...)` and sets `EscalationFiled = true`.
+- If `state.LastError != ""` AND `state.LifecycleEscalationFiled == false`, calls `EscalationSink.File(...)` for the lifecycle-tier condition and sets `LifecycleEscalationFiled = true`.
+- Atomically `tracker.Write`s state after emission.
+
+**Crash-window dedup:** a crash between Sink emit and state write may double-fire on the next invocation. The Sink itself is expected to dedup idempotently — bd's `label add` is idempotent (acceptable); bd's `--append-notes` is NOT (would duplicate notes lines on retry), so the bd-adapter MUST use label-only emit, or content-hash dedup on notes. Stderr-only sinks have no dedup but the cost is one extra log line, accepted.
+
+**Verb-error handling (`handle_verb_error`).** Returns a disposition enum:
+
+```text
+function handle_verb_error(err, state) Disposition:
+    if err == nil: return Continue
+    switch err.Tier:
+        case RUNTIME_TRANSIENT:
+            state.LastError = err.Code
+            tracker.Write(state)
+            return Propagate                  # Run will exit 75; scheduler retries
+        case RUNTIME_TERMINAL_USER:
+            state.Phase = "human-gated"
+            state.LastError = err.Code
+            state.LifecycleEscalationFiled = false   # invites loop-top emit
+            tracker.Write(state)
+            return Propagate                  # Run will exit 77
+        case CONTRACT_AUDIT_FAILED:
+            # Verb has already flipped affected items to Disposition.Kind = failed
+            # with rationale set. End-of-cycle resolver (§3.2 priority 3) decides
+            # phase consequence. Per-item EscalationFiled flag controls dedup.
+            return Continue                   # cycle proceeds; loop-top emits at terminal
+        case STATE_CORRUPT, STATE_SCHEMA_UNKNOWN:
+            state.Phase = "human-gated"
+            state.LastError = err.Code
+            state.LifecycleEscalationFiled = false
+            tracker.Write(state)
+            return Propagate                  # Run will exit 78
+        default:
+            return Propagate                  # unknown tier — fail safe
+```
+
+**`waitLocked` contract surface (implementation owned by §4).** §3.3 only relies on the following surface; §4 defines the quiescence/timeout logic that implements it:
+
+- Signature: `waitLocked(pr PRRef, state *PRGroomingState) (*PRGroomingState, error)`.
+- Behavior: sleeps + internally invokes `pollLocked` at the §4-defined cadence, returning when either (a) the polled state transitions to a new phase, (b) the §4-defined quiescence threshold trips (writes `Phase = quiesced` and returns), or (c) a §4-defined hard-timeout fires (returns without phase change).
+- Error tiers: may return `RUNTIME_TRANSIENT` if internal `pollLocked` invocations hit gh API blips beyond the retry budget; otherwise `nil`.
+- Cancellation: honors a context `Done` channel if the caller plumbs one through; in MVP, signals (SIGINT/SIGTERM) cause `waitLocked` to return promptly with an error tagged `RUNTIME_TRANSIENT` so the lock releases cleanly.
+- Lock semantics: assumes the caller holds the PR lock; does NOT release the lock during sleep (lock stays held for the entire `Run --autonomous` invocation per §3.5).
+
+**`run --interactive` differences:** identical control flow except the verb returns 0 on reaching `awaiting-review`, `idle`, or any terminal-for-CLI phase. It never calls `waitLocked`. On `idle`, the interactive variant emits a one-line stderr advisory (`prgroom: nothing to do — PR has no commits yet (phase=idle)`) so callers can distinguish "nothing to do" from "completed work." Escalations route through the default `EscalationSink` (stderr).
+
+**Lock-hold duration:** `Run --autonomous` holds the lock continuously from the first `tracker.Lock(pr)` call. Within each cycle, the lock is held through the full sequence `pollLocked → clusterLocked → fixLocked → pushLocked → [rereviewLocked] → replyLocked → resolveLocked → resolve_end_of_cycle_phase → tracker.Write` (no mid-cycle release). After each cycle's phase resolution, if the new phase is terminal-for-CLI (`quiesced`, `human-gated`, or `merged`), the loop `continue`s, the loop-top terminal check fires, `runLocked` returns, and the `defer release()` registered by `Run` releases the lock. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75); once the holder returns, the next invocation may acquire.
+
+**Resilience:** every internal `*Locked` writes state atomically (per Section 2's transactional model). If the process dies mid-`run`, the OS releases the file-adapter lock, the next invocation re-acquires it, reads the last-good state, and resumes from there. There is no `crash_recovery` flag.
+
+### 3.4 `Round` counter semantics
+
+`Round` represents the **count of distinct review-eliciting pushes** observed for this PR. It disambiguates initial review (`Round=1`) from re-review (`Round≥2`) within the `awaiting-review` phase.
+
+**Initialization and increment rules.** The unifying principle: `Round` increments from 0 to 1 on the **first observation of a non-empty PR HEAD by either code path** (whichever happens first), and increments further only on subsequent **distinct review-eliciting pushes**. Both `pollLocked` and `pushLocked` must guard their increment with idempotency checks so they do not double-bump.
+
+- The zero value of `PRGroomingState` has `Round: 0` and `LastPollSHA == ""`.
+- **`pollLocked` bootstrap (Round 0 → 1).** When `pollLocked` runs with `state.LastPollSHA == ""`, it inspects the remote PR HEAD:
+  - If the remote HEAD is **non-empty** (the PR has ≥1 commit), `pollLocked` idempotently sets `state.Round = max(state.Round, 1)` (a prior `pushLocked` may have already set it to 1, in which case this is a no-op), sets `state.LastPollSHA = <observed HEAD SHA>`, and follows the §3.2 `poll`-from-`idle` row to transition phase out of `idle`.
+  - If the remote HEAD is **empty** (PR opened with no commits — uncommon but legal), `pollLocked` leaves `state.Round = 0` and `state.LastPollSHA = ""`, returns no phase change. The next `pollLocked` invocation re-evaluates the bootstrap condition.
+  This bootstrap is not subject to the CLI-vs-external attribution rule below (which applies only when `state.LastPollSHA != ""`).
+- **`pushLocked` bootstrap (Round 0 → 1).** If `pushLocked` successfully uploads ≥1 commit while `state.Round == 0` (e.g., `prgroom` is the first agent to push commits to a freshly-opened empty PR), it sets `state.Round = 1` and `state.LastPushedHeadSHA = <new HEAD SHA>` in the same write. If a `pollLocked` runs subsequently while `state.LastPollSHA == ""`, it follows the **`pollLocked` bootstrap rule above** (NOT the attribution rule): it inspects the remote HEAD, observes `state.Round == 1` (already bumped by `pushLocked`), idempotently skips re-incrementing, sets `state.LastPollSHA = <observed HEAD SHA>`, and follows the §3.2 `poll`-from-`idle` row to transition phase. The bootstrap branch is identified by `state.LastPollSHA == ""`; the attribution branch (below) is identified by `state.LastPollSHA != ""`. The two branches are mutually exclusive.
+- **`pushLocked` subsequent increments (Round N → N+1, N ≥ 1).** When `state.Round >= 1`, `pushLocked` increments `Round` if and only if it uploaded **≥1 new commit** to the remote, and sets `state.LastPushedHeadSHA = <new HEAD SHA>` in the same write.
+- **`pollLocked` subsequent increments (Round N → N+1, N ≥ 1).** When `state.Round >= 1` and `pollLocked` observes a HEAD SHA change attributable to commits the CLI did not author, it increments `Round` (see the attribution rule below).
+- A complete fix-cycle that produced zero commits (every item dispositioned `skipped`/`wont_fix`/`deferred`) does NOT increment `Round`. Such a cycle counts toward quiescence (§4) but not toward the hard cap.
+- `resolve-escalated` does NOT increment `Round` — the disposition flip alone is not visible to reviewers.
+- **`§3.5` narrative consistency:** the §3.5 "Round=1 → fix-push #2 → fix-push #3" example assumes the typical case in which the first observed push (by either bootstrap path above) is followed by CLI-authored fix-pushes. The exact code path that produced `Round=1` (poll-bootstrap on a human-authored push vs. push-bootstrap on a CLI-authored initial push) does not affect cap semantics — both consume one round.
+
+**CLI-vs-external push attribution.** When `pollLocked` observes that the remote HEAD differs from `state.LastPollSHA`:
+
+- If `newHeadSHA == state.LastPushedHeadSHA` → the change is the CLI's own push (already counted by `pushLocked`); update `state.LastPollSHA = newHeadSHA`, do NOT increment `Round`. `pushLocked` already performed the reviewer-state flip in this case, so `pollLocked` leaves `state.Reviewers` untouched.
+- Otherwise → external push (operator or third party); increment `Round`, set `state.LastPollSHA = newHeadSHA`, leave `state.LastPushedHeadSHA` untouched. **Additionally, mirror `pushLocked`'s reviewer-state flip:** walk `state.Reviewers` and flip every entry with `Required == true` AND `Status == "review_found"` to `Status = "not_requested"` (same predicate as the "`ReviewerState.Status` transition on `pushLocked`" rule below). External pushes invalidate prior reviews on the old SHA exactly as CLI pushes do, so the post-push `rereviewLocked` predicate `has_required_reviewers_to_refresh(state)` evaluates correctly. The CLI does NOT update `LastPushedHeadSHA` for pushes it didn't make.
+
+This rule prevents double-counting CLI pushes (which would otherwise be incremented once by `pushLocked` and again by the next `pollLocked`) and prevents missing external pushes. The reviewer-flip mirror ensures stale reviews are detected regardless of the push's author.
+
+**Force-push and rebase edge cases (best-effort attribution).** When operators force-push or rebase, history is rewritten and the simple "SHA equality" check above can under- or over-count rounds:
+
+- *Under-count:* CLI pushed X (set `LastPushedHeadSHA = X`). Operator force-pushed Y over X. CLI then pushed Z on top of Y. `LastPushedHeadSHA` now reads Z. The intermediate Y is unobservable because it was overwritten; the round it consumed is not counted.
+- *Over-count:* In `awaiting-review`, the operator force-pushes a rebase whose tree is logically identical to the prior HEAD. `LastPushedHeadSHA` no longer matches the new HEAD, so `pollLocked` increments `Round` even though no new review work was elicited.
+
+These edge cases are accepted as **best-effort attribution**, not corrected automatically. Rationale: detecting history rewrites reliably (especially distinguishing "rebase with identical tree" from "rebase with different commits") requires comparing tree hashes, parent chains, and committer metadata — a feature surface disproportionate to the value, given that operators who care can manually adjust `--max-rounds`. If precise round accounting under force-push becomes a recurring need, a follow-up bead should split `MaxRoundsCLI` vs `MaxRoundsTotal` (mentioned in §3.5) so the cap can be raised without altering CLI-side budgets.
+
+**Detecting queued (unpushed) fix commits.** `prgroom` does not maintain a separate state field for the commit queue. The remote tip is the source of truth: `pushLocked` consults `gh pr view --json headRefOid` for the authoritative remote HEAD on the PR branch and compares it to the local PR-branch HEAD via `git rev-list <remote-head>..HEAD`. This avoids the `@{upstream}` tracking-ref requirement (which is not guaranteed in fresh clones or non-standard worktree configurations). `has_queued_fix_commits(state)` evaluates to true iff the local PR-branch HEAD differs from the remote HEAD and the diff contains commits authored by the local branch. `pushLocked` uploads exactly those commits; if none exist, the verb returns `PRECONDITION_NO_COMMITS` (under `--no-prework`) or a no-op (under default). Crash recovery: if the process dies after `fixLocked` but before `pushLocked`, re-invoking `run` will re-enter at `pollLocked` → `fixesPending` → `clusterLocked` (idempotent on classified items) → `fixLocked` (idempotent on items already carrying `Disposition`) → `pushLocked` (uploads the orphaned-by-crash commits). No special crash-recovery code path is required.
+
+**`pushLocked` idempotency.** If `git push` succeeds but the subsequent state write fails (disk full, partial write), the next invocation's queued-commits check returns empty (commits already remote), so `pushLocked` early-returns without incrementing `Round` a second time. The result is a possible Round under-count by one — preferred over double-counting.
+
+**`ReviewerState.Status` transition on `pushLocked`.** A reviewer's `Status == "review_found"` is bound to the SHA the reviewer evaluated. When `pushLocked` uploads ≥1 new commit, the HEAD SHA changes and prior reviews become stale. After a successful push, `pushLocked` walks `state.Reviewers` and flips every entry with `Required == true` AND `Status == "review_found"` to `Status = "not_requested"`. This ensures the post-push `rereviewLocked` call (§3.3) finds reviewers to re-request. Reviewers in `{requested, in_progress, timeout, declined}` are left as-is — `rereview` already targets `{timeout, declined}` per §3.2, and `requested`/`in_progress` reviewers should not be disturbed mid-pass.
+
+**Predicate definitions used in §3.3 pseudocode:**
+
+- `has_queued_fix_commits(state) bool` — true iff the remote/local HEAD comparison yields ≥1 unpushed commit (see "Detecting queued (unpushed) fix commits" above).
+- `has_required_reviewers_to_refresh(state) bool` — true iff `state.Reviewers` contains ≥1 entry with `Required == true` AND `Status ∈ {not_requested, timeout, declined}`. After `pushLocked`'s flip, this reduces to "any `Required=true` reviewers are configured." False only when no required reviewers exist (e.g., the PR has no Copilot/codeowner required reviewer set).
+- `push_uploaded_commits_this_cycle(state) bool` — true iff `state.LastPushedHeadSHA` was updated during the current cycle (i.e., the most recent `pushLocked` returned with a non-zero commit upload). Implemented in the in-memory state copy threaded by `runLocked`.
+- `new_lifecycle_gate_this_cycle(state) bool` — true iff `state.LastError` was set by the end-of-cycle resolver in this cycle (cap-trip, HumanReviewRequired, etc.) and was not set in the prior cycle. Used to gate `LifecycleEscalationFiled = false` so each new gate fires exactly one Sink event.
+
+**`pushLocked` partial-write self-correction.** If `git push` succeeds but the subsequent state write fails, the next invocation's queued-commits check returns empty (commits are on the remote), so `pushLocked` early-returns without incrementing `Round`. The next `pollLocked` then observes `newHeadSHA != state.LastPushedHeadSHA` (because `LastPushedHeadSHA` was not updated) and attributes the change as an external push, incrementing `Round` via the external-push path. **Net effect: `Round` is incremented exactly once, just via the external-attribution code path.** `LastPushedHeadSHA` catches up on the next successful CLI push.
+
+### 3.5 Hard-cap behavior
+
+- **Default cap:** `MaxRounds = 3` — parallel to the current `wait-for-pr-comments` Round-3 cap. With `Round` initialized to 1 on initial push, this allows the initial PR push plus two CLI fix-pushes before the cap trips.
+- **Configurability:** `--max-rounds N` flag on `run` and `wait`; env var `PRGROOM_MAX_ROUNDS`; per-repo override in `.prgroom.toml` (file format owned by Section 7). **Precedence (highest → lowest):** CLI flag > env var > per-repo TOML > built-in default (3).
+- **Trigger location:** the cap is checked **pre-push**, inside `run`'s cycle loop (§3.3), so the push that would exceed it is refused rather than uploaded:
+  - condition: `has_queued_fix_commits(state) AND state.Round >= MaxRounds`
+  - action: `state.Phase = "human-gated"`, `state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"`, emit one escalation via `EscalationSink`, `tracker.Write`, then return on next loop top (releasing lock).
+- **Semantic clarification:** `MaxRounds` is the maximum count of *review-eliciting pushes the CLI will perform or observe* for this PR, including the initial push. The cap is a ceiling on `Round`, not on it-plus-one. With `MaxRounds=3` the visible push history is exactly: initial (Round=1) → fix-push #1 (Round=2) → fix-push #2 (Round=3) → cap blocks fix-push #3.
+- **`wait` verb interaction:** `waitLocked` is only invoked from `awaiting-review` or `idle` (not from `fixes-pending`). It does NOT itself check the cap; the cap check belongs to the pre-push branch of `runLocked`. `wait`'s break conditions are owned by §4.
+- **First-poll on an already-active PR (operator migration case).** When `prgroom run` is first invoked on a PR with prior reviewer rounds already on it (operator was running other tooling before adopting `prgroom`), the first `pollLocked` sets `Round = 1` per §3.4's bootstrap rule but does NOT retroactively count the historical rounds. **The cap counts only rounds observed by `prgroom`** — historical out-of-band rounds are not visible to the CLI and so do not consume the budget. If the operator wants the cap to reflect the PR's full lifetime, they can pass `--max-rounds` lower to compensate, or wait for a future enhancement.
+- **External pushes and the cap — "observed transitions only" rule.** External pushes count toward `MaxRounds` only when `pollLocked` observes them as a **SHA change between two consecutive poll invocations** (i.e., `newHeadSHA != state.LastPollSHA` AND `newHeadSHA != state.LastPushedHeadSHA`). The first-poll bootstrap (§3.4) sets `Round = 1` to anchor the counter at the PR's currently observed HEAD; it does NOT retroactively scan and count historical pushes that occurred before `prgroom` ever ran on this PR. Rationale: the cap measures review work `prgroom` has *observed* the PR ask of reviewers, not the PR's total lifetime push history. This makes the rule on line 807 and this rule fully consistent: historical pushes are invisible to `prgroom` and so do not count; pushes observed in-flight (CLI's own pushes counted by `pushLocked`, external pushes counted by `pollLocked` SHA-transition attribution) do count. The consequence: if an operator force-pushes three times while `prgroom run --autonomous` is in `awaiting-review` and polling, those three transitions each bump `Round` and may consume the cap; if the operator instead pushes three times BEFORE first launching `prgroom`, only the bootstrap `Round = 1` is recorded. To mitigate cap consumption from in-flight external activity, `pushLocked` emits a one-line stderr warning when the imminent push would advance `Round` to `MaxRounds` (e.g., `prgroom: warning — this push reaches MaxRounds=3; subsequent fix work will gate to human-gated`). Operators who want CLI-only round budgets should distinguish via `--max-rounds` adjustment when manual pushes occur, or file a follow-up bead to split `MaxRoundsCLI` vs `MaxRoundsTotal`.
+- **Recovery:** the operator may `resolve-escalated` the gating item(s), raise `--max-rounds`, and re-run. **`LastError` is cleared automatically on the next successful cycle completion** — defined as: end-of-cycle resolution writes any phase other than `human-gated` (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, or `merged`). The clearing is wired in §3.3's `runLocked` pseudocode immediately after `resolve_end_of_cycle_phase`. No `clear-error` verb is needed; manual state-file editing is never required. Alternatively, the operator may resolve out of band (manual push), which `pollLocked` will observe on the next invocation and re-enter `fixes-pending`.
+
+### 3.6 Failure tier model
+
+Extends Section 1's three-tier precondition gating into runtime errors. Every verb's failure path classifies into one of the tiers below. The tier determines the exit code, whether the phase transitions to `human-gated`, and whether an `EscalationSink` event is filed.
+
+| Tier | Examples | Exit code | Phase change | Escalation | Caller (scheduler/agent) behavior |
+|------|----------|-----------|--------------|------------|-----------------------------------|
+| `PRECONDITION_SELFHEAL` | `fix` with no clusters → auto-runs `poll` + `cluster`, retries | 0 on self-heal success | none | no | proceeds normally |
+| `PRECONDITION_USER_ERROR` | bad args, no PR detected, malformed PR ref | 2 (`EX_USAGE`) | none | no | aborts; user fixes invocation |
+| `PRECONDITION_NO_WORK` | preconditions met but nothing to do | 0 (success-no-op) | none | no | proceeds |
+| `RUNTIME_TRANSIENT` | gh 5xx, network blip, rate-limit with `Retry-After`, GraphQL transient | 75 (`EX_TEMPFAIL`) | none; `LastError` set | no | scheduler retries on next cadence |
+| `RUNTIME_TERMINAL_USER` | gh auth missing/expired, repo deleted, branch protection blocks push, OAuth scope insufficient | 77 (`EX_NOPERM`) | → `human-gated`; `LastError` set | yes | aborts; user/operator must resolve |
+| `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb and `LastError` set by `handle_verb_error`; end-of-cycle resolver §3.2 priority 3 always promotes phase to `human-gated` (any `failed` item, any cause, always gates) | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
+| `STATE_CORRUPT` | tracker JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
+| `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
+
+**Retry policy for `RUNTIME_TRANSIENT`:** the retry budget is **per logical API call, not per verb**. A single `pollLocked` may issue several distinct gh API calls (comments, reviews, CI status, head SHA); each gets its own budget independently. Per API call: **up to 3 total attempts** (initial call + 2 retries) before propagating the error. Back-off between retries is exponential: 1s before retry #1, then 4s before retry #2. When the failure response carries a `Retry-After` header (e.g., gh API rate-limit responses), the CLI honors that value instead of the exponential schedule for that retry. The CLI never retries indefinitely inside one process; after the third attempt fails for a single API call, the verb exits with the tier's code (75 `EX_TEMPFAIL`) and the scheduler (cron, `/loop`, agent caller) drives long-horizon retry.
+
+**Note on `PRECONDITION_LOCK_HELD` tier classification.** Named like a precondition but exits 75 (transient-equivalent) — see §3.7 for rationale. The reason: lock contention is short-lived; scheduler retry-on-cadence is the right recovery, identical to `RUNTIME_TRANSIENT`. The "precondition" naming captures the *pre-work check* shape; the exit-code captures the *retry semantics*.
+
+**`human-gated` re-entry:** the only paths OUT of `human-gated` are:
+- `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain.
+- `poll` observes externally-resolved state (operator pushed a fix manually, or merged the PR) and writes `fixes-pending` or `merged` accordingly.
+- Operator clears `HumanReviewRequired` upstream and re-runs (covered by §4's upstream signal contract).
+
+### 3.7 Error-code registry
+
+Every code carries `what` / `why` / `how` per Section 1's structured-stderr contract. Codes are stable identifiers in the form `<CATEGORY>_<SPECIFIC>`. Adding a new code is a non-breaking change; renaming or repurposing one is breaking.
+
+**Tier assignment per code** (the §3.6 tier determines exit code via `exitCodeForTier`, §3.3):
+
+- `PRECONDITION_*` codes are `PRECONDITION_USER_ERROR` tier (exit 2 `EX_USAGE`), EXCEPT:
+  - `PRECONDITION_LOCK_HELD` → `PRECONDITION_LOCK_HELD` tier (exit 75 — transient-equivalent, since locks free up; scheduler retries succeed)
+  - `PRECONDITION_NO_*` codes (NO_ITEMS, NO_CLUSTERS, NO_COMMITS, NO_UNREPLIED, NO_UNRESOLVED, NO_ESCALATIONS) → `PRECONDITION_NO_WORK` tier (exit 0 success-no-op under default self-heal; exit 2 only under `--no-prework`)
+- `RUNTIME_*` codes are tagged in the table below.
+- `CONTRACT_*` codes → `CONTRACT_AUDIT_FAILED` tier (exit 65 `EX_DATAERR`).
+- `STATE_*` codes → `STATE_CORRUPT` tier (exit 78 `EX_CONFIG`).
+- `LIFECYCLE_*` codes → `LIFECYCLE_CAP` tier (exit 0 graceful terminal).
+
+#### `PRECONDITION_*`
+
+| Code | What | Why | How |
+|------|------|-----|-----|
+| `PRECONDITION_NO_PR_DETECTED` | No PR found for current branch or positional arg | every verb requires a PR ref | pass `<pr-number-or-url>` or run from a branch with an open PR |
+| `PRECONDITION_NO_AUTH` | `gh auth status` failed at startup precondition check | every verb requires gh auth | run `gh auth login`. Note: if auth was valid at startup but expires mid-verb (token rotation, etc.), the mid-flight failure surfaces as `RUNTIME_GH_TERMINAL` (exit 77), not this precondition code. |
+| `PRECONDITION_REPO_UNREACHABLE` | gh API returned 404 for the repo | repo must be accessible | verify repo path and gh token scope |
+| `PRECONDITION_BAD_PR_REF` | Provided PR ref is malformed | parseable PR ref required | pass `<number>`, `<owner>/<repo>#<n>`, or full URL |
+| `PRECONDITION_NO_ITEMS` | Verb requires items but state has none | each verb declares its preconditions | run `poll` first |
+| `PRECONDITION_NO_CLUSTERS` | `fix` requires clustered items | clustering precedes fixing | run `cluster` first |
+| `PRECONDITION_NO_COMMITS` | `push` invoked with no local commits queued | `push` is degenerate without commits | run `fix` first OR accept no-op |
+| `PRECONDITION_NO_UNREPLIED` | `reply` invoked with no unreplied items | nothing to do | exit-0 success-no-op (or exit 2 under `--no-prework`) |
+| `PRECONDITION_NO_UNRESOLVED` | `resolve` invoked with no items in `Disposition.Kind ∈ {fixed, already_addressed}` AND `Resolved == false` | nothing to do | exit-0 success-no-op (or exit 2 under `--no-prework`) |
+| `PRECONDITION_NO_ESCALATIONS` | `resolve-escalated` invoked but no `escalated` items | nothing to resolve | re-check `status`; item may have been resolved already |
+| `PRECONDITION_WAIT_NOT_APPLICABLE` | `wait` invoked while phase is `fixes-pending` | `wait` is for non-actionable phases; `fixes-pending` has work to do | invoke `run` (full cycle) or `fix`+`push` directly |
+| `PRECONDITION_LOCK_HELD` | Another `prgroom` invocation holds the PR lock | concurrency model = one-at-a-time per PR; classified `RUNTIME_TRANSIENT`-equivalent (exit 75 `EX_TEMPFAIL`) | wait for the other invocation; scheduler retries on next cadence; `prgroom status <pr>` shows pid |
+
+#### `RUNTIME_*`
+
+| Code | Tier | What | Why | How |
+|------|------|------|-----|-----|
+| `RUNTIME_GH_TRANSIENT` | `RUNTIME_TRANSIENT` (75) | gh API returned 5xx or rate-limited with `Retry-After` | external service degraded | retry on next scheduler cadence |
+| `RUNTIME_GH_TERMINAL` | `RUNTIME_TERMINAL_USER` (77) | gh API returned 4xx other than 404 or rate-limit | auth/scope/permission issue | inspect stderr; reconfigure gh token. For mid-flight auth expiry specifically, this is the runtime equivalent of `PRECONDITION_NO_AUTH`; re-run `gh auth login` and re-invoke |
+| `RUNTIME_GRAPHQL_FAILED` | `RUNTIME_TRANSIENT` (75) | `resolveReviewThread` GraphQL mutation failed | thread may have been resolved externally or schema drifted | re-run `resolve`; if persistent, escalate via Sink |
+| `RUNTIME_PUSH_REJECTED` | `RUNTIME_TERMINAL_USER` (77) | `git push` rejected (non-fast-forward, hook block, branch protection) | local branch diverged or rule blocks push; retry without intervention is futile | inspect git stderr; manual reconciliation required (rebase, fix hook, or adjust branch protection). After resolving manually, `pollLocked` will observe the new state on next `Run` |
+| `RUNTIME_GIT_TRANSIENT` | `RUNTIME_TRANSIENT` (75) | git network operation timed out | upstream connectivity blip | retry on next cadence |
+| `RUNTIME_AGENT_UNAVAILABLE` | `RUNTIME_TRANSIENT` (75) | Primary AND fallback agent CLIs both failed | upstream model/tool unavailable | check `claude` / `codex` CLIs; verify quotas |
+| `RUNTIME_AGENT_TIMEOUT` | `RUNTIME_TRANSIENT` (75) | Per-contract time budget exceeded | agent exceeded its budget for one cluster | re-run; if persistent, raise budget or shrink cluster |
+
+#### `CONTRACT_*`
+
+| Code | What | Why | How |
+|------|------|-----|-----|
+| `CONTRACT_CLUSTER_MALFORMED` | Cluster output JSON failed schema validation | Contract A invariant violated | retry once; second failure falls back to per-item clusters |
+| `CONTRACT_CLUSTER_COVERAGE` | Some input items did not appear in any cluster after fallback | Contract A invariant: every item clustered | re-cluster; if persistent, file `failed` disposition for orphans |
+| `CONTRACT_FIX_MALFORMED` | Fix output JSON failed schema validation | Contract B invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_ORPHAN_COMMIT` | Commits exist on branch that no item claimed | Contract B invariant: every commit claimed | stash isolation applied; affected items flipped to `failed`; escalate |
+| `CONTRACT_FIX_UNREACHABLE_SHA` | Output claims `commit_shas[i]` not on branch | Contract B invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_AUDIT_FAILED` | Disposition+evidence combination violates audit rules | Contract B post-conditions | item flipped to `failed`; end-of-cycle resolution may promote phase to `human-gated` |
+
+#### `STATE_*`
+
+| Code | What | Why | How |
+|------|------|-----|-----|
+| `STATE_CORRUPT` | Tracker JSON failed parse | state file written incompletely or hand-edited | move state file aside (`<file>.corrupt-YYYYMMDD`); re-run to rebuild |
+| `STATE_SCHEMA_UNKNOWN` | `schema_version` not recognized | CLI older than state file (or vice versa) | upgrade/downgrade CLI; do not run conflicting versions concurrently |
+
+**Locking mechanism note.** Section 2 specifies `flock(2)` advisory locking on the state file. `flock(2)` is **released automatically by the kernel on process death**, so the failure-tier registry does NOT include a "stale lock from dead process" code — that condition cannot occur with `flock(2)`. (Earlier drafts referenced `STATE_LOCK_STALE` and `NOTICE_LOCK_STALE_CLEANED` reflecting an fcntl-style protocol; both have been removed to match the chosen mechanism.) Lock contention by a live process surfaces as `PRECONDITION_LOCK_HELD` (registered above, exit 75).
+
+#### `LIFECYCLE_*`
+
+| Code | What | Why | How |
+|------|------|-----|-----|
+| `LIFECYCLE_HARD_CAP_EXCEEDED` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (so `Round` is never allowed to exceed `MaxRounds`; the cap-tripping push is refused) | hard cap reached without quiescence | resolve outstanding escalations; raise `--max-rounds` and re-run (a successful cycle clears `LastError` automatically); or hand off to human review |
+| `LIFECYCLE_HUMAN_REVIEW_REQUIRED` | `HumanReviewRequired = true` set upstream | brainstorm or another upstream signal flagged this PR | human reviews; clear flag manually (mechanism owned by §4) to resume autonomous flow |
+
+Adding new codes is straightforward; the registry's structure (`<CATEGORY>_<SPECIFIC>` with what/why/how) is the stable contract that agents and humans both consume.
+
+---
+
+## Sections 4, 6, 7 — Open sub-designs (TBD)
+
+These sections are NOT YET DRAFTED. Listed here so the reviewer can leave annotations on the open questions. (Section 5 is drafted further down; Section 8 is sketched at the end.)
 
 ### Section 4 — Quiescence model
 
