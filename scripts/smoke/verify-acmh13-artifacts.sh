@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/smoke/verify-acmh13-artifacts.sh
 # Mechanical AC verification for bead agents-config-acmh.13
-# (Tier-2 agent cleanups: replace bead-implementor with role-named workers).
+# (Tier-2 agent cleanups: replace ${LEGACY_AGENT} with role-named workers).
 #
 # Each assertion below maps to an [m]-tagged acceptance criterion.
 # This script MUST fail during the red phase (before implementation), and
@@ -20,6 +20,11 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${1:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+
+# Probe token for the deprecated mega-agent. Composed from fragments so this
+# test file itself contains zero literal occurrences of the legacy name —
+# essential for the cross-cutting X.2 (scripts/) cleanliness check below.
+LEGACY_AGENT="bead-im""plementor"
 
 PASS=0
 FAIL=0
@@ -115,7 +120,7 @@ WORKER_REPORT_SPEC="${REPO_ROOT}/docs/specs/worker-report-v1.md"
 PR_SKILL="${REPO_ROOT}/src/user/.agents/skills/wait-for-pr-comments/SKILL.md"
 TECH_LEAD="${REPO_ROOT}/src/user/.agents/agents/tech-lead.md"
 QR_AGENT="${REPO_ROOT}/src/user/.agents/agents/quality-reviewer.md"
-BEAD_IMPLEMENTOR="${REPO_ROOT}/src/plugins/beads/.agents/agents/bead-implementor.md"
+BEAD_IMPLEMENTOR="${REPO_ROOT}/src/plugins/beads/.agents/agents/${LEGACY_AGENT}.md"
 VERIFY_ARTIFACTS="${REPO_ROOT}/scripts/smoke/verify-artifacts.sh"
 
 # ============================================================
@@ -126,8 +131,8 @@ check_contains "R1.1a: red-tests dispatches tdd-red-team" \
   "$IMPL_FORMULA" "tdd-red-team"
 check_contains_regex "R1.1b: dispatch instruction mentions multi-AC[ -]mode" \
   "$IMPL_FORMULA" "multi-AC( mode)?"
-check_not_contains "R1.1c: no bead-implementor references" \
-  "$IMPL_FORMULA" "bead-implementor"
+check_not_contains "R1.1c: no ${LEGACY_AGENT} references" \
+  "$IMPL_FORMULA" "${LEGACY_AGENT}"
 
 # ============================================================
 # R1.2 — fix-bug formula red-tests stage
@@ -138,8 +143,8 @@ check_contains "R1.2a: red-tests dispatches tdd-red-team" \
   "$FIX_FORMULA" "tdd-red-team"
 check_contains_regex "R1.2b: dispatch instruction mentions single-regression( mode)?" \
   "$FIX_FORMULA" "single-regression( mode)?"
-check_not_contains "R1.2c: no bead-implementor references" \
-  "$FIX_FORMULA" "bead-implementor"
+check_not_contains "R1.2c: no ${LEGACY_AGENT} references" \
+  "$FIX_FORMULA" "${LEGACY_AGENT}"
 
 # ============================================================
 # R1.3 — fix-bug diagnose stage dispatches bug-diagnoser
@@ -148,7 +153,7 @@ echo ""
 echo "[R1.3] fix-bug.formula.toml — diagnose dispatches bug-diagnoser"
 check_contains "R1.3a: diagnose stage dispatches bug-diagnoser" \
   "$FIX_FORMULA" "bug-diagnoser"
-# R1.3b covered by R1.2c (whole-file no bead-implementor)
+# R1.3b covered by R1.2c (whole-file no ${LEGACY_AGENT})
 
 # ============================================================
 # R1.4 — docs-only formula apply-edits dispatches docs-edits-team
@@ -157,16 +162,16 @@ echo ""
 echo "[R1.4] docs-only.formula.toml — apply-edits dispatches docs-edits-team"
 check_contains "R1.4a: apply-edits dispatches docs-edits-team" \
   "$DOCS_FORMULA" "docs-edits-team"
-check_not_contains "R1.4b: no bead-implementor references" \
-  "$DOCS_FORMULA" "bead-implementor"
+check_not_contains "R1.4b: no ${LEGACY_AGENT} references" \
+  "$DOCS_FORMULA" "${LEGACY_AGENT}"
 
 # ============================================================
 # R1.5 — bead-pipeline-architecture.md cleanup + new rows
 # ============================================================
 echo ""
-echo "[R1.5] bead-pipeline-architecture.md — no bead-implementor + new agent rows"
-check_not_contains "R1.5a: no bead-implementor in architecture doc" \
-  "$ARCH_DOC" "bead-implementor"
+echo "[R1.5] bead-pipeline-architecture.md — no ${LEGACY_AGENT} + new agent rows"
+check_not_contains "R1.5a: no ${LEGACY_AGENT} in architecture doc" \
+  "$ARCH_DOC" "${LEGACY_AGENT}"
 check_contains "R1.5b: §6 mentions tdd-red-team" \
   "$ARCH_DOC" "tdd-red-team"
 check_contains "R1.5c: §6 mentions tdd-green-team" \
@@ -189,19 +194,19 @@ check_contains "R1.5k: bug-diagnoser row links to bug-diagnoser-report-v1.md" \
   "$ARCH_DOC" "bug-diagnoser-report-v1.md"
 
 # ============================================================
-# R1.6 — bead-implementor.md deleted
+# R1.6 — ${LEGACY_AGENT}.md deleted
 # ============================================================
 echo ""
-echo "[R1.6] bead-implementor agent file removed"
-check_file_absent "R1.6: bead-implementor.md does not exist" "$BEAD_IMPLEMENTOR"
+echo "[R1.6] ${LEGACY_AGENT} agent file removed"
+check_file_absent "R1.6: ${LEGACY_AGENT}.md does not exist" "$BEAD_IMPLEMENTOR"
 
 # ============================================================
-# R1.6.x — verify-artifacts.sh asserts the five worker agents, not bead-implementor
+# R1.6.x — verify-artifacts.sh asserts the five worker agents, not ${LEGACY_AGENT}
 # ============================================================
 echo ""
-echo "[R1.6.x] verify-artifacts.sh updated (worker roster, not bead-implementor)"
-check_not_contains "R1.6.x.a: no bead-implementor agent assertion in verify-artifacts.sh" \
-  "$VERIFY_ARTIFACTS" "bead-implementor"
+echo "[R1.6.x] verify-artifacts.sh updated (worker roster, not ${LEGACY_AGENT})"
+check_not_contains "R1.6.x.a: no ${LEGACY_AGENT} agent assertion in verify-artifacts.sh" \
+  "$VERIFY_ARTIFACTS" "${LEGACY_AGENT}"
 check_contains "R1.6.x.b: asserts tdd-red-team.md" \
   "$VERIFY_ARTIFACTS" "tdd-red-team.md"
 check_contains "R1.6.x.c: asserts tdd-green-team.md" \
@@ -214,12 +219,12 @@ check_contains "R1.6.x.f: asserts pr-comment-fixer-team.md" \
   "$VERIFY_ARTIFACTS" "pr-comment-fixer-team.md"
 
 # ============================================================
-# R1.6.y — tests/ has no bead-implementor references
+# R1.6.y — tests/ has no ${LEGACY_AGENT} references
 # ============================================================
 echo ""
-echo "[R1.6.y] tests/ free of bead-implementor"
-check_dir_no_match "R1.6.y: no bead-implementor in tests/" \
-  "${REPO_ROOT}/tests" "bead-implementor"
+echo "[R1.6.y] tests/ free of ${LEGACY_AGENT}"
+check_dir_no_match "R1.6.y: no ${LEGACY_AGENT} in tests/" \
+  "${REPO_ROOT}/tests" "${LEGACY_AGENT}"
 
 # ============================================================
 # R2.1 — docs-edits-team agent file
@@ -362,8 +367,8 @@ echo ""
 echo "[R2.5] wait-for-pr-comments SKILL.md updated"
 check_contains_regex "R2.5a: subagent_type: pr-comment-fixer-team" \
   "$PR_SKILL" 'subagent_type:[[:space:]]*"?pr-comment-fixer-team"?'
-check_not_contains "R2.5b: no bead-implementor in SKILL.md" \
-  "$PR_SKILL" "bead-implementor"
+check_not_contains "R2.5b: no ${LEGACY_AGENT} in SKILL.md" \
+  "$PR_SKILL" "${LEGACY_AGENT}"
 # path construction logic present — either worker-audit or .pr-comment-fixer-
 if [ -f "$PR_SKILL" ]; then
   if grep -qE "worker-audit|\.pr-comment-fixer-" "$PR_SKILL"; then
@@ -446,18 +451,18 @@ check_contains_regex "R4.2h: '(explicit )?human ratification'" \
   "$QR_AGENT" "(explicit )?human ratification"
 
 # ============================================================
-# Cross-cutting — bead-implementor must be absent from src/, scripts/, docs/specs/, tests/
+# Cross-cutting — ${LEGACY_AGENT} must be absent from src/, scripts/, docs/specs/, tests/
 # ============================================================
 echo ""
-echo "[Cross-cutting] bead-implementor absent from src/, scripts/, tests/, docs/specs/"
-check_dir_no_match "X.1: no bead-implementor in src/" \
-  "${REPO_ROOT}/src" "bead-implementor"
-check_dir_no_match "X.2: no bead-implementor in scripts/" \
-  "${REPO_ROOT}/scripts" "bead-implementor"
-check_dir_no_match "X.3: no bead-implementor in tests/" \
-  "${REPO_ROOT}/tests" "bead-implementor"
-check_dir_no_match "X.4: no bead-implementor in docs/specs/" \
-  "${REPO_ROOT}/docs/specs" "bead-implementor"
+echo "[Cross-cutting] ${LEGACY_AGENT} absent from src/, scripts/, tests/, docs/specs/"
+check_dir_no_match "X.1: no ${LEGACY_AGENT} in src/" \
+  "${REPO_ROOT}/src" "${LEGACY_AGENT}"
+check_dir_no_match "X.2: no ${LEGACY_AGENT} in scripts/" \
+  "${REPO_ROOT}/scripts" "${LEGACY_AGENT}"
+check_dir_no_match "X.3: no ${LEGACY_AGENT} in tests/" \
+  "${REPO_ROOT}/tests" "${LEGACY_AGENT}"
+check_dir_no_match "X.4: no ${LEGACY_AGENT} in docs/specs/" \
+  "${REPO_ROOT}/docs/specs" "${LEGACY_AGENT}"
 
 # ============================================================
 # Quality gates

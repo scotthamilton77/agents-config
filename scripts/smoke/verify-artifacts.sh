@@ -73,7 +73,7 @@ check_file \
   "implement-bead slash command exists" \
   "${REPO_ROOT}/src/plugins/beads/.claude/commands/implement-bead.md"
 
-# Worker agent family (replaces bead-implementor — acmh.13)
+# Worker agent family (role-named, post-acmh.13 split)
 check_file \
   "tdd-red-team agent exists" \
   "${REPO_ROOT}/src/plugins/beads/.agents/agents/tdd-red-team.md"

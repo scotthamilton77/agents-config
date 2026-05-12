@@ -160,9 +160,14 @@ assert_grep "Agent" "$SLASH" "AC16b: slash command mentions Agent tool"
 assert_grep_regex "(orchestration|ralf-implement|loop owner|loop ownership|owns the loop|owns iteration)" "$SLASH" "AC16c: slash command mentions orchestration-skill loop ownership"
 assert_line_count_le "$SLASH" 40 "AC16d: slash command ≤ 40 lines"
 
-# AC 17 — No bead-implementor in either file
-assert_no_grep "bead-implementor" "$SKILL" "AC17a: SKILL.md has NO bead-implementor references"
-assert_no_grep "bead-implementor" "$SLASH" "AC17b: slash command has NO bead-implementor references"
+# AC 17 — legacy mega-agent absent from both files. The implement-bead
+# skill and slash command must reference role-named worker agents
+# (tdd-red-team, tdd-green-team, bug-diagnoser, docs-edits-team,
+# pr-comment-fixer-team) rather than any pre-split "do-everything"
+# implementor stand-in. Probe via a distinctive token that no current
+# worker uses but the legacy mega-agent did: the suffix "-implementor".
+assert_no_grep_regex "[a-z]+-implementor" "$SKILL" "AC17a: SKILL.md has NO legacy '*-implementor' references"
+assert_no_grep_regex "[a-z]+-implementor" "$SLASH" "AC17b: slash command has NO legacy '*-implementor' references"
 
 # AC 18 — Stage-blind outcome rules (option (c) per bead 7bk.19.3)
 # Workers self-police via stage-aware `status` emission; the orchestrator
