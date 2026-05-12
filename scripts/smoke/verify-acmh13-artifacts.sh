@@ -428,27 +428,9 @@ echo "[R3.3] tech-lead.md — frontmatter disallowedTools"
 check_contains "R3.3: disallowedTools: Write, Edit" \
   "$TECH_LEAD" "disallowedTools: Write, Edit"
 
-# ============================================================
-# R4.2 — quality-reviewer Memory Protocol
-# ============================================================
-echo ""
-echo "[R4.2] quality-reviewer.md — Memory Protocol section"
-check_contains_regex "R4.2a: H2 'Memory Protocol' (or equivalent)" \
-  "$QR_AGENT" "^## Memory Protocol"
-check_contains "R4.2b: mentions 'recurring vulnerability patterns'" \
-  "$QR_AGENT" "recurring vulnerability patterns"
-check_contains "R4.2c: mentions 'project-specific anti-patterns'" \
-  "$QR_AGENT" "project-specific anti-patterns"
-check_contains "R4.2d: mentions 'prior false-positive corrections'" \
-  "$QR_AGENT" "prior false-positive corrections"
-check_contains_regex "R4.2e: horizon number 30 present" \
-  "$QR_AGENT" "\\b30\\b"
-check_contains_regex "R4.2f: 'LRU' or 'least-recently' present" \
-  "$QR_AGENT" "LRU|least-recently"
-check_contains_regex "R4.2g: hard cap number 50 present" \
-  "$QR_AGENT" "\\b50\\b"
-check_contains_regex "R4.2h: '(explicit )?human ratification'" \
-  "$QR_AGENT" "(explicit )?human ratification"
+# R4.2 — Memory Protocol assertions removed: the section was intentionally
+# stripped from quality-reviewer.md (requires cross-PR feedback loop not yet
+# implemented; deferred to agents-config-4vn5.1 feedback-loops spike).
 
 # ============================================================
 # Cross-cutting — ${LEGACY_AGENT} must be absent from src/, scripts/, docs/specs/, tests/
