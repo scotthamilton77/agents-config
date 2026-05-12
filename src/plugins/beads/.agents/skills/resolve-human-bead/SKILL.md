@@ -17,7 +17,11 @@ Resolve a human-flagged bead back into the autonomous pipeline.
 
 The skill detects what *kind* of human-labeled state the target represents,
 then applies the right primitive. It NEVER bare-removes the `human` label
-and NEVER bare-closes a `human`-labeled bead — both bypass the audit trail.
+and NEVER bare-closes a HEP escalation bead — both bypass the audit trail.
+(Scenario F's `[h]` follow-up class is the deliberate exception: plain
+`bd close` AFTER stamping `verified-by-human` is the correct primitive,
+gated by the parent-child + I2 close-walk — see Scenario F and the Red
+Flags table below.)
 
 ## Authoritative references
 
@@ -393,7 +397,7 @@ close the escalation via `bd human respond <human-id> --response
 | Thought | Reality |
 |---------|---------|
 | "I'll just `bd label remove <id> human` to clear the escalation" | NO. Bare `bd label remove <id> human` (or `bd label remove ... human` in any shape) is **prohibited** — it bypasses the audit trail. The escalation bead disappears from `bd human list` but the dep blocker stays live and the source bead is still paused with no recorded reason. Use `bd human respond` (Scenarios A–D) or `bd human dismiss` (Scenario E) for HEP escalations; `verified-by-human` + plain `bd close` for `[h]` follow-ups (Scenario F); `/merge-and-cleanup` for merge-gate (Scenario G). |
-| "I'll just `bd close` the human-labeled bead and move on" | NO. Bare `bd close` on a `human`-labeled bead is **prohibited** — it bypasses the audit trail (`bd human respond`/`bd human dismiss` record reasons and add audit comments; plain `bd close` does not). The only exception is Scenario F's plain `bd close` AFTER the `verified-by-human` label has been stamped — that path is deliberate, audit-trail-preserving, and gated by the parent-child + I2 close-walk on `merge-and-cleanup`. |
+| "I'll just `bd close` the human-labeled bead and move on" | NO. Bare `bd close` on a HEP escalation bead is **prohibited** — it bypasses the audit trail (`bd human respond`/`bd human dismiss` record reasons and add audit comments; plain `bd close` does not). The deliberate exception is Scenario F's plain `bd close` on an `[h]` follow-up AFTER the `verified-by-human` label has been stamped — that path is audit-trail-preserving and gated by the parent-child + I2 close-walk on `merge-and-cleanup`. The prohibition scopes to HEP escalations (Probe 3 + the merge-gate sub-class), not to `[h]` follow-ups. |
 | "Scenario C also needs me to edit the source description" | NO. Scenario C is the "tooling/credential resolved" case — ONLY `bd human respond`. No other state changes. |
 | "Scenario E should use `bd human respond`, the user has 'responded' that the work is abandoned" | NO. Abandoned = `bd human dismiss` + `bd close <source-id>`. `bd human respond` implies the source bead remains live and will resume; that is the opposite of what abandonment means. |
 | "Scenario F should use `bd human respond` — there's a human in the loop" | NO. `[h]` follow-ups are structurally distinct from HEP escalations (parent-child + I2 close-walk vs. dep-blocker). `bd human respond` would close the follow-up without stamping `verified-by-human`, breaking `merge-and-cleanup`'s gate-step (arch §4.3). |
