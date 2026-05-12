@@ -14,7 +14,7 @@ No exceptions. No partial runs. Each step feeds the next.
 
 **Subagents**: When dispatching subagents to do implementation work, always include the full completion gate workflow (review, simplify, verify) in their instructions. Subagent work that skips the gate is incomplete work.
 
-**Optional adversarial pass** (operator-initiated): For high-stakes changes (architecture shifts, security-sensitive code, final pre-merge), add `/codex:adversarial-review --wait --model gpt-5.3-codex` as defense-in-depth after the in-house review steps.
+**Optional adversarial pass** (operator-initiated): For high-stakes changes (architecture shifts, security-sensitive code, final pre-merge), add `/codex:adversarial-review --wait --model gpt-5.5` as defense-in-depth after the in-house review steps.
 
 **HARD STOP**: After this gate, AUTOMATICALLY execute delivery steps. Do NOT pause for authorization.
 DO NOT commit to main. DO NOT push directly.
