@@ -93,7 +93,8 @@ escalation_reason: "<crisp reason>"              # only when classification == E
 evidence: {}
 escalations: []
 discovered_work: []
-commits: []
+commits:
+  - "<full 40-char SHA — same as commit_sha when action == COMMITTED_FIX; empty list otherwise>"
 ```
 
 ## Constraints

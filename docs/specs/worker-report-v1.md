@@ -42,7 +42,7 @@ existing spec style under `docs/specs/`.
 | **Audit label** | `worker-audit-<agent-name>[-iter<N>]` — stamped on the step-bead |
 | **Required core fields** | `status`, `evidence`, `escalations`, `discovered_work`, `commits` |
 | **Orchestrator minimum** | `status` — missing → synthesize a `status: failed` report |
-| **Per-agent extensions** | `tdd-red-report-v1`, `tdd-green-report-v1`, `bug-diagnoser-report-v1`, `docs-edits-report-v1`, `pr-comment-fix-report-v1.md` |
+| **Per-agent extensions** | `tdd-red-report-v1`, `tdd-green-report-v1`, `bug-diagnoser-report-v1`, `docs-edits-report-v1`, `pr-comment-fix-report-v1` |
 
 ## Background
 
