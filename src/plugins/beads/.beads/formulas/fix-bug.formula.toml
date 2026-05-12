@@ -150,30 +150,41 @@ superpowers:systematic-debugging
 
 ## Actions
 
-1. Reproduce the bug reliably.
+1. Dispatch bug-diagnoser (opus, high effort) to investigate the defect:
+   - Dispatch with: worktree path, full bug description (and any
+     reproduction notes from the bead), step-bead ID, project
+     test-runner command, absolute report path.
+   - The worker reproduces the bug, traces backward to the root cause,
+     and emits a bug-diagnoser-report-v1 YAML with a non-empty
+     `root_cause_note`. The orchestrator parses the report after the
+     worker exits and propagates the `root_cause_note` to the
+     downstream red-tests stage via step-bead notes.
+
+2. Reproduction expectations applied by the worker:
    - Find or write a minimal reproduction case.
    - Confirm it fails consistently (not flaky).
    - Note: exact failure (error message, stack trace, wrong output).
    - Note: expected correct behavior.
-   If cannot reproduce: flag-human with a note asking for more information.
+   - If the worker cannot reproduce, it emits `status: needs_human` with
+     a request-for-information escalation.
 
-2. Trace the failure backward to the root cause.
-   Apply superpowers:systematic-debugging.
+3. Root-cause tracing methodology:
+   - Apply superpowers:systematic-debugging.
    - A symptom is WHERE it breaks. A root cause is WHY it breaks.
    - Do not patch the first place you see the problem — trace further back.
    - Read the code path. Do not assume.
    - Ask: "What invariant was violated? Where was it first violated?"
 
-3. Append root-cause note to step-bead:
-   bd update <step-bead-id> --append-notes "Root cause: <explanation>"
+4. After the worker exits, append the root-cause note to the step-bead:
+   bd update <step-bead-id> --append-notes "Root cause: <root_cause_note from report>"
 
-4. If root cause significantly differs from the bead description:
+5. If root cause significantly differs from the bead description:
    bd label add <step-bead-id> human
    bd label add {{bead-id}} human
    bd update <step-bead-id> --append-notes "Root cause significantly differs: <reason>"
    Exit cleanly. Do NOT proceed.
 
-5. If root cause exceeds the bead's stated scope:
+6. If root cause exceeds the bead's stated scope:
    Apply human-flag protocol. Do NOT fix out-of-scope issues inline.
    File a new bead for the out-of-scope root cause before flagging.
 
@@ -229,8 +240,8 @@ regression test is "proof that the bug cannot silently return" (see action
 would silently waive that invariant. A bug bead with zero [m] ACs and a
 non-empty [gates].test is a brainstorm gap, not an escalate condition —
 the formula must NOT silently skip or reroute; it proceeds with normal
-red-tests behavior, and the dispatched bead-implementor will fail loudly
-with no [m] lines to cover, surfacing the gap for human resolution.
+red-tests behavior, and the dispatched tdd-red-team worker will fail
+loudly with no [m] lines to cover, surfacing the gap for human resolution.
 
 ### Reroute protocol (when Trigger A fires)
 
@@ -324,11 +335,19 @@ in a separate session will pick up <new-bead-id> organically and pour the
 
 ### Normal flow (when no escalate trigger fires)
 
-1. Dispatch bead-implementor (sonnet, medium effort) to write the regression test:
+1. Dispatch tdd-red-team (opus, high effort) in single-regression mode to write the regression test:
+   - Dispatch with: worktree path, root-cause note from diagnose,
+     bead AC ([m]-tagged lines), step-bead ID, project test-runner
+     command, absolute report path, and the explicit input mode
+     "single-regression mode" (one targeted failing test capturing
+     the diagnosed defect — see tdd-red-team.md for the multi-AC vs
+     single-regression mode contract).
    - Test MUST target the root cause location, not the symptom surface.
    - Testing at the wrong layer creates false confidence.
    - Confirm test FAILS in current codebase (bug exists).
    - Commit failing test to feature branch.
+   - The worker emits a tdd-red-report-v1 YAML to the report path; the
+     orchestrator parses it after exit.
 
 2. Run Claude reviewer (test-review skill) on the written test.
    When review-level:none: skip reviewers (test still written).
