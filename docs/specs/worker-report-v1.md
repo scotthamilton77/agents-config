@@ -12,12 +12,14 @@ of the task spec, and the worker writes the YAML report to that path
 before exiting. The orchestrator reads the file once the worker exits
 and stamps a forensic audit label on the step-bead.
 
-Three per-agent specs extend this core with agent-specific fields and
+Five per-agent specs extend this core with agent-specific fields and
 expectations:
 
 - [`tdd-red-report-v1.md`](./tdd-red-report-v1.md) — `tdd-red-team`
 - [`tdd-green-report-v1.md`](./tdd-green-report-v1.md) — `tdd-green-team`
 - [`bug-diagnoser-report-v1.md`](./bug-diagnoser-report-v1.md) — `bug-diagnoser`
+- [`docs-edits-report-v1.md`](./docs-edits-report-v1.md) — `docs-edits-team`
+- [`pr-comment-fix-report-v1.md`](./pr-comment-fix-report-v1.md) — `pr-comment-fixer-team`
 
 This document defines:
 
@@ -40,15 +42,17 @@ existing spec style under `docs/specs/`.
 | **Audit label** | `worker-audit-<agent-name>[-iter<N>]` — stamped on the step-bead |
 | **Required core fields** | `status`, `evidence`, `escalations`, `discovered_work`, `commits` |
 | **Orchestrator minimum** | `status` — missing → synthesize a `status: failed` report |
-| **Per-agent extensions** | `tdd-red-report-v1`, `tdd-green-report-v1`, `bug-diagnoser-report-v1` |
+| **Per-agent extensions** | `tdd-red-report-v1`, `tdd-green-report-v1`, `bug-diagnoser-report-v1`, `docs-edits-report-v1`, `pr-comment-fix-report-v1.md` |
 
 ## Background
 
 PR #28 introduced the per-stage `claude -p` pipeline (bead `7bk.9`).
-Post-review, the `bead-implementor` worker agent was found to have four
-structural defects (see epic `7bk.19`); two of them — Defect A (leaky
-abstraction) and Defect C (no structured report contract) — motivate
-this spec directly:
+Post-review, the original mega-agent (subsequently split into the
+role-named workers `tdd-red-team`, `tdd-green-team`, `bug-diagnoser`,
+`docs-edits-team`, and `pr-comment-fixer-team` by `acmh.13`) was found
+to have four structural defects (see epic `7bk.19`); two of them —
+Defect A (leaky abstraction) and Defect C (no structured report
+contract) — motivate this spec directly:
 
 - **Defect A.** The worker called `bd label add`, `bd update --append-notes`,
   and read bead state. Workers should be pure task functions with no
@@ -191,6 +195,8 @@ required. An omitted top-level required field is malformed.
 | `tdd-red-team` | [`tdd-red-report-v1`](./tdd-red-report-v1.md) | (no additional fields; agent-specific expectations only) |
 | `tdd-green-team` | [`tdd-green-report-v1`](./tdd-green-report-v1.md) | (no additional fields; agent-specific expectations only) |
 | `bug-diagnoser` | [`bug-diagnoser-report-v1`](./bug-diagnoser-report-v1.md) | `root_cause_note` (required) |
+| `docs-edits-team` | [`docs-edits-report-v1`](./docs-edits-report-v1.md) | `files_changed`, `commit_sha`, `summary`, `skipped_items` (all required) |
+| `pr-comment-fixer-team` | [`pr-comment-fix-report-v1`](./pr-comment-fix-report-v1.md) | `comment_id`, `comment_thread_id`, `classification`, `action`, plus action-conditional `fix_summary` / `commit_sha` / `already_addressed_by_sha` / `escalation_reason` |
 
 Per-agent specs describe:
 
@@ -355,6 +361,8 @@ agent. The current set:
 | `tdd-red-report-v1` | `status` | synthesize |
 | `tdd-green-report-v1` | `status` | synthesize |
 | `bug-diagnoser-report-v1` | `status`, `root_cause_note` (non-empty) | synthesize + escalate |
+| `docs-edits-report-v1` | `status` | synthesize |
+| `pr-comment-fix-report-v1` | `status`, `classification`, `action` | synthesize |
 
 All other contract fields (the rest of §1.2, plus any per-agent
 non-runtime-required fields) are contract obligations enforced by
