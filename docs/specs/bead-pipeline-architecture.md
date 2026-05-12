@@ -566,7 +566,7 @@ HUMAN_ID=$(bd create \
     --type task \
     --priority "<inherited from source bead>" \
     --description "<context: what the stage was doing, what is blocked, what is needed>" \
-    --json | jq -r '.id')
+    --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
     "Source: <source-bead-id>
