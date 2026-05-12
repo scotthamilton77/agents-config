@@ -1,7 +1,7 @@
 ---
 name: whats-next
 description: Use when the user asks what work is available, what needs attention, what to work on next, or runs bd ready in conversation. NOT for run-queue autonomous processing or checking a specific bead.
-model: haiku
+model: sonnet[1m]
 ---
 
 # whats-next

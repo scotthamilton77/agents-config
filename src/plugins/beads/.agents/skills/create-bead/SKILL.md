@@ -5,7 +5,7 @@ description: >
   enhancement as a tracked work item. Creates a lightweight placeholder bead
   with enough context to be routed later by start-bead. Do NOT brainstorm,
   spec-write, or ask design questions — that is start-bead's job.
-model: haiku
+model: sonnet[1m]
 effort: low
 ---
 
