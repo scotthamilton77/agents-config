@@ -126,12 +126,13 @@ Decide from the result array:
   escalation bead to be the sole carrier of `human`:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
+  # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
   HUMAN_ID=$(bd create \
       --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
       --type task \
       --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
       --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
-      --json | jq -r '.id')
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
@@ -176,6 +177,7 @@ Decide from the result array:
   `human`. Carry your multi-molecule analysis into the escalation
   bead's notes so the human sees your read-out, not a blank flag:
   ```bash
+  # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
   HUMAN_ID=$(bd create \
       --title "Human input needed: multiple active molecules on <bead-id>" \
       --type task \
@@ -185,7 +187,7 @@ Decide from the result array:
   - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
   Assessment: <duplicative | legacy | needs manual merge>
   Recommended action: <resume X / burn Y / user decides>" \
-      --json | jq -r '.id')
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
