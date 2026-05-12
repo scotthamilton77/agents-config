@@ -182,7 +182,7 @@ Inputs:
 - target artifact: current spec and acceptance criteria from `bd show {{bead-id}}`
 - review criteria: completeness, ambiguity, feasibility, consistency, and implementability
 - context: discussion notes, known constraints, parent/child bead context, and relevant repo conventions
-- max cycles: 2
+- max cycles: 3
 
 `ralf-review` runs bounded adversarial fresh-eyes cycles against the provided spec text.
 It does not read or mutate beads; this formula step supplies all inputs and decides how
@@ -192,8 +192,11 @@ Review reported findings:
 - if findings are valid and actionable, return to write-spec and revise
 - if findings are non-significant, proceed
 
-Run at most 2 spec-review cycles. If concerns remain after cycle cap,
-document them explicitly as open questions in the bead notes.
+Run at most 3 spec-review cycles. If critical or blocking issues remain, stop 
+and inform the user if in interactive mode, else flag the bead for human intervention
+(add the human label), capture the state of the review and the outstanding issues, and 
+stop.  Otherwise for non-blocking and non-critical concerns  that remain after cycle 
+cap, document them explicitly as open questions in the bead notes.
 """
 
 # =============================================================================
