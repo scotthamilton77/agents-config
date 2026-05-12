@@ -387,10 +387,19 @@ as final actions. The skill MUST NOT invoke `bd human respond` or `bd
 human dismiss` on the hand-off escalation bead directly —
 `/merge-and-cleanup` owns its closure.
 
-**Manual fallback** — if `/merge-and-cleanup` is unavailable, surface
-the manual recovery to the user: they merge the PR themselves, then
-close the escalation via `bd human respond <human-id> --response
-"Merged manually"` once the merge action completed.
+**Manual fallback (documented exception to the no-respond/no-dismiss
+rule above)** — if `/merge-and-cleanup` is unavailable, surface the
+manual recovery to the user: they merge the PR themselves, then the
+skill MAY close the escalation via `bd human respond <human-id>
+--response "Merged manually"` — but ONLY after explicitly confirming
+with the user that the merge has actually completed. This is the sole
+documented exception to Scenario G's "MUST NOT invoke `bd human
+respond` or `bd human dismiss`" rule, and it applies ONLY to the
+merge-already-completed-manually case. Never invoke `bd human respond`
+on a merge-gate hand-off escalation if the merge has not yet happened —
+that would double-close against `/merge-and-cleanup`'s closure
+transaction if it later runs, and falsely report completion if the
+merge never happens.
 
 ## Red Flags
 
