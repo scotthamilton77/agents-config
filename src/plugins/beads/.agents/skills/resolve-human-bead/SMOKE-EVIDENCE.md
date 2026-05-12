@@ -9,12 +9,12 @@ the bead spec (AC15, AC16). Authority: `docs/specs/bead-pipeline-architecture.md
 ### Fixture
 
 ```bash
-SMOKE1=/tmp/nhep-smoke-1-1778601933
+SMOKE1=/tmp/nhep-smoke-1-cycle2-1778603362
 mkdir -p "$SMOKE1" && cd "$SMOKE1"
 bd init
-# Issue prefix: nhep-smoke-1-1778601933
+# Issue prefix: nhep-smoke-1-cycle2-1778603362
 B1=$(bd create --title "Test source" --type task --json | jq -r .id)
-# B1=nhep-smoke-1-1778601933-p8v
+# B1=nhep-smoke-1-cycle2-1778603362-i2o
 ```
 
 ### Step 2 — Run the HEP escalation block
@@ -28,9 +28,9 @@ H1=$(bd create \
     --title "Human input needed: tooling-credentials test" \
     --type task \
     --priority "$(bd show "$B1" --json | jq -r '.[0].priority')" \
-    --description "Smoke 1 fixture: blocked on tooling-credentials" \
+    --description "Smoke 1 cycle2 fixture: blocked on tooling-credentials" \
     --json | jq -r .id)
-# H1=nhep-smoke-1-1778601933-dr9
+# H1=nhep-smoke-1-cycle2-1778603362-3r7
 bd label add "$H1" human
 bd update "$H1" --append-notes "Source: $B1
 Step-bead: N/A (smoke fixture)
@@ -44,13 +44,13 @@ bd update "$B1" --status open
 ### Step 3 — Verifications (actual output)
 
 ```
-[bd show $B1] status+deps
+[bd show $B1] status+deps (post-escalation)
 {
-  "id": "nhep-smoke-1-1778601933-p8v",
+  "id": "nhep-smoke-1-cycle2-1778603362-i2o",
   "status": "open",
   "dependencies": [
     {
-      "id": "nhep-smoke-1-1778601933-dr9",
+      "id": "nhep-smoke-1-cycle2-1778603362-3r7",
       "title": "Human input needed: tooling-credentials test",
       "status": "open",
       "labels": ["human"],
@@ -75,60 +75,78 @@ All three step-3 invariants hold:
 - `bd label list $B1` returns `[]` — the source bead does NOT carry
   `human`. The single-bead-`human` invariant holds.
 
+### Step 4 — Canonical detection probe verified live (cycle-2 correction)
+
+Cycle 1's SKILL.md and start-bead Route D used
+`select(.type=="blocks") | .issue_id` — that shape is from
+`bd ready --json`'s dependency-record wire, NOT `bd show --json`'s. On
+`bd show --json` each dep object exposes `dependency_type` and `.id`.
+Cycle 2 corrects both files and verifies the corrected probe live on
+the same fixture:
+
+```bash
+# Broken probe (cycle-1 text) — returns empty on bd show --json:
+$ bd show "$B1" --json | jq -r '.[0].dependencies[]? | select(.type=="blocks") | .issue_id'
+
+# Corrected probe (cycle-2 text) — returns the blocker id:
+$ bd show "$B1" --json | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id'
+nhep-smoke-1-cycle2-1778603362-3r7
+
+# Full canonical probe (corrected) with human-label filter:
+$ bd show "$B1" --json \
+    | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id' \
+    | while read blocker; do
+        BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
+        [ "$BSTATE" = "closed" ] && continue
+        bd label list "$blocker" --json | jq -e 'index("human")' >/dev/null && echo "$blocker"
+      done
+nhep-smoke-1-cycle2-1778603362-3r7
+```
+
+The corrected probe fires exactly once for the one open human-labeled
+blocker. Route D's `bead-blocked-by-human` trigger and
+`resolve-human-bead`'s Probe 6 (source-bead pivot) detection both rely
+on this probe shape; the cycle-1 text would have caused both to miss.
+
 ### Step 5 — Scenario C resolution (`bd human respond`)
 
 ```bash
 bd human respond "$H1" --response "Tooling credential resolved; source bead unblocked"
-# Output: ✔ Bead nhep-smoke-1-1778601933-dr9 closed with response.
+# Output: ✔ Bead nhep-smoke-1-cycle2-1778603362-3r7 closed with response.
 ```
 
 ### Step 5 — Verifications (actual output)
 
 ```
-[bd show $H1] (should be closed with close_reason "Responded")
+[bd show $H1] (closed with close_reason "Responded")
 {
-  "id": "nhep-smoke-1-1778601933-dr9",
+  "id": "nhep-smoke-1-cycle2-1778603362-3r7",
   "status": "closed",
-  "close_reason": "Responded"
+  "close_reason": "Responded",
+  "labels": ["human"]
 }
 
-[bd ready] (should now include $B1 — source unblocked)
-[
-  { "id": "nhep-smoke-1-1778601933-p8v",
-    "title": "Test source",
-    "status": "open",
-    ... }
-]
+[bd show $B1 post-resolve] (dep edge persists; H1 is closed, so B1 ready)
+{
+  "id": "nhep-smoke-1-cycle2-1778603362-i2o",
+  "status": "open",
+  "dependencies": [
+    { "id": "nhep-smoke-1-cycle2-1778603362-3r7",
+      "status": "closed",
+      "close_reason": "Responded",
+      "dependency_type": "blocks" }
+  ]
+}
 ```
 
 Round-trip succeeded: the escalation closed via `bd human respond` (which
 adds the response comment AND closes with `close_reason: "Responded"`),
-and the source bead reappeared in `bd ready` with its dep blocker
-resolved.
+and the source bead is unblocked because its only dep is closed.
 
 **Expected outcome verified:** zero `human` labels on the source bead at
 any point; round-trip succeeds with no other state changes (scenario C
-applied ONLY `bd human respond`).
-
-### Smoke 1 discovered finding (filed in green-team report's discovered_work)
-
-The bead's "Open questions / minor risks" note #2 flagged the canonical
-detection probe's `select(.type=="blocks") | .issue_id` jq path. The
-implementer ran the probe against the live schema:
-
-- Against `bd show <source-id> --json`'s nested `.dependencies[]` shape,
-  each dep object exposes `dependency_type` (not `.type`) and `.id` (not
-  `.issue_id`). The literal probe text from the spec returns empty on
-  this surface.
-- The literal probe text DOES work against `bd ready --json`'s
-  `.dependencies[]` shape, where dep objects expose `issue_id` /
-  `depends_on_id` / `type`.
-
-The SKILL.md keeps the literal spec-mandated probe text inline (the
-test contract requires it). The schema mismatch is filed as discovered
-work for follow-up — either updating the probe text in the spec/skill
-or normalizing `bd`'s `dependencies[]` shape across `bd show` vs.
-`bd ready` JSON outputs.
+applied ONLY `bd human respond`); the corrected canonical detection
+probe fires live as documented in SKILL.md and start-bead Route D.
 
 ## Smoke 2 — `[h]` follow-up scenario F, synthetic fixture (executed)
 
