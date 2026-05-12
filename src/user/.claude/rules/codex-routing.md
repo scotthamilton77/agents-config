@@ -5,7 +5,7 @@ When delegating to Codex, always go through the Claude Code Codex plugin — nev
 **Invocation (from a skill or subagent):**
 ```
 CODEX_HOME="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/plugins/marketplaces/openai-codex/plugins/codex}"
-node "$CODEX_HOME/scripts/codex-companion.mjs" task [--model <name|spark>] [--write] < prompt.md
+node "$CODEX_HOME/scripts/codex-companion.mjs" task [--model <name>] [--write] < prompt.md
 ```
 `CLAUDE_PLUGIN_ROOT` is only set for plugin-owned code; fall back to the marketplace install path. Omit `--write` for read-only (the sandbox enforces it); add `--write` only when Codex must edit files. Pipe the prompt on stdin — `--prompt-file` works today but lives in the plugin's internal `codex-cli-runtime` contract, so prefer stdin for forward-compat.
 
