@@ -73,10 +73,22 @@ check_file \
   "implement-bead slash command exists" \
   "${REPO_ROOT}/src/plugins/beads/.claude/commands/implement-bead.md"
 
-# Scope item 7: bead-implementor agent
+# Worker agent family (replaces bead-implementor — acmh.13)
 check_file \
-  "bead-implementor agent exists" \
-  "${REPO_ROOT}/src/plugins/beads/.agents/agents/bead-implementor.md"
+  "tdd-red-team agent exists" \
+  "${REPO_ROOT}/src/plugins/beads/.agents/agents/tdd-red-team.md"
+check_file \
+  "tdd-green-team agent exists" \
+  "${REPO_ROOT}/src/plugins/beads/.agents/agents/tdd-green-team.md"
+check_file \
+  "bug-diagnoser agent exists" \
+  "${REPO_ROOT}/src/plugins/beads/.agents/agents/bug-diagnoser.md"
+check_file \
+  "docs-edits-team agent exists" \
+  "${REPO_ROOT}/src/plugins/beads/.agents/agents/docs-edits-team.md"
+check_file \
+  "pr-comment-fixer-team agent exists" \
+  "${REPO_ROOT}/src/plugins/beads/.agents/agents/pr-comment-fixer-team.md"
 
 # Scope item 4: shell driver script
 check_file \
