@@ -14,6 +14,6 @@ node "$CODEX_HOME/scripts/codex-companion.mjs" task [--model <name|spark>] [--wr
 - First-pass triage, diff summary, per-file parallel review, cost-sensitive runs → `gpt-5.4-mini`
 - Deeply code-centric, Codex-tuned agentic work → `gpt-5.3-codex`
 
-**Prompt best practices:** use XML-tagged blocks, one task per run, explicit completion contract.
+**Prompt best practices:** One task per run, explicit completion contract.
 
 **Slash commands** (`/codex:review`, `/codex:adversarial-review`, `/codex:rescue`, `/codex:status`, `/codex:result`, `/codex:cancel`) are user-initiated only; the model cannot fire them. Suggest them to the user instead.
