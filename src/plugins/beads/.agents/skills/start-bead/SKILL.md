@@ -96,10 +96,21 @@ user is present to read audit comments and the reply directly.
 ### Step 2: Check for Existing Molecule
 
 Once Step 1.5 has cleared (the bead is open, or Route Z has forwarded
-to an open Y), check if an active molecule already exists for this bead
-before evaluating any of Routes A/B/C. Use the `for-bead-<bead-id>`
-label (stamped by Route C on wisp and by `implement-bead` on pour) and
-query with `--json`:
+to an open Y), **run the Step 2.5 / Route D trigger check before any
+other action in this step**. Route D's detection probe (`HUMAN_SELF`
+and `HUMAN_BLOCKER_COUNT` in §2.5) is non-destructive — a pair of
+`bd label list` / `bd show --json` reads. If either trigger fires
+(`HUMAN_SELF=yes` OR `HUMAN_BLOCKER_COUNT>0`), JUMP straight to Step 2.5
+and dispatch to `resolve-human-bead`; do NOT execute the molecule-count
+branching below. A paused (human-blocked) bead with one or more active
+molecules must NOT be silently resumed via the length-1 path — Route D
+gates ALL routing actions, including molecule resume.
+
+Once the Route D trigger check has cleared (no human label on the bead
+itself, no open human-labeled blockers), check if an active molecule
+already exists for this bead before evaluating any of Routes A/B/C. Use
+the `for-bead-<bead-id>` label (stamped by Route C on wisp and by
+`implement-bead` on pour) and query with `--json`:
 
 ```bash
 bd list --label for-bead-<bead-id> --type molecule --json \
@@ -224,8 +235,9 @@ arch §5.6 and the beads.md HEP section as authoritative.
   `bd dep` blocker that carries `human` (a human-labeled blocker
   paused this bead).
 
-Detection (run after Step 2's molecule probe; non-destructive `--json`
-reads only):
+Detection (run as the **first action of Step 2** before any
+molecule-count branching, per the Route D gate referenced at the top of
+Step 2; non-destructive `--json` reads only):
 
 ```bash
 # Bead itself carries human?
