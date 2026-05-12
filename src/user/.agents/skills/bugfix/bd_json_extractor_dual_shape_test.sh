@@ -19,13 +19,21 @@
 #
 # This test lives under src/user/.agents/skills/ so the project's [gates].test
 # command picks it up (it scans src/user/.agents/skills/**/*_test.sh only).
-# It does NOT depend on its own location — only on the repo root being two
-# levels up from this file's grandparent. We resolve the repo root via git.
+# It does NOT depend on its own filesystem location — but it DOES depend on
+# being executed from inside a git worktree. We resolve the repo root via
+# `git rev-parse --show-toplevel` (run from this script's directory) and then
+# locate src/plugins/beads/ relative to that. If the script is run outside a
+# git worktree (e.g. from an extracted tarball), `git rev-parse` will fail
+# and the explicit guard below aborts with a clear diagnostic.
 
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$HERE" && git rev-parse --show-toplevel)"
+REPO_ROOT="$(cd "$HERE" && git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$REPO_ROOT" ]; then
+  echo "FAIL: could not resolve REPO_ROOT via git rev-parse --show-toplevel; test must run inside a git worktree" >&2
+  exit 1
+fi
 FAIL=0
 
 assert() {
