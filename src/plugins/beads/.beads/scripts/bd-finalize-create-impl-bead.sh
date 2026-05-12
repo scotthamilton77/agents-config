@@ -184,8 +184,8 @@ CREATE_JSON=$(bd create \
 
 # bd create --json returns either an object {id:...} or array [{id:...}] depending
 # on bd version; handle both forms defensively.
-Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r 'if type == "array" then .[0].id else .id end // empty' 2>/dev/null) || {
-    echo "Error: jq parse failed on bd create output: $CREATE_JSON" >&2
+Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
+    echo "Error: jq parse failed on bd create output (see jq diagnostic above)" >&2
     exit 1
 }
 
