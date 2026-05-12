@@ -11,3 +11,6 @@
 # Retired in 11c5bd1 (PR #66): bead-implementor mega-agent split into five role-named workers
 # (tdd-red-team, tdd-green-team, bug-diagnoser, docs-edits-team, pr-comment-fixer-team)
 */agents/bead-implementor.md
+
+# Retired, already deprecated ralf-it skill
+*/skills/ralf-it

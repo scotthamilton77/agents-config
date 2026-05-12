@@ -85,7 +85,7 @@ fi
 OUTCOME=$([[ "$IMPLEMENTED" == true ]] && echo "implemented" || echo "needs-approval")
 
 # Create the decision bead and capture its ID via --json (stable; avoids text-format fragility)
-DEC_ID=$(bd create "$TITLE" --type decision --json | jq -r '(.[0].id // .id) // empty')
+DEC_ID=$(bd create "$TITLE" --type decision --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
 if [[ -z "$DEC_ID" ]]; then
     echo "Error: could not extract decision bead ID from bd create --json output" >&2
     exit 1

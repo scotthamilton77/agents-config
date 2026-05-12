@@ -85,10 +85,10 @@ human-approvers-required = 0     # copilot-only by default; override per bead
 # ---------------------------------------------------------------------------
 [foreign-cli]
 # codex_binary_path              = ""     # default: ${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs
-# gemini_binary_path             = "gemini"
+gemini_binary_path             = "gemini"
 codex_red_tests_model            = "gpt-5.5"    # adversarial test review
 codex_green_loop_iter1_model     = "gpt-5.5"    # RALF-IT iter 1 implementation review
-codex_adversarial_review_model   = "gpt-5.4"    # review-level:deep only
-gemini_green_loop_iter2_model    = "gemini-2.5-pro"
+codex_adversarial_review_model   = "gpt-5.5"          # review-level:deep only
+gemini_green_loop_iter2_model    = "gemini-3-flash-preview"
 codex_max_concurrent             = 1
 gemini_max_concurrent            = 1

@@ -182,7 +182,7 @@ Inputs:
 - target artifact: current spec and acceptance criteria from `bd show {{bead-id}}`
 - review criteria: completeness, ambiguity, feasibility, consistency, and implementability
 - context: discussion notes, known constraints, parent/child bead context, and relevant repo conventions
-- max cycles: 2
+- max cycles: 3
 
 `ralf-review` runs bounded adversarial fresh-eyes cycles against the provided spec text.
 It does not read or mutate beads; this formula step supplies all inputs and decides how
@@ -192,8 +192,11 @@ Review reported findings:
 - if findings are valid and actionable, return to write-spec and revise
 - if findings are non-significant, proceed
 
-Run at most 2 spec-review cycles. If concerns remain after cycle cap,
-document them explicitly as open questions in the bead notes.
+Run at most 3 spec-review cycles. If critical or blocking issues remain, stop
+and inform the user if in interactive mode, else flag the bead for human intervention
+(add the human label), capture the state of the review and the outstanding issues, and
+stop. Otherwise for non-blocking and non-critical concerns that remain after cycle
+cap, document them explicitly as open questions in the bead notes.
 """
 
 # =============================================================================
@@ -258,7 +261,11 @@ Detect prior partial runs before doing any new writes.
       --title "Manual triage: multiple produced-bead labels on {{bead-id}}" \\
       --description "finalize halted: $PRODUCED_COUNT produced-bead-* labels found on {{bead-id}}; cannot determine canonical Y. Remove all but the correct produced-bead-<Y-id> label and re-run finalize." \\
       --labels "human" --no-inherit-labels \\
-      --json | jq -r '.id')
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+    if [[ -z "$ESC_ID" || "$ESC_ID" == "null" ]]; then
+        echo "Error: could not extract escalation bead id (multiple produced-bead labels path)" >&2
+        exit 1
+    fi
     bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
     echo "PAUSED: multiple produced-bead-* labels on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
@@ -302,7 +309,11 @@ Detect prior partial runs before doing any new writes.
            --title "Manual triage: $ORPHAN_COUNT orphan Y beads for {{bead-id}}" \\
            --description "finalize halted: $ORPHAN_COUNT non-closed beads carry label produced-from-{{bead-id}}. Determine the canonical Y, close or delete the others, then re-run finalize." \\
            --labels "human" --no-inherit-labels \\
-           --json | jq -r '.id')
+           --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+         if [[ -z "$ESC_ID" || "$ESC_ID" == "null" ]]; then
+             echo "Error: could not extract escalation bead id (orphan Y candidates path)" >&2
+             exit 1
+         fi
          bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
          echo "PAUSED: multiple orphan Y candidates for {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
          exit 0 ;;
@@ -338,7 +349,11 @@ child halts finalize for human triage.
       --title "Manual triage: unexpected children on {{bead-id}}" \\
       --description "finalize halted: {{bead-id}} has unexpected non-formula children [$UNEXPECTED]. Triage or close these children, then re-run finalize." \\
       --labels "human" --no-inherit-labels \\
-      --json | jq -r '.id')
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+    if [[ -z "$ESC_ID" || "$ESC_ID" == "null" ]]; then
+        echo "Error: could not extract escalation bead id (unexpected children path)" >&2
+        exit 1
+    fi
     bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
     echo "PAUSED: unexpected children on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
