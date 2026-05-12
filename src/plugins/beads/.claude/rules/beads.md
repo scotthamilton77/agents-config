@@ -66,6 +66,66 @@ Use the `whats-next` skill. It handles mode selection (human-triage + brainstorm
 
 **Footgun**: `--notes` is a destructive overwrite. Use `--append-notes` to add.
 
+## Human-Escalation Pattern (HEP)
+
+When a stage cannot proceed without human input, it executes the
+**Human-Escalation Pattern (HEP)** rather than stamping `human` directly
+on a source or step bead. HEP is defined in full in
+`docs/specs/bead-pipeline-architecture.md` §5.6 (authoritative); this
+section is the operational summary every agent needs at hand.
+
+**Critical premise.** The `human` label is a *visibility tag* on
+`bd human list` — it is **not** a gate on `bd ready`. Only an open
+blocking dep keeps a bead out of the ready queue. Stamping `human` on a
+source bead would leave it visible to `bd ready --label implementation-ready`,
+letting another agent silently grab paused work.
+
+**Escalation procedure (run literally on every flag-human path):**
+
+```bash
+# dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
+HUMAN_ID=$(bd create \
+    --title "Human input needed: <one-line summary>" \
+    --type task \
+    --priority "<inherited from source bead>" \
+    --description "<context: what was being done, what is blocked, what is needed>" \
+    --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+[ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
+bd label add "$HUMAN_ID" human
+bd update "$HUMAN_ID" --append-notes \
+    "Source: <source-bead-id>
+Step-bead: <step-bead-id>
+Molecule: <mol-id>
+Worktree: <worktree-path-or-N/A>
+Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
+bd dep add "<source-bead-id>" "$HUMAN_ID"
+bd update "<source-bead-id>" --status open
+# Exit cleanly (zero exit code; stage is paused, not failed).
+```
+
+**Single-bead `human` invariant.** Only the escalation bead carries
+`human`. On HEP flag-human paths, the source bead never carries `human`
+and the step-bead never carries `human`. (Exception: the current
+`merge-or-handoff` formula implementations stamp `merge-ready` + `human`
+on the source bead directly rather than creating a separate escalation
+bead — a divergence from arch §5.6 tracked in `agents-config-g17x`.)
+`[h]` follow-up beads (§4.3) also carry `human` but are a separate
+class with their own lifecycle.
+
+**Resolution.** Use the `resolve-human-bead` skill (`/resolve-human-bead
+<bead-id>`). It detects the bead's class — merge-gate hand-off (G),
+`[h]` follow-up (F), HEP escalation (A–E), orphan, inconsistent-state
+repair, or source-bead pivot — and applies the right primitive:
+`bd human respond` (A–D), `bd human dismiss` + `bd close <source-id>`
+(E), `verified-by-human` + plain `bd close` (F), or
+`/merge-and-cleanup` (G).
+
+**Bare label removal is prohibited.** `bd label remove <human-id>
+human` bypasses the audit trail and leaves the dep blocker live; the
+escalation disappears from `bd human list` but the source remains
+paused with no recorded reason. Always close through the
+audit-trail-preserving primitive.
+
 ## Session Separation
 
 **`run-queue` runs in a dedicated Claude session.**

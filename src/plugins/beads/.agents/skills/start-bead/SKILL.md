@@ -96,10 +96,21 @@ user is present to read audit comments and the reply directly.
 ### Step 2: Check for Existing Molecule
 
 Once Step 1.5 has cleared (the bead is open, or Route Z has forwarded
-to an open Y), check if an active molecule already exists for this bead
-before evaluating any of Routes A/B/C. Use the `for-bead-<bead-id>`
-label (stamped by Route C on wisp and by `implement-bead` on pour) and
-query with `--json`:
+to an open Y), **run the Step 2.5 / Route D trigger check before any
+other action in this step**. Route D's detection probe (`HUMAN_SELF`
+and `HUMAN_BLOCKER_COUNT` in §2.5) is non-destructive — a pair of
+`bd label list` / `bd show --json` reads. If either trigger fires
+(`HUMAN_SELF=yes` OR `HUMAN_BLOCKER_COUNT>0`), JUMP straight to Step 2.5
+and dispatch to `resolve-human-bead`; do NOT execute the molecule-count
+branching below. A paused (human-blocked) bead with one or more active
+molecules must NOT be silently resumed via the length-1 path — Route D
+gates ALL routing actions, including molecule resume.
+
+Once the Route D trigger check has cleared (no human label on the bead
+itself, no open human-labeled blockers), check if an active molecule
+already exists for this bead before evaluating any of Routes A/B/C. Use
+the `for-bead-<bead-id>` label (stamped by Route C on wisp and by
+`implement-bead` on pour) and query with `--json`:
 
 ```bash
 bd list --label for-bead-<bead-id> --type molecule --json \
@@ -118,12 +129,32 @@ Decide from the result array:
 - **length 0** → no active molecule. BUT if you suspect a pre-convention
   or otherwise unlabeled molecule exists (prior activity visible in the
   bead's history, user references one), STOP — do NOT pour/wisp over
-  unlabeled in-progress work. Escalate:
+  unlabeled in-progress work. Execute the **Human-Escalation Pattern
+  (HEP)** — defined in `docs/specs/bead-pipeline-architecture.md` §5.6
+  and summarized in the **HEP section** of
+  `src/plugins/beads/.claude/rules/beads.md`. Do NOT bare-stamp `human`
+  on the source bead; the single-bead-`human` invariant requires the
+  escalation bead to be the sole carrier of `human`:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
-  bd label add <bead-id> human
+  # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
+  HUMAN_ID=$(bd create \
+      --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
+      --type task \
+      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+      --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
+  bd label add "$HUMAN_ID" human
+  bd update "$HUMAN_ID" --append-notes \
+      "Source: <bead-id>
+  Step-bead: N/A (pre-pour)
+  Molecule: <unknown — probe returned 0 labeled molecules>
+  Worktree: N/A
+  Scenario hint: architectural-rework"
+  bd dep add "<bead-id>" "$HUMAN_ID"
   ```
-  Otherwise proceed to Step 3.
+  Exit cleanly. Otherwise proceed to Step 3.
 
 - **length 1** → extract and resume:
   ```bash
@@ -149,20 +180,132 @@ Decide from the result array:
   the winner and tell the user your reasoning in the routing message;
   the user can burn the loser later.
 
-  If the molecules cannot be cleanly disambiguated, escalate WITH your
-  analysis — the human should see your read-out, not a blank flag:
+  If the molecules cannot be cleanly disambiguated, escalate via the
+  **Human-Escalation Pattern (HEP)** — defined in
+  `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
+  **HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Do NOT
+  bare-stamp `human` on the source bead; the single-bead-`human`
+  invariant requires the escalation bead to be the sole carrier of
+  `human`. Carry your multi-molecule analysis into the escalation
+  bead's notes so the human sees your read-out, not a blank flag:
   ```bash
-  bd comments add <bead-id> "N active molecules for this bead:
-    - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
-    - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
-    Assessment: <duplicative | legacy | needs manual merge>
-    Recommended action: <resume X / burn Y / user decides>"
-  bd label add <bead-id> human
+  # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
+  HUMAN_ID=$(bd create \
+      --title "Human input needed: multiple active molecules on <bead-id>" \
+      --type task \
+      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+      --description "N active molecules for this bead; cannot cleanly disambiguate.
+  - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
+  - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
+  Assessment: <duplicative | legacy | needs manual merge>
+  Recommended action: <resume X / burn Y / user decides>" \
+      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
+  bd label add "$HUMAN_ID" human
+  bd update "$HUMAN_ID" --append-notes \
+      "Source: <bead-id>
+  Step-bead: N/A (pre-pour)
+  Molecule: <mol-id-1>, <mol-id-2>, ...
+  Worktree: N/A
+  Scenario hint: architectural-rework"
+  bd dep add "<bead-id>" "$HUMAN_ID"
   ```
-  Do NOT silently pick one.
+  Exit cleanly. Do NOT silently pick one.
 
 See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
 rationale and the stamp procedure.
+
+### Step 2.5: Route D — bead carries `human` or is blocked by `human`
+
+Route D **AUTO-INVOKES** the `resolve-human-bead` skill in the current
+session via the Skill tool before any of Routes A/B/C are considered. The
+user sees one continuous flow — no second `/resolve-human-bead` invocation
+is required.
+
+Authority: this route implements the **Human-Escalation Pattern (HEP)**
+defined in `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized
+in the HEP section of `src/plugins/beads/.claude/rules/beads.md`. Cite
+arch §5.6 and the beads.md HEP section as authoritative.
+
+**Trigger** — fire Route D when EITHER:
+
+- **bead-itself-human** — the target bead has `human` label (i.e. the
+  bead itself carries the human-attention tag), OR
+- **bead-blocked-by-human** — the target bead has at least one open
+  `bd dep` blocker that carries `human` (a human-labeled blocker
+  paused this bead).
+
+Detection (run as the **first action of Step 2** before any
+molecule-count branching, per the Route D gate referenced at the top of
+Step 2; non-destructive `--json` reads only):
+
+```bash
+# Bead itself carries human?
+HUMAN_SELF=$(bd label list <bead-id> --json | jq -e 'index("human")' >/dev/null && echo yes || echo no)
+
+# How many open human-labeled blockers does this bead have?
+# Route D fires when HUMAN_BLOCKER_COUNT > 0; the count is also used in
+# the surface message so the user sees up front whether the skill will
+# pivot directly (count=1) or list-and-prompt (count>1).
+HUMAN_BLOCKER_COUNT=$(bd show <bead-id> --json \
+  | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id' \
+  | while read blocker; do
+      BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
+      [ "$BSTATE" = "closed" ] && continue
+      bd label list "$blocker" --json | jq -e 'index("human")' >/dev/null && echo "$blocker"
+    done | wc -l | tr -d ' ')
+```
+
+Note: Route D does NOT pick a specific blocker id from this list — the
+source bead id is what gets passed to `resolve-human-bead`, and the
+skill's Probe 6 (source-bead pivot) re-runs the same detection and
+handles both the single-blocker (auto-pivot) and multi-blocker
+(list-and-prompt) cases.
+
+`select(.dependency_type=="blocks")` is the verified jq path on `bd show
+--json`'s `dependencies[]` field; `.id` is the verified id field on each
+dep object. (Do NOT use `select(.type=="blocks") | .issue_id` here —
+that is `bd ready --json`'s dependency-record shape, NOT `bd show
+--json`'s, and returns empty silently.) The canonical detection probe
+is documented in the `resolve-human-bead` skill — Route D's detection
+MUST stay in sync with it.
+
+**Action** — Route D auto-invokes the `resolve-human-bead` skill via the
+Skill tool, passing the **source bead id** (i.e. the `<bead-id>` that
+`start-bead` was invoked with) unconditionally — regardless of trigger
+or blocker count:
+
+- **bead-itself-human** — the skill sees a `human`-labeled target and
+  proceeds with its normal class-detection path (Probes 1–5).
+- **bead-blocked-by-human** — the skill's source-bead-pivot (Probe 6)
+  re-runs the canonical detection probe on the source's blockers; if
+  exactly one open `human`-labeled blocker exists it pivots
+  automatically, and if more than one exists it lists all blockers
+  with one-line context and prompts the user to pick one per
+  invocation.
+
+Passing the source bead unconditionally keeps Route D branch-free and
+preserves the multi-blocker list-and-prompt UX — passing only the
+first blocker would bypass that prompt and silently pick one for the
+user.
+
+Merge-gate hand-off sub-class beads (also `human`-labeled) flow through
+Route D naturally — Route D dispatches to the skill, which then routes
+to Scenario G per the class-detection priority.
+
+**Surface message** — print exactly one line before invoking the skill.
+For the `bead-blocked-by-human` trigger, include the count of open
+`human`-labeled blockers detected so the user sees up front whether a
+multi-blocker prompt is about to appear:
+
+```
+Route D: <id> is human-labeled. Invoking resolve-human-bead on source...
+Route D: <id> is blocked by <N> human-labeled bead(s). Invoking resolve-human-bead on source...
+```
+
+Then invoke the `resolve-human-bead` skill via the Skill tool. Do NOT
+fall through to Routes A/B/C; Route D's dispatch is the terminal action
+for this `start-bead` invocation.
 
 ### Step 3: Route the Bead
 
