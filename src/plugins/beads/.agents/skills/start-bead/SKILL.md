@@ -232,6 +232,8 @@ while [ -n "$PARENT" ]; do
 done
 ```
 
+Do NOT commit or push unless explicitly instructed by the user.  Definitely do not violate branch protection rules unless given explicit permission for this specific change.
+
 If in doubt, it is NOT trivial. Use Route C.
 
 ---
