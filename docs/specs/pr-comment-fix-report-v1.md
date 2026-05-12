@@ -44,7 +44,7 @@ Any other combination is malformed.
 
 | `status` | When the worker emits it |
 |----------|-------------------------|
-| `complete` | Classification + action were emitted and the YAML is well-formed. (`COMMITTED_FIX`, `ALREADY_ADDRESSED`, and `SKIP` all reach `complete`.) |
+| `complete` | Classification + action were emitted and the YAML is well-formed. All non-ESCALATE outcomes reach `complete`. |
 | `needs_human` | `classification == ESCALATE` — worker could not make the call. |
 | `failed` | Worker could not run to completion (e.g., repo path invalid, tools unavailable). |
 

@@ -49,8 +49,9 @@ Based on the classification, take exactly one action:
   via `git log` (search by file/path or commit message), record its
   full 40-char SHA as `already_addressed_by_sha`, and emit a
   `NO_ACTION` action (no new commit).
-- **NO_ACTION** — applicable when classification is SKIP or
-  ALREADY_ADDRESSED. No new commit is produced.
+- **NO_ACTION** — applicable when classification is SKIP, or when a
+  prior commit already resolved the concern (action: ALREADY_ADDRESSED).
+  No new commit is produced.
 
 When classification is ESCALATE, populate `escalation_reason` with a
 crisp explanation of what you needed and could not obtain.
@@ -61,19 +62,7 @@ Cite and follow `docs/specs/pr-comment-fix-report-v1.md` (repo-root
 relative) as the YAML schema source of truth. The shared core lives at
 `docs/specs/worker-report-v1.md`.
 
-Use the `Write` tool to emit the report to the caller-provided absolute
-report path. Bash redirection is forbidden; the absolute report path may
-live outside the working directory and a sandbox-aware filesystem layer
-is required.
-
-## Three outcomes
-
-1. **COMMITTED_FIX** — you committed a fix targeting the comment.
-   Action records `fix_summary` and `commit_sha`.
-2. **ALREADY_ADDRESSED** — the concern is fixed by a prior commit on
-   the current branch. Action records `already_addressed_by_sha`.
-3. **ESCALATE** — you cannot proceed. Action records
-   `escalation_reason`.
+Use the `Write` tool with the absolute path; do not use Bash redirection.
 
 ## Report format
 

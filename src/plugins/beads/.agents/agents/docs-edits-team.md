@@ -32,12 +32,7 @@ Cite and follow `docs/specs/docs-edits-report-v1.md` (repo-root-relative)
 as the YAML schema source of truth. The shared core lives at
 `docs/specs/worker-report-v1.md`.
 
-Use the `Write` tool to emit the report to the caller-provided absolute
-path. Do NOT use Bash redirection: the report path lives outside the
-worktree under the main repo root, and a worker in a feature worktree may
-have CWD or sandbox constraints that block Bash writes to that location.
-The `Write` tool resolves the absolute path through the sandbox-aware
-filesystem layer.
+Use the `Write` tool with the absolute path; do not use Bash redirection.
 
 ## What you do
 
@@ -67,26 +62,10 @@ filesystem layer.
 
 ## Report format
 
-```yaml
-schema_version: "worker-report-v1"
-agent: "docs-edits-team"
-step_bead_id: "<step-bead-id>"
-source_bead_id: "<source-bead-id>"
-mode: "docs-only-apply-edits"
-status: "complete"   # or "needs_human"
-evidence: {}         # docs-only has no test/build/lint/typecheck blocks
-files_changed:
-  - "path/to/changed/file.md"
-commit_sha: "<full 40-char SHA>"
-summary: "<one-line summary of the edits>"
-skipped_items:
-  - path: "path/to/something"
-    reason: "out-of-scope per AC scope ringfence"
-escalations: []
-discovered_work: []
-commits:
-  - "<full 40-char SHA>"
-```
+Emit a YAML report matching the schema in `docs/specs/docs-edits-report-v1.md`.
+Required extension fields: `files_changed`, `commit_sha`, `summary`, `skipped_items`.
+Shared core: `schema_version`, `agent`, `step_bead_id`, `source_bead_id`, `status`,
+`evidence`, `escalations`, `discovered_work`, `commits`.
 
 ## Constraints
 

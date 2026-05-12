@@ -196,7 +196,7 @@ required. An omitted top-level required field is malformed.
 | `tdd-green-team` | [`tdd-green-report-v1`](./tdd-green-report-v1.md) | (no additional fields; agent-specific expectations only) |
 | `bug-diagnoser` | [`bug-diagnoser-report-v1`](./bug-diagnoser-report-v1.md) | `root_cause_note` (required) |
 | `docs-edits-team` | [`docs-edits-report-v1`](./docs-edits-report-v1.md) | `files_changed`, `commit_sha`, `summary`, `skipped_items` (all required) |
-| `pr-comment-fixer-team` | [`pr-comment-fix-report-v1`](./pr-comment-fix-report-v1.md) | `comment_id`, `comment_thread_id`, `classification`, `action`, plus action-conditional `fix_summary` / `commit_sha` / `already_addressed_by_sha` / `escalation_reason` |
+| `pr-comment-fixer-team` | [`pr-comment-fix-report-v1`](./pr-comment-fix-report-v1.md) | `comment_id`, `comment_thread_id`, `classification`, `action`, plus action-conditional `fix_summary` / `commit_sha` / `already_addressed_by_sha`, classification-conditional `escalation_reason` |
 
 Per-agent specs describe:
 
