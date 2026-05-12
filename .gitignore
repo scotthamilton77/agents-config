@@ -13,6 +13,7 @@
 .worktrees/
 .claude/worktrees/
 .ralf/
+.crit.json
 
 # Local settings
 settings.local.json
