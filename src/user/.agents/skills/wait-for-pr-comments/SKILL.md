@@ -205,7 +205,7 @@ re-merge any user reclassifications into the inventory before Phase 4.
      - In a beads workflow (step-bead ID available):
        `<repo-root>/.beads/worker-audit/<step-bead-id>/pr-comment-fixer-team.yaml`
      - Otherwise (standalone PR review, no beads context):
-       `${TMPDIR:-/tmp}/pr-comment-fixer-<comment-id>.yaml` (ephemeral; survives only the current process)
+       `${TMPDIR:-/tmp}/pr-comment-fixer-<comment-id>.yaml` (temporary; not guaranteed to persist across system cleanup or reboots)
    - **Dispatch with an explicit `opus` model** (do NOT inherit orchestrator):
      ```
      Agent({
