@@ -85,6 +85,10 @@ else
   # Otherwise create as an orphan and link with discovered-from:
   # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
   NEW=$(bd create "<title>" -t "<type>" -p "<priority>" --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  if [ -z "$NEW" ] || [ "$NEW" = "null" ]; then
+    echo "Error: could not extract bead id from bd create output" >&2
+    exit 1
+  fi
   bd dep add "$NEW" "<current-bead-id>" --type discovered-from
 fi
 ```
