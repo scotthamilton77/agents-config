@@ -201,14 +201,26 @@ re-merge any user reclassifications into the inventory before Phase 4.
 3. For each FIX item:
    - Capture `<pre_subagent_sha> = git rev-parse HEAD` BEFORE dispatch.
    - Pass `<pre_subagent_sha>` to the subagent as input context.
+   - **Construct an explicit absolute report path** for the subagent:
+     - In a beads workflow (step-bead ID available):
+       `<repo-root>/.beads/worker-audit/<step-bead-id>/pr-comment-fixer-team.yaml`
+     - Otherwise (standalone PR review, no beads context):
+       `<cwd>/.pr-comment-fixer-<comment-id>.yaml`
    - **Dispatch with an explicit `opus` model** (do NOT inherit orchestrator):
      ```
      Agent({
-       subagent_type: "bead-implementor",
+       subagent_type: "pr-comment-fixer-team",
        model: "opus",
        prompt: <task-spec>
      })
      ```
+     The `<task-spec>` MUST pass: `comment_id`, `comment_thread_id`,
+     comment `body`, the code-location (file + line(s) + any anchor
+     metadata), the repo path, and the absolute report path constructed
+     above. The worker classifies (FIX/SKIP/ESCALATE), takes action
+     (COMMITTED_FIX/ALREADY_ADDRESSED/NO_ACTION), and writes a
+     `pr-comment-fix-report-v1` YAML to the absolute report path.
+
      The orchestrator runs on `sonnet[1m]`; the FIX subagent MUST run on
      `opus` so fix correctness is not regressed by the orchestrator's lower
      tier. See Red Flags.
