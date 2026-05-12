@@ -15,7 +15,8 @@
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# .agents/skills/resolve-human-bead -> repo root is four dirs up.
+# HERE = src/user/.agents/skills/resolve-human-bead; repo root is five
+# levels up (resolve-human-bead -> skills -> .agents -> user -> src -> root).
 REPO_ROOT="$(cd "$HERE/../../../../.." && pwd)"
 
 SKILL_MD="$REPO_ROOT/src/plugins/beads/.agents/skills/resolve-human-bead/SKILL.md"
