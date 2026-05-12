@@ -168,12 +168,22 @@ grep_in_fixed "$SKILL_MD" "source-bead pivot"       "AC1 branch: source-bead piv
 grep_in_fixed "$SKILL_MD" "merge-gate"              "AC1 branch: merge-gate hand-off sub-class"
 
 # Canonical detection probe (jq) — the spec mandates an inline, verified probe.
+# Probe shape verified live against bd show --json: dep objects expose
+# `dependency_type` (not `.type`) and `.id` (not `.issue_id`). The previous
+# `.type` / `.issue_id` shape is bd ready --json's wire, not bd show's.
 grep_in_fixed "$SKILL_MD" 'bd show'                              "AC1 probe: uses bd show"
 grep_in_fixed "$SKILL_MD" 'dependencies'                         "AC1 probe: references dependencies field"
-grep_in_fixed "$SKILL_MD" 'select(.type=="blocks")'              "AC1 probe: verified jq path .type==blocks"
-grep_in_fixed "$SKILL_MD" '.issue_id'                            "AC1 probe: jq extracts .issue_id"
+grep_in_fixed "$SKILL_MD" 'select(.dependency_type=="blocks")'   "AC1 probe: verified jq path .dependency_type==blocks"
 grep_in_fixed "$SKILL_MD" 'bd label list'                        "AC1 probe: bd label list used"
 grep_in_fixed "$SKILL_MD" 'index("human")'                       "AC1 probe: jq index(\"human\") check"
+# Forbid the broken bd-ready-shape probe text in the canonical bd-show probe.
+# Match the probe-shape composition rather than bare field names — this
+# allows contrast prose ("the .type / .issue_id shape is bd ready --json's")
+# while still rejecting any live probe text that uses the wrong shape.
+grep_not_in "$SKILL_MD" 'select(.type=="blocks")' \
+  "AC1 probe: does NOT use the broken .type==blocks shape (that is bd ready --json's shape, not bd show --json's)"
+grep_not_in "$SKILL_MD" '| .issue_id' \
+  "AC1 probe: does NOT pipe to broken .issue_id field (bd show --json deps expose .id)"
 
 # Destructive-action enumeration — three actions per spec.
 grep_in_fixed "$SKILL_MD" "bd mol squash"     "AC1 destructive: bd mol squash listed"
@@ -318,6 +328,15 @@ grep_in_fixed "$START_MD" "resolve-human-bead"                     "AC11 Route D
 grep_in       "$START_MD" "(Skill tool|via the Skill tool|via Skill)" "AC11 Route D uses Skill tool"
 grep_in       "$START_MD" "(bead-itself.?human|has +.human. label)"   "AC11 Route D trigger: bead-itself-human"
 grep_in       "$START_MD" "(blocked.?by.?human|human.?labeled blocker)" "AC11 Route D trigger: bead-blocked-by-human"
+
+# AC11 also covers the HEP single-bead-human invariant for start-bead: the
+# Step-2 fall-throughs (length-0 with suspected unlabeled molecule and
+# length-2+ undisambiguable molecules) must NOT bare-stamp `human` on the
+# source bead — they must execute the HEP escalation procedure instead.
+grep_not_in "$START_MD" "bd label add <bead-id> human" \
+  "AC11 start-bead no longer bare-stamps human on source bead (HEP single-bead invariant)"
+grep_in "$START_MD" "(HEP|Human.?Escalation Pattern)" \
+  "AC11 start-bead references HEP for Step-2 escalation"
 
 # ===========================================================================
 # AC12 — implement-bead no longer stamps human on source/step-beads; all

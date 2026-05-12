@@ -126,15 +126,16 @@ source bead that itself carries no `human` label but has at least one
 open `human`-labeled blocker.
 
 **Canonical detection probe** — verified jq paths inline. The `bd show
---json` `dependencies[]` shape was verified against the live schema
-before shipping (the `bd-cli-quirks` memory notes that jq paths for dep
-objects can trip people up; `select(.type=="blocks")` is the verified
-filter and `.issue_id` is the verified id field name on a dep object):
+--json` `dependencies[]` shape was verified live before shipping: each
+dep object exposes `dependency_type` (the relationship type) and `.id`
+(the blocker's bead id). The `.type` / `.issue_id` shape is **bd ready
+--json**'s dependency record shape, NOT bd show's — using it here
+returns empty results silently:
 
 ```bash
 # List source's open dep blockers, then check each for the human label.
 bd show <source-id> --json \
-  | jq -r '.[0].dependencies[]? | select(.type=="blocks") | .issue_id' \
+  | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id' \
   | while read blocker; do
       BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
       [ "$BSTATE" = "closed" ] && continue

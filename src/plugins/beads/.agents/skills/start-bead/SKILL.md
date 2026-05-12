@@ -193,7 +193,7 @@ HUMAN_SELF=$(bd label list <bead-id> --json | jq -e 'index("human")' >/dev/null 
 
 # Bead is blocked by at least one open human-labeled blocker?
 HUMAN_BLOCKER=$(bd show <bead-id> --json \
-  | jq -r '.[0].dependencies[]? | select(.type=="blocks") | .issue_id' \
+  | jq -r '.[0].dependencies[]? | select(.dependency_type=="blocks") | .id' \
   | while read blocker; do
       BSTATE=$(bd show "$blocker" --json | jq -r '.[0].status')
       [ "$BSTATE" = "closed" ] && continue
@@ -201,10 +201,13 @@ HUMAN_BLOCKER=$(bd show <bead-id> --json \
     done | head -1)
 ```
 
-`select(.type=="blocks")` is the verified jq path on the source's
-`dependencies[]` field; `.issue_id` is the verified id field. The
-canonical detection probe is documented in the `resolve-human-bead`
-skill — Route D's detection MUST stay in sync with it.
+`select(.dependency_type=="blocks")` is the verified jq path on `bd show
+--json`'s `dependencies[]` field; `.id` is the verified id field on each
+dep object. (Do NOT use `select(.type=="blocks") | .issue_id` here —
+that is `bd ready --json`'s dependency-record shape, NOT `bd show
+--json`'s, and returns empty silently.) The canonical detection probe
+is documented in the `resolve-human-bead` skill — Route D's detection
+MUST stay in sync with it.
 
 **Action** — Route D auto-invokes the `resolve-human-bead` skill via the
 Skill tool, passing the appropriate target id:
