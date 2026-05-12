@@ -49,9 +49,12 @@ in §5.6's "`[h]` follow-up beads are NOT HEP" subsection.
 Class detection ordering is **load-bearing**. Run the six probes in this
 exact order:
 
-- A `[Merge gate]`-titled bead also satisfies the generic HEP-escalation
-  predicate (it carries `human` + has an incoming dep edge), so the
-  merge-gate probe MUST run first or scenario routing is wrong.
+- A merge-ready hand-off bead also satisfies the generic HEP-escalation
+  predicate when it carries an incoming dep edge (per arch §5.6's
+  escalation-bead shape), so the merge-gate probe MUST run first or
+  scenario routing is wrong. The `merge-ready` label is the load-bearing
+  discriminator regardless of whether the target is the escalation bead
+  (spec shape) or the source bead (current formula shape — see Probe 1).
 - The inconsistent-state probe MUST run BEFORE the orphan probe.
   Probe 4 (orphaned-escalation sub-case (a)) — the escalation bead is
   open but its source is closed — also satisfies the orphan probe's
@@ -62,11 +65,22 @@ exact order:
 
 ### Probe 1 — Merge-gate hand-off sub-class
 
-Triggered when ALL of the following hold on the target bead:
+Triggered when BOTH of the following hold on the target bead:
 
 - has `human` label
 - has `merge-ready` label
-- title prefix is `[Merge gate]`
+
+The `merge-ready` label is the load-bearing discriminator. Arch §5.6's
+hand-off contract also calls for the title prefix `[Merge gate] <source-title>`
+on a separate escalation bead, but the current `merge-or-handoff` formula
+implementations in `implement-feature.formula.toml`, `fix-bug.formula.toml`,
+and `docs-only.formula.toml` stamp `merge-ready` + `human` on the **existing
+source bead** without renaming the title or creating a separate escalation
+bead. Probe 1 therefore does not require the title prefix — the label pair
+alone is the reliable discriminator across both shapes (spec-conforming
+separate escalation bead OR current label-on-source formula impl). The
+spec-vs-formula divergence is tracked in follow-up bead `agents-config-g17x`;
+this skill detects the shape the formula actually produces today.
 
 Created by `merge-or-handoff`'s hand-off path (arch §3, §5.6). Resolution
 routes to **Scenario G** (`/merge-and-cleanup`). Do NOT use `bd human
@@ -79,7 +93,14 @@ Triggered when ALL of the following hold:
 
 - has `human` label
 - has `parent` set (parent-child edge to a source bead)
-- title prefix is `[Human verify]`
+- title prefix is `[verify] ` OR `[Human verify] `
+
+`[verify] $TITLE_SLUG - $ac_line` is the active format produced by
+`brainstorm-bead.formula.toml` (around lines 583-593). `[Human verify]
+$ac_line` is the legacy format that brainstorm-bead's internal dual-probe
+idempotency check still recognizes during the transition window — Probe 2
+matches either so previously-filed follow-ups still resolve through
+Scenario F regardless of when they were filed.
 
 Created by `brainstorm-bead.finalize` (arch §4.3). Resolution routes to
 **Scenario F** (`verified-by-human` + plain `bd close`).
@@ -90,8 +111,8 @@ Triggered when ALL of the following hold:
 
 - has `human` label
 - has at least one **incoming** `bd dep` edge from a non-closed source bead
-- lacks the discriminators above (no `merge-ready`, no `[Merge gate]`/`[Human verify]`
-  title prefix)
+- lacks the discriminators above (no `merge-ready` label and no
+  `[verify] `/`[Human verify] ` title prefix)
 
 Resolution routes to **Scenarios A–E** (depending on the user's diagnosis).
 
@@ -132,7 +153,7 @@ Triggered when:
 - has no incoming `bd dep` edge from any source (open or closed) —
   i.e., truly dep-less, not the closed-source case (which Probe 4
   already claimed as the orphaned-escalation sub-case)
-- has no `[h]` or `[Merge gate]` discriminator
+- has no `merge-ready` label and no `[verify] `/`[Human verify] ` title prefix
 
 Treat as a standalone task. Prompt the user for intent — most likely
 Scenario E (abandon via `bd human dismiss`), or a user-specific close.
