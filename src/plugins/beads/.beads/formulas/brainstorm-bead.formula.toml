@@ -192,10 +192,10 @@ Review reported findings:
 - if findings are valid and actionable, return to write-spec and revise
 - if findings are non-significant, proceed
 
-Run at most 3 spec-review cycles. If critical or blocking issues remain, stop 
+Run at most 3 spec-review cycles. If critical or blocking issues remain, stop
 and inform the user if in interactive mode, else flag the bead for human intervention
-(add the human label), capture the state of the review and the outstanding issues, and 
-stop.  Otherwise for non-blocking and non-critical concerns  that remain after cycle 
+(add the human label), capture the state of the review and the outstanding issues, and
+stop. Otherwise for non-blocking and non-critical concerns that remain after cycle
 cap, document them explicitly as open questions in the bead notes.
 """
 
