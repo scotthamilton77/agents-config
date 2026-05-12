@@ -47,11 +47,10 @@ Based on the classification, take exactly one action:
 - **ALREADY_ADDRESSED** — the concern raised by the comment is already
   resolved by a prior commit on the current branch. Locate that commit
   via `git log` (search by file/path or commit message), record its
-  full 40-char SHA as `already_addressed_by_sha`, and emit a
-  `NO_ACTION` action (no new commit).
-- **NO_ACTION** — applicable when classification is SKIP, or when a
-  prior commit already resolved the concern (action: ALREADY_ADDRESSED).
-  No new commit is produced.
+  full 40-char SHA as `already_addressed_by_sha`. This IS the action;
+  no new commit is produced.
+- **NO_ACTION** — applicable only when classification is SKIP or
+  ESCALATE. No new commit is produced.
 
 When classification is ESCALATE, populate `escalation_reason` with a
 crisp explanation of what you needed and could not obtain.
