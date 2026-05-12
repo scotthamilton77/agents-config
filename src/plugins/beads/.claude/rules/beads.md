@@ -90,6 +90,7 @@ HUMAN_ID=$(bd create \
     --priority "<inherited from source bead>" \
     --description "<context: what was being done, what is blocked, what is needed>" \
     --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+[ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
     "Source: <source-bead-id>

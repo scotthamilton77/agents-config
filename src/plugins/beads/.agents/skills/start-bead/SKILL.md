@@ -133,6 +133,7 @@ Decide from the result array:
       --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
       --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
       --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
@@ -188,6 +189,7 @@ Decide from the result array:
   Assessment: <duplicative | legacy | needs manual merge>
   Recommended action: <resume X / burn Y / user decides>" \
       --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
