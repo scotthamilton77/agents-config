@@ -94,29 +94,6 @@ grep_not_in() {
   return 0
 }
 
-# section_has <file> <header-pattern> <body-pattern> <label>
-section_has() {
-  local file="$1" header="$2" body="$3" lab="$4"
-  if [ ! -f "$file" ]; then
-    fail "$lab" "file not found: $file"
-    return 1
-  fi
-  awk -v header="$header" -v body="$body" '
-    BEGIN { in_section=0; found=0 }
-    {
-      if ($0 ~ header) { in_section=1; next }
-      if (in_section && $0 ~ body) { found=1; exit }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
-  if [ $? -eq 0 ]; then
-    pass "$lab"
-    return 0
-  fi
-  fail "$lab" "did not find body /$body/ after header /$header/ in $file"
-  return 1
-}
-
 # ===========================================================================
 # AC2 — Install staging recognizes dep-health-check skill.
 #       scripts/install.sh --dry-run exits 0 AND output mentions
@@ -129,23 +106,30 @@ if [ ! -f "$INSTALL_SH" ]; then
 else
   pass "AC2 install.sh present"
 
-  # Use --plugins= so the test carrier dir under src/user/.agents/skills/
-  # does not collide with the plugin skill dir during staging. (Same model
-  # the repo uses for resolve-human-bead.) The carrier dir alone is enough
-  # to surface "skills/dep-health-check" in the dry-run output.
-  DRY_OUT="$(cd "$REPO_ROOT" && bash "$INSTALL_SH" --dry-run --tools=claude --plugins= 2>&1)"
+  # Exercise the ACTUAL beads-plugin staging path with --plugins=beads
+  # --verbose so we can see plugin-skill placement in the dry-run output.
+  # The carrier dir under src/user/.agents/skills/dep-health-check/ and the
+  # plugin skill dir under src/plugins/beads/.agents/skills/dep-health-check/
+  # follow the same merge model as resolve-human-bead; install.sh handles
+  # the collision. If --plugins=beads --verbose surfaces a fatal collision
+  # error here, the test will fail loudly — that is the intended signal.
+  DRY_OUT="$(cd "$REPO_ROOT" && bash "$INSTALL_SH" --dry-run --tools=claude --plugins=beads --verbose 2>&1)"
   DRY_RC=$?
   if [ "$DRY_RC" -eq 0 ]; then
     pass "AC2 install.sh --dry-run exit 0"
   else
-    fail "AC2 install.sh --dry-run exit 0" "exit code: $DRY_RC"
+    fail "AC2 install.sh --dry-run exit 0" "exit code: $DRY_RC; output tail: $(printf '%s\n' "$DRY_OUT" | tail -c 600)"
   fi
 
-  if printf '%s\n' "$DRY_OUT" | grep -Fq "dep-health-check"; then
-    pass "AC2 dry-run output mentions dep-health-check"
+  # Must mention dep-health-check AND it must appear in a plugin-skill
+  # staging line (i.e. paths under plugins/beads/...skills/dep-health-check).
+  # Without this, an implementer could place SKILL.md in the carrier dir
+  # alone and the test would pass — that's the bug Codex flagged.
+  if printf '%s\n' "$DRY_OUT" | grep -Eq "(plugins/beads|beads-plugin|beads).*skills/dep-health-check"; then
+    pass "AC2 dry-run output stages beads-plugin dep-health-check skill"
   else
-    fail "AC2 dry-run output mentions dep-health-check" \
-      "no 'dep-health-check' line in install.sh --dry-run output"
+    fail "AC2 dry-run output stages beads-plugin dep-health-check skill" \
+      "expected a staging line mentioning the beads plugin and skills/dep-health-check; got tail: $(printf '%s\n' "$DRY_OUT" | tail -c 600)"
   fi
 fi
 
@@ -221,6 +205,16 @@ else
     fail "AC4 beads is list and bead_count is int" "wrong types"
   fi
 
+  # bead_count must be positive AND equal len(beads). This repo has 100+
+  # open beads — an empty graph result from --mode all is a defect, not a
+  # boundary case. Mirrors the AC5 focused-mode count check.
+  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d['bead_count']>0 and d['bead_count']==len(d.get('beads',[]))" 2>/dev/null; then
+    pass "AC4 bead_count > 0 and matches len(beads)"
+  else
+    fail "AC4 bead_count > 0 and matches len(beads)" \
+      "expected positive bead_count matching len(beads) for --mode all against live repo"
+  fi
+
   rm -f "$OUT_FILE" "$ERR_FILE"
 fi
 
@@ -238,11 +232,13 @@ echo "[ac5_collect_mode_focused_json]"
 # checkout. We DO NOT silently skip — if no target can be found, that is a
 # failure.
 TARGET=""
+# bd resolves the bead store relative to CWD; run the probes inside REPO_ROOT
+# so that the test works regardless of where the runner invoked it from.
 if command -v bd >/dev/null 2>&1; then
-  if bd show agents-config-3up3 >/dev/null 2>&1; then
+  if ( cd "$REPO_ROOT" && bd show agents-config-3up3 >/dev/null 2>&1 ); then
     TARGET="agents-config-3up3"
   else
-    TARGET="$(bd ready --json 2>/dev/null | python3 -c "import sys,json
+    TARGET="$( ( cd "$REPO_ROOT" && bd ready --json 2>/dev/null ) | python3 -c "import sys,json
 try:
     d=json.load(sys.stdin)
     print(d[0]['id'] if d else '')
@@ -326,22 +322,15 @@ else
   fi
 
   # 6b: bd not on PATH -> 3
-  # Construct a minimal PATH that contains python3 but excludes bd.
-  PY_DIR="$(dirname "$(command -v python3)")"
-  RESTRICTED_PATH="$PY_DIR:/usr/bin:/bin"
-  if command -v bd >/dev/null 2>&1; then
-    BD_DIR="$(dirname "$(command -v bd)")"
-    # Make sure the restricted PATH really excludes bd.
-    case ":$RESTRICTED_PATH:" in
-      *":$BD_DIR:"*)
-        # bd is in /usr/bin or /bin somehow; relocate by using only PY_DIR.
-        RESTRICTED_PATH="$PY_DIR"
-        ;;
-    esac
-  fi
-  ( cd "$REPO_ROOT" && env -i PATH="$RESTRICTED_PATH" HOME="$HOME" \
+  # Construct a temp bin dir containing ONLY a python3 symlink. This
+  # guarantees no bd leak regardless of where bd actually lives — sharing
+  # /usr/bin or /opt/homebrew/bin with bd was the bug Codex flagged.
+  TMP_BIN="$(mktemp -d -t depcheck-bin.XXXXXX)"
+  ln -s "$(command -v python3)" "$TMP_BIN/python3"
+  ( cd "$REPO_ROOT" && env -i PATH="$TMP_BIN" HOME="$HOME" \
       python3 "$COLLECT_PY" --mode all >/dev/null 2>&1 )
   RC=$?
+  rm -rf "$TMP_BIN"
   if [ "$RC" -eq 3 ]; then
     pass "AC6 bd not on PATH -> exit 3"
   else
