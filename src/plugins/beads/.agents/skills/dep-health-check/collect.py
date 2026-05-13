@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import OrderedDict
 
 
 # ---------------------------------------------------------------------------
@@ -493,33 +494,49 @@ def find_cycles(selected_ids=None):
 def focused_neighborhood(target_id, beads_by_id):
     """Target + 1-hop neighborhood (NEIGHBORHOOD_TYPES) + full parent chain +
     full child chain. Capped at FOCUSED_BEAD_CAP. Parent chain is guaranteed
-    to survive the cap — neighborhood entries are dropped first."""
-    selected = {target_id}
-    parent_chain_ids = {target_id}
+    to survive the cap — neighborhood entries are dropped first.
+
+    Returns a deterministically ordered list of bead ids:
+      1. Parent chain in traversal order (root first → ... → target's immediate parent)
+      2. The target bead
+      3. Remaining 1-hop neighbors and descendants, sorted by id
+
+    An OrderedDict (used as an ordered set) tracks membership while
+    preserving insertion order; the final remaining-neighbor block is
+    sorted by id so repeated runs produce identical output."""
+    # parent_chain_ids: list, ordered root → target's immediate parent.
+    parent_chain_ids = []
+    # selected: OrderedDict acts as an ordered set; insertion order is
+    # meaningful only for membership-tracking. Final ordering is rebuilt
+    # below from (parent_chain, target, sorted-remaining).
+    selected = OrderedDict()
+    selected[target_id] = None
+
     target = beads_by_id.get(target_id)
     if not target:
-        return list(selected), False
+        return [target_id], False
 
     # 1-hop via dependencies/dependents on the target.
     for dep in target.get("dependencies", []) or []:
         if isinstance(dep, dict) and dep.get("dependency_type") in NEIGHBORHOOD_TYPES:
             dep_id = dep.get("id")
             if dep_id:
-                selected.add(dep_id)
+                selected.setdefault(dep_id, None)
     for dep in target.get("dependents", []) or []:
         if isinstance(dep, dict) and dep.get("dependency_type") in NEIGHBORHOOD_TYPES:
             dep_id = dep.get("id")
             if dep_id:
-                selected.add(dep_id)
+                selected.setdefault(dep_id, None)
 
-    # Parent chain (walk up). Tracked separately so the cap can guarantee
-    # the chain is preserved.
+    # Parent chain (walk up). Collected as a list so the cap can preserve
+    # the chain in root-first traversal order.
     cur = target.get("parent") or ""
-    seen = {target_id}
-    while cur and cur not in seen:
-        seen.add(cur)
-        selected.add(cur)
-        parent_chain_ids.add(cur)
+    walk_seen = {target_id}
+    parents_upward = []  # immediate parent first → root last
+    while cur and cur not in walk_seen:
+        walk_seen.add(cur)
+        parents_upward.append(cur)
+        selected.setdefault(cur, None)
         nxt_bead = beads_by_id.get(cur)
         if not nxt_bead:
             # Fetch parent on-demand so chain is complete even for closed parents.
@@ -527,28 +544,46 @@ def focused_neighborhood(target_id, beads_by_id):
             if nxt_bead:
                 beads_by_id[cur] = nxt_bead
         cur = (nxt_bead or {}).get("parent") or ""
+    # Reverse so order is root → target's immediate parent.
+    parent_chain_ids = list(reversed(parents_upward))
 
     # Child chain (walk down via beads whose parent==target, recursively).
+    # Iterate children in sorted order at each level so traversal itself
+    # is deterministic, even though final ordering is re-sorted below.
     def walk_down(parent_id, depth=0):
         if depth > MAX_CHILD_DEPTH:
             return
-        for cid, c in list(beads_by_id.items()):
-            if c.get("parent") == parent_id and cid not in selected:
-                selected.add(cid)
-                walk_down(cid, depth + 1)
+        children = sorted(
+            cid for cid, c in beads_by_id.items()
+            if c.get("parent") == parent_id and cid not in selected
+        )
+        for cid in children:
+            selected[cid] = None
+            walk_down(cid, depth + 1)
 
     walk_down(target_id)
 
+    parent_chain_set = set(parent_chain_ids)
     capped = False
     if len(selected) > FOCUSED_BEAD_CAP:
         # Preserve parent chain first, then fill the remaining cap with the
-        # rest of the neighborhood. Set iteration order is undefined; the
-        # ordered list below guarantees parent chain survives the truncation.
-        ordered = list(parent_chain_ids) + [s for s in selected if s not in parent_chain_ids]
-        selected = set(ordered[:FOCUSED_BEAD_CAP])
+        # rest of the neighborhood sorted by id so cap-truncation is
+        # deterministic.
+        remaining_sorted = sorted(
+            s for s in selected
+            if s != target_id and s not in parent_chain_set
+        )
+        ordered = parent_chain_ids + [target_id] + remaining_sorted
+        ordered = ordered[:FOCUSED_BEAD_CAP]
         capped = True
+    else:
+        remaining_sorted = sorted(
+            s for s in selected
+            if s != target_id and s not in parent_chain_set
+        )
+        ordered = parent_chain_ids + [target_id] + remaining_sorted
 
-    return list(selected), capped
+    return ordered, capped
 
 
 # ---------------------------------------------------------------------------
