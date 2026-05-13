@@ -12,7 +12,7 @@ If `$ARGUMENTS` is empty, use defaults (30 days, no specific focus).
 
 Extract from `$ARGUMENTS`:
 1. **Time range** — any phrase indicating how far back to look in git history. Convert to a `git log --since` compatible value. Default: `--since="30 days ago"`.
-2. **Focus areas** — any remaining text describing what to pay special attention to. Store as context for Phase 3.
+2. **Focus areas** — any remaining text describing what to pay special attention to. Store as `focus_areas` for use in Step 3b.
 
 ## Step 1 — Discovery
 
