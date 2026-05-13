@@ -109,15 +109,34 @@ verify_flattening() {
   # Match the marker syntax (`<!-- DYNAMIC-INCLUDE`) rather than the bare
   # word — the inlined INSTRUCTIONS template legitimately mentions
   # "DYNAMIC-INCLUDE" in a prose comment about the mechanism itself.
+  #
+  # Split into explicit cases so a missing file or a grep I/O error does
+  # NOT silently PASS via `! grep …` (any non-zero exit, including grep's
+  # error exit 2, would otherwise be treated as "no match found").
   local label="${label_prefix}: no unprocessed DYNAMIC-INCLUDE markers"
-  if [ -f "${instructions_path}" ] \
-       && ! grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:' "${instructions_path}"; then
-    echo "  PASS  ${label}"
-    PASS=$((PASS + 1))
-  else
+  if [ ! -f "${instructions_path}" ]; then
     echo "  FAIL  ${label}"
-    echo "        unexpected DYNAMIC-INCLUDE marker in: ${instructions_path}"
+    echo "        file not found: ${instructions_path}"
     FAIL=$((FAIL + 1))
+  else
+    grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:' "${instructions_path}"
+    local rc=$?
+    case "${rc}" in
+      0)
+        echo "  FAIL  ${label}"
+        echo "        unexpected DYNAMIC-INCLUDE marker in: ${instructions_path}"
+        FAIL=$((FAIL + 1))
+        ;;
+      1)
+        echo "  PASS  ${label}"
+        PASS=$((PASS + 1))
+        ;;
+      *)
+        echo "  FAIL  ${label}"
+        echo "        grep error (exit ${rc}) reading: ${instructions_path}"
+        FAIL=$((FAIL + 1))
+        ;;
+    esac
   fi
 }
 
