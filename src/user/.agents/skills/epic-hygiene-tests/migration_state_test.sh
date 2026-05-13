@@ -42,14 +42,14 @@ bd_or_fail() {
 # parse_json_or_fail: validate that the captured bd output is parseable JSON.
 parse_json_or_fail() {
     local context="$1" payload="$2"
-    PAYLOAD="$payload" python3 -c "
+    CTX="$context" PAYLOAD="$payload" python3 -c "
 import json, os, sys
 try:
     json.loads(os.environ['PAYLOAD'])
 except Exception as e:
     print(f'{os.environ.get(\"CTX\", \"?\")}: bd output is not valid JSON: {e}', file=sys.stderr)
     sys.exit(1)
-" CTX="$context" || fail "$context: bd output unparseable"
+" || fail "$context: bd output unparseable"
 }
 
 # -----------------------------------------------------------------------------
