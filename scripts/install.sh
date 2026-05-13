@@ -518,6 +518,35 @@ stage_item() {
             cp "$src" "$dest"
         fi
     else
+        # Carrier-merge: when both src and dest are directories with NO
+        # overlapping filenames, merge the file lists instead of fatal-erroring.
+        # This supports the "carrier dir" pattern where src/user/.agents/skills/<name>/
+        # holds only contract tests (e.g. _test.sh) and the actual skill content
+        # lives under src/plugins/<plugin>/.agents/skills/<name>/.
+        if [[ "$file_type" == "dir" && -d "$src" && -d "$dest" ]]; then
+            local sfile sname collision=0
+            for sfile in "$src"/*; do
+                [[ -e "$sfile" ]] || continue
+                sname="$(basename "$sfile")"
+                if [[ -e "$dest/$sname" ]]; then
+                    collision=1
+                    break
+                fi
+            done
+            if [[ "$collision" -eq 0 ]]; then
+                vinfo "carrier-merge: merging $(basename "$src") into existing $dest (disjoint file sets)"
+                for sfile in "$src"/*; do
+                    [[ -e "$sfile" ]] || continue
+                    sname="$(basename "$sfile")"
+                    if [[ -d "$sfile" ]]; then
+                        cp -R "$sfile" "$dest/$sname"
+                    else
+                        cp "$sfile" "$dest/$sname"
+                    fi
+                done
+                return 0
+            fi
+        fi
         resolve_collision "$dest" "$src" "$file_type"
     fi
 }
@@ -713,12 +742,19 @@ stage_and_install_tool() {
     fi
 
     # ── Phase 6: Overlay active plugins (alphabetical order) ─────────────────
+    local plugin_item
     for plugin in "${PLUGINS[@]}"; do
         plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
         plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
 
         if [[ -d "$plugin_tool_dir" ]]; then
             for subdir in rules commands skills agents; do
+                if [[ -d "$plugin_tool_dir/$subdir" ]]; then
+                    for plugin_item in "$plugin_tool_dir/$subdir"/*; do
+                        [[ -e "$plugin_item" ]] || continue
+                        vinfo "  plugin($plugin) staging $subdir/$(basename "$plugin_item")"
+                    done
+                fi
                 stage_content_from_dir "$plugin_tool_dir" "$staging" "$subdir"
             done
             # Plugin settings injection (MCP servers, hooks, permissions)
@@ -730,6 +766,12 @@ stage_and_install_tool() {
 
         if [[ -d "$plugin_agents_dir" ]]; then
             for subdir in skills agents; do
+                if [[ -d "$plugin_agents_dir/$subdir" ]]; then
+                    for plugin_item in "$plugin_agents_dir/$subdir"/*; do
+                        [[ -e "$plugin_item" ]] || continue
+                        vinfo "  plugin($plugin) staging $subdir/$(basename "$plugin_item") (from .agents)"
+                    done
+                fi
                 stage_content_from_dir "$plugin_agents_dir" "$staging" "$subdir"
             done
         fi
