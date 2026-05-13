@@ -42,6 +42,7 @@ class DbMissing(Exception):
 
 TOTAL_CONTENT_CAP = 600_000     # ~150K tokens at ~4 chars/tok; leaves headroom for LLM body in sonnet[1m] context
 PER_BEAD_TRUNCATE_LEN = 4_000   # hard truncation per bead when total cap is exceeded
+PER_COMMENT_TRUNCATE_LEN = 1_000  # per-comment cap; comments are summed into content_chars() so large threads must also be bounded
 FOCUSED_BEAD_CAP = 200          # spec R8 explicit cap; prevents runaway child-chain expansion
 MAX_CHILD_DEPTH = 50            # guards against pathological cycles; child trees are <10 deep in practice
 
@@ -191,12 +192,36 @@ def content_chars(bead):
     return sum(len(p) for p in parts)
 
 
-def truncate_bead_content(bead, limit=PER_BEAD_TRUNCATE_LEN):
+def truncate_bead_content(bead, limit=PER_BEAD_TRUNCATE_LEN,
+                          comment_limit=PER_COMMENT_TRUNCATE_LEN):
+    """Truncate per-field text and per-comment bodies in-place. Only flag
+    ``bead["truncated"] = True`` when at least one field or comment was
+    actually shortened — otherwise the marker is dishonest (it claims a
+    reduction that did not occur) and disconnected from real token savings.
+
+    Comments are included because ``content_chars()`` counts them; large
+    comment threads would otherwise blow past the token guard even after
+    'truncation' clipped only the top-level fields."""
+    modified = False
     for k in ("description", "notes", "design", "acceptance_criteria"):
         v = bead.get(k, "") or ""
         if len(v) > limit:
             bead[k] = v[:limit] + "\n…[truncated]"
-    bead["truncated"] = True
+            modified = True
+
+    comments = bead.get("comments") or []
+    if isinstance(comments, list):
+        for c in comments:
+            if isinstance(c, dict):
+                for key in ("body", "text"):
+                    cv = c.get(key)
+                    if isinstance(cv, str) and len(cv) > comment_limit:
+                        c[key] = cv[:comment_limit] + "\n…[truncated]"
+                        modified = True
+
+    if modified:
+        bead["truncated"] = True
+    return modified
 
 
 # ---------------------------------------------------------------------------
@@ -641,8 +666,8 @@ def main():
     if total > TOTAL_CONTENT_CAP:
         for b in detailed_by_id.values():
             if content_chars(b) > PER_BEAD_TRUNCATE_LEN:
-                truncate_bead_content(b)
-                truncated_count += 1
+                if truncate_bead_content(b):
+                    truncated_count += 1
 
     beads_list = list(detailed_by_id.values())
     prefix = detect_prefix(beads_list) or detect_prefix(open_beads + in_progress)
