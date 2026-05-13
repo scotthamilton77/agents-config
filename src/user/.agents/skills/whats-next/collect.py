@@ -164,7 +164,8 @@ def is_impl_candidate(bead):
     labels = bead.get("labels", [])
     btype = bead.get("issue_type", "")
     return (
-        "implementation-ready" in labels
+        btype not in CONTAINER_DESIGN_TYPES  # decision + container-design types never impl-ready
+        and "implementation-ready" in labels
         and "human" not in labels
         # Containers can never be impl-ready per Rule B (structural filter).
         and not is_container(bead.get("id", ""), btype)
