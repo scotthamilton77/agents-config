@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Red-phase test for AC4: implement-bead SKILL.md must add 'milestone' to
-# the epic → flag-human path. The existing prose at line 98 names only 'epic'
-# as the container type that triggers flag-human; the spec mandates that
-# 'milestone' is also covered.
+# Red-phase test for AC "implement-bead SKILL.md: milestone added to
+# epic → flag-human routing": implement-bead SKILL.md must add 'milestone'
+# to the epic → flag-human path so container-type beads route consistently.
 set -u
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

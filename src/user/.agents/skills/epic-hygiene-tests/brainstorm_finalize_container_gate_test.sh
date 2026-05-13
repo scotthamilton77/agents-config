@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Red-phase test for AC5: brainstorm-bead.formula.toml finalize step must
-# include a container-gate (Step 0) that prevents impl-ready stamping on
-# milestone / epic / feature-with-children, BEFORE any other finalize work
-# runs.
+# Red-phase test for AC "brainstorm-bead finalize Step 0 container gate":
+# brainstorm-bead.formula.toml finalize step must include a container-gate
+# (Step 0) that prevents impl-ready stamping on milestone / epic /
+# feature-with-children, BEFORE any other finalize work runs.
 set -u
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

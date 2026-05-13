@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Red-phase tests for:
-#   AC1 — Container Bead definition documented in
-#         src/plugins/beads/.claude/rules/beads.md under a new
-#         '## Container Beads' section.
-#   AC5/I1/I2 — beads.md I1/I2 prose updated: 'ancestor epic' → 'ancestor bead'.
-#         Scoped to the I1 and I2 sections only (per spec rev 7).
+# Red-phase tests for AC "Container Beads section in beads.md" and
+# AC "I1/I2 prose: ancestor epic → ancestor bead":
+#   - Container Bead definition documented in
+#     src/plugins/beads/.claude/rules/beads.md under a new
+#     '## Container Beads' section.
+#   - beads.md I1/I2 prose updated to type-agnostic 'ancestor bead' phrasing
+#     (scoped to the I1 and I2 sections only).
 set -u
 
 fail() { echo "FAIL: $*" >&2; exit 1; }

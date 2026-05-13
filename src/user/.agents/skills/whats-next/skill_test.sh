@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC4 (whats-next SKILL.md):
+# Red-phase tests for AC "whats-next SKILL.md: 7-column table, four sections, default omits implementation":
 #   T1. 7-column table header rendered in a SINGLE table-header line:
 #       P | Milestone | Feature | Parent Epic | Bead ID | Type | Title
 #   T2. All FOUR sections referenced (loose casing/hyphenation accepted):

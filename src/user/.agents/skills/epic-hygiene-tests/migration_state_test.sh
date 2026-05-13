@@ -1,27 +1,26 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC6/AC7/AC8/AC10–13 — migration applied + post-migration
-# verification.
+# Red-phase tests for AC "epic-hygiene live bd migrations (abn9.8 / 7bk.19 /
+# 7bk.19.9 / bt9e) and post-migration sanity check".
 #
 # Coverage:
-#   AC6/AC11  abn9.8: labels stripped AND AC trimmed (no executable
-#                     "Build passes." style verification text).
-#   AC6/AC13  7bk.19: labels stripped AND verification AC moved.
-#   AC10      7bk.19.9: AC includes grep/smoke verification text moved from
-#                     parent.
-#   AC6/AC12  bt9e:  reclassified to spike.
-#   AC8       `bd list --type epic --json` open-epic query returns a valid
-#                     JSON array, and no open epic carries
-#                     implementation-ready or implementation-readied-session-*.
+#   abn9.8:     labels stripped AND AC trimmed (no executable
+#               "Build passes." style verification text).
+#   7bk.19:     labels stripped AND verification AC moved.
+#   7bk.19.9:   AC includes grep/smoke verification text moved from parent.
+#   bt9e:       reclassified to spike.
+#   sanity:     `bd list --type epic --json` open-epic query returns a valid
+#               JSON array, and no open epic carries implementation-ready or
+#               implementation-readied-session-*.
 #
-# bd-failure hardening (CR4): every `bd` call captures its exit status; the
-# test FAILS loud on non-zero or unparseable output instead of silently
-# treating bd failures as "empty array".
+# bd-failure hardening: every `bd` call captures its exit status; the test
+# FAILS loud on non-zero or unparseable output instead of silently treating
+# bd failures as "empty array".
 set -u
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
-command -v bd >/dev/null 2>&1 || fail "bd CLI not on PATH; AC6/AC8 tests require live bd"
+command -v bd >/dev/null 2>&1 || fail "bd CLI not on PATH; migration + sanity-check tests require live bd"
 command -v python3 >/dev/null 2>&1 || fail "python3 required for parsing bd output"
 
 # bd_or_fail: run a bd command, capture stdout to TMP_OUT, fail the test if

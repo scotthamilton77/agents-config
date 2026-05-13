@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC2/AC3/AC9 (whats-next collect.py).
+# Red-phase tests for AC "whats-next collect.py: container filter, planning-ready, typed ancestry, --mode flag".
 # Covers:
 #   T1. is_container(id, type): epic/milestone are containers regardless of
 #       child count; feature is a container only when it has active children.
@@ -9,7 +9,7 @@
 #       planning | human) are accepted, and an invalid choice is rejected.
 #   T4. (REMOVED — was an impl-detail probe on hasattr(mod,'enrich')).
 #       End-to-end JSON shape covered by T5/T6/T7.
-#   T5. End-to-end typed-ancestor extraction (AC2):
+#   T5. End-to-end typed-ancestor extraction:
 #       With a known ancestry chain milestone→feature→epic→task in the bd shim,
 #       the task's enriched record carries exact milestone_col / feature_col /
 #       parent_epic_col / type values. planning_ready section surfaces the
@@ -17,10 +17,12 @@
 #       children except the chain, but the chain's feature/epic have active
 #       descendants; assertion: planning_ready contains AT LEAST one of the
 #       expected ancestors when shim simulates a childless container).
-#   T6. Mode key matrix: per AC9, run all 5 modes and assert the EXACT set
-#       of top-level section keys emitted. Per spec §"Output schema": absent
-#       sections must be ABSENT from JSON, not empty arrays.
+#   T6. Mode key matrix: run all 5 modes and assert the EXACT set of top-level
+#       section keys emitted. Per spec §"Output schema": absent sections must
+#       be ABSENT from JSON, not empty arrays.
 #   T7. (folded into T6).
+#   T8. Childless feature with implementation-ready is a leaf impl bead:
+#       surfaces under --mode implementation; excluded from --mode planning.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
