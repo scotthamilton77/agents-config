@@ -514,10 +514,86 @@ stage_item() {
     if [[ ! -e "$dest" ]]; then
         if [[ -d "$src" ]]; then
             cp -R "$src" "$dest"
+            # Drop a sentinel marker when the initial staging came from the
+            # shared carrier tree (src/user/.agents/). The marker lets a later
+            # plugin staging pass distinguish carrier-merge (allowed) from
+            # plugin-plugin collisions (forbidden). See carrier-merge block
+            # below.
+            if [[ "$file_type" == "dir" ]]; then
+                local src_parent_name
+                src_parent_name="$(basename "$(dirname "$src")")"
+                if [[ ( "$src_parent_name" == "skills" || "$src_parent_name" == "agents" ) \
+                      && "$src" == *"/src/user/.agents/$src_parent_name/"* ]]; then
+                    : > "$dest/.carrier-from-user-shared"
+                fi
+            fi
         else
             cp "$src" "$dest"
         fi
     else
+        # Carrier-merge: when both src and dest are skill/agent directories
+        # with NO overlapping filenames, merge the file lists instead of
+        # fatal-erroring. This supports the "carrier dir" pattern where
+        # src/user/.agents/skills/<name>/ holds only contract tests
+        # (e.g. _test.sh) and the actual skill content lives under
+        # src/plugins/<plugin>/.agents/skills/<name>/.
+        #
+        # Scope is deliberately narrow (to avoid silently merging unrelated
+        # plugin-plugin colliding directories):
+        #   - The dir must be inside skills/ or agents/.
+        #   - The incoming `$src` must be a plugin path
+        #     (src/plugins/<plugin>/.agents/<ns>/<name>/).
+        #   - The existing `$dest` must carry the `.carrier-from-user-shared`
+        #     sentinel — proving the FIRST stager was the user-shared carrier
+        #     (not another plugin). Plugin-plugin collisions cannot satisfy
+        #     this and stay fatal via resolve_collision.
+        if [[ "$file_type" == "dir" && -d "$src" && -d "$dest" ]]; then
+            local src_parent_name dest_parent_name
+            src_parent_name="$(basename "$(dirname "$src")")"
+            dest_parent_name="$(basename "$(dirname "$dest")")"
+
+            local carrier_pattern_ok=0
+            if [[ ( "$src_parent_name" == "skills" || "$src_parent_name" == "agents" ) \
+                  && "$src_parent_name" == "$dest_parent_name" ]]; then
+                # Incoming side must be a plugin path; existing dest must
+                # carry the user-shared sentinel. This rejects plugin-plugin
+                # carrier-merges (neither side would have stamped the
+                # sentinel) without needing to inspect $dest's origin path.
+                if [[ "$src" == *"/src/plugins/"*"/.agents/$src_parent_name/"* \
+                      && -f "$dest/.carrier-from-user-shared" ]]; then
+                    carrier_pattern_ok=1
+                fi
+            fi
+
+            if [[ "$carrier_pattern_ok" -eq 1 ]]; then
+                local sfile sname collision=0
+                for sfile in "$src"/*; do
+                    [[ -e "$sfile" ]] || continue
+                    sname="$(basename "$sfile")"
+                    if [[ -e "$dest/$sname" ]]; then
+                        collision=1
+                        break
+                    fi
+                done
+                if [[ "$collision" -eq 0 ]]; then
+                    vinfo "carrier-merge: merging $(basename "$src") into existing $dest (disjoint file sets, $src_parent_name/)"
+                    for sfile in "$src"/*; do
+                        [[ -e "$sfile" ]] || continue
+                        sname="$(basename "$sfile")"
+                        if [[ -d "$sfile" ]]; then
+                            cp -R "$sfile" "$dest/$sname"
+                        else
+                            cp "$sfile" "$dest/$sname"
+                        fi
+                    done
+                    # Clear the sentinel — the merge has occurred. Any further
+                    # collision on this dir will now be a true plugin-plugin
+                    # collision (fatal).
+                    rm -f "$dest/.carrier-from-user-shared"
+                    return 0
+                fi
+            fi
+        fi
         resolve_collision "$dest" "$src" "$file_type"
     fi
 }
@@ -713,12 +789,19 @@ stage_and_install_tool() {
     fi
 
     # ── Phase 6: Overlay active plugins (alphabetical order) ─────────────────
+    local plugin_item
     for plugin in "${PLUGINS[@]}"; do
         plugin_tool_dir="$SRC_PLUGINS/$plugin/.$tool"
         plugin_agents_dir="$SRC_PLUGINS/$plugin/.agents"
 
         if [[ -d "$plugin_tool_dir" ]]; then
             for subdir in rules commands skills agents; do
+                if [[ -d "$plugin_tool_dir/$subdir" ]]; then
+                    for plugin_item in "$plugin_tool_dir/$subdir"/*; do
+                        [[ -e "$plugin_item" ]] || continue
+                        vinfo "  plugin($plugin) staging $subdir/$(basename "$plugin_item")"
+                    done
+                fi
                 stage_content_from_dir "$plugin_tool_dir" "$staging" "$subdir"
             done
             # Plugin settings injection (MCP servers, hooks, permissions)
@@ -730,6 +813,12 @@ stage_and_install_tool() {
 
         if [[ -d "$plugin_agents_dir" ]]; then
             for subdir in skills agents; do
+                if [[ -d "$plugin_agents_dir/$subdir" ]]; then
+                    for plugin_item in "$plugin_agents_dir/$subdir"/*; do
+                        [[ -e "$plugin_item" ]] || continue
+                        vinfo "  plugin($plugin) staging $subdir/$(basename "$plugin_item") (from .agents)"
+                    done
+                fi
                 stage_content_from_dir "$plugin_agents_dir" "$staging" "$subdir"
             done
         fi
@@ -785,6 +874,15 @@ stage_and_install_tool() {
             [[ -f "$agent_file" ]] || continue
             transform_gemini_agent_frontmatter "$agent_file"
         done
+    fi
+
+    # ── Phase 6.9: Remove carrier-merge sentinels ──────────────────────────
+    # The stage_item carrier-merge logic drops `.carrier-from-user-shared`
+    # files inside skill/agent directories staged from src/user/.agents/.
+    # These are internal markers — they must not leak into the installed
+    # tree. Strip them before Phase 7 sync.
+    if [[ -d "$staging" ]]; then
+        find "$staging" -type f -name ".carrier-from-user-shared" -delete 2>/dev/null || true
     fi
 
     # ── Phase 7: Sync staging → ~/.<tool>/ (reusing existing sync functions) ──
