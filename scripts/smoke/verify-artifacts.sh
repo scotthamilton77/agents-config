@@ -182,7 +182,8 @@ echo ""
 echo "==> Universal-flattening checks (bead jyb.5)"
 
 if ! command -v jq &>/dev/null; then
-  echo "  SKIP  install.sh requires jq; flattening checks not run"
+  echo "  FAIL  install.sh requires jq; flattening checks not run (install jq to enable this section)"
+  FAIL=$((FAIL + 1))
 else
   SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")"
   trap 'rm -rf "${SANDBOX_HOME}"' EXIT
