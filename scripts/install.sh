@@ -1462,8 +1462,14 @@ _in_prune_list() {
     local tool="$1" ns="$2" base="$3" key entry
     key="$tool/$ns/$base"
     for entry in "${PRUNE_LIST[@]}"; do
+        # zsh treats $entry as a literal in case patterns; ${~entry} enables glob matching.
+        # bash treats $entry as a glob pattern natively, but ${~entry} is not valid bash.
         # shellcheck disable=SC2254
-        case "$key" in ($entry) return 0;; esac
+        if [ -n "${ZSH_VERSION:-}" ]; then
+            case "$key" in (${~entry}) return 0;; esac
+        else
+            case "$key" in ($entry) return 0;; esac
+        fi
     done
     return 1
 }
