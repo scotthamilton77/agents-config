@@ -1,6 +1,6 @@
 ---
 name: optimize-my-agent
-model: sonnet
+model: sonnet[1m]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 description: Audits and improves agent persona files (agents/*.md) for role clarity, commands, examples, and explicit boundaries. Use when asked to optimize an agent file, when reviewing an agent persona for quality, or when an agent description, commands, or boundary section needs cleanup. Do NOT use for SKILL.md files or AGENTS.md configuration files.
 ---
