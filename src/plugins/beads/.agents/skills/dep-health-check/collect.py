@@ -26,12 +26,24 @@ import sys
 
 
 # ---------------------------------------------------------------------------
+# Typed sentinel exceptions
+# ---------------------------------------------------------------------------
+
+class BdMissing(Exception):
+    """bd binary not found on PATH."""
+
+class DbMissing(Exception):
+    """bd binary present but no reachable beads database."""
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-TOTAL_CONTENT_CAP = 600_000          # chars; total content across all beads
-PER_BEAD_TRUNCATE_LEN = 4000         # chars; truncate per-bead content when cap hit
-FOCUSED_BEAD_CAP = 200               # focused-mode neighborhood cap
+TOTAL_CONTENT_CAP = 600_000     # ~150K tokens at ~4 chars/tok; leaves headroom for LLM body in sonnet[1m] context
+PER_BEAD_TRUNCATE_LEN = 4_000   # hard truncation per bead when total cap is exceeded
+FOCUSED_BEAD_CAP = 200          # spec R8 explicit cap; prevents runaway child-chain expansion
+MAX_CHILD_DEPTH = 50            # guards against pathological cycles; child trees are <10 deep in practice
 
 # Dep types we expand through for focused-mode 1-hop neighborhood.
 NEIGHBORHOOD_TYPES = {"blocks", "discovered-from", "tracks", "relates-to"}
@@ -51,8 +63,7 @@ def bd_json(*args, allow_fail=False):
             capture_output=True, text=True, timeout=60,
         )
     except FileNotFoundError:
-        # bd disappeared mid-run — treat as missing.
-        raise RuntimeError("bd_missing")
+        raise BdMissing()
     except subprocess.TimeoutExpired:
         if allow_fail:
             return []
@@ -65,7 +76,7 @@ def bd_json(*args, allow_fail=False):
                    "no beads", "could not open")
         low = stderr.lower()
         if any(m in low for m in markers):
-            raise RuntimeError("db_missing:" + stderr[:200])
+            raise DbMissing(stderr[:200])
         if allow_fail:
             return []
         raise RuntimeError("bd failed: " + stderr[:200])
@@ -155,7 +166,6 @@ def fetch_bead_detail(bead_id):
     if not data:
         return None
     d = data[0]
-    # Normalize sparse fields.
     d.setdefault("description", "")
     d.setdefault("notes", "")
     d.setdefault("parent", "")
@@ -173,7 +183,6 @@ def content_chars(bead):
         bead.get("design", "") or "",
         bead.get("acceptance_criteria", "") or "",
     ]
-    # Comments may be list of dicts.
     for c in bead.get("comments", []) or []:
         if isinstance(c, dict):
             parts.append(c.get("body", "") or c.get("text", "") or "")
@@ -282,8 +291,9 @@ def find_semantic_type_conflicts(beads_by_id):
                             "parent-child relationship should not be 'blocks'."
                         ),
                     })
-            # Bidirectional discovered-from.
-            if dep_type == "discovered-from":
+            # Bidirectional discovered-from: only emit when bid < dep_id so
+            # each symmetric pair is reported exactly once without a dedup pass.
+            if dep_type == "discovered-from" and bid < dep_id:
                 other = beads_by_id.get(dep_id)
                 if not other:
                     continue
@@ -291,30 +301,19 @@ def find_semantic_type_conflicts(beads_by_id):
                     if isinstance(od, dict) \
                        and od.get("id") == bid \
                        and od.get("dependency_type") == "discovered-from":
-                        # Emit once (smaller id first).
-                        a, c = sorted([bid, dep_id])
                         out.append({
                             "type": "semantic_type_conflict",
                             "subtype": "bidirectional_discovered_from",
                             "confidence": "HIGH",
-                            "dependent": a,
-                            "blocker": c,
+                            "dependent": bid,
+                            "blocker": dep_id,
                             "rationale": (
-                                f"{a} and {c} both declare discovered-from "
+                                f"{bid} and {dep_id} both declare discovered-from "
                                 "edges on each other; provenance must be acyclic."
                             ),
                         })
                         break
-    # De-dup
-    seen = set()
-    unique = []
-    for f in out:
-        key = (f["type"], f.get("subtype"), f.get("dependent"), f.get("blocker"))
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(f)
-    return unique
+    return out
 
 
 def find_stale_blockers(beads_by_id, closed_ids):
@@ -417,7 +416,7 @@ def focused_neighborhood(target_id, beads_by_id):
 
     # Child chain (walk down via beads whose parent==target, recursively).
     def walk_down(parent_id, depth=0):
-        if depth > 50:
+        if depth > MAX_CHILD_DEPTH:
             return
         for cid, c in list(beads_by_id.items()):
             if c.get("parent") == parent_id and cid not in selected:
@@ -471,15 +470,14 @@ def main():
         in_progress = bd_json("list", "--status", "in_progress", "--json", "--limit", "0")
         closed_meta = bd_json("list", "--status", "closed", "--json", "--limit", "0",
                               allow_fail=True)
+    except BdMissing:
+        print("error: bd not found on PATH", file=sys.stderr)
+        sys.exit(3)
+    except DbMissing as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(4)
     except RuntimeError as e:
-        msg = str(e)
-        if msg.startswith("db_missing"):
-            print(f"error: {msg}", file=sys.stderr)
-            sys.exit(4)
-        if msg == "bd_missing":
-            print("error: bd not found on PATH", file=sys.stderr)
-            sys.exit(3)
-        print(f"error: {msg}", file=sys.stderr)
+        print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Build closed-id set for stale-blocker detection.
@@ -494,17 +492,14 @@ def main():
             continue
         bulk_by_id[bid] = b
 
-    # Focused-mode: validate target exists.
     if args.mode == "focused":
-        # Try bd show directly — works for any status.
+        # bd show resolves any status, including closed — needed for focused audits.
         target_detail = fetch_bead_detail(args.target)
         if not target_detail:
             print(f"error: target bead '{args.target}' not found",
                   file=sys.stderr)
             sys.exit(2)
-        # Ensure target is in bulk_by_id (may be closed, etc.).
         if args.target not in bulk_by_id:
-            # Use the show payload; labels come from there too if present.
             bulk_by_id[args.target] = target_detail
 
     # Decide candidate set.
@@ -516,7 +511,6 @@ def main():
     for bid in candidate_ids:
         d = fetch_bead_detail(bid)
         if d is None:
-            # Fall back to bulk record.
             d = dict(bulk_by_id[bid])
             d.setdefault("description", "")
             d.setdefault("notes", "")
@@ -524,11 +518,10 @@ def main():
             d.setdefault("dependencies", [])
             d.setdefault("dependents", [])
             d.setdefault("comments", [])
-        # Merge labels from bulk.
+        # Labels are only on bulk output, not on `bd show` — merge them in.
         bulk_rec = bulk_by_id.get(bid, {})
         if not d.get("labels"):
             d["labels"] = bulk_rec.get("labels", []) or []
-        # Ensure status is present.
         if not d.get("status"):
             d["status"] = bulk_rec.get("status", "")
         detailed_by_id[bid] = d

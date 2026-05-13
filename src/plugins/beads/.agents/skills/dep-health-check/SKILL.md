@@ -61,20 +61,9 @@ unattended. The rules are deliberately narrow:
 - **ONLY `bd dep add`** is allowed as a mutating primitive. No other write.
 - HIGH-confidence threshold required. MED and LOW findings are listed in
   the report but never auto-applied.
-- Cap of **at most 10 edges** per invocation (cap 10 / max 10 edges /
-  10 per invocation / limit of 10). Excess HIGH-confidence findings are
-  reported and deferred.
-- The mode MUST NOT run `bd dep remove`. Never `bd dep remove`. Removing
-  edges is prohibited — bd dep remove is forbidden in `--just-fix-it`.
-- The mode MUST NOT run `bd close`. Never `bd close`. Closing beads is
-  prohibited; bd close is forbidden in `--just-fix-it`.
-- The mode MUST NOT run `bd label remove`. Never `bd label remove`.
-  Removing labels is prohibited; bd label remove is forbidden in
-  `--just-fix-it`.
-- The mode MUST NOT run `bd update --notes`, `bd update --description`,
-  `bd update --append-notes`, or any other bead-content mutation. No
-  bead-content mutation. No content mutation. Do not mutate bead content
-  in `--just-fix-it` mode. Never `bd update` that touches the spec.
+- Cap of **at most 10 edges** per invocation. Excess HIGH-confidence findings are reported and deferred.
+- The mode MUST NOT run `bd dep remove`, `bd close`, or `bd label remove`.
+- The mode MUST NOT run any bead-content mutation commands (`bd update --notes`, `bd update --description`, `bd update --append-notes`, etc.). Only add-only dep edges are permitted.
 
 Any finding that would require one of the prohibited primitives is
 **surfaced in the report** (with rationale) and left for interactive
@@ -126,20 +115,13 @@ label (HIGH/MED/LOW) and a per-item rationale.
 
 ### Empty sections are omitted
 
-Rule: omit empty sections — empty sections are omitted from the rendered
-report, and we skip empty sections entirely (do not emit empty sections,
-do not render placeholders for them). If `collect.py` produced no
-deterministic findings, the deterministic section is omitted entirely
-rather than rendered with a "(none)" placeholder. Likewise, when the LLM
-inferred no additional findings the LLM-inferred section is omitted.
+Rule: omit empty sections entirely — do not emit a section heading when there are no findings for it. If `collect.py` produced no deterministic findings, the deterministic section is omitted entirely rather than rendered with a "(none)" placeholder. Likewise, when the LLM inferred no additional findings the LLM-inferred section is omitted.
 
 ## LLM rationale rules
 
 These rules are non-negotiable for every LLM-inferred finding:
 
-- **Per-item rationale required.** Every LLM finding carries a per-item
-  rationale. Each LLM-inferred finding has its own rationale; every
-  finding requires its own rationale string.
+- **Per-item rationale required.** Every LLM finding carries a per-item rationale string citing observable bead content.
 - **Cite observable bead content.** The rationale MUST cite observable
   bead content — quote the bead description, reference the bead field
   (description, notes, comments, labels, AC) or quote a bead snippet that
