@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # scripts/smoke/verify-artifacts.sh
-# Artifact existence check for bead 7bk.9 (Per-step claude -p orchestration).
+# Artifact existence and flattening verification for the bead pipeline.
+# Initially created for bead 7bk.9 (Per-step claude -p orchestration);
+# extended by bead jyb.5 to verify DYNAMIC-INCLUDE flattening.
 #
-# Checks that every artifact the bead is required to produce actually exists.
+# Checks that every artifact the bead is required to produce actually exists,
+# and that DYNAMIC-INCLUDE markers in instruction templates were inlined
+# into the assembled output files at install time.
 # Intended to be run at the END of the green phase; MUST fail during the red
 # phase because the artifacts do not yet exist.
 #
@@ -64,6 +68,79 @@ check_file_contains() {
   fi
 }
 
+# verify_flattening (bead jyb.5):
+#   Run install.sh into a sandbox HOME and verify that DYNAMIC-INCLUDE
+#   markers in each tool's instruction template were actually replaced
+#   with the contents of the referenced shared templates.
+#
+#   For each of Claude, Codex, Gemini, and OpenCode we check that the
+#   assembled top-level instruction file contains representative strings
+#   from AGENT-PERSONA.md.template, USER-PERSONA.md.template, and
+#   INSTRUCTIONS.md.template — and that none of the raw DYNAMIC-INCLUDE
+#   markers leaked through unprocessed.
+#
+#   This is a positive flattening assertion: the sandbox-installed files are
+#   not checked for bare existence elsewhere; check_file_contains handles
+#   missing files implicitly ([ -f ] guard). This function answers the harder
+#   question "did the install actually inline the shared content?"
+verify_flattening() {
+  local label_prefix="$1"
+  local instructions_path="$2"
+
+  # Representative substrings from each shared template that gets
+  # DYNAMIC-INCLUDE'd into every tool's AGENTS.md / GEMINI.md.
+  check_file_contains \
+    "${label_prefix}: AGENT-PERSONA content inlined" \
+    "${instructions_path}" \
+    "snarky, arrogant, boastful"
+  check_file_contains \
+    "${label_prefix}: USER-PERSONA content inlined" \
+    "${instructions_path}" \
+    "54yo architect, Sci-Fi nerd"
+  check_file_contains \
+    "${label_prefix}: INSTRUCTIONS laws block inlined" \
+    "${instructions_path}" \
+    "L0 Codebase"
+  check_file_contains \
+    "${label_prefix}: INSTRUCTIONS decision-matrix inlined" \
+    "${instructions_path}" \
+    "verify-facts"
+
+  # Negative check: an unprocessed marker means flattening was skipped.
+  # Match the marker syntax (`<!-- DYNAMIC-INCLUDE`) rather than the bare
+  # word — the inlined INSTRUCTIONS template legitimately mentions
+  # "DYNAMIC-INCLUDE" in a prose comment about the mechanism itself.
+  #
+  # Split into explicit cases so a missing file or a grep I/O error does
+  # NOT silently PASS via `! grep …` (any non-zero exit, including grep's
+  # error exit 2, would otherwise be treated as "no match found").
+  local label="${label_prefix}: no unprocessed DYNAMIC-INCLUDE markers"
+  if [ ! -f "${instructions_path}" ]; then
+    echo "  FAIL  ${label}"
+    echo "        file not found: ${instructions_path}"
+    FAIL=$((FAIL + 1))
+  else
+    grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:' "${instructions_path}"
+    local rc=$?
+    case "${rc}" in
+      0)
+        echo "  FAIL  ${label}"
+        echo "        unexpected DYNAMIC-INCLUDE marker in: ${instructions_path}"
+        FAIL=$((FAIL + 1))
+        ;;
+      1)
+        echo "  PASS  ${label}"
+        PASS=$((PASS + 1))
+        ;;
+      *)
+        echo "  FAIL  ${label}"
+        echo "        grep error (exit ${rc}) reading: ${instructions_path}"
+        FAIL=$((FAIL + 1))
+        ;;
+    esac
+  fi
+}
+
 echo "==> Artifact verification for bead 7bk.9"
 echo "    Repo root: ${REPO_ROOT}"
 echo ""
@@ -116,6 +193,50 @@ check_file_contains \
   "fix-bug.formula.toml contains 'diagnose' stage name" \
   "${REPO_ROOT}/src/plugins/beads/.beads/formulas/fix-bug.formula.toml" \
   '"diagnose"'
+
+# ── DYNAMIC-INCLUDE flattening (bead jyb.5) ────────────────────────────────
+# Drive a sandboxed install and verify shared template content was actually
+# inlined into each tool's assembled instruction file. install.sh writes to
+# ~/.<tool>/ and ~/.config/opencode/, so we point HOME at a scratch dir.
+echo ""
+echo "==> Universal-flattening checks (bead jyb.5)"
+
+if ! command -v jq &>/dev/null; then
+  echo "  FAIL  install.sh requires jq; flattening checks not run (install jq to enable this section)"
+  FAIL=$((FAIL + 1))
+else
+  SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")" || SANDBOX_HOME=""
+  if [ -z "${SANDBOX_HOME}" ] || [ ! -d "${SANDBOX_HOME}" ]; then
+    echo "  FAIL  mktemp: could not create sandbox directory; skipping flattening checks"
+    FAIL=$((FAIL + 1))
+  else
+    trap 'rm -rf "${SANDBOX_HOME}"' EXIT
+    echo "    Sandbox HOME: ${SANDBOX_HOME}"
+
+    # --tools= explicitly lists every tool that supports DYNAMIC-INCLUDE.
+    # This intentionally bypasses install.sh's auto-detection logic; the test
+    # is scoped to "did flattening happen?", not "did detection work?".
+    # --plugins= disables plugin auto-detection so the test does not depend
+    # on the host bd/beads state.
+    install_log="${SANDBOX_HOME}/install.log"
+    if HOME="${SANDBOX_HOME}" \
+         bash "${REPO_ROOT}/scripts/install.sh" \
+              --yes \
+              --tools=claude,codex,gemini,opencode \
+              --plugins= \
+              >"${install_log}" 2>&1; then
+      echo "    install.sh: OK"
+      verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
+      verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
+      verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
+      verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
+    else
+      echo "    install.sh: FAILED (see ${install_log})"
+      cat "${install_log}" >&2
+      FAIL=$((FAIL + 1))
+    fi
+  fi
+fi
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
