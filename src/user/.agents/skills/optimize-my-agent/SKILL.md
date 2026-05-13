@@ -17,6 +17,8 @@ Read the target agent.md file completely. Then identify:
 
 1. **Agent Purpose**: What is this agent supposed to do? Look at the frontmatter description, the opening role statement, and any embedded examples.
 2. **Current State**: How complete and effective is the current file? Note whether commands have flags, whether examples exist (vs descriptions), whether boundaries are explicit.
+3. **Scope check**: Is the file in `agents/` with the expected schema (frontmatter `name`, `description`, and optionally `model`, `color`, `tools`)? If not, stop — this skill is not for AGENTS.md or SKILL.md files.
+4. **Prior context**: Are there companion files (adjacent AGENTS.md, parent CLAUDE.md) that constrain this agent's role? Note any hierarchy context before assessing standalone quality.
 
 If the purpose is unclear or missing, use `AskUserQuestion` to clarify before proceeding. Do not invent a purpose from thin context — agents whose role is guessed end up generic.
 
