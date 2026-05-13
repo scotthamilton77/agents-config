@@ -59,7 +59,7 @@ levels:
 unattended. The rules are deliberately narrow:
 
 - **Only two writes are permitted**, both tied to applying a single edge:
-    1. `bd dep add <dependent> <blocker>` — adds the new dep edge. ONLY `bd dep add` mutates the dep graph.
+    1. `bd dep add <dependent> <blocker> --type <dep-type>` — adds the new dep edge. ONLY `bd dep add` mutates the dep graph. The `--type` argument is REQUIRED: `--just-fix-it` applies non-`blocks` edges (e.g., provenance fixes use `--type discovered-from`), and omitting `--type` lets `bd` default to the wrong type. Pass the finding's dep type explicitly on every invocation.
     2. `bd comments add <dependent-id> "dep-health-check (just-fix-it): ..."` —
        the required audit comment on the dependent bead (see next section).
 
