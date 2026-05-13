@@ -34,16 +34,78 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 - **`bd create` is pure capture — no claim, no implementation.** Reserve "Starting work on task [id]..." for when the user explicitly directs you to START WORK on a specific bead identifier.
 - When referencing any bead in conversation turn, always use the ID and title together, e.g. "bd-1234 (Implement login)"; you only need do this once per turn per bead, then you can refer to it by ID alone for the rest of the turn.
 
+## Container Beads
+
+A **container bead** groups related work — it does not carry executable work
+itself. Rules govern what labels containers may carry, whether they hold
+executable verification, and where they surface in readiness lists.
+
+A bead is a container when any of the following applies:
+
+- Type is `milestone` or `epic` — always a container, regardless of children.
+- Type is `feature` AND has ≥1 non-closed children — a `feature` becomes a
+  container the moment its first non-closed child exists. A childless
+  `feature` without `implementation-ready` is a planning-ready placeholder;
+  a childless `feature` with `implementation-ready` is a leaf implementation
+  bead produced by `brainstorm-bead` finalize.
+
+`decision` type is informational — excluded from all ready lists regardless
+of children.
+
+`milestone`, `epic`, and `feature` types are NEVER brainstorm-ready. Use
+`task`, `story`, or `spike` for leaf beads subject to brainstorm-ready
+routing.
+
+### The Three Rules
+
+- **Rule A — No executable work (convention).** A container bead's acceptance
+  criteria should be expressible purely as "all children/named-children
+  closed." Verification work not automatic from child closure lives in a leaf
+  child. Convention only; no automated enforcement.
+- **Rule B — Never surfaces in brainstorm or implementation ready lists.**
+  Container beads are excluded from the brainstorm-ready and
+  implementation-ready lists by structural probe, not by label hygiene. The
+  planning-ready list intentionally surfaces childless container beads —
+  that is its purpose; Rule B's prohibition applies only to brainstorm and
+  implementation routing.
+- **Rule C — No readiness labels (convention).** Container beads must not
+  carry `implementation-ready`, `implementation-readied-session-*`,
+  `brainstormed`, or `human`. Convention only; collect.py's structural
+  filter prevents surfacing even when labels exist. `brainstorm-bead`
+  finalize's Step 0 container gate prevents future stamping; migration
+  strips existing violators.
+
+### Filter Matrix
+
+| Type | Non-closed children | Has `implementation-ready` | Has `human` | Routing |
+|------|---------------------|---------------------------|-------------|---------|
+| `milestone` | 0 | no | no | **planning-ready** |
+| `milestone` | 0 | yes/any | any | planning-ready (Rule C noise) |
+| `milestone` | ≥1 | any | any | hidden |
+| `epic` | 0 | no | no | **planning-ready** |
+| `epic` | 0 | yes/any | any | planning-ready (Rule C noise) |
+| `epic` | ≥1 | any | any | hidden |
+| `feature` | 0 | no | no | **planning-ready** |
+| `feature` | 0 | yes | no | **impl-ready** (leaf impl bead) |
+| `feature` | ≥1 | any | any | hidden (active container) |
+| `decision` | any | any | any | nowhere |
+| any type | any | any | yes | **human-attention only** (excluded from all other lists) |
+| `task`/`bug`/`chore`/`story`/`spike` | any | no | no | **brainstorm-ready** |
+| `task`/`bug`/`chore`/`story`/`spike` | any | yes | no | **impl-ready** |
+
+The `human`-labeled row takes priority over all other rows.
+
 ## Parent-chain invariants
 
 **I1. Claim walk — when work starts on a child, walk UP.**
 
-Before any work (including brainstorming), mark the bead AND every ancestor epic `in_progress`:
+Before any work (including brainstorming), mark the bead AND every ancestor bead `in_progress`:
 
 ```bash
 bd update <id> --status in_progress
 PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
 while [ -n "$PARENT" ]; do
+  # walk every ancestor bead, type-agnostic
   bd update "$PARENT" --status in_progress
   PARENT=$(bd show "$PARENT" --json | jq -r '.[0].parent // empty')
 done
@@ -51,10 +113,13 @@ done
 
 **I2. Close walk — when work completes, walk UP and close empty ancestors.**
 
+When the bead closes, walk every ancestor bead and close any whose children are all closed:
+
 ```bash
 bd close <id> --reason "<summary>"
 PARENT=$(bd show <id> --json | jq -r '.[0].parent // empty')
 while [ -n "$PARENT" ]; do
+  # walk every ancestor bead, type-agnostic
   NON_CLOSED=$(bd list --parent="$PARENT" --json | jq '[.[] | select(.status != "closed")] | length')
   [ "$NON_CLOSED" = "0" ] || break
   bd close "$PARENT" --reason "All children closed"

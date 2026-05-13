@@ -11,6 +11,7 @@
 | `human` | `bd label add <id> human` | Visibility tag for `bd human list`. NOT a gate on `bd ready` — only blocking deps gate readiness |
 | `ralf:required` | brainstorm-bead finalize or manual | Formula dispatch signal for ralf-implement / ralf-review |
 | `ralf:cycles=N` | brainstorm-bead finalize or manual | Max-cycle override; remove existing `ralf:cycles=` label before adding replacement |
+| `epic-decomposed` | brainstorm-bead finalize (container path) | Audit-trail only; not a filter input. Container bead brainstormed for decomposition; no impl bead produced. Query historical decompositions: `bd list --label epic-decomposed --status closed`. |
 
 ```bash
 bd label add <id> <label>

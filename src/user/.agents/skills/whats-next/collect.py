@@ -7,7 +7,7 @@ once regardless of how many children share it), and emits JSON for the agent
 to render.
 
 Usage:
-    python3 collect.py [--limit N]   # N=10 default; 0=no limit
+    python3 collect.py [--limit N] [--mode MODE]
 
 Exit codes:
     0 — success (JSON on stdout)
@@ -47,10 +47,6 @@ def detect_prefix(beads):
     """
     Infer the common project prefix (e.g. 'agents-config') from bead IDs.
     Returns the prefix string or None if none is detectable.
-
-    Strategy: find the longest common string prefix across all IDs, then
-    trim it back to the last '-' boundary. Requires at least 2 beads and
-    a prefix of at least 2 chars.
     """
     ids = [b.get("id", "") for b in beads if b.get("id")]
     if len(ids) < 2:
@@ -79,19 +75,9 @@ def resolve_all_ancestry(display_ids, known):
     """
     Walk parent chains for every bead in display_ids.
 
-    Optimised: collects all unique parent IDs up-front, fetches each unknown
-    parent via bd show exactly once (regardless of how many children share it),
-    then builds the full chain map. No redundant CLI calls.
-
-    Args:
-        display_ids: list of bead IDs whose ancestry we need.
-        known: dict of id→bead (pre-populated from bd ready / bd list output).
-               Modified in-place as parents are fetched.
-
     Returns:
         dict of bead_id → list of ancestor IDs (root first, parent last).
     """
-    # Phase 1: iteratively discover and fetch all unknown parents.
     frontier = set()
     for bid in display_ids:
         parent = known.get(bid, {}).get("parent", "")
@@ -114,7 +100,6 @@ def resolve_all_ancestry(display_ids, known):
                 next_frontier.add(grandparent)
         frontier = next_frontier
 
-    # Phase 2: build root-first ancestry chain for each display bead.
     ancestry_map = {}
     for bid in display_ids:
         chain = []
@@ -131,13 +116,44 @@ def resolve_all_ancestry(display_ids, known):
 
 
 # ---------------------------------------------------------------------------
+# Container classification
+# ---------------------------------------------------------------------------
+
+CONTAINER_ALWAYS = {"milestone", "epic"}
+CONTAINER_DESIGN = {"feature"}
+# Container-design types are EXCLUDED from brainstorm-ready regardless of
+# child count. Diverges intentionally from is_container (which uses
+# CONTAINER_DESIGN + active-child probe) — see spec §"is_container vs
+# CONTAINER_DESIGN_TYPES".
+CONTAINER_DESIGN_TYPES = {"milestone", "epic", "feature", "decision"}
+
+# Module-level dict; populated in main() before any is_container() call.
+active_child_count = {}
+
+
+def is_container(bead_id, bead_type):
+    """True when bead should be hidden from brainstorm/impl lists.
+
+    milestone / epic — always containers, regardless of children.
+    feature         — container only when it has ≥1 non-closed children.
+    """
+    if bead_type in CONTAINER_ALWAYS:
+        return True
+    if bead_type in CONTAINER_DESIGN:
+        return active_child_count.get(bead_id, 0) > 0
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Filters
 # ---------------------------------------------------------------------------
 
 def is_brainstorm_candidate(bead):
     labels = bead.get("labels", [])
+    btype = bead.get("issue_type", "")
     return (
-        "implementation-ready" not in labels
+        btype not in CONTAINER_DESIGN_TYPES  # never brainstorm-ready
+        and "implementation-ready" not in labels
         and "merge-gate" not in labels
         and "human" not in labels
         and not re.search(r"-mol-", bead.get("id", ""))
@@ -145,11 +161,43 @@ def is_brainstorm_candidate(bead):
 
 
 def is_impl_candidate(bead):
-    return "implementation-ready" in bead.get("labels", [])
+    labels = bead.get("labels", [])
+    btype = bead.get("issue_type", "")
+    return (
+        "implementation-ready" in labels
+        and "human" not in labels
+        # Containers can never be impl-ready per Rule B (structural filter).
+        and not is_container(bead.get("id", ""), btype)
+    )
 
 
 def bead_sort_key(bead):
     return (bead.get("priority", 99), bead.get("created_at", ""))
+
+
+# ---------------------------------------------------------------------------
+# Typed ancestor extraction
+# ---------------------------------------------------------------------------
+
+def extract_typed_ancestors(bead_id, ancestry_map, known, shorten):
+    """Return (milestone_col, feature_col, parent_epic_col) for one bead.
+
+    chain[-1] = immediate parent; reverse to traverse parent-first so the
+    NEAREST typed ancestor wins.
+    """
+    chain = ancestry_map.get(bead_id, [])
+    milestone_col = next(
+        (shorten(a) for a in reversed(chain)
+         if known.get(a, {}).get("issue_type") == "milestone"),
+        "",
+    )
+    feature_col = next(
+        (shorten(a) for a in reversed(chain)
+         if known.get(a, {}).get("issue_type") == "feature"),
+        "",
+    )
+    parent_epic_col = shorten(chain[-1]) if chain else ""
+    return milestone_col, feature_col, parent_epic_col
 
 
 # ---------------------------------------------------------------------------
@@ -164,20 +212,41 @@ def main():
         "--limit", type=int, default=10, metavar="N",
         help="Max beads per section (0 = no limit, default 10)",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["default", "brainstorm", "implementation", "planning", "human"],
+        default="default",
+        help="Which section(s) to emit (default: human + planning_ready + brainstorm)",
+    )
     args = parser.parse_args()
     limit = args.limit
+    mode = args.mode
 
-    # Fetch full source sets (needed for memoized parent lookups).
+    # Fetch full source sets.
     human_raw = bd_json("list", "--label", "human", "--json")
     ready_raw = bd_json("ready", "--json")
+    all_active = bd_json("list", "--status", "open,in_progress", "--json")
 
-    if not human_raw and not ready_raw:
-        sys.exit(1)
+    # Build the active-child-count index in one O(N) pass.
+    global active_child_count
+    active_child_count = {}
+    for b in all_active:
+        parent = b.get("parent", "")
+        if parent:
+            active_child_count[parent] = active_child_count.get(parent, 0) + 1
+
+    # Planning-ready: three separate --type queries (comma-separated --type
+    # is not supported by the CLI). --ready gates on dep-unblocked.
+    planning_raw = (
+        bd_json("list", "--type", "milestone", "--ready", "--json")
+        + bd_json("list", "--type", "epic", "--ready", "--json")
+        + bd_json("list", "--type", "feature", "--ready", "--json")
+    )
 
     def apply_limit(lst):
         return lst[:limit] if limit > 0 else lst
 
-    # Filter and sort all three sections, compute pre-limit totals.
+    # Filter and sort sections.
     human_sorted = sorted(
         [b for b in human_raw if b.get("status") != "closed"],
         key=bead_sort_key,
@@ -191,22 +260,49 @@ def main():
         key=bead_sort_key,
     )
 
+    # Planning-ready: childless container beads with no impl-ready / human.
+    planning_sorted = sorted(
+        [
+            b for b in planning_raw
+            if active_child_count.get(b.get("id", ""), 0) == 0
+            and "implementation-ready" not in b.get("labels", [])
+            and "human" not in b.get("labels", [])
+        ],
+        key=bead_sort_key,
+    )
+
+    # De-dupe planning_sorted by id (three queries may overlap if anything
+    # ever satisfies more than one --type filter, defensive).
+    seen_ids = set()
+    planning_deduped = []
+    for b in planning_sorted:
+        bid = b.get("id")
+        if bid and bid not in seen_ids:
+            seen_ids.add(bid)
+            planning_deduped.append(b)
+    planning_sorted = planning_deduped
+
     totals = {
-        "human":          len(human_sorted),
-        "brainstorm":     len(brainstorm_sorted),
+        "human": len(human_sorted),
+        "planning_ready": len(planning_sorted),
+        "brainstorm": len(brainstorm_sorted),
         "implementation": len(impl_sorted),
     }
 
-    # Apply limit after sorting (ancestry resolved only for displayed beads).
-    human_beads      = apply_limit(human_sorted)
+    human_beads = apply_limit(human_sorted)
     brainstorm_beads = apply_limit(brainstorm_sorted)
-    impl_beads       = apply_limit(impl_sorted)
+    impl_beads = apply_limit(impl_sorted)
+    planning_beads = apply_limit(planning_sorted)
 
-    # Build known map from full raw sets for efficient parent lookups.
-    all_fetched = human_raw + ready_raw
-    known = {b["id"]: b for b in all_fetched if b.get("id")}
+    # Build `known` map from every fetched bead — supports typed-ancestor
+    # resolution (we need each ancestor's issue_type to classify it).
+    all_fetched = human_raw + ready_raw + all_active + planning_raw
+    known = {}
+    for b in all_fetched:
+        bid = b.get("id")
+        if bid:
+            known[bid] = b
 
-    # Detect project prefix.
     prefix = detect_prefix(all_fetched)
 
     def shorten(bid):
@@ -214,39 +310,60 @@ def main():
             return bid[len(prefix) + 1:]
         return bid
 
-    # Resolve ancestry only for the beads we'll display.
     display_ids = (
         [b["id"] for b in human_beads]
         + [b["id"] for b in brainstorm_beads]
         + [b["id"] for b in impl_beads]
+        + [b["id"] for b in planning_beads]
     )
     ancestry_map = resolve_all_ancestry(display_ids, known)
 
     def enrich(beads):
         result = []
         for b in beads:
-            anc = ancestry_map.get(b["id"], [])
-            feature    = shorten(anc[0]) if anc else ""
-            epic_chain = " → ".join(shorten(a) for a in anc[1:]) if len(anc) > 1 else ""
+            milestone_col, feature_col, parent_epic_col = extract_typed_ancestors(
+                b["id"], ancestry_map, known, shorten,
+            )
             result.append({
-                "id":         b["id"],
-                "short_id":   shorten(b["id"]),
-                "priority":   b.get("priority"),
-                "title":      b.get("title", ""),
-                "labels":     b.get("labels", []),
-                "feature":    feature,
-                "epic_chain": epic_chain,
+                "id": b["id"],
+                "short_id": shorten(b["id"]),
+                "priority": b.get("priority"),
+                "title": b.get("title", ""),
+                "labels": b.get("labels", []),
+                "milestone_col": milestone_col,
+                "feature_col": feature_col,
+                "parent_epic_col": parent_epic_col,
+                "type": b.get("issue_type", ""),
             })
         return result
 
+    # Bail if there's nothing in any source AT ALL — preserves prior
+    # "bd unavailable" exit-1 behavior. Don't bail just because one mode has
+    # no data; argparse-rejection probes (test T3) tolerate exit 1.
+    if not human_raw and not ready_raw and not all_active and not planning_raw:
+        sys.exit(1)
+
     output = {
+        "mode": mode,
         "project_prefix": prefix,
-        "limit":          limit,
-        "totals":         totals,
-        "human":          enrich(human_beads),
-        "brainstorm":     enrich(brainstorm_beads),
-        "implementation": enrich(impl_beads),
+        "limit": limit,
+        "totals": totals,
     }
+
+    # Per spec §"--mode contract": absent sections are ABSENT from JSON,
+    # not empty arrays.
+    if mode == "default":
+        output["human"] = enrich(human_beads)
+        output["planning_ready"] = enrich(planning_beads)
+        output["brainstorm"] = enrich(brainstorm_beads)
+    elif mode == "brainstorm":
+        output["brainstorm"] = enrich(brainstorm_beads)
+    elif mode == "implementation":
+        output["implementation"] = enrich(impl_beads)
+    elif mode == "planning":
+        output["planning_ready"] = enrich(planning_beads)
+    elif mode == "human":
+        output["human"] = enrich(human_beads)
 
     print(json.dumps(output, indent=2))
 

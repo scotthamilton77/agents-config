@@ -232,6 +232,101 @@ At the top of this step's script execution, set:
 
   TITLE_SLUG="{{title-slug}}"
 
+──────────────────────────────────────────────────────────────────────────
+STEP 0 — Container gate (runs BEFORE Step 1 idempotency probe)
+──────────────────────────────────────────────────────────────────────────
+
+Container beads (milestone / epic / feature-with-children) must NOT produce
+an implementation bead Y. Per the Container Beads section in beads.md
+(Rules B and C), containers are excluded from impl-ready and brainstorm-
+ready lists, and brainstorm-bead MUST NOT stamp `implementation-ready` or
+`brainstormed` on a container. Decomposition produces leaf children
+directly via `bd create --parent`; this finalize path then exits cleanly.
+
+  # ── STEP 0: Container gate ───────────────────────────────────────────
+  X_TYPE=$(bd show "{{bead-id}}" --json | jq -r '.[0].issue_type // "task"')
+
+  CONTAINER=0
+  case "$X_TYPE" in
+    milestone|epic) CONTAINER=1 ;;
+    feature)
+      # Note: 'blocked' is not a real stored status; dep-blocked children
+      # have status open or in_progress. open,in_progress covers all
+      # non-closed children.
+      CHILD_COUNT=$(bd list --parent "{{bead-id}}" --status open,in_progress --json | jq 'length')
+      [ "$CHILD_COUNT" -gt 0 ] && CONTAINER=1 || CONTAINER=0 ;;
+  esac
+
+  if [ "$CONTAINER" = "1" ]; then
+    # Detect whether a prior run produced a Y impl bead before X became a
+    # container.
+    PRODUCED_COUNT=$(bd label list "{{bead-id}}" --json \\
+      | jq '[.[] | select(startswith("produced-bead-"))] | length')
+
+    if [ "$PRODUCED_COUNT" -gt 1 ]; then
+      # Multiple produced-bead-* labels: route to ambiguous-Y HEP.
+      X_PRIORITY=$(bd show "{{bead-id}}" --json | jq -r '.[0].priority // "2"')
+      ESC_ID=$(bd create --type task --priority "$X_PRIORITY" \\
+        --title "Manual triage: multiple produced-bead labels on {{bead-id}} (container)" \\
+        --description "finalize halted: $PRODUCED_COUNT produced-bead-* labels on {{bead-id}} which is now a container (type=$X_TYPE). Remove all but the correct label, then re-run finalize." \\
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+      if [ -z "$ESC_ID" ] || [ "$ESC_ID" = "null" ]; then
+        echo "HEP: failed to extract escalation bead id" >&2; exit 1
+      fi
+      bd label add "$ESC_ID" human
+      bd update "$ESC_ID" --append-notes \\
+        "Source: {{bead-id}}
+Step-bead: N/A (pre-pour container gate)
+Molecule: <this-mol-id>
+Worktree: N/A
+Scenario hint: scope-expanded (multiple produced-bead labels on container)"
+      bd dep add "{{bead-id}}" "$ESC_ID" --type blocked-by
+      bd update "{{bead-id}}" --status open
+      echo "PAUSED: ambiguous Y on container {{bead-id}}; escalation bead $ESC_ID created."
+      bd mol burn <this-mol-id> --force
+      exit 0
+    fi
+
+    if [ "$PRODUCED_COUNT" -gt 0 ]; then
+      # Single reclassification case: Y exists but X is now a container.
+      X_PRIORITY=$(bd show "{{bead-id}}" --json | jq -r '.[0].priority // "2"')
+      ESC_ID=$(bd create --type task --priority "$X_PRIORITY" \\
+        --title "Manual triage: container reclassification of {{bead-id}} after Y was produced" \\
+        --description "finalize halted: {{bead-id}} produced a Y impl bead in a prior run but is now a container (type=$X_TYPE). Determine whether to close the orphan Y or proceed. Re-run finalize after resolution." \\
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+      if [ -z "$ESC_ID" ] || [ "$ESC_ID" = "null" ]; then
+        echo "HEP: failed to extract escalation bead id" >&2; exit 1
+      fi
+      bd label add "$ESC_ID" human
+      STEP_BEAD_ID=$(bd mol current <this-mol-id> --json 2>/dev/null \\
+        | jq -r 'if type == "array" then .[0].id else .id end // "unknown"')
+      bd update "$ESC_ID" --append-notes \\
+        "Source: {{bead-id}}
+Step-bead: $STEP_BEAD_ID
+Molecule: <this-mol-id>
+Worktree: N/A
+Scenario hint: scope-expanded (container reclassification after Y produced)"
+      bd dep add "{{bead-id}}" "$ESC_ID" --type blocked-by
+      bd update "{{bead-id}}" --status open
+      echo "PAUSED: container reclassification on {{bead-id}}; escalation bead $ESC_ID created."
+      bd mol burn <this-mol-id> --force
+      exit 0
+    fi
+
+    # Clean container case: decomposition outcome — stamp audit-trail label,
+    # close X via I2 close-walk, burn the wisp. Per Rule C, do NOT stamp
+    # `brainstormed` or `implementation-ready`. The `epic-decomposed` label
+    # is audit-only.
+    echo "Container bead (type=$X_TYPE): decomposition outcome; implementation-ready NOT stamped."
+    bd label add "{{bead-id}}" epic-decomposed
+    ~/.beads/scripts/bd-close-walk.sh \\
+      --bead-id "{{bead-id}}" \\
+      --reason "brainstormed (decomposition); no impl bead produced"
+    bd mol burn <this-mol-id> --force
+    exit 0
+  fi
+  # Not a container: fall through to Step 1 (idempotency probe → ...).
+
 Note on naming scope: $TITLE_SLUG is used ONLY for children created UNDER Y
 (post-Y), namely the `[merge-gate] $TITLE_SLUG` child in step 5b and the
 `[verify] $TITLE_SLUG - $ac_line` children in step 5b. The pre-Y
