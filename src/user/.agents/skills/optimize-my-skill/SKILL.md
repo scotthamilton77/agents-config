@@ -151,14 +151,18 @@ For each skill that needs work, present a structured proposal. Do not silently r
 
 ## Phase 4: Suggest Testing
 
-For each modified skill, suggest tests the user can run to confirm the changes work:
+For each modified skill, suggest tests the user can run to confirm the changes work. Prefer the strongest tool available in the environment:
 
 **Triggering tests** — ask Claude "When would you use the [skill name] skill?" and verify it quotes the right triggers:
 
 - Should trigger: [2-3 natural phrases that should activate this skill]
 - Should NOT trigger: [2-3 unrelated queries it should ignore]
 
+If the `skill-creator` skill is available, its description-optimization loop (`scripts/run_loop.py` with a should-trigger / should-not-trigger eval set) gives a quantitative trigger-accuracy score instead of a one-shot vibe check — recommend it when the skill's discoverability is the failure mode.
+
 **Functional check** — after applying changes, verify the skill still produces correct behavior on a representative task. If the skill includes deterministic scripts, run them against a known input/output pair.
+
+**Discipline check (for rule-enforcing skills)** — if the skill's job is to make agents comply under pressure (TDD, verification gates, refusal patterns), one happy-path run proves nothing. If `superpowers:writing-skills` is available, follow its RED-GREEN-REFACTOR methodology: run a pressure scenario with a subagent WITHOUT the skill to capture rationalizations, then re-run WITH the skill and confirm compliance. Loopholes found in the second run become explicit counters in the skill body.
 
 ## Phase 5: Confirm and Apply
 
