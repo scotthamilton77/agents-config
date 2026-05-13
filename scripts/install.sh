@@ -518,33 +518,64 @@ stage_item() {
             cp "$src" "$dest"
         fi
     else
-        # Carrier-merge: when both src and dest are directories with NO
-        # overlapping filenames, merge the file lists instead of fatal-erroring.
-        # This supports the "carrier dir" pattern where src/user/.agents/skills/<name>/
-        # holds only contract tests (e.g. _test.sh) and the actual skill content
-        # lives under src/plugins/<plugin>/.agents/skills/<name>/.
+        # Carrier-merge: when both src and dest are skill/agent directories
+        # with NO overlapping filenames, merge the file lists instead of
+        # fatal-erroring. This supports the "carrier dir" pattern where
+        # src/user/.agents/skills/<name>/ holds only contract tests
+        # (e.g. _test.sh) and the actual skill content lives under
+        # src/plugins/<plugin>/.agents/skills/<name>/.
+        #
+        # Scope is deliberately narrow (to avoid silently merging unrelated
+        # plugin-plugin colliding directories):
+        #   - The dir must be inside skills/ or agents/.
+        #   - One side must be under src/user/.agents/<ns>/<name>/ (the
+        #     shared base / carrier).
+        #   - The other side must be under src/plugins/<plugin>/.agents/<ns>/<name>/
+        #     (a plugin).
+        # Plugin-plugin collisions and non-skill/agent dir collisions remain
+        # fatal via resolve_collision.
         if [[ "$file_type" == "dir" && -d "$src" && -d "$dest" ]]; then
-            local sfile sname collision=0
-            for sfile in "$src"/*; do
-                [[ -e "$sfile" ]] || continue
-                sname="$(basename "$sfile")"
-                if [[ -e "$dest/$sname" ]]; then
-                    collision=1
-                    break
+            local src_parent_name dest_parent_name
+            src_parent_name="$(basename "$(dirname "$src")")"
+            dest_parent_name="$(basename "$(dirname "$dest")")"
+
+            local carrier_pattern_ok=0
+            if [[ ( "$src_parent_name" == "skills" || "$src_parent_name" == "agents" ) \
+                  && "$src_parent_name" == "$dest_parent_name" ]]; then
+                # One side must be the shared carrier path; the other a plugin.
+                # The dest in staging is path-opaque (already-staged); we can
+                # only inspect the incoming src path. The shared carrier is
+                # the path that lives under src/user/.agents/. A plugin path
+                # lives under src/plugins/<plugin>/.agents/.
+                if [[ "$src" == *"/src/user/.agents/$src_parent_name/"* \
+                      || "$src" == *"/src/plugins/"*"/.agents/$src_parent_name/"* ]]; then
+                    carrier_pattern_ok=1
                 fi
-            done
-            if [[ "$collision" -eq 0 ]]; then
-                vinfo "carrier-merge: merging $(basename "$src") into existing $dest (disjoint file sets)"
+            fi
+
+            if [[ "$carrier_pattern_ok" -eq 1 ]]; then
+                local sfile sname collision=0
                 for sfile in "$src"/*; do
                     [[ -e "$sfile" ]] || continue
                     sname="$(basename "$sfile")"
-                    if [[ -d "$sfile" ]]; then
-                        cp -R "$sfile" "$dest/$sname"
-                    else
-                        cp "$sfile" "$dest/$sname"
+                    if [[ -e "$dest/$sname" ]]; then
+                        collision=1
+                        break
                     fi
                 done
-                return 0
+                if [[ "$collision" -eq 0 ]]; then
+                    vinfo "carrier-merge: merging $(basename "$src") into existing $dest (disjoint file sets, $src_parent_name/)"
+                    for sfile in "$src"/*; do
+                        [[ -e "$sfile" ]] || continue
+                        sname="$(basename "$sfile")"
+                        if [[ -d "$sfile" ]]; then
+                            cp -R "$sfile" "$dest/$sname"
+                        else
+                            cp "$sfile" "$dest/$sname"
+                        fi
+                    done
+                    return 0
+                fi
             fi
         fi
         resolve_collision "$dest" "$src" "$file_type"

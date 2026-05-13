@@ -58,12 +58,17 @@ levels:
 `--just-fix-it` is the autonomous mode for the audit. It applies edges
 unattended. The rules are deliberately narrow:
 
-- **ONLY `bd dep add`** is allowed as a mutating primitive. No other write.
+- **Only two writes are permitted**, both tied to applying a single edge:
+    1. `bd dep add <dependent> <blocker>` — adds the new dep edge. ONLY `bd dep add` mutates the dep graph.
+    2. `bd comments add <dependent-id> "dep-health-check (just-fix-it): ..."` —
+       the required audit comment on the dependent bead (see next section).
+
+  Every other mutating primitive is prohibited.
 - HIGH-confidence threshold required. MED and LOW findings are listed in
   the report but never auto-applied.
 - Cap of **at most 10 edges** per invocation. Excess HIGH-confidence findings are reported and deferred.
 - The mode MUST NOT run `bd dep remove`, `bd close`, or `bd label remove`.
-- The mode MUST NOT run any bead-content mutation commands (`bd update --notes`, `bd update --description`, `bd update --append-notes`, etc.). Only add-only dep edges are permitted.
+- The mode MUST NOT run any bead-content mutation commands (`bd update --notes`, `bd update --description`, `bd update --append-notes`, etc.). Only add-only dep edges plus their audit comments are permitted.
 
 Any finding that would require one of the prohibited primitives is
 **surfaced in the report** (with rationale) and left for interactive
@@ -133,6 +138,28 @@ These rules are non-negotiable for every LLM-inferred finding:
   unsupported by bead content, or "it feels related" arguments are not
   acceptable as a rationale. If you can't quote or cite bead content,
   drop the finding.
+
+## LLM-inferred finding deduplication
+
+The orchestration code MUST post-process the LLM's inferred findings and
+drop duplicates against two sources before rendering the LLM-inferred
+section:
+
+1. **Pass 1 (deterministic findings).** Skip any inferred finding whose
+   `(dependent_id, blocker_id, dep_type)` tuple already appears in the
+   Pass 1 deterministic findings emitted by `collect.py`. The deterministic
+   pass already covers provenance mismatches, semantic-type conflicts,
+   stale blockers, and cycles — re-emitting them as LLM inferences is
+   noise.
+2. **Existing dep edges in the current graph.** Skip any inferred finding
+   whose `(dependent_id, blocker_id)` pair already has an existing dep
+   edge in the current graph (regardless of dep type). The graph snapshot
+   in the collected JSON is the source of truth; if the edge exists
+   already, the proposal is redundant.
+
+This dedup pass runs in the SKILL.md orchestration layer — it is not the
+LLM prompt's job to perform the dedup itself. The orchestration filters
+the LLM's output before rendering.
 
 ## Scenarios
 

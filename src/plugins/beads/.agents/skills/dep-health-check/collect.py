@@ -203,51 +203,87 @@ def truncate_bead_content(bead, limit=PER_BEAD_TRUNCATE_LEN):
 # Deterministic findings
 # ---------------------------------------------------------------------------
 
+def _resolve_id(suffix, beads_by_id):
+    """Resolve a possibly-short bead id (e.g. '3up3') against the known
+    inventory. Returns the full id or None."""
+    if not suffix:
+        return None
+    if suffix in beads_by_id:
+        return suffix
+    for candidate in beads_by_id:
+        if candidate.endswith("-" + suffix):
+            return candidate
+    return None
+
+
 def find_provenance_mismatches(beads_by_id):
-    """A `produced-bead-Y` label on bead X expects a dep edge:
-    `bd dep add Y X --type discovered-from`. Missing edge → finding."""
+    """Spec R7 — provenance labels on either side must have a matching
+    `discovered-from` dep edge:
+
+    - X-side: bead X carries `produced-bead-Y` → expect edge
+      `bd dep add Y X --type discovered-from`.
+    - Y-side: bead Y carries `produced-from-X` → expect the same edge.
+
+    Both passes are de-duplicated by (dependent_id, blocker_id) so a bead
+    pair that carries both labels is reported once."""
     out = []
+    seen = set()
+
+    def _emit(dependent, blocker, source_label, source_side):
+        key = (dependent, blocker)
+        if key in seen:
+            return
+        seen.add(key)
+        blocker_bead = beads_by_id.get(blocker)
+        # Expected edge: dependent depends-on blocker with type discovered-from.
+        dep_bead = beads_by_id.get(dependent)
+        has_edge = False
+        for dep in (dep_bead or {}).get("dependencies", []) or []:
+            if not isinstance(dep, dict):
+                continue
+            if dep.get("id") == blocker and dep.get("dependency_type") == "discovered-from":
+                has_edge = True
+                break
+        if has_edge:
+            return
+        out.append({
+            "type": "provenance_mismatch",
+            "confidence": "HIGH",
+            "dependent": dependent,
+            "blocker": blocker,
+            "dep_type": "discovered-from",
+            "source_label": source_label,
+            "source_side": source_side,
+            "rationale": (
+                f"Provenance label '{source_label}' on {source_side}-side "
+                f"({blocker if source_side == 'X' else dependent}) implies "
+                f"edge {dependent} --discovered-from--> {blocker}, but no "
+                "such edge exists."
+            ),
+        })
+
+    # X-side pass: produced-bead-Y on bead X.
     for x_id, x in beads_by_id.items():
         for label in x.get("labels", []) or []:
-            if not isinstance(label, str):
+            if not isinstance(label, str) or not label.startswith("produced-bead-"):
                 continue
-            if not label.startswith("produced-bead-"):
-                continue
-            y_id_suffix = label[len("produced-bead-"):]
-            if not y_id_suffix:
-                continue
-            # Try exact match first, then suffix match against known ids.
-            y_id = None
-            if y_id_suffix in beads_by_id:
-                y_id = y_id_suffix
-            else:
-                for candidate in beads_by_id:
-                    if candidate.endswith("-" + y_id_suffix):
-                        y_id = candidate
-                        break
+            y_suffix = label[len("produced-bead-"):]
+            y_id = _resolve_id(y_suffix, beads_by_id)
             if not y_id:
                 continue
-            y = beads_by_id[y_id]
-            # Expected edge: Y depends-on X with type discovered-from.
-            has_edge = False
-            for dep in y.get("dependencies", []) or []:
-                if not isinstance(dep, dict):
-                    continue
-                if dep.get("id") == x_id and dep.get("dependency_type") == "discovered-from":
-                    has_edge = True
-                    break
-            if not has_edge:
-                out.append({
-                    "type": "provenance_mismatch",
-                    "confidence": "HIGH",
-                    "dependent": y_id,
-                    "blocker": x_id,
-                    "dep_type": "discovered-from",
-                    "rationale": (
-                        f"Bead {x_id} carries label '{label}' but {y_id} "
-                        f"has no incoming discovered-from edge from {x_id}."
-                    ),
-                })
+            _emit(dependent=y_id, blocker=x_id, source_label=label, source_side="X")
+
+    # Y-side pass: produced-from-X on bead Y.
+    for y_id, y in beads_by_id.items():
+        for label in y.get("labels", []) or []:
+            if not isinstance(label, str) or not label.startswith("produced-from-"):
+                continue
+            x_suffix = label[len("produced-from-"):]
+            x_id = _resolve_id(x_suffix, beads_by_id)
+            if not x_id:
+                continue
+            _emit(dependent=y_id, blocker=x_id, source_label=label, source_side="Y")
+
     return out
 
 
@@ -342,7 +378,40 @@ def find_stale_blockers(beads_by_id, closed_ids):
     return out
 
 
-def find_cycles():
+def _cycle_touches(cycle, selected_ids):
+    """Return True iff any id in `cycle` is in `selected_ids`. Cycles can be
+    lists of ids, lists of dicts with `id`/`bead_id` keys, or dicts containing
+    a `nodes`/`ids` list — handle all observed shapes defensively."""
+    if not selected_ids:
+        return True
+    candidates = []
+    if isinstance(cycle, list):
+        for item in cycle:
+            if isinstance(item, str):
+                candidates.append(item)
+            elif isinstance(item, dict):
+                for k in ("id", "bead_id", "node"):
+                    v = item.get(k)
+                    if isinstance(v, str):
+                        candidates.append(v)
+    elif isinstance(cycle, dict):
+        for k in ("nodes", "ids", "cycle"):
+            v = cycle.get(k)
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        candidates.append(item)
+                    elif isinstance(item, dict):
+                        cid = item.get("id") or item.get("bead_id")
+                        if isinstance(cid, str):
+                            candidates.append(cid)
+    return any(c in selected_ids for c in candidates)
+
+
+def find_cycles(selected_ids=None):
+    """Run `bd dep cycles --json`. When `selected_ids` is provided, only
+    return cycles that touch at least one id in the selection (focused mode).
+    `selected_ids=None` means return all cycles (all-mode)."""
     rc, out, _err = bd_text("dep", "cycles", "--json")
     if rc != 0 or not out.strip():
         return []
@@ -361,19 +430,22 @@ def find_cycles():
         return []
     if not data:
         return []
-    if isinstance(data, list):
-        return [{
-            "type": "cycle",
-            "confidence": "HIGH",
-            "cycle": c,
-            "rationale": "bd dep cycles reported a cycle in the dep graph.",
-        } for c in data]
+    if not isinstance(data, list):
+        # Non-list scalar (dict, string, etc.) — wrap into a single cycle item.
+        if isinstance(data, dict) and (selected_ids is None or _cycle_touches(data, selected_ids)):
+            return [{
+                "type": "cycle",
+                "confidence": "HIGH",
+                "cycle": data,
+                "rationale": "bd dep cycles reported a cycle in the dep graph.",
+            }]
+        return []
     return [{
         "type": "cycle",
         "confidence": "HIGH",
-        "cycle": data,
+        "cycle": c,
         "rationale": "bd dep cycles reported a cycle in the dep graph.",
-    }]
+    } for c in data if selected_ids is None or _cycle_touches(c, selected_ids)]
 
 
 # ---------------------------------------------------------------------------
@@ -382,8 +454,10 @@ def find_cycles():
 
 def focused_neighborhood(target_id, beads_by_id):
     """Target + 1-hop neighborhood (NEIGHBORHOOD_TYPES) + full parent chain +
-    full child chain. Capped at FOCUSED_BEAD_CAP."""
+    full child chain. Capped at FOCUSED_BEAD_CAP. Parent chain is guaranteed
+    to survive the cap — neighborhood entries are dropped first."""
     selected = {target_id}
+    parent_chain_ids = {target_id}
     target = beads_by_id.get(target_id)
     if not target:
         return list(selected), False
@@ -400,12 +474,14 @@ def focused_neighborhood(target_id, beads_by_id):
             if dep_id:
                 selected.add(dep_id)
 
-    # Parent chain (walk up).
+    # Parent chain (walk up). Tracked separately so the cap can guarantee
+    # the chain is preserved.
     cur = target.get("parent") or ""
     seen = {target_id}
     while cur and cur not in seen:
         seen.add(cur)
         selected.add(cur)
+        parent_chain_ids.add(cur)
         nxt_bead = beads_by_id.get(cur)
         if not nxt_bead:
             # Fetch parent on-demand so chain is complete even for closed parents.
@@ -427,8 +503,10 @@ def focused_neighborhood(target_id, beads_by_id):
 
     capped = False
     if len(selected) > FOCUSED_BEAD_CAP:
-        # Keep target + parent chain + first (FOCUSED_BEAD_CAP - chain) others.
-        ordered = [target_id] + [s for s in selected if s != target_id]
+        # Preserve parent chain first, then fill the remaining cap with the
+        # rest of the neighborhood. Set iteration order is undefined; the
+        # ordered list below guarantees parent chain survives the truncation.
+        ordered = list(parent_chain_ids) + [s for s in selected if s not in parent_chain_ids]
         selected = set(ordered[:FOCUSED_BEAD_CAP])
         capped = True
 
@@ -528,10 +606,21 @@ def main():
 
     # Focused-mode neighborhood selection.
     capped = False
+    cycle_filter_ids = None
     if args.mode == "focused":
         selected_ids, capped = focused_neighborhood(args.target, detailed_by_id)
+        # Some selected neighbors may not be in detailed_by_id yet — e.g. a
+        # closed blocker that didn't appear in the open/in_progress bulk
+        # inventory. Fetch them on-demand so the focused-mode result is
+        # complete.
+        for sid in selected_ids:
+            if sid not in detailed_by_id:
+                fetched = fetch_bead_detail(sid)
+                if fetched is not None:
+                    detailed_by_id[sid] = fetched
         detailed_by_id = {bid: detailed_by_id[bid]
                           for bid in selected_ids if bid in detailed_by_id}
+        cycle_filter_ids = set(selected_ids)
 
     # Token guard: cap total content; truncate per-bead when over.
     total = sum(content_chars(b) for b in detailed_by_id.values())
@@ -550,7 +639,7 @@ def main():
     findings.extend(find_provenance_mismatches(detailed_by_id))
     findings.extend(find_semantic_type_conflicts(detailed_by_id))
     findings.extend(find_stale_blockers(detailed_by_id, closed_ids))
-    findings.extend(find_cycles())
+    findings.extend(find_cycles(selected_ids=cycle_filter_ids))
 
     output = {
         "project_prefix": prefix,
