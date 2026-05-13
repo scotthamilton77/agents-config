@@ -22,7 +22,7 @@ If the purpose is unclear or missing, use `AskUserQuestion` to clarify before pr
 
 ## Phase 2: Assess Against Quality Criteria
 
-Rate the file against the AGENTS_PRIMER quality issues. Produce this table verbatim — the row titles are load-bearing and must match the primer exactly:
+Rate the file against the AGENTS_PRIMER quality issues. See `references/AGENTS_PRIMER.md` for the complete quality axes — the table below uses the verbatim row titles from that document. Produce this table verbatim — the row titles are load-bearing and must match the primer exactly:
 
 | Area | Present? | Quality (1-5) | Notes |
 |------|----------|---------------|-------|
@@ -82,55 +82,4 @@ Then generate the optimized agent file. Show a diff against the original so the 
 
 ## Reference: What Makes Agent Files Work
 
-### Effective Structure
-
-```markdown
----
-name: agent-name
-description: One clear sentence about what this agent does, including when to invoke
-model: sonnet
-color: blue
-tools: Read, Grep, Glob, Bash
----
-
-You are an expert [specific role] for this project.
-
-## Your Role
-- What you specialize in
-- What you understand
-- What you produce
-
-## Project Knowledge
-- **Tech Stack:** [specific versions]
-- **File Structure:**
-  - `src/` – [what's here]
-  - `tests/` – [what's here]
-
-## Commands You Can Use
-- **Build:** `npm run build` (what it does)
-- **Test:** `npm test` (what it validates)
-- **Lint:** `npm run lint --fix` (what it fixes)
-
-## Standards
-[Code examples showing good vs bad patterns — NOT descriptions]
-
-## Boundaries
-- **Always:** [things to always do]
-- **Ask first:** [things requiring confirmation]
-- **Never:** [hard prohibitions — most important section]
-```
-
-### Key Principles
-
-1. **Commands early**: Put executable commands near the top. Include flags and options.
-2. **Examples > explanations**: One real code snippet beats three paragraphs describing style.
-3. **Explicit boundaries**: "Never commit secrets" was the most common helpful constraint.
-4. **Specific stack**: Versions matter. "React 18" not "React."
-5. **Three-tier boundaries**: Always / Ask-first / Never prevents most mistakes.
-
-### Common Agent Types That Work Well
-
-- **@docs-agent**: Reads code, writes docs. Commands: `npm run docs:build`, `markdownlint`
-- **@test-agent**: Writes tests. Boundary: never remove failing tests
-- **@lint-agent**: Fixes style only. Boundary: never change logic
-- **@api-agent**: Creates endpoints. Boundary: ask before schema changes
+See `references/AGENTS_PRIMER.md` for the full quality rubric, effective structure templates, and key principles.

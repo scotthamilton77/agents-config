@@ -32,6 +32,8 @@ Rate each skill against the following areas. Produce a written assessment for ev
 
 ### Frontmatter
 
+Per SKILLS_PRIMER (see `references/SKILLS_PRIMER.md`):
+
 **Required fields:**
 
 | Criterion | Good | Bad |
@@ -72,7 +74,7 @@ Examples of ineffective descriptions:
 
 ### Folder Structure (Progressive Disclosure)
 
-Skills use a three-level progressive disclosure system to minimize token usage:
+Per SKILLS_PRIMER (see `references/SKILLS_PRIMER.md`): skills use a three-level progressive disclosure system to minimize token usage:
 
 | Level | What | Loaded When |
 |-------|------|-------------|
@@ -89,6 +91,8 @@ Assess:
 - [ ] **Templates in assets/**: Templates, fonts, icons used in output belong in `assets/`
 
 ### Body Content
+
+Per SKILLS_PRIMER (see `references/SKILLS_PRIMER.md`):
 
 | Criterion | Present? | Quality (1-5) | Notes |
 |-----------|----------|---------------|-------|
@@ -175,77 +179,4 @@ Apply approved changes. Show a diff for each modified file so the user can verif
 
 ## Reference: What Makes Skills Effective
 
-### File Structure
-
-```
-your-skill-name/
-├── SKILL.md              # Required — main skill file (must be exactly SKILL.md)
-├── scripts/              # Optional — executable code (Python, Bash, etc.)
-├── references/           # Optional — detailed docs, API guides, examples
-└── assets/               # Optional — templates, fonts, icons
-```
-
-The four-entry layout is intentional: `SKILL.md` is the only file always loaded when the skill triggers, while `scripts/`, `references/`, and `assets/` are pulled in on demand. Keeping heavy content out of `SKILL.md` is the load-bearing token discipline.
-
-### Frontmatter That Works
-
-```yaml
----
-name: skill-name
-description: What it does. Use when situation A, situation B, or situation C. Do NOT use for exclusion.
----
-```
-
-Optional fields when useful:
-
-```yaml
----
-name: skill-name
-description: What it does. Use when situation A, situation B, or situation C.
-license: MIT
-allowed-tools: "Bash(python:*) WebFetch"
-compatibility: Requires Python 3.10+
-metadata:
-  author: Your Name
-  version: 1.0.0
----
-```
-
-Required fields earn their keep on every invocation; optional fields earn their keep only when the skill genuinely needs them. Add them sparingly and validate every value.
-
-### Body Structure That Works
-
-```markdown
-# Skill Name
-
-## Core Principle
-One iron law. The thing this skill enforces above all.
-
-## When to Use
-Decision tree or clear criteria. Include "when NOT to use."
-
-## The Process
-Numbered steps with concrete actions. Not "consider" — "do."
-
-## Examples
-Good vs bad with real code. Show don't tell.
-
-## Red Flags / Common Rationalizations
-Table of excuses and why they're wrong.
-
-## Verification Checklist
-How to confirm the skill was applied correctly.
-```
-
-Each heading is load-bearing: the core principle anchors the skill, the decision tree prevents over-firing, the process replaces vague imperatives with executable steps, and the red-flags table inoculates against rationalization.
-
-### Key Principles
-
-1. **Descriptions are discovery hooks**: They tell Claude WHEN to invoke, not WHAT the skill does. Claude reads the body for the "what."
-2. **Progressive disclosure saves tokens**: Frontmatter is always loaded, body only when triggered, linked files only when needed. Keep SKILL.md under 500 lines.
-3. **Opinionated > generic**: "Never mock more than 2 dependencies" beats "use mocks judiciously."
-4. **Decision trees > paragraphs**: Ambiguity is where skills fail. Trees eliminate it.
-5. **Negative triggers prevent over-firing**: "Do NOT use for X" in descriptions is as important as "Use when Y."
-6. **Red flags prevent rationalization**: Without them, Claude skips the skill "just this once."
-7. **Code > language for validation**: For critical checks, bundle a script in `scripts/` rather than relying on language instructions. Code is deterministic; interpretation isn't.
-8. **Body content is the skill**: The frontmatter gets you discovered, the body gets you followed.
+See `references/SKILLS_PRIMER.md` for the full file structure, frontmatter schema, body structure template, and key principles.
