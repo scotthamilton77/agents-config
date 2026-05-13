@@ -16,17 +16,7 @@ Extract from `$ARGUMENTS`:
 
 ## Step 1 — Discovery
 
-Before deciding how to dispatch the three discovery tasks below, probe for the `dispatching-parallel-agents` skill. The skill matches if **any** of these paths exist:
-
-- `~/.claude/skills/dispatching-parallel-agents/SKILL.md`
-- `~/.claude/plugins/*/skills/dispatching-parallel-agents/SKILL.md`
-
-**Decision:**
-
-- **Probe matches** — invoke `dispatching-parallel-agents` and run Git Analyzer, File Inventory, and Directory Discovery simultaneously.
-- **Probe does not match** — run the three subagents sequentially in this order: (1) Git Analyzer, (2) File Inventory, (3) Directory Discovery.
-
-The three subagent definitions below are identical in either mode; only the dispatch shape changes.
+Run the three discovery tasks below (Git Analyzer, File Inventory, Directory Discovery) using parallel subagents to optimize time-to-result. Use whatever parallel-dispatch skill is available to you if it matches; otherwise dispatch the subagents directly — you know how to do this.
 
 ### Subagent 1: Git Analyzer
 
