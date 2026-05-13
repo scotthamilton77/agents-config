@@ -163,11 +163,16 @@ def is_brainstorm_candidate(bead):
 def is_impl_candidate(bead):
     labels = bead.get("labels", [])
     btype = bead.get("issue_type", "")
+    # milestone/epic are always containers; decision routes nowhere.
+    # `feature` is dual-nature: a childless feature carrying
+    # `implementation-ready` is the leaf impl bead produced by
+    # brainstorm-bead finalize and MUST surface in the implementation
+    # section. is_container() encodes that distinction.
+    if btype in CONTAINER_ALWAYS or btype == "decision":
+        return False
     return (
-        btype not in CONTAINER_DESIGN_TYPES  # decision + container-design types never impl-ready
-        and "implementation-ready" in labels
+        "implementation-ready" in labels
         and "human" not in labels
-        # Containers can never be impl-ready per Rule B (structural filter).
         and not is_container(bead.get("id", ""), btype)
     )
 

@@ -319,4 +319,97 @@ assert_mode_keys planning        "$expect_planning"   planning
 assert_mode_keys human           "$expect_human"      human
 pass "T6: --mode emits exact section-key set per spec §--mode contract (default | brainstorm | implementation | planning | human)"
 
+# -----------------------------------------------------------------------------
+# T8. is_impl_candidate handles `feature` leaf-impl beads (regression for
+# PR #72 comment 3234282015 / 3234282059).
+# brainstorm-bead finalize creates the implementation bead Y with
+# issue_type=feature + label `implementation-ready`. A childless feature
+# carrying that label IS a leaf impl bead and MUST appear under
+# `--mode implementation` AND MUST be excluded from `planning_ready`.
+# A previous over-broad guard (`btype not in CONTAINER_DESIGN_TYPES`)
+# silently dropped this bead from all sections. This test would have
+# failed against that regression.
+# -----------------------------------------------------------------------------
+TMP_T8=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8"' EXIT
+
+cat > "$TMP_T8/bd" <<'SHIM'
+#!/usr/bin/env bash
+case "$*" in
+  "list --label human --json")
+    echo '[]' ;;
+  "list --status open,in_progress --json")
+    # Childless feature with implementation-ready — the leaf impl bead.
+    # No other active beads share this id as parent → active_child_count is 0.
+    cat <<'JSON'
+[
+  {"id":"proj-leaffeat","issue_type":"feature","status":"open","priority":1,"title":"Leaf impl bead","labels":["implementation-ready"]}
+]
+JSON
+    ;;
+  "ready --json")
+    cat <<'JSON'
+[
+  {"id":"proj-leaffeat","issue_type":"feature","status":"open","priority":1,"title":"Leaf impl bead","labels":["implementation-ready"],"created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --json") echo '[]' ;;
+  "list --type epic --ready --json") echo '[]' ;;
+  "list --type feature --ready --json")
+    # `--ready` may return the childless feature; planning_ready filter
+    # must still drop it because of the implementation-ready label.
+    cat <<'JSON'
+[
+  {"id":"proj-leaffeat","issue_type":"feature","status":"open","priority":1,"title":"Leaf impl bead","labels":["implementation-ready"]}
+]
+JSON
+    ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T8/bd"
+
+# (a) --mode implementation: leaf feature MUST appear.
+OUT_T8_IMPL="$TMP_T8/impl.json"
+PATH="$TMP_T8:$PATH" python3 "$COLLECT_PY" --mode implementation \
+    >"$OUT_T8_IMPL" 2>"$TMP_T8/err.impl"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T8a: collect.py --mode implementation exited $ec (stderr: $(cat "$TMP_T8/err.impl"))"
+
+OUT_T8_IMPL="$OUT_T8_IMPL" python3 - <<'PY' \
+    || fail "T8a: childless feature with implementation-ready missing from implementation section"
+import json, os, sys
+out = json.load(open(os.environ["OUT_T8_IMPL"]))
+impl = out.get("implementation", [])
+ids = [b.get("id") for b in impl]
+assert "proj-leaffeat" in ids, \
+    f"leaf-impl feature must appear under implementation; got: {ids}"
+# Also verify the type is preserved end-to-end.
+match = next(b for b in impl if b.get("id") == "proj-leaffeat")
+assert match.get("type") == "feature", \
+    f"enriched type should be 'feature'; got {match.get('type')!r}"
+PY
+pass "T8a: childless feature with implementation-ready surfaces under --mode implementation"
+
+# (b) --mode planning: leaf feature MUST NOT appear in planning_ready.
+OUT_T8_PLAN="$TMP_T8/planning.json"
+PATH="$TMP_T8:$PATH" python3 "$COLLECT_PY" --mode planning \
+    >"$OUT_T8_PLAN" 2>"$TMP_T8/err.plan"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T8b: collect.py --mode planning exited $ec (stderr: $(cat "$TMP_T8/err.plan"))"
+
+OUT_T8_PLAN="$OUT_T8_PLAN" python3 - <<'PY' \
+    || fail "T8b: leaf-impl feature leaked into planning_ready (must be excluded by impl-ready label)"
+import json, os, sys
+out = json.load(open(os.environ["OUT_T8_PLAN"]))
+pr = out.get("planning_ready", [])
+ids = [b.get("id") for b in pr]
+assert "proj-leaffeat" not in ids, \
+    f"leaf-impl feature MUST be excluded from planning_ready; got: {ids}"
+PY
+pass "T8b: childless feature with implementation-ready is excluded from --mode planning"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
