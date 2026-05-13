@@ -493,13 +493,27 @@ def find_cycles(selected_ids=None):
 
 def focused_neighborhood(target_id, beads_by_id):
     """Target + 1-hop neighborhood (NEIGHBORHOOD_TYPES) + full parent chain +
-    full child chain. Capped at FOCUSED_BEAD_CAP. Parent chain is guaranteed
-    to survive the cap — neighborhood entries are dropped first.
+    full child chain. Capped at FOCUSED_BEAD_CAP.
 
     Returns a deterministically ordered list of bead ids:
-      1. Parent chain in traversal order (root first → ... → target's immediate parent)
+      1. Parent chain in walk order (root first → ... → target's immediate parent)
       2. The target bead
       3. Remaining 1-hop neighbors and descendants, sorted by id
+
+    Cap precedence when ``len(selected) > FOCUSED_BEAD_CAP``:
+      - The **target** is guaranteed to survive (it is placed at the head
+        and the parent chain is truncated around it if necessary).
+      - The parent chain is preserved next, in walk order, truncated from
+        the ROOT end first so the closest ancestors remain alongside the
+        target.
+      - Remaining neighborhood entries (sorted by id) fill any leftover
+        slots.
+
+    The pathological case ``len(parent_chain_ids) + 1 > FOCUSED_BEAD_CAP``
+    is uncommon in practice (project parent chains are <10 deep) but is
+    handled explicitly rather than relying on slice semantics: dropping
+    the target would silently break every downstream consumer that pivots
+    on the target id.
 
     An OrderedDict (used as an ordered set) tracks membership while
     preserving insertion order; the final remaining-neighbor block is
@@ -565,22 +579,26 @@ def focused_neighborhood(target_id, beads_by_id):
 
     parent_chain_set = set(parent_chain_ids)
     capped = False
+    remaining_sorted = sorted(
+        s for s in selected
+        if s != target_id and s not in parent_chain_set
+    )
     if len(selected) > FOCUSED_BEAD_CAP:
-        # Preserve parent chain first, then fill the remaining cap with the
-        # rest of the neighborhood sorted by id so cap-truncation is
-        # deterministic.
-        remaining_sorted = sorted(
-            s for s in selected
-            if s != target_id and s not in parent_chain_set
-        )
-        ordered = parent_chain_ids + [target_id] + remaining_sorted
-        ordered = ordered[:FOCUSED_BEAD_CAP]
         capped = True
+        # Target is non-negotiable — it anchors the focused view. Allocate
+        # the remaining (cap - 1) slots to as much of the parent chain as
+        # fits (truncating from the ROOT end so the closest ancestors
+        # stay), then fill any leftover with sorted neighborhood entries.
+        budget = FOCUSED_BEAD_CAP - 1
+        if len(parent_chain_ids) >= budget:
+            # Pathological: chain alone fills (or overflows) the cap.
+            # Keep the closest `budget` ancestors (tail of walk order).
+            kept_chain = parent_chain_ids[-budget:] if budget > 0 else []
+            ordered = kept_chain + [target_id]
+        else:
+            slots_left = budget - len(parent_chain_ids)
+            ordered = parent_chain_ids + [target_id] + remaining_sorted[:slots_left]
     else:
-        remaining_sorted = sorted(
-            s for s in selected
-            if s != target_id and s not in parent_chain_set
-        )
         ordered = parent_chain_ids + [target_id] + remaining_sorted
 
     return ordered, capped
