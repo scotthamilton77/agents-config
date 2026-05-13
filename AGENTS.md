@@ -121,6 +121,7 @@ Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
 ## Development Notes
 
 - **NEVER run `install.sh` automatically** — only the user runs the installer, and only when they explicitly say so
+- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next `install.sh` run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
 - No build system, tests, or linting - this is pure documentation
 - Changes should follow existing formatting conventions in each file type
 - Agent descriptions should include concrete usage examples in the frontmatter
