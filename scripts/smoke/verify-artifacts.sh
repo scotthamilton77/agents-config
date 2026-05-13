@@ -185,31 +185,36 @@ if ! command -v jq &>/dev/null; then
   echo "  FAIL  install.sh requires jq; flattening checks not run (install jq to enable this section)"
   FAIL=$((FAIL + 1))
 else
-  SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")"
-  trap 'rm -rf "${SANDBOX_HOME}"' EXIT
-  echo "    Sandbox HOME: ${SANDBOX_HOME}"
-
-  # --tools= explicitly lists every tool that supports DYNAMIC-INCLUDE.
-  # This intentionally bypasses install.sh's auto-detection logic; the test
-  # is scoped to "did flattening happen?", not "did detection work?".
-  # --plugins= disables plugin auto-detection so the test does not depend
-  # on the host bd/beads state.
-  install_log="${SANDBOX_HOME}/install.log"
-  if HOME="${SANDBOX_HOME}" \
-       bash "${REPO_ROOT}/scripts/install.sh" \
-            --yes \
-            --tools=claude,codex,gemini,opencode \
-            --plugins= \
-            >"${install_log}" 2>&1; then
-    echo "    install.sh: OK"
-    verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
-    verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
-    verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
-    verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
-  else
-    echo "    install.sh: FAILED (see ${install_log})"
-    cat "${install_log}" >&2
+  SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")" || SANDBOX_HOME=""
+  if [ -z "${SANDBOX_HOME}" ] || [ ! -d "${SANDBOX_HOME}" ]; then
+    echo "  FAIL  mktemp: could not create sandbox directory; skipping flattening checks"
     FAIL=$((FAIL + 1))
+  else
+    trap 'rm -rf "${SANDBOX_HOME}"' EXIT
+    echo "    Sandbox HOME: ${SANDBOX_HOME}"
+
+    # --tools= explicitly lists every tool that supports DYNAMIC-INCLUDE.
+    # This intentionally bypasses install.sh's auto-detection logic; the test
+    # is scoped to "did flattening happen?", not "did detection work?".
+    # --plugins= disables plugin auto-detection so the test does not depend
+    # on the host bd/beads state.
+    install_log="${SANDBOX_HOME}/install.log"
+    if HOME="${SANDBOX_HOME}" \
+         bash "${REPO_ROOT}/scripts/install.sh" \
+              --yes \
+              --tools=claude,codex,gemini,opencode \
+              --plugins= \
+              >"${install_log}" 2>&1; then
+      echo "    install.sh: OK"
+      verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
+      verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
+      verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
+      verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
+    else
+      echo "    install.sh: FAILED (see ${install_log})"
+      cat "${install_log}" >&2
+      FAIL=$((FAIL + 1))
+    fi
   fi
 fi
 
