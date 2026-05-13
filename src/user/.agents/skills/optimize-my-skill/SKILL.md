@@ -1,6 +1,6 @@
 ---
 name: optimize-my-skill
-model: sonnet
+model: sonnet[1m]
 allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 description: Audits and improves existing SKILL.md files for discoverability, progressive disclosure, and methodology rigor. Use when asked to optimize a skill, when reviewing a skill folder for quality, or when a SKILL.md needs frontmatter or body cleanup. Do NOT use for agent persona files or AGENTS.md configuration files.
 ---
