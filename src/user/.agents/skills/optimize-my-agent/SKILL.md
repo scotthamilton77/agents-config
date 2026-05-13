@@ -7,9 +7,9 @@ description: Audits and improves agent persona files (agents/*.md) for role clar
 
 # Optimize My Agent
 
-Analyze and optimize an agent persona file (an `agents/*.md` with frontmatter fields `name`, `description`, `model`, `color`, `tools`). The goal is clarity, executable commands, concrete examples, and explicit boundaries — not generic advice.
+Analyze and optimize an agent persona file (an `agents/*.md` with required frontmatter fields `name` and `description` (optional: `model`, `color`, `tools`)). The goal is clarity, executable commands, concrete examples, and explicit boundaries — not generic advice.
 
-**Scope note**: This skill targets agent persona files (`agents/*.md` with frontmatter fields name/description/model/color/tools). Do NOT use for AGENTS.md configuration files or SKILL.md files — those have different schemas and different review rubrics.
+**Scope note**: This skill targets agent persona files (`agents/*.md` with required `name` and `description` frontmatter (optional: `model`, `color`, `tools`)). Do NOT use for AGENTS.md configuration files or SKILL.md files — those have different schemas and different review rubrics.
 
 ## Phase 1: Read and Understand
 
