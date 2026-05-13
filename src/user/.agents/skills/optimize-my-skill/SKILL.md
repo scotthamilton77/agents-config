@@ -9,6 +9,10 @@ description: Audits and improves existing SKILL.md files for discoverability, pr
 
 Audit and improve existing SKILL.md files for clarity, discoverability, and effectiveness. This skill is for *auditing and improving* existing skills — if a `writing-skills` skill is available (e.g. `superpowers:writing-skills`), prefer it for *creating* new skills from scratch.
 
+## Core Principle
+
+**Audit before writing.** Read the existing skill completely before proposing any change — never rewrite content you haven't fully understood.
+
 ## Phase 1: Discover and Read
 
 Find all SKILL.md files in the target scope. For each one, read the complete file (frontmatter + body) and also check the skill's folder structure.
@@ -180,6 +184,25 @@ Present all proposed changes as a single summary table before writing anything:
 **Wait for user confirmation before writing any files.** Use `AskUserQuestion` to capture the accept/reject decision per skill if the batch is large.
 
 Apply approved changes. Show a diff for each modified file so the user can verify the edit landed correctly.
+
+## Red Flags
+
+| Rationalization | Reality |
+|---|---|
+| "The description is fine, it triggers correctly" | Trigger accuracy is measurable — test it with `skill-creator` before assuming |
+| "I'll just improve the frontmatter" | Body content is where skills fail; frontmatter only gets you discovered |
+| "This skill is simple, no changes needed" | Simple skills rot into generic advice; audit every section against the quality criteria |
+| "I can rewrite this without reading it first" | Always read the full SKILL.md before proposing changes |
+
+## Verification Checklist
+
+Before closing the optimization session:
+- [ ] Frontmatter `description` passes the formula: `[What it does]. Use when [A], [B], or [C]. Do NOT use for [exclusion].`
+- [ ] No XML angle brackets in frontmatter values
+- [ ] SKILL.md body under 500 lines; heavy content in `references/`
+- [ ] Every Phase in the process is actionable ("do" not "consider")
+- [ ] Red flags section present so the skill can't be rationalized away
+- [ ] If scripts were added: they are executable and tested against known inputs
 
 ## Reference: What Makes Skills Effective
 
