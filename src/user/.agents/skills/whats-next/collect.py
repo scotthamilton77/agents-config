@@ -261,14 +261,25 @@ def main():
         key=bead_sort_key,
     )
 
-    # Planning-ready: childless container beads with no impl-ready / human.
+    # Planning-ready: childless container beads with no human label.
+    # Per the Filter Matrix in beads.md / epic-hygiene spec, the
+    # `implementation-ready` label is treated as Rule C noise for
+    # `milestone` and `epic` (still routed to planning-ready), and only
+    # acts as an exclusion for `feature` — where `implementation-ready`
+    # means the bead is a leaf impl bead produced by brainstorm-bead and
+    # belongs in the implementation-ready section instead.
+    def in_planning(b):
+        if active_child_count.get(b.get("id", ""), 0) != 0:
+            return False
+        labels = b.get("labels", [])
+        if "human" in labels:
+            return False
+        if b.get("issue_type") == "feature" and "implementation-ready" in labels:
+            return False
+        return True
+
     planning_sorted = sorted(
-        [
-            b for b in planning_raw
-            if active_child_count.get(b.get("id", ""), 0) == 0
-            and "implementation-ready" not in b.get("labels", [])
-            and "human" not in b.get("labels", [])
-        ],
+        [b for b in planning_raw if in_planning(b)],
         key=bead_sort_key,
     )
 
