@@ -52,7 +52,7 @@ Rate each skill against the following areas. Produce a written assessment for ev
 | Field | Purpose | Validation |
 |-------|---------|------------|
 | **license** | Open-source license identifier | Valid SPDX (MIT, Apache-2.0, etc.) |
-| **allowed-tools** | Restrict tool access | Space-separated tool patterns, e.g. `"Bash(python:*) WebFetch"` |
+| **allowed-tools** | Restrict tool access | Space-separated (e.g. `"Bash(python:*) WebFetch"`) or comma-separated (e.g. `Read, Write, Edit`) — both accepted by Claude Code |
 | **compatibility** | Environment requirements | 1-500 characters |
 | **metadata** | Custom key-value pairs | Valid YAML object; suggest: author, version, mcp-server |
 
