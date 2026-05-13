@@ -205,14 +205,17 @@ def truncate_bead_content(bead, limit=PER_BEAD_TRUNCATE_LEN):
 
 def _resolve_id(suffix, beads_by_id):
     """Resolve a possibly-short bead id (e.g. '3up3') against the known
-    inventory. Returns the full id or None."""
+    inventory. Returns the full id, or None when the suffix is unknown OR
+    matches more than one bead (ambiguous short-id — refuse rather than
+    guess; under --just-fix-it a guess could auto-apply a dep edge to the
+    wrong bead)."""
     if not suffix:
         return None
     if suffix in beads_by_id:
         return suffix
-    for candidate in beads_by_id:
-        if candidate.endswith("-" + suffix):
-            return candidate
+    matches = [c for c in beads_by_id if c.endswith("-" + suffix)]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 
@@ -234,7 +237,6 @@ def find_provenance_mismatches(beads_by_id):
         if key in seen:
             return
         seen.add(key)
-        blocker_bead = beads_by_id.get(blocker)
         # Expected edge: dependent depends-on blocker with type discovered-from.
         dep_bead = beads_by_id.get(dependent)
         has_edge = False
@@ -381,9 +383,15 @@ def find_stale_blockers(beads_by_id, closed_ids):
 def _cycle_touches(cycle, selected_ids):
     """Return True iff any id in `cycle` is in `selected_ids`. Cycles can be
     lists of ids, lists of dicts with `id`/`bead_id` keys, or dicts containing
-    a `nodes`/`ids` list — handle all observed shapes defensively."""
-    if not selected_ids:
+    a `nodes`/`ids` list — handle all observed shapes defensively.
+
+    Empty-set semantics: `selected_ids is None` means "no filter — show all
+    cycles" (all-mode); an explicit empty set means "filter everything out"
+    (focused mode with no resolved neighborhood)."""
+    if selected_ids is None:
         return True
+    if not selected_ids:
+        return False
     candidates = []
     if isinstance(cycle, list):
         for item in cycle:
@@ -409,16 +417,19 @@ def _cycle_touches(cycle, selected_ids):
 
 
 def find_cycles(selected_ids=None):
-    """Run `bd dep cycles --json`. When `selected_ids` is provided, only
-    return cycles that touch at least one id in the selection (focused mode).
-    `selected_ids=None` means return all cycles (all-mode)."""
+    """Run `bd dep cycles --json`. Always returns ALL cycles in the dep
+    graph. In focused mode, each cycle is annotated `in_focused_scope`
+    according to whether it touches `selected_ids`; we deliberately do NOT
+    filter them out — cycles between the parent chain and beads outside
+    the focused neighborhood are still material to the user. `selected_ids
+    is None` (all-mode) omits the annotation."""
     rc, out, _err = bd_text("dep", "cycles", "--json")
     if rc != 0 or not out.strip():
         return []
     try:
         data = json.loads(out)
     except json.JSONDecodeError:
-        # Fall back to plain text.
+        # Fall back to plain text — no cycle structure to annotate.
         rc2, out2, _ = bd_text("dep", "cycles")
         if rc2 == 0 and out2.strip():
             return [{
@@ -430,22 +441,24 @@ def find_cycles(selected_ids=None):
         return []
     if not data:
         return []
+
+    def _wrap(c):
+        item = {
+            "type": "cycle",
+            "confidence": "HIGH",
+            "cycle": c,
+            "rationale": "bd dep cycles reported a cycle in the dep graph.",
+        }
+        if selected_ids is not None:
+            item["in_focused_scope"] = _cycle_touches(c, selected_ids)
+        return item
+
     if not isinstance(data, list):
         # Non-list scalar (dict, string, etc.) — wrap into a single cycle item.
-        if isinstance(data, dict) and (selected_ids is None or _cycle_touches(data, selected_ids)):
-            return [{
-                "type": "cycle",
-                "confidence": "HIGH",
-                "cycle": data,
-                "rationale": "bd dep cycles reported a cycle in the dep graph.",
-            }]
+        if isinstance(data, dict):
+            return [_wrap(data)]
         return []
-    return [{
-        "type": "cycle",
-        "confidence": "HIGH",
-        "cycle": c,
-        "rationale": "bd dep cycles reported a cycle in the dep graph.",
-    } for c in data if selected_ids is None or _cycle_touches(c, selected_ids)]
+    return [_wrap(c) for c in data]
 
 
 # ---------------------------------------------------------------------------
