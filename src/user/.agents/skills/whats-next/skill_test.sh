@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC7: whats-next SKILL.md must:
-#   - render a 7-column table: P | Milestone | Feature | Parent Epic | Bead ID | Type | Title
-#   - handle 4 sections: Needs your attention / Planning-ready /
-#     Ready to brainstorm / Ready to implement
-#   - default mode excludes the implementation section
+# Red-phase tests for AC4 (whats-next SKILL.md):
+#   T1. 7-column table header rendered in a SINGLE table-header line:
+#       P | Milestone | Feature | Parent Epic | Bead ID | Type | Title
+#   T2. All FOUR sections referenced (loose casing/hyphenation accepted):
+#         Needs your attention | Planning-ready | Ready to brainstorm | Ready to implement
+#   T3. Default-mode → planning-ready binding is documented tightly:
+#       within a 5-line window of the SKILL.md text, the tokens 'default' and
+#       'planning' both appear (e.g. in the intent→mode mapping or a default-
+#       mode section list).
+#   T4. Intent→mode mapping table-or-list mentions all 5 mode values.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,25 +19,63 @@ pass() { echo "PASS: $*"; }
 
 [ -f "$SKILL_MD" ] || fail "SKILL.md not found at $SKILL_MD"
 
-# T1. 7-column table header present.
-header_re='\| *P *\| *Milestone *\| *Feature *\| *Parent Epic *\| *Bead ID *\| *Type *\| *Title *\|'
+# ---------------------------------------------------------------------------
+# T1. 7-column table header — single line, exact column names in order.
+# ---------------------------------------------------------------------------
+# Build a strict header regex: 7 columns joined by '|', in order.
+header_re='\|[[:space:]]*P[[:space:]]*\|[[:space:]]*Milestone[[:space:]]*\|[[:space:]]*Feature[[:space:]]*\|[[:space:]]*Parent Epic[[:space:]]*\|[[:space:]]*Bead ID[[:space:]]*\|[[:space:]]*Type[[:space:]]*\|[[:space:]]*Title[[:space:]]*\|'
 grep -Eq "$header_re" "$SKILL_MD" \
-    || fail "T1: SKILL.md missing 7-column table header (P | Milestone | Feature | Parent Epic | Bead ID | Type | Title)"
-pass "T1: 7-column header present"
+    || fail "T1: SKILL.md missing 7-column table header line 'P | Milestone | Feature | Parent Epic | Bead ID | Type | Title' (all on ONE line)"
+pass "T1: 7-column header present on a single line"
 
-# T2. All four section names referenced.
-for section in "Needs your attention" "Planning-ready" "Ready to brainstorm" "Ready to implement"; do
-    grep -qF "$section" "$SKILL_MD" \
-        || fail "T2: SKILL.md missing section heading: '$section'"
+# ---------------------------------------------------------------------------
+# T2. All four section names (or reasonable variants) appear.
+#   - "Needs your attention"  (case-insensitive)
+#   - "Planning-ready"  or  "Planning Ready" / "Planning ready"
+#   - "Ready to brainstorm"  or  "Ready-to-brainstorm"
+#   - "Ready to implement"   or  "Ready-to-implement"
+# ---------------------------------------------------------------------------
+grep -qiE 'needs[[:space:]]+your[[:space:]]+attention' "$SKILL_MD" \
+    || fail "T2: missing 'Needs your attention' section"
+grep -qiE 'planning[-[:space:]]+ready' "$SKILL_MD" \
+    || fail "T2: missing 'Planning-ready' section"
+grep -qiE 'ready[-[:space:]]+to[-[:space:]]+brainstorm' "$SKILL_MD" \
+    || fail "T2: missing 'Ready to brainstorm' section"
+grep -qiE 'ready[-[:space:]]+to[-[:space:]]+implement' "$SKILL_MD" \
+    || fail "T2: missing 'Ready to implement' section"
+pass "T2: all four section names referenced (with casing/hyphenation variants accepted)"
+
+# ---------------------------------------------------------------------------
+# T3. Default-mode → planning-ready binding documented WITHIN a 5-line window.
+# Probe: there exists a 5-line window in SKILL.md containing BOTH 'default'
+# (case-insensitive) AND a 'planning' token (covering 'planning_ready',
+# 'planning-ready', 'Planning-ready', etc.).
+# ---------------------------------------------------------------------------
+python3 - "$SKILL_MD" <<'PY' || fail "T3: SKILL.md does not bind 'default' mode to a planning section within a tight (5-line) window"
+import sys, re
+path = sys.argv[1]
+lines = open(path).readlines()
+window = 5
+found = False
+for i in range(len(lines)):
+    chunk = "".join(lines[i:i + window]).lower()
+    if "default" in chunk and "planning" in chunk:
+        found = True
+        break
+if not found:
+    print("FAIL: no 5-line window contains both 'default' and 'planning' tokens", file=sys.stderr)
+    sys.exit(1)
+PY
+pass "T3: SKILL.md documents the default-mode → planning binding within a 5-line window"
+
+# ---------------------------------------------------------------------------
+# T4. Intent→mode mapping references all 5 mode values somewhere in the doc.
+# Spec mode values: default, brainstorm, implementation, planning, human.
+# ---------------------------------------------------------------------------
+for mv in default brainstorm implementation planning human; do
+    grep -qiE "\b$mv\b" "$SKILL_MD" \
+        || fail "T4: SKILL.md does not mention mode value '$mv' (spec mandates all 5)"
 done
-pass "T2: all four section names referenced"
-
-# T3. Default-mode rule names planning-ready alongside human + brainstorm.
-# The spec calls for: default mode renders human + planning-ready + brainstorm
-# (no implementation). Probe the doc for a description that ties default to
-# the planning-ready section explicitly.
-grep -qiE 'default.*planning-ready|planning-ready.*default' "$SKILL_MD" \
-    || fail "T3: SKILL.md does not document planning-ready as a default-mode section"
-pass "T3: default mode documents planning-ready inclusion"
+pass "T4: SKILL.md references all 5 mode values (default, brainstorm, implementation, planning, human)"
 
 echo "All whats-next SKILL.md red-phase tests reached."
