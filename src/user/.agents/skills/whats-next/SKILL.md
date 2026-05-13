@@ -1,12 +1,21 @@
 ---
 name: whats-next
-description: Use when the user asks what work is available, what needs attention, what to work on next, or runs bd ready in conversation. NOT for run-queue autonomous processing or checking a specific bead.
+description: Surfaces the right beads work list for the current session. Use when the user asks what work is available, what needs attention, what to work on next, or what to implement. Do NOT use for checking a specific bead.
 model: sonnet[1m]
 ---
 
 # whats-next
 
 Surface the right work list for the current user intent. Two modes; one skill.
+
+## Step 0: Determine mode from the user's exact message
+
+**Do this before collecting any data.** Re-read the user's message word-for-word:
+
+- Message contains **"implement"** or **"run-queue"** → **implementation mode**
+- Anything else → **default mode**
+
+Lock in the mode now. Do not infer intent from context or prior conversation — the user's exact words are the only signal.
 
 ## Step 1: Collect data
 
@@ -110,6 +119,15 @@ If truncated (displayed < total for any shown section), show per-section counts:
 `Showing top 10 of 42 brainstorm, 6 of 6 implementation. Pass \`--limit 0\` to see all.`
 
 If every section is empty: `All clear — no open beads ready for attention.`
+
+## Red Flags
+
+| Rationalization | Reality |
+|---|---|
+| "The wording was ambiguous so I used default mode" | The user's exact words are the signal. "implement" = implementation mode, full stop. |
+| "I already had context so I inferred intent" | Step 0 says re-read the message. Inference is not re-reading. |
+| "They probably meant brainstorm" | Probably is not the same as "the message does not contain 'implement'." |
+| "Default mode shows more, so it's safer" | Showing the wrong list is not safer. Mode selection is deterministic, not a judgment call. |
 
 ## NOT For
 
