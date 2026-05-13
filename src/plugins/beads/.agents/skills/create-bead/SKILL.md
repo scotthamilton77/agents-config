@@ -27,15 +27,18 @@ Those belong in `start-bead` → brainstorm formula.
 
 ### Step 1: Determine Type and Priority
 
-From context, classify the work:
+From context, classify the work. Full type reference (including `spike`, `story`, `milestone`, required fields, and `blocks` dep rules) is in `rules/beads.md § Type Reference`. Quick guide:
 
 | Type | When |
 |------|------|
-| `bug` | Something is broken or behaving incorrectly |
-| `feature` | New capability or user-visible behavior |
+| `bug` | Something broken or behaving incorrectly |
+| `feature` | New user-visible capability |
 | `task` | Internal work, refactoring, infrastructure |
 | `chore` | Maintenance, cleanup, dependency updates |
-| `epic` | Container for a group of related beads |
+| `epic` | Container for a group of related beads (needs Success Criteria) |
+| `spike` | Time-boxed investigation before committing to a design |
+| `story` | Feature framed from user perspective (structurally same as task) |
+| `milestone` | Roadmap phase anchor — contains no work itself |
 
 Priority (if not obvious, default to P2):
 - P0: Critical, blocking, prod incident

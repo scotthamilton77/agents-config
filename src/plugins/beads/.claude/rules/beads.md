@@ -2,10 +2,26 @@
 
 Task tracking workflow (run with `dangerouslyDisableSandbox: true`).
 
-`bd <command> [args]` — Types: bug | feature | task | epic | chore | decision
+`bd <command> [args]` — Types: `bug | feature | task | epic | chore | decision | milestone | spike | story`
 Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low".
 
 **Basic workflow**: `bd ready` → pick a bead → `start-bead <id>` → molecule executes → `merge-and-cleanup`
+
+## Type Reference
+
+| Type | Alias(es) | Required sections | Notes |
+|------|-----------|------------------|-------|
+| `task` | — | Acceptance Criteria | Default. Can only `blocks`-dep non-epics. |
+| `bug` | — | Steps to Reproduce + Acceptance Criteria | Can only `blocks`-dep non-epics. |
+| `feature` | feat, enhancement | Acceptance Criteria | Can only `blocks`-dep non-epics. |
+| `chore` | — | none | Plain maintenance. |
+| `story` | user-story, user_story | Acceptance Criteria | User-perspective framing; structurally same as task. |
+| `spike` | investigation, timebox | Goal + Findings | Time-boxed investigation before committing to a design. |
+| `epic` | — | Success Criteria | Groups related work. Can only `blocks`-dep other epics. Auto-close eligible: `bd epic status --eligible-only`. |
+| `milestone` | ms | none | Roadmap phase anchor — contains no work itself. |
+| `decision` | dec, adr | Decision + Rationale + Alternatives Considered | Immutable ADR record by convention. |
+
+**`blocks` dep epic wall — hard error:** epics can only `blocks`-dep other epics. Non-epics can only `blocks`-dep other non-epics. Cross-type blocking raises a CLI error.
 
 **Rules**:
 - Use bd for ALL tracking, `--json` for programmatic use

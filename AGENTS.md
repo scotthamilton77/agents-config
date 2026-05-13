@@ -127,6 +127,21 @@ Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
 - Skills should be opinionated and actionable, not generic advice
 - **No file-path citations in specs or prose** — `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
 
+## Project Milestones
+
+**Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
+
+Milestones form a sequential `blocks` chain: M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
+
+| ID | Status | Milestone |
+|----|--------|-----------|
+| `agents-config-abn9` | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators |
+| `agents-config-qn0g` | open | **M2** — Brainstorm-readiness gate |
+| `agents-config-vaac` | in_progress | **M3** — Worker fleet through PR autonomy |
+| `agents-config-t142` | open | **M4** — Overnight autonomy |
+
+All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
