@@ -64,6 +64,59 @@ check_file_contains() {
   fi
 }
 
+# verify_flattening (bead jyb.5):
+#   Run install.sh into a sandbox HOME and verify that DYNAMIC-INCLUDE
+#   markers in each tool's instruction template were actually replaced
+#   with the contents of the referenced shared templates.
+#
+#   For each of Claude, Codex, Gemini, and OpenCode we check that the
+#   assembled top-level instruction file contains representative strings
+#   from AGENT-PERSONA.md.template, USER-PERSONA.md.template, and
+#   INSTRUCTIONS.md.template — and that none of the raw DYNAMIC-INCLUDE
+#   markers leaked through unprocessed.
+#
+#   This is a positive flattening assertion: existence of the file is
+#   already covered by check_file; this function answers the harder
+#   question "did the install actually inline the shared content?"
+verify_flattening() {
+  local label_prefix="$1"
+  local instructions_path="$2"
+
+  # Representative substrings from each shared template that gets
+  # DYNAMIC-INCLUDE'd into every tool's AGENTS.md / GEMINI.md.
+  check_file_contains \
+    "${label_prefix}: AGENT-PERSONA content inlined" \
+    "${instructions_path}" \
+    "snarky, arrogant, boastful"
+  check_file_contains \
+    "${label_prefix}: USER-PERSONA content inlined" \
+    "${instructions_path}" \
+    "54yo architect, Sci-Fi nerd"
+  check_file_contains \
+    "${label_prefix}: INSTRUCTIONS laws block inlined" \
+    "${instructions_path}" \
+    "L0 Codebase"
+  check_file_contains \
+    "${label_prefix}: INSTRUCTIONS decision-matrix inlined" \
+    "${instructions_path}" \
+    "verify-facts"
+
+  # Negative check: an unprocessed marker means flattening was skipped.
+  # Match the marker syntax (`<!-- DYNAMIC-INCLUDE`) rather than the bare
+  # word — the inlined INSTRUCTIONS template legitimately mentions
+  # "DYNAMIC-INCLUDE" in a prose comment about the mechanism itself.
+  local label="${label_prefix}: no unprocessed DYNAMIC-INCLUDE markers"
+  if [ -f "${instructions_path}" ] \
+       && ! grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:' "${instructions_path}"; then
+    echo "  PASS  ${label}"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL  ${label}"
+    echo "        unexpected DYNAMIC-INCLUDE marker in: ${instructions_path}"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 echo "==> Artifact verification for bead 7bk.9"
 echo "    Repo root: ${REPO_ROOT}"
 echo ""
@@ -116,6 +169,41 @@ check_file_contains \
   "fix-bug.formula.toml contains 'diagnose' stage name" \
   "${REPO_ROOT}/src/plugins/beads/.beads/formulas/fix-bug.formula.toml" \
   '"diagnose"'
+
+# ── DYNAMIC-INCLUDE flattening (bead jyb.5) ────────────────────────────────
+# Drive a sandboxed install and verify shared template content was actually
+# inlined into each tool's assembled instruction file. install.sh writes to
+# ~/.<tool>/ and ~/.config/opencode/, so we point HOME at a scratch dir.
+echo ""
+echo "==> Universal-flattening checks (bead jyb.5)"
+
+if ! command -v jq &>/dev/null; then
+  echo "  SKIP  install.sh requires jq; flattening checks not run"
+else
+  SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")"
+  echo "    Sandbox HOME: ${SANDBOX_HOME}"
+
+  # Force the install to target every tool that supports DYNAMIC-INCLUDE
+  # (claude, codex, gemini, opencode). --plugins= disables plugin
+  # auto-detection so the test does not depend on the host bd/beads state.
+  install_log="${SANDBOX_HOME}/install.log"
+  if HOME="${SANDBOX_HOME}" \
+       bash "${REPO_ROOT}/scripts/install.sh" \
+            --yes \
+            --tools=claude,codex,gemini,opencode \
+            --plugins= \
+            >"${install_log}" 2>&1; then
+    echo "    install.sh: OK"
+  else
+    echo "    install.sh: FAILED (see ${install_log})"
+    FAIL=$((FAIL + 1))
+  fi
+
+  verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
+  verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
+  verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
+  verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
+fi
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"
