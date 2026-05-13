@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # scripts/smoke/verify-artifacts.sh
-# Artifact existence check for bead 7bk.9 (Per-step claude -p orchestration).
+# Artifact existence and flattening verification for the bead pipeline.
+# Initially created for bead 7bk.9 (Per-step claude -p orchestration);
+# extended by bead jyb.5 to verify DYNAMIC-INCLUDE flattening.
 #
-# Checks that every artifact the bead is required to produce actually exists.
+# Checks that every artifact the bead is required to produce actually exists,
+# and that DYNAMIC-INCLUDE markers in instruction templates were inlined
+# into the assembled output files at install time.
 # Intended to be run at the END of the green phase; MUST fail during the red
 # phase because the artifacts do not yet exist.
 #
@@ -181,11 +185,14 @@ if ! command -v jq &>/dev/null; then
   echo "  SKIP  install.sh requires jq; flattening checks not run"
 else
   SANDBOX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/verify-artifacts-flatten.XXXXXXXX")"
+  trap 'rm -rf "${SANDBOX_HOME}"' EXIT
   echo "    Sandbox HOME: ${SANDBOX_HOME}"
 
-  # Force the install to target every tool that supports DYNAMIC-INCLUDE
-  # (claude, codex, gemini, opencode). --plugins= disables plugin
-  # auto-detection so the test does not depend on the host bd/beads state.
+  # --tools= explicitly lists every tool that supports DYNAMIC-INCLUDE.
+  # This intentionally bypasses install.sh's auto-detection logic; the test
+  # is scoped to "did flattening happen?", not "did detection work?".
+  # --plugins= disables plugin auto-detection so the test does not depend
+  # on the host bd/beads state.
   install_log="${SANDBOX_HOME}/install.log"
   if HOME="${SANDBOX_HOME}" \
        bash "${REPO_ROOT}/scripts/install.sh" \
@@ -194,15 +201,15 @@ else
             --plugins= \
             >"${install_log}" 2>&1; then
     echo "    install.sh: OK"
+    verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
+    verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
+    verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
+    verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
   else
     echo "    install.sh: FAILED (see ${install_log})"
+    cat "${install_log}" >&2
     FAIL=$((FAIL + 1))
   fi
-
-  verify_flattening "claude/AGENTS.md"   "${SANDBOX_HOME}/.claude/AGENTS.md"
-  verify_flattening "codex/AGENTS.md"    "${SANDBOX_HOME}/.codex/AGENTS.md"
-  verify_flattening "gemini/GEMINI.md"   "${SANDBOX_HOME}/.gemini/GEMINI.md"
-  verify_flattening "opencode/AGENTS.md" "${SANDBOX_HOME}/.config/opencode/AGENTS.md"
 fi
 
 echo ""
