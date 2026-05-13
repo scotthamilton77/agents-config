@@ -660,14 +660,33 @@ def main():
                           for bid in selected_ids if bid in detailed_by_id}
         cycle_filter_ids = set(selected_ids)
 
-    # Token guard: cap total content; truncate per-bead when over.
+    # Token guard: cap total content; truncate per-bead until total is under
+    # the cap. First pass uses PER_BEAD_TRUNCATE_LEN; if the total is still
+    # over the cap (e.g. many beads near the per-bead limit, or large comment
+    # bodies summing past the cap), a second pass applies an aggressive
+    # cap // bead_count per-bead limit so total <= TOTAL_CONTENT_CAP is
+    # actually guaranteed. `>=` ensures exact-limit beads are still trimmed
+    # when the second pass demands a smaller limit.
+    truncated_ids = set()
     total = sum(content_chars(b) for b in detailed_by_id.values())
-    truncated_count = 0
     if total > TOTAL_CONTENT_CAP:
-        for b in detailed_by_id.values():
-            if content_chars(b) > PER_BEAD_TRUNCATE_LEN:
+        # First pass: per-bead PER_BEAD_TRUNCATE_LEN.
+        for bid, b in detailed_by_id.items():
+            if content_chars(b) >= PER_BEAD_TRUNCATE_LEN:
                 if truncate_bead_content(b):
-                    truncated_count += 1
+                    truncated_ids.add(bid)
+        total = sum(content_chars(b) for b in detailed_by_id.values())
+
+        # Second pass: aggressive cap // num_beads when still over.
+        if total > TOTAL_CONTENT_CAP and detailed_by_id:
+            aggressive_limit = max(256, TOTAL_CONTENT_CAP // len(detailed_by_id))
+            aggressive_comment_limit = max(128, aggressive_limit // 4)
+            for bid, b in detailed_by_id.items():
+                if content_chars(b) >= aggressive_limit:
+                    if truncate_bead_content(b, limit=aggressive_limit,
+                                             comment_limit=aggressive_comment_limit):
+                        truncated_ids.add(bid)
+    truncated_count = len(truncated_ids)
 
     beads_list = list(detailed_by_id.values())
     prefix = detect_prefix(beads_list) or detect_prefix(open_beads + in_progress)
