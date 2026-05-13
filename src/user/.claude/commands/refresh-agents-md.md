@@ -12,11 +12,11 @@ If `$ARGUMENTS` is empty, use defaults (30 days, no specific focus).
 
 Extract from `$ARGUMENTS`:
 1. **Time range** — any phrase indicating how far back to look in git history. Convert to a `git log --since` compatible value. Default: `--since="30 days ago"`.
-2. **Focus areas** — any remaining text describing what to pay special attention to. Store as context for Phase 3.
+2. **Focus areas** — any remaining text describing what to pay special attention to. Store as `focus_areas` for use in Step 3b.
 
-## Step 1 — Parallel Discovery
+## Step 1 — Discovery
 
-Invoke the `dispatching-parallel-agents` skill to run these three tasks simultaneously:
+Run the three discovery tasks below (Git Analyzer, File Inventory, Directory Discovery) using parallel subagents to optimize time-to-result. Use whatever parallel-dispatch skill is available to you if it matches; otherwise dispatch the subagents directly — you know how to do this.
 
 ### Subagent 1: Git Analyzer
 
@@ -91,18 +91,16 @@ For each approved location:
 
 ### 3b. Update AGENTS.md
 
-Apply the `optimize-agents-md` skill principles — but **skip the 5 scope questions** (infer from codebase):
+Invoke the `optimize-agents-md` skill to update the AGENTS.md at this location.
 
-- **Verify freshness**: Does the file reflect the current project state? Flag stale content.
-- **Eliminate**: Remove generic AI advice, vague imperatives, parent duplication, stale file paths, anything Claude would do without being told.
-- **Transform**: Convert weak directives ("try to keep functions small") to strong ones ("Functions >50 lines require justification comment").
-- **Hierarchy**: Only include content unique to this level. Don't repeat parent rules.
-- **Progressive disclosure**: Move heavy reference content to linked files if appropriate.
-- **Structure**: Use bullet points, tables, sentence fragments. No filler words. Target <200 lines.
+**Skip the 5 scope questions** that skill normally asks — infer scope from the codebase exploration done in Step 3a instead.
 
-If the file doesn't exist yet (suggested new file), draft it from scratch based on codebase exploration.
+**Context handoff** to the skill:
 
-If focus areas from `$ARGUMENTS` are relevant to this directory, give them extra attention.
+- The `focus_areas` value parsed from `$ARGUMENTS` in Step 0 — pass through so the skill weights those areas more heavily.
+- The parent-file context gathered in Step 3a (parent AGENTS.md content, git analysis, codebase structure at this directory level) — pass through so the skill enforces hierarchy (no parent duplication, only content unique to this level).
+
+If the file doesn't exist yet (suggested new file), instruct the skill to draft it from scratch based on the Step 3a exploration.
 
 ### 3c. Update CLAUDE.md
 
@@ -118,15 +116,7 @@ If CLAUDE.md has additional content beyond a pointer, evaluate whether that cont
 
 ### 3d. Validate
 
-Run the optimize-agents-md validation checklist against the updated file:
-- No generic AI advice
-- No vague imperatives — all rules measurable or falsifiable
-- No parent duplication
-- No child overlap
-- Every directive has concrete action or threshold
-- File paths are exact, not illustrative
-- Under 200 lines
-- Every line passes: "Would removing this cause Claude to make mistakes?"
+Run the `optimize-agents-md` skill's **Validation Checklist** section against the updated file. The skill owns the checklist content; do not duplicate it here. If any checklist item fails, return to Step 3b with the failure surfaced so the skill can revise.
 
 ### 3e. Present Diff
 
