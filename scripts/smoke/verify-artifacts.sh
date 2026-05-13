@@ -79,8 +79,9 @@ check_file_contains() {
 #   INSTRUCTIONS.md.template — and that none of the raw DYNAMIC-INCLUDE
 #   markers leaked through unprocessed.
 #
-#   This is a positive flattening assertion: existence of the file is
-#   already covered by check_file; this function answers the harder
+#   This is a positive flattening assertion: the sandbox-installed files are
+#   not checked for bare existence elsewhere; check_file_contains handles
+#   missing files implicitly ([ -f ] guard). This function answers the harder
 #   question "did the install actually inline the shared content?"
 verify_flattening() {
   local label_prefix="$1"
