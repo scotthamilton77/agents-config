@@ -31,7 +31,7 @@ pass "AC1: '## Container Beads' section present"
 container_section=$(awk '/^## Container Beads[[:space:]]*$/{flag=1; next} /^## /{flag=0} flag' "$BEADS_MD")
 [ -n "$container_section" ] || fail "AC1: Container Beads section body is empty"
 for t in epic milestone feature; do
-    echo "$container_section" | grep -qE "\b$t\b" \
+    echo "$container_section" | grep -qE "(^|[^[:alnum:]_])$t([^[:alnum:]_]|$)" \
         || fail "AC1: Container Beads section does not name type '$t'"
 done
 pass "AC1: Container Beads section names epic, milestone, feature"

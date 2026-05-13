@@ -73,7 +73,7 @@ pass "T3: SKILL.md documents the default-mode → planning binding within a 5-li
 # Spec mode values: default, brainstorm, implementation, planning, human.
 # ---------------------------------------------------------------------------
 for mv in default brainstorm implementation planning human; do
-    grep -qiE "\b$mv\b" "$SKILL_MD" \
+    grep -qiE "(^|[^[:alnum:]_])$mv([^[:alnum:]_]|$)" "$SKILL_MD" \
         || fail "T4: SKILL.md does not mention mode value '$mv' (spec mandates all 5)"
 done
 pass "T4: SKILL.md references all 5 mode values (default, brainstorm, implementation, planning, human)"
