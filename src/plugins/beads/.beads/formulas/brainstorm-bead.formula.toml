@@ -280,7 +280,7 @@ Step-bead: N/A (pre-pour container gate)
 Molecule: <this-mol-id>
 Worktree: N/A
 Scenario hint: scope-expanded (multiple produced-bead labels on container)"
-      bd dep add "{{bead-id}}" "$ESC_ID" --type blocked-by
+      bd dep add "{{bead-id}}" "$ESC_ID"
       bd update "{{bead-id}}" --status open
       echo "PAUSED: ambiguous Y on container {{bead-id}}; escalation bead $ESC_ID created."
       bd mol burn <this-mol-id> --force
@@ -306,7 +306,7 @@ Step-bead: $STEP_BEAD_ID
 Molecule: <this-mol-id>
 Worktree: N/A
 Scenario hint: scope-expanded (container reclassification after Y produced)"
-      bd dep add "{{bead-id}}" "$ESC_ID" --type blocked-by
+      bd dep add "{{bead-id}}" "$ESC_ID"
       bd update "{{bead-id}}" --status open
       echo "PAUSED: container reclassification on {{bead-id}}; escalation bead $ESC_ID created."
       bd mol burn <this-mol-id> --force
@@ -361,7 +361,7 @@ Detect prior partial runs before doing any new writes.
         echo "Error: could not extract escalation bead id (multiple produced-bead labels path)" >&2
         exit 1
     fi
-    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    bd dep add {{bead-id}} "$ESC_ID"
     echo "PAUSED: multiple produced-bead-* labels on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
   fi
@@ -409,7 +409,7 @@ Detect prior partial runs before doing any new writes.
              echo "Error: could not extract escalation bead id (orphan Y candidates path)" >&2
              exit 1
          fi
-         bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+         bd dep add {{bead-id}} "$ESC_ID"
          echo "PAUSED: multiple orphan Y candidates for {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
          exit 0 ;;
     esac
@@ -449,7 +449,7 @@ child halts finalize for human triage.
         echo "Error: could not extract escalation bead id (unexpected children path)" >&2
         exit 1
     fi
-    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    bd dep add {{bead-id}} "$ESC_ID"
     echo "PAUSED: unexpected children on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
   fi
