@@ -17,9 +17,9 @@
 #   not-container  — X is a leaf bead. Caller falls through to Step 1.
 #
 # Side effects (handled paths only):
-#   - May create an escalation bead (label: human) and stamp it on X via
-#     bd dep add (skipped for epic/milestone sources — Rule B structural
-#     filter in whats-next already gates them out of bd ready).
+#   - May create an escalation bead (label: human) as a child of X for
+#     any container type that takes the HEP path; this script does not
+#     add a blocking dependency edge onto X via `bd dep add`.
 #   - May close X via bd-close-walk.sh and stamp `epic-decomposed`.
 #   - May burn the wisp via `bd mol burn`.
 #   - Reverts X status to `open` on HEP paths.
