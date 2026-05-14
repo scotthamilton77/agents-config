@@ -121,15 +121,20 @@ rows = [
 print(json.dumps(rows, indent=2))
 ")
 
-# Append inventory to the source bead's notes.
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-NOTE_BODY="PR #72 stress-test inventory (${TIMESTAMP}):
-${INVENTORY}"
-
-if bd update "$SOURCE_BEAD" --append-notes "$NOTE_BODY" >/dev/null 2>&1; then
-    pass "F2: findings inventory appended to $SOURCE_BEAD notes"
+# Idempotency: only append if inventory not already present (prevents
+# notes bloat when F2 is run multiple times during validation sessions).
+EXISTING_NOTES=$(bd show "$SOURCE_BEAD" --json 2>/dev/null | jq -r '.[0].notes // ""')
+if echo "$EXISTING_NOTES" | grep -qF "PR #72 stress-test inventory"; then
+    pass "F2: findings inventory already present in $SOURCE_BEAD notes (idempotent skip)"
 else
-    fail "F2: bd update --append-notes on $SOURCE_BEAD failed"
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    NOTE_BODY="PR #72 stress-test inventory (${TIMESTAMP}):
+${INVENTORY}"
+    if bd update "$SOURCE_BEAD" --append-notes "$NOTE_BODY" >/dev/null 2>&1; then
+        pass "F2: findings inventory appended to $SOURCE_BEAD notes"
+    else
+        fail "F2: bd update --append-notes on $SOURCE_BEAD failed"
+    fi
 fi
 
 echo "GROUP F: cleanup + findings inventory passed."
