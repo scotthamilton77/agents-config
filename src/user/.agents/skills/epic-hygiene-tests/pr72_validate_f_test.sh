@@ -16,6 +16,7 @@ pass() { echo "PASS: $*"; }
 
 command -v bd >/dev/null 2>&1 || fail "bd CLI not on PATH"
 command -v jq >/dev/null 2>&1 || fail "jq required"
+command -v python3 >/dev/null 2>&1 || fail "python3 required"
 
 # =============================================================================
 # F1: stress-test-fixture inventory must be empty.
