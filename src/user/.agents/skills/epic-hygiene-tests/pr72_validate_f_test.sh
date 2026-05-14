@@ -67,9 +67,14 @@ fi
 # so all prior groups have completed). The agent-rendered driver
 # (pr72_validate_all.sh) consolidates per-group statuses; F2 records the
 # inventory contract.
+# F2 only knows its own outcome (F1 passed above). A-E outcomes are
+# determined by the driver (pr72_validate_all.sh) which aggregates exit
+# codes per group; this script marks A-E as 'see-driver' to avoid
+# falsely claiming 'pass' for tests it did not run.
 INVENTORY=$(python3 -c "
 import json
-buckets = [
+# A-E: outcome not known here — use driver output for actual pass/fail.
+driver_buckets = [
     ('A1','whats-next-all-mode-section-keys'),
     ('A2','impl-mode-type-and-child-constraints'),
     ('A3','brainstorm-mode-type-and-label'),
@@ -97,12 +102,21 @@ buckets = [
     ('D5','outcome-alignment'),
     ('E1','epic-no-readiness-labels'),
     ('E2','milestone-no-readiness-labels'),
+]
+# F1/F2: known to this script (F1 passed above; F2 in-progress).
+f_buckets = [
     ('F1','stress-fixture-inventory-empty'),
     ('F2','findings-inventory-written'),
 ]
 rows = [
-    {'test_id': tid, 'status': 'pass', 'finding_class': cls, 'routed_to': 'agents-config-3qf2'}
-    for tid, cls in buckets
+    {'test_id': tid, 'status': 'see-driver', 'finding_class': cls,
+     'routed_to': 'agents-config-3qf2',
+     'note': 'actual outcome in pr72_validate_all.sh driver output'}
+    for tid, cls in driver_buckets
+] + [
+    {'test_id': tid, 'status': 'pass', 'finding_class': cls,
+     'routed_to': 'agents-config-3qf2'}
+    for tid, cls in f_buckets
 ]
 print(json.dumps(rows, indent=2))
 ")

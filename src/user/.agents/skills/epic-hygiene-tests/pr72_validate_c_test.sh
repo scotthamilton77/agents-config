@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# PR #72 stress-test — GROUP C: implement-bead routing on milestone / epic /
-# non-container, validated via the container gate helper.
+# PR #72 stress-test — GROUP C: container gate HEP routing for epic/milestone
+# source beads, via bd-finalize-container-gate.sh.
 #
-# Group C tests the HEP shape that fires when implement-bead encounters
-# an epic or milestone. Instead of driving a full implement-bead molecule
-# (heavyweight + many side effects), we invoke the container gate helper
-# directly to simulate the routing decision — same code path, same
-# observable outputs.
+# SCOPE NOTE: This group tests the container gate HELPER's HEP decision for
+# epic and milestone source beads — specifically the path that fires when
+# bd-finalize-container-gate.sh is invoked on a container (used by the
+# brainstorm-bead finalize step). This is NOT a direct test of implement-bead
+# skill's routing logic; implement-bead has its own separate HEP branch that
+# is not covered here. See follow-up bead (filed via discovered-from on
+# agents-config-3qf2) for direct implement-bead routing tests.
+#
+# The gate helper's HEP path is exercised with the `produced-bead-NONEXISTENT`
+# label trick to force the dangling-pointer branch. The childless-epic
+# CLEAN-DECOMP path is covered by Group B.
 #
 # Coverage:
-#   C1. Sacrificial epic E3_test → HEP fires (decision=handled); child
-#       `human` bead exists under E3_test (note: the helper takes the
-#       CLEAN-DECOMP path for a childless epic with no produced-bead label;
-#       we use the produced-bead-NONEXISTENT marker to force the HEP path).
-#   C2. E3_test status=open; E3_test does NOT carry `human` label.
-#   C3. Single-bead-`human` invariant: only the escalation child carries
-#       `human` (not E3_test, not the wisp's step beads).
-#   C4. Container HEP shape: the human bead is a child of E3_test (via
-#       parent-child); no cross-type `bd dep add` was needed.
+#   C1. Sacrificial epic E3_test + produced-bead-NONEXISTENT → gate HEP fires
+#       (decision=handled); child `human` bead exists under E3_test.
+#   C2. E3_test status=open (HEP reverts source); E3_test does NOT carry `human`.
+#   C3. Single-bead-`human` invariant: only the escalation child carries `human`.
+#   C4. Container HEP shape: human bead is a structural child of E3_test
+#       (parent-child, not bd dep add — avoids epic-wall cross-type error).
 #   C5. Repeat C1–C4 for milestone M3_test.
 #   C6. Non-container regression: plain task → decision='not-container';
 #       NO human child created.

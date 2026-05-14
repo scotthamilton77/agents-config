@@ -33,6 +33,7 @@ set -u
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+skip() { echo "SKIP: $* (no live bd data — assertion deferred)"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
@@ -89,7 +90,7 @@ if missing:
 PY
     pass "A1: --mode all exits 0 and emits all four section keys"
 else
-    pass "A1: --mode all exited 1 (no bd data) — vacuously satisfies section-key requirement"
+    skip "A1: --mode all exited 1 (no bd data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -143,7 +144,7 @@ for row in impl:
 PY
     pass "A2: --mode implementation rows pass type+child constraints"
 else
-    pass "A2: --mode implementation exited 1 (no data) — vacuously satisfies"
+    skip "A2: --mode implementation exited 1 (no data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -176,7 +177,7 @@ for row in bs:
 PY
     pass "A3: --mode brainstorm rows pass type+label constraints"
 else
-    pass "A3: --mode brainstorm exited 1 (no data) — vacuously satisfies"
+    skip "A3: --mode brainstorm exited 1 (no data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -221,7 +222,7 @@ for row in pl:
 PY
     pass "A4: --mode planning rows pass container+childless constraints"
 else
-    pass "A4: --mode planning exited 1 (no data) — vacuously satisfies"
+    skip "A4: --mode planning exited 1 (no data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -242,7 +243,7 @@ for row in hu:
 PY
     pass "A5: --mode human rows all carry 'human' label"
 else
-    pass "A5: --mode human exited 1 (no data) — vacuously satisfies"
+    skip "A5: --mode human exited 1 (no data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -268,7 +269,7 @@ if defp.get("mode") != "all":
 PY
     pass "A6: default mode emits same section-key set as --mode all"
 else
-    pass "A6: default or --mode all exited 1 (no data) — vacuously satisfies"
+    skip "A6: default or --mode all exited 1 (no data)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -321,7 +322,7 @@ else
     # SKILL.md still documents the schema; assert that as a fallback.
     grep -qE 'P \| Milestone \| Feature \| Parent Epic \| Bead ID \| Type \| Title' "$SKILL_MD" \
         || fail "A8: SKILL.md missing 7-column schema header and no live data to verify"
-    pass "A8: no live data; SKILL.md still documents the 7-column schema"
+    skip "A8: no live data; SKILL.md schema doc verified as fallback only"
 fi
 
 echo "GROUP A: all whats-next mode tests passed."
