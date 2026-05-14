@@ -287,8 +287,8 @@ def extract_typed_ancestors(bead_id, ancestry_map, known, shorten):
 def select_section_beads(mode, human_beads, planning_beads, brainstorm_beads, impl_beads):
     """Canonical mode->sections mapping.
 
-    Parallel implementation: the output-emission if/elif at
-    collect.py:476-488 encodes the same mapping. Keep them in sync.
+    Parallel implementation: the output-emission if/elif in main()
+    encodes the same mapping. Keep them in sync.
     """
     if mode == 'all':
         return human_beads + planning_beads + brainstorm_beads + impl_beads
