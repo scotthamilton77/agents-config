@@ -488,9 +488,9 @@ pass "T9: feature-Y impl bead with merge-gate / [Human verify] children surfaces
 # T10. Mode-isolation regression: --mode <m> must only call bd show for the
 # ancestors of beads in the section(s) that mode emits.
 #
-# Defect under test (collect.py:434-440): display_ids is the union of ALL
-# four sections regardless of mode, which causes resolve_all_ancestry to
-# fire `bd show <parent>` for every section's parents even when only one
+# Defect under test: the prior unconditional 4-section union construction
+# of display_ids in collect.py caused resolve_all_ancestry to fire
+# `bd show <parent>` for every section's parents even when only one
 # section will be emitted. Under `--mode human`, only the human section's
 # parent (h1-parent) should be fetched; the brainstorm/impl/planning
 # parents (b1-parent, i1-parent, p1-parent) MUST NOT be fetched.
