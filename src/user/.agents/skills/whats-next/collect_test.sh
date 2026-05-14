@@ -424,7 +424,7 @@ pass "T8b: childless feature with implementation-ready is excluded from --mode p
 # excludes children with merge-gate / human labels) keeps Y visible.
 # -----------------------------------------------------------------------------
 TMP_T9=$(mktemp -d)
-trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" "${TMP_T10:-}"' EXIT
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"}' EXIT
 
 cat > "$TMP_T9/bd" <<'SHIM'
 #!/usr/bin/env bash
@@ -500,7 +500,7 @@ pass "T9: feature-Y impl bead with merge-gate / [Human verify] children surfaces
 # single line `show <id>` to $TMP_T10/show.log.
 # -----------------------------------------------------------------------------
 TMP_T10=$(mktemp -d)
-# trap already includes ${TMP_T10:-} (set above on the T9 trap line).
+# trap already includes ${TMP_T10:+"$TMP_T10"} (set above on the T9 trap line).
 SHOW_LOG="$TMP_T10/show.log"
 : > "$SHOW_LOG"
 export SHOW_LOG
