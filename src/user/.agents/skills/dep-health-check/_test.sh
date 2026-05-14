@@ -182,40 +182,75 @@ else
     fail "AC4 stdout is valid JSON" "could not json.load stdout file"
   fi
 
-  # Schema-shape probe: top-level keys present.
-  for key in project_prefix mode bead_count beads findings; do
+  # Schema-shape probe (two-file output contract per SKILL.md): summary JSON
+  # on stdout carries metadata + paths to the beads/findings files. The
+  # `beads` array lives in the text beads_file; the `findings` array lives
+  # inside the findings_file JSON.
+  for key in project_prefix mode bead_count beads_file findings_file finding_counts; do
     if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert '$key' in d" 2>/dev/null; then
-      pass "AC4 schema has top-level key '$key'"
+      pass "AC4 summary has top-level key '$key'"
     else
-      fail "AC4 schema has top-level key '$key'" "missing in JSON output"
+      fail "AC4 summary has top-level key '$key'" "missing in JSON output"
     fi
   done
 
   # mode field should equal 'all' in this invocation.
   if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d.get('mode')=='all'" 2>/dev/null; then
-    pass "AC4 schema mode == 'all'"
+    pass "AC4 summary mode == 'all'"
   else
-    fail "AC4 schema mode == 'all'" "mode field absent or not 'all'"
+    fail "AC4 summary mode == 'all'" "mode field absent or not 'all'"
   fi
 
-  # beads is a list; bead_count is an int.
-  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert isinstance(d.get('beads'), list) and isinstance(d.get('bead_count'), int)" 2>/dev/null; then
-    pass "AC4 beads is list and bead_count is int"
+  # bead_count is an int; finding_counts is an object.
+  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert isinstance(d.get('bead_count'), int) and isinstance(d.get('finding_counts'), dict)" 2>/dev/null; then
+    pass "AC4 bead_count is int and finding_counts is object"
   else
-    fail "AC4 beads is list and bead_count is int" "wrong types"
+    fail "AC4 bead_count is int and finding_counts is object" "wrong types"
   fi
 
-  # bead_count must be positive AND equal len(beads). This repo has 100+
-  # open beads — an empty graph result from --mode all is a defect, not a
-  # boundary case. Mirrors the AC5 focused-mode count check.
-  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d['bead_count']>0 and d['bead_count']==len(d.get('beads',[]))" 2>/dev/null; then
-    pass "AC4 bead_count > 0 and matches len(beads)"
+  # bead_count must be positive. This repo has 100+ open beads — an empty
+  # graph from --mode all is a defect, not a boundary case.
+  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d['bead_count']>0" 2>/dev/null; then
+    pass "AC4 bead_count > 0"
   else
-    fail "AC4 bead_count > 0 and matches len(beads)" \
-      "expected positive bead_count matching len(beads) for --mode all against live repo"
+    fail "AC4 bead_count > 0" "expected positive bead_count for --mode all against live repo"
   fi
 
-  rm -f "$OUT_FILE" "$ERR_FILE"
+  # beads_file: path exists, non-empty, '=== ' bead-header count obeys the
+  # ordering invariant below. beads_file filters mol/wisp only;
+  # open_bead_count filters mol/wisp + closed. Strict equality is fragile
+  # under concurrent bd writes (a bead may be closed between the bulk bd
+  # list and per-bead bd show, landing in detailed_by_id with status=closed
+  # but still written to beads_file). Invariant: open_bead_count <= headers
+  # <= bead_count AND headers > 0.
+  BEADS_FILE_PATH="$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('beads_file',''))" 2>/dev/null || echo "")"
+  if [ -n "$BEADS_FILE_PATH" ] && [ -f "$BEADS_FILE_PATH" ]; then
+    pass "AC4 beads_file exists ($BEADS_FILE_PATH)"
+    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null || echo 0)"
+    if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d['open_bead_count']<=$HEADER_COUNT<= d['bead_count'] and $HEADER_COUNT>0" 2>/dev/null; then
+      pass "AC4 beads_file header count in [open_bead_count, bead_count] and > 0"
+    else
+      fail "AC4 beads_file header count in [open_bead_count, bead_count] and > 0" \
+        "headers=$HEADER_COUNT, open_bead_count=$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('open_bead_count'))"), bead_count=$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('bead_count'))")"
+    fi
+  else
+    fail "AC4 beads_file exists" "summary path: '$BEADS_FILE_PATH'"
+  fi
+
+  # findings_file: path exists, valid JSON, has a 'findings' list.
+  FINDINGS_FILE_PATH="$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('findings_file',''))" 2>/dev/null || echo "")"
+  if [ -n "$FINDINGS_FILE_PATH" ] && [ -f "$FINDINGS_FILE_PATH" ]; then
+    pass "AC4 findings_file exists ($FINDINGS_FILE_PATH)"
+    if python3 -c "import json; f=json.load(open('$FINDINGS_FILE_PATH')); assert isinstance(f.get('findings'), list)" 2>/dev/null; then
+      pass "AC4 findings_file has 'findings' list"
+    else
+      fail "AC4 findings_file has 'findings' list" "missing or wrong type"
+    fi
+  else
+    fail "AC4 findings_file exists" "summary path: '$FINDINGS_FILE_PATH'"
+  fi
+
+  rm -f "$OUT_FILE" "$ERR_FILE" "$BEADS_FILE_PATH" "$FINDINGS_FILE_PATH"
 fi
 
 # ===========================================================================
@@ -282,21 +317,46 @@ else
     fail "AC5 focused mode+target echoed" "mode/target mismatch"
   fi
 
-  # Target bead is in beads[].
-  if python3 -c "import json; d=json.load(open('$OUT_FILE')); ids=[b.get('id') for b in d.get('beads',[])]; assert '$TARGET' in ids" 2>/dev/null; then
-    pass "AC5 target bead present in beads[]"
+  # Two-file output contract: target bead and bead_count live in the
+  # beads_file (text), not in the summary JSON.
+  BEADS_FILE_PATH="$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('beads_file',''))" 2>/dev/null || echo "")"
+  if [ -n "$BEADS_FILE_PATH" ] && [ -f "$BEADS_FILE_PATH" ]; then
+    pass "AC5 focused beads_file exists ($BEADS_FILE_PATH)"
+    if grep -q "^=== $TARGET " "$BEADS_FILE_PATH"; then
+      pass "AC5 target bead present in beads_file"
+    else
+      fail "AC5 target bead present in beads_file" "no '=== $TARGET ' header in $BEADS_FILE_PATH"
+    fi
+
+    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null || echo 0)"
+    # beads_file excludes mol/wisp only (NOT closed beads, since focused mode
+    # may pull closed neighbors via bd show). Header count must be positive
+    # and bounded by bead_count; equality only holds when no mol/wisp are in
+    # scope, so test the safer invariant 0 < headers <= bead_count.
+    if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert isinstance(d.get('bead_count'), int) and d['bead_count']>0 and $HEADER_COUNT>0 and $HEADER_COUNT<=d['bead_count']" 2>/dev/null; then
+      pass "AC5 bead_count > 0 and 0 < beads_file headers <= bead_count"
+    else
+      fail "AC5 bead_count > 0 and 0 < beads_file headers <= bead_count" \
+        "headers=$HEADER_COUNT, bead_count=$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('bead_count'))")"
+    fi
   else
-    fail "AC5 target bead present in beads[]" "target $TARGET not found in beads array"
+    fail "AC5 focused beads_file exists" "summary path: '$BEADS_FILE_PATH'"
   fi
 
-  # bead_count is positive AND equals len(beads).
-  if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert isinstance(d.get('bead_count'), int) and d['bead_count']==len(d.get('beads',[])) and d['bead_count']>0" 2>/dev/null; then
-    pass "AC5 bead_count > 0 and matches len(beads)"
+  # findings_file: path exists, valid JSON, has a 'findings' list.
+  FINDINGS_FILE_PATH="$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('findings_file',''))" 2>/dev/null || echo "")"
+  if [ -n "$FINDINGS_FILE_PATH" ] && [ -f "$FINDINGS_FILE_PATH" ]; then
+    pass "AC5 focused findings_file exists ($FINDINGS_FILE_PATH)"
+    if python3 -c "import json; f=json.load(open('$FINDINGS_FILE_PATH')); assert isinstance(f.get('findings'), list)" 2>/dev/null; then
+      pass "AC5 focused findings_file has 'findings' list"
+    else
+      fail "AC5 focused findings_file has 'findings' list" "missing or wrong type"
+    fi
   else
-    fail "AC5 bead_count > 0 and matches len(beads)" "bead_count vs beads len mismatch"
+    fail "AC5 focused findings_file exists" "summary path: '$FINDINGS_FILE_PATH'"
   fi
 
-  rm -f "$OUT_FILE" "$ERR_FILE"
+  rm -f "$OUT_FILE" "$ERR_FILE" "$BEADS_FILE_PATH" "$FINDINGS_FILE_PATH"
 fi
 
 # ===========================================================================
@@ -457,7 +517,8 @@ grep_in "$SKILL_MD" "(LLM.?internal|internal reasoning|model.?internal|no .*find
 # ===========================================================================
 echo "[name_uniqueness_r6]"
 
-UNIQ_OUT="$( ( grep -rl 'dep-health-check' "$REPO_ROOT/src" 2>/dev/null \
+UNIQ_OUT="$( ( grep -rl --exclude-dir=__pycache__ --exclude='*.pyc' \
+                  'dep-health-check' "$REPO_ROOT/src" 2>/dev/null \
                 | grep -v "$REPO_ROOT/src/plugins/beads/.agents/skills/dep-health-check" \
                 | grep -v "$REPO_ROOT/src/user/.claude/commands/dep-health-check" \
                 | grep -v "$REPO_ROOT/src/user/.agents/skills/dep-health-check" \
