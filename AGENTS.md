@@ -143,6 +143,32 @@ Milestones form a sequential `blocks` chain: M1 → M2 → M3 → M4. Each miles
 
 All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
 
+## Deferred Topics
+
+Topics where in-scope agents should **not** spend cycles, and where to route incidental findings instead. Read this before reasoning about any subsystem in this list.
+
+### `run-queue` — DEFERRED pending full redesign
+
+The `run-queue` skill is queued for replacement. Two beads track the planned work:
+
+- **`agents-config-7bk.11`** (P2 feature) — Production shell driver for autonomous bead processing (replaces run-queue skill)
+- **`agents-config-acmh.9`** (P2 task) — Tier 2 split: Replace run-queue skill with script-orchestrated process (supersedes F18 F22 F25 + partial F17)
+
+**Do NOT, until the redesign begins:**
+
+- Patch the run-queue skill or harden its current behavior against edge cases
+- File new beads about run-queue limitations, bugs, or interactions
+- Burn analysis time reasoning about run-queue in *unrelated* work (PR reviews, brainstorming sessions, refactors)
+- Re-litigate the known limitations (e.g., `bd ready --label implementation-ready` direct-poll bypassing the whats-next Rule B container filter, leftover readiness labels on container sources, polling cadence)
+
+**Instead — if you discover a finding worth recording:**
+
+- Append it as a `bd comments add agents-config-7bk.11 "<finding>"` (primary — the replacement implementation will absorb it)
+- Or `bd comments add agents-config-acmh.9 "<finding>"` if the finding is about the process/contract design rather than the implementation surface
+- Then move on. One short comment, no further analysis.
+
+The known limitations are **intentional** until the redesign lands; do not let an agent's persona ("self-awareness: doubt yourself until you've checked facts") drag work back into run-queue's surface area.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
