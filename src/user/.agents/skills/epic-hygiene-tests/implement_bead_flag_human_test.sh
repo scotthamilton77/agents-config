@@ -36,27 +36,52 @@ match=$(grep -E '`?epic`?[^a-z]*.*flag-human|flag-human.*`?epic`?' "$SKILL" \
 pass "AC4: implement-bead SKILL.md routes epic AND milestone to flag-human"
 
 # ---------------------------------------------------------------------------
-# cross-type-dep-skip: §0 HEP boilerplate must type-condition the
-# `bd dep add` for epic / milestone sources. Without this guard, the
-# epic → flag-human path hard-errors on bd's cross-type `blocks` epic
-# wall: an epic source cannot block on a task escalation bead. The
-# canonical shape is a case statement with an `epic|milestone)` arm
-# that skips the dep, plus a `*)` fall-through that issues `bd dep add`
-# for leaf sources where the dep is still required for bd ready gating.
+# container-hep-parent-child: §0 HEP boilerplate must (a) detect whether
+# the source bead is a container (epic / milestone / feature-with-active-
+# children) and, on the container branch, (b) create the human bead with
+# `--parent <source-bead-id>` so it becomes a CHILD of the source bead.
+# This sidesteps bd's `blocks` epic wall (cross-type edges hard-error)
+# and is the documented gating shape for container sources. Non-
+# container sources must still receive a `bd dep add <source> <human>`
+# blocker — that is what keeps them out of `bd ready --label
+# implementation-ready` between escalation creation and resolution.
 # ---------------------------------------------------------------------------
-python3 - "$SKILL" <<'PY' || fail "cross-type-dep-skip: implement-bead SKILL.md §0 HEP boilerplate does not type-condition the bd dep add for epic/milestone sources"
+python3 - "$SKILL" <<'PY' || fail "container-hep-parent-child: implement-bead SKILL.md §0 HEP boilerplate does not implement the container parent-child shape correctly"
 import re, sys
 body = open(sys.argv[1]).read()
-# Probe for a case-statement arm naming epic|milestone (either order)
-# whose body is empty (`;;` immediately after the closing paren), i.e.
-# the skip arm.
-skip = re.search(r'case\s+"?\$?\w+"?\s+in[\s\S]*?(?:epic\s*\|\s*milestone|milestone\s*\|\s*epic)\)\s*;;', body)
-if not skip:
-    raise SystemExit("no case-statement arm 'epic|milestone)' skipping the bd dep add was found in the HEP boilerplate")
-# Probe for the `*) bd dep add ...` fall-through that issues the dep for
-# non-container sources. This must live in the same HEP boilerplate.
-fall_through = re.search(r'\*\)\s*bd\s+dep\s+add', body)
-if not fall_through:
-    raise SystemExit("HEP boilerplate has an epic|milestone skip arm but no '*) bd dep add' fall-through for leaf sources")
+
+# Probe 1 — the container-detection case statement names both `epic` and
+# `milestone` arms that set IS_CONTAINER=1, AND has a `feature)` arm
+# that uses bd list --parent ... --status open,in_progress --limit 0
+# (with a label filter that excludes merge-gate / human children).
+container_branch = re.search(
+    r'case\s+"?\$?\w+"?\s+in[\s\S]*?'
+    r'(?:epic\s*\|\s*milestone|milestone\s*\|\s*epic)\)\s*IS_CONTAINER=1[\s\S]*?'
+    r'feature\)[\s\S]*?bd\s+list\s+--parent[\s\S]*?--limit\s+0',
+    body,
+)
+if not container_branch:
+    raise SystemExit("missing container-detection case (epic|milestone IS_CONTAINER=1 + feature) bd list --parent --limit 0 probe)")
+
+# Probe 2 — the container branch creates the human bead with --parent
+# pointing at the source, AND uses --no-inherit-labels so the human
+# bead does not inherit source labels.
+container_create = re.search(
+    r'bd\s+create\s+--parent\s+"?<?source-bead-id?>?"?\s+--no-inherit-labels',
+    body,
+)
+if not container_create:
+    raise SystemExit("container branch must `bd create --parent <source> --no-inherit-labels` for the human bead")
+
+# Probe 3 — non-container sources MUST still receive `bd dep add` so the
+# source is gated out of bd ready while the escalation is open. This
+# must be conditional on IS_CONTAINER (an unconditional dep would re-
+# introduce the cross-type epic-wall error).
+dep_add_guarded = re.search(
+    r'if\s+\[\s*"?\$IS_CONTAINER"?\s*=\s*"?0"?\s*\][\s\S]*?bd\s+dep\s+add\s+"?<?source-bead-id?>?"?\s+"?\$HUMAN_ID"?',
+    body,
+)
+if not dep_add_guarded:
+    raise SystemExit("non-container branch must `bd dep add <source> $HUMAN_ID` under a guard like `if [ \"$IS_CONTAINER\" = \"0\" ]`")
 PY
-pass "cross-type-dep-skip: implement-bead SKILL.md §0 HEP boilerplate type-conditions bd dep add for epic/milestone"
+pass "container-hep-parent-child: implement-bead SKILL.md §0 HEP boilerplate creates the human bead as a child of container sources and dep-blocks non-container sources"

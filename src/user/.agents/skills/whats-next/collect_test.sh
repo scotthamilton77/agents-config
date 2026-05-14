@@ -414,4 +414,74 @@ assert "proj-leaffeat" not in ids, \
 PY
 pass "T8b: childless feature with implementation-ready is excluded from --mode planning"
 
+# -----------------------------------------------------------------------------
+# T9. Feature-Y impl bead with formula-gate (merge-gate) child must still
+# appear in implementation. Regression for PR #72 Copilot R5/R7/R10:
+# brainstorm-bead finalize creates Y as type=feature with implementation-
+# ready, then attaches an OPEN merge-gate child under it. A naive
+# "feature + has any children → container" rule would filter Y out of
+# the implementation queue. The narrowed Rule B (active_child_count
+# excludes children with merge-gate / human labels) keeps Y visible.
+# -----------------------------------------------------------------------------
+TMP_T9=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9"' EXIT
+
+cat > "$TMP_T9/bd" <<'SHIM'
+#!/usr/bin/env bash
+case "$*" in
+  "list --label human --limit 0 --json")
+    echo '[]' ;;
+  "list --status open,in_progress --limit 0 --json")
+    # feature-Y impl bead + open merge-gate child + open [Human verify] child.
+    # active_child_count for proj-yfeat must filter out both children →
+    # count == 0 → proj-yfeat is NOT a container → surfaces in implementation.
+    cat <<'JSON'
+[
+  {"id":"proj-yfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] some feature","labels":["implementation-ready","brainstormed"]},
+  {"id":"proj-mergegate","issue_type":"task","status":"open","priority":1,"title":"[merge-gate] some-feature","labels":["merge-gate"],"parent":"proj-yfeat"},
+  {"id":"proj-humanverify","issue_type":"task","status":"open","priority":1,"title":"[verify] some-feature - check X","labels":["human"],"parent":"proj-yfeat"}
+]
+JSON
+    ;;
+  "ready --json")
+    # bd ready returns the Y feat (merge-gate / human children carry
+    # gating labels of their own, but Y itself is dep-unblocked).
+    cat <<'JSON'
+[
+  {"id":"proj-yfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] some feature","labels":["implementation-ready","brainstormed"],"created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
+    cat <<'JSON'
+[
+  {"id":"proj-yfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] some feature","labels":["implementation-ready","brainstormed"]}
+]
+JSON
+    ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T9/bd"
+
+OUT_T9_IMPL="$TMP_T9/impl.json"
+PATH="$TMP_T9:$PATH" python3 "$COLLECT_PY" --mode implementation \
+    >"$OUT_T9_IMPL" 2>"$TMP_T9/err.impl"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T9: collect.py --mode implementation exited $ec with feature-Y+merge-gate fixture (stderr: $(cat "$TMP_T9/err.impl"))"
+
+OUT_T9_IMPL="$OUT_T9_IMPL" python3 - <<'PY' \
+    || fail "T9: feature-Y impl bead with merge-gate / human children was wrongly filtered out of implementation queue"
+import json, os, sys
+out = json.load(open(os.environ["OUT_T9_IMPL"]))
+impl = out.get("implementation", [])
+ids = [b.get("id") for b in impl]
+assert "proj-yfeat" in ids, \
+    f"feature-Y with merge-gate/human children MUST appear under implementation (formula-gate children are excluded from active_child_count); got: {ids}"
+PY
+pass "T9: feature-Y impl bead with merge-gate / [Human verify] children surfaces under --mode implementation (narrowed Rule B)"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."

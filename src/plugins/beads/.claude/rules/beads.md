@@ -99,13 +99,47 @@ letting another agent silently grab paused work.
 **Escalation procedure (run literally on every flag-human path):**
 
 ```bash
+# Container detection. Containers (epic, milestone, feature-with-active-
+# children) get the human bead as a CHILD of the source via `--parent`;
+# non-containers get the human bead as a sibling with a `blocks` dep
+# from the source. Rationale: bd's `blocks` epic wall hard-errors on
+# cross-type edges, so an epic source cannot carry a `blocks` dep to a
+# task-typed human escalation bead — parent-child is wall-immune AND is
+# the natural shape for "escalation belongs to this container". Container
+# readiness is gated by the Rule C invariant (containers MUST NOT carry
+# readiness labels) instead of a blocking dep. The active-children probe
+# uses `--limit 0` for an unbounded inventory and drops `merge-gate` /
+# `human`-labeled children since those don't make a feature a container.
+SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
+case "$SRC_TYPE" in
+    epic|milestone) IS_CONTAINER=1 ;;
+    feature)
+        SRC_ACTIVE_CHILDREN=$(bd list --parent "<source-bead-id>" \
+            --status open,in_progress --limit 0 --json \
+            | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+        [ "$SRC_ACTIVE_CHILDREN" -gt 0 ] && IS_CONTAINER=1 || IS_CONTAINER=0 ;;
+    *) IS_CONTAINER=0 ;;
+esac
+
 # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
-HUMAN_ID=$(bd create \
-    --title "Human input needed: <one-line summary>" \
-    --type task \
-    --priority "<inherited from source bead>" \
-    --description "<context: what was being done, what is blocked, what is needed>" \
-    --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+# `--no-inherit-labels` (container branch) prevents the human bead from
+# inheriting brainstormed / implementation-ready / session markers from
+# the source container.
+if [ "$IS_CONTAINER" = "1" ]; then
+    HUMAN_ID=$(bd create --parent "<source-bead-id>" --no-inherit-labels \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what was being done, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+else
+    HUMAN_ID=$(bd create \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what was being done, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+fi
 [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
@@ -114,19 +148,13 @@ Step-bead: <step-bead-id>
 Molecule: <mol-id>
 Worktree: <worktree-path-or-N/A>
 Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-# Source-type-conditional blocking dep: epic / milestone sources cannot
-# carry a cross-type `blocks` dep to a task escalation bead (bd's epic
-# wall hard-errors on cross-type edges). Containers are already excluded
-# from `bd ready` and `bd ready --label implementation-ready` by the
-# Rule B structural filter (whats-next skill / collect.py), so the dep
-# is moot for them — reverting status to `open` alone keeps them out of
-# the queue. For non-container sources the dep is required so `bd ready`
-# gating works.
-SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
-case "$SRC_TYPE" in
-    epic|milestone) ;;  # skip; Rule B structural filter already gates
-    *) bd dep add "<source-bead-id>" "$HUMAN_ID" ;;
-esac
+# Non-containers: source is dep-blocked on the human bead so `bd ready`
+# (and `bd ready --label implementation-ready`) gate it out. Containers
+# gate via the structural parent-child relationship plus the Rule C
+# invariant.
+if [ "$IS_CONTAINER" = "0" ]; then
+    bd dep add "<source-bead-id>" "$HUMAN_ID"
+fi
 bd update "<source-bead-id>" --status open
 # Exit cleanly (zero exit code; stage is paused, not failed).
 ```

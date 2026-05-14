@@ -79,10 +79,17 @@ CONTAINER=0
 case "$X_TYPE" in
     milestone|epic) CONTAINER=1 ;;
     feature)
-        # Note: 'blocked' is not a real stored status; dep-blocked children
-        # have status open or in_progress. open,in_progress covers all
-        # non-closed children.
-        CHILD_COUNT=$(bd list --parent "$BEAD_ID" --status open,in_progress --json | jq 'length')
+        # 'blocked' is not a real stored status; dep-blocked children have
+        # status open or in_progress. open,in_progress covers all non-closed
+        # children. `--limit 0` keeps the inventory unbounded so a child past
+        # row 50 cannot slip past the container check. We FILTER OUT
+        # formula-gate children (carrying `merge-gate` or `human` label)
+        # before counting: brainstorm finalize attaches merge-gate /
+        # [Human verify] children under feature-Y impl beads, and counting
+        # those toward "feature has active children" wrongly reclassifies
+        # legitimate Y impls as containers.
+        CHILD_COUNT=$(bd list --parent "$BEAD_ID" --status open,in_progress --limit 0 --json \
+            | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
         [ "$CHILD_COUNT" -gt 0 ] && CONTAINER=1 || CONTAINER=0 ;;
 esac
 
@@ -96,34 +103,37 @@ fi
 # (Step 7) AND the reverse `produced-from-<X>` label on non-closed Y
 # candidates (Step 4). If Step 4 ran but Step 7 crashed, only the reverse
 # edge exists — without checking it the container path would treat X as
-# clean and orphan Y.
+# clean and orphan Y. `--limit 0` keeps the orphan inventory unbounded so
+# a Y candidate past row 50 cannot slip past the probe.
 PRODUCED_COUNT=$(bd label list "$BEAD_ID" --json \
     | jq '[.[] | select(startswith("produced-bead-"))] | length')
-ORPHAN_REVERSE_COUNT=$(bd list --label "produced-from-$BEAD_ID" --json \
+ORPHAN_REVERSE_COUNT=$(bd list --label "produced-from-$BEAD_ID" --limit 0 --json \
     | jq '[.[] | select(.status != "closed")] | length')
 
-# epic/milestone sources cannot carry a cross-type `blocks` dep to a task
-# escalation bead (bd's `blocks` epic wall hard-errors on cross-type edges).
-# Containers are also excluded from `bd ready` and `bd ready --label
-# implementation-ready` by structural filter (Rule B in the whats-next
-# skill), so the dep is moot for them — setting status=open is sufficient
-# to keep them out of any queue. For non-epic/milestone sources the dep
-# is still required so `bd ready` gating works.
-add_hep_block_dep() {
-    local source_id="$1" esc_id="$2"
-    case "$X_TYPE" in
-        epic|milestone) ;;
-        *) bd dep add "$source_id" "$esc_id" ;;
-    esac
+# HEP for container sources: the human bead is created as a CHILD of the
+# source bead via `--parent`. This sidesteps bd's cross-type `blocks` epic
+# wall (epic-typed sources cannot carry `blocks` deps to task-typed
+# escalation beads) AND is uniformly cleaner than per-type dep branching
+# (milestone / feature-with-children could in principle take a `blocks`
+# dep, but the parent-child relationship documents the escalation more
+# directly). `--no-inherit-labels` prevents the human bead from inheriting
+# brainstormed / implementation-ready / session markers from the source
+# container, which would otherwise produce surprising side effects.
+# Container source readiness is gated by the Rule C invariant (containers
+# MUST NOT carry readiness labels) rather than a `blocks` dep — enforced
+# by the migrations + tests in this PR.
+hep_create_human() {
+    bd create --parent "$BEAD_ID" --no-inherit-labels "$@" --json \
+        | jq -r 'if type == "array" then .[0].id else .id end // empty'
 }
 
 if [ "$PRODUCED_COUNT" -gt 1 ]; then
     # Multiple produced-bead-* labels: ambiguous-Y HEP.
     X_PRIORITY=$(bd show "$BEAD_ID" --json | jq -r '.[0].priority // "2"')
-    ESC_ID=$(bd create --type task --priority "$X_PRIORITY" \
+    ESC_ID=$(hep_create_human \
+        --type task --priority "$X_PRIORITY" \
         --title "Manual triage: multiple produced-bead labels on $BEAD_ID (container)" \
-        --description "finalize halted: $PRODUCED_COUNT produced-bead-* labels on $BEAD_ID which is now a container (type=$X_TYPE). Remove all but the correct label, then re-run finalize." \
-        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+        --description "finalize halted: $PRODUCED_COUNT produced-bead-* labels on $BEAD_ID which is now a container (type=$X_TYPE). Remove all but the correct label, then re-run finalize.")
     if [ -z "$ESC_ID" ] || [ "$ESC_ID" = "null" ]; then
         echo "HEP: failed to extract escalation bead id" >&2
         exit 1
@@ -135,9 +145,8 @@ Step-bead: N/A (pre-pour container gate)
 Molecule: $MOL_ID
 Worktree: N/A
 Scenario hint: scope-expanded (multiple produced-bead labels on container)"
-    add_hep_block_dep "$BEAD_ID" "$ESC_ID"
     bd update "$BEAD_ID" --status open
-    echo "PAUSED: ambiguous Y on container $BEAD_ID; escalation bead $ESC_ID created."
+    echo "PAUSED: ambiguous Y on container $BEAD_ID; escalation bead $ESC_ID created (child of source)."
     bd mol burn "$MOL_ID" --force
     echo "handled" >&3
     exit 0
@@ -147,26 +156,31 @@ if [ "$PRODUCED_COUNT" -gt 0 ] || [ "$ORPHAN_REVERSE_COUNT" -gt 0 ]; then
     # Reclassification case: Y exists (via forward marker OR reverse-edge
     # orphan on a non-closed Y) but X is now a container.
     X_PRIORITY=$(bd show "$BEAD_ID" --json | jq -r '.[0].priority // "2"')
-    ESC_ID=$(bd create --type task --priority "$X_PRIORITY" \
+    ESC_ID=$(hep_create_human \
+        --type task --priority "$X_PRIORITY" \
         --title "Manual triage: container reclassification of $BEAD_ID after Y was produced" \
-        --description "finalize halted: $BEAD_ID produced a Y impl bead in a prior run (produced-bead=$PRODUCED_COUNT, reverse-orphan=$ORPHAN_REVERSE_COUNT) but is now a container (type=$X_TYPE). Determine whether to close the orphan Y or proceed. Re-run finalize after resolution." \
-        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+        --description "finalize halted: $BEAD_ID produced a Y impl bead in a prior run (produced-bead=$PRODUCED_COUNT, reverse-orphan=$ORPHAN_REVERSE_COUNT) but is now a container (type=$X_TYPE). Determine whether to close the orphan Y or proceed. Re-run finalize after resolution.")
     if [ -z "$ESC_ID" ] || [ "$ESC_ID" = "null" ]; then
         echo "HEP: failed to extract escalation bead id" >&2
         exit 1
     fi
     bd label add "$ESC_ID" human
+    # Tolerant lookup: bd mol current may fail or emit no usable JSON; the
+    # `unknown` fallback is informational only. Under set -euo pipefail
+    # the failure must be swallowed locally so the HEP path completes
+    # instead of aborting after the escalation bead is already created.
     STEP_BEAD_ID=$(bd mol current "$MOL_ID" --json 2>/dev/null \
-        | jq -r 'if type == "array" then .[0].id else .id end // "unknown"')
+        | jq -r 'if type == "array" then .[0].id else .id end // "unknown"' \
+        || echo "unknown")
+    [ -z "$STEP_BEAD_ID" ] && STEP_BEAD_ID="unknown"
     bd update "$ESC_ID" --append-notes \
 "Source: $BEAD_ID
 Step-bead: $STEP_BEAD_ID
 Molecule: $MOL_ID
 Worktree: N/A
 Scenario hint: scope-expanded (container reclassification after Y produced)"
-    add_hep_block_dep "$BEAD_ID" "$ESC_ID"
     bd update "$BEAD_ID" --status open
-    echo "PAUSED: container reclassification on $BEAD_ID; escalation bead $ESC_ID created."
+    echo "PAUSED: container reclassification on $BEAD_ID; escalation bead $ESC_ID created (child of source)."
     bd mol burn "$MOL_ID" --force
     echo "handled" >&3
     exit 0

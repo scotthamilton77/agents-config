@@ -203,7 +203,13 @@ def is_container(bead_id, bead_type):
     """True when bead should be hidden from brainstorm/impl lists.
 
     milestone / epic — always containers, regardless of children.
-    feature         — container only when it has ≥1 non-closed children.
+    feature         — container only when it has ≥1 non-closed children
+                      that are NOT formula-gate children. The
+                      active_child_count index below excludes children
+                      labeled `merge-gate` or `human` so feature-Y impl
+                      beads (which always carry a merge-gate child via
+                      brainstorm finalize step 5b) don't get misclassified
+                      as containers.
     """
     if bead_type in CONTAINER_ALWAYS:
         return True
@@ -307,12 +313,35 @@ def main():
     all_active = bd_json("list", "--status", "open,in_progress", "--limit", "0", "--json")
 
     # Build the active-child-count index in one O(N) pass.
+    # IMPORTANT: this index is safety-critical for feature-container
+    # detection. The inventory above is fetched with `--limit 0`; if the
+    # query were to silently degrade to an empty list (e.g. via a bd
+    # failure swallowed upstream) while `bd ready` succeeded, features
+    # with active children would be misclassified as childless and leak
+    # into the implementation queue. Fail closed when the inventory is
+    # empty but `bd ready` returned non-container leaf beads — that is
+    # the inconsistency signal.
+    if not all_active and ready_raw:
+        print(
+            "ERROR: bd list --status open,in_progress --limit 0 returned empty while "
+            "bd ready returned beads — active-child index would be unsafe; aborting.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     global active_child_count
     active_child_count = {}
     for b in all_active:
         parent = b.get("parent", "")
-        if parent:
-            active_child_count[parent] = active_child_count.get(parent, 0) + 1
+        if not parent:
+            continue
+        labels = b.get("labels", []) or []
+        # Exclude formula-gate / verify-follow-up children from the count.
+        # brainstorm-bead finalize step 5b creates `merge-gate` and (when
+        # AC has [h] lines) `human`-labeled `[Human verify]` children
+        # under feature-Y impl beads. These don't make Y a container.
+        if "merge-gate" in labels or "human" in labels:
+            continue
+        active_child_count[parent] = active_child_count.get(parent, 0) + 1
 
     # Planning-ready: three separate --type queries (comma-separated --type
     # is not supported by the CLI). --ready gates on dep-unblocked.

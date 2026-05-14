@@ -31,13 +31,43 @@ The HEP escalation procedure (run literally on every flag-human path
 below) is:
 
 ```bash
+# Container detection. Containers (epic, milestone, feature-with-active-
+# children) get the human bead as a CHILD via `--parent`; non-containers
+# get the human bead as a sibling with a `blocks` dep. bd's `blocks`
+# epic wall hard-errors on cross-type edges, so parent-child is the
+# wall-immune shape for container sources. The active-children probe
+# uses `--limit 0` (unbounded inventory) and drops `merge-gate` /
+# `human`-labeled children — those don't make a feature a container.
+SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
+case "$SRC_TYPE" in
+    epic|milestone) IS_CONTAINER=1 ;;
+    feature)
+        SRC_ACTIVE_CHILDREN=$(bd list --parent "<source-bead-id>" \
+            --status open,in_progress --limit 0 --json \
+            | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+        [ "$SRC_ACTIVE_CHILDREN" -gt 0 ] && IS_CONTAINER=1 || IS_CONTAINER=0 ;;
+    *) IS_CONTAINER=0 ;;
+esac
+
 # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
-HUMAN_ID=$(bd create \
-    --title "Human input needed: <one-line summary>" \
-    --type task \
-    --priority "<inherited from source bead>" \
-    --description "<context: what the stage was doing, what is blocked, what is needed>" \
-    --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+# `--no-inherit-labels` (container branch) prevents the human bead from
+# inheriting brainstormed / implementation-ready / session markers from
+# the source container.
+if [ "$IS_CONTAINER" = "1" ]; then
+    HUMAN_ID=$(bd create --parent "<source-bead-id>" --no-inherit-labels \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what the stage was doing, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+else
+    HUMAN_ID=$(bd create \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what the stage was doing, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+fi
 [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
@@ -46,30 +76,25 @@ Step-bead: <step-bead-id>
 Molecule: <mol-id>
 Worktree: <worktree-path-or-N/A>
 Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-# Source-type-conditional blocking dep: epic / milestone sources cannot
-# carry a cross-type `blocks` dep to a task escalation bead (bd's epic
-# wall hard-errors on cross-type edges). Containers are already excluded
-# from `bd ready` and `bd ready --label implementation-ready` by the
-# Rule B structural filter (whats-next skill / collect.py), so the dep
-# is moot for them — reverting status to `open` alone keeps them out of
-# the queue. For non-container sources the dep is required so `bd ready`
-# gating works.
-SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
-case "$SRC_TYPE" in
-    epic|milestone) ;;  # skip; Rule B structural filter already gates
-    *) bd dep add "<source-bead-id>" "$HUMAN_ID" ;;
-esac
+# Non-containers: dep-block the source. Containers gate via parent-child
+# relationship + Rule C invariant (containers MUST NOT carry readiness
+# labels).
+if [ "$IS_CONTAINER" = "0" ]; then
+    bd dep add "<source-bead-id>" "$HUMAN_ID"
+fi
 bd update "<source-bead-id>" --status open
 # Exit cleanly (zero exit code; stage is paused, not failed).
 ```
 
-After this transaction the source bead status reverts `in_progress → open`,
-the source bead's open `bd dep` blocker on `$HUMAN_ID` keeps it out of
-`bd ready --label implementation-ready` (for non-container sources; for
-epic / milestone sources, status=open alone is sufficient because Rule B
-structurally filters containers out of the queue), and the escalation
-bead is the single carrier of the `human` visibility tag. The source
-bead and the step-bead MUST NOT carry the `human` label.
+After this transaction the source bead status reverts `in_progress → open`
+and the escalation bead is the single carrier of the `human` visibility
+tag. For non-container sources, the open `bd dep` blocker on `$HUMAN_ID`
+keeps the source out of `bd ready --label implementation-ready`. For
+container sources, the human bead is a child of the source and the
+source is kept out of every ready queue by Rule C — containers MUST NOT
+carry readiness labels (enforced by the brainstorm-bead container gate
+and the epic-hygiene migrations in this PR). The source bead and the
+step-bead MUST NOT carry the `human` label.
 
 This is a structural invariant of HEP — see arch §5.6's "Single-bead
 `human` invariant" subsection and the beads.md HEP section. Bare label

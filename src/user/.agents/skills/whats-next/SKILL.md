@@ -131,7 +131,15 @@ Example:
 | 2 | abn9      |         |             | bf6     | task    | Externalize long bead specs to docs/beads/   |
 ```
 
-Close with a summary line. If the displayed count equals the total: `Ready: N beads`. If truncated: `Showing top 10 of 42 brainstorm, 3 of 3 planning. Pass --limit 0 to see all.` If every section is empty: `All clear — no open beads ready for attention.`
+Close with a summary line. If the displayed count equals the total: `Ready: N beads`. If truncated: `Showing top 10 of 42 brainstorm, 3 of 3 planning. Pass --limit 0 to see all.` If every section is empty, the empty-state message is mode-specific so it does not falsely point a single-section caller at the human-attention queue:
+
+| `--mode`                | Empty-state line                                                                  |
+|-------------------------|-----------------------------------------------------------------------------------|
+| `all` (or omitted)      | `All clear — no open beads ready for attention.`                                  |
+| `human`                 | `No beads currently flagged for human attention.`                                 |
+| `planning`              | `No childless container beads ready for planning.`                                |
+| `brainstorm`            | `No beads ready for brainstorming.`                                               |
+| `implementation`        | `No beads ready for implementation.`                                              |
 
 ## Red Flags
 
