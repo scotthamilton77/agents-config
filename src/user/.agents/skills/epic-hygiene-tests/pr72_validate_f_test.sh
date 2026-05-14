@@ -123,7 +123,9 @@ print(json.dumps(rows, indent=2))
 
 # Idempotency: only append if inventory not already present (prevents
 # notes bloat when F2 is run multiple times during validation sessions).
-EXISTING_NOTES=$(bd show "$SOURCE_BEAD" --json 2>/dev/null | jq -r '.[0].notes // ""')
+# Use Python json.load — bd show --json emits literal newlines in
+# notes/description/acceptance_criteria fields which jq rejects.
+EXISTING_NOTES=$(bd show "$SOURCE_BEAD" --json 2>/dev/null | python3 -c "import sys, json; d=json.load(sys.stdin); print(d[0].get('notes', '') or '')" 2>/dev/null)
 if echo "$EXISTING_NOTES" | grep -qF "PR #72 stress-test inventory"; then
     pass "F2: findings inventory already present in $SOURCE_BEAD notes (idempotent skip)"
 else
