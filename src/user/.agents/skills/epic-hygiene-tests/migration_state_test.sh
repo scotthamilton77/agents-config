@@ -52,7 +52,7 @@ except Exception as e:
 }
 
 # -----------------------------------------------------------------------------
-# AC6a / AC11 — abn9.8: labels stripped AND AC trimmed.
+# abn9.8 migration: labels stripped AND AC trimmed.
 # -----------------------------------------------------------------------------
 labels_abn98=$(bd_or_fail "abn9.8 label list" label list agents-config-abn9.8 --json)
 parse_json_or_fail "abn9.8 label list" "$labels_abn98"
@@ -64,8 +64,8 @@ bad = [l for l in labels if l == 'implementation-ready' or l == 'brainstormed' o
 if bad:
     print(f'FAIL: abn9.8 still carries forbidden labels: {bad}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC6a/AC11: agents-config-abn9.8 still carries forbidden labels"
-pass "AC6a/AC11: agents-config-abn9.8 labels stripped (no impl-ready/brainstormed/readied-session-*)"
+" || fail "labels-strip(abn9.8): agents-config-abn9.8 still carries forbidden labels"
+pass "labels-strip(abn9.8): agents-config-abn9.8 labels stripped (no impl-ready/brainstormed/readied-session-*)"
 
 # AC trimming — spec replaces verbose verification AC with the bare
 # "All [Impl] beads for prgroom complete." line. The trim removes executable
@@ -84,11 +84,11 @@ if hits:
     print(f'FAIL: abn9.8 AC still contains executable verification phrases: {hits}', file=sys.stderr)
     print(f'AC body: {ac!r}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC11: agents-config-abn9.8 AC has not been trimmed of executable verification phrases"
-pass "AC11: agents-config-abn9.8 AC trimmed (no 'Build passes'/'Tests pass'/'Typecheck passes')"
+" || fail "AC-trim(abn9.8): agents-config-abn9.8 AC has not been trimmed of executable verification phrases"
+pass "AC-trim(abn9.8): agents-config-abn9.8 AC trimmed (no 'Build passes'/'Tests pass'/'Typecheck passes')"
 
 # -----------------------------------------------------------------------------
-# AC6b / AC13 — 7bk.19: labels stripped + verification AC moved to 7bk.19.9.
+# 7bk.19 migration: labels stripped + verification AC moved to 7bk.19.9.
 # -----------------------------------------------------------------------------
 labels_7bk19=$(bd_or_fail "7bk.19 label list" label list agents-config-7bk.19 --json)
 parse_json_or_fail "7bk.19 label list" "$labels_7bk19"
@@ -100,11 +100,11 @@ bad = [l for l in labels if l == 'implementation-ready' or l == 'brainstormed' o
 if bad:
     print(f'FAIL: 7bk.19 still carries forbidden labels: {bad}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC13: agents-config-7bk.19 still carries forbidden labels"
-pass "AC13: agents-config-7bk.19 labels stripped"
+" || fail "labels-strip(7bk.19): agents-config-7bk.19 still carries forbidden labels"
+pass "labels-strip(7bk.19): agents-config-7bk.19 labels stripped"
 
-# AC6b — verification AC must have been REMOVED from 7bk.19 (the parent epic
-# no longer carries the grep/smoke verification text).
+# AC-cleanup: verification AC must have been REMOVED from 7bk.19 (the parent
+# epic no longer carries the grep/smoke verification text).
 ac_7bk19_json=$(bd_or_fail "7bk.19 show" show agents-config-7bk.19 --json)
 echo "$ac_7bk19_json" | python3 -c "
 import sys, json
@@ -120,11 +120,11 @@ if hits:
     print(f'FAIL: 7bk.19 AC still references verification tokens that should have moved to 7bk.19.9: {hits}', file=sys.stderr)
     print(f'AC body: {ac!r}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC6b: agents-config-7bk.19 AC still contains verification text that should have moved"
-pass "AC6b: agents-config-7bk.19 AC no longer contains grep/smoke verification text"
+" || fail "AC-cleanup(7bk.19): agents-config-7bk.19 AC still contains verification text that should have moved"
+pass "AC-cleanup(7bk.19): agents-config-7bk.19 AC no longer contains grep/smoke verification text"
 
-# AC10 — 7bk.19.9 must exist AND its AC must include the moved verification
-# text (recognisable by grep/smoke token).
+# verification-text-migrated: 7bk.19.9 must exist AND its AC must include the
+# moved verification text (recognisable by grep/smoke token).
 ac_7bk199_json=$(bd_or_fail "7bk.19.9 show" show agents-config-7bk.19.9 --json)
 echo "$ac_7bk199_json" | python3 -c "
 import sys, json
@@ -140,11 +140,11 @@ if not hits:
     print(f'FAIL: 7bk.19.9 AC missing recognisable verification token from migration; expected one of {verification_tokens}', file=sys.stderr)
     print(f'AC body: {ac!r}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC10: agents-config-7bk.19.9 does not contain the migrated verification text"
-pass "AC10: agents-config-7bk.19.9 carries the migrated verification text"
+" || fail "verification-text-migrated(7bk.19.9): agents-config-7bk.19.9 does not contain the migrated verification text"
+pass "verification-text-migrated(7bk.19.9): agents-config-7bk.19.9 carries the migrated verification text"
 
 # -----------------------------------------------------------------------------
-# AC6c / AC12 — bt9e reclassified to spike.
+# bt9e migration: reclassified to spike.
 # -----------------------------------------------------------------------------
 bt9e_json=$(bd_or_fail "bt9e show" show agents-config-bt9e --json)
 type_bt9e=$(echo "$bt9e_json" | python3 -c "
@@ -153,13 +153,14 @@ data = json.load(sys.stdin)
 print(data[0].get('issue_type', '') if data else '')
 ")
 [ "$type_bt9e" = "spike" ] \
-    || fail "AC12: agents-config-bt9e issue_type is '$type_bt9e', expected 'spike'"
-pass "AC12: agents-config-bt9e is type spike"
+    || fail "type-spike(bt9e): agents-config-bt9e issue_type is '$type_bt9e', expected 'spike'"
+pass "type-spike(bt9e): agents-config-bt9e is type spike"
 
 # -----------------------------------------------------------------------------
-# AC8 — `bd list --type epic --json` query succeeds AND returns a JSON array.
-# No open epic carries implementation-ready or implementation-readied-session-*.
-# (Hardened per CR4: distinguish bd failure from empty result.)
+# open-epics-sanity-check: `bd list --type epic --json` query succeeds AND
+# returns a JSON array. No open epic carries implementation-ready or
+# implementation-readied-session-*. (Hardened per CR4: distinguish bd failure
+# from empty result.)
 # -----------------------------------------------------------------------------
 epics_json=$(bd_or_fail "list --type epic" list --type epic --json)
 parse_json_or_fail "list --type epic" "$epics_json"
@@ -171,7 +172,7 @@ data = json.load(sys.stdin)
 if not isinstance(data, list):
     print(f'FAIL: bd list --type epic --json returned non-list: {type(data).__name__}', file=sys.stderr)
     sys.exit(1)
-" || fail "AC8: bd list --type epic --json did not return a JSON array"
+" || fail "open-epics-sanity-check: bd list --type epic --json did not return a JSON array"
 
 bad_epics=$(echo "$epics_json" | python3 -c "
 import sys, json
@@ -186,7 +187,7 @@ for b in data:
 print(','.join(bad))
 ")
 [ -z "$bad_epics" ] \
-    || fail "AC8: open epics still carry implementation-ready labels: $bad_epics"
-pass "AC8: no open epics carry implementation-ready / implementation-readied-session-* labels"
+    || fail "open-epics-sanity-check: open epics still carry implementation-ready labels: $bad_epics"
+pass "open-epics-sanity-check: no open epics carry implementation-ready / implementation-readied-session-* labels"
 
-echo "AC6 + AC8 + AC10 + AC11 + AC12 + AC13 migration-state red-phase tests passed."
+echo "All migration-state red-phase tests passed (abn9.8 + 7bk.19 + 7bk.19.9 + bt9e + open-epics-sanity)."

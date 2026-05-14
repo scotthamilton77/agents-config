@@ -259,9 +259,32 @@ directly via `bd create --parent`; this finalize path then exits cleanly.
 
   if [ "$CONTAINER" = "1" ]; then
     # Detect whether a prior run produced a Y impl bead before X became a
-    # container.
+    # container. Probe BOTH directions of the produced-from/produced-bead
+    # edge pair: the forward `produced-bead-<Y>` label on X (set by Step 7),
+    # AND the reverse `produced-from-<X>` label on the non-closed Y candidates
+    # (set by Step 4). If Step 4 ran but Step 7 crashed, only the reverse edge
+    # exists — without checking it, the container path would treat X as
+    # clean, close it, and leave Y as an orphan impl bead.
     PRODUCED_COUNT=$(bd label list "{{bead-id}}" --json \\
       | jq '[.[] | select(startswith("produced-bead-"))] | length')
+    ORPHAN_REVERSE_COUNT=$(bd list --label produced-from-{{bead-id}} --json \\
+      | jq '[.[] | select(.status != "closed")] | length')
+
+    # epic/milestone sources cannot carry a cross-type `blocks` dep to a
+    # task escalation bead (the bd `blocks` epic wall hard-errors on
+    # cross-type edges). Containers are also excluded from `bd ready` and
+    # `bd ready --label implementation-ready` by structural filter (Rule B
+    # in the whats-next skill), so the dep is moot for them — setting
+    # status=open is sufficient to keep them out of any queue. For
+    # non-epic/milestone sources, the dep is still required so `bd ready`
+    # gating works.
+    add_hep_block_dep() {
+      local source_id="$1" esc_id="$2"
+      case "$X_TYPE" in
+        epic|milestone) ;;  # skip; Rule B structural filter already gates
+        *) bd dep add "$source_id" "$esc_id" ;;
+      esac
+    }
 
     if [ "$PRODUCED_COUNT" -gt 1 ]; then
       # Multiple produced-bead-* labels: route to ambiguous-Y HEP.
@@ -280,19 +303,20 @@ Step-bead: N/A (pre-pour container gate)
 Molecule: <this-mol-id>
 Worktree: N/A
 Scenario hint: scope-expanded (multiple produced-bead labels on container)"
-      bd dep add "{{bead-id}}" "$ESC_ID"
+      add_hep_block_dep "{{bead-id}}" "$ESC_ID"
       bd update "{{bead-id}}" --status open
       echo "PAUSED: ambiguous Y on container {{bead-id}}; escalation bead $ESC_ID created."
       bd mol burn <this-mol-id> --force
       exit 0
     fi
 
-    if [ "$PRODUCED_COUNT" -gt 0 ]; then
-      # Single reclassification case: Y exists but X is now a container.
+    if [ "$PRODUCED_COUNT" -gt 0 ] || [ "$ORPHAN_REVERSE_COUNT" -gt 0 ]; then
+      # Reclassification case: Y exists (via forward marker OR reverse-edge
+      # orphan on a non-closed Y) but X is now a container.
       X_PRIORITY=$(bd show "{{bead-id}}" --json | jq -r '.[0].priority // "2"')
       ESC_ID=$(bd create --type task --priority "$X_PRIORITY" \\
         --title "Manual triage: container reclassification of {{bead-id}} after Y was produced" \\
-        --description "finalize halted: {{bead-id}} produced a Y impl bead in a prior run but is now a container (type=$X_TYPE). Determine whether to close the orphan Y or proceed. Re-run finalize after resolution." \\
+        --description "finalize halted: {{bead-id}} produced a Y impl bead in a prior run (produced-bead=$PRODUCED_COUNT, reverse-orphan=$ORPHAN_REVERSE_COUNT) but is now a container (type=$X_TYPE). Determine whether to close the orphan Y or proceed. Re-run finalize after resolution." \\
         --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
       if [ -z "$ESC_ID" ] || [ "$ESC_ID" = "null" ]; then
         echo "HEP: failed to extract escalation bead id" >&2; exit 1
@@ -306,7 +330,7 @@ Step-bead: $STEP_BEAD_ID
 Molecule: <this-mol-id>
 Worktree: N/A
 Scenario hint: scope-expanded (container reclassification after Y produced)"
-      bd dep add "{{bead-id}}" "$ESC_ID"
+      add_hep_block_dep "{{bead-id}}" "$ESC_ID"
       bd update "{{bead-id}}" --status open
       echo "PAUSED: container reclassification on {{bead-id}}; escalation bead $ESC_ID created."
       bd mol burn <this-mol-id> --force

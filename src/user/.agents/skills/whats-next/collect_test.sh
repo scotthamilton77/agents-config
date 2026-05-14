@@ -145,7 +145,7 @@ echo "$bogus_out" | grep -qE 'invalid choice|unrecognized arguments' \
 pass "T3b: --mode flag rejects invalid choices"
 
 # -----------------------------------------------------------------------------
-# T5. Typed-ancestor extraction (AC2) with a known ancestry chain in the shim.
+# T5. Typed-ancestor extraction with a known ancestry chain in the shim.
 # Chain: proj-ms1 (milestone) → proj-feat1 (feature) → proj-epic1 (epic) → proj-task1 (task).
 # We assert exact column values on the displayed task.
 # -----------------------------------------------------------------------------
@@ -215,7 +215,7 @@ brainstorm = out.get("brainstorm", [])
 task = next((b for b in brainstorm if b.get("id") == "proj-task1"), None)
 assert task is not None, f"proj-task1 missing from brainstorm; got: {[b.get('id') for b in brainstorm]}"
 
-# AC2: exact typed-ancestor column values (short_id form, prefix-stripped).
+# Exact typed-ancestor column values (short_id form, prefix-stripped).
 # Project prefix detection collapses to 'proj' (common across all ids).
 assert task["milestone_col"] == "ms1", \
     f"milestone_col expected 'ms1', got {task.get('milestone_col')!r}"
@@ -235,8 +235,8 @@ PY
 pass "T5: typed-ancestor extraction emits exact milestone/feature/parent_epic/type; planning_ready surfaces childless container"
 
 # -----------------------------------------------------------------------------
-# T6. Mode key matrix (AC9): exact top-level section-key sets per mode.
-# Per spec §"--mode contract" + AC9: absent sections are ABSENT from JSON,
+# T6. Mode key matrix: exact top-level section-key sets per mode.
+# Per spec §"--mode contract": absent sections are ABSENT from JSON,
 # not empty arrays. Top-level 'mode' field carries the mode value.
 # -----------------------------------------------------------------------------
 TMP_T6=$(mktemp -d)
@@ -306,7 +306,7 @@ present = section_keys & set(out.keys())
 if present != expect:
     raise SystemExit(f"section keys mismatch: expected {expect}, got {present} "
                      f"(all keys: {sorted(out.keys())})")
-# Top-level 'mode' field (AC9 explicit requirement).
+# Top-level 'mode' field (per spec --mode contract).
 mode_val = os.environ["MODE_VALUE"]
 if out.get("mode") != mode_val:
     raise SystemExit(f"top-level 'mode' field expected {mode_val!r}, got {out.get('mode')!r}")

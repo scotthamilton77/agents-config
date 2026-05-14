@@ -165,24 +165,26 @@ def resolve_all_ancestry(display_ids, known):
 #
 # Filter Matrix (routing by type × non-closed-children × labels):
 #
+#   Read this matrix top-down: the human-attention row applies FIRST. For
+#   every other row, treat the `human` column as implicitly `no` — a bead
+#   carrying `human` routes to human-attention only, period.
+#
 #   | Type        | Children | impl-ready | human | Routing                        |
 #   |-------------|----------|------------|-------|--------------------------------|
+#   | any         | any      | any        | yes   | human-attention only           |
 #   | milestone   | 0        | no         | no    | planning-ready                 |
-#   | milestone   | 0        | yes/any    | any   | planning-ready (Rule C noise)  |
-#   | milestone   | ≥1       | any        | any   | hidden                         |
+#   | milestone   | 0        | yes        | no    | planning-ready (Rule C noise)  |
+#   | milestone   | ≥1       | any        | no    | hidden                         |
 #   | epic        | 0        | no         | no    | planning-ready                 |
-#   | epic        | 0        | yes/any    | any   | planning-ready (Rule C noise)  |
-#   | epic        | ≥1       | any        | any   | hidden                         |
+#   | epic        | 0        | yes        | no    | planning-ready (Rule C noise)  |
+#   | epic        | ≥1       | any        | no    | hidden                         |
 #   | feature     | 0        | no         | no    | planning-ready                 |
 #   | feature     | 0        | yes        | no    | impl-ready (leaf impl bead)    |
-#   | feature     | ≥1       | any        | any   | hidden (active container)      |
-#   | decision    | any      | any        | any   | nowhere                        |
-#   | any         | any      | any        | yes   | human-attention only           |
+#   | feature     | ≥1       | any        | no    | hidden (active container)      |
+#   | decision    | any      | any        | no    | nowhere                        |
 #   | task / bug /| any      | no         | no    | brainstorm-ready               |
 #   | chore /     |          |            |       |                                |
 #   | story / spike| any     | yes        | no    | impl-ready                     |
-#
-#   The `human` row takes priority over all other rows.
 
 CONTAINER_ALWAYS = {"milestone", "epic"}
 CONTAINER_DESIGN = {"feature"}
