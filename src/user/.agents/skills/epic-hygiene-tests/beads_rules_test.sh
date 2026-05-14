@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC "Container Beads section in beads.md" and
+# Red-phase tests for AC "Container Beads spec lives in collect.py" and
 # AC "I1/I2 prose: ancestor epic → ancestor bead":
-#   - Container Bead definition documented in
-#     src/plugins/beads/.claude/rules/beads.md under a new
-#     '## Container Beads' section.
+#   - Container-Bead spec (three rules + filter matrix) lives in
+#     src/user/.agents/skills/whats-next/collect.py module-level docs,
+#     NOT in src/plugins/beads/.claude/rules/beads.md (which loads in every
+#     context and should not carry the full routing spec).
+#   - beads.md retains a short breadcrumb plus the I1/I2 walks (now driven by
+#     bd-claim-walk.sh / bd-close-walk.sh helper scripts).
 #   - beads.md I1/I2 prose updated to type-agnostic 'ancestor bead' phrasing
 #     (scoped to the I1 and I2 sections only).
 set -u
@@ -20,22 +23,43 @@ done
     || fail "could not locate repo root containing src/plugins/beads (started at $SCRIPT_DIR)"
 
 BEADS_MD="$REPO_ROOT/src/plugins/beads/.claude/rules/beads.md"
+COLLECT_PY="$REPO_ROOT/src/user/.agents/skills/whats-next/collect.py"
 [ -f "$BEADS_MD" ] || fail "beads.md not found at $BEADS_MD"
+[ -f "$COLLECT_PY" ] || fail "collect.py not found at $COLLECT_PY"
 
 # -----------------------------------------------------------------------------
-# AC1 — Container Beads section exists and names epic, milestone, feature.
+# AC1 — Container-Bead spec lives in collect.py (not beads.md), and names
+# epic, milestone, feature. Also covers the three rules + filter matrix that
+# define the routing contract.
 # -----------------------------------------------------------------------------
-grep -Eq '^##[[:space:]]+Container Beads[[:space:]]*$' "$BEADS_MD" \
-    || fail "AC1: '## Container Beads' section heading missing in beads.md"
-pass "AC1: '## Container Beads' section present"
 
-container_section=$(awk '/^## Container Beads[[:space:]]*$/{flag=1; next} /^## /{flag=0} flag' "$BEADS_MD")
-[ -n "$container_section" ] || fail "AC1: Container Beads section body is empty"
-for t in epic milestone feature; do
-    echo "$container_section" | grep -qE "(^|[^[:alnum:]_])$t([^[:alnum:]_]|$)" \
-        || fail "AC1: Container Beads section does not name type '$t'"
+# beads.md should NOT carry the full routing spec — the Three Rules and the
+# Filter Matrix table belong next to the enforcement code.
+if grep -qE '^### (The )?Three Rules[[:space:]]*$' "$BEADS_MD"; then
+    fail "AC1: Three-Rules section still in beads.md (must move to collect.py)"
+fi
+if grep -qE '^### Filter Matrix[[:space:]]*$' "$BEADS_MD"; then
+    fail "AC1: Filter Matrix section still in beads.md (must move to collect.py)"
+fi
+pass "AC1a: beads.md does not carry the full Container-Bead routing spec"
+
+# beads.md should still acknowledge container beads via a short breadcrumb
+# referring readers to the canonical location.
+grep -qiE 'container bead' "$BEADS_MD" \
+    || fail "AC1b: beads.md must keep a short breadcrumb mentioning container beads"
+pass "AC1b: beads.md keeps a container-bead breadcrumb"
+
+# collect.py must carry the three rules AND the filter matrix in its module-
+# level documentation, alongside type tokens.
+for marker in 'Rule A' 'Rule B' 'Rule C' 'Filter Matrix'; do
+    grep -qF "$marker" "$COLLECT_PY" \
+        || fail "AC1c: collect.py missing routing-spec marker: $marker"
 done
-pass "AC1: Container Beads section names epic, milestone, feature"
+for t in epic milestone feature; do
+    grep -qE "(^|[^[:alnum:]_])$t([^[:alnum:]_]|$)" "$COLLECT_PY" \
+        || fail "AC1c: collect.py Container-Bead docs do not name type '$t'"
+done
+pass "AC1c: collect.py carries the three rules + filter matrix + type tokens"
 
 # -----------------------------------------------------------------------------
 # AC5 / I1+I2 prose update — scoped per section.

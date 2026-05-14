@@ -47,6 +47,10 @@ def detect_prefix(beads):
     """
     Infer the common project prefix (e.g. 'agents-config') from bead IDs.
     Returns the prefix string or None if none is detectable.
+
+    Strategy: find the longest common string prefix across all IDs, then
+    trim it back to the last '-' boundary. Requires at least 2 beads and
+    a prefix of at least 2 chars.
     """
     ids = [b.get("id", "") for b in beads if b.get("id")]
     if len(ids) < 2:
@@ -75,9 +79,19 @@ def resolve_all_ancestry(display_ids, known):
     """
     Walk parent chains for every bead in display_ids.
 
+    Optimised: collects all unique parent IDs up-front, fetches each unknown
+    parent via bd show exactly once (regardless of how many children share it),
+    then builds the full chain map. No redundant CLI calls.
+
+    Args:
+        display_ids: list of bead IDs whose ancestry we need.
+        known: dict of id→bead (pre-populated from bd ready / bd list output).
+               Modified in-place as parents are fetched.
+
     Returns:
         dict of bead_id → list of ancestor IDs (root first, parent last).
     """
+    # Phase 1: iteratively discover and fetch all unknown parents.
     frontier = set()
     for bid in display_ids:
         parent = known.get(bid, {}).get("parent", "")
@@ -100,6 +114,7 @@ def resolve_all_ancestry(display_ids, known):
                 next_frontier.add(grandparent)
         frontier = next_frontier
 
+    # Phase 2: build root-first ancestry chain for each display bead.
     ancestry_map = {}
     for bid in display_ids:
         chain = []
@@ -118,14 +133,65 @@ def resolve_all_ancestry(display_ids, known):
 # ---------------------------------------------------------------------------
 # Container classification
 # ---------------------------------------------------------------------------
+#
+# A *container bead* groups related work — it does not carry executable work
+# itself. The three rules below govern how containers move through the
+# readiness lists; the Filter Matrix beneath them is the authoritative
+# routing spec for this skill (whats-next).
+#
+# Container detection:
+#   - milestone / epic         — always a container, regardless of children.
+#   - feature with ≥1 non-closed children — container.
+#   - feature with no children — NOT a container (it's either a planning-
+#                                ready placeholder or, if it carries
+#                                `implementation-ready`, the leaf impl bead
+#                                produced by brainstorm-bead finalize).
+#   - decision                 — informational; excluded from all ready lists.
+#
+# The three rules (governing convention, enforced structurally where noted):
+#   Rule A — No executable work (convention). A container's acceptance
+#     criteria should reduce to "all children/named-children closed."
+#     Verification not automatic from child closure lives in a leaf child.
+#   Rule B — Never surfaces in brainstorm or implementation ready lists
+#     (STRUCTURAL — enforced here by is_brainstorm_candidate /
+#     is_impl_candidate). Planning-ready intentionally surfaces childless
+#     container beads — that is its purpose.
+#   Rule C — No readiness labels (convention). Containers must not carry
+#     `implementation-ready`, `implementation-readied-session-*`,
+#     `brainstormed`, or `human`. brainstorm-bead finalize's Step 0
+#     container gate prevents future stamping; migrations strip violators.
+#     This filter prevents surfacing even when labels exist (defence in
+#     depth).
+#
+# Filter Matrix (routing by type × non-closed-children × labels):
+#
+#   | Type        | Children | impl-ready | human | Routing                        |
+#   |-------------|----------|------------|-------|--------------------------------|
+#   | milestone   | 0        | no         | no    | planning-ready                 |
+#   | milestone   | 0        | yes/any    | any   | planning-ready (Rule C noise)  |
+#   | milestone   | ≥1       | any        | any   | hidden                         |
+#   | epic        | 0        | no         | no    | planning-ready                 |
+#   | epic        | 0        | yes/any    | any   | planning-ready (Rule C noise)  |
+#   | epic        | ≥1       | any        | any   | hidden                         |
+#   | feature     | 0        | no         | no    | planning-ready                 |
+#   | feature     | 0        | yes        | no    | impl-ready (leaf impl bead)    |
+#   | feature     | ≥1       | any        | any   | hidden (active container)      |
+#   | decision    | any      | any        | any   | nowhere                        |
+#   | any         | any      | any        | yes   | human-attention only           |
+#   | task / bug /| any      | no         | no    | brainstorm-ready               |
+#   | chore /     |          |            |       |                                |
+#   | story / spike| any     | yes        | no    | impl-ready                     |
+#
+#   The `human` row takes priority over all other rows.
 
 CONTAINER_ALWAYS = {"milestone", "epic"}
 CONTAINER_DESIGN = {"feature"}
-# Container-design types are EXCLUDED from brainstorm-ready regardless of
-# child count. Diverges intentionally from is_container (which uses
-# CONTAINER_DESIGN + active-child probe) — see spec §"is_container vs
-# CONTAINER_DESIGN_TYPES".
-CONTAINER_DESIGN_TYPES = {"milestone", "epic", "feature", "decision"}
+# Types EXCLUDED from brainstorm-ready regardless of child count.
+# Diverges intentionally from is_container (which uses CONTAINER_DESIGN +
+# active-child probe): `decision` is informational, never brainstormed;
+# the three container-design types are spec-prohibited from brainstorm
+# routing whether or not they currently have children.
+BRAINSTORM_EXCLUDED_TYPES = {"milestone", "epic", "feature", "decision"}
 
 # Module-level dict; populated in main() before any is_container() call.
 active_child_count = {}
@@ -152,7 +218,7 @@ def is_brainstorm_candidate(bead):
     labels = bead.get("labels", [])
     btype = bead.get("issue_type", "")
     return (
-        btype not in CONTAINER_DESIGN_TYPES  # never brainstorm-ready
+        btype not in BRAINSTORM_EXCLUDED_TYPES  # never brainstorm-ready
         and "implementation-ready" not in labels
         and "merge-gate" not in labels
         and "human" not in labels
@@ -220,9 +286,9 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["default", "brainstorm", "implementation", "planning", "human"],
-        default="default",
-        help="Which section(s) to emit (default: human + planning_ready + brainstorm)",
+        choices=["all", "brainstorm", "implementation", "planning", "human"],
+        default="all",
+        help="Which section(s) to emit (all: human + planning_ready + brainstorm + implementation)",
     )
     args = parser.parse_args()
     limit = args.limit
@@ -369,10 +435,11 @@ def main():
 
     # Per spec §"--mode contract": absent sections are ABSENT from JSON,
     # not empty arrays.
-    if mode == "default":
+    if mode == "all":
         output["human"] = enrich(human_beads)
         output["planning_ready"] = enrich(planning_beads)
         output["brainstorm"] = enrich(brainstorm_beads)
+        output["implementation"] = enrich(impl_beads)
     elif mode == "brainstorm":
         output["brainstorm"] = enrich(brainstorm_beads)
     elif mode == "implementation":

@@ -3,9 +3,9 @@
 # Covers:
 #   T1. is_container(id, type): epic/milestone are containers regardless of
 #       child count; feature is a container only when it has active children.
-#   T2. is_brainstorm_candidate excludes container-design types
+#   T2. is_brainstorm_candidate excludes BRAINSTORM_EXCLUDED_TYPES
 #       (milestone, epic, feature, decision).
-#   T3. --mode flag: all 5 values (default | brainstorm | implementation |
+#   T3. --mode flag: all 5 values (all | brainstorm | implementation |
 #       planning | human) are accepted, and an invalid choice is rejected.
 #   T4. (REMOVED — was an impl-detail probe on hasattr(mod,'enrich')).
 #       End-to-end JSON shape covered by T5/T6/T7.
@@ -130,10 +130,10 @@ probe_mode() {
     return 0
 }
 
-for m in _default_ default brainstorm implementation planning human; do
+for m in _default_ all brainstorm implementation planning human; do
     probe_mode "$m"
 done
-pass "T3a: --mode flag accepts default, brainstorm, implementation, planning, human"
+pass "T3a: --mode flag accepts all, brainstorm, implementation, planning, human"
 
 # Invalid mode must be rejected.
 bogus_out=$(PATH="$TMP_T3:$PATH" python3 "$COLLECT_PY" --mode bogus --limit 0 2>&1)
@@ -203,12 +203,12 @@ ec=$?
 OUT_T5_FILE="$OUT_T5_FILE" python3 - <<'PY' || fail "T5: typed-ancestor extraction wrong or planning_ready missing expected entries"
 import json, os, sys
 out = json.load(open(os.environ["OUT_T5_FILE"]))
-# Default mode: must contain human + planning_ready + brainstorm; NO implementation.
-assert "implementation" not in out, \
-    "default mode must omit 'implementation' key entirely (per spec: absent, not empty)"
-assert "planning_ready" in out, "default mode must include planning_ready"
-assert "brainstorm" in out, "default mode must include brainstorm"
-assert "human" in out, "default mode must include human"
+# `all` mode (the default when no flag): must contain all four section keys.
+assert "human" in out, "all mode must include human"
+assert "planning_ready" in out, "all mode must include planning_ready"
+assert "brainstorm" in out, "all mode must include brainstorm"
+assert "implementation" in out, \
+    "all mode must include 'implementation' key (per spec: 4 sections)"
 
 # Find proj-task1 in the brainstorm section (no impl-ready label).
 brainstorm = out.get("brainstorm", [])
@@ -278,7 +278,7 @@ chmod +x "$TMP_T6/bd"
 # Section keys: human, planning_ready, brainstorm, implementation.
 # (Top-level meta keys like 'mode', 'totals', 'limit', 'project_prefix' may
 # also appear; we assert on the SECTION-key subset only.)
-expect_default='human planning_ready brainstorm'
+expect_all='human planning_ready brainstorm implementation'
 expect_brainstorm='brainstorm'
 expect_impl='implementation'
 expect_planning='planning_ready'
@@ -313,13 +313,13 @@ if out.get("mode") != mode_val:
 PY
 }
 
-assert_mode_keys _default_       "$expect_default"    default
-assert_mode_keys default         "$expect_default"    default
+assert_mode_keys _default_       "$expect_all"        all
+assert_mode_keys all             "$expect_all"        all
 assert_mode_keys brainstorm      "$expect_brainstorm" brainstorm
 assert_mode_keys implementation  "$expect_impl"       implementation
 assert_mode_keys planning        "$expect_planning"   planning
 assert_mode_keys human           "$expect_human"      human
-pass "T6: --mode emits exact section-key set per spec §--mode contract (default | brainstorm | implementation | planning | human)"
+pass "T6: --mode emits exact section-key set per spec §--mode contract (all | brainstorm | implementation | planning | human)"
 
 # -----------------------------------------------------------------------------
 # T8. is_impl_candidate handles `feature` leaf-impl beads (regression for

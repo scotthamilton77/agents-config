@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Red-phase tests for AC "whats-next SKILL.md: 7-column table, four sections, default omits implementation":
+# Red-phase tests for AC "whats-next SKILL.md: 7-column table, four sections, all-mode default includes implementation":
 #   T1. 7-column table header rendered in a SINGLE table-header line:
 #       P | Milestone | Feature | Parent Epic | Bead ID | Type | Title
 #   T2. All FOUR sections referenced (loose casing/hyphenation accepted):
 #         Needs your attention | Planning-ready | Ready to brainstorm | Ready to implement
-#   T3. Default-mode → planning-ready binding is documented tightly:
-#       within a 5-line window of the SKILL.md text, the tokens 'default' and
-#       'planning' both appear (e.g. in the intent→mode mapping or a default-
-#       mode section list).
+#   T3. `all`-mode → planning-ready binding is documented tightly: within a
+#       5-line window of the SKILL.md text, a backticked `all` (the mode
+#       value) and a 'planning' token both appear (e.g. in the intent→mode
+#       mapping or an all-mode section list).
 #   T4. Intent→mode mapping table-or-list mentions all 5 mode values.
 set -u
 
@@ -51,31 +51,33 @@ pass "T2: all four section names referenced (with casing/hyphenation variants ac
 # (case-insensitive) AND a 'planning' token (covering 'planning_ready',
 # 'planning-ready', 'Planning-ready', etc.).
 # ---------------------------------------------------------------------------
-python3 - "$SKILL_MD" <<'PY' || fail "T3: SKILL.md does not bind 'default' mode to a planning section within a tight (5-line) window"
+python3 - "$SKILL_MD" <<'PY' || fail "T3: SKILL.md does not bind the \`all\` mode to a planning section within a tight (5-line) window"
 import sys, re
 path = sys.argv[1]
 lines = open(path).readlines()
 window = 5
 found = False
 for i in range(len(lines)):
-    chunk = "".join(lines[i:i + window]).lower()
-    if "default" in chunk and "planning" in chunk:
+    chunk = "".join(lines[i:i + window])
+    # Backticked `all` matches the mode value specifically (rejects the
+    # ubiquitous English word "all"); planning matches the section name.
+    if re.search(r"`all`", chunk) and re.search(r"planning", chunk, re.IGNORECASE):
         found = True
         break
 if not found:
-    print("FAIL: no 5-line window contains both 'default' and 'planning' tokens", file=sys.stderr)
+    print("FAIL: no 5-line window contains both `all` (backticked) and 'planning' tokens", file=sys.stderr)
     sys.exit(1)
 PY
-pass "T3: SKILL.md documents the default-mode → planning binding within a 5-line window"
+pass "T3: SKILL.md documents the \`all\`-mode → planning binding within a 5-line window"
 
 # ---------------------------------------------------------------------------
 # T4. Intent→mode mapping references all 5 mode values somewhere in the doc.
-# Spec mode values: default, brainstorm, implementation, planning, human.
+# Spec mode values: all, brainstorm, implementation, planning, human.
 # ---------------------------------------------------------------------------
-for mv in default brainstorm implementation planning human; do
+for mv in all brainstorm implementation planning human; do
     grep -qiE "(^|[^[:alnum:]_])$mv([^[:alnum:]_]|$)" "$SKILL_MD" \
         || fail "T4: SKILL.md does not mention mode value '$mv' (spec mandates all 5)"
 done
-pass "T4: SKILL.md references all 5 mode values (default, brainstorm, implementation, planning, human)"
+pass "T4: SKILL.md references all 5 mode values (all, brainstorm, implementation, planning, human)"
 
 echo "All whats-next SKILL.md red-phase tests reached."

@@ -1,6 +1,6 @@
 ---
 name: whats-next
-description: Surfaces the right beads work list for the current session. Use when the user asks what work is available, what needs attention, what to work on next, what to brainstorm, what to plan / decompose, or what to implement. Do NOT use for checking a specific bead.
+description: Surfaces the right beads work list for the current session. Use when the user asks what work is available, what work is ready, what needs attention, what to work on next, what to brainstorm, what to plan / decompose, or what to implement. Do NOT use for checking a specific bead.
 model: sonnet[1m]
 ---
 
@@ -14,22 +14,22 @@ Surface the right work list for the current user intent. One skill, five modes.
 
 | User intent (exact phrasing) | `--mode` value |
 |---|---|
-| No qualifier — "what's next", "what should I work on" | `default` |
+| No qualifier — "what's next", "what should I work on" | `all` |
 | "what needs attention", "human escalations" (explicit) | `human` |
 | "brainstorm", "what's next to brainstorm", "ready to brainstorm" | `brainstorm` |
 | "implement", "implementation-ready", "run-queue", "what to implement" | `implementation` |
 | "planning", "planning-ready", "needs decomposition" | `planning` |
 
-`default` is the entry mode: it shows attention items, planning-ready containers, and brainstorm-ready leaves — but NOT the implementation queue (request it explicitly).
+`all` is the entry mode: it shows all modes: attention items, planning-ready containers, brainstorm-ready, and the implementation queue.
 
 Lock in the mode now. Do not infer intent from prior conversation — the user's exact words are the only signal.
 
 ## Step 1: Collect data
 
-Run the helper script with the chosen mode. Default limit is 10 per section. Pass `--limit 0` for all.
+Run the helper script with the chosen mode. Default limit is 10 per section. Pass `--limit 0` for all.  Examples below:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/collect.py"                   # default mode
+python3 "${CLAUDE_SKILL_DIR}/collect.py"                   # all mode (default)
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode brainstorm
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode implementation
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode planning
@@ -41,7 +41,7 @@ The script returns a JSON object whose top-level `mode` field carries the reques
 
 | `--mode` value | Section keys emitted |
 |----------------|----------------------|
-| `default` (or omitted) | `human`, `planning_ready`, `brainstorm` |
+| `all` (or omitted) | `human`, `planning_ready`, `brainstorm`, `implementation` |
 | `brainstorm` | `brainstorm` only |
 | `implementation` | `implementation` only |
 | `planning` | `planning_ready` only |
@@ -51,7 +51,7 @@ Top-level shape:
 
 ```json
 {
-  "mode":           "default",
+  "mode":           "all",
   "project_prefix": "agents-config",
   "limit":          10,
   "totals": {
@@ -102,7 +102,7 @@ Skip any section whose list is empty.
 | `brainstorm` | **Ready to brainstorm** |
 | `implementation` | **Ready to implement** |
 
-`default` mode renders attention + planning-ready + brainstorm in that order. The implementation queue surfaces ONLY on `--mode implementation` — the user must ask.
+`all` mode renders attention + planning-ready + brainstorm + implementation queue in that order.
 
 ## Step 3: Present
 
@@ -136,10 +136,10 @@ Close with a summary line. If the displayed count equals the total: `Ready: N be
 
 | Rationalization | Reality |
 |---|---|
-| "The wording was ambiguous so I used default mode" | The user's exact words are the signal. Use the intent table; default is the catch-all for absent qualifiers, not ambiguous ones. |
+| "The wording was ambiguous so I used the default `all` mode" | The user's exact words are the signal. Use the intent table; default is the catch-all for absent qualifiers, not ambiguous ones. |
 | "I already had context so I inferred intent" | Step 0 says re-read the message. Inference is not re-reading. |
 | "They probably meant brainstorm" | Probably is not the same as matching the intent table. |
-| "Default mode shows everything, so it's safer" | Default omits the implementation queue intentionally. Showing the wrong list is not safer. |
+| "User's stated intent is unwise. Default mode shows everything, so it's safer" | Respect the user's stated intent.  Showing the wrong list is not safer. |
 | "Container beads should still appear in impl-ready if labeled" | Container Beads Rule B: structural filter excludes them regardless of label. The migration strips labels; the filter prevents future leaks. |
 
 ## NOT For
