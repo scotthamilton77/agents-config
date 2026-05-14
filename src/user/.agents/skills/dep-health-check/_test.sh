@@ -226,7 +226,7 @@ else
   BEADS_FILE_PATH="$(python3 -c "import json; print(json.load(open('$OUT_FILE')).get('beads_file',''))" 2>/dev/null || echo "")"
   if [ -n "$BEADS_FILE_PATH" ] && [ -f "$BEADS_FILE_PATH" ]; then
     pass "AC4 beads_file exists ($BEADS_FILE_PATH)"
-    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null || echo 0)"
+    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null)"
     if python3 -c "import json; d=json.load(open('$OUT_FILE')); assert d['open_bead_count']<=$HEADER_COUNT<= d['bead_count'] and $HEADER_COUNT>0" 2>/dev/null; then
       pass "AC4 beads_file header count in [open_bead_count, bead_count] and > 0"
     else
@@ -328,7 +328,7 @@ else
       fail "AC5 target bead present in beads_file" "no '=== $TARGET ' header in $BEADS_FILE_PATH"
     fi
 
-    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null || echo 0)"
+    HEADER_COUNT="$(grep -c '^=== ' "$BEADS_FILE_PATH" 2>/dev/null)"
     # beads_file excludes mol/wisp only (NOT closed beads, since focused mode
     # may pull closed neighbors via bd show). Header count must be positive
     # and bounded by bead_count; equality only holds when no mol/wisp are in
