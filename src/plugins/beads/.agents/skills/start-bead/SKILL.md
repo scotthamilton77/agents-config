@@ -130,20 +130,42 @@ Decide from the result array:
   or otherwise unlabeled molecule exists (prior activity visible in the
   bead's history, user references one), STOP — do NOT pour/wisp over
   unlabeled in-progress work. Execute the **Human-Escalation Pattern
-  (HEP)** — defined in `docs/specs/bead-pipeline-architecture.md` §5.6
-  and summarized in the **HEP section** of
-  `src/plugins/beads/.claude/rules/beads.md`. Do NOT bare-stamp `human`
-  on the source bead; the single-bead-`human` invariant requires the
-  escalation bead to be the sole carrier of `human`:
+  (HEP)** — see the HEP section of the beads rule (deployed alongside
+  this skill, authoritative for agents in deployed context). Do NOT
+  bare-stamp `human` on the source bead; the single-bead-`human`
+  invariant requires the escalation bead to be the sole carrier of
+  `human`:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
+  # Container detection: containers get the human bead as a CHILD via
+  # `--parent` (sidesteps bd's cross-type `blocks` epic wall);
+  # non-containers get a sibling human bead with a `blocks` dep.
+  SRC_TYPE=$(bd show <bead-id> --json | jq -r '.[0].issue_type // "task"')
+  case "$SRC_TYPE" in
+      epic|milestone) IS_CONTAINER=1 ;;
+      feature)
+          SRC_ACTIVE_CHILDREN=$(bd list --parent <bead-id> \
+              --status open,in_progress --limit 0 --json \
+              | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+          [ "$SRC_ACTIVE_CHILDREN" -gt 0 ] && IS_CONTAINER=1 || IS_CONTAINER=0 ;;
+      *) IS_CONTAINER=0 ;;
+  esac
   # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
-  HUMAN_ID=$(bd create \
-      --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
-      --type task \
-      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
-      --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
-      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  if [ "$IS_CONTAINER" = "1" ]; then
+    HUMAN_ID=$(bd create --parent <bead-id> --no-inherit-labels \
+        --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
+        --type task \
+        --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+        --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  else
+    HUMAN_ID=$(bd create \
+        --title "Human input needed: suspected unlabeled molecule on <bead-id>" \
+        --type task \
+        --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+        --description "<reason the unlabeled molecule is suspected; what evidence in the bead history points to it>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  fi
   [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
@@ -152,7 +174,11 @@ Decide from the result array:
   Molecule: <unknown — probe returned 0 labeled molecules>
   Worktree: N/A
   Scenario hint: architectural-rework"
-  bd dep add "<bead-id>" "$HUMAN_ID"
+  # Non-containers: dep-block the source. Containers gate via parent-child
+  # plus Rule C invariant (containers MUST NOT carry readiness labels).
+  if [ "$IS_CONTAINER" = "0" ]; then
+      bd dep add <bead-id> "$HUMAN_ID"
+  fi
   ```
   Exit cleanly. Otherwise proceed to Step 3.
 
@@ -181,25 +207,50 @@ Decide from the result array:
   the user can burn the loser later.
 
   If the molecules cannot be cleanly disambiguated, escalate via the
-  **Human-Escalation Pattern (HEP)** — defined in
-  `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
-  **HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Do NOT
-  bare-stamp `human` on the source bead; the single-bead-`human`
-  invariant requires the escalation bead to be the sole carrier of
-  `human`. Carry your multi-molecule analysis into the escalation
-  bead's notes so the human sees your read-out, not a blank flag:
+  **Human-Escalation Pattern (HEP)** — see the HEP section of the
+  beads rule (deployed alongside this skill, authoritative for agents
+  in deployed context). Do NOT bare-stamp `human` on the source bead;
+  the single-bead-`human` invariant requires the escalation bead to be
+  the sole carrier of `human`. Carry your multi-molecule analysis into
+  the escalation bead's notes so the human sees your read-out, not a
+  blank flag:
   ```bash
+  # Container detection: containers get the human bead as a CHILD via
+  # `--parent`; non-containers get a sibling human bead + `blocks` dep.
+  SRC_TYPE=$(bd show <bead-id> --json | jq -r '.[0].issue_type // "task"')
+  case "$SRC_TYPE" in
+      epic|milestone) IS_CONTAINER=1 ;;
+      feature)
+          SRC_ACTIVE_CHILDREN=$(bd list --parent <bead-id> \
+              --status open,in_progress --limit 0 --json \
+              | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+          [ "$SRC_ACTIVE_CHILDREN" -gt 0 ] && IS_CONTAINER=1 || IS_CONTAINER=0 ;;
+      *) IS_CONTAINER=0 ;;
+  esac
   # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
-  HUMAN_ID=$(bd create \
-      --title "Human input needed: multiple active molecules on <bead-id>" \
-      --type task \
-      --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
-      --description "N active molecules for this bead; cannot cleanly disambiguate.
+  if [ "$IS_CONTAINER" = "1" ]; then
+    HUMAN_ID=$(bd create --parent <bead-id> --no-inherit-labels \
+        --title "Human input needed: multiple active molecules on <bead-id>" \
+        --type task \
+        --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+        --description "N active molecules for this bead; cannot cleanly disambiguate.
   - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
   - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
   Assessment: <duplicative | legacy | needs manual merge>
   Recommended action: <resume X / burn Y / user decides>" \
-      --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  else
+    HUMAN_ID=$(bd create \
+        --title "Human input needed: multiple active molecules on <bead-id>" \
+        --type task \
+        --priority "$(bd show <bead-id> --json | jq -r '.[0].priority')" \
+        --description "N active molecules for this bead; cannot cleanly disambiguate.
+  - <mol-id-1> (<formula>, status=<s>, updated <ts>): <analysis>
+  - <mol-id-2> (<formula>, status=<s>, updated <ts>): <analysis>
+  Assessment: <duplicative | legacy | needs manual merge>
+  Recommended action: <resume X / burn Y / user decides>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+  fi
   [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
   bd update "$HUMAN_ID" --append-notes \
@@ -208,11 +259,15 @@ Decide from the result array:
   Molecule: <mol-id-1>, <mol-id-2>, ...
   Worktree: N/A
   Scenario hint: architectural-rework"
-  bd dep add "<bead-id>" "$HUMAN_ID"
+  # Non-containers: dep-block the source. Containers gate via parent-child
+  # plus Rule C invariant (containers MUST NOT carry readiness labels).
+  if [ "$IS_CONTAINER" = "0" ]; then
+      bd dep add <bead-id> "$HUMAN_ID"
+  fi
   ```
   Exit cleanly. Do NOT silently pick one.
 
-See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
+See the molecule→bead linkage convention in the beads-labels rule for the full
 rationale and the stamp procedure.
 
 ### Step 2.5: Route D — bead carries `human` or is blocked by `human`
@@ -223,9 +278,9 @@ user sees one continuous flow — no second `/resolve-human-bead` invocation
 is required.
 
 Authority: this route implements the **Human-Escalation Pattern (HEP)**
-defined in `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized
-in the HEP section of `src/plugins/beads/.claude/rules/beads.md`. Cite
-arch §5.6 and the beads.md HEP section as authoritative.
+documented in the HEP section of the beads rule (deployed alongside
+this skill, authoritative for agents in deployed context). Cite that
+section as authoritative.
 
 **Trigger** — fire Route D when EITHER:
 
@@ -386,13 +441,13 @@ If in doubt, it is NOT trivial. Use Route C.
 Condition: anything that does not meet Route A or B criteria.
 This is the default route for feature, task, and chore beads without full specs.
 
-The bead's claim walk (I1 in `rules/beads.md`) is handled by the
+The bead's claim walk (I1 in the beads rule) is handled by the
 brainstorm-bead formula's first step (`claim`) — you do not need to
 claim the bead manually here; driving the molecule will run the claim
 step and mark the bead (and parent chain) `in_progress` before `assess`.
 
 Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
-lookup label (see `rules/beads-labels.md` "Molecule → bead linkage convention"):
+lookup label (see the molecule→bead linkage convention in the beads-labels rule):
 ```bash
 bd mol wisp create brainstorm-bead --var bead-id=<bead-id> --var title-slug=<slug>
 # Capture the wisp-id from the command output, then:

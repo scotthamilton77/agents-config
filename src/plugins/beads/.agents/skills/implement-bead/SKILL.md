@@ -22,22 +22,52 @@ Metadata-driven dispatcher. One step-bead per invocation.
 Whenever this skill needs to pause a source bead pending human input —
 the verb used throughout below is **flag-human** — it executes the
 **Human-Escalation Pattern (HEP)** rather than stamping `human` directly
-on the source or step bead. HEP is defined in
-`docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
-**HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Both are
-authoritative.
+on the source or step bead. The full HEP rule lives in the **HEP section
+of the beads rule** (deployed alongside this skill and authoritative for
+agents in deployed context); the procedure below is its operational
+summary.
 
 The HEP escalation procedure (run literally on every flag-human path
 below) is:
 
 ```bash
+# Container detection. Containers (epic, milestone, feature-with-active-
+# children) get the human bead as a CHILD via `--parent`; non-containers
+# get the human bead as a sibling with a `blocks` dep. bd's `blocks`
+# epic wall hard-errors on cross-type edges, so parent-child is the
+# wall-immune shape for container sources. The active-children probe
+# uses `--limit 0` (unbounded inventory) and drops `merge-gate` /
+# `human`-labeled children — those don't make a feature a container.
+SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
+case "$SRC_TYPE" in
+    epic|milestone) IS_CONTAINER=1 ;;
+    feature)
+        SRC_ACTIVE_CHILDREN=$(bd list --parent "<source-bead-id>" \
+            --status open,in_progress --limit 0 --json \
+            | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+        [ "$SRC_ACTIVE_CHILDREN" -gt 0 ] && IS_CONTAINER=1 || IS_CONTAINER=0 ;;
+    *) IS_CONTAINER=0 ;;
+esac
+
 # dual-shape contract: bd create --json may emit either {id:...} or [{id:...}]
-HUMAN_ID=$(bd create \
-    --title "Human input needed: <one-line summary>" \
-    --type task \
-    --priority "<inherited from source bead>" \
-    --description "<context: what the stage was doing, what is blocked, what is needed>" \
-    --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+# `--no-inherit-labels` (container branch) prevents the human bead from
+# inheriting brainstormed / implementation-ready / session markers from
+# the source container.
+if [ "$IS_CONTAINER" = "1" ]; then
+    HUMAN_ID=$(bd create --parent "<source-bead-id>" --no-inherit-labels \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what the stage was doing, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+else
+    HUMAN_ID=$(bd create \
+        --title "Human input needed: <one-line summary>" \
+        --type task \
+        --priority "<inherited from source bead>" \
+        --description "<context: what the stage was doing, what is blocked, what is needed>" \
+        --json | jq -r 'if type == "array" then .[0].id else .id end // empty')
+fi
 [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
 bd label add "$HUMAN_ID" human
 bd update "$HUMAN_ID" --append-notes \
@@ -46,15 +76,24 @@ Step-bead: <step-bead-id>
 Molecule: <mol-id>
 Worktree: <worktree-path-or-N/A>
 Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-bd dep add "<source-bead-id>" "$HUMAN_ID"
+# Non-containers: dep-block the source. Containers gate via parent-child
+# relationship + Rule C invariant (containers MUST NOT carry readiness
+# labels).
+if [ "$IS_CONTAINER" = "0" ]; then
+    bd dep add "<source-bead-id>" "$HUMAN_ID"
+fi
 bd update "<source-bead-id>" --status open
 # Exit cleanly (zero exit code; stage is paused, not failed).
 ```
 
-After this transaction the source bead status reverts `in_progress → open`,
-the source bead's open `bd dep` blocker on `$HUMAN_ID` keeps it out of
-`bd ready --label implementation-ready`, and the escalation bead is the
-single carrier of the `human` visibility tag. The source bead and the
+After this transaction the source bead status reverts `in_progress → open`
+and the escalation bead is the single carrier of the `human` visibility
+tag. For non-container sources, the open `bd dep` blocker on `$HUMAN_ID`
+keeps the source out of `bd ready --label implementation-ready`. For
+container sources, the human bead is a child of the source and the
+source is kept out of every ready queue by Rule C — containers MUST NOT
+carry readiness labels (enforced by the brainstorm-bead container gate
+and the epic-hygiene migrations in this PR). The source bead and the
 step-bead MUST NOT carry the `human` label.
 
 This is a structural invariant of HEP — see arch §5.6's "Single-bead
@@ -67,7 +106,7 @@ path back into the autonomous queue.
 
 The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the same id the shell driver passes from `bd ready --label implementation-ready`. Resolve the chain source-bead → molecule → current step-bead:
 
-1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in `src/plugins/beads/.claude/rules/beads-labels.md`). **If empty (first stage — no molecule yet)**: select the formula and pour. Formula selection is canonical: read the source bead's `formula-<name>` label first via the JSON array shape (per `src/plugins/beads/.claude/rules/beads-labels.md` molecule→bead linkage convention — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing §4.2 policy-knob collisions):
+1. `<mol-id>` from the source bead's linkage label: `bd list --label for-bead-<source-bead-id> --type molecule --json | jq '[.[] | select(.status != "closed")]'` (per the molecule→bead linkage convention in the beads-labels rule). **If empty (first stage — no molecule yet)**: select the formula and pour. Formula selection is canonical: read the source bead's `formula-<name>` label first via the JSON array shape (per the molecule→bead linkage convention in the beads-labels rule — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing policy-knob collisions):
 
        formula_names=$(bd label list <source-bead-id> --json \
          | jq -r '.[] | select(startswith("formula-"))' \
@@ -95,15 +134,15 @@ The slash-command argument is the **source bead-id** (e.g. `7bk.19.3`) — the s
          exit 0
        fi
 
-   If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` → flag-human (execute the HEP escalation procedure from §0; the escalation bead's notes record "epic source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>" --var title-slug=<slug>`; `fix-bug` → `--var bug="<title>" --var title-slug=<slug>`; `docs-only` → `--var topic="<title>" --var title-slug=<slug>`; `merge-and-cleanup` → `--var title-slug=<slug> --var pr="<pr-number>"` (where `<pr-number>` is the open PR number to merge; `bead-id` is the source bead being delivered). All formulas additionally take `--var bead-id=<source-bead-id>`. The `<slug>` is derived from the source bead's title using the canonical slug generation algorithm: (1) lowercase the title, (2) replace spaces with hyphens, (3) strip all characters except a-z, 0-9, and hyphens, (4) collapse consecutive hyphens to a single hyphen, (5) truncate to a maximum of 30 characters, (6) strip leading and trailing hyphens, (7) fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead (dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`). Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from `src/plugins/beads/.claude/rules/beads-labels.md` "Molecule → bead linkage convention" (resume the winner if one clearly supersedes others; otherwise execute the HEP escalation procedure from §0 and exit).
-2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes, matching the pattern in `scripts/bead-driver-test.sh`).
+   If `formula_to_pour` is non-empty, use it. Otherwise branch on the source bead's type as the fallback: `epic` / `milestone` → flag-human (execute the HEP escalation procedure from §0; the escalation bead's notes record "epic or milestone source bead requires decomposition before implementation, not a formula pour") and exit; do NOT pour; `bug` → `fix-bug`; `feature` / `task` / `chore` (or null) → `implement-feature`. Pour the selected formula with the appropriate `--var` shape (one variable name per formula): `implement-feature` → `--var feature="<title>" --var title-slug=<slug>`; `fix-bug` → `--var bug="<title>" --var title-slug=<slug>`; `docs-only` → `--var topic="<title>" --var title-slug=<slug>`; `merge-and-cleanup` → `--var title-slug=<slug> --var pr="<pr-number>"` (where `<pr-number>` is the open PR number to merge; `bead-id` is the source bead being delivered). All formulas additionally take `--var bead-id=<source-bead-id>`. The `<slug>` is derived from the source bead's title using the canonical slug generation algorithm: (1) lowercase the title, (2) replace spaces with hyphens, (3) strip all characters except a-z, 0-9, and hyphens, (4) collapse consecutive hyphens to a single hyphen, (5) truncate to a maximum of 30 characters, (6) strip leading and trailing hyphens, (7) fallback: if the result is empty (e.g., the title contained only non-ASCII characters or symbols), apply steps 1–6 to the bead-id instead (dots and other non-[a-z0-9-] characters in the bead-id are stripped by step 3, so `agents-config-abn9.7` → `agents-config-abn97`). Stamp `bd label add <new-mol-id> for-bead-<source-bead-id>` immediately after pour (linkage convention). Then re-run the existence probe to obtain `<mol-id>`. If exactly one non-closed molecule → take its `id`. If multiple → apply the disambiguation logic from the molecule→bead linkage convention in the beads-labels rule (resume the winner if one clearly supersedes others; otherwise execute the HEP escalation procedure from §0 and exit).
+2. `<step-bead-id>` from the molecule's current step: `bd mol current <mol-id> --json | jq -r 'if type == "array" then .[] else . end | select(.status != "closed") | .id' | head -1` (defensive against both array and object JSON shapes).
 3. Run `bd show <step-bead-id>` and `bd label list <step-bead-id>` for step-bead context.
 4. Run `bd label list <source-bead-id>` to capture `ralf:required` / `ralf:cycles=N`.
 
 ## 2. Resolve execution context
 
 1. Worktree path: decode the molecule's `worktree-path-*` label (`__ → /` then `_u → _`); verify with `git -C "<path>" rev-parse --is-inside-work-tree`. If the command exits non-zero or prints anything other than `true` → flag-human protocol: execute the HEP escalation procedure from §0 (escalation bead's notes record the decoded path that failed verification), and exit. Do NOT proceed without a verified worktree. The source bead and step-bead MUST NOT carry `human` — the escalation bead is the only `human`-labeled bead in the transaction.
-2. Mode: canonical lookup is the source bead's `formula-<name>` label (per `bead-pipeline-architecture.md` §3 preflight and §4.2 policy-knob labels — preflight reads `formula-<name>` on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic → flag-human). implement-bead reads the same authority via the JSON array shape (per `src/plugins/beads/.claude/rules/beads-labels.md` molecule→bead linkage convention — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing §4.2 policy-knob collisions):
+2. Mode: canonical lookup is the source bead's `formula-<name>` label (the preflight stage reads this `formula-<name>` policy-knob label on the source bead, falling back to per-bead-type defaults: feature/task/chore → `implement-feature`, bug → `fix-bug`, epic / milestone → flag-human). implement-bead reads the same authority via the JSON array shape (per the molecule→bead linkage convention in the beads-labels rule — `bd label list <id> --json` returns a flat JSON array of label strings, NOT `{labels: [...]}`; the awk-with-`exit` pattern previously used here returned the FIRST match and could not detect ambiguity, silently swallowing policy-knob collisions):
 
        formula_names=$(bd label list <source-bead-id> --json \
          | jq -r '.[] | select(startswith("formula-"))' \
@@ -181,7 +220,7 @@ For `(red-tests, fix-bug)` and `(green-loop, fix-bug)`, retrieve the prior diagn
 
 1. For every non-synthetic report (status is `complete`, `needs_human`, or `failed` from the worker), file each `discovered_work` item as a new bead. Apply this step BEFORE step 8 outcomes, so any escalations may reference the newly-filed beads.
 2. Synthetic reports always have `discovered_work: []` per `worker-report-v1.md` §4 — moot but explicit.
-3. Placement decision is the orchestrator's, not the worker's. Apply the I3 sibling test from `src/plugins/beads/.claude/rules/beads.md`: passes → `bd create --parent <epic-id>`; fails → orphan + `bd dep add <new-id> <source-bead-id> --type discovered-from`. Default when no obvious sibling fit exists: orphan + `discovered-from`.
+3. Placement decision is the orchestrator's, not the worker's. Apply the I3 sibling test from the beads rule: passes → `bd create --parent <epic-id>`; fails → orphan + `bd dep add <new-id> <source-bead-id> --type discovered-from`. Default when no obvious sibling fit exists: orphan + `discovered-from`.
 
 ## 8. Apply status outcomes to the step-bead
 

@@ -232,6 +232,43 @@ At the top of this step's script execution, set:
 
   TITLE_SLUG="{{title-slug}}"
 
+──────────────────────────────────────────────────────────────────────────
+STEP 0 — Container gate (runs BEFORE Step 1 idempotency probe)
+──────────────────────────────────────────────────────────────────────────
+
+Container beads (milestone / epic / feature-with-children) must NOT produce
+an implementation bead Y. Containers are excluded from impl-ready and
+brainstorm-ready lists, and brainstorm-bead MUST NOT stamp
+`implementation-ready` or `brainstormed` on a container. The full
+routing spec — the three rules and the type × children × labels filter
+matrix — lives in the `whats-next` skill's `collect.py` module-level
+documentation. Decomposition produces leaf children directly via
+`bd create --parent`; this finalize path then exits cleanly.
+
+The detection + HEP / decomposition logic lives in the helper script
+`~/.beads/scripts/bd-finalize-container-gate.sh`. The helper handles:
+container detection (milestone | epic | feature-with-children — probes
+non-closed children via `bd list --parent ... --status open,in_progress`);
+HEP escalation for prior-run state (forward `produced-bead-<Y>` AND
+reverse `produced-from-<X>` orphan probes); clean decomposition outcome
+(stamps `epic-decomposed`, runs the I2 close-walk, burns the wisp).
+On HEP paths it creates child-only escalations and skips the cross-type
+`bd dep add` for container sources, including epic/milestone and
+feature-with-children cases (the bd `blocks` epic wall hard-errors on
+cross-type edges; the Rule B structural filter in the whats-next skill
+already gates containers out of any queue).
+
+  # ── STEP 0: Container gate ───────────────────────────────────────────
+  DECISION=$(~/.beads/scripts/bd-finalize-container-gate.sh \\
+    --bead-id "{{bead-id}}" \\
+    --mol-id "<this-mol-id>")
+  case "$DECISION" in
+    handled)        exit 0 ;;   # HEP escalation OR clean decomposition done
+    not-container)  ;;          # fall through to Step 1 (idempotency probe → ...)
+    *) echo "ERROR: bd-finalize-container-gate.sh returned unexpected decision: $DECISION" >&2
+       exit 1 ;;
+  esac
+
 Note on naming scope: $TITLE_SLUG is used ONLY for children created UNDER Y
 (post-Y), namely the `[merge-gate] $TITLE_SLUG` child in step 5b and the
 `[verify] $TITLE_SLUG - $ac_line` children in step 5b. The pre-Y
@@ -266,7 +303,7 @@ Detect prior partial runs before doing any new writes.
         echo "Error: could not extract escalation bead id (multiple produced-bead labels path)" >&2
         exit 1
     fi
-    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    bd dep add {{bead-id}} "$ESC_ID"
     echo "PAUSED: multiple produced-bead-* labels on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
   fi
@@ -314,7 +351,7 @@ Detect prior partial runs before doing any new writes.
              echo "Error: could not extract escalation bead id (orphan Y candidates path)" >&2
              exit 1
          fi
-         bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+         bd dep add {{bead-id}} "$ESC_ID"
          echo "PAUSED: multiple orphan Y candidates for {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
          exit 0 ;;
     esac
@@ -354,7 +391,7 @@ child halts finalize for human triage.
         echo "Error: could not extract escalation bead id (unexpected children path)" >&2
         exit 1
     fi
-    bd dep add {{bead-id}} "$ESC_ID" --type blocked-by
+    bd dep add {{bead-id}} "$ESC_ID"
     echo "PAUSED: unexpected children on {{bead-id}}; escalation bead $ESC_ID created. Resolve $ESC_ID to resume."
     exit 0
   fi
