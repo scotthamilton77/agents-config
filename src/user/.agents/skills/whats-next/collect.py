@@ -290,15 +290,15 @@ def select_section_beads(mode, human_beads, planning_beads, brainstorm_beads, im
     Parallel implementation: the output-emission if/elif in main()
     encodes the same mapping. Keep them in sync.
     """
-    if mode == 'all':
+    if mode == "all":
         return human_beads + planning_beads + brainstorm_beads + impl_beads
-    if mode == 'human':
+    if mode == "human":
         return human_beads
-    if mode == 'brainstorm':
+    if mode == "brainstorm":
         return brainstorm_beads
-    if mode == 'implementation':
+    if mode == "implementation":
         return impl_beads
-    if mode == 'planning':
+    if mode == "planning":
         return planning_beads
     return []  # unreachable under argparse choices=
 
