@@ -252,10 +252,11 @@ non-closed children via `bd list --parent ... --status open,in_progress`);
 HEP escalation for prior-run state (forward `produced-bead-<Y>` AND
 reverse `produced-from-<X>` orphan probes); clean decomposition outcome
 (stamps `epic-decomposed`, runs the I2 close-walk, burns the wisp).
-On HEP paths it skips the cross-type `bd dep add` for epic/milestone
-sources (the bd `blocks` epic wall hard-errors on cross-type edges; the
-Rule B structural filter in the whats-next skill already gates
-containers out of any queue).
+On HEP paths it creates child-only escalations and skips the cross-type
+`bd dep add` for container sources, including epic/milestone and
+feature-with-children cases (the bd `blocks` epic wall hard-errors on
+cross-type edges; the Rule B structural filter in the whats-next skill
+already gates containers out of any queue).
 
   # ── STEP 0: Container gate ───────────────────────────────────────────
   DECISION=$(~/.beads/scripts/bd-finalize-container-gate.sh \\
