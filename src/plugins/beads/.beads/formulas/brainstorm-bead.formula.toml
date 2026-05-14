@@ -237,11 +237,13 @@ STEP 0 — Container gate (runs BEFORE Step 1 idempotency probe)
 ──────────────────────────────────────────────────────────────────────────
 
 Container beads (milestone / epic / feature-with-children) must NOT produce
-an implementation bead Y. Per the Container Beads section in beads.md
-(Rules B and C), containers are excluded from impl-ready and brainstorm-
-ready lists, and brainstorm-bead MUST NOT stamp `implementation-ready` or
-`brainstormed` on a container. Decomposition produces leaf children
-directly via `bd create --parent`; this finalize path then exits cleanly.
+an implementation bead Y. Containers are excluded from impl-ready and
+brainstorm-ready lists, and brainstorm-bead MUST NOT stamp
+`implementation-ready` or `brainstormed` on a container. The full
+routing spec — the three rules and the type × children × labels filter
+matrix — lives in the `whats-next` skill's `collect.py` module-level
+documentation. Decomposition produces leaf children directly via
+`bd create --parent`; this finalize path then exits cleanly.
 
 The detection + HEP / decomposition logic lives in the helper script
 `~/.beads/scripts/bd-finalize-container-gate.sh`. The helper handles:

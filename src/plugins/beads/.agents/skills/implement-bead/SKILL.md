@@ -46,16 +46,30 @@ Step-bead: <step-bead-id>
 Molecule: <mol-id>
 Worktree: <worktree-path-or-N/A>
 Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-bd dep add "<source-bead-id>" "$HUMAN_ID"
+# Source-type-conditional blocking dep: epic / milestone sources cannot
+# carry a cross-type `blocks` dep to a task escalation bead (bd's epic
+# wall hard-errors on cross-type edges). Containers are already excluded
+# from `bd ready` and `bd ready --label implementation-ready` by the
+# Rule B structural filter (whats-next skill / collect.py), so the dep
+# is moot for them — reverting status to `open` alone keeps them out of
+# the queue. For non-container sources the dep is required so `bd ready`
+# gating works.
+SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
+case "$SRC_TYPE" in
+    epic|milestone) ;;  # skip; Rule B structural filter already gates
+    *) bd dep add "<source-bead-id>" "$HUMAN_ID" ;;
+esac
 bd update "<source-bead-id>" --status open
 # Exit cleanly (zero exit code; stage is paused, not failed).
 ```
 
 After this transaction the source bead status reverts `in_progress → open`,
 the source bead's open `bd dep` blocker on `$HUMAN_ID` keeps it out of
-`bd ready --label implementation-ready`, and the escalation bead is the
-single carrier of the `human` visibility tag. The source bead and the
-step-bead MUST NOT carry the `human` label.
+`bd ready --label implementation-ready` (for non-container sources; for
+epic / milestone sources, status=open alone is sufficient because Rule B
+structurally filters containers out of the queue), and the escalation
+bead is the single carrier of the `human` visibility tag. The source
+bead and the step-bead MUST NOT carry the `human` label.
 
 This is a structural invariant of HEP — see arch §5.6's "Single-bead
 `human` invariant" subsection and the beads.md HEP section. Bare label

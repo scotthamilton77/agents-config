@@ -155,9 +155,9 @@ trap 'rm -rf "$TMP_T3" "$TMP_T5"' EXIT
 cat > "$TMP_T5/bd" <<'SHIM'
 #!/usr/bin/env bash
 case "$*" in
-  "list --label human --json")
+  "list --label human --limit 0 --json")
     echo '[]' ;;
-  "list --status open,in_progress --json")
+  "list --status open,in_progress --limit 0 --json")
     # active_child_count source: each non-closed bead with its parent. Chain:
     # task has parent epic; epic has parent feature; feature has parent
     # milestone. Container at top has no other children (childless).
@@ -177,12 +177,12 @@ JSON
 ]
 JSON
     ;;
-  "list --type milestone --ready --json")
+  "list --type milestone --ready --limit 0 --json")
     # Childless container surfaces in planning-ready.
     echo '[{"id":"proj-empty-ms","issue_type":"milestone","status":"open","priority":1,"title":"Empty MS","labels":[]}]' ;;
-  "list --type epic --ready --json")
+  "list --type epic --ready --limit 0 --json")
     echo '[]' ;;
-  "list --type feature --ready --json")
+  "list --type feature --ready --limit 0 --json")
     echo '[]' ;;
   "show proj-feat1 --json")
     echo '[{"id":"proj-feat1","issue_type":"feature","priority":1,"title":"Some feature","labels":[],"parent":"proj-ms1"}]' ;;
@@ -245,9 +245,9 @@ trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6"' EXIT
 cat > "$TMP_T6/bd" <<'SHIM'
 #!/usr/bin/env bash
 case "$*" in
-  "list --label human --json")
+  "list --label human --limit 0 --json")
     echo '[{"id":"proj-h1","issue_type":"task","status":"open","priority":1,"title":"H","labels":["human"]}]' ;;
-  "list --status open,in_progress --json")
+  "list --status open,in_progress --limit 0 --json")
     cat <<'JSON'
 [
   {"id":"proj-impl1","issue_type":"task","status":"open","priority":1,"title":"Impl","labels":["implementation-ready"]},
@@ -265,10 +265,10 @@ JSON
 ]
 JSON
     ;;
-  "list --type milestone --ready --json") echo '[]' ;;
-  "list --type epic --ready --json")
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json")
     echo '[{"id":"proj-empty-ep","issue_type":"epic","status":"open","priority":1,"title":"Empty epic","labels":[]}]' ;;
-  "list --type feature --ready --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json") echo '[]' ;;
   *) echo '[]' ;;
 esac
 SHIM
@@ -338,9 +338,9 @@ trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8"' EXIT
 cat > "$TMP_T8/bd" <<'SHIM'
 #!/usr/bin/env bash
 case "$*" in
-  "list --label human --json")
+  "list --label human --limit 0 --json")
     echo '[]' ;;
-  "list --status open,in_progress --json")
+  "list --status open,in_progress --limit 0 --json")
     # Childless feature with implementation-ready — the leaf impl bead.
     # No other active beads share this id as parent → active_child_count is 0.
     cat <<'JSON'
@@ -356,9 +356,9 @@ JSON
 ]
 JSON
     ;;
-  "list --type milestone --ready --json") echo '[]' ;;
-  "list --type epic --ready --json") echo '[]' ;;
-  "list --type feature --ready --json")
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
     # `--ready` may return the childless feature; planning_ready filter
     # must still drop it because of the implementation-ready label.
     cat <<'JSON'

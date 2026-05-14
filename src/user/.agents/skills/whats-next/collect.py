@@ -297,9 +297,14 @@ def main():
     mode = args.mode
 
     # Fetch full source sets.
-    human_raw = bd_json("list", "--label", "human", "--json")
+    # NOTE: pass `--limit 0` on every `bd list` call so the unbounded
+    # inventory is returned. `bd list` defaults to a 50-row page; without
+    # `--limit 0`, the active-child-count index below can drop children
+    # for any parent whose children fall past row 50, which then
+    # misclassifies feature-with-children containers as childless leaves.
+    human_raw = bd_json("list", "--label", "human", "--limit", "0", "--json")
     ready_raw = bd_json("ready", "--json")
-    all_active = bd_json("list", "--status", "open,in_progress", "--json")
+    all_active = bd_json("list", "--status", "open,in_progress", "--limit", "0", "--json")
 
     # Build the active-child-count index in one O(N) pass.
     global active_child_count
@@ -311,10 +316,11 @@ def main():
 
     # Planning-ready: three separate --type queries (comma-separated --type
     # is not supported by the CLI). --ready gates on dep-unblocked.
+    # `--limit 0` for the same unbounded-inventory reason as above.
     planning_raw = (
-        bd_json("list", "--type", "milestone", "--ready", "--json")
-        + bd_json("list", "--type", "epic", "--ready", "--json")
-        + bd_json("list", "--type", "feature", "--ready", "--json")
+        bd_json("list", "--type", "milestone", "--ready", "--limit", "0", "--json")
+        + bd_json("list", "--type", "epic", "--ready", "--limit", "0", "--json")
+        + bd_json("list", "--type", "feature", "--ready", "--limit", "0", "--json")
     )
 
     def apply_limit(lst):
@@ -335,12 +341,13 @@ def main():
     )
 
     # Planning-ready: childless container beads with no human label.
-    # Per the Filter Matrix in beads.md / epic-hygiene spec, the
-    # `implementation-ready` label is treated as Rule C noise for
-    # `milestone` and `epic` (still routed to planning-ready), and only
-    # acts as an exclusion for `feature` — where `implementation-ready`
-    # means the bead is a leaf impl bead produced by brainstorm-bead and
-    # belongs in the implementation-ready section instead.
+    # Per the Filter Matrix in this module's docstring above (the
+    # canonical home of the routing spec), the `implementation-ready`
+    # label is treated as Rule C noise for `milestone` and `epic` (still
+    # routed to planning-ready), and only acts as an exclusion for
+    # `feature` — where `implementation-ready` means the bead is a leaf
+    # impl bead produced by brainstorm-bead and belongs in the
+    # implementation-ready section instead.
     def in_planning(b):
         if active_child_count.get(b.get("id", ""), 0) != 0:
             return False

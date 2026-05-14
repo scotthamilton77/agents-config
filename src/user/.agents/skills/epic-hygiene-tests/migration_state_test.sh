@@ -161,8 +161,14 @@ pass "type-spike(bt9e): agents-config-bt9e is type spike"
 # returns a JSON array. No open epic carries implementation-ready or
 # implementation-readied-session-*. (Hardened per CR4: distinguish bd failure
 # from empty result.)
+#
+# `--limit 0` is mandatory — bd list defaults to 50 rows; without an
+# explicit limit override, an open epic past the first page would slip
+# past the sanity check and let the assertion pass while AC8 is still
+# violated. `--status open,in_progress` keeps the inventory focused on
+# the rows whose label state actually matters (closed epics are irrelevant).
 # -----------------------------------------------------------------------------
-epics_json=$(bd_or_fail "list --type epic" list --type epic --json)
+epics_json=$(bd_or_fail "list --type epic" list --type epic --status open,in_progress --limit 0 --json)
 parse_json_or_fail "list --type epic" "$epics_json"
 
 # Confirm the parsed structure is a list (could legitimately be empty).

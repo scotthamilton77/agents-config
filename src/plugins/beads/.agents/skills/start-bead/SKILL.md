@@ -152,7 +152,14 @@ Decide from the result array:
   Molecule: <unknown — probe returned 0 labeled molecules>
   Worktree: N/A
   Scenario hint: architectural-rework"
-  bd dep add "<bead-id>" "$HUMAN_ID"
+  # Source-type-conditional blocking dep: epic / milestone sources hit
+  # bd's cross-type `blocks` wall; Rule B structural filter already
+  # gates containers out of `bd ready` regardless of dep.
+  SRC_TYPE=$(bd show "<bead-id>" --json | jq -r '.[0].issue_type // "task"')
+  case "$SRC_TYPE" in
+      epic|milestone) ;;
+      *) bd dep add "<bead-id>" "$HUMAN_ID" ;;
+  esac
   ```
   Exit cleanly. Otherwise proceed to Step 3.
 
@@ -208,7 +215,14 @@ Decide from the result array:
   Molecule: <mol-id-1>, <mol-id-2>, ...
   Worktree: N/A
   Scenario hint: architectural-rework"
-  bd dep add "<bead-id>" "$HUMAN_ID"
+  # Source-type-conditional blocking dep: epic / milestone sources hit
+  # bd's cross-type `blocks` wall; Rule B structural filter already
+  # gates containers out of `bd ready` regardless of dep.
+  SRC_TYPE=$(bd show "<bead-id>" --json | jq -r '.[0].issue_type // "task"')
+  case "$SRC_TYPE" in
+      epic|milestone) ;;
+      *) bd dep add "<bead-id>" "$HUMAN_ID" ;;
+  esac
   ```
   Exit cleanly. Do NOT silently pick one.
 

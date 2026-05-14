@@ -24,9 +24,17 @@
 #   - May burn the wisp via `bd mol burn`.
 #   - Reverts X status to `open` on HEP paths.
 #
+# Stdout contract: the caller captures stdout via `$(...)` command
+# substitution and compares it to the literal `handled` or `not-container`
+# tokens. To prevent multi-line capture (which would route to the case
+# error branch after irreversible state changes), this script saves the
+# real stdout on FD 3 immediately after arg parsing and redirects all
+# remaining stdout (including every `bd` subcommand) to stderr. Only the
+# final decision token is written to FD 3.
+#
 # Exit: 0 on success (decision emitted on stdout); non-zero on error.
 
-set -eu
+set -euo pipefail
 
 BEAD_ID=""
 MOL_ID=""
@@ -61,6 +69,10 @@ done
 [ -z "$BEAD_ID" ] && { echo "Error: --bead-id is required" >&2; usage; }
 [ -z "$MOL_ID" ]  && { echo "Error: --mol-id is required" >&2; usage; }
 
+# Save real stdout on FD 3; redirect remaining stdout to stderr so subordinate
+# bd/jq/helper-script output does not pollute the caller's $(...) capture.
+exec 3>&1 1>&2
+
 X_TYPE=$(bd show "$BEAD_ID" --json | jq -r '.[0].issue_type // "task"')
 
 CONTAINER=0
@@ -75,7 +87,7 @@ case "$X_TYPE" in
 esac
 
 if [ "$CONTAINER" = "0" ]; then
-    echo "not-container"
+    echo "not-container" >&3
     exit 0
 fi
 
@@ -125,9 +137,9 @@ Worktree: N/A
 Scenario hint: scope-expanded (multiple produced-bead labels on container)"
     add_hep_block_dep "$BEAD_ID" "$ESC_ID"
     bd update "$BEAD_ID" --status open
-    echo "PAUSED: ambiguous Y on container $BEAD_ID; escalation bead $ESC_ID created." >&2
+    echo "PAUSED: ambiguous Y on container $BEAD_ID; escalation bead $ESC_ID created."
     bd mol burn "$MOL_ID" --force
-    echo "handled"
+    echo "handled" >&3
     exit 0
 fi
 
@@ -154,9 +166,9 @@ Worktree: N/A
 Scenario hint: scope-expanded (container reclassification after Y produced)"
     add_hep_block_dep "$BEAD_ID" "$ESC_ID"
     bd update "$BEAD_ID" --status open
-    echo "PAUSED: container reclassification on $BEAD_ID; escalation bead $ESC_ID created." >&2
+    echo "PAUSED: container reclassification on $BEAD_ID; escalation bead $ESC_ID created."
     bd mol burn "$MOL_ID" --force
-    echo "handled"
+    echo "handled" >&3
     exit 0
 fi
 
@@ -164,11 +176,11 @@ fi
 # close X via I2 close-walk, burn the wisp. Per Rule C, do NOT stamp
 # `brainstormed` or `implementation-ready`. The `epic-decomposed` label
 # is audit-only.
-echo "Container bead (type=$X_TYPE): decomposition outcome; implementation-ready NOT stamped." >&2
+echo "Container bead (type=$X_TYPE): decomposition outcome; implementation-ready NOT stamped."
 bd label add "$BEAD_ID" epic-decomposed
 ~/.beads/scripts/bd-close-walk.sh \
     --bead-id "$BEAD_ID" \
     --reason "brainstormed (decomposition); no impl bead produced"
 bd mol burn "$MOL_ID" --force
-echo "handled"
+echo "handled" >&3
 exit 0

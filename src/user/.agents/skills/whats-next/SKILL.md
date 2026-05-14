@@ -62,7 +62,8 @@ Top-level shape:
   },
   "human":          [ ...beads ],
   "planning_ready": [ ...beads ],
-  "brainstorm":     [ ...beads ]
+  "brainstorm":     [ ...beads ],
+  "implementation": [ ...beads ]
 }
 ```
 

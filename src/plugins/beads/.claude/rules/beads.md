@@ -47,7 +47,7 @@ and must not carry readiness labels.
 Before any work (including brainstorming), mark the bead AND every ancestor bead `in_progress`. Use the helper script:
 
 ```bash
-.beads/scripts/bd-claim-walk.sh --bead-id <id>
+~/.beads/scripts/bd-claim-walk.sh --bead-id <id>
 ```
 
 It walks the parent chain from `<id>`, marking each ancestor `in_progress` (skipping any already `in_progress` or `closed`). Emits `walked=N` on stdout. Idempotent.
@@ -57,7 +57,7 @@ It walks the parent chain from `<id>`, marking each ancestor `in_progress` (skip
 When the bead closes, walk every ancestor bead and close any whose children are all closed. Use the helper script:
 
 ```bash
-.beads/scripts/bd-close-walk.sh --bead-id <id> --reason "<summary>"
+~/.beads/scripts/bd-close-walk.sh --bead-id <id> --reason "<summary>"
 ```
 
 It closes `<id>` with the given reason, then walks the parent chain closing any ancestor whose remaining children are all closed. Stops at the first ancestor with non-closed children. Emits `closed=<csv>` on stdout. Idempotent re-entry — if `<id>` is already closed, only the ancestor walk runs.
@@ -114,7 +114,19 @@ Step-bead: <step-bead-id>
 Molecule: <mol-id>
 Worktree: <worktree-path-or-N/A>
 Scenario hint: <spec-amended | scope-expanded | tooling-credentials | architectural-rework | abandoned>"
-bd dep add "<source-bead-id>" "$HUMAN_ID"
+# Source-type-conditional blocking dep: epic / milestone sources cannot
+# carry a cross-type `blocks` dep to a task escalation bead (bd's epic
+# wall hard-errors on cross-type edges). Containers are already excluded
+# from `bd ready` and `bd ready --label implementation-ready` by the
+# Rule B structural filter (whats-next skill / collect.py), so the dep
+# is moot for them — reverting status to `open` alone keeps them out of
+# the queue. For non-container sources the dep is required so `bd ready`
+# gating works.
+SRC_TYPE=$(bd show "<source-bead-id>" --json | jq -r '.[0].issue_type // "task"')
+case "$SRC_TYPE" in
+    epic|milestone) ;;  # skip; Rule B structural filter already gates
+    *) bd dep add "<source-bead-id>" "$HUMAN_ID" ;;
+esac
 bd update "<source-bead-id>" --status open
 # Exit cleanly (zero exit code; stage is paused, not failed).
 ```
