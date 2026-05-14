@@ -424,7 +424,7 @@ pass "T8b: childless feature with implementation-ready is excluded from --mode p
 # excludes children with merge-gate / human labels) keeps Y visible.
 # -----------------------------------------------------------------------------
 TMP_T9=$(mktemp -d)
-trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9"' EXIT
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"}' EXIT
 
 cat > "$TMP_T9/bd" <<'SHIM'
 #!/usr/bin/env bash
@@ -483,5 +483,109 @@ assert "proj-yfeat" in ids, \
     f"feature-Y with merge-gate/human children MUST appear under implementation (formula-gate children are excluded from active_child_count); got: {ids}"
 PY
 pass "T9: feature-Y impl bead with merge-gate / [Human verify] children surfaces under --mode implementation (narrowed Rule B)"
+
+# -----------------------------------------------------------------------------
+# T10. Mode-isolation regression: --mode <m> must only call bd show for the
+# ancestors of beads in the section(s) that mode emits.
+#
+# Defect under test: the prior unconditional 4-section union construction
+# of display_ids in collect.py caused resolve_all_ancestry to fire
+# `bd show <parent>` for every section's parents even when only one
+# section will be emitted. Under `--mode human`, only the human section's
+# parent (h1-parent) should be fetched; the brainstorm/impl/planning
+# parents (b1-parent, i1-parent, p1-parent) MUST NOT be fetched.
+#
+# The shim here is the only T-shim that LOGS its `show` invocations
+# (T9's shim does not). Each `bd show <id> ...` invocation appends a
+# single line `show <id>` to $TMP_T10/show.log.
+# -----------------------------------------------------------------------------
+TMP_T10=$(mktemp -d)
+# trap already includes ${TMP_T10:+"$TMP_T10"} (set above on the T9 trap line).
+SHOW_LOG="$TMP_T10/show.log"
+: > "$SHOW_LOG"
+export SHOW_LOG
+
+cat > "$TMP_T10/bd" <<SHIM
+#!/usr/bin/env bash
+# Log only \`bd show <id> ...\` invocations, one event per line.
+if [ "\$1" = "show" ]; then
+  echo "show \$2" >> "$SHOW_LOG"
+fi
+case "\$*" in
+  "list --label human --limit 0 --json")
+    echo '[{"id":"proj-h1","issue_type":"task","status":"open","priority":1,"title":"H","labels":["human"],"parent":"h1-parent"}]' ;;
+  "list --status open,in_progress --limit 0 --json")
+    # Active inventory contains ONLY the four leaf beads — none of their
+    # parents. This forces resolve_all_ancestry to issue \`bd show <parent>\`
+    # for every parent it encounters in display_ids.
+    cat <<'JSON'
+[
+  {"id":"proj-h1","issue_type":"task","status":"open","priority":1,"title":"H","labels":["human"],"parent":"h1-parent"},
+  {"id":"proj-b1","issue_type":"task","status":"open","priority":1,"title":"B","labels":[],"parent":"b1-parent"},
+  {"id":"proj-i1","issue_type":"task","status":"open","priority":1,"title":"I","labels":["implementation-ready"],"parent":"i1-parent"},
+  {"id":"proj-p1","issue_type":"feature","status":"open","priority":1,"title":"P","labels":[],"parent":"p1-parent"}
+]
+JSON
+    ;;
+  "ready --json")
+    cat <<'JSON'
+[
+  {"id":"proj-b1","issue_type":"task","status":"open","priority":1,"title":"B","labels":[],"parent":"b1-parent","created_at":"2026-05-01"},
+  {"id":"proj-i1","issue_type":"task","status":"open","priority":1,"title":"I","labels":["implementation-ready"],"parent":"i1-parent","created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
+    echo '[{"id":"proj-p1","issue_type":"feature","status":"open","priority":1,"title":"P","labels":[],"parent":"p1-parent"}]' ;;
+  "show h1-parent --json")
+    echo '[{"id":"h1-parent","issue_type":"task","parent":"","title":"parent bead","status":"open","priority":2,"labels":[]}]' ;;
+  "show b1-parent --json")
+    echo '[{"id":"b1-parent","issue_type":"task","parent":"","title":"parent bead","status":"open","priority":2,"labels":[]}]' ;;
+  "show i1-parent --json")
+    echo '[{"id":"i1-parent","issue_type":"task","parent":"","title":"parent bead","status":"open","priority":2,"labels":[]}]' ;;
+  "show p1-parent --json")
+    echo '[{"id":"p1-parent","issue_type":"task","parent":"","title":"parent bead","status":"open","priority":2,"labels":[]}]' ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T10/bd"
+
+OUT_T10="$TMP_T10/human.json"
+PATH="$TMP_T10:$PATH" python3 "$COLLECT_PY" --mode human \
+    >"$OUT_T10" 2>"$TMP_T10/err.human"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T10: collect.py --mode human exited $ec (stderr: $(cat "$TMP_T10/err.human"))"
+
+# Group (a) — sanity assertions (do NOT discriminate fixed vs unfixed).
+OUT_T10="$OUT_T10" python3 - <<'PY' \
+    || fail "T10a: --mode human output shape wrong (top-level section keys)"
+import json, os
+out = json.load(open(os.environ["OUT_T10"]))
+assert "human" in out, f"--mode human must emit 'human' key; got: {sorted(out.keys())}"
+human_ids = [b.get("id") for b in out.get("human", [])]
+assert "proj-h1" in human_ids, f"human section must include proj-h1; got: {human_ids}"
+for k in ("brainstorm", "implementation", "planning_ready"):
+    assert k not in out, f"--mode human MUST NOT emit '{k}' (got keys: {sorted(out.keys())})"
+PY
+pass "T10a: --mode human emits only the 'human' section key and includes proj-h1"
+
+# Group (b) — isolation assertions. THESE FAIL on the unfixed defect.
+# (b1) h1-parent MUST be in the log (the human section's parent is always
+#      legitimately fetched, fixed or unfixed).
+grep -qE '^show h1-parent$' "$SHOW_LOG" \
+    || fail "T10b1: expected 'show h1-parent' in $SHOW_LOG (log: $(cat "$SHOW_LOG"))"
+
+# (b2) None of {b1-parent, i1-parent, p1-parent} may be fetched — under
+#      --mode human, the brainstorm/impl/planning sections are not emitted,
+#      so their parents must not be resolved.
+for forbidden in b1-parent i1-parent p1-parent; do
+    if grep -qE "^show ${forbidden}\$" "$SHOW_LOG"; then
+        fail "T10b2: --mode human leaked 'show $forbidden' — display_ids must be scoped to the active mode's sections (log: $(cat "$SHOW_LOG"))"
+    fi
+done
+pass "T10b: --mode human fetches only h1-parent; brainstorm/impl/planning parents are not fetched (display_ids scoped to emitted sections)"
 
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."

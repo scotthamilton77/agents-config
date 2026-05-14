@@ -284,6 +284,25 @@ def extract_typed_ancestors(bead_id, ancestry_map, known, shorten):
 # Main
 # ---------------------------------------------------------------------------
 
+def select_section_beads(mode, human_beads, planning_beads, brainstorm_beads, impl_beads):
+    """Canonical mode->sections mapping.
+
+    Parallel implementation: the output-emission if/elif in main()
+    encodes the same mapping. Keep them in sync.
+    """
+    if mode == "all":
+        return human_beads + planning_beads + brainstorm_beads + impl_beads
+    if mode == "human":
+        return human_beads
+    if mode == "brainstorm":
+        return brainstorm_beads
+    if mode == "implementation":
+        return impl_beads
+    if mode == "planning":
+        return planning_beads
+    return []  # unreachable under argparse choices=
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Fetch and filter beads for the whats-next skill."
@@ -431,12 +450,7 @@ def main():
             return bid[len(prefix) + 1:]
         return bid
 
-    display_ids = (
-        [b["id"] for b in human_beads]
-        + [b["id"] for b in brainstorm_beads]
-        + [b["id"] for b in impl_beads]
-        + [b["id"] for b in planning_beads]
-    )
+    display_ids = [b["id"] for b in select_section_beads(mode, human_beads, planning_beads, brainstorm_beads, impl_beads)]
     ancestry_map = resolve_all_ancestry(display_ids, known)
 
     def enrich(beads):
