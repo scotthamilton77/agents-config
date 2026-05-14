@@ -126,9 +126,15 @@ for row in impl:
     if proc.returncode != 0:
         # bd failure — surface, do not silently pass.
         raise SystemExit(f"A2: bd list --parent {bid} failed: {proc.stderr}")
-    try:
-        children = json.loads(proc.stdout) if proc.stdout.strip() else []
-    except json.JSONDecodeError:
+    if proc.stdout.strip():
+        try:
+            children = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise SystemExit(
+                f"A2: bd list --parent {bid} returned invalid JSON: {e}\n"
+                f"stdout: {proc.stdout[:500]}\nstderr: {proc.stderr[:200]}"
+            )
+    else:
         children = []
     # Filter out formula-gate children (merge-gate / human labeled).
     active = [
@@ -206,9 +212,15 @@ for row in pl:
     )
     if proc.returncode != 0:
         raise SystemExit(f"A4: bd list --parent {bid} failed: {proc.stderr}")
-    try:
-        children = json.loads(proc.stdout) if proc.stdout.strip() else []
-    except json.JSONDecodeError:
+    if proc.stdout.strip():
+        try:
+            children = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise SystemExit(
+                f"A4: bd list --parent {bid} returned invalid JSON: {e}\n"
+                f"stdout: {proc.stdout[:500]}\nstderr: {proc.stderr[:200]}"
+            )
+    else:
         children = []
     active = [
         c for c in children
