@@ -17,7 +17,9 @@ done
     || fail "could not locate repo root containing src/plugins/beads"
 
 FORMULA="$REPO_ROOT/src/plugins/beads/.beads/formulas/brainstorm-bead.formula.toml"
+HELPER="$REPO_ROOT/src/plugins/beads/.beads/scripts/bd-finalize-container-gate.sh"
 [ -f "$FORMULA" ] || fail "brainstorm-bead.formula.toml not found at $FORMULA"
+[ -f "$HELPER" ]  || fail "bd-finalize-container-gate.sh helper not found at $HELPER"
 
 # Extract the finalize step body and write to a tmp file (also captures line
 # numbers within the finalize body for ordering checks).
@@ -40,32 +42,34 @@ grep -qiE 'container[- ]gate|step[[:space:]]*0[^0-9]' "$TMP_FIN" \
 pass "gate-marker: finalize body contains Step 0 / container-gate marker"
 
 # ---------------------------------------------------------------------------
+# helper-invocation: finalize body invokes the extracted helper script.
+# The bash logic lives in bd-finalize-container-gate.sh; the formula must
+# call it from Step 0.
+# ---------------------------------------------------------------------------
+grep -qE 'bd-finalize-container-gate\.sh' "$TMP_FIN" \
+    || fail "helper-invocation: finalize body does not invoke bd-finalize-container-gate.sh"
+pass "helper-invocation: finalize body invokes bd-finalize-container-gate.sh"
+
+# ---------------------------------------------------------------------------
 # milestone-epic-arm: gate handles milestone AND epic types (explicit type branches).
 # Probe for a 'case' construct that branches on the X_TYPE / issue_type
 # variable with milestone and epic arms. We accept the spec's literal shape
 # (`milestone|epic)`) or any variant that names both types as case branches.
+# Lives in the extracted helper after Step 0 bash extraction.
 # ---------------------------------------------------------------------------
-grep -qE 'milestone[[:space:]]*\|[[:space:]]*epic|epic[[:space:]]*\|[[:space:]]*milestone' "$TMP_FIN" \
-    || fail "milestone-epic-arm: finalize body container gate does not have a 'milestone|epic' (or 'epic|milestone') case branch"
-pass "milestone-epic-arm: finalize body has milestone|epic case arm"
+grep -qE 'milestone[[:space:]]*\|[[:space:]]*epic|epic[[:space:]]*\|[[:space:]]*milestone' "$HELPER" \
+    || fail "milestone-epic-arm: helper script does not have a 'milestone|epic' (or 'epic|milestone') case branch"
+pass "milestone-epic-arm: helper script has milestone|epic case arm"
 
 # ---------------------------------------------------------------------------
-# feature-branch: feature-with-children behavior — implementation MUST probe child
-# count via `bd list --parent <X> --status open,in_progress`. This replaces
-# the literal-phrase "feature-with-children" string match (which would
-# false-negative on a correct implementation that doesn't use that exact
-# phrase). The spec's authoritative shape is the bd list invocation.
-# Behaviour probe:
-#   (i) a `feature)` case-arm exists in the gate
-#   (ii) within (or near) it, `bd list --parent` is called with
-#        `--status open,in_progress` to count children
+# feature-branch + feature-child-probe: feature-with-children behavior —
+# implementation MUST have a `feature)` case-arm and probe child count via
+# `bd list --parent <X> --status open,in_progress`. Lives in the helper.
 # ---------------------------------------------------------------------------
-grep -qE '(^|[[:space:]])feature\)' "$TMP_FIN" \
-    || fail "feature-branch: finalize body container gate lacks a 'feature)' case branch"
+grep -qE '(^|[[:space:]])feature\)' "$HELPER" \
+    || fail "feature-branch: helper script lacks a 'feature)' case branch"
 
-# bd list --parent ... --status open,in_progress (order of --parent and
-# --status may vary; check both flags appear within 200 chars of each other).
-python3 - "$TMP_FIN" <<'PY' || fail "feature-child-probe: container gate's feature branch does not probe active children via 'bd list --parent ... --status open,in_progress'"
+python3 - "$HELPER" <<'PY' || fail "feature-child-probe: helper's feature branch does not probe active children via 'bd list --parent ... --status open,in_progress'"
 import re, sys
 body = open(sys.argv[1]).read()
 # Find any bd list command and assert both flags appear together (order-free).
@@ -78,23 +82,19 @@ for m in re.finditer(r'bd\s+list[^\n]{0,400}', body):
 if not ok:
     raise SystemExit("no 'bd list --parent ... --status open,in_progress' invocation found")
 PY
-pass "feature-child-probe: feature branch probes active children via bd list --parent ... --status open,in_progress"
+pass "feature-child-probe: helper script probes active children via bd list --parent ... --status open,in_progress"
 
 # ---------------------------------------------------------------------------
-# impl-ready-suppression: gate must reference implementation-ready (the label whose stamping
-# is being suppressed) AND the container path must NOT stamp 'brainstormed'.
-# We assert both:
-#   (i)  'implementation-ready' is mentioned in the finalize body
-#   (ii) on the container path the comment/text "NOT stamped" appears near
-#        the implementation-ready / brainstormed mention OR the formula
-#        explicitly stamps 'epic-decomposed' (the audit-trail-only label
-#        per spec).
+# impl-ready-suppression + epic-decomposed-stamp: the formula body
+# documents implementation-ready suppression (Step 0 doc-block) AND the
+# helper stamps the `epic-decomposed` audit-trail label on the clean
+# decomposition path.
 # ---------------------------------------------------------------------------
 grep -qE 'implementation-ready' "$TMP_FIN" \
     || fail "impl-ready-suppression: finalize body does not reference 'implementation-ready'"
-grep -qE 'epic-decomposed' "$TMP_FIN" \
-    || fail "epic-decomposed-stamp: finalize body container path does not stamp 'epic-decomposed' audit-trail label"
-pass "impl-ready-suppression + epic-decomposed-stamp: container path mentions implementation-ready suppression and stamps epic-decomposed"
+grep -qE 'epic-decomposed' "$HELPER" \
+    || fail "epic-decomposed-stamp: helper script does not stamp 'epic-decomposed' audit-trail label"
+pass "impl-ready-suppression + epic-decomposed-stamp: finalize body documents implementation-ready suppression; helper stamps epic-decomposed"
 
 # ---------------------------------------------------------------------------
 # gate-precedes-impl-ready: Step 0 container gate must appear BEFORE any

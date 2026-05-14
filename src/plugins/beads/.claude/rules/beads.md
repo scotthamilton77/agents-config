@@ -38,10 +38,7 @@ Priority: 0-4 / P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"lo
 
 Container beads (`milestone`, `epic`, and `feature`-with-children) carry no
 executable work, never surface in brainstorm or implementation ready lists,
-and must not carry readiness labels. The full routing spec — the three
-rules and the type × children × labels filter matrix — lives next to the
-code that enforces it, in the `whats-next` skill's `collect.py` module-level
-documentation. Edit it there.
+and must not carry readiness labels.
 
 ## Parent-chain invariants
 
