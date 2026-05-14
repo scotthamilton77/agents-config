@@ -129,9 +129,13 @@ proc = subprocess.run(
 if proc.returncode != 0:
     print(f"ERR: bd list failed: {proc.stderr}", file=sys.stderr)
     sys.exit(2)
-try:
-    children = json.loads(proc.stdout) if proc.stdout.strip() else []
-except json.JSONDecodeError:
+if proc.stdout.strip():
+    try:
+        children = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        print(f"ERR: bd list returned invalid JSON: {e}\nstdout: {proc.stdout[:500]}", file=sys.stderr)
+        sys.exit(2)
+else:
     children = []
 count = 0
 for c in children:
