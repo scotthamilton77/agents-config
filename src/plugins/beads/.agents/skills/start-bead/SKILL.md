@@ -130,11 +130,11 @@ Decide from the result array:
   or otherwise unlabeled molecule exists (prior activity visible in the
   bead's history, user references one), STOP — do NOT pour/wisp over
   unlabeled in-progress work. Execute the **Human-Escalation Pattern
-  (HEP)** — defined in `docs/specs/bead-pipeline-architecture.md` §5.6
-  and summarized in the **HEP section** of
-  `src/plugins/beads/.claude/rules/beads.md`. Do NOT bare-stamp `human`
-  on the source bead; the single-bead-`human` invariant requires the
-  escalation bead to be the sole carrier of `human`:
+  (HEP)** — see the HEP section of the beads rule (deployed alongside
+  this skill, authoritative for agents in deployed context). Do NOT
+  bare-stamp `human` on the source bead; the single-bead-`human`
+  invariant requires the escalation bead to be the sole carrier of
+  `human`:
   ```bash
   bd comments add <bead-id> "Probe returned no labeled molecules, but I suspect an unlabeled molecule exists because: <reason>."
   # Container detection: containers get the human bead as a CHILD via
@@ -207,13 +207,13 @@ Decide from the result array:
   the user can burn the loser later.
 
   If the molecules cannot be cleanly disambiguated, escalate via the
-  **Human-Escalation Pattern (HEP)** — defined in
-  `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized in the
-  **HEP section** of `src/plugins/beads/.claude/rules/beads.md`. Do NOT
-  bare-stamp `human` on the source bead; the single-bead-`human`
-  invariant requires the escalation bead to be the sole carrier of
-  `human`. Carry your multi-molecule analysis into the escalation
-  bead's notes so the human sees your read-out, not a blank flag:
+  **Human-Escalation Pattern (HEP)** — see the HEP section of the
+  beads rule (deployed alongside this skill, authoritative for agents
+  in deployed context). Do NOT bare-stamp `human` on the source bead;
+  the single-bead-`human` invariant requires the escalation bead to be
+  the sole carrier of `human`. Carry your multi-molecule analysis into
+  the escalation bead's notes so the human sees your read-out, not a
+  blank flag:
   ```bash
   # Container detection: containers get the human bead as a CHILD via
   # `--parent`; non-containers get a sibling human bead + `blocks` dep.
@@ -267,7 +267,7 @@ Decide from the result array:
   ```
   Exit cleanly. Do NOT silently pick one.
 
-See `rules/beads-labels.md` ("Molecule → bead linkage convention") for the full
+See the molecule→bead linkage convention in the beads-labels rule for the full
 rationale and the stamp procedure.
 
 ### Step 2.5: Route D — bead carries `human` or is blocked by `human`
@@ -278,9 +278,9 @@ user sees one continuous flow — no second `/resolve-human-bead` invocation
 is required.
 
 Authority: this route implements the **Human-Escalation Pattern (HEP)**
-defined in `docs/specs/bead-pipeline-architecture.md` §5.6 and summarized
-in the HEP section of `src/plugins/beads/.claude/rules/beads.md`. Cite
-arch §5.6 and the beads.md HEP section as authoritative.
+documented in the HEP section of the beads rule (deployed alongside
+this skill, authoritative for agents in deployed context). Cite that
+section as authoritative.
 
 **Trigger** — fire Route D when EITHER:
 
@@ -441,13 +441,13 @@ If in doubt, it is NOT trivial. Use Route C.
 Condition: anything that does not meet Route A or B criteria.
 This is the default route for feature, task, and chore beads without full specs.
 
-The bead's claim walk (I1 in `rules/beads.md`) is handled by the
+The bead's claim walk (I1 in the beads rule) is handled by the
 brainstorm-bead formula's first step (`claim`) — you do not need to
 claim the bead manually here; driving the molecule will run the claim
 step and mark the bead (and parent chain) `in_progress` before `assess`.
 
 Action: wisp the brainstorm-bead formula, then stamp the bead→molecule
-lookup label (see `rules/beads-labels.md` "Molecule → bead linkage convention"):
+lookup label (see the molecule→bead linkage convention in the beads-labels rule):
 ```bash
 bd mol wisp create brainstorm-bead --var bead-id=<bead-id> --var title-slug=<slug>
 # Capture the wisp-id from the command output, then:

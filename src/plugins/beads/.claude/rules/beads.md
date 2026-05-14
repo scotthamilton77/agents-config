@@ -86,9 +86,8 @@ Use the `whats-next` skill. It handles mode selection (human-triage + brainstorm
 
 When a stage cannot proceed without human input, it executes the
 **Human-Escalation Pattern (HEP)** rather than stamping `human` directly
-on a source or step bead. HEP is defined in full in
-`docs/specs/bead-pipeline-architecture.md` §5.6 (authoritative); this
-section is the operational summary every agent needs at hand.
+on a source or step bead. This section is the authoritative HEP rule
+for agents in deployed context.
 
 **Critical premise.** The `human` label is a *visibility tag* on
 `bd human list` — it is **not** a gate on `bd ready`. Only an open
