@@ -19,11 +19,14 @@ Exit codes:
 
 import argparse
 import json
+import locale as _locale_mod
 import os
 import shutil
 import subprocess
 import sys
-from collections import OrderedDict
+import time
+from collections import Counter, OrderedDict
+from datetime import datetime
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +52,25 @@ MAX_CHILD_DEPTH = 50            # guards against pathological cycles; child tree
 
 # Dep types we expand through for focused-mode 1-hop neighborhood.
 NEIGHBORHOOD_TYPES = {"blocks", "discovered-from", "tracks", "relates-to"}
+
+try:
+    _locale_mod.setlocale(_locale_mod.LC_TIME, "")
+except _locale_mod.Error:
+    pass  # fall back to C locale formatting
+
+
+def format_ts(ts_str):
+    """Convert an ISO 8601 timestamp to local-timezone locale-formatted string.
+
+    Returns the bare date (first 10 chars) on parse failure so the field is
+    never empty when the raw value is non-empty."""
+    if not ts_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%x %H:%M %Z").strip()
+    except (ValueError, OSError):
+        return ts_str[:10]
 
 
 # ---------------------------------------------------------------------------
@@ -380,8 +402,17 @@ def find_semantic_type_conflicts(beads_by_id):
     return out
 
 
-def find_stale_blockers(beads_by_id, closed_ids):
-    """Open bead whose every `blocks`-type incoming blocker is closed."""
+def find_stale_blockers(beads_by_id, closed_ids, known_ids=None):
+    """Open (or in_progress) bead whose every live `blocks`-type blocker is
+    closed.
+
+    Ghost references (deps pointing at IDs that exist in no status — open,
+    in_progress, or closed) are stripped before the all-closed evaluation
+    when `known_ids` is provided. Without this filter, a bead with
+    `[real-closed-blocker, ghost-blocker]` would slip past detection
+    because the ghost id is not in `closed_ids`, making `all_closed` False
+    and masking a legitimate finding. A bead whose blockers are *all*
+    ghosts is skipped (no meaningful blocker state to report)."""
     out = []
     for bid, b in beads_by_id.items():
         if b.get("status") == "closed":
@@ -391,6 +422,11 @@ def find_stale_blockers(beads_by_id, closed_ids):
                        if isinstance(d, dict) and d.get("dependency_type") == "blocks"]
         if not blocks_deps:
             continue
+        # Strip ghost references when a known-id universe is supplied.
+        if known_ids is not None:
+            blocks_deps = [d for d in blocks_deps if d.get("id") in known_ids]
+            if not blocks_deps:
+                continue
         all_closed = all(d.get("id") in closed_ids for d in blocks_deps)
         if all_closed:
             out.append({
@@ -403,6 +439,221 @@ def find_stale_blockers(beads_by_id, closed_ids):
                     "the bead may be ready or its dep edges are stale."
                 ),
             })
+    return out
+
+
+ORPHAN_WALK_MAX_DEPTH = 10  # parent-chain hop cap; project chains are <10 in practice
+
+
+def _is_mol_or_wisp(bid):
+    """True iff bead ID indicates a mol/wisp step-bead (substring match on
+    `-mol-` or `-wisp-`). Conservative: matches both step-beads and their
+    parent molecule/wisp containers, which is the intent — we want to
+    surface orphans regardless of which layer of the workflow they sit in."""
+    if not bid or not isinstance(bid, str):
+        return False
+    return ("-mol-" in bid) or ("-wisp-" in bid)
+
+
+def _find_for_bead_label(labels):
+    """Return the bead-ID reference from the first `for-bead-<id>` label,
+    or None when no such label is present."""
+    for label in labels or []:
+        if isinstance(label, str) and label.startswith("for-bead-"):
+            return label[len("for-bead-"):]
+    return None
+
+
+def _orphan_full_bead(bid, beads_by_id, lazy_cache):
+    """Return the full bead record for `bid`. Reads the in-process snapshot
+    first, falls back to lazy `bd show` for closed beads, caches results
+    per run. Returns None for ghost beads (not in any status). Cache
+    sentinel ``False`` marks a previously-failed lookup so repeated walks
+    do not re-spawn the shell-out."""
+    if bid in beads_by_id:
+        return beads_by_id[bid]
+    cached = lazy_cache.get(bid)
+    if cached is False:
+        return None
+    if cached is not None:
+        return cached
+    fetched = fetch_bead_detail(bid)
+    if fetched is None:
+        lazy_cache[bid] = False
+        return None
+    lazy_cache[bid] = fetched
+    return fetched
+
+
+def _summarize_bead(bid, bead):
+    """Reduce a full bead record to the orphan-finding forensic summary
+    (id, title, status, updated_at). Returns None when `bead` is None so
+    callers can propagate the ghost signal cleanly."""
+    if bead is None:
+        return None
+    return {
+        "id": bead.get("id") or bid,
+        "title": bead.get("title", "") or "",
+        "status": bead.get("status", "") or "",
+        "updated_at": format_ts(bead.get("updated_at", "") or ""),
+    }
+
+
+def find_orphan_step_beads(beads_by_id, known_ids, closed_ids,
+                           max_depth=ORPHAN_WALK_MAX_DEPTH):
+    """Open mol/wisp step-beads whose parent chain contains any closed
+    ancestor — i.e. workflow artifacts left behind when the molecule that
+    spawned them closed (or partially closed) mid-flight.
+
+    Walk strategy (per candidate step-bead):
+      - Starting from the step's `parent`, hop up to `max_depth` ancestors.
+      - At each hop, capture a forensic summary (id, title, status,
+        updated_at) and record whether the ancestor is closed.
+      - The closest ancestor carrying a `for-bead-<X>` label identifies
+        the molecule container; X identifies the source bead.
+      - Stop on: ghost parent (id not in `known_ids`), `bd show` miss,
+        cycle, depth cap, or root (no further parent).
+
+    Classification (collect.py-emitted `classification` field):
+      - ``live-work``: source bead is `in_progress` — work is still active;
+        the step is most likely live, not orphaned.
+      - ``safe-cleanup``: step is open/in_progress, every walked ancestor
+        is closed, AND the source bead is closed. Safe to close manually.
+      - ``untraceable``: no `for-bead-<X>` label resolvable anywhere in
+        the chain (or the labelled source is a ghost). Manual triage
+        required — no provenance trail.
+      - ``needs-review``: anything else (mixed-state ancestor chain, source
+        still open, etc.). Human (or interactive LLM) reads the forensic
+        block to decide.
+
+    Beads with zero closed ancestors are excluded — they are healthy
+    in-flight workflow artifacts, not orphan candidates."""
+    out = []
+    lazy_cache = {}
+
+    for bid, b in beads_by_id.items():
+        if b.get("status") == "closed":
+            continue
+        if not _is_mol_or_wisp(bid):
+            continue
+
+        # Inlined (vs _summarize_bead) so the type-checker sees a concrete
+        # dict rather than Optional[dict] — `b` is guaranteed non-None here
+        # because it comes from beads_by_id.items() iteration.
+        step_summary = {
+            "id": b.get("id") or bid,
+            "title": b.get("title", "") or "",
+            "status": b.get("status", "") or "",
+            "updated_at": format_ts(b.get("updated_at", "") or ""),
+        }
+
+        any_closed_ancestor = False
+        ghost_encountered = False
+        ancestor_statuses = []
+        parent_mol_id = None
+        source_label_ref = None
+        walked_summaries = []
+
+        cur_parent_id = b.get("parent") or ""
+        depth = 0
+        seen_in_walk = {bid}
+
+        while cur_parent_id and depth < max_depth:
+            if cur_parent_id in seen_in_walk:
+                # Cycle guard — stop the walk rather than loop.
+                break
+            seen_in_walk.add(cur_parent_id)
+            depth += 1
+
+            if cur_parent_id not in known_ids:
+                ghost_encountered = True
+                walked_summaries.append({
+                    "id": cur_parent_id,
+                    "title": "",
+                    "status": "ghost",
+                    "updated_at": "",
+                })
+                break
+
+            parent_bead = _orphan_full_bead(cur_parent_id, beads_by_id, lazy_cache)
+            if parent_bead is None:
+                # known_ids hit but bd show miss — treat as ghost defensively.
+                ghost_encountered = True
+                walked_summaries.append({
+                    "id": cur_parent_id,
+                    "title": "",
+                    "status": "ghost",
+                    "updated_at": "",
+                })
+                break
+
+            summary = _summarize_bead(cur_parent_id, parent_bead)
+            walked_summaries.append(summary)
+            ancestor_statuses.append(summary["status"])
+            if summary["status"] == "closed":
+                any_closed_ancestor = True
+
+            # First `for-bead-<X>` label wins — closest molecule container.
+            if source_label_ref is None:
+                ref = _find_for_bead_label(parent_bead.get("labels"))
+                if ref:
+                    source_label_ref = ref
+                    parent_mol_id = cur_parent_id
+
+            cur_parent_id = parent_bead.get("parent") or ""
+
+        # Orphan criterion: at least one closed ancestor in chain.
+        if not any_closed_ancestor:
+            continue
+
+        # Parent-molecule container summary: prefer the for-bead-bearing
+        # ancestor; fall back to the immediate parent when no for-bead
+        # label was found.
+        parent_mol_summary = None
+        if parent_mol_id is not None:
+            for w in walked_summaries:
+                if w["id"] == parent_mol_id:
+                    parent_mol_summary = w
+                    break
+        elif walked_summaries:
+            parent_mol_summary = walked_summaries[0]
+
+        # Resolve source bead from the for-bead label, if found.
+        source_summary = None
+        if source_label_ref:
+            resolved_id = source_label_ref
+            if resolved_id not in known_ids:
+                # Try suffix resolution against the in-process snapshot.
+                resolved_id = _resolve_id(source_label_ref, beads_by_id) or source_label_ref
+            source_bead = _orphan_full_bead(resolved_id, beads_by_id, lazy_cache)
+            source_summary = _summarize_bead(resolved_id, source_bead)
+
+        if source_summary is None:
+            classification = "untraceable"
+        elif source_summary.get("status") == "in_progress":
+            classification = "live-work"
+        elif (step_summary.get("status") in ("open", "in_progress")
+              and all(s == "closed" for s in ancestor_statuses)
+              and source_summary.get("status") == "closed"):
+            classification = "safe-cleanup"
+        else:
+            classification = "needs-review"
+
+        out.append({
+            "type": "orphan_step_bead",
+            "confidence": "HIGH",
+            "classification": classification,
+            "step": step_summary,
+            "parent_mol": parent_mol_summary,
+            "source_bead": source_summary,
+            "ghost_encountered": ghost_encountered,
+            "walk_depth": depth,
+            "rationale": (
+                f"Open mol/wisp step-bead {bid} has a closed ancestor in its "
+                "parent chain; classified by source-bead status."
+            ),
+        })
+
     return out
 
 
@@ -605,6 +856,104 @@ def focused_neighborhood(target_id, beads_by_id):
 
 
 # ---------------------------------------------------------------------------
+# Output writers
+# ---------------------------------------------------------------------------
+
+def _format_deps_text(deps):
+    """Compact one-line dep list for beads.txt: 'id (type), id (type)'."""
+    if not deps:
+        return "(none)"
+    parts = []
+    for d in deps:
+        if not isinstance(d, dict):
+            continue
+        dep_id = d.get("id", "")
+        dep_type = d.get("dependency_type", "?")
+        if dep_id:
+            parts.append(f"{dep_id} ({dep_type})")
+    return ", ".join(parts) if parts else "(none)"
+
+
+def write_beads_file(detailed_by_id, path):
+    """Write a flat human-readable bead inventory to *path*.
+
+    One block per bead, separated by ``---``. Mol/wisp workflow artifacts
+    are excluded. Each block starts with a ``===`` header line that packs
+    the key identifying fields, making the file grep-friendly while also
+    being LLM-scannable as a continuous document.
+
+    Description and notes are capped and newlines collapsed to spaces so
+    every field is a single line (preserves block structure). Acceptance
+    criteria and comments are omitted — too verbose for semantic-link
+    analysis and the LLM subagent does not need them.
+
+    Sorted by bead id for deterministic output across runs."""
+    DESC_CAP = 500
+    NOTES_CAP = 200
+
+    with open(path, "w", encoding="utf-8") as fh:
+        for bid in sorted(detailed_by_id):
+            b = detailed_by_id[bid]
+            if _is_mol_or_wisp(bid):
+                continue
+
+            issue_type = b.get("issue_type", "") or ""
+            priority = b.get("priority", "")
+            priority_str = f"P{priority}" if priority != "" else "P?"
+            status = b.get("status", "") or ""
+            updated = format_ts(b.get("updated_at", "") or "")
+
+            fh.write(f"=== {bid} | {issue_type} | {priority_str}"
+                     f" | {status} | updated:{updated} ===\n")
+            fh.write(f"Title: {b.get('title', '') or ''}\n")
+
+            labels = b.get("labels") or []
+            fh.write(f"Labels: {labels}\n")
+
+            parent = b.get("parent", "") or ""
+            if parent:
+                fh.write(f"Parent: {parent}\n")
+
+            fh.write(f"Deps: {_format_deps_text(b.get('dependencies') or [])}\n")
+
+            desc = " ".join((b.get("description", "") or "").split()).strip()
+            if desc:
+                if len(desc) > DESC_CAP:
+                    desc = desc[:DESC_CAP] + "…"
+                fh.write(f"Desc: {desc}\n")
+
+            notes = " ".join((b.get("notes", "") or "").split()).strip()
+            if notes:
+                if len(notes) > NOTES_CAP:
+                    notes = notes[:NOTES_CAP] + "…"
+                fh.write(f"Notes: {notes}\n")
+
+            fh.write("---\n")
+
+
+def write_findings_file(prefix, mode, target, bead_count, open_bead_count,
+                        truncated_count, capped, findings, path):
+    """Write structured findings JSON to *path*.
+
+    Contains all findings plus run metadata. The ``beads`` array is NOT
+    included here — bead content lives in the companion beads.txt file."""
+    finding_counts = dict(Counter(f.get("type", "unknown") for f in findings))
+    payload = {
+        "project_prefix": prefix,
+        "mode": mode,
+        "target": target,
+        "bead_count": bead_count,
+        "open_bead_count": open_bead_count,
+        "truncated_count": truncated_count,
+        "capped": capped,
+        "finding_counts": finding_counts,
+        "findings": findings,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, default=str)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -651,6 +1000,16 @@ def main():
 
     # Build closed-id set for stale-blocker detection.
     closed_ids = set(b.get("id") for b in closed_meta if b.get("id"))
+
+    # Known-ID set: any bead that exists in any status (open, in_progress,
+    # or closed). Ghost references — dep targets or parents to deleted /
+    # non-existent beads — are absent from this set. Consumed by the
+    # stale-blocker filter (to strip ghost blockers before all-closed
+    # evaluation) and the orphan-step-bead walker (to detect ghost
+    # ancestors and stop the walk cleanly).
+    known_ids = closed_ids | set(
+        b.get("id") for b in (open_beads + in_progress) if b.get("id")
+    )
 
     # Bulk inventory keyed by id, retaining labels (labels are only on bulk
     # output, not on `bd show`).
@@ -748,21 +1107,44 @@ def main():
     findings = []
     findings.extend(find_provenance_mismatches(detailed_by_id))
     findings.extend(find_semantic_type_conflicts(detailed_by_id))
-    findings.extend(find_stale_blockers(detailed_by_id, closed_ids))
+    findings.extend(find_stale_blockers(detailed_by_id, closed_ids,
+                                        known_ids=known_ids))
+    findings.extend(find_orphan_step_beads(detailed_by_id, known_ids,
+                                           closed_ids))
     findings.extend(find_cycles(selected_ids=cycle_filter_ids))
 
-    output = {
+    # Write two /tmp/ files: findings JSON (no bead content) and flat bead
+    # text (no findings). Stdout is a small summary that fits in any context
+    # window. The skill reads the findings file directly and dispatches a
+    # Read-only subagent for the LLM-inferred pass against the beads file.
+    ts = int(time.time())
+    findings_path = f"/tmp/dep-health-{ts}-findings.json"
+    beads_path = f"/tmp/dep-health-{ts}-beads.txt"
+
+    open_bead_count = sum(
+        1 for bid, b in detailed_by_id.items()
+        if not _is_mol_or_wisp(bid)
+        and b.get("status") in ("open", "in_progress")
+    )
+
+    write_findings_file(prefix, args.mode, args.target,
+                        len(beads_list), open_bead_count,
+                        truncated_count, capped, findings,
+                        findings_path)
+    write_beads_file(detailed_by_id, beads_path)
+
+    summary = {
         "project_prefix": prefix,
         "mode": args.mode,
         "target": args.target,
         "bead_count": len(beads_list),
-        "truncated_count": truncated_count,
+        "open_bead_count": open_bead_count,
+        "finding_counts": dict(Counter(f.get("type", "unknown") for f in findings)),
         "capped": capped,
-        "beads": beads_list,
-        "findings": findings,
+        "findings_file": findings_path,
+        "beads_file": beads_path,
     }
-
-    print(json.dumps(output, indent=2, default=str))
+    print(json.dumps(summary, indent=2, default=str))
 
 
 if __name__ == "__main__":
