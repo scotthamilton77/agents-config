@@ -54,7 +54,7 @@ Agent({
 })
 ```
 
-The `subagent_type` argument is **required** — this skill never dispatches without it. The actual per-dispatch primitive (build worker task-spec, allocate report path, classify worker exit, derive gate, stamp audit label, synthesize on crash/malformed) is owned upstream — see `implement-bead/SKILL.md` §4 per-dispatch primitive, which this skill calls into informally per cycle. The §4 primitive is not inlined here; this skill is the loop layer.
+The `subagent_type` argument is **required** — this skill never dispatches without it. The actual per-dispatch primitive (build worker task-spec, allocate report path, classify worker exit, derive gate, stamp audit label, synthesize on crash/malformed) is owned upstream — see `implement-bead/SKILL.md` §4 per-dispatch primitive, which this skill calls into per cycle. The §4 primitive is not inlined here; this skill is the loop layer.
 
 ## Doer subagent_type contract
 
@@ -131,7 +131,7 @@ Operational procedure on every cycle:
 2. Substitute the uppercase-bracket placeholders (e.g. `[PASTE ORIGINAL DOD]`, `[PASTE ORIGINAL SPEC]`, `[PASTE CONTEXT]`, `[ARCHITECTURE / CONVENTIONS / RELATED FILES]`).
 3. Dispatch via `Agent({ subagent_type: <doer>, prompt: <substituted-body> })`.
 
-Templates are read fresh on each dispatch — no caching. Substitution is per-cycle (the placeholders may differ across cycles, e.g. when prior-cycle findings narrow the focus).
+Templates are read fresh on each dispatch — no caching. Different template files are used per cycle (cycle 1: `subagent-implementer.md`; fresh-eyes cycles: `subagent-fresh-eyes.md` or `subagent-foreign-cycle.md`). Prior-cycle findings are NEVER injected into the substituted prompt — Core Invariant 2 (independence) forbids it.
 
 ### Degradation cascade
 
@@ -164,8 +164,6 @@ Enumerated decision table:
 
 - Score = `PASS_WITH_RESERVATIONS` when the final cycle has `status` is `complete` AND the derived gate roll-up is in `{pass, n/a}` AND the final cycle's fresh-eyes pass found no `blocking` or `critical` issues. Open `major` issues are allowed and ARE the "reservations".
 - Score = `FAIL` otherwise — i.e., the final cycle either has `status: failed`, or its derived gate is `fail`/`partial`, or it carries unresolved `blocking`/`critical` findings.
-
-The convergence predicate is enumerated above to make BOTH the status signal and the derived-gate signal explicit: neither one alone decides convergence. `status=failed` is a hard non-candidate; `gate=fail|partial` is a hard non-candidate; `status=complete + gate=n/a` is the docs-only / no-runnable-tests path where fresh-eyes alone decides convergence.
 
 ### R1.4.1 synthesis-path extension (malformed evidence sub-blocks)
 
