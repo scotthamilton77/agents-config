@@ -128,7 +128,7 @@ Iteration-routing references each prompt template by concrete relative path AS D
 Operational procedure on every cycle:
 
 1. Read the template file by relative path (e.g. `./subagent-fresh-eyes.md`).
-2. Substitute the uppercase-bracket placeholders (e.g. `[PASTE ORIGINAL DOD]`, `[PASTE ORIGINAL SPEC]`, `[PASTE CONTEXT]`, `[ARCHITECTURE / CONVENTIONS / RELATED FILES]`).
+2. Substitute the uppercase-bracket placeholders (e.g. `[PASTE ORIGINAL DOD]`, `[PASTE ORIGINAL SPEC]`, `[PASTE CONTEXT]`, `[ARCHITECTURE / CONVENTIONS / RELATED FILES]`). This `[...]` style applies to the Claude subagent templates (`subagent-implementer.md`, `subagent-fresh-eyes.md`, `subagent-foreign-cycle.md`) that are dispatched via the `Agent` tool. The foreign-CLI instruction file (`foreign-cli-instructions.md`) is a separate template piped to Codex/Gemini on stdin and uses lowercase curly-brace placeholders (`{dod}`, `{spec}`, etc.) — substitute those when constructing the foreign-CLI stdin payload, not when constructing an `Agent` prompt.
 3. Dispatch via `Agent({ subagent_type: <doer>, prompt: <substituted-body> })`.
 
 Templates are read fresh on each dispatch — no caching. `subagent-implementer.md` is used for the INITIAL cold-start dispatch only (before any numbered fresh-eyes cycle); cycles 1/2/3+ are fresh-eyes passes using `subagent-foreign-cycle.md` (cycles 1–2) or `subagent-fresh-eyes.md` (cycle 3+). Prior-cycle findings are NEVER injected into the substituted prompt — Core Invariant 2 (independence) forbids it.
