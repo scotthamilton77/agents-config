@@ -140,7 +140,7 @@ else:
 count = 0
 for c in children:
     labels = c.get("labels", []) or []
-    if "merge-gate" in labels or "human" in labels:
+    if "merge-gate" in labels or ("human" in labels and "hep-pause" not in labels):
         continue
     count += 1
 mod.active_child_count = {fid: count}
