@@ -141,6 +141,14 @@ else
 fi
 [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
 bd label add "$HUMAN_ID" human
+# Container branch only: the `hep-pause` label discriminates live HEP
+# escalations (which MUST keep the container classified) from bare
+# `human`-labeled formula-gate children (which MUST NOT count toward
+# container status). See the active-child filter in
+# `bd-finalize-container-gate.sh` and `whats-next/collect.py`.
+if [ "$IS_CONTAINER" = "1" ]; then
+    bd label add "$HUMAN_ID" hep-pause
+fi
 bd update "$HUMAN_ID" --append-notes \
     "Source: <source-bead-id>
 Step-bead: <step-bead-id>
