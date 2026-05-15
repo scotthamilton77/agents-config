@@ -202,7 +202,7 @@ active_child_count = {}
 def is_container(bead_id, bead_type):
     """True when bead should be hidden from brainstorm/impl lists.
 
-    Post-pqvc 2-level shape:
+    2-level shape:
       Y_container = epic with non-gate children (e.g. Y_impl as active child);
                     always a container (type=epic), regardless of child count.
       Y_impl      = leaf carrying impl-ready label, no non-gate children;

@@ -151,16 +151,28 @@ case ",${LABELS}," in
         exit 1 ;;
 esac
 
+# Extract .id from bd create --json output (handles both object and single-element array).
+_parse_create_id() {
+    local json="$1" label="$2" id
+    id=$(printf '%s' "$json" | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
+        echo "Error: jq parse failed on $label create output" >&2; exit 1
+    }
+    [[ -n "$id" && "$id" != "null" ]] || { echo "Error: bd create returned no id for $label" >&2; exit 1; }
+    printf '%s' "$id"
+}
+
 # Derive Y_container title (strip [Impl] prefix if present — Y_container gets
 # the clean title; Y_impl gets [Impl] <title>).
 TITLE_TRIMMED=$(printf %s "$TITLE" | awk '{$1=$1; print}')
 case "$TITLE_TRIMMED" in
-    '[Impl] '*) CONTAINER_TITLE="${TITLE_TRIMMED#\[Impl\] }" ;;
-    *)          CONTAINER_TITLE="$TITLE_TRIMMED" ;;
-esac
-case "$TITLE_TRIMMED" in
-    '[Impl] '*) IMPL_TITLE="$TITLE_TRIMMED" ;;
-    *)          IMPL_TITLE="[Impl] $TITLE_TRIMMED" ;;
+    '[Impl] '*)
+        CONTAINER_TITLE="${TITLE_TRIMMED#\[Impl\] }"
+        IMPL_TITLE="$TITLE_TRIMMED"
+        ;;
+    *)
+        CONTAINER_TITLE="$TITLE_TRIMMED"
+        IMPL_TITLE="[Impl] $TITLE_TRIMMED"
+        ;;
 esac
 
 # ── Idempotency: State 3 probe ──────────────────────────────────────────────
@@ -171,8 +183,6 @@ PRODUCED_LABELS=$(bd label list "${SOURCE_BEAD_ID}" --json 2>/dev/null \
 PRODUCED_COUNT=$(printf '%s' "$PRODUCED_LABELS" | jq 'length' 2>/dev/null) || PRODUCED_COUNT=0
 
 if [[ "$PRODUCED_COUNT" -ge 2 ]]; then
-    # Multiple produced-bead-* labels on X — formula Step 1a should have caught this before
-    # calling the helper. Emit a structured error and let the caller HEP-escalate.
     echo "Error: ${PRODUCED_COUNT} produced-bead-* labels on ${SOURCE_BEAD_ID}; caller must triage" >&2
     exit 1
 fi
@@ -192,7 +202,6 @@ if [[ "$PRODUCED_COUNT" -eq 1 ]]; then
 fi
 
 # ── Idempotency: State 2 probe ──────────────────────────────────────────────
-# Check for a bead with produced-from-<X_id> label (Y_impl exists but X not yet stamped).
 ORPHAN_JSON=$(bd list --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null) || {
     echo "Error: bd list failed during orphan probe" >&2
     exit 1
@@ -203,8 +212,6 @@ ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | jq '[.[] | select(.status != "closed
 }
 
 if [[ "$ORPHAN_COUNT" -ge 2 ]]; then
-    # Multiple orphan impl beads — formula Step 1b should have caught this via HEP.
-    # Emit a structured error and let the caller HEP-escalate (do NOT bare-stamp `human` here).
     echo "Error: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; caller must HEP-escalate" >&2
     exit 1
 fi
@@ -227,8 +234,6 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
 fi
 
 # ── Idempotency: State 1 probe ──────────────────────────────────────────────
-# Check for a bead with pending-split-<X_id> label (Y_container created but
-# Y_impl not yet created).
 PENDING_JSON=$(bd list --label "pending-split-${SOURCE_BEAD_ID}" --json 2>/dev/null) || PENDING_JSON='[]'
 PENDING_COUNT=$(printf '%s' "$PENDING_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || PENDING_COUNT=0
 
@@ -258,16 +263,7 @@ if [[ -z "$Y_CONTAINER_ID" ]]; then
         exit 1
     }
 
-    Y_CONTAINER_ID=$(printf '%s' "$CONTAINER_JSON" \
-        | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
-        echo "Error: jq parse failed on Y_container create output" >&2
-        exit 1
-    }
-
-    if [[ -z "$Y_CONTAINER_ID" || "$Y_CONTAINER_ID" == "null" ]]; then
-        echo "Error: bd create returned no id for Y_container" >&2
-        exit 1
-    fi
+    Y_CONTAINER_ID=$(_parse_create_id "$CONTAINER_JSON" "Y_container") || exit 1
 
     # Mark Y_container in_progress immediately (claim-walk invariant I1).
     bd update "$Y_CONTAINER_ID" --status in_progress >/dev/null 2>&1 || true
@@ -292,16 +288,7 @@ IMPL_JSON=$(bd create \
     exit 1
 }
 
-Y_IMPL_ID=$(printf '%s' "$IMPL_JSON" \
-    | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
-    echo "Error: jq parse failed on Y_impl create output" >&2
-    exit 1
-}
-
-if [[ -z "$Y_IMPL_ID" || "$Y_IMPL_ID" == "null" ]]; then
-    echo "Error: bd create returned no id for Y_impl" >&2
-    exit 1
-fi
+Y_IMPL_ID=$(_parse_create_id "$IMPL_JSON" "Y_impl") || exit 1
 
 # Remove State 1 crash-recovery marker from Y_container now that Y_impl is created.
 bd label remove "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null 2>&1 || true
