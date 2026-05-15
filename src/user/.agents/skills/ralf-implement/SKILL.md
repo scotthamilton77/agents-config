@@ -163,7 +163,7 @@ Enumerated decision table:
 
 **At cycle cap** (cycles exhausted with no convergence candidate yet accepted):
 
-- Score = `PASS_WITH_RESERVATIONS` when the final cycle has `status` is `complete` AND the derived gate roll-up is in `{pass, n/a}` AND the final cycle's fresh-eyes pass found no `blocking` or `critical` issues. Open `major` issues are allowed and ARE the "reservations".
+- Score = `PASS_WITH_RESERVATIONS` when the final cycle has `status=complete` AND the derived gate roll-up is in `{pass, n/a}` AND the final cycle's fresh-eyes pass found no `blocking` or `critical` issues. Open `major` issues are allowed and ARE the "reservations".
 - Score = `FAIL` otherwise — i.e., the final cycle either has `status: failed`, or its derived gate is `fail`/`partial`, or it carries unresolved `blocking`/`critical` findings.
 
 ### R1.4.1 synthesis-path extension (malformed evidence sub-blocks)
