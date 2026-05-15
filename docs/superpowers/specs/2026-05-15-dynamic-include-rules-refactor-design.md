@@ -80,7 +80,7 @@ stage_content_from_dir "$SRC_SHARED" "$staging" "rules"   # ADD THIS LINE
 Currently Phase 2 only stages `skills` and `agents` from `.agents/`. Rules must also be staged.
 
 ### Phase 6 — Plugin `.agents/rules/` support
-Extend the `plugin_agents_dir` loop from `for subdir in skills agents` to `for subdir in rules skills agents`. This enables `src/plugins/<name>/.agents/rules/` for tool-agnostic plugin rules (one-line diff; zero current consumers in the beads plugin, but symmetric with existing `.agents/skills` and `.agents/agents`).
+Extend the **`plugin_agents_dir` loop only** (the second plugin loop, ~line 815) from `for subdir in skills agents` to `for subdir in rules skills agents`. **Do NOT change the `plugin_tool_dir` loop** (~line 798) — that one already includes `rules` and handles tool-specific plugin rules. One-line diff; zero current consumers in the beads plugin, but symmetric with existing `.agents/skills` and `.agents/agents`.
 
 ### `flatten_agents_md` — Add 4th arg and new marker handler
 
@@ -123,7 +123,11 @@ fi
 
 Note: `find` is used rather than `ls *.md` glob because `install.sh` sets `shopt -s nullglob` (line 28), which causes an empty glob to expand to nothing and `ls` would then list the CWD — a silent correctness bug. `find` with `2>/dev/null` handles missing directories cleanly.
 
-**Call site update** (in `stage_and_install_tool`, Phase 6.5):
+**Call site update** — there is exactly one call site, at line 841 inside the Phase 6.5 `for template in` loop in `stage_and_install_tool`. Replace:
+```bash
+flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
+```
+with:
 ```bash
 flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT" "$staging"
 ```
@@ -177,7 +181,9 @@ Several files outside the main install.sh / templates scope contain filename ref
 | `src/user/.claude/README.md:16-18` | Update filenames in the rules/ inventory comment |
 | `AGENTS.md:64` | Remove 5 general rule names from `.claude/rules/` bullet (they move to `.agents/rules/`); update `git-commits` → `claude-sandbox` and `codex-routing` → `claude-to-codex-routing`; add a new `src/user/.agents/rules/` row listing the 5 general files |
 | `src/user/.opencode/OPENCODE-EXTENSIONS.md.template:32-34` | Update stale prose: `codex-routing.md` → `claude-to-codex-routing.md`; note that `completion-gate.md` is now general (included, not omitted) |
-| `scripts/smoke/verify-artifacts.sh:123` | Extend ERE regex to also catch the new no-colon marker. Current: `grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:'`. Updated: `grep -qE '<!-- DYNAMIC-INCLUDE((-RULES)?:|-ALL-RULES)'`. Note: `DYNAMIC-INCLUDE-ALL-RULES` has no trailing colon (the old markers embed their payload after `:`; the new marker has no payload). ERE alternation uses unescaped `\|` — `\|` in ERE is not alternation. |
+| `src/user/.agents/AGENTS.md:11-13` | Add `rules/` bullet alongside `agents/` and `skills/` describing the new tool-agnostic rules subdirectory and its append-merge collision semantics |
+| `src/user/.claude/AGENTS.md` | Update `rules/` description: it now contains only Claude-specific rules (`claude-sandbox.md`, `claude-to-codex-routing.md`, plugin append-merges); the 5 general rules now source from `.agents/rules/` not here |
+| `scripts/smoke/verify-artifacts.sh:123` | Replace the `grep -qE` pattern on line 123. New pattern: `<!-- DYNAMIC-INCLUDE((-RULES)?:|-ALL-RULES -->)` — the second branch includes ` -->` to anchor the match so no future `DYNAMIC-INCLUDE-ALL-RULES-*` variant triggers a false positive. `DYNAMIC-INCLUDE-ALL-RULES` has no trailing `:` (old markers carry payload after `:`; the new marker closes immediately with ` -->`). |
 
 ---
 
