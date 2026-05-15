@@ -131,7 +131,7 @@ Operational procedure on every cycle:
 2. Substitute the uppercase-bracket placeholders (e.g. `[PASTE ORIGINAL DOD]`, `[PASTE ORIGINAL SPEC]`, `[PASTE CONTEXT]`, `[ARCHITECTURE / CONVENTIONS / RELATED FILES]`).
 3. Dispatch via `Agent({ subagent_type: <doer>, prompt: <substituted-body> })`.
 
-Templates are read fresh on each dispatch — no caching. Different template files are used per cycle (cycle 1: `subagent-implementer.md`; fresh-eyes cycles: `subagent-fresh-eyes.md` or `subagent-foreign-cycle.md`). Prior-cycle findings are NEVER injected into the substituted prompt — Core Invariant 2 (independence) forbids it.
+Templates are read fresh on each dispatch — no caching. `subagent-implementer.md` is used for the INITIAL cold-start dispatch only (before any numbered fresh-eyes cycle); cycles 1/2/3+ are fresh-eyes passes using `subagent-foreign-cycle.md` (cycles 1–2) or `subagent-fresh-eyes.md` (cycle 3+). Prior-cycle findings are NEVER injected into the substituted prompt — Core Invariant 2 (independence) forbids it.
 
 ### Degradation cascade
 
@@ -150,12 +150,13 @@ A cycle's report is a **convergence candidate** when ALL of the following hold:
 
 Enumerated decision table:
 
-| status     | derived gate | fresh-eyes severity         | Convergence candidate? | Action |
-|------------|--------------|-----------------------------|------------------------|--------|
-| `failed`   | any          | any                         | NO                     | iterate (or — at cap — FAIL) |
+| status        | derived gate | fresh-eyes severity         | Convergence candidate? | Action |
+|---------------|--------------|-----------------------------|------------------------|--------|
+| `needs_human` | any          | any                         | NO                     | abort immediately; surface worker's `escalations[]` to caller; do NOT iterate; do NOT run quality-reviewer/simplify |
+| `failed`      | any          | any                         | NO                     | iterate (or — at cap — FAIL) |
 | `complete` | `pass`       | no blocking/critical        | YES                    | converge (within cap) → PASS |
 | `complete` | `pass`       | blocking or critical present | NO                    | iterate (or — at cap — see scoring below) |
-| `complete` | `n/a`        | no blocking/critical        | YES                    | converge; fresh-eyes alone decides (no gate to consult) |
+| `complete` | `n/a`        | no blocking/critical        | YES                    | converge; fresh-eyes alone decides (no gate to consult). NOTE: `gate=n/a` requires `evidence.tests.command` to be explicitly empty/absent. If a test runner exists and tdd-green-team returned `n/a`, treat as `gate=fail`. |
 | `complete` | `n/a`        | blocking or critical present | NO                    | iterate (fresh-eyes findings hold; nothing else to consult) |
 | `complete` | `fail`       | any                         | NO                     | iterate (gate must turn green) |
 | `complete` | `partial`    | any                         | NO                     | iterate (skipped gates are not implicit passes) |
@@ -169,7 +170,7 @@ Enumerated decision table:
 
 The per-dispatch primitive in `implement-bead/SKILL.md` §4 already synthesizes `status: failed` on worker crash (non-zero exit OR no file at the target path) and on top-level malformed report (parse error, missing `status`). This skill extends that synthesis path with one further trigger:
 
-- A present `evidence` block (e.g. `evidence.tests`) that is **missing one of its required sub-fields** (`command`, `exit_code`, `skipped` — per `worker-report-v1.md` §1.1) is treated as a malformed report. The orchestrator synthesizes a `status: failed` report with `escalations[].reason: "Worker emitted malformed report"`, wrapping the missing-sub-field name and the raw bytes of the worker's file in `escalations[].detail`.
+- A present `evidence` block (e.g. `evidence.tests`) that is **missing one of its required sub-fields** (`command`, `exit_code`, `passing`, `failing`, `skipped` — per `worker-report-v1.md` §1.1) is treated as a malformed report. The orchestrator synthesizes a `status: failed` report with `escalations[].reason: "Worker emitted malformed report"`, wrapping the missing-sub-field name and the raw bytes of the worker's file in `escalations[].detail`.
 
 This extension means: a worker that emits a top-level-parseable YAML but supplies a `tests` block with `command` only (no `exit_code`, no `skipped`) is **not** a convergence candidate — its report fails the synthesis-path check before the derived gate is computed. Synthesized `status: failed` reports always have `evidence: {}` (per `worker-report-v1.md` §4), so their derived gate is `n/a` — but `status=failed` short-circuits the convergence predicate (row 1 of the table above) regardless of gate.
 
@@ -179,6 +180,8 @@ After each dispatch, the orchestrator decides whether to run `quality-reviewer` 
 
 - **Convergence candidates** (status=`complete` AND gate ∈ `{pass, n/a}`): run `quality-reviewer` (ONLY on convergence candidates) and `simplify` (ONLY on convergence candidates) as the per-cycle loop quality steps.
 - **Non-candidates** (status=`failed`, or gate=`fail`, or gate=`partial`): skip `quality-reviewer` and `simplify`; dispatch the next cycle (or — at cap — emit `FAIL`).
+
+**quality-reviewer rejection rule**: if `quality-reviewer` finds `blocking` or `critical` issues on a convergence candidate, the candidate is **rejected** — it reverts to non-candidate status. Iterate (or — at cap — score as `FAIL` if blocking/critical remain; `PASS_WITH_RESERVATIONS` if only `major` remain after quality-reviewer). `simplify` does NOT run on a quality-reviewer-rejected candidate.
 
 This avoids wasting `quality-reviewer` / `simplify` runs on reports the loop is going to reject anyway.
 
