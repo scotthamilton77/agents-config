@@ -144,7 +144,7 @@ Templates are read fresh on each dispatch — no caching. `subagent-implementer.
 
 A cycle's report is a **convergence candidate** when ALL of the following hold:
 
-1. `status=complete` (a real-or-synthesized `status=failed` is NOT a convergence candidate — see row 1 of the table below).
+1. `status=complete` (a real-or-synthesized `status=failed` is NOT a convergence candidate — see the `status=failed` row of the table below).
 2. The derived gate roll-up is `pass` OR `n/a`. The `status=complete + gate=pass` branch is a convergence candidate when fresh-eyes finds no blocking/critical findings; the `status=complete + gate=n/a` branch is a convergence candidate where fresh-eyes alone decides.
 3. The fresh-eyes (or foreign-eyes) review attached to the cycle finds no `blocking` or `critical` findings.
 
@@ -172,7 +172,7 @@ The per-dispatch primitive in `implement-bead/SKILL.md` §4 already synthesizes 
 
 - A present `evidence` block (e.g. `evidence.tests`) that is **missing one of its required sub-fields** (`command`, `exit_code`, `passing`, `failing`, `skipped` — per `worker-report-v1.md` §1.1) is treated as a malformed report. The orchestrator synthesizes a `status: failed` report with `escalations[].reason: "Worker emitted malformed report"`, wrapping the missing-sub-field name and the raw bytes of the worker's file in `escalations[].detail`.
 
-This extension means: a worker that emits a top-level-parseable YAML but supplies a `tests` block with `command` only (no `exit_code`, no `skipped`) is **not** a convergence candidate — its report fails the synthesis-path check before the derived gate is computed. Synthesized `status: failed` reports always have `evidence: {}` (per `worker-report-v1.md` §4), so their derived gate is `n/a` — but `status=failed` short-circuits the convergence predicate (row 1 of the table above) regardless of gate.
+This extension means: a worker that emits a top-level-parseable YAML but supplies a `tests` block with `command` only (no `exit_code`, no `skipped`) is **not** a convergence candidate — its report fails the synthesis-path check before the derived gate is computed. Synthesized `status: failed` reports always have `evidence: {}` (per `worker-report-v1.md` §4), so their derived gate is `n/a` — but `status=failed` short-circuits the convergence predicate (the `status=failed` row of the table above) regardless of gate.
 
 ## Per-cycle loop steps
 
