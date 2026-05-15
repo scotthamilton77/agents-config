@@ -160,19 +160,25 @@ Do not merge while human follow-ups are incomplete or while the system-managed
 merge gate child is missing.
 
 Resolve CONTAINER_ID at the top of this step. When the bead-id refers to a
-Y_impl bead (produced by brainstorm-bead finalize — title starts with "[Impl] "),
-its parent is the Y_container (epic) that holds the merge-gate child. We must
-look for children under the container, not the impl leaf. Legacy single-Y beads
-(no "[Impl] " prefix) are their own container.
+Y_impl bead (produced by brainstorm-bead finalize — title starts with "[Impl] "
+AND parent carries a `produced-bead-*` label), its parent is the Y_container
+(epic) that holds the merge-gate child. We must look for children under the
+container, not the impl leaf. Legacy single-Y beads (no "[Impl] " prefix, OR
+"[Impl] " prefix with a parent project epic that lacks `produced-bead-*`) are
+their own container. The `produced-bead-*` label is stamped on Y_containers
+by brainstorm-bead finalize and is what distinguishes them from legacy
+project epics that historically also hosted "[Impl] "-prefixed beads.
 
   BEAD_TITLE=$(bd show "{{bead-id}}" --json | jq -r '.[0].title // empty')
+  CONTAINER_ID="{{bead-id}}"
   case "$BEAD_TITLE" in
     '[Impl] '*)
-      CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
-      [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
-      ;;
-    *)
-      CONTAINER_ID="{{bead-id}}"
+      PARENT_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+      if [ -n "$PARENT_ID" ]; then
+        PARENT_IS_YCONTAINER=$(bd label list "$PARENT_ID" --json \
+          | jq '[.[] | select(startswith("produced-bead-"))] | length')
+        [ "$PARENT_IS_YCONTAINER" -gt 0 ] && CONTAINER_ID="$PARENT_ID"
+      fi
       ;;
   esac
 
@@ -277,18 +283,25 @@ description = """
 Clean up all artifacts from the merged work.
 
 Resolve CONTAINER_ID first. When bead-id refers to a Y_impl bead (title starts
-with "[Impl] "), its parent is the Y_container (epic) that holds the merge-gate
-child and all sibling children. We close the container (not just the impl leaf).
-Legacy single-Y beads (no "[Impl] " prefix) are their own container.
+with "[Impl] " AND parent carries a `produced-bead-*` label), its parent is the
+Y_container (epic) that holds the merge-gate child and all sibling children. We
+close the container (not just the impl leaf). Legacy single-Y beads (no "[Impl] "
+prefix, OR "[Impl] " prefix with a parent project epic that lacks
+`produced-bead-*`) are their own container. The `produced-bead-*` label is
+stamped on Y_containers by brainstorm-bead finalize and is what distinguishes
+them from legacy project epics that historically also hosted "[Impl] "-prefixed
+beads.
 
   BEAD_TITLE=$(bd show "{{bead-id}}" --json | jq -r '.[0].title // empty')
+  CONTAINER_ID="{{bead-id}}"
   case "$BEAD_TITLE" in
     '[Impl] '*)
-      CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
-      [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
-      ;;
-    *)
-      CONTAINER_ID="{{bead-id}}"
+      PARENT_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+      if [ -n "$PARENT_ID" ]; then
+        PARENT_IS_YCONTAINER=$(bd label list "$PARENT_ID" --json \
+          | jq '[.[] | select(startswith("produced-bead-"))] | length')
+        [ "$PARENT_IS_YCONTAINER" -gt 0 ] && CONTAINER_ID="$PARENT_ID"
+      fi
       ;;
   esac
 
