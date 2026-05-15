@@ -323,11 +323,23 @@ Detect prior partial runs before doing any new writes.
     [ -z "$Y_IMPL_ID" ] && Y_IMPL_ID=$(bd list --parent "$Y_CONTAINER_ID" \
       --label "produced-from-{{bead-id}}" --json \
       | jq -r '.[0].id // empty')
-    # Derive CHOSEN and SID from Y_impl's labels (step 3 was skipped on this replay path).
-    CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
-    SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
-    # GOTO step 8.
-  else
+    # Legacy produced-bead-* path: the label may point directly at a single-Y
+    # bead (old formula shape) rather than a Y_container with a Y_impl child.
+    # In that case Y_IMPL_ID will still be empty after both probes. Fall through
+    # to step 2 (fresh pair creation) rather than proceeding with an empty ID
+    # that would corrupt downstream steps.
+    if [ -z "$Y_IMPL_ID" ]; then
+      echo "Replay: produced-bead-$Y_CONTAINER_ID has no [Impl] child (legacy shape); falling through to create fresh pair."
+      PRODUCED_MARKER=""  # clear so the else-branch below runs fresh
+    fi
+    if [ -n "$PRODUCED_MARKER" ]; then
+      # Derive CHOSEN and SID from Y_impl's labels (step 3 was skipped on this replay path).
+      CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+      SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
+      # GOTO step 8.
+    fi
+  fi
+  if [ -z "$PRODUCED_MARKER" ]; then
     # 1b. No produced-bead marker. Probe for an orphan Y from a run that
     # crashed AFTER step 4 (Y created) but BEFORE step 7 (X stamped).
     ORPHAN_Y=$(bd list --label produced-from-{{bead-id}} --json \\

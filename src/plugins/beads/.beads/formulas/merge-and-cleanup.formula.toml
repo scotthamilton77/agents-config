@@ -160,12 +160,21 @@ Do not merge while human follow-ups are incomplete or while the system-managed
 merge gate child is missing.
 
 Resolve CONTAINER_ID at the top of this step. When the bead-id refers to a
-Y_impl bead (produced by brainstorm-bead finalize), its parent is the
-Y_container (epic) that holds the merge-gate child. We must look for children
-under the container, not the impl leaf.
+Y_impl bead (produced by brainstorm-bead finalize — title starts with "[Impl] "),
+its parent is the Y_container (epic) that holds the merge-gate child. We must
+look for children under the container, not the impl leaf. Legacy single-Y beads
+(no "[Impl] " prefix) are their own container.
 
-  CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
-  [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+  BEAD_TITLE=$(bd show "{{bead-id}}" --json | jq -r '.[0].title // empty')
+  case "$BEAD_TITLE" in
+    '[Impl] '*)
+      CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+      [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+      ;;
+    *)
+      CONTAINER_ID="{{bead-id}}"
+      ;;
+  esac
 
 1. List children of the container:
      bd list --parent "$CONTAINER_ID" --json
@@ -267,12 +276,21 @@ needs = ["merge"]
 description = """
 Clean up all artifacts from the merged work.
 
-Resolve CONTAINER_ID first. When bead-id refers to a Y_impl bead, its parent
-is the Y_container (epic) that holds the merge-gate child and all sibling
-children. We close the container (not just the impl leaf).
+Resolve CONTAINER_ID first. When bead-id refers to a Y_impl bead (title starts
+with "[Impl] "), its parent is the Y_container (epic) that holds the merge-gate
+child and all sibling children. We close the container (not just the impl leaf).
+Legacy single-Y beads (no "[Impl] " prefix) are their own container.
 
-  CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
-  [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+  BEAD_TITLE=$(bd show "{{bead-id}}" --json | jq -r '.[0].title // empty')
+  case "$BEAD_TITLE" in
+    '[Impl] '*)
+      CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+      [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+      ;;
+    *)
+      CONTAINER_ID="{{bead-id}}"
+      ;;
+  esac
 
 1. Delete remote branch (if not auto-deleted by GitHub):
      gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
@@ -304,15 +322,17 @@ children. We close the container (not just the impl leaf).
      }
      bd close "$MERGE_GATE" --reason "PR #{{pr}} merged and cleanup completed"
 
-5. Close the source bead only after all children are closed. This preserves
-   the shift-right gate: human follow-ups plus the merge-gate child must all be
-   closed before the source can close. Check under $CONTAINER_ID:
+5. Close the source bead (Y_impl / {{bead-id}}) now that the merge-gate child
+   is closed. Then verify all remaining siblings under $CONTAINER_ID are also
+   closed before allowing the container close in step 6.
+
+     bd close "{{bead-id}}" --reason "Merged via PR #{{pr}}" 2>/dev/null || true
 
      NON_CLOSED=$(bd list --parent "$CONTAINER_ID" --json | jq '[.[] | select(.status != "closed")] | length')
      [ "$NON_CLOSED" = "0" ] || {
        bd label add {{bead-id}} human
        bd label add <this-step-bead-id> human
-       bd update {{bead-id}} --append-notes "Cleanup blocked: source bead still has open children."
+       bd update {{bead-id}} --append-notes "Cleanup blocked: container still has open children after closing source bead."
        exit 1
      }
 

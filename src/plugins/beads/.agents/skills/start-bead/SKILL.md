@@ -365,8 +365,8 @@ for this `start-bead` invocation.
 ### Step 2.7: Container-routing for Y_container targets
 
 Apply the **container-routing** algorithm when the current target bead is
-an open Y_container — `epic` type, no `implementation-ready` label on itself,
-has at least one non-gate child. This fires in two cases:
+a non-closed (open or in_progress) Y_container — `epic` type, no `implementation-ready`
+label on itself, has at least one non-gate child. This fires in two cases:
 - **Forwarded path**: closed-bead-preflight (Step 1.5) forwarded to this bead.
 - **Direct start**: the user called `start-bead` with the Y_container id directly,
   bypassing preflight forwarding.

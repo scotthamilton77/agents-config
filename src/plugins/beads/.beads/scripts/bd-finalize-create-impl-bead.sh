@@ -3,9 +3,11 @@
 #
 # Wraps brainstorm-bead formula Step 4 ("Create Y atomically") in a single
 # idempotent command. The LLM issues one invocation; the script handles the
-# intra-step orphan guard (probe → create-or-short-circuit), escalation
-# bookkeeping (human label + audit comment on source bead), and all error
+# intra-step orphan guard (probe → create-or-short-circuit), and all error
 # paths — so the formula needs no case statement or extra bd calls.
+# On escalation the script exits 1 with a diagnostic on stderr; the caller
+# (formula or agent) is responsible for HEP-escalation. Source bead is NOT
+# modified by this script on escalation paths.
 #
 # Callers invoke as:
 #   HELPER_OUT=$(bd-finalize-create-impl-bead.sh --source-bead-id X ...) || exit 1
@@ -27,8 +29,7 @@
 #   stdout (exit 0): two lines in KEY=VALUE form:
 #     Y_CONTAINER_ID=<id>
 #     Y_IMPL_ID=<id>
-#   stderr (exit 1): diagnostic message; source bead has been labelled 'human'
-#                    and an audit comment added (escalate case only)
+#   stderr (exit 1): diagnostic on stderr; caller must HEP-escalate. Source bead is NOT modified.
 #
 # Exit: 0 on success; 1 on any failure.
 #
@@ -95,7 +96,7 @@ Options:
 
 Output:
   stdout (exit 0): two KEY=VALUE lines: Y_CONTAINER_ID=<id> and Y_IMPL_ID=<id>
-  stderr (exit 1): diagnostic; source bead gets 'human' label + audit comment on escalate
+  stderr (exit 1): diagnostic on stderr; caller must HEP-escalate. Source bead is NOT modified.
 EOF
     exit 1
 }
@@ -227,13 +228,16 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
         # brainstorm container epic, not a Y_container. Misidentifying it would corrupt that epic.
         CONTAINER_TYPE=$(bd show "$EXISTING_CONTAINER" --json 2>/dev/null \
             | jq -r '.[0].issue_type // empty' 2>/dev/null) || CONTAINER_TYPE=""
-        if [[ "$CONTAINER_TYPE" == "epic" ]]; then
+        EXISTING_IMPL_TITLE=$(bd show "$EXISTING_IMPL" --json 2>/dev/null \
+            | jq -r '.[0].title // empty' 2>/dev/null) || EXISTING_IMPL_TITLE=""
+        if [[ "$CONTAINER_TYPE" == "epic" && "$EXISTING_IMPL_TITLE" == '[Impl] '* ]]; then
             printf 'Y_CONTAINER_ID=%s\n' "$EXISTING_CONTAINER"
             printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
             exit 0
         fi
-        # Parent is not an epic — this is likely a legacy single-Y bead. Fall through to State 0
-        # to create a fresh Y_container/Y_impl pair; the legacy bead is left as-is.
+        # Parent is not an epic, or impl bead title lacks [Impl] prefix — this is a legacy
+        # single-Y bead. Fall through to State 0 to create a fresh Y_container/Y_impl pair;
+        # the legacy bead is left as-is.
     else
         # Y_impl exists but has no parent — cannot safely resume; emit error for caller to HEP-escalate.
         bd comments add "$SOURCE_BEAD_ID" \
@@ -248,6 +252,10 @@ PENDING_JSON=$(bd list --label "pending-split-${SOURCE_BEAD_ID}" --json 2>/dev/n
 PENDING_COUNT=$(printf '%s' "$PENDING_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || PENDING_COUNT=0
 
 Y_CONTAINER_ID=""
+if [[ "$PENDING_COUNT" -ge 2 ]]; then
+    echo "Error: ${PENDING_COUNT} non-closed pending-split-${SOURCE_BEAD_ID} beads found; caller must triage" >&2
+    exit 1
+fi
 if [[ "$PENDING_COUNT" -ge 1 ]]; then
     # State 1: Y_container exists but Y_impl not yet created.
     Y_CONTAINER_ID=$(printf '%s' "$PENDING_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
@@ -279,7 +287,10 @@ if [[ -z "$Y_CONTAINER_ID" ]]; then
     # without a probe-able label. A crash after this line is detected by State 1 on retry.
     # A crash between create and this line leaves an unlabeled container (unavoidable without
     # atomic create+label); that window is inherent to the two-phase protocol.
-    bd label add "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null 2>&1 || true
+    bd label add "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null || {
+        echo "Error: failed to stamp crash-recovery marker; idempotency not guaranteed" >&2
+        exit 1
+    }
 
     # Claim-walk invariant I1.
     bd update "$Y_CONTAINER_ID" --status in_progress >/dev/null 2>&1 || true

@@ -207,6 +207,8 @@ def is_container(bead_id, bead_type):
                     always a container (type=epic), regardless of child count.
       Y_impl      = leaf carrying impl-ready label, no non-gate children;
                     type=feature (or bug/task), child of Y_container.
+                    merge-gate and [Human verify] children attach under
+                    Y_container as siblings of Y_impl (not under Y_impl itself).
 
     milestone / epic — always containers, regardless of children.
                        This covers Y_container (type=epic) directly.
@@ -214,9 +216,8 @@ def is_container(bead_id, bead_type):
                       that are NOT formula-gate children. The
                       active_child_count index below excludes children
                       labeled `merge-gate` or `human` so Y_impl beads
-                      (which always carry a merge-gate child via brainstorm
-                      finalize step 5b under Y_container) don't get
-                      misclassified as containers.
+                      (which have no non-gate children of their own) don't
+                      get misclassified as containers.
     """
     if bead_type in CONTAINER_ALWAYS:
         return True
