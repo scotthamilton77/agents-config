@@ -8,4 +8,4 @@ MANDATORY delegation for non-trivial work (skip for obvious one-liners, config c
 - NEVER invoke `ralf-review` unless defined as part of the scope of work to be done, or the user explicitly requests it with a target artifact, review criteria, context, and optional max cycle count
 - Tests → `writing-unit-tests` + `superpowers:test-driven-development` skills
 
-**Cross-tool delegation:** see `codex-routing.md` for picking a Codex model when delegating review or coding work to the Codex plugin.
+**Cross-tool delegation:** see `claude-to-codex-routing.md` for picking a Codex model when delegating review or coding work to the Codex plugin.

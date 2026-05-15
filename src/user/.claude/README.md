@@ -8,14 +8,10 @@ by default.
 - `commands/` — Slash commands (e.g. `/optimize-my-agent`,
   `/refresh-agents-md`). Plain markdown; `$ARGUMENTS` is substituted at
   runtime.
-- `rules/` — Claude-specific workflow rules that implement the shared
-  `<verification-checklist>` and related protocols:
-  - `delegation.md` — when to use which skill
-  - `completion-gate.md` — code review, simplification, and verification gate
-  - `delivery.md` — worktree isolation, PR creation, Copilot review monitoring
-  - `git-commits.md` — commit style under the sandbox
-  - `subagents.md` — subagent dispatch rules
-  - `codex-routing.md` — when to delegate to the Codex plugin, and which model
+- `rules/` — Claude-specific workflow rules (general rules now live in
+  `src/user/.agents/rules/` and are staged into `~/.claude/rules/` at install time):
+  - `claude-sandbox.md` — commit style under the Claude Code sandbox
+  - `claude-to-codex-routing` rule — when to delegate to the Codex plugin, and which model
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
   `INSTRUCTIONS.md`, personas, and `CLAUDE-EXTENSIONS.md`.
 - `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.

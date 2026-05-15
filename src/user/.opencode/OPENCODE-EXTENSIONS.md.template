@@ -29,6 +29,10 @@ slightly different frontmatter format.
 
 ## Rules
 
-OpenCode does not support a `rules/` directory. Tool-agnostic rules from the
-Claude `rules/` directory have been inlined above. Claude-specific rules
-(`codex-routing.md`, `completion-gate.md`) are omitted.
+OpenCode does not support a `rules/` directory. All rules — tool-agnostic
+rules from `src/user/.agents/rules/` (delegation, delivery, completion-gate,
+subagents, worktrees) plus Claude-specific rules from `src/user/.claude/rules/`
+(`claude-sandbox.md`, the Claude-to-Codex routing rule) — are inlined above
+via the `DYNAMIC-INCLUDE-ALL-RULES` marker. Note: the Claude-specific rules
+apply narrowly to Claude Code (sandbox constraints, Codex plugin delegation)
+but are still inlined for completeness; ignore them when working in OpenCode.

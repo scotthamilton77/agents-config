@@ -687,6 +687,7 @@ flatten_agents_md() {
     local template="$1"
     local output="$2"
     local project_root="$3"
+    local staging_tool_dir="$4"
 
     local line marker_path rule_names rule_file first_rule rule_name
 
@@ -722,6 +723,26 @@ flatten_agents_md() {
                     warn "DYNAMIC-INCLUDE-RULES not found: $rule_name.md"
                 fi
             done < <(printf '%s' "$rule_names" | tr ',' '\n')
+            continue
+        fi
+
+        # Handle <!-- DYNAMIC-INCLUDE-ALL-RULES -->
+        if [[ "$line" == "<!-- DYNAMIC-INCLUDE-ALL-RULES -->" ]]; then
+            # NOTE: reuses existing `first_rule` local declared at the top of the function.
+            # Do NOT re-declare with `local` here.
+            first_rule=true
+            while IFS= read -r rule_file; do
+                [[ -f "$rule_file" ]] || continue
+                if [[ "$first_rule" == true ]]; then
+                    first_rule=false
+                else
+                    printf '\n---\n' >> "$output"
+                fi
+                cat "$rule_file" >> "$output"
+            done < <(find "$staging_tool_dir/rules" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null | LC_ALL=C sort)
+            if [[ "$first_rule" == true ]]; then
+                warn "DYNAMIC-INCLUDE-ALL-RULES: no rules found in $staging_tool_dir/rules/"
+            fi
             continue
         fi
 
@@ -765,6 +786,7 @@ stage_and_install_tool() {
     if [[ "$tool" != "opencode" ]]; then
         stage_content_from_dir "$SRC_SHARED" "$staging" "agents"
     fi
+    stage_content_from_dir "$SRC_SHARED" "$staging" "rules"
 
     # Note: $SRC_SHARED/*.json.template (shared settings) are intentionally not staged here.
     # Shared settings are not used today; tool-specific settings are handled in Phase 5.
@@ -812,7 +834,7 @@ stage_and_install_tool() {
         fi
 
         if [[ -d "$plugin_agents_dir" ]]; then
-            for subdir in skills agents; do
+            for subdir in rules skills agents; do
                 if [[ -d "$plugin_agents_dir/$subdir" ]]; then
                     for plugin_item in "$plugin_agents_dir/$subdir"/*; do
                         [[ -e "$plugin_item" ]] || continue
@@ -838,7 +860,7 @@ stage_and_install_tool() {
 
         vinfo "Phase 6.5: Flattening $(basename "$template") for $tool"
         flattened="$(mktemp "$STAGING_DIR/flatten.XXXXXXXX")"
-        flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT"
+        flatten_agents_md "$template" "$flattened" "$PROJECT_ROOT" "$staging"
         mv "$flattened" "$template"
     done
 

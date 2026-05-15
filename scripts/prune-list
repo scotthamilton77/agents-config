@@ -14,3 +14,9 @@
 
 # Retired, already deprecated ralf-it skill
 */skills/ralf-it
+
+# Retired in abn9.23.1: renamed to claude-sandbox.md (Claude Code sandbox constraints)
+claude/rules/git-commits.md
+
+# Retired in abn9.23.1: renamed to claude-to-codex-routing.md
+claude/rules/codex-routing.md

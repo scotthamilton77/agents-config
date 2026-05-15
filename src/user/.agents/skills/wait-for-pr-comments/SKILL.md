@@ -654,7 +654,7 @@ POSIX-atomic) — handled by `write-inventory.sh`.
 
 ### Helper-script invocation patterns
 
-**Heredocs are sandbox-blocked** per `git-commits.md`. Use a temp file +
+**Heredocs are sandbox-blocked** per `claude-sandbox.md`. Use a temp file +
 `jq` pipeline; pipe into the helper.
 
 **Write inventory** (called from Phases 7 success, every 5x failure, and

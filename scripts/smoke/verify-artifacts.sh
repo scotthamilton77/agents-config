@@ -120,7 +120,7 @@ verify_flattening() {
     echo "        file not found: ${instructions_path}"
     FAIL=$((FAIL + 1))
   else
-    grep -qE '<!-- DYNAMIC-INCLUDE(-RULES)?:' "${instructions_path}"
+    grep -qE '<!-- DYNAMIC-INCLUDE((-RULES)?:|-ALL-RULES -->)' "${instructions_path}"
     local rc=$?
     case "${rc}" in
       0)

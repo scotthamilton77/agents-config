@@ -3,5 +3,5 @@
 <!-- DYNAMIC-INCLUDE: src/user/.agents/AGENT-PERSONA.md.template -->
 <!-- DYNAMIC-INCLUDE: src/user/.agents/USER-PERSONA.md.template -->
 <!-- DYNAMIC-INCLUDE: src/user/.agents/INSTRUCTIONS.md.template -->
-<!-- DYNAMIC-INCLUDE-RULES: delegation,delivery,git-commits,subagents,worktrees -->
+<!-- DYNAMIC-INCLUDE-ALL-RULES -->
 <!-- DYNAMIC-INCLUDE: src/user/.opencode/OPENCODE-EXTENSIONS.md.template -->
