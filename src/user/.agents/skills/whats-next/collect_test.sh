@@ -588,4 +588,175 @@ for forbidden in b1-parent i1-parent p1-parent; do
 done
 pass "T10b: --mode human fetches only h1-parent; brainstorm/impl/planning parents are not fetched (display_ids scoped to emitted sections)"
 
+# -----------------------------------------------------------------------------
+# T11. HEP escalation child discrimination via `hep-pause` label.
+#
+# Scenario: A feature bead (no readiness labels) has exactly one open child
+# carrying BOTH `human` AND `hep-pause` labels — the post-fix shape of a HEP
+# escalation bead (HEB) sitting under a container source.
+#
+# Expected behavior (after fix): the production active_child_count loop
+# COUNTS the hep-pause child → is_container() returns True for the feature
+# → the feature is hidden from planning_ready (active container).
+#
+# Current (buggy) behavior: the count-construction loop excludes any
+# `human`-labeled child unconditionally → active_child_count == 0 →
+# is_container() returns False → feature treated as childless → SURFACES
+# in planning_ready → TEST FAILS.
+#
+# Test method: end-to-end via collect.py --mode planning so the production
+# filter is exercised. Assertion: the feature is NOT in planning_ready
+# (it has an active hep-pause child, so it is a container).
+# -----------------------------------------------------------------------------
+TMP_T11=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"} "$TMP_T11"' EXIT
+
+cat > "$TMP_T11/bd" <<'SHIM'
+#!/usr/bin/env bash
+case "$*" in
+  "list --label human --limit 0 --json")
+    # The hep-pause child also carries `human` so it surfaces here.
+    echo '[{"id":"proj-hebchild","issue_type":"task","status":"open","priority":1,"title":"Human input needed","labels":["human","hep-pause"],"parent":"proj-hepfeat"}]' ;;
+  "list --status open,in_progress --limit 0 --json")
+    # Feature (no readiness labels) + ONE child carrying human+hep-pause.
+    # Under the FIX, the child IS counted → feature is a container.
+    # Under current code, the child is excluded → count=0 → feature is
+    # treated as childless and leaks into planning_ready.
+    cat <<'JSON'
+[
+  {"id":"proj-hepfeat","issue_type":"feature","status":"open","priority":1,"title":"feature paused via HEP","labels":[]},
+  {"id":"proj-hebchild","issue_type":"task","status":"open","priority":1,"title":"Human input needed","labels":["human","hep-pause"],"parent":"proj-hepfeat"}
+]
+JSON
+    ;;
+  "ready --json")
+    # Feature is dep-unblocked (container HEP gates via parent-child shape,
+    # not a blocks edge).
+    cat <<'JSON'
+[
+  {"id":"proj-hepfeat","issue_type":"feature","status":"open","priority":1,"title":"feature paused via HEP","labels":[],"created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
+    # Childless-looking feature is returned by the --ready query; planning
+    # filter must drop it because active_child_count > 0 (after fix).
+    cat <<'JSON'
+[
+  {"id":"proj-hepfeat","issue_type":"feature","status":"open","priority":1,"title":"feature paused via HEP","labels":[]}
+]
+JSON
+    ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T11/bd"
+
+OUT_T11="$TMP_T11/planning.json"
+PATH="$TMP_T11:$PATH" python3 "$COLLECT_PY" --mode planning \
+    >"$OUT_T11" 2>"$TMP_T11/err.plan"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T11: collect.py --mode planning exited $ec (stderr: $(cat "$TMP_T11/err.plan"))"
+
+OUT_T11="$OUT_T11" python3 - <<'PY' \
+    || fail "T11: HEP-paused feature (one human+hep-pause child) leaked into planning_ready (active-child filter must count hep-pause children)"
+import json, os
+out = json.load(open(os.environ["OUT_T11"]))
+pr = out.get("planning_ready", [])
+ids = [b.get("id") for b in pr]
+assert "proj-hepfeat" not in ids, (
+    f"feature with one open human+hep-pause child MUST NOT appear in "
+    f"planning_ready (it is an active container; the hep-pause child must "
+    f"be counted toward active_child_count); got planning_ready ids: {ids}"
+)
+PY
+pass "T11: HEP-paused feature with one human+hep-pause child is recognized as a container (excluded from planning_ready)"
+
+# -----------------------------------------------------------------------------
+# T12. Feature with `implementation-ready` whose ONLY active child carries
+# `human+hep-pause` must NOT surface in --mode implementation.
+#
+# Scenario: A feature carrying `implementation-ready` has exactly one open
+# child carrying ['human','hep-pause'] — the post-fix HEP shape. The
+# feature is a paused container, not a leaf impl bead.
+#
+# Expected behavior (after fix): active_child_count == 1 → is_container()
+# True → is_impl_candidate() False → feature NOT in implementation section.
+#
+# Current (buggy) behavior: hep-pause child wrongly excluded → count == 0 →
+# is_container() False → feature TREATED AS LEAF IMPL → appears in
+# implementation section → TEST FAILS.
+# -----------------------------------------------------------------------------
+TMP_T12=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"} "$TMP_T11" "$TMP_T12"' EXIT
+
+cat > "$TMP_T12/bd" <<'SHIM'
+#!/usr/bin/env bash
+case "$*" in
+  "list --label human --limit 0 --json")
+    # The hep-pause child carries `human` so it surfaces here too — but the
+    # human SECTION just shows it (irrelevant to the implementation
+    # assertion below).
+    echo '[{"id":"proj-hebchild","issue_type":"task","status":"open","priority":1,"title":"Human input needed","labels":["human","hep-pause"],"parent":"proj-pausedfeat"}]' ;;
+  "list --status open,in_progress --limit 0 --json")
+    # Feature with implementation-ready + ONLY a human+hep-pause child.
+    # Under the FIX, the child is counted → feature is a container →
+    # excluded from implementation. Under current code, the child is
+    # excluded → count=0 → feature treated as a leaf impl bead → leaks
+    # into implementation queue.
+    cat <<'JSON'
+[
+  {"id":"proj-pausedfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] feature paused via HEP","labels":["implementation-ready"]},
+  {"id":"proj-hebchild","issue_type":"task","status":"open","priority":1,"title":"Human input needed","labels":["human","hep-pause"],"parent":"proj-pausedfeat"}
+]
+JSON
+    ;;
+  "ready --json")
+    # bd ready returns the paused feature (it has impl-ready label and no
+    # blocking dep, since HEP for containers uses parent-child gating, not
+    # a blocks edge).
+    cat <<'JSON'
+[
+  {"id":"proj-pausedfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] feature paused via HEP","labels":["implementation-ready"],"created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
+    cat <<'JSON'
+[
+  {"id":"proj-pausedfeat","issue_type":"feature","status":"open","priority":1,"title":"[Impl] feature paused via HEP","labels":["implementation-ready"]}
+]
+JSON
+    ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T12/bd"
+
+OUT_T12="$TMP_T12/impl.json"
+PATH="$TMP_T12:$PATH" python3 "$COLLECT_PY" --mode implementation \
+    >"$OUT_T12" 2>"$TMP_T12/err.impl"
+ec=$?
+[ "$ec" -eq 0 ] \
+    || fail "T12: collect.py --mode implementation exited $ec (stderr: $(cat "$TMP_T12/err.impl"))"
+
+OUT_T12="$OUT_T12" python3 - <<'PY' \
+    || fail "T12: paused feature with only human+hep-pause child leaked into implementation queue (active-child filter must count hep-pause children)"
+import json, os
+out = json.load(open(os.environ["OUT_T12"]))
+impl = out.get("implementation", [])
+ids = [b.get("id") for b in impl]
+assert "proj-pausedfeat" not in ids, (
+    f"feature with implementation-ready and ONLY a human+hep-pause child "
+    f"MUST NOT appear in implementation (it is a HEP-paused container, not "
+    f"a leaf impl bead); got implementation ids: {ids}"
+)
+PY
+pass "T12: HEP-paused feature (impl-ready + only human+hep-pause child) is excluded from --mode implementation"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
