@@ -80,12 +80,26 @@ CLAUDE_TO_CODEX="$CLAUDE_RULES_DIR/claude-to-codex-routing.md"
 [ -f "$CLAUDE_SANDBOX" ] || fail "AC4: $CLAUDE_SANDBOX does not exist (renamed git-commits.md)"
 [ -f "$CLAUDE_TO_CODEX" ] || fail "AC4: $CLAUDE_TO_CODEX does not exist (renamed codex-routing.md)"
 
-# Canonical content marker for the old git-commits.md (preserved in claude-sandbox.md).
-grep -q 'Sandbox mode: heredocs fail' "$CLAUDE_SANDBOX" \
-    || fail "AC4: $CLAUDE_SANDBOX missing canonical git-commits.md content ('Sandbox mode: heredocs fail')"
-# Canonical content marker for old codex-routing.md (preserved in claude-to-codex-routing.md).
-grep -q 'codex-companion.mjs' "$CLAUDE_TO_CODEX" \
-    || fail "AC4: $CLAUDE_TO_CODEX missing canonical codex-routing.md content ('codex-companion.mjs')"
+# Canonical content markers for the old git-commits.md (preserved in
+# claude-sandbox.md). Assert MULTIPLE markers so a partial / truncated rename
+# can't pass.
+for marker in 'Sandbox mode: heredocs fail' 'dangerouslyDisableSandbox' 'NEVER use heredoc syntax'; do
+    grep -q "$marker" "$CLAUDE_SANDBOX" \
+        || fail "AC4: $CLAUDE_SANDBOX missing canonical git-commits.md marker ('$marker')"
+done
+# Canonical content markers for old codex-routing.md (preserved in
+# claude-to-codex-routing.md).
+for marker in 'codex-companion.mjs' 'CLAUDE_PLUGIN_ROOT' 'gpt-5.5' 'Slash commands'; do
+    grep -q "$marker" "$CLAUDE_TO_CODEX" \
+        || fail "AC4: $CLAUDE_TO_CODEX missing canonical codex-routing.md marker ('$marker')"
+done
+# Sanity: each renamed file is non-trivially sized (>= 5 non-empty lines).
+sandbox_lines="$(grep -cve '^$' "$CLAUDE_SANDBOX")"
+[ "$sandbox_lines" -ge 5 ] \
+    || fail "AC4: $CLAUDE_SANDBOX has only $sandbox_lines non-empty lines (expected >= 5); content looks truncated"
+codex_lines="$(grep -cve '^$' "$CLAUDE_TO_CODEX")"
+[ "$codex_lines" -ge 5 ] \
+    || fail "AC4: $CLAUDE_TO_CODEX has only $codex_lines non-empty lines (expected >= 5); content looks truncated"
 pass "AC4: claude-sandbox.md and claude-to-codex-routing.md exist with preserved content"
 
 # -----------------------------------------------------------------------------
@@ -104,7 +118,10 @@ pass "AC5: Claude AGENTS.md.template has no DYNAMIC-INCLUDE-RULES marker"
 [ -f "$CODEX_AGENTS_TPL" ] || fail "AC6: $CODEX_AGENTS_TPL missing"
 grep -q 'DYNAMIC-INCLUDE-ALL-RULES' "$CODEX_AGENTS_TPL" \
     || fail "AC6: Codex AGENTS.md.template missing DYNAMIC-INCLUDE-ALL-RULES marker"
-pass "AC6: Codex AGENTS.md.template contains DYNAMIC-INCLUDE-ALL-RULES"
+if grep -q '<!-- DYNAMIC-INCLUDE-RULES:' "$CODEX_AGENTS_TPL"; then
+    fail "AC6: Codex AGENTS.md.template still has hardcoded DYNAMIC-INCLUDE-RULES list"
+fi
+pass "AC6: Codex AGENTS.md.template contains DYNAMIC-INCLUDE-ALL-RULES (no hardcoded list)"
 
 # -----------------------------------------------------------------------------
 # AC7 — Gemini GEMINI.md.template contains DYNAMIC-INCLUDE-ALL-RULES.
@@ -112,7 +129,10 @@ pass "AC6: Codex AGENTS.md.template contains DYNAMIC-INCLUDE-ALL-RULES"
 [ -f "$GEMINI_TPL" ] || fail "AC7: $GEMINI_TPL missing"
 grep -q 'DYNAMIC-INCLUDE-ALL-RULES' "$GEMINI_TPL" \
     || fail "AC7: Gemini GEMINI.md.template missing DYNAMIC-INCLUDE-ALL-RULES marker"
-pass "AC7: Gemini GEMINI.md.template contains DYNAMIC-INCLUDE-ALL-RULES"
+if grep -q '<!-- DYNAMIC-INCLUDE-RULES:' "$GEMINI_TPL"; then
+    fail "AC7: Gemini GEMINI.md.template still has hardcoded DYNAMIC-INCLUDE-RULES list"
+fi
+pass "AC7: Gemini GEMINI.md.template contains DYNAMIC-INCLUDE-ALL-RULES (no hardcoded list)"
 
 # -----------------------------------------------------------------------------
 # AC8 — OpenCode AGENTS.md.template contains DYNAMIC-INCLUDE-ALL-RULES (and
@@ -266,10 +286,10 @@ pass "AC16: verify-artifacts.sh regex catches DYNAMIC-INCLUDE-ALL-RULES"
 # AC17 — prune-list contains entries for the retired Claude rule paths.
 # -----------------------------------------------------------------------------
 [ -f "$PRUNE_LIST" ] || fail "AC17: $PRUNE_LIST missing"
-grep -q 'claude/rules/git-commits.md' "$PRUNE_LIST" \
-    || fail "AC17: prune-list missing entry for claude/rules/git-commits.md"
-grep -q 'claude/rules/codex-routing.md' "$PRUNE_LIST" \
-    || fail "AC17: prune-list missing entry for claude/rules/codex-routing.md"
+grep -Eq '^[[:space:]]*claude/rules/git-commits\.md[[:space:]]*$' "$PRUNE_LIST" \
+    || fail "AC17: prune-list missing active entry for claude/rules/git-commits.md (must not be commented out)"
+grep -Eq '^[[:space:]]*claude/rules/codex-routing\.md[[:space:]]*$' "$PRUNE_LIST" \
+    || fail "AC17: prune-list missing active entry for claude/rules/codex-routing.md (must not be commented out)"
 pass "AC17: prune-list contains retired claude/rules/ entries"
 
 # -----------------------------------------------------------------------------
