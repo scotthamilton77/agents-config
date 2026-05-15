@@ -202,14 +202,21 @@ active_child_count = {}
 def is_container(bead_id, bead_type):
     """True when bead should be hidden from brainstorm/impl lists.
 
+    Post-pqvc 2-level shape:
+      Y_container = epic with non-gate children (e.g. Y_impl as active child);
+                    always a container (type=epic), regardless of child count.
+      Y_impl      = leaf carrying impl-ready label, no non-gate children;
+                    type=feature (or bug/task), child of Y_container.
+
     milestone / epic — always containers, regardless of children.
+                       This covers Y_container (type=epic) directly.
     feature         — container only when it has ≥1 non-closed children
                       that are NOT formula-gate children. The
                       active_child_count index below excludes children
-                      labeled `merge-gate` or `human` so feature-Y impl
-                      beads (which always carry a merge-gate child via
-                      brainstorm finalize step 5b) don't get misclassified
-                      as containers.
+                      labeled `merge-gate` or `human` so Y_impl beads
+                      (which always carry a merge-gate child via brainstorm
+                      finalize step 5b under Y_container) don't get
+                      misclassified as containers.
     """
     if bead_type in CONTAINER_ALWAYS:
         return True

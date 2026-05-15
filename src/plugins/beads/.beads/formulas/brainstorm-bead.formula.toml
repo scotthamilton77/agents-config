@@ -314,11 +314,18 @@ Detect prior partial runs before doing any new writes.
     # X has been stamped by a prior run. Extract the existing Y-id from the
     # label suffix and skip ahead to step 8 (close X + I2 close-walk) and
     # step 9 (burn wisp). Steps 2-7 are already done.
-    Y_ID="${PRODUCED_MARKER#produced-bead-}"
-    echo "Replay: produced-bead-$Y_ID already on {{bead-id}}; resuming at step 8."
-    # Derive CHOSEN and SID from Y's labels (step 3 was skipped on this replay path).
-    CHOSEN=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
-    SID=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
+    Y_CONTAINER_ID="${PRODUCED_MARKER#produced-bead-}"
+    echo "Replay: produced-bead-$Y_CONTAINER_ID already on {{bead-id}}; resuming at step 8."
+    # Derive Y_IMPL_ID from Y_container's children with produced-from-{{bead-id}} label.
+    Y_IMPL_ID=$(bd list --parent "$Y_CONTAINER_ID" \
+      --label "produced-from-{{bead-id}}" --json \
+      | jq -r '[.[] | select(.status != "closed")] | .[0].id // empty')
+    [ -z "$Y_IMPL_ID" ] && Y_IMPL_ID=$(bd list --parent "$Y_CONTAINER_ID" \
+      --label "produced-from-{{bead-id}}" --json \
+      | jq -r '.[0].id // empty')
+    # Derive CHOSEN and SID from Y_impl's labels (step 3 was skipped on this replay path).
+    CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+    SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
     # GOTO step 8.
   else
     # 1b. No produced-bead marker. Probe for an orphan Y from a run that
@@ -329,16 +336,17 @@ Detect prior partial runs before doing any new writes.
 
     case "$ORPHAN_COUNT" in
       0) ;;  # fresh run; proceed to step 2
-      1) Y_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
-         echo "Replay: orphan Y=$Y_ID found (produced-from-{{bead-id}}); resuming at step 5."
+      1) Y_IMPL_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
+         Y_CONTAINER_ID=$(bd show "$Y_IMPL_ID" --json | jq -r '.[0].parent // empty')
+         echo "Replay: orphan Y_IMPL_ID=$Y_IMPL_ID (Y_CONTAINER_ID=$Y_CONTAINER_ID) found (produced-from-{{bead-id}}); resuming at step 5."
          # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
          X_JSON_R=$(bd show {{bead-id}} --json)
          X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
          X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
-         # Derive CHOSEN and SID from Y's labels for use in step 9 report.
-         CHOSEN=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
-         SID=$(bd label list "$Y_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
-         # GOTO step 5 with the existing Y_ID.
+         # Derive CHOSEN and SID from Y_impl's labels for use in step 9 report.
+         CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+         SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
+         # GOTO step 5 with the existing Y_CONTAINER_ID / Y_IMPL_ID.
          ;;
       *) # HEP: create escalation bead + blocking dep; exit 0 so bd ready gating works.
          X_PRIORITY_ESC=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "2"')
@@ -541,7 +549,7 @@ Write spec and AC to temp files, then invoke the script:
   PARENT_FLAG=()
   [ -n "$X_PARENT" ] && PARENT_FLAG=(--parent "$X_PARENT")
 
-  Y_ID=$(~/.beads/scripts/bd-finalize-create-impl-bead.sh \\
+  HELPER_OUT=$(~/.beads/scripts/bd-finalize-create-impl-bead.sh \\
     --source-bead-id "{{bead-id}}" \\
     --type "$Y_TYPE" \\
     --priority "$X_PRIORITY" \\
@@ -550,25 +558,32 @@ Write spec and AC to temp files, then invoke the script:
     --spec-file "$Y_SPEC" \\
     --ac-file "$Y_AC" \\
     "${PARENT_FLAG[@]}") || exit 1
-  echo "Implementation bead: $Y_ID"
+  Y_CONTAINER_ID=$(echo "$HELPER_OUT" | grep '^Y_CONTAINER_ID=' | cut -d= -f2)
+  Y_IMPL_ID=$(echo "$HELPER_OUT" | grep '^Y_IMPL_ID=' | cut -d= -f2)
+  echo "Y_container bead: $Y_CONTAINER_ID"
+  echo "Y_impl bead: $Y_IMPL_ID"
 
 Notes on this step:
 
-- The script outputs just the Y bead ID on success (exit 0). On failure
-  (exit 1), it writes diagnostics to stderr. For the escalate case
+- The script outputs two KEY=VALUE lines on success (exit 0):
+    Y_CONTAINER_ID=<id>
+    Y_IMPL_ID=<id>
+  Y_container (type=epic) is the structural parent; Y_impl (formula-derived
+  type) is the executable leaf carrying all impl-ready labels.
+  On failure (exit 1), it writes diagnostics to stderr. For the escalate case
   (multiple orphan impl beads), it also adds the 'human' label and an
   audit comment to {{bead-id}} before exiting — no extra bd calls needed here.
-- The script probes for an existing non-closed bead carrying
-  produced-from-{{bead-id}} before issuing bd create. If one exists, it
-  returns that bead's ID (idempotent resume). This is the second line of
-  defence against duplicate impl beads; Step 1b is the first.
+- The script handles idempotency via four states (State 3/2/1/0):
+  State 3 (X has produced-bead-<id> + Y_impl has produced-from-<X_id>): emit existing IDs.
+  State 2 (Y_impl exists with produced-from-<X_id> but X not stamped): resume.
+  State 1 (Y_container has pending-split-<X_id> but no Y_impl): resume after creating Y_impl.
+  State 0: fresh start — create Y_container then Y_impl.
 - `--no-inherit-labels` (inside the script) prevents X.parent's labels
-  from leaking onto Y; Y's labels are EXACTLY what `--labels` lists.
-- I1 claim-walk: Y is created `open` here; it is not yet "starting work,"
-  so I1 does NOT require a fresh claim-walk against Y. Y.parent = X.parent,
-  which X's Phase 0 claim already marked in_progress and walked. The next
-  agent (run-queue / implement-bead) that claims Y will run its own
-  claim-walk per I1.
+  from leaking onto Y_impl; Y_impl's labels are EXACTLY what `--labels` lists.
+- I1 claim-walk: Y_container is marked in_progress by the script immediately
+  after creation. Y_impl is created `open` here; it is not yet "starting work."
+  The next agent (run-queue / implement-bead) that claims Y_impl will run its
+  own claim-walk per I1.
 - `for-bead-{{bead-id}}` molecule label staleness: the running wisp still
   bears `for-bead-{{bead-id}}` after Y is created. Step 9 burns the wisp
   immediately after step 8, so the staleness window is bounded to the
@@ -580,7 +595,7 @@ Notes on this step:
 STEP 5 — Create children under Y (migrate first, then fresh-create)
 ──────────────────────────────────────────────────────────────────────────
 
-5a. Migrate any allowlisted pre-existing children of X to Y:
+5a. Migrate any allowlisted pre-existing children of X to Y_container:
 
   # Re-fetch children: step 1's orphan-Y resume path (ORPHAN_COUNT==1, "GOTO step 5")
   # skips step 2, so CHILDREN_JSON may be unset on entry. This is idempotent and
@@ -593,54 +608,55 @@ STEP 5 — Create children under Y (migrate first, then fresh-create)
                                              or (.labels | index("human")))
                                      | .id' \\
   | while read -r child_id; do
-      bd update "$child_id" --parent "$Y_ID"
+      bd update "$child_id" --parent "$Y_CONTAINER_ID"
 
       # If this is a merge-gate child whose title uses either legacy naming
       # pattern, rename it to the new "[merge-gate] $TITLE_SLUG" format.
       # Dual-probe covers BOTH legacy patterns being renamed:
       #   - "merge-{{bead-id}}" (older X-id-based title from pre-rename formula)
-      #   - "merge-$Y_ID"       (even older Y-id-based title from earlier formula)
+      #   - "merge-$Y_CONTAINER_ID" (Y_container-id-based title)
       # Future readers: both legacy formats are intentionally matched so this
       # guard handles repos that may carry either historical title.
       child_labels=$(bd label list "$child_id" --json | jq -r '.[]')
       child_title=$(bd show "$child_id" --json | jq -r '.[0].title')
       if echo "$child_labels" | grep -qx 'merge-gate' \\
-        && { [ "$child_title" = "merge-{{bead-id}}" ] || [ "$child_title" = "merge-$Y_ID" ]; }; then
+        && { [ "$child_title" = "merge-{{bead-id}}" ] || [ "$child_title" = "merge-$Y_CONTAINER_ID" ]; }; then
         bd update "$child_id" --title "[merge-gate] $TITLE_SLUG"
       fi
     done
 
-5b. Fresh-create what's still missing under Y:
+5b. Fresh-create what's still missing under Y_container (sibling to Y_impl):
 
-  # Probe for merge-gate child; create only if absent.
+  # Probe for merge-gate child under Y_container; create only if absent.
   # Dual-probe idempotency: the label-based probe covers BOTH old pattern
   # "merge-{{bead-id}}" AND new pattern "[merge-gate] $TITLE_SLUG" because
   # all merge-gate children carry the merge-gate label regardless of title format.
-  EXISTING_GATE=$(bd list --parent "$Y_ID" --label merge-gate --json \\
+  EXISTING_GATE=$(bd list --parent "$Y_CONTAINER_ID" --label merge-gate --json \\
     | jq 'length')
   if [ "$EXISTING_GATE" = "0" ]; then
-    bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
+    bd create --type task --priority "$X_PRIORITY" --parent "$Y_CONTAINER_ID" \\
       --title "[merge-gate] $TITLE_SLUG" \\
-      --description "Merge gate child for $Y_ID. Closed only by merge-and-cleanup after merge + branch/worktree cleanup." \\
+      --description "Merge gate child for $Y_CONTAINER_ID. Closed only by merge-and-cleanup after merge + branch/worktree cleanup." \\
       --labels "merge-gate" \\
       --no-inherit-labels
   fi
 
-  # For each [h] AC line in Y's acceptance_criteria, ensure exactly one
-  # human-verify child exists. Iterate the AC and create only what's missing.
+  # For each [h] AC line in Y_impl's acceptance_criteria, ensure exactly one
+  # human-verify child exists under Y_container. Iterate the AC and create only
+  # what's missing.
   printf %s "$X_AC" \\
     | awk '/^\\[h\\][[:space:]]/{sub(/^\\[h\\][[:space:]]+/,""); print}' \\
     | while IFS= read -r ac_line; do
-        # Probe for an existing human child by exact title match.
+        # Probe for an existing human child by exact title match under Y_container.
         # Dual-probe idempotency: check for BOTH old pattern
         # "[Human verify] $ac_line" AND new pattern "[verify] $TITLE_SLUG - $ac_line"
         # (transition window dual-probe).
-        EXISTING=$(bd list --parent "$Y_ID" --label human --json \\
+        EXISTING=$(bd list --parent "$Y_CONTAINER_ID" --label human --json \\
           | jq --arg old_title "[Human verify] $ac_line" \\
                --arg new_title "[verify] $TITLE_SLUG - $ac_line" \\
                '[.[] | select(.title == $old_title or .title == $new_title)] | length')
         if [ "$EXISTING" = "0" ]; then
-          bd create --type task --priority "$X_PRIORITY" --parent "$Y_ID" \\
+          bd create --type task --priority "$X_PRIORITY" --parent "$Y_CONTAINER_ID" \\
             --title "[verify] $TITLE_SLUG - $ac_line" \\
             --description "Human verification required for: $ac_line" \\
             --labels "human" \\
@@ -679,7 +695,7 @@ direction), so a replay is a no-op for them.
 
   ~/.beads/scripts/bd-migrate-deps.sh \\
     --source "{{bead-id}}" \\
-    --target "$Y_ID"
+    --target "$Y_IMPL_ID"
 
 ──────────────────────────────────────────────────────────────────────────
 STEP 7 — Stamp produced-bead-<Y-id> on X (replay-safe boundary)
@@ -688,11 +704,11 @@ STEP 7 — Stamp produced-bead-<Y-id> on X (replay-safe boundary)
 The label is the canonical replay-safe marker — set it BEFORE the
 breadcrumb comment so a comment failure does not block forward progress.
 
-  bd label add {{bead-id}} "produced-bead-$Y_ID"
+  bd label add {{bead-id}} "produced-bead-$Y_CONTAINER_ID"
 
   # Best-effort breadcrumb (comment failure does NOT block step 8):
   TODAY=$(date -u +%Y-%m-%d)
-  bd comments add {{bead-id}} "Brainstormed; produced $Y_ID on $TODAY" \\
+  bd comments add {{bead-id}} "Brainstormed; produced container=$Y_CONTAINER_ID impl=$Y_IMPL_ID on $TODAY" \\
     || echo "WARN: comment breadcrumb failed; continuing (label is the canonical marker)."
 
 ──────────────────────────────────────────────────────────────────────────
@@ -701,10 +717,11 @@ STEP 8 — Close X with reason; run I2 close-walk
 
   ~/.beads/scripts/bd-close-walk.sh \\
     --bead-id "{{bead-id}}" \\
-    --reason "brainstormed; produced $Y_ID"
+    --reason "brainstormed; produced Y_container=$Y_CONTAINER_ID Y_impl=$Y_IMPL_ID"
 
-  # The I2 ancestor walk halts at X.parent because Y is now an open child
-  # of X.parent (Y.parent = X.parent) — the epic still has active work via Y.
+  # The I2 ancestor walk halts at X.parent because Y_container is now an open
+  # child of X.parent (Y_container.parent = X.parent) — the epic still has
+  # active work via Y_container → Y_impl.
   # Read the `closed=...` output for the audit trail.
 
 ──────────────────────────────────────────────────────────────────────────
@@ -715,7 +732,8 @@ STEP 9 — Burn the wisp; report hand-off
 
 Report to the user:
   "Brainstorming complete for {{bead-id}} (now closed).
-   Implementation bead: $Y_ID — labels: brainstormed, implementation-ready,
+   Y_container (epic, structural parent): $Y_CONTAINER_ID
+   Y_impl (implementation bead): $Y_IMPL_ID — labels: brainstormed, implementation-ready,
    formula-${CHOSEN}, implementation-readied-session-${SID}.
    Default hand-off is to run-queue (separate session). Continuing to
    implementation in this session requires explicit authorization."

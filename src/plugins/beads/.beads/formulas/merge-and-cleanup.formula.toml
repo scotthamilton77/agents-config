@@ -159,8 +159,16 @@ Before asking for merge authorization, enforce the source-bead closure gate.
 Do not merge while human follow-ups are incomplete or while the system-managed
 merge gate child is missing.
 
-1. List children of the source bead:
-     bd list --parent {{bead-id}} --json
+Resolve CONTAINER_ID at the top of this step. When the bead-id refers to a
+Y_impl bead (produced by brainstorm-bead finalize), its parent is the
+Y_container (epic) that holds the merge-gate child. We must look for children
+under the container, not the impl leaf.
+
+  CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+  [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+
+1. List children of the container:
+     bd list --parent $CONTAINER_ID --json
 
 2. For every `[Human verify]` child carrying the `human` label, require BOTH:
      - status is `closed`
@@ -176,7 +184,7 @@ merge gate child is missing.
      bd update {{bead-id}} --append-notes "Merge blocked: human follow-up <child-id> is not closed with verified-by-human."
      bd update <this-step-bead-id> --append-notes "Merge blocked: human follow-up <child-id> is not closed with verified-by-human."
 
-3. Find the system-managed merge child under `{{bead-id}}` by checking each
+3. Find the system-managed merge child under $CONTAINER_ID by checking each
    child with `bd label list <child-id> --json` for `merge-gate`. Exactly one
    must exist, and it must still be open before the PR merge. If missing,
    duplicated, or already closed, stop with the same human-flag protocol and
@@ -259,6 +267,13 @@ needs = ["merge"]
 description = """
 Clean up all artifacts from the merged work.
 
+Resolve CONTAINER_ID first. When bead-id refers to a Y_impl bead, its parent
+is the Y_container (epic) that holds the merge-gate child and all sibling
+children. We close the container (not just the impl leaf).
+
+  CONTAINER_ID=$(bd show "{{bead-id}}" --json | jq -r '.[0].parent // empty')
+  [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
+
 1. Delete remote branch (if not auto-deleted by GitHub):
      gh pr view {{pr}} --json headRefName | jq -r '.headRefName'
      gh api repos/{owner}/{repo}/git/refs/heads/<branch> -X DELETE
@@ -272,11 +287,11 @@ Clean up all artifacts from the merged work.
 
 4. Close the merge-gate child only after branch/worktree cleanup has
    completed. This is the action that allows the source bead's child gate to
-   clear:
+   clear. Search under $CONTAINER_ID:
 
      MERGE_GATE=""
-     for child in $(bd list --parent {{bead-id}} --json | jq -r '.[].id'); do
-       if bd label list "$child" --json | jq -e '.labels | index("merge-gate")' >/dev/null; then
+     for child in $(bd list --parent $CONTAINER_ID --json | jq -r '.[].id'); do
+       if bd label list "$child" --json | jq -e 'index("merge-gate")' >/dev/null; then
          [ -z "$MERGE_GATE" ] || { MERGE_GATE="__duplicate__"; break; }
          MERGE_GATE="$child"
        fi
@@ -291,27 +306,26 @@ Clean up all artifacts from the merged work.
 
 5. Close the source bead only after all children are closed. This preserves
    the shift-right gate: human follow-ups plus the merge-gate child must all be
-   closed before the source can close.
+   closed before the source can close. Check under $CONTAINER_ID:
 
-     NON_CLOSED=$(bd list --parent {{bead-id}} --json | jq '[.[] | select(.status != "closed")] | length')
+     NON_CLOSED=$(bd list --parent $CONTAINER_ID --json | jq '[.[] | select(.status != "closed")] | length')
      [ "$NON_CLOSED" = "0" ] || {
        bd label add {{bead-id}} human
        bd label add <this-step-bead-id> human
        bd update {{bead-id}} --append-notes "Cleanup blocked: source bead still has open children."
        exit 1
      }
-     bd close {{bead-id}} --reason "Merged PR #{{pr}} and all child gates closed"
 
-6. Walk the parent chain; close each ancestor epic whose remaining
-   children are all closed:
+6. Walk the parent chain from CONTAINER_ID; close CONTAINER_ID and each
+   ancestor epic whose remaining children are all closed:
 
      ~/.beads/scripts/bd-close-walk.sh \\
-       --bead-id "{{bead-id}}" \\
+       --bead-id "$CONTAINER_ID" \\
        --reason "Merged PR #{{pr}} and all child gates closed"
 
-   Note: {{bead-id}} was already closed in step 5; the script detects
-   this and skips the initial close, proceeding directly to the ancestor
-   walk. Read the `closed=...` output for the audit trail.
+   The close-walk closes CONTAINER_ID first, then walks up the ancestor chain
+   closing any ancestor whose remaining children are all closed.
+   Read the `closed=...` output for the audit trail.
 
 7. Burn this wisp:
      bd mol burn <this-mol-id> --force

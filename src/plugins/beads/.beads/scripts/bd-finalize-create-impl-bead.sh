@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bd-finalize-create-impl-bead.sh — Create the implementation bead during brainstorm finalize.
+# bd-finalize-create-impl-bead.sh — Create the implementation bead pair during brainstorm finalize.
 #
 # Wraps brainstorm-bead formula Step 4 ("Create Y atomically") in a single
 # idempotent command. The LLM issues one invocation; the script handles the
@@ -8,7 +8,9 @@
 # paths — so the formula needs no case statement or extra bd calls.
 #
 # Callers invoke as:
-#   Y_ID=$(bd-finalize-create-impl-bead.sh --source-bead-id X ...) || exit 1
+#   HELPER_OUT=$(bd-finalize-create-impl-bead.sh --source-bead-id X ...) || exit 1
+#   Y_CONTAINER_ID=$(echo "$HELPER_OUT" | grep '^Y_CONTAINER_ID=' | cut -d= -f2)
+#   Y_IMPL_ID=$(echo "$HELPER_OUT" | grep '^Y_IMPL_ID=' | cut -d= -f2)
 #
 # Usage:
 #   bd-finalize-create-impl-bead.sh \
@@ -22,11 +24,22 @@
 #     [--parent <id>]
 #
 # Output:
-#   stdout (exit 0): the new (or pre-existing) implementation bead ID — nothing else
+#   stdout (exit 0): two lines in KEY=VALUE form:
+#     Y_CONTAINER_ID=<id>
+#     Y_IMPL_ID=<id>
 #   stderr (exit 1): diagnostic message; source bead has been labelled 'human'
 #                    and an audit comment added (escalate case only)
 #
 # Exit: 0 on success; 1 on any failure.
+#
+# Idempotency states (checked in order, first match wins):
+#   State 3: X has produced-bead-<id> AND that bead has a Y_impl child
+#            with produced-from-<X_id> → skip; emit existing IDs.
+#   State 2: a bead has produced-from-<X_id> label, but X has no
+#            produced-bead-* → resume from after step 5.
+#   State 1: a bead has pending-split-<X_id> label, but no
+#            produced-from-<X_id> child → resume after creating Y_impl.
+#   State 0: none of the above → fresh start.
 
 set -euo pipefail
 
@@ -51,32 +64,37 @@ Usage: bd-finalize-create-impl-bead.sh \
   --ac-file <path> \
   [--parent <id>]
 
-Create the implementation bead during brainstorm-bead finalize (Step 4).
+Create the Y_container/Y_impl 2-level implementation bead pair during
+brainstorm-bead finalize (Step 4).
 
-Probes for an existing non-closed bead carrying label produced-from-<source-bead-id>
-before issuing bd create. Returns the existing bead ID if one is found (idempotent
-re-entry), creates a new one if none exists. Escalates if multiple non-closed
-candidates exist (requires human triage).
+Emits two KEY=VALUE lines on stdout:
+  Y_CONTAINER_ID=<id>
+  Y_IMPL_ID=<id>
 
-This script gives the LLM a single named invocation for Step 4 of brainstorm-bead
-finalize, preventing the parallel-tool-call race that produces duplicate
-implementation beads.
+Y_container (type=epic) is the structural parent; Y_impl (formula-derived
+type) is the executable leaf carrying all impl-ready labels, child of
+Y_container.
+
+Probes for existing beads via idempotency states before issuing bd create.
+Escalates if multiple non-closed candidates exist (requires human triage).
 
 Options:
   --source-bead-id  ID of the brainstorm seed bead — used for the orphan probe
-                    and to stamp the produced-from label on Y (required)
+                    and to stamp the produced-from label on Y_impl (required)
   --type            Bead type: feature, bug, or task (required)
   --priority        Priority: integer 0-4 or P0-P4 format (required)
-  --title           Title for the new implementation bead (required)
-  --labels          Comma-separated labels to apply; must include
+  --title           Title for the new implementation bead (required);
+                    Y_container gets this title (without [Impl] prefix),
+                    Y_impl gets [Impl] <title>
+  --labels          Comma-separated labels to apply to Y_impl; must include
                     produced-from-<source-bead-id> and other finalize labels (required)
   --spec-file       Path to file containing the spec/notes content (required)
   --ac-file         Path to file containing the acceptance criteria (required)
-  --parent          Parent bead ID; omit if source bead has no parent (optional)
+  --parent          Parent bead ID for Y_container; omit if source bead has no parent (optional)
   -h, --help        Show this help
 
 Output:
-  stdout (exit 0): the new or pre-existing implementation bead ID (one line)
+  stdout (exit 0): two KEY=VALUE lines: Y_CONTAINER_ID=<id> and Y_IMPL_ID=<id>
   stderr (exit 1): diagnostic; source bead gets 'human' label + audit comment on escalate
 EOF
     exit 1
@@ -133,11 +151,42 @@ case ",${LABELS}," in
         exit 1 ;;
 esac
 
-# ── Intra-step orphan probe ─────────────────────────────────────────────────
-# Check for non-closed beads already carrying produced-from-<source> label.
-# This guard is a second line of defence against the parallel-tool-call race:
-# even if Step 1b's top-of-finalize probe was bypassed, this probe fires
-# immediately before bd create and catches any bead that exists in the gap.
+# Derive Y_container title (strip [Impl] prefix if present — Y_container gets
+# the clean title; Y_impl gets [Impl] <title>).
+TITLE_TRIMMED=$(printf %s "$TITLE" | awk '{$1=$1; print}')
+case "$TITLE_TRIMMED" in
+    '[Impl] '*) CONTAINER_TITLE="${TITLE_TRIMMED#\[Impl\] }" ;;
+    *)          CONTAINER_TITLE="$TITLE_TRIMMED" ;;
+esac
+case "$TITLE_TRIMMED" in
+    '[Impl] '*) IMPL_TITLE="$TITLE_TRIMMED" ;;
+    *)          IMPL_TITLE="[Impl] $TITLE_TRIMMED" ;;
+esac
+
+# ── Idempotency: State 3 probe ──────────────────────────────────────────────
+# Check if X already has a produced-bead-* label AND that bead has a Y_impl
+# child with produced-from-<X_id>.
+PRODUCED_LABELS=$(bd label list "${SOURCE_BEAD_ID}" --json 2>/dev/null \
+    | jq -c '[.[] | select(startswith("produced-bead-"))]' 2>/dev/null) || PRODUCED_LABELS='[]'
+PRODUCED_COUNT=$(printf '%s' "$PRODUCED_LABELS" | jq 'length' 2>/dev/null) || PRODUCED_COUNT=0
+
+if [[ "$PRODUCED_COUNT" -eq 1 ]]; then
+    CONTAINER_CANDIDATE="${PRODUCED_LABELS}"
+    CONTAINER_CANDIDATE=$(printf '%s' "$PRODUCED_LABELS" | jq -r '.[0]' | sed 's/^produced-bead-//')
+    # Probe for Y_impl child of Y_container with produced-from-<X_id>.
+    IMPL_CANDIDATE=$(bd list --parent "${CONTAINER_CANDIDATE}" \
+        --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null \
+        | jq -r '[.[] | select(.status != "closed")] | .[0].id // empty' 2>/dev/null) || IMPL_CANDIDATE=""
+    if [[ -n "$IMPL_CANDIDATE" && "$IMPL_CANDIDATE" != "null" ]]; then
+        # State 3: both exist — emit and exit.
+        printf 'Y_CONTAINER_ID=%s\n' "$CONTAINER_CANDIDATE"
+        printf 'Y_IMPL_ID=%s\n' "$IMPL_CANDIDATE"
+        exit 0
+    fi
+fi
+
+# ── Idempotency: State 2 probe ──────────────────────────────────────────────
+# Check for a bead with produced-from-<X_id> label (Y_impl exists but X not yet stamped).
 ORPHAN_JSON=$(bd list --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null) || {
     echo "Error: bd list failed during orphan probe" >&2
     exit 1
@@ -148,50 +197,103 @@ ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | jq '[.[] | select(.status != "closed
 }
 
 if [[ "$ORPHAN_COUNT" -ge 2 ]]; then
-    # Multiple orphan impl beads exist — escalate to human; all bookkeeping done here.
-    bd label add "$SOURCE_BEAD_ID" human || true
+    # Multiple orphan impl beads exist — escalate to human.
+    bd label add "$SOURCE_BEAD_ID" human >/dev/null 2>&1 || true
     bd comments add "$SOURCE_BEAD_ID" \
-        "finalize halted: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; manual triage required." || true
+        "finalize halted: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; manual triage required." >/dev/null 2>&1 || true
     echo "Error: ${ORPHAN_COUNT} non-closed impl beads found for ${SOURCE_BEAD_ID}; source bead flagged for human triage" >&2
     exit 1
 fi
 
 if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
-    # Pre-existing impl bead found — idempotent resume; output its ID.
-    EXISTING_ID=$(printf '%s' "$ORPHAN_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
-    printf '%s\n' "$EXISTING_ID"
-    exit 0
+    # State 2: Y_impl exists but X not stamped; find its parent (Y_container).
+    EXISTING_IMPL=$(printf '%s' "$ORPHAN_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
+    EXISTING_CONTAINER=$(bd show "$EXISTING_IMPL" --json 2>/dev/null \
+        | jq -r '.[0].parent // empty' 2>/dev/null) || EXISTING_CONTAINER=""
+    if [[ -n "$EXISTING_CONTAINER" && "$EXISTING_CONTAINER" != "null" ]]; then
+        printf 'Y_CONTAINER_ID=%s\n' "$EXISTING_CONTAINER"
+        printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
+        exit 0
+    fi
+    # Y_impl found but has no parent — treat as recoverable; fall through to create Y_container.
 fi
 
-# ── Create implementation bead ──────────────────────────────────────────────
-PARENT_ARGS=()
-[[ -n "$PARENT" ]] && PARENT_ARGS=("--parent" "$PARENT")
+# ── Idempotency: State 1 probe ──────────────────────────────────────────────
+# Check for a bead with pending-split-<X_id> label (Y_container created but
+# Y_impl not yet created).
+PENDING_JSON=$(bd list --label "pending-split-${SOURCE_BEAD_ID}" --json 2>/dev/null) || PENDING_JSON='[]'
+PENDING_COUNT=$(printf '%s' "$PENDING_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || PENDING_COUNT=0
 
-CREATE_JSON=$(bd create \
+Y_CONTAINER_ID=""
+if [[ "$PENDING_COUNT" -ge 1 ]]; then
+    # State 1: Y_container exists but Y_impl not yet created.
+    Y_CONTAINER_ID=$(printf '%s' "$PENDING_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
+fi
+
+# ── State 0: Create Y_container (if not already found in State 1) ───────────
+if [[ -z "$Y_CONTAINER_ID" ]]; then
+    PARENT_ARGS=()
+    [[ -n "$PARENT" ]] && PARENT_ARGS=("--parent" "$PARENT")
+
+    CONTAINER_JSON=$(bd create \
+        --type epic \
+        --priority "$PRIORITY" \
+        "${PARENT_ARGS[@]}" \
+        --title "$CONTAINER_TITLE" \
+        --no-inherit-labels \
+        --json) || {
+        echo "Error: bd create for Y_container failed" >&2
+        exit 1
+    }
+
+    Y_CONTAINER_ID=$(printf '%s' "$CONTAINER_JSON" \
+        | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
+        echo "Error: jq parse failed on Y_container create output" >&2
+        exit 1
+    }
+
+    if [[ -z "$Y_CONTAINER_ID" || "$Y_CONTAINER_ID" == "null" ]]; then
+        echo "Error: bd create returned no id for Y_container" >&2
+        exit 1
+    fi
+
+    # Mark Y_container in_progress immediately (claim-walk invariant I1).
+    bd update "$Y_CONTAINER_ID" --status in_progress >/dev/null 2>&1 || true
+
+    # Stamp State 1 crash-recovery marker on Y_container.
+    bd label add "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null 2>&1 || true
+fi
+
+# ── Create Y_impl under Y_container ─────────────────────────────────────────
+IMPL_JSON=$(bd create \
     --type "$TYPE" \
     --priority "$PRIORITY" \
-    "${PARENT_ARGS[@]}" \
-    --title "$TITLE" \
+    --parent "$Y_CONTAINER_ID" \
+    --title "$IMPL_TITLE" \
     --description "$(cat "$SPEC_FILE")" \
     --acceptance "$(cat "$AC_FILE")" \
     --labels "$LABELS" \
     --deps "discovered-from:${SOURCE_BEAD_ID}" \
     --no-inherit-labels \
     --json) || {
-    echo "Error: bd create failed" >&2
+    echo "Error: bd create for Y_impl failed" >&2
     exit 1
 }
 
-# bd create --json returns either an object {id:...} or array [{id:...}] depending
-# on bd version; handle both forms defensively.
-Y_ID=$(printf '%s' "$CREATE_JSON" | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
-    echo "Error: jq parse failed on bd create output (see jq diagnostic above)" >&2
+Y_IMPL_ID=$(printf '%s' "$IMPL_JSON" \
+    | jq -r 'if type == "array" then .[0].id else .id end // empty') || {
+    echo "Error: jq parse failed on Y_impl create output" >&2
     exit 1
 }
 
-if [[ -z "$Y_ID" || "$Y_ID" == "null" ]]; then
-    echo "Error: bd create returned no id" >&2
+if [[ -z "$Y_IMPL_ID" || "$Y_IMPL_ID" == "null" ]]; then
+    echo "Error: bd create returned no id for Y_impl" >&2
     exit 1
 fi
 
-printf '%s\n' "$Y_ID"
+# Remove State 1 crash-recovery marker from Y_container now that Y_impl is created.
+bd label remove "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null 2>&1 || true
+
+# Emit the two-line KEY=VALUE output.
+printf 'Y_CONTAINER_ID=%s\n' "$Y_CONTAINER_ID"
+printf 'Y_IMPL_ID=%s\n' "$Y_IMPL_ID"

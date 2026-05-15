@@ -120,7 +120,7 @@ case "$1" in
     create)
         # Two distinct create calls — first call returns Y_container id,
         # second returns Y_impl id. Use a counter file.
-        COUNTER="${SHIM_LOG%.*}.counter"
+        COUNTER="${SHIM_LOG}.counter"
         N=0
         if [ -f "$COUNTER" ]; then
             N=$(cat "$COUNTER")

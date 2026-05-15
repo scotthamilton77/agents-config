@@ -362,6 +362,46 @@ Then invoke the `resolve-human-bead` skill via the Skill tool. Do NOT
 fall through to Routes A/B/C; Route D's dispatch is the terminal action
 for this `start-bead` invocation.
 
+### Step 2.7: Container-routing for Y_container targets
+
+When closed-bead-preflight (Step 1.5) forwards to a Y_container bead — an
+open bead with `epic` type and no `implementation-ready` label on itself —
+apply the **container-routing** algorithm before proceeding to Route A/B/C.
+
+A Y_container is the structural parent created by brainstorm-bead finalize
+for the 2-level shape (Y_container/Y_impl). The merge-gate child and any
+[Human verify] children attach under Y_container as siblings to Y_impl.
+
+**Container-routing algorithm:**
+
+1. Probe impl-ready children of Y_container:
+   ```bash
+   bd list --parent <Y_container> --label implementation-ready --json \
+     | jq '[.[] | select(.status != "closed")]'
+   ```
+
+2. Route based on cardinality:
+
+   - Zero implementation-ready children → run Route C (brainstorm) on
+     Y_container directly. The container has no ready leaf to route to.
+
+   - Exactly one implementation-ready child → resolve that child as Y_impl;
+     route via Route A on Y_impl. This is the normal post-finalize flow.
+
+   - Multiple implementation-ready children → escalate via HEP. This is
+     an ambiguous state that requires human triage to determine which Y_impl
+     is canonical.
+
+**Integration with closed-bead-preflight (Step 1.5):**
+
+When preflight forwards to Y_container, the `decision=forward target=<Y_container>`
+decision line triggers a re-entry into Step 1 with the new target. Before
+applying the standard routing checks for the Y_container target, run the
+container-routing algorithm above. The preflight forward → container-routing
+chain ensures that start-bead always resolves to an actionable leaf (Y_impl)
+or a clear brainstorm target, rather than routing to the epic container
+itself.
+
 ### Step 3: Route the Bead
 
 Evaluate the bead against these criteria in order:
@@ -535,13 +575,14 @@ Exception: if it's obviously trivial, just do it without announcing.
 
 ## Routing Decision Table
 
-| Status | Has `produced-bead-*` | Has `implementation-ready` | Trivial | Route |
-|--------|-----------------------|----------------------------|---------|-------|
-| closed | yes (exactly 1)       | —                          | —       | **Z** (forward to Y) |
-| closed | no                    | —                          | —       | exit (friendly message) |
-| open   | —                     | yes                        | —       | A |
-| open   | —                     | no                         | yes     | B |
-| open   | —                     | no                         | no      | C |
+| Status | Has `produced-bead-*` | Type        | Has `implementation-ready` | Trivial | Route |
+|--------|-----------------------|-------------|----------------------------|---------|-------|
+| closed | yes (exactly 1)       | any         | —                          | —       | **Z** (forward to Y) |
+| closed | no                    | any         | —                          | —       | exit (friendly message) |
+| open   | —                     | epic (Y_container, forwarded from Z) | no (no impl-ready on container itself) | — | **container-routing** (Step 2.7: probe impl-ready children → 0→Route C / 1→Y_impl/Route A / multiple→HEP) |
+| open   | —                     | any         | yes                        | —       | A |
+| open   | —                     | any         | no                         | yes     | B |
+| open   | —                     | any         | no                         | no      | C |
 
 *"A closed bead with ≥2 `produced-bead-*` labels does NOT route — it halts."*
 
