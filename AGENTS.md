@@ -56,12 +56,13 @@ This configuration assumes the following Claude Code plugins are installed:
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
+  - `rules/` - Tool-agnostic workflow rules (delegation, delivery, completion-gate, subagents, worktrees); same-name collisions append-merge
   - `INSTRUCTIONS.md.template` - Shared laws, constraints, workflow, orchestration
   - `AGENT-PERSONA.md.template` - Agent persona/personality template
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
-  - `rules/` - Claude-specific workflow rules (delegation, completion-gate, delivery, git-commits, codex-routing, subagents)
+  - `rules/` - Claude-specific workflow rules (`claude-sandbox.md`, `claude-to-codex-routing.md`); general rules are sourced from `src/user/.agents/rules/`
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
