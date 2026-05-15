@@ -168,7 +168,7 @@ under the container, not the impl leaf.
   [ -z "$CONTAINER_ID" ] && CONTAINER_ID="{{bead-id}}"
 
 1. List children of the container:
-     bd list --parent $CONTAINER_ID --json
+     bd list --parent "$CONTAINER_ID" --json
 
 2. For every `[Human verify]` child carrying the `human` label, require BOTH:
      - status is `closed`
@@ -290,7 +290,7 @@ children. We close the container (not just the impl leaf).
    clear. Search under $CONTAINER_ID:
 
      MERGE_GATE=""
-     for child in $(bd list --parent $CONTAINER_ID --json | jq -r '.[].id'); do
+     for child in $(bd list --parent "$CONTAINER_ID" --json | jq -r '.[].id'); do
        if bd label list "$child" --json | jq -e 'index("merge-gate")' >/dev/null; then
          [ -z "$MERGE_GATE" ] || { MERGE_GATE="__duplicate__"; break; }
          MERGE_GATE="$child"
@@ -308,7 +308,7 @@ children. We close the container (not just the impl leaf).
    the shift-right gate: human follow-ups plus the merge-gate child must all be
    closed before the source can close. Check under $CONTAINER_ID:
 
-     NON_CLOSED=$(bd list --parent $CONTAINER_ID --json | jq '[.[] | select(.status != "closed")] | length')
+     NON_CLOSED=$(bd list --parent "$CONTAINER_ID" --json | jq '[.[] | select(.status != "closed")] | length')
      [ "$NON_CLOSED" = "0" ] || {
        bd label add {{bead-id}} human
        bd label add <this-step-bead-id> human

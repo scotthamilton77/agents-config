@@ -170,8 +170,14 @@ PRODUCED_LABELS=$(bd label list "${SOURCE_BEAD_ID}" --json 2>/dev/null \
     | jq -c '[.[] | select(startswith("produced-bead-"))]' 2>/dev/null) || PRODUCED_LABELS='[]'
 PRODUCED_COUNT=$(printf '%s' "$PRODUCED_LABELS" | jq 'length' 2>/dev/null) || PRODUCED_COUNT=0
 
+if [[ "$PRODUCED_COUNT" -ge 2 ]]; then
+    # Multiple produced-bead-* labels on X — formula Step 1a should have caught this before
+    # calling the helper. Emit a structured error and let the caller HEP-escalate.
+    echo "Error: ${PRODUCED_COUNT} produced-bead-* labels on ${SOURCE_BEAD_ID}; caller must triage" >&2
+    exit 1
+fi
+
 if [[ "$PRODUCED_COUNT" -eq 1 ]]; then
-    CONTAINER_CANDIDATE="${PRODUCED_LABELS}"
     CONTAINER_CANDIDATE=$(printf '%s' "$PRODUCED_LABELS" | jq -r '.[0]' | sed 's/^produced-bead-//')
     # Probe for Y_impl child of Y_container with produced-from-<X_id>.
     IMPL_CANDIDATE=$(bd list --parent "${CONTAINER_CANDIDATE}" \
@@ -197,11 +203,9 @@ ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | jq '[.[] | select(.status != "closed
 }
 
 if [[ "$ORPHAN_COUNT" -ge 2 ]]; then
-    # Multiple orphan impl beads exist — escalate to human.
-    bd label add "$SOURCE_BEAD_ID" human >/dev/null 2>&1 || true
-    bd comments add "$SOURCE_BEAD_ID" \
-        "finalize halted: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; manual triage required." >/dev/null 2>&1 || true
-    echo "Error: ${ORPHAN_COUNT} non-closed impl beads found for ${SOURCE_BEAD_ID}; source bead flagged for human triage" >&2
+    # Multiple orphan impl beads — formula Step 1b should have caught this via HEP.
+    # Emit a structured error and let the caller HEP-escalate (do NOT bare-stamp `human` here).
+    echo "Error: ${ORPHAN_COUNT} non-closed impl beads carry produced-from-${SOURCE_BEAD_ID}; caller must HEP-escalate" >&2
     exit 1
 fi
 
@@ -215,7 +219,11 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
         printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
         exit 0
     fi
-    # Y_impl found but has no parent — treat as recoverable; fall through to create Y_container.
+    # Y_impl exists but has no parent — cannot safely resume; emit error for caller to HEP-escalate.
+    bd comments add "$SOURCE_BEAD_ID" \
+        "finalize halted: orphan impl bead $EXISTING_IMPL has no parent; manual triage required." >/dev/null 2>&1 || true
+    echo "Error: orphan impl bead $EXISTING_IMPL has no parent; cannot resume safely" >&2
+    exit 1
 fi
 
 # ── Idempotency: State 1 probe ──────────────────────────────────────────────
@@ -235,6 +243,10 @@ if [[ -z "$Y_CONTAINER_ID" ]]; then
     PARENT_ARGS=()
     [[ -n "$PARENT" ]] && PARENT_ARGS=("--parent" "$PARENT")
 
+    # Y_container intentionally carries no labels: --no-inherit-labels keeps it clean of
+    # impl-ready / session markers (Rule C), and no --labels arg is passed so category
+    # labels from X stay on Y_impl (the visible leaf in brainstorm/impl queries). The
+    # container is a structural grouping bead, not the bearer of project semantics.
     CONTAINER_JSON=$(bd create \
         --type epic \
         --priority "$PRIORITY" \
