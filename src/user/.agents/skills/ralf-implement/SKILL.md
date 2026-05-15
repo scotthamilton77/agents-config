@@ -156,7 +156,7 @@ Enumerated decision table:
 | `failed`      | any          | any                         | NO                     | iterate (or — at cap — FAIL) |
 | `complete` | `pass`       | no blocking/critical        | YES                    | converge (within cap) → PASS |
 | `complete` | `pass`       | blocking or critical present | NO                    | iterate (or — at cap — see scoring below) |
-| `complete` | `n/a`        | no blocking/critical        | YES                    | converge; fresh-eyes alone decides (no gate to consult). NOTE: `gate=n/a` requires `evidence.tests.command` to be explicitly empty/absent. If a test runner exists and tdd-green-team returned `n/a`, treat as `gate=fail`. |
+| `complete` | `n/a`        | no blocking/critical        | YES                    | converge; fresh-eyes alone decides (no gate to consult). NOTE: workers do NOT emit `gate_status` — the orchestrator derives `gate=n/a` from an `evidence.tests.command` that is explicitly empty/absent. For a tdd-green-team dispatch in a test-capable repo, an empty `evidence.tests` block is treated by the orchestrator as `gate=fail` (the worker failed to exercise the runner), not `gate=n/a`. |
 | `complete` | `n/a`        | blocking or critical present | NO                    | iterate (fresh-eyes findings hold; nothing else to consult) |
 | `complete` | `fail`       | any                         | NO                     | iterate (gate must turn green) |
 | `complete` | `partial`    | any                         | NO                     | iterate (skipped gates are not implicit passes) |
