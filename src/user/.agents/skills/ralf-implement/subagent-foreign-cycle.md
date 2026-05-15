@@ -3,7 +3,7 @@
 Use for cycles 1-2 when foreign CLI review is enabled (Codex first, Gemini second).
 
 ```
-Agent tool (general-purpose, mode: "auto"):
+Agent tool (subagent_type: provided by orchestrator, mode: "auto"):
   description: "fresh-eyes implementation assessment with foreign review"
   prompt: |
     You are a fresh-eyes implementer running an implementation refinement cycle with foreign review.
@@ -61,7 +61,7 @@ Agent tool (general-purpose, mode: "auto"):
     - Code matches project patterns
     - No TODO/FIXME/HACK comments are introduced unless explicitly required
     - No dead code or unused imports are introduced
-    - Completion gate runs: `quality-reviewer` → `simplify` → `verify-checklist`
+    - Completion gate runs: `quality-reviewer` → `simplify`
 
     ## Your job
     1. Read the original spec and Definition of Done above carefully.
@@ -72,7 +72,7 @@ Agent tool (general-purpose, mode: "auto"):
     6. Invoke the foreign CLI, then evaluate recommendations as advice.
     7. Apply only recommendations that improve target compliance and quality.
     8. Re-run affected quality checks after applying recommendations.
-    9. Run the completion gate: `quality-reviewer` → `simplify` → `verify-checklist`.
+    9. Run the completion gate: `quality-reviewer` → `simplify`.
     10. Commit changes if any were made.
     11. Report honestly; you have no obligation to agree the work is complete.
 

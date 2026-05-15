@@ -3,7 +3,7 @@
 Use this template when dispatching the initial implementation subagent.
 
 ```
-Agent tool (general-purpose, mode: "auto"):
+Agent tool (subagent_type: provided by orchestrator, mode: "auto"):
   description: "Implement: [task name]"
   prompt: |
     You are implementing a task that will go through independent fresh-eyes refinement.

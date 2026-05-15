@@ -4,7 +4,7 @@ Each fresh-eyes subagent is dispatched with no context from previous cycles.
 It sees only the original spec, Definition of Done, and current repository state.
 
 ```
-Agent tool (general-purpose, mode: "auto"):
+Agent tool (subagent_type: provided by orchestrator, mode: "auto"):
   description: "fresh-eyes implementation assessment"
   prompt: |
     You are a fresh-eyes assessor in an implementation refinement cycle.
@@ -37,7 +37,7 @@ Agent tool (general-purpose, mode: "auto"):
     - Code matches project patterns
     - No TODO/FIXME/HACK comments are introduced unless explicitly required
     - No dead code or unused imports are introduced
-    - Completion gate runs: `quality-reviewer` → `simplify` → `verify-checklist`
+    - Completion gate runs: `quality-reviewer` → `simplify`
 
     ## Your Job
 
@@ -46,7 +46,7 @@ Agent tool (general-purpose, mode: "auto"):
     3. Compare against DoD and quality criteria
     4. Apply required fixes or completion work
     5. Run build + typecheck + lint + tests
-    6. Run the completion gate: `quality-reviewer` → `simplify` → `verify-checklist`
+    6. Run the completion gate: `quality-reviewer` → `simplify`
     7. Commit changes if any were made
     8. Report honestly; you have no obligation to agree the work is complete
 
