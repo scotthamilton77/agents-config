@@ -585,7 +585,7 @@ Exception: if it's obviously trivial, just do it without announcing.
 |--------|-----------------------|-------------|----------------------------|---------|-------|
 | closed | yes (exactly 1)       | any         | —                          | —       | **Z** (forward to Y) |
 | closed | no                    | any         | —                          | —       | exit (friendly message) |
-| open   | —                     | epic (Y_container, forwarded from Z) | no (no impl-ready on container itself) | — | **container-routing** (Step 2.7: probe impl-ready children → 0→Route C / 1→Y_impl/Route A / multiple→HEP) |
+| non-closed | —                 | epic (Y_container, forwarded from Z) | no (no impl-ready on container itself) | — | **container-routing** (Step 2.7: probe impl-ready children → 0→Route C / 1→Y_impl/Route A / multiple→HEP) |
 | open   | —                     | any         | yes                        | —       | A |
 | open   | —                     | any         | no                         | yes     | B |
 | open   | —                     | any         | no                         | no      | C |
