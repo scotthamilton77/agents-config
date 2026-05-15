@@ -330,6 +330,10 @@ Detect prior partial runs before doing any new writes.
     # that would corrupt downstream steps.
     if [ -z "$Y_IMPL_ID" ]; then
       echo "Replay: produced-bead-$Y_CONTAINER_ID has no [Impl] child (legacy shape); falling through to create fresh pair."
+      # Strip the stale legacy marker from X first; otherwise the fresh path
+      # below stamps a SECOND produced-bead-* on X and a future replay halts
+      # via the PRODUCED_COUNT > 1 escalation above.
+      bd label remove "{{bead-id}}" "$PRODUCED_MARKER" >/dev/null 2>&1 || true
       PRODUCED_MARKER=""  # clear so the else-branch below runs fresh
     fi
     if [ -n "$PRODUCED_MARKER" ]; then
@@ -353,15 +357,34 @@ Detect prior partial runs before doing any new writes.
            "[Impl] "*)
              Y_IMPL_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
              Y_CONTAINER_ID=$(bd show "$Y_IMPL_ID" --json | jq -r '.[0].parent // empty')
-             echo "Replay: orphan Y_IMPL_ID=$Y_IMPL_ID (Y_CONTAINER_ID=$Y_CONTAINER_ID) found (produced-from-{{bead-id}}); resuming at step 5."
-             # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
-             X_JSON_R=$(bd show {{bead-id}} --json)
-             X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
-             X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
-             # Derive CHOSEN and SID from Y_impl's labels for use in step 9 report.
-             CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
-             SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
-             # GOTO step 5 with the existing Y_CONTAINER_ID / Y_IMPL_ID.
+             # Discriminator: a real Y_container carries a produced-bead-* label
+             # stamped at finalize-step-7. Legacy single-Y beads ALSO have an
+             # [Impl] prefix, but their parent is the project epic (no
+             # produced-bead-* label). Without this check we'd treat the
+             # project epic as Y_container and migrate/create children under
+             # the wrong parent, then stamp a fresh produced-bead-* on X
+             # pointing at the project epic.
+             PARENT_HAS_PRODUCED=0
+             if [ -n "$Y_CONTAINER_ID" ]; then
+               PARENT_HAS_PRODUCED=$(bd label list "$Y_CONTAINER_ID" --json 2>/dev/null \
+                 | jq '[.[] | select(startswith("produced-bead-"))] | length' 2>/dev/null) \
+                 || PARENT_HAS_PRODUCED=0
+             fi
+             if [ "${PARENT_HAS_PRODUCED:-0}" = "0" ] || [ -z "$Y_CONTAINER_ID" ]; then
+               echo "Replay: orphan [Impl] bead's parent ($Y_CONTAINER_ID) lacks produced-bead-* (legacy single-Y shape); falling through to create fresh pair."
+               Y_IMPL_ID=""
+               Y_CONTAINER_ID=""
+             else
+               echo "Replay: orphan Y_IMPL_ID=$Y_IMPL_ID (Y_CONTAINER_ID=$Y_CONTAINER_ID) found (produced-from-{{bead-id}}); resuming at step 5."
+               # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
+               X_JSON_R=$(bd show {{bead-id}} --json)
+               X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
+               X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
+               # Derive CHOSEN and SID from Y_impl's labels for use in step 9 report.
+               CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+               SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
+               # GOTO step 5 with the existing Y_CONTAINER_ID / Y_IMPL_ID.
+             fi
              ;;
            *)
              # Orphan lacks [Impl] prefix — legacy single-Y shape, not a Y_impl.
