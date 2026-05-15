@@ -179,9 +179,22 @@ esac
 # ── Idempotency: State 3 probe ──────────────────────────────────────────────
 # Check if X already has a produced-bead-* label AND that bead has a Y_impl
 # child with produced-from-<X_id>.
-PRODUCED_LABELS=$(bd label list "${SOURCE_BEAD_ID}" --json 2>/dev/null \
-    | jq -c '[.[] | select(startswith("produced-bead-"))]' 2>/dev/null) || PRODUCED_LABELS='[]'
-PRODUCED_COUNT=$(printf '%s' "$PRODUCED_LABELS" | jq 'length' 2>/dev/null) || PRODUCED_COUNT=0
+#
+# These probes fail LOUD on bd/jq errors. A silent default to '[]'/0 would cause
+# us to miss an existing produced-bead-* marker on transient failure and proceed
+# into orphan/fresh creation, risking duplicate Y_container/Y_impl pairs.
+PRODUCED_LABELS_RAW=$(bd label list "${SOURCE_BEAD_ID}" --json 2>/dev/null) || {
+    echo "Error: bd label list failed for ${SOURCE_BEAD_ID} during State 3 probe" >&2
+    exit 1
+}
+PRODUCED_LABELS=$(printf '%s' "$PRODUCED_LABELS_RAW" | jq -c '[.[] | select(startswith("produced-bead-"))]' 2>/dev/null) || {
+    echo "Error: jq parse failed on bd label list output for ${SOURCE_BEAD_ID}" >&2
+    exit 1
+}
+PRODUCED_COUNT=$(printf '%s' "$PRODUCED_LABELS" | jq 'length' 2>/dev/null) || {
+    echo "Error: jq length failed on produced-bead-* label set for ${SOURCE_BEAD_ID}" >&2
+    exit 1
+}
 
 if [[ "$PRODUCED_COUNT" -ge 2 ]]; then
     echo "Error: ${PRODUCED_COUNT} produced-bead-* labels on ${SOURCE_BEAD_ID}; caller must triage" >&2
@@ -191,9 +204,15 @@ fi
 if [[ "$PRODUCED_COUNT" -eq 1 ]]; then
     CONTAINER_CANDIDATE=$(printf '%s' "$PRODUCED_LABELS" | jq -r '.[0]' | sed 's/^produced-bead-//')
     # Probe for Y_impl child of Y_container with produced-from-<X_id>.
+    # Fail LOUD: we already know a produced-bead-* marker exists on X, so a probe
+    # failure here is a hard error — silently defaulting would re-create Y_impl
+    # under a container that may already have one.
     IMPL_CANDIDATE=$(bd list --parent "${CONTAINER_CANDIDATE}" \
         --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null \
-        | jq -r '[.[] | select(.status != "closed")] | .[0].id // empty' 2>/dev/null) || IMPL_CANDIDATE=""
+        | jq -r '[.[] | select(.status != "closed")] | .[0].id // empty' 2>/dev/null) || {
+        echo "Error: failed to probe for Y_impl under ${CONTAINER_CANDIDATE} (State 3)" >&2
+        exit 1
+    }
     if [[ -n "$IMPL_CANDIDATE" && "$IMPL_CANDIDATE" != "null" ]]; then
         # State 3: both exist — emit and exit.
         printf 'Y_CONTAINER_ID=%s\n' "$CONTAINER_CANDIDATE"
@@ -223,21 +242,30 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
     EXISTING_CONTAINER=$(bd show "$EXISTING_IMPL" --json 2>/dev/null \
         | jq -r '.[0].parent // empty' 2>/dev/null) || EXISTING_CONTAINER=""
     if [[ -n "$EXISTING_CONTAINER" && "$EXISTING_CONTAINER" != "null" ]]; then
-        # Guard: verify the parent is actually an epic (Y_container shape), not a legacy project epic.
-        # A legacy single-Y bead (old formula) can carry produced-from-X but its parent is the
-        # brainstorm container epic, not a Y_container. Misidentifying it would corrupt that epic.
+        # Guard: verify the parent is actually a Y_container epic, not a legacy project epic.
+        # A legacy single-Y bead (old formula) can carry produced-from-X with a `[Impl] ...`
+        # title and an epic parent — but that parent is the brainstorm container epic, not a
+        # Y_container. The discriminator is the `produced-bead-*` label, which the brainstorm-
+        # bead finalize formula stamps on Y_containers but NOT on legacy project epics.
+        # All three conditions must hold to safely resume: epic type + `[Impl]` title + parent
+        # carries a `produced-bead-*` label. Empty/error returns fall through to State 0.
         CONTAINER_TYPE=$(bd show "$EXISTING_CONTAINER" --json 2>/dev/null \
             | jq -r '.[0].issue_type // empty' 2>/dev/null) || CONTAINER_TYPE=""
         EXISTING_IMPL_TITLE=$(bd show "$EXISTING_IMPL" --json 2>/dev/null \
             | jq -r '.[0].title // empty' 2>/dev/null) || EXISTING_IMPL_TITLE=""
-        if [[ "$CONTAINER_TYPE" == "epic" && "$EXISTING_IMPL_TITLE" == '[Impl] '* ]]; then
+        PARENT_HAS_PRODUCED=$(bd label list "$EXISTING_CONTAINER" --json 2>/dev/null \
+            | jq '[.[] | select(startswith("produced-bead-"))] | length' 2>/dev/null) || PARENT_HAS_PRODUCED=0
+        if [[ "$CONTAINER_TYPE" == "epic" \
+              && "$EXISTING_IMPL_TITLE" == '[Impl] '* \
+              && "$PARENT_HAS_PRODUCED" -ge 1 ]]; then
             printf 'Y_CONTAINER_ID=%s\n' "$EXISTING_CONTAINER"
             printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
             exit 0
         fi
-        # Parent is not an epic, or impl bead title lacks [Impl] prefix — this is a legacy
-        # single-Y bead. Fall through to State 0 to create a fresh Y_container/Y_impl pair;
-        # the legacy bead is left as-is.
+        # Parent is not an epic, impl bead title lacks [Impl] prefix, or parent epic lacks a
+        # `produced-bead-*` label — this is a legacy single-Y bead under a project epic. Fall
+        # through to State 0 to create a fresh Y_container/Y_impl pair; the legacy bead is
+        # left as-is.
     else
         # Y_impl exists but has no parent — cannot safely resume; emit error for caller to HEP-escalate.
         bd comments add "$SOURCE_BEAD_ID" \
@@ -248,8 +276,16 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
 fi
 
 # ── Idempotency: State 1 probe ──────────────────────────────────────────────
-PENDING_JSON=$(bd list --label "pending-split-${SOURCE_BEAD_ID}" --json 2>/dev/null) || PENDING_JSON='[]'
-PENDING_COUNT=$(printf '%s' "$PENDING_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || PENDING_COUNT=0
+# Fail LOUD on probe errors: silently defaulting to '[]'/0 here would cause a
+# transient failure to fall through to State 0 and create a duplicate Y_container.
+PENDING_JSON=$(bd list --label "pending-split-${SOURCE_BEAD_ID}" --json 2>/dev/null) || {
+    echo "Error: bd list failed during State 1 pending-split probe" >&2
+    exit 1
+}
+PENDING_COUNT=$(printf '%s' "$PENDING_JSON" | jq '[.[] | select(.status != "closed")] | length' 2>/dev/null) || {
+    echo "Error: jq parse failed on State 1 pending-split probe output" >&2
+    exit 1
+}
 
 Y_CONTAINER_ID=""
 if [[ "$PENDING_COUNT" -ge 2 ]]; then
@@ -257,8 +293,26 @@ if [[ "$PENDING_COUNT" -ge 2 ]]; then
     exit 1
 fi
 if [[ "$PENDING_COUNT" -ge 1 ]]; then
-    # State 1: Y_container exists but Y_impl not yet created.
+    # State 1: Y_container exists but Y_impl may or may not yet have been created.
     Y_CONTAINER_ID=$(printf '%s' "$PENDING_JSON" | jq -r '[.[] | select(.status != "closed")] | .[0].id')
+
+    # Re-probe under the found container for a Y_impl carrying produced-from-<X_id>.
+    # Without this, a parallel finalize/retry window (A creates container+pending
+    # marker, B enters State 1 before A reaches the State 2 visibility horizon) lets
+    # both invocations bd-create separate Y_impl beads under the same container,
+    # breaking the single-canonical-impl invariant. Fail LOUD on probe errors —
+    # silently defaulting would re-introduce the same duplicate-creation risk.
+    EXISTING_IMPL_IN_CONTAINER=$(bd list --parent "$Y_CONTAINER_ID" \
+        --label "produced-from-${SOURCE_BEAD_ID}" --json 2>/dev/null \
+        | jq -r '[.[] | select(.status != "closed")] | .[0].id // empty' 2>/dev/null) || {
+        echo "Error: failed to re-probe for Y_impl under ${Y_CONTAINER_ID} (State 1)" >&2
+        exit 1
+    }
+    if [[ -n "$EXISTING_IMPL_IN_CONTAINER" && "$EXISTING_IMPL_IN_CONTAINER" != "null" ]]; then
+        printf 'Y_CONTAINER_ID=%s\n' "$Y_CONTAINER_ID"
+        printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL_IN_CONTAINER"
+        exit 0
+    fi
 fi
 
 # ── State 0: Create Y_container (if not already found in State 1) ───────────
