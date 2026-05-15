@@ -11,7 +11,7 @@ by default.
 - `rules/` — Claude-specific workflow rules (general rules now live in
   `src/user/.agents/rules/` and are staged into `~/.claude/rules/` at install time):
   - `claude-sandbox.md` — commit style under the Claude Code sandbox
-  - `claude-to-codex-routing` rule — when to delegate to the Codex plugin, and which model
+  - `claude-to-codex-routing.md` — when to delegate to the Codex plugin, and which model
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
   `INSTRUCTIONS.md`, personas, and `CLAUDE-EXTENSIONS.md`.
 - `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.
