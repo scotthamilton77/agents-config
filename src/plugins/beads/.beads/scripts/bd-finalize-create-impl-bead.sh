@@ -222,15 +222,25 @@ if [[ "$ORPHAN_COUNT" -eq 1 ]]; then
     EXISTING_CONTAINER=$(bd show "$EXISTING_IMPL" --json 2>/dev/null \
         | jq -r '.[0].parent // empty' 2>/dev/null) || EXISTING_CONTAINER=""
     if [[ -n "$EXISTING_CONTAINER" && "$EXISTING_CONTAINER" != "null" ]]; then
-        printf 'Y_CONTAINER_ID=%s\n' "$EXISTING_CONTAINER"
-        printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
-        exit 0
+        # Guard: verify the parent is actually an epic (Y_container shape), not a legacy project epic.
+        # A legacy single-Y bead (old formula) can carry produced-from-X but its parent is the
+        # brainstorm container epic, not a Y_container. Misidentifying it would corrupt that epic.
+        CONTAINER_TYPE=$(bd show "$EXISTING_CONTAINER" --json 2>/dev/null \
+            | jq -r '.[0].issue_type // empty' 2>/dev/null) || CONTAINER_TYPE=""
+        if [[ "$CONTAINER_TYPE" == "epic" ]]; then
+            printf 'Y_CONTAINER_ID=%s\n' "$EXISTING_CONTAINER"
+            printf 'Y_IMPL_ID=%s\n' "$EXISTING_IMPL"
+            exit 0
+        fi
+        # Parent is not an epic — this is likely a legacy single-Y bead. Fall through to State 0
+        # to create a fresh Y_container/Y_impl pair; the legacy bead is left as-is.
+    else
+        # Y_impl exists but has no parent — cannot safely resume; emit error for caller to HEP-escalate.
+        bd comments add "$SOURCE_BEAD_ID" \
+            "finalize halted: orphan impl bead $EXISTING_IMPL has no parent; manual triage required." >/dev/null 2>&1 || true
+        echo "Error: orphan impl bead $EXISTING_IMPL has no parent; cannot resume safely" >&2
+        exit 1
     fi
-    # Y_impl exists but has no parent — cannot safely resume; emit error for caller to HEP-escalate.
-    bd comments add "$SOURCE_BEAD_ID" \
-        "finalize halted: orphan impl bead $EXISTING_IMPL has no parent; manual triage required." >/dev/null 2>&1 || true
-    echo "Error: orphan impl bead $EXISTING_IMPL has no parent; cannot resume safely" >&2
-    exit 1
 fi
 
 # ── Idempotency: State 1 probe ──────────────────────────────────────────────
@@ -265,11 +275,14 @@ if [[ -z "$Y_CONTAINER_ID" ]]; then
 
     Y_CONTAINER_ID=$(_parse_create_id "$CONTAINER_JSON" "Y_container") || exit 1
 
-    # Mark Y_container in_progress immediately (claim-walk invariant I1).
-    bd update "$Y_CONTAINER_ID" --status in_progress >/dev/null 2>&1 || true
-
-    # Stamp State 1 crash-recovery marker on Y_container.
+    # Stamp crash-recovery marker FIRST — minimizes the window where Y_container exists
+    # without a probe-able label. A crash after this line is detected by State 1 on retry.
+    # A crash between create and this line leaves an unlabeled container (unavoidable without
+    # atomic create+label); that window is inherent to the two-phase protocol.
     bd label add "$Y_CONTAINER_ID" "pending-split-${SOURCE_BEAD_ID}" >/dev/null 2>&1 || true
+
+    # Claim-walk invariant I1.
+    bd update "$Y_CONTAINER_ID" --status in_progress >/dev/null 2>&1 || true
 fi
 
 # ── Create Y_impl under Y_container ─────────────────────────────────────────

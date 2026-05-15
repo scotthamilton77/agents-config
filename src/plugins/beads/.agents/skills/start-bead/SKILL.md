@@ -364,9 +364,17 @@ for this `start-bead` invocation.
 
 ### Step 2.7: Container-routing for Y_container targets
 
-When closed-bead-preflight (Step 1.5) forwards to a Y_container bead — an
-open bead with `epic` type and no `implementation-ready` label on itself —
-apply the **container-routing** algorithm before proceeding to Route A/B/C.
+Apply the **container-routing** algorithm when the current target bead is
+an open Y_container — `epic` type, no `implementation-ready` label on itself,
+has at least one non-gate child. This fires in two cases:
+- **Forwarded path**: closed-bead-preflight (Step 1.5) forwarded to this bead.
+- **Direct start**: the user called `start-bead` with the Y_container id directly,
+  bypassing preflight forwarding.
+
+Detect the direct-start case after Route D clears: if the bead is `epic` type,
+has no `implementation-ready` label, and `bd list --parent <id> --status open,in_progress`
+returns at least one non-gate child, run container-routing rather than falling
+through to Routes A/B/C (which would incorrectly brainstorm or skip the container).
 
 A Y_container is the structural parent created by brainstorm-bead finalize
 for the 2-level shape (Y_container/Y_impl). The merge-gate child and any
@@ -392,15 +400,13 @@ for the 2-level shape (Y_container/Y_impl). The merge-gate child and any
      an ambiguous state that requires human triage to determine which Y_impl
      is canonical.
 
-**Integration with closed-bead-preflight (Step 1.5):**
+**Trigger summary:**
 
-When preflight forwards to Y_container, the `decision=forward target=<Y_container>`
-decision line triggers a re-entry into Step 1 with the new target. Before
-applying the standard routing checks for the Y_container target, run the
-container-routing algorithm above. The preflight forward → container-routing
-chain ensures that start-bead always resolves to an actionable leaf (Y_impl)
-or a clear brainstorm target, rather than routing to the epic container
-itself.
+Both the preflight-forward path (`decision=forward target=<Y_container>`) and
+the direct-start path converge here. In both cases, Step 2.7 runs before
+Routes A/B/C, ensuring start-bead always resolves to an actionable leaf
+(Y_impl) or a clear brainstorm target rather than silently routing the
+epic container itself.
 
 ### Step 3: Route the Bead
 
