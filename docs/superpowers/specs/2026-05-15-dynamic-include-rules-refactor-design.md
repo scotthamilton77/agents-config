@@ -16,7 +16,7 @@ Replace the hardcoded `DYNAMIC-INCLUDE-RULES` marker (comma-separated list) with
 The current mechanism has four compounding problems:
 
 1. **Stale list** — `completion-gate.md` and `codex-routing.md` exist in `src/user/.claude/rules/` but are absent from the hardcoded list; they silently never reach non-Claude tools.
-2. **Plugin rules never reach non-Claude tools** — the beads plugin adds `beads.md`, `beads-labels.md`, and `delivery.md` to `staging/<tool>/rules/` via Phase 6, but the hardcoded list never includes them.
+2. **Plugin rules never reach non-Claude tools** — the beads plugin adds `beads.md`, `beads-labels.md`, and `delivery.md` to `staging/<tool>/rules/` via Phase 6, but the hardcoded list never includes them. *Note: this bead fixes the MECHANISM (enabling `src/plugins/<name>/.agents/rules/` for future agnostic plugin rules) but does NOT migrate existing beads plugin rules from `.claude/rules/` — those remain Claude-only until explicitly relocated.*
 3. **Codex and Gemini receive zero rules** — their templates have no `DYNAMIC-INCLUDE-RULES` marker at all.
 4. **Claude double-loads rules** — Claude's template inlines rules via `DYNAMIC-INCLUDE-RULES`, then native `rules/` directory loading loads the same files again at session start.
 5. **Misleading filenames** — `git-commits.md` (content: Claude sandbox constraints) and `codex-routing.md` (content: Claude→Codex plugin delegation) have names that imply general applicability.
@@ -48,6 +48,8 @@ The current mechanism has four compounding problems:
 | `worktrees.md` | Worktree location convention; `.claude/worktrees/` path pools all tools into one location (intentional) |
 
 *Note: `delegation.md`, `delivery.md`, and `completion-gate.md` reference `superpowers:` skill names — a Claude plugin namespace. This bleed is accepted per the requirement that rule content is unchanged. Future tightening is out of scope for this bead.*
+
+**Cross-reference update required:** `delegation.md:11` contains `see \`codex-routing.md\`` — this filename is being renamed. The citation must be updated to `claude-to-codex-routing.md` as part of this bead (a one-word change in one file; not a semantic content change).
 
 ### Claude-specific → `src/user/.claude/rules/` (renamed)
 
@@ -107,7 +109,10 @@ if [[ "$line" == "<!-- DYNAMIC-INCLUDE-ALL-RULES -->" ]]; then
             printf '\n---\n' >> "$output"
         fi
         cat "$rule_file" >> "$output"
-    done < <(LC_COLLATE=C ls "$staging_tool_dir/rules/"*.md 2>/dev/null | sort)
+    done < <(find "$staging_tool_dir/rules" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null | LC_ALL=C sort)
+    if [[ "$first_rule" == true ]]; then
+        warn "DYNAMIC-INCLUDE-ALL-RULES: no rules found in $staging_tool_dir/rules/"
+    fi
     continue
 fi
 ```
@@ -139,6 +144,21 @@ Alphabetical ordering is deterministic and sufficient — rules are mutually ind
   ```
   Without the prune-list entries, old-name files persist as orphans in `~/.claude/rules/` and Claude double-loads both the old and new name.
 - Codex and Gemini users will receive rule content for the first time after this install. No behavioral regression expected — they were previously operating without rules context.
+
+---
+
+## Additional Required Changes
+
+Several files outside the main install.sh / templates scope contain filename references that become stale after the rename. These are in scope for this bead:
+
+| File | Change |
+|------|--------|
+| `src/user/.claude/rules/delegation.md:11` | `codex-routing.md` → `claude-to-codex-routing.md` |
+| `src/user/.agents/skills/wait-for-pr-comments/SKILL.md:657` | `git-commits.md` → `claude-sandbox.md` |
+| `src/user/.claude/README.md:16-18` | Update filenames in the rules/ inventory comment |
+| `AGENTS.md:64` | Update `git-commits` and `codex-routing` to new names in the repo structure table |
+| `src/user/.opencode/OPENCODE-EXTENSIONS.md.template:32-34` | Update stale prose: `codex-routing.md` → `claude-to-codex-routing.md`; `completion-gate.md` is now general (included, not omitted) |
+| `scripts/smoke/verify-artifacts.sh:123` | Extend regex from `DYNAMIC-INCLUDE(-RULES)?:` to `DYNAMIC-INCLUDE(-RULES\|-ALL-RULES)?` so the new marker is caught as an unprocessed-marker error if flattening silently fails |
 
 ---
 
