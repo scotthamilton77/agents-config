@@ -923,7 +923,9 @@ stage_and_install_tool() {
     # Sync subdirectories
     for subdir in rules commands skills agents; do
         # OpenCode: skip agents (frontmatter format differs; see OPENCODE-EXTENSIONS.md)
-        if [[ "$tool" == "opencode" && "$subdir" == "agents" ]]; then
+        # and skip rules (inlined into AGENTS.md via DYNAMIC-INCLUDE-ALL-RULES; OpenCode
+        # has no rules/ destination directory)
+        if [[ "$tool" == "opencode" && ("$subdir" == "agents" || "$subdir" == "rules") ]]; then
             continue
         fi
         [[ -d "$staging/$subdir" ]] || continue
