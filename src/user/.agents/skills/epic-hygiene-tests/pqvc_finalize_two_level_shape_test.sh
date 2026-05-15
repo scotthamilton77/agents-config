@@ -156,25 +156,22 @@ echo "[m] acceptance line" > "$AC_FILE"
 SHIM_LOG="$TMP_T4/log"
 touch "$SHIM_LOG"
 
-# Run the helper with the shim on PATH. Tolerate exit 1 (the script may not
-# yet be wired to produce two-line output and may still succeed with one
-# line). We only assert on stdout SHAPE here.
+# Run the helper with the shim on PATH and inspect stdout SHAPE.
 #
-# RED-PHASE LENIENCY (intentional):
-#   The current (pre-implementation) helper does NOT yet support the
-#   two-ID contract, so it may either:
-#     (a) exit non-zero — captured by `|| true` below; the test does not
-#         fail on the exit code alone.
-#     (b) exit zero with a single-line ID — does not match the two-line
-#         contract.
-#   We do NOT fail T4 on (a) or (b) because the upstream red-phase signal
-#   for the two-line contract is already carried by T1+T3 (string probes
-#   on the helper source). T4 exists to assert the GREEN-PHASE behavior:
-#   IF AND ONLY IF the helper succeeds (exit 0) AND emits exactly two
-#   non-empty lines, those lines must match `Y_CONTAINER_ID=<id>` and
-#   `Y_IMPL_ID=<id>` in that order. The current helper cannot satisfy
-#   the antecedent, so this assertion is dormant in red-phase and
-#   becomes binding once the implementation lands.
+# EXIT-CODE LENIENCY (narrow, intentional):
+#   The helper may exit non-zero under the shim because the shim cannot
+#   fully emulate a live bd backend (e.g., dep/label side-effects after
+#   the two create calls). A non-zero exit therefore SKIPs T4 — the
+#   helper crashing in the test harness is not the failure mode this
+#   assertion is meant to guard. Static string probes T1+T3 carry the
+#   "helper does not implement the contract" signal.
+#
+# HAPPY-PATH ASSERTION (binding):
+#   When the helper exits 0, it MUST emit exactly two non-empty lines
+#   matching `Y_CONTAINER_ID=<id>` and `Y_IMPL_ID=<id>` in order. Any
+#   other shape (1 line, 3+ lines, wrong keys) is a FAIL — a helper
+#   that exits 0 but bypasses the two-line KEY=VALUE contract is the
+#   exact regression this test guards.
 HELPER_OUT="$TMP_T4/helper.out"
 HELPER_ERR="$TMP_T4/helper.err"
 HELPER_RC=0
@@ -193,12 +190,10 @@ PATH="$TMP_T4:$PATH" SHIM_LOG="$SHIM_LOG" \
         --ac-file "$AC_FILE" \
         >"$HELPER_OUT" 2>"$HELPER_ERR" || HELPER_RC=$?
 
-# Conditional green-phase assertion: only enforce the strict KEY=VALUE
-# contract when the helper exited 0 AND emitted two non-empty lines. In
-# red-phase, the helper either errors or emits one line — both bypass
-# this check intentionally.
 line_count=$(grep -cE '\S' "$HELPER_OUT" || true)
-if [ "$HELPER_RC" -eq 0 ] && [ "$line_count" -eq 2 ]; then
+if [ "$HELPER_RC" -eq 0 ]; then
+    [ "$line_count" -eq 2 ] \
+        || fail "T4: helper exited 0 but emitted $line_count non-empty stdout line(s); expected exactly 2 (Y_CONTAINER_ID=<id>, Y_IMPL_ID=<id>). stdout: $(cat "$HELPER_OUT")"
     first_line=$(sed -n '1p' "$HELPER_OUT")
     second_line=$(sed -n '2p' "$HELPER_OUT")
     echo "$first_line"  | grep -qE '^Y_CONTAINER_ID=[A-Za-z0-9._-]+$' \
@@ -207,9 +202,10 @@ if [ "$HELPER_RC" -eq 0 ] && [ "$line_count" -eq 2 ]; then
         || fail "T4: line 2 must match 'Y_IMPL_ID=<id>'; got: '$second_line'"
     pass "T4: helper emits two KEY=VALUE lines (Y_CONTAINER_ID, Y_IMPL_ID) on happy path"
 else
-    # Red-phase: contract not yet satisfiable; T1+T3 carry the static
-    # signal. Emit a SKIP marker for forensic clarity.
-    echo "SKIP: T4: helper rc=$HELPER_RC, line_count=$line_count — green-phase contract dormant (red-phase: T1+T3 carry the failure signal)"
+    # Helper exited non-zero — likely shim cannot fully emulate the
+    # live bd backend. T1+T3 static probes still carry the contract
+    # signal; skip the dynamic shape assertion.
+    echo "SKIP: T4: helper rc=$HELPER_RC (shim cannot fully emulate bd backend); static contract signal carried by T1+T3"
 fi
 
 # ---------------------------------------------------------------------------
