@@ -37,7 +37,7 @@ Agent tool (general-purpose, mode: "auto"):
     ```
 
     Write the foreign instruction file before inspecting or changing code. Use
-    `./foreign-agent-prompt.md`, filling in the original Definition of Done and
+    `./foreign-cli-instructions.md`, filling in the original Definition of Done and
     original spec exactly enough that the foreign reviewer sees the clean target.
     Do not tell the foreign reviewer that prior agents probably finished the work;
     ask for an independent assessment against the original target.
