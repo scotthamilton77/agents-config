@@ -130,7 +130,14 @@ Alphabetical ordering is deterministic and sufficient — rules are mutually ind
 
 ## Migration Notes
 
-- Running `install.sh --prune` after this change will remove the old-name files (`git-commits.md`, `codex-routing.md`) from `~/.claude/rules/`. Without `--prune`, they persist as orphans but do no harm (Claude loads all `*.md` files in `rules/`).
+- The renamed files (`git-commits.md` → `claude-sandbox.md`, `codex-routing.md` → `claude-to-codex-routing.md`) must be added to `scripts/prune-list` so that `install.sh --prune` removes the old-name files from `~/.claude/rules/`:
+  ```
+  # Retired in <commit>: abn9.16 — renamed to claude-sandbox.md (content is Claude Code sandbox constraints)
+  claude/rules/git-commits.md
+  # Retired in <commit>: abn9.16 — renamed to claude-to-codex-routing.md
+  claude/rules/codex-routing.md
+  ```
+  Without the prune-list entries, old-name files persist as orphans in `~/.claude/rules/` and Claude double-loads both the old and new name.
 - Codex and Gemini users will receive rule content for the first time after this install. No behavioral regression expected — they were previously operating without rules context.
 
 ---
