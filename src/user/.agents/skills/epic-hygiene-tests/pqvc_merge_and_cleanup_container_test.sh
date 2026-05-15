@@ -107,13 +107,49 @@ awk '
 [ -s "$TMP_SBG" ] || fail "T3: source-bead-gate step body not found"
 
 # Within the source-bead-gate body, every `bd list --parent ...` must use
-# $CONTAINER_ID (or ${CONTAINER_ID}), not {{bead-id}} directly.
-if grep -qE 'bd list --parent \{\{bead-id\}\}' "$TMP_SBG"; then
-    fail "T3: source-bead-gate uses 'bd list --parent {{bead-id}}' — must use \$CONTAINER_ID"
-fi
-grep -qE 'bd list --parent[[:space:]]+"?\$\{?CONTAINER_ID\}?"?' "$TMP_SBG" \
-    || fail "T3: source-bead-gate does not use 'bd list --parent \$CONTAINER_ID'"
-pass "T3: source-bead-gate uses \$CONTAINER_ID for child lookups"
+# $CONTAINER_ID (or ${CONTAINER_ID}). A mixed implementation (some
+# invocations using $CONTAINER_ID, others using {{bead-id}} or
+# $BEAD_ID) is NOT acceptable — extract ALL --parent values and verify
+# each one references CONTAINER_ID.
+python3 - "$TMP_SBG" <<'PY' || fail "T3: source-bead-gate has 'bd list --parent <X>' with X != \$CONTAINER_ID"
+import re, sys
+body = open(sys.argv[1]).read()
+# Capture every `bd list --parent <token>` occurrence. <token> can be:
+#   $CONTAINER_ID, ${CONTAINER_ID}, "$CONTAINER_ID", "${CONTAINER_ID}"
+#   {{bead-id}}, $BEAD_ID, "$BEAD_ID", a bare id, etc.
+parent_tokens = re.findall(
+    r'bd\s+list[^\n]*?--parent\s+(\S+)',
+    body,
+)
+if not parent_tokens:
+    raise SystemExit(
+        "no 'bd list --parent <X>' occurrences found in source-bead-gate"
+    )
+# Strip surrounding quotes and braces for comparison.
+def normalize(tok):
+    t = tok.strip()
+    # Strip a single layer of surrounding quotes.
+    if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+        t = t[1:-1]
+    # Strip leading $ and surrounding {} from variable references.
+    if t.startswith('${') and t.endswith('}'):
+        t = t[2:-1]
+    elif t.startswith('$'):
+        t = t[1:]
+    return t
+
+bad = []
+for tok in parent_tokens:
+    norm = normalize(tok)
+    if norm != "CONTAINER_ID":
+        bad.append(tok)
+if bad:
+    raise SystemExit(
+        f"source-bead-gate has {len(bad)} 'bd list --parent <X>' usage(s) where "
+        f"X != $CONTAINER_ID: {bad}"
+    )
+PY
+pass "T3: source-bead-gate uses \$CONTAINER_ID for ALL bd list --parent child lookups"
 
 # ---------------------------------------------------------------------------
 # T4 — cleanup step child lookups + merge-gate detection use $CONTAINER_ID.
@@ -130,13 +166,41 @@ awk '
 
 [ -s "$TMP_CLN" ] || fail "T4: cleanup step body not found"
 
-# All `bd list --parent ...` inside cleanup must use $CONTAINER_ID, not bead-id.
-if grep -qE 'bd list --parent \{\{bead-id\}\}' "$TMP_CLN"; then
-    fail "T4: cleanup uses 'bd list --parent {{bead-id}}' — must use \$CONTAINER_ID"
-fi
-grep -qE 'bd list --parent[[:space:]]+"?\$\{?CONTAINER_ID\}?"?' "$TMP_CLN" \
-    || fail "T4: cleanup does not use 'bd list --parent \$CONTAINER_ID' for the merge-gate probe loop"
-pass "T4: cleanup uses \$CONTAINER_ID for child lookups"
+# Every `bd list --parent ...` inside cleanup must use $CONTAINER_ID.
+# Mixed-args (some $CONTAINER_ID, some {{bead-id}} / $BEAD_ID) MUST fail.
+python3 - "$TMP_CLN" <<'PY' || fail "T4: cleanup has 'bd list --parent <X>' with X != \$CONTAINER_ID"
+import re, sys
+body = open(sys.argv[1]).read()
+parent_tokens = re.findall(
+    r'bd\s+list[^\n]*?--parent\s+(\S+)',
+    body,
+)
+if not parent_tokens:
+    raise SystemExit(
+        "no 'bd list --parent <X>' occurrences found in cleanup step"
+    )
+def normalize(tok):
+    t = tok.strip()
+    if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+        t = t[1:-1]
+    if t.startswith('${') and t.endswith('}'):
+        t = t[2:-1]
+    elif t.startswith('$'):
+        t = t[1:]
+    return t
+
+bad = []
+for tok in parent_tokens:
+    norm = normalize(tok)
+    if norm != "CONTAINER_ID":
+        bad.append(tok)
+if bad:
+    raise SystemExit(
+        f"cleanup has {len(bad)} 'bd list --parent <X>' usage(s) where "
+        f"X != $CONTAINER_ID: {bad}"
+    )
+PY
+pass "T4: cleanup uses \$CONTAINER_ID for ALL bd list --parent child lookups"
 
 # ---------------------------------------------------------------------------
 # T5 — cleanup CLOSES the Y_container via $CONTAINER_ID (AC 12).

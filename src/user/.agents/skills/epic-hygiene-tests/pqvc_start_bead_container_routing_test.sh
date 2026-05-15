@@ -75,37 +75,95 @@ pass "T2: SKILL.md shows the impl-ready child probe under Y_container"
 #   exactly 1 child  → resolve to Y_impl, then Route A
 #   multiple         → HEP escalation
 # ---------------------------------------------------------------------------
-# We probe the SKILL.md prose for each of the three branches. The text
-# should describe them within a reasonable window.
-python3 - "$SKILL_MD" <<'PY' || fail "T3: SKILL.md container-routing algorithm does not cover all three cardinalities (0 / 1 / multi)"
+# We probe the SKILL.md prose for each of the three branches AND verify
+# each cardinality cue is co-located (within a small line window) with
+# its routing destination:
+#   0 children  → Route C
+#   1 child     → Y_impl / Route A
+#   multiple    → HEP escalation
+#
+# Cardinality words without destinations (or destinations without
+# cardinality words) are not sufficient — the contract is the MAPPING.
+python3 - "$SKILL_MD" <<'PY' || fail "T3: SKILL.md container-routing algorithm does not map all three cardinalities to their routing destinations (0→Route C, 1→Y_impl/Route A, multi→HEP)"
 import re, sys
 body = open(sys.argv[1]).read().lower()
+lines = body.split("\n")
 
-# Each branch must be discernible by a numeric cue near a routing verb.
-# Zero impl-ready children → Route C.
-zero_ok = (
-    re.search(r'zero\s+(impl-ready|implementation-ready)', body)
-    or re.search(r'no\s+(impl-ready|implementation-ready)\s+child', body)
-    or re.search(r'0\s+(impl-ready|implementation-ready)', body)
+# Window: cardinality cue must appear within WINDOW lines of its
+# matching destination. 6 lines accommodates a bullet list with a
+# routing description on the same or adjacent line.
+WINDOW = 6
+
+# Regexes for cardinality cues (per branch) and destination cues.
+zero_cue_re = re.compile(
+    r'(\bzero\b|\bno\b|\b0\b)\s+(impl-ready|implementation-ready)'
+    r'|^[^a-z]*0\s*(impl-ready|implementation-ready|child)',
+    re.IGNORECASE,
 )
-one_ok = (
-    re.search(r'(exactly\s+one|one)\s+(impl-ready|implementation-ready)', body)
-    or re.search(r'single\s+(impl-ready|implementation-ready)', body)
-    or re.search(r'1\s+(impl-ready|implementation-ready)', body)
+one_cue_re = re.compile(
+    r'(\bexactly\s+one\b|\bone\b|\bsingle\b|\b1\b)\s+(impl-ready|implementation-ready)',
+    re.IGNORECASE,
 )
-multi_ok = (
-    re.search(r'(multiple|several|two\s+or\s+more|>1)\s+(impl-ready|implementation-ready)', body)
-    or re.search(r'(multiple|several)\s+(child|children)', body)
+multi_cue_re = re.compile(
+    r'(\bmultiple\b|\bseveral\b|\btwo\s+or\s+more\b|\b>1\b|\b>\s*1\b)\s+'
+    r'(impl-ready|implementation-ready|child|children)',
+    re.IGNORECASE,
 )
 
-if not zero_ok:
-    raise SystemExit("zero-impl-ready-children branch not described")
-if not one_ok:
-    raise SystemExit("exactly-one-impl-ready-child branch not described")
-if not multi_ok:
-    raise SystemExit("multiple-impl-ready-children branch not described")
+route_c_re = re.compile(r'route\s*c\b', re.IGNORECASE)
+y_impl_re = re.compile(r'(y[-_]?impl|route\s*a\b)', re.IGNORECASE)
+hep_re = re.compile(r'\bhep\b|human[-\s]escalation', re.IGNORECASE)
+
+def line_hits(regex):
+    return [i for i, l in enumerate(lines) if regex.search(l)]
+
+def co_located(cue_hits, dest_hits, window=WINDOW):
+    for i in cue_hits:
+        for j in dest_hits:
+            if abs(i - j) <= window:
+                return (i, j)
+    return None
+
+zero_cues = line_hits(zero_cue_re)
+one_cues = line_hits(one_cue_re)
+multi_cues = line_hits(multi_cue_re)
+
+route_c = line_hits(route_c_re)
+y_impl = line_hits(y_impl_re)
+hep = line_hits(hep_re)
+
+if not zero_cues:
+    raise SystemExit("zero-impl-ready-children cue not present anywhere")
+if not one_cues:
+    raise SystemExit("exactly-one-impl-ready-child cue not present anywhere")
+if not multi_cues:
+    raise SystemExit("multiple-impl-ready-children cue not present anywhere")
+
+zero_map = co_located(zero_cues, route_c)
+if not zero_map:
+    raise SystemExit(
+        f"zero-children cue (lines {zero_cues}) not co-located within "
+        f"{WINDOW} lines of a 'Route C' mention (lines {route_c}). "
+        f"Spec requires: 0 impl-ready children → Route C."
+    )
+
+one_map = co_located(one_cues, y_impl)
+if not one_map:
+    raise SystemExit(
+        f"exactly-one cue (lines {one_cues}) not co-located within "
+        f"{WINDOW} lines of a 'Y_impl' or 'Route A' mention (lines {y_impl}). "
+        f"Spec requires: 1 impl-ready child → resolve to Y_impl and Route A."
+    )
+
+multi_map = co_located(multi_cues, hep)
+if not multi_map:
+    raise SystemExit(
+        f"multiple cue (lines {multi_cues}) not co-located within "
+        f"{WINDOW} lines of an 'HEP' / 'human-escalation' mention (lines {hep}). "
+        f"Spec requires: multiple impl-ready children → HEP escalation."
+    )
 PY
-pass "T3: SKILL.md container-routing covers all three cardinalities"
+pass "T3: SKILL.md container-routing maps 0→Route C, 1→Y_impl/Route A, multi→HEP"
 
 # ---------------------------------------------------------------------------
 # T4 — Routing decision table gains the new row for
