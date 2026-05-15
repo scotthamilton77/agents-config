@@ -348,17 +348,28 @@ Detect prior partial runs before doing any new writes.
 
     case "$ORPHAN_COUNT" in
       0) ;;  # fresh run; proceed to step 2
-      1) Y_IMPL_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
-         Y_CONTAINER_ID=$(bd show "$Y_IMPL_ID" --json | jq -r '.[0].parent // empty')
-         echo "Replay: orphan Y_IMPL_ID=$Y_IMPL_ID (Y_CONTAINER_ID=$Y_CONTAINER_ID) found (produced-from-{{bead-id}}); resuming at step 5."
-         # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
-         X_JSON_R=$(bd show {{bead-id}} --json)
-         X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
-         X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
-         # Derive CHOSEN and SID from Y_impl's labels for use in step 9 report.
-         CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
-         SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
-         # GOTO step 5 with the existing Y_CONTAINER_ID / Y_IMPL_ID.
+      1) ORPHAN_TITLE=$(echo "$ORPHAN_Y" | jq -r '.[0].title // empty')
+         case "$ORPHAN_TITLE" in
+           "[Impl] "*)
+             Y_IMPL_ID=$(echo "$ORPHAN_Y" | jq -r '.[0].id')
+             Y_CONTAINER_ID=$(bd show "$Y_IMPL_ID" --json | jq -r '.[0].parent // empty')
+             echo "Replay: orphan Y_IMPL_ID=$Y_IMPL_ID (Y_CONTAINER_ID=$Y_CONTAINER_ID) found (produced-from-{{bead-id}}); resuming at step 5."
+             # Re-fetch X fields needed by step 5+ (step 3 is skipped on this path).
+             X_JSON_R=$(bd show {{bead-id}} --json)
+             X_PRIORITY=$(echo "$X_JSON_R" | jq -r '.[0].priority')
+             X_AC=$(echo "$X_JSON_R"      | jq -r '.[0].acceptance_criteria // ""')
+             # Derive CHOSEN and SID from Y_impl's labels for use in step 9 report.
+             CHOSEN=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("formula-"))' | sed 's/^formula-//')
+             SID=$(bd label list "$Y_IMPL_ID" --json | jq -r '.[] | select(startswith("implementation-readied-session-"))' | sed 's/^implementation-readied-session-//')
+             # GOTO step 5 with the existing Y_CONTAINER_ID / Y_IMPL_ID.
+             ;;
+           *)
+             # Orphan lacks [Impl] prefix — legacy single-Y shape, not a Y_impl.
+             # Parent is the project epic, not a Y_container; do not reuse it.
+             # Fall through to create a fresh Y_container/Y_impl pair.
+             echo "Replay: single orphan bead lacks [Impl] prefix (legacy single-Y shape); falling through to create fresh pair."
+             ;;
+         esac
          ;;
       *) # HEP: create escalation bead + blocking dep; exit 0 so bd ready gating works.
          X_PRIORITY_ESC=$(bd show {{bead-id}} --json | jq -r '.[0].priority // "2"')
