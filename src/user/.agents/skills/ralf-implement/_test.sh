@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Red-phase tests for bead agents-config-abn9.10:
+# Contract tests for bead agents-config-abn9.10:
 #   "Update RALF skills + formula prose for worker-report-v1 and Scheme A renames"
 #
-# These tests are expected to FAIL against the current tree state because:
-#   * ralf-implement/ still carries the OLD prompt-template filenames
+# These assertions enforce the post-implementation contract for ralf-implement:
+#   * ralf-implement/ carries the Scheme A subagent-template filenames
+#     (subagent-implementer.md, subagent-fresh-eyes.md, subagent-foreign-cycle.md,
+#     foreign-cli-instructions.md), and the legacy *-prompt.md filenames
 #     (implementer-prompt.md, fresh-eyes-prompt.md, foreign-eyes-prompt.md,
-#     foreign-agent-prompt.md) and the new Scheme A filenames do not yet exist.
-#   * SKILL.md has no worker-report-v1, subagent_type, convergence predicate,
-#     or worker-audit policy language yet.
-#   * implement-feature.formula.toml / fix-bug.formula.toml do not yet carry
-#     the header pointer comment or the `subagent_type: tdd-green-team` arg.
+#     foreign-agent-prompt.md) no longer exist.
+#   * SKILL.md uses worker-report-v1 vocabulary (subagent_type, convergence
+#     predicate, worker-audit policy language).
+#   * implement-feature.formula.toml / fix-bug.formula.toml carry the
+#     header pointer comment and the `subagent_type: tdd-green-team` arg.
 #
 # Pattern follows the dep-health-check skill's _test.sh (pass/fail helpers,
 # grep_in, grep_in_fixed, grep_not_in, require_file).
