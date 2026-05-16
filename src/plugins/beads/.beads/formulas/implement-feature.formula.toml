@@ -14,6 +14,8 @@
 #
 # See: docs/specs/bead-pipeline-architecture.md §3, §9.1
 #
+# ralf:required label semantics: see src/user/.agents/skills/ralf-implement/SKILL.md
+#
 # Usage:
 #   bd mol pour implement-feature \
 #     --var feature="Add rate limiting to the API" \
@@ -389,7 +391,7 @@ Check the bead's RALF signal before dispatching:
   bd label list {{bead-id}} --json
 
 - If label `ralf:required` is present:
-    invoke `ralf-implement` with the bead spec, Definition of Done, relevant context, quality commands, and optional max cycle count from `ralf:cycles=N`
+    invoke `ralf-implement` with the bead spec, Definition of Done, relevant context, quality commands, `subagent_type: tdd-green-team`, and optional max cycle count from `ralf:cycles=N`
 
     `ralf-implement` owns only the inner quality loop: iteration,
     independence, adversarial posture, convergence, and structured report output.
