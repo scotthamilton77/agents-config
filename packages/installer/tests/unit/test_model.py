@@ -25,7 +25,6 @@ from installer.core.model import (
     StagedItem,
 )
 
-
 # ───────────────────────────── helpers ─────────────────────────────
 
 
@@ -43,7 +42,7 @@ def _staged_item(**overrides: object) -> StagedItem:
         "content": b"hello",
     }
     base.update(overrides)
-    return StagedItem(**base)  # type: ignore[arg-type]
+    return StagedItem(**base)
 
 
 def _orphan(**overrides: object) -> Orphan:
@@ -54,7 +53,7 @@ def _orphan(**overrides: object) -> Orphan:
         "kind": "file",
     }
     base.update(overrides)
-    return Orphan(**base)  # type: ignore[arg-type]
+    return Orphan(**base)
 
 
 # ─────────────── 1. test_provenance_equality ───────────────
@@ -74,7 +73,7 @@ def test_provenance_equality() -> None:
 def test_provenance_is_frozen() -> None:
     p = Provenance(kind="tool", name="claude")
     with pytest.raises(FrozenInstanceError):
-        p.name = "codex"  # type: ignore[misc]
+        p.name = "codex"
 
 
 # ─────────────── 3. test_file_include_construction_and_equality ───────────────
@@ -105,7 +104,7 @@ def test_staged_item_equality_and_frozen() -> None:
     assert a == b
     assert a != c
     with pytest.raises(FrozenInstanceError):
-        a.content = b"mutated"  # type: ignore[misc]
+        a.content = b"mutated"
 
 
 def test_staged_item_executable_defaults_false_and_round_trips() -> None:
@@ -127,7 +126,7 @@ def test_orphan_equality_and_frozen() -> None:
     assert a == b
     assert a != c
     with pytest.raises(FrozenInstanceError):
-        a.namespace = "skills"  # type: ignore[misc]
+        a.namespace = "skills"
 
 
 # ─────────────── 7. test_include_directive_match_dispatches_to_both_arms ───────────────
