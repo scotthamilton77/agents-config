@@ -311,7 +311,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 ## Dependency graph
 
-Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 51. Critical path: A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → F.2 → H.1 → H.2 → H.3 → H.4 → H.5 (14 stories of strict serial work — C.3 used to sit on the critical path; it is now deferred and downstream stories prereq on C.2 instead, so the chain shortens by one). Everything else hides inside this calendar time via the parallel fronts below.
+Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 51. Critical path: **A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → D.2 → D.4 → H.2 → H.3 → H.4 → H.5** (14 stories of strict serial work — derived from the dep table below, where each hop honours a real prereq edge: D.2 prereqs C.2, D.4 prereqs D.2, H.2 prereqs D.4 (and G.5 / F.2 in parallel), H.3 prereqs H.1 and H.2, H.4 prereqs H.3, H.5 prereqs H.4). C.3 used to occupy the C.2 → C.3 → F.2 segment; it is now deferred and downstream stories prereq on C.2 directly, so the path no longer threads through C.3 or F.2 — F.2 remains on a parallel-but-shorter branch (F.1 → F.2 → H.2). Everything else hides inside this calendar time via the parallel fronts below.
 
 C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID stability but every prior dependent has been re-pointed at C.2 so the deferral does not stall the roadmap.
 
