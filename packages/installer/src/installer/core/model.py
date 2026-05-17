@@ -92,8 +92,13 @@ class StagingPlan:
     """The in-memory replacement for the bash installer's temp-dir staging.
 
     Built incrementally during the staging phase; consumed by sync and
-    prune. Keyed by `dest_relpath` so two sources targeting the same
-    destination surface as a `dict` collision the merge engine resolves."""
+    prune. `items` is a plain `dict` and therefore **silently overwrites**
+    on a duplicate `dest_relpath` — it does not by itself surface
+    collisions. Callers (staging.py) MUST check `dest_relpath in items`
+    before assigning and route through the merge registry when the key is
+    already present; this dataclass is bare storage, not a collision
+    detector. A future helper may absorb the check, but A.2 deliberately
+    holds the engine behaviour out of the data layer."""
 
     items: dict[Path, StagedItem]
     tool: Tool
