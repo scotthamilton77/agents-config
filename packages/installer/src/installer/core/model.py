@@ -95,7 +95,7 @@ class StagingPlan:
     prune. Keyed by `dest_relpath` so two sources targeting the same
     destination surface as a `dict` collision the merge engine resolves."""
 
-    items: dict[Path, "StagedItem"]
+    items: dict[Path, StagedItem]
     tool: Tool
 
 
