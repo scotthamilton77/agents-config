@@ -13,10 +13,30 @@ PATH or `~/.config/opencode/` exists, or selected via `--tools=opencode`).
 ## Dynamic flattening
 
 `AGENTS.md.template` is special: it contains `<!-- DYNAMIC-INCLUDE: path -->` and
-`<!-- DYNAMIC-INCLUDE-RULES: rule1,rule2,... -->` markers that the installer
+`<!-- DYNAMIC-INCLUDE-ALL-RULES -->` markers that the installer
 resolves at staging time, producing a single flat `AGENTS.md` with no `@`
 references. This is required because OpenCode does not support `@` include
 resolution.
+
+## Skills
+
+OpenCode scans `~/.claude/skills/**/SKILL.md` natively. Shared skills are
+available without duplication. Some referenced skills (e.g. `superpowers:*`)
+require the [obra/superpowers](https://github.com/obra/superpowers) Claude Code
+plugin.
+
+## Agents
+
+Shared agents from `src/user/.agents/agents/` are **not** installed to OpenCode
+for now because the frontmatter format differs (OpenCode uses provider-prefixed
+model IDs, `mode:`, `permission:`, etc.). Install OpenCode-specific agents to
+`~/.config/opencode/agents/` manually if needed.
+
+## Commands
+
+Shared commands from `src/user/.claude/commands/` are **not** installed to
+OpenCode. OpenCode commands live in `~/.config/opencode/commands/` and use a
+slightly different frontmatter format.
 
 ## Agent warnings
 
