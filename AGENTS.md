@@ -18,41 +18,43 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 2. **Make AI good at saying "no, not ready"** — bounce under-specified work back BEFORE implementation, with structured feedback on what is missing
 3. **Substitute adversarial cross-model review** for human review wherever quality permits (RALF, foreign-CLI configs, codex adversarial review)
 4. **Guardrail every completion claim with mechanical evidence** (completion gate, verify-checklist)
-5. **Persist context** (beads, memories, formulas) so work survives compaction, agent handoff, and overnight runs
+5. **Persist context** (work tickets, memories, formulas) so work survives compaction, agent handoff, and overnight runs
 
-### Current state — work in progress
+### Current state — FAILED work in progress
 
-The architecture is in place; several keystone enablers are tracked but **not yet shipped**. Treat the vision as direction; treat the rules-as-written as the current contract.
+The architecture has run into a problematic ocean of complexity and inverted engineering where agents are doing the wrong things (things algorithms should be doing).  We're presently in a REDESIGN phase where much of the old and suspect architecture has been pushed under the `archive/` folder to serve as references until we don't need them anymore.  You should NOT peek in there unless/until you need to.  (Don't let its contents poison your understanding of current and future state).
 
-Search current work with: `bd list --label vision-85-5-10`. Major gaps as of 2026-05:
+That means that the current code architecture is a work in progress that is being cleaned up with the following goals in mind:
 
-- **Brainstorm-readiness gate** — the "no, not ready" mechanism is implicit, not enforced
-- **Persona vs orchestration** guidance on decide-vs-escalate is not yet reconciled
-- **85/5/10 instrumentation** — aspirational, not measured
-- **Spec post-mortem** feedback loop — not built; failures do not automatically improve future brainstorming
-- **Risk-tiered auto-merge** for low-risk PR classes — not defined; every PR waits on a human "ship it"
-- **Wall-clock pipelining** across external waits (CI, Copilot, GitHub) — future work
+- **Code over Prose** - Anything code can do better than agents, we're moving out of prose and into code helpers
+- **Python over Bash** - Thin shell script wrappers are fine but any logic that needs good testing needs to be in Python
+- **Amalgams over Conflicts** - There are currently competing priorities in certain plugins that contribute to context rot - we'll be consolidating "best of breed" from plugins' skills and other assets such as superpowers, pollock, karpathy, and so on
+- **Work vs beads** - While we'll continue to use the beads infrastructure (and possibly plugin) we'll be taking a step back from making that a first class citizen of this project's architecture, placing a "work" abstraction in front of it - end state is that beads is quarantined behind our own CLI
 
 ### Implications for agents working in *this* repo
 
-- **File beads for harness friction you discover** — refining this discipline layer IS the work; capture is not a tangent
-- **Surface rule conflicts**, do not paper over them; if persona and orchestration disagree, say so
-- **When proposing new skills, agents, or rules, ask**: does this advance the 85/5/10 ratio, or accidentally regress it?
-- **Distinguish the destination from the contract** in your reasoning: don't behave as if a vision-tagged enabler exists when it doesn't, but do let the vision break ties when the rules are silent
+- You'll still use beads directly for the time being until we get our work abstraction in place
+- The current backlog of beads is meaningful in a historic sense, but we'll be cleaning that up substantially over time
+- I need YOUR help (talking to you, agent!) to point out confusion or ambiguity in your context and where it's coming from - job #1 is to clean that up and give you an environment that's useful, not confusing - TELL ME WHAT MAKES THINGS HARDER THAN THEY SHOULD BE
+- The goals of the architecture are still valid / remain, but right now we're prioritizing getting the house in order to make it possible to accrete work toward that 85/5/10 goal. So while I'll need you (the agent) to point out what's in the way of this now, I also want you to watchdog what I'm asking you to do and apply backpressure where it's not clear how what I'm asking for is aligned with cleaning house or paving the road to the vision.
 
-## Prerequisites (Plugins)
+## Project Architecture
 
-This configuration assumes the following Claude Code plugins are installed:
+It's simple: this project hosts "agent configuration" (and tools, helpers, etc.) under `src/` that are installed into the user space (e.g. `~/.claude/`, et. al) using the install script.  The installer will expand content into the target agents' config files, e.g. since only claude supports rules, the rules are expanded into codex's AGENTS.md file.  THUS whenever we're discussing making a change to a skill, an agent, a command, a rule, etc., your FIRST AND ONLY PLACE TO MAKE CHANGES is under the `src/**` folders' contents unless explicitly told otherwise.
 
-- **[obra/superpowers](https://github.com/obra/superpowers)** - Provides skills referenced throughout the templates: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, writing-plans, and others
-- **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used in the `<beads>` section of the AGENTS.md template
+**Implications:**
 
-## Repository Structure
+- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next `install.sh` run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
+- **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
+- **NEVER run `install.sh` (or, when it is available, install.py) automatically** — only the user runs the installer, and only when they explicitly say so
+
+## Repository Structure (current, not target state)
 
 - `scripts/` - Installation and maintenance scripts
   - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=`/`--plugins=` overrides, and `--prune`/`--prune-only` for removing orphaned items not in the source
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications for implemented features
+- `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
@@ -79,57 +81,14 @@ This configuration assumes the following Claude Code plugins are installed:
   - `opencode.jsonc.template` - Settings (model, permissions, skills paths)
 - `src/plugins/` - **Optional plugin content** (installed only when detected)
   - `beads/` - beads plugin: skills, Claude rules, formulas
-  - See `src/plugins/AGENTS.md` for plugin authoring conventions
+- `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.
 
-## File Formats
+Other notes:
 
-### Agent files (`agents/*.md`)
-
-```yaml
----
-name: agent-name
-description: One-line description
-model: sonnet | opus | haiku | inherit          # optional; common subset — see AGENTS_PRIMER.md for full list (e.g. opus[1m], sonnet[1m])
-color: purple | indigo | blue | green | yellow | orange | red | cyan | teal | pink
-tools: Read, Grep, Glob, Bash                   # optional — comma-separated allow-list
-disallowedTools: Write, Edit                    # optional — explicit deny-list
-skills: [skill-name, plugin:skill-name]         # optional — preloaded skills
-effort: low | medium | high | xhigh             # optional — reasoning budget
-memory: <path-or-key>                           # optional — persistent memory namespace
----
-```
-
-See `docs/primers/AGENTS_PRIMER.md` for the full schema and field semantics.
-
-Followed by role definition, standards, and boundaries.
-
-### Skill files (`skills/*/SKILL.md`)
-
-```yaml
----
-name: skill-name
-description: When to use this skill
-# optional fields: model, effort, allowed-tools — see docs/primers/SKILLS_PRIMER.md
----
-```
-
-Followed by methodology, examples, and decision trees. Skills may include supporting files (`.ts`, `.sh`) in the same directory.
-
-### Command files (`commands/*.md`)
-
-Plain markdown with instructions. `$ARGUMENTS` placeholder receives user input.
-
-## Development Notes
-
-- **NEVER run `install.sh` automatically** — only the user runs the installer, and only when they explicitly say so
-- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next `install.sh` run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
 - No build system, tests, or linting - this is pure documentation
 - Changes should follow existing formatting conventions in each file type
-- Agent descriptions should include concrete usage examples in the frontmatter
-- Skills should be opinionated and actionable, not generic advice
-- **No file-path citations in specs or prose** — `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
 
-## Project Milestones
+## Project Milestones (current, not target)
 
 **Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
 
@@ -143,32 +102,6 @@ Milestones form a sequential `blocks` chain: M1 → M2 → M3 → M4. Each miles
 | `agents-config-t142` | open | **M4** — Overnight autonomy |
 
 All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
-
-## Deferred Topics
-
-Topics where in-scope agents should **not** spend cycles, and where to route incidental findings instead. Read this before reasoning about any subsystem in this list.
-
-### `run-queue` — DEFERRED pending full redesign
-
-The `run-queue` skill is queued for replacement. Two beads track the planned work:
-
-- **`agents-config-7bk.11`** (P2 feature) — Production shell driver for autonomous bead processing (replaces run-queue skill)
-- **`agents-config-acmh.9`** (P2 task) — Tier 2 split: Replace run-queue skill with script-orchestrated process (supersedes F18 F22 F25 + partial F17)
-
-**Do NOT, until the redesign begins:**
-
-- Patch the run-queue skill or harden its current behavior against edge cases
-- File new beads about run-queue limitations, bugs, or interactions
-- Burn analysis time reasoning about run-queue in *unrelated* work (PR reviews, brainstorming sessions, refactors)
-- Re-litigate the known limitations (e.g., `bd ready --label implementation-ready` direct-poll bypassing the whats-next Rule B container filter, leftover readiness labels on container sources, polling cadence)
-
-**Instead — if you discover a finding worth recording:**
-
-- Append it as a `bd comments add agents-config-7bk.11 "<finding>"` (primary — the replacement implementation will absorb it)
-- Or `bd comments add agents-config-acmh.9 "<finding>"` if the finding is about the process/contract design rather than the implementation surface
-- Then move on. One short comment, no further analysis.
-
-The known limitations are **intentional** until the redesign lands; do not let an agent's persona ("self-awareness: doubt yourself until you've checked facts") drag work back into run-queue's surface area.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker

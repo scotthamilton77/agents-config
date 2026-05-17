@@ -21,7 +21,7 @@ The five load-bearing convictions behind this:
 4. **Evidence before assertion, always.** Mechanical gates (tests, build, lint, review) sit between "I think this works" and "this is done."
 5. **Persistent context survives compaction.** Beads, memories, formulas, and audit logs let work span sessions, agents, and overnight cranking without losing thread.
 
-### Current state
+### Current state -- NOTE THIS AND THE REST OF THE FILE ARE OUT OF DATE - TODO update once v2 architecture is solid in concept
 
 This is a work in progress. The architecture is in place; several keystone enablers toward the vision are filed but not yet shipped — tracked under the `vision-85-5-10` bead label. Notable current gaps:
 

@@ -1,4 +1,5 @@
 # project-config.toml
+# TODO clean up stale beads references once v2 architecture is in place
 # Per-project configuration for the bead pipeline architecture.
 # Lives at the repository root. Read by per-stage orchestrators to configure
 # quality gates, coverage thresholds, foreign-CLI model selection, and more.
