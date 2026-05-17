@@ -41,9 +41,12 @@ class FileKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
-    """Tagged origin marker on every `StagedItem`. Tools and plugins share
-    the same name space at the registry level; the `kind` discriminator
-    keeps them distinguishable."""
+    """Tagged origin marker on every `StagedItem`. Tool and plugin
+    adapters live in separate registries (Tool-enum-keyed vs string-keyed),
+    but the `name` field on Provenance is a flat string — a hypothetical
+    plugin named after a tool would be indistinguishable in logs and
+    StagedItem comparisons without the `kind` discriminator. The
+    discriminator disambiguates the flat name field, not the registries."""
 
     kind: Literal["tool", "plugin"]
     name: str

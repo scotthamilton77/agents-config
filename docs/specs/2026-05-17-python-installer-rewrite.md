@@ -61,7 +61,7 @@ installer/
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write
 │   ├── prune.py                 Orphan scan + interactive prune flow
 │   └── merge/
-│       ├── registry.py          FileKind → MergeStrategy dispatch
+│       ├── registry.py          (FileKind, namespace) → MergeStrategy dispatch
 │       ├── base.py              MergeStrategy protocol
 │       └── strategies/
 │           ├── append_rules.py        rules/*.md → join with \n---\n
@@ -104,7 +104,7 @@ class MergeStrategy(Protocol):
     def merge(self, existing: StagedItem, incoming: StagedItem) -> StagedItem: ...
 ```
 
-Each strategy class lives in its own module with its own test file. `core/merge/registry.py` provides the `FileKind → MergeStrategy` lookup, easily swapped in tests.
+Each strategy class lives in its own module with its own test file. `core/merge/registry.py` provides the `(FileKind, namespace) → MergeStrategy` lookup (namespace is unused for non-namespaced kinds — see §"Data model highlights"), easily swapped in tests.
 
 ### Dependency management — `uv`
 
