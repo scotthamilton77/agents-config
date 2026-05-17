@@ -49,7 +49,8 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 
 | Skill | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|---------------|----------|-----------|--------------|
-| _(empty — OSS-derived amalgams pending under epic agents-config-cx6)_ | | | | |
+| `writing-skills` | `oss-snapshots/superpowers/writing-skills/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-17 | accept-periodic-resync |
+| `writing-skills` | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-17 | accept-periodic-resync |
 
 Update this table whenever a skill is added, replaced, or amalgamated from an OSS source.
 
