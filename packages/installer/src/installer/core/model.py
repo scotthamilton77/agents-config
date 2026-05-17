@@ -76,17 +76,26 @@ every call site rather than silently passing through."""
 
 @dataclass(frozen=True, slots=True)
 class StagedItem:
-    """In-memory record of one file destined for a tool's install root.
+    """In-memory record of one entry destined for a tool's install root.
+
+    `content` is `None` when `kind == FileKind.DIR` (the bash installer
+    treats top-level skill / agent directories as single staged units;
+    their bytes are derived from `source_path` at sync time, not carried
+    in the data model). For every other `kind`, `content` is the file's
+    bytes (eager — read at staging time so the sync-phase hash-compare
+    has no extra I/O).
 
     `executable` is a sync-phase write attribute (mode bit 0o755 vs 0o644),
-    not a merge-dispatch concern — see design doc §3.6."""
+    not a merge-dispatch concern — see design doc §3.6. Directories
+    ignore `executable`; the sync engine preserves the source tree's
+    mode bits for recursive copies."""
 
     source_path: Path
     dest_relpath: Path
     kind: FileKind
     namespace: str | None
     provenance: Provenance
-    content: bytes
+    content: bytes | None = None
     executable: bool = False
 
 

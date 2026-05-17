@@ -175,7 +175,7 @@ Pure-function tests against the core engine, exercised through a `FakeToolAdapte
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+sort; type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
-- `core/merge/registry.py` — FileKind dispatch correctness; unknown FileKind raises.
+- `core/merge/registry.py` — `(FileKind, namespace)` dispatch correctness (NAMESPACED_MD with namespace "rules" vs "commands" dispatches to different strategies; non-namespaced kinds ignore the namespace); unknown `(FileKind, namespace)` key raises.
 - `core/prune.py` — TOML prune-list load; glob matching (`*/skills/foo` vs exact match).
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
@@ -266,7 +266,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 - **C.1** Phase 1–2 equivalent: stage shared content from `src/user/.agents/` (agents, skills, rules) into the claude plan.
 - **C.2** DYNAMIC-INCLUDE ALL-RULES (sorted, `\n---\n`-joined, read from staging rules collection).
-- **C.3** _Deferred — DYNAMIC-INCLUDE named-RULES._ The data model (A.2) intentionally omits a `NamedRulesInclude` variant; no current use case justifies adding one. Story slot retained so downstream `blocks` edges (D.\*, G.6, H.1) keep their existing target without renumbering. Reopen this story only if a concrete named-RULES requirement surfaces.
+- **C.3** _Deferred — DYNAMIC-INCLUDE named-RULES._ The data model (A.2) intentionally omits a `NamedRulesInclude` variant; no current use case justifies adding one. Story slot retained for ID stability; downstream prereqs (D.\*, G.6, H.1) have been re-pointed at C.2 so the roadmap is not blocked on this deferred story. Reopen C.3 only if a concrete named-RULES requirement surfaces.
 
 ### Epic D — Multi-tool
 
@@ -311,7 +311,9 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 ## Dependency graph
 
-Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 52. Critical path: A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → C.3 → F.2 → H.1 → H.2 → H.3 → H.4 → H.5 (15 stories of strict serial work; everything else hides inside this calendar time via the parallel fronts below).
+Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 52. Critical path: A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → F.2 → H.1 → H.2 → H.3 → H.4 → H.5 (14 stories of strict serial work — C.3 used to sit on the critical path; it is now deferred and downstream stories prereq on C.2 instead, so the chain shortens by one). Everything else hides inside this calendar time via the parallel fronts below.
+
+C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID stability but every prior dependent has been re-pointed at C.2 so the deferral does not stall the roadmap.
 
 | Story | Direct prereqs | Parallelisable with |
 |---|---|---|
@@ -324,10 +326,10 @@ Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's
 | B.4 | B.3 | — |
 | C.1 | B.4 | — |
 | C.2 | C.1, B.4 | — |
-| C.3 | C.2 | — |
-| D.1 | C.3, B.1 | D.2, D.3 |
-| D.2 | C.3, B.1 | D.1, D.3 |
-| D.3 | C.3, B.1 | D.1, D.2 |
+| C.3 | _deferred — see story description; no active prereqs_ | _N/A_ |
+| D.1 | C.2, B.1 | D.2, D.3 |
+| D.2 | C.2, B.1 | D.1, D.3 |
+| D.3 | C.2, B.1 | D.1, D.2 |
 | D.4 | D.2 | — |
 | E.1 | A.2 | A.3, B.\*, C.\* (model-only dep) |
 | E.2 | E.1 | E.3, E.4, E.5 |
@@ -343,8 +345,8 @@ Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's
 | G.3 | G.2, C.1, F.2 | — |
 | G.4 | G.3, A.3 | — |
 | G.5 | G.4 | — |
-| G.6 | C.3, B.1 | D.\*, E.\*, F.\*, G.{1..5} |
-| H.1 | E.4, G.1, C.3 | H.2 (independent scenarios) |
+| G.6 | C.2, B.1 | D.\*, E.\*, F.\*, G.{1..5} |
+| H.1 | E.4, G.1, C.2 | H.2 (independent scenarios) |
 | H.2 | G.5, F.2, D.4 | H.1 |
 | H.3 | H.1, H.2 | — |
 | H.4 | H.3 | — |

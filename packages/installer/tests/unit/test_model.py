@@ -95,13 +95,17 @@ def test_all_rules_include_is_singleton_by_value() -> None:
 
 
 def test_all_rules_include_is_frozen() -> None:
-    """AllRulesInclude is an empty marker class — there is no field to
-    mutate and `slots=True` turns dynamic-attribute assignment into
-    `AttributeError` rather than `FrozenInstanceError`, so the standard
-    'assign and catch' check is ambiguous here. Verify the contract
-    directly via the dataclass parameters instead: if a future change
-    drops `frozen=True`, this assertion fails and `__hash__` becomes
-    None — both signals the hashability test would also catch."""
+    """AllRulesInclude is an empty `@dataclass(frozen=True, slots=True)`
+    marker. Asserting via `pytest.raises(FrozenInstanceError)` does NOT
+    work here because of a CPython interaction: `slots=True` synthesises
+    a new class to install `__slots__`, and the frozen-generated
+    `__setattr__` ends up referencing a stale `__class__` for its
+    `super()` call. The observable error on `ar.x = "v"` is
+    `TypeError: super(type, obj): obj ... is not an instance or subtype of
+    type` — confusing for a test reader and not the contract we care
+    about. Instead, assert the contract directly via the dataclass
+    parameters: if a future change drops `frozen=True`, this fails AND
+    `__hash__` becomes `None`, which the hashability test also catches."""
     assert AllRulesInclude.__dataclass_params__.frozen is True
 
 
@@ -125,6 +129,21 @@ def test_staged_item_executable_defaults_false_and_round_trips() -> None:
     promoted = _staged_item(executable=True)
     assert promoted.executable is True
     assert item != promoted
+
+
+def test_staged_item_accepts_dir_kind_with_no_content() -> None:
+    """Pins the FileKind.DIR / content=None contract: top-level skill or
+    agent directories stage as a single StagedItem with content omitted.
+    The sync engine reads the source tree at copy time."""
+    dir_item = StagedItem(
+        source_path=Path("/abs/src/skills/my-skill"),
+        dest_relpath=Path("skills/my-skill"),
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+    )
+    assert dir_item.content is None
+    assert dir_item.kind is FileKind.DIR
 
 
 # ───────────────────────── Orphan ─────────────────────────
