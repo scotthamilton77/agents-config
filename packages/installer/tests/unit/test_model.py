@@ -56,7 +56,7 @@ def _orphan(**overrides: object) -> Orphan:
     return Orphan(**base)
 
 
-# ─────────────── 1. test_provenance_equality ───────────────
+# ───────────────────────── Provenance ─────────────────────────
 
 
 def test_provenance_equality() -> None:
@@ -67,16 +67,13 @@ def test_provenance_equality() -> None:
     assert a != Provenance(kind="plugin", name="claude")
 
 
-# ─────────────── 2. test_provenance_is_frozen ───────────────
-
-
 def test_provenance_is_frozen() -> None:
     p = Provenance(kind="tool", name="claude")
     with pytest.raises(FrozenInstanceError):
         p.name = "codex"
 
 
-# ─────────────── 3. test_file_include_construction_and_equality ───────────────
+# ───────────────────────── IncludeDirective variants ─────────────────────────
 
 
 def test_file_include_construction_and_equality() -> None:
@@ -87,14 +84,28 @@ def test_file_include_construction_and_equality() -> None:
     assert a != c
 
 
-# ─────────────── 4. test_all_rules_include_is_singleton_by_value ───────────────
+def test_file_include_is_frozen() -> None:
+    fi = FileInclude(path=Path("a"))
+    with pytest.raises(FrozenInstanceError):
+        fi.path = Path("b")
 
 
 def test_all_rules_include_is_singleton_by_value() -> None:
     assert AllRulesInclude() == AllRulesInclude()
 
 
-# ─────────────── 5. test_staged_item_equality_and_frozen ───────────────
+def test_all_rules_include_is_frozen() -> None:
+    """AllRulesInclude is an empty marker class — there is no field to
+    mutate and `slots=True` turns dynamic-attribute assignment into
+    `AttributeError` rather than `FrozenInstanceError`, so the standard
+    'assign and catch' check is ambiguous here. Verify the contract
+    directly via the dataclass parameters instead: if a future change
+    drops `frozen=True`, this assertion fails and `__hash__` becomes
+    None — both signals the hashability test would also catch."""
+    assert AllRulesInclude.__dataclass_params__.frozen is True
+
+
+# ───────────────────────── StagedItem ─────────────────────────
 
 
 def test_staged_item_equality_and_frozen() -> None:
@@ -116,7 +127,7 @@ def test_staged_item_executable_defaults_false_and_round_trips() -> None:
     assert item != promoted
 
 
-# ─────────────── 6. test_orphan_equality_and_frozen ───────────────
+# ───────────────────────── Orphan ─────────────────────────
 
 
 def test_orphan_equality_and_frozen() -> None:
@@ -129,7 +140,7 @@ def test_orphan_equality_and_frozen() -> None:
         a.namespace = "skills"
 
 
-# ─────────────── 7. test_include_directive_match_dispatches_to_both_arms ───────────────
+# ───────────────────────── Discriminated union dispatch ─────────────────────────
 
 
 def test_include_directive_match_dispatches_to_both_arms() -> None:
@@ -153,7 +164,7 @@ def test_include_directive_match_dispatches_to_both_arms() -> None:
     assert describe(AllRulesInclude()) == "all-rules"
 
 
-# ─────────────── 8. test_counters_default_to_zero ───────────────
+# ───────────────────────── Counters ─────────────────────────
 
 
 def test_counters_default_to_zero() -> None:
@@ -166,12 +177,20 @@ def test_counters_default_to_zero() -> None:
     assert c.backed_up == 0
 
 
-# ─────────────── 9. test_frozen_items_are_hashable ───────────────
+# ───────────────────────── Hashability ─────────────────────────
 
 
 def test_frozen_items_are_hashable() -> None:
-    items: set[object] = {_staged_item(), _orphan(), _provenance()}
-    assert len(items) == 3
+    items: set[object] = {
+        _staged_item(),
+        _orphan(),
+        _provenance(),
+        FileInclude(path=Path("x.md")),
+        AllRulesInclude(),
+    }
+    assert len(items) == 5
     assert _staged_item() in items
     assert _orphan() in items
     assert _provenance() in items
+    assert FileInclude(path=Path("x.md")) in items
+    assert AllRulesInclude() in items
