@@ -158,7 +158,7 @@ Unchanged from prior design. Single injectable abstraction (`info`/`ok`/`warn`/`
 ### Data model highlights
 
 - `Tool` is an enum for exhaustive type-checking; `ToolAdapter` instances live in a registry keyed by `Tool` value. Plugins are **not** enumerated — they are discovered dynamically by scanning `src/plugins/<name>/` and registered by name string, so adding a plugin requires no code change to `model.py`. `PluginAdapter` instances live in a string-keyed registry. Per-`StagedItem` provenance is tracked via a `Provenance(kind: Literal["tool","plugin"], name: str)` dataclass so tool-vs-plugin origin survives the asymmetry.
-- `FileKind` enum mirrors install.sh:486-505; `MergeStrategy` instances mapped to `FileKind` in `core/merge/registry.py`.
+- `FileKind` enum mirrors install.sh:486-505; `MergeStrategy` dispatch in `core/merge/registry.py` keys on **`(FileKind, namespace)`** because `NAMESPACED_MD` items need their parent-dir namespace to pick the right strategy (e.g. `(NAMESPACED_MD, "rules")` → append-merge; `(NAMESPACED_MD, "commands")` → fatal). For non-namespaced kinds (`SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) the namespace component is unused and the lookup degenerates to a `FileKind`-only key.
 - `StagingPlan` is the in-memory replacement for install.sh's temp-dir staging — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass replaces install.sh's four parallel arrays (`ORPHAN_TOOLS` / `ORPHAN_NS` / `ORPHAN_PATHS` / `ORPHAN_KINDS` at install.sh:1456-1467).
 - `Config` is frozen, populated from argv + `installer.toml` + auto-detection probes (which themselves consult adapters).
@@ -171,7 +171,7 @@ Three suites under `packages/installer/tests/`. Target ~120–150 tests, full ru
 
 Pure-function tests against the core engine, exercised through a `FakeToolAdapter` so each module tests in isolation. Examples by module:
 
-- `core/templates.py` — directive recognition; ALL-RULES join; named-RULES; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion (the conversion lives in `tools/gemini.py` but the test plugs it into the core).
+- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion (the conversion lives in `tools/gemini.py` but the test plugs it into the core).
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+sort; type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
@@ -266,7 +266,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 - **C.1** Phase 1–2 equivalent: stage shared content from `src/user/.agents/` (agents, skills, rules) into the claude plan.
 - **C.2** DYNAMIC-INCLUDE ALL-RULES (sorted, `\n---\n`-joined, read from staging rules collection).
-- **C.3** DYNAMIC-INCLUDE named-RULES (comma list).
+- **C.3** _Deferred — DYNAMIC-INCLUDE named-RULES._ The data model (A.2) intentionally omits a `NamedRulesInclude` variant; no current use case justifies adding one. Story slot retained so downstream `blocks` edges (D.\*, G.6, H.1) keep their existing target without renumbering. Reopen this story only if a concrete named-RULES requirement surfaces.
 
 ### Epic D — Multi-tool
 
