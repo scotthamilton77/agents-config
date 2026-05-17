@@ -6,6 +6,19 @@ Good Skills are concise, well-structured, and tested with real usage. This guide
 
 For conceptual background on how Skills work, see the [Skills overview](/en/docs/agents-and-tools/agent-skills/overview).
 
+## Contents
+- [Core principles](#core-principles)
+- [Skill structure](#skill-structure)
+- [Workflows and feedback loops](#workflows-and-feedback-loops)
+- [Content guidelines](#content-guidelines)
+- [Common patterns](#common-patterns)
+- [Evaluation and iteration](#evaluation-and-iteration)
+- [Anti-patterns to avoid](#anti-patterns-to-avoid)
+- [Advanced: Skills with executable code](#advanced-skills-with-executable-code)
+- [Technical notes](#technical-notes)
+- [Checklist for effective Skills](#checklist-for-effective-skills)
+- [Next steps](#next-steps)
+
 ## Core principles
 
 ### Concise is key
