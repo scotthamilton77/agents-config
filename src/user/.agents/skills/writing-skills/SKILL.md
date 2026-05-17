@@ -17,9 +17,17 @@ same change.
 
 Bundled resources (scripts/, references/, examples/) were byte-identical
 copies of the upstream artifacts at the SHAs above at initial import.
-scripts/render-graphs.js has since been patched to exit non-zero on
-render failure (upstream bug; not yet fixed in the source repo).
-Their internal cross-references may use upstream conventions (e.g.,
+Documented divergences since:
+  - scripts/render-graphs.js — patched to exit non-zero on render failure
+    (upstream bug; not yet fixed in the source repo).
+  - references/anthropic-best-practices.md, references/persuasion-principles.md,
+    references/testing-skills-with-subagents.md, references/schemas.md — each
+    gained a "## Contents" TOC near the top per the project skill primer's
+    >100-line requirement; existing content preserved.
+  - references/testing-skills-with-subagents.md — line "Add symptoms of ABOUT
+    to violate." repaired to "Add symptoms of when you're ABOUT to violate
+    the rule." (upstream truncation typo).
+Internal cross-references in bundled refs may use upstream conventions (e.g.,
 plugin-namespaced skill names like "superpowers:test-driven-development")
 that do not match this skill's own bare-name convention. If a
 cross-reference dangles in a deployment, consult the upstream source
