@@ -157,7 +157,7 @@ Unchanged from prior design. Single injectable abstraction (`info`/`ok`/`warn`/`
 
 ### Data model highlights
 
-- `Tool` and `Plugin` enums for exhaustive type-checking; the corresponding `ToolAdapter` / `PluginAdapter` instances live in registries keyed by enum value.
+- `Tool` is an enum for exhaustive type-checking; `ToolAdapter` instances live in a registry keyed by `Tool` value. Plugins are **not** enumerated — they are discovered dynamically by scanning `src/plugins/<name>/` and registered by name string, so adding a plugin requires no code change to `model.py`. `PluginAdapter` instances live in a string-keyed registry. Per-`StagedItem` provenance is tracked via a `Provenance(kind: Literal["tool","plugin"], name: str)` dataclass so tool-vs-plugin origin survives the asymmetry.
 - `FileKind` enum mirrors install.sh:486-505; `MergeStrategy` instances mapped to `FileKind` in `core/merge/registry.py`.
 - `StagingPlan` is the in-memory replacement for install.sh's temp-dir staging — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass replaces install.sh's four parallel arrays (`ORPHAN_TOOLS` / `ORPHAN_NS` / `ORPHAN_PATHS` / `ORPHAN_KINDS` at install.sh:1456-1467).
@@ -250,7 +250,7 @@ Eight epics, 34 stories — each story is independently mergeable, has its own t
 ### Epic A — Foundation
 
 - **A.1** `packages/installer/` scaffold with `uv`; `pyproject.toml`; `scripts/install.py` stub; CI runs `pytest` / `ruff` / `mypy` on a hello-world test. Deliverable: green CI, no installer behaviour yet.
-- **A.2** `core/model.py` — pure dataclasses + enums (`Tool`, `Plugin`, `FileKind`, `StagedItem`, `StagingPlan`, `Orphan`, `IncludeDirective`, `Counters`).
+- **A.2** `core/model.py` — pure dataclasses + enums (`Tool`, `FileKind`, `Provenance`, `StagedItem`, `StagingPlan`, `Orphan`, `IncludeDirective` as a discriminated union of `FileInclude` + `AllRulesInclude`, `Counters`). No `Plugin` enum — see "Data model highlights" for the string-keyed plugin rationale.
 - **A.3** `core/io_port.py` — `IOPort` protocol + `ScriptedIO` fake + `TerminalIO` real (rendered via `rich`).
 
 ### Epic B — First end-to-end install (claude only, minimal)
