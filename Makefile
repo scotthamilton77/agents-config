@@ -29,7 +29,7 @@ audit-installer:
 	cd $(INSTALLER) && uv sync --frozen && uv run pip-audit
 
 lint-actions:
-	cd $(INSTALLER) && uv run actionlint
+	uv --project $(INSTALLER) run actionlint
 
 verify-entry-installer:
 	uv --project $(INSTALLER) run python scripts/install.py --help > /dev/null
