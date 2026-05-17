@@ -33,3 +33,11 @@ settings.local.json
 .beads-credential-key
 
 __pycache__/
+
+# Python tooling caches
+.coverage*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
