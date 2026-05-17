@@ -61,7 +61,7 @@ installer/
 │   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write
 │   ├── prune.py                 Orphan scan + interactive prune flow
 │   └── merge/
-│       ├── registry.py          FileKind → MergeStrategy dispatch
+│       ├── registry.py          (FileKind, namespace) → MergeStrategy dispatch
 │       ├── base.py              MergeStrategy protocol
 │       └── strategies/
 │           ├── append_rules.py        rules/*.md → join with \n---\n
@@ -104,7 +104,7 @@ class MergeStrategy(Protocol):
     def merge(self, existing: StagedItem, incoming: StagedItem) -> StagedItem: ...
 ```
 
-Each strategy class lives in its own module with its own test file. `core/merge/registry.py` provides the `FileKind → MergeStrategy` lookup, easily swapped in tests.
+Each strategy class lives in its own module with its own test file. `core/merge/registry.py` provides the `(FileKind, namespace) → MergeStrategy` lookup (namespace is unused for non-namespaced kinds — see §"Data model highlights"), easily swapped in tests.
 
 ### Dependency management — `uv`
 
@@ -157,8 +157,8 @@ Unchanged from prior design. Single injectable abstraction (`info`/`ok`/`warn`/`
 
 ### Data model highlights
 
-- `Tool` and `Plugin` enums for exhaustive type-checking; the corresponding `ToolAdapter` / `PluginAdapter` instances live in registries keyed by enum value.
-- `FileKind` enum mirrors install.sh:486-505; `MergeStrategy` instances mapped to `FileKind` in `core/merge/registry.py`.
+- `Tool` is an enum for exhaustive type-checking; `ToolAdapter` instances live in a registry keyed by `Tool` value. Plugins are **not** enumerated — they are discovered dynamically by scanning `src/plugins/<name>/` and registered by name string, so adding a plugin requires no code change to `model.py`. `PluginAdapter` instances live in a string-keyed registry. Per-`StagedItem` provenance is tracked via a `Provenance(kind: Literal["tool","plugin"], name: str)` dataclass so tool-vs-plugin origin survives the asymmetry.
+- `FileKind` enum mirrors install.sh:486-505; `MergeStrategy` dispatch in `core/merge/registry.py` keys on **`(FileKind, namespace)`** because `NAMESPACED_MD` items need their parent-dir namespace to pick the right strategy (e.g. `(NAMESPACED_MD, "rules")` → append-merge; `(NAMESPACED_MD, "commands")` → fatal). For non-namespaced kinds (`SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) the namespace component is unused and the lookup degenerates to a `FileKind`-only key.
 - `StagingPlan` is the in-memory replacement for install.sh's temp-dir staging — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass replaces install.sh's four parallel arrays (`ORPHAN_TOOLS` / `ORPHAN_NS` / `ORPHAN_PATHS` / `ORPHAN_KINDS` at install.sh:1456-1467).
 - `Config` is frozen, populated from argv + `installer.toml` + auto-detection probes (which themselves consult adapters).
@@ -171,11 +171,11 @@ Three suites under `packages/installer/tests/`. Target ~120–150 tests, full ru
 
 Pure-function tests against the core engine, exercised through a `FakeToolAdapter` so each module tests in isolation. Examples by module:
 
-- `core/templates.py` — directive recognition; ALL-RULES join; named-RULES; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion (the conversion lives in `tools/gemini.py` but the test plugs it into the core).
+- `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion (the conversion lives in `tools/gemini.py` but the test plugs it into the core).
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+sort; type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
-- `core/merge/registry.py` — FileKind dispatch correctness; unknown FileKind raises.
+- `core/merge/registry.py` — `(FileKind, namespace)` dispatch correctness (NAMESPACED_MD with namespace "rules" vs "commands" dispatches to different strategies; non-namespaced kinds ignore the namespace); unknown `(FileKind, namespace)` key raises.
 - `core/prune.py` — TOML prune-list load; glob matching (`*/skills/foo` vs exact match).
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
@@ -250,7 +250,7 @@ Eight epics, 34 stories — each story is independently mergeable, has its own t
 ### Epic A — Foundation
 
 - **A.1** `packages/installer/` scaffold with `uv`; `pyproject.toml`; `scripts/install.py` stub; CI runs `pytest` / `ruff` / `mypy` on a hello-world test. Deliverable: green CI, no installer behaviour yet.
-- **A.2** `core/model.py` — pure dataclasses + enums (`Tool`, `Plugin`, `FileKind`, `StagedItem`, `StagingPlan`, `Orphan`, `IncludeDirective`, `Counters`).
+- **A.2** `core/model.py` — pure dataclasses + enums (`Tool`, `FileKind`, `Provenance`, `StagedItem`, `StagingPlan`, `Orphan`, `IncludeDirective` as a discriminated union of `FileInclude` + `AllRulesInclude`, `Counters`). No `Plugin` enum — see "Data model highlights" for the string-keyed plugin rationale.
 - **A.3** `core/io_port.py` — `IOPort` protocol + `ScriptedIO` fake + `TerminalIO` real (rendered via `rich`).
 
 ### Epic B — First end-to-end install (claude only, minimal)
@@ -266,7 +266,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 - **C.1** Phase 1–2 equivalent: stage shared content from `src/user/.agents/` (agents, skills, rules) into the claude plan.
 - **C.2** DYNAMIC-INCLUDE ALL-RULES (sorted, `\n---\n`-joined, read from staging rules collection).
-- **C.3** DYNAMIC-INCLUDE named-RULES (comma list).
+- **C.3** _Deferred — DYNAMIC-INCLUDE named-RULES._ The data model (A.2) intentionally omits a `NamedRulesInclude` variant; no current use case justifies adding one. Story slot retained for ID stability; downstream prereqs (D.\*, G.6, H.1) have been re-pointed at C.2 so the roadmap is not blocked on this deferred story. Reopen C.3 only if a concrete named-RULES requirement surfaces.
 
 ### Epic D — Multi-tool
 
@@ -311,7 +311,9 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 ## Dependency graph
 
-Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 52. Critical path: A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → C.3 → F.2 → H.1 → H.2 → H.3 → H.4 → H.5 (15 stories of strict serial work; everything else hides inside this calendar time via the parallel fronts below).
+Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 51. Critical path: **A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → D.2 → D.4 → H.2 → H.3 → H.4 → H.5** (14 stories of strict serial work — derived from the dep table below, where each hop honours a real prereq edge: D.2 prereqs C.2, D.4 prereqs D.2, H.2 prereqs D.4 (and G.5 / F.2 in parallel), H.3 prereqs H.1 and H.2, H.4 prereqs H.3, H.5 prereqs H.4). C.3 used to occupy the C.2 → C.3 → F.2 segment; it is now deferred and downstream stories prereq on C.2 directly, so the path no longer threads through C.3 or F.2 — F.2 remains on a parallel-but-shorter branch (F.1 → F.2 → H.2). Everything else hides inside this calendar time via the parallel fronts below.
+
+C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID stability but every prior dependent has been re-pointed at C.2 so the deferral does not stall the roadmap.
 
 | Story | Direct prereqs | Parallelisable with |
 |---|---|---|
@@ -324,10 +326,10 @@ Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's
 | B.4 | B.3 | — |
 | C.1 | B.4 | — |
 | C.2 | C.1, B.4 | — |
-| C.3 | C.2 | — |
-| D.1 | C.3, B.1 | D.2, D.3 |
-| D.2 | C.3, B.1 | D.1, D.3 |
-| D.3 | C.3, B.1 | D.1, D.2 |
+| C.3 | _deferred — see story description; no active prereqs_ | _N/A_ |
+| D.1 | C.2, B.1 | D.2, D.3 |
+| D.2 | C.2, B.1 | D.1, D.3 |
+| D.3 | C.2, B.1 | D.1, D.2 |
 | D.4 | D.2 | — |
 | E.1 | A.2 | A.3, B.\*, C.\* (model-only dep) |
 | E.2 | E.1 | E.3, E.4, E.5 |
@@ -343,8 +345,8 @@ Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's
 | G.3 | G.2, C.1, F.2 | — |
 | G.4 | G.3, A.3 | — |
 | G.5 | G.4 | — |
-| G.6 | C.3, B.1 | D.\*, E.\*, F.\*, G.{1..5} |
-| H.1 | E.4, G.1, C.3 | H.2 (independent scenarios) |
+| G.6 | C.2, B.1 | D.\*, E.\*, F.\*, G.{1..5} |
+| H.1 | E.4, G.1, C.2 | H.2 (independent scenarios) |
 | H.2 | G.5, F.2, D.4 | H.1 |
 | H.3 | H.1, H.2 | — |
 | H.4 | H.3 | — |
