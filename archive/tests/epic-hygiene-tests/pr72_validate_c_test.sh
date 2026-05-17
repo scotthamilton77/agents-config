@@ -197,4 +197,47 @@ CHILDREN=$(bd list --parent "$T1" --limit 0 --json 2>/dev/null \
 bd mol burn "$MOL_T1" --force >/dev/null 2>&1 || true
 pass "C6: plain task → not-container; no human child created"
 
+# =============================================================================
+# C7: feature with a pre-existing HEP escalation child (human+hep-pause) must
+# be recognized by the container gate as a CONTAINER (decision='handled' via
+# clean-decomposition path), not a leaf bead.
+#
+# Scenario: feature F has exactly one open child carrying both `human` and
+# `hep-pause` labels — the post-fix HEP shape sitting under a container
+# source. F has no `produced-bead-*` label (no prior Y produced). The gate
+# is invoked on F.
+#
+# Expected behavior (after fix): the feature CHILD_COUNT probe narrows from
+# "any human-labeled child" to "human-labeled AND NOT hep-pause"; the
+# hep-pause child IS counted → CHILD_COUNT=1 → CONTAINER=1 → with no
+# produced-bead-* label and no orphan reverse edge, the gate falls through
+# to the clean-decomposition outcome → emits `handled`.
+#
+# Current (buggy) behavior: the wider filter excludes the human-labeled
+# child (whether or not it carries hep-pause) → CHILD_COUNT=0 → CONTAINER=0
+# → gate emits `not-container` → ASSERTION FAILS.
+#
+# Second assertion: the pre-existing HEP child must still carry `hep-pause`
+# (we stamped it ourselves; this guards the label-stamping contract).
+# =============================================================================
+F=$(make_bead feature "stress-test C7 feature with HEP child")
+HEP_PRE=$(bd create --parent "$F" --type task --priority 4 \
+    --title "[Human] pre-existing HEP child" --json \
+    | jq -r 'if type=="array" then .[0].id else .id end // empty')
+[ -z "$HEP_PRE" ] && fail "C7: failed to create HEP child under F"
+bd label add "$HEP_PRE" stress-test-fixture >/dev/null 2>&1
+bd label add "$HEP_PRE" human               >/dev/null 2>&1
+bd label add "$HEP_PRE" hep-pause           >/dev/null 2>&1
+CREATED_BEADS+=("$HEP_PRE")
+
+MOL_F=$(make_wisp "$F" "stress-c7")
+DECISION=$(run_gate "$F" "$MOL_F")
+[ "$DECISION" = "handled" ] \
+    || fail "C7: feature with human+hep-pause child decision expected 'handled' (active container → clean-decomposition path), got '$DECISION' — gate's feature CHILD_COUNT probe wrongly excludes hep-pause children from the active-child count"
+
+# Assertion 2: pre-existing HEP child still carries hep-pause.
+has_label "$HEP_PRE" hep-pause \
+    || fail "C7: pre-existing HEP child $HEP_PRE missing 'hep-pause' label — label stamping must be preserved across the gate path"
+pass "C7: feature with one open human+hep-pause child is recognized as container (decision=handled); HEP child retains hep-pause label"
+
 echo "GROUP C: implement-bead routing via container gate helper passed."

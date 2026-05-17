@@ -168,6 +168,12 @@ Decide from the result array:
   fi
   [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
+  # Container branch only: `hep-pause` discriminates live HEP escalations
+  # from bare `human`-labeled formula-gate children in the active-child
+  # filter (see whats-next/collect.py and bd-finalize-container-gate.sh).
+  if [ "$IS_CONTAINER" = "1" ]; then
+      bd label add "$HUMAN_ID" hep-pause
+  fi
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
   Step-bead: N/A (pre-pour)
@@ -253,6 +259,12 @@ Decide from the result array:
   fi
   [ -z "$HUMAN_ID" ] && { echo "HEP: failed to extract escalation bead id" >&2; exit 1; }
   bd label add "$HUMAN_ID" human
+  # Container branch only: `hep-pause` discriminates live HEP escalations
+  # from bare `human`-labeled formula-gate children in the active-child
+  # filter (see whats-next/collect.py and bd-finalize-container-gate.sh).
+  if [ "$IS_CONTAINER" = "1" ]; then
+      bd label add "$HUMAN_ID" hep-pause
+  fi
   bd update "$HUMAN_ID" --append-notes \
       "Source: <bead-id>
   Step-bead: N/A (pre-pour)

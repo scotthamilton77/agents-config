@@ -206,10 +206,14 @@ def is_container(bead_id, bead_type):
     feature         — container only when it has ≥1 non-closed children
                       that are NOT formula-gate children. The
                       active_child_count index below excludes children
-                      labeled `merge-gate` or `human` so feature-Y impl
-                      beads (which always carry a merge-gate child via
-                      brainstorm finalize step 5b) don't get misclassified
-                      as containers.
+                      labeled `merge-gate` or `human` (without
+                      `hep-pause`) so feature-Y impl beads (which always
+                      carry a merge-gate child via brainstorm finalize
+                      step 5b) don't get misclassified as containers.
+                      `human + hep-pause` children ARE counted — those
+                      are live HEP escalations under container sources
+                      and keep the parent classified as a container
+                      while human input is pending.
     """
     if bead_type in CONTAINER_ALWAYS:
         return True
@@ -358,7 +362,12 @@ def main():
         # brainstorm-bead finalize step 5b creates `merge-gate` and (when
         # AC has [h] lines) `human`-labeled `[Human verify]` children
         # under feature-Y impl beads. These don't make Y a container.
-        if "merge-gate" in labels or "human" in labels:
+        # IMPORTANT: bare `human` children are formula-gate artifacts and
+        # are excluded, BUT `human` children that also carry `hep-pause`
+        # are live HEP escalations (created by the HEP procedure under
+        # container sources) — those MUST count so the container stays
+        # classified while human input is pending.
+        if "merge-gate" in labels or ("human" in labels and "hep-pause" not in labels):
             continue
         active_child_count[parent] = active_child_count.get(parent, 0) + 1
 

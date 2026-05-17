@@ -136,11 +136,19 @@ for row in impl:
             )
     else:
         children = []
-    # Filter out formula-gate children (merge-gate / human labeled).
-    active = [
-        c for c in children
-        if not (set(c.get("labels", []) or []) & {"merge-gate", "human"})
-    ]
+    # Mirror the narrowed active-child filter in production
+    # (whats-next/collect.py and bd-finalize-container-gate.sh):
+    # exclude `merge-gate` OR (`human` AND NOT `hep-pause`). HEP escalation
+    # children carrying `human + hep-pause` ARE live container artifacts;
+    # they count toward active_child_count.
+    def _is_formula_gate(c):
+        labels = set(c.get("labels", []) or [])
+        if "merge-gate" in labels:
+            return True
+        if "human" in labels and "hep-pause" not in labels:
+            return True
+        return False
+    active = [c for c in children if not _is_formula_gate(c)]
     if active:
         raise SystemExit(
             f"A2: feature row {bid} has {len(active)} active non-formula-gate "
@@ -222,10 +230,19 @@ for row in pl:
             )
     else:
         children = []
-    active = [
-        c for c in children
-        if not (set(c.get("labels", []) or []) & {"merge-gate", "human"})
-    ]
+    # Mirror the narrowed active-child filter in production
+    # (whats-next/collect.py and bd-finalize-container-gate.sh):
+    # exclude `merge-gate` OR (`human` AND NOT `hep-pause`). HEP escalation
+    # children carrying `human + hep-pause` ARE live container artifacts;
+    # they count toward active_child_count.
+    def _is_formula_gate(c):
+        labels = set(c.get("labels", []) or [])
+        if "merge-gate" in labels:
+            return True
+        if "human" in labels and "hep-pause" not in labels:
+            return True
+        return False
+    active = [c for c in children if not _is_formula_gate(c)]
     if active:
         raise SystemExit(
             f"A4: planning row {bid} has {len(active)} active non-formula-gate "

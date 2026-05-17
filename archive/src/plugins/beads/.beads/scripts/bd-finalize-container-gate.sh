@@ -83,13 +83,16 @@ case "$X_TYPE" in
         # status open or in_progress. open,in_progress covers all non-closed
         # children. `--limit 0` keeps the inventory unbounded so a child past
         # row 50 cannot slip past the container check. We FILTER OUT
-        # formula-gate children (carrying `merge-gate` or `human` label)
-        # before counting: brainstorm finalize attaches merge-gate /
-        # [Human verify] children under feature-Y impl beads, and counting
-        # those toward "feature has active children" wrongly reclassifies
-        # legitimate Y impls as containers.
+        # formula-gate children (carrying `merge-gate`, or `human` WITHOUT
+        # `hep-pause`) before counting: brainstorm finalize attaches
+        # merge-gate / [Human verify] children under feature-Y impl beads,
+        # and counting those toward "feature has active children" wrongly
+        # reclassifies legitimate Y impls as containers. HEP escalation
+        # children carry BOTH `human` AND `hep-pause` — those ARE live
+        # human-pause artifacts under container sources and MUST count so
+        # the container stays classified while human input is pending.
         CHILD_COUNT=$(bd list --parent "$BEAD_ID" --status open,in_progress --limit 0 --json \
-            | jq '[.[] | select(((.labels // []) | (index("merge-gate") or index("human"))) | not)] | length')
+            | jq '[.[] | select((.labels // []) as $l | (($l | index("merge-gate")) or (($l | index("human")) and (($l | index("hep-pause")) | not))) | not)] | length')
         [ "$CHILD_COUNT" -gt 0 ] && CONTAINER=1 || CONTAINER=0 ;;
 esac
 
@@ -139,6 +142,7 @@ if [ "$PRODUCED_COUNT" -gt 1 ]; then
         exit 1
     fi
     bd label add "$ESC_ID" human
+    bd label add "$ESC_ID" hep-pause
     bd update "$ESC_ID" --append-notes \
 "Source: $BEAD_ID
 Step-bead: N/A (pre-pour container gate)
@@ -165,6 +169,7 @@ if [ "$PRODUCED_COUNT" -gt 0 ] || [ "$ORPHAN_REVERSE_COUNT" -gt 0 ]; then
         exit 1
     fi
     bd label add "$ESC_ID" human
+    bd label add "$ESC_ID" hep-pause
     # Tolerant lookup: bd mol current may fail or emit no usable JSON; the
     # `unknown` fallback is informational only. Under set -euo pipefail
     # the failure must be swallowed locally so the HEP path completes
