@@ -240,7 +240,7 @@ Write code before test? Delete it. Start over.
 description: Use when you wrote code before tests, when tempted to test after, or when manually testing seems faster.
 ```
 
-Add symptoms of ABOUT to violate.
+Add symptoms of when you're ABOUT to violate the rule.
 
 ### Re-verify After Refactoring
 
