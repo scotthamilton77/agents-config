@@ -392,9 +392,10 @@ A bad query:
 
 Automation of this loop (a scripted optimizer that proposes description
 edits, splits train/test, and runs to convergence) is the future home of
-`scripts/run_loop.py` — not yet shipped in this skill. See
-`references/schemas.md` for the eval/grading JSON shape the future
-automation will use.
+`scripts/run_loop.py` — not yet shipped in this skill. The
+`evals/trigger-eval.json` shape is defined inline above;
+`references/schemas.md` covers the broader eval/grading JSON shapes the
+future automation will use (`evals/evals.json`, `grading.json`).
 
 **How triggering actually works.** Skills appear in the agent's available
 list with their name + description. The agent decides whether to consult a
