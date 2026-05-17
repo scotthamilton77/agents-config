@@ -34,8 +34,8 @@ settings.local.json
 
 __pycache__/
 
-# Python tooling caches (packages/installer/)
-.coverage
+# Python tooling caches
+.coverage*
 htmlcov/
 .pytest_cache/
 .ruff_cache/

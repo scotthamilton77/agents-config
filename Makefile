@@ -7,7 +7,7 @@ INSTALLER := packages/installer
 ci: ci-installer lint-actions
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
-              test-installer cov-installer audit-installer \
+              cov-installer audit-installer \
               verify-entry-installer
 
 test-installer:
@@ -28,6 +28,9 @@ cov-installer:
 audit-installer:
 	cd $(INSTALLER) && uv sync --frozen && uv run pip-audit
 
+# lint-actions and verify-entry-installer run from the repo root (no `cd`) so
+# they can resolve .github/workflows/ and scripts/ respectively. The
+# `uv --project` flag selects the installer venv where the tool binary lives.
 lint-actions:
 	uv --project $(INSTALLER) run actionlint
 
