@@ -92,10 +92,11 @@ Other notes:
 
 **Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
 
-Milestones form a sequential `blocks` chain: M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
+Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
 
 | ID | Status | Milestone |
 |----|--------|-----------|
+| `agents-config-wgclw` | open | **M0** — Discipline-layer rearchitecture: scripts own determinism, skills own judgment |
 | `agents-config-abn9` | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators |
 | `agents-config-qn0g` | open | **M2** — Brainstorm-readiness gate |
 | `agents-config-vaac` | in_progress | **M3** — Worker fleet through PR autonomy |
