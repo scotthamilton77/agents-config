@@ -163,14 +163,16 @@ class TerminalIO:
         raise NotImplementedError
 
 
-# ───────────────────────── ScriptedIO (stub) ─────────────────────────
+# ───────────────────────── ScriptedIO ─────────────────────────
 
 
 class ScriptedIO:
-    """Test fake. Stub for Slice 1 - methods raise NotImplementedError;
-    Slice 2 (Tasks 3-4) implements them. The transcript list is
-    initialized empty so `isinstance(io, IOPort)` works without invoking
-    any prompt."""
+    """Test fake. Per-method answer queues drive prompt responses; every
+    output and prompt call is recorded in a transcript for post-hoc
+    assertion. Output methods never short-circuit on `verbose=True` —
+    tests filter by `verbose` in their assertions if they want."""
+
+    _TRANSCRIPT_TAIL_SIZE = 8
 
     def __init__(
         self,
@@ -186,43 +188,109 @@ class ScriptedIO:
         self._interactive = interactive
         self.transcript: list[TranscriptEntry] = []
 
+    # ── output channels ──
+
     def info(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        self._record_output("info", message, verbose)
 
     def ok(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        self._record_output("ok", message, verbose)
 
     def warn(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        self._record_output("warn", message, verbose)
 
     def err(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        self._record_output("err", message, verbose)
 
     def header(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        self._record_output("header", message, verbose)
+
+    # ── diff ──
 
     def show_diff(self, label: str, old: bytes, new: bytes) -> None:
-        raise NotImplementedError
+        self.transcript.append(
+            TranscriptEntry(
+                channel="diff",
+                message=label,
+                payload=(old, new),
+            )
+        )
 
-    def confirm(self, message: str, *, default: bool = False) -> bool:
-        raise NotImplementedError
+    # ── prompts ──
+
+    def confirm(self, message: str, *, default: bool = False) -> bool:  # noqa: ARG002
+        if not self._confirms:
+            raise ScriptExhaustedError(self._exhaustion_msg("confirms", message))
+        answer = self._confirms.pop(0)
+        self.transcript.append(
+            TranscriptEntry(
+                channel="confirm",
+                message=message,
+                payload=answer,
+            )
+        )
+        return answer
 
     def confirm_three_way(
         self,
         message: str,
         *,
-        choices: tuple[str, str, str],
-        default: str | None = None,
+        choices: tuple[str, str, str],  # noqa: ARG002
+        default: str | None = None,  # noqa: ARG002
     ) -> str:
-        raise NotImplementedError
+        if not self._three_ways:
+            raise ScriptExhaustedError(self._exhaustion_msg("three_ways", message))
+        answer = self._three_ways.pop(0)
+        self.transcript.append(
+            TranscriptEntry(
+                channel="confirm_three_way",
+                message=message,
+                payload=answer,
+            )
+        )
+        return answer
 
     def confirm_per_item(
         self,
         message: str,
         *,
-        items: list[str],
+        items: list[str],  # noqa: ARG002
     ) -> PerItemResult:
-        raise NotImplementedError
+        if not self._per_items:
+            raise ScriptExhaustedError(self._exhaustion_msg("per_items", message))
+        answer = self._per_items.pop(0)
+        self.transcript.append(
+            TranscriptEntry(
+                channel="confirm_per_item",
+                message=message,
+                payload=answer,
+            )
+        )
+        return answer
+
+    # ── capability ──
 
     def is_interactive(self) -> bool:
-        raise NotImplementedError
+        return self._interactive
+
+    # ── internals ──
+
+    def _record_output(
+        self,
+        channel: Literal["info", "ok", "warn", "err", "header"],
+        message: str,
+        verbose: bool,
+    ) -> None:
+        self.transcript.append(
+            TranscriptEntry(channel=channel, message=message, verbose=verbose)
+        )
+
+    def _exhaustion_msg(self, queue_name: str, prompt_message: str) -> str:
+        tail = self.transcript[-self._TRANSCRIPT_TAIL_SIZE:]
+        tail_lines = [f"  {e.channel}: {e.message}" for e in tail]
+        tail_block = "\n".join(tail_lines) if tail_lines else "  (transcript is empty)"
+        return (
+            f"ScriptedIO {queue_name} queue exhausted while handling prompt: "
+            f"{prompt_message!r}. Recent transcript (last {len(tail)} of "
+            f"{len(self.transcript)}):\n{tail_block}"
+        )
