@@ -235,12 +235,55 @@ def test_terminal_io_err_goes_to_stderr() -> None:
 def test_terminal_io_is_interactive_reflects_tty() -> None:
     """Pins the 'both ends must be TTY' contract."""
     io = TerminalIO()
-    with patch("sys.stdin.isatty", return_value=True), \
-         patch("sys.stdout.isatty", return_value=True):
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch("sys.stdout.isatty", return_value=True),
+    ):
         assert io.is_interactive() is True
-    with patch("sys.stdin.isatty", return_value=True), \
-         patch("sys.stdout.isatty", return_value=False):
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch("sys.stdout.isatty", return_value=False),
+    ):
         assert io.is_interactive() is False
-    with patch("sys.stdin.isatty", return_value=False), \
-         patch("sys.stdout.isatty", return_value=True):
+    with (
+        patch("sys.stdin.isatty", return_value=False),
+        patch("sys.stdout.isatty", return_value=True),
+    ):
         assert io.is_interactive() is False
+
+
+@pytest.mark.parametrize("channel_name", ["ok", "warn", "err", "header"])
+def test_terminal_io_other_channels_respect_verbose_flag(channel_name: str) -> None:
+    """Pins: the verbose-suppression branch fires on every output channel,
+    not just info()."""
+    out_console, out_buf = _capture_console()
+    err_console, err_buf = _capture_console()
+    io = TerminalIO(stdout=out_console, stderr=err_console)  # verbose=False
+    method = getattr(io, channel_name)
+    method("quiet", verbose=True)
+    # err writes to err_buf; everything else writes to out_buf
+    target = err_buf if channel_name == "err" else out_buf
+    assert target.getvalue() == ""
+
+
+def test_terminal_io_other_channels_emit_when_enabled() -> None:
+    """Pins: non-verbose calls on all output channels actually write output."""
+    out_console, out_buf = _capture_console()
+    err_console, err_buf = _capture_console()
+    io = TerminalIO(stdout=out_console, stderr=err_console)
+    for name in ("ok", "warn", "header"):
+        getattr(io, name)("visible")
+    io.err("visible-err")
+    assert "visible" in out_buf.getvalue()
+    assert "visible-err" in err_buf.getvalue()
+
+
+def test_terminal_io_show_diff_renders_diff_markers() -> None:
+    """Pins: show_diff produces unified-diff output containing standard
+    diff markers. Validates the difflib + Syntax pipeline fires end-to-end."""
+    out_console, out_buf = _capture_console()
+    io = TerminalIO(stdout=out_console)
+    io.show_diff("config.yaml", b"old line\n", b"new line\n")
+    output = out_buf.getvalue()
+    # unified_diff always emits --- / +++ header lines
+    assert "---" in output or "+++" in output or "@@" in output

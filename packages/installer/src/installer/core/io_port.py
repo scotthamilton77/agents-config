@@ -12,10 +12,14 @@ behind every design decision in this file.
 
 from __future__ import annotations
 
+import difflib
+import sys
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
 from rich.console import Console
+from rich.prompt import Confirm, Prompt
+from rich.syntax import Syntax
 
 # ───────────────────────── Value types ─────────────────────────
 
@@ -47,9 +51,15 @@ class TranscriptEntry:
     """
 
     channel: Literal[
-        "info", "ok", "warn", "err", "header",
+        "info",
+        "ok",
+        "warn",
+        "err",
+        "header",
         "diff",
-        "confirm", "confirm_three_way", "confirm_per_item",
+        "confirm",
+        "confirm_three_way",
+        "confirm_per_item",
     ]
     message: str
     verbose: bool = False
@@ -72,43 +82,40 @@ class IOPort(Protocol):
     log line in the installer. No module other than this one may import
     `rich` or call `print` / `input` directly."""
 
-    def info(self, message: str, *, verbose: bool = False) -> None: ...
-    def ok(self, message: str, *, verbose: bool = False) -> None: ...
-    def warn(self, message: str, *, verbose: bool = False) -> None: ...
-    def err(self, message: str, *, verbose: bool = False) -> None: ...
-    def header(self, message: str, *, verbose: bool = False) -> None: ...
+    def info(self, message: str, *, verbose: bool = False) -> None: ...  # pragma: no cover
+    def ok(self, message: str, *, verbose: bool = False) -> None: ...  # pragma: no cover
+    def warn(self, message: str, *, verbose: bool = False) -> None: ...  # pragma: no cover
+    def err(self, message: str, *, verbose: bool = False) -> None: ...  # pragma: no cover
+    def header(self, message: str, *, verbose: bool = False) -> None: ...  # pragma: no cover
 
-    def show_diff(self, label: str, old: bytes, new: bytes) -> None: ...
+    def show_diff(self, label: str, old: bytes, new: bytes) -> None: ...  # pragma: no cover
 
-    def confirm(self, message: str, *, default: bool = False) -> bool: ...
-    def confirm_three_way(
+    def confirm(self, message: str, *, default: bool = False) -> bool: ...  # pragma: no cover
+    def confirm_three_way(  # pragma: no cover
         self,
         message: str,
         *,
         choices: tuple[str, str, str],
         default: str | None = None,
     ) -> str: ...
-    def confirm_per_item(
+    def confirm_per_item(  # pragma: no cover
         self,
         message: str,
         *,
         items: list[str],
     ) -> PerItemResult: ...
 
-    def is_interactive(self) -> bool: ...
+    def is_interactive(self) -> bool: ...  # pragma: no cover
 
 
 # ───────────────────────── TerminalIO (stub) ─────────────────────────
 
 
 class TerminalIO:
-    """Real I/O implementation backed by rich. Stub for Slice 1 - methods
-    raise NotImplementedError; Slice 3 (Tasks 5-6) implements them.
-
-    Holds two Console instances (stdout + stderr) and a verbose flag so
-    `err()` can route to stderr and verbose-tagged output can be
-    suppressed by default. Console injection at construction time keeps
-    unit tests from touching real terminal I/O."""
+    """Real I/O implementation backed by `rich`. Structurally satisfies
+    IOPort. Constructor accepts optional stdout / stderr Console instances
+    and a verbose flag - injected Consoles let unit tests capture output
+    without touching real terminal I/O."""
 
     def __init__(
         self,
@@ -121,46 +128,87 @@ class TerminalIO:
         self._err = stderr if stderr is not None else Console(stderr=True)
         self._verbose = verbose
 
+    # -- output channels --
+
     def info(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        if verbose and not self._verbose:
+            return
+        self._out.print(message, style="cyan")
 
     def ok(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        if verbose and not self._verbose:
+            return
+        self._out.print(f"✓ {message}", style="green")
 
     def warn(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        if verbose and not self._verbose:
+            return
+        self._out.print(f"⚠ {message}", style="yellow")
 
     def err(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        if verbose and not self._verbose:
+            return
+        self._err.print(f"✗ {message}", style="red")
 
     def header(self, message: str, *, verbose: bool = False) -> None:
-        raise NotImplementedError
+        if verbose and not self._verbose:
+            return
+        self._out.print(message, style="bold")
+
+    # -- diff --
 
     def show_diff(self, label: str, old: bytes, new: bytes) -> None:
-        raise NotImplementedError
+        diff_lines = difflib.unified_diff(
+            old.decode("utf-8", errors="replace").splitlines(keepends=True),
+            new.decode("utf-8", errors="replace").splitlines(keepends=True),
+            fromfile=f"{label} (current)",
+            tofile=f"{label} (incoming)",
+        )
+        body = "".join(diff_lines)
+        self._out.print(Syntax(body, "diff", theme="ansi_dark", background_color="default"))
 
-    def confirm(self, message: str, *, default: bool = False) -> bool:
-        raise NotImplementedError
+    # -- prompts --
 
-    def confirm_three_way(
+    def confirm(  # pragma: no cover  # interactive prompt; covered at integration in G.4
+        self, message: str, *, default: bool = False
+    ) -> bool:
+        return Confirm.ask(message, default=default, console=self._out)
+
+    def confirm_three_way(  # pragma: no cover  # interactive prompt; covered at integration in G.4
         self,
         message: str,
         *,
         choices: tuple[str, str, str],
         default: str | None = None,
     ) -> str:
-        raise NotImplementedError
+        if default is not None:
+            return Prompt.ask(message, choices=list(choices), default=default, console=self._out)
+        return Prompt.ask(message, choices=list(choices), console=self._out)
 
-    def confirm_per_item(
+    def confirm_per_item(  # pragma: no cover  # interactive prompt; covered at integration in G.4
         self,
         message: str,
         *,
         items: list[str],
     ) -> PerItemResult:
-        raise NotImplementedError
+        self.header(message)
+        decisions: dict[str, bool] = {}
+        for item in items:
+            choice = Prompt.ask(
+                f"  {item}",
+                choices=["y", "n", "q"],
+                default="n",
+                console=self._out,
+            )
+            if choice == "q":
+                return PerItemResult(decisions=decisions, quit=True)
+            decisions[item] = choice == "y"
+        return PerItemResult(decisions=decisions, quit=False)
+
+    # -- capability --
 
     def is_interactive(self) -> bool:
-        raise NotImplementedError
+        return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 # ───────────────────────── ScriptedIO ─────────────────────────
@@ -281,12 +329,10 @@ class ScriptedIO:
         message: str,
         verbose: bool,
     ) -> None:
-        self.transcript.append(
-            TranscriptEntry(channel=channel, message=message, verbose=verbose)
-        )
+        self.transcript.append(TranscriptEntry(channel=channel, message=message, verbose=verbose))
 
     def _exhaustion_msg(self, queue_name: str, prompt_message: str) -> str:
-        tail = self.transcript[-self._TRANSCRIPT_TAIL_SIZE:]
+        tail = self.transcript[-self._TRANSCRIPT_TAIL_SIZE :]
         tail_lines = [f"  {e.channel}: {e.message}" for e in tail]
         tail_block = "\n".join(tail_lines) if tail_lines else "  (transcript is empty)"
         return (
