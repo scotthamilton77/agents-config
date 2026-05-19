@@ -16,6 +16,7 @@ from installer.core.io_port import (
     IOPort,
     PerItemResult,
     ScriptedIO,
+    ScriptExhaustedError,
     TerminalIO,
 )
 
@@ -48,3 +49,137 @@ def test_per_item_result_quit_flag_breaks_equality() -> None:
     a = PerItemResult(decisions={"a": True}, quit=False)
     b = PerItemResult(decisions={"a": True}, quit=True)
     assert a != b
+
+
+# ───────────────────────── ScriptedIO — script consumption ─────────────────────────
+
+
+def test_scripted_confirm_pops_in_order() -> None:
+    io = ScriptedIO(confirms=[True, False])
+    assert io.confirm("first?") is True
+    assert io.confirm("second?") is False
+
+
+def test_scripted_three_way_pops_in_order() -> None:
+    io = ScriptedIO(three_ways=["all", "cancel"])
+    assert io.confirm_three_way("how?", choices=("all", "one-by-one", "cancel")) == "all"
+    assert io.confirm_three_way("how?", choices=("all", "one-by-one", "cancel")) == "cancel"
+
+
+def test_scripted_per_item_pops_in_order() -> None:
+    a = PerItemResult(decisions={"x": True}, quit=False)
+    b = PerItemResult(decisions={"y": False}, quit=True)
+    io = ScriptedIO(per_items=[a, b])
+    assert io.confirm_per_item("prune?", items=["x"]) == a
+    assert io.confirm_per_item("prune?", items=["y"]) == b
+
+
+def test_scripted_per_method_queues_are_independent() -> None:
+    """Pins the per-method-queue design - interleaved prompts pop from
+    their own queues without cross-contamination."""
+    io = ScriptedIO(
+        confirms=[True, False],
+        three_ways=["all"],
+    )
+    assert io.confirm("a?") is True
+    assert io.confirm_three_way("b?", choices=("all", "one", "cancel")) == "all"
+    assert io.confirm("c?") is False
+
+
+# ───────────────────────── ScriptedIO — exhaustion ─────────────────────────
+
+
+def test_scripted_confirm_exhaustion_raises_with_queue_name() -> None:
+    io = ScriptedIO()  # empty confirms queue
+    with pytest.raises(ScriptExhaustedError) as exc_info:
+        io.confirm("Install?")
+    msg = str(exc_info.value)
+    assert "confirms" in msg
+    assert "Install?" in msg
+
+
+def test_scripted_three_way_exhaustion_raises_with_queue_name() -> None:
+    io = ScriptedIO()
+    with pytest.raises(ScriptExhaustedError) as exc_info:
+        io.confirm_three_way("How?", choices=("a", "b", "c"))
+    msg = str(exc_info.value)
+    assert "three_ways" in msg
+    assert "How?" in msg
+
+
+def test_scripted_per_item_exhaustion_raises_with_queue_name() -> None:
+    io = ScriptedIO()
+    with pytest.raises(ScriptExhaustedError) as exc_info:
+        io.confirm_per_item("Prune?", items=["a", "b"])
+    msg = str(exc_info.value)
+    assert "per_items" in msg
+    assert "Prune?" in msg
+
+
+def test_scripted_exhaustion_message_includes_transcript_tail() -> None:
+    """Pins the self-diagnosing error contract: the failure message
+    includes the recent transcript so a test reader can see what was
+    happening before the over-pop."""
+    io = ScriptedIO()
+    io.info("first")
+    io.ok("second")
+    io.warn("third")
+    with pytest.raises(ScriptExhaustedError) as exc_info:
+        io.confirm("over the line?")
+    msg = str(exc_info.value)
+    # At least one of the prior messages must surface in the tail.
+    assert any(prior in msg for prior in ("first", "second", "third"))
+
+
+# ───────────────────────── ScriptedIO — transcript ─────────────────────────
+
+
+def test_scripted_transcript_records_output_in_order() -> None:
+    io = ScriptedIO()
+    io.info("a")
+    io.ok("b")
+    io.warn("c")
+    io.err("d")
+    io.header("e")
+    assert [e.channel for e in io.transcript] == ["info", "ok", "warn", "err", "header"]
+    assert [e.message for e in io.transcript] == ["a", "b", "c", "d", "e"]
+
+
+def test_scripted_transcript_preserves_verbose_flag() -> None:
+    """Pins: ScriptedIO records every output call (no short-circuit on
+    verbose=True), with the verbose tag intact for filtered assertions."""
+    io = ScriptedIO()
+    io.info("loud", verbose=False)
+    io.info("quiet", verbose=True)
+    assert io.transcript[0].verbose is False
+    assert io.transcript[1].verbose is True
+
+
+def test_scripted_transcript_records_prompts_with_answers() -> None:
+    io = ScriptedIO(confirms=[True])
+    result = io.confirm("ok?")
+    assert result is True
+    entry = io.transcript[-1]
+    assert entry.channel == "confirm"
+    assert entry.message == "ok?"
+    assert entry.payload is True
+
+
+def test_scripted_transcript_records_diff_payload() -> None:
+    io = ScriptedIO()
+    io.show_diff("a.md", b"old", b"new")
+    entry = io.transcript[-1]
+    assert entry.channel == "diff"
+    assert entry.message == "a.md"
+    assert entry.payload == (b"old", b"new")
+
+
+# ───────────────────────── ScriptedIO — interactivity ─────────────────────────
+
+
+def test_scripted_is_interactive_defaults_true() -> None:
+    assert ScriptedIO().is_interactive() is True
+
+
+def test_scripted_is_interactive_can_be_disabled() -> None:
+    assert ScriptedIO(interactive=False).is_interactive() is False
