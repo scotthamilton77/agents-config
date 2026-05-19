@@ -218,7 +218,7 @@ class ScriptedIO:
 
     # ── prompts ──
 
-    def confirm(self, message: str, *, default: bool = False) -> bool:  # noqa: ARG002
+    def confirm(self, message: str, *, default: bool = False) -> bool:  # noqa: ARG002  # protocol parameter; fake pops queued answers
         if not self._confirms:
             raise ScriptExhaustedError(self._exhaustion_msg("confirms", message))
         answer = self._confirms.pop(0)
@@ -235,8 +235,8 @@ class ScriptedIO:
         self,
         message: str,
         *,
-        choices: tuple[str, str, str],  # noqa: ARG002
-        default: str | None = None,  # noqa: ARG002
+        choices: tuple[str, str, str],  # noqa: ARG002  # protocol parameter; fake pops queued answers
+        default: str | None = None,  # noqa: ARG002  # protocol parameter; fake pops queued answers
     ) -> str:
         if not self._three_ways:
             raise ScriptExhaustedError(self._exhaustion_msg("three_ways", message))
@@ -254,7 +254,7 @@ class ScriptedIO:
         self,
         message: str,
         *,
-        items: list[str],  # noqa: ARG002
+        items: list[str],  # noqa: ARG002  # protocol parameter; fake pops queued answers
     ) -> PerItemResult:
         if not self._per_items:
             raise ScriptExhaustedError(self._exhaustion_msg("per_items", message))
