@@ -9,8 +9,11 @@ are deliberately absent — see §5.1 of the design doc.
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from io import StringIO
+from unittest.mock import patch
 
 import pytest
+from rich.console import Console
 
 from installer.core.io_port import (
     IOPort,
@@ -183,3 +186,61 @@ def test_scripted_is_interactive_defaults_true() -> None:
 
 def test_scripted_is_interactive_can_be_disabled() -> None:
     assert ScriptedIO(interactive=False).is_interactive() is False
+
+
+# ───────────────────────── TerminalIO - smoke against StringIO Console ─────────────────────────
+
+
+def _capture_console() -> tuple[Console, StringIO]:
+    """Return (Console, buffer) suitable for asserting on TerminalIO output
+    without touching real stdout/stderr or rich's color rendering."""
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=False, color_system=None, width=120)
+    return console, buf
+
+
+def test_terminal_io_info_writes_to_console() -> None:
+    out_console, out_buf = _capture_console()
+    io = TerminalIO(stdout=out_console)
+    io.info("hello")
+    assert "hello" in out_buf.getvalue()
+
+
+def test_terminal_io_verbose_suppressed_when_verbose_flag_false() -> None:
+    """Pins the default-quiet contract: verbose=True messages do not
+    render unless TerminalIO was constructed with verbose=True."""
+    out_console, out_buf = _capture_console()
+    io = TerminalIO(stdout=out_console)  # verbose defaults to False
+    io.info("loud", verbose=True)
+    assert out_buf.getvalue() == ""
+
+
+def test_terminal_io_verbose_emitted_when_verbose_flag_true() -> None:
+    out_console, out_buf = _capture_console()
+    io = TerminalIO(stdout=out_console, verbose=True)
+    io.info("loud", verbose=True)
+    assert "loud" in out_buf.getvalue()
+
+
+def test_terminal_io_err_goes_to_stderr() -> None:
+    """Pins the stdout/stderr split - err() must not pollute stdout."""
+    out_console, out_buf = _capture_console()
+    err_console, err_buf = _capture_console()
+    io = TerminalIO(stdout=out_console, stderr=err_console)
+    io.err("oops")
+    assert "oops" in err_buf.getvalue()
+    assert "oops" not in out_buf.getvalue()
+
+
+def test_terminal_io_is_interactive_reflects_tty() -> None:
+    """Pins the 'both ends must be TTY' contract."""
+    io = TerminalIO()
+    with patch("sys.stdin.isatty", return_value=True), \
+         patch("sys.stdout.isatty", return_value=True):
+        assert io.is_interactive() is True
+    with patch("sys.stdin.isatty", return_value=True), \
+         patch("sys.stdout.isatty", return_value=False):
+        assert io.is_interactive() is False
+    with patch("sys.stdin.isatty", return_value=False), \
+         patch("sys.stdout.isatty", return_value=True):
+        assert io.is_interactive() is False
