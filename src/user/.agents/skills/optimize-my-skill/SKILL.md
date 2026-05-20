@@ -265,7 +265,58 @@ opt-out in this version.
 - **Grader skipped** (empty expectations) — log it, no error
 - **run_loop.py non-zero exit** — surface stderr; ask user whether to retry, fall back to advisory-only Phase 4, or abort
 
-## Phase 5: Confirm and Apply
+## Phase 5: Iterate (gated by `--deep`)
+
+Synthesize Phase 4a (description-loop results) and Phase 4b (output-review
+feedback) into a concrete proposal: which description to adopt, which body
+edits to make, and whether another `--deep` pass is warranted.
+
+### Inputs
+
+- From Phase 4a: `best_description`, `best_score`, `history` (each iteration's
+  description + score), `final_description`
+- From Phase 4b: `feedback.json` (per-run user notes from the review server),
+  per-run `metrics.json` (if grader ran)
+
+### Process
+
+1. **Compare best_description against the current description.** If they
+   differ, summarize the delta in 1–2 sentences for the user.
+2. **Read feedback.json.** Group user notes by run; identify recurring themes
+   (e.g., "skill never read the SKILL.md", "missed a frontmatter check").
+3. **Read each metrics.json** (where present). Identify expectations that
+   failed across multiple runs — those signal systematic skill weaknesses.
+4. **Propose a structured update** in this shape:
+
+   ```markdown
+   ## Phase 5 proposal — <skill-name>
+
+   ### Description
+   - Current: `<text>`
+   - Proposed: `<text>` (from Phase 4a best, score <X/Y>)
+   - Adopt? [yes / keep current / draft alternative]
+
+   ### Body edits
+   - <Section>: <one-sentence change>; rationale: <feedback theme>
+   - <Section>: ...
+
+   ### Re-run?
+   - Recommend another `--deep` pass: [yes if N>0 unresolved themes / no]
+   ```
+
+5. **Surface the proposal to the user via AskUserQuestion.** Options:
+   Accept all (proceeds to Phase 6) / Adopt description only / Adopt body
+   edits only / Re-run `--deep` from Phase 4a (loops back, using the
+   accepted description as starting point) / Reject all (proceeds to
+   Phase 6 with no changes from Phase 4/5).
+
+### What NOT to do in Phase 5
+
+- Do not silently apply changes — every adoption is explicit
+- Do not propose body edits with no grounding in Phase 4b feedback
+- Do not loop more than once without checking with the user (cost discipline)
+
+## Phase 6: Confirm and Apply
 
 Present all proposed changes as a single summary table before writing anything:
 
@@ -286,7 +337,7 @@ Apply approved changes. Show a diff for each modified file so the user can verif
 
 | Rationalization | Reality |
 |---|---|
-| "The description is fine, it triggers correctly" | Trigger accuracy is measurable — test it with `skill-creator` before assuming |
+| "The description is fine, it triggers correctly" | Trigger accuracy is measurable — run `--deep` (Phase 4a) before assuming |
 | "I'll just improve the frontmatter" | Body content is where skills fail; frontmatter only gets you discovered |
 | "This skill is simple, no changes needed" | Simple skills rot into generic advice; audit every section against the quality criteria |
 | "I can rewrite this without reading it first" | Always read the full SKILL.md before proposing changes |
