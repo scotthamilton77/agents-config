@@ -162,20 +162,108 @@ For each skill that needs work, present a structured proposal. Do not silently r
 - Do not remove opinionated methodology in favor of generic advice
 - Do not add optional frontmatter fields unless they provide clear value for the specific skill
 
-## Phase 4: Suggest Testing
+## Phase 4: Empirical Optimization (gated by `--deep`)
 
-For each modified skill, suggest tests the user can run to confirm the changes work. Prefer the strongest tool available in the environment:
+Skip this phase entirely when `--deep` is absent — naked invocation collapses
+Phase 4 to a one-line note: "Quantitative description and output evaluation
+available via `--deep`; see Phase 4 details when ready."
 
-**Triggering tests** — ask Claude "When would you use the [skill name] skill?" and verify it quotes the right triggers:
+When `--deep` is present, run both 4a and 4b sequentially.
 
-- Should trigger: [2-3 natural phrases that should activate this skill]
-- Should NOT trigger: [2-3 unrelated queries it should ignore]
+### Phase 4 cost gate
 
-If the `skill-creator` skill is available, its description-optimization loop (`scripts/run_loop.py` with a should-trigger / should-not-trigger eval set) gives a quantitative trigger-accuracy score instead of a one-shot vibe check — recommend it when the skill's discoverability is the failure mode.
+Before launching any model calls, surface an estimate via AskUserQuestion:
 
-**Functional check** — after applying changes, verify the skill still produces correct behavior on a representative task. If the skill includes deterministic scripts, run them against a known input/output pair.
+> "`--deep` will execute approximately N model calls in total
+> (description-improver: K, triggering eval: P runs, output-review subagents:
+> Q dispatches, grader: R). Estimated cost ~$X at current rates. Continue?"
 
-**Discipline check (for rule-enforcing skills)** — if the skill's job is to make agents comply under pressure (TDD, verification gates, refusal patterns), one happy-path run proves nothing. If `superpowers:writing-skills` is available, follow its RED-GREEN-REFACTOR methodology: run a pressure scenario with a subagent WITHOUT the skill to capture rationalizations, then re-run WITH the skill and confirm compliance. Loopholes found in the second run become explicit counters in the skill body.
+User selects Continue / Reduce iterations / Abort. Honor the choice before
+proceeding. The cost gate fires on every `--deep` invocation; no persistent
+opt-out in this version.
+
+### Phase 4a: Description loop (automated)
+
+1. **Resolve eval set.** Probe `<skill-dir>/evals.json`.
+   - If present: use it. Print one-line summary
+     `Using N evals (T trigger / U no-trigger).` Continue to step 2.
+   - If absent: auto-draft per `references/eval-set-format.md`. Read the target
+     SKILL.md, generate 5–10 should-trigger + 5–10 should-not-trigger queries
+     (favor near-miss queries over obviously-unrelated). Write to
+     `<skill-dir>/evals.json`. Display via AskUserQuestion with options
+     Accept / Edit (skill pauses, user edits file, types continue) / Reject
+     (abort `--deep`).
+2. **Invoke the loop.** Shell out:
+
+   ```bash
+   python3 <skill-scripts>/run_loop.py \
+     --eval-set <skill-dir>/evals.json \
+     --skill-path <skill-dir> \
+     --max-iterations <N>  # default 5; overridden by --max-iterations flag
+     --holdout 0.4 \
+     --runs-per-query 3 \
+     --num-workers 10 \
+     --model <model>       # default claude-haiku-4-5-20251001; overridden by --model flag
+   ```
+
+3. **Capture results.** Read the JSON output: `{best_description, best_score,
+   final_description, history, iterations_run, ...}`. Pass to Phase 5.
+
+### Phase 4b: Output review (semi-automated)
+
+1. **Create persistent workspace** at `<skill-dir>/.eval-runs/<UTC-timestamp>/`
+   (the project `.gitignore` excludes `.eval-runs/`).
+2. **Select prompts.** First 3 entries with `should_trigger:true` from the
+   eval set, in file order (deterministic; no random sampling).
+3. **Dispatch run subagents in parallel** (single message, multiple Agent
+   calls). For each prompt:
+   - Create `<workspace>/run-NNNN/outputs/`
+   - Write `<workspace>/run-NNNN/eval_metadata.json` with
+     `{eval_id, prompt, expectations}`
+   - Dispatch a `general-purpose` subagent with this prompt template:
+
+     > "Read the target skill at `<deployed-skill-path>` and any of its
+     > referenced files you need. Then perform the following user task:
+     > `<prompt>`. Write any file outputs to
+     > `<absolute-workspace-path>/run-NNNN/outputs/`. Write your full
+     > turn-by-turn transcript (your thinking, tool calls, results) to
+     > `<absolute-workspace-path>/run-NNNN/transcript.md` before returning.
+     > Return a one-sentence summary."
+
+4. **Grade** (per run, after the run subagent returns).
+   - If the entry's `expectations` list is empty or missing: skip grading.
+   - Otherwise: dispatch the `grader` subagent (definition at
+     `<skill-dir>/agents/grader.md`) with `expectations`, `transcript_path`,
+     and `outputs_dir`. Grader writes `metrics.json` to the run dir.
+5. **Launch review server.** Shell out:
+
+   ```bash
+   python3 <skill-scripts>/eval-viewer/generate_review.py \
+     <workspace-path> \
+     --skill-name <target-skill-name> \
+     --port 8742
+   ```
+
+   Emit to the user:
+
+   > Review server running at http://localhost:8742
+   > Press Ctrl+C in the running terminal when you're done reviewing.
+   > Your feedback will be saved to `<workspace>/feedback.json`.
+
+   The skill **blocks** until the server process exits.
+
+6. **Read feedback.** When the server exits, read
+   `<workspace>/feedback.json`. Pass results to Phase 5. If the file is
+   empty or missing (user ^C'd before reviewing), ask via AskUserQuestion:
+   "No feedback captured — abort `--deep` or proceed with description-loop
+   results only?"
+
+### Failure handling
+
+- **Port in use** — retry with port+1 up to 5 attempts; surface the final port to the user
+- **Subagent timeout** (default 5 min/run) — write `metrics.json` with `{status: "timeout"}` and continue; partial transcript still visible in review server
+- **Grader skipped** (empty expectations) — log it, no error
+- **run_loop.py non-zero exit** — surface stderr; ask user whether to retry, fall back to advisory-only Phase 4, or abort
 
 ## Phase 5: Confirm and Apply
 
