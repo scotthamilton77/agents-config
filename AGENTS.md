@@ -57,6 +57,10 @@ Your job, agent, is to also keep these in mind as we continue to brainstorm and 
     * Escape "bullet-point review hell" using spatial/visual node graphs (e.g., D3.js).
     * Map ATs against stable `CONTEXT.md` domains. Size by complexity, color by risk.
     * Use multimodal AI to analyze the topological graph and highlight architectural violations instantly.
+* **Dreaming / Subconscious Backlog Process (Concept):**
+    * Verbatim (Scott, 2026-05-17, while designing the PDLC state machine in `agents-config-wgclw.1`): a background process that periodically scans the backlog looking for new connections, broken connections, stale connections, between work items. Consider this a "dreaming" process or subconscious process of strengthening edges between memory nodes.
+    * Purpose: supports topic-correlated Idea resurfacing (option C from the holding-place exit-condition tradeoff) AND sequencing recommendations during "what's next to work on" pulls — e.g. "you want to work on X, but Y might be a blocking dependency for X."
+    * Provenance backreference: captured live during the brainstorm of `agents-config-wgclw.1` (PDLC State Machine Design); parked here pending an official Capture surface.
 
 ### Current state — FAILED work in progress
 
