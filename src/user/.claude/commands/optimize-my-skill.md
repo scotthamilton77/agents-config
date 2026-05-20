@@ -4,13 +4,24 @@ Audit and improve existing SKILL.md files via the `optimize-my-skill` skill.
 
 > **Tip**: For *creating* new skills from scratch, prefer `superpowers:writing-skills` if available. This command is for *auditing and improving* existing skills.
 
-## Argument
+## Arguments
 
-`$ARGUMENTS` specifies the target:
+`$ARGUMENTS` accepts one non-flag target and optional flags:
 
-- **Skill name** (e.g. `bugfix`, `writing-unit-tests`) — optimize that single skill
-- **Directory path** (e.g. `~/.claude/skills/` or `.claude/skills/`) — optimize all skills in that directory
-- **Empty** — resolve a default location (see below)
+```
+/optimize-my-skill [<target>] [--deep] [--max-iterations N] [--model <name>]
+```
+
+| Token | Meaning |
+|-------|---------|
+| `<target>` | skill name (e.g. `bugfix`), directory path (e.g. `~/.claude/skills/`), or empty (resolved via the probe below) |
+| `--deep` | opt into Phase 4 (empirical description loop + output review) and Phase 5 (iterate). Absent → naked invocation = today's audit-and-apply behavior |
+| `--max-iterations N` | override the description-loop iteration cap (default 5). Ignored without `--deep` |
+| `--model <name>` | model id for the description-improver loop. Default `claude-haiku-4-5-20251001`. Ignored without `--deep` |
+
+Parse by splitting `$ARGUMENTS` on whitespace: identify the single non-flag
+token as `<target>`, collect flags separately, pass both to the skill.
+Empty `<target>` triggers the probe in the next section.
 
 ## Empty-argument resolution
 
@@ -31,7 +42,13 @@ and stop.
 
 ## Invoke the skill
 
-With the resolved target, invoke the `optimize-my-skill` skill and pass the target as its scope. The skill owns the full methodology (discover, assess, propose, test, confirm, apply).
+With the resolved target and any flags, invoke the `optimize-my-skill` skill
+and pass them in its invocation context. The skill owns the full methodology
+(discover, assess, propose, optionally empirical-optimize + iterate, then
+confirm/apply).
+
+Quick mode (no `--deep`) is unchanged from prior behavior. Deep mode
+prompts the user for a cost confirmation before invoking model-heavy phases.
 
 ## Report
 
