@@ -5,6 +5,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
 description: Audits and improves existing SKILL.md files for discoverability, progressive disclosure, and methodology rigor. Use when asked to optimize a skill, when reviewing a skill folder for quality, or when a SKILL.md needs frontmatter or body cleanup. Do NOT use for agent persona files or AGENTS.md configuration files.
 ---
 
+<!--
+Sources (amalgam):
+  - Native (audit/assess methodology — Phases 1–3, 6)
+  - oss-snapshots/anthropics/skill-creator/
+    Upstream: https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174
+Last sync: 2026-05-20
+Drift policy: accept-periodic-resync
+-->
+
 # Optimize My Skill
 
 Audit and improve existing SKILL.md files for clarity, discoverability, and effectiveness. This skill is for *auditing and improving* existing skills — if a `writing-skills` skill is available (e.g. `superpowers:writing-skills`), prefer it for *creating* new skills from scratch.
