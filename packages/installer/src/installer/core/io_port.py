@@ -108,7 +108,7 @@ class IOPort(Protocol):
     def is_interactive(self) -> bool: ...  # pragma: no cover
 
 
-# ───────────────────────── TerminalIO (stub) ─────────────────────────
+# ───────────────────────── TerminalIO ─────────────────────────
 
 
 class TerminalIO:
