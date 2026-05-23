@@ -21,9 +21,9 @@
     "query": "Review every skill under src/user/.agents/skills/ and tell me which ones need their descriptions improved.",
     "should_trigger": true,
     "expectations": [
-      "Enumerates skills in the directory (does not silently pick one)",
-      "Produces a per-skill assessment, not a single global summary",
-      "Surfaces per-skill structured proposals with current vs proposed descriptions"
+      "Leads with a priority-grouped summary table covering every skill in scope (columns: Skill / Priority / Headline finding)",
+      "Uses the Critical / High / Medium / Low / OK priority rubric",
+      "Surfaces detailed current-vs-proposed proposals only for Medium-and-higher entries; Low/OK collapsed into a one-line note unless the user asks for everything"
     ]
   },
   {
