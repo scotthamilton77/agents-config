@@ -1,0 +1,109 @@
+[
+  {
+    "query": "Can you optimize the bugfix skill? Its description seems too vague.",
+    "should_trigger": true,
+    "expectations": [
+      "Reads bugfix/SKILL.md before proposing any change",
+      "Reports concrete findings against the description formula (what / when / not-for)",
+      "Surfaces a structured proposal with current vs proposed description and a one-sentence rationale"
+    ]
+  },
+  {
+    "query": "Audit the optimize-my-agent skill folder for frontmatter compliance and progressive-disclosure issues.",
+    "should_trigger": true,
+    "expectations": [
+      "Reads the target SKILL.md's frontmatter and folder structure",
+      "Reports specific frontmatter issues (name kebab-case, description schema, allowed-tools shape) — not generic advice",
+      "Checks SKILL.md line count vs the 500-line guideline and flags candidates for references/"
+    ]
+  },
+  {
+    "query": "Review every skill under src/user/.agents/skills/ and tell me which ones need their descriptions improved.",
+    "should_trigger": true,
+    "expectations": [
+      "Leads with a priority-grouped summary table covering every skill in scope (columns: Skill / Priority / Headline finding)",
+      "Uses the Critical / High / Medium / Low / OK priority rubric",
+      "Surfaces detailed current-vs-proposed proposals only for Medium-and-higher entries; Low/OK collapsed into a one-line note unless the user asks for everything"
+    ]
+  },
+  {
+    "query": "The merge-guard SKILL.md is over 500 lines — should I split parts of it into references/?",
+    "should_trigger": true,
+    "expectations": [
+      "Reads merge-guard/SKILL.md to assess actual content distribution, not just line count",
+      "Identifies specific sections that are good extraction candidates (lengthy examples, detailed API docs)",
+      "Recommends action grounded in the progressive-disclosure rubric, not a yes/no without rationale"
+    ]
+  },
+  {
+    "query": "Improve the description on writing-unit-tests — it keeps over-triggering on general code review requests.",
+    "should_trigger": true,
+    "expectations": [
+      "Reads writing-unit-tests/SKILL.md before proposing changes",
+      "Diagnoses concrete over-triggering causes in the current description (missing negative triggers, vague triggers)",
+      "Proposes a revised description with explicit 'Do NOT use for' scope boundaries"
+    ]
+  },
+  {
+    "query": "Optimize my AGENTS.md file — it's getting too long and unwieldy.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Audit the simplify agent persona file under src/user/.agents/agents/.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Refactor scripts/run_loop.py for clarity — too much duplication in the result-printing branches.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Update the project README so the install instructions match the new --plugins= flag.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Help me write a new pytest fixture for parsing ISO 8601 dates with timezones.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Make this skill's description more reliable at triggering — it keeps getting passed over for adjacent skills.",
+    "should_trigger": true,
+    "expectations": [
+      "Asks for skill identification when no skill is named, OR reads the in-scope SKILL.md if context implies one",
+      "Diagnoses concrete under-triggering causes (missing trigger phrases, overly narrow scope, sibling-skill cannibalization)",
+      "Surfaces a description proposal grounded in the audited skill's current text"
+    ]
+  },
+  {
+    "query": "Can you fix the frontmatter on writing-skills? I think the description is non-compliant.",
+    "should_trigger": true,
+    "expectations": [
+      "Reads writing-skills/SKILL.md frontmatter before commenting",
+      "Reports specific compliance findings (XML-bracket check, name format, description schema)",
+      "Proposes targeted corrections rather than a wholesale rewrite"
+    ]
+  },
+  {
+    "query": "I want to write a brand new skill for parsing PDFs from scratch — no existing skill to start from.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Help me edit the whats-next skill — I want to add a new section.",
+    "should_trigger": false,
+    "expectations": []
+  },
+  {
+    "query": "Make the bugfix skill's description better at triggering — it keeps over-firing on tasks that are clearly not bugs.",
+    "should_trigger": true,
+    "expectations": [
+      "Reads bugfix/SKILL.md to ground the analysis",
+      "Diagnoses concrete over-triggering causes in the current description",
+      "Proposes explicit negative triggers or scope-narrowing language with rationale"
+    ]
+  }
+]
