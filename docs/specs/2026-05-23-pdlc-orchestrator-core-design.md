@@ -97,7 +97,9 @@ Objective {
   lifecycle_status                  # projection onto tracker:
                                     #   open / in_progress / closed / blocked / deferred
   priority                          # mirrored from tracker; PriorityLevel 0..4
-                                    #   (0=critical, 2=medium, 4=backlog)
+                                    #   (0=critical, 1=high, 2=medium, 3=low,
+                                    #   4=backlog). Mirrors bd's priority scale —
+                                    #   the reference WorkTracker adapter.
   is_container                      # bool; assigned at DECOMPOSE alongside type_stamp.
                                     #   Some type_stamp values (Epic, Feature-with-
                                     #   children) default to is_container=true; rules
