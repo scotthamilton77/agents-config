@@ -7,14 +7,17 @@
 ## Objective
 
 The unified primitive the Orchestrator tracks. An Objective is any unit of
-intent the PDLC drives through its lifecycle — from raw thought to merged
-code. The same Objective wears different names at different lifecycle
-stages; the entity is one, the names are stage-specific:
+intent the PDLC drives through its FSM lifecycle — from `CANDIDATE_UOW`
+through to a terminal lifecycle stage. Every Objective enters the
+lifecycle at `CANDIDATE_UOW` (the universal entry point per Law L6).
+Idea-stage entities are a **distinct primitive**, NOT Objectives —
+see the `Idea` entry below.
 
-- **Stages 1–2** — the Objective is an *Idea* (raw) or *Shaped Idea*
-  (lightly brainstormed). Lives in the Holding Place. No Spec yet.
+The same Objective wears different names at different lifecycle stages;
+the entity is one, the names are stage-specific:
+
 - **Stage 3** — the Objective is a *Candidate UoW* in the Design
-  Workspace, carrying a Draft Spec.
+  Workspace, carrying a Draft Spec. This is the universal entry point.
 - **Stage 4** — the Objective is *Agent-Worthy* (Spec signoff received).
 - **Stage 5** — the Objective enters Decomposition; the type-stamp
   (Executable vs Container) is assigned.
@@ -30,31 +33,45 @@ Every Objective carries:
 - An optional parent (for decomposition hierarchies).
 - A set of children (populated when the Objective is stamped Container at
   stage 5).
-- An FSM stage (from the PDLC FSM design).
+- A lifecycle stage (see the wgclw.2 Orchestrator Core spec's Lifecycle
+  Stage Constants table).
 - A lifecycle status projected onto the work-tracker
   (open / in_progress / closed / blocked / deferred).
-- Optional provenance backreferences (originating Idea, decomposition_of,
-  discovered_from, autopsy_route) — each nullable; not every Objective has
-  every form of provenance.
+- Optional provenance backreferences (`originating_idea_id`,
+  `decomposition_of`, `discovered_from`, `autopsy_route`) — each
+  nullable; not every Objective has every form of provenance.
+  `originating_idea_id`, if set, points back into the Holding Place's
+  Idea record from which this Objective was promoted.
 
-An Idea is an Objective at stages 1–2. A Unit of Work (UoW) is an Objective
-at stage 3 and beyond. A Container is a UoW stamped Container at stage 5.
-These are not separate entity types — they are **stage-specific names for
-the same primitive**.
+A Unit of Work (UoW) is the conversational name for an Objective at
+stage 3 and beyond. A Container is a UoW stamped Container at stage 5.
+An Idea is **NOT** an Objective — it is a distinct primitive (see
+below). Promotion from Idea to Objective is the explicit handoff via
+the Holding-Place service.
 
 ## Idea
 
 A raw thought worth preserving but not yet committed to development. Has not
 been designed, decomposed, or validated. May be vague. May overlap with other
 Ideas. May be wrong. Survives in the system long enough to be revisited.
-An Idea is an *Objective* at FSM stage 1 (raw) or stage 2 (Shaped Idea).
+
+An Idea is a **distinct primitive**, NOT an Objective. Ideas live in the
+Holding Place under their own lifecycle (Capture → Groom → Shape → Promote
+or Kill). The orchestrator does not drive Idea lifecycle; the Holding-Place
+service does. When an Idea is *promoted* into an Objective, the Holding
+Place calls `WorkTracker.create_objective(..., provenance.originating_idea_id=<idea_id>)`
+and the resulting Objective enters the FSM at `CANDIDATE_UOW` like any
+other Objective. The Idea record stays in the Holding Place as the
+provenance source.
 
 Distinguished from:
 
 - **Spec** (later in the lifecycle) — a designed, reviewed artefact ready to
   drive execution.
+- **Objective** — a separate primitive that the Orchestrator tracks through
+  its FSM. Ideas are promoted into Objectives; they are not the same entity.
 - **Unit of Work** (later) — an executable, thin-sliced, machine-verifiable
-  scope.
+  scope; the conversational name for an Objective at stage 3 and beyond.
 
 ## Capture
 
@@ -73,10 +90,17 @@ the originator's mental state without further input.
 ## Holding Place (working name: Icebox)
 
 The persistent store where Captured Ideas — at any pre-Spec growth stage —
-sleep until acted on. Holds entities at stage 1 (Idea) and stage 2 (Shaped
-Idea); does **not** hold Candidate UoWs or anything further along. Entries
+sleep until acted on. Holds `Idea` records (the distinct primitive); does
+**not** hold Objectives, Candidate UoWs, or anything further along. Entries
 are **pull-only by default** — nothing surfaces them automatically except
 the Grooming Nag (below).
+
+The Holding Place is a **peer service**, NOT owned by the Orchestrator.
+The Orchestrator's only call into the Holding Place is
+`promote(idea_id) → objective_id`; the orchestrator does NOT `tick` the
+Holding Place. Capture, Grooming, Bucket assignment, Killed-without-Spec,
+and resurrection are all HoldingPlace-CLI commands. See the wgclw.2
+Orchestrator Core spec's "Holding Place handoff" section for the contract.
 
 ## Grooming
 
@@ -91,7 +115,10 @@ Grooming triages the whole backlog at low resolution.
 
 ## Bucket
 
-The disposition of an Idea after Grooming. The live buckets are:
+The disposition of an Idea after Grooming. **Bucket is an `Idea`
+property only** — there is no equivalent on Objective. (Per the
+CA-8 primitive split: stages 1–2 are Idea-only territory; Objectives
+have no Bucket field.) The live buckets are:
 
 - **Now** — ready to be brainstormed in the near term; expected to be picked
   up before the next Grooming pass.
@@ -129,16 +156,19 @@ judgment) and self-silences once Grooming completes.
 
 ## Shaped Idea
 
-An Idea that has been touched by one or more *light* brainstorm passes
-(typically during Grooming). Carries a one-paragraph what-why-rough-success
-statement in addition to the original verbatim quote and provenance. Still
-pre-Spec; still lives in the Holding Place.
+A `Idea` record that has been touched by one or more *light* brainstorm
+passes (typically during Grooming). Carries a one-paragraph
+what-why-rough-success statement in addition to the original verbatim
+quote and provenance. Still pre-Spec; still lives in the Holding Place.
 
-The "Shaped Idea" stage exists specifically to legitimise the *"pick it up
-in Grooming, shape it a little, put it back not-yet-ready"* developmental
-move. Without this stage, the Holding Place would falsely require every
-entity to be a raw Idea or a fully-brainstormed Candidate UoW with nothing
-in between.
+A Shaped Idea remains an `Idea` (the distinct primitive — NOT an
+Objective). The "Shaped" qualifier captures the developmental move
+*"pick it up in Grooming, shape it a little, put it back not-yet-ready"* —
+without it, the Holding Place would falsely require every entity to be
+a raw Idea or a fully-brainstormed Candidate UoW with nothing in
+between. The transition from Shaped Idea to Candidate UoW is the
+**Promote** operation (Holding-Place service → WorkTracker), which
+creates a NEW Objective at `CANDIDATE_UOW`.
 
 ## Candidate UoW
 
@@ -146,10 +176,11 @@ A Unit of Work that has been fully brainstormed into a Draft Spec but has
 **not yet** received a type-stamp (Epic / Story / Task / Chore / etc.). The
 type-stamp is an *output* of the Sizing Gate downstream, not an input. Lives
 in the Design Workspace, never in the Holding Place. A Candidate UoW is an
-*Objective* at stage 3 — the first stage at which the entity is named a Unit
-of Work. An Objective may enter the FSM directly at stage 3 (without ever
-having been an Idea) — see the wgclw.2 Orchestrator Core spec for the
-universal-entry-point discipline.
+*Objective* at `CANDIDATE_UOW` — the first lifecycle stage of an Objective;
+promoted from an Idea (via the Holding-Place service) or created directly
+by a human / formula / Autopsy route. **Every Objective enters the lifecycle
+at `CANDIDATE_UOW`** (the universal entry point per Law L6); see the
+wgclw.2 Orchestrator Core spec for the universal-entry-point discipline.
 
 ## Spec
 
@@ -607,12 +638,12 @@ by name, which transitions it back to a pre-terminal lifecycle stage
 appropriate to its previous state, and the Epitaph is preserved as
 historical record.
 
-Killed applies at any lifecycle stage from Idea (pre-Spec) through
-the Execution Pipeline. The Idea-stage Killed (a Bucket disposition
-discussed under Bucket above) is the same concept applied at the
-Holding Place; the post-execution Killed is the same verdict applied
-after substantial work has begun. Both honour the Epitaph + resurrection
-rules.
+`KILLED` applies at any Objective lifecycle stage from `CANDIDATE_UOW`
+through the Execution Pipeline. Ideas (the separate primitive in the
+Holding Place) have their own Killed concept — a Bucket disposition
+discussed under Bucket above — which is a related-but-distinct
+mechanism that lives in the Holding-Place service and predates any
+Objective creation. Both honour the Epitaph + resurrection rules.
 
 ### Parked
 
@@ -625,6 +656,23 @@ explicit blocking dep, not just a "maybe someday" status. When the
 blocker resolves, the Orchestrator surfaces the Parked Objective for
 human review — it does not auto-resume execution. Used by Autopsy
 Resolution Routes (iv) and (v).
+
+### NeedsReconcile
+
+**Inspection flag, NOT a terminal lifecycle stage.** Set on an
+Objective when the orchestrator's reconcile step cannot determine the
+correct terminal mapping (e.g. tracker `terminal_disposition` field
+absent or ambiguous, identity-fingerprint mismatch, version-fingerprint
+divergence). Surfaces on `pdlc health` and `pdlc objectives show`
+for human disposition.
+
+`NeedsReconcile` is intentionally **not** a `Killed` mapping (that
+would silently destroy valid work — Codex showstopper C-1.8). The
+orchestrator holds the Objective in its current pre-terminal lifecycle
+stage and waits for human input. The terminal mapping happens only
+after the operator picks the correct `terminal_disposition` value
+(`killed` / `manually-merged` / `duplicate` / `superseded` /
+`abandoned`).
 
 ---
 
