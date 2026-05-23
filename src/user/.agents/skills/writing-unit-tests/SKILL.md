@@ -8,7 +8,7 @@ description: Use when writing, reviewing, OR designing/spec'ing unit tests — i
 
 <!--
 Source: oss-snapshots/pocock/tdd/
-Upstream: https://github.com/mattpocock/skills @ e74f0061
+Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
 Drift policy: accept-periodic-resync (amalgamated deltas only — anti-horizontal-slicing rule + diagram and proactive interface-design pre-phase; companion files not pulled in)
 -->
