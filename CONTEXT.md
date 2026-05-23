@@ -96,11 +96,15 @@ are **pull-only by default** — nothing surfaces them automatically except
 the Grooming Nag (below).
 
 The Holding Place is a **peer service**, NOT owned by the Orchestrator.
-The Orchestrator's only call into the Holding Place is
-`promote(idea_id) → objective_id`; the orchestrator does NOT `tick` the
-Holding Place. Capture, Grooming, Bucket assignment, Killed-without-Spec,
-and resurrection are all HoldingPlace-CLI commands. See the wgclw.2
-Orchestrator Core spec's "Holding Place handoff" section for the contract.
+The orchestrator's calls into the Holding Place are exactly two:
+`promote(idea_id) → objective_id` (Idea → Objective transitions) and
+`create_idea(provenance.decomposition_of=<container_id>)` (FSM stage-5
+oversized-Container child emission, which routes children through the
+Holding Place rather than directly into the Objective FSM). The
+orchestrator does NOT `tick` the Holding Place. Capture, Grooming,
+Bucket assignment, Killed-without-Spec, and resurrection are all
+HoldingPlace-CLI commands. See the wgclw.2 Orchestrator Core spec's
+"Holding Place handoff" section for the full contract.
 
 ## Grooming
 

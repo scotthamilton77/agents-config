@@ -553,8 +553,20 @@ FSM gates, strike counters, and lifecycle are uniform.
 ### Holding Place handoff
 
 The Holding Place is a **peer service**, NOT owned by the Orchestrator
-(committed decision: CA-8 Option A). The orchestrator's only interaction
-with the Holding Place is the `promote(idea_id) → objective_id` call.
+(committed decision: CA-8 Option A). The orchestrator's interaction with
+the Holding Place is restricted to exactly two calls:
+
+- `promote(idea_id) → objective_id` — invoked for every Idea → Objective
+  transition (the HoldingPlace-CLI's promote command drives this, and the
+  resulting Objective enters the FSM at `CANDIDATE_UOW`).
+- `create_idea(provenance.decomposition_of=<container_id>) → idea_id` —
+  invoked during FSM stage-5 (`DECOMPOSE`) child emission for oversized
+  Containers. Children are emitted as Ideas in the Holding Place (NOT as
+  direct Objectives) and re-enter the orchestrator through the normal
+  Idea-promotion path after Holding-Place grooming and shaping.
+
+No other orchestrator → HoldingPlace calls are permitted; in particular,
+the orchestrator does not `tick` the Holding Place.
 
 Ideas (raw and shaped) have qualitatively different mechanics from
 Objectives — Capture is one-shot and non-interrogative, Grooming is a
