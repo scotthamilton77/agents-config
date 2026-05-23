@@ -52,6 +52,11 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `writing-skills` | `oss-snapshots/superpowers/writing-skills/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-17 | accept-periodic-resync |
 | `writing-skills` | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-17 | accept-periodic-resync |
 | `optimize-my-skill` | `oss-snapshots/anthropics/skill-creator/` | `anthropics/skills @ f458cee` | 2026-05-20 | accept-periodic-resync |
+| `brainstorming` | `oss-snapshots/superpowers/brainstorming/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
+| `finishing-a-development-branch` | `oss-snapshots/superpowers/finishing-a-development-branch/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
+| `test-driven-development` | `oss-snapshots/superpowers/test-driven-development/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
+| `using-git-worktrees` | `oss-snapshots/superpowers/using-git-worktrees/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
+| `writing-plans` | `oss-snapshots/superpowers/writing-plans/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `improve-codebase-architecture` | `oss-snapshots/pocock/improve-codebase-architecture/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `zoom-out` | `oss-snapshots/pocock/zoom-out/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `grill-with-docs` | `oss-snapshots/pocock/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
