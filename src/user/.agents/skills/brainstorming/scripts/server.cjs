@@ -7,6 +7,7 @@ const path = require('path');
 
 const OPCODES = { TEXT: 0x01, CLOSE: 0x08, PING: 0x09, PONG: 0x0A };
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const MAX_FRAME_SIZE = 16 * 1024 * 1024; // 16 MB — close with 1009 if exceeded
 
 function computeAcceptKey(clientKey) {
   return crypto.createHash('sha1').update(clientKey + WS_MAGIC).digest('base64');
@@ -56,6 +57,8 @@ function decodeFrame(buffer) {
     payloadLen = Number(buffer.readBigUInt64BE(2));
     offset = 10;
   }
+
+  if (payloadLen > MAX_FRAME_SIZE) throw Object.assign(new Error('message too big'), { closeCode: 1009 });
 
   const maskOffset = offset;
   const dataOffset = offset + 4;
@@ -164,7 +167,7 @@ function handleRequest(req, res) {
 
 const clients = new Set();
 
-function handleUpgrade(req, socket) {
+function handleUpgrade(req, socket, head) {
   const key = req.headers['sec-websocket-key'];
   if (!key) { socket.destroy(); return; }
 
@@ -176,7 +179,7 @@ function handleUpgrade(req, socket) {
     'Sec-WebSocket-Accept: ' + accept + '\r\n\r\n'
   );
 
-  let buffer = Buffer.alloc(0);
+  let buffer = (head && head.length) ? head : Buffer.alloc(0);
   clients.add(socket);
 
   socket.on('data', (chunk) => {
@@ -186,7 +189,10 @@ function handleUpgrade(req, socket) {
       try {
         result = decodeFrame(buffer);
       } catch (e) {
-        socket.end(encodeFrame(OPCODES.CLOSE, Buffer.alloc(0)));
+        const code = (e && e.closeCode) || 1002;
+        const closeBuf = Buffer.alloc(2);
+        closeBuf.writeUInt16BE(code);
+        socket.end(encodeFrame(OPCODES.CLOSE, closeBuf));
         clients.delete(socket);
         return;
       }
