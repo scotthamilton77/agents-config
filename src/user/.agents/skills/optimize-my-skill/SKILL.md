@@ -304,11 +304,27 @@ edits to make, and whether another `--deep` pass is warranted.
    - Recommend another `--deep` pass: [yes if N>0 unresolved themes / no]
    ```
 
-5. **Surface the proposal to the user via AskUserQuestion.** Options:
-   Accept all (proceeds to Phase 6) / Adopt description only / Adopt body
-   edits only / Re-run `--deep` from Phase 4a (loops back, using the
-   accepted description as starting point) / Reject all (proceeds to
-   Phase 6 with no changes from Phase 4/5).
+5. **Surface the proposal to the user and STOP — wait for their letter reply.**
+
+   This question has 5 options, which exceeds `AskUserQuestion`'s 4-option
+   cap. Use a prose letter-prompt instead. Print the proposal block (from
+   step 4) followed by:
+
+   ```
+   Which path forward? Reply with a single letter:
+
+   A) Accept all — apply description + body edits, proceed to Phase 6
+   B) Adopt description only — apply Phase 4a winner, skip body edits, proceed to Phase 6
+   C) Adopt body edits only — apply Phase 4b-driven body changes, keep current description, proceed to Phase 6
+   D) Re-run `--deep` from Phase 4a — loop back using the accepted description as starting point (incurs another cost-gated pass)
+   E) Reject all — proceed to Phase 6 with no changes from Phase 4/5
+   ```
+
+   End your turn after presenting these. Do NOT infer the user's choice
+   from prior context — wait for an explicit single-letter reply. On the
+   reply, parse the first letter (A–E, case-insensitive). If ambiguous
+   (no letter, multiple letters, or outside A–E), ask once for
+   clarification then halt rather than guessing.
 
 ### What NOT to do in Phase 5
 
