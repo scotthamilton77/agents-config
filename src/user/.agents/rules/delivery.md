@@ -10,6 +10,17 @@ After completion gate passes for non-trivial work:
 
 Housekeeping (checklist steps 9–10) applies throughout: record discovered work, update memory.
 
+## Discovered-work placement (checklist step 9)
+
+When mid-implementation work surfaces a new issue, **classify before filing** to avoid auto-closing the in-flight parent. Apply the **sibling test**: *"would this have been on the parent bead's original plan?"*
+
+| Sibling test answer | Edge to use | Why |
+|---|---|---|
+| **Yes** — would have been in the original scope | Child: `bd create --parent <parent-id>` | Closing the child rolls into the parent's structural close-walk naturally; the parent stays open until ALL structural children close. |
+| **No** — out of original scope but related | Orphan + provenance: `bd create` (no `--parent`) followed by `bd dep add <new-id> <current-id> --type discovered-from` | Preserves the discovery breadcrumb without entangling the new bead in the parent's structural close-walk. |
+
+**The trap to avoid:** filing an out-of-scope discovery as `--parent <in-flight-bead>` and then closing the discovery mid-session. Close-walk closes the parent the moment all its structural children are closed — so the in-flight bead auto-closes while the work it represents is still pending. Recovery requires `bd reopen <parent>` plus a manual audit of any downstream beads that close-walk propagated through. Classify with the sibling test BEFORE filing, not after.
+
 ## Action Categories
 
 **AUTOMATIC — execute without user authorization:**

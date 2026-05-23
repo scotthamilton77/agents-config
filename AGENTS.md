@@ -62,6 +62,12 @@ Your job, agent, is to also keep these in mind as we continue to brainstorm and 
     * Purpose: supports topic-correlated Idea resurfacing (option C from the holding-place exit-condition tradeoff) AND sequencing recommendations during "what's next to work on" pulls — e.g. "you want to work on X, but Y might be a blocking dependency for X."
     * Provenance backreference: captured live during the brainstorm of `agents-config-wgclw.1` (PDLC State Machine Design); parked here pending an official Capture surface.
 
+#### Architecture and Objectives
+* **Architecture Context:**
+  * A project needs a high-level architecture (CONTEXT.md, HLD artifacts (TBD)) and every objective must be linkable to a specific part of the architecture.
+* **Architecture Heatmap:**
+  * Given an HLD, we should be able to show the work associated with the HLD components (at whatever state they are in) to show which parts are theoretical, which are planned, which are done, and to whatever degree.  This can help in prioritization/bucketing, but also allows us to maintain focus on specific components without losing track of the rest of the architecture, and perform audits to see where we're veering off MVP or tracer bullet goals.
+
 ### Current state — FAILED work in progress
 
 The architecture has run into a problematic ocean of complexity and inverted engineering where agents are doing the wrong things (things algorithms should be doing).  We're presently in a REDESIGN phase where much of the old and suspect architecture has been pushed under the `archive/` folder to serve as references until we don't need them anymore.  You should NOT peek in there unless/until you need to.  (Don't let its contents poison your understanding of current and future state).

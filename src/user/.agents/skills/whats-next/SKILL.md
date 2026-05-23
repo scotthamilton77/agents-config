@@ -3,6 +3,7 @@ name: whats-next
 description: Surfaces the right beads work list for the current session. Use when the user asks what work is available, what work is ready, what needs attention, what to work on next, what to brainstorm, what to plan / decompose, or what to implement. Do NOT use for checking a specific bead.
 model: sonnet[1m]
 ---
+<!-- FIXME this is bead-based and needs to be refactored to be abstracted from beads (with plugin extensions) -->
 
 # whats-next
 

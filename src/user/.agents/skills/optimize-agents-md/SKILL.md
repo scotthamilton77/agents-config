@@ -1,7 +1,7 @@
 ---
 name: optimize-agents-md
 model: sonnet
-allowed-tools: Read, Write, Edit, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep
 argument-hint: "[file-path]"
 description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent behavior degrades, when AGENT.md or CLAUDE.md files exceed 200 lines, or when merging redundant instructions across hierarchy.  Use when the user asks to update or optimize AGENTS.md or CLAUDE.md files.
 ---
@@ -43,15 +43,21 @@ Before optimizing, ensure the target file is **up to date, accurate, and complet
 
 ### 1. Scope Discovery (Ask 5 Questions)
 
-**Before touching the file, use AskUserQuestion to ask these 5 questions.** Answers shape every optimization decision.
+**Before touching the file, ask the user these 5 questions and STOP — wait for their reply.** Answers shape every optimization decision.
 
-1. **What is this?** — "What does this project/package/folder do? One sentence."
-2. **Who works here?** — "Who are the agents and humans working in this codebase? What roles?"
-3. **What's the stack?** — "What are the key technologies, frameworks, and versions?"
-4. **What goes wrong?** — "What mistakes does Claude keep making, or what instructions get ignored?"
-5. **What's sacred?** — "Any rules, conventions, or constraints that must never be removed?"
+5 questions exceeds `AskUserQuestion`'s cap (see the `user-prompts` rule). Use a prose numbered prompt instead. Print:
 
-Use AskUserQuestion to present all 5 at once. Wait for answers before proceeding.
+```
+Before optimizing, I need answers to 5 scope questions. Please answer each by number:
+
+1. **What is this?** — What does this project/package/folder do? One sentence.
+2. **Who works here?** — Who are the agents and humans working in this codebase? What roles?
+3. **What's the stack?** — What are the key technologies, frameworks, and versions?
+4. **What goes wrong?** — What mistakes does Claude keep making, or what instructions get ignored?
+5. **What's sacred?** — Any rules, conventions, or constraints that must never be removed?
+```
+
+End your turn after presenting these. Do NOT infer answers from prior context — wait for the user's explicit reply before proceeding. If the user answers only a subset, ask once for the remaining items then proceed with whatever they provide.
 
 ### 2. Inventory the Hierarchy
 
