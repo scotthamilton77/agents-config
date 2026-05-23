@@ -4,11 +4,50 @@
 > deliberately implementation-agnostic. Architecture and tooling decisions
 > live elsewhere (specs, ADRs, code).
 
+## Objective
+
+The unified primitive the Orchestrator tracks. An Objective is any unit of
+intent the PDLC drives through its lifecycle — from raw thought to merged
+code. The same Objective wears different names at different lifecycle
+stages; the entity is one, the names are stage-specific:
+
+- **Stages 1–2** — the Objective is an *Idea* (raw) or *Shaped Idea*
+  (lightly brainstormed). Lives in the Holding Place. No Spec yet.
+- **Stage 3** — the Objective is a *Candidate UoW* in the Design
+  Workspace, carrying a Draft Spec.
+- **Stage 4** — the Objective is *Agent-Worthy* (Spec signoff received).
+- **Stage 5** — the Objective enters Decomposition; the type-stamp
+  (Executable vs Container) is assigned.
+- **Stages 6 / 6′** — the Objective is an *Agent-Ready Executable* (queued
+  for execution) or a *Decomposed Container* (passive aggregator).
+- **Stages 7–10C** — the Objective traverses the Execution Pipeline.
+- **Terminal** — the Objective is *Merged*, *Killed*, or *Parked* (held
+  in *Library* with a blocking dep awaiting resolution).
+
+Every Objective carries:
+
+- A unique identifier.
+- An optional parent (for decomposition hierarchies).
+- A set of children (populated when the Objective is stamped Container at
+  stage 5).
+- An FSM stage (from the PDLC FSM design).
+- A lifecycle status projected onto the work-tracker
+  (open / in_progress / closed / blocked / deferred).
+- Optional provenance backreferences (originating Idea, decomposition_of,
+  discovered_from, autopsy_route) — each nullable; not every Objective has
+  every form of provenance.
+
+An Idea is an Objective at stages 1–2. A Unit of Work (UoW) is an Objective
+at stage 3 and beyond. A Container is a UoW stamped Container at stage 5.
+These are not separate entity types — they are **stage-specific names for
+the same primitive**.
+
 ## Idea
 
 A raw thought worth preserving but not yet committed to development. Has not
 been designed, decomposed, or validated. May be vague. May overlap with other
 Ideas. May be wrong. Survives in the system long enough to be revisited.
+An Idea is an *Objective* at FSM stage 1 (raw) or stage 2 (Shaped Idea).
 
 Distinguished from:
 
@@ -106,7 +145,11 @@ in between.
 A Unit of Work that has been fully brainstormed into a Draft Spec but has
 **not yet** received a type-stamp (Epic / Story / Task / Chore / etc.). The
 type-stamp is an *output* of the Sizing Gate downstream, not an input. Lives
-in the Design Workspace, never in the Holding Place.
+in the Design Workspace, never in the Holding Place. A Candidate UoW is an
+*Objective* at stage 3 — the first stage at which the entity is named a Unit
+of Work. An Objective may enter the FSM directly at stage 3 (without ever
+having been an Idea) — see the wgclw.2 Orchestrator Core spec for the
+universal-entry-point discipline.
 
 ## Spec
 
