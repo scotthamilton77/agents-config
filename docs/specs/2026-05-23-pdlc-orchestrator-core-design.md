@@ -1186,8 +1186,26 @@ adapter; the orchestrator contract on `discover_since` is unchanged.
 
 For the full-reconcile correctness path, the bd adapter implements
 `list_all_ids` as the authoritative full-enumeration call — a thin
-wrapper over `bd list --status=open` (or the equivalent query that
-returns every non-deleted Objective ID, irrespective of marker state).
+wrapper that enumerates every non-deleted Objective ID across **all
+statuses** with **no pagination**, irrespective of marker state. The
+canonical shape is:
+
+```
+bd list --status=all --limit 0 --json | jq -r '.[].id'
+```
+
+This MUST be an unpaginated all-status query because `list_all_ids`
+is the correctness path for full reconciliation: it cannot truncate
+(default page sizes would drop tail rows) and it cannot skip non-open
+statuses (in-progress, closed, deferred Objectives still need to be
+reconciled against the sidecar). `bd list --status=open` is
+**insufficient** — it is the status-filtered convenience query, not
+an authoritative enumeration. (Exact bd flag syntax — `--status=all`
+vs an empty `--status=` vs omitting the flag, and `--limit 0` vs
+`--limit -1` — verified at impl-child time against the bd CLI in
+use; the contract here is "all statuses, no pagination, ID-parseable
+output.")
+
 This is the call that detects Objectives `discover_since` missed
 (adapter bugs, clock skew, deleted markers); it deliberately does
 **not** consult the marker.
@@ -1274,8 +1292,14 @@ is orchestrator-sidecar-owned.
   enumeration of every non-deleted tracker-known Objective ID,
   independent of marker state; the correctness primitive for the
   per-tick full reconciliation in the Discovery Sweep above. Adapters
-  MUST implement this as a true enumeration — for the bd adapter it
-  is a thin wrapper over `bd list --status=open` or equivalent)
+  MUST implement this as a true enumeration across **all statuses**
+  with **no pagination** — for the bd adapter the canonical shape is
+  `bd list --status=all --limit 0 --json | jq -r '.[].id'`. A
+  status-filtered query like `bd list --status=open` is **not**
+  acceptable here: closed/in-progress/deferred Objectives must still
+  be enumerated so reconciliation can detect drift across the full
+  population. See "bd marker semantics (reference adapter)" above for
+  rationale and the impl-child flag-verification caveat.)
 - `get_objective(id) -> ObjectiveRecord` (full record including spec,
   audit notes; provenance is orchestrator-owned and not returned here)
 - `bulk_get(ids: list[ObjectiveID]) -> list[ObjectiveRecord]`
