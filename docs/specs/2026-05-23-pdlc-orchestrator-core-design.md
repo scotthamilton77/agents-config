@@ -989,10 +989,17 @@ Session {
 ### Lifecycle
 
 1. **pending** — record written to OrchestratorStateRepo BEFORE fork;
-   `supervisor_id` and `lease_token` populated; `config_hash` and
-   `worktree_base_commit` recorded
-2. **running** — supervisor reports the worker started; `heartbeat_ts`
-   advances; status updated via CAS
+   pre-fork fields only — `config_hash` and `worktree_base_commit` (the
+   latter if the orchestrator pre-computes it; otherwise it is populated
+   on the running transition). `supervisor_id`, `lease_token`,
+   `process_group_id`, and `artifact_dir` are **not** populated at
+   pending — they do not exist until `JobSupervisor.lease(session_id)`
+   forks the worker
+2. **running** — `JobSupervisor.lease(session_id)` has returned;
+   `supervisor_id`, `lease_token`, `process_group_id`, `artifact_dir`,
+   and the first `heartbeat_ts` are populated on this transition; the
+   supervisor reports the worker started; subsequent `heartbeat_ts`
+   updates advance via CAS
 3. **exited** — supervisor reports terminal status; awaiting reap
 4. **reaped** — Orchestrator has read the report, **independently
    re-verified gate-driving claims** (re-runs the gate command against
