@@ -1105,21 +1105,35 @@ per-object version fingerprints.
 ### Per-tick full reconciliation
 
 Every Nth tick (project-config `discovery.full-reconcile-every`,
-default N=10) the orchestrator performs a **full enumeration** via
-`bulk_get` against the tracker:
+default N=10) the orchestrator performs a **true full enumeration**
+against the tracker. The enumeration MUST be authoritative — i.e., it
+MUST be able to surface Objectives the marker-driven `discover_since`
+path missed, including **newly-created** Objectives the orchestrator
+has never seen before. A `bulk_get` over already-known IDs cannot do
+this; the algorithm therefore uses Domain 1's `list_all_ids` primitive
+as the source of tracker-side truth, then fans out:
 
-1. `bulk_get` returns the current `ObjectiveRecord` for every Objective
-   the orchestrator tracks.
-2. The orchestrator computes per-object **version fingerprints**
-   `(spec_hash, structural_hash, dependency_hash,
-   lifecycle_status_hash)` for the live record.
-3. Fingerprints are diffed against the cached fingerprints in
-   `OrchestratorStateRepo`.
-4. Mismatches surface as reconcile candidates; the marker-driven
-   `discover_since` set is augmented with anything full-reconcile
-   surfaced.
-5. The full-reconcile timestamp and diff count are recorded for
-   `pdlc health`.
+1. `list_all_ids` returns the **full set** of tracker-known Objective
+   IDs (non-deleted). This is the authoritative enumeration.
+2. The orchestrator partitions that set against
+   `OrchestratorStateRepo.all_objective_ids()`:
+   - **New IDs** (`tracker_ids − sidecar_known_ids`) = Objectives the
+     marker missed. For each: fetch the full record via
+     `get_objective(id)` and integrate per the discovery-of-new flow
+     (initialise at `CANDIDATE_UOW`, run candidate-uow gates).
+   - **Known IDs** (`tracker_ids ∩ sidecar_known_ids`) = candidates for
+     fingerprint diff. Fetch via `bulk_get(known_ids)` and compute
+     per-object **version fingerprints** `(spec_hash, structural_hash,
+     dependency_hash, lifecycle_status_hash)` against the cached
+     fingerprints in `OrchestratorStateRepo`.
+   - **Vanished IDs** (`sidecar_known_ids − tracker_ids`) surface as
+     `needs_reconcile=true` candidates (tracker-side deletion the
+     orchestrator must classify).
+3. Both new-ID integrations and fingerprint mismatches feed into the
+   reconcile-candidates set; the marker-driven `discover_since` set is
+   augmented with this union.
+4. The full-reconcile timestamp, new-ID count, fingerprint-diff count,
+   and vanished-ID count are recorded for `pdlc health`.
 
 A full-reconcile may set the marker **backward** only with an explicit
 operator override (`pdlc reconcile --reset-marker`); under normal
@@ -1163,16 +1177,33 @@ The two-component marker survives both Dolt branch operations and
 timestamp-only updates. This is the **concrete contract** for the bd
 adapter; the orchestrator contract on `discover_since` is unchanged.
 
+For the full-reconcile correctness path, the bd adapter implements
+`list_all_ids` as the authoritative full-enumeration call — a thin
+wrapper over `bd list --status=open` (or the equivalent query that
+returns every non-deleted Objective ID, irrespective of marker state).
+This is the call that detects Objectives `discover_since` missed
+(adapter bugs, clock skew, deleted markers); it deliberately does
+**not** consult the marker.
+
 ### Algorithm
 
 ```
 DISCOVER():
   marker = OrchestratorStateRepo.last_seen_marker
-  changes = WorkTracker.discover_since(marker)
+  changes = WorkTracker.discover_since(marker)            # acceleration path
   if (tick_count % full_reconcile_every) == 0:
-    full_records = WorkTracker.bulk_get(OrchestratorStateRepo.all_objective_ids())
-    fingerprint_diff = compute_diff(full_records, cached_fingerprints)
-    changes = changes ∪ fingerprint_diff
+    # Correctness path: true full enumeration, independent of marker.
+    tracker_ids = WorkTracker.list_all_ids()
+    sidecar_ids = OrchestratorStateRepo.all_objective_ids()
+    new_ids      = tracker_ids - sidecar_ids              # marker missed these
+    known_ids    = tracker_ids & sidecar_ids
+    vanished_ids = sidecar_ids - tracker_ids              # deleted upstream
+    # Fetch records for the partitions that need them.
+    new_records  = [WorkTracker.get_objective(i) for i in new_ids]
+    known_records = WorkTracker.bulk_get(known_ids)
+    fingerprint_diff = compute_diff(known_records, cached_fingerprints)
+    changes = changes ∪ new_records ∪ fingerprint_diff
+    flag_for_reconcile(vanished_ids)                      # needs_reconcile=true
   for each ObjectiveRecord o in changes:
     if o.id not in OrchestratorStateRepo:
       # New Objective — initialise at CANDIDATE_UOW (universal entry, per L6)
@@ -1224,10 +1255,18 @@ is orchestrator-sidecar-owned.
 ### Domain 1 — Discovery & state
 
 - `discover_since(marker) -> (changes: list[ObjectiveRecord], new_marker: Token)`
+  (acceleration path — may miss; not authoritative on its own)
+- `list_all_ids() -> list[ObjectiveID]` (authoritative full
+  enumeration of every non-deleted tracker-known Objective ID,
+  independent of marker state; the correctness primitive for the
+  per-tick full reconciliation in the Discovery Sweep above. Adapters
+  MUST implement this as a true enumeration — for the bd adapter it
+  is a thin wrapper over `bd list --status=open` or equivalent)
 - `get_objective(id) -> ObjectiveRecord` (full record including spec,
   audit notes; provenance is orchestrator-owned and not returned here)
 - `bulk_get(ids: list[ObjectiveID]) -> list[ObjectiveRecord]`
-  (used by full-reconcile per Discovery Sweep above)
+  (used by full-reconcile for fingerprint diffing on already-known
+  IDs; pairs with `list_all_ids` to cover the known-ID partition)
 
 ### Domain 2 — Lifecycle
 
