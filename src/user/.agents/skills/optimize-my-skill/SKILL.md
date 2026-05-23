@@ -14,7 +14,7 @@ Last sync: 2026-05-20
 Drift policy: accept-periodic-resync
 
 Dormant scripts:
-  - scripts/quick_validate.py — amalgamated verbatim but currently dormant (no live callers in SKILL.md). Kept per the accept-periodic-resync drift policy pending a future wiring decision (wire into Phase 2 frontmatter pre-check, or delete from the amalgam and drop the pyyaml dependency).
+  - scripts/quick_validate.py — amalgamated verbatim but currently dormant (no live callers). Kept per the accept-periodic-resync drift policy pending a future wire-or-delete decision.
 
 Known divergences from upstream `anthropics/skill-creator @ f458cee`:
   Kept verbatim per drift policy; future decision per item = upstream PR /
