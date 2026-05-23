@@ -285,7 +285,7 @@ no third-party packages required.
 5. **Launch review server.** Shell out:
 
    ```bash
-   python3 <skill-scripts>/eval-viewer/generate_review.py \
+   python3 <skill-scripts>/eval_viewer/generate_review.py \
      <workspace-path> \
      --skill-name <target-skill-name> \
      --port 8742
