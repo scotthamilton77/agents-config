@@ -36,5 +36,7 @@ def main(argv: list[str] | None = None, *, home: Path | None = None) -> int:
         print(f"installer: {exc}", file=sys.stderr)
         return 2
 
+    # B.1: instantiation proves Config construction succeeds end-to-end;
+    # B.2's sync engine will consume the returned value.
     Config(home=resolved_home, tools=tools)
     return 0
