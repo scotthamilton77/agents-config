@@ -278,14 +278,24 @@ no third-party packages required.
    ```
 
    `generate_review.py` auto-opens the URL in the user's default browser
-   on startup (via `webbrowser.open()`). Capture the actual bound port from
-   the script's stdout (which may differ from the `--port` request if that
-   port was in use — the script retries port+1 up to 5 times). Then emit:
+   on startup (via `webbrowser.open()`). Before binding, the script attempts
+   to free the requested `--port` by invoking `lsof -ti :<port>` and sending
+   `SIGTERM` to any listening PIDs; if `lsof` is unavailable it prints a
+   notice to stderr and skips the kill step. The script then tries to bind
+   the requested port; if that still fails (`OSError`), it falls back to an
+   OS-assigned ephemeral port (`bind(..., 0)`). Capture the actual bound
+   port from the script's stdout — it may differ from `--port`. Then emit:
 
    > Review server running at http://localhost:<actual-port> (browser tab
    > opened automatically — if it didn't, navigate there manually).
    > Press Ctrl+C in the running terminal when you're done reviewing.
    > Your feedback will be saved to `<workspace>/feedback.json`.
+   >
+   > Note: if port <requested-port> was already in use, this server may
+   > have terminated the prior listener via `lsof` + `SIGTERM` — check for
+   > unintended impact on other local processes. (This kill-on-startup
+   > behavior comes from the upstream script and is tracked as a
+   > known-risk decision in bead `agents-config-nsneu`.)
 
    The skill **blocks** until the server process exits.
 
@@ -297,7 +307,7 @@ no third-party packages required.
 
 ### Failure handling
 
-- **Port in use** — retry with port+1 up to 5 attempts; surface the final port to the user
+- **Port in use** — the script preemptively `SIGTERM`s any process listening on `--port` (via `lsof -ti`) before binding; if the bind still fails, it falls back to an ephemeral port (`bind(..., 0)`). Always read the actual bound port from stdout and surface it to the user. Warn the user that the kill step may have affected unrelated processes (see bead `agents-config-nsneu` for the upstream-defect decision)
 - **Subagent timeout** (default 5 min/run) — write `grading.json` with `{status: "timeout"}` and continue; partial transcript still visible in review server
 - **Grader skipped** (empty expectations) — log it, no error
 - **run_loop.py non-zero exit** — surface stderr; ask user whether to retry, fall back to advisory-only Phase 4, or abort
