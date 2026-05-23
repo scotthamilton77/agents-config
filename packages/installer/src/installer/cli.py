@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None, *, home: Path | None = None) -> int:
 
     if not tools:
         sys.stderr.write(
-            "installer: unable to apply changes — no agent tools detected.\n"
+            "installer: no agent tools detected; cannot proceed.\n"
             "Auto-detection checks each known tool's installation signal:\n"
         )
         for known in known_tools():
