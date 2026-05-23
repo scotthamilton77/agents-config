@@ -15,7 +15,7 @@ finding across multiple passes.
   `/Users/scott/.crit/reviews/6c185cd92050/review.json`. Anchors and bodies
   preserved verbatim in the appendix.
 - **Codex gpt-5.5 adversarial review** (2026-05-23) — 8 numbered sections.
-  Full text archived at `/tmp/codex-adversarial-review-output.md`.
+  Full text archived at `docs/specs/2026-05-23-pdlc-orchestrator-core-codex-adversarial-review.md`.
 
 ## Finding ID convention
 
