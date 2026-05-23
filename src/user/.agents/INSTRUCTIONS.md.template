@@ -13,6 +13,7 @@ Tool-agnostic principles for all AI coding assistants.
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
 - **Informed edits**: Research the codebase before editing - never change code you haven't read
+- **Domain vocabulary**: If the project has a `CONTEXT.md` at the repo root (or a `CONTEXT-MAP.md` pointing to per-context glossaries in a multi-context repo), read it and use its terminology when discussing domain concepts. Soft convention — absence is not a blocker
 - **Parallel ops**: Independent tool calls in single message
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
 - **Dependencies**: If a library version is newer than model training data, look up current docs via available documentation tools (e.g., context7 MCP if available, or web search) before using it
