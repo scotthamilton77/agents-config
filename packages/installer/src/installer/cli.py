@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None, *, home: Path | None = None) -> int:
     try:
         tools = resolve_tools(home=resolved_home, override_csv=args.tools)
     except (UnknownToolError, ValueError) as exc:
-        print(f"installer: {exc}", file=sys.stderr)
+        sys.stderr.write(f"installer: {exc}\n")
         return 2
 
     # B.1: instantiation proves Config construction succeeds end-to-end;
