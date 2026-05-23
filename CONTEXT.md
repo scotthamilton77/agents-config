@@ -160,7 +160,7 @@ judgment) and self-silences once Grooming completes.
 
 ## Shaped Idea
 
-A `Idea` record that has been touched by one or more *light* brainstorm
+An `Idea` record that has been touched by one or more *light* brainstorm
 passes (typically during Grooming). Carries a one-paragraph
 what-why-rough-success statement in addition to the original verbatim
 quote and provenance. Still pre-Spec; still lives in the Holding Place.
