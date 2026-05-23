@@ -1,4 +1,8 @@
-# Retrospect
+---
+description: Analyze the current session for what made it slower, more error-prone, or less correct, and propose weighted corrective actions to improve future sessions. Makes no changes until explicitly approved. Use at session end or when the user types /retrospect.
+argument-hint: [--focus <area> | --since <marker>]
+disable-model-invocation: true
+---
 
 Analyze the current session, identify what made it slower, more error-prone, or
 less correct than it should have been, and propose weighted corrective actions
@@ -7,7 +11,9 @@ Make **no changes** until the user explicitly authorizes.
 
 ## Argument
 
-`$ARGUMENTS` (optional) narrows the lens:
+Optional scope filter for this retrospective: $ARGUMENTS
+
+Recognized forms:
 
 - **Empty** — full-session retrospective covering all categories below.
 - **`--focus <area>`** — restrict analysis to one area (e.g. `--focus tooling`,
