@@ -19,9 +19,19 @@ Audit and improve existing SKILL.md files via the `optimize-my-skill` skill.
 | `--max-iterations N` | override the description-loop iteration cap (default 5). Ignored without `--deep` |
 | `--model <name>` | model id for the description-improver loop. Default `claude-haiku-4-5-20251001`. Ignored without `--deep` |
 
-Parse by splitting `$ARGUMENTS` on whitespace: identify the single non-flag
-token as `<target>`, collect flags separately, pass both to the skill.
-Empty `<target>` triggers the probe in the next section.
+Parse by splitting `$ARGUMENTS` on whitespace and walking tokens left-to-right:
+
+- `--deep` is a boolean flag (consumes no value).
+- `--max-iterations` and `--model` are value-taking flags: the **next token**
+  after the flag is its value and MUST NOT be considered as `<target>`. Treat
+  `--max-iterations=N` / `--model=<name>` (equals-form) as a single token.
+- The first unclaimed (non-flag, non-value) token is `<target>`. Any further
+  unclaimed tokens are an error — reject with a usage message.
+- Unknown `--flags` are an error — reject with a usage message.
+
+Collect flags separately from `<target>` and pass both to the skill. Empty
+`<target>` (no unclaimed token after flag/value consumption) triggers the
+probe in the next section.
 
 ## Empty-argument resolution
 
