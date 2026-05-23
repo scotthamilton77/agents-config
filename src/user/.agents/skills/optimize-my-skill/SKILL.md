@@ -12,6 +12,20 @@ Sources (amalgam):
     Upstream: https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174
 Last sync: 2026-05-20
 Drift policy: accept-periodic-resync
+
+Dormant scripts:
+  - scripts/quick_validate.py — amalgamated verbatim but currently dormant (no live callers in SKILL.md). Kept per the accept-periodic-resync drift policy pending a future wiring decision (wire into Phase 2 frontmatter pre-check, or delete from the amalgam and drop the pyyaml dependency).
+
+Known divergences from upstream `anthropics/skill-creator @ f458cee`:
+  Kept verbatim per drift policy; future decision per item = upstream PR /
+  document-and-accept / local divergence (TBD). Each entry below is a known
+  defect we have consciously chosen NOT to locally patch.
+
+  - scripts/eval-viewer/generate_review.py — `_kill_port()` SIGTERMs any PID returned by `lsof -ti :<port>`, which is risky in dev workspaces (can kill unrelated user services; PermissionError when the PID is owned by another user; lsof unavailable on some platforms).
+  - scripts/eval-viewer/generate_review.py — `find_runs()` sorts by `(eval_id, id)` where `eval_id` may be string-typed in JSON, raising TypeError in Python 3 when mixing string/numeric keys.
+  - scripts/run_loop.py — `split_eval_set()` can produce an empty `train_set` for very small eval sets (always reserves ≥1 per bucket for test_set, leaving nothing for training).
+  - scripts/quick_validate.py — PyYAML stdlib gap: the script `import yaml` requires the third-party `pyyaml` package which is not in the Python stdlib. (Naturally moot while the script remains dormant per the note above, but the import concern is documented here for the eventual wire-or-delete decision.)
+  - scripts/aggregate_benchmark.py — `aggregate_results()` uses insertion-order of the first two configuration keys to pick baseline vs primary, which can silently flip if input ordering changes and becomes meaningless with >2 configs.
 -->
 
 # Optimize My Skill
