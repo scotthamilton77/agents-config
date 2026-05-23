@@ -732,7 +732,7 @@ implemented.
 pdlc tick:
   acquire authoritative lease in OrchestratorStateRepo.Leases
     (fast-path file lock at .pdlc/tick.lock as optimisation only)
-  start tick-budget timer (project-config tick.budget-seconds, default 60)
+  start tick-budget timer (project-config [orchestrator].tick-budget-seconds, default 60)
   DISCOVER:
     query WorkTracker for Objectives changed since marker (acceleration path)
     every Nth tick (project-config, default N=10): also run a FULL_RECONCILE
