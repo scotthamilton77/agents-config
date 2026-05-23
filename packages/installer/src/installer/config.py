@@ -35,6 +35,9 @@ def resolve_tools(*, home: Path, override_csv: str | None) -> tuple[Tool, ...]:
 
     seen: dict[Tool, None] = {}
     for raw in override_csv.split(","):
-        tool = parse_tool_name(raw.strip())
+        name = raw.strip()
+        if not name:
+            raise ValueError("--tools= contains an empty tool name (check for stray commas)")  # noqa: TRY003  # single call-site; subclass not justified
+        tool = parse_tool_name(name)
         seen.setdefault(tool, None)
     return tuple(seen.keys())

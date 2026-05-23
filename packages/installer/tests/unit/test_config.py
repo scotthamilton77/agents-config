@@ -83,6 +83,29 @@ def test_empty_tools_value_is_rejected(tmp_path: Path) -> None:
         resolve_tools(home=tmp_path, override_csv="")
 
 
+def test_trailing_comma_in_tools_value_is_rejected(tmp_path: Path) -> None:
+    """
+    When resolve_tools(home=any, override_csv="claude,") is called
+    Then ValueError is raised
+    And the message names the CSV-format problem (not 'Unknown tool: '').
+
+    Pins: empty CSV elements get a clear UX error rather than the
+    misleading 'Unknown tool: ''' message from parse_tool_name("").
+    """
+    with pytest.raises(ValueError, match="empty tool name"):
+        resolve_tools(home=tmp_path, override_csv="claude,")
+
+
+def test_consecutive_commas_in_tools_value_is_rejected(tmp_path: Path) -> None:
+    """
+    When resolve_tools(home=any, override_csv="claude,,claude") is called
+    Then ValueError is raised
+    And the message names the CSV-format problem.
+    """
+    with pytest.raises(ValueError, match="empty tool name"):
+        resolve_tools(home=tmp_path, override_csv="claude,,claude")
+
+
 def test_whitespace_around_csv_tokens_is_stripped(tmp_path: Path) -> None:
     """
     When resolve_tools(home=any, override_csv=" claude ") is called
