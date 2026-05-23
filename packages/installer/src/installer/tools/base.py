@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from installer.core.io_port import IOPort
-from installer.core.model import StagingPlan
+if TYPE_CHECKING:
+    from installer.core.io_port import IOPort
+    from installer.core.model import StagingPlan
 
 
 @runtime_checkable
