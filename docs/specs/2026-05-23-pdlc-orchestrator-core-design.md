@@ -723,7 +723,11 @@ deferred:
 - **Idea** — updated to cross-reference Objective at `IDEA_RAW`.
 - **Candidate UoW** — updated to cross-reference Objective at
   `CANDIDATE_UOW` and to note the universal-entry-point discipline (L6).
-- **Lifecycle stage constants** — each named constant from the
-  Lifecycle Stage Constants table (e.g. `IDEA_RAW`, `CANDIDATE_UOW`,
-  `IMPLEMENTING`, `PR_MERGED`, `KILLED`) is added as its own glossary
-  entry pointing back to this spec.
+- **Lifecycle stage constants** — the full Lifecycle Stage Constants
+  table is defined in this spec and is the canonical reference.
+  Terminal-state constants (`MERGED`, `KILLED`, `PARKED`) are
+  additionally defined as individual entries in CONTEXT.md's "Terminal
+  Lifecycle States" section. Per-stage constants (`IDEA_RAW`,
+  `CANDIDATE_UOW`, `IMPLEMENTING`, `MERGING`, etc.) are not yet
+  individually itemised in CONTEXT.md; they will be added as the
+  orchestrator implementation matures.
