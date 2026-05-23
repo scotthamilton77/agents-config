@@ -182,6 +182,18 @@ User selects Continue / Reduce iterations / Abort. Honor the choice before
 proceeding. The cost gate fires on every `--deep` invocation; no persistent
 opt-out in this version.
 
+### Runtime contract
+
+Phase 4's scripts shell out to `claude -p` (the Claude Code CLI) as a
+subprocess, inheriting your existing session's auth. No separate
+`ANTHROPIC_API_KEY` or `anthropic` Python SDK install is required. If
+`claude` is not on PATH (rare — usually implicit when this skill is invoked
+from Claude Code), surface the error and abort `--deep` rather than
+fabricating an alternate auth path.
+
+Both `run_loop.py` and `generate_review.py` use only the Python stdlib —
+no third-party packages required.
+
 ### Phase 4a: Description loop (automated)
 
 1. **Resolve eval set.** Probe `<skill-dir>/evals.json`.
