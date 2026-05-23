@@ -737,7 +737,13 @@ pdlc tick:
     query WorkTracker for Objectives changed since marker (acceleration path)
     every Nth tick (project-config, default N=10): also run a FULL_RECONCILE
       via bulk_get + per-object fingerprint diff
+      (NOTE: full-reconcile is a correctness mechanism — see CA-6 — and is
+       NOT budget-bounded; it runs to completion regardless of tick budget)
     for each unknown Objective:
+      if now() - tick_start_ts >= tick-budget-seconds:
+        break loop; surface signal "budget-exhausted-in-discover"
+        (un-processed Objectives wait for the next tick; already-processed
+         Objectives this tick commit normally)
       initialise OrchestratorStateRepo entry at lifecycle_stage=CANDIDATE_UOW
       run candidate_uow exit gates (Atomic-AT lint, DoD application, Sizing Gate)
       record outcome
@@ -783,6 +789,19 @@ acquisition that fails (another tick holds a live lease) exits non-zero
 with a clear message — cron will simply skip that interval. Tick-budget
 exhaustion is **not** an error; work that did not fit is queued for the
 next tick, not lost.
+
+**Design rule — what the tick budget bounds.** The `tick-budget-seconds`
+budget bounds **latency-sensitive per-Objective work** at two checkpoints:
+(a) inside DISCOVER, before evaluating Candidate UoW exit gates for each
+unknown Objective; and (b) inside DISPATCH, before forking a new worker
+Session. **Correctness-critical operations are NOT budget-bounded** and
+run to completion regardless of remaining budget: full-reconcile (CA-6),
+lease acquisition and release, REAP heartbeat / deadline checks and
+worker-report verification, CAS predicate evaluation, and Crash-Recovery
+roll-forward. Budgeting these would trade correctness for latency — the
+wrong trade. The signal a tick emits when the budget fires inside DISCOVER
+is `budget-exhausted-in-discover`; inside DISPATCH it remains the existing
+deferral path. Both are valid tick outcomes, not errors.
 
 ### Transition execution discipline
 
@@ -838,6 +857,7 @@ synthesise an equivalent.
 | Reviewer artifact added mid-review | proposed-artifact validator runs on each loop pass; artifacts in `.pdlc/proposed-artifacts/` not yet validated do not block | validator pass before promotion; failures route to tooling-escalation (CA-9) |
 | Config reload mid-tick | `config_hash` on Session vs live config | reap-only mode for affected Sessions; refuse dispatch until divergence resolved |
 | Tracker status update mid-reconcile | fingerprint mismatch + tracker version-id changed | abort reconcile for that Objective; re-read in next tick |
+| Large backlog of unknown Objectives in DISCOVER | per-Objective budget check at top of DISCOVER loop fires | break loop; emit `budget-exhausted-in-discover` (valid tick outcome, not an error); un-processed Objectives wait for next tick |
 
 ### Mid-tick edit detected
 
@@ -1229,16 +1249,32 @@ DISCOVER():
     fingerprint_diff = compute_diff(known_records, cached_fingerprints)
     changes = changes ∪ new_records ∪ fingerprint_diff
     flag_for_reconcile(vanished_ids)                      # needs_reconcile=true
+  budget_exhausted = false
+  last_committed_marker_position = changes.start_marker
   for each ObjectiveRecord o in changes:
     if o.id not in OrchestratorStateRepo:
-      # New Objective — initialise at CANDIDATE_UOW (universal entry, per L6)
+      # New Objective — initialise at CANDIDATE_UOW (universal entry, per L6).
+      # Budget-bound the LATENCY-sensitive per-Objective gate eval.
+      # Full-reconcile above is NOT budget-bounded (correctness, CA-6);
+      # structural mirroring of known Objectives below is also cheap and
+      # not budget-bounded. Only Candidate UoW gate evaluation is gated
+      # by tick budget.
+      if now() - tick_start_ts >= tick-budget-seconds:
+        budget_exhausted = true
+        break                                              # signal: budget-exhausted-in-discover
       OrchestratorStateRepo.create(o.id, lifecycle_stage=CANDIDATE_UOW, ...)
       run_candidate_uow_gates(o.id)
     else:
       # Existing Objective — only structural fields may have changed
       OrchestratorStateRepo.mirror_structural(o.id, o)
       OrchestratorStateRepo.update_fingerprints(o.id, fingerprint_of(o))
-  OrchestratorStateRepo.last_seen_marker = changes.new_marker
+    last_committed_marker_position = marker_position_of(o)
+  if budget_exhausted:
+    # Conservative: advance marker only up to the last fully-processed Objective.
+    # Un-processed Objectives remain "new" on the next tick's discover_since.
+    OrchestratorStateRepo.last_seen_marker = last_committed_marker_position
+  else:
+    OrchestratorStateRepo.last_seen_marker = changes.new_marker
 ```
 
 If the tracker cannot reliably provide "changes since marker" semantics,
