@@ -41,3 +41,6 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 .venv/
+
+# optimize-my-skill --deep workspaces (persistent but not committed)
+.eval-runs/
