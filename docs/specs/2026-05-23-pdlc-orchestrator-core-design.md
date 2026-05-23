@@ -1244,8 +1244,15 @@ is orchestrator-sidecar-owned.
   the tracker for human visibility.
 - Domain 3 stays — the tracker is the source of truth for structure
   (L7); hierarchy cannot be sidecarred. `create_objective` is needed
-  for Decomposition child creation, Container Closure, and Idea →
-  Objective promotion.
+  for Idea → Objective promotion (the Holding-Place CLI promoting a
+  groomed Idea) and other direct CLI-driven Objective creation paths
+  (Captures that bypass the Idea pipeline, autopsy routes, and
+  discovered-from siblings). Per CA-8, Decomposition child emission
+  does **not** call `create_objective`: oversized Containers emit
+  Ideas via `HoldingPlace.create_idea(...)`, and the child re-enters
+  the orchestrator FSM only after Holding-Place grooming promotes the
+  Idea back to an Objective. Container Closure is a stage transition,
+  not a create, so it does not call `create_objective` either.
 - Domain 6 stays — specs live in the tracker; orchestrator reads /
   writes via this interface.
 - Domains 4 / 5 / 7 move to the sidecar so the adapter's required
@@ -1298,7 +1305,7 @@ resolved.
 
 | Transition | Tracker writes | Orchestrator writes | Disagreement resolution |
 |---|---|---|---|
-| Decomposition child creation | `create_objective(parent_id=<container>, ...)` (Domain 3) | Mirror `parent_id` and `children_ids` from Discovery; set child `lifecycle_stage=CANDIDATE_UOW` | Tracker wins on structural truth; orchestrator re-reads via fingerprint diff |
+| Decomposition child creation (cross-service; CA-8) | `HoldingPlace.create_idea(provenance.decomposition_of=<container_id>)` — note this is a HoldingPlace call, NOT a WorkTracker call; no Objective is created at this step | Record the emitted Idea ID in the TransitionEntry log against the Container; retain `decomposition_of=<container_id>` traceability so a later Idea → Objective promotion can be reconciled back to the originating Container. No FSM child is initialised here — the child re-enters the orchestrator FSM only after Holding-Place grooming promotes the Idea via the Idea → Objective promotion row below | Holding Place owns Idea creation; orchestrator authoritative on the TransitionEntry. Reconciliation to a future Objective happens via `provenance.originating_idea_id` on the promotion row |
 | Container Closure (close-walk) | `set_lifecycle_status(parent, closed)` after all children closed | Set parent `lifecycle_stage=MERGED`; record TransitionEntry | Orchestrator drives sequencing (waits for all children); tracker reflects the close |
 | Autopsy parking | `set_lifecycle_status(id, blocked)`; `append_audit_note(autopsy bead ref)` | Set `lifecycle_stage=PARKED`; freeze branch; set `terminal_disposition=abandoned` (route iv) | Orchestrator authoritative on stage transition |
 | Manual closure (human edit) | `set_terminal_disposition(id, <disposition>)`; `set_lifecycle_status(id, closed)` | Apply terminal-disposition classifier; advance to terminal `lifecycle_stage` per disposition (or `needs_reconcile=true` if absent) | Tracker authoritative on terminal disposition; orchestrator authoritative on `needs_reconcile` flag |
