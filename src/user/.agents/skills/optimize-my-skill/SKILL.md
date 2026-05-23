@@ -36,6 +36,12 @@ Audit and improve existing SKILL.md files for clarity, discoverability, and effe
 
 **Audit before writing.** Read the existing skill completely before proposing any change — never rewrite content you haven't fully understood.
 
+## Boundaries (default: audit-only)
+
+Phases 1–5 are **read-only against the target skill folder**. The skill discovers, assesses, proposes, and (under `--deep`) measures — but it does not modify any target `SKILL.md`, frontmatter, or body content until **Phase 6** has user confirmation. The only writes permitted before Phase 6 are workspace artifacts under `<skill-dir>/.eval-runs/` (gitignored) and the eval set draft at `<skill-dir>/evals.json` (Phase 4a, user-reviewed before the loop runs).
+
+A run that silently mutates a target SKILL.md during audit is a defect, not a feature, regardless of how well-intentioned the change.
+
 ## Phase 1: Discover and Read
 
 Find all SKILL.md files in the target scope. For each one, read the complete file (frontmatter + body) and also check the skill's folder structure.
@@ -148,6 +154,34 @@ Per SKILLS_PRIMER (see `references/SKILLS_PRIMER.md`):
 ## Phase 3: Propose Improvements
 
 For each skill that needs work, present a structured proposal. Do not silently rewrite — surface the change and the rationale so the user can accept, modify, or reject.
+
+### Multi-skill scope: lead with priority summary
+
+When the resolved scope contains more than one skill (directory-path argument enumerating multiple `SKILL.md` files), **present a priority-grouped summary table FIRST**, then offer per-skill detail on request rather than dumping every proposal inline.
+
+```
+| Skill | Priority | Headline finding |
+|-------|----------|------------------|
+| <name> | Critical | <one-line> |
+| <name> | High     | <one-line> |
+| <name> | Medium   | <one-line> |
+| <name> | Low      | <one-line> |
+| <name> | OK       | No changes needed |
+```
+
+Priority rubric:
+
+- **Critical** — description fails the formula entirely OR XML/reserved-name security check fails
+- **High** — description present but missing negative triggers / scope boundaries (over-trigger risk)
+- **Medium** — body content gaps (missing red flags, verification checklist, decision trees)
+- **Low** — cosmetic frontmatter polish, line-count discipline, structural cleanup
+- **OK** — passes all criteria; no changes needed
+
+After the summary, surface detailed per-skill proposals only for Medium-and-higher entries by default; Low and OK can be collapsed into a one-line note unless the user asks for everything. This keeps multi-skill audits scannable without losing depth.
+
+For single-skill scope, skip the summary table and go straight to the per-skill proposal below.
+
+### Per-skill proposal template
 
 **Skill**: `[name]` (`[path]`)
 **Current description**:
