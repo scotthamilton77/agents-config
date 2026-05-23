@@ -14,6 +14,7 @@ class ClaudeAdapter:
     'always include claude' rule."""
 
     name: str = "claude"
+    detection_signal: str = "~/.claude/settings.json"
 
     # exercised by w1qls.2.2 (B.2)
     def source_dir(self, repo_root: Path) -> Path:  # pragma: no cover

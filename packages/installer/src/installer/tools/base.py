@@ -14,6 +14,7 @@ class ToolAdapter(Protocol):
     per `Tool` enum value; registry-wired."""
 
     name: str
+    detection_signal: str
 
     def source_dir(self, repo_root: Path) -> Path: ...  # pragma: no cover
 
