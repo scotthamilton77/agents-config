@@ -132,8 +132,13 @@ Objective {
 The Orchestrator's `lifecycle_stage` field uses **named English constants**
 throughout — in code, data, logs, audit trails, and prose. Numeric stage
 IDs (1 through 11) appear only as a low-attention **ordering hint** in
-tables; they are not used in code or persisted state. The same constants
-appear in CONTEXT.md as the canonical glossary entries.
+tables; they are not used in code or persisted state. The Lifecycle Stage
+Constants table in this spec is the **canonical reference** for the
+constants themselves. CONTEXT.md carries the corresponding **conversational
+terms** (Idea, Candidate UoW, Implementation, etc.) as glossary entries;
+terminal-state constants (`MERGED`, `KILLED`, `PARKED`) are additionally
+defined as individual CONTEXT.md entries. Per-stage constants will be
+itemised in CONTEXT.md as the orchestrator implementation matures.
 
 | Constant | Ordering hint | Conversational name | CONTEXT.md entry |
 |---|---|---|---|
