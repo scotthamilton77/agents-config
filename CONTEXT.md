@@ -580,6 +580,52 @@ Candidate UoWs (stage 4) and Decomposition (stage 5). Distinct from the
 Holding Place (which holds only pre-Spec Ideas) and from the Execution
 Pipeline (which holds Agent-Ready UoWs).
 
+## Terminal Lifecycle States
+
+The three terminal states an Objective reaches at the end of the PDLC
+lifecycle. Each maps to a Lifecycle Stage Constant defined in the
+wgclw.2 Orchestrator Core spec's Lifecycle Stage Constants table.
+
+### Merged
+
+Constant: `MERGED`. The happy terminal. The Objective's PR has been
+merged into the integration target, all Container Closure conditions
+that depend on it are eligible to roll up, and the Orchestrator removes
+its worktree and branch. The work item closes in the tracker; the
+transition log retains the complete audit history.
+
+### Killed
+
+Constant: `KILLED`. Verdict-of-record that this Objective will not be
+completed. Stays in the underlying store; nothing is deleted. The
+Killed *state* hides the Objective from the living view — it does not
+appear in Grooming, Holding Place surfacing, work-pull, or in-flight
+session inventories. Carries a mandatory one-line **Epitaph** (the
+cause-of-death) and the timestamp / actor of the killing. Resurrection
+is legal but explicit: the originator must summon a Killed Objective
+by name, which transitions it back to a pre-terminal lifecycle stage
+appropriate to its previous state, and the Epitaph is preserved as
+historical record.
+
+Killed applies at any lifecycle stage from Idea (pre-Spec) through
+the Execution Pipeline. The Idea-stage Killed (a Bucket disposition
+discussed under Bucket above) is the same concept applied at the
+Holding Place; the post-execution Killed is the same verdict applied
+after substantial work has begun. Both honour the Epitaph + resurrection
+rules.
+
+### Parked
+
+Constant: `PARKED`. Terminal-ish: the Objective is held in *Library*
+with a blocking dep awaiting resolution (typically a follow-up tooling
+fix, environment change, or external prerequisite). Parked is distinct
+from Killed in that there is an expected unblocking event; it is
+distinct from Library-bucketed Ideas in that the Parking carries an
+explicit blocking dep, not just a "maybe someday" status. When the
+blocker resolves, the Orchestrator surfaces the Parked Objective for
+human review — it does not auto-resume execution. Used by Autopsy
+Resolution Routes (iv) and (v).
+
 ---
 
 ## Forward-referenced terms (mentioned but not yet defined here)
