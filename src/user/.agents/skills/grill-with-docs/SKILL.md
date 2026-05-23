@@ -3,6 +3,14 @@ name: grill-with-docs
 description: Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Use when user wants to stress-test a plan against their project's language and documented decisions.
 ---
 
+<!--
+Source: oss-snapshots/pocock/grill-with-docs/
+Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
+Last sync: 2026-05-23
+Drift policy: accept-periodic-resync
+Note: promoted from byte-identical local copy at <repo>/.claude/skills/grill-with-docs/.
+-->
+
 <what-to-do>
 
 Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
