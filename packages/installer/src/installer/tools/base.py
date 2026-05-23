@@ -14,6 +14,11 @@ class ToolAdapter(Protocol):
     per `Tool` enum value; registry-wired."""
 
     name: str
+    # Path **relative to home** that signals tool presence
+    # (e.g. ".claude/settings.json"). NOT a `~`-prefixed absolute string —
+    # callers that surface this in diagnostics are responsible for joining it
+    # against the resolved home so the printed path reflects what was probed
+    # (critical when `home` is injected, e.g. in tests).
     detection_signal: str
 
     def source_dir(self, repo_root: Path) -> Path: ...  # pragma: no cover

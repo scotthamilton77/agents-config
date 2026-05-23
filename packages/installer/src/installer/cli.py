@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None, *, home: Path | None = None) -> int:
         )
         for known in known_tools():
             adapter = get_adapter(known)
-            sys.stderr.write(f"  {known.value}: {adapter.detection_signal}\n")
+            sys.stderr.write(f"  {known.value}: {resolved_home}/{adapter.detection_signal}\n")
         sys.stderr.write(
             f"None of the above were found under {resolved_home}.\n"
             "To force installation, pass --tools=<csv>, e.g. --tools=claude.\n"
