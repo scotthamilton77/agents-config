@@ -121,8 +121,13 @@ function getNewestScreen() {
     .filter(f => f.endsWith('.html'))
     .map(f => {
       const fp = path.join(CONTENT_DIR, f);
-      return { path: fp, mtime: fs.statSync(fp).mtime.getTime() };
+      try {
+        return { path: fp, mtime: fs.statSync(fp).mtime.getTime() };
+      } catch (_) {
+        return null; // file deleted between readdir and stat
+      }
     })
+    .filter(Boolean)
     .sort((a, b) => b.mtime - a.mtime);
   return files.length > 0 ? files[0].path : null;
 }
