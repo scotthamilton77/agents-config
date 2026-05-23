@@ -38,7 +38,7 @@ Audit and improve existing SKILL.md files for clarity, discoverability, and effe
 
 ## Boundaries (default: audit-only)
 
-Phases 1–5 are **read-only against the target skill folder**. The skill discovers, assesses, proposes, and (under `--deep`) measures — but it does not modify any target `SKILL.md`, frontmatter, or body content until **Phase 6** has user confirmation. The only writes permitted before Phase 6 are workspace artifacts under `<skill-dir>/.eval-runs/` (gitignored) and the eval set draft at `<skill-dir>/evals.json` (Phase 4a, user-reviewed before the loop runs).
+Phases 1–5 are **read-only against tracked skill content** — `SKILL.md`, frontmatter, and body. The skill discovers, assesses, proposes, and (under `--deep`) measures, but it does not modify that content until **Phase 6** has user confirmation. Permitted writes before Phase 6 are limited to gitignored side-files: workspace artifacts under `<skill-dir>/.eval-runs/`, and an auto-drafted `<skill-dir>/evals.json` written only when absent (Phase 4a step 1 fallback, user-reviewed before the loop runs). An existing `evals.json` is reused as-is and never overwritten.
 
 A run that silently mutates a target SKILL.md during audit is a defect, not a feature, regardless of how well-intentioned the change.
 
