@@ -116,7 +116,7 @@ If nothing in the current story invokes `source_dir(repo_root)`, a test for it i
 
 ### 3. Attribute and enum literals
 
-`assert adapter.name == "claude"` when the implementation is `name = "claude"` is a tautology — the only failure mode is you changing the literal, at which point the linter tells you first. Test constant values at the consumer boundary (CLI flag parsing, config loading, provenance emission) where the wrong string breaks a visible contract. See the [enum-consumer memory](feedback_test_enum_values_at_consumers.md).
+`assert adapter.name == "claude"` when the implementation is `name = "claude"` is a tautology — the only failure mode is you changing the literal, at which point the linter tells you first. Test constant values at the consumer boundary (CLI flag parsing, config loading, provenance emission) where the wrong string breaks a visible contract.
 
 **Exception:** when a public constant forms part of a serialization contract (e.g., written to disk or sent over the wire), pin it at the serialization boundary, not at the definition.
 
