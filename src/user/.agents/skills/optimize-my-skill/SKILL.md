@@ -205,21 +205,36 @@ no third-party packages required.
      `<skill-dir>/evals.json`. Display via AskUserQuestion with options
      Accept / Edit (skill pauses, user edits file, types continue) / Reject
      (abort `--deep`).
-2. **Invoke the loop.** Shell out:
+2. **Invoke the loop.** Use module-mode invocation (the script's relative
+   imports require it):
 
    ```bash
-   python3 <skill-scripts>/run_loop.py \
+   cd <skill-dir> && PYTHONPATH=. python3 -m scripts.run_loop \
      --eval-set <skill-dir>/evals.json \
      --skill-path <skill-dir> \
-     --max-iterations <N>  # default 5; overridden by --max-iterations flag
+     --model <model> \
+     --max-iterations <N> \
      --holdout 0.4 \
      --runs-per-query 3 \
      --num-workers 10 \
-     --model <model>       # default claude-haiku-4-5-20251001; overridden by --model flag
+     --results-dir <skill-dir>/.eval-runs/
    ```
 
-3. **Capture results.** Read the JSON output: `{best_description, best_score,
-   final_description, history, iterations_run, ...}`. Pass to Phase 5.
+   Flag semantics:
+   - `--model` is **required** by `run_loop.py` (no default). Use the value
+     from the skill's `--model` flag (default: `claude-haiku-4-5`).
+   - `--max-iterations` is the description-loop cap. Use the value from the
+     skill's `--max-iterations` flag (default: 5).
+   - `--results-dir` writes outputs to a timestamped subdirectory under the
+     given path; reuse the `.eval-runs/<UTC-timestamp>/` workspace from
+     Phase 4b if you create it first.
+
+3. **Capture results.** `run_loop.py` writes `results.json` and an HTML
+   report inside the timestamped subdir under `--results-dir`. Locate the
+   newest subdir and read `results.json` — expected keys include
+   `best_description`, `best_score`, `best_train_score`, `best_test_score`,
+   `final_description`, `history`, `iterations_run`, `exit_reason`. Pass to
+   Phase 5.
 
 ### Phase 4b: Output review (semi-automated)
 
@@ -256,9 +271,11 @@ no third-party packages required.
      --port 8742
    ```
 
-   Emit to the user:
+   `generate_review.py` auto-opens the URL in the user's default browser
+   on startup (via `webbrowser.open()`). Emit to the user:
 
-   > Review server running at http://localhost:8742
+   > Review server running at http://localhost:8742 (browser tab opened
+   > automatically — if it didn't, navigate there manually).
    > Press Ctrl+C in the running terminal when you're done reviewing.
    > Your feedback will be saved to `<workspace>/feedback.json`.
 
