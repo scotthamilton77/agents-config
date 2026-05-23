@@ -43,12 +43,13 @@ correctness:
 
 ### L6 — Universal Entry Point
 
-Every Objective enters the FSM at stage 3 (Candidate UoW). Stages 1
-and 2 (Idea and Shaped Idea) are *optional pre-entry stages* hosted in
-the Holding Place. **Direct entry into any later stage is prohibited.**
-There is no escape hatch for "trivial" work that bypasses the stage-3
-exit gate — the Atomic-AT linter, DoD application, Sizing Gate, and
-human signoff all run regardless of how the Objective was created.
+Every Objective enters the FSM at `CANDIDATE_UOW` (the lifecycle stage
+formerly numbered 3). The Idea stages — `IDEA_RAW` and `IDEA_SHAPED` —
+are *optional pre-entry stages* hosted in the Holding Place. **Direct
+entry into any later stage is prohibited.** There is no escape hatch
+for "trivial" work that bypasses the `CANDIDATE_UOW` exit gate — the
+Atomic-AT linter, DoD application, Sizing Gate, and human signoff all
+run regardless of how the Objective was created.
 
 The gates are the discipline; the entry point is a convenience.
 
@@ -58,14 +59,14 @@ The work-tracker is the source of truth for *what Objectives exist*,
 their identity, hierarchy, dependencies, spec content, and coarse
 lifecycle status (open / in_progress / closed / blocked / deferred).
 
-The Orchestrator is the source of truth for *what FSM stage each
+The Orchestrator is the source of truth for *what lifecycle stage each
 Objective is at*, strike counters per gate, transition logs,
 frozen-branch markers, and gate-pass commit SHAs.
 
 Neither side may write the other's domain unilaterally. Conflicts are
 resolved by a per-domain canonical-ownership rule (the tracker wins on
-structural edits; the Orchestrator wins on FSM state). The connection
-between the two stores is by Objective ID only.
+structural edits; the Orchestrator wins on `objective_lifecycle_state`).
+The connection between the two stores is by Objective ID only.
 
 ### L8 — Protocol Prescribes, Adapters Conform
 
@@ -89,54 +90,128 @@ moves through the FSM stages; only its stage-specific *name* and the
 Objective {
   id                                # tracker-assigned identifier
   parent_id                         # Optional[ObjectiveID]; null for top-level
-  children_ids                      # Set[ObjectiveID]; populated at stage 5
-                                    #   if stamped Container
-  fsm_stage                         # one of: 1, 2, 3, 4, 5, 6, 6', 7, 8, 9,
-                                    #   10A, 10B, 10C, 11, Merged, Killed, Parked
+  children_ids                      # Set[ObjectiveID]; populated at DECOMPOSE
+                                    #   if is_container=true
+  lifecycle_stage                   # one of the named stage constants;
+                                    #   see "Lifecycle Stage Constants" table below
   lifecycle_status                  # projection onto tracker:
                                     #   open / in_progress / closed / blocked / deferred
-  type_stamp                        # Optional; assigned at stage 5:
+  priority                          # mirrored from tracker; PriorityLevel 0..4
+                                    #   following bd's P0-P4 scale: 0=critical,
+                                    #   2=medium, 4=backlog (with 1 and 3 as
+                                    #   intermediate levels). Bd is the reference
+                                    #   WorkTracker adapter and forbids
+                                    #   high/medium/low labels — do not introduce
+                                    #   those terms in code or logs.
+  is_container                      # bool; assigned at DECOMPOSE alongside type_stamp.
+                                    #   Some type_stamp values (Epic, Feature-with-
+                                    #   children) default to is_container=true; rules
+                                    #   key off this boolean, not type_stamp string
+                                    #   matching
+  type_stamp                        # Optional; assigned at DECOMPOSE:
                                     #   Executable (Story / Task / Chore / Bug / ...)
                                     #   Container  (Epic / Feature / ...)
-  spec_blob                         # the Draft Spec body; opaque to Orchestrator;
+  draft_spec                        # the Draft Spec body; opaque to Orchestrator;
                                     #   shape defined elsewhere
   provenance {                      # all nullable
     originating_idea_id   : Optional[ObjectiveID]   # set at Idea→UoW promotion
     decomposition_of      : Optional[ObjectiveID]   # set for children of a Container
-    discovered_from       : Optional[ObjectiveID]   # set for I3-style sibling captures
+    discovered_from       : Optional[ObjectiveID]   # set for sibling captures discovered
+                                                    #   mid-implementation
     autopsy_route         : Optional[Route]         # set for routes 4 / 5 spawns
   }
-  fsm_state {                       # Orchestrator-owned; not in tracker
-    strike_counts         : Dict[StageID, int]
+  objective_lifecycle_state {       # Orchestrator-owned; not in tracker
+    strike_counts         : Dict[LifecycleStage, int]
     transition_log        : Append[TransitionEntry]
     frozen_branch_ref     : Optional[CommitSHAChain]
     gate_pass_shas        : Dict[GateID, CommitSHA]
-    bucket                : Optional[Bucket]   # Now / Next / Later / Library; stages 1–2
+    bucket                : Optional[Bucket]   # Now / Next / Later / Library;
+                                               #   Idea-stage property
+                                               #   (IDEA_RAW / IDEA_SHAPED only)
   }
 }
 ```
 
-### Lifecycle name mapping
+### Lifecycle Stage Constants
 
-| FSM stage | Name in conversation | Where in CONTEXT.md |
-|---|---|---|
-| 1 | Idea | Idea |
-| 2 | Shaped Idea | Shaped Idea |
-| 3 | Candidate UoW (Draft Spec) | Candidate UoW |
-| 4 | Agent-Worthy | Agent-Worthy |
-| 5 | (in Decomposition) | Decomposition |
-| 6 | Agent-Ready Executable | Agent-Ready |
-| 6′ | Decomposed Container | (composed of Container + Container Closure) |
-| 7 | Test-Authoring | Test-Author Agent |
-| 8 | Implementation | Implementer Agent |
-| 9 | Review | Review |
-| 10A | PR Mechanical Validation | Integration §A |
-| 10B | Human Approval Hold | Integration §B |
-| 10C | Merge + Cleanup | Integration §C |
-| 11 | Autopsy | Autopsy |
-| Merged | terminal — happy | — |
-| Killed | terminal — abandoned (with Epitaph) | Bucket §Killed |
-| Parked | terminal-ish — held in Library with blocking dep | Autopsy Routes (iv), (v) |
+The Orchestrator's `lifecycle_stage` field uses **named English constants**
+throughout — in code, data, logs, audit trails, and prose. Numeric stage
+IDs appear only as a low-attention **ordering hint** in tables, or as a
+one-shot orientation parenthetical when a constant is introduced for the
+first time in a section (e.g. "`CANDIDATE_UOW` (the lifecycle stage
+formerly numbered 3)"); they are not used in code, data, or persisted
+state. The Lifecycle Stage
+Constants table in this spec is the **canonical reference** for the
+constants themselves. CONTEXT.md carries the corresponding **conversational
+terms** (Idea, Candidate UoW, Implementation, etc.) as glossary entries;
+terminal-state constants (`MERGED`, `KILLED`, `PARKED`) are additionally
+defined as individual CONTEXT.md entries. Per-stage constants will be
+itemised in CONTEXT.md as the orchestrator implementation matures.
+
+| Constant | Ordering hint | Conversational name | CONTEXT.md entry |
+|---|---|---|---|
+| `IDEA_RAW` | 1 | Idea | Idea |
+| `IDEA_SHAPED` | 2 | Shaped Idea | Shaped Idea |
+| `CANDIDATE_UOW` | 3 | Candidate UoW (Draft Spec) | Candidate UoW |
+| `AGENT_WORTHY` | 4 | Agent-Worthy | Agent-Worthy |
+| `DECOMPOSE` | 5 | (in Decomposition) | Decomposition |
+| `EXECUTABLE_READY` | 6 | Agent-Ready Executable | Agent-Ready |
+| `CONTAINER_DECOMPOSED` | 6′ | Decomposed Container | Container + Container Closure |
+| `TEST_AUTHORING` | 7 | Test-Authoring | Test-Author Agent |
+| `IMPLEMENTING` | 8 | Implementation | Implementer Agent |
+| `REVIEWING` | 9 | Review | Review |
+| `PR_VALIDATION` | 10A | PR Mechanical Validation | PR Mechanical Validation |
+| `PR_HUMAN_HOLD` | 10B | Human Approval Hold | Human Approval Hold |
+| `MERGING` | 10C | Merge + Cleanup | Merge + Cleanup |
+| `AUTOPSY` | 11 | Autopsy | Autopsy |
+| `MERGED` | terminal | Merged (happy) | Merged |
+| `KILLED` | terminal | Killed (with Epitaph) | Killed |
+| `PARKED` | terminal-ish | Parked in Library awaiting blocking dep | Parked |
+
+`6′` (the apostrophed variant for Decomposed Container) is a labelling
+artifact carried from the PDLC FSM design spec; it has no meaning in
+code beyond the explicit `CONTAINER_DECOMPOSED` constant.
+
+### Happy-path flowchart
+
+The single-Objective happy path from raw thought to merged code. Side
+branches, retries, the 3-strike circuit breaker, Autopsy routing, and
+container-closure aggregation are intentionally omitted — they live in
+the PDLC FSM design spec and in the dedicated HLD multi-view artifacts
+bead. This diagram is the orientation poster, not the complete map.
+
+```mermaid
+flowchart TD
+  IDEA_RAW["IDEA_RAW<br/>(raw thought, Holding Place)"]
+  IDEA_SHAPED["IDEA_SHAPED<br/>(lightly brainstormed)"]
+  CANDIDATE_UOW["CANDIDATE_UOW<br/>(Draft Spec, universal entry per L6)"]
+  AGENT_WORTHY["AGENT_WORTHY<br/>(Spec signoff received)"]
+  DECOMPOSE["DECOMPOSE<br/>(type_stamp + is_container assigned)"]
+  EXECUTABLE_READY["EXECUTABLE_READY<br/>(queued for execution)"]
+  CONTAINER_DECOMPOSED["CONTAINER_DECOMPOSED<br/>(passive aggregator)"]
+  TEST_AUTHORING["TEST_AUTHORING"]
+  IMPLEMENTING["IMPLEMENTING"]
+  REVIEWING["REVIEWING"]
+  PR_VALIDATION["PR_VALIDATION<br/>(mechanical gates on the PR)"]
+  PR_HUMAN_HOLD["PR_HUMAN_HOLD<br/>(approval hold)"]
+  MERGING["MERGING<br/>(merge + cleanup)"]
+  MERGED([MERGED])
+
+  IDEA_RAW --> IDEA_SHAPED
+  IDEA_SHAPED --> CANDIDATE_UOW
+  CANDIDATE_UOW -->|"Atomic-AT lint<br/>DoD application<br/>Sizing Gate<br/>human signoff"| AGENT_WORTHY
+  AGENT_WORTHY --> DECOMPOSE
+  DECOMPOSE -->|"is_container=false<br/>(Executable)"| EXECUTABLE_READY
+  DECOMPOSE -->|"is_container=true<br/>(Container)"| CONTAINER_DECOMPOSED
+  EXECUTABLE_READY --> TEST_AUTHORING
+  TEST_AUTHORING --> IMPLEMENTING
+  IMPLEMENTING --> REVIEWING
+  REVIEWING --> PR_VALIDATION
+  PR_VALIDATION --> PR_HUMAN_HOLD
+  PR_HUMAN_HOLD --> MERGING
+  MERGING --> MERGED
+  CONTAINER_DECOMPOSED -.->|"all descendants MERGED<br/>+ Container ATs pass<br/>+ Scaffold→Cleanup paired"| MERGED
+```
 
 ### Hierarchy
 
@@ -154,18 +229,23 @@ Discovery Sweep on the next tick.
 
 ### Idea-less Objectives
 
-Many Objectives have no originating Idea (provenance.originating_idea_id
-= null). They are created directly at stage 3 by:
+Many Objectives have no originating Idea
+(`provenance.originating_idea_id = null`). They are created directly at
+`CANDIDATE_UOW` by:
 
 - A human or agent invoking the tracker's create primitive for obvious
   work (bug with clean repro, chore, dependency bump).
-- Discovered work mid-implementation (I3 sibling captures).
+- Sibling captures discovered mid-implementation — work that would have
+  been on the parent's original plan but was not anticipated; classified
+  via the sibling test and filed as a child of the in-flight parent
+  Objective with `provenance.discovered_from` set.
 - Programmatic creation by formulas, hygiene sweeps, or Autopsy routes 4
   and 5 (debt-Ideas and tooling-Ideas).
 
 The Orchestrator treats Idea-less Objectives identically to Idea-promoted
-ones from stage 3 onward. The provenance backreference is the only
-difference; the FSM gates, strike counters, and lifecycle are uniform.
+ones from `CANDIDATE_UOW` onward. The provenance backreference is the
+only difference; the FSM gates, strike counters, and lifecycle are
+uniform.
 
 ## State Ownership
 
@@ -178,20 +258,21 @@ Two stores, two domains, two canonical authorities:
 | Objective identity | id, type, title, parent_id, children_ids |
 | Spec content | Draft Spec body, Decomposition Plan |
 | Lifecycle status | open / in_progress / closed / blocked / deferred |
+| Priority | PriorityLevel 0..4; mirrored onto Objective; tracker authoritative |
 | Dependencies | typed; both directions; with reasons |
 | Audit notes | append-only human-readable trail |
-| Metadata channel | typed bag for FSM-projection markers, etc. |
+| Metadata channel | typed bag for lifecycle-stage projection markers, etc. |
 
 ### Orchestrator domain (Orchestrator's own store)
 
 | State | Notes |
 |---|---|
-| FSM stage | per the FSM spec's enumeration |
-| Strike counters | per gate where strikes apply (7, 8, 9, 10A) |
-| Transition log | append-only; FSM movements with reason and gate evidence |
-| Frozen-branch markers | set on Autopsy entry; lifted only on `pdlc objectives unfreeze` |
+| Lifecycle stage | one of the Lifecycle Stage Constants |
+| Strike counters | per gate where strikes apply (`TEST_AUTHORING`, `IMPLEMENTING`, `REVIEWING`, `PR_VALIDATION`) |
+| Transition log | append-only; lifecycle-stage transitions with reason and gate evidence |
+| Frozen-branch markers | set on `AUTOPSY` entry; lifted only on `pdlc objectives unfreeze` |
 | Gate-pass SHAs | per gate; commit SHA at which gate last passed |
-| Bucket | Now / Next / Later / Library — only meaningful at FSM stages 1–2 |
+| Bucket | Now / Next / Later / Library — Idea-stage property; meaningful only for `IDEA_RAW` / `IDEA_SHAPED` (`null` for all later stages) |
 | Session records | one per worker invocation; see Sessions below |
 
 ### Canonical-ownership rule
@@ -199,11 +280,11 @@ Two stores, two domains, two canonical authorities:
 - **Tracker wins on structural edits.** Reparenting, child creation,
   dependency add/remove, spec body changes — the tracker is authoritative.
   The Orchestrator mirrors these via the Discovery Sweep.
-- **Orchestrator wins on FSM state.** Stage advancement, strike
-  increments, frozen-branch markers, gate-pass SHAs — these live only
-  in the OrchestratorStateRepo. The tracker carries a coarse projection
-  (open / in_progress / closed) the Orchestrator writes back during
-  reconcile.
+- **Orchestrator wins on `objective_lifecycle_state`.** Lifecycle-stage
+  advancement, strike increments, frozen-branch markers, gate-pass SHAs
+  — these live only in the OrchestratorStateRepo. The tracker carries a
+  coarse projection (open / in_progress / closed) the Orchestrator
+  writes back during reconcile.
 
 ### Out-of-band edit reconciliation
 
@@ -212,15 +293,16 @@ reparents, manually marks killed), the next tick's Discovery Sweep
 detects the change and updates the Orchestrator's view. Specific
 reconcile rules:
 
-- Tracker `closed` while Orchestrator FSM stage is pre-terminal →
-  Orchestrator records the Objective as `Killed` with reason
+- Tracker `closed` while Orchestrator `lifecycle_stage` is pre-terminal →
+  Orchestrator records the Objective as `KILLED` with reason
   "manual-close-via-tracker" in the transition_log. Any in-flight
   Session is killed; strikes are not counted.
-- Tracker reparenting → Orchestrator mirrors the new parent_id without
-  resetting FSM state.
-- Tracker spec body changed during stages 7–10 → flagged as an Advisory
-  in the transition_log; does not auto-rollback (humans get a
-  diff-aware warning at the next health check).
+- Tracker reparenting → Orchestrator mirrors the new `parent_id` without
+  resetting `objective_lifecycle_state`.
+- Tracker spec body changed during `TEST_AUTHORING` / `IMPLEMENTING` /
+  `REVIEWING` / `PR_VALIDATION` → flagged as an Advisory in the
+  transition_log; does not auto-rollback (humans get a diff-aware
+  warning at the next health check).
 
 Storage location for the OrchestratorStateRepo is **deferred to
 implementation**. Candidates include a SQLite sidecar, flat YAML files
@@ -231,8 +313,8 @@ commits only to the canonical-ownership rule and the entity shape.
 
 The Orchestrator is a CLI tool named `pdlc`. It has no daemon process.
 Each invocation of `pdlc tick` reads state, dispatches and reaps
-worker sessions, advances FSM stages whose gates have passed, and
-exits. The same code path serves both cron-driven and human-invoked
+worker sessions, advances lifecycle stages whose gates have passed,
+and exits. The same code path serves both cron-driven and human-invoked
 ticks.
 
 ### Tick algorithm (high-level)
@@ -243,23 +325,23 @@ pdlc tick:
   DISCOVER:
     query WorkTracker for Objectives created or changed since last marker
     for each unknown Objective:
-      initialise OrchestratorStateRepo entry at stage 3
-      run stage-3 exit gates (Atomic-AT lint, DoD application, Sizing Gate)
+      initialise OrchestratorStateRepo entry at lifecycle_stage=CANDIDATE_UOW
+      run CANDIDATE_UOW exit gates (Atomic-AT lint, DoD application, Sizing Gate)
       record outcome
   RECONCILE:
     for each Objective known to both stores:
-      if tracker lifecycle conflicts with Orchestrator FSM → apply
-      reconciliation rules above
+      if tracker lifecycle_status conflicts with Orchestrator lifecycle_stage
+      → apply reconciliation rules above
   REAP:
     for each Session with status running:
       check process state and report file
       if exited and report present:
         verify gate evidence
-        advance FSM stage or record strike
-        if strike == 3: route to Autopsy (freeze branch; spawn RCA Sessions)
+        advance lifecycle_stage or record strike
+        if strike == 3: route to AUTOPSY (freeze branch; spawn RCA Sessions)
       if process gone and no report: mark crashed; record strike
   DISPATCH:
-    for each Objective at a worker-driven stage with no in-flight Session:
+    for each Objective at a worker-driven lifecycle_stage with no in-flight Session:
       write Session record with status pending (BEFORE fork)
       fork detached subprocess for the appropriate persona
       update Session record to status running with PID and start_ts
@@ -287,8 +369,8 @@ non-zero with a clear message — cron will simply skip that interval.
 ### `--dry-run` mode
 
 `pdlc tick --dry-run` reads state and reports the dispatches, reaps,
-and FSM advancements it would have performed, without mutating any
-state. Safe to run concurrently with real ticks (read-only).
+and lifecycle-stage advancements it would have performed, without
+mutating any state. Safe to run concurrently with real ticks (read-only).
 
 ## The Session Primitive
 
@@ -301,7 +383,9 @@ It has its own identity, lifecycle, and audit record.
 Session {
   id                  # session-<uuid>
   objective_id        # the Objective this Session is working on
-  fsm_stage           # 7, 8, 9, 10A, or 11 — the gate it targets
+  lifecycle_stage     # one of TEST_AUTHORING / IMPLEMENTING / REVIEWING /
+                      #   PR_VALIDATION / AUTOPSY — the gate this Session
+                      #   targets
   persona             # Test-Author / Implementer / Reviewer / RCA / etc.
   attempt_number      # 1..3; corresponds to the strike counter for this stage
   pid                 # OS process id; null until status == running
@@ -321,7 +405,7 @@ Session {
 2. **running** — subprocess forked; PID populated; updated atomically
 3. **exited** — process has terminated; awaiting reap
 4. **reaped** — Orchestrator has read the report, verified gate evidence,
-   advanced FSM state (or recorded strike)
+   advanced `objective_lifecycle_state` (or recorded strike)
 5. **crashed** — process gone but no report file present, or report
    malformed; recorded as strike with reason
 
@@ -351,9 +435,9 @@ DISCOVER():
   changes = WorkTracker.discover_since(marker)
   for each ObjectiveRecord o in changes:
     if o.id not in OrchestratorStateRepo:
-      # New Objective — initialise at stage 3 (universal entry)
-      OrchestratorStateRepo.create(o.id, fsm_stage=3, ...)
-      run_stage_3_gates(o.id)
+      # New Objective — initialise at CANDIDATE_UOW (universal entry, per L6)
+      OrchestratorStateRepo.create(o.id, lifecycle_stage=CANDIDATE_UOW, ...)
+      run_candidate_uow_gates(o.id)
     else:
       # Existing Objective — only structural fields may have changed
       OrchestratorStateRepo.mirror_structural(o.id, o)
@@ -409,7 +493,7 @@ domain.
 
 - `find_by_criteria(criteria: StructuredQuery) -> list[ObjectiveRecord]`
   (composable predicates — by type, by parent, by lifecycle, by dep
-  state, by label-or-equivalent metadata, by FSM stage projection)
+  state, by label-or-equivalent metadata, by `lifecycle_stage` projection)
 - `bulk_get(ids: list[ObjectiveID]) -> list[ObjectiveRecord]`
 
 ### Domain 6 — Spec content
@@ -440,8 +524,8 @@ adapters (Jira, GitHub) ship only after passing the same corpus.
 
 The store the Orchestrator owns. Holds:
 
-- One **Objective FSM-state record** per Objective (see Objective
-  attributes, `fsm_state` block).
+- One **Objective lifecycle-state record** per Objective (see Objective
+  attributes, `objective_lifecycle_state` block).
 - **Session records** keyed by session_id, with reverse index by
   objective_id.
 - The **last-seen Discovery marker**.
@@ -544,10 +628,10 @@ resolution and override layering) for debugging.
 | | `pdlc sessions tail <session-id>` | follow the log file |
 | Sessions (write) | `pdlc sessions kill <session-id> [--resubmit]` | SIGTERM the worker; optionally re-dispatch without burning a strike |
 | | `pdlc sessions kill --all` | emergency stop — every running session |
-| Objectives (read) | `pdlc objectives list` | every Objective with stage + active session |
-| | `pdlc objectives show <id>` | full FSM state + provenance + transition_log |
+| Objectives (read) | `pdlc objectives list` | every Objective with `lifecycle_stage` + active session |
+| | `pdlc objectives show <id>` | full `objective_lifecycle_state` + provenance + transition_log |
 | | `pdlc objectives log <id>` | transition log only |
-| Objectives (override) | `pdlc objectives advance <id> --to <stage> --reason <text> --force` | force-advance the FSM; audit-logged |
+| Objectives (override) | `pdlc objectives advance <id> --to <stage> --reason <text> --force` | force-advance `lifecycle_stage`; audit-logged |
 | | `pdlc objectives reset-strikes <id> --stage <s> --reason <text> --force` | reset strikes; audit-logged |
 | | `pdlc objectives unfreeze <id> --reason <text> --force` | lift Autopsy frozen-branch lock; audit-logged |
 | Operations | `pdlc reconcile` | run a Discovery Sweep + reconcile pass on demand |
@@ -649,6 +733,14 @@ deferred:
 ## Glossary additions made to CONTEXT.md by this spec
 
 - **Objective** — new entry as the umbrella primitive.
-- **Idea** — updated to cross-reference Objective at FSM stage 1.
-- **Candidate UoW** — updated to cross-reference Objective at stage 3
-  and to note the universal-entry-point discipline (L6).
+- **Idea** — updated to cross-reference Objective at `IDEA_RAW`.
+- **Candidate UoW** — updated to cross-reference Objective at
+  `CANDIDATE_UOW` and to note the universal-entry-point discipline (L6).
+- **Lifecycle stage constants** — the full Lifecycle Stage Constants
+  table is defined in this spec and is the canonical reference.
+  Terminal-state constants (`MERGED`, `KILLED`, `PARKED`) are
+  additionally defined as individual entries in CONTEXT.md's "Terminal
+  Lifecycle States" section. Per-stage constants (`IDEA_RAW`,
+  `CANDIDATE_UOW`, `IMPLEMENTING`, `MERGING`, etc.) are not yet
+  individually itemised in CONTEXT.md; they will be added as the
+  orchestrator implementation matures.

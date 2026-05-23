@@ -15,7 +15,7 @@ finding across multiple passes.
   `/Users/scott/.crit/reviews/6c185cd92050/review.json`. Anchors and bodies
   preserved verbatim in the appendix.
 - **Codex gpt-5.5 adversarial review** (2026-05-23) — 8 numbered sections.
-  Full text archived at `/tmp/codex-adversarial-review-output.md`.
+  Full text archived at `docs/specs/2026-05-23-pdlc-orchestrator-core-codex-adversarial-review.md`.
 
 ## Finding ID convention
 
@@ -44,15 +44,15 @@ language; references like "Integration §A" violate that contract.
 
 | ID | Source | Severity | Location | Claim | Proposed action | Status |
 |---|---|---|---|---|---|---|
-| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `PR_MERGED`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | open |
-| S-04 | Scott | major | spec L109 | `fsm_state` is a concept name applied to a problem; rename to `objective_lifecycle_state` (or better) | Rename `fsm_state` → `objective_lifecycle_state` in the Objective data model; rename `fsm_stage` → `lifecycle_stage`. Cascades to all subsequent code, tables, CLI strings. | open |
-| S-12 | Scott | major | spec L189 | "FSM stage" in attributes table should read "Objective Lifecycle Stage" | Apply rename from S-04 consistently in attribute tables. | open |
-| S-15 | Scott | minor | spec L304 | `fsm_stage` in Session data model — apply the rename | Same rename cascade. | open |
-| S-16 | Scott | major | spec L356 | Pseudocode `run_stage_3_gates(o.id)` — no obscure references in code | Rename to `run_<lifecycle-stage-name>_gates(o.id)` using the canonical English name from S-01. | open |
-| S-03 | Scott | minor | spec L101–102 | `spec_blob` — if it's the Draft Spec body, call it `draft_spec` and drop the `_blob` suffix | Rename `spec_blob` → `draft_spec`. | open |
-| S-10 | Scott | major | spec L162 | `I3` is meaningless to a reader — stay away from unexplained codes/acronyms | Replace `I3 sibling captures` with descriptive prose; do a global sweep for any other inline rule-IDs that aren't defined in this spec. | open |
-| S-07 | Scott | major | spec L133–135 | CONTEXT.md references "Integration §A/B/C" instead of actual terms — violates CONTEXT.md's mandate to establish a universal language | Replace `Integration §A/§B/§C` with the named lifecycle stages (PR Mechanical Validation, Human Approval Hold, Merge + Cleanup). Sweep the spec AND CONTEXT.md for any other §-style references that should be names. | open |
-| S-08 | Scott | minor | spec L137 | Terminal states (Merged / Killed / Parked) should appear in CONTEXT.md too | Add the terminal-state entries to CONTEXT.md alongside the other Objective lifecycle stages. | open |
+| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `MERGING`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | applied (22eeded) |
+| S-04 | Scott | major | spec L109 | `fsm_state` is a concept name applied to a problem; rename to `objective_lifecycle_state` (or better) | Rename `fsm_state` → `objective_lifecycle_state` in the Objective data model; rename `fsm_stage` → `lifecycle_stage`. Cascades to all subsequent code, tables, CLI strings. | applied (22eeded) |
+| S-12 | Scott | major | spec L189 | "FSM stage" in attributes table should read "Objective Lifecycle Stage" | Apply rename from S-04 consistently in attribute tables. | applied (22eeded) |
+| S-15 | Scott | minor | spec L304 | `fsm_stage` in Session data model — apply the rename | Same rename cascade. | applied (22eeded) |
+| S-16 | Scott | major | spec L356 | Pseudocode `run_stage_3_gates(o.id)` — no obscure references in code | Rename to `run_<lifecycle-stage-name>_gates(o.id)` using the canonical English name from S-01. | applied (22eeded) |
+| S-03 | Scott | minor | spec L101–102 | `spec_blob` — if it's the Draft Spec body, call it `draft_spec` and drop the `_blob` suffix | Rename `spec_blob` → `draft_spec`. | applied (22eeded) |
+| S-10 | Scott | major | spec L162 | `I3` is meaningless to a reader — stay away from unexplained codes/acronyms | Replace `I3 sibling captures` with descriptive prose; do a global sweep for any other inline rule-IDs that aren't defined in this spec. | applied (22eeded) |
+| S-07 | Scott | major | spec L133–135 | CONTEXT.md references "Integration §A/B/C" instead of actual terms — violates CONTEXT.md's mandate to establish a universal language | Replace `Integration §A/§B/§C` with the named lifecycle stages (PR Mechanical Validation, Human Approval Hold, Merge + Cleanup). Sweep the spec AND CONTEXT.md for any other §-style references that should be names. | applied (22eeded) |
+| S-08 | Scott | minor | spec L137 | Terminal states (Merged / Killed / Parked) should appear in CONTEXT.md too | Add the terminal-state entries to CONTEXT.md alongside the other Objective lifecycle stages. | applied (22eeded) |
 
 **Cross-cutting notes:** Codex's "Things The Spec Gets Right" item about
 "first-class Sessions" survives the rename; nothing in this concept area
@@ -511,12 +511,86 @@ a child bead under wgclw.2:"
 
 ## Appendix B — Codex adversarial review (full text)
 
-Full output preserved at `/tmp/codex-adversarial-review-output.md`. The
-concept-area sections above carry the actionable Codex findings with
+Full output preserved at
+`docs/specs/2026-05-23-pdlc-orchestrator-core-codex-adversarial-review.md`.
+The concept-area sections above carry the actionable Codex findings with
 IDs C-N.M. Two items from Codex Section 2 (Load-Bearing Assumptions) and
 all 9 of Codex Section 6 (Stress Tests) appear distributed across the
 appropriate concept areas. Codex Section 8 (Things The Spec Gets Right)
 is preserved verbatim in Concept Area 21.
+
+---
+
+## Pre-Ultraplan Briefing (Round 1 → ultraplan handoff)
+
+> Inputs to be passed alongside the spec and this ledger when invoking
+> `/ultraplan`. Locks in pre-decisions and non-negotiable constraints so
+> ultraplan does not waste revision cycles on choices we have already
+> made — and does not finesse the contested architectural choices we
+> need it to recommend on.
+
+### MVP Boundary — what is IN for the first wgclw.2 implementation pass
+
+- **Objective primitive** with the full attribute list (after CA-2 Phase-2 additions: `is_container`, `priority`).
+- **The PDLC lifecycle-stage runner** — every named stage from `CANDIDATE_UOW` through `MERGING`.
+- **Holding Place** (`IDEA_RAW` / `IDEA_SHAPED`) — minimum viable handling per the CA-8 decision (ownership choice pending ultraplan recommendation).
+- **Single-host CLI tick** (`pdlc tick`) with the async dispatch + reap pattern (Option B).
+- **OrchestratorStateRepo** — persistence spine; **versioned** (S-17 non-negotiable). Backend choice pending CA-4 ultraplan recommendation.
+- **Session primitive + JobSupervisor contract** (CA-7) — pre-execution authority, not reap-time.
+- **Discovery + reconciliation** against the minimum WorkTracker protocol (CA-12, shrunk from 7 domains).
+- **Reference bd adapter** validated against the protocol before the revision pass completes.
+- **Mechanical gates with pre-strike triage** (CA-9) — separate cognition failures from tooling / reviewer-artifact / flake / config / dependency failures.
+- **Terminal-state semantics** with explicit disposition metadata (CA-10).
+- **Transition log** (append-only, schema specified per CA-14).
+- **Invariant model** section in spec (CA-20).
+- **Crash-recovery table** covering the named transition points (CA-5 / C-5.1).
+- **Worktree discipline** (CA-18) — branch naming, base-commit pinning, dirty-state detection, cleanup idempotency.
+
+### MVP Boundary — what is OUT (deferred to follow-up beads, do NOT bloat into this revision)
+
+- Distributed / multi-host / remote-runner orchestration (CA-17 / C-5.4) — single-host assumption is explicit.
+- `.local` config layering + on-demand config-file creation (S-19 / CA-13).
+- Post-MVP re-apply-Agent-Ready-gate on spec-mutation during `TEST_AUTHORING` through `PR_VALIDATION` (S-18 / CA-11).
+- Worker-authority sandboxing v2 (containerization beyond worktree-isolation + path allowlists).
+- Full audit-forensics layer (hash-chain transition log, tamper model). Basic append-only log is IN; cryptographic layer is OUT.
+- Rich `pdlc health` dashboards. Basic stage-histogram + session inventory + recent failure taxonomy are IN.
+- Multi-reviewer / codeowner-aware reviewer-state generalization (post-MVP).
+- Spec-modularization skill referenced in related-bead R2.1.
+
+### What ultraplan MUST decide (recommend with reasoning — do NOT punt)
+
+- **CA-4** — Choice of storage backend (SQLite-WAL vs Dolt-style versioned store vs other). Versioning is the non-negotiable; ultraplan picks among candidates that meet that bar.
+- **CA-8** — Holding-Place ownership: Option A (external HoldingPlace service, stages 1–2 NOT Orchestrator Objectives) vs Option B (orchestrator owns stages 1–2). A hybrid that re-creates the L6/primitive contradiction is unacceptable.
+- **CA-12** — Final scope of the minimum WorkTracker protocol: which of the seven domains stay, which move to the orchestrator sidecar, which become explicit v2 protocol expansion.
+
+### Non-Negotiable Constraints
+
+ultraplan **must honor** these without recommending around them:
+
+1. **OrchestratorStateRepo MUST be versioned** (S-17). Backend is open; versioning is not.
+2. **Mission alignment**: every revision serves the 85/5/10 operating ratio. Revisions that add human gates without proportional autonomy gains FAIL this filter.
+3. **Doctrine**: code-over-prose, Python-over-bash, amalgams-over-conflicts. Logic that needs testing belongs in Python, not Markdown or shell.
+4. **No architectural drift into the FSM spec** (`docs/specs/2026-05-19-pdlc-state-machine-design.md`) — this revision pass is scoped to the orchestrator core. FSM-amendment suggestions go to a separate follow-up bead.
+5. **Worker authority enforced BEFORE/DURING execution** (CA-7 / C-1.6). Reap-time checks remain but do not replace pre-execution enforcement.
+6. **3-Strike pre-triage** (CA-9 / C-7.2) — failure cause is classified BEFORE a strike is charged. Strikes are charged only for cognition failures.
+7. **Protocol shrinks to MVP minimum** (CA-12) and validates against the bd reference adapter before this revision completes.
+8. **Holding-Place ownership is a decision, not a finesse** (CA-8).
+9. **Worktree discipline** (CA-18) — implementation work happens on feature branches in worktrees, never directly on `main`.
+10. **Mid-flight reconciliation** (CA-11) — sessions pinned to the `config_hash` they launched under; tracker version-checks on every write; full-reconcile pass per tick is an acceptable correctness fallback to cursor-based discovery (CA-6 / C-1.3).
+
+### Scope-bloat watchdog
+
+Any revision that touches an OUT item above gets pushed back with
+`defer-followup, do not include in this revision`. The Round-1 ledger
+absorbs the finding; the spec stays in scope.
+
+### Iteration discipline (operator-side)
+
+- One ultraplan iteration cycle per concept-area cluster, not per finding.
+- Cap at **3 rounds**. If a contested decision remains after round 3, save the plan to file via Cancel and resolve in a separate human-led conversation before re-engaging.
+- Group inline comments by concept area.
+- Emoji-react for accept/reject on individual recommendations.
+- Reserve inline comments for "rework this section" feedback.
 
 ---
 
