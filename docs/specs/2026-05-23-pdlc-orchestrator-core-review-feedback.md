@@ -44,15 +44,15 @@ language; references like "Integration §A" violate that contract.
 
 | ID | Source | Severity | Location | Claim | Proposed action | Status |
 |---|---|---|---|---|---|---|
-| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `MERGING`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | open |
-| S-04 | Scott | major | spec L109 | `fsm_state` is a concept name applied to a problem; rename to `objective_lifecycle_state` (or better) | Rename `fsm_state` → `objective_lifecycle_state` in the Objective data model; rename `fsm_stage` → `lifecycle_stage`. Cascades to all subsequent code, tables, CLI strings. | open |
-| S-12 | Scott | major | spec L189 | "FSM stage" in attributes table should read "Objective Lifecycle Stage" | Apply rename from S-04 consistently in attribute tables. | open |
-| S-15 | Scott | minor | spec L304 | `fsm_stage` in Session data model — apply the rename | Same rename cascade. | open |
-| S-16 | Scott | major | spec L356 | Pseudocode `run_stage_3_gates(o.id)` — no obscure references in code | Rename to `run_<lifecycle-stage-name>_gates(o.id)` using the canonical English name from S-01. | open |
-| S-03 | Scott | minor | spec L101–102 | `spec_blob` — if it's the Draft Spec body, call it `draft_spec` and drop the `_blob` suffix | Rename `spec_blob` → `draft_spec`. | open |
-| S-10 | Scott | major | spec L162 | `I3` is meaningless to a reader — stay away from unexplained codes/acronyms | Replace `I3 sibling captures` with descriptive prose; do a global sweep for any other inline rule-IDs that aren't defined in this spec. | open |
-| S-07 | Scott | major | spec L133–135 | CONTEXT.md references "Integration §A/B/C" instead of actual terms — violates CONTEXT.md's mandate to establish a universal language | Replace `Integration §A/§B/§C` with the named lifecycle stages (PR Mechanical Validation, Human Approval Hold, Merge + Cleanup). Sweep the spec AND CONTEXT.md for any other §-style references that should be names. | open |
-| S-08 | Scott | minor | spec L137 | Terminal states (Merged / Killed / Parked) should appear in CONTEXT.md too | Add the terminal-state entries to CONTEXT.md alongside the other Objective lifecycle stages. | open |
+| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `MERGING`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | applied (22eeded) |
+| S-04 | Scott | major | spec L109 | `fsm_state` is a concept name applied to a problem; rename to `objective_lifecycle_state` (or better) | Rename `fsm_state` → `objective_lifecycle_state` in the Objective data model; rename `fsm_stage` → `lifecycle_stage`. Cascades to all subsequent code, tables, CLI strings. | applied (22eeded) |
+| S-12 | Scott | major | spec L189 | "FSM stage" in attributes table should read "Objective Lifecycle Stage" | Apply rename from S-04 consistently in attribute tables. | applied (22eeded) |
+| S-15 | Scott | minor | spec L304 | `fsm_stage` in Session data model — apply the rename | Same rename cascade. | applied (22eeded) |
+| S-16 | Scott | major | spec L356 | Pseudocode `run_stage_3_gates(o.id)` — no obscure references in code | Rename to `run_<lifecycle-stage-name>_gates(o.id)` using the canonical English name from S-01. | applied (22eeded) |
+| S-03 | Scott | minor | spec L101–102 | `spec_blob` — if it's the Draft Spec body, call it `draft_spec` and drop the `_blob` suffix | Rename `spec_blob` → `draft_spec`. | applied (22eeded) |
+| S-10 | Scott | major | spec L162 | `I3` is meaningless to a reader — stay away from unexplained codes/acronyms | Replace `I3 sibling captures` with descriptive prose; do a global sweep for any other inline rule-IDs that aren't defined in this spec. | applied (22eeded) |
+| S-07 | Scott | major | spec L133–135 | CONTEXT.md references "Integration §A/B/C" instead of actual terms — violates CONTEXT.md's mandate to establish a universal language | Replace `Integration §A/§B/§C` with the named lifecycle stages (PR Mechanical Validation, Human Approval Hold, Merge + Cleanup). Sweep the spec AND CONTEXT.md for any other §-style references that should be names. | applied (22eeded) |
+| S-08 | Scott | minor | spec L137 | Terminal states (Merged / Killed / Parked) should appear in CONTEXT.md too | Add the terminal-state entries to CONTEXT.md alongside the other Objective lifecycle stages. | applied (22eeded) |
 
 **Cross-cutting notes:** Codex's "Things The Spec Gets Right" item about
 "first-class Sessions" survives the rename; nothing in this concept area
@@ -532,8 +532,8 @@ is preserved verbatim in Concept Area 21.
 ### MVP Boundary — what is IN for the first wgclw.2 implementation pass
 
 - **Objective primitive** with the full attribute list (after CA-2 Phase-2 additions: `is_container`, `priority`).
-- **The PDLC lifecycle-stage runner** — every named stage from `CANDIDATE_UOW` (3) through `MERGING` (10C).
-- **Holding Place** (stages 1–2) — minimum viable handling per the CA-8 decision (ownership choice pending ultraplan recommendation).
+- **The PDLC lifecycle-stage runner** — every named stage from `CANDIDATE_UOW` through `MERGING`.
+- **Holding Place** (`IDEA_RAW` / `IDEA_SHAPED`) — minimum viable handling per the CA-8 decision (ownership choice pending ultraplan recommendation).
 - **Single-host CLI tick** (`pdlc tick`) with the async dispatch + reap pattern (Option B).
 - **OrchestratorStateRepo** — persistence spine; **versioned** (S-17 non-negotiable). Backend choice pending CA-4 ultraplan recommendation.
 - **Session primitive + JobSupervisor contract** (CA-7) — pre-execution authority, not reap-time.
@@ -550,7 +550,7 @@ is preserved verbatim in Concept Area 21.
 
 - Distributed / multi-host / remote-runner orchestration (CA-17 / C-5.4) — single-host assumption is explicit.
 - `.local` config layering + on-demand config-file creation (S-19 / CA-13).
-- Post-MVP re-apply-Agent-Ready-gate on spec-mutation during stages 7–10 (S-18 / CA-11).
+- Post-MVP re-apply-Agent-Ready-gate on spec-mutation during `TEST_AUTHORING` through `PR_VALIDATION` (S-18 / CA-11).
 - Worker-authority sandboxing v2 (containerization beyond worktree-isolation + path allowlists).
 - Full audit-forensics layer (hash-chain transition log, tamper model). Basic append-only log is IN; cryptographic layer is OUT.
 - Rich `pdlc health` dashboards. Basic stage-histogram + session inventory + recent failure taxonomy are IN.

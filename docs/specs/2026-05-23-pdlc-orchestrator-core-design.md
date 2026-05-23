@@ -97,9 +97,12 @@ Objective {
   lifecycle_status                  # projection onto tracker:
                                     #   open / in_progress / closed / blocked / deferred
   priority                          # mirrored from tracker; PriorityLevel 0..4
-                                    #   (0=critical, 1=high, 2=medium, 3=low,
-                                    #   4=backlog). Mirrors bd's priority scale —
-                                    #   the reference WorkTracker adapter.
+                                    #   following bd's P0-P4 scale: 0=critical,
+                                    #   2=medium, 4=backlog (with 1 and 3 as
+                                    #   intermediate levels). Bd is the reference
+                                    #   WorkTracker adapter and forbids
+                                    #   high/medium/low labels — do not introduce
+                                    #   those terms in code or logs.
   is_container                      # bool; assigned at DECOMPOSE alongside type_stamp.
                                     #   Some type_stamp values (Epic, Feature-with-
                                     #   children) default to is_container=true; rules
@@ -133,8 +136,11 @@ Objective {
 
 The Orchestrator's `lifecycle_stage` field uses **named English constants**
 throughout — in code, data, logs, audit trails, and prose. Numeric stage
-IDs (1 through 11) appear only as a low-attention **ordering hint** in
-tables; they are not used in code or persisted state. The Lifecycle Stage
+IDs appear only as a low-attention **ordering hint** in tables, or as a
+one-shot orientation parenthetical when a constant is introduced for the
+first time in a section (e.g. "`CANDIDATE_UOW` (the lifecycle stage
+formerly numbered 3)"); they are not used in code, data, or persisted
+state. The Lifecycle Stage
 Constants table in this spec is the **canonical reference** for the
 constants themselves. CONTEXT.md carries the corresponding **conversational
 terms** (Idea, Candidate UoW, Implementation, etc.) as glossary entries;
