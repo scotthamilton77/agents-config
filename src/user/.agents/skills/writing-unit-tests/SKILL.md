@@ -3,7 +3,7 @@ name: writing-unit-tests
 model: opus[1m]
 effort: xhigh
 argument-hint: "[file or function to test]"
-description: Use when writing or reviewing unit tests, when test setup balloons with mocks, when CI coverage gates are pressuring anti-pattern tests, or when code resists testing — covers behavior-vs-implementation, fakes/stubs/spies/mocks hierarchy, refusal criteria, and rationalizations to reject
+description: Use when writing, reviewing, OR designing/spec'ing unit tests — including drafting a test plan during brainstorming or in a design doc, before any test code is typed. Also fires when test setup balloons with mocks, when CI coverage gates pressure anti-pattern tests, or when code resists testing. Covers tautology filter (don't test the language/compiler/stdlib), behavior-vs-implementation, fakes/stubs/spies/mocks hierarchy, refusal criteria, and rationalizations to reject.
 ---
 
 # Writing Unit Tests
@@ -91,6 +91,34 @@ it('should call validator.validate with card', async () => {
 ```
 
 Tests that code calls a method. Breaks on any internal change. Proves nothing about correctness.
+
+## Tautology Filter
+
+Before accepting any test into a plan, ask: **"What coded decision does this pin?"** If the answer is "the literal I just typed" or "Python/the OS," delete the test.
+
+Three failure modes to screen:
+
+### 1. Language / compiler / stdlib / OS behavior
+
+Tests that pass as long as the language isn't broken are not tests — they're comments with ceremony.
+
+| Reject | Why | Write instead |
+|---|---|---|
+| `isinstance(obj, SomeProtocol)` | Tests `@runtime_checkable` name-matching, not your logic; mypy --strict enforces signatures | Behavior test through the consumer of the object |
+| `@dataclass(frozen=True)` raises `FrozenInstanceError` | Tests stdlib dataclass machinery | Nothing — the type system enforces this |
+| `Path.is_file()` returns `False` on a directory | Tests pathlib semantics, not your probe decision | "given `settings.json` absent, auto-detect returns `()` " — tests *your choice* of what to probe |
+
+### 2. Methods with no caller in the current story
+
+If nothing in the current story invokes `source_dir(repo_root)`, a test for it is testing the return-value literal you just typed. That is not a test — it is a snapshot of your own code that would fail only if you changed the literal.
+
+**Resolution:** add `# pragma: no cover  # exercised by <consumer-story>` to the uncalled method. Add a removal note to the consumer story's AC so the pragma dies when the consumer arrives. Do NOT write coverage-theater tests to satisfy the gate.
+
+### 3. Attribute and enum literals
+
+`assert adapter.name == "claude"` when the implementation is `name = "claude"` is a tautology — the only failure mode is you changing the literal, at which point the linter tells you first. Test constant values at the consumer boundary (CLI flag parsing, config loading, provenance emission) where the wrong string breaks a visible contract. See the [enum-consumer memory](feedback_test_enum_values_at_consumers.md).
+
+**Exception:** when a public constant forms part of a serialization contract (e.g., written to disk or sent over the wire), pin it at the serialization boundary, not at the definition.
 
 ## Test Doubles
 
