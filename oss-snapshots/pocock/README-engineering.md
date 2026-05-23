@@ -1,5 +1,7 @@
 # Engineering
 
+> **Scope note (added by agents-config, not upstream):** This is the upstream `skills/engineering/README.md` from `mattpocock/skills`, preserved verbatim below. It covers only the engineering-subset skills — see `AGENTS.md` in this directory for the full in-scope inventory (engineering + in-progress + misc + productivity) and per-skill verdicts.
+
 Skills I use daily for code work.
 
 - **[diagnose](./diagnose/SKILL.md)** — Disciplined diagnosis loop for hard bugs and performance regressions: reproduce → minimise → hypothesise → instrument → fix → regression-test.

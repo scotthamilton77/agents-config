@@ -20,3 +20,6 @@ claude/rules/git-commits.md
 
 # Retired in abn9.23.1: renamed to claude-to-codex-routing.md
 claude/rules/codex-routing.md
+
+# Renamed in cx6.7.5: big-picture → where-does-this-fit
+*/skills/big-picture
