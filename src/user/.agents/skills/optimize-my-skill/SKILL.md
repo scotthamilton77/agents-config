@@ -226,7 +226,7 @@ no third-party packages required.
    - `--max-iterations` is the description-loop cap. Use the value from the
      skill's `--max-iterations` flag (default: 5).
    - `--results-dir` writes outputs to a timestamped subdirectory under the
-     given path. Phase 4b also writes into `.eval-runs/<UTC-timestamp>/` —
+     given path. Phase 4b also writes into `.eval-runs/<local-timestamp>/` —
      create that workspace directory FIRST (here in Phase 4a), then pass it
      to both `run_loop.py --results-dir` and Phase 4b's workspace path so
      they share a single timestamped root.
@@ -240,7 +240,7 @@ no third-party packages required.
 
 ### Phase 4b: Output review (semi-automated)
 
-1. **Use the shared workspace** at `<skill-dir>/.eval-runs/<UTC-timestamp>/`
+1. **Use the shared workspace** at `<skill-dir>/.eval-runs/<local-timestamp>/`
    created in Phase 4a Step 2 (the project `.gitignore` excludes `.eval-runs/`).
    Phase 4b artifacts (`run-NNNN/`, `feedback.json`) live as siblings of
    Phase 4a's `results.json` under this same timestamped root.
