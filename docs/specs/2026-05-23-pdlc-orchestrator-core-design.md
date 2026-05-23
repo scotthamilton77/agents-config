@@ -1314,11 +1314,14 @@ is orchestrator-sidecar-owned.
   the orchestrator FSM only after Holding-Place grooming promotes the
   Idea back to an Objective. Container Closure is a stage transition,
   not a create, so it does not call `create_objective` either.
-- Domain 6 stays — specs live in the tracker; orchestrator reads /
-  writes via this interface.
-- Domains 4 / 5 / 7 move to the sidecar so the adapter's required
-  surface shrinks by ~50% and the "adapter as fragile emulation layer"
-  risk (Codex C-2.1, C-7.6, C-4.1) is removed.
+- Domain 4 (Spec content; formerly Domain 6 in the pre-MVP draft)
+  stays — specs live in the tracker; orchestrator reads / writes via
+  this interface.
+- Pre-MVP Domains 4 / 5 / 7 (Dependencies / Search & surfacing /
+  Metadata channel — see "Post-MVP protocol expansions (v2)" below for
+  the canonical "(was)" mapping) move to the sidecar so the adapter's
+  required surface shrinks by ~50% and the "adapter as fragile
+  emulation layer" risk (Codex C-2.1, C-7.6, C-4.1) is removed.
 
 ### Domain 1 — Discovery & state
 
