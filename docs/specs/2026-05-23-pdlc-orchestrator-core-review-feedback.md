@@ -44,7 +44,7 @@ language; references like "Integration §A" violate that contract.
 
 | ID | Source | Severity | Location | Claim | Proposed action | Status |
 |---|---|---|---|---|---|---|
-| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `PR_MERGED`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | open |
+| S-01 | Scott | major | spec L94 | All `fsm_stage` values (1, 2, 3, …, 6', 10A/B/C, 11) need English constant names — no cryptic codes through the data | Define a stage-name constants table (e.g. `IDEA_RAW`, `IDEA_SHAPED`, `CANDIDATE_UOW`, `SHAPING`, `READY_TO_DECOMPOSE`, `IMPLEMENT`, `IMPLEMENT_FIXUP` for 6', `REVIEW`, `MERGE_GATE`, `PR_MECHANICAL`, `PR_HUMAN_HOLD`, `MERGING`, `KILLED`/`MERGED`/`PARKED`). Use the names throughout the spec; relegate numeric stage IDs to a dim "ordering hint" column. | open |
 | S-04 | Scott | major | spec L109 | `fsm_state` is a concept name applied to a problem; rename to `objective_lifecycle_state` (or better) | Rename `fsm_state` → `objective_lifecycle_state` in the Objective data model; rename `fsm_stage` → `lifecycle_stage`. Cascades to all subsequent code, tables, CLI strings. | open |
 | S-12 | Scott | major | spec L189 | "FSM stage" in attributes table should read "Objective Lifecycle Stage" | Apply rename from S-04 consistently in attribute tables. | open |
 | S-15 | Scott | minor | spec L304 | `fsm_stage` in Session data model — apply the rename | Same rename cascade. | open |
@@ -532,7 +532,7 @@ is preserved verbatim in Concept Area 21.
 ### MVP Boundary — what is IN for the first wgclw.2 implementation pass
 
 - **Objective primitive** with the full attribute list (after CA-2 Phase-2 additions: `is_container`, `priority`).
-- **The PDLC lifecycle-stage runner** — every named stage from `CANDIDATE_UOW` (3) through `PR_MERGED` (10C).
+- **The PDLC lifecycle-stage runner** — every named stage from `CANDIDATE_UOW` (3) through `MERGING` (10C).
 - **Holding Place** (stages 1–2) — minimum viable handling per the CA-8 decision (ownership choice pending ultraplan recommendation).
 - **Single-host CLI tick** (`pdlc tick`) with the async dispatch + reap pattern (Option B).
 - **OrchestratorStateRepo** — persistence spine; **versioned** (S-17 non-negotiable). Backend choice pending CA-4 ultraplan recommendation.
