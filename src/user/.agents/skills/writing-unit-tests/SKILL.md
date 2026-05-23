@@ -6,6 +6,13 @@ argument-hint: "[file or function to test]"
 description: Use when writing, reviewing, OR designing/spec'ing unit tests — including drafting a test plan during brainstorming or in a design doc, before any test code is typed. Also fires when test setup balloons with mocks, when CI coverage gates pressure anti-pattern tests, or when code resists testing. Covers tautology filter (don't test the language/compiler/stdlib), behavior-vs-implementation, fakes/stubs/spies/mocks hierarchy, refusal criteria, and rationalizations to reject.
 ---
 
+<!--
+Source: oss-snapshots/pocock/tdd/
+Upstream: https://github.com/mattpocock/skills @ e74f0061
+Last sync: 2026-05-23
+Drift policy: accept-periodic-resync (amalgamated deltas only — anti-horizontal-slicing rule + diagram and proactive interface-design pre-phase; companion files not pulled in)
+-->
+
 # Writing Unit Tests
 
 ## Core Principle
@@ -36,6 +43,30 @@ If you can't test it simply, the code needs refactoring — not more mocks. Test
 ```
 
 **Violating the letter of these laws is violating the spirit.** Naming a method `*ForTesting`, casting mocks to `any`, using regex matchers on outputs you haven't read, or filing a "follow-up to fix it later" are all violations dressed up as compliance. The discipline applies to intent, not syntax.
+
+## Anti-Pattern: Horizontal Slicing
+
+**DO NOT write all tests first, then all implementation.** Treating RED as "write all tests" and GREEN as "write all code" is horizontal slicing, and it produces tests of *imagined* behavior, not *actual* behavior. Symptoms:
+
+- Tests written in bulk verify the *shape* of things (data structures, signatures) rather than user-facing behavior
+- Tests become insensitive to real changes — they pass when behavior breaks, fail when behavior is fine
+- You outrun your headlights, committing to test structure before understanding the implementation
+
+**Correct approach:** vertical tracer-bullet slices. One test → one implementation → repeat. Each test responds to what you learned from the previous cycle, because you just wrote the code and know what behavior matters.
+
+```
+WRONG (horizontal):
+  RED:   test1, test2, test3, test4, test5
+  GREEN: impl1, impl2, impl3, impl4, impl5
+
+RIGHT (vertical):
+  RED→GREEN: test1→impl1
+  RED→GREEN: test2→impl2
+  RED→GREEN: test3→impl3
+  ...
+```
+
+This rule applies even when you have a clear test plan up front: enumerate behaviors in the plan, but commit them to code one cycle at a time. See "Planning Before You Test" below for how to build that plan.
 
 ## Refusal Criteria
 
@@ -167,6 +198,21 @@ it('should log when processing', async () => {
   expect(mockLogger.info).toHaveBeenCalledWith('Processing order');
 });
 ```
+
+## Planning Before You Test
+
+Reactive refactoring (see "Refactoring for Testability" below) salvages testability after the fact. Proactive interface design avoids the salvage job entirely. Before writing the first test, run this checklist:
+
+- [ ] Identify candidate **deep modules** — small interface, deep implementation (avoid shallow modules: large interface, thin implementation). Surface area is the testing cost; depth is hidden, not paid in tests.
+- [ ] Design interfaces for testability:
+  - Accept dependencies, don't construct them (pass `paymentGateway` in; don't `new StripeGateway()` inside)
+  - Return results, don't mutate hidden state (a function that returns a `Discount` is testable; one that silently edits `cart.total` is not)
+  - Keep the surface small — fewer methods = fewer tests, fewer parameters = simpler setup
+- [ ] List the **behaviors** to test, not the implementation steps. "User can checkout with valid cart" is a behavior; "calls validator then calls gateway" is implementation.
+- [ ] Confirm with the user which behaviors matter most. You can't test everything — focus on critical paths and complex logic, not every edge case.
+- [ ] Get user approval on the plan before any test code is typed.
+
+The behaviors-list output of this checklist feeds directly into the "Anti-Pattern: Horizontal Slicing" loop above: one behavior → one test → one implementation → repeat.
 
 ## Refactoring for Testability
 

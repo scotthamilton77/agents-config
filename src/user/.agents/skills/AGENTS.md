@@ -57,6 +57,7 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `grill-with-docs` | `oss-snapshots/pocock/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `caveman` | `oss-snapshots/pocock/caveman/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
 | `prototype` | `oss-snapshots/pocock/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
+| `writing-unit-tests` | `oss-snapshots/pocock/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 
 Update this table whenever a skill is added, replaced, or amalgamated from an OSS source.
 
