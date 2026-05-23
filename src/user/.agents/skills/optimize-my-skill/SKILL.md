@@ -222,12 +222,14 @@ no third-party packages required.
 
    Flag semantics:
    - `--model` is **required** by `run_loop.py` (no default). Use the value
-     from the skill's `--model` flag (default: `claude-haiku-4-5`).
+     from the skill's `--model` flag (default: `claude-haiku-4-5-20251001`).
    - `--max-iterations` is the description-loop cap. Use the value from the
      skill's `--max-iterations` flag (default: 5).
    - `--results-dir` writes outputs to a timestamped subdirectory under the
-     given path; reuse the `.eval-runs/<UTC-timestamp>/` workspace from
-     Phase 4b if you create it first.
+     given path. Phase 4b also writes into `.eval-runs/<UTC-timestamp>/` —
+     create that workspace directory FIRST (here in Phase 4a), then pass it
+     to both `run_loop.py --results-dir` and Phase 4b's workspace path so
+     they share a single timestamped root.
 
 3. **Capture results.** `run_loop.py` writes `results.json` and an HTML
    report inside the timestamped subdir under `--results-dir`. Locate the
@@ -261,7 +263,9 @@ no third-party packages required.
    - If the entry's `expectations` list is empty or missing: skip grading.
    - Otherwise: dispatch the `grader` subagent (definition at
      `<skill-dir>/agents/grader.md`) with `expectations`, `transcript_path`,
-     and `outputs_dir`. Grader writes `metrics.json` to the run dir.
+     and `outputs_dir`. Grader writes `grading.json` to the run dir
+     (this is the filename `generate_review.py` looks for; do not rename
+     to `metrics.json` despite that term appearing in earlier drafts).
 5. **Launch review server.** Shell out:
 
    ```bash
@@ -272,10 +276,12 @@ no third-party packages required.
    ```
 
    `generate_review.py` auto-opens the URL in the user's default browser
-   on startup (via `webbrowser.open()`). Emit to the user:
+   on startup (via `webbrowser.open()`). Capture the actual bound port from
+   the script's stdout (which may differ from the `--port` request if that
+   port was in use — the script retries port+1 up to 5 times). Then emit:
 
-   > Review server running at http://localhost:8742 (browser tab opened
-   > automatically — if it didn't, navigate there manually).
+   > Review server running at http://localhost:<actual-port> (browser tab
+   > opened automatically — if it didn't, navigate there manually).
    > Press Ctrl+C in the running terminal when you're done reviewing.
    > Your feedback will be saved to `<workspace>/feedback.json`.
 
@@ -290,7 +296,7 @@ no third-party packages required.
 ### Failure handling
 
 - **Port in use** — retry with port+1 up to 5 attempts; surface the final port to the user
-- **Subagent timeout** (default 5 min/run) — write `metrics.json` with `{status: "timeout"}` and continue; partial transcript still visible in review server
+- **Subagent timeout** (default 5 min/run) — write `grading.json` with `{status: "timeout"}` and continue; partial transcript still visible in review server
 - **Grader skipped** (empty expectations) — log it, no error
 - **run_loop.py non-zero exit** — surface stderr; ask user whether to retry, fall back to advisory-only Phase 4, or abort
 
@@ -305,7 +311,7 @@ edits to make, and whether another `--deep` pass is warranted.
 - From Phase 4a: `best_description`, `best_score`, `history` (each iteration's
   description + score), `final_description`
 - From Phase 4b: `feedback.json` (per-run user notes from the review server),
-  per-run `metrics.json` (if grader ran)
+  per-run `grading.json` (if grader ran)
 
 ### Process
 
@@ -313,7 +319,7 @@ edits to make, and whether another `--deep` pass is warranted.
    differ, summarize the delta in 1–2 sentences for the user.
 2. **Read feedback.json.** Group user notes by run; identify recurring themes
    (e.g., "skill never read the SKILL.md", "missed a frontmatter check").
-3. **Read each metrics.json** (where present). Identify expectations that
+3. **Read each grading.json** (where present). Identify expectations that
    failed across multiple runs — those signal systematic skill weaknesses.
 4. **Propose a structured update** in this shape:
 

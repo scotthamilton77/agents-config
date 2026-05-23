@@ -44,3 +44,6 @@ htmlcov/
 
 # optimize-my-skill --deep workspaces (persistent but not committed)
 .eval-runs/
+
+# Sidekick ephemeral session state (transcripts, persona JSON, metrics)
+.sidekick/
