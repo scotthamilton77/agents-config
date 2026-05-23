@@ -240,8 +240,10 @@ no third-party packages required.
 
 ### Phase 4b: Output review (semi-automated)
 
-1. **Create persistent workspace** at `<skill-dir>/.eval-runs/<UTC-timestamp>/`
-   (the project `.gitignore` excludes `.eval-runs/`).
+1. **Use the shared workspace** at `<skill-dir>/.eval-runs/<UTC-timestamp>/`
+   created in Phase 4a Step 2 (the project `.gitignore` excludes `.eval-runs/`).
+   Phase 4b artifacts (`run-NNNN/`, `feedback.json`) live as siblings of
+   Phase 4a's `results.json` under this same timestamped root.
 2. **Select prompts.** First 3 entries with `should_trigger:true` from the
    eval set, in file order (deterministic; no random sampling).
 3. **Dispatch run subagents in parallel** (single message, multiple Agent
