@@ -616,9 +616,9 @@ Two stores, two domains, two canonical authorities:
 | Spec content | Draft Spec body, Decomposition Plan |
 | Lifecycle status | open / in_progress / closed / blocked / deferred |
 | Priority | PriorityLevel 0..4; mirrored onto Objective; tracker authoritative |
-| Dependencies | typed; both directions; with reasons |
+| Dependencies | typed; both directions; with reasons (NOT part of MVP `WorkTracker` protocol — see CA-12; orchestrator mirrors into `OrchestratorStateRepo.DependencyEdges` for MVP) |
 | Audit notes | append-only human-readable trail |
-| Metadata channel | typed bag for lifecycle-stage projection markers, etc. |
+| Metadata channel | typed bag for lifecycle-stage projection markers, etc. (NOT part of MVP `WorkTracker` protocol — see CA-12; per-Objective overrides live in `OrchestratorStateRepo.MetadataOverrides` for MVP) |
 
 ### Orchestrator domain (Orchestrator's own store)
 

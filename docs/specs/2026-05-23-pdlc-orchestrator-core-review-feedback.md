@@ -29,6 +29,7 @@ finding across multiple passes.
 - `discuss` — needs conversation before resolution
 - `applied` — edit landed in the spec; record commit/diff reference
 - `deferred-child` — pushed to a child bead under wgclw.2 implementation
+- `deferred-impl-child` — synonym of `deferred-child`; pushed to a specific implementation child bead (with id)
 - `deferred-followup` — post-MVP, captured in follow-up bead (with id once filed)
 - `out-of-scope` — explicitly rejected with reason
 - `superseded` — replaced by a more comprehensive finding (link to superseder)
