@@ -45,7 +45,7 @@ Before optimizing, ensure the target file is **up to date, accurate, and complet
 
 **Before touching the file, ask the user these 5 questions and STOP — wait for their reply.** Answers shape every optimization decision.
 
-`AskUserQuestion` enforces `questions.maxItems = 4`, so 5 questions in one call fails input validation. Use a prose numbered prompt instead. Print:
+5 questions exceeds `AskUserQuestion`'s cap (see the `user-prompts` rule). Use a prose numbered prompt instead. Print:
 
 ```
 Before optimizing, I need answers to 5 scope questions. Please answer each by number:
