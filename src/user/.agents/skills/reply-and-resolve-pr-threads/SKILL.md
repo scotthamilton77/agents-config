@@ -10,6 +10,15 @@ model: sonnet[1m]
 effort: low
 ---
 
+<!--
+Provenance pointer: this skill is a renderer; classification and fix
+discipline live upstream. Pushback discipline (verify-before-agreeing,
+push-back-with-reasoning, YAGNI grep, blast-radius check) lives in
+`../wait-for-pr-comments/references/handling-feedback.md`. Amalgamated
+from oss-snapshots/superpowers/receiving-code-review/SKILL.md at commit
+f2cbfbe (v5.1.0). Tracked under bead agents-config-cx6.7.11.
+-->
+
 # reply-and-resolve-pr-threads
 
 Reply to every PR review thread (FIX, SKIP, ESCALATE-with-`escalation_filed=true`) and resolve only the FIXED `review_thread`s via GraphQL `resolveReviewThread`.

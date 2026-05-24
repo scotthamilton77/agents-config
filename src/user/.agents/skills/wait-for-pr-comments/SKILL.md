@@ -14,6 +14,14 @@ model: sonnet[1m]
 effort: medium
 ---
 
+<!--
+Provenance pointer: pushback discipline for the per-comment subagent and
+the orchestrator-side classifier lives in
+`references/handling-feedback.md`. Amalgamated from
+oss-snapshots/superpowers/receiving-code-review/SKILL.md at commit
+f2cbfbe (v5.1.0). Tracked under bead agents-config-cx6.7.11.
+-->
+
 # wait-for-pr-comments
 
 End-to-end PR-review responder. Polls Copilot via background bash (zero
@@ -138,6 +146,16 @@ want to proceed?"
 
 ### Phase 3 — Inventory + classify (FIX / SKIP / ESCALATE) + ESCALATE branch (Phase 3.5)
 
+**Before classifying any item, load `references/handling-feedback.md`**
+via the `Read` tool. The file sits next to this SKILL.md in the
+installed skill directory (e.g. `~/.claude/skills/wait-for-pr-comments/references/handling-feedback.md`
+in Claude installs; resolve the equivalent path for the active tool).
+The seven patterns there — no performative agreement, restate, verify
+against the codebase, push back with reasoning, ask before assuming,
+YAGNI grep, blast-radius check — gate every FIX/SKIP/ESCALATE decision.
+Classifications made without that discipline produce wrong-direction
+fixes and empty SKIP rationales.
+
 Build the inventory items array. Each item has both:
 
 - **`classification`** — primary triage (FIX / SKIP / ESCALATE).
@@ -216,9 +234,15 @@ re-merge any user reclassifications into the inventory before Phase 4.
      ```
      The `<task-spec>` MUST pass: `comment_id`, `comment_thread_id`,
      comment `body`, the code-location (file + line(s) + any anchor
-     metadata), the repo path, and the absolute report path constructed
-     above. The worker classifies (FIX/SKIP/ESCALATE), takes action
-     (COMMITTED_FIX/ALREADY_ADDRESSED/NO_ACTION), and writes a
+     metadata), the repo path, the absolute report path constructed
+     above, and the **fully-expanded absolute path** to the
+     pushback-discipline reference doc — `handling-feedback.md` next to
+     this SKILL.md in the installed skill directory (e.g.
+     `~/.claude/skills/wait-for-pr-comments/references/handling-feedback.md`).
+     **Do NOT pass a literal `${CLAUDE_SKILL_DIR}/...` string** — the
+     subagent has no shell context to expand it. The worker reads the
+     reference doc FIRST, then classifies (FIX/SKIP/ESCALATE), takes
+     action (COMMITTED_FIX/ALREADY_ADDRESSED/NO_ACTION), and writes a
      `pr-comment-fix-report-v1` YAML to the absolute report path.
 
      The orchestrator runs on `sonnet[1m]`; the FIX subagent MUST run on
