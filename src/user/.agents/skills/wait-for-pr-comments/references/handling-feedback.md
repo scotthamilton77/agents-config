@@ -6,7 +6,7 @@ Source: oss-snapshots/superpowers/receiving-code-review/SKILL.md.
 Drift policy: in-tree copy. Re-sync only when the source materially
 changes; pattern #7 (blast-radius) is a local addition with no upstream
 equivalent. Discovered work for related lifts is tracked under bead
-agents-config-cx6.7.6.
+agents-config-cx6.7.11.
 -->
 
 # Handling PR Review Feedback
