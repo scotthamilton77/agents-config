@@ -3,6 +3,7 @@
 **Source bead**: `agents-config-wgclw.2`
 **Parent milestone**: `agents-config-wgclw` (M0 — Discipline-layer rearchitecture)
 **Companion spec**: `docs/specs/2026-05-19-pdlc-state-machine-design.md`
+**HLD artifact set**: [`docs/architecture/pdlc-orchestrator/`](../architecture/pdlc-orchestrator/index.md) — multi-view diagrams (C4 L1 / L2 / L3, sequences, state machine, data view, deployment) visualising the architecture described in this spec. Filed as `agents-config-wgclw.2.1`. Every implementation child of `wgclw.2` should read at minimum the HLD index, C4 L1, C4 L2, the tick-cycle sequence, and the state machine before drafting its bead Spec, so that scope claims align with the system boundary at L2.
 **Glossary**: `CONTEXT.md` (Objective, Idea, UoW, Candidate UoW, etc.)
 **Date**: 2026-05-23
 **Status**: Design draft — pending review and implementation planning
