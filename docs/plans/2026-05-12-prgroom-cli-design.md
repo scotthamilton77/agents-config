@@ -553,6 +553,7 @@ function exitCodeForTier(tier):
         case PRECONDITION_LOCK_HELD:     return 75  # EX_TEMPFAIL (transient-equivalent for scheduler retry)
         case RUNTIME_TRANSIENT:          return 75  # EX_TEMPFAIL
         case RUNTIME_TERMINAL_USER:      return 77  # EX_NOPERM
+        case RUNTIME_CANCELLED:          return 128 + signum(err)  # 130 (SIGINT) or 143 (SIGTERM); non-retryable
         case CONTRACT_AUDIT_FAILED:      return 65  # EX_DATAERR
         case STATE_CORRUPT, STATE_SCHEMA_UNKNOWN: return 78  # EX_CONFIG
         case LIFECYCLE_CAP:              return 0   # graceful terminal exit
@@ -785,8 +786,8 @@ function handle_verb_error(err, state) Disposition:
 
 - Signature: `waitLocked(pr PRRef, state *PRGroomingState) (*PRGroomingState, error)`.
 - Behavior: sleeps + internally invokes `pollLocked` at the §4-defined cadence, returning when either (a) the polled state transitions to a new phase, (b) the §4-defined quiescence threshold trips (writes `Phase = quiesced` and returns), or (c) a §4-defined hard-timeout fires (returns without phase change).
-- Error tiers: may return `RUNTIME_TRANSIENT` if internal `pollLocked` invocations hit gh API blips beyond the retry budget; otherwise `nil`.
-- Cancellation: honors a context `Done` channel if the caller plumbs one through; in MVP, signals (SIGINT/SIGTERM) cause `waitLocked` to return promptly with an error tagged `RUNTIME_TRANSIENT` so the lock releases cleanly.
+- Error tiers: may return `RUNTIME_TRANSIENT` if internal `pollLocked` invocations hit gh API blips beyond the retry budget; `RUNTIME_CANCELLED` if a signal interrupts the wait (see Cancellation below); otherwise `nil`.
+- Cancellation: honors a context `Done` channel if the caller plumbs one through; in MVP, signals (SIGINT/SIGTERM) cause `waitLocked` to return promptly with an error tagged `RUNTIME_CANCELLED` (NOT `RUNTIME_TRANSIENT`) so the lock releases cleanly AND the scheduler does not retry the cancelled invocation. The exit code is `128 + signum` per Unix convention (130 for SIGINT, 143 for SIGTERM), distinct from `RUNTIME_TRANSIENT`'s exit 75 (`EX_TEMPFAIL`). This separation prevents the "cancelled-work resurrection" failure mode in which a Ctrl-C'd `run --autonomous` is re-driven by the scheduler against the operator's intent.
 - Lock semantics: assumes the caller holds the PR lock; does NOT release the lock during sleep (lock stays held for the entire `Run --autonomous` invocation per §3.5).
 
 **`run --interactive` differences:** identical control flow except the verb returns 0 on reaching `awaiting-review`, `idle`, or any terminal-for-CLI phase. It never calls `waitLocked`. On `idle`, the interactive variant emits a one-line stderr advisory (`prgroom: nothing to do — PR has no commits yet (phase=idle)`) so callers can distinguish "nothing to do" from "completed work." Escalations route through the default `EscalationSink` (stderr).
@@ -866,6 +867,7 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 | `PRECONDITION_NO_WORK` | preconditions met but nothing to do | 0 (success-no-op) | none | no | proceeds |
 | `RUNTIME_TRANSIENT` | gh 5xx, network blip, rate-limit with `Retry-After`, GraphQL transient | 75 (`EX_TEMPFAIL`) | none; `LastError` set | no | scheduler retries on next cadence |
 | `RUNTIME_TERMINAL_USER` | gh auth missing/expired, repo deleted, branch protection blocks push, OAuth scope insufficient | 77 (`EX_NOPERM`) | → `human-gated`; `LastError` set | yes | aborts; user/operator must resolve |
+| `RUNTIME_CANCELLED` | SIGINT / SIGTERM received during `waitLocked` (or other blocking internal); operator Ctrl-C or scheduler-issued cancellation | 130 (SIGINT) / 143 (SIGTERM) — `128 + signum` per Unix convention | none; `LastError` left unchanged (cancellation is not a gating condition) | no | scheduler MUST NOT retry — non-retryable by convention; operator decides whether to re-invoke |
 | `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb and `LastError` set by `handle_verb_error`; end-of-cycle resolver §3.2 priority 3 always promotes phase to `human-gated` (any `failed` item, any cause, always gates) | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
 | `STATE_CORRUPT` | tracker JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
 | `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
@@ -921,6 +923,8 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 | `RUNTIME_GIT_TRANSIENT` | `RUNTIME_TRANSIENT` (75) | git network operation timed out | upstream connectivity blip | retry on next cadence |
 | `RUNTIME_AGENT_UNAVAILABLE` | `RUNTIME_TRANSIENT` (75) | Primary AND fallback agent CLIs both failed | upstream model/tool unavailable | check `claude` / `codex` CLIs; verify quotas |
 | `RUNTIME_AGENT_TIMEOUT` | `RUNTIME_TRANSIENT` (75) | Per-contract time budget exceeded | agent exceeded its budget for one cluster | re-run; if persistent, raise budget or shrink cluster |
+| `RUNTIME_CANCELLED_SIGINT` | `RUNTIME_CANCELLED` (130) | SIGINT received during a blocking internal (typically `waitLocked`); operator pressed Ctrl-C | operator-initiated stop; non-retryable | inspect state via `prgroom status`; re-invoke `run` manually if/when desired |
+| `RUNTIME_CANCELLED_SIGTERM` | `RUNTIME_CANCELLED` (143) | SIGTERM received during a blocking internal; scheduler-issued cancellation or container shutdown | external-initiated stop; non-retryable | inspect state via `prgroom status`; scheduler MUST treat 143 as terminal, not as a retry signal |
 
 #### `CONTRACT_*`
 
