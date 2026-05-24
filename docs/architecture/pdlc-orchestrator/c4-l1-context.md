@@ -27,6 +27,8 @@ C4Context
     System_Ext(config, "project-config files", "TOML on disk; carries every PDLC parameter; pinned per-Session by config_hash")
 
     Rel(operator, pdlc, "Runs pdlc tick / health / objectives; signs off at human gates")
+    Rel(operator, holding, "Captures Ideas via HoldingPlace-CLI", "originates pre-Objective work")
+    Rel(operator, tracker, "Creates Idea-less Objectives directly: bugs, chores, sibling captures", "originates work")
     Rel(cron, pdlc, "Triggers pdlc tick", "cron")
     Rel(config, pdlc, "Provides config_hash-stamped configuration", "read at tick start")
 
@@ -43,8 +45,9 @@ C4Context
 
 ### People
 
-- **Developer / Operator** — the human at the wheel. Three load-bearing interactions:
-  - **Ad-hoc command invocations** (`pdlc tick`, `pdlc health`, `pdlc objectives show <id>`, `pdlc reconcile`, `pdlc objectives unfreeze`). The CLI is the entire user-facing surface; there is no daemon and no dashboard.
+- **Developer / Operator** — the human at the wheel. Four load-bearing interactions:
+  - **Originating work** — the operator is the source of all new units of intent the system tracks. Two paths exist depending on the maturity of the thought: capture an `Idea` in the **Holding Place** when the thought needs Grooming and Shaping before it can be specified, or create an *Idea-less Objective* directly in the **Work Tracker** for obvious work (bug with clean repro, chore, dependency bump, sibling capture discovered mid-implementation). Both paths converge at `CANDIDATE_UOW` per Law L6 — Ideas reach it via Holding-Place promotion, Idea-less Objectives arrive there directly. The Orchestrator observes both via Discovery on the next tick. Programmatic creation by formulas, hygiene sweeps, or Autopsy routes 4 & 5 is the same shape and routes through the same surfaces; "operator" here is human-or-agent.
+  - **Ad-hoc command invocations** (`pdlc tick`, `pdlc health`, `pdlc objectives show <id>`, `pdlc reconcile`, `pdlc objectives unfreeze`). The CLI is the entire user-facing surface for PDLC itself; there is no daemon and no dashboard.
   - **Human signoffs** at the two human gates the FSM mandates: `CANDIDATE_UOW → AGENT_WORTHY` (Spec signoff) and `PR_HUMAN_HOLD → MERGING` (approval before merge).
   - **`needs_reconcile` disposition** when the Orchestrator surfaces an Objective it could not reconcile mechanically (terminal-disposition classifier ambiguous; fingerprint mismatch unresolved).
 
