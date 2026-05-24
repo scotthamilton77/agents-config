@@ -22,15 +22,13 @@ digraph when_to_use {
     "Multiple files involved?" [shape=diamond];
     "Symptom unclear?" [shape=diamond];
     "Use this skill" [shape=doublecircle];
-    "Use systematic-debugging" [shape=box];
-
     "Bug reported" -> "Root cause obvious?";
     "Root cause obvious?" -> "Fix directly" [label="yes, single line"];
     "Root cause obvious?" -> "Multiple files involved?" [label="no"];
     "Multiple files involved?" -> "Use this skill" [label="yes"];
     "Multiple files involved?" -> "Symptom unclear?" [label="no, single file"];
     "Symptom unclear?" -> "Use this skill" [label="yes"];
-    "Symptom unclear?" -> "Use systematic-debugging" [label="no"];
+    "Symptom unclear?" -> "Fix directly" [label="no, clear single-file symptom"];
 }
 ```
 
@@ -114,8 +112,7 @@ digraph synthesis {
 
 **Honesty clause:** If a thread's findings are inconclusive, say so. "Git history shows no relevant changes in the last 20 commits" is a valid finding. "I couldn't reproduce the failure" is a valid finding. Do NOT speculate to fill gaps.
 
-**Fallback:** If root cause remains unclear after synthesis, escalate to complementary skill:
-- `superpowers:systematic-debugging` — full sequential 4-phase approach (includes root-cause tracing and condition-based waiting)
+**Fallback:** If root cause remains unclear after synthesis, document findings (what each thread ruled out, what remains unexplained) and escalate to the user with a targeted investigation proposal.
 
 ## Implementation Phase
 

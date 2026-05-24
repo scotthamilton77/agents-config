@@ -2,7 +2,7 @@
 
 Audit and improve existing SKILL.md files via the `optimize-my-skill` skill.
 
-> **Tip**: For *creating* new skills from scratch, prefer `superpowers:writing-skills` if available. This command is for *auditing and improving* existing skills.
+> **Tip**: For *creating* new skills from scratch, prefer the `writing-skills` skill. This command is for *auditing and improving* existing skills.
 
 ## Arguments
 

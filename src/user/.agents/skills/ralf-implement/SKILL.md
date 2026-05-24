@@ -230,7 +230,7 @@ This bead (`agents-config-abn9.10`) covers R3.1 (the ralf-implement rename and S
 
 This SKILL.md is the **canonical home** for `ralf:required` label semantics. The two formula files (`implement-feature.formula.toml`, `fix-bug.formula.toml`) carry a header pointer comment back here rather than re-stating the semantics inline:
 
-- `ralf:required` on a source bead is the dispatch signal that tells the `green-loop` formula step to invoke this skill (`ralf-implement`) instead of running a single-shot `superpowers:test-driven-development` dispatch.
+- `ralf:required` on a source bead is the dispatch signal that tells the `green-loop` formula step to invoke this skill (`ralf-implement`) instead of running a single-shot `test-driven-development` dispatch.
 - `ralf:cycles=N` on the source bead overrides the default cycle cap (`RALF_IMPLEMENT_DEFAULT_CYCLES=3`). The label form is `ralf:cycles=N` where `N` is a decimal integer in `1..20`. Multiple `ralf:cycles=` labels on the same bead are a configuration error — remove existing `ralf:cycles=` labels before adding a replacement.
 - `ralf:required` is honored only by `green-loop` (implementation) and (for ralf-review, post-abn9.13) `review-cycle` stages. It does NOT cause this skill to be invoked from `preflight`, `red-tests`, `quality-sweep`, `verify-ac`, `create-pr`, or `merge-or-handoff` — those stages have their own dispatch contracts.
 
