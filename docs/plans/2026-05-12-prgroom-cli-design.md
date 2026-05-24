@@ -711,6 +711,12 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             # Successful cycle completion clears any prior gating error
             # (e.g., LIFECYCLE_HARD_CAP_EXCEEDED carried over from a previous run
             # that the operator has since resolved out-of-band or by raising --max-rounds).
+            # Realistic carry-overs reaching this clear: LIFECYCLE_HARD_CAP_EXCEEDED
+            # (operator raised --max-rounds and re-ran) and LIFECYCLE_HUMAN_REVIEW_REQUIRED
+            # (upstream signal cleared per §4). Other BlockingErrorCodes
+            # (STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED)
+            # keep phase at human-gated via handle_verb_error or the end-of-cycle
+            # resolver and never reach this clear-on-success branch.
             # See §3.5 "Recovery" bullet.
             state.LastError = ""
             state.LifecycleEscalationFiled = false   # reset for next gate, if any
@@ -732,6 +738,7 @@ Notes on the rewrite vs. earlier drafts:
 - Walks `state.Items`: for any item with `Disposition.Kind ∈ {escalated, failed}` AND `Disposition.EscalationFiled == false`, calls `EscalationSink.File(...)` and sets `EscalationFiled = true`.
 - If `state.LastError != ""` AND `state.LifecycleEscalationFiled == false`, calls `EscalationSink.File(...)` for the lifecycle-tier condition and sets `LifecycleEscalationFiled = true`.
 - Atomically `tracker.Write`s state after emission.
+- **Sink failure handling:** if `EscalationSink.File(...)` returns an error (stderr write failure, bd-adapter API blip), the failure is swallowed (best-effort emit). The corresponding `EscalationFiled` / `LifecycleEscalationFiled` flag is NOT set on Sink error, so the next invocation of `escalate_if_needed` re-attempts the emission for the same item or lifecycle gate. Persistent Sink failures produce repeated retry attempts but never block lifecycle progression (the cycle continues; phase transitions still happen). Operators inspecting `prgroom status` see the gating condition via `state.LastError` and per-item `Disposition.Kind` regardless of Sink reachability.
 
 **Crash-window dedup:** a crash between Sink emit and state write may double-fire on the next invocation. The Sink itself is expected to dedup idempotently — bd's `label add` is idempotent (acceptable); bd's `--append-notes` is NOT (would duplicate notes lines on retry), so the bd-adapter MUST use label-only emit, or content-hash dedup on notes. Stderr-only sinks have no dedup but the cost is one extra log line, accepted.
 
@@ -763,7 +770,15 @@ function handle_verb_error(err, state) Disposition:
             tracker.Write(state)
             return Propagate                  # Run will exit 78
         default:
-            return Propagate                  # unknown tier — fail safe
+            # Unknown tier is a programmer error — the tier enum is exhaustive
+            # over registered tiers (§3.6) and adding a new tier requires
+            # updating both the registry and this switch. Crash-loud propagation
+            # is intentional: do NOT tracker.Write(state) here, because doing so
+            # would silently persist any verb-level state mutations carried in
+            # the (potentially undefined) error and mask the bug from operators.
+            # Run maps default-tier propagation to exit code 1 (generic failure)
+            # via exitCodeForTier.
+            return Propagate
 ```
 
 **`waitLocked` contract surface (implementation owned by §4).** §3.3 only relies on the following surface; §4 defines the quiescence/timeout logic that implements it:
