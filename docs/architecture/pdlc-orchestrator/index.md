@@ -1,0 +1,78 @@
+# PDLC Orchestrator — HLD Artifact Index
+
+> **Source bead**: `agents-config-wgclw.2.1`
+> **Subsystem**: PDLC Orchestrator (`agents-config-wgclw.2` and descendants)
+> **Companion specs**:
+> - `docs/specs/2026-05-23-pdlc-orchestrator-core-design.md` — the orchestrator core design these artifacts visualise
+> - `docs/specs/2026-05-19-pdlc-state-machine-design.md` — the FSM companion
+>
+> **Glossary**: `CONTEXT.md`
+> **Status**: under construction (drafted in three waves per wgclw.2.1)
+
+## Purpose
+
+This folder is the **high-level design (HLD) artifact set** for the PDLC Orchestrator. It exists to cement the big-picture architecture before any sibling implementation child of `wgclw.2` opens, so decomposition and downstream implementation beads share a single mental model.
+
+These artifacts are **evergreen reference material**: they describe how the orchestrator is meant to be structured and behave, and they are amended in place as the design evolves. They are NOT point-in-time proposals — those live in `docs/specs/` with date-prefixed filenames.
+
+## Scope and non-scope
+
+**In scope** for this artifact set:
+
+- The orchestrator's place in its surrounding ecosystem (developer, work tracker, agents, git, CI, Holding Place, project-config)
+- The orchestrator's internal containers and their responsibilities
+- The orchestrator's runtime behaviour: tick cycle, Objective happy-path traversal, lifecycle state machine
+- The orchestrator's data ownership: what lives in the tracker vs the OrchestratorStateRepo vs the filesystem
+- The orchestrator's deployment topology (single-host MVP; post-MVP markers)
+
+**Out of scope** for this artifact set:
+
+- Code-level (C4 L4) diagrams — C4 itself recommends against drawing this level
+- Implementation-detail component diagrams for every container — the tick loop is fully drawn; WorkTracker adapter, JobSupervisor, and OrchestratorStateRepo carry **TODO stubs** to be filled when their implementation children open
+- Persona-internal flows (Test-Author, Implementer, Reviewer, RCA) — those belong to wgclw.3 / wgclw.4 / wgclw.6 HLD sets in their own subfolders
+
+## Reading order
+
+Newcomers should read in this order; deep contributors may navigate freely.
+
+1. **[C4 L1 — System Context](c4-l1-context.md)** — where does the `pdlc` CLI live? Who talks to it?
+2. **[C4 L2 — Container](c4-l2-container.md)** — what is inside the `pdlc` system boundary?
+3. **[Sequences](sequences.md)** — how does one tick run? How does an Objective traverse the happy path?
+4. **[State Machine](state-machine.md)** — the full lifecycle stage graph: retries, autopsy routing, terminals
+5. **[C4 L3 — Tick Loop](c4-l3-tick-loop.md)** — components inside the tick container (plus TODO stubs for the other containers)
+6. **[Data View](data-view.md)** — what lives where: tracker vs OrchestratorStateRepo vs filesystem
+7. **[C4 Deployment](c4-deployment.md)** — single-host MVP topology; post-MVP markers
+
+## Artifact synopsis
+
+| File | Synopsis |
+|---|---|
+| [`c4-l1-context.md`](c4-l1-context.md) | **C4 Level 1** — the `pdlc` CLI in its ecosystem: developer/operator, `bd` (and the WorkTracker adapter boundary), git, CI, Claude/Codex/Gemini agents, Holding Place (peer service), project-config files |
+| [`c4-l2-container.md`](c4-l2-container.md) | **C4 Level 2** — internal containers of the `pdlc` system: tick loop, OrchestratorStateRepo (Dolt-backed sidecar), WorkTracker adapter (bd-bound), JobSupervisor, Worker subprocess, Worktree filesystem, project-config loader. Replaces the prior block-diagram concept |
+| [`c4-l3-tick-loop.md`](c4-l3-tick-loop.md) | **C4 Level 3** — components inside the tick loop container: DISCOVER, RECONCILE, REAP, DISPATCH, PERSIST, plus Lease manager, CAS predicate evaluator, Pre-strike triage classifier, Sizing Gate calculator. Other containers carry **TODO stubs** for later expansion |
+| [`c4-deployment.md`](c4-deployment.md) | **C4 Deployment** — single-host MVP topology: CLI process, cron trigger, Dolt sidecar volume, worker subprocesses, worktree filesystem, tracker store. Explicit "multi-host POST-MVP" annotations |
+| [`sequences.md`](sequences.md) | **Two sequence diagrams**: (a) one tick cycle (DISCOVER → RECONCILE → REAP → DISPATCH → PERSIST) with concrete actors; (b) Objective happy path (Idea → MERGED) with worker dispatches at each gate |
+| [`state-machine.md`](state-machine.md) | **Full lifecycle stage graph**: retry edges, 3-strike → `AUTOPSY`, Container-decomposition divergence (Decomposed Container as passive aggregator), terminal states (`MERGED` / `KILLED` / `PARKED`); `needs_reconcile` shown as a flag, not a state |
+| [`data-view.md`](data-view.md) | **What lives where**: tracker domain vs OrchestratorStateRepo vs filesystem; marker semantics; CAS predicate flow; canonical-ownership boundaries |
+
+## Conventions
+
+- **Diagram notation**: Mermaid throughout, for native GitHub rendering.
+  - C4 set uses `C4Context` / `C4Container` / `C4Component` / `C4Deployment` syntax
+  - Sequences use `sequenceDiagram`
+  - State machine uses `stateDiagram-v2`
+  - Data view uses `flowchart` or markdown tables as appropriate
+
+- **Lifecycle Stage Constants** appear as **named English constants** throughout — `CANDIDATE_UOW`, `AGENT_WORTHY`, `DECOMPOSE`, `EXECUTABLE_READY`, `CONTAINER_DECOMPOSED`, `TEST_AUTHORING`, `IMPLEMENTING`, `REVIEWING`, `PR_VALIDATION`, `PR_HUMAN_HOLD`, `MERGING`, `AUTOPSY`, `MERGED`, `KILLED`, `PARKED`. Numeric stage IDs (3, 4, 5, 6, 6′, 7-10C, 11) appear only as low-attention ordering hints in tables. The canonical reference is the [Lifecycle Stage Constants table in the orchestrator core design spec](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#lifecycle-stage-constants).
+
+- **C4 L4 (code) is intentionally absent.** C4 itself recommends against drawing this level for systems where the code is reasonably self-documenting; we follow that guidance.
+
+## How these artifacts should be used
+
+- During **decomposition** of `wgclw.2`: every implementation child filer should read at minimum L1, L2, the tick-cycle sequence, and the state machine before drafting their bead's Spec, so the bead's scope claim aligns with the system boundary visible at L2.
+- During **onboarding**: this is the first thing a new contributor (human or agent) reads to orient themselves in the PDLC subsystem.
+- During **drift detection**: if implementation diverges from these diagrams without an amendment to them, that is a signal — either the diagrams need updating or the implementation has wandered. Prefer updating both as a paired commit.
+
+## Provenance
+
+This artifact set was filed as `agents-config-wgclw.2.1` per review-feedback CA-3 (showstopper S-09 from the Scott crit), during Phase 2 of the `wobbly-wiggling-pizza` plan (Round 1 review preparation before `/ultraplan` invocation). The Mermaid happy-path flowchart in the orchestrator core design spec at [§ Happy-path flowchart](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#happy-path-flowchart) was a sketch placeholder; the artifacts in this folder are the authoritative HLD set it pointed forward to.
