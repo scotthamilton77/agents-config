@@ -1,0 +1,276 @@
+# PDLC Orchestrator — Sequence Diagrams
+
+> **Up**: [index](index.md)
+> **Previous (reading order)**: [C4 L2 — Container](c4-l2-container.md)
+> **Next (reading order)**: [State Machine](state-machine.md)
+> **Source bead**: `agents-config-wgclw.2.1`
+> **Source spec**: [`2026-05-23-pdlc-orchestrator-core-design.md`](../../specs/2026-05-23-pdlc-orchestrator-core-design.md)
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Tick | One end-to-end run of the orchestrator's DISCOVER → RECONCILE → REAP → DISPATCH → PERSIST cycle; one `pdlc tick` invocation = one tick. |
+| Session | One worker invocation; one Session = one attempt at one gate. |
+| Gate | A discrete pass/fail checkpoint inside a lifecycle stage (e.g. red-tests gate, green-gate, reviewer-gate, PR-validation gate). |
+| Reap | The phase where the orchestrator collects results from completed Worker Sessions and decides what to do next. |
+| Dispatch | The phase where the orchestrator decides which Objectives need new Worker Sessions and forks them. |
+| CAS (Compare-And-Swap) | Concurrency control: read with a version, write only if the version is unchanged; mismatch aborts the transition and re-reads. |
+| `config_hash` | Hash of project-config in effect at tick start; pinned on every Session at dispatch; validated at reap. |
+| Independent gate verification | Reap re-runs the gate command itself against the worker's commit SHA; the worker's claimed verdict is never trusted. |
+
+## Purpose
+
+Two sequence diagrams covering the orchestrator's behaviour at two complementary timescales:
+
+1. **Single tick cycle** — what happens during one `pdlc tick` invocation; spans seconds to ~60s
+2. **Objective happy path** — what happens to one Objective from Idea capture through to merge; spans many ticks (often days)
+
+Together they answer: *who calls whom, in what order, with what concurrency control, and where do the failure branches live?*
+
+---
+
+## Sequence 1 — Single tick cycle
+
+One invocation of `pdlc tick`. The same code path serves cron-driven and human-invoked ticks. Phases run sequentially within a single tick; the lease prevents concurrent ticks from corrupting state.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Cron as Cron / Operator
+    participant PDLC as pdlc process
+    participant Config as project-config loader
+    participant State as OrchestratorStateRepo
+    participant Adapter as WorkTracker adapter
+    participant BD as bd (Work Tracker)
+    participant Super as JobSupervisor
+    participant Worker as Worker subprocess
+
+    Cron->>PDLC: exec `pdlc tick`
+    PDLC->>State: acquire tick lease (CAS on Leases)
+    State-->>PDLC: lease granted (fencing token)
+    PDLC->>Config: read project-config.toml; compute config_hash
+    Config-->>PDLC: config + config_hash
+
+    Note over PDLC: start tick-budget timer
+
+    rect rgb(245, 245, 255)
+        Note over PDLC,BD: DISCOVER
+        PDLC->>Adapter: list_changed_since(marker)
+        Adapter->>BD: bd query (delta)
+        BD-->>Adapter: changed Objectives
+        Adapter-->>PDLC: delta
+        alt every Nth tick (full-reconcile path)
+            PDLC->>Adapter: bulk_get (NOT budget-bounded)
+            Adapter->>BD: bd query (all)
+            BD-->>Adapter: all Objectives + fingerprints
+            Adapter-->>PDLC: full set
+        end
+        loop for each unknown Objective (budget-checked)
+            PDLC->>State: init ObjectiveLifecycleState at CANDIDATE_UOW
+            PDLC->>PDLC: run candidate_uow exit gates (lint, DoD, Sizing Gate)
+        end
+    end
+
+    rect rgb(255, 245, 245)
+        Note over PDLC,State: RECONCILE
+        loop for each known Objective
+            PDLC->>Adapter: bulk_get + fingerprints
+            Adapter-->>PDLC: tracker view
+            PDLC->>State: compare lifecycle_status vs lifecycle_stage
+            alt tracker closed + terminal_disposition present
+                PDLC->>State: map to terminal lifecycle_stage
+            else terminal_disposition ambiguous / absent
+                PDLC->>State: set needs_reconcile=true
+            else fingerprint mismatch
+                PDLC->>State: set needs_reconcile=true
+            end
+        end
+    end
+
+    rect rgb(245, 255, 245)
+        Note over PDLC,Worker: REAP
+        loop for each Session status=running
+            PDLC->>Super: heartbeat / deadline / terminal_status
+            Super-->>PDLC: status
+            alt worker exited with report
+                PDLC->>Worker: read gate-evidence YAML from report_path
+                PDLC->>PDLC: validate evidence schema
+                PDLC->>PDLC: INDEPENDENTLY re-run gate vs worker commit SHA
+                PDLC->>PDLC: validate config_hash matches live config
+                PDLC->>PDLC: validate worktree descent from worktree_base_commit
+                PDLC->>PDLC: pre-strike triage (cognition / tooling / flake / ...)
+                alt pass
+                    PDLC->>Adapter: set_lifecycle_status (CAS)
+                    PDLC->>State: advance lifecycle_stage + append TransitionLog
+                else cognition strike
+                    PDLC->>State: strike_count++ + append TransitionLog
+                    opt strike_count == 3
+                        PDLC->>State: route to AUTOPSY; freeze branch
+                    end
+                else non-cognition (tooling / config / dep / spec)
+                    PDLC->>State: route to corrective path (no strike)
+                end
+            else heartbeat silent past deadline
+                PDLC->>Super: cancel (SIGTERM → SIGKILL)
+                PDLC->>State: record strike (subject to triage)
+            end
+        end
+    end
+
+    rect rgb(255, 255, 240)
+        Note over PDLC,Super: DISPATCH
+        alt degraded reap-only mode
+            Note over PDLC: SKIP dispatch
+        else nominal
+            loop for each Objective at worker-driven stage with no in-flight Session
+                PDLC->>PDLC: check tick-budget remaining
+                PDLC->>State: write Session row status=pending + config_hash (BEFORE fork)
+                PDLC->>Super: lease(session_id)
+                Super->>Worker: fork in process group; assign deadline_ts
+                Super-->>PDLC: supervisor_id, lease_token, process_group_id, artifact_dir
+                PDLC->>State: promote Session to status=running
+            end
+        end
+    end
+
+    rect rgb(240, 240, 240)
+        Note over PDLC,State: PERSIST
+        PDLC->>State: commit SQL transaction
+        PDLC->>State: per-tick Dolt branch checkpoint
+        PDLC->>State: write new Discovery marker (CAS vs prior)
+    end
+
+    PDLC->>State: release tick lease
+    PDLC-->>Cron: exit (status: nominal / degraded)
+```
+
+### Notes on the tick cycle
+
+- **Phase ordering is fixed**: DISCOVER → RECONCILE → REAP → DISPATCH → PERSIST. Inverting REAP and DISPATCH would risk dispatching against state the just-completed worker had already mutated.
+- **Per-tick lease** is acquired first and released last. A fast-path file lock at `.pdlc/tick.lock` is an optimisation; the authoritative lease lives in `OrchestratorStateRepo.Leases`.
+- **Full-reconcile** (the every-Nth-tick `bulk_get` path) is **not budget-bounded** — it runs to completion. Budgeting it would trade correctness for latency.
+- **Independent gate verification** at REAP is non-negotiable: the orchestrator never trusts the worker's `verdict` claim in the evidence YAML.
+- **Pending-before-fork** ordering at DISPATCH means a crash between Session-write and fork leaves a reconcilable record (next tick sees a stale `pending` Session and cleans it up).
+- **Degraded reap-only mode** preserves the ability to complete in-flight workers even when dispatch is unsafe (config divergence, tracker unreachable).
+
+---
+
+## Sequence 2 — Objective happy path
+
+One Objective traversing the FSM from initial capture through to merge. **Multiple ticks** span this sequence — each `pdlc tick` invocation advances the Objective by at most one stage per gate-pass. Worker Sessions sit between ticks; they may run for minutes to tens of minutes.
+
+This diagram shows the happy path only — failure branches (strikes, autopsy routing, container divergence) live in [`state-machine.md`](state-machine.md). It also collapses the tick-cycle internals (already shown in Sequence 1) into single arrows where applicable.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Op as Operator
+    participant HP as Holding Place
+    participant BD as bd (Work Tracker)
+    participant PDLC as pdlc (across many ticks)
+    participant State as OrchestratorStateRepo
+    participant TA as Test-Author worker
+    participant Impl as Implementer worker
+    participant Rev as Reviewer worker
+    participant CI as CI
+    participant Git as Git remote
+
+    Note over Op,HP: Idea phase (Holding Place pipeline)
+    Op->>HP: capture Idea
+    Op->>HP: groom / shape Ideas (batch ceremony)
+    Op->>HP: promote(idea_id)
+    HP->>BD: create_objective(provenance.originating_idea_id=...)
+    BD-->>HP: objective_id
+
+    Note over PDLC,BD: tick N — DISCOVER picks up new Objective
+    PDLC->>BD: list_changed_since(marker)
+    BD-->>PDLC: new Objective at CANDIDATE_UOW
+    PDLC->>State: init ObjectiveLifecycleState at CANDIDATE_UOW
+    PDLC->>PDLC: run candidate_uow exit gates (lint, DoD, Sizing Gate)
+
+    Note over Op,PDLC: Human signoff gate
+    PDLC->>Op: surface on `pdlc health` — needs signoff
+    Op->>BD: signoff annotation (or `pdlc objectives signoff <id>`)
+
+    Note over PDLC: tick N+m — promote to AGENT_WORTHY
+    PDLC->>State: advance to AGENT_WORTHY
+    PDLC->>State: advance to DECOMPOSE; assign type_stamp + is_container
+    alt is_container=false (Executable)
+        PDLC->>State: advance to EXECUTABLE_READY
+    else is_container=true (Container)
+        Note over PDLC,HP: emit children as Ideas, NOT direct Objectives
+        PDLC->>HP: create_idea(decomposition_of=container_id) × N
+        PDLC->>State: advance to CONTAINER_DECOMPOSED (passive aggregator)
+        Note over PDLC: Container Closure waits for descendants to MERGE
+    end
+
+    Note over PDLC,TA: tick N+m+k — DISPATCH worker for TEST_AUTHORING
+    PDLC->>State: write Session row pending (TEST_AUTHORING, attempt=1)
+    PDLC->>TA: fork (via JobSupervisor)
+    TA-->>TA: write failing tests; commit; write evidence YAML; exit
+    Note over PDLC,TA: tick N+m+k+1 — REAP TEST_AUTHORING
+    PDLC->>TA: read evidence + re-run gate vs commit SHA
+    PDLC->>State: advance to IMPLEMENTING
+
+    Note over PDLC,Impl: tick — DISPATCH Implementer
+    PDLC->>State: write Session row pending (IMPLEMENTING, attempt=1)
+    PDLC->>Impl: fork
+    Impl-->>Impl: write production code; commit; evidence YAML; exit
+    Note over PDLC: tick — REAP IMPLEMENTING
+    PDLC->>Impl: read evidence + re-run gate vs commit SHA
+    PDLC->>State: advance to REVIEWING
+
+    Note over PDLC,Rev: tick — DISPATCH Reviewer
+    PDLC->>State: write Session row pending (REVIEWING, attempt=1)
+    PDLC->>Rev: fork
+    Rev-->>Rev: review; commit findings if any; evidence YAML; exit
+    Note over PDLC: tick — REAP REVIEWING
+    PDLC->>State: advance to PR_VALIDATION
+
+    Note over PDLC,CI: tick — push PR; await CI verdicts
+    PDLC->>Git: push branch + open PR (gh pr create)
+    Git->>CI: PR trigger
+    CI-->>Git: mechanical-gate verdicts
+    PDLC->>Git: read verdicts (gh pr checks)
+    PDLC->>State: advance to PR_HUMAN_HOLD
+
+    Note over Op,PDLC: Human approval hold
+    PDLC->>Op: surface on `pdlc health` — needs merge approval
+    Op->>PDLC: approval annotation
+
+    Note over PDLC,Git: tick — MERGING
+    PDLC->>State: advance to MERGING
+    PDLC->>Git: merge PR (gh pr merge)
+    Git-->>PDLC: merged
+    PDLC->>BD: set_terminal_disposition=manually-merged-no-wait... (or merged-by-orchestrator)
+    PDLC->>State: advance to MERGED (terminal)
+    PDLC->>PDLC: cleanup worktree (idempotent)
+
+    Note over PDLC: tick — cleanup pass
+    PDLC->>State: cleanup ephemeral Session records; archive TransitionLog
+```
+
+### Notes on the happy path
+
+- **The sequence spans many ticks.** Each `pdlc tick` advances the Objective by at most one gate-pass. Between ticks, Workers run (minutes to tens of minutes) and humans signoff (asynchronous).
+- **Idea creation is operator-driven, NOT orchestrator-driven.** Operators capture Ideas in the Holding Place and either promote them (Holding Place path) or create Idea-less Objectives directly in bd. The orchestrator observes the result on the next DISCOVER.
+- **DECOMPOSE for Containers emits Ideas, not Objectives.** Children of an oversized Container go into the Holding Place as Ideas; they re-enter the FSM at `CANDIDATE_UOW` after Holding-Place grooming and shaping. This eliminates the contradiction where Discovery would silently re-initialise a Holding-Place child.
+- **Container Closure bubbles upward.** A Container reaches `MERGED` only when every descendant has merged, every Container-Level AT passes, and every Scaffold AT has been paired with a successful Cleanup AT.
+- **Two human gates** are explicit: `CANDIDATE_UOW → AGENT_WORTHY` (Spec signoff) and `PR_HUMAN_HOLD → MERGING` (merge approval). All other transitions are mechanical given gate-pass.
+- **Cleanup is idempotent.** `cleanup_worktree(session_id)` is safe to call multiple times; first call removes the worktree and deletes the branch, subsequent calls no-op. This makes crash-recovery's worktree cleanup safe to retry across ticks.
+
+## What these diagrams do NOT show
+
+- **Strike and autopsy routing.** A cognition strike loops back to the same lifecycle stage with `attempt_number++`; on the 3rd strike, the Objective routes to `AUTOPSY`. See [`state-machine.md`](state-machine.md).
+- **Non-cognition failure routes** (tooling, config, dependency, spec). Each has its own corrective path; none charge a cognition strike. See [`state-machine.md`](state-machine.md).
+- **CAS aborts and retries.** Mid-tick edits to the tracker fail the CAS predicate at the write step; the orchestrator re-reads and re-ticks. Not drawn for brevity; covered in [the orchestrator core design spec's transition execution discipline](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#transition-execution-discipline).
+- **Container-decomposition divergence beyond the single CONTAINER_DECOMPOSED stop.** Container Closure conditions and Scaffold/Cleanup pairing live in [`state-machine.md`](state-machine.md).
+- **Component-level mechanics inside the pdlc process.** See [`c4-l3-tick-loop.md`](c4-l3-tick-loop.md) for the components that execute these sequences.
+
+## Cross-references
+
+- **Companion structural views**: [`c4-l2-container.md`](c4-l2-container.md), [`c4-l3-tick-loop.md`](c4-l3-tick-loop.md)
+- **Companion state view**: [`state-machine.md`](state-machine.md)
+- **Companion data view**: [`data-view.md`](data-view.md)
+- **Source spec**: orchestrator core design §§ [Tick algorithm](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#tick-algorithm-high-level), [Transition execution discipline](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#transition-execution-discipline), [Crash-Recovery](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#crash-recovery)
