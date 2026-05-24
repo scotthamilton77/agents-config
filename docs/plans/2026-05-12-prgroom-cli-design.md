@@ -112,7 +112,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 | `wait <pr>` | Sleep/poll until SHA changes or quiescence threshold trips. |
 | `status <pr>` | Print current state for inspection. |
 | `run <pr>` | Aggregate: orchestrates the above in sequence with iteration until quiescent or hard cap. |
-| `sweep <repo>` | Cross-PR autonomous mode: list open PRs, invoke `run` for each. (Optional MVP if cheap.) |
+| `sweep <repo>` | Cross-PR autonomous mode: list open PRs, invoke `run` for each (serially, per-PR locks, failure-isolated; see §3.2 sweep note). (Optional MVP if cheap.) |
 
 ### Precondition gating (cross-cutting requirement)
 
@@ -500,6 +500,8 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 ### 3.2 Phase × verb transition matrix
 
 For every `(current phase, verb invoked)`, the next phase and side effects are pinned. The matrix covers the **11 per-PR lifecycle verbs** (`poll`, `cluster`, `fix`, `push`, `reply`, `resolve`, `rereview`, `wait`, `resolve-escalated`, `status`, `run`). The optional `sweep` verb is a cross-PR aggregator outside this per-PR matrix; it iterates open PRs and invokes `run` for each, with no phase semantics of its own.
+
+**`sweep` lock semantics and failure isolation (MVP):** `sweep` iterates open PRs **serially**, acquiring one PR's lock at a time via `tracker.Lock(pr)` exactly as a direct `run <pr>` invocation would. **There is no tracker-wide or cross-PR `sweep` lock** — each PR is independently lockable, so a separate `run <other-pr>` invocation initiated by another process or operator does not block `sweep` from making progress on remaining PRs. **Failures are isolated per-PR:** a non-zero exit from one PR's `run` invocation (any tier — `RUNTIME_TRANSIENT`, `RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `RUNTIME_CANCELLED`, etc.) does NOT abort the sweep. `sweep` logs each failure to stderr (PR ref + exit code + first stderr line) and continues to the next PR. `sweep`'s own exit code is `0` if every PR's `run` reached a terminal-for-CLI or transient outcome without unhandled errors, non-zero only on `sweep`-level errors (e.g., `gh pr list` failure to enumerate open PRs at the start). Because `run --autonomous` blocks for the full lifecycle of each PR per §3.5, `sweep` over N PRs in `awaiting-review` may take O(N × per-PR-wait) to complete — concurrency caps and ordering policies are deferred to a later section.
 
 **Default behavior is "with prework" (`PRECONDITION_SELFHEAL`).** Cells marked **precondition fail** show the terminal outcome you get with `--no-prework`. Under the default self-heal path (Section 1 cross-cutting precondition gating), the verb auto-runs the missing deterministic prework and re-evaluates rather than returning the precondition error. For example, `fix` invoked in `idle` with no clusters under the default self-heal path runs `poll` → `cluster` → retries `fix`, then transitions per the `fixes-pending` row. With `--no-prework`, it returns `PRECONDITION_NO_CLUSTERS` immediately. Cells marked **no-op** mean the verb returns success (exit 0) without state change.
 
