@@ -525,6 +525,8 @@ is preserved verbatim in Concept Area 21.
 
 ## Pre-Ultraplan Briefing (Round 1 → ultraplan handoff)
 
+> **[HISTORICAL]** This section was the contract handed to `/ultraplan` during the Round-1 revision pass. The contested decisions named below (CA-4, CA-8, CA-12) have been committed in the spec body and are reflected as `applied` in the per-CA ledger rows above. The "pending ultraplan recommendation" wording — and the MVP IN/OUT listings (including `IDEA_RAW` / `IDEA_SHAPED` under Holding Place, which CA-8 Option A subsequently removed from the `Objective` primitive) — are preserved verbatim as the historical record of what ultraplan was asked to recommend on. For current Status, consult the per-CA ledger rows; do not treat this briefing as live guidance.
+
 > Inputs to be passed alongside the spec and this ledger when invoking
 > `/ultraplan`. Locks in pre-decisions and non-negotiable constraints so
 > ultraplan does not waste revision cycles on choices we have already
