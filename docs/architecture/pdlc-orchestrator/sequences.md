@@ -46,10 +46,10 @@ sequenceDiagram
     participant Super as JobSupervisor
     participant Worker as Worker subprocess
 
-    Cron->>PDLC: exec `pdlc tick`
+    Cron->>PDLC: exec pdlc tick
     PDLC->>State: acquire tick lease (CAS on Leases)
     State-->>PDLC: lease granted (fencing token)
-    PDLC->>Config: read project-config.toml; compute config_hash
+    PDLC->>Config: read project-config.toml + compute config_hash
     Config-->>PDLC: config + config_hash
 
     Note over PDLC: start tick-budget timer
@@ -106,7 +106,7 @@ sequenceDiagram
                 else cognition strike
                     PDLC->>State: strike_count++ + append TransitionLog
                     opt strike_count == 3
-                        PDLC->>State: route to AUTOPSY; freeze branch
+                        PDLC->>State: route to AUTOPSY + freeze branch
                     end
                 else non-cognition (tooling / config / dep / spec)
                     PDLC->>State: route to corrective path (no strike)
@@ -127,7 +127,7 @@ sequenceDiagram
                 PDLC->>PDLC: check tick-budget remaining
                 PDLC->>State: write Session row status=pending + config_hash (BEFORE fork)
                 PDLC->>Super: lease(session_id)
-                Super->>Worker: fork in process group; assign deadline_ts
+                Super->>Worker: fork in process group + assign deadline_ts
                 Super-->>PDLC: supervisor_id, lease_token, process_group_id, artifact_dir
                 PDLC->>State: promote Session to status=running
             end
@@ -190,12 +190,12 @@ sequenceDiagram
     PDLC->>PDLC: run candidate_uow exit gates (lint, DoD, Sizing Gate)
 
     Note over Op,PDLC: Human signoff gate
-    PDLC->>Op: surface on `pdlc health` — needs signoff
-    Op->>BD: signoff annotation (or `pdlc objectives signoff <id>`)
+    PDLC->>Op: surface on pdlc health — needs signoff
+    Op->>BD: signoff annotation (or pdlc objectives signoff)
 
     Note over PDLC: tick N+m — promote to AGENT_WORTHY
     PDLC->>State: advance to AGENT_WORTHY
-    PDLC->>State: advance to DECOMPOSE; assign type_stamp + is_container
+    PDLC->>State: advance to DECOMPOSE + assign type_stamp + is_container
     alt is_container=false (Executable)
         PDLC->>State: advance to EXECUTABLE_READY
     else is_container=true (Container)
@@ -208,7 +208,7 @@ sequenceDiagram
     Note over PDLC,TA: tick N+m+k — DISPATCH worker for TEST_AUTHORING
     PDLC->>State: write Session row pending (TEST_AUTHORING, attempt=1)
     PDLC->>TA: fork (via JobSupervisor)
-    TA-->>TA: write failing tests; commit; write evidence YAML; exit
+    TA-->>TA: write failing tests + commit + write evidence YAML + exit
     Note over PDLC,TA: tick N+m+k+1 — REAP TEST_AUTHORING
     PDLC->>TA: read evidence + re-run gate vs commit SHA
     PDLC->>State: advance to IMPLEMENTING
@@ -216,7 +216,7 @@ sequenceDiagram
     Note over PDLC,Impl: tick — DISPATCH Implementer
     PDLC->>State: write Session row pending (IMPLEMENTING, attempt=1)
     PDLC->>Impl: fork
-    Impl-->>Impl: write production code; commit; evidence YAML; exit
+    Impl-->>Impl: write production code + commit + evidence YAML + exit
     Note over PDLC: tick — REAP IMPLEMENTING
     PDLC->>Impl: read evidence + re-run gate vs commit SHA
     PDLC->>State: advance to REVIEWING
@@ -224,11 +224,11 @@ sequenceDiagram
     Note over PDLC,Rev: tick — DISPATCH Reviewer
     PDLC->>State: write Session row pending (REVIEWING, attempt=1)
     PDLC->>Rev: fork
-    Rev-->>Rev: review; commit findings if any; evidence YAML; exit
+    Rev-->>Rev: review + commit findings if any + evidence YAML + exit
     Note over PDLC: tick — REAP REVIEWING
     PDLC->>State: advance to PR_VALIDATION
 
-    Note over PDLC,CI: tick — push PR; await CI verdicts
+    Note over PDLC,CI: tick — push PR and await CI verdicts
     PDLC->>Git: push branch + open PR (gh pr create)
     Git->>CI: PR trigger
     CI-->>Git: mechanical-gate verdicts
@@ -236,19 +236,19 @@ sequenceDiagram
     PDLC->>State: advance to PR_HUMAN_HOLD
 
     Note over Op,PDLC: Human approval hold
-    PDLC->>Op: surface on `pdlc health` — needs merge approval
+    PDLC->>Op: surface on pdlc health — needs merge approval
     Op->>PDLC: approval annotation
 
     Note over PDLC,Git: tick — MERGING
     PDLC->>State: advance to MERGING
     PDLC->>Git: merge PR (gh pr merge)
     Git-->>PDLC: merged
-    PDLC->>BD: set_terminal_disposition=manually-merged-no-wait... (or merged-by-orchestrator)
+    PDLC->>BD: set_terminal_disposition (manually-merged or merged-by-orchestrator)
     PDLC->>State: advance to MERGED (terminal)
     PDLC->>PDLC: cleanup worktree (idempotent)
 
     Note over PDLC: tick — cleanup pass
-    PDLC->>State: cleanup ephemeral Session records; archive TransitionLog
+    PDLC->>State: cleanup ephemeral Session records + archive TransitionLog
 ```
 
 ### Notes on the happy path
