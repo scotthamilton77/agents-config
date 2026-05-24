@@ -5,6 +5,18 @@
 > **Source bead**: `agents-config-wgclw.2.1`
 > **Source spec**: [`2026-05-23-pdlc-orchestrator-core-design.md`](../../specs/2026-05-23-pdlc-orchestrator-core-design.md)
 
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Workstation | The single developer machine on which MVP runs; macOS or Linux. |
+| Dolt | A SQL database with git-style branching, commits, and merges; the storage backend for both OrchestratorStateRepo and bd. |
+| Per-tick branch checkpoint | A Dolt branch commit performed by PERSIST at the end of every successful tick; enables `dolt log` replay during crash recovery. |
+| Worktree | A git worktree under `<project-root>/.claude/worktrees/`; per-attempt worker branches live here. |
+| `config_hash` | Hash of the project-config TOML in effect at a tick; pinned on every Session at dispatch. |
+| Session | One worker invocation; one Session = one attempt at one gate. See `CONTEXT.md > Session`. |
+| Artifact directory | Supervisor-owned per-Session directory holding stdout/stderr, gate-evidence YAML, and any persona-emitted artifacts. |
+
 ## Purpose
 
 Show *where* the L2 containers physically run for the MVP. Answers: *what host, what process, what data store, what file path?*
@@ -96,7 +108,7 @@ Everything in the MVP runs on one machine, owned by one developer. Even cron is 
 ### Storage layout
 
 - **OrchestratorStateRepo** — Dolt schema, owned by the orchestrator. Per-tick branch checkpoints enable `dolt log` replay for crash recovery. Tracker-domain data is NOT stored here.
-- **bd schema** — Dolt schema, owned by bd. The orchestrator reads it via the WorkTracker adapter (via bd CLI); never directly via SQL. **MVP implementation choice**: same Dolt instance with separate schemas, or two separate Dolt instances. The architectural separation is the *contract*, not the deployment shape (per CA-8 reasoning).
+- **bd schema** — Dolt schema, owned by bd. The orchestrator reads it via the WorkTracker adapter (via bd CLI); never directly via SQL. **MVP implementation choice**: same Dolt instance with separate schemas, or two separate Dolt instances. The architectural separation is the *contract* (Orchestrator owns lifecycle state, tracker owns structural state; they communicate only by Objective ID), not the physical deployment shape.
 - **Worktrees** — git worktrees under `<project-root>/.claude/worktrees/`, per the project's worktree-location rule. Per-attempt branches.
 - **project-config.toml** — versioned with the project source. `config_hash` is computed at tick start and pinned on every Session at dispatch.
 - **Artifact directories** — supervisor-owned per-Session directories under `<project-root>/.pdlc/artifacts/<session_id>/` (location subject to implementation child review). Hold worker stdout/stderr, gate-evidence YAML, and any persona-emitted artifacts.

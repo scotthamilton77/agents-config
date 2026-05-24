@@ -5,6 +5,23 @@
 > **Source bead**: `agents-config-wgclw.2.1`
 > **Source spec**: [`2026-05-23-pdlc-orchestrator-core-design.md`](../../specs/2026-05-23-pdlc-orchestrator-core-design.md)
 
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| `lifecycle_stage` | Where an Objective is in the PDLC FSM — one of the [named Lifecycle Stage Constants](index.md#conventions). Orchestrator-owned. |
+| Session | One worker invocation; one Session = one attempt at one gate. See `CONTEXT.md > Session`. |
+| CAS (Compare-And-Swap) | Concurrency control: read with a version, write only if the version is unchanged. Mismatch aborts the transition and re-reads. Every tracker write and every state-repo write carries one. |
+| Version fingerprint | Per-Objective hash (`spec_hash`, `structural_hash`, `dependency_hash`, `lifecycle_status_hash`) used to detect mid-flight tracker edits during RECONCILE. |
+| Lease | A CAS-protected claim — either the per-host tick lock or a per-Session supervisor lease. Carries a fencing token. |
+| Fencing token | Monotonic counter attached to a lease; CAS-predicate-evaluated on every write so a stale lease cannot mutate state under a newer holder. |
+| Pre-strike triage | Classifier that decides *what kind* of failure a gate failure is (cognition / tooling / reviewer-artifact / flake / config / dependency / spec) before charging a strike. Deterministic Python; never LLM-judged. |
+| Sizing Gate | Mechanical composite-score computation that decides Sized (Executable) vs Oversized (Container) at the `CANDIDATE_UOW → AGENT_WORTHY` exit. |
+| `needs_reconcile` | An Orchestrator-only flag (NOT a lifecycle stage) raised when the reconcile step cannot determine the correct terminal mapping for an Objective; surfaces on `pdlc health` for human disposition. |
+| `terminal_disposition` | Tracker-owned typed metadata field carrying the *why* of an Objective's terminal state (`killed`, `manually-merged`, `duplicate`, `superseded`, `abandoned`); the orchestrator reads it to map into a terminal lifecycle stage. |
+| `config_hash` | Hash of the project-config in effect at a tick; pinned on every Session at dispatch; validated at reap. |
+| `worktree_base_commit` | Immutable git commit pinned on a Session at fork; reap validates the worker's commits descend from it. |
+
 ## Purpose
 
 Zoom into the `pdlc process` container from [C4 L2](c4-l2-container.md). Show the components that make up the **tick loop** — the heart of the Orchestrator — and the adjacent components inside the same process that the tick loop calls.
@@ -21,7 +38,7 @@ C4Component
 
     Container_Boundary(tick, "Tick Loop (within pdlc process)") {
         Component(discover, "DISCOVER", "Python", "Queries WorkTracker for changes since marker (acceleration path); every Nth tick runs full-reconcile via bulk_get + fingerprint diff; initialises unknown Objectives at CANDIDATE_UOW; runs candidate_uow exit gates")
-        Component(reconcile, "RECONCILE", "Python", "Compares tracker lifecycle_status vs state-repo lifecycle_stage; applies terminal-disposition classifier (CA-10); flags fingerprint mismatches as needs_reconcile")
+        Component(reconcile, "RECONCILE", "Python", "Compares tracker lifecycle_status vs state-repo lifecycle_stage; applies terminal-disposition classifier; flags fingerprint mismatches as needs_reconcile")
         Component(reap, "REAP", "Python", "Checks heartbeats + deadlines; validates evidence YAML schema; INDEPENDENTLY re-verifies gate command vs worker commit SHA; pre-strike triage; advance OR strike OR route non-cognition")
         Component(dispatch, "DISPATCH", "Python", "For Objectives at worker-driven stages with no in-flight Session: write Session row (pending) BEFORE fork; JobSupervisor.lease() → fork; promote to running")
         Component(persist, "PERSIST", "Python", "Commits state-repo SQL transaction; per-tick Dolt branch checkpoint; writes Discovery marker under CAS")
@@ -82,13 +99,13 @@ C4Component
 Two execution paths in one component:
 
 - **Acceleration path (every tick)** — `WorkTracker.list_changed_since(marker)` returns Objectives that have changed since the last successful tick. Cheap; processes only the delta.
-- **Full-reconcile path (every Nth tick, project-config default N=10)** — `bulk_get` of all Objectives plus per-object fingerprint diff against `OrchestratorStateRepo`. Correctness mechanism per CA-6; **not budget-bounded**.
+- **Full-reconcile path (every Nth tick, project-config default N=10)** — `bulk_get` of all Objectives plus per-object fingerprint diff against `OrchestratorStateRepo`. This is a **correctness mechanism**, not a latency-sensitive one — it is therefore **not budget-bounded** and runs to completion regardless of the tick budget.
 
 For each unknown Objective, DISCOVER initialises an `ObjectiveLifecycleState` at `CANDIDATE_UOW` and runs the candidate_uow exit gates (Atomic-AT lint, DoD application, Sizing Gate). Per-iteration budget check at the top of the loop emits `budget-exhausted-in-discover` when the tick budget fires; un-processed Objectives wait for the next tick.
 
 ### RECONCILE
 
-Compares the tracker's coarse `lifecycle_status` against the state-repo's fine `lifecycle_stage` per Objective known to both stores. The **terminal-disposition classifier** (CA-10) reads the tracker's typed `terminal_disposition` field and maps each value to the appropriate terminal lifecycle stage. Ambiguous or absent dispositions raise `needs_reconcile=true` — an Orchestrator-only flag, NOT a lifecycle stage — which surfaces on `pdlc health` for human disposition.
+Compares the tracker's coarse `lifecycle_status` against the state-repo's fine `lifecycle_stage` per Objective known to both stores. The **terminal-disposition classifier** reads the tracker's typed `terminal_disposition` field and maps each value to the appropriate terminal lifecycle stage. Ambiguous or absent dispositions raise `needs_reconcile=true` — an Orchestrator-only flag, NOT a lifecycle stage — which surfaces on `pdlc health` for human disposition. The classifier never silently collapses semantically-distinct closures (a tracker-side `close` could mean `killed`, `manually-merged`, `duplicate`, `superseded`, or `abandoned` — the human picks if the typed field is absent).
 
 Fingerprint mismatches (`spec_hash`, `structural_hash`, `dependency_hash`, `lifecycle_status_hash`) also raise `needs_reconcile`. RECONCILE never silently mutates terminal state.
 
@@ -99,8 +116,8 @@ The most operationally consequential phase. For each Session with `status=runnin
 1. Check the JobSupervisor's heartbeat and deadline. Silent past `deadline_ts` → cancel + record strike (subject to pre-strike triage).
 2. If supervisor reports `exited` and report present:
    - Validate the gate-evidence YAML schema.
-   - **Independently re-run the gate command** against the worker's commit SHA. No trust-by-report (CA-16 C-2.3).
-   - Validate `config_hash` matches the live config (mismatch → config-version-divergence handler, CA-13).
+   - **Independently re-run the gate command** against the worker's commit SHA. Reap never trusts the worker's `verdict` field; it re-establishes the claim itself.
+   - Validate `config_hash` matches the live config. Mismatch routes the Session to the **config-version-divergence handler**: the Session continues to reap under its original `config_hash`, but no new Session is dispatched against the divergent config until the operator resolves it.
    - Validate worktree state (descended from `worktree_base_commit`, `git status --porcelain` clean).
    - Run **Pre-strike triage** to classify the failure cause.
    - Advance `lifecycle_stage` OR record a cognition strike OR route the non-cognition failure.
@@ -116,7 +133,7 @@ For each Objective at a worker-driven `lifecycle_stage` (`TEST_AUTHORING`, `IMPL
 4. Call `JobSupervisor.lease(session_id)` to fork the Worker in its own process group.
 5. Promote the Session to `running` and populate `supervisor_id`, `lease_token`, `process_group_id`, `artifact_dir`, `worktree_base_commit`, `deadline_ts`.
 
-Degraded reap-only mode (per CA-13 config-divergence handling) SKIPS dispatch but still reaps.
+Degraded **reap-only mode** (active during config-version divergence or `tracker_unreachable`) SKIPS dispatch but still reaps in-flight Sessions to completion.
 
 ### PERSIST
 
@@ -134,69 +151,25 @@ The heart of the orchestrator's correctness story. Every tracker write carries a
 
 ### Pre-strike triage classifier
 
-Strict deterministic Python. Seven failure causes (see [`state-machine.md`](state-machine.md) for the routing): **cognition** (charge strike), **tooling** (no strike — Autopsy route v), **reviewer-artifact** (no strike — tooling escalation), **flake** (retry then strike), **config** (no strike — divergence handler), **dependency** (no strike — park via route iv), **spec** (no strike — Specification RCA). LLM judgment is **not permitted** in failure-cause assignment per CA-9; ambiguous cases route to `needs_reconcile=true` for human disposition.
+Strict deterministic Python. Seven failure causes (see [`state-machine.md`](state-machine.md) for the routing): **cognition** (charge strike), **tooling** (no strike — Autopsy route v), **reviewer-artifact** (no strike — tooling escalation), **flake** (retry then strike), **config** (no strike — divergence handler), **dependency** (no strike — park via route iv), **spec** (no strike — Specification RCA). **LLM judgment is forbidden in failure-cause assignment** — the classifier inputs are gate-evidence YAML, exit code, reviewer-artifact validation, `config_hash` check, dependency check, and worktree state check; nothing else. Ambiguous cases route to `needs_reconcile=true` for human disposition rather than guessing.
 
 ### Sizing Gate calculator
 
-Mechanical composite-score computation at `CANDIDATE_UOW → AGENT_WORTHY` exit. Five mechanical inputs (Atomic-AT count, file-touch estimate, subsystem-crossing count, dependency fan-out, NFR-escalation flag), each normalised and weighted from project-config. Score < threshold → **Sized** (Executable); score ≥ threshold → **Oversized** (Container). If a project's adoption demands an LLM-judgment axis, that axis MUST be marked `human-mechanical` and require explicit operator override per CA-9 — the orchestrator does not silently accept LLM-judgment inputs into the Sizing Gate.
+Mechanical composite-score computation at `CANDIDATE_UOW → AGENT_WORTHY` exit. Five mechanical inputs (Atomic-AT count, file-touch estimate, subsystem-crossing count, dependency fan-out, NFR-escalation flag), each normalised and weighted from project-config. Score < threshold → **Sized** (Executable); score ≥ threshold → **Oversized** (Container). If a project's adoption demands an LLM-judgment axis (e.g. "architectural risk"), that axis MUST be marked `human-mechanical` and require an explicit recorded operator override — the orchestrator does not silently accept LLM-judgment inputs into the Sizing Gate.
 
 ### Tick-budget timer
 
-Bounds latency-sensitive per-Objective work at two checkpoints: inside DISCOVER (before evaluating Candidate UoW exit gates for each unknown Objective) and inside DISPATCH (before forking a new worker Session). **Correctness-critical operations bypass the budget**: full-reconcile (CA-6), lease acquisition/release, REAP heartbeat/deadline checks and worker-report verification, CAS predicate evaluation, Crash-Recovery roll-forward. Budgeting these would trade correctness for latency.
+Bounds latency-sensitive per-Objective work at two checkpoints: inside DISCOVER (before evaluating Candidate UoW exit gates for each unknown Objective) and inside DISPATCH (before forking a new worker Session). **Correctness-critical operations bypass the budget**: full-reconcile, lease acquisition/release, REAP heartbeat/deadline checks and worker-report verification, CAS predicate evaluation, Crash-Recovery roll-forward. Budgeting these would trade correctness for latency — the wrong trade.
 
----
+## Other containers' L3 views
 
-## TODO stubs — other containers' components
+The other L2 containers — **WorkTracker adapter**, **JobSupervisor**, and **OrchestratorStateRepo** — have their own L3 component diagrams in this folder. They are currently **stubs**, to be filled in when their respective implementation children (under `wgclw.2`) open and have ratified design decisions to draw against:
 
-> These component diagrams will be filled in when their respective implementation children (under `wgclw.2`) open. Stubbing them here establishes their home in the artifact set; their detailed components depend on design decisions that have not yet been ratified, and drafting them now would prematurely lock those decisions in.
+- [c4-l3-worktracker-adapter.md](c4-l3-worktracker-adapter.md) — **STUB** — expected components: protocol-method groupings, bd CLI invocation, CAS predicate computation, fingerprint computation, error translation, Discovery marker management
+- [c4-l3-jobsupervisor.md](c4-l3-jobsupervisor.md) — **STUB** — expected components: lease lifecycle, heartbeat reporter, deadline enforcer, terminal-status collector, capture handles, cancellation handler, crash-recovery roll-forward
+- [c4-l3-state-repo.md](c4-l3-state-repo.md) — **STUB** — expected components: schema migrations, per-table DAOs, branch-checkpoint mechanism, CAS predicate API, read-only-cache fallback, retention policy
 
-### TODO — WorkTracker adapter (bd-bound)
-
-**Open implementation child**: TBD (will be filed under `wgclw.2` when scoped)
-
-Expected components, pending design ratification:
-
-- WorkTracker protocol method implementations (`get_objective`, `bulk_get`, `list_changed_since`, `create_objective`, `set_lifecycle_status`, `set_terminal_disposition`, etc.)
-- bd CLI invocation layer (subprocess + arg marshalling + output parsing)
-- Tracker-side CAS predicate computation (Dolt row-version handling)
-- Adapter-side fingerprint computation (`spec_hash`, `structural_hash`, `dependency_hash`, `lifecycle_status_hash`)
-- Error translation: bd-specific errors → adapter-protocol errors (so the tick loop only sees protocol-level failures)
-- Discovery marker formatting (bd's commit hash or `updated_ts` cursor)
-
-**To be drawn when**: the WorkTracker protocol implementation bead opens, and the protocol surface (Domain 1–7) has been concretely fixed. The protocol shape lives in the [orchestrator core design spec](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#the-worktracker-protocol).
-
-### TODO — JobSupervisor
-
-**Open implementation child**: TBD (will be filed under `wgclw.2` when scoped)
-
-Expected components, pending design ratification:
-
-- Lease lifecycle: `lease(session_id) → SupervisorLease`, fork in own process group, write supervisor record
-- Heartbeat reporter (per-Session liveness signal under CAS via fencing token)
-- Deadline enforcer (SIGTERM at expiry, SIGKILL after grace)
-- Terminal-status collector (exit code, exit signal, report_path, log_path; durable across orchestrator restarts)
-- Capture handles (stdout / stderr / artifact_dir; supervisor-owned)
-- Cancellation handler (idempotent SIGTERM to process group; safe to re-call)
-- Crash-recovery roll-forward (machine-wake reclamation of stale leases)
-
-**To be drawn when**: the JobSupervisor implementation bead opens. The supervisor contract surface lives in the [orchestrator core design spec](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#jobsupervisor-contract).
-
-### TODO — OrchestratorStateRepo
-
-**Open implementation child**: TBD (will be filed under `wgclw.2` when scoped)
-
-Expected components, pending design ratification:
-
-- Schema migrations (versioned; forward-only for MVP)
-- DAO modules per table: `ObjectiveLifecycleState`, `TransitionLog`, `Sessions`, `Leases`, `DependencyEdges`, `MetadataOverrides`, `DiscoveryMarker`
-- Per-tick branch checkpoint mechanism (Dolt branch operations)
-- CAS predicate API surface (row-version handling)
-- Read-only-cache fallback for `tracker_unreachable` degraded mode
-- Backup / archive / pruning policy (long-term; pruning is post-MVP per the [retention note](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#transition-log-event-schema))
-
-**To be drawn when**: the OrchestratorStateRepo schema and DAO implementation bead opens. The table-level structure lives in the [orchestrator core design spec](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#state-ownership) and [`data-view.md`](data-view.md) in this artifact set.
-
----
+Each stub file lists its expected components, its when-to-fill trigger, and its source-spec pointer. Establishing the homes now means future contributors don't have to invent folder structure mid-stride.
 
 ## What this diagram does NOT show
 

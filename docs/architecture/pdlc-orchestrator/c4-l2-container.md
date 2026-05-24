@@ -5,6 +5,19 @@
 > **Source bead**: `agents-config-wgclw.2.1`
 > **Source spec**: [`2026-05-23-pdlc-orchestrator-core-design.md`](../../specs/2026-05-23-pdlc-orchestrator-core-design.md)
 
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Container (C4 sense) | A separately runnable process or data store — not a Linux/Docker container. |
+| Component | A code module inside a container; appears at C4 L3, not L2. |
+| Session | One worker invocation; one Session = one attempt at one gate. See `CONTEXT.md > Session`. |
+| CAS (Compare-And-Swap) | Concurrency control: read with a version, write only if the version is unchanged; mismatch aborts the transition and re-reads. Every tracker write and every state-repo write carries one. |
+| Gate-evidence YAML | Structured file the worker writes at `report_path` on exit; reap reads it, validates the schema, and re-runs the gate independently against the worker's commit SHA. |
+| `worktree_base_commit` | Immutable git commit pinned on a Session at fork; reap validates the worker's commits descend from it via `git merge-base --is-ancestor`. |
+| `config_hash` | Hash of the project-config in effect at a tick; pinned on every Session at dispatch; validated at reap. |
+| Sidecar | A store the orchestrator owns that holds data not yet promoted to the WorkTracker protocol (MVP-scoped — see [c4-l3-state-repo.md](c4-l3-state-repo.md)). |
+
 ## Purpose
 
 Open the PDLC Orchestrator boundary and show its deployable / runnable units. Answers: *what runs, where does state live, how do the running pieces talk to each other?*
@@ -88,7 +101,7 @@ A SQL store distinct from the tracker's store, holding everything the Orchestrat
 - `MetadataOverrides` (sidecar, MVP scope) — per-Objective config overrides
 - `DiscoveryMarker` — last-seen tracker watermark for the acceleration-path Discovery
 
-The Dolt choice was committed as **CA-4**. Per-tick branch checkpoints enable `dolt log` replay for crash recovery (see [`sequences.md`](sequences.md) tick cycle for the persistence ordering).
+**Dolt was chosen as the storage backend** specifically because its git-style branching enables per-tick branch checkpoints that allow `dolt log` replay during crash recovery. See [`sequences.md`](sequences.md) tick cycle for the persistence ordering and [`c4-l3-state-repo.md`](c4-l3-state-repo.md) for the per-table breakdown.
 
 #### Worker subprocess
 
@@ -103,7 +116,7 @@ The Worker's job is bounded:
 5. Write a `gate-evidence YAML` to `report_path` inside the supervisor-owned `artifact_dir`
 6. Exit
 
-The Orchestrator's reap step does **not trust the Worker's verdict field** in the gate-evidence YAML — it re-runs the gate command itself against the Worker's commit SHA (per CA-16 C-2.3, "Independent gate verification").
+The Orchestrator's reap step does **not trust the Worker's verdict field** in the gate-evidence YAML — it re-runs the gate command itself against the Worker's commit SHA. This **independent gate verification** is the security posture: every gate-pass claim is re-established, never inherited.
 
 #### Worktree filesystem
 
@@ -121,7 +134,7 @@ Standard git worktrees under the project's worktree directory. Per-attempt branc
 - **State-repo writes are also CAS-predicated.** Every `ObjectiveLifecycleState` write carries a row-version predicate; mismatch aborts with `state-version-mismatch`. Both predicates are evaluated by the **CAS predicate evaluator** component at L3.
 - **Worker → state is one-way during the Session.** The Worker writes the gate-evidence YAML to disk inside `artifact_dir`; the Orchestrator reads it back at reap. The Worker does **not** mutate `OrchestratorStateRepo` directly.
 - **The Orchestrator owns worktree lifecycle.** Workers commit *into* the worktree but do not create or destroy the worktree itself. Create happens at DISPATCH; cleanup happens at reap (after gate-evidence is ingested) or at machine-wake recovery for crashed Sessions.
-- **Holding Place is touched twice — that is the entire surface.** Any temptation to add a third call type is a contract violation per CA-8.
+- **Holding Place is touched twice — that is the entire surface.** Any temptation to add a third call type is a contract violation. The Holding Place is a peer service with qualitatively different mechanics from the Orchestrator; the two-call boundary keeps that separation honest.
 
 ## What this diagram does NOT show
 

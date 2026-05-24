@@ -4,6 +4,18 @@
 > **Source bead**: `agents-config-wgclw.2.1`
 > **Source spec**: [`2026-05-23-pdlc-orchestrator-core-design.md`](../../specs/2026-05-23-pdlc-orchestrator-core-design.md)
 
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Objective | The unified primitive the Orchestrator tracks from `CANDIDATE_UOW` to a terminal lifecycle stage. The same record wears different names at different stages (Candidate UoW, Agent-Worthy, Executable, etc.). See `CONTEXT.md > Objective`. |
+| Idea | A pre-Objective primitive in the Holding Place pipeline (Capture → Groom → Shape → Promote). Distinct from Objective; not tracked by the Orchestrator until promoted. See `CONTEXT.md > Idea`. |
+| Work Tracker | The external system that holds Objective identity, structural graph, lifecycle_status, and spec body. `bd` is the reference adapter. |
+| Holding Place | The peer service for the Idea pipeline; the Orchestrator interacts with it via exactly two call types (promote and create_idea). |
+| Lifecycle Stage | The Orchestrator-owned position of an Objective in the PDLC FSM (e.g. `CANDIDATE_UOW`, `IMPLEMENTING`, `MERGED`). Named English constants only; the canonical list is in the [index](index.md#conventions). |
+| `config_hash` | Hash of the project-config TOML in effect at a tick; pinned on every Session at dispatch so reap can detect mid-flight config drift. |
+| `needs_reconcile` | An Orchestrator-only flag — NOT a lifecycle stage — raised when the reconcile step cannot mechanically determine the correct mapping; surfaces on `pdlc health` for human disposition. |
+
 ## Purpose
 
 Place the PDLC Orchestrator in its environment. Answers: *what is the system, who uses it, and what other systems does it talk to?* It is the most zoomed-out view in the artifact set — every other diagram drills deeper.
@@ -55,7 +67,7 @@ C4Context
 
 - **Work Tracker (bd)** — the canonical authority on *what Objectives exist*. The Orchestrator never invents Objectives; it observes them via the Discovery Sweep and mirrors their structural graph. Reparenting, child creation, dependency edits, and spec-body changes flow through bd first; the Orchestrator picks them up on the next tick. Per Law L8, bd is the *reference adapter* for the WorkTracker protocol — future trackers conform to the protocol, not the other way around.
 
-- **Holding Place** — a peer service for the pre-Objective Idea pipeline (Capture → Groom → Shape → Promote). The Orchestrator's interaction with it is restricted to **exactly two call types** (per CA-8 Option A): `promote(idea_id) → objective_id` and `create_idea(decomposition_of=container_id) → idea_id`. The Orchestrator never `tick`s the Holding Place; Ideas are a distinct primitive with qualitatively different mechanics.
+- **Holding Place** — a peer service for the pre-Objective Idea pipeline (Capture → Groom → Shape → Promote). The Orchestrator's interaction with it is restricted to **exactly two call types**: `promote(idea_id) → objective_id` and `create_idea(decomposition_of=container_id) → idea_id`. The Orchestrator never `tick`s the Holding Place; Ideas are a distinct primitive with qualitatively different mechanics (Capture is one-shot and non-interrogative, Grooming is a batch ceremony, Bucket and Killed-without-Spec are Idea-only states) and reusing the Objective primitive for them would bloat orchestrator state with fields nil for most records.
 
 - **Git + worktrees** — every Worker operates on its own branch named `pdlc/<objective_id>/<lifecycle_stage>/<attempt_number>`. Branches descend from a `worktree_base_commit` pinned at fork; reap validates descent before accepting work. The Orchestrator performs the merge itself at `MERGING`.
 
