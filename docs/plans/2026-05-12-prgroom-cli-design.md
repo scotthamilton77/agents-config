@@ -112,7 +112,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 | `wait <pr>` | Sleep/poll until SHA changes or quiescence threshold trips. |
 | `status <pr>` | Print current state for inspection. |
 | `run <pr>` | Aggregate: orchestrates the above in sequence with iteration until quiescent or hard cap. |
-| `sweep <repo>` | Cross-PR autonomous mode: list open PRs, invoke `run` for each. (Optional MVP if cheap.) |
+| `sweep <repo>` | Cross-PR autonomous mode: list open PRs, invoke `run` for each (serially, per-PR locks, failure-isolated; see §3.2 sweep paragraph). (Optional MVP if cheap.) |
 
 ### Precondition gating (cross-cutting requirement)
 
@@ -483,6 +483,8 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 
 **Note on merge transitions (omitted from the diagram for clarity):** every non-terminal phase (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`) transitions to `merged` when `pollLocked` observes the PR closed via merge. The diagram shows only the `quiesced → merged` and `human-gated → merged` edges; `awaiting-review → merged` and `fixes-pending → merged` are equally legal and enumerated in the §3.2 matrix `poll` row.
 
+**Note on direct `idle → fixes-pending` (omitted from the diagram for clarity):** when the first `pollLocked` observes both ≥1 commit on the remote AND ≥1 reviewer item already filed (uncommon but legal — a reviewer commented during the bootstrap window before `prgroom` ran), the verb advances `idle → fixes-pending` directly, bypassing the `awaiting-review` step. This edge is enumerated in the §3.2 `poll`-from-`idle` row; the diagram shows only the typical `idle → awaiting-review → fixes-pending` path.
+
 **Any non-terminal phase transitions to `human-gated` at end-of-cycle when** (priority order, applied by `resolve_end_of_cycle_phase` in §3.2):
 
 - Hard cap would be exceeded by the next push (`Round >= MaxRounds` with queued fix commits)
@@ -499,6 +501,8 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 
 For every `(current phase, verb invoked)`, the next phase and side effects are pinned. The matrix covers the **11 per-PR lifecycle verbs** (`poll`, `cluster`, `fix`, `push`, `reply`, `resolve`, `rereview`, `wait`, `resolve-escalated`, `status`, `run`). The optional `sweep` verb is a cross-PR aggregator outside this per-PR matrix; it iterates open PRs and invokes `run` for each, with no phase semantics of its own.
 
+**`sweep` lock semantics and failure isolation (MVP):** `sweep` iterates open PRs **serially**, acquiring one PR's lock at a time via `tracker.Lock(pr)` exactly as a direct `run <pr>` invocation would. **There is no tracker-wide or cross-PR `sweep` lock** — each PR is independently lockable, so a separate `run <other-pr>` invocation initiated by another process or operator does not block `sweep` from making progress on remaining PRs. **Failures are isolated per-PR:** a non-zero exit from one PR's `run` invocation (any tier — `RUNTIME_TRANSIENT`, `RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `RUNTIME_CANCELLED`, etc.) does NOT abort the sweep. `sweep` logs each failure to stderr (PR ref + exit code + first stderr line) and continues to the next PR. `sweep`'s own exit code is `0` if every PR's `run` reached a terminal-for-CLI or transient outcome without unhandled errors, non-zero only on `sweep`-level errors (e.g., `gh pr list` failure to enumerate open PRs at the start). Because `run --autonomous` blocks for the full lifecycle of each PR per §3.5, `sweep` over N PRs in `awaiting-review` may take O(N × per-PR-wait) to complete — concurrency caps and ordering policies are deferred to a later section.
+
 **Default behavior is "with prework" (`PRECONDITION_SELFHEAL`).** Cells marked **precondition fail** show the terminal outcome you get with `--no-prework`. Under the default self-heal path (Section 1 cross-cutting precondition gating), the verb auto-runs the missing deterministic prework and re-evaluates rather than returning the precondition error. For example, `fix` invoked in `idle` with no clusters under the default self-heal path runs `poll` → `cluster` → retries `fix`, then transitions per the `fixes-pending` row. With `--no-prework`, it returns `PRECONDITION_NO_CLUSTERS` immediately. Cells marked **no-op** mean the verb returns success (exit 0) without state change.
 
 **This matrix describes the public verb's behavior when invoked directly** (e.g., `prgroom fix <pr>` from the shell). The `run` aggregate verb (§3.3) gates internal `*Locked` lifecycle functions by phase and does not exercise the per-verb precondition self-heal path — `run` already orchestrates the prework sequence. When reconciling §3.2 and §3.3, the matrix is the **direct-invocation contract**; §3.3 is the **run-driven flow**.
@@ -511,10 +515,10 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 | `push` | `PRECONDITION_NO_COMMITS` | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
 | `reply` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNREPLIED` only under `--no-prework`) unless prior round left replies pending | renders templates + posts via gh API; marks `Replied=true`; no phase change | re-applies idempotently to unreplied items; no phase change | re-applies idempotently | terminal; no-op |
 | `resolve` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNRESOLVED` only under `--no-prework`) | resolves review-threads with `Disposition.Kind ∈ {fixed, already_addressed}` AND `Resolved == false`; marks `Resolved=true`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
-| `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for `Required=true` reviewers in `{not_requested, timeout, declined}` (`pushLocked` flips stale `review_found` → `not_requested`, see §3.4); no phase change | invoked by `runLocked` immediately after a successful `pushLocked` for the same set of reviewers; no phase change | re-requests if reviewer state stale; no phase change | re-applies idempotently | terminal; no-op |
-| `wait` | sleeps; poll-event may transition phase | sleeps; poll-event may transition; hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; poll-event may transition to `fixes-pending` or `merged` | sleeps; poll-event may transition out | terminal; no-op |
+| `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for `Required=true` reviewers in `{not_requested, timeout, declined}` (`pushLocked` flips stale `review_found` → `not_requested`, see §3.4); **no-op exit 0 if no reviewers match** the target set; no phase change | invoked by `runLocked` immediately after a successful `pushLocked` for the same set of reviewers; no phase change | re-requests if reviewer state stale; no phase change | re-applies idempotently | terminal; no-op |
+| `wait` | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or hard timeout | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or hard timeout; hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions to `fixes-pending` or `merged` | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions out | terminal; no-op |
 | `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition.Kind` from `escalated` to a terminal value; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition`; **only clears the `escalated` items gate** (§3.2 priority 4). Does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED` (requires `--max-rounds` raise + re-run), `HumanReviewRequired = true` (requires upstream flag clear, §4), `STATE_CORRUPT` (requires operator state-file inspection), or `failed`-items gating (requires the operator to address the underlying `failed` disposition first). After the flip: phase moves to `fixes-pending` if and only if ALL of: (a) `state.Items` has no `escalated` items remaining, (b) `state.Items` has no `failed` items, (c) `HumanReviewRequired == false`, AND (d) `state.LastError ∉ BlockingErrorCodes` (defined below). Otherwise phase stays `human-gated`. **`BlockingErrorCodes`** = { `LIFECYCLE_HARD_CAP_EXCEEDED`, `LIFECYCLE_HUMAN_REVIEW_REQUIRED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — these codes signal conditions outside `resolve-escalated`'s scope and require the recovery paths in §3.6/§3.7. ("Repo deleted" is one of the conditions classified under `RUNTIME_GH_TERMINAL`, per §3.6's example list; no distinct `RUNTIME_REPO_DELETED` code is registered.) (`CONTRACT_AUDIT_FAILED` is intentionally NOT in this set: per §3.3 `handle_verb_error`, contract-audit failures are surfaced via per-item `Disposition.Kind = failed`, not via `state.LastError`; the `failed`-items check in clause (b) handles them.) | terminal; no-op |
-| `status` | read-only | read-only | read-only | read-only | read-only | read-only |
+| `status` | read-only (**lock-free**; see §3.3 carve-out — `--locked` opt-in for strictly-consistent read) | read-only | read-only | read-only | read-only | read-only |
 | `run` | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes `pollLocked` **once** to detect external transitions (e.g., operator merged externally → `merged`; new reviewer activity → `fixes-pending`). If phase advances out of `quiesced`, re-enter the lifecycle loop; otherwise return 0. | invokes `pollLocked` **once** to detect external resolutions (operator pushed a fix → `fixes-pending`; operator merged → `merged`). If phase advances out of `human-gated`, re-enter the lifecycle loop; otherwise return 0 (awaits operator action). | returns 0 immediately (graph-terminal; `merged` is absorbing) |
 
 **End-of-cycle phase resolution** (applied by `run` after each cycle via `resolve_end_of_cycle_phase`, see §3.3): from `fixes-pending` the resolver chooses the next phase by evaluating these conditions in strict priority order — the first match wins.
@@ -540,17 +544,19 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 - Returns `(*PRGroomingState, error)` — the (potentially) mutated state and any error tagged with its failure tier (§3.6).
 - Atomically `tracker.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
 - Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-7 re-entry path (§3.2) relies on it to avoid hot loops.
+- **`fixLocked` restart-safety under transient agent failures.** When a transient-tier agent failure (`RUNTIME_AGENT_TIMEOUT`, `RUNTIME_AGENT_UNAVAILABLE`) aborts a cycle mid-cluster, items already processed before the failure carry `Disposition != nil` and are skipped on the next `fixLocked` invocation per the idempotency rule above; items not yet processed carry `Disposition == nil` and are reprocessed. This guarantees that partial-cluster processing is never lost (no double-fixing of already-dispositioned items) and never starved (un-dispositioned items always get another attempt on the next `run` invocation, driven by the scheduler's retry of exit-75).
 
 **Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
 
 ```text
-function exitCodeForTier(tier):
-    switch tier:
+function exitCodeForTier(err):              # takes the full tier-tagged error, not just err.Tier
+    switch err.Tier:                         # all cases inspect err.Tier only, EXCEPT RUNTIME_CANCELLED
         case PRECONDITION_USER_ERROR:    return 2   # EX_USAGE
         case PRECONDITION_NO_WORK:       return 0   # success-no-op
         case PRECONDITION_LOCK_HELD:     return 75  # EX_TEMPFAIL (transient-equivalent for scheduler retry)
         case RUNTIME_TRANSIENT:          return 75  # EX_TEMPFAIL
         case RUNTIME_TERMINAL_USER:      return 77  # EX_NOPERM
+        case RUNTIME_CANCELLED:          return 128 + err.Signum  # err.Signum is 2 (SIGINT→130) or 15 (SIGTERM→143); non-retryable; only RUNTIME_CANCELLED reads err payload beyond .Tier
         case CONTRACT_AUDIT_FAILED:      return 65  # EX_DATAERR
         case STATE_CORRUPT, STATE_SCHEMA_UNKNOWN: return 78  # EX_CONFIG
         case LIFECYCLE_CAP:              return 0   # graceful terminal exit
@@ -561,12 +567,12 @@ function exitCodeForTier(tier):
 function Run(pr, mode):                       # mode ∈ {interactive, autonomous}
     release, err := tracker.Lock(pr)          # public locking shell
     if err != nil:
-        return exitCodeForTier(err.Tier)      # likely PRECONDITION_LOCK_HELD → 75
+        return exitCodeForTier(err)      # likely PRECONDITION_LOCK_HELD → 75
     defer release()
 
     state, err := runLocked(pr, mode)
     if err != nil:
-        return exitCodeForTier(err.Tier)
+        return exitCodeForTier(err)
     return 0
 
 function runLocked(pr, mode) (*PRGroomingState, error):
@@ -709,6 +715,12 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             # Successful cycle completion clears any prior gating error
             # (e.g., LIFECYCLE_HARD_CAP_EXCEEDED carried over from a previous run
             # that the operator has since resolved out-of-band or by raising --max-rounds).
+            # Realistic carry-overs reaching this clear: LIFECYCLE_HARD_CAP_EXCEEDED
+            # (operator raised --max-rounds and re-ran) and LIFECYCLE_HUMAN_REVIEW_REQUIRED
+            # (upstream signal cleared per §4). Other BlockingErrorCodes
+            # (STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED)
+            # keep phase at human-gated via handle_verb_error or the end-of-cycle
+            # resolver and never reach this clear-on-success branch.
             # See §3.5 "Recovery" bullet.
             state.LastError = ""
             state.LifecycleEscalationFiled = false   # reset for next gate, if any
@@ -730,6 +742,7 @@ Notes on the rewrite vs. earlier drafts:
 - Walks `state.Items`: for any item with `Disposition.Kind ∈ {escalated, failed}` AND `Disposition.EscalationFiled == false`, calls `EscalationSink.File(...)` and sets `EscalationFiled = true`.
 - If `state.LastError != ""` AND `state.LifecycleEscalationFiled == false`, calls `EscalationSink.File(...)` for the lifecycle-tier condition and sets `LifecycleEscalationFiled = true`.
 - Atomically `tracker.Write`s state after emission.
+- **Sink failure handling:** if `EscalationSink.File(...)` returns an error (stderr write failure, bd-adapter API blip), the failure is swallowed (best-effort emit). The corresponding `EscalationFiled` / `LifecycleEscalationFiled` flag is NOT set on Sink error, so the next invocation of `escalate_if_needed` re-attempts the emission for the same item or lifecycle gate. Persistent Sink failures produce repeated retry attempts but never block lifecycle progression (the cycle continues; phase transitions still happen). Operators inspecting `prgroom status` see the gating condition via `state.LastError` and per-item `Disposition.Kind` regardless of Sink reachability. **Relation to the crash-window dedup paragraph below:** the Sink-error retry path produces the same double-fire risk as the crash window (next invocation re-emits) and relies on the same Sink-side dedup contract — bd-adapter must use label-only emit or content-hash dedup on notes; stderr sinks accept the duplicate as a single extra log line.
 
 **Crash-window dedup:** a crash between Sink emit and state write may double-fire on the next invocation. The Sink itself is expected to dedup idempotently — bd's `label add` is idempotent (acceptable); bd's `--append-notes` is NOT (would duplicate notes lines on retry), so the bd-adapter MUST use label-only emit, or content-hash dedup on notes. Stderr-only sinks have no dedup but the cost is one extra log line, accepted.
 
@@ -760,21 +773,37 @@ function handle_verb_error(err, state) Disposition:
             state.LifecycleEscalationFiled = false
             tracker.Write(state)
             return Propagate                  # Run will exit 78
+        case RUNTIME_CANCELLED:
+            # Normal non-retryable lifecycle exit (SIGINT/SIGTERM from operator or scheduler).
+            # No phase change, no state mutation — leave state exactly as written by the
+            # last successful *Locked so `prgroom status` reports the last known phase
+            # accurately. Run applies exitCodeForTier (→ 130 or 143).
+            return Propagate
         default:
-            return Propagate                  # unknown tier — fail safe
+            # Unknown tier is a programmer error — the tier enum is exhaustive
+            # over registered tiers (§3.6) and adding a new tier requires
+            # updating both the registry and this switch. Crash-loud propagation
+            # is intentional: do NOT tracker.Write(state) here, because doing so
+            # would silently persist any verb-level state mutations carried in
+            # the (potentially undefined) error and mask the bug from operators.
+            # Run maps default-tier propagation to exit code 1 (generic failure)
+            # via exitCodeForTier.
+            return Propagate
 ```
 
 **`waitLocked` contract surface (implementation owned by §4).** §3.3 only relies on the following surface; §4 defines the quiescence/timeout logic that implements it:
 
 - Signature: `waitLocked(pr PRRef, state *PRGroomingState) (*PRGroomingState, error)`.
 - Behavior: sleeps + internally invokes `pollLocked` at the §4-defined cadence, returning when either (a) the polled state transitions to a new phase, (b) the §4-defined quiescence threshold trips (writes `Phase = quiesced` and returns), or (c) a §4-defined hard-timeout fires (returns without phase change).
-- Error tiers: may return `RUNTIME_TRANSIENT` if internal `pollLocked` invocations hit gh API blips beyond the retry budget; otherwise `nil`.
-- Cancellation: honors a context `Done` channel if the caller plumbs one through; in MVP, signals (SIGINT/SIGTERM) cause `waitLocked` to return promptly with an error tagged `RUNTIME_TRANSIENT` so the lock releases cleanly.
+- Error tiers: may return `RUNTIME_TRANSIENT` if internal `pollLocked` invocations hit gh API blips beyond the retry budget; `RUNTIME_CANCELLED` if a signal interrupts the wait (see Cancellation below); otherwise `nil`.
+- Cancellation: honors a context `Done` channel if the caller plumbs one through; in MVP, signals (SIGINT/SIGTERM) cause `waitLocked` to return promptly with an error tagged `RUNTIME_CANCELLED` (NOT `RUNTIME_TRANSIENT`) so the lock releases cleanly AND the scheduler does not retry the cancelled invocation. The exit code is `128 + signum` per Unix convention (130 for SIGINT, 143 for SIGTERM), distinct from `RUNTIME_TRANSIENT`'s exit 75 (`EX_TEMPFAIL`). This separation prevents the "cancelled-work resurrection" failure mode in which a Ctrl-C'd `run --autonomous` is re-driven by the scheduler against the operator's intent.
 - Lock semantics: assumes the caller holds the PR lock; does NOT release the lock during sleep (lock stays held for the entire `Run --autonomous` invocation per §3.5).
 
 **`run --interactive` differences:** identical control flow except the verb returns 0 on reaching `awaiting-review`, `idle`, or any terminal-for-CLI phase. It never calls `waitLocked`. On `idle`, the interactive variant emits a one-line stderr advisory (`prgroom: nothing to do — PR has no commits yet (phase=idle)`) so callers can distinguish "nothing to do" from "completed work." Escalations route through the default `EscalationSink` (stderr).
 
 **Lock-hold duration:** `Run --autonomous` holds the lock continuously from the first `tracker.Lock(pr)` call. Within each cycle, the lock is held through the full sequence `pollLocked → clusterLocked → fixLocked → pushLocked → [rereviewLocked] → replyLocked → resolveLocked → resolve_end_of_cycle_phase → tracker.Write` (no mid-cycle release). After each cycle's phase resolution, if the new phase is terminal-for-CLI (`quiesced`, `human-gated`, or `merged`), the loop `continue`s, the loop-top terminal check fires, `runLocked` returns, and the `defer release()` registered by `Run` releases the lock. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75); once the holder returns, the next invocation may acquire.
+
+**`status` read-only carve-out.** The `status` verb is the **single exception** to Section 2's "every verb acquires the PR lock" rule. `status` performs a single `tracker.Read(pr)` and prints the result without calling `tracker.Lock(pr)`. Rationale: under a long-running `run --autonomous` invocation that holds the lock for the entire `awaiting-review` wait (potentially minutes-to-hours per §4 quiescence semantics), a lock-acquiring `status` would block or exit `PRECONDITION_LOCK_HELD` for that whole duration — a UX regression versus the legacy `wait-for-pr-comments` skill, which exposes per-poll state readable at any time. The cost: a `status` invocation that races with an in-progress `tracker.Write` from another verb may observe a **stale-but-internally-consistent snapshot** — the pre-rename state from the prior write. Because writes are file-atomic per Section 2 (`mktemp` + `rename(2)` on the same filesystem), a reader always observes either the old complete file or the new complete file. Partial/corrupt JSON from a race is not possible; `status` does not retry on staleness (a single read is always parseable). True `STATE_CORRUPT` errors (hand-edited state file, filesystem corruption) remain distinguishable from lock-free staleness and surface via the normal `STATE_CORRUPT` handling. Operators who need a strictly-consistent read can invoke `prgroom status --locked <pr>`, which DOES acquire the lock via the standard `tracker.Lock(pr)` path. Under contention, `--locked` exits **75** (`PRECONDITION_LOCK_HELD` per §3.7) on the standard scheduler-retry cadence — it does NOT block indefinitely; the default lock-free `status` invocation is the right tool for diagnostic polling under a long-running `run --autonomous`.
 
 **Resilience:** every internal `*Locked` writes state atomically (per Section 2's transactional model). If the process dies mid-`run`, the OS releases the file-adapter lock, the next invocation re-acquires it, reads the last-good state, and resumes from there. There is no `crash_recovery` flag.
 
@@ -849,7 +878,8 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 | `PRECONDITION_NO_WORK` | preconditions met but nothing to do | 0 (success-no-op) | none | no | proceeds |
 | `RUNTIME_TRANSIENT` | gh 5xx, network blip, rate-limit with `Retry-After`, GraphQL transient | 75 (`EX_TEMPFAIL`) | none; `LastError` set | no | scheduler retries on next cadence |
 | `RUNTIME_TERMINAL_USER` | gh auth missing/expired, repo deleted, branch protection blocks push, OAuth scope insufficient | 77 (`EX_NOPERM`) | → `human-gated`; `LastError` set | yes | aborts; user/operator must resolve |
-| `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb and `LastError` set by `handle_verb_error`; end-of-cycle resolver §3.2 priority 3 always promotes phase to `human-gated` (any `failed` item, any cause, always gates) | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
+| `RUNTIME_CANCELLED` | SIGINT / SIGTERM received during `waitLocked` (or other blocking internal); operator Ctrl-C or scheduler-issued cancellation (concrete codes: `RUNTIME_CANCELLED_SIGINT`, `RUNTIME_CANCELLED_SIGTERM` per §3.7) | 130 (SIGINT) / 143 (SIGTERM) — `128 + signum` per Unix convention | none; `LastError` left unchanged (cancellation is not a gating condition) | no | scheduler MUST NOT retry — non-retryable by convention; operator decides whether to re-invoke |
+| `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb. **`handle_verb_error` returns `Continue` for this tier — it does NOT set `state.LastError`.** End-of-cycle resolver §3.2 priority 3 promotes phase to `human-gated` (any `failed` item, any cause). The cause is available per-item via `Disposition.Rationale`, not via `state.LastError`. | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
 | `STATE_CORRUPT` | tracker JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
 | `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
 
@@ -870,7 +900,7 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 
 - `PRECONDITION_*` codes are `PRECONDITION_USER_ERROR` tier (exit 2 `EX_USAGE`), EXCEPT:
   - `PRECONDITION_LOCK_HELD` → `PRECONDITION_LOCK_HELD` tier (exit 75 — transient-equivalent, since locks free up; scheduler retries succeed)
-  - `PRECONDITION_NO_*` codes (NO_ITEMS, NO_CLUSTERS, NO_COMMITS, NO_UNREPLIED, NO_UNRESOLVED, NO_ESCALATIONS) → `PRECONDITION_NO_WORK` tier (exit 0 success-no-op under default self-heal; exit 2 only under `--no-prework`)
+  - **The "no-work" exception applies ONLY to the following explicitly enumerated codes** (NOT by `PRECONDITION_NO_` prefix matching): `PRECONDITION_NO_ITEMS`, `PRECONDITION_NO_CLUSTERS`, `PRECONDITION_NO_COMMITS`, `PRECONDITION_NO_UNREPLIED`, `PRECONDITION_NO_UNRESOLVED`, `PRECONDITION_NO_ESCALATIONS` → `PRECONDITION_NO_WORK` tier (exit 0 success-no-op under default self-heal; exit 2 only under `--no-prework`). **`PRECONDITION_NO_AUTH` and `PRECONDITION_NO_PR_DETECTED` — despite the `NO_` substring — are NOT in the exception set; they remain `PRECONDITION_USER_ERROR` tier (exit 2)** because they denote user-actionable configuration/invocation errors, not absence-of-work conditions. Future codes named `PRECONDITION_NO_*` will be `PRECONDITION_USER_ERROR` tier (exit 2) BY DEFAULT and must be explicitly added to this enumeration to gain `PRECONDITION_NO_WORK` treatment.
 - `RUNTIME_*` codes are tagged in the table below.
 - `CONTRACT_*` codes → `CONTRACT_AUDIT_FAILED` tier (exit 65 `EX_DATAERR`).
 - `STATE_*` codes → `STATE_CORRUPT` tier (exit 78 `EX_CONFIG`).
@@ -904,6 +934,8 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 | `RUNTIME_GIT_TRANSIENT` | `RUNTIME_TRANSIENT` (75) | git network operation timed out | upstream connectivity blip | retry on next cadence |
 | `RUNTIME_AGENT_UNAVAILABLE` | `RUNTIME_TRANSIENT` (75) | Primary AND fallback agent CLIs both failed | upstream model/tool unavailable | check `claude` / `codex` CLIs; verify quotas |
 | `RUNTIME_AGENT_TIMEOUT` | `RUNTIME_TRANSIENT` (75) | Per-contract time budget exceeded | agent exceeded its budget for one cluster | re-run; if persistent, raise budget or shrink cluster |
+| `RUNTIME_CANCELLED_SIGINT` | `RUNTIME_CANCELLED` (130) | SIGINT received during a blocking internal (typically `waitLocked`); operator pressed Ctrl-C | operator-initiated stop; non-retryable | inspect state via `prgroom status`; re-invoke `run` manually if/when desired |
+| `RUNTIME_CANCELLED_SIGTERM` | `RUNTIME_CANCELLED` (143) | SIGTERM received during a blocking internal; scheduler-issued cancellation or container shutdown | external-initiated stop; non-retryable | inspect state via `prgroom status`; scheduler MUST treat 143 as terminal, not as a retry signal |
 
 #### `CONTRACT_*`
 
