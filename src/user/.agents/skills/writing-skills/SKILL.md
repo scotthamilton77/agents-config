@@ -27,11 +27,8 @@ Documented divergences since:
   - references/testing-skills-with-subagents.md — line "Add symptoms of ABOUT
     to violate." repaired to "Add symptoms of when you're ABOUT to violate
     the rule." (upstream truncation typo).
-Internal cross-references in bundled refs may use upstream conventions (e.g.,
-plugin-namespaced skill names like "superpowers:test-driven-development")
-that do not match this skill's own bare-name convention. If a
-cross-reference dangles in a deployment, consult the upstream source
-for resolution.
+Internal cross-references use bare-name skill conventions (e.g., `test-driven-development`).
+If a cross-reference dangles in a deployment, verify the skill exists in your installation.
 -->
 
 # Writing Skills
@@ -50,7 +47,7 @@ don't know if the skill teaches the right thing. If you didn't watch the
 description compete with realistic near-miss queries, you don't know if it
 will trigger when it should.
 
-**REQUIRED BACKGROUND:** You MUST understand `superpowers:test-driven-development` before
+**REQUIRED BACKGROUND:** You MUST understand `test-driven-development` before
 using this skill. That skill defines the fundamental RED-GREEN-REFACTOR cycle.
 This skill adapts TDD to documentation.
 
@@ -71,7 +68,7 @@ the **test approach** (how you verify it works).
 
 | Type | Examples | Register | Test approach |
 |------|----------|----------|---------------|
-| **Discipline** | `superpowers:test-driven-development`, `verification-before-completion` — rules you must obey under pressure | Hard MUSTs, Iron Law, "no exceptions," explicit rationalization tables, red flags lists | Pressure scenarios with combined time + sunk-cost + authority pressure; agent must comply under stress |
+| **Discipline** | `test-driven-development`, `verification-before-completion` — rules you must obey under pressure | Hard MUSTs, Iron Law, "no exceptions," explicit rationalization tables, red flags lists | Pressure scenarios with combined time + sunk-cost + authority pressure; agent must comply under stress |
 | **Technique** | `condition-based-waiting`, `root-cause-tracing` — how-to guides for a method | Soft, explain-the-why, theory-of-mind framing, examples beat MUSTs | Application scenarios: can the agent use the technique correctly on a new problem? |
 | **Reference** | API docs, schemas, library guides | Neutral documentation voice, scan-optimized tables, no admonitions | Retrieval scenarios: can the agent find the right info and apply it? |
 
@@ -519,7 +516,7 @@ A worked example of skill testing lives in `examples/CLAUDE_MD_TESTING.md`.
 When referencing other skills, use the skill name with explicit requirement
 markers:
 
-- ✅ `REQUIRED SUB-SKILL: Use superpowers:test-driven-development`
+- ✅ `REQUIRED SUB-SKILL: Use test-driven-development`
 - ✅ `REQUIRED BACKGROUND: You MUST understand systematic-debugging`
 - ❌ `See skills/testing/test-driven-development` — unclear if required
 - ❌ `@skills/testing/test-driven-development/SKILL.md` — force-loads, burns context

@@ -30,7 +30,7 @@ Known divergences from upstream `anthropics/skill-creator @ f458cee`:
 
 # Optimize My Skill
 
-Audit and improve existing SKILL.md files for clarity, discoverability, and effectiveness. This skill is for *auditing and improving* existing skills — if a `writing-skills` skill is available (e.g. `superpowers:writing-skills`), prefer it for *creating* new skills from scratch.
+Audit and improve existing SKILL.md files for clarity, discoverability, and effectiveness. This skill is for *auditing and improving* existing skills — if a `writing-skills` skill is available, prefer it for *creating* new skills from scratch.
 
 ## Core Principle
 

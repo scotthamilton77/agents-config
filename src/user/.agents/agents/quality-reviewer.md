@@ -29,7 +29,7 @@ description: |-
   </commentary>
   </example>
 tools: Read, Grep, Glob, Bash
-skills: [superpowers:requesting-code-review, superpowers:receiving-code-review]
+skills: []
 model: opus[1m]
 color: purple
 ---

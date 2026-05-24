@@ -21,9 +21,8 @@ resolution.
 ## Skills
 
 OpenCode scans `~/.claude/skills/**/SKILL.md` natively. Shared skills are
-available without duplication. Some referenced skills (e.g. `superpowers:*`)
-require the [obra/superpowers](https://github.com/obra/superpowers) Claude Code
-plugin.
+available without duplication. Skills use bare names (e.g. `test-driven-development`)
+and are installed from this repo's `src/` directory.
 
 ## Agents
 
