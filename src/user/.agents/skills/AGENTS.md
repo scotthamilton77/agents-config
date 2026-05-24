@@ -64,6 +64,7 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `prototype` | `oss-snapshots/pocock/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `writing-unit-tests` | `oss-snapshots/pocock/tdd/` (amalgamated deltas only) | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `verify-checklist` | `oss-snapshots/superpowers/verification-before-completion/` (amalgamated lift only — Iron Law framing, gate function) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | accept-periodic-resync |
+| `bugfix` | `oss-snapshots/superpowers/systematic-debugging/` (selective amalgamation — 3-strike escalation, multi-component boundary instrumentation lifted only) | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-24 | selective-amalgamation |
 
 Update this table whenever a skill is added, replaced, or amalgamated from an OSS source.
 

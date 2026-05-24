@@ -6,6 +6,15 @@ argument-hint: "[error message, file path, or symptom description]"
 description: Use when encountering a bug with unclear origins, when multiple files could be involved, or when the symptom does not obviously point to a single root cause
 ---
 
+<!--
+Source: oss-snapshots/superpowers/systematic-debugging/
+Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
+Last sync: 2026-05-24
+Note: cx6.7.12 amalgamation lift (selective patterns lifted; see `Patterns lifted:` below)
+Drift policy: selective-amalgamation. `bugfix` is the canonical in-tree path with its own parallel-evidence design; upstream is consulted for pattern lifts only, never wholesale resync. Iron Law framing and 4-phase structure intentionally diverge.
+Patterns lifted: 3-strike fix-failure escalation; multi-component boundary instrumentation.
+-->
+
 # Bugfix
 
 **Core principle:** Gather evidence from three angles in parallel, synthesize into a root cause analysis, THEN fix. Sequential investigation wastes hours — parallel evidence gathering catches what single-threaded debugging misses. Use ultrathink for deep reasoning during synthesis.
@@ -80,7 +89,19 @@ Return: Annotated data flow showing the path and suspect points.
 
 **Why this matters:** Reading code reveals assumptions. Combined with git history and test results, it pinpoints where assumptions break.
 
-Spawn all three as parallel subagent tasks in a single message. Each thread is independent — no shared state between them. **WAIT for all three to complete.** Do not proceed to synthesis if any thread is still running.
+**Multi-layer systems — instrument boundaries.** When the bug spans components (CI → build → signing; API → service → DB; client → gateway → worker), reading source alone is not enough. Before forming a hypothesis, add diagnostic instrumentation at EACH component boundary and run once to gather evidence showing *which* layer fails:
+
+```
+For each component boundary:
+  - Log what data enters the component
+  - Log what data exits the component
+  - Verify environment/config propagation
+  - Capture state at the layer transition
+```
+
+Then analyze the evidence to identify the failing layer BEFORE investigating that component in depth. This guards against fixing the first component that looks suspicious when the break is actually one boundary earlier.
+
+Spawn all three threads as parallel subagent tasks in a single message. Each thread is independent — no shared state between them. **WAIT for all three to complete.** Do not proceed to synthesis if any thread is still running.
 
 ## Synthesis Gate
 
@@ -124,6 +145,17 @@ Only after synthesis identifies a root cause:
 4. **Run the full test suite** — confirm no regressions
 5. **Commit only if ALL tests pass** — no partial commits, no "fix later" promises
 
+### If the fix doesn't work
+
+- STOP. Count how many fixes you've attempted on this bug.
+- **If < 3:** Return to the Synthesis Gate. The failed fix is new evidence — re-correlate the threads with that data and form a new hypothesis. Do NOT stack a second fix on top of the first.
+- **If ≥ 3:** STOP and question the architecture. Three failed fixes is an architectural signal, not a hypothesis signal — the abstraction is wrong, not the theory. Watch for these patterns:
+  - Each fix reveals new shared state, coupling, or symptoms in a *different* place
+  - Each fix requires "massive refactoring" to land cleanly
+  - Each fix creates new symptoms elsewhere
+  - You find yourself thinking "one more attempt should do it"
+- **Escalate to the user before fix #4.** Surface the failed attempts, the pattern, and a proposed architectural question. This is not a failed hypothesis — it's a wrong design.
+
 ## Red Flags — STOP and Recheck
 
 If you catch yourself:
@@ -136,6 +168,8 @@ If you catch yourself:
 - Committing with failing tests ("only unrelated tests fail")
 - Treating a user's diagnosis as confirmed without thread evidence
 - Skipping threads because "production is down"
+- **"One more fix attempt" after 2+ failed fixes** — 3+ failures means architectural problem, not a hypothesis problem
+- Fixing the first suspicious component in a multi-layer system without instrumenting boundaries to confirm WHERE the break is
 
 **ALL of these mean: STOP. You are skipping the process.**
 
