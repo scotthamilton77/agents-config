@@ -667,8 +667,12 @@ reconcile rules:
 - **Tracker closed while Orchestrator pre-terminal — terminal-disposition
   classifier**: the orchestrator reads the tracker's typed
   `terminal_disposition` metadata field (a Domain-2 lifecycle field
-  introduced by this spec; written by the human-side close path or by
-  the orchestrator itself on a Merge-induced close). Valid values:
+  introduced by this spec; written via `set_terminal_disposition` by
+  the human-side close path or by the orchestrator itself on a
+  Merge-induced close; read back as the
+  `terminal_disposition: Optional[TerminalDisposition]` field on
+  the `ObjectiveRecord` returned by `get_objective` / `bulk_get`).
+  Valid values:
   `killed`, `manually-merged`, `duplicate`, `superseded`, `abandoned`.
   The classifier maps each to the appropriate terminal lifecycle stage
   and `terminal_disposition` field on `objective_lifecycle_state`. If
@@ -1340,10 +1344,20 @@ is orchestrator-sidecar-owned.
   population. See "bd marker semantics (reference adapter)" above for
   rationale and the impl-child flag-verification caveat.)
 - `get_objective(id) -> ObjectiveRecord` (full record including spec,
-  audit notes; provenance is orchestrator-owned and not returned here)
+  audit notes; provenance is orchestrator-owned and not returned here).
+  The returned `ObjectiveRecord` carries at minimum: `id`,
+  `parent_id`, `type`, `title`, `spec` (body), `audit_notes`,
+  `lifecycle_status` (the tracker's coarse open/in_progress/closed
+  projection), and **`terminal_disposition: Optional[TerminalDisposition]`**
+  — populated by the Domain-2 `set_terminal_disposition` setter and
+  read back here so the terminal-disposition classifier (CA-10 / "Out-of-band
+  edit reconciliation") can map a tracker-side close to the correct
+  terminal lifecycle stage. `None` for any non-terminal Objective.
 - `bulk_get(ids: list[ObjectiveID]) -> list[ObjectiveRecord]`
   (used by full-reconcile for fingerprint diffing on already-known
-  IDs; pairs with `list_all_ids` to cover the known-ID partition)
+  IDs; pairs with `list_all_ids` to cover the known-ID partition;
+  same `ObjectiveRecord` shape as `get_objective`, including
+  `terminal_disposition` for terminal Objectives)
 
 ### Domain 2 — Lifecycle
 
