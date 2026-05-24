@@ -628,9 +628,16 @@ Two stores, two domains, two canonical authorities:
 | Spec content | Draft Spec body, Decomposition Plan |
 | Lifecycle status | open / in_progress / closed / blocked / deferred |
 | Priority | PriorityLevel 0..4; mirrored onto Objective; tracker authoritative |
-| Dependencies | typed; both directions; with reasons (NOT part of MVP `WorkTracker` protocol — see CA-12; orchestrator mirrors into `OrchestratorStateRepo.DependencyEdges` for MVP) |
 | Audit notes | append-only human-readable trail |
-| Metadata channel | typed bag for lifecycle-stage projection markers, etc. (NOT part of MVP `WorkTracker` protocol — see CA-12; per-Objective overrides live in `OrchestratorStateRepo.MetadataOverrides` for MVP) |
+
+> **MVP scope note.** For MVP, dependency edges and metadata-channel
+> overrides are **orchestrator-sidecar** concerns (see CA-12 and the
+> "Post-MVP protocol expansions (v2)" section). They are **NOT**
+> tracker-domain state in this scope, and therefore do not appear as
+> rows in the table above. The Orchestrator owns them in
+> `OrchestratorStateRepo.DependencyEdges` /
+> `OrchestratorStateRepo.MetadataOverrides`; reconciliation and CAS
+> responsibility live with the orchestrator alone.
 
 ### Orchestrator domain (Orchestrator's own store)
 
@@ -643,6 +650,7 @@ Two stores, two domains, two canonical authorities:
 | Frozen-branch markers | set on `AUTOPSY` entry; lifted only on `pdlc objectives unfreeze` |
 | Gate-pass SHAs | per gate; commit SHA at which gate last passed |
 | Dependencies (sidecar) | typed `(blocker_id, blocked_id, reason, created_ts)` rows in `OrchestratorStateRepo.DependencyEdges`; orchestrator-owned for MVP (CA-12 — Domain 4 lives in the sidecar, not in the WorkTracker protocol) |
+| MetadataOverrides (sidecar) | per-Objective config overrides in `OrchestratorStateRepo.MetadataOverrides`; orchestrator-owned for MVP (CA-12 — Domain 7 lives in the sidecar, not in the WorkTracker protocol) |
 | Terminal disposition | `killed` / `manually-merged` / `duplicate` / `superseded` / `abandoned`; populated only at terminal lifecycle stage; sourced from tracker `terminal_disposition` typed-metadata field — see "Terminal disposition" subsection |
 | Session records | one per worker invocation; see Sessions below |
 
@@ -1565,9 +1573,14 @@ they are TOML, with the same schema validation as the root.
 
 `per-Objective > per-persona > global default`.
 
-Per-Objective overrides flow via the WorkTracker's metadata channel.
-The existing `coverage-threshold-<n>` label-on-bead pattern is one
-example; the schema generalises this to typed metadata keys.
+Per-Objective overrides live in `OrchestratorStateRepo.MetadataOverrides`
+for MVP (orchestrator-sidecar — see CA-12; the metadata channel is NOT
+part of the MVP `WorkTracker` protocol). Post-MVP, the v2 protocol may
+move them back onto a tracker-side typed metadata channel — see the
+"Post-MVP protocol expansions (v2)" section, Domain 7. The existing
+`coverage-threshold-<n>` label-on-bead pattern is one historical
+example; the schema generalises this to typed metadata keys keyed by
+Objective id.
 
 Per-persona overrides live in the persona definition (a future
 implementation concern).
