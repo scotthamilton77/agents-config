@@ -544,6 +544,7 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 - Returns `(*PRGroomingState, error)` — the (potentially) mutated state and any error tagged with its failure tier (§3.6).
 - Atomically `tracker.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
 - Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-7 re-entry path (§3.2) relies on it to avoid hot loops.
+- **`fixLocked` restart-safety under transient agent failures.** When a transient-tier agent failure (`RUNTIME_AGENT_TIMEOUT`, `RUNTIME_AGENT_UNAVAILABLE`) aborts a cycle mid-cluster, items already processed before the failure carry `Disposition != nil` and are skipped on the next `fixLocked` invocation per the idempotency rule above; items not yet processed carry `Disposition == nil` and are reprocessed. This guarantees that partial-cluster processing is never lost (no double-fixing of already-dispositioned items) and never starved (un-dispositioned items always get another attempt on the next `run` invocation, driven by the scheduler's retry of exit-75).
 
 **Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
 
@@ -893,7 +894,7 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 
 - `PRECONDITION_*` codes are `PRECONDITION_USER_ERROR` tier (exit 2 `EX_USAGE`), EXCEPT:
   - `PRECONDITION_LOCK_HELD` → `PRECONDITION_LOCK_HELD` tier (exit 75 — transient-equivalent, since locks free up; scheduler retries succeed)
-  - `PRECONDITION_NO_*` codes (NO_ITEMS, NO_CLUSTERS, NO_COMMITS, NO_UNREPLIED, NO_UNRESOLVED, NO_ESCALATIONS) → `PRECONDITION_NO_WORK` tier (exit 0 success-no-op under default self-heal; exit 2 only under `--no-prework`)
+  - **The "no-work" exception applies ONLY to the following explicitly enumerated codes** (NOT by `PRECONDITION_NO_` prefix matching): `PRECONDITION_NO_ITEMS`, `PRECONDITION_NO_CLUSTERS`, `PRECONDITION_NO_COMMITS`, `PRECONDITION_NO_UNREPLIED`, `PRECONDITION_NO_UNRESOLVED`, `PRECONDITION_NO_ESCALATIONS` → `PRECONDITION_NO_WORK` tier (exit 0 success-no-op under default self-heal; exit 2 only under `--no-prework`). **`PRECONDITION_NO_AUTH` and `PRECONDITION_NO_PR_DETECTED` — despite the `NO_` substring — are NOT in the exception set; they remain `PRECONDITION_USER_ERROR` tier (exit 2)** because they denote user-actionable configuration/invocation errors, not absence-of-work conditions. Future codes named `PRECONDITION_NO_*` will be `PRECONDITION_USER_ERROR` tier (exit 2) BY DEFAULT and must be explicitly added to this enumeration to gain `PRECONDITION_NO_WORK` treatment.
 - `RUNTIME_*` codes are tagged in the table below.
 - `CONTRACT_*` codes → `CONTRACT_AUDIT_FAILED` tier (exit 65 `EX_DATAERR`).
 - `STATE_*` codes → `STATE_CORRUPT` tier (exit 78 `EX_CONFIG`).
