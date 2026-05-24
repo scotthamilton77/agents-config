@@ -3,11 +3,20 @@ name: verify-checklist
 description: Use when about to declare work complete or report final status to the user, or when user invokes directly — audits all completed work against verification workflows stored in memory and produces a structured completion report
 ---
 
+<!--
+Source: oss-snapshots/superpowers/verification-before-completion/
+Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
+Last sync: 2026-05-24
+Drift policy: accept-periodic-resync (amalgamated lift — Iron Law framing + "evidence before claims, always" tagline + identify-run-read-verify-claim gate function only; tracked in agents-config-cx6.7.13)
+-->
+
 # Verify Checklist
 
 ## Core Principle
 
-**Completion without audit is assumption.** Cross-reference every piece of work against the verification workflows in your memory before declaring done. If steps were skipped, do them now. Then produce a structured report with evidence.
+**The Iron Law: no completion claims without fresh verification evidence in this message.**
+
+Claiming work is complete without verification is dishonesty, not efficiency. **Evidence before claims, always.** Completion without audit is assumption — cross-reference every piece of work against the verification workflows in your memory before declaring done. If steps were skipped, do them now. Then produce a structured report with evidence.
 
 ## When to Use
 
@@ -46,11 +55,21 @@ Then proceed with best-effort verification using whatever project conventions yo
 For **each** verification workflow step:
 
 1. **Check**: Did you complete this step during this session? What evidence exists?
-2. **If completed**: Record the result (test output, review findings, commit SHAs)
-3. **If NOT completed**: **Execute it now.** Do not merely report it missing — do the work, then record the result.
-4. **If blocked**: Record why and flag for the user
+2. **If completed**: Record the result (test output, review findings, commit SHAs).
+3. **If NOT completed**: **Execute it now using the gate function below** — do the work, then record the result.
+4. **If blocked**: Record why and flag for the user.
 
 Do not skip steps. Do not reorder steps. Do not decide steps "don't apply."
+
+**The gate function** — apply per step, fresh, in this message:
+
+1. **IDENTIFY** — What command or check proves this step?
+2. **RUN** — Execute the full command (fresh, complete).
+3. **READ** — Full output; check exit code; count failures.
+4. **VERIFY** — Does the output confirm the claim?
+5. **CLAIM** — Only now, with evidence.
+
+Skipping any step is lying, not verifying. Stale evidence ("I ran tests earlier") is not fresh evidence — re-run.
 
 ### 3. Gather Context
 
