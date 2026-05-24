@@ -20,6 +20,20 @@ the fix.
 before agreeing. Ask before assuming. The comment is a hypothesis about
 the code, not a verdict.
 
+## Contents
+
+- [The seven patterns](#the-seven-patterns)
+  - [1. No performative agreement](#1-no-performative-agreement)
+  - [2. Restate the requirement in your own words](#2-restate-the-requirement-in-your-own-words)
+  - [3. Verify against the codebase before responding](#3-verify-against-the-codebase-before-responding)
+  - [4. Push back with technical reasoning when wrong](#4-push-back-with-technical-reasoning-when-wrong)
+  - [5. Ask before assuming on unclear items](#5-ask-before-assuming-on-unclear-items)
+  - [6. YAGNI grep — verify the feature is actually used](#6-yagni-grep--verify-the-feature-is-actually-used)
+  - [7. Check for larger blast radius](#7-check-for-larger-blast-radius)
+- [Outcome routing](#outcome-routing)
+- [When you pushed back and were wrong](#when-you-pushed-back-and-were-wrong)
+- [What this file does NOT cover](#what-this-file-does-not-cover)
+
 ## The seven patterns
 
 ### 1. No performative agreement
@@ -75,7 +89,7 @@ Disagreement is fine. Defensiveness is not. Push back when:
 
 - The suggestion breaks existing functionality.
 - The reviewer lacks context the codebase makes obvious.
-- It violates YAGNI (see pattern #5).
+- It violates YAGNI (see pattern #6).
 - It is technically incorrect for this stack / platform / version target.
 - Legacy or compatibility constraints exist.
 - It conflicts with an architectural decision recorded in `docs/adr/`
@@ -170,8 +184,8 @@ The seven patterns produce one of three outcomes per comment:
 
 | Outcome | When |
 |---|---|
-| **FIX → COMMITTED_FIX** | Verified (per #3), restated (per #2), blast-radius scoped (per #7), no YAGNI violation (per #5). |
-| **SKIP** | Reviewer claim is wrong (per #3 + #4), or feature is unused (per #5 + #4), or you have a defensible counterargument. Rationale becomes the reply. |
+| **FIX → COMMITTED_FIX** | Verified (per #3), restated (per #2), blast-radius scoped (per #7), no YAGNI violation (per #6). |
+| **SKIP** | Reviewer claim is wrong (per #3 + #4), or feature is unused (per #6 + #4), or you have a defensible counterargument. Rationale becomes the reply. |
 | **ESCALATE** | Comment is ambiguous (per #2 + #5), or blast-radius exceeds PR scope (per #7), or you cannot make the call without human judgment. |
 
 ## When you pushed back and were wrong

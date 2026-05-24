@@ -75,9 +75,12 @@ crisp explanation of what you needed and could not obtain.
 
 ## Report contract
 
-Cite and follow `docs/specs/pr-comment-fix-report-v1.md` (repo-root
-relative) as the YAML schema source of truth. The shared core lives at
-`docs/specs/worker-report-v1.md`.
+The authoritative report schema is the **Subagent report schema** section
+in `wait-for-pr-comments/SKILL.md` (installed at
+`~/.claude/skills/wait-for-pr-comments/SKILL.md`). The legacy spec files
+(`pr-comment-fix-report-v1.md`, `worker-report-v1.md`) are in
+`archive/docs/specs/` for historical reference only — do not cite them as
+current.
 
 Use the `Write` tool with the absolute path; do not use Bash redirection.
 
