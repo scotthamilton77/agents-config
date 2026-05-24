@@ -549,14 +549,14 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 **Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
 
 ```text
-function exitCodeForTier(tier):
-    switch tier:
+function exitCodeForTier(err):              # takes the full tier-tagged error, not just err.Tier
+    switch err.Tier:                         # all cases inspect err.Tier only, EXCEPT RUNTIME_CANCELLED
         case PRECONDITION_USER_ERROR:    return 2   # EX_USAGE
         case PRECONDITION_NO_WORK:       return 0   # success-no-op
         case PRECONDITION_LOCK_HELD:     return 75  # EX_TEMPFAIL (transient-equivalent for scheduler retry)
         case RUNTIME_TRANSIENT:          return 75  # EX_TEMPFAIL
         case RUNTIME_TERMINAL_USER:      return 77  # EX_NOPERM
-        case RUNTIME_CANCELLED:          return 128 + signum(err)  # signum(err) extracts the signal number from the tier-tagged err payload (SIGINT=2 → 130; SIGTERM=15 → 143); non-retryable
+        case RUNTIME_CANCELLED:          return 128 + err.Signum  # err.Signum is 2 (SIGINT→130) or 15 (SIGTERM→143); non-retryable; only RUNTIME_CANCELLED reads err payload beyond .Tier
         case CONTRACT_AUDIT_FAILED:      return 65  # EX_DATAERR
         case STATE_CORRUPT, STATE_SCHEMA_UNKNOWN: return 78  # EX_CONFIG
         case LIFECYCLE_CAP:              return 0   # graceful terminal exit
@@ -567,12 +567,12 @@ function exitCodeForTier(tier):
 function Run(pr, mode):                       # mode ∈ {interactive, autonomous}
     release, err := tracker.Lock(pr)          # public locking shell
     if err != nil:
-        return exitCodeForTier(err.Tier)      # likely PRECONDITION_LOCK_HELD → 75
+        return exitCodeForTier(err)      # likely PRECONDITION_LOCK_HELD → 75
     defer release()
 
     state, err := runLocked(pr, mode)
     if err != nil:
-        return exitCodeForTier(err.Tier)
+        return exitCodeForTier(err)
     return 0
 
 function runLocked(pr, mode) (*PRGroomingState, error):
@@ -773,6 +773,12 @@ function handle_verb_error(err, state) Disposition:
             state.LifecycleEscalationFiled = false
             tracker.Write(state)
             return Propagate                  # Run will exit 78
+        case RUNTIME_CANCELLED:
+            # Normal non-retryable lifecycle exit (SIGINT/SIGTERM from operator or scheduler).
+            # No phase change, no state mutation — leave state exactly as written by the
+            # last successful *Locked so `prgroom status` reports the last known phase
+            # accurately. Run applies exitCodeForTier (→ 130 or 143).
+            return Propagate
         default:
             # Unknown tier is a programmer error — the tier enum is exhaustive
             # over registered tiers (§3.6) and adding a new tier requires
@@ -797,7 +803,7 @@ function handle_verb_error(err, state) Disposition:
 
 **Lock-hold duration:** `Run --autonomous` holds the lock continuously from the first `tracker.Lock(pr)` call. Within each cycle, the lock is held through the full sequence `pollLocked → clusterLocked → fixLocked → pushLocked → [rereviewLocked] → replyLocked → resolveLocked → resolve_end_of_cycle_phase → tracker.Write` (no mid-cycle release). After each cycle's phase resolution, if the new phase is terminal-for-CLI (`quiesced`, `human-gated`, or `merged`), the loop `continue`s, the loop-top terminal check fires, `runLocked` returns, and the `defer release()` registered by `Run` releases the lock. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75); once the holder returns, the next invocation may acquire.
 
-**`status` read-only carve-out.** The `status` verb is the **single exception** to Section 2's "every verb acquires the PR lock" rule. `status` performs a single `tracker.Read(pr)` and prints the result without calling `tracker.Lock(pr)`. Rationale: under a long-running `run --autonomous` invocation that holds the lock for the entire `awaiting-review` wait (potentially minutes-to-hours per §4 quiescence semantics), a lock-acquiring `status` would block or exit `PRECONDITION_LOCK_HELD` for that whole duration — a UX regression versus the legacy `wait-for-pr-comments` skill, which exposes per-poll state readable at any time. The cost: a `status` invocation that races with an in-progress `tracker.Write` from another verb may observe a torn read (partial state). Because writes are file-atomic per Section 2 (write-to-tmp, then `rename(2)`), the torn-read window is bounded to the post-rename read-back path; in practice this surfaces as a brief parse error. `status` retries the read **once**; on persistent failure it exits **78** (`STATE_CORRUPT` tier per §3.7) with the underlying parse error on stderr. Operators who need a strictly-consistent read can invoke `prgroom status --locked <pr>`, which DOES acquire the lock via the standard `tracker.Lock(pr)` path. Under contention, `--locked` exits **75** (`PRECONDITION_LOCK_HELD` per §3.7) on the standard scheduler-retry cadence — it does NOT block indefinitely; the default lock-free `status` invocation is the right tool for diagnostic polling under a long-running `run --autonomous`.
+**`status` read-only carve-out.** The `status` verb is the **single exception** to Section 2's "every verb acquires the PR lock" rule. `status` performs a single `tracker.Read(pr)` and prints the result without calling `tracker.Lock(pr)`. Rationale: under a long-running `run --autonomous` invocation that holds the lock for the entire `awaiting-review` wait (potentially minutes-to-hours per §4 quiescence semantics), a lock-acquiring `status` would block or exit `PRECONDITION_LOCK_HELD` for that whole duration — a UX regression versus the legacy `wait-for-pr-comments` skill, which exposes per-poll state readable at any time. The cost: a `status` invocation that races with an in-progress `tracker.Write` from another verb may observe a **stale-but-internally-consistent snapshot** — the pre-rename state from the prior write. Because writes are file-atomic per Section 2 (`mktemp` + `rename(2)` on the same filesystem), a reader always observes either the old complete file or the new complete file. Partial/corrupt JSON from a race is not possible; `status` does not retry on staleness (a single read is always parseable). True `STATE_CORRUPT` errors (hand-edited state file, filesystem corruption) remain distinguishable from lock-free staleness and surface via the normal `STATE_CORRUPT` handling. Operators who need a strictly-consistent read can invoke `prgroom status --locked <pr>`, which DOES acquire the lock via the standard `tracker.Lock(pr)` path. Under contention, `--locked` exits **75** (`PRECONDITION_LOCK_HELD` per §3.7) on the standard scheduler-retry cadence — it does NOT block indefinitely; the default lock-free `status` invocation is the right tool for diagnostic polling under a long-running `run --autonomous`.
 
 **Resilience:** every internal `*Locked` writes state atomically (per Section 2's transactional model). If the process dies mid-`run`, the OS releases the file-adapter lock, the next invocation re-acquires it, reads the last-good state, and resumes from there. There is no `crash_recovery` flag.
 
@@ -873,7 +879,7 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 | `RUNTIME_TRANSIENT` | gh 5xx, network blip, rate-limit with `Retry-After`, GraphQL transient | 75 (`EX_TEMPFAIL`) | none; `LastError` set | no | scheduler retries on next cadence |
 | `RUNTIME_TERMINAL_USER` | gh auth missing/expired, repo deleted, branch protection blocks push, OAuth scope insufficient | 77 (`EX_NOPERM`) | → `human-gated`; `LastError` set | yes | aborts; user/operator must resolve |
 | `RUNTIME_CANCELLED` | SIGINT / SIGTERM received during `waitLocked` (or other blocking internal); operator Ctrl-C or scheduler-issued cancellation (concrete codes: `RUNTIME_CANCELLED_SIGINT`, `RUNTIME_CANCELLED_SIGTERM` per §3.7) | 130 (SIGINT) / 143 (SIGTERM) — `128 + signum` per Unix convention | none; `LastError` left unchanged (cancellation is not a gating condition) | no | scheduler MUST NOT retry — non-retryable by convention; operator decides whether to re-invoke |
-| `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb and `LastError` set by `handle_verb_error`; end-of-cycle resolver §3.2 priority 3 always promotes phase to `human-gated` (any `failed` item, any cause, always gates) | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
+| `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb. **`handle_verb_error` returns `Continue` for this tier — it does NOT set `state.LastError`.** End-of-cycle resolver §3.2 priority 3 promotes phase to `human-gated` (any `failed` item, any cause). The cause is available per-item via `Disposition.Rationale`, not via `state.LastError`. | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
 | `STATE_CORRUPT` | tracker JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
 | `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
 
