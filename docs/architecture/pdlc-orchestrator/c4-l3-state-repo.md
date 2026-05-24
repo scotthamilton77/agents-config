@@ -36,7 +36,7 @@ When this stub is expanded, the diagram is expected to contain at least:
   - `DiscoveryMarker` — last-seen tracker watermark per adapter
 - **Per-tick branch-checkpoint mechanism** — Dolt branch operations; performed at end of every successful tick by the PERSIST phase
 - **CAS predicate API surface** — row-version read/write helpers consumed by the [Tick Loop's CAS evaluator component](c4-l3-tick-loop.md)
-- **Read-only-cache fallback** — services Discovery in `tracker_unreachable` degraded mode by serving from the most recent successful fingerprint snapshot
+- **Read-only-cache fallback (likely)** — may service Discovery in `tracker_unreachable` degraded mode by serving from the most recent successful fingerprint snapshot. The degraded-mode handling is ratified in the orchestrator core design; whether it lives as a dedicated cache component or as a code path inside the WorkTracker adapter is an implementation-child decision
 - **Backup / archive / pruning policy** — long-term retention story; pruning is post-MVP (see `agents-config-64ecc` for the cryptographic hash-chain that would precede pruning)
 
 ## When to expand this stub

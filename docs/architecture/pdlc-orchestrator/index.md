@@ -74,9 +74,9 @@ Newcomers should read in this order; deep contributors may navigate freely.
 | [`c4-l3-jobsupervisor.md`](c4-l3-jobsupervisor.md) | **stub** | **C4 Level 3** (JobSupervisor) — placeholder; expected components: lease lifecycle, heartbeat reporter, deadline enforcer, terminal-status collector, capture handles, cancellation handler, crash-recovery roll-forward |
 | [`c4-l3-state-repo.md`](c4-l3-state-repo.md) | **stub** | **C4 Level 3** (OrchestratorStateRepo) — placeholder; expected components: schema migrations, per-table DAOs, branch-checkpoint mechanism, CAS predicate API, read-only-cache fallback, retention policy |
 | [`c4-deployment.md`](c4-deployment.md) | drawn | **C4 Deployment** — single-host MVP topology: CLI process, cron trigger, Dolt sidecar volume, worker subprocesses, worktree filesystem, tracker store. Explicit "multi-host POST-MVP" annotations |
-| [`sequences.md`](sequences.md) | wave 3 (pending) | **Two sequence diagrams**: (a) one tick cycle (DISCOVER → RECONCILE → REAP → DISPATCH → PERSIST) with concrete actors; (b) Objective happy path (Idea → MERGED) with worker dispatches at each gate |
-| [`state-machine.md`](state-machine.md) | wave 3 (pending) | **Full lifecycle stage graph**: retry edges, 3-strike → `AUTOPSY`, Container-decomposition divergence (Decomposed Container as passive aggregator), terminal states (`MERGED` / `KILLED` / `PARKED`); `needs_reconcile` shown as a flag, not a state |
-| [`data-view.md`](data-view.md) | wave 3 (pending) | **What lives where**: tracker domain vs OrchestratorStateRepo vs filesystem; marker semantics; CAS predicate flow; canonical-ownership boundaries |
+| [`sequences.md`](sequences.md) | drawn | **Two sequence diagrams**: (a) one tick cycle (DISCOVER → RECONCILE → REAP → DISPATCH → PERSIST) with concrete actors; (b) Objective happy path (Idea → MERGED) with worker dispatches at each gate |
+| [`state-machine.md`](state-machine.md) | drawn | **Full lifecycle stage graph**: retry edges, 3-strike → `AUTOPSY`, Container-decomposition divergence (Decomposed Container as passive aggregator), terminal states (`MERGED` / `KILLED` / `PARKED`); `needs_reconcile` shown as a flag, not a state |
+| [`data-view.md`](data-view.md) | drawn | **What lives where**: tracker domain vs OrchestratorStateRepo vs filesystem; marker semantics; CAS predicate flow; canonical-ownership boundaries |
 
 ## Conventions
 

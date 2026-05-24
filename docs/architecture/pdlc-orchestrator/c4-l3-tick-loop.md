@@ -51,9 +51,9 @@ C4Component
     }
 
     Container_Boundary(pdlc_other, "Other components in pdlc process (called by the tick loop)") {
-        Component(adapter, "WorkTracker adapter (bd-bound)", "Python", "Implements WorkTracker protocol against bd; per-call tracker-side CAS predicate (e.g. Dolt row-version). See TODO stub below.")
-        Component(super, "JobSupervisor", "Python", "Worker process supervision: lease / heartbeat / deadline / cancel / terminal_status / capture. Owns process_group_id. See TODO stub below.")
-        Component(state_client, "OrchestratorStateRepo client", "Python + Dolt SQL", "Typed DAO over the Dolt sidecar; per-tick branch checkpoint commits. See TODO stub below.")
+        Component(adapter, "WorkTracker adapter (bd-bound)", "Python", "Implements WorkTracker protocol against bd; per-call tracker-side CAS predicate (e.g. Dolt row-version). Detailed L3 in sibling file c4-l3-worktracker-adapter.md (currently stub).")
+        Component(super, "JobSupervisor", "Python", "Worker process supervision: lease / heartbeat / deadline / cancel / terminal_status / capture. Owns process_group_id. Detailed L3 in sibling file c4-l3-jobsupervisor.md (currently stub).")
+        Component(state_client, "OrchestratorStateRepo client", "Python + Dolt SQL", "Typed DAO over the Dolt sidecar; per-tick branch checkpoint commits. Detailed L3 in sibling file c4-l3-state-repo.md (currently stub).")
         Component(config_ld, "project-config loader", "Python", "Reads + validates project-config.toml; computes config_hash; pins it on Sessions at dispatch")
     }
 
@@ -167,7 +167,7 @@ The other L2 containers — **WorkTracker adapter**, **JobSupervisor**, and **Or
 
 - [c4-l3-worktracker-adapter.md](c4-l3-worktracker-adapter.md) — **STUB** — expected components: protocol-method groupings, bd CLI invocation, CAS predicate computation, fingerprint computation, error translation, Discovery marker management
 - [c4-l3-jobsupervisor.md](c4-l3-jobsupervisor.md) — **STUB** — expected components: lease lifecycle, heartbeat reporter, deadline enforcer, terminal-status collector, capture handles, cancellation handler, crash-recovery roll-forward
-- [c4-l3-state-repo.md](c4-l3-state-repo.md) — **STUB** — expected components: schema migrations, per-table DAOs, branch-checkpoint mechanism, CAS predicate API, read-only-cache fallback, retention policy
+- [c4-l3-state-repo.md](c4-l3-state-repo.md) — **STUB** — expected components: schema migrations, per-table DAOs, branch-checkpoint mechanism, CAS predicate API, degraded-mode read path, retention policy
 
 Each stub file lists its expected components, its when-to-fill trigger, and its source-spec pointer. Establishing the homes now means future contributors don't have to invent folder structure mid-stride.
 

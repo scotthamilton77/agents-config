@@ -155,4 +155,4 @@ None of these change the MVP shape. They are flagged here so that implementation
 
 - **Up**: [C4 L2 — Container](c4-l2-container.md)
 - **Companion source**: orchestrator core design spec §§ [The Process Model: CLI-driven Tick](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#the-process-model-cli-driven-tick), [Single-host constraint (MVP)](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#single-host-constraint-mvp), [Worktree Discipline](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#worktree-discipline)
-- **Project worktree rule**: `~/.claude/rules/worktrees.md` (worktrees go under `<project-root>/.claude/worktrees/`)
+- **Worktree convention**: per the project worktree rule, all worktrees live under `<project-root>/.claude/worktrees/` (never elsewhere, never nested in subdirectories)

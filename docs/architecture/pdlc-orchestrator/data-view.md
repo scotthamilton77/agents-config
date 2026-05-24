@@ -169,14 +169,24 @@ WorkTracker.set_lifecycle_status(id, status, version_predicate)
 
 This is the only orchestrator → tracker write for in-flight Objectives. CAS via `version_predicate`.
 
-### Terminal disposition (orchestrator → tracker on merge / kill)
+### Terminal disposition (orchestrator → tracker on Autopsy kill)
 
 ```
-At MERGING success: WorkTracker.set_terminal_disposition(id, manually-merged | merged-by-orchestrator)
-At Autopsy route (iii): WorkTracker.set_terminal_disposition(id, killed | duplicate | superseded | abandoned)
+At Autopsy route (iii): WorkTracker.set_terminal_disposition(id, killed)
+                       + WorkTracker.set_lifecycle_status(id, closed)
 ```
 
 Sets the typed `terminal_disposition` field the reconcile-side classifier reads back.
+
+The orchestrator only WRITES `terminal_disposition` for terminations it initiates via Autopsy. The other enumerated values (`manually-merged`, `duplicate`, `superseded`, `abandoned`) are written by the operator or other tooling outside the orchestrator's normal path; the orchestrator READS them during reconcile to map into the corresponding terminal lifecycle stage.
+
+### Happy-path close (orchestrator → tracker on MERGED)
+
+```
+At MERGING success: WorkTracker.set_lifecycle_status(id, closed) under CAS
+```
+
+The happy-path merge writes only the coarse `lifecycle_status` projection. No `terminal_disposition` value is written — the orchestrator's own `lifecycle_stage=MERGED` is the source of truth for "this merged via the normal pipeline". Reconcile on a future tick reads `lifecycle_stage` and sees no ambiguity.
 
 ### Worker → orchestrator (via filesystem)
 

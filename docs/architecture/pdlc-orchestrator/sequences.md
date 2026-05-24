@@ -243,7 +243,7 @@ sequenceDiagram
     PDLC->>State: advance to MERGING
     PDLC->>Git: merge PR (gh pr merge)
     Git-->>PDLC: merged
-    PDLC->>BD: set_terminal_disposition (manually-merged or merged-by-orchestrator)
+    PDLC->>BD: set_lifecycle_status(id, closed) under CAS
     PDLC->>State: advance to MERGED (terminal)
     PDLC->>PDLC: cleanup worktree (idempotent)
 

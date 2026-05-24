@@ -99,7 +99,7 @@ stateDiagram-v2
     PR_HUMAN_HOLD --> MERGING : human approval
 
     MERGING --> MERGED : merge succeeds
-    MERGING --> needs_reconcile_flag : merge conflict<br/>(world-state failure — Human Escalation Path,<br/>NOT Autopsy)
+    MERGING --> MERGING : merge conflict<br/>(raises needs_reconcile flag;<br/>routes to Human Escalation Path,<br/>NOT Autopsy)
 
     state AUTOPSY {
         [*] --> rca_dispatch
@@ -117,7 +117,7 @@ stateDiagram-v2
     AUTOPSY --> PARKED : route (iv) — blocked on dep
     AUTOPSY --> EXECUTABLE_READY : route (v) — tooling escalation resolved<br/>(re-dispatch the same stage)
 
-    PARKED --> EXECUTABLE_READY : blocking dep resolved<br/>(operator-initiated unpark)
+    PARKED --> EXECUTABLE_READY : blocking dep resolved<br/>(operator-initiated unpark — resurrection;<br/>creates NEW TransitionEntry, not a stage rewind)
 
     MERGED --> [*]
     KILLED --> [*]
@@ -135,12 +135,13 @@ stateDiagram-v2
         `pdlc objectives unfreeze`.
     end note
 
-    note left of needs_reconcile_flag
-        needs_reconcile is a FLAG,
-        not a state. Surfaces on
-        `pdlc health` for human
-        disposition; does NOT
-        auto-transition.
+    note right of MERGING
+        needs_reconcile is a FLAG, not a state.
+        Raised when a merge conflict (world-state
+        failure) requires human escalation; the
+        Objective stays at MERGING; surfaces on
+        `pdlc health` for human disposition.
+        Does NOT auto-transition.
     end note
 ```
 
