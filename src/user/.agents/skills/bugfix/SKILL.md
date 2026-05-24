@@ -9,7 +9,7 @@ description: Use when encountering a bug with unclear origins, when multiple fil
 <!--
 Source: oss-snapshots/superpowers/systematic-debugging/
 Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
-Last lift: 2026-05-24 (cx6.7.12)
+Last sync: 2026-05-24 (cx6.7.12 amalgamation lift)
 Drift policy: selective-amalgamation. bugfix is the canonical in-tree path with its own parallel-evidence design; upstream is consulted for pattern lifts only, never wholesale resync. Iron Law framing and 4-phase structure intentionally diverge.
 Patterns lifted: 3-strike fix-failure escalation; multi-component boundary instrumentation.
 -->
