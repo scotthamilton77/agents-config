@@ -22,15 +22,13 @@ digraph when_to_use {
     "Multiple files involved?" [shape=diamond];
     "Symptom unclear?" [shape=diamond];
     "Use this skill" [shape=doublecircle];
-    "Use systematic-debugging" [shape=box];
-
     "Bug reported" -> "Root cause obvious?";
     "Root cause obvious?" -> "Fix directly" [label="yes, single line"];
     "Root cause obvious?" -> "Multiple files involved?" [label="no"];
     "Multiple files involved?" -> "Use this skill" [label="yes"];
     "Multiple files involved?" -> "Symptom unclear?" [label="no, single file"];
     "Symptom unclear?" -> "Use this skill" [label="yes"];
-    "Symptom unclear?" -> "Use systematic-debugging" [label="no"];
+    "Symptom unclear?" -> "Fix directly" [label="no, clear single-file symptom"];
 }
 ```
 

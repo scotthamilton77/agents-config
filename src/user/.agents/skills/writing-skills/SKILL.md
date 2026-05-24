@@ -68,8 +68,8 @@ the **test approach** (how you verify it works).
 
 | Type | Examples | Register | Test approach |
 |------|----------|----------|---------------|
-| **Discipline** | `test-driven-development`, `verification-before-completion` — rules you must obey under pressure | Hard MUSTs, Iron Law, "no exceptions," explicit rationalization tables, red flags lists | Pressure scenarios with combined time + sunk-cost + authority pressure; agent must comply under stress |
-| **Technique** | `condition-based-waiting`, `root-cause-tracing` — how-to guides for a method | Soft, explain-the-why, theory-of-mind framing, examples beat MUSTs | Application scenarios: can the agent use the technique correctly on a new problem? |
+| **Discipline** | `test-driven-development`, `verify-checklist` — rules you must obey under pressure | Hard MUSTs, Iron Law, "no exceptions," explicit rationalization tables, red flags lists | Pressure scenarios with combined time + sunk-cost + authority pressure; agent must comply under stress |
+| **Technique** | `grill-with-docs`, `prototype` — how-to guides for a method | Soft, explain-the-why, theory-of-mind framing, examples beat MUSTs | Application scenarios: can the agent use the technique correctly on a new problem? |
 | **Reference** | API docs, schemas, library guides | Neutral documentation voice, scan-optimized tables, no admonitions | Retrieval scenarios: can the agent find the right info and apply it? |
 
 **Why the register split matters.** The two upstream sources of this skill
@@ -517,7 +517,7 @@ When referencing other skills, use the skill name with explicit requirement
 markers:
 
 - ✅ `REQUIRED SUB-SKILL: Use test-driven-development`
-- ✅ `REQUIRED BACKGROUND: You MUST understand systematic-debugging`
+- ✅ `REQUIRED BACKGROUND: You MUST understand bugfix`
 - ❌ `See skills/testing/test-driven-development` — unclear if required
 - ❌ `@skills/testing/test-driven-development/SKILL.md` — force-loads, burns context
 
