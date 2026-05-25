@@ -23,7 +23,7 @@ echo "[post-replies_test]"
 assert "script file exists" "[ -f '$SCRIPT' ]"
 assert "script is executable" "[ -x '$SCRIPT' ]"
 assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
-assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'input|output|exit'"
+assert "documents inputs/outputs in header" "head -50 '$SCRIPT' | grep -qiE 'input|output|exit'"
 assert "accepts --inventory flag" "grep -q -- '--inventory' '$SCRIPT'"
 assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
 assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
@@ -398,6 +398,58 @@ if [ -f "${INV_SIDECAR_PARTIAL}.posted" ] && grep -qE '^66666$' "${INV_SIDECAR_P
   echo "  ok: partial-failure run preserves sidecar with the 66666 success"
 else
   echo "  FAIL: sidecar should exist and contain 66666 after partial run; sidecar=$(cat "${INV_SIDECAR_PARTIAL}.posted" 2>&1 || echo missing)"
+  FAIL=1
+fi
+
+# Behavior test (sidecar idempotency, --skip-comment-ids): when the operator
+# supplies --skip-comment-ids, even a 100%-success run (every item handled
+# via sidecar-skip ∪ CSV-skip) MUST preserve the sidecar. The operator has
+# externally asserted some items are already done, so the script can NOT
+# claim the sidecar is a complete record of what THIS run posted; deleting
+# it would lose prior-run POSTED state and let a subsequent retry (without
+# the flag) re-post duplicates.
+INV_SIDECAR_SKIP_CSV="$TMP/inv-sidecar-skipcsv.json"
+cat >"$INV_SIDECAR_SKIP_CSV" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {
+      "kind": "review_thread",
+      "thread_id": "T_x",
+      "reply_to_comment_id": 91111,
+      "issue_comment_id": null,
+      "classification": "FIX",
+      "fix_outcome": "committed",
+      "reply_body": "x"
+    },
+    {
+      "kind": "review_thread",
+      "thread_id": "T_y",
+      "reply_to_comment_id": 92222,
+      "issue_comment_id": null,
+      "classification": "FIX",
+      "fix_outcome": "committed",
+      "reply_body": "y"
+    }
+  ]
+}
+JSON
+# Pre-populate sidecar with X (91111); operator asserts Y (92222) is done.
+printf '91111\n' > "${INV_SIDECAR_SKIP_CSV}.posted"
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_SIDECAR_SKIP_CSV" --owner o --repo r --pr 1 \
+  --skip-comment-ids "92222" > "$TMP/sidecar-skipcsv-out.txt" 2>&1
+rc_skipcsv=$?
+if [ "$rc_skipcsv" = "0" ]; then
+  echo "  ok: sidecar∪CSV-only run (no POST needed) exits 0"
+else
+  echo "  FAIL: sidecar∪CSV-only run should exit 0; got $rc_skipcsv; out: $(cat "$TMP/sidecar-skipcsv-out.txt")"
+  FAIL=1
+fi
+if [ -f "${INV_SIDECAR_SKIP_CSV}.posted" ] && grep -qE '^91111$' "${INV_SIDECAR_SKIP_CSV}.posted"; then
+  echo "  ok: sidecar preserved when --skip-comment-ids supplied (prior-run POSTED record retained)"
+else
+  echo "  FAIL: sidecar must survive when --skip-comment-ids supplied; sidecar=$(cat "${INV_SIDECAR_SKIP_CSV}.posted" 2>&1 || echo missing)"
   FAIL=1
 fi
 

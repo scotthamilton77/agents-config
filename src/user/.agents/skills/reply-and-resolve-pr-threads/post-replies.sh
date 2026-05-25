@@ -14,8 +14,16 @@
 # startup the sidecar is read and unioned with --skip-comment-ids to form
 # the effective skip-set, so crash-recovery re-runs against the same
 # inventory will SKIP previously-posted items automatically.
-# - On a 100%-success run (any_failed=0) the sidecar is deleted.
+# - On a 100%-success run (any_failed=0) AND when --skip-comment-ids was
+#   NOT supplied, the sidecar is deleted: the script can prove the sidecar
+#   is a complete record of what this inventory needed.
 # - On a partial-failure run the sidecar is preserved for the next retry.
+# - When --skip-comment-ids was supplied the sidecar is preserved even on
+#   any_failed=0: the operator has externally asserted some items are
+#   already done, so the script can NOT claim the sidecar is a complete
+#   record of what THIS run posted. Deleting it would lose the prior-run
+#   POSTED record and let a subsequent retry (without the flag) re-post
+#   duplicates.
 # - Callers MAY still pass --skip-comment-ids explicitly; both sources
 #   union into the same skip-set.
 # - The sidecar's lifecycle is bounded by the inventory itself: inventory
@@ -58,7 +66,10 @@ Usage: $(basename "$0") --inventory <file> --owner <o> --repo <r> --pr <n>
 Posts replies to each inventory item. Self-recording: each POSTED cid is
 appended to <inventory>.posted; subsequent runs against the same
 inventory automatically SKIP previously-posted items. A 100%-success run
-deletes the sidecar; partial-failure runs preserve it for retry.
+deletes the sidecar UNLESS --skip-comment-ids was supplied (in which
+case the operator has externally asserted some items are already done
+and the script can't prove the sidecar is complete, so it is preserved);
+partial-failure runs preserve the sidecar for retry.
 EOF
   exit 2
 }
@@ -200,7 +211,12 @@ done < "$TMP"
 
 # 100% success: drop the sidecar so it can't leak into an unrelated run.
 # Partial failures preserve it so the next retry inherits the skip-set.
-if [ "$any_failed" -eq 0 ] && [ -f "$POSTED_SIDECAR" ]; then
+# When --skip-comment-ids was supplied we preserve it too: the operator has
+# externally asserted that some items are already done, so we can't confidently
+# claim the sidecar is a complete record of what THIS run handled. Deleting
+# it would lose the prior-run POSTED record and let a subsequent retry
+# (without the flag) re-post duplicates.
+if [ "$any_failed" -eq 0 ] && [ -z "$SKIP_CSV" ] && [ -f "$POSTED_SIDECAR" ]; then
   rm -f "$POSTED_SIDECAR"
 fi
 
