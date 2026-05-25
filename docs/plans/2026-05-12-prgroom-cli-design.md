@@ -1050,18 +1050,20 @@ function quiescencePredicate(state):
 
 **Contract surface** (declared at §3.3 line 794): `waitLocked(pr PRRef, state *PRGroomingState) (*PRGroomingState, error)`. Holds the PR lock for the entire invocation (no mid-sleep release). Cancellation honors a `context.Context` plumbed through `Run`'s public wrapper.
 
+**Pseudocode notation:** `signum` below denotes the integer signal number captured by `Run`'s OS signal handler (installed at process startup per §3.7). `context.Context` itself does not carry a signal number, so the handler stores the observed signum in a value visible to the cancellation path (e.g. an atomic int, a channel read on demand, or a small accessor on the deps surface). Concrete implementation is the implementer's call; the contract is only that `signum` is available at error-construction time for the exit-code mapping in §3.7.
+
 ```text
 function waitLocked(pr, state) (*PRGroomingState, error):
     for {
         # Wake event 1: signal-cancel — return immediately, RUNTIME_CANCELLED tier
         if ctx.Err() != nil:
-            return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=ctx.Signum)
+            return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=signum)
 
         # Interruptible sleep — wakes on poll_interval expiry or ctx.Done
         select {
             case <-time.After(poll_interval):
             case <-ctx.Done():
-                return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=ctx.Signum)
+                return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=signum)
         }
 
         # Wake event 2: any pollLocked error propagates per §3.3 handle_verb_error

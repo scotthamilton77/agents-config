@@ -69,7 +69,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/lifecycle/poll_test.go` | Tests for each §4 add-on (one per add-on) |
 | `internal/lifecycle/end_of_cycle.go` | Add priority-5 quiescence rule to `resolve_end_of_cycle_phase` |
 | `internal/lifecycle/end_of_cycle_test.go` | Priority-5 quiescence-trip path + `QuiescedAt` stamp |
-| `internal/lifecycle/run.go` | Add `state = requestHumanReviewIfNeeded(...)` at the 11 dedup-safe sites in `runLocked` adjacent to existing `escalate_if_needed` calls; add `state.HumanReviewLabelAdded = false` to the clear-on-success branch |
+| `internal/lifecycle/run.go` | Add `requestHumanReviewIfNeeded(...)` calls (void; mutates `state` via the pointer it already receives) at the 11 dedup-safe sites in `runLocked` adjacent to existing `escalate_if_needed` calls; add `state.HumanReviewLabelAdded = false` to the clear-on-success branch |
 | `internal/lifecycle/run_test.go` (or fit-test) | Cap-trip → label-added; reset-on-success → re-add on next trip |
 | `internal/gh/labels.go` | Add `AddLabel(ctx, pr, label) error` if missing |
 | `internal/gh/labels_test.go` | Fake HTTP transport test for `AddLabel` |
@@ -1393,7 +1393,12 @@ func waitLocked(ctx context.Context, pr tracker.PRRef, state *tracker.PRGrooming
 }
 
 // runtimeCancelledError marks an error as RUNTIME_CANCELLED tier per §3.6/§3.7.
-// The Run wrapper inspects this to apply exit code 128+signum.
+// The Run wrapper inspects this to apply the cancelled-tier exit code (130 for
+// SIGINT, 143 for SIGTERM). The signum itself is NOT carried on this error —
+// the cause may be context.Canceled (no signal observable from the error
+// alone). Run is the single source of truth for which signal fired: its own
+// signal handler captures the signum at OS-observation time and combines that
+// with this tier marker to derive the exit code per §3.7.
 type runtimeCancelledError struct{ cause error }
 
 func (e *runtimeCancelledError) Error() string { return "prgroom: cancelled: " + e.cause.Error() }
@@ -1654,6 +1659,7 @@ package gh
 
 import (
     "context"
+    "io"
     "net/http"
     "net/http/httptest"
     "testing"
@@ -1664,9 +1670,8 @@ func TestAddLabel_PostsLabelsToIssuesAPI(t *testing.T) {
     var capturedBody string
     server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         capturedPath = r.URL.Path
-        buf := make([]byte, 1024)
-        n, _ := r.Body.Read(buf)
-        capturedBody = string(buf[:n])
+        body, _ := io.ReadAll(r.Body)
+        capturedBody = string(body)
         w.WriteHeader(http.StatusOK)
         _, _ = w.Write([]byte(`[{"name":"human-review-required"}]`))
     }))
@@ -2173,11 +2178,12 @@ type LabelAdder interface {
 // TrackerWriter is the narrow seam for persisting state after dedup-flag flip.
 type TrackerWriter func(pr tracker.PRRef, state *tracker.PRGroomingState) error
 
-// ShouldRequestHumanReview returns true iff the state's gating condition
-// matches a §4.7 trigger (cap-trip, escalated item, failed item) and is NOT
-// a §4.7 trigger condition. All other LastError values (RUNTIME_TERMINAL_USER,
-// STATE_CORRUPT, etc.) are implicit non-triggers — the positive-match logic
-// returns false for anything not in the trigger set.
+// ShouldRequestHumanReview returns true iff the state matches a §4.7 trigger:
+//   - LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" (cap-trip), or
+//   - at least one item with Disposition.Kind == Escalated or Failed.
+// All other LastError values (RUNTIME_TERMINAL_USER, STATE_CORRUPT, etc.) and
+// any state with no escalated/failed items are non-triggers, and the function
+// returns false.
 func ShouldRequestHumanReview(state *tracker.PRGroomingState) bool {
     if state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" {
         return true
