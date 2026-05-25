@@ -3,6 +3,7 @@
 **Source bead**: `agents-config-wgclw.2`
 **Parent milestone**: `agents-config-wgclw` (M0 — Discipline-layer rearchitecture)
 **Companion spec**: `docs/specs/2026-05-19-pdlc-state-machine-design.md`
+**HLD artifact set**: [`docs/architecture/pdlc-orchestrator/`](../architecture/pdlc-orchestrator/index.md) — multi-view diagrams (C4 L1 / L2 / L3, sequences, state machine, data view, deployment) visualising the architecture described in this spec. Filed as `agents-config-wgclw.2.1`. Every implementation child of `wgclw.2` should read at minimum the HLD index, C4 L1, C4 L2, the tick-cycle sequence, and the state machine before drafting its bead Spec, so that scope claims align with the system boundary at L2.
 **Glossary**: `CONTEXT.md` (Objective, Idea, UoW, Candidate UoW, etc.)
 **Date**: 2026-05-23
 **Status**: Design draft — pending review and implementation planning
@@ -918,8 +919,8 @@ Seven failure causes, routed as follows:
 | Cause | Symptom | Routing |
 |---|---|---|
 | **cognition** | Worker's logic / output failed the gate's correctness check | charge strike against persona; on 3rd strike, route to `AUTOPSY` |
-| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | route to tooling-escalation (Autopsy route v); do NOT charge strike |
-| **reviewer-artifact** | A reviewer-added artifact failed its own validator | route to tooling-escalation; do NOT charge Implementer strike |
+| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | bounded retry (route v) — stays in current lifecycle stage; see [Tooling-failure handling](#tooling-failure-handling); do NOT charge cognition strike |
+| **reviewer-artifact** | A reviewer-added artifact failed its own validator | route to tooling-escalation (same bounded-retry mechanics as `tooling`); do NOT charge cognition strike |
 | **flake** | Intermittent failure; re-run produces different verdict | retry up to project-config retry-budget; charge strike only if retries exhausted |
 | **config** | `config_hash` mismatch or schema-validation failure | route to config-version-divergence handler (CA-13); do NOT charge strike |
 | **dependency** | Blocking dep not satisfied at run time | park via Autopsy route iv (file as blocked); do NOT charge strike |
@@ -928,6 +929,86 @@ Seven failure causes, routed as follows:
 The classifier itself is deterministic Python; LLM judgment is NOT
 permitted in the failure-cause assignment. Ambiguous cases route to
 `needs_reconcile=true` and surface on `pdlc health` for human disposition.
+
+### Tooling-failure handling
+
+The `tooling` and `reviewer-artifact` triage classes must NOT cause
+infinite re-dispatch on non-transient failures (e.g. a linter binary is
+not installed at all; a CI runner image is missing a dependency). The
+orchestrator defends against this with two complementary mechanisms.
+
+**Layer 1 — Pre-tick toolchain assertion.** At the start of every tick,
+after `config_hash` is computed but before DISCOVER, the orchestrator
+probes every binary declared in `project-config.toolchain.required` for
+presence on `PATH`. The manifest may pin a minimum version per entry; the
+probe shells out the entry's `--version` command and compares the parsed
+output against the floor. A missing or under-versioned binary aborts
+DISPATCH for the rest of the tick: every Objective that would otherwise
+have dispatched is marked `needs_reconcile=true` with code
+`missing-toolchain:<binary>`; the condition surfaces on `pdlc health`.
+REAP of already-in-flight Sessions still runs (the in-flight Sessions
+may have been forked when the toolchain was healthy); PERSIST runs
+normally. The next tick's pre-tick assertion re-evaluates from scratch
+— once the operator restores the tooling, dispatch resumes
+automatically.
+
+The `toolchain.required` manifest is project-versioned alongside the
+rest of `project-config`. Entries are simple records:
+
+```toml
+[[toolchain.required]]
+binary = "ruff"
+min_version = "0.5.0"
+version_cmd = "ruff --version"
+
+[[toolchain.required]]
+binary = "pytest"
+min_version = "8.0.0"
+version_cmd = "pytest --version"
+```
+
+The probe runs once per tick (memoised within the tick); its result
+is logged to the TransitionLog as a `toolchain-probe` event.
+
+**Layer 2 — Bounded `tooling_strike_count`.** For failures that the
+pre-tick assertion cannot statically detect (binary present but mis-
+configured, dynamic dependency missing at run-time, supervisor reports
+infra failure mid-Session, network-isolation issue, etc.), the
+orchestrator maintains a counter per `(objective_id, lifecycle_stage,
+error_signature)` row in `ObjectiveLifecycleState`. `error_signature`
+is a stable hash derived from:
+
+- the triage-classified failure cause (`tooling` or `reviewer-artifact`)
+- the binary name or artifact name implicated (where extractable from
+  the gate-evidence or supervisor `terminal_status`)
+- a coarse exit-class bucket (`crashed` / `not-found` / `permission-denied`
+  / `timeout` / `other`)
+
+Each recurrence increments the counter. At
+`project-config.tooling_max_strikes` (default 3), the counter trips:
+the orchestrator sets `needs_reconcile=true` on the Objective with code
+`tooling-persistent:<error_signature>`, halts dispatch on that Objective
+specifically (other Objectives continue), and surfaces the condition on
+`pdlc health`. Cognition strikes are not affected by this counter; the
+two are entirely independent.
+
+**Why two layers.** Layer 1 prevents the common case (declared tool
+simply absent) from ever consuming a worker. Layer 2 is the safety net
+for everything Layer 1 cannot statically detect, and it bounds the
+retry so non-transient failures escalate to humans rather than burning
+ticks. Together they make it impossible for a non-transient tooling
+failure to loop indefinitely.
+
+**Out of scope for MVP — autonomous remediation.** A "ToolingFixer"
+persona that attempts to install missing tooling automatically
+(`npm install`, `pip install -r requirements.txt`, `make setup`, etc.)
+is a known post-MVP extension. It would slot between Layer 1 (which
+detects the absence) and Layer 2 (which currently escalates after
+retry exhaustion). Its activation is gated behind a separate
+`project-config.toolchain.auto_install_permitted` flag and a closed
+taxonomy of permitted remediation operations. Until then, persistent
+tooling failures escalate to humans via Layer 2; this is the safe
+default for both security posture and design simplicity.
 
 ### Degraded modes (tracker / config divergence)
 

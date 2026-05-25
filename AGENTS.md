@@ -101,8 +101,9 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `scripts/` - Installation and maintenance scripts
   - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=`/`--plugins=` overrides, and `--prune`/`--prune-only` for removing orphaned items not in the source
 - `docs/plans/` - Design documents for features in development
-- `docs/specs/` - Design specifications for implemented features
+- `docs/specs/` - Design specifications (point-in-time proposals; date-prefixed filenames; status varies from draft through implemented)
 - `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
+- `docs/architecture/` - **High-level design (HLD) artifacts** for major subsystems: C4 diagrams (Context / Container / Component / Deployment), sequence diagrams, state machines, data-flow / persistence views. Grouped per subsystem in its own subfolder (e.g. `docs/architecture/pdlc-orchestrator/`). **Evergreen reference material** — amended in place as systems evolve; filenames are undated and describe content (e.g. `c4-l1-context.md`, `state-machine.md`). Distinct from `docs/specs/` (dated point-in-time proposals) and `docs/primers/` (prose explainers for the discipline layer itself). Each subfolder has an `index.md` orientation file referenced from its source design spec(s)
 - `src/user/.agents/` - **Shared content** (copied into all detected tools)
   - `agents/` - Role-based agent definitions (frontmatter + instructions)
   - `skills/` - Methodology guides, some with supporting code/scripts
