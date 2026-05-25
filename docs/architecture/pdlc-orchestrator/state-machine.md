@@ -91,7 +91,7 @@ stateDiagram-v2
         [*] --> pv_push
         pv_push --> pv_ci_gate : push branch<br/>+ open PR<br/>+ await CI
         pv_ci_gate --> pv_review_ingest : CI green
-        pv_ci_gate --> pv_push : cognition strike on CI
+        pv_ci_gate --> pv_push : CI failure<br/>(triage — strike only<br/>if classified-cognition)
         pv_review_ingest --> pv_fix_dispatch : addressable FIX comments
         pv_review_ingest --> [*] : clean<br/>(no FIX backlog,<br/>no ESCALATE,<br/>no upstream HOLD marker)
         pv_fix_dispatch --> pv_push : commit fixes<br/>(bounded by review_max_rounds)
@@ -119,7 +119,7 @@ stateDiagram-v2
     AUTOPSY --> DECOMPOSE : route (ii) — re-decompose
     AUTOPSY --> KILLED : route (iii) — kill with Epitaph
     AUTOPSY --> PARKED : route (iv) — blocked on dep
-    AUTOPSY --> EXECUTABLE_READY : route (v) — tooling escalation resolved<br/>(re-dispatch the same stage)
+    AUTOPSY --> EXECUTABLE_READY : route (v) — tooling escalation resolved<br/>(re-dispatch the stage where tooling failed —<br/>EXECUTABLE_READY shown as representative target —<br/>see note below diagram)
 
     PARKED --> EXECUTABLE_READY : blocking dep resolved<br/>(operator-initiated unpark — resurrection —<br/>creates NEW TransitionEntry, not a stage rewind)
 
@@ -148,6 +148,16 @@ stateDiagram-v2
         Does NOT auto-transition.
     end note
 ```
+
+> **Note on Autopsy route (v) target.** Tooling failures can originate at any
+> stage that runs tooling (`TEST_AUTHORING`, `IMPLEMENTING`, `REVIEWING`,
+> `PR_VALIDATION`, …). Routing every tooling-resolved case back to a single
+> early stage like `EXECUTABLE_READY` would incorrectly force re-doing earlier
+> gates (test authoring, etc.). The runtime reads
+> `tooling_escalation_source_stage` from the Objective record and re-dispatches
+> *that* stage; the diagram shows `EXECUTABLE_READY` as a single representative
+> target for readability. The edge is conceptually
+> `AUTOPSY --> <tooling_escalation_source_stage>`.
 
 ## Lifecycle Stage Constants (reference)
 
@@ -180,7 +190,7 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 | Cause | Symptom | Strike charged? | Routing |
 |---|---|---|---|
 | **cognition** | Worker's logic / output failed the gate's correctness check | YES | Loop within stage; 3rd strike → `AUTOPSY` |
-| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | `AUTOPSY` route (v) — bounded tooling retry; on `tooling_max_strikes`, `needs_reconcile=true` and halt dispatch. See *Tooling-failure handling* below |
+| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | Bounded retry (route v) — stays in current stage; on `tooling_max_strikes`, `needs_reconcile=true` and halt dispatch. See *Tooling-failure handling* below |
 | **reviewer-artifact** | A reviewer-added artifact failed its own validator | NO | Tooling escalation (same bounded-retry mechanics as `tooling`) |
 | **flake** | Intermittent failure; re-run produces different verdict | NO (until retries exhausted) | Retry up to project-config retry-budget |
 | **config** | `config_hash` mismatch or schema-validation failure | NO | Config-version-divergence handler |
@@ -233,7 +243,7 @@ After both the Spec RCA and Architecture-Health RCA complete, the Autopsy outcom
 - **(ii) Re-decompose** — Decomposition was wrong; return to `DECOMPOSE`
 - **(iii) Kill with Epitaph** — abandon the Objective; terminal `KILLED` with `terminal_disposition` carrying the reason
 - **(iv) Park** — blocked on a dependency that isn't resolvable in the current cycle; terminal-ish `PARKED`; can be unparked when the dep resolves
-- **(v) Tooling escalation** — the failure was infrastructure, not cognition. The orchestrator increments `tooling_strike_count` for `(objective_id, lifecycle_stage, error_signature)` and re-dispatches the same lifecycle stage. At `project-config.tooling_max_strikes` (default 3), the count threshold trips: `needs_reconcile=true` is set with code `tooling-persistent`, dispatch on that Objective halts, and the condition surfaces on `pdlc health` for human disposition. No cognition strike is ever charged. See *Tooling-failure handling* below for the full mechanism, including the complementary pre-tick toolchain assertion that prevents the most common failure mode before any worker forks
+- **(v) Tooling escalation** — the failure was infrastructure, not cognition. The orchestrator increments `tooling_strike_count` for `(objective_id, lifecycle_stage, error_signature)` and re-dispatches the lifecycle stage where the tooling failure originated, read from `tooling_escalation_source_stage` on the Objective record (NOT a fixed early stage — tooling can fail at `TEST_AUTHORING`, `IMPLEMENTING`, `REVIEWING`, `PR_VALIDATION`, etc., and re-dispatch resumes there so earlier gates are not re-run). At `project-config.tooling_max_strikes` (default 3), the count threshold trips: `needs_reconcile=true` is set with code `tooling-persistent`, dispatch on that Objective halts, and the condition surfaces on `pdlc health` for human disposition. No cognition strike is ever charged. See *Tooling-failure handling* below for the full mechanism, including the complementary pre-tick toolchain assertion that prevents the most common failure mode before any worker forks
 
 ### Terminal-disposition mapping
 
