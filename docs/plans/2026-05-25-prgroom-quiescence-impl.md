@@ -56,7 +56,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/lifecycle/reviewer_timeouts_test.go` | Start-timeout, finish-timeout, no-double-decline, config-extension paths |
 | `internal/lifecycle/human_review.go` | `DeriveHumanReview(labels []string, approvals []ApprovalRecord)`, `ShouldRequestHumanReview(state *prsession.PRGroomingState)`, `RequestHumanReviewIfNeeded(ctx, state, adder LabelAdder, cfg HumanReviewCfg, write StoreWriter)` |
 | `internal/lifecycle/human_review_test.go` | Derivation truth-table (label/approval/Bot-filter), dedup, reset, operator-override |
-| `internal/lifecycle/wait.go` | `waitLocked(ctx, pr, state, deps) (*PRGroomingState, error)` |
+| `internal/lifecycle/wait.go` | `waitLocked(ctx, pr, state, deps) (*prsession.PRGroomingState, error)` |
 | `internal/lifecycle/wait_test.go` | Five-wake-event tests with fake clock + fake pollLocked + fake ctx |
 
 **Modified files** (extended by this plan):
