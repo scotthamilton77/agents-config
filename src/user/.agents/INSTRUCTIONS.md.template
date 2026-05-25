@@ -13,7 +13,7 @@ Tool-agnostic principles for all AI coding assistants.
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
 - **Informed edits**: Research the codebase before editing - never change code you haven't read
-- **State the decision, not its history**: Specs, plans, design docs, prose, and code carry only the current decision. No "Round-N amendment", "Supersedes...", "Previously X, now Y", "Changed in YYYY-MM-DD", or similar in-artifact change-log markers. Git history is the changelog; PR descriptions hold the rationale. Inline change-log narration is noise to fresh readers and rots on rebase.
+- **State the decision, not its history**: The main body of specs, plans, design docs, prose, and code carries only the current decision. No "Round-N amendment", "Supersedes...", "Previously X, now Y", "Changed in YYYY-MM-DD", or similar in-artifact change-log markers in the body. Git history is the changelog; PR descriptions hold the rationale. Inline change-log narration is noise to fresh readers and rots on rebase. Carve-out: dated specs MAY append a clearly-bounded review-ledger appendix (e.g. "## Review feedback") that records round-N review threads — that's artifact-level structure, not in-body narration. Pre-existing review-ledger appendices in dated specs are grandfathered; this rule applies to new edits.
 - **Domain vocabulary**: If the project has a `CONTEXT.md` at the repo root (or a `CONTEXT-MAP.md` pointing to per-context glossaries in a multi-context repo), read it and use its terminology when discussing domain concepts. Soft convention — absence is not a blocker
 - **Parallel ops**: Independent tool calls in single message
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
