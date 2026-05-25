@@ -12,7 +12,7 @@ Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e9498
 Last sync: 2026-05-24
 Note: cx6.7.12 amalgamation lift (selective patterns lifted; see `Patterns lifted:` below)
 Drift policy: selective-amalgamation. `bugfix` is the canonical in-tree path with its own parallel-evidence design; upstream is consulted for pattern lifts only, never wholesale resync. Iron Law framing and 4-phase structure intentionally diverge.
-Patterns lifted: 3-strike fix-failure escalation; multi-component boundary instrumentation.
+Patterns lifted: 3-strike fix-failure escalation; multi-component boundary instrumentation; compare-against-working-examples (Thread 3 extension, bn9um lift).
 -->
 
 # Bugfix
@@ -84,6 +84,7 @@ Return: The test code AND the failure output.
 Read all relevant source files from entry point to failure point.
 Trace the data flow: what values enter, how they transform, where they exit.
 Identify where the data could become invalid.
+If similar working code exists in the codebase, read it and list every difference, however small — do not assume that cannot matter.
 Return: Annotated data flow showing the path and suspect points.
 ```
 
