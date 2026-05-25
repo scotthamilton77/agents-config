@@ -295,7 +295,7 @@ Two append-only artifacts live alongside the per-PR state files:
 
 | File | Path | Contents |
 |---|---|---|
-| Token-usage log | `$XDG_STATE_HOME/prgroom/token-usage.jsonl` | One line per agent invocation: `{ts, pr, contract, provider, model, input_tokens, output_tokens, duration_ms, outcome}`. MVP: capture only; no aggregation. |
+| Token-usage log | `$XDG_STATE_HOME/prgroom/usage.jsonl` | One line per agent invocation: `{ts, pr, contract, provider, model, input_tokens, output_tokens, duration_ms, outcome}`. MVP: capture only; no aggregation. |
 | Escalation file log (optional) | `<path>` from `--escalation-file` | One JSON line per `Escalation` event. Used by external watchers. |
 
 Neither file is part of `prsession.Store` — they are output streams owned by `internal/agent` and `internal/escalation` respectively.

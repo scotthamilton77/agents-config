@@ -45,7 +45,7 @@ C4Deployment
 
         Deployment_Node(state_node, "prsession state directory", "filesystem under $XDG_STATE_HOME") {
             ContainerDb(state_file, "<owner>-<repo>-<n>.json", "JSON file", "$XDG_STATE_HOME/prgroom/. One file per PR. flock(2) for concurrency; mktemp+rename for atomicity.")
-            ContainerDb(token_log, "token-usage.jsonl", "append-only JSONL", "Per-invocation agent token usage. MVP: log only; no analysis.")
+            ContainerDb(token_log, "usage.jsonl", "append-only JSONL", "Per-invocation agent token usage. MVP: log only; no analysis.")
         }
 
         Deployment_Node(repo_node, "Operator's git repository", "git working tree") {
@@ -120,7 +120,7 @@ The `flock(2)` advisory lock on the state file is the single concurrency primiti
 Three persistent stores on the workstation:
 
 1. **prsession state file** (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`) — owned by prgroom. One file per PR. Survives prgroom process exits, machine reboots (locks self-clear via `flock(2)`).
-2. **token-usage JSONL log** (`$XDG_STATE_HOME/prgroom/token-usage.jsonl`) — append-only audit log of agent invocations. MVP captures; no analysis.
+2. **token-usage JSONL log** (`$XDG_STATE_HOME/prgroom/usage.jsonl`) — append-only audit log of agent invocations. MVP captures; no analysis.
 3. **git worktree** (the operator's working tree, wherever they cloned it) — owned by the operator. prgroom reads HEAD / branch ref; the Contract B agent commits here. prgroom does NOT manage the worktree lifecycle.
 
 No databases. No shared volumes. No remote stores. The MVP boundary is "what fits on one workstation".
