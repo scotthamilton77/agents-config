@@ -25,8 +25,6 @@ Open the PDLC Orchestrator boundary and show its deployable / runnable units. An
 
 A **container** here is a C4 container: a separately runnable process or data store. The CLI dispatch, tick loop, work-tracker adapter, JobSupervisor, and project-config loader all live inside the single `pdlc` Python process and are therefore **components** of that container, not containers themselves — they appear at L3. The same goes for the bd adapter: `bd` itself is the external Work Tracker; the adapter that calls it is a component inside `pdlc`.
 
-This view replaces the "block diagram" the bead originally specified — same intent, properly stratified.
-
 ## Diagram
 
 ```mermaid
