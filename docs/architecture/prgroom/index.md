@@ -87,7 +87,7 @@ Newcomers should read in this order; deep contributors may navigate freely.
   - State machine uses `stateDiagram-v2`
   - Data view uses `erDiagram` for entity relationships, `flowchart` and markdown tables for canonical-ownership boundaries, fenced JSON for flat contract objects (`status` output, escalation events)
 
-- **Phase constants** appear as **named English constants** throughout — `Pending`, `Polling`, `Clustering`, `Fixing`, `Pushing`, `Rereviewing`, `Replying`, `Resolving`, `Waiting`. **Quiescence sub-states** likewise — `Active`, `WaitingForReview`, `Quiesced`, `HumanGated`. The canonical reference is [Section 3.1](../../plans/2026-05-12-prgroom-cli-design.md) (phases) and [Section 4.1](../../plans/2026-05-12-prgroom-cli-design.md) (quiescence) of the source spec.
+- **PRPhase values** (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`) are the canonical lifecycle phase identifiers throughout the artifact set — used verbatim in the state machine and data-view ER. The canonical reference is [Section 3.1](../../plans/2026-05-12-prgroom-cli-design.md). Note: Mermaid `stateDiagram-v2` requires valid identifiers (no hyphens), so the state machine diagram uses underscored node IDs (e.g., `awaiting_review`) aliased to labels matching the canonical hyphenated values.
 
 - **C4 L4 (code) is intentionally absent.** C4 itself recommends against drawing this level for systems where the code is reasonably self-documenting; we follow that guidance.
 
