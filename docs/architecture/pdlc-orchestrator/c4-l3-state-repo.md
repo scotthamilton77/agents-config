@@ -48,7 +48,7 @@ When the implementation child for the OrchestratorStateRepo schema and DAO is fi
 3. A concrete decision on the branch-checkpoint cadence and naming (per-tick branch name pattern)
 4. A concrete decision on the read-only-cache invalidation rules
 
-Until then, this stub stays as-is. The table-level structure lives in the [orchestrator core design's State Ownership section](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#state-ownership) and the future [`data-view.md`](data-view.md) artifact.
+Until then, this stub stays as-is. The table-level structure lives in the [orchestrator core design's State Ownership section](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#state-ownership) and in [`data-view.md`](data-view.md).
 
 ## Cross-references
 
