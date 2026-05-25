@@ -84,7 +84,7 @@ Return: The test code AND the failure output.
 Read all relevant source files from entry point to failure point.
 Trace the data flow: what values enter, how they transform, where they exit.
 Identify where the data could become invalid.
-If similar working code exists in the codebase, read it and list every difference, however small — do not assume that cannot matter.
+If similar working code exists in the codebase, read it and list every difference, however small — do not assume any of them cannot matter.
 Return: Annotated data flow showing the path and suspect points.
 ```
 
