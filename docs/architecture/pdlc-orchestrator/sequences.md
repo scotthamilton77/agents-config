@@ -53,7 +53,7 @@ sequenceDiagram
     Config-->>PDLC: config + config_hash
 
     Note over PDLC: pre-tick toolchain assertion
-    PDLC->>PDLC: probe config.toolchain.required for PATH presence + min versions
+    PDLC->>PDLC: probe project-config.toolchain.required for PATH presence + min versions
     alt missing or under-versioned binary
         PDLC->>State: mark dispatchable Objectives needs_reconcile=true (missing-toolchain:X)
         Note over PDLC: skip DISPATCH this tick (REAP of in-flight Sessions still runs)
