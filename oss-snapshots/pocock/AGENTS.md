@@ -34,8 +34,8 @@ Per-skill notes record the upstream source path, the 4vn5.2 audit verdict, the c
 | `to-issues/` | `engineering/to-issues` | Compare-and-improve | **out of scope** | Deferred to `agents-config-wgclw.7`. |
 | `to-prd/` | `engineering/to-prd` | Compare-and-improve | **out of scope** | Deferred to `agents-config-wgclw.7`. |
 | `triage/` | `engineering/triage` | Gap-fill | **out of scope** | Deferred to `agents-config-wgclw.7`. |
-| `write-a-skill/` | `productivity/write-a-skill` | Compare-and-improve | **deferred — verdict open** | Compare against the in-tree `writing-skills` amalgam (superpowers + anthropics). A follow-up tracks the comparison and verdict (lift deltas, close with rationale). |
-| `zoom-out/` | `engineering/zoom-out` | Gap-fill | **promoted (pristine)** | `src/user/.agents/skills/zoom-out/`. Drift policy: accept-periodic-resync. Kept separate from `where-does-this-fit` (renamed from `big-picture`) — different triggers, complementary skills. |
+| `write-a-skill/` | `productivity/write-a-skill` | Compare-and-improve | **dropped — covered by `writing-skills` amalgam** | The in-tree `writing-skills` skill amalgamates `superpowers/writing-skills` + `anthropics/skill-creator` — the two most comprehensive upstream skill-authoring sources. Pocock/write-a-skill is unlikely to contribute meaningful deltas. Revisit on future pocock re-sync if upstream changes substantially. |
+| `zoom-out/` | `engineering/zoom-out` | Gap-fill | **promoted (pristine, Claude-only)** | `src/user/.claude/skills/zoom-out/`. Frontmatter sets `disable-model-invocation: true`, so the skill is Claude-specific and lives in the Claude-only tree. Drift policy: accept-periodic-resync. Kept separate from `where-does-this-fit` (renamed from `big-picture`) — different triggers, complementary skills. |
 
 ## Out of scope — `deprecated/` subtree
 
