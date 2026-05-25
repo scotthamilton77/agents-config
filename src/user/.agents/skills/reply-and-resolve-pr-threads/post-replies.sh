@@ -122,7 +122,10 @@ while IFS= read -r item; do
     review_summary)
       # No per-item id; synthesize one from sha1(item-json) so retries against
       # the same content are idempotent and distinguishable from sibling summaries.
-      cid="summary-$(printf '%s' "$item" | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
+      # Canonicalize with `jq --sort-keys` so the cid depends only on content,
+      # not on jq's emitted key order (otherwise two semantically identical
+      # items could hash differently and break idempotency).
+      cid="summary-$(printf '%s' "$item" | jq --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
       ;;
     *)              cid="$(echo "$item" | jq -r '.thread_id // .reply_to_comment_id // .issue_comment_id // empty')" ;;
   esac
