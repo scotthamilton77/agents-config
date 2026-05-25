@@ -190,7 +190,7 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 | Cause | Symptom | Strike charged? | Routing |
 |---|---|---|---|
 | **cognition** | Worker's logic / output failed the gate's correctness check | YES | Loop within stage; 3rd strike → `AUTOPSY` |
-| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | Bounded retry (route v) — stays in current stage; on `tooling_max_strikes`, `needs_reconcile=true` and halt dispatch. See *Tooling-failure handling* below |
+| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | Bounded retry (route v) — stays in current stage; on `project-config.tooling_max_strikes`, `needs_reconcile=true` and halt dispatch. See [Tooling-failure handling](#tooling-failure-handling-pre-tick-assertion--bounded-retry) below |
 | **reviewer-artifact** | A reviewer-added artifact failed its own validator | NO | Tooling escalation (same bounded-retry mechanics as `tooling`) |
 | **flake** | Intermittent failure; re-run produces different verdict | NO (until retries exhausted) | Retry up to project-config retry-budget |
 | **config** | `config_hash` mismatch or schema-validation failure | NO | Config-version-divergence handler |

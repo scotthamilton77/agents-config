@@ -919,7 +919,7 @@ Seven failure causes, routed as follows:
 | Cause | Symptom | Routing |
 |---|---|---|
 | **cognition** | Worker's logic / output failed the gate's correctness check | charge strike against persona; on 3rd strike, route to `AUTOPSY` |
-| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | route to tooling-escalation (Autopsy route v) with bounded retry — see *Tooling-failure handling*; do NOT charge cognition strike |
+| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | bounded retry (route v) — stays in current lifecycle stage; see [Tooling-failure handling](#tooling-failure-handling); do NOT charge cognition strike |
 | **reviewer-artifact** | A reviewer-added artifact failed its own validator | route to tooling-escalation (same bounded-retry mechanics as `tooling`); do NOT charge cognition strike |
 | **flake** | Intermittent failure; re-run produces different verdict | retry up to project-config retry-budget; charge strike only if retries exhausted |
 | **config** | `config_hash` mismatch or schema-validation failure | route to config-version-divergence handler (CA-13); do NOT charge strike |
