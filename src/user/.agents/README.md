@@ -13,6 +13,9 @@ is useful to more than one tool, it lives here.
   and optional supporting scripts.
 - `INSTRUCTIONS.md.template` — Shared laws, constraints, workflow, and
   orchestration referenced by each tool's top-level instruction file.
+- `SESSION-PRIMER.md.template` — Skill-invocation discipline (the "1% rule"
+  + red-flag rationalization table + skill-priority ordering). Dynamically
+  included between USER-PERSONA and INSTRUCTIONS in every per-tool template.
 - `AGENT-PERSONA.md.template` — Agent personality and expertise claims.
   Personalize after install.
 - `USER-PERSONA.md.template` — User description and interaction preferences.

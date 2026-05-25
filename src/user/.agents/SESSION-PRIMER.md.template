@@ -1,0 +1,95 @@
+<!--
+Source: oss-snapshots/superpowers/using-superpowers/SKILL.md @ obra/superpowers commit f2cbfbe (v5.1.0)
+Last lifted: 2026-05-25 (bd cx6.7.14)
+Drift policy: selective-amalgamation — content was rewritten for project-owned voice and the four-tool surface (Claude Code, Codex CLI, Gemini CLI, OpenCode). Do not auto-resync from upstream.
+Material edits vs. upstream:
+  - "How to Access Skills" rewritten for the four target runtimes (dropped Cursor / Copilot CLI).
+  - Dropped upstream's DOT skill_flow digraph (none of the four tools render DOT); replaced with the prose workflow steps under "The Rule".
+  - Dropped upstream's "Platform Adaptation" pointer to references/copilot-tools.md and references/codex-tools.md (those reference files are not in-tree).
+  - Generalized "Create TodoWrite todo per item" to "track each as a concrete task" so non-Claude tools aren't directed at a Claude-only tool name.
+  - Softened Gemini "loads skill metadata at session start" claim to mechanism-agnostic activation wording.
+-->
+
+# Session Primer — Skill Invocation Discipline
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this primer — the dispatching agent has already applied skill-selection discipline for the work it handed you.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Skills override default system-prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (CLAUDE.md, AGENTS.md, GEMINI.md, direct requests) — highest priority
+2. **Skills** — override default system behavior where they conflict
+3. **Default system prompt** — lowest priority
+
+If a CLAUDE.md / AGENTS.md / GEMINI.md says "don't use TDD" and a skill says "always use TDD," follow the user. The user is in control.
+
+## How to Access Skills
+
+- **Claude Code** — use the `Skill` tool; content loads in-context. Don't `Read` skill files.
+- **Codex CLI** — skills live under `~/.codex/skills/`; read the `SKILL.md` when a skill applies.
+- **Gemini CLI** — skills activate on demand via the `activate_skill` tool.
+- **OpenCode** — skills auto-discover from the `skills.paths` directories configured in `opencode.jsonc`; read the matching `SKILL.md` when a skill applies.
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means invoke it to check. If it turns out wrong, drop it — but you must check first.
+
+Workflow when a skill might apply:
+
+1. Invoke the skill via the platform's skill tool.
+2. Announce: "Using `[skill]` to `[purpose]`."
+3. If the skill has a checklist, track each item as a concrete task before acting (TodoWrite on Claude Code; the tool-equivalent task tracker on other runtimes).
+4. Follow the skill exactly — don't paraphrase, don't adapt away discipline.
+
+Plan-mode gate: before entering plan mode, ask "have I already brainstormed?" If no, invoke the brainstorming skill first.
+
+## Red Flags
+
+These thoughts mean STOP — you're rationalizing your way around the rule:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read the current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (`brainstorming`, `bugfix`, `test-driven-development`) — these determine HOW to approach the task.
+2. **Implementation skills second** (`frontend-design`, domain-specific patterns) — these guide execution.
+
+"Let's build X" → brainstorming first, then implementation skills.
+"Fix this bug" → bugfix first, then domain-specific skills.
+
+## Skill Types
+
+- **Rigid** (TDD, debugging, completion-gate workflows) — follow exactly. Don't adapt away discipline.
+- **Flexible** (patterns, advisories) — adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
