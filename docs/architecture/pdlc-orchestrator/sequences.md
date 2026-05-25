@@ -52,6 +52,13 @@ sequenceDiagram
     PDLC->>Config: read project-config.toml + compute config_hash
     Config-->>PDLC: config + config_hash
 
+    Note over PDLC: pre-tick toolchain assertion
+    PDLC->>PDLC: probe config.toolchain.required for PATH presence + min versions
+    alt missing or under-versioned binary
+        PDLC->>State: mark dispatchable Objectives needs_reconcile=true (missing-toolchain:X)
+        Note over PDLC: skip DISPATCH this tick (REAP of in-flight Sessions still runs)
+    end
+
     Note over PDLC: start tick-budget timer
 
     rect rgb(245, 245, 255)
@@ -120,7 +127,7 @@ sequenceDiagram
 
     rect rgb(255, 255, 240)
         Note over PDLC,Super: DISPATCH
-        alt degraded reap-only mode
+        alt degraded reap-only mode<br/>(toolchain missing OR config divergence OR tracker unreachable)
             Note over PDLC: SKIP dispatch
         else nominal
             loop for each Objective at worker-driven stage with no in-flight Session
@@ -152,7 +159,8 @@ sequenceDiagram
 - **Full-reconcile** (the every-Nth-tick `bulk_get` path) is **not budget-bounded** — it runs to completion. Budgeting it would trade correctness for latency.
 - **Independent gate verification** at REAP is non-negotiable: the orchestrator never trusts the worker's `verdict` claim in the evidence YAML.
 - **Pending-before-fork** ordering at DISPATCH means a crash between Session-write and fork leaves a reconcilable record (next tick sees a stale `pending` Session and cleans it up).
-- **Degraded reap-only mode** preserves the ability to complete in-flight workers even when dispatch is unsafe (config divergence, tracker unreachable).
+- **Degraded reap-only mode** preserves the ability to complete in-flight workers even when dispatch is unsafe (config divergence, tracker unreachable, **missing required toolchain**). The pre-tick toolchain assertion gates entry to this mode for the missing-toolchain case; once the operator restores tooling, the next tick proceeds normally.
+- **Non-transient tooling failures are bounded.** The pre-tick toolchain assertion catches the common case (declared binary not on `PATH`) before any worker forks. For failures it cannot statically detect, the orchestrator maintains a `tooling_strike_count` per `(objective_id, lifecycle_stage, error_signature)`; on `project-config.tooling_max_strikes` recurrence the Objective is marked `needs_reconcile=true` and dispatch halts. Detail: [`state-machine.md` § Tooling-failure handling](state-machine.md#tooling-failure-handling-pre-tick-assertion--bounded-retry).
 
 ---
 

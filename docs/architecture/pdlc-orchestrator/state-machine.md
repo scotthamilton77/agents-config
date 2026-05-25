@@ -180,8 +180,8 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 | Cause | Symptom | Strike charged? | Routing |
 |---|---|---|---|
 | **cognition** | Worker's logic / output failed the gate's correctness check | YES | Loop within stage; 3rd strike → `AUTOPSY` |
-| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | `AUTOPSY` route (v) — tooling escalation |
-| **reviewer-artifact** | A reviewer-added artifact failed its own validator | NO | Tooling escalation |
+| **tooling** | Test runner crashed, lint binary missing, supervisor reported infra error | NO | `AUTOPSY` route (v) — bounded tooling retry; on `tooling_max_strikes`, `needs_reconcile=true` and halt dispatch. See *Tooling-failure handling* below |
+| **reviewer-artifact** | A reviewer-added artifact failed its own validator | NO | Tooling escalation (same bounded-retry mechanics as `tooling`) |
 | **flake** | Intermittent failure; re-run produces different verdict | NO (until retries exhausted) | Retry up to project-config retry-budget |
 | **config** | `config_hash` mismatch or schema-validation failure | NO | Config-version-divergence handler |
 | **dependency** | Blocking dep not satisfied at run time | NO | `AUTOPSY` route (iv) — park as PARKED |
@@ -193,6 +193,18 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 
 - **`is_container=false`** (Sized): the Objective is an Executable. Move to `EXECUTABLE_READY` and queue for the Test-Author.
 - **`is_container=true`** (Oversized): the Objective is a Container. Emit children **as direct Objectives at `CANDIDATE_UOW`** in the tracker, each carrying `parent_id=<container_id>`. Then advance the Container to `CONTAINER_DECOMPOSED` as a passive aggregator. Each child runs its own `CANDIDATE_UOW` exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff) before advancing — children inherit the parent's *worth-pursuing* signoff but not the per-child gate pass.
+
+### Tooling-failure handling: pre-tick assertion + bounded retry
+
+Two-layer defence against non-cognition tool failures (linter binary missing, test runner crashed, supervisor reported infra error). Both layers prevent infinite-loop dispatch on non-transient failures; neither charges a cognition strike.
+
+**Layer 1 — Pre-tick toolchain assertion (preventative).** At tick start, the orchestrator probes each binary declared in `project-config.toolchain.required` for presence on `PATH` (and, where the manifest specifies, a minimum version check). A missing or under-versioned binary aborts the tick before DISPATCH: every Objective that would have dispatched gets `needs_reconcile=true` with code `missing-toolchain:<binary>`; the condition surfaces on `pdlc health`. Reap and persist still run on already-in-flight Sessions; only new dispatch is suppressed. Workers are never forked against a known-broken environment.
+
+**Layer 2 — Bounded tooling-strike counter (recoverable).** For failures the pre-tick assertion can't catch (mid-run binary disappearance, version-edge incompatibility, supervisor-reported infra error during a Session), the orchestrator maintains `tooling_strike_count` per `(objective_id, lifecycle_stage, error_signature)` where `error_signature` is a stable hash of the classified failure (binary name + exit-code class + supervisor error class). Each recurrence increments. At `project-config.tooling_max_strikes` (default 3) the counter trips: `needs_reconcile=true` is set with code `tooling-persistent`, dispatch on that Objective halts, the condition surfaces on `pdlc health`. Cognition strikes remain unaffected.
+
+**Why two layers.** Layer 1 prevents the most common failure shape (declared tool simply not installed) from ever consuming a worker; Layer 2 catches everything Layer 1 cannot statically detect and bounds the retry. Together they guarantee that no non-transient tooling failure loops indefinitely.
+
+**Out of scope for MVP — autonomous remediation.** A "ToolingFixer" persona that attempts to install missing tooling (`npm install`, `pip install -r requirements.txt`, etc.) is a known post-MVP extension. It would slot in between Layers 1 and 2 — dispatched on the first tooling-strike, allowed a closed taxonomy of remediation operations gated by `project-config.toolchain.auto_install_permitted`. Until then, persistent tooling failures escalate to humans via Layer 2.
 
 ### PR_HUMAN_HOLD engagement criteria
 
@@ -221,7 +233,7 @@ After both the Spec RCA and Architecture-Health RCA complete, the Autopsy outcom
 - **(ii) Re-decompose** — Decomposition was wrong; return to `DECOMPOSE`
 - **(iii) Kill with Epitaph** — abandon the Objective; terminal `KILLED` with `terminal_disposition` carrying the reason
 - **(iv) Park** — blocked on a dependency that isn't resolvable in the current cycle; terminal-ish `PARKED`; can be unparked when the dep resolves
-- **(v) Tooling escalation** — the failure was infrastructure, not cognition; return to the same lifecycle stage and re-dispatch (no strike charged)
+- **(v) Tooling escalation** — the failure was infrastructure, not cognition. The orchestrator increments `tooling_strike_count` for `(objective_id, lifecycle_stage, error_signature)` and re-dispatches the same lifecycle stage. At `project-config.tooling_max_strikes` (default 3), the count threshold trips: `needs_reconcile=true` is set with code `tooling-persistent`, dispatch on that Objective halts, and the condition surfaces on `pdlc health` for human disposition. No cognition strike is ever charged. See *Tooling-failure handling* below for the full mechanism, including the complementary pre-tick toolchain assertion that prevents the most common failure mode before any worker forks
 
 ### Terminal-disposition mapping
 
