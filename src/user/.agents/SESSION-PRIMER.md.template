@@ -3,18 +3,18 @@ Source: oss-snapshots/superpowers/using-superpowers/SKILL.md @ obra/superpowers 
 Last lifted: 2026-05-25
 Drift policy: selective-amalgamation — content was rewritten for project-owned voice and the four-tool surface (Claude Code, Codex CLI, Gemini CLI, OpenCode). Do not auto-resync from upstream.
 Material edits vs. upstream:
-  - "How to Access Skills" rewritten for the four target runtimes (dropped Cursor / Copilot CLI).
-  - Dropped upstream's DOT skill_flow digraph (none of the four tools render DOT); replaced with the prose workflow steps under "The Rule".
-  - Dropped upstream's "Platform Adaptation" pointer to references/copilot-tools.md and references/codex-tools.md (those reference files are not in-tree).
-  - Generalized "Create TodoWrite todo per item" to "track each as a concrete task" so non-Claude tools aren't directed at a Claude-only tool name.
-  - Softened Gemini "loads skill metadata at session start" claim to mechanism-agnostic activation wording.
+  - Dropped upstream's <SUBAGENT-STOP> gate: subagents inherit the host's AGENTS.md context including this primer, so they cannot act on a "skip" instruction they've already read.
+  - Dropped upstream's "Instruction Priority" section: user > skills > defaults is already established in the assembled instruction file's <laws> and decision matrix.
+  - Dropped upstream's "How to Access Skills" per-runtime listing: each runtime's own system prompt already documents its skill mechanism.
+  - Dropped upstream's "Platform Adaptation" pointer to references/copilot-tools.md / references/codex-tools.md (those reference files are not in-tree).
+  - Dropped upstream's DOT skill_flow digraph (none of the four tools render DOT); replaced with prose workflow steps.
+  - Generalized "Create TodoWrite todo per item" to a tool-agnostic phrasing with a Claude-specific parenthetical.
+  - Body wrapped in <skill-usage-instructions> for context-boundary clarity.
 -->
 
-# Session Primer — Skill Invocation Discipline
+<skill-usage-instructions>
 
-<SUBAGENT-STOP>
-If you were dispatched as a subagent to execute a specific task, skip this primer — the dispatching agent has already applied skill-selection discipline for the work it handed you.
-</SUBAGENT-STOP>
+# Session Primer — Skill Invocation Discipline
 
 <EXTREMELY-IMPORTANT>
 If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
@@ -23,23 +23,6 @@ IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
 
 This is not negotiable. This is not optional. You cannot rationalize your way out of this.
 </EXTREMELY-IMPORTANT>
-
-## Instruction Priority
-
-Skills override default system-prompt behavior, but **user instructions always take precedence**:
-
-1. **User's explicit instructions** (CLAUDE.md, AGENTS.md, GEMINI.md, direct requests) — highest priority
-2. **Skills** — override default system behavior where they conflict
-3. **Default system prompt** — lowest priority
-
-If a CLAUDE.md / AGENTS.md / GEMINI.md says "don't use TDD" and a skill says "always use TDD," follow the user. The user is in control.
-
-## How to Access Skills
-
-- **Claude Code** — use the `Skill` tool; content loads in-context. Don't `Read` skill files.
-- **Codex CLI** — skills live under `~/.codex/skills/`; read the `SKILL.md` when a skill applies.
-- **Gemini CLI** — skills activate on demand via the `activate_skill` tool.
-- **OpenCode** — skills auto-discover from the `skills.paths` directories configured in `opencode.jsonc`; read the matching `SKILL.md` when a skill applies.
 
 ## The Rule
 
@@ -93,3 +76,5 @@ The skill itself tells you which.
 ## User Instructions
 
 Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+</skill-usage-instructions>
