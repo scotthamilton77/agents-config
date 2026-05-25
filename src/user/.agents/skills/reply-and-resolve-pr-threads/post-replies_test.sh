@@ -561,6 +561,54 @@ else
   FAIL=1
 fi
 
+# Behavior test (whitespace normalization): --skip-comment-ids with spaces in the CSV
+# must still match the skipset cids. Regression guard against operators or tooling
+# that pass "11111, 22222" instead of "11111,22222".
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_MIXED" --owner o --repo r --pr 1 \
+  --skip-comment-ids "11111, 22222" > "$TMP/csv-ws-out.txt" 2>&1
+if grep -qE '^SKIPPED 11111$' "$TMP/csv-ws-out.txt" \
+   && grep -qE '^SKIPPED 22222$' "$TMP/csv-ws-out.txt"; then
+  echo "  ok: --skip-comment-ids tolerates whitespace in the CSV"
+else
+  echo "  FAIL: --skip-comment-ids did not match with whitespace; got: $(cat "$TMP/csv-ws-out.txt")"
+  FAIL=1
+fi
+
+# Behavior test (sidecar append failure is surfaced): if the sidecar path is
+# un-writable (simulated by making it a directory), the script must emit a
+# WARNING on stderr and exit 1 — NOT silently print POSTED while the state
+# write is lost.
+INV_WRITE_FAIL="$TMP/inv-write-fail.json"
+cat >"$INV_WRITE_FAIL" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {"kind":"review_thread","thread_id":"T_x","reply_to_comment_id":77777,"issue_comment_id":null,"classification":"FIX","fix_outcome":"committed","reply_body":"ok"}
+  ]
+}
+JSON
+# Make the sidecar path a directory so >> fails.
+mkdir -p "${INV_WRITE_FAIL}.posted"
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_WRITE_FAIL" --owner o --repo r --pr 1 \
+  > "$TMP/write-fail-out.txt" 2> "$TMP/write-fail-err.txt"
+rc_wf=$?
+if [ "$rc_wf" = "1" ]; then
+  echo "  ok: sidecar append failure causes exit 1"
+else
+  echo "  FAIL: sidecar append failure should exit 1, got $rc_wf"
+  FAIL=1
+fi
+if grep -q 'sidecar-append-failed' "$TMP/write-fail-err.txt"; then
+  echo "  ok: sidecar append failure surfaces WARNING on stderr"
+else
+  echo "  FAIL: sidecar append failure should emit WARNING with 'sidecar-append-failed'; got stderr: $(cat "$TMP/write-fail-err.txt")"
+  FAIL=1
+fi
+# Cleanup the directory-sidecar so EXIT trap doesn't try to delete a non-empty dir
+rmdir "${INV_WRITE_FAIL}.posted" 2>/dev/null || rm -rf "${INV_WRITE_FAIL}.posted"
+
 # Failure path: invoking without --inventory must fail (flag validation)
 if "$SCRIPT" --owner o --repo r --pr 1 2>/dev/null; then
   echo "  FAIL: accepted invocation without --inventory"

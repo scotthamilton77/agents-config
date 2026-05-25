@@ -25,7 +25,15 @@
 #   POSTED record and let a subsequent retry (without the flag) re-post
 #   duplicates.
 # - Callers MAY still pass --skip-comment-ids explicitly; both sources
-#   union into the same skip-set.
+#   union into the same skip-set. The CSV input tolerates whitespace
+#   (spaces, tabs, newlines): "11111, 22222" is normalized to "11111,22222"
+#   before being spliced into the skipset so the membership check still
+#   matches.
+# - A sidecar write failure (e.g., unwritable directory, full disk) AFTER
+#   a successful GitHub POST is a run failure: the script emits a WARNING
+#   on stderr naming the cid and the manual recovery action, sets the
+#   failure flag, and exits 1. Without this, the cid would be posted but
+#   not persisted, and the next retry would re-post a duplicate.
 # - The sidecar's lifecycle is bounded by the inventory itself: inventory
 #   filenames are keyed by (owner, repo, pr, head_sha) so each new push
 #   gets a fresh inventory and a fresh sidecar.
@@ -102,13 +110,22 @@ done
 
 POSTED_SIDECAR="${INV}.posted"
 
+# Normalize --skip-comment-ids: strip ALL whitespace so operators or tooling
+# passing "11111, 22222" (with spaces/newlines) still match the *,<cid>,*
+# skipset membership test. Without this, the whitespace would be glued onto
+# the cid in the skipset and silently fail to match, causing duplicate POSTs.
+SKIP_CSV="$(printf '%s' "$SKIP_CSV" | tr -d '[:space:]')"
+
 skipset=","
 if [ -n "$SKIP_CSV" ]; then
   skipset="${skipset}${SKIP_CSV},"
 fi
 # Union any prior <inventory>.posted entries into the skipset.
+# Defensively strip whitespace per line — we control the writer, but the
+# normalization is cheap and symmetric with the CSV handling above.
 if [ -f "$POSTED_SIDECAR" ]; then
   while IFS= read -r prior_cid; do
+    prior_cid="$(printf '%s' "$prior_cid" | tr -d '[:space:]')"
     [ -n "$prior_cid" ] || continue
     skipset="${skipset}${prior_cid},"
   done < "$POSTED_SIDECAR"
@@ -201,7 +218,20 @@ while IFS= read -r item; do
   if printf '%s' "$body" | gh api "$post_url" \
       --method POST --field body=@- >/dev/null 2>"$ERR"; then
     echo "POSTED $cid"
-    [ -n "$cid" ] && printf '%s\n' "$cid" >> "$POSTED_SIDECAR"
+    # Sidecar recording is part of the idempotency contract. The append CANNOT
+    # be expressed as `&& printf ... >> $POSTED_SIDECAR`: under `set -e`, a
+    # failed `>>` inside an `&&`-list is NOT treated as a fatal error, so the
+    # write loss would be silent — the cid would be POSTED to GitHub but never
+    # persisted, and a crash-recovery retry would re-post a duplicate. The
+    # GitHub-side and sidecar-side state are already divergent at this point;
+    # surface it loudly and fail the run so the operator can manually append
+    # the cid before retrying.
+    if [ -n "$cid" ]; then
+      if ! printf '%s\n' "$cid" >> "$POSTED_SIDECAR"; then
+        echo "WARNING $cid sidecar-append-failed: posted to GitHub but $POSTED_SIDECAR write failed; manually append $cid to that file before retrying or the next run will re-post a duplicate" >&2
+        any_failed=1
+      fi
+    fi
   else
     err_msg="$(tr '\n' ' ' <"$ERR" | sed 's/  */ /g; s/^ //; s/ $//')"
     echo "FAILED $cid ${fail_label}${err_msg:+ — $err_msg}"
