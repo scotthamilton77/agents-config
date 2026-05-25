@@ -7,7 +7,7 @@
 > - `docs/specs/2026-05-19-pdlc-state-machine-design.md` — the FSM companion
 >
 > **Glossary**: `CONTEXT.md` (canonical); per-artifact short glossaries appear at the top of each file
-> **Status**: under construction (drafted in three waves per wgclw.2.1)
+> **Status**: under construction
 
 ## Glossary (project-wide terms used across this artifact set)
 
@@ -68,7 +68,7 @@ Newcomers should read in this order; deep contributors may navigate freely.
 | File | Status | Synopsis |
 |---|---|---|
 | [`c4-l1-context.md`](c4-l1-context.md) | drawn | **C4 Level 1** — the `pdlc` CLI in its ecosystem: developer/operator, `bd` (and the WorkTracker adapter boundary), git, CI, Claude/Codex/Gemini agents, Holding Place (peer service), project-config files |
-| [`c4-l2-container.md`](c4-l2-container.md) | drawn | **C4 Level 2** — internal containers of the `pdlc` system: tick loop, OrchestratorStateRepo (Dolt-backed sidecar), WorkTracker adapter (bd-bound), JobSupervisor, Worker subprocess, Worktree filesystem, project-config loader. Replaces the prior block-diagram concept |
+| [`c4-l2-container.md`](c4-l2-container.md) | drawn | **C4 Level 2** — internal containers of the `pdlc` system: tick loop, OrchestratorStateRepo (Dolt-backed sidecar), WorkTracker adapter (bd-bound), JobSupervisor, Worker subprocess, Worktree filesystem, project-config loader |
 | [`c4-l3-tick-loop.md`](c4-l3-tick-loop.md) | drawn | **C4 Level 3** (tick loop) — components inside the tick loop container: DISCOVER, RECONCILE, REAP, DISPATCH, PERSIST, plus Lease manager, CAS predicate evaluator, Pre-strike triage classifier, Sizing Gate calculator |
 | [`c4-l3-worktracker-adapter.md`](c4-l3-worktracker-adapter.md) | **stub** | **C4 Level 3** (WorkTracker adapter) — placeholder; expected components: protocol-method groupings, bd CLI invocation, CAS predicate computation, fingerprint computation, error translation, Discovery marker management |
 | [`c4-l3-jobsupervisor.md`](c4-l3-jobsupervisor.md) | **stub** | **C4 Level 3** (JobSupervisor) — placeholder; expected components: lease lifecycle, heartbeat reporter, deadline enforcer, terminal-status collector, capture handles, cancellation handler, crash-recovery roll-forward |
@@ -98,6 +98,6 @@ Newcomers should read in this order; deep contributors may navigate freely.
 
 ## Provenance
 
-This artifact set was filed as `agents-config-wgclw.2.1` during the Round 1 review of the orchestrator core design — the reviewer flagged that the design spec's single Mermaid happy-path flowchart was insufficient to anchor downstream implementation work and that a multi-view HLD set was needed before any sibling implementation child opened. The Mermaid happy-path flowchart that lives in the orchestrator core design spec at [§ Happy-path flowchart](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#happy-path-flowchart) was a sketch placeholder; the artifacts in this folder are the authoritative HLD set it pointed forward to.
+Filed as `agents-config-wgclw.2.1` under `wgclw.2` (PDLC Orchestrator Core & Foundations). This artifact set is the authoritative HLD for the PDLC Orchestrator; it is referenced from the core design spec at [§ Happy-path flowchart](../../specs/2026-05-23-pdlc-orchestrator-core-design.md#happy-path-flowchart).
 
-A discovered-work bead (`agents-config-zzsv8`) tracks a follow-up architectural question: whether to promote the orchestrator core design from its dated location in `docs/specs/` to an evergreen location in this folder. That decision is intentionally deferred — it affects future architecture sets across all PDLC epics, not just this one.
+A follow-up bead (`agents-config-zzsv8`) tracks whether to promote the orchestrator core design from its dated location in `docs/specs/` to an evergreen location in this folder. That decision is intentionally deferred — it affects future architecture sets across all PDLC epics, not just this one.
