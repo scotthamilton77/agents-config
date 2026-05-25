@@ -138,7 +138,7 @@ error: PRECONDITION_NO_PR_DETECTED
   how:  pass <pr-number-or-url> or run from a branch with an open PR
 ```
 
-Stdout remains reserved for normal verb output (status JSON, etc.) so agents can parse stderr independently. The full error-code registry is owned by the spec's Section 3 (lifecycle state machine — TBD).
+Stdout remains reserved for normal verb output (status JSON, etc.) so agents can parse stderr independently. The full error-code registry is owned by §3.7.
 
 ---
 
@@ -200,7 +200,7 @@ type PRGroomingState struct {
     LastPushedHeadSHA   string          `json:"last_pushed_head_sha"` // last HEAD pushed by THIS CLI; distinguishes CLI vs external pushes for Round attribution (see §3.4)
     LastPolledAt        time.Time       `json:"last_polled_at"`
     LastActivityAt      time.Time       `json:"last_activity_at"`
-    HumanReviewRequired bool                       `json:"human_review_required,omitempty"`
+    HumanReviewLabelAdded bool                     `json:"human_review_label_added,omitempty"`  // §4.7: dedup flag for auto-add of `human-review-required` PR label
     Reviewers           map[string]ReviewerState   `json:"reviewers"`            // keyed by reviewer Identity
     Items               []ReviewItem               `json:"items"`
     Quiescence          QuiescenceState            `json:"quiescence"`
@@ -220,7 +220,7 @@ const (
     PhaseAwaitingReview   PRPhase = "awaiting-review"   // pushed; waiting for any reviewer to engage (covers initial AND re-review; Round disambiguates)
     PhaseFixesPending     PRPhase = "fixes-pending"    // feedback arrived; items not yet processed
     PhaseQuiesced         PRPhase = "quiesced"          // terminal: everything addressed; safe to merge (auto-mergeable when policy allows)
-    PhaseHumanGated       PRPhase = "human-gated"       // terminal: human action required (escalation, hard cap, HumanReviewRequired)
+    PhaseHumanGated       PRPhase = "human-gated"       // terminal: human action required (escalation, hard cap, failed items)
     PhaseMerged           PRPhase = "merged"            // terminal: merged
 )
 ```
@@ -250,15 +250,14 @@ const (
 
 **Any phase may transition to `human-gated`** when:
 - An item disposition is `escalated` and we're in interactive mode (or autonomous-with-no-autodefer)
-- The re-review round hard cap (Section 4) is exceeded
-- `HumanReviewRequired` was set upstream (brainstorm flagged the PR; Section 4 defines the signal)
+- The re-review round hard cap (§3.5) is exceeded
 - A `fix` subagent's audit fails irrecoverably
+
+(Per §4.4, the `human-review-required` PR label is a merge constraint, not a lifecycle gate — it does NOT trigger `human-gated`.)
 
 **`human-gated` exits** to `fixes-pending` (human resolved the issue and may have pushed) or to `merged` (human merged directly).
 
 **`quiesced` is a true terminal that does NOT necessarily require human action.** A `quiesced` PR with all dispositions resolved, all replies posted, all FIX threads resolved, and policy-satisfied CI/coverage is **auto-merge-eligible** (the merge gate is a future capability outside MVP scope; see `td39`). When a policy criterion fails (e.g., CI red), `quiesced` is the "we did our part — human decides whether to ship" state.
-
-**`HumanReviewRequired = true` always routes to `human-gated`, never to `quiesced`.** The flag's purpose is exactly to demand human review; collapsing it into `quiesced` would hide the gate. Section 3's end-of-cycle phase resolution (§3.2) reflects this — `HumanReviewRequired = true` takes precedence over the quiescence check.
 
 **`quiesced` vs `human-gated` distinction:** both are terminal-for-the-CLI states. `quiesced` = "everything we can do is done; safe to merge under policy." `human-gated` = "human judgment is required to proceed." A `quiesced` PR may auto-merge; a `human-gated` PR cannot.
 
@@ -351,17 +350,18 @@ const (
     ReviewerRequested    ReviewerStatus = "requested"
     ReviewerInProgress   ReviewerStatus = "in_progress"
     ReviewerReviewFound  ReviewerStatus = "review_found"
-    ReviewerTimeout      ReviewerStatus = "timeout"
-    ReviewerDeclined     ReviewerStatus = "declined"  // human reviewer explicitly passed
+    ReviewerDeclined     ReviewerStatus = "declined"  // covers explicit pass AND §4 auto-decline (timeout-no-start / timeout-stalled); see ReviewerState.DeclinedReason
 )
 
 type ReviewerState struct {
-    Identity      string         `json:"identity"`      // gh login or bot id
-    Kind          ReviewerKind   `json:"kind"`
-    Status        ReviewerStatus `json:"status"`
-    Required      bool           `json:"required"`      // true = gates quiescence (PR cannot quiesce until this reviewer's Status ∈ {review_found, declined})
-    LastRequestAt time.Time      `json:"last_request_at"`
-    LastReviewAt  time.Time      `json:"last_review_at,omitempty"`
+    Identity       string         `json:"identity"`        // gh login or bot id
+    Kind           ReviewerKind   `json:"kind"`
+    Status         ReviewerStatus `json:"status"`
+    Required       bool           `json:"required"`        // true = gates quiescence (PR cannot quiesce until this reviewer's Status ∈ {review_found, declined})
+    LastRequestAt  time.Time      `json:"last_request_at"` // §4.1: start-timeout reference
+    LastReviewAt   time.Time      `json:"last_review_at,omitempty"`  // §4.1: first observed engagement post-request; finish-timeout reference
+    DeclinedAt     time.Time      `json:"declined_at,omitempty"`     // §4.1: set on transition to declined (any reason)
+    DeclinedReason string         `json:"declined_reason,omitempty"` // §4.1: user-declined | timeout-no-start | timeout-stalled
 }
 ```
 
@@ -373,10 +373,8 @@ type ReviewerState struct {
 
 ```go
 type QuiescenceState struct {
-    LastChangeAt    time.Time `json:"last_change_at"`   // most recent PR-side mutation observed
-    OpenThreadCount int       `json:"open_thread_count"`
-    CIState         string    `json:"ci_state"`         // pending | success | failure
-    Score           float64   `json:"score,omitempty"`  // 0.0–1.0 readiness; computed lazily
+    CIState    string    `json:"ci_state,omitempty"`     // §4.1: success | pending | failure | absent — G_CI gate input for state.LastPushedHeadSHA
+    QuiescedAt time.Time `json:"quiesced_at,omitempty"`  // §4.2: set when phase transitions to quiesced
 }
 ```
 
@@ -488,7 +486,6 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 **Any non-terminal phase transitions to `human-gated` at end-of-cycle when** (priority order, applied by `resolve_end_of_cycle_phase` in §3.2):
 
 - Hard cap would be exceeded by the next push (`Round >= MaxRounds` with queued fix commits)
-- `HumanReviewRequired = true` set upstream (§4 defines the signal)
 - Any item has `Disposition.Kind == failed` produced by `CONTRACT_AUDIT_FAILED` or terminal-runtime failure (§3.6)
 - Any item has unresolved `Disposition.Kind == escalated`
 - A terminal-runtime failure occurred during the cycle
@@ -515,21 +512,20 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 | `push` | `PRECONDITION_NO_COMMITS` | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | uploads queued commits if any; **Round++** if ≥1 commit pushed; no phase change | terminal; no-op | terminal; no-op | terminal; no-op |
 | `reply` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNREPLIED` only under `--no-prework`) unless prior round left replies pending | renders templates + posts via gh API; marks `Replied=true`; no phase change | re-applies idempotently to unreplied items; no phase change | re-applies idempotently | terminal; no-op |
 | `resolve` | `PRECONDITION_NO_ITEMS` | **no-op** (exit 0; emits `PRECONDITION_NO_UNRESOLVED` only under `--no-prework`) | resolves review-threads with `Disposition.Kind ∈ {fixed, already_addressed}` AND `Resolved == false`; marks `Resolved=true`; no phase change | re-applies idempotently | re-applies idempotently | terminal; no-op |
-| `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for `Required=true` reviewers in `{not_requested, timeout, declined}` (`pushLocked` flips stale `review_found` → `not_requested`, see §3.4); **no-op exit 0 if no reviewers match** the target set; no phase change | invoked by `runLocked` immediately after a successful `pushLocked` for the same set of reviewers; no phase change | re-requests if reviewer state stale; no phase change | re-applies idempotently | terminal; no-op |
-| `wait` | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or hard timeout | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or hard timeout; hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions to `fixes-pending` or `merged` | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions out | terminal; no-op |
-| `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition.Kind` from `escalated` to a terminal value; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition`; **only clears the `escalated` items gate** (§3.2 priority 4). Does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED` (requires `--max-rounds` raise + re-run), `HumanReviewRequired = true` (requires upstream flag clear, §4), `STATE_CORRUPT` (requires operator state-file inspection), or `failed`-items gating (requires the operator to address the underlying `failed` disposition first). After the flip: phase moves to `fixes-pending` if and only if ALL of: (a) `state.Items` has no `escalated` items remaining, (b) `state.Items` has no `failed` items, (c) `HumanReviewRequired == false`, AND (d) `state.LastError ∉ BlockingErrorCodes` (defined below). Otherwise phase stays `human-gated`. **`BlockingErrorCodes`** = { `LIFECYCLE_HARD_CAP_EXCEEDED`, `LIFECYCLE_HUMAN_REVIEW_REQUIRED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — these codes signal conditions outside `resolve-escalated`'s scope and require the recovery paths in §3.6/§3.7. ("Repo deleted" is one of the conditions classified under `RUNTIME_GH_TERMINAL`, per §3.6's example list; no distinct `RUNTIME_REPO_DELETED` code is registered.) (`CONTRACT_AUDIT_FAILED` is intentionally NOT in this set: per §3.3 `handle_verb_error`, contract-audit failures are surfaced via per-item `Disposition.Kind = failed`, not via `state.LastError`; the `failed`-items check in clause (b) handles them.) | terminal; no-op |
+| `rereview` | `PRECONDITION_NO_ITEMS` | re-requests review for `Required=true` reviewers in `{not_requested, declined}` (`pushLocked` flips stale `review_found` → `not_requested`, see §3.4); **no-op exit 0 if no reviewers match** the target set; no phase change | invoked by `runLocked` immediately after a successful `pushLocked` for the same set of reviewers; no phase change | re-requests if reviewer state stale; no phase change | re-applies idempotently | terminal; no-op |
+| `wait` | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or signal-cancel (§4.2) | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or signal-cancel (§4.2); hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions to `fixes-pending` or `merged` | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions out | terminal; no-op |
+| `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition.Kind` from `escalated` to a terminal value; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition`; **only clears the `escalated` items gate** (§3.2 priority 4). Does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED` (requires `--max-rounds` raise + re-run), `STATE_CORRUPT` (requires operator state-file inspection), or `failed`-items gating (requires the operator to address the underlying `failed` disposition first). After the flip: phase moves to `fixes-pending` if and only if ALL of: (a) `state.Items` has no `escalated` items remaining, (b) `state.Items` has no `failed` items, AND (c) `state.LastError ∉ BlockingErrorCodes` (defined below). Otherwise phase stays `human-gated`. **`BlockingErrorCodes`** = { `LIFECYCLE_HARD_CAP_EXCEEDED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — these codes signal conditions outside `resolve-escalated`'s scope and require the recovery paths in §3.6/§3.7. ("Repo deleted" is one of the conditions classified under `RUNTIME_GH_TERMINAL`, per §3.6's example list; no distinct `RUNTIME_REPO_DELETED` code is registered.) (`CONTRACT_AUDIT_FAILED` is intentionally NOT in this set: per §3.3 `handle_verb_error`, contract-audit failures are surfaced via per-item `Disposition.Kind = failed`, not via `state.LastError`; the `failed`-items check in clause (b) handles them.) | terminal; no-op |
 | `status` | read-only (**lock-free**; see §3.3 carve-out — `--locked` opt-in for strictly-consistent read) | read-only | read-only | read-only | read-only | read-only |
 | `run` | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes `pollLocked` **once** to detect external transitions (e.g., operator merged externally → `merged`; new reviewer activity → `fixes-pending`). If phase advances out of `quiesced`, re-enter the lifecycle loop; otherwise return 0. | invokes `pollLocked` **once** to detect external resolutions (operator pushed a fix → `fixes-pending`; operator merged → `merged`). If phase advances out of `human-gated`, re-enter the lifecycle loop; otherwise return 0 (awaits operator action). | returns 0 immediately (graph-terminal; `merged` is absorbing) |
 
 **End-of-cycle phase resolution** (applied by `run` after each cycle via `resolve_end_of_cycle_phase`, see §3.3): from `fixes-pending` the resolver chooses the next phase by evaluating these conditions in strict priority order — the first match wins.
 
 1. Hard-cap would be exceeded by the next push (`Round >= MaxRounds` AND `has_queued_fix_commits(state)`) → `human-gated` with `LastError = LIFECYCLE_HARD_CAP_EXCEEDED`. **Check is pre-push** (§3.5), so the cap-tripping push is *not* uploaded.
-2. `HumanReviewRequired == true` set upstream → `human-gated` with `LastError = LIFECYCLE_HUMAN_REVIEW_REQUIRED`.
-3. Any item with `Disposition.Kind == failed` (regardless of underlying cause — contract audit, runtime terminal error, or agent-reported "could not converge") → `human-gated`. For runtime-terminal-user failures, `state.LastError` was already set by `handle_verb_error` (Propagate path); the resolver preserves it. For contract-audit failures and pure agent-reported failures, `state.LastError` is left unset — the per-item `Disposition.Rationale` is the source of truth for the cause. (Rationale: `handle_verb_error` only writes `state.LastError` on Propagate-tier errors; `CONTRACT_AUDIT_FAILED` returns `Continue` and surfaces the cause via per-item `Disposition`. Cross-reference §3.3 `handle_verb_error` and the §3.7 error-code registry.)
-4. Any item with unresolved `Disposition.Kind == escalated` → `human-gated`; file exactly one `EscalationSink` event per cycle (deduped across items). The `EscalationSink` always exists (Section 5: stderr is the default sink) — there is no "no resolution path" branch.
-5. ≥1 commit pushed this cycle (`Round` was incremented) → `awaiting-review`. `rereview` already invoked from within the cycle (§3.3) for required bot reviewers needing fresh review.
-6. No commits pushed this cycle AND quiescence threshold trips (§4) → `quiesced`.
-7. Otherwise (no commits pushed, quiescence did not trip) → `awaiting-review`. **Rule-7 rationale:** this covers the case where every item processed this cycle dispositioned to `skipped`/`wont_fix`/`deferred` (zero commits, no fresh work), and the §4 quiescence threshold has not yet judged the PR ready. The next cycle's `wait` either observes new reviewer activity (→ back to `fixes-pending` via `poll`) or accumulates idle time until quiescence trips. Already-processed items remain in `state.Items` with `Disposition != nil`; subsequent `clusterLocked`/`fixLocked` skip them (idempotent on dispositioned items), so re-entering `fixes-pending` only does work for NEW items.
+2. Any item with `Disposition.Kind == failed` (regardless of underlying cause — contract audit, runtime terminal error, or agent-reported "could not converge") → `human-gated`. For runtime-terminal-user failures, `state.LastError` was already set by `handle_verb_error` (Propagate path); the resolver preserves it. For contract-audit failures and pure agent-reported failures, `state.LastError` is left unset — the per-item `Disposition.Rationale` is the source of truth for the cause. (Rationale: `handle_verb_error` only writes `state.LastError` on Propagate-tier errors; `CONTRACT_AUDIT_FAILED` returns `Continue` and surfaces the cause via per-item `Disposition`. Cross-reference §3.3 `handle_verb_error` and the §3.7 error-code registry.)
+3. Any item with unresolved `Disposition.Kind == escalated` → `human-gated`; file exactly one `EscalationSink` event per cycle (deduped across items). The `EscalationSink` always exists (Section 5: stderr is the default sink) — there is no "no resolution path" branch.
+4. ≥1 commit pushed this cycle (`Round` was incremented) → `awaiting-review`. `rereview` already invoked from within the cycle (§3.3) for required bot reviewers needing fresh review.
+5. No commits pushed this cycle AND quiescence threshold trips (§4) → `quiesced`.
+6. Otherwise (no commits pushed, quiescence did not trip) → `awaiting-review`. **Rule-6 rationale:** this covers the case where every item processed this cycle dispositioned to `skipped`/`wont_fix`/`deferred` (zero commits, no fresh work), and the §4 quiescence threshold has not yet judged the PR ready. The next cycle's `wait` either observes new reviewer activity (→ back to `fixes-pending` via `poll`) or accumulates idle time until quiescence trips. Already-processed items remain in `state.Items` with `Disposition != nil`; subsequent `clusterLocked`/`fixLocked` skip them (idempotent on dispositioned items), so re-entering `fixes-pending` only does work for NEW items.
 
 ### 3.3 `run` aggregate verb algorithm
 
@@ -613,7 +609,8 @@ function runLocked(pr, mode) (*PRGroomingState, error):
     if state.Phase ∈ {quiesced, human-gated}:
         state, err = pollLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)
+            state = escalate_if_needed(state)              # §3.3
+            state = request_human_review_if_needed(state)  # §4.7 (auto-label-add)
             return state, err
         # If pollLocked transitioned phase to a non-terminal-for-CLI value
         # (fixes-pending after operator fix-push, or back into awaiting-review
@@ -622,21 +619,26 @@ function runLocked(pr, mode) (*PRGroomingState, error):
         # loop-top check returns cleanly.
 
     for {
-        # Terminal-for-CLI: emit any pending escalations, return.
-        # All escalation emission funnels through escalate_if_needed. It is called
-        # from two sites: HERE (clean phase transitions) and before each Propagate-
-        # return below (terminal-error transitions). Both sites are dedup-safe via
-        # the per-item EscalationFiled flag and the lifecycle LifecycleEscalationFiled
-        # flag — second invocation in the same cycle is a no-op.
+        # Terminal-for-CLI: emit any pending escalations + auto-label, return.
+        # All escalation emission funnels through escalate_if_needed (§3.3); the
+        # parallel request_human_review_if_needed (§4.7) handles GitHub-label
+        # auto-add for review-content gating conditions (cap-trip, escalated/failed
+        # items). Both are called from the same two sites: HERE (clean phase
+        # transitions) and before each Propagate-return below (terminal-error
+        # transitions). Both sites are dedup-safe via the per-item EscalationFiled
+        # flag, the lifecycle LifecycleEscalationFiled flag, and the HumanReviewLabelAdded
+        # flag — second invocation in the same cycle is a no-op for all three.
         if state.Phase ∈ {merged, quiesced, human-gated}:
-            state = escalate_if_needed(state)         # per-item + lifecycle dedup; writes state
+            state = escalate_if_needed(state)              # per-item + lifecycle dedup; writes state (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, nil
 
         # === Cycle start (state.Phase ∈ {idle, awaiting-review, fixes-pending}) ===
 
         state, err = pollLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
 
         if state.Phase ∈ {merged, quiesced, human-gated}:
@@ -648,7 +650,8 @@ function runLocked(pr, mode) (*PRGroomingState, error):
                 return state, nil
             state, err = waitLocked(pr, state)
             if disposition := handle_verb_error(err, &state); disposition == Propagate:
-                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+                state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
                 return state, err
             continue
 
@@ -657,19 +660,22 @@ function runLocked(pr, mode) (*PRGroomingState, error):
                 return state, nil             # user owns the wait
             state, err = waitLocked(pr, state)
             if disposition := handle_verb_error(err, &state); disposition == Propagate:
-                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+                state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
                 return state, err
             continue
 
         # === state.Phase == fixes-pending ===
         state, err = clusterLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
 
         state, err = fixLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
 
         # Pre-push hard-cap check (§3.5). Set state ONLY; the next loop-top
@@ -684,7 +690,8 @@ function runLocked(pr, mode) (*PRGroomingState, error):
 
         state, err = pushLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
 
         # Post-push rereview for required bot reviewers needing fresh review.
@@ -694,16 +701,19 @@ function runLocked(pr, mode) (*PRGroomingState, error):
         if push_uploaded_commits_this_cycle(state) AND has_required_reviewers_to_refresh(state):
             state, err = rereviewLocked(pr, state)
             if disposition := handle_verb_error(err, &state); disposition == Propagate:
-                state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+                state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+                state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
                 return state, err
 
         state, err = replyLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
         state, err = resolveLocked(pr, state)
         if disposition := handle_verb_error(err, &state); disposition == Propagate:
-            state = escalate_if_needed(state)   # flush per-item + lifecycle emits before propagating
+            state = escalate_if_needed(state)              # flush per-item + lifecycle emits before propagating (§3.3)
+            state = request_human_review_if_needed(state)  # auto-add `human-review-required` label if applicable (§4.7)
             return state, err
 
         # End-of-cycle phase resolution — priority cascade per §3.2.
@@ -715,15 +725,15 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             # Successful cycle completion clears any prior gating error
             # (e.g., LIFECYCLE_HARD_CAP_EXCEEDED carried over from a previous run
             # that the operator has since resolved out-of-band or by raising --max-rounds).
-            # Realistic carry-overs reaching this clear: LIFECYCLE_HARD_CAP_EXCEEDED
-            # (operator raised --max-rounds and re-ran) and LIFECYCLE_HUMAN_REVIEW_REQUIRED
-            # (upstream signal cleared per §4). Other BlockingErrorCodes
+            # Realistic carry-over reaching this clear: LIFECYCLE_HARD_CAP_EXCEEDED
+            # (operator raised --max-rounds and re-ran). Other BlockingErrorCodes
             # (STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED)
             # keep phase at human-gated via handle_verb_error or the end-of-cycle
             # resolver and never reach this clear-on-success branch.
             # See §3.5 "Recovery" bullet.
             state.LastError = ""
             state.LifecycleEscalationFiled = false   # reset for next gate, if any
+            state.HumanReviewLabelAdded = false      # §4.7: reset so next gating event re-adds the label
         tracker.Write(state)
         continue                                     # loop top handles terminal + emits
 }
@@ -733,9 +743,9 @@ Notes on the rewrite vs. earlier drafts:
 
 - Every `*Locked` returns `(*PRGroomingState, error)` so `runLocked` threads in-memory state without disk re-reads. The lock guarantees no external mutation; re-reads were redundant.
 - `handle_verb_error` returns a disposition enum (`Continue` or `Propagate`) rather than `error`, eliminating the shadow / ambiguous-return pattern. Continuable errors (`CONTRACT_AUDIT_FAILED`) write state and return `Continue`; terminal-tier errors return `Propagate` and `runLocked` returns the original tagged error to `Run`, which applies `exitCodeForTier`.
-- All escalation emission flows through `escalate_if_needed`. It is called from **two** sites in `runLocked` — the loop-top terminal-for-CLI check (clean transitions to `merged`/`quiesced`/`human-gated`), and immediately before each Propagate-return after `handle_verb_error` (terminal-error paths: auth-expiry, push-rejected, state-corrupt). Both sites share the same dedup mechanism: per-item `EscalationFiled` flag, lifecycle-tier `LifecycleEscalationFiled` flag, atomic state write after emit. Calling `escalate_if_needed` twice in one cycle is a no-op the second time (both flags are already set). The cap-trip branch and end-of-cycle resolver only WRITE state (setting `LifecycleEscalationFiled = false` to invite a new emit). Crash-recovery safe modulo Sink idempotency (bd `label add` is idempotent; `--append-notes` is not — bd-adapter must use label-only emit, or content-hash dedup on notes).
+- All escalation emission flows through `escalate_if_needed`, called immediately followed by `request_human_review_if_needed` (§4.7) at every site. Both are called from **two** sites in `runLocked` — the loop-top terminal-for-CLI check (clean transitions to `merged`/`quiesced`/`human-gated`), and immediately before each Propagate-return after `handle_verb_error` (terminal-error paths: auth-expiry, push-rejected, state-corrupt). All three dedup flags share the same mechanism — per-item `EscalationFiled`, lifecycle-tier `LifecycleEscalationFiled`, and `HumanReviewLabelAdded` (§4.7) — each with atomic state write after emit. Calling either function twice in one cycle is a no-op the second time (the relevant flag is already set). The cap-trip branch and end-of-cycle resolver only WRITE state (setting `LifecycleEscalationFiled = false` and `HumanReviewLabelAdded = false` to invite a new emit). Crash-recovery safe modulo Sink idempotency (bd `label add` is idempotent; `--append-notes` is not — bd-adapter must use label-only emit, or content-hash dedup on notes) and GitHub-label idempotency (`gh.AddLabel` is idempotent server-side).
 
-**Escalation emission — single-function design.** `runLocked` emits via the `EscalationSink` only through `escalate_if_needed(state)`. There are **two** call sites, both dedup-safe via `EscalationFiled`/`LifecycleEscalationFiled` flags: (1) the loop-top terminal-for-CLI check (clean transitions), and (2) immediately before each `return state, err` on Propagate paths (terminal-error transitions). `handle_verb_error` sets state and (for terminal tiers) updates `state.LastError` and `state.LifecycleEscalationFiled = false` but does NOT emit directly. The cap-trip branch and end-of-cycle resolver also only WRITE state (setting `state.LifecycleEscalationFiled = false` to invite a new emit when a fresh lifecycle gate fires). All emission funnels through one function; the dedup flags make double-invocation safe.
+**Terminal-signal emission — parallel-function design.** `runLocked` emits terminal signals via two parallel functions: `escalate_if_needed(state)` (Sink semantics; §3.3) and `request_human_review_if_needed(state)` (GitHub-label semantics; §4.7). There are **two** call sites for both, both dedup-safe via `EscalationFiled`/`LifecycleEscalationFiled`/`HumanReviewLabelAdded` flags: (1) the loop-top terminal-for-CLI check (clean transitions), and (2) immediately before each `return state, err` on Propagate paths (terminal-error transitions). `handle_verb_error` sets state and (for terminal tiers) updates `state.LastError` and `state.LifecycleEscalationFiled = false` but does NOT emit directly. The cap-trip branch and end-of-cycle resolver also only WRITE state (setting `state.LifecycleEscalationFiled = false` and `state.HumanReviewLabelAdded = false` to invite fresh emits when a new lifecycle gate fires). Recommended call order at every site is `escalate_if_needed` first (Sink), then `request_human_review_if_needed` (label) — either ordering is correct since both are idempotent and read disjoint state; the convention is for readability.
 
 `escalate_if_needed(state)` semantics:
 
@@ -843,14 +853,14 @@ These edge cases are accepted as **best-effort attribution**, not corrected auto
 
 **`pushLocked` idempotency.** If `git push` succeeds but the subsequent state write fails (disk full, partial write), the next invocation's queued-commits check returns empty (commits already remote), so `pushLocked` early-returns without incrementing `Round` a second time. The result is a possible Round under-count by one — preferred over double-counting.
 
-**`ReviewerState.Status` transition on `pushLocked`.** A reviewer's `Status == "review_found"` is bound to the SHA the reviewer evaluated. When `pushLocked` uploads ≥1 new commit, the HEAD SHA changes and prior reviews become stale. After a successful push, `pushLocked` walks `state.Reviewers` and flips every entry with `Required == true` AND `Status == "review_found"` to `Status = "not_requested"`. This ensures the post-push `rereviewLocked` call (§3.3) finds reviewers to re-request. Reviewers in `{requested, in_progress, timeout, declined}` are left as-is — `rereview` already targets `{timeout, declined}` per §3.2, and `requested`/`in_progress` reviewers should not be disturbed mid-pass.
+**`ReviewerState.Status` transition on `pushLocked`.** A reviewer's `Status == "review_found"` is bound to the SHA the reviewer evaluated. When `pushLocked` uploads ≥1 new commit, the HEAD SHA changes and prior reviews become stale. After a successful push, `pushLocked` walks `state.Reviewers` and flips every entry with `Required == true` AND `Status == "review_found"` to `Status = "not_requested"`. This ensures the post-push `rereviewLocked` call (§3.3) finds reviewers to re-request. Reviewers in `{requested, in_progress, declined}` are left as-is — `rereview` already targets `{declined}` (plus `{not_requested}` after the flip) per §3.2, and `requested`/`in_progress` reviewers should not be disturbed mid-pass.
 
 **Predicate definitions used in §3.3 pseudocode:**
 
 - `has_queued_fix_commits(state) bool` — true iff the remote/local HEAD comparison yields ≥1 unpushed commit (see "Detecting queued (unpushed) fix commits" above).
-- `has_required_reviewers_to_refresh(state) bool` — true iff `state.Reviewers` contains ≥1 entry with `Required == true` AND `Status ∈ {not_requested, timeout, declined}`. After `pushLocked`'s flip, this reduces to "any `Required=true` reviewers are configured." False only when no required reviewers exist (e.g., the PR has no Copilot/codeowner required reviewer set).
+- `has_required_reviewers_to_refresh(state) bool` — true iff `state.Reviewers` contains ≥1 entry with `Required == true` AND `Status ∈ {not_requested, declined}`. After `pushLocked`'s flip, this reduces to "any `Required=true` reviewers are configured." False only when no required reviewers exist (e.g., the PR has no Copilot/codeowner required reviewer set).
 - `push_uploaded_commits_this_cycle(state) bool` — true iff `state.LastPushedHeadSHA` was updated during the current cycle (i.e., the most recent `pushLocked` returned with a non-zero commit upload). Implemented in the in-memory state copy threaded by `runLocked`.
-- `new_lifecycle_gate_this_cycle(state) bool` — true iff `state.LastError` was set by the end-of-cycle resolver in this cycle (cap-trip, HumanReviewRequired, etc.) and was not set in the prior cycle. Used to gate `LifecycleEscalationFiled = false` so each new gate fires exactly one Sink event.
+- `new_lifecycle_gate_this_cycle(state) bool` — true iff `state.LastError` was set by the end-of-cycle resolver in this cycle (cap-trip, etc.) and was not set in the prior cycle. Used to gate `LifecycleEscalationFiled = false` so each new gate fires exactly one Sink event.
 
 **`pushLocked` partial-write self-correction.** If `git push` succeeds but the subsequent state write fails, the next invocation's queued-commits check returns empty (commits are on the remote), so `pushLocked` early-returns without incrementing `Round`. The next `pollLocked` then observes `newHeadSHA != state.LastPushedHeadSHA` (because `LastPushedHeadSHA` was not updated) and attributes the change as an external push, incrementing `Round` via the external-push path. **Net effect: `Round` is incremented exactly once, just via the external-attribution code path.** `LastPushedHeadSHA` catches up on the next successful CLI push.
 
@@ -890,7 +900,7 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 **`human-gated` re-entry:** the only paths OUT of `human-gated` are:
 - `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain.
 - `poll` observes externally-resolved state (operator pushed a fix manually, or merged the PR) and writes `fixes-pending` or `merged` accordingly.
-- Operator clears `HumanReviewRequired` upstream and re-runs (covered by §4's upstream signal contract).
+- (Note: the `human-review-required` PR label per §4.4 is a merge constraint, NOT a lifecycle gate — operator does not need to clear it to exit `human-gated`.)
 
 ### 3.7 Error-code registry
 
@@ -962,24 +972,353 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 | Code | What | Why | How |
 |------|------|-----|-----|
 | `LIFECYCLE_HARD_CAP_EXCEEDED` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (so `Round` is never allowed to exceed `MaxRounds`; the cap-tripping push is refused) | hard cap reached without quiescence | resolve outstanding escalations; raise `--max-rounds` and re-run (a successful cycle clears `LastError` automatically); or hand off to human review |
-| `LIFECYCLE_HUMAN_REVIEW_REQUIRED` | `HumanReviewRequired = true` set upstream | brainstorm or another upstream signal flagged this PR | human reviews; clear flag manually (mechanism owned by §4) to resume autonomous flow |
 
 Adding new codes is straightforward; the registry's structure (`<CATEGORY>_<SPECIFIC>` with what/why/how) is the stable contract that agents and humans both consume.
 
 ---
 
-## Sections 4, 6, 7 — Open sub-designs (TBD)
+## Sections 6, 7 — Open sub-designs (TBD)
 
-These sections are NOT YET DRAFTED. Listed here so the reviewer can leave annotations on the open questions. (Section 5 is drafted further down; Section 8 is sketched at the end.)
+These sections are NOT YET DRAFTED. Listed here so the reviewer can leave annotations on the open questions. (Section 4 is drafted below; Section 5 is drafted further down; Section 8 is sketched at the end.)
 
-### Section 4 — Quiescence model
+## Section 4 — Quiescence model
 
-- Probability function inputs: time-since-last-update, required-reviewer statuses (every `Required=true` reviewer must be in `review_found` or `declined` to allow quiescence), open-thread count, CI state, items-with-no-Disposition count
-- Threshold parameters and how they're set (flags? config file? per-repo `.prgroom.toml`? heuristics bead?)
-- `wait` verb semantics: how long, what events break the wait
-- `human-review-required` signal: how marked upstream (brainstorm? hand-flagged label?), how the CLI reads it, how it overrides quiescence
-- Hard cap parallel to current `wait-for-pr-comments` round-3 cap
-- Auto-merge eligibility check: which signals must align for a `quiesced` PR to be auto-merge-eligible (handed off to a future merge-gate, outside this MVP — see bead `td39`)
+Section 4 owns the **quiescence predicate** (when end-of-cycle resolution should transition `awaiting-review` → `quiesced`), the **`waitLocked` internals** (the `wait` verb's blocking-loop implementation declared at §3.3 line 794), the **human-review merge constraint** (a label-based satisfaction protocol that does NOT block the lifecycle), the **auto-merge eligibility contract** exposed by `prgroom status --json` (handoff surface for the future merge-gate `gmxo`/`td39`), and the **auto-request-human-review behavior** that adds a visible GitHub label when the CLI's lifecycle reaches a review-content gate.
+
+Section 4 chose **hard gates + idle timer** over the originally-sketched "weighted probability" framing. Operators reading `prgroom status` get an explicit named gate as the answer to "why didn't it quiesce?" — not a tuneable score.
+
+### 4.1 Quiescence decision: hard gates + idle timer
+
+`waitLocked` evaluates a **quiescence predicate** on every poll. The predicate is satisfied iff all hard gates pass AND the idle timer has elapsed. Hard gates are binary and operator-debuggable; `prgroom status` names the failing gate.
+
+**Hard gates (all must pass):**
+
+| Gate | Condition | Source field(s) |
+|------|-----------|-----------------|
+| `G_REVIEWERS` | Every reviewer with `Required=true` has `Status ∈ {review_found, declined}` | `state.Reviewers[*].Required`, `state.Reviewers[*].Status` |
+| `G_CI` | `state.Quiescence.CIState ∈ {success, absent}` for `state.LastPushedHeadSHA` | `state.Quiescence.CIState` |
+| `G_DISPOSITIONS` | Every `state.Items[*].Disposition != nil` (sanity check — structurally guaranteed by `fixLocked` having run this cycle per §3.3 idempotency contract) | `state.Items[*].Disposition` |
+| `G_NO_BLOCKERS` | No item has `Disposition.Kind ∈ {escalated, failed}` (sanity check — §3.2 priority cascade routes those to `human-gated` before reaching this predicate) | `state.Items[*].Disposition.Kind` |
+
+**Idle timer (the soft "let it settle" buffer):** `time.Now().UTC().Sub(state.LastActivityAt) >= idle_threshold`. `LastActivityAt` is the timestamp of the most-recent PR-side mutation observed by `pollLocked` (new comment, new review, push, CI state change, label change). The idle timer's purpose is *not* to detect bot inactivity (per-reviewer timeouts in §4.1 own that case); it gives a short final buffer in case a slow human reviewer is mid-comment-draft when all hard gates flip green.
+
+**`G_REVIEWERS` and the `declined` substates.** A Required reviewer can reach `Status = declined` three ways:
+1. Human reviewer explicitly passed (`DeclinedReason = "user-declined"`)
+2. Auto-declined by `review_start_timeout` (`DeclinedReason = "timeout-no-start"`) — Copilot was requested but never engaged
+3. Auto-declined by `review_finish_timeout` (`DeclinedReason = "timeout-stalled"`) — Copilot engaged but never produced a terminal review
+
+All three count as gate-satisfying. The DeclinedReason is preserved for operator inspection via `prgroom status` so the operator can tell silence from explicit decline.
+
+**`pollLocked` auto-decline logic (Section 4 add-on to §3.3's `pollLocked`):**
+
+```text
+function evaluate_reviewer_timeouts(state):                   # invoked inside pollLocked, post-fetch
+    for r in state.Reviewers values:
+        if r.Status == requested AND r.LastReviewAt.IsZero():
+            if time.Now().UTC().Sub(r.LastRequestAt) > review_start_timeout:
+                r.Status = declined
+                r.DeclinedAt = time.Now().UTC()
+                r.DeclinedReason = "timeout-no-start"
+        elif r.Status == in_progress AND NOT r.LastReviewAt.IsZero():
+            if time.Now().UTC().Sub(r.LastReviewAt) > review_finish_timeout:
+                r.Status = declined
+                r.DeclinedAt = time.Now().UTC()
+                r.DeclinedReason = "timeout-stalled"
+```
+
+**"Engagement" detection — what sets `LastReviewAt` (Section 4 add-on to §3.3's `pollLocked`):** any actor-attributed activity after `LastRequestAt` and after the most-recent push timestamp:
+
+- New comment on `/issues/{n}/comments` whose `user.login == r.Identity` (Copilot's known top-level-comment reply pattern per the reviewer-bot quirks observed in prior `wait-for-pr-comments` runs)
+- New review (`/pulls/{n}/reviews`) by `r.Identity` in any state (`PENDING`, `COMMENTED`, `APPROVED`, `CHANGES_REQUESTED`)
+- New inline review comment (`/pulls/{n}/comments`) by `r.Identity`
+- New thread reply by `r.Identity`
+
+First such activity flips `r.Status = in_progress` and sets `r.LastReviewAt = activity.CreatedAt`. Subsequent activity refreshes `r.LastReviewAt` AND `state.LastActivityAt`. When `r.Status` transitions to terminal (`review_found` for `APPROVED`/`CHANGES_REQUESTED`/`COMMENTED-with-final-disposition` per Section 5's contract; `declined` per the timeout paths above), no further `r.LastReviewAt` updates are needed.
+
+**End-of-cycle interaction with §3.3's `resolve_end_of_cycle_phase`:** the priority cascade in §3.2 places quiescence at **priority 5** (after the blocker gates at priorities 1-3 and the commit-pushed rule at priority 4). `resolve_end_of_cycle_phase` calls `quiescencePredicate(state)` at priority 5; when true, sets `state.Phase = "quiesced"`, `state.Quiescence.QuiescedAt = time.Now().UTC()`. When false, phase stays `awaiting-review` and the next `waitLocked` invocation re-evaluates.
+
+```text
+function quiescencePredicate(state):
+    return allReviewerGatesPass(state)        # G_REVIEWERS
+       AND ciGateAllows(state.Quiescence.CIState)   # G_CI
+       AND allItemsDispositioned(state)       # G_DISPOSITIONS
+       AND noBlockerDispositions(state)       # G_NO_BLOCKERS
+       AND time.Now().UTC().Sub(state.LastActivityAt) >= idle_threshold
+```
+
+### 4.2 `waitLocked` internals
+
+**Contract surface** (declared at §3.3 line 794): `waitLocked(pr PRRef, state *PRGroomingState) (*PRGroomingState, error)`. Holds the PR lock for the entire invocation (no mid-sleep release). Cancellation honors a `context.Context` plumbed through `Run`'s public wrapper.
+
+**Pseudocode notation:** `signum` below denotes the integer signal number captured by `Run`'s OS signal handler (installed at process startup per §3.7). `context.Context` itself does not carry a signal number, so the handler stores the observed signum in a value visible to the cancellation path (e.g. an atomic int, a channel read on demand, or a small accessor on the deps surface). Concrete implementation is the implementer's call; the contract is only that `signum` is available at error-construction time for the exit-code mapping in §3.7.
+
+```text
+function waitLocked(pr, state) (*PRGroomingState, error):
+    for {
+        # Wake event 1: signal-cancel — return immediately, RUNTIME_CANCELLED tier
+        if ctx.Err() != nil:
+            return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=signum)
+
+        # Interruptible sleep — wakes on poll_interval expiry or ctx.Done
+        select {
+            case <-time.After(poll_interval):
+            case <-ctx.Done():
+                return state, taggedError(RUNTIME_CANCELLED, ctx.Err(), Signum=signum)
+        }
+
+        # Wake event 2: any pollLocked error propagates per §3.3 handle_verb_error
+        state, err = pollLocked(pr, state)
+        if err != nil:
+            return state, err          # runLocked's handle_verb_error decides Propagate vs Continue
+
+        # pollLocked side-effects relevant to §4 (added by this section):
+        #   - updates state.LastActivityAt on observed PR-side mutations
+        #   - calls evaluate_reviewer_timeouts(state)  (§4.1)
+        #   - updates state.Quiescence.CIState from latest check-runs/statuses for state.LastPushedHeadSHA
+        #   - reads state.HumanReviewLabelAdded is unchanged here (set by §4.7's request_human_review_if_needed)
+
+        # Wake event 3: phase already moved off awaiting-review/idle (fix commits arrived,
+        # external push, PR merged externally, etc.) → return to let runLocked re-enter cycle
+        if state.Phase != awaiting-review AND state.Phase != idle:
+            return state, nil
+
+        # Wake event 4: quiescence predicate satisfied → trip to quiesced, write, return
+        if quiescencePredicate(state):
+            state.Phase = quiesced
+            state.Quiescence.QuiescedAt = time.Now().UTC()
+            tracker.Write(state)
+            return state, nil
+
+        # Otherwise: loop back, sleep again
+    }
+```
+
+**Wake event registry (all paths that exit `waitLocked`):**
+
+| Trigger | Exit condition | Phase on exit | Error tier |
+|---------|---------------|---------------|------------|
+| Signal (SIGINT/SIGTERM) | `ctx.Done()` | unchanged | `RUNTIME_CANCELLED` (130/143 per §3.7) |
+| `pollLocked` transient error | gh API past retry budget | unchanged | `RUNTIME_TRANSIENT` (75) — scheduler retries |
+| `pollLocked` terminal error | gh auth expired, etc. | `human-gated` | `RUNTIME_TERMINAL_USER` (77) |
+| Activity moves phase | fix commits arrived → `fixes-pending`; PR merged externally → `merged`; escalated/failed item produced → `human-gated` via §3.2 cascade on next cycle | as observed | `nil` |
+| Quiescence trips | `quiescencePredicate == true` | `quiesced` | `nil` |
+| *(intentional non-trigger)* | n/a — no hard wait-timeout in MVP | n/a | n/a |
+
+**No hard wait-timeout in MVP** — the design relies on (a) per-reviewer timeouts (§4.1) to handle bot silence, (b) the `human-review-required` label as the explicit operator merge-block (§4.4), (c) signal-cancel as the manual bail-out. A hard wait-timeout would add a fourth exit path racing with the others without solving a distinct failure mode. If operations experience shows long waits hanging too often, it's a one-line addition in v2.
+
+**Lock semantics:** lock is held continuously for the entire `waitLocked` invocation. Per §3.3 line 806, the `status` verb is lock-free, so operators can `prgroom status <pr>` during long waits without contending.
+
+**Signal handling:** `runLocked`'s caller plumbs `context.Context` through `Run`'s public wrapper; the context cancels on SIGINT/SIGTERM. `waitLocked` honors `ctx.Done()` both at the top of each loop iteration AND inside the `select` that wraps the sleep. Distinct error tier from `RUNTIME_TRANSIENT` (per §3.3 line 799) so the scheduler does NOT retry a cancelled wait.
+
+**Resumability (crash-recovery semantics).** All §4 timestamps in state are stored as **absolute UTC** (RFC3339):
+
+- `state.LastActivityAt`
+- `state.Quiescence.QuiescedAt`
+- `state.Reviewers[r].LastRequestAt`
+- `state.Reviewers[r].LastReviewAt`
+- `state.Reviewers[r].DeclinedAt`
+
+Timeout *deadlines* are **derived per-evaluation**, never stored:
+
+```text
+startDeadlinePassed  := time.Now().UTC().Sub(r.LastRequestAt) > review_start_timeout
+finishDeadlinePassed := !r.LastReviewAt.IsZero() &&
+                        time.Now().UTC().Sub(r.LastReviewAt) > review_finish_timeout
+idleSatisfied        := time.Now().UTC().Sub(state.LastActivityAt) >= idle_threshold
+```
+
+Crash-recovery flow:
+1. Process dies mid-`waitLocked`. OS releases the §2 file-adapter lock via `flock(2)`-on-fd-close (per §3.7 line 958).
+2. Scheduler re-invokes `prgroom run`. `Run` acquires lock; `runLocked` reads state from disk.
+3. All §4 timestamps are intact (last written by `pollLocked` before crash).
+4. Re-entered `waitLocked`'s first `pollLocked` re-evaluates deadlines from current `time.Now().UTC()`. Elapsed time across the crash gap counts. A reviewer with `Now - LastRequestAt > review_start_timeout` auto-declines as expected — same outcome as if the process had never died.
+
+Config-change semantics: operator raises `review_start_timeout` from 3m→5m mid-flight via TOML edit. Next `pollLocked` evaluation reads the new value (Section 7 owns config-reload cadence; assume re-read per `Run` invocation). A reviewer who would have been auto-declined at 3m gets the extension. Operator intent always wins because deadlines aren't frozen at start-time.
+
+### 4.3 Configuration surface
+
+All Section 4 knobs follow §3.5's established precedence pattern: **CLI flag > env var > per-repo `.prgroom.toml` > built-in default**.
+
+| Setting | Default | Flag | Env var | TOML key |
+|---------|---------|------|---------|----------|
+| `idle_threshold` | `10m` | `--idle-threshold` | `PRGROOM_IDLE_THRESHOLD` | `quiescence.idle_threshold` |
+| `poll_interval` | `30s` | `--poll-interval` | `PRGROOM_POLL_INTERVAL` | `quiescence.poll_interval` |
+| `review_start_timeout` | `3m` | `--review-start-timeout` | `PRGROOM_REVIEW_START_TIMEOUT` | `quiescence.review_start_timeout` |
+| `review_finish_timeout` | `15m` | `--review-finish-timeout` | `PRGROOM_REVIEW_FINISH_TIMEOUT` | `quiescence.review_finish_timeout` |
+| `auto_request_human_review` | `true` | `--auto-request-human-review[=false]` | `PRGROOM_AUTO_REQUEST_HUMAN_REVIEW` | `quiescence.auto_request_human_review` |
+
+All durations parse with Go's `time.ParseDuration` syntax (`30s`, `10m`, `1h30m`). Section 7 owns the TOML format and config-loading mechanism; §4 just declares the keys it consumes.
+
+### 4.4 Human-review merge constraint (NOT a lifecycle blocker)
+
+The PR label `human-review-required` is a **merge constraint**, not a lifecycle constraint. The full poll → cluster → fix → push → rereview → reply → resolve cycle runs normally when the label is set; quiescence still trips when gates pass. The label only affects `auto_merge_eligible` in §4.6.
+
+**The constraint:** GitHub PR label `human-review-required` (literal string, case-insensitive match). Indicates a human must approve before merge.
+
+**Satisfaction signals (OR — any one satisfies the constraint):**
+
+- Label `human-approved` (literal string, case-insensitive) — covers the self-PR case where GitHub blocks self-approval
+- A GitHub PR review with `state == APPROVED` AND `reviewer.actor.type != "Bot"` — i.e., a real human approval through the standard reviewer flow
+
+The `Bot`-filter on PR approvals is **load-bearing**: without it, Copilot's auto-approval of a self-PR would satisfy the gate. Bot approvals do not count for the human-review gate.
+
+**CLI read path:** `pollLocked` already fetches labels and reviewer-state as part of standard PR poll. The constraint check is pure-derivation from existing state fields — no new API calls. `pollLocked` does NOT persist `HumanReviewConstrained` or `HumanReviewSatisfied` in state; both are derived per-status-query because they're functions of current GitHub state, not lifecycle history.
+
+**Lifecycle behavior:** none. `pollLocked` does NOT transition phase based on the label. The cluster/fix/push/reply/resolve cycle continues normally.
+
+**Quiescence behavior:** unchanged from §4.1 — gates pass → idle timer trips → `Phase = quiesced`. The label does NOT block quiescence.
+
+**Operator workflow:**
+
+- To require human review (upstream signal): `gh pr edit --add-label human-review-required`
+- To satisfy via label (self-PR or supplemental): `gh pr edit --add-label human-approved`
+- To satisfy via standard reviewer flow: leave a GitHub PR review with "Approve"
+- To unrequire (rare; usually leave the historical record): `gh pr edit --remove-label human-review-required`
+
+### 4.5 Relationship to §3.5 hard-cap
+
+Quiescence (§4) and the round hard-cap (§3.5) are **independent terminal paths**:
+
+| | Round hard-cap (§3.5) | Quiescence (§4) |
+|---|---|---|
+| Trigger condition | `state.Round >= MaxRounds` AND `has_queued_fix_commits(state)` | All hard gates pass AND idle timer trips |
+| Triggers from phase | `fixes-pending` (pre-push check in `runLocked`) | `awaiting-review` (inside `waitLocked` or end-of-cycle resolver) |
+| Result phase | `human-gated` | `quiesced` |
+| `LastError` | `LIFECYCLE_HARD_CAP_EXCEEDED` | (unset) |
+| Auto-merge-eligible | No | Yes (modulo §4.6) |
+| Auto-request human review | Yes (§4.7) | No |
+| Recovery | Operator raises `--max-rounds` + re-runs; or `resolve-escalated` + re-runs | None needed — `quiesced` is success |
+
+A PR can reach either terminal but not both in the same cycle: the round cap fires inside `runLocked`'s cycle (pre-push, §3.3 line 678), before the next `waitLocked` invocation. Once in `human-gated`, `waitLocked` is not invoked — the §3.2 priority cascade routes elsewhere.
+
+**No new hard-cap defined in §4.** The bead description's "hard cap parallel to current `wait-for-pr-comments` round-3 cap" requirement is satisfied by §3.5's existing `MaxRounds=3` default. §4 only adds the auto-request-human-review behavior (§4.7) that fires when §3.5's cap trips.
+
+### 4.6 Auto-merge eligibility contract
+
+**Out of scope for MVP:** the actual merge gate is owned by future bead `gmxo`; the policy layer (coverage, security-scan, branch-protection overlay) is owned by future bead `td39`. Section 4 only defines what `prgroom status --json` exposes so those downstream beads have a stable contract to consume.
+
+**`prgroom status <pr> --json` output:**
+
+```json
+{
+  "pr": 42,
+  "phase": "quiesced",
+  "last_error": "",
+  "round": 2,
+  "reviewers": [
+    {"login": "github-copilot[bot]", "required": true, "is_bot": true, "status": "review_found", "declined_reason": ""},
+    {"login": "alice", "required": false, "is_bot": false, "status": "in_progress", "declined_reason": ""}
+  ],
+  "ci_state": "success",
+  "items_summary": {"fixed": 3, "already_addressed": 1, "wont_fix": 0, "escalated": 0, "failed": 0, "skipped": 0, "deferred": 0},
+  "last_activity_at": "2026-05-25T14:32:11Z",
+  "quiesced_at": "2026-05-25T14:42:11Z",
+  "merge_gates": {
+    "phase_is_quiesced": true,
+    "last_error_clear": true,
+    "no_blocker_items": true,
+    "human_review_satisfied": false
+  },
+  "human_review": {
+    "required": true,
+    "satisfied_by": null,
+    "candidates_seen": []
+  },
+  "auto_merge_eligible": false
+}
+```
+
+**Computation:**
+
+```text
+auto_merge_eligible :=
+  merge_gates.phase_is_quiesced     AND
+  merge_gates.last_error_clear      AND
+  merge_gates.no_blocker_items      AND
+  merge_gates.human_review_satisfied
+
+merge_gates.phase_is_quiesced      := state.Phase == quiesced
+merge_gates.last_error_clear       := state.LastError == ""
+merge_gates.no_blocker_items       := no item with Disposition.Kind ∈ {escalated, failed}
+merge_gates.human_review_satisfied := NOT human_review.required OR human_review.satisfied_by != null
+
+human_review.required              := hasLabel("human-review-required")
+human_review.satisfied_by          := first matching:
+                                        "label" if hasLabel("human-approved")
+                                        "approval:{login}" if any review has state==APPROVED AND NOT actor.type=="Bot"
+                                        null otherwise
+human_review.candidates_seen       := list of all examined PR-approval candidates with bot-filter outcome,
+                                      e.g. [{"login": "github-copilot[bot]", "approved": true, "counted": false, "reason": "bot"}]
+```
+
+The `candidates_seen` field is for operator debuggability — answers "why didn't approval X count?" without re-running queries.
+
+**Stability commitment:** the JSON shape above is part of §4's stable interface. Adding fields is non-breaking. Removing or renaming fields is breaking and requires a version-bumped JSON envelope (deferred to `gmxo`/`td39` brainstorm if needed).
+
+### 4.7 Auto-request human review on lifecycle gating
+
+When `runLocked` transitions to `human-gated` for a **review-content reason**, prgroom automatically adds the `human-review-required` label to the PR. This complements the existing `EscalationSink` event (stderr / bd-adapter) with a GitHub-visible marker so operators scanning their PR list immediately see "automation gave up here."
+
+**Triggering conditions (any one):**
+
+| Trigger | Source |
+|---------|--------|
+| `state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED"` | §3.5 round hard-cap trip |
+| Any item with `Disposition.Kind == "escalated"` | §3.2 priority cascade (escalated items) |
+| Any item with `Disposition.Kind == "failed"` | §3.2 priority cascade (audit-failed or agent-could-not-converge) |
+
+**Explicit non-triggers (review-content vs infra/state distinction):**
+
+- `RUNTIME_TERMINAL_USER` (gh auth expired, etc.) — infra problem, not a review problem
+- `STATE_CORRUPT` / `STATE_SCHEMA_UNKNOWN` — operator-investigate-state-file
+- `RUNTIME_PUSH_REJECTED` / `RUNTIME_GH_TERMINAL` — infra problem
+
+**Implementation — `request_human_review_if_needed(state)`:**
+
+```text
+function should_request_human_review(state):
+    return state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED"
+        OR any(item.Disposition != nil AND item.Disposition.Kind == "escalated" for item in state.Items)
+        OR any(item.Disposition != nil AND item.Disposition.Kind == "failed"    for item in state.Items)
+
+function request_human_review_if_needed(state):
+    if NOT auto_request_human_review:                             # §4.3 config knob
+        return
+    if NOT should_request_human_review(state):
+        return
+    if state.HumanReviewLabelAdded:
+        return                                                   # already added once this gating event
+    err := gh.AddLabel(pr, "human-review-required")
+    if err != nil:
+        log_stderr("prgroom: warning — failed to add human-review-required label: " + err.Error())
+        return                                                   # best-effort; flag stays false; next cycle retries
+    state.HumanReviewLabelAdded = true
+    tracker.Write(state)
+```
+
+`request_human_review_if_needed` is invoked alongside `escalate_if_needed` at the **same two dedup-safe call sites in `runLocked`** (per §3.3): the loop-top terminal-for-CLI check, and immediately before each Propagate-return after `handle_verb_error`. Both functions are idempotent and best-effort; both follow the same crash-window dedup posture.
+
+**Reset semantics (mirrors §3.5 line 868 `LastError` clearing):** `state.HumanReviewLabelAdded` is reset to `false` on the **same condition** that clears `LastError` — successful end-of-cycle resolution to any phase other than `human-gated` (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, or `merged`). Wired into §3.3's `runLocked` pseudocode at the same point that clears `LastError`. After reset, if the gating condition recurs (a new cap-trip after operator raised `--max-rounds`), the label gets re-added on the next gating event.
+
+**Operator override (deliberate one-way intent):** if the operator manually `gh pr edit --remove-label human-review-required` while `state.HumanReviewLabelAdded == true`, prgroom does NOT re-add the label on the next invocation — `HumanReviewLabelAdded` is still `true` in state, so `request_human_review_if_needed` short-circuits. The label re-adds only after the reset path above fires AND the gating condition recurs. This preserves operator intent ("I've handled this") without permanent suppression.
+
+**Interaction with §4.4's `human-approved` satisfaction signal:** the operator adding `human-approved` (or leaving a human PR approval) AFTER prgroom added `human-review-required` causes §4.6's `auto_merge_eligible` to become `true`. **The `human-review-required` label persists** as historical record; the operator does NOT need to remove it. Future audits see "constraint was raised AND satisfied." This is exactly why §4.4 chose positive-signal satisfaction over absence-of-negative — clean operator-actionable records.
+
+**Permissions:** `gh.AddLabel` requires triage or write access on the repo. Failure is logged to stderr (one-line warning) but does NOT tier-tag the error, does NOT block lifecycle progression, does NOT propagate via `handle_verb_error`. Same best-effort posture as Sink-error handling in §3.3 line 745. Operators seeing persistent label-add failures should check their PAT scopes.
+
+### 4.8 §2 schema fields consumed by Section 4
+
+| §2 field | Section using | Purpose |
+|----------|---------------|---------|
+| `PRGroomingState.LastActivityAt` | §4.1, §4.2 | idle-timer reference |
+| `PRGroomingState.HumanReviewLabelAdded` | §4.7 | dedup flag for `human-review-required` label auto-add |
+| `ReviewerState.LastRequestAt` | §4.1 | `review_start_timeout` reference |
+| `ReviewerState.LastReviewAt` | §4.1 | `review_finish_timeout` reference; first observed engagement post-request |
+| `ReviewerState.DeclinedAt` | §4.1 | timestamp of decline (any reason) |
+| `ReviewerState.DeclinedReason` | §4.1, §4.6 | one of: `user-declined`, `timeout-no-start`, `timeout-stalled` |
+| `QuiescenceState.CIState` | §4.1 | `G_CI` gate input for `state.LastPushedHeadSHA` |
+| `QuiescenceState.QuiescedAt` | §4.2, §4.6 | set on transition to `quiesced`; surfaced in status JSON |
+| `ReviewerStatus.declined` | §4.1 | covers explicit pass AND auto-decline; subcause via `DeclinedReason` |
 
 ### Section 5 — Agent dispatch internals (named contracts)
 
