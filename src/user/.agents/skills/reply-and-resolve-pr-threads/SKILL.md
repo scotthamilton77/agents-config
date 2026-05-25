@@ -266,7 +266,7 @@ skip-set, so crash-recovery re-runs against the same inventory SKIP
 previously-posted items automatically. A 100%-success run deletes the
 sidecar; partial-failure runs preserve it for the next retry. Callers
 MAY still pass `--skip-comment-ids` explicitly, but no longer need to
-on a clean retry against the same inventory path.
+do so on a clean retry against the same inventory path.
 
 **Resolve FIX review threads** (Phase 3 — replaces inline GraphQL
 `resolveReviewThread` block):
