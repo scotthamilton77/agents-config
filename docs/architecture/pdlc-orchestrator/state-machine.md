@@ -54,7 +54,7 @@ stateDiagram-v2
 
     state DECOMPOSE <<choice>>
     DECOMPOSE --> EXECUTABLE_READY : is_container=false<br/>(Sized)
-    DECOMPOSE --> CONTAINER_DECOMPOSED : is_container=true<br/>(Oversized)<br/>+ emit children as Ideas
+    DECOMPOSE --> CONTAINER_DECOMPOSED : is_container=true<br/>(Oversized)<br/>+ emit children as Objectives<br/>at CANDIDATE_UOW
 
     CONTAINER_DECOMPOSED --> MERGED : Container Closure conditions met<br/>(all descendants MERGED<br/>+ Container ATs pass<br/>+ Scaffold/Cleanup paired)
 
@@ -88,18 +88,22 @@ stateDiagram-v2
     REVIEWING --> AUTOPSY : 3rd cognition strike
 
     state PR_VALIDATION {
-        [*] --> pv_attempt
-        pv_attempt --> pv_gate : CI mechanical gates
-        pv_gate --> [*] : pass
-        pv_gate --> pv_attempt : cognition strike
+        [*] --> pv_push
+        pv_push --> pv_ci_gate : push branch<br/>+ open PR<br/>+ await CI
+        pv_ci_gate --> pv_review_ingest : CI green
+        pv_ci_gate --> pv_push : cognition strike on CI
+        pv_review_ingest --> pv_fix_dispatch : addressable FIX comments
+        pv_review_ingest --> [*] : clean<br/>(no FIX backlog,<br/>no ESCALATE,<br/>no upstream HOLD marker)
+        pv_fix_dispatch --> pv_push : commit fixes<br/>(bounded by review_max_rounds)
     }
-    PR_VALIDATION --> PR_HUMAN_HOLD : CI gates pass
-    PR_VALIDATION --> AUTOPSY : 3rd cognition strike
+    PR_VALIDATION --> MERGING : clean exit<br/>(default happy path)
+    PR_VALIDATION --> PR_HUMAN_HOLD : exit with hold<br/>(ESCALATE comment raised<br/>OR upstream HUMAN_HOLD marker set)
+    PR_VALIDATION --> AUTOPSY : 3rd cognition strike on CI
 
     PR_HUMAN_HOLD --> MERGING : human approval
 
     MERGING --> MERGED : merge succeeds
-    MERGING --> MERGING : merge conflict<br/>(raises needs_reconcile flag;<br/>routes to Human Escalation Path,<br/>NOT Autopsy)
+    MERGING --> MERGING : merge conflict<br/>(raises needs_reconcile flag —<br/>routes to Human Escalation Path,<br/>NOT Autopsy)
 
     state AUTOPSY {
         [*] --> rca_dispatch
@@ -117,7 +121,7 @@ stateDiagram-v2
     AUTOPSY --> PARKED : route (iv) — blocked on dep
     AUTOPSY --> EXECUTABLE_READY : route (v) — tooling escalation resolved<br/>(re-dispatch the same stage)
 
-    PARKED --> EXECUTABLE_READY : blocking dep resolved<br/>(operator-initiated unpark — resurrection;<br/>creates NEW TransitionEntry, not a stage rewind)
+    PARKED --> EXECUTABLE_READY : blocking dep resolved<br/>(operator-initiated unpark — resurrection —<br/>creates NEW TransitionEntry, not a stage rewind)
 
     MERGED --> [*]
     KILLED --> [*]
@@ -188,7 +192,18 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 `DECOMPOSE` is a choice node, not a long-lived stage:
 
 - **`is_container=false`** (Sized): the Objective is an Executable. Move to `EXECUTABLE_READY` and queue for the Test-Author.
-- **`is_container=true`** (Oversized): the Objective is a Container. Emit children as **Ideas** in the Holding Place (not as direct Objectives), then move to `CONTAINER_DECOMPOSED` as a passive aggregator. The children re-enter the FSM at `CANDIDATE_UOW` after Holding-Place grooming.
+- **`is_container=true`** (Oversized): the Objective is a Container. Emit children **as direct Objectives at `CANDIDATE_UOW`** in the tracker, each carrying `parent_id=<container_id>`. Then advance the Container to `CONTAINER_DECOMPOSED` as a passive aggregator. Each child runs its own `CANDIDATE_UOW` exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff) before advancing — children inherit the parent's *worth-pursuing* signoff but not the per-child gate pass.
+
+> **Supersedes** the original `2026-05-19-pdlc-state-machine-design.md` stage-5 exit rule, which routed Container children into the Holding Place at stage 2 (Shaped Idea). The flip eliminates the empty-container window in the tracker (where the Container sat at `CONTAINER_DECOMPOSED` with zero descendants until Ideas promoted), makes Container Closure immediately well-defined on the descendant set, and removes the asymmetry between operator-originated and decomposer-originated work. See `agents-config-wgclw.2.1` commit history.
+
+### PR_HUMAN_HOLD engagement criteria
+
+`PR_HUMAN_HOLD` is **not** a mandatory step on the happy path. The default exit from `PR_VALIDATION` is `→ MERGING`. The orchestrator diverts to `PR_HUMAN_HOLD` only when either of:
+
+- **Upstream HUMAN_HOLD marker** — a flag set during spec authoring (or by an Autopsy resolution) marking the Objective as requiring human merge approval. Used for security-sensitive changes, irreversible migrations, regulated-domain code, or anything the author or operator decided up-front cannot merge unattended.
+- **ESCALATE classification raised during PR review iteration** — at least one PR review comment was classified `ESCALATE` (not `FIX` or `SKIP`) during the `PR_VALIDATION` review-iteration loop. The orchestrator does not attempt to auto-disposition an `ESCALATE` comment; it diverts to `PR_HUMAN_HOLD` and surfaces the comment for human merge approval (or refusal).
+
+The PR review iteration loop itself is bounded by `review_max_rounds` from project-config. `FIX` comments dispatch per-comment fix workers; `SKIP` are recorded as reviewed-and-acknowledged; `ESCALATE` aborts the loop and routes to `PR_HUMAN_HOLD`. None of these classifications charge a cognition strike — review iteration is a non-cognition failure mode.
 
 ### Container Closure
 

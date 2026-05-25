@@ -173,6 +173,7 @@ sequenceDiagram
     participant TA as Test-Author worker
     participant Impl as Implementer worker
     participant Rev as Reviewer worker
+    participant PRFix as PR-fix worker (per-comment)
     participant CI as CI
     participant Git as Git remote
 
@@ -199,10 +200,11 @@ sequenceDiagram
     alt is_container=false (Executable)
         PDLC->>State: advance to EXECUTABLE_READY
     else is_container=true (Container)
-        Note over PDLC,HP: emit children as Ideas, NOT direct Objectives
-        PDLC->>HP: create_idea(decomposition_of=container_id) × N
-        PDLC->>State: advance to CONTAINER_DECOMPOSED (passive aggregator)
-        Note over PDLC: Container Closure waits for descendants to MERGE
+        Note over PDLC,BD: emit children as direct Objectives at CANDIDATE_UOW (parent-linked)
+        PDLC->>BD: create_objective(parent_id=container_id, lifecycle_status=open) × N
+        PDLC->>State: init each child ObjectiveLifecycleState at CANDIDATE_UOW
+        PDLC->>State: advance Container to CONTAINER_DECOMPOSED (passive aggregator)
+        Note over PDLC: each child runs its own CANDIDATE_UOW exit gates — Container Closure waits for all descendants to MERGE
     end
 
     Note over PDLC,TA: tick N+m+k — DISPATCH worker for TEST_AUTHORING
@@ -228,19 +230,37 @@ sequenceDiagram
     Note over PDLC: tick — REAP REVIEWING
     PDLC->>State: advance to PR_VALIDATION
 
-    Note over PDLC,CI: tick — push PR and await CI verdicts
+    Note over PDLC,CI: tick — PR_VALIDATION begins: push PR and await CI verdicts
     PDLC->>Git: push branch + open PR (gh pr create)
     Git->>CI: PR trigger
     CI-->>Git: mechanical-gate verdicts
     PDLC->>Git: read verdicts (gh pr checks)
-    PDLC->>State: advance to PR_HUMAN_HOLD
 
-    Note over Op,PDLC: Human approval hold
-    PDLC->>Op: surface on pdlc health — needs merge approval
-    Op->>PDLC: approval annotation
+    Note over PDLC,Git: PR review-iteration loop (bounded by review_max_rounds)
+    loop until clean OR escalation OR rounds exhausted
+        PDLC->>Git: poll review comments (issue + inline)
+        Git-->>PDLC: comments
+        PDLC->>PDLC: classify each comment FIX / SKIP / ESCALATE
+        alt any FIX comments
+            PDLC->>PRFix: dispatch per-comment fix worker (via JobSupervisor)
+            PRFix-->>PRFix: apply fix + commit + reply + resolve thread
+            PDLC->>Git: push fixes
+            Git->>CI: PR re-trigger
+            CI-->>Git: mechanical-gate verdicts
+        end
+    end
 
-    Note over PDLC,Git: tick — MERGING
-    PDLC->>State: advance to MERGING
+    alt CI green + no FIX backlog + no ESCALATE + no upstream HUMAN_HOLD marker
+        PDLC->>State: advance to MERGING (skip PR_HUMAN_HOLD — default happy path)
+    else ESCALATE raised OR upstream HUMAN_HOLD marker set
+        PDLC->>State: advance to PR_HUMAN_HOLD
+        Note over Op,PDLC: Human approval hold (conditional path)
+        PDLC->>Op: surface on pdlc health — needs merge approval
+        Op->>PDLC: approval annotation
+        PDLC->>State: advance to MERGING
+    end
+
+    Note over PDLC,Git: MERGING
     PDLC->>Git: merge PR (gh pr merge)
     Git-->>PDLC: merged
     PDLC->>BD: set_lifecycle_status(id, closed) under CAS
@@ -255,9 +275,10 @@ sequenceDiagram
 
 - **The sequence spans many ticks.** Each `pdlc tick` advances the Objective by at most one gate-pass. Between ticks, Workers run (minutes to tens of minutes) and humans signoff (asynchronous).
 - **Idea creation is operator-driven, NOT orchestrator-driven.** Operators capture Ideas in the Holding Place and either promote them (Holding Place path) or create Idea-less Objectives directly in bd. The orchestrator observes the result on the next DISCOVER.
-- **DECOMPOSE for Containers emits Ideas, not Objectives.** Children of an oversized Container go into the Holding Place as Ideas; they re-enter the FSM at `CANDIDATE_UOW` after Holding-Place grooming and shaping. This eliminates the contradiction where Discovery would silently re-initialise a Holding-Place child.
+- **DECOMPOSE for Containers emits direct Objectives at `CANDIDATE_UOW`.** Children of an oversized Container are created directly in the tracker with `parent_id=<container_id>`; each runs its own `CANDIDATE_UOW` exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff) before advancing. The Container becomes a passive aggregator at `CONTAINER_DECOMPOSED`. This supersedes the original `2026-05-19-pdlc-state-machine-design.md` route through Holding-Place Ideas — see `agents-config-wgclw.2.1` for the rationale (eliminates empty-container window, makes Container Closure immediately well-defined).
 - **Container Closure bubbles upward.** A Container reaches `MERGED` only when every descendant has merged, every Container-Level AT passes, and every Scaffold AT has been paired with a successful Cleanup AT.
-- **Two human gates** are explicit: `CANDIDATE_UOW → AGENT_WORTHY` (Spec signoff) and `PR_HUMAN_HOLD → MERGING` (merge approval). All other transitions are mechanical given gate-pass.
+- **Human gates.** One always-present: `CANDIDATE_UOW → AGENT_WORTHY` (per-Objective Spec signoff — applies to every Objective, including decomposer-originated children). One conditional: `PR_HUMAN_HOLD → MERGING` (merge approval), engaged only when the Objective carries an upstream HUMAN_HOLD marker OR PR review iteration raised an `ESCALATE` classification. The happy path with no escalation flows `PR_VALIDATION → MERGING` directly.
+- **PR review iteration is non-cognition.** The `FIX / SKIP / ESCALATE` classification loop inside `PR_VALIDATION` does not charge cognition strikes — it is bounded by `review_max_rounds` from project-config. Only CI failures inside `PR_VALIDATION` charge strikes.
 - **Cleanup is idempotent.** `cleanup_worktree(session_id)` is safe to call multiple times; first call removes the worktree and deletes the branch, subsequent calls no-op. This makes crash-recovery's worktree cleanup safe to retry across ticks.
 
 ## What these diagrams do NOT show

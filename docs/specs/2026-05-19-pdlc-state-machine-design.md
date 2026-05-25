@@ -86,8 +86,8 @@ HOLDING PLACE                    DESIGN WORKSPACE                 EXECUTION PIPE
             │           Sized               Oversized                           │
             │           (Executable)        (Container)                         ▼ (all Mechanical Findings clear)
             │              │                   │                            Integration
-            │              │                   ├─► children re-enter            │
-            │              │                   │   Holding Place at stage 2     ├─ A. PR Mechanical Validation
+            │              │                   ├─► children created at            │
+            │              │                   │   tracker stage 3 (Candidate)  ├─ A. PR Mechanical Validation
             │              │                   │                                ├─ B. Human Approval Hold (if approval_required)
             │              │                   ▼                                └─ C. Merge + Cleanup
             │              │           Decomposed Container                     │
@@ -160,6 +160,8 @@ Lives in the Design Workspace.
 
 ### Stage 5 — Decomposition
 
+> **Round-2 amendment (2026-05-25, `agents-config-wgclw.2.1`)**: The Oversized branch's exit gate previously routed children into the Holding Place at stage 2 (Shaped Idea). It now creates children **directly in the tracker at stage 3 (Candidate UoW)** with `parent_id=<container_id>`. Rationale: the prior route left the Container at stage 6′ with zero descendants in the tracker until Ideas promoted, leaving Container Closure undefined on the descendant set and creating asymmetry between operator-originated and decomposer-originated work. Per-child human input is preserved via each child's own stage-3 exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff). See the HLD's [state-machine artifact](../architecture/pdlc-orchestrator/state-machine.md) and [happy-path sequence](../architecture/pdlc-orchestrator/sequences.md) for the visual.
+
 Decomposition is mandatory for *every* Agent-Worthy Candidate UoW. The
 type-stamp (Executable vs Container) is an *output* of this state, not an
 input.
@@ -168,7 +170,7 @@ input.
 |---|---|
 | **Purpose** | Run the Sizing Gate; in the Sized branch, stamp Executable and advance. In the Oversized branch, author a Decomposition Plan and stamp Container. |
 | **Persona** | **Sizing Gate**: Orchestrator (deterministic pure function). **Decomposition Plan authoring (Oversized branch)**: Decomposition Architect (integration-aware, optimises for minimum total Scaffold + Cleanup AT churn; prefers user-visible value per slice as secondary preference; kicks the UoW back to stage 3 if a functional-contract flaw emerges mid-decomposition). |
-| **Exit gate** | **Sized branch**: composite mechanical score below threshold → stamp Executable → advance to stage 6. **Oversized branch**: Decomposition Plan satisfies all five exit criteria (every parent atomic AT allocated, every child has name + provenance + allocated ATs + integration-role annotation, Assembly Graph acyclic, foreseeable Scaffold / Cleanup ATs attached, human signoff on the Plan) → stamp Container, emit N children into the Holding Place at stage 2, advance Container to stage 6′. |
+| **Exit gate** | **Sized branch**: composite mechanical score below threshold → stamp Executable → advance to stage 6. **Oversized branch**: Decomposition Plan satisfies all five exit criteria (every parent atomic AT allocated, every child has name + provenance + allocated ATs + integration-role annotation, Assembly Graph acyclic, foreseeable Scaffold / Cleanup ATs attached, human signoff on the Plan) → stamp Container, emit N children **directly into the tracker at stage 3 (Candidate UoW)** with `parent_id=<container_id>` — each child then runs its own stage-3 exit gates per-child — advance Container to stage 6′. |
 | **Failure routing** | Plan fails any exit criterion → stay at stage 5 with the Decomposition Architect iterating. Human rejects Plan → stay with feedback. Decomposition reveals the parent should not exist → *Killed* (rare — usually caught at stage 3). Decomposition reveals a Spec flaw → return to stage 3 with a specific complaint. |
 
 ### Stage 6 — Agent-Ready Executable UoW
