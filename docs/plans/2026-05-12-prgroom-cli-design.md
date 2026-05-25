@@ -690,7 +690,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             state.Phase = "human-gated"
             state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"
             state.LifecycleEscalationFiled = false   # cleared so loop-top fires once
-            store.Write(state)
+            store.Write(pr, state)
             continue                                 # loop top emits + returns
 
         state, err = pushLocked(pr, state)
