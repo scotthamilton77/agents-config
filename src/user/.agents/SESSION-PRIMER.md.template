@@ -8,7 +8,7 @@ Material edits vs. upstream:
   - Dropped upstream's "How to Access Skills" per-runtime listing: each runtime's own system prompt already documents its skill mechanism.
   - Dropped upstream's "Platform Adaptation" pointer to references/copilot-tools.md / references/codex-tools.md (those reference files are not in-tree).
   - Dropped upstream's DOT skill_flow digraph (none of the four tools render DOT); replaced with prose workflow steps.
-  - Generalized "Create TodoWrite todo per item" to a tool-agnostic phrasing with a Claude-specific parenthetical.
+  - Generalized the upstream's runtime-specific checklist-tracker invocation to runtime-agnostic phrasing (no tool name).
   - Body wrapped in <skill-usage-instructions> for context-boundary clarity.
 -->
 
@@ -32,7 +32,7 @@ Workflow when a skill might apply:
 
 1. Invoke the skill via the platform's skill tool.
 2. Announce: "Using `[skill]` to `[purpose]`."
-3. If the skill has a checklist, track each item as a concrete task before acting (TodoWrite on Claude Code; the tool-equivalent task tracker on other runtimes).
+3. If the skill has a checklist, track each item as a concrete task before acting using your runtime's task tracker / todo-list mechanism.
 4. Follow the skill exactly — don't paraphrase, don't adapt away discipline.
 
 Plan-mode gate: before entering plan mode, ask "have I already brainstormed?" If no, invoke the brainstorming skill first.
@@ -61,7 +61,7 @@ These thoughts mean STOP — you're rationalizing your way around the rule:
 When multiple skills could apply, use this order:
 
 1. **Process skills first** (`brainstorming`, `bugfix`, `test-driven-development`) — these determine HOW to approach the task.
-2. **Implementation skills second** (`frontend-design`, domain-specific patterns) — these guide execution.
+2. **Implementation skills second** (domain-specific patterns) — these guide execution.
 
 "Let's build X" → brainstorming first, then implementation skills.
 "Fix this bug" → bugfix first, then domain-specific skills.
