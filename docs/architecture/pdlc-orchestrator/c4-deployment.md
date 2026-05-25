@@ -123,7 +123,7 @@ The MVP assumes the operator's PATH includes:
 - `git`, `gh` — standard
 - `dolt` — if Dolt is invoked CLI-style rather than embedded
 
-Missing tooling at tick start raises a startup error before any state is mutated.
+Missing or under-versioned required tooling at tick start suppresses the DISPATCH phase. The tick still runs DISCOVER, RECONCILE, REAP, and PERSIST so affected Objectives are marked `needs_reconcile=true` with error_signature `missing-toolchain:<binary>` (or `under-version-toolchain:<binary>`). The orchestrator does not spawn workers until the toolchain is restored. See the *Tooling-failure handling* section of `state-machine.md` for the full mechanism.
 
 ### External coupling
 
