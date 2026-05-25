@@ -194,8 +194,6 @@ The pre-strike triage classifier decides whether a gate failure charges a cognit
 - **`is_container=false`** (Sized): the Objective is an Executable. Move to `EXECUTABLE_READY` and queue for the Test-Author.
 - **`is_container=true`** (Oversized): the Objective is a Container. Emit children **as direct Objectives at `CANDIDATE_UOW`** in the tracker, each carrying `parent_id=<container_id>`. Then advance the Container to `CONTAINER_DECOMPOSED` as a passive aggregator. Each child runs its own `CANDIDATE_UOW` exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff) before advancing — children inherit the parent's *worth-pursuing* signoff but not the per-child gate pass.
 
-> **Spec alignment**: this matches the [Round-2 amendment (2026-05-25) at Stage 5 of `2026-05-19-pdlc-state-machine-design.md`](../../specs/2026-05-19-pdlc-state-machine-design.md#stage-5--decomposition), which was applied as a paired change alongside this HLD under `agents-config-wgclw.2.1`. The amendment replaced the original "emit children into the Holding Place at stage 2" exit rule. Rationale (also recorded in the spec's amendment marker): the prior route left the Container at `CONTAINER_DECOMPOSED` with zero descendants in the tracker until Ideas promoted, leaving Container Closure undefined on the descendant set and creating asymmetry between operator-originated and decomposer-originated work.
-
 ### PR_HUMAN_HOLD engagement criteria
 
 `PR_HUMAN_HOLD` is **not** a mandatory step on the happy path. The default exit from `PR_VALIDATION` is `→ MERGING`. The orchestrator diverts to `PR_HUMAN_HOLD` only when either of:

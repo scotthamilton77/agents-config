@@ -160,8 +160,6 @@ Lives in the Design Workspace.
 
 ### Stage 5 — Decomposition
 
-> **Round-2 amendment (2026-05-25, `agents-config-wgclw.2.1`)**: The Oversized branch's exit gate previously routed children into the Holding Place at stage 2 (Shaped Idea). It now creates children **directly in the tracker at stage 3 (Candidate UoW)** with `parent_id=<container_id>`. Rationale: the prior route left the Container at stage 6′ with zero descendants in the tracker until Ideas promoted, leaving Container Closure undefined on the descendant set and creating asymmetry between operator-originated and decomposer-originated work. Per-child human input is preserved via each child's own stage-3 exit gates (Atomic-AT lint + DoD + Sizing Gate + human signoff). See the HLD's [state-machine artifact](../architecture/pdlc-orchestrator/state-machine.md) and [happy-path sequence](../architecture/pdlc-orchestrator/sequences.md) for the visual.
-
 Decomposition is mandatory for *every* Agent-Worthy Candidate UoW. The
 type-stamp (Executable vs Container) is an *output* of this state, not an
 input.
