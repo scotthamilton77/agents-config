@@ -24,6 +24,7 @@ Tool-agnostic principles for all AI coding assistants.
 - **Worktree hygiene**: Always run tests and builds from the correct worktree directory, not the main tree
 - **Database safety**: Never copy Dolt or SQLite databases while WAL is locked; never run DB operations from worktree directories if the DB lives in the main tree
 - **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
+- **No tracker IDs in code or living docs**: Do not embed work-tracker IDs (bead IDs, ticket numbers) or opaque section codes (e.g. "CA-23") in source code or living technical documentation. Cite design docs by readable name and section ("foo-design.md, section 2"), not by tracker ID. The test: deleting the tracker should leave the code and docs unaffected. Exempt: commit messages, PR titles/bodies, and dated audit/spec/plan files.
 </constraints>
 
 <decision-matrix>
