@@ -263,10 +263,15 @@ Validation Failed`).
 `<comment_id>` to a sidecar `<inventory>.posted`. On startup the
 sidecar is unioned with `--skip-comment-ids` to form the effective
 skip-set, so crash-recovery re-runs against the same inventory SKIP
-previously-posted items automatically. A 100%-success run deletes the
-sidecar; partial-failure runs preserve it for the next retry. Callers
-MAY still pass `--skip-comment-ids` explicitly, but no longer need to
-do so on a clean retry against the same inventory path.
+previously-posted items automatically.
+
+Sidecar cleanup:
+- **100%-success run, no `--skip-comment-ids` supplied** → sidecar is deleted.
+- **100%-success run with `--skip-comment-ids` supplied** → sidecar is preserved. The operator has externally asserted some items are already done, so we can't claim the sidecar is a complete record of what this run handled.
+- **Partial-failure run** → sidecar is preserved for the next retry.
+
+Callers MAY still pass `--skip-comment-ids` explicitly, but no longer
+need to do so on a clean retry against the same inventory path.
 
 **Resolve FIX review threads** (Phase 3 — replaces inline GraphQL
 `resolveReviewThread` block):
