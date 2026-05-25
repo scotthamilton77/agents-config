@@ -29,12 +29,60 @@ assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
 assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
 assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
 
-# --- Fake-gh shim: pr comment posts succeed ---
+# --- Fake-gh shim: validates endpoint + required flags; logs every call ---
+# Why validate, not just exit 0: a bare `exit 0` shim cannot catch wrong-
+# endpoint regressions (e.g., review_summary accidentally hitting the
+# /pulls/.../replies path, or a missing --method POST / --field body=@-).
+# Logging to $FAKE_GH_LOG lets behavior tests assert which endpoint was hit
+# per kind.
 FAKEBIN="$TMP/bin"
 mkdir -p "$FAKEBIN"
+export FAKE_GH_LOG="$TMP/fake-gh.log"
 cat > "$FAKEBIN/gh" <<'FAKE'
 #!/usr/bin/env bash
-# Fake gh — any invocation succeeds.
+# Fake gh — validates endpoint + required flags; logs every invocation.
+LOG="${FAKE_GH_LOG:-/tmp/fake-gh.log}"
+echo "$@" >> "$LOG"
+# Locate the endpoint arg (first positional after 'api', skipping flags).
+endpoint=""
+saw_api=0
+skip_next=0
+for a in "$@"; do
+  if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+  case "$a" in
+    api) saw_api=1; continue ;;
+    --method|--field|-f|-F|-H|--header|--input|--hostname)
+      skip_next=1; continue ;;
+    --*=*) continue ;;
+    --*) continue ;;
+    *)
+      if [ "$saw_api" = "1" ] && [ -z "$endpoint" ]; then endpoint="$a"; fi
+      ;;
+  esac
+done
+case "$endpoint" in
+  repos/*/*/issues/*/comments) ;;
+  repos/*/*/pulls/*/comments/*/replies)
+    cid_segment="$(echo "$endpoint" | awk -F/ '{print $(NF-1)}')"
+    if ! [[ "$cid_segment" =~ ^[0-9]+$ ]]; then
+      echo "fake-gh: non-numeric comment id in pulls/.../replies endpoint: $cid_segment" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "fake-gh: unexpected endpoint: $endpoint" >&2
+    exit 2 ;;
+esac
+case " $* " in
+  *" --method POST "*) ;;
+  *) echo "fake-gh: missing --method POST" >&2; exit 2 ;;
+esac
+case " $* " in
+  *" --field body=@- "*) ;;
+  *) echo "fake-gh: missing --field body=@- (stdin body contract)" >&2; exit 2 ;;
+esac
+# Drain stdin (body) so the caller's pipe doesn't error.
+cat >/dev/null
 exit 0
 FAKE
 chmod +x "$FAKEBIN/gh"
@@ -271,6 +319,66 @@ if [ -n "$cid1" ] && [ "$cid1" = "$cid2" ]; then
   echo "  ok: review_summary synthetic cid is stable across runs ($cid1)"
 else
   echo "  FAIL: review_summary synthetic cid not stable; first=$cid1 second=$cid2"
+  FAIL=1
+fi
+
+# Behavior tests (endpoint correctness): each kind must dispatch to the
+# correct REST endpoint. These guard against regressions where, e.g.,
+# review_summary accidentally hit /pulls/.../replies — a bug the old
+# always-exit-0 fake gh would not have caught.
+
+# review_summary → /issues/N/comments (NOT /pulls/...).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_RSUM" --owner o --repo r --pr 1 \
+  > "$TMP/rsum-endpoint-out.txt" 2>&1
+if grep -qE 'repos/o/r/issues/1/comments' "$FAKE_GH_LOG" \
+   && ! grep -qE 'repos/o/r/pulls/' "$FAKE_GH_LOG"; then
+  echo "  ok: review_summary hits /issues/N/comments (not /pulls/...)"
+else
+  echo "  FAIL: review_summary endpoint wrong; fake-gh log: $(cat "$FAKE_GH_LOG")"
+  FAIL=1
+fi
+
+# review_thread → /pulls/N/comments/<reply_to>/replies.
+: > "$FAKE_GH_LOG"
+INV_RT="$TMP/inv-rt.json"
+cat >"$INV_RT" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {"kind":"review_thread","thread_id":"T_x","reply_to_comment_id":99999,"issue_comment_id":null,"classification":"FIX","fix_outcome":"committed","reply_body":"ok"}
+  ]
+}
+JSON
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_RT" --owner o --repo r --pr 1 \
+  > "$TMP/rt-endpoint-out.txt" 2>&1
+if grep -qE 'repos/o/r/pulls/1/comments/99999/replies' "$FAKE_GH_LOG"; then
+  echo "  ok: review_thread hits /pulls/N/comments/<reply_to>/replies"
+else
+  echo "  FAIL: review_thread endpoint wrong; fake-gh log: $(cat "$FAKE_GH_LOG")"
+  FAIL=1
+fi
+
+# issue_comment → /issues/N/comments (NOT /pulls/...).
+: > "$FAKE_GH_LOG"
+INV_IC="$TMP/inv-ic.json"
+cat >"$INV_IC" <<'JSON'
+{
+  "schema_version": 1,
+  "pr": {"number": 1, "owner": "o", "repo": "r"},
+  "items": [
+    {"kind":"issue_comment","thread_id":null,"reply_to_comment_id":null,"issue_comment_id":88888,"classification":"FIX","fix_outcome":"committed","reply_body":"ok"}
+  ]
+}
+JSON
+PATH="$FAKEBIN:$PATH" "$SCRIPT" --inventory "$INV_IC" --owner o --repo r --pr 1 \
+  > "$TMP/ic-endpoint-out.txt" 2>&1
+if grep -qE 'repos/o/r/issues/1/comments' "$FAKE_GH_LOG" \
+   && ! grep -qE 'repos/o/r/pulls/' "$FAKE_GH_LOG"; then
+  echo "  ok: issue_comment hits /issues/N/comments (not /pulls/...)"
+else
+  echo "  FAIL: issue_comment endpoint wrong; fake-gh log: $(cat "$FAKE_GH_LOG")"
   FAIL=1
 fi
 
