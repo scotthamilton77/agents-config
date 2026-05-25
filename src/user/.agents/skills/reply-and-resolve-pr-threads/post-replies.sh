@@ -2,12 +2,41 @@
 # Purpose: post a reply to every inventory thread/comment.
 #
 # Dispatches by `kind`:
-#   review_thread → REST POST /repos/{o}/{r}/pulls/{n}/comments/{reply_to_comment_id}/replies
-#   issue_comment → REST POST /repos/{o}/{r}/issues/{n}/comments
+#   review_thread  → REST POST /repos/{o}/{r}/pulls/{n}/comments/{reply_to_comment_id}/replies
+#   issue_comment  → REST POST /repos/{o}/{r}/issues/{n}/comments
+#   review_summary → REST POST /repos/{o}/{r}/issues/{n}/comments
+#                    (review_summary has no per-item id; synthetic cid is
+#                     `summary-<12-char sha1 of the item JSON>` so retries
+#                     against the same content are idempotent.)
 #
-# IDEMPOTENCY: this helper is NOT idempotent. If a partial run posted some
-# replies and then crashed, the caller MUST pass --skip-comment-ids with the
-# csv of already-posted comment_ids on the next invocation.
+# IDEMPOTENCY: this helper is self-recording. Each successful POST is
+# appended to a sidecar file <inventory>.posted (one cid per line). On
+# startup the sidecar is read and unioned with --skip-comment-ids to form
+# the effective skip-set, so crash-recovery re-runs against the same
+# inventory will SKIP previously-posted items automatically.
+# - On a 100%-success run (any_failed=0) AND when --skip-comment-ids was
+#   NOT supplied, the sidecar is deleted: the script can prove the sidecar
+#   is a complete record of what this inventory needed.
+# - On a partial-failure run the sidecar is preserved for the next retry.
+# - When --skip-comment-ids was supplied the sidecar is preserved even on
+#   any_failed=0: the operator has externally asserted some items are
+#   already done, so the script can NOT claim the sidecar is a complete
+#   record of what THIS run posted. Deleting it would lose the prior-run
+#   POSTED record and let a subsequent retry (without the flag) re-post
+#   duplicates.
+# - Callers MAY still pass --skip-comment-ids explicitly; both sources
+#   union into the same skip-set. The CSV input tolerates whitespace
+#   (spaces, tabs, newlines): "11111, 22222" is normalized to "11111,22222"
+#   before being spliced into the skipset so the membership check still
+#   matches.
+# - A sidecar write failure (e.g., unwritable directory, full disk) AFTER
+#   a successful GitHub POST is a run failure: the script emits a WARNING
+#   on stderr naming the cid and the manual recovery action, sets the
+#   failure flag, and exits 1. Without this, the cid would be posted but
+#   not persisted, and the next retry would re-post a duplicate.
+# - The sidecar's lifecycle is bounded by the inventory itself: inventory
+#   filenames are keyed by (owner, repo, pr, head_sha) so each new push
+#   gets a fresh inventory and a fresh sidecar.
 #
 # Inputs:
 #   --inventory        <file>  inventory JSON (must contain .items array)
@@ -19,14 +48,22 @@
 # Outputs:
 #   stdout: per item, one of:
 #     POSTED <comment_id>
-#     FAILED <comment_id> <reason>
-#     SKIPPED <comment_id> (matched --skip-comment-ids)
+#     FAILED <comment_id> <reason> [— <gh-stderr-one-line>]
+#     SKIPPED <comment_id> (matched skip-set: sidecar ∪ --skip-comment-ids)
 #     FILTERED <comment_id> (classification=<value>) — item is not replyable
 #       (e.g., ESCALATE without escalation_filed=true); not an error
 #   exit codes:
 #     0 = all items posted (or skipped) successfully
 #     1 = at least one item failed
 #     2 = bad flag usage / missing input
+#
+# <comment_id> is the canonical id per kind:
+#   kind=review_thread  → .reply_to_comment_id  (numeric REST databaseId)
+#   kind=issue_comment  → .issue_comment_id     (numeric REST databaseId)
+#   kind=review_summary → summary-<12-char sha1 of item JSON> (synthetic; stable)
+#   otherwise           → .thread_id // .reply_to_comment_id // .issue_comment_id
+# (Inventory items do NOT carry a top-level .comment_id — see
+#  build-inventory-body.sh and SKILL.md §"Inventory schema".)
 set -euo pipefail
 
 usage() {
@@ -34,8 +71,13 @@ usage() {
 Usage: $(basename "$0") --inventory <file> --owner <o> --repo <r> --pr <n>
                         [--skip-comment-ids <csv>]
 
-Posts replies to each inventory item; not idempotent — caller must pass
---skip-comment-ids on re-invocation.
+Posts replies to each inventory item. Self-recording: each POSTED cid is
+appended to <inventory>.posted; subsequent runs against the same
+inventory automatically SKIP previously-posted items. A 100%-success run
+deletes the sidecar UNLESS --skip-comment-ids was supplied (in which
+case the operator has externally asserted some items are already done
+and the script can't prove the sidecar is complete, so it is preserved);
+partial-failure runs preserve the sidecar for retry.
 EOF
   exit 2
 }
@@ -66,22 +108,59 @@ done
 [ -n "$PR" ]    || { echo "error: --pr is required" >&2; exit 2; }
 [ -f "$INV" ]   || { echo "error: inventory file not found: $INV" >&2; exit 2; }
 
-skipset=""
+POSTED_SIDECAR="${INV}.posted"
+
+# Normalize --skip-comment-ids: strip ALL whitespace so operators or tooling
+# passing "11111, 22222" (with spaces/newlines) still match the *,<cid>,*
+# skipset membership test. Without this, the whitespace would be glued onto
+# the cid in the skipset and silently fail to match, causing duplicate POSTs.
+SKIP_CSV="$(printf '%s' "$SKIP_CSV" | tr -d '[:space:]')"
+
+skipset=","
 if [ -n "$SKIP_CSV" ]; then
-  skipset=",$SKIP_CSV,"
+  skipset="${skipset}${SKIP_CSV},"
 fi
+# Union any prior <inventory>.posted entries into the skipset.
+# Defensively strip whitespace per line — we control the writer, but the
+# normalization is cheap and symmetric with the CSV handling above.
+if [ -f "$POSTED_SIDECAR" ]; then
+  while IFS= read -r prior_cid; do
+    prior_cid="$(printf '%s' "$prior_cid" | tr -d '[:space:]')"
+    [ -n "$prior_cid" ] || continue
+    skipset="${skipset}${prior_cid},"
+  done < "$POSTED_SIDECAR"
+fi
+[ "$skipset" = "," ] && skipset=""
 
 any_failed=0
 
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+ERR="$(mktemp)"
+trap 'rm -f "$TMP" "$ERR"' EXIT
 jq -c '.items[]?' "$INV" > "$TMP"
 
 while IFS= read -r item; do
   [ -n "$item" ] || continue
-  cid="$(echo "$item" | jq -r '.comment_id // empty')"
   kind="$(echo "$item" | jq -r '.kind // empty')"
   classification="$(echo "$item" | jq -r '.classification // ""')"
+  # Canonical id dispatch — see header comment for the per-kind contract.
+  case "$kind" in
+    review_thread)  cid="$(echo "$item" | jq -r '.reply_to_comment_id // empty')" ;;
+    issue_comment)  cid="$(echo "$item" | jq -r '.issue_comment_id // empty')" ;;
+    review_summary)
+      # No per-item id; synthesize one from sha1(item-json) so retries against
+      # the same content are idempotent and distinguishable from sibling summaries.
+      # Canonicalize with `jq -c --sort-keys` so the cid depends only on content,
+      # not on jq's emitted key order (otherwise two semantically identical
+      # items could hash differently and break idempotency). `-c` (compact
+      # output) is REQUIRED for cross-version/platform stability: jq's
+      # pretty-print whitespace and indentation can shift across jq versions,
+      # which would change the hash bytes and break idempotency across
+      # environments. Compact form is deterministic.
+      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
+      ;;
+    *)              cid="$(echo "$item" | jq -r '.thread_id // .reply_to_comment_id // .issue_comment_id // empty')" ;;
+  esac
 
   if [ -n "$cid" ] && [ -n "$skipset" ] && [[ "$skipset" == *",$cid,"* ]]; then
     echo "SKIPPED $cid"
@@ -106,39 +185,74 @@ while IFS= read -r item; do
     continue
   fi
 
-  if [ "$kind" = "issue_comment" ]; then
-    if gh api "repos/$OWNER/$REPO/issues/$PR/comments" \
-      -X POST -f body="$body" >/dev/null 2>&1; then
-      echo "POSTED $cid"
-    else
-      echo "FAILED $cid gh-issue-comment-post-failed"
-      any_failed=1
+  # Per-kind POST target. issue_comment + review_summary share the REST
+  # issue-comments endpoint (gh pr comment is a wrapper around it). Unknown
+  # kinds fall through to the review_thread path (historical behavior).
+  case "$kind" in
+    issue_comment|review_summary)
+      post_url="repos/$OWNER/$REPO/issues/$PR/comments"
+      fail_label="gh-issue-comment-post-failed"
+      ;;
+    *)
+      reply_to="$(echo "$item" | jq -r '.reply_to_comment_id // empty')"
+      if [ -z "$reply_to" ]; then
+        echo "FAILED $cid reply_to_comment_id_missing"
+        any_failed=1
+        continue
+      fi
+      # REST endpoint /pulls/<n>/comments/<id>/replies requires the integer
+      # databaseId, not the GraphQL node id string.
+      if ! [[ "$reply_to" =~ ^[0-9]+$ ]]; then
+        echo "FAILED $cid reply_to_comment_id_not_numeric"
+        any_failed=1
+        continue
+      fi
+      post_url="repos/$OWNER/$REPO/pulls/$PR/comments/${reply_to}/replies"
+      fail_label="gh-rest-reply-failed"
+      ;;
+  esac
+
+  # The leading printf|gh pipe is load-bearing: it isolates gh's stdin from
+  # the outer loop's `< "$TMP"` redirection AND prevents gh's `@<file>` /
+  # typed-value parsing from misinterpreting body content (apostrophes,
+  # leading @, newlines). $ERR is truncated per attempt and surfaced into
+  # the FAILED line so script-internal vs API-rejection failures are
+  # distinguishable.
+  : > "$ERR"
+  if printf '%s' "$body" | gh api "$post_url" \
+      --method POST --field body=@- >/dev/null 2>"$ERR"; then
+    echo "POSTED $cid"
+    # Sidecar recording is part of the idempotency contract. The append CANNOT
+    # be expressed as `&& printf ... >> $POSTED_SIDECAR`: under `set -e`, a
+    # failed `>>` inside an `&&`-list is NOT treated as a fatal error, so the
+    # write loss would be silent — the cid would be POSTED to GitHub but never
+    # persisted, and a crash-recovery retry would re-post a duplicate. The
+    # GitHub-side and sidecar-side state are already divergent at this point;
+    # surface it loudly and fail the run so the operator can manually append
+    # the cid before retrying.
+    if [ -n "$cid" ]; then
+      if ! printf '%s\n' "$cid" >> "$POSTED_SIDECAR"; then
+        echo "WARNING $cid sidecar-append-failed: posted to GitHub but $POSTED_SIDECAR write failed; manually append $cid to that file before retrying or the next run will re-post a duplicate" >&2
+        any_failed=1
+      fi
     fi
   else
-    # Default: review_thread (or unknown kind treated as such).
-    # Use REST replies endpoint: POST /repos/{o}/{r}/pulls/{n}/comments/{reply_to_comment_id}/replies
-    reply_to="$(echo "$item" | jq -r '.reply_to_comment_id // empty')"
-    if [ -z "$reply_to" ]; then
-      echo "FAILED $cid reply_to_comment_id_missing"
-      any_failed=1
-      continue
-    fi
-    # Validate reply_to_comment_id is numeric — REST endpoint /pulls/<n>/comments/<id>/replies
-    # requires the integer databaseId, not the GraphQL node id string.
-    if ! [[ "$reply_to" =~ ^[0-9]+$ ]]; then
-      echo "FAILED $cid reply_to_comment_id_not_numeric"
-      any_failed=1
-      continue
-    fi
-    if gh api "repos/$OWNER/$REPO/pulls/$PR/comments/${reply_to}/replies" \
-      --method POST -f body="$body" >/dev/null 2>&1; then
-      echo "POSTED $cid"
-    else
-      echo "FAILED $cid gh-rest-reply-failed"
-      any_failed=1
-    fi
+    err_msg="$(tr '\n' ' ' <"$ERR" | sed 's/  */ /g; s/^ //; s/ $//')"
+    echo "FAILED $cid ${fail_label}${err_msg:+ — $err_msg}"
+    any_failed=1
   fi
 done < "$TMP"
+
+# 100% success: drop the sidecar so it can't leak into an unrelated run.
+# Partial failures preserve it so the next retry inherits the skip-set.
+# When --skip-comment-ids was supplied we preserve it too: the operator has
+# externally asserted that some items are already done, so we can't confidently
+# claim the sidecar is a complete record of what THIS run handled. Deleting
+# it would lose the prior-run POSTED record and let a subsequent retry
+# (without the flag) re-post duplicates.
+if [ "$any_failed" -eq 0 ] && [ -z "$SKIP_CSV" ] && [ -f "$POSTED_SIDECAR" ]; then
+  rm -f "$POSTED_SIDECAR"
+fi
 
 [ "$any_failed" -eq 0 ] || exit 1
 exit 0
