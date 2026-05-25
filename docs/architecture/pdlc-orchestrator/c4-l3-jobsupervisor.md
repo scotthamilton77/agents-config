@@ -22,6 +22,7 @@ This file is a **placeholder home** for that diagram. It will be filled in when 
 | Heartbeat | Periodic liveness signal from the supervisor reporting the worker is still making progress |
 | Deadline | Absolute timeout (`deadline_ts`) past which the supervisor cancels the worker via SIGTERM → SIGKILL |
 | `terminal_status` | The supervisor's post-exit report: exit code, exit signal, report path, log path — durable across orchestrator restarts |
+| Gate-evidence artifact | Supervisor-captured record of one gate execution: `gate_cmd`, `exit_code`, `start_ts`, `end_ts`, `stdout_path`, `stderr_path`, `commit_sha_at_start`, `commit_sha_at_end`. Owned by the supervisor (not the worker process) so it cannot be fabricated by a confidently-wrong worker. Trust anchor for the post-MVP `gate_trust_mode = "trust_evidence"` optimisation (see `agents-config-pdmkh`). |
 
 ## Expected components (pending design ratification)
 
@@ -32,6 +33,7 @@ When this stub is expanded, the diagram is expected to contain at least:
 - **Deadline enforcer** — SIGTERM at expiry; SIGKILL after grace period; deadline-set / deadline-extend API
 - **Terminal-status collector** — exit code, exit signal, report path, log path; persisted durably so the report survives orchestrator restarts
 - **Capture handles** — supervisor-owned stdout / stderr / artifact-dir handles for streaming and forensic preservation
+- **Gate-evidence collector** — wraps each gate-command invocation initiated by the worker; records `gate_cmd`, `exit_code`, `start_ts`, `end_ts`, `commit_sha_at_start`, `commit_sha_at_end`, and pointers to the captured stdout/stderr files into a supervisor-owned evidence record alongside `terminal_status`. The worker report at `report_path` *references* this evidence by path; the supervisor *owns* it. Trust anchor for `gate_trust_mode = "trust_evidence"` (`agents-config-pdmkh`). Even in MVP — where reap still re-executes — populating this record is cheap road-paving that avoids a v2 worker-report-contract break later.
 - **Cancellation handler** — idempotent SIGTERM to the worker's process group; safe to re-call
 - **Crash-recovery roll-forward** — on machine-wake, reclaim stale leases whose `expiry_ts + grace < now`
 

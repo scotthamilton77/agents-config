@@ -137,8 +137,10 @@ The three filesystem stores are simpler than the two SQL stores but warrant expl
 
 - Written by the worker at the path `Session.report_path` inside `artifact_dir`.
 - Schema-validated by reap on the next tick after worker exit.
-- The worker's `verdict` field is read but **not trusted** — reap re-runs the gate command independently against the worker's commit SHA and re-establishes the verdict itself.
+- The worker's `verdict` field is read but **not trusted** — in MVP, reap re-runs the gate command independently against the worker's commit SHA and re-establishes the verdict itself.
+- The YAML carries a `gate_evidence` block of *pointers* to supervisor-owned files (`stdout_path`, `stderr_path`, `gate_cmd`, `exit_code`, `start_ts`, `end_ts`, `commit_sha_at_start`, `commit_sha_at_end`). The worker emits the pointers; the **JobSupervisor's gate-evidence collector** is what actually owns and writes those files (see [`c4-l3-jobsupervisor.md`](c4-l3-jobsupervisor.md)). The worker process cannot fabricate the underlying evidence because it doesn't own the file handles.
 - On schema-validation failure: classified as `tooling` by pre-strike triage (worker died mid-report); no cognition strike charged.
+- **Post-MVP `gate_trust_mode = "trust_evidence"`** (tracked as `agents-config-pdmkh`): reap inspects the supervisor-owned evidence files referenced by the pointers and skips re-execution when `exit_code == 0`, `commit_sha_at_end == HEAD`, `gate_cmd` matches the expected spec, and no concurrent worktree mutation has happened between `end_ts` and now.
 
 ### project-config.toml
 
@@ -191,12 +193,20 @@ The happy-path merge writes only the coarse `lifecycle_status` projection. No `t
 ### Worker → orchestrator (via filesystem)
 
 ```
-Worker writes:  Session.artifact_dir/<files> + Session.report_path (gate-evidence YAML)
+JobSupervisor owns:  Session.artifact_dir/<gate-evidence files>
+                     (gate_cmd, exit_code, stdout, stderr,
+                      start_ts, end_ts, commit_sha_at_start, commit_sha_at_end)
+Worker writes:       Session.report_path (gate-evidence YAML with POINTERS
+                                          into the supervisor-owned files)
 Worker exits
-Next tick REAP reads: gate-evidence YAML; re-runs gate against worker commit SHA
+Next tick REAP reads: gate-evidence YAML; resolves pointers to supervisor-owned files;
+                     MVP: re-runs gate against worker commit SHA
+                     post-MVP (gate_trust_mode=trust_evidence): inspects supervisor
+                       artifacts and skips re-execution if predicates pass
+                       (see agents-config-pdmkh)
 ```
 
-There is no direct Worker → OrchestratorStateRepo write path. All worker output flows through the supervisor-owned artifact directory.
+There is no direct Worker → OrchestratorStateRepo write path. All worker output flows through the supervisor-owned artifact directory. The split between supervisor-owned evidence files and worker-emitted YAML pointers is the **trust boundary** — the worker can lie in the YAML but cannot tamper with the underlying evidence the supervisor captured around it.
 
 ## MVP scope notes — what's in the sidecar vs the tracker
 

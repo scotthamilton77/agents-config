@@ -13,7 +13,8 @@
 | Component | A code module inside a container; appears at C4 L3, not L2. |
 | Session | One worker invocation; one Session = one attempt at one gate. See `CONTEXT.md > Session`. |
 | CAS (Compare-And-Swap) | Concurrency control: read with a version, write only if the version is unchanged; mismatch aborts the transition and re-reads. Every tracker write and every state-repo write carries one. |
-| Gate-evidence YAML | Structured file the worker writes at `report_path` on exit; reap reads it, validates the schema, and re-runs the gate independently against the worker's commit SHA. |
+| Gate-evidence YAML | Structured file the worker writes at `report_path` on exit; reap reads it, validates the schema, and (in MVP) re-runs the gate independently against the worker's commit SHA. The YAML carries pointers to supervisor-captured evidence (exit_code, stdout/stderr paths, start/end timestamps, commit_sha_at_end) that the worker process cannot fabricate — the JobSupervisor owns those file handles out-of-band. |
+| `gate_trust_mode` | Project-config toggle (post-MVP, tracked as `agents-config-pdmkh`): `verify` (MVP default — re-run the gate) or `trust_evidence` (skip re-execution if supervisor-captured artifacts satisfy confidence predicates). |
 | `worktree_base_commit` | Immutable git commit pinned on a Session at fork; reap validates the worker's commits descend from it via `git merge-base --is-ancestor`. |
 | `config_hash` | Hash of the project-config in effect at a tick; pinned on every Session at dispatch; validated at reap. |
 | Sidecar | A store the orchestrator owns that holds data not yet promoted to the WorkTracker protocol (MVP-scoped — see [c4-l3-state-repo.md](c4-l3-state-repo.md)). |
@@ -116,7 +117,9 @@ The Worker's job is bounded:
 5. Write a `gate-evidence YAML` to `report_path` inside the supervisor-owned `artifact_dir`
 6. Exit
 
-The Orchestrator's reap step does **not trust the Worker's verdict field** in the gate-evidence YAML — it re-runs the gate command itself against the Worker's commit SHA. This **independent gate verification** is the security posture: every gate-pass claim is re-established, never inherited.
+The Orchestrator's reap step does **not trust the Worker's verdict field** in the gate-evidence YAML — in MVP it re-runs the gate command itself against the Worker's commit SHA. This **independent gate verification** is the MVP security posture: every gate-pass claim is re-established, never inherited from the worker process.
+
+**Optimisation path (post-MVP, `agents-config-pdmkh`).** Re-execution is the right MVP default but is not the only trustworthy stance. The JobSupervisor captures gate evidence (`gate_cmd`, `exit_code`, `start_ts`, `end_ts`, `stdout_path`, `stderr_path`, `commit_sha_at_end`) into the supervisor-owned `artifact_dir` out-of-band of the worker process — those artifacts cannot be fabricated by a confidently-wrong worker. A future `gate_trust_mode = "trust_evidence"` mode would have reap inspect those supervisor-owned artifacts and skip re-execution when confidence predicates pass (`exit_code == 0`, `commit_sha_at_end == HEAD`, `gate_cmd` matches the expected spec, no concurrent worktree mutation between `end_ts` and now). The trust anchor is the supervisor, never the worker report — the report only *points* to supervisor-owned paths. The road-paving for this lives in the worker-report contract today (see `data-view.md`'s *Worker → orchestrator (via filesystem)* pattern); the activation work is the `agents-config-pdmkh` bead.
 
 #### Worktree filesystem
 
