@@ -42,6 +42,10 @@ This is the visual companion to source spec ยง3.1 (the ASCII phase graph) plus ย
 stateDiagram-v2
     direction TB
 
+    state "awaiting-review" as awaiting_review
+    state "fixes-pending" as fixes_pending
+    state "human-gated" as human_gated
+
     [*] --> idle : prgroom run <pr><br/>(first invocation; bootstrap)
 
     idle --> awaiting_review : poll<br/>(first push observed)
