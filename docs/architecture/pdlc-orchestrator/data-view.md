@@ -39,6 +39,7 @@ flowchart LR
 
     subgraph Orch [Orchestrator domain — canonical: OrchestratorStateRepo / Dolt sidecar]
         O1[Lifecycle stage:<br/>CANDIDATE_UOW / IMPLEMENTING / ...]
+        O1b[Terminal disposition projection:<br/>mirrored from tracker<br/>for terminal stage mapping]
         O2[Strike counters:<br/>per gate per Objective]
         O3[Transition log:<br/>append-only event log]
         O4[Frozen-branch markers:<br/>set on AUTOPSY entry]
