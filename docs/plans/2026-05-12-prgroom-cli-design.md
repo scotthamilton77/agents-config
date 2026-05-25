@@ -250,7 +250,7 @@ const (
 
 **Any phase may transition to `human-gated`** when:
 - An item disposition is `escalated` and we're in interactive mode (or autonomous-with-no-autodefer)
-- The re-review round hard cap (Section 4) is exceeded
+- The re-review round hard cap (§3.5) is exceeded
 - A `fix` subagent's audit fails irrecoverably
 
 (Per §4.4, the `human-review-required` PR label is a merge constraint, not a lifecycle gate — it does NOT trigger `human-gated`.)
@@ -1000,7 +1000,7 @@ Section 4 chose **hard gates + idle timer** over the originally-sketched "weight
 | `G_DISPOSITIONS` | Every `state.Items[*].Disposition != nil` (sanity check — structurally guaranteed by `fixLocked` having run this cycle per §3.3 idempotency contract) | `state.Items[*].Disposition` |
 | `G_NO_BLOCKERS` | No item has `Disposition.Kind ∈ {escalated, failed}` (sanity check — §3.2 priority cascade routes those to `human-gated` before reaching this predicate) | `state.Items[*].Disposition.Kind` |
 
-**Idle timer (the soft "let it settle" buffer):** `time.Now().UTC().Sub(state.LastActivityAt) >= idle_threshold`. `LastActivityAt` is the timestamp of the most-recent PR-side mutation observed by `pollLocked` (new comment, new review, push, CI state change, label change). The idle timer's purpose is *not* to detect bot inactivity (per-reviewer timeouts in §4.4 own that case); it gives a short final buffer in case a slow human reviewer is mid-comment-draft when all hard gates flip green.
+**Idle timer (the soft "let it settle" buffer):** `time.Now().UTC().Sub(state.LastActivityAt) >= idle_threshold`. `LastActivityAt` is the timestamp of the most-recent PR-side mutation observed by `pollLocked` (new comment, new review, push, CI state change, label change). The idle timer's purpose is *not* to detect bot inactivity (per-reviewer timeouts in §4.1 own that case); it gives a short final buffer in case a slow human reviewer is mid-comment-draft when all hard gates flip green.
 
 **`G_REVIEWERS` and the `declined` substates.** A Required reviewer can reach `Status = declined` three ways:
 1. Human reviewer explicitly passed (`DeclinedReason = "user-declined"`)
@@ -1035,7 +1035,7 @@ function evaluate_reviewer_timeouts(state):                   # invoked inside p
 
 First such activity flips `r.Status = in_progress` and sets `r.LastReviewAt = activity.CreatedAt`. Subsequent activity refreshes `r.LastReviewAt` AND `state.LastActivityAt`. When `r.Status` transitions to terminal (`review_found` for `APPROVED`/`CHANGES_REQUESTED`/`COMMENTED-with-final-disposition` per Section 5's contract; `declined` per the timeout paths above), no further `r.LastReviewAt` updates are needed.
 
-**End-of-cycle interaction with §3.3's `resolve_end_of_cycle_phase`:** the priority cascade in §3.2 places quiescence at **priority 4** (after the blocker gates at priorities 1-3). `resolve_end_of_cycle_phase` calls `quiescencePredicate(state)` at priority 4; when true, sets `state.Phase = "quiesced"`, `state.Quiescence.QuiescedAt = time.Now().UTC()`. When false, phase stays `awaiting-review` and the next `waitLocked` invocation re-evaluates.
+**End-of-cycle interaction with §3.3's `resolve_end_of_cycle_phase`:** the priority cascade in §3.2 places quiescence at **priority 5** (after the blocker gates at priorities 1-3 and the commit-pushed rule at priority 4). `resolve_end_of_cycle_phase` calls `quiescencePredicate(state)` at priority 5; when true, sets `state.Phase = "quiesced"`, `state.Quiescence.QuiescedAt = time.Now().UTC()`. When false, phase stays `awaiting-review` and the next `waitLocked` invocation re-evaluates.
 
 ```text
 function quiescencePredicate(state):

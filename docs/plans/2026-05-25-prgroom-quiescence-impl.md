@@ -30,7 +30,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 2. **§3 lifecycle implementation bead** (not yet filed at plan-writing time; see fca6 epic) — must have shipped:
    - `internal/lifecycle/run.go` with `runLocked` per §3.3 pseudocode (the 11 sites for `escalate_if_needed` already wired)
    - `internal/lifecycle/poll.go` with `pollLocked` per §3.4 (HEAD-SHA observation, reviewer-state flips, `Round` increments)
-   - `internal/lifecycle/end_of_cycle.go` with `resolve_end_of_cycle_phase` per §3.2 priority cascade (priorities 1-3 wired; **priority 4 quiescence is THIS plan's responsibility** — Task 8)
+   - `internal/lifecycle/end_of_cycle.go` with `resolve_end_of_cycle_phase` per §3.2 priority cascade (priorities 1-4 wired: 1-3 route to `human-gated`, 4 routes to `awaiting-review` on commit-pushed; **priority 5 quiescence is THIS plan's responsibility** — Task 8)
    - `internal/lifecycle/predicates.go` with `has_queued_fix_commits`, `has_required_reviewers_to_refresh`, `new_lifecycle_gate_this_cycle`, `push_uploaded_commits_this_cycle`
    - `internal/lifecycle/errors.go` with `handle_verb_error` returning `Continue` / `Propagate`
    - `internal/lifecycle/escalation.go` with `escalate_if_needed(state)` (per-item dedup via `Disposition.EscalationFiled`; lifecycle dedup via `state.LifecycleEscalationFiled`)
@@ -1546,7 +1546,7 @@ git commit -m "feat(prgroom): waitLocked exits on phase-transition + propagates 
 - Modify: `internal/lifecycle/end_of_cycle.go`
 - Modify: `internal/lifecycle/end_of_cycle_test.go`
 
-**Reference:** §4.1 "End-of-cycle interaction with §3.3's `resolve_end_of_cycle_phase`". Priority 5 is the quiescence rule; priorities 1-4 are existing blocker gates from §3.2.
+**Reference:** §4.1 "End-of-cycle interaction with §3.3's `resolve_end_of_cycle_phase`". Quiescence is priority 5 in §3.2's cascade: priorities 1-3 route to `human-gated` (blocker gates), priority 4 routes to `awaiting-review` on commit-pushed, priority 5 is quiescence → `quiesced`. The §3 lifecycle bead implements priorities 1-4; this task adds priority 5.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1601,10 +1601,10 @@ The signature change `resolveEndOfCyclePhase(state) → resolveEndOfCyclePhase(s
 
 - [ ] **Step 3: Add the priority-5 quiescence rule**
 
-In `internal/lifecycle/end_of_cycle.go`, find `resolveEndOfCyclePhase`. After the existing priority-1-through-3 checks (blockers route to `human-gated` per §3.2), and BEFORE the function's default return, add:
+In `internal/lifecycle/end_of_cycle.go`, find `resolveEndOfCyclePhase`. After the existing priority-1-through-4 checks (priorities 1-3 route to `human-gated`; priority 4 is the commit-pushed → `awaiting-review` branch per §3.2), and BEFORE the function's default return, add:
 
 ```go
-    // Priority 4: quiescence. If all hard gates pass AND idle timer elapsed,
+    // Priority 5: quiescence. If all hard gates pass AND idle timer elapsed,
     // transition to quiesced. See §4.1.
     if QuiescencePredicate(state, cfg, now) {
         state.Quiescence.QuiescedAt = now
@@ -2175,7 +2175,9 @@ type TrackerWriter func(pr tracker.PRRef, state *tracker.PRGroomingState) error
 
 // ShouldRequestHumanReview returns true iff the state's gating condition
 // matches a §4.7 trigger (cap-trip, escalated item, failed item) and is NOT
-// one of the explicit non-triggers (RUNTIME_TERMINAL_USER, STATE_CORRUPT, etc.).
+// a §4.7 trigger condition. All other LastError values (RUNTIME_TERMINAL_USER,
+// STATE_CORRUPT, etc.) are implicit non-triggers — the positive-match logic
+// returns false for anything not in the trigger set.
 func ShouldRequestHumanReview(state *tracker.PRGroomingState) bool {
     if state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" {
         return true
