@@ -70,13 +70,12 @@ The whole CLI runs here. Every invocation is short-lived: parse args, acquire th
 Internally — at L3 — this binary is composed of:
 
 - `cmd/prgroom/` — cobra root + per-verb command files
-- `internal/lifecycle/` — verb implementations (`pollLocked`, `clusterLocked`, `fixLocked`, `pushLocked`, `rereviewLocked`, `replyLocked`, `resolveLocked`, `waitLocked`) and the `runLocked` aggregator
+- `internal/lifecycle/` — verb implementations (`pollLocked`, `clusterLocked`, `fixLocked`, `pushLocked`, `rereviewLocked`, `replyLocked`, `resolveLocked`, `waitLocked`), the `runLocked` aggregator, and the `quiescencePredicate` (§4.1 pure function — lives here, not in a separate package)
 - `internal/prsession/` — `Store` interface + `file` adapter + `memory` adapter (tests) + (v2) `bd` adapter
 - `internal/agent/` — Contract A and Contract B dispatch with per-contract provider chains
 - `internal/gh/` — GitHub adapter (wraps `github.com/cli/go-gh/v2`)
 - `internal/git/` — git plumbing (worktree-aware reads of HEAD / branch ref)
 - `internal/escalation/` — `EscalationSink` interface + stderr / file / (later) bd adapters
-- `internal/quiescence/` — quiescence predicate + threshold knobs
 - `internal/config/` — TOML loader for per-contract provider chains, hard-cap, reviewer timeouts
 
 These components are drawn out at L3 — `c4-l3-lifecycle.md` is the core view; `c4-l3-prsession.md` and `c4-l3-agent-dispatch.md` are stubs awaiting their implementation children.
