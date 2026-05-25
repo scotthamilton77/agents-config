@@ -322,6 +322,23 @@ else
   FAIL=1
 fi
 
+# Behavior test (cross-version stability anchor): review_summary cid for a
+# pinned fixture item must equal a known hash. Regression guard against
+# removing `-c` from the jq canonicalization in the dispatch — jq's
+# pretty-print whitespace varies across versions/platforms, so without `-c`
+# the hash drifts and idempotency breaks across environments. The expected
+# hash below was computed via:
+#   printf '%s' "$item" | jq -c --sort-keys . | shasum -a 1 \
+#     | cut -d' ' -f1 | cut -c1-12
+# against the INV_RSUM fixture item content above.
+EXPECTED_RSUM_CID="summary-aad5a242e21c"
+if grep -qE "^POSTED ${EXPECTED_RSUM_CID}\$" "$TMP/rsum-out.txt"; then
+  echo "  ok: review_summary cid matches pinned canonical hash ($EXPECTED_RSUM_CID)"
+else
+  echo "  FAIL: review_summary cid does not match pinned hash; expected $EXPECTED_RSUM_CID, got: $(grep '^POSTED summary-' "$TMP/rsum-out.txt")"
+  FAIL=1
+fi
+
 # Behavior tests (endpoint correctness): each kind must dispatch to the
 # correct REST endpoint. These guard against regressions where, e.g.,
 # review_summary accidentally hit /pulls/.../replies — a bug the old

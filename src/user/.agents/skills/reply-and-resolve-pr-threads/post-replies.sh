@@ -150,10 +150,14 @@ while IFS= read -r item; do
     review_summary)
       # No per-item id; synthesize one from sha1(item-json) so retries against
       # the same content are idempotent and distinguishable from sibling summaries.
-      # Canonicalize with `jq --sort-keys` so the cid depends only on content,
+      # Canonicalize with `jq -c --sort-keys` so the cid depends only on content,
       # not on jq's emitted key order (otherwise two semantically identical
-      # items could hash differently and break idempotency).
-      cid="summary-$(printf '%s' "$item" | jq --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
+      # items could hash differently and break idempotency). `-c` (compact
+      # output) is REQUIRED for cross-version/platform stability: jq's
+      # pretty-print whitespace and indentation can shift across jq versions,
+      # which would change the hash bytes and break idempotency across
+      # environments. Compact form is deterministic.
+      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
       ;;
     *)              cid="$(echo "$item" | jq -r '.thread_id // .reply_to_comment_id // .issue_comment_id // empty')" ;;
   esac
