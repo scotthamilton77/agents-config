@@ -58,7 +58,6 @@ Skills built from scratch in-repo do not appear here. This table tracks only OSS
 | `using-git-worktrees` | `oss-snapshots/superpowers/using-git-worktrees/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `writing-plans` | `oss-snapshots/superpowers/writing-plans/` | `obra/superpowers @ f2cbfbe` (v5.1.0) | 2026-05-23 | accept-periodic-resync |
 | `improve-codebase-architecture` | `oss-snapshots/pocock/improve-codebase-architecture/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
-| `zoom-out` | `oss-snapshots/pocock/zoom-out/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `grill-with-docs` | `oss-snapshots/pocock/grill-with-docs/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 | `caveman` | `oss-snapshots/pocock/caveman/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended fork) |
 | `prototype` | `oss-snapshots/pocock/prototype/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
@@ -77,6 +76,7 @@ Skills whose Claude-specific features (`!`-command syntax, `disable-model-invoca
 | Skill | Location | Snapshot path | Upstream | Last sync | Drift policy |
 |-------|----------|---------------|----------|-----------|--------------|
 | `handoff` | `src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
+| `zoom-out` | `src/user/.claude/skills/zoom-out/` | `oss-snapshots/pocock/zoom-out/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 
 ## Companion folders
 
