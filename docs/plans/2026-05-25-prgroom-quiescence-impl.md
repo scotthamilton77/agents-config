@@ -10,6 +10,8 @@
 
 **Spec source:** `docs/plans/2026-05-12-prgroom-cli-design.md` §4 (lines 984-1320), with cross-references into §2 (schema), §3.3 (lifecycle pseudocode), §3.5 (hard cap), §3.6 (failure tiers), §3.7 (exit codes).
 
+> **`<module>` placeholder:** All Go code blocks in this plan use `<module>` as the Go module path (e.g., `"<module>/internal/tracker"`). Before running `go test`, replace `<module>` with the actual module name from the project's `go.mod` file (e.g., `github.com/scotthamilton77/prgroom`). A quick `grep ^module go.mod` gives the exact string.
+
 ---
 
 ## Prerequisites
@@ -28,15 +30,15 @@ This plan executes on top of two earlier beads. Verify each before starting:
 2. **§3 lifecycle implementation bead** (not yet filed at plan-writing time; see fca6 epic) — must have shipped:
    - `internal/lifecycle/run.go` with `runLocked` per §3.3 pseudocode (the 11 sites for `escalate_if_needed` already wired)
    - `internal/lifecycle/poll.go` with `pollLocked` per §3.4 (HEAD-SHA observation, reviewer-state flips, `Round` increments)
-   - `internal/lifecycle/end_of_cycle.go` with `resolve_end_of_cycle_phase` per §3.2 priority cascade (priorities 1-4 wired; **priority 5 quiescence is THIS plan's responsibility** — Task 10)
+   - `internal/lifecycle/end_of_cycle.go` with `resolve_end_of_cycle_phase` per §3.2 priority cascade (priorities 1-3 wired; **priority 4 quiescence is THIS plan's responsibility** — Task 8)
    - `internal/lifecycle/predicates.go` with `has_queued_fix_commits`, `has_required_reviewers_to_refresh`, `new_lifecycle_gate_this_cycle`, `push_uploaded_commits_this_cycle`
    - `internal/lifecycle/errors.go` with `handle_verb_error` returning `Continue` / `Propagate`
    - `internal/lifecycle/escalation.go` with `escalate_if_needed(state)` (per-item dedup via `Disposition.EscalationFiled`; lifecycle dedup via `state.LifecycleEscalationFiled`)
-   - `internal/gh/labels.go` may already exist for `gh.RemoveLabel` (used by §3.4 reviewer dance); if so, this plan extends it. If not, this plan adds it (Task 11).
+   - `internal/gh/labels.go` may already exist for `gh.RemoveLabel` (used by §3.4 reviewer dance); if so, this plan extends it. If not, this plan adds it (Task 9).
 
 **If any prerequisite is missing, file a blocker and pause.** Do not stub the missing surface — the contract violations cascade and the integration tests will fail meaningfully only against the real surface.
 
-**Worktree:** Per project worktree convention (`.claude/rules/worktrees.md`), create the worktree at `.claude/worktrees/<branch>` before starting Task 1. Recommended branch: `feat/prgroom-section4-quiescence`.
+**Worktree:** Per project worktree convention (see `src/user/.agents/rules/worktrees.md` in this repo, deployed to `~/.claude/rules/worktrees.md`), create the worktree at `.claude/worktrees/<branch>` before starting Task 1. Recommended branch: `feat/prgroom-section4-quiescence`.
 
 ---
 
@@ -52,7 +54,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/lifecycle/engagement_test.go` | Activity-type / actor-match / timestamp-ordering matrix |
 | `internal/lifecycle/reviewer_timeouts.go` | `evaluateReviewerTimeouts(state, cfg, now)` mutating function |
 | `internal/lifecycle/reviewer_timeouts_test.go` | Start-timeout, finish-timeout, no-double-decline, config-extension paths |
-| `internal/lifecycle/human_review.go` | `deriveHumanReview(state, ghLabels, ghReviews)`, `shouldRequestHumanReview(state)`, `requestHumanReviewIfNeeded(ctx, state, ghClient, cfg)` |
+| `internal/lifecycle/human_review.go` | `DeriveHumanReview(labels []string, approvals []ApprovalRecord)`, `ShouldRequestHumanReview(state *tracker.PRGroomingState)`, `RequestHumanReviewIfNeeded(ctx, state, adder LabelAdder, cfg HumanReviewCfg, write TrackerWriter)` |
 | `internal/lifecycle/human_review_test.go` | Derivation truth-table (label/approval/Bot-filter), dedup, reset, operator-override |
 | `internal/lifecycle/wait.go` | `waitLocked(ctx, pr, state, deps) (*PRGroomingState, error)` |
 | `internal/lifecycle/wait_test.go` | Five-wake-event tests with fake clock + fake pollLocked + fake ctx |
@@ -75,7 +77,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/status/json_test.go` | Golden-file test for the JSON shape (per §4.6 stability commitment) |
 | `internal/lifecycle/lifecycle_fit_test.go` (or new) | End-to-end fit-tests: resumability across simulated restart, full lifecycle to quiesced, cap-trip→label-add |
 
-**Untouched** (do NOT modify in this plan): `cmd/prgroom/` cobra wiring, `internal/tracker/` schema or adapters (any schema gap is a prerequisite-bead bug, not this plan's scope).
+**Untouched** (do NOT modify in this plan): `internal/tracker/` schema or adapters (any schema gap is a prerequisite-bead bug, not this plan's scope). Note: `cmd/prgroom/` verb-logic files are also out of scope — **except** for the CLI flag additions in Task 1 (adding cobra flags for the 5 §4 config knobs is in scope; changing verb behavior is not).
 
 ---
 
@@ -1599,10 +1601,10 @@ The signature change `resolveEndOfCyclePhase(state) → resolveEndOfCyclePhase(s
 
 - [ ] **Step 3: Add the priority-5 quiescence rule**
 
-In `internal/lifecycle/end_of_cycle.go`, find `resolveEndOfCyclePhase`. After the existing priority-1-through-4 checks (blockers route to `human-gated` per §3.2), and BEFORE the function's default return, add:
+In `internal/lifecycle/end_of_cycle.go`, find `resolveEndOfCyclePhase`. After the existing priority-1-through-3 checks (blockers route to `human-gated` per §3.2), and BEFORE the function's default return, add:
 
 ```go
-    // Priority 5: quiescence. If all hard gates pass AND idle timer elapsed,
+    // Priority 4: quiescence. If all hard gates pass AND idle timer elapsed,
     // transition to quiesced. See §4.1.
     if QuiescencePredicate(state, cfg, now) {
         state.Quiescence.QuiescedAt = now
