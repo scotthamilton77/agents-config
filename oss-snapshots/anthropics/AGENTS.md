@@ -25,5 +25,5 @@ The following skills exist in the source repo but were not adopted — all are U
 
 ## Notes
 
-- Namespace folder is `anthropics/` (not `claude-plugins-official/` as the original cx6.6 bead title suggested — naming updated to match the actual GitHub org).
-- Analysis of overlap with the native `skill-creator:skill-creator` skill and decisions on amalgamation are deferred to cx6.7.
+- Namespace folder is `anthropics/` (renamed mid-cycle to match the actual GitHub org, replacing an earlier `claude-plugins-official/` label).
+- `skill-creator` was amalgamated into two in-tree skills: `src/user/.agents/skills/writing-skills/` (creation/editing methodology) and `src/user/.agents/skills/optimize-my-skill/` (audit methodology). Provenance is recorded in each host SKILL.md's HTML-comment header and in the project-wide registry at `src/user/.agents/skills/AGENTS.md`.

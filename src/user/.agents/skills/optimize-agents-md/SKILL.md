@@ -3,7 +3,7 @@ name: optimize-agents-md
 model: sonnet
 allowed-tools: Read, Write, Edit, Glob, Grep
 argument-hint: "[file-path]"
-description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent behavior degrades, when AGENT.md or CLAUDE.md files exceed 200 lines, or when merging redundant instructions across hierarchy.  Use when the user asks to update or optimize AGENTS.md or CLAUDE.md files.
+description: Use when CLAUDE.md or AGENTS.md files need optimization, when agent behavior degrades, when AGENTS.md or CLAUDE.md files exceed 200 lines, or when merging redundant instructions across hierarchy. Use when the user asks to update or optimize AGENTS.md or CLAUDE.md files.
 ---
 
 # Optimize AGENTS.md / CLAUDE.md
