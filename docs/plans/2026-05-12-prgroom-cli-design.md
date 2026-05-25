@@ -739,7 +739,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             state.LastError = ""
             state.LifecycleEscalationFiled = false   # reset for next gate, if any
             state.HumanReviewLabelAdded = false      # §4.7: reset so next gating event re-adds the label
-        store.Write(state)
+        store.Write(pr, state)
         continue                                     # loop top handles terminal + emits
 }
 ```
@@ -769,13 +769,13 @@ function handle_verb_error(err, state) Disposition:
     switch err.Tier:
         case RUNTIME_TRANSIENT:
             state.LastError = err.Code
-            store.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 75; scheduler retries
         case RUNTIME_TERMINAL_USER:
             state.Phase = "human-gated"
             state.LastError = err.Code
             state.LifecycleEscalationFiled = false   # invites loop-top emit
-            store.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 77
         case CONTRACT_AUDIT_FAILED:
             # Verb has already flipped affected items to Disposition.Kind = failed
@@ -786,7 +786,7 @@ function handle_verb_error(err, state) Disposition:
             state.Phase = "human-gated"
             state.LastError = err.Code
             state.LifecycleEscalationFiled = false
-            store.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 78
         case RUNTIME_CANCELLED:
             # Normal non-retryable lifecycle exit (SIGINT/SIGTERM from operator or scheduler).
@@ -798,7 +798,7 @@ function handle_verb_error(err, state) Disposition:
             # Unknown tier is a programmer error — the tier enum is exhaustive
             # over registered tiers (§3.6) and adding a new tier requires
             # updating both the registry and this switch. Crash-loud propagation
-            # is intentional: do NOT store.Write(state) here, because doing so
+            # is intentional: do NOT store.Write(pr, state) here, because doing so
             # would silently persist any verb-level state mutations carried in
             # the (potentially undefined) error and mask the bug from operators.
             # Run maps default-tier propagation to exit code 1 (generic failure)
@@ -1091,7 +1091,7 @@ function waitLocked(pr, state) (*PRGroomingState, error):
         if quiescencePredicate(state):
             state.Phase = quiesced
             state.Quiescence.QuiescedAt = time.Now().UTC()
-            store.Write(state)
+            store.Write(pr, state)
             return state, nil
 
         # Otherwise: loop back, sleep again
@@ -1298,7 +1298,7 @@ function request_human_review_if_needed(state):
         log_stderr("prgroom: warning — failed to add human-review-required label: " + err.Error())
         return                                                   # best-effort; flag stays false; next cycle retries
     state.HumanReviewLabelAdded = true
-    store.Write(state)
+    store.Write(pr, state)
 ```
 
 `request_human_review_if_needed` is invoked alongside `escalate_if_needed` at the **same two dedup-safe call sites in `runLocked`** (per §3.3): the loop-top terminal-for-CLI check, and immediately before each Propagate-return after `handle_verb_error`. Both functions are idempotent and best-effort; both follow the same crash-window dedup posture.

@@ -26,7 +26,7 @@ Two complementary data views in one file:
    - `Escalation` (§5) — consumed by `EscalationSink` adapters (stderr / file / bd)
 3. **The canonical-ownership boundaries** — which data lives where, and which system is authoritative when state inevitably drifts.
 
-The data view answers: *what shapes does prgroom read, write, and emit; which of those are it's own truth vs mirrored from external truth?*
+The data view answers: *what shapes does prgroom read, write, and emit; which of those are its own truth vs mirrored from external truth?*
 
 ## Persistent state ER diagram
 

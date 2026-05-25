@@ -106,8 +106,7 @@ C4Component
     Rel(resolve, gh_adapter, "GraphQL resolveReviewThread")
     Rel(humanreq_hook, gh_adapter, "POST label human-review-required")
 
-    Rel(escalate_hook, sink_iface, "Emit Escalation per qualifying item")
-    Rel(humanreq_hook, sink_iface, "Dedup-gated lifecycle-cap Escalation emit in the same call site for §3.5 cap-trip path (gated by LifecycleEscalationFiled)")
+    Rel(escalate_hook, sink_iface, "Emit Escalation per qualifying item + dedup-gated lifecycle-cap emits (§3.5 cap-trip, gated by LifecycleEscalationFiled)")
 
     Rel(poll, store_iface, "Read / Write")
     Rel(cluster, store_iface, "Write — ClusterID assignment")
@@ -154,7 +153,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
 
         # End-of-cycle phase resolution
         state.Phase = resolve_end_of_cycle_phase(state)
-        store.Write(state)
+        store.Write(pr, state)
 
         # §4.7 label-on-gate
         if state.Phase == human-gated AND !state.HumanReviewLabelAdded:
