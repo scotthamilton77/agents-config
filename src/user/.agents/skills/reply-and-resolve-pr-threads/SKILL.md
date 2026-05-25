@@ -242,13 +242,31 @@ ${CLAUDE_SKILL_DIR}/post-replies.sh \
   [--skip-comment-ids "<csv>"]
 # per item, one of:
 #   POSTED <comment_id>
-#   FAILED <comment_id> <reason>
-#   SKIPPED <comment_id>            # matched --skip-comment-ids
+#   FAILED <comment_id> <reason> [— <gh-stderr-one-line>]
+#   SKIPPED <comment_id>            # matched skip-set (sidecar or --skip-comment-ids)
 #   FILTERED <comment_id> (classification=<class>)  # not replyable
 ```
 
-**NOT idempotent** — on a partial-run retry, the caller MUST pass
-`--skip-comment-ids` with the csv of already-posted comment_ids.
+`<comment_id>` is the canonical id per `kind`:
+
+| `kind` | `<comment_id>` source |
+|---|---|
+| `review_thread` | `.reply_to_comment_id` (numeric REST databaseId) |
+| `issue_comment` | `.issue_comment_id` (numeric REST databaseId) |
+| `review_summary` | `summary-<12-char sha1 of item JSON>` (synthetic; stable across re-runs against the same item content) |
+
+FAILED lines surface the underlying `gh` stderr appended after the bare
+reason label (e.g., `FAILED 12345 gh-rest-reply-failed — HTTP 422:
+Validation Failed`).
+
+**Self-recording idempotency** — each successful POST appends its
+`<comment_id>` to a sidecar `<inventory>.posted`. On startup the
+sidecar is unioned with `--skip-comment-ids` to form the effective
+skip-set, so crash-recovery re-runs against the same inventory SKIP
+previously-posted items automatically. A 100%-success run deletes the
+sidecar; partial-failure runs preserve it for the next retry. Callers
+MAY still pass `--skip-comment-ids` explicitly, but no longer need to
+on a clean retry against the same inventory path.
 
 **Resolve FIX review threads** (Phase 3 — replaces inline GraphQL
 `resolveReviewThread` block):
