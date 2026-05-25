@@ -1,0 +1,80 @@
+<!--
+Source: oss-snapshots/superpowers/using-superpowers/SKILL.md @ obra/superpowers commit f2cbfbe (v5.1.0)
+Last lifted: 2026-05-25
+Drift policy: selective-amalgamation — content was rewritten for project-owned voice and the four-tool surface (Claude Code, Codex CLI, Gemini CLI, OpenCode). Do not auto-resync from upstream.
+Material edits vs. upstream:
+  - Dropped upstream's <SUBAGENT-STOP> gate: subagents inherit the host's AGENTS.md context including this primer, so they cannot act on a "skip" instruction they've already read.
+  - Dropped upstream's "Instruction Priority" section: agents already follow user > skills > defaults as part of their baseline instruction-following protocol; restating it here is noise. (Not redundant with INSTRUCTIONS.md's <laws> — those define the L0–L3 quality/safety stack, a different concern.)
+  - Dropped upstream's "How to Access Skills" per-runtime listing: each runtime's own system prompt already documents its skill mechanism.
+  - Dropped upstream's "Platform Adaptation" pointer to references/copilot-tools.md / references/codex-tools.md (those reference files are not in-tree).
+  - Dropped upstream's DOT skill_flow digraph (none of the four tools render DOT); replaced with prose workflow steps.
+  - Generalized the upstream's runtime-specific checklist-tracker invocation to runtime-agnostic phrasing (no tool name).
+  - Body wrapped in <skill-usage-instructions> for context-boundary clarity.
+-->
+
+<skill-usage-instructions>
+
+# Session Primer — Skill Invocation Discipline
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## The Rule
+
+**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means invoke it to check. If it turns out wrong, drop it — but you must check first.
+
+Workflow when a skill might apply:
+
+1. Invoke the skill via the platform's skill tool.
+2. Announce: "Using `[skill]` to `[purpose]`."
+3. If the skill has a checklist, track each item as a concrete task before acting using your runtime's task tracker / todo-list mechanism.
+4. Follow the skill exactly — don't paraphrase, don't adapt away discipline.
+
+Plan-mode gate: before entering plan mode, ask "have I already brainstormed?" If no, invoke the brainstorming skill first.
+
+## Red Flags
+
+These thoughts mean STOP — you're rationalizing your way around the rule:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read the current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (`brainstorming`, `bugfix`, `test-driven-development`) — these determine HOW to approach the task.
+2. **Implementation skills second** (domain-specific patterns) — these guide execution.
+
+"Let's build X" → brainstorming first, then implementation skills.
+"Fix this bug" → bugfix first, then domain-specific skills.
+
+## Skill Types
+
+- **Rigid** (TDD, debugging, completion-gate workflows) — follow exactly. Don't adapt away discipline.
+- **Flexible** (patterns, advisories) — adapt principles to context.
+
+The skill itself tells you which.
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Add X" or "Fix Y" doesn't mean skip workflows.
+
+</skill-usage-instructions>
