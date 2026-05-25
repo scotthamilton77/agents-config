@@ -1,6 +1,6 @@
 <!--
 Source: oss-snapshots/superpowers/using-superpowers/SKILL.md @ obra/superpowers commit f2cbfbe (v5.1.0)
-Last lifted: 2026-05-25 (bd cx6.7.14)
+Last lifted: 2026-05-25
 Drift policy: selective-amalgamation — content was rewritten for project-owned voice and the four-tool surface (Claude Code, Codex CLI, Gemini CLI, OpenCode). Do not auto-resync from upstream.
 Material edits vs. upstream:
   - "How to Access Skills" rewritten for the four target runtimes (dropped Cursor / Copilot CLI).
