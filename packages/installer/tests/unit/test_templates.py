@@ -86,9 +86,7 @@ def test_single_marker_resolves_to_inlined_content(tmp_path: Path) -> None:
     (tmp_path / "inc.md").write_text("INCLUDED BODY\n", encoding="utf-8")
     io = ScriptedIO()
 
-    result = flatten_template(
-        "<!-- DYNAMIC-INCLUDE: inc.md -->\n", base_dir=tmp_path, io=io
-    )
+    result = flatten_template("<!-- DYNAMIC-INCLUDE: inc.md -->\n", base_dir=tmp_path, io=io)
 
     assert result == "INCLUDED BODY\n"
 
@@ -102,11 +100,7 @@ def test_markers_and_prose_assemble_in_order(tmp_path: Path) -> None:
     (tmp_path / "a.md").write_text("AAA\n", encoding="utf-8")
     (tmp_path / "b.md").write_text("BBB\n", encoding="utf-8")
     template = (
-        "header\n"
-        "<!-- DYNAMIC-INCLUDE: a.md -->\n"
-        "middle\n"
-        "<!-- DYNAMIC-INCLUDE: b.md -->\n"
-        "footer\n"
+        "header\n<!-- DYNAMIC-INCLUDE: a.md -->\nmiddle\n<!-- DYNAMIC-INCLUDE: b.md -->\nfooter\n"
     )
 
     result = flatten_template(template, base_dir=tmp_path, io=ScriptedIO())
@@ -197,6 +191,4 @@ def test_all_rules_marker_resolution_is_deferred(tmp_path: Path) -> None:
     marker must fail loudly rather than emit a literal comment line.
     """
     with pytest.raises(NotImplementedError):
-        flatten_template(
-            "<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n", base_dir=tmp_path, io=ScriptedIO()
-        )
+        flatten_template("<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n", base_dir=tmp_path, io=ScriptedIO())
