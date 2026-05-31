@@ -16,7 +16,7 @@
 | Round | The CLI-observed-push counter; bounded by `MaxRounds` (default 3) per §3.5. |
 | Hard cap | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND Round >= MaxRounds` → refuse push, set `Phase=human-gated`, set `LastError=LIFECYCLE_HARD_CAP_EXCEEDED`. |
 | Quiescence predicate | The §4.1 boolean: all four hard gates (`G_REVIEWERS`, `G_CI`, `G_DISPOSITIONS`, `G_NO_BLOCKERS`) pass AND `now() - LastActivityAt >= idle_threshold`. |
-| Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, or an operator `resolve-escalated`. `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
+| Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator `resolve-escalated`, or — when the gate is the hard cap — a `run` with a raised `--max-rounds` (cap re-arm, §3.5). `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
 | Graph-terminal | A phase with no outgoing edges. `merged` only. |
 | Blocking error codes | The closed set `{ LIFECYCLE_HARD_CAP_EXCEEDED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED }` that `resolve-escalated` cannot clear by itself; see §3.2. |
 
@@ -30,9 +30,9 @@ The complete phase graph for one PR's grooming lifecycle. Every transition the C
 - The §3.2-priority-2 / -3 routes to `human-gated` (failed items, escalated items, runtime-terminal errors)
 - The §4-quiescence trips into `quiesced` — from `fixes-pending` via end-of-cycle resolver priority 5, AND from `awaiting-review` via the `waitLocked` wake event (§4.2)
 - The §4.7 human-review label addition (a side-effect on the `→ human-gated` edges, not a phase itself)
-- The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity)
+- The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity; or, for a cap-gated PR, a `run` with raised `--max-rounds`)
 - The `→ merged` edges from every non-terminal phase
-- Resurrection paths (operator-driven `resolve-escalated`)
+- Resurrection paths (operator-driven `resolve-escalated`, or the `run --max-rounds` cap re-arm)
 
 This is the visual companion to source spec §3.1 (the ASCII phase graph) plus §3.2 (the phase × verb transition matrix) plus §4 (the quiescence predicate).
 
@@ -70,6 +70,7 @@ stateDiagram-v2
 
     human_gated --> fixes_pending : resolve-escalated<br/>(item gating cleared AND<br/>no failed items AND<br/>state.LastError ∉ BlockingErrorCodes)
     human_gated --> fixes_pending : poll<br/>(operator pushed fix manually)
+    human_gated --> fixes_pending : run --max-rounds raised<br/>(cap re-arm: LastError ==<br/>LIFECYCLE_HARD_CAP_EXCEEDED AND<br/>cap no longer trips — §3.3 entry probe)
     human_gated --> merged : poll<br/>(PR closed via merge)
 
     merged --> [*]
@@ -106,7 +107,10 @@ stateDiagram-v2
         Terminal-for-CLI, NOT graph-terminal.
         resolve-escalated only clears items;
         it does NOT clear LastError ∈
-        BlockingErrorCodes. The
+        BlockingErrorCodes (incl. the hard
+        cap). The cap clears via run with a
+        raised --max-rounds (cap re-arm,
+        §3.3 entry probe). The
         human-review-required PR label is a
         merge constraint, NOT a lifecycle
         gate — operator does not remove it
@@ -155,6 +159,7 @@ Three classes of edge re-enter the lifecycle from non-active phases. None of the
 | `quiesced` | `awaiting_review` | `poll` observes external push (SHA changed) | Round++; `pushLocked`'s ReviewerState flip semantics apply (§3.4) |
 | `human_gated` | `fixes_pending` | `resolve-escalated` flips item disposition AND no failed items AND `LastError ∉ BlockingErrorCodes` | Most common recovery path |
 | `human_gated` | `fixes_pending` | `poll` observes operator-pushed fix | Operator resolved out-of-band |
+| `human_gated` | `fixes_pending` | `run` entry probe: `LastError == LIFECYCLE_HARD_CAP_EXCEEDED` AND cap no longer trips (operator raised `--max-rounds`) | Cap re-arm; orthogonal to escalation clearance — clears the cap gate that `resolve-escalated` cannot |
 
 ## Auto-label side-effect (§4.7)
 
@@ -176,9 +181,9 @@ The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (
 | `RUNTIME_CANCELLED` | unchanged | unchanged | signal-cancel; non-retryable |
 | `CONTRACT_AUDIT_FAILED` | → `human-gated` (via priority 2) | NOT set (per-item `Disposition.Rationale` is the source of truth) | the run loop continues through the cycle; resolver promotes |
 | `STATE_CORRUPT` | → `human-gated` | set | operator inspects state file |
-| `LIFECYCLE_CAP` | → `human-gated` | set | resolve outstanding escalations OR raise cap |
+| `LIFECYCLE_CAP` | → `human-gated` | set | clears via `run` + raised `--max-rounds` (cap re-arm, §3.5/§3.3 entry probe); resolve escalations separately if the gate also carries them |
 
-`state.LastError` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. No `clear-error` verb is needed.
+`state.LastError` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. For a cap-gated PR that success path is reached by the §3.3 entry-probe cap re-arm (operator raised `--max-rounds`), which re-enters the cycle; for other gates, by `poll` observing external resolution. No `clear-error` verb is needed.
 
 ## What this diagram does NOT show
 

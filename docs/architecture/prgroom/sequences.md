@@ -200,7 +200,7 @@ sequenceDiagram
     PG-->>State: Lock released
     PG-->>Op: exit 0 (graceful terminal — LIFECYCLE_CAP tier)
 
-    Note over Op,PG: Recovery: operator runs prgroom resolve-escalated<br/>(or raises --max-rounds and re-invokes run).<br/>LastError clears automatically on next successful cycle.<br/>The human-review-required label is a merge constraint,<br/>NOT a lifecycle gate — operator does not need to remove it<br/>to exit human-gated (§4.4).
+    Note over Op,PG: Recovery — two orthogonal actions:<br/>(1) escalated items → prgroom resolve-escalated (clears items only, NOT the cap).<br/>(2) the cap → raise --max-rounds and re-invoke run: the §3.3 entry probe re-arms when<br/>LastError==LIFECYCLE_HARD_CAP_EXCEEDED AND the cap no longer trips, re-enters the cycle,<br/>and LastError clears on the next successful cycle. A bare re-run with no raise stays human-gated.<br/>The human-review-required label is a merge constraint, NOT a lifecycle gate —<br/>operator need not remove it to exit human-gated (§4.4).
 ```
 
 ### Notes on the hard-cap path

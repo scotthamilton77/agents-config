@@ -152,7 +152,9 @@ function runLocked(pr, mode) (*PRGroomingState, error):
 
         # The cycle: each *Locked runs under handle_verb_error.
         # ⚠ ILLUSTRATIVE ONLY — this linearises the spec's §3.2 phase-dispatch (which
-        # branches on state.Phase, and elides the entry-time external-transition probe)
+        # branches on state.Phase, and elides the entry-time external-transition probe —
+        # which also performs the §3.5 cap re-arm: from human-gated, a raised --max-rounds
+        # clears LIFECYCLE_HARD_CAP_EXCEEDED and re-enters the cycle)
         # AND repeats the (call → handle_verb_error → maybe-Propagate) guard per verb,
         # both purely for readability. Do NOT copy either shape into Go: the guard
         # belongs in ONE place via a verb-step pipeline, and the dispatch belongs on
