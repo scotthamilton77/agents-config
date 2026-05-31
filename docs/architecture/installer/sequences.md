@@ -80,10 +80,10 @@ sequenceDiagram
             loop per StagedItem in plan
                 Sync->>FS: hash-compare vs destination (see Sequence 3)
                 alt unchanged
-                    Note over Sync: skip — Counters.Skipped++
+                    Note over Sync: skip — Counters.skipped++
                 else changed or new
                     Sync->>FS: backup (if overwrite) + write
-                    Note over Sync: Counters.Written++ / BackedUp++
+                    Note over Sync: Counters.created++ or updated++ (+ backed_up++ on overwrite)
                 end
             end
             Sync-->>Orch: Counters
@@ -94,7 +94,7 @@ sequenceDiagram
         Orch->>Orch: prune flow (see Sequence 4)
     end
 
-    Orch-->>Op: summary (written / skipped / backed-up per tool); exit 0
+    Orch-->>Op: summary (created / updated / skipped / backed-up per tool); exit 0
 ```
 
 ### Notes on the happy path
@@ -169,28 +169,28 @@ sequenceDiagram
     alt destination absent
         alt --dry-run
             Sync->>IO: info "would create FILE"
-            Note over Sync: Counters.WouldCreate++ — no write
+            Note over Sync: Counters.created++ (preview — no write)
         else
             Sync->>FS: write new file
-            Note over Sync: Counters.Created++
+            Note over Sync: Counters.created++
         end
     else destination present
         Sync->>Sync: hash(incoming) vs hash(dest)
         alt hashes equal
-            Note over Sync: identical — skip; Counters.Skipped++
+            Note over Sync: identical — skip; Counters.skipped++
         else hashes differ
             Sync->>IO: show_diff(dest, incoming)
             alt --dry-run
-                Note over Sync: preview only; Counters.WouldUpdate++ — no write
+                Note over Sync: preview only; Counters.updated++ (no write)
             else interactive
                 Sync->>IO: confirm("overwrite FILE?")
                 alt confirmed
                     Sync->>Bak: path-aware backup of dest
                     Bak->>FS: copy dest to namespace-backup/ (or in-place)
                     Sync->>FS: write incoming
-                    Note over Sync: Counters.Written++ + BackedUp++
+                    Note over Sync: Counters.updated++ + backed_up++
                 else declined
-                    Note over Sync: keep existing; Counters.Skipped++
+                    Note over Sync: keep existing; Counters.skipped++
                 end
             end
         end
@@ -250,7 +250,7 @@ sequenceDiagram
         else none
             Note over Prune: keep all orphans
         end
-        Prune-->>Orch: prune Counters (removed / kept / backed-up)
+        Prune-->>Orch: prune Counters (pruned + backed_up)
     end
 ```
 
