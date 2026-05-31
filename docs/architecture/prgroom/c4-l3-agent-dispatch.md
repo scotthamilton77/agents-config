@@ -37,7 +37,7 @@ A future enhancement, **not** in the parity MVP and **not yet ratified**: an RCA
 
 ### Cross-cutting components
 
-- **Per-contract config loader** — reads the `[agent.cluster]` and `[agent.fix]` TOML sections; resolves `--cluster-model` / `--fix-model` flag overrides; provides the `Contract*` constructors with their provider chains.
+- **Per-contract config loader** — reads the `[agents.cluster]` and `[agents.fix]` TOML sections; resolves `--cluster-model` / `--fix-model` flag overrides; provides the `Contract*` constructors with their provider chains.
 - **Token-usage JSONL emitter** — appends one line per agent invocation to `$XDG_STATE_HOME/prgroom/usage.jsonl`. Schema per §5: `{ts, pr, contract, provider, model, input_tokens, output_tokens, duration_ms, outcome}`. MVP does no aggregation — the file is the baseline data; analysis is a v2 deferral.
 - **Subprocess lifecycle wrapper** — owns the `exec.CommandContext` plumbing for `claude -p` / `codex exec` / `opencode run` / `ollama`; ctx-aware kill on cancellation; stdin/stdout pipe management; per-contract time-budget enforcement.
 
