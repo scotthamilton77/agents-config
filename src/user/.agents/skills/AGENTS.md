@@ -78,6 +78,16 @@ Skills whose Claude-specific features (`!`-command syntax, `disable-model-invoca
 | `handoff` | `src/user/.claude/skills/handoff/` | `oss-snapshots/pocock/handoff/` (pristine upstream; local extensions in deployed copy) | `mattpocock/skills @ e74f0061` | 2026-05-23 | rewrite-and-divorce (project-extended, Claude-specific) |
 | `zoom-out` | `src/user/.claude/skills/zoom-out/` | `oss-snapshots/pocock/zoom-out/` | `mattpocock/skills @ e74f0061` | 2026-05-23 | accept-periodic-resync |
 
+## Common pitfall — extracted helpers must be wired in
+
+When you extract a helper script out of in-model skill code, the live path keeps
+using the in-model code until `SKILL.md` is rewired to invoke the helper. So
+smoke tests, Copilot, and first-pass review can all pass while the helper chain
+carries a latent, unexercised contract bug. Treat "helper added but not yet
+invoked by `SKILL.md`" as a review smell, and drive the documented helper chain
+end-to-end on a fixture before merging — an architecture-challenge review pass
+catches these cross-file contract gaps that per-line review misses.
+
 ## Companion folders
 
 - `<repo-root>/oss-snapshots/` — unmodified reference clones of upstream skill catalogs, pinned to specific commits. Each snapshot folder carries its own `AGENTS.md` documenting source repo, commit, and per-skill inventory.

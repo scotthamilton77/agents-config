@@ -53,6 +53,11 @@ but the full gate must pass before push.
   this pin?" before writing it.
 - Unit tests drive the engine through `ScriptedIO`; assert against its
   transcript. Coverage floor is 90% branch (enforced by `pytest --cov`).
+- **`# pragma: no cover` on `Protocol` method declarations is load-bearing.**
+  With `--cov-branch`, coverage.py counts the inter-declaration branches on
+  `...`-bodied `typing.Protocol` methods; removing the pragma drops branch
+  coverage measurably (e.g. `core/io_port.py` 100% → 87%) even though the
+  methods have no executable body. Keep them.
 
 ## Do not run the installer automatically
 
