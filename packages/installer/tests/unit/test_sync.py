@@ -14,6 +14,7 @@ absent. See the writing-unit-tests skill's Tautology Filter.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -334,6 +335,10 @@ def test_parent_traversal_relpath_is_rejected(tmp_path: Path) -> None:
     assert not (tmp_path / "escape.md").exists()
 
 
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root bypasses the 0o444 mode bit, so the write would succeed",
+)
 def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path) -> None:
     """
     Given a destination that differs from the source and is read-only
