@@ -79,6 +79,7 @@ installer/
 └── plugins/                     ── plugin adapters
     ├── base.py                  PluginAdapter protocol
     ├── beads.py                 Owns ~/.beads/ destination, chmod +x on scripts
+    ├── extensions.py            apply_extensions(): YAML-patch base markdown assets post-staging
     └── registry.py
 ```
 
@@ -289,6 +290,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 - **F.2** Phase 6 plugin overlay (alphabetical, full collision matrix exercised).
 - **F.3** Carrier-merge logic via in-memory metadata.
 - **F.4** `plugins/beads.py` (`~/.beads/formulas/`, `~/.beads/scripts/` with chmod +x).
+- **F.5** `plugins/extensions.py` — plugin-to-base-asset extension via YAML patches. Plugins declare structured YAML patch files in scope-bearing extension directories (`src/plugins/<plugin>/.agents/extensions/*.yaml` for shared scope; `.<tool>/extensions/*.yaml` for tool scope). Each YAML declares a `target-file`, `target-section` (ATX header text or `frontmatter`), `precision` verb (`replace` | `insert_before` | `insert_after` | `prepend` | `append`), and `content`. `apply_extensions()` is called from the install pipeline post-staging, once per enabled tool, against that tool's per-tool staging tree. Includes YAML schema validation, fenced-code-aware section matching, frontmatter targeting with post-patch YAML re-parse, multi-plugin deterministic ordering, and terminal failure modes. Extraction of the `merge-and-cleanup` skill inline beads cheat block to `src/plugins/beads/.agents/extensions/` is part of this story (AC #8–9 from the originating spec in `agents-config-phzj.4`). Full requirements in `agents-config-w1qls.6.5`.
 
 ### Epic G — Operations (backup, prune, debug)
 
@@ -311,7 +313,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 ## Dependency graph
 
-Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 51. Critical path: **A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → D.2 → D.4 → H.2 → H.3 → H.4 → H.5** (14 stories of strict serial work — derived from the dep table below, where each hop honours a real prereq edge: D.2 prereqs C.2, D.4 prereqs D.2, H.2 prereqs D.4 (and G.5 / F.2 in parallel), H.3 prereqs H.1 and H.2, H.4 prereqs H.3, H.5 prereqs H.4). C.3 used to occupy the C.2 → C.3 → F.2 segment; it is now deferred and downstream stories prereq on C.2 directly, so the path no longer threads through C.3 or F.2 — F.2 remains on a parallel-but-shorter branch (F.1 → F.2 → H.2). Everything else hides inside this calendar time via the parallel fronts below.
+Inter-story `blocks` edges drawn exhaustively up front. Each row lists a story's direct prerequisites and (where relevant) sibling stories that can run in parallel. Total edges: 53. Critical path: **A.1 → A.2 → B.1 → B.2 → B.3 → B.4 → C.1 → C.2 → D.2 → D.4 → H.2 → H.3 → H.4 → H.5** (14 stories of strict serial work — derived from the dep table below, where each hop honours a real prereq edge: D.2 prereqs C.2, D.4 prereqs D.2, H.2 prereqs D.4 (and G.5 / F.2 in parallel), H.3 prereqs H.1 and H.2, H.4 prereqs H.3, H.5 prereqs H.4). C.3 used to occupy the C.2 → C.3 → F.2 segment; it is now deferred and downstream stories prereq on C.2 directly, so the path no longer threads through C.3 or F.2 — F.2 remains on a parallel-but-shorter branch (F.1 → F.2 → H.2). Everything else hides inside this calendar time via the parallel fronts below.
 
 C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID stability but every prior dependent has been re-pointed at C.2 so the deferral does not stall the roadmap.
 
@@ -338,8 +340,9 @@ C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID s
 | E.5 | E.1 | E.2, E.3, E.4 |
 | F.1 | B.1, A.2 | E.\* |
 | F.2 | F.1, E.2, E.3, E.4, E.5 | — |
-| F.3 | F.2 | F.4 |
-| F.4 | F.1 | F.3 |
+| F.3 | F.2 | F.4, F.5 |
+| F.4 | F.1 | F.3, F.5 |
+| F.5 | F.2 | F.3, F.4 |
 | G.1 | B.2 | C.\*, D.\*, E.\*, F.\* |
 | G.2 | A.1 | most of A.\*–F.\* |
 | G.3 | G.2, C.1, F.2 | — |
@@ -347,7 +350,7 @@ C.3 (DYNAMIC-INCLUDE named-RULES) is a placeholder; its row is retained for ID s
 | G.5 | G.4 | — |
 | G.6 | C.2, B.1 | D.\*, E.\*, F.\*, G.{1..5} |
 | H.1 | E.4, G.1, C.2 | H.2 (independent scenarios) |
-| H.2 | G.5, F.2, D.4 | H.1 |
+| H.2 | G.5, F.2, F.5, D.4 | H.1 |
 | H.3 | H.1, H.2 | — |
 | H.4 | H.3 | — |
 | H.5 | H.4 | — |
