@@ -31,6 +31,9 @@ class FilesystemIdeaStorage:
         self._ideas_dir = root / "ideas"
 
     def _path_for(self, idea_id: str) -> Path:
+        # Safe today: ids are machine-minted upstream (id_factory / promote).
+        # Revisit with explicit validation if externally-sourced ids ever reach
+        # here — a ``../`` or absolute-path id would escape the ideas root.
         return self._ideas_dir / f"{idea_id}.yml"
 
     def get(self, idea_id: str) -> Idea:

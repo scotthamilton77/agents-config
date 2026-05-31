@@ -1,7 +1,7 @@
 """Holding Place — the peer subsystem that owns the Idea pipeline.
 
-Per ADR-0001 (`docs/adr/0001-holding-place-is-a-peer-subsystem.md`) the
-Holding Place is a **peer** of the PDLC Orchestrator, not owned by it. It
+Per ADR-0001 the Holding Place is a **peer** of the PDLC Orchestrator, not
+owned by it. It
 holds the `Idea` primitive and exposes exactly two orchestrator-facing
 operations — `promote(idea_id) -> objective_id` and
 `create_idea(decomposition_of=...)` — across a documented contract.

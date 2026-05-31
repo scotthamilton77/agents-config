@@ -130,6 +130,9 @@ class Orchestrator:
             # (re-running the gate command against the worker's commit) is
             # stubbed for the tracer: a schema-valid pass is a gate pass.
             read_and_validate(status.report_path)
+            # RUNNING -> EXITED -> REAPED within one tick: the tracer's worker is
+            # synchronous, so it exits and is reaped in the same pass. A real async
+            # worker would exit on an earlier tick than the one that reaps it.
             session.status = SessionStatus.EXITED
             runtime = self._repo.get_objective(session.objective_id)
             from_stage = runtime.lifecycle_stage
@@ -238,3 +241,7 @@ class Orchestrator:
         # tracker and idempotently remove the sandbox worktrees.
         self._wt.set_lifecycle_status(objective_id, "closed", "merged")
         self.cleanup_worktree(objective_id)
+        # Forget the worktree-tracking entry now its worktrees are gone, so the
+        # bookkeeping does not grow unbounded as Objectives accumulate. A later
+        # cleanup_worktree() call stays a safe no-op (empty list).
+        self._session_worktrees.pop(objective_id, None)
