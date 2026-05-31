@@ -304,7 +304,7 @@ type Disposition struct {
     Gate         string          `json:"gate,omitempty"`          // full | lite — recommended gate the fix agent thought necessary
     EscalationFiled bool         `json:"escalation_filed,omitempty"` // escalated only
     DecidedAt    time.Time       `json:"decided_at"`
-    DecidedBy    string          `json:"decided_by"`              // agent CLI id (e.g. "claude -p sonnet[1m]") or "human:<login>"
+    DecidedBy    string          `json:"decided_by"`              // agent CLI id (e.g. "claude -p opus[1m]") or "human:<login>"
 }
 
 type ReviewItem struct {
@@ -383,7 +383,7 @@ type QuiescenceState struct {
 }
 ```
 
-**Agent-contract callout (forward reference to Section 5):** the CLI's interactions with agent-CLIs (Contract A: cluster, Contract B: fix) need strict input/output contracts. Section 5 is the owner; the state schema above carries only the *results* (`ClusterID`, `Disposition`).
+**Agent-contract callout (forward reference to Section 5):** the CLI's interactions with agent-CLIs (the cluster contract and fix contract) need strict input/output contracts. Section 5 is the owner; the state schema above carries only the *results* (`ClusterID`, `Disposition`).
 
 ### Transactional model (verb-level + run-aggregate)
 
@@ -544,7 +544,7 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 - Reads no state from disk; instead receives the current in-memory `*PRGroomingState` from the caller.
 - Returns `(*PRGroomingState, error)` — the (potentially) mutated state and any error tagged with its failure tier (§3.6).
 - Atomically `store.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
-- Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-7 re-entry path (§3.2) relies on it to avoid hot loops.
+- Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-6 re-entry path (§3.2) relies on it to avoid hot loops.
 - **`fixLocked` restart-safety under transient agent failures.** When a transient-tier agent failure (`RUNTIME_AGENT_TIMEOUT`, `RUNTIME_AGENT_UNAVAILABLE`) aborts a cycle mid-cluster, items already processed before the failure carry `Disposition != nil` and are skipped on the next `fixLocked` invocation per the idempotency rule above; items not yet processed carry `Disposition == nil` and are reprocessed. This guarantees that partial-cluster processing is never lost (no double-fixing of already-dispositioned items) and never starved (un-dispositioned items always get another attempt on the next `run` invocation, driven by the scheduler's retry of exit-75).
 
 **Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
@@ -956,12 +956,12 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 
 | Code | What | Why | How |
 |------|------|-----|-----|
-| `CONTRACT_CLUSTER_MALFORMED` | Cluster output JSON failed schema validation | Contract A invariant violated | retry once; second failure falls back to per-item clusters |
-| `CONTRACT_CLUSTER_COVERAGE` | Some input items did not appear in any cluster after fallback | Contract A invariant: every item clustered | re-cluster; if persistent, file `failed` disposition for orphans |
-| `CONTRACT_FIX_MALFORMED` | Fix output JSON failed schema validation | Contract B invariant violated | item flipped to `failed`; escalate |
-| `CONTRACT_FIX_ORPHAN_COMMIT` | Commits exist on branch that no item claimed | Contract B invariant: every commit claimed | stash isolation applied; affected items flipped to `failed`; escalate |
-| `CONTRACT_FIX_UNREACHABLE_SHA` | Output claims `commit_shas[i]` not on branch | Contract B invariant violated | item flipped to `failed`; escalate |
-| `CONTRACT_FIX_AUDIT_FAILED` | Disposition+evidence combination violates audit rules | Contract B post-conditions | item flipped to `failed`; end-of-cycle resolution may promote phase to `human-gated` |
+| `CONTRACT_CLUSTER_MALFORMED` | Cluster output JSON failed schema validation | Cluster contract invariant violated | retry once; second failure falls back to per-item clusters |
+| `CONTRACT_CLUSTER_COVERAGE` | Some input items did not appear in any cluster after fallback | Cluster contract invariant: every item clustered | re-cluster; if persistent, file `failed` disposition for orphans |
+| `CONTRACT_FIX_MALFORMED` | Fix output JSON failed schema validation | Fix contract invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_ORPHAN_COMMIT` | Commits exist on branch that no item claimed | Fix contract invariant: every commit claimed | stash isolation applied; affected items flipped to `failed`; escalate |
+| `CONTRACT_FIX_UNREACHABLE_SHA` | Output claims `commit_shas[i]` not on branch | Fix contract invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_AUDIT_FAILED` | Disposition+evidence combination violates audit rules | Fix contract post-conditions | item flipped to `failed`; end-of-cycle resolution may promote phase to `human-gated` |
 
 #### `STATE_*`
 
@@ -1335,10 +1335,10 @@ The cheap agent is bad at deciding intent but good at grouping; the heavy agent 
 
 Each contract is a **stable, versioned interface** between the CLI and the agent-CLI. That stability is what lets us swap `claude -p` for `codex exec` or `opencode run`, change models, run different agents per hand-off, or fall back when the primary is unavailable — without touching the CLI's lifecycle code. Available runtimes (`claude -p`, `codex exec`, `opencode run`, local `ollama`) are selected per-contract in TOML config; the per-contract default chains below are just the shipped defaults, not the limit of what's supported.
 
-#### Contract A — `cluster`
+#### Cluster contract — the `cluster` verb
 
 - **When:** during the `cluster` verb. Operates on the set of items with `ClusterID == ""`.
-- **Default agent CLI (primary → fallback chain):** Prefer a local model via `ollama` (Gemma 4 or similar small classifier) if installed; otherwise `claude -p` with model `haiku` / effort `low`; otherwise `codex-mini`. Cheap, fast — grouping intent is NOT decisional work, so locally-runnable models are appropriate.
+- **Default agent CLI (primary → fallback chain):** Prefer a local model via `ollama` (Gemma 4 or similar small classifier) if installed; otherwise `claude -p` with model `haiku` / effort `high`; otherwise `codex-mini`. Cheap, fast — grouping intent is NOT decisional work, so locally-runnable models are appropriate.
 - **Input (JSON, written to a file passed by path):**
   ```json
   {
@@ -1364,10 +1364,10 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
 - **Audit guards:** every input item appears in exactly one cluster; cluster ids unique; rationale non-empty per cluster.
 - **Failure modes:** malformed JSON, items missing from output, agent timeout → retry once; on second failure, fall back to **per-item degenerate clusters** (one item per cluster) so the fix verb can still proceed.
 
-#### Contract B — `fix`
+#### Fix contract — the `fix` verb
 
 - **When:** during the `fix` verb, **once per cluster** (was: once per FIX item). Serial in MVP (parallel deferred).
-- **Default agent CLI:** `claude -p` with model `sonnet[1m]` and effort `medium`. This launches an **orchestrator** agent that will itself choose skills/sub-agents (e.g. `quality-reviewer`, `simplify`, language-specific debuggers). Model and effort for those sub-agents are set by the orchestrator, not by `prgroom`.
+- **Default agent CLI:** `claude -p` with model `opus[1m]` and effort `xhigh`. This launches an **orchestrator** agent that will itself choose skills/sub-agents (e.g. `quality-reviewer`, `simplify`, language-specific debuggers). Model and effort for those sub-agents are set by the orchestrator, not by `prgroom`.
 - **Input (JSON, written to a file passed by path):**
   ```json
   {
@@ -1473,12 +1473,12 @@ Per-contract agent CLI is configurable and supports a fallback for unavailabilit
 # prgroom config (location TBD in Section 7)
 [agents.cluster]
 primary  = { cli = "ollama", model = "gemma4" }                 # local; near-zero per-call cost
-fallback = { cli = "claude", model = "haiku", effort = "low" }
+fallback = { cli = "claude", model = "haiku", effort = "high" }
 fallback2 = { cli = "codex", model = "gpt-5.4-mini" }
 
 [agents.fix]
-primary  = { cli = "claude", model = "sonnet[1m]", effort = "medium" }
-fallback = { cli = "codex",  model = "gpt-5.4", write = true }
+primary  = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
+fallback = { cli = "codex",  model = "gpt-5.5", write = true }
 ```
 
 Fallback triggers: primary binary not on PATH; primary exits with quota/auth/network error code; primary times out (per-contract budget). If both primary AND fallback fail, the verb emits a `failed` disposition for the affected items + escalates via the `EscalationSink`.
@@ -1527,15 +1527,15 @@ Across re-review rounds the `fix` agent needs to remember decisions from earlier
 
 **Not yet designed; called out so it isn't lost.** Open questions for the dedicated sub-design:
 
-- **Storage location.** **Both**: a per-PR directory (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>/memory/`) is the always-present file-backed home (agent-side this is `memory_dir` in Contract B); when bd is available it ALSO mirrors decisions into bd beads of type `decision` or `memory`, so beads remain a source of truth that survives outside the file-backed store. The file directory keeps the agent bd-agnostic; the bead mirror keeps the system memory durable and queryable.
+- **Storage location.** **Both**: a per-PR directory (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>/memory/`) is the always-present file-backed home (agent-side this is `memory_dir` in the fix contract); when bd is available it ALSO mirrors decisions into bd beads of type `decision` or `memory`, so beads remain a source of truth that survives outside the file-backed store. The file directory keeps the agent bd-agnostic; the bead mirror keeps the system memory durable and queryable.
 - **Memory shape.** Free-form markdown files. No schema enforced; the agent picks file names and structure that fit the round's content. Bead-mirrored entries carry the same markdown as their description/notes field.
-- **Read API.** Agent receives `memory_dir` path in its Contract B input. Reads what it wants.
+- **Read API.** Agent receives `memory_dir` path in its fix contract input. Reads what it wants.
 - **Write API.** Agent declares `memory_writes` in output. CLI audits that all writes landed inside `memory_dir`; mirroring to beads (when enabled) happens CLI-side after audit passes.
 - **Compaction / pruning.** Defer. Memory is PR-scoped so unbounded growth is not expected to be a problem in the normal case. Revisit only if it becomes one.
 - **Cross-PR memory.** Future enhancement; out of MVP scope. The bead mirror is a natural integration point if/when we want it.
 - **Skill ownership.** A new `pr-memory-management` skill that the `fix` agent invokes? Or simply documented prompt template guidance? Decision deferred; both are workable.
 
-This sub-design is deferred to a separate spec but **MVP must carve out the skeleton hooks** (memory_dir input, memory_writes output) so we don't rework Contract B again later.
+This sub-design is deferred to a separate spec but **MVP must carve out the skeleton hooks** (memory_dir input, memory_writes output) so we don't rework the fix contract again later.
 
 ---
 

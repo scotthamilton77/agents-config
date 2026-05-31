@@ -16,9 +16,9 @@
 | Verb | A prgroom subcommand. The MVP verb set is `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`, `resolve-escalated`, `wait`, `status`, `run`, `sweep`. |
 | Phase | A position in prgroom's lifecycle for a single PR-grooming session. Each verb advances or operates within a phase; the run verb chains verbs to traverse phases. |
 | Round | A single review-iteration loop: poll → cluster → fix → push → re-review → reply → resolve. Bounded by the §3.5 hard cap. |
-| Disposition | The fix-orchestrator agent's per-comment classification: `FIX` (commit a code change), `SKIP` (acknowledge and dismiss), `ESCALATE` (defer to human). Per Section 5 of the source spec. |
+| Disposition | The fix contract agent's per-comment classification: `fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`. Per Section 5 of the source spec. |
 | Quiescence | A definite end-state where no further bot or human reviewer activity is expected; prgroom may safely stop watching the PR. Defined in §4 of the source spec. |
-| Contract A / Contract B | The two agent-dispatch contracts defined in §5. **A = `cluster`** (cheap grouping; local-first via ollama → claude haiku → codex-mini). **B = `fix`** (sonnet[1m] orchestrator that decides disposition AND implements). |
+| Cluster contract / Fix contract | The two agent-dispatch contracts defined in §5. **Cluster contract** = `cluster` (cheap grouping; local-first via ollama → claude haiku → codex-mini). **Fix contract** = `fix` (opus[1m] orchestrator that decides disposition AND implements). |
 | `prsession.Store` | The state-persistence interface defined in §2 of the source spec. MVP default is the `file` adapter (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`); a `memory` adapter exists for tests; the `bd` adapter is deferred to v2. **Naming-collision note:** this is a per-PR typed K/V store with locking — deliberately NOT named `WorkTracker` because PDLC orchestrator has a `WorkTracker` interface that abstracts a genuinely different concept (Objective registry with Discovery / CAS / fingerprinting). The two should not be conflated. |
 | `EscalationSink` | The interface (Section 5) for surfacing items the fix orchestrator classified `ESCALATE`. Default is stderr; `bd` and `file` adapters available. |
 
@@ -70,9 +70,9 @@ Newcomers should read in this order; deep contributors may navigate freely.
 | File | Status | Synopsis |
 |---|---|---|
 | [`c4-l1-context.md`](c4-l1-context.md) | drawn | **C4 Level 1** — the `prgroom` CLI in its ecosystem: operator, scheduler (cron / `prgroom sweep`), GitHub (PR + reviews + threads), Claude/Codex/OpenCode agent CLIs, prsession state store (via `prsession.Store` interface), local state file |
-| [`c4-l2-container.md`](c4-l2-container.md) | drawn | **C4 Level 2** — separately runnable / persistent units of `prgroom`: the `prgroom` binary (single short-lived Go process), the local state file (`prsession.Store` file-adapter storage), the local git worktree (where fix commits land), and the agent subprocess (forked per Contract A / Contract B dispatch). Internal Go modules (`internal/lifecycle`, `internal/prsession`, `internal/agent`, `internal/gh`, `internal/escalation`, etc.) are L3 **components** inside the binary, not L2 containers. |
+| [`c4-l2-container.md`](c4-l2-container.md) | drawn | **C4 Level 2** — separately runnable / persistent units of `prgroom`: the `prgroom` binary (single short-lived Go process), the local state file (`prsession.Store` file-adapter storage), the local git worktree (where fix commits land), and the agent subprocess (forked per cluster or fix dispatch). Internal Go modules (`internal/lifecycle`, `internal/prsession`, `internal/agent`, `internal/gh`, `internal/escalation`, etc.) are L3 **components** inside the binary, not L2 containers. |
 | [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) | drawn | **C4 Level 3** (lifecycle) — components inside `internal/lifecycle`: the `runLocked` control flow with verb breakdown (`poll → cluster → fix → push → rereview → reply → resolve → wait`), showing `escalate_if_needed` and `request_human_review_if_needed` call sites |
-| [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) | **stub** | **C4 Level 3** (`internal/agent`) — placeholder; expected components: Contract A (cluster) provider chain (ollama → haiku → codex-mini), Contract B (fix) sonnet[1m] orchestrator + EscalationSink wiring, per-contract config loader, token-usage JSONL emitter |
+| [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) | **stub** | **C4 Level 3** (`internal/agent`) — placeholder; expected components: cluster contract provider chain (ollama → haiku → codex-mini), fix contract opus[1m] orchestrator + EscalationSink wiring, per-contract config loader, token-usage JSONL emitter |
 | [`c4-l3-prsession.md`](c4-l3-prsession.md) | **stub** | **C4 Level 3** (`internal/prsession`) — placeholder; expected components: `prsession.Store` protocol + adapter registry, file adapter (`$XDG_STATE_HOME/prgroom/...`), memory adapter (tests), transactional verb-level + run-aggregate commit model, schema-migration plumbing for `schema_version` |
 | [`c4-deployment.md`](c4-deployment.md) | drawn | **C4 Deployment** — single-host MVP topology: prgroom binary on operator workstation, scheduler integration (cron / systemd timer / `prgroom sweep` loop), state file on local FS, gh CLI auth, agent-CLI bin presence. Explicit "multi-host POST-MVP" markers. |
 | [`sequences.md`](sequences.md) | drawn | **Four sequence diagrams** covering the canonical flows: (1) happy path — push → review → fix → push → quiesce; (2) bot silence — Copilot doesn't engage → `review_start_timeout` auto-decline → quiesce; (3) hard-cap — 3 rounds without quiescence → human-gated + auto-add human-review-required label; (4) resumability — process crash mid-`waitLocked` → next invocation re-evaluates timeouts from stored UTC timestamps |
@@ -91,18 +91,9 @@ Newcomers should read in this order; deep contributors may navigate freely.
 
 - **C4 L4 (code) is intentionally absent.** C4 itself recommends against drawing this level for systems where the code is reasonably self-documenting; we follow that guidance.
 
-## Source-spec coupling and rework risk
+## Source-spec coupling
 
 Diagrams in this folder are **derived artifacts**. The source of truth is `docs/plans/2026-05-12-prgroom-cli-design.md` Sections 1–8. Diagrams should cite the spec section they visualise (each file does so in its header) and be amended in place when the spec changes.
-
-**Known pending rework — fca6.11 (Tick-based run model).** A sibling sub-design bead is open to rework `§3.3` (the `run` aggregate verb algorithm) and `§4.2` (`waitLocked` internals) toward a tick-based model where each tick = one cycle and the lock is held briefly per tick. When fca6.11 lands, the following artifacts will need re-drawing:
-
-- `c4-l3-lifecycle.md` — the `runLocked` control flow becomes single-cycle
-- `sequences.md` — flows 1 (happy path), 2 (bot-silence), 3 (hard-cap) all change shape (the `waitLocked` long-poll collapses to a per-tick predicate check)
-- `state-machine.md` — phases stay, quiescence predicate stays, but the wait-edges become tick-driven
-- `c4-deployment.md` — scheduler integration becomes the primary deployment story rather than a side note
-
-Sections §1, §2, §4 (the *contract* of quiescence; the *mechanism* in §4.2 reworks), §5, §8 are not affected by the tick-model rework. fca6.12 reflects the current (blocking-model) spec; the rework will produce a paired commit to both the spec and these artifacts.
 
 ## How these artifacts should be used
 

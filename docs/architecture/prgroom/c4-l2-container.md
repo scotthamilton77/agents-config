@@ -13,9 +13,9 @@
 | Container (C4 sense) | A separately runnable process or persistent data store — not a Linux / Docker container. |
 | Component | A code module inside a container; appears at C4 L3, not L2. |
 | `runLocked` | The lifecycle aggregator inside the binary that holds the per-PR lock for the duration of a full grooming cycle and chains the per-verb `*Locked` lifecycle steps. Defined in source spec §3.3. |
-| Contract A | The agent-dispatch contract for `cluster` — cheap grouping of unprocessed review items. Local-first provider chain: ollama+Gemma → claude haiku → codex-mini. Source spec §5. |
-| Contract B | The agent-dispatch contract for `fix` — `sonnet[1m]` orchestrator that decides per-comment disposition AND implements the fix. Source spec §5. |
-| Fix commit | A commit produced by the Contract B agent inside the operator's working tree, then pushed to the PR branch by the `push` verb. |
+| Cluster contract | The agent-dispatch contract for `cluster` — cheap grouping of unprocessed review items. Local-first provider chain: ollama+Gemma → claude haiku → codex-mini. Source spec §5. |
+| Fix contract | The agent-dispatch contract for `fix` — `opus[1m]` orchestrator that decides per-comment disposition AND implements the fix. Source spec §5. |
+| Fix commit | A commit produced by the fix contract agent inside the operator's working tree, then pushed to the PR branch by the `push` verb. |
 | Quiescence | A definite end-state where no further reviewer activity is expected; the `wait` verb returns on observing quiescence (or hard cap). Source spec §4. |
 
 ## Purpose
@@ -33,16 +33,16 @@ C4Container
     Person(operator, "Operator (human or wrapping agent)")
 
     System_Boundary(prgroom, "prgroom CLI") {
-        Container(prgroom_bin, "prgroom binary", "Go static binary (cobra root)", "Single short-lived process: parses verb args, acquires per-PR lock via prsession.Store, runs the lifecycle (poll/cluster/fix/push/rereview/reply/resolve/wait or runLocked), shells out to the agent subprocess, exits. No daemon, no background threads, no shared memory between invocations.")
+        Container(prgroom_bin, "prgroom binary", "Go static binary (cobra root)", "Single terminal process — runs to completion and exits (one run may take seconds, or many minutes under the autonomous wait/iteration loop): parses verb args, acquires per-PR lock via prsession.Store, runs the lifecycle (poll/cluster/fix/push/rereview/reply/resolve/wait or runLocked), shells out to the agent subprocess, exits. No daemon, no background threads, no shared memory between invocations.")
         ContainerDb(state, "prsession state file", "JSON on local FS", "$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json. Sole survivor of process exit. flock(2) for concurrency; mktemp+rename(2) for atomicity. Schema versioned (schema_version: 1). Hand-edit-safe but not hand-edit-encouraged.")
-        Container(agent_proc, "Agent subprocess", "claude -p / codex exec / opencode run", "Short-lived; forked per Contract A or Contract B call. Receives prompt on stdin + context env; emits structured output. Fresh agent context per invocation — no carryover between calls.")
-        ContainerDb(worktree, "Operator's git worktree", "git working tree on local FS", "The repo + branch the operator launched prgroom against. The Contract B fix agent edits + commits here; the push verb pushes commits to origin. prgroom does NOT manage the worktree lifecycle — the operator (or upstream skill) owns create/cleanup.")
+        Container(agent_proc, "Agent subprocess", "claude -p / codex exec / opencode run", "Short-lived; forked per cluster or fix call. Receives prompt on stdin + context env; emits structured output. Fresh agent context per invocation — no carryover between calls.")
+        ContainerDb(worktree, "Operator's git worktree", "git working tree on local FS", "The repo + branch the operator launched prgroom against. The fix contract agent edits + commits here; the push verb pushes commits to origin. prgroom does NOT manage the worktree lifecycle — the operator (or upstream skill) owns create/cleanup.")
     }
 
     System_Ext(github, "GitHub", "PR + reviews + threads + CI verdicts + human-review-required label")
     System_Ext(gh_cli, "gh CLI auth state", "OS keyring / config — reused via go-gh")
     System_Ext(scheduler, "Scheduler", "cron / systemd timer / GHA / prgroom sweep / /loop session")
-    System_Ext(bd_adapter, "prsession.Store bd adapter (v2)", "Deferred prsession.Store adapter")
+    System_Ext(bd_store, "bd (beads store)", "External beads store (v2). prgroom's INTERNAL prsession.Store bd adapter persists state in a linked bead's notes; bd itself is the external system. Deferred — not wired in MVP.")
 
     Rel(operator, prgroom_bin, "Runs prgroom run / status / resolve-escalated", "CLI invocation")
     Rel(scheduler, prgroom_bin, "Triggers prgroom run (or prgroom sweep)", "tick / event")
@@ -50,11 +50,11 @@ C4Container
     Rel(prgroom_bin, state, "Read / atomically rewrite PRGroomingState; hold flock for verb duration", "local FS")
     Rel(prgroom_bin, github, "Polls reviews / threads / comments / CI; posts replies; resolves threads (GraphQL); pushes commits; sets human-review-required label", "gh API via go-gh")
     Rel(prgroom_bin, gh_cli, "Reuses gh auth token + host config", "config file read")
-    Rel(prgroom_bin, agent_proc, "Forks per Contract A (cluster) or Contract B (fix); pipes prompt; reads structured output", "stdin/stdout pipe")
-    Rel(prgroom_bin, worktree, "Reads HEAD SHA, branch ref; the Contract B agent commits here when invoked", "git plumbing")
-    Rel(prgroom_bin, bd_adapter, "v2: read/write state via bd notes (linkage label for-pr-<owner>-<repo>-<n>)", "bd CLI (deferred)")
+    Rel(prgroom_bin, agent_proc, "Forks per cluster or fix; pipes prompt; reads structured output", "stdin/stdout pipe")
+    Rel(prgroom_bin, worktree, "Reads HEAD SHA, branch ref; the fix contract agent commits here when invoked", "git plumbing")
+    Rel(prgroom_bin, bd_store, "v2: internal bd adapter reads/writes state via bd notes (linkage label for-pr-<owner>-<repo>-<n>)", "bd CLI (deferred)")
 
-    Rel(agent_proc, worktree, "Contract B only: edits files + git commit (the agent runs `git commit` itself, not prgroom)", "git from inside agent")
+    Rel(agent_proc, worktree, "Fix contract only: edits files + git commit (the agent runs `git commit` itself, not prgroom)", "git from inside agent")
 
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -65,14 +65,14 @@ C4Container
 
 #### `prgroom` binary — Go static binary
 
-The whole CLI runs here. Every invocation is short-lived: parse args, acquire the per-PR lock, do the work, release the lock, exit. There is no daemon, no background goroutine pool, no in-memory cache between invocations. State that must survive an invocation lives in the **prsession state file** (process-owned) or on the PR itself (GitHub-owned).
+The whole CLI runs here. Every invocation is **terminal** — it runs to completion and exits (a single `run` may take seconds, or many minutes under the autonomous wait/iteration loop): parse args, acquire the per-PR lock, do the work, release the lock, exit. There is no daemon, no background goroutine pool, no in-memory cache between invocations. State that must survive an invocation lives in the **prsession state file** (process-owned) or on the PR itself (GitHub-owned).
 
 Internally — at L3 — this binary is composed of:
 
 - `cmd/prgroom/` — cobra root + per-verb command files
 - `internal/lifecycle/` — verb implementations (`pollLocked`, `clusterLocked`, `fixLocked`, `pushLocked`, `rereviewLocked`, `replyLocked`, `resolveLocked`, `waitLocked`), the `runLocked` aggregator, and the `quiescencePredicate` (§4.1 pure function — lives here, not in a separate package)
 - `internal/prsession/` — `Store` interface + `file` adapter + `memory` adapter (tests) + (v2) `bd` adapter
-- `internal/agent/` — Contract A and Contract B dispatch with per-contract provider chains
+- `internal/agent/` — cluster contract and fix contract dispatch with per-contract provider chains
 - `internal/gh/` — GitHub adapter (wraps `github.com/cli/go-gh/v2`)
 - `internal/git/` — git plumbing (worktree-aware reads of HEAD / branch ref)
 - `internal/escalation/` — `EscalationSink` interface + stderr / file / (later) bd adapters
@@ -90,27 +90,27 @@ Concurrency: `flock(2)` on the file for the verb's duration (the `run` verb hold
 
 Forked per agent dispatch. Two contracts share the subprocess mechanism:
 
-- **Contract A (`cluster`)** — cheap. Local-first provider chain: ollama+Gemma, falling back to claude haiku, falling back to codex-mini. Bundles unprocessed review items into fix-clusters; no per-item disposition decided here.
-- **Contract B (`fix`)** — strong. `sonnet[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`.
+- **Cluster contract** (`cluster` verb) — cheap. Local-first provider chain: ollama+Gemma, falling back to claude haiku, falling back to codex-mini. Bundles unprocessed review items into fix-clusters; no per-item disposition decided here.
+- **Fix contract** (`fix` verb) — strong. `opus[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`.
 
 Each invocation is a **fresh context** — no conversation memory between calls. Per-call token-usage is logged to JSONL (`internal/agent/` emits this) for later baseline analysis; MVP does no aggregation.
 
 #### Operator's git worktree
 
-The repo + branch the operator launched prgroom against. The Contract B agent edits + commits here; the `push` verb pushes commits to origin. **prgroom does NOT manage the worktree lifecycle** — the operator (or upstream skill like `finishing-a-development-branch`) owns create / cleanup. This is a deliberate scope decision per source spec §1 non-goals.
+The repo + branch the operator launched prgroom against. The fix contract agent edits + commits here; the `push` verb pushes commits to origin. **prgroom does NOT manage the worktree lifecycle** — the operator (or upstream skill like `finishing-a-development-branch`) owns create / cleanup. This is a deliberate scope decision per source spec §1 non-goals.
 
 ### External systems (carried forward from L1)
 
 - **GitHub** — at L1 this was a single "GitHub" box. At L2 the relationship list expands but the box stays singular; the components inside `prgroom` (`internal/gh`, `internal/lifecycle/{poll,push,reply,resolve,rereview}`) split the GitHub interactions into REST + GraphQL + label-mutation slices, but those splits live at L3.
 - **gh CLI auth state** — unchanged from L1. `prgroom` does not store credentials; it reuses what `gh auth` already established.
 - **Scheduler** — unchanged from L1. Whatever drives autonomous mode (cron, systemd timer, GitHub Actions, `prgroom sweep`, a `/loop` Claude Code session) is opaque to `prgroom`.
-- **`prsession.Store` bd adapter (v2)** — unchanged from L1. The `bd` adapter for `prsession.Store` is deferred; in MVP this box is "drawn for context, not wired".
+- **`bd` (beads store)** — unchanged from L1. `bd` is the external store; prgroom's `bd`-backed `prsession.Store` adapter is an internal component (deferred to v2), not an external system. In MVP this box is "drawn for context, not wired".
 
 ## Container-relationship discipline (worth memorising)
 
 - **One prsession lock per PR.** Every verb acquires `prsession.Store.Lock(prRef)` before doing work; the `run` verb holds the lock for the entire grooming cycle. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75). The `status` verb is the sole carve-out: an unlocked `Read` returns a stale-but-atomic snapshot for diagnostic polling.
 - **Fresh agent context per dispatch.** The agent subprocess receives only what `prgroom` pipes in. No carryover state, no agent memory between calls. This is what makes the contracts deterministic from the orchestrator's perspective.
-- **prgroom owns the prsession state file; the agent owns the worktree edits.** `prgroom` writes the state file from inside `runLocked`. The Contract B agent writes files + runs `git commit` inside the worktree itself. `prgroom` never commits; the agent never reads / writes the prsession state file.
+- **prgroom owns the prsession state file; the agent owns the worktree edits.** `prgroom` writes the state file from inside `runLocked`. The fix contract agent writes files + runs `git commit` inside the worktree itself. `prgroom` never commits; the agent never reads / writes the prsession state file.
 - **GitHub is the source of truth for review state.** `prsession` mirrors the relevant slice (per-comment disposition, per-reviewer status) but is not authoritative — if `prsession` and GitHub disagree (e.g., operator hand-resolved a thread), the next `poll` reconciles toward GitHub.
 - **No daemon, no shared memory.** Crash recovery = re-invoke. The state file plus the PR's GitHub state are sufficient to resume any in-flight cycle. Resumability is a §4 invariant (UTC timestamps; reviewer-timeout evaluated against now, not against process-start).
 

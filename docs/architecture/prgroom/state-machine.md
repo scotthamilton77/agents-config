@@ -28,7 +28,7 @@ The complete phase graph for one PR's grooming lifecycle. Every transition the C
 - The `awaiting-review ↔ fixes-pending ↔ awaiting-review` push-and-iterate loop
 - The §3.5 hard-cap exit (`fixes-pending → human-gated`)
 - The §3.2-priority-2 / -3 routes to `human-gated` (failed items, escalated items, runtime-terminal errors)
-- The §4-quiescence trip (`fixes-pending → quiesced` via end-of-cycle resolver priority 5)
+- The §4-quiescence trips into `quiesced` — from `fixes-pending` via end-of-cycle resolver priority 5, AND from `awaiting-review` via the `waitLocked` wake event (§4.2)
 - The §4.7 human-review label addition (a side-effect on the `→ human-gated` edges, not a phase itself)
 - The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity)
 - The `→ merged` edges from every non-terminal phase
@@ -46,7 +46,7 @@ stateDiagram-v2
     state "fixes-pending" as fixes_pending
     state "human-gated" as human_gated
 
-    [*] --> idle : prgroom run <pr><br/>(first invocation; bootstrap)
+    [*] --> idle : prgroom run PR<br/>(first invocation — bootstrap)
 
     idle --> awaiting_review : poll<br/>(first push observed)
     idle --> fixes_pending : poll<br/>(first push AND reviewer items<br/>already present — uncommon)
@@ -54,10 +54,11 @@ stateDiagram-v2
 
     awaiting_review --> fixes_pending : poll<br/>(new reviewer item observed)
     awaiting_review --> merged : poll<br/>(PR closed via merge)
+    awaiting_review --> quiesced : waitLocked quiescence trip (§4.2)<br/>(reviewers terminal — approved / declined /<br/>timed-out — no open items, CI ok,<br/>idle_threshold elapsed)
 
     fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no cap trip, Round++)
     fixes_pending --> quiesced : end-of-cycle priority 5<br/>(zero commits pushed AND<br/>quiescencePredicate(state) == true)
-    fixes_pending --> fixes_pending : end-of-cycle priority 6<br/>(zero commits pushed AND<br/>quiescence has not tripped —<br/>e.g., all items skipped / deferred)
+    fixes_pending --> awaiting_review : end-of-cycle priority 6<br/>(zero commits pushed AND quiescence<br/>has not tripped — e.g. all items<br/>skipped / deferred — re-wait for<br/>reviewer activity)
     fixes_pending --> human_gated : end-of-cycle priority 1<br/>(hard cap pre-push:<br/>has_queued_fix_commits AND<br/>Round >= MaxRounds)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
     fixes_pending --> human_gated : end-of-cycle priority 2<br/>(any item.Disposition.Kind == failed)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
     fixes_pending --> human_gated : end-of-cycle priority 3<br/>(any item.Disposition.Kind == escalated)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
@@ -86,8 +87,10 @@ stateDiagram-v2
         Priority 5 → quiesced
         (zero pushes + quiescencePredicate true)
 
-        Priority 6 → fixes-pending (stay)
-        (zero pushes + quiescence not tripped)
+        Priority 6 → awaiting-review
+        (zero pushes + quiescence not tripped —
+        re-wait; poll re-enters fixes-pending
+        for NEW items only, per idempotency)
     end note
 
     note right of quiesced
@@ -113,16 +116,16 @@ stateDiagram-v2
 
 ## Quiescence predicate (the gate behind `fixes-pending → quiesced`)
 
-The single transition `fixes_pending --> quiesced` (priority 5) fires when `quiescencePredicate(state) == true`. The predicate is four hard gates AND the idle timer:
+Two transitions reach `quiesced`, both gated by the same `quiescencePredicate(state) == true`: `fixes_pending --> quiesced` (end-of-cycle resolver, priority 5) and `awaiting_review --> quiesced` (`waitLocked` wake event, §4.2). The predicate is four hard gates AND the idle timer:
 
 ```mermaid
 flowchart LR
     Q{quiescencePredicate}
-    G1[G_REVIEWERS<br/>all Required reviewers<br/>have Status ∈<br/>{review_found, declined}]
-    G2[G_CI<br/>Quiescence.CIState ∈<br/>{success, absent}<br/>for LastPushedHeadSHA]
-    G3[G_DISPOSITIONS<br/>every Items[*].Disposition != nil]
-    G4[G_NO_BLOCKERS<br/>no item with Disposition.Kind ∈<br/>{escalated, failed}]
-    G5[idle_threshold elapsed<br/>now - LastActivityAt >= 10m default]
+    G1["G_REVIEWERS<br/>all Required reviewers<br/>have Status ∈<br/>{review_found, declined}"]
+    G2["G_CI<br/>Quiescence.CIState ∈<br/>{success, absent}<br/>for LastPushedHeadSHA"]
+    G3["G_DISPOSITIONS<br/>every Items[*].Disposition != nil"]
+    G4["G_NO_BLOCKERS<br/>no item with Disposition.Kind ∈<br/>{escalated, failed}"]
+    G5["idle_threshold elapsed<br/>now - LastActivityAt >= 10m default"]
 
     Q --> G1
     Q --> G2
@@ -177,14 +180,10 @@ The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (
 
 `state.LastError` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. No `clear-error` verb is needed.
 
-## Pending rework (fca6.11)
-
-The phase graph above reflects the current blocking-model spec (§3 as ratified). fca6.11 is open to rework §3.3 (the `run` aggregate) and §4.2 (`waitLocked`) toward a tick-based model where each tick = one cycle and the lock is held briefly per tick. The phase graph itself is unaffected by that rework — the 6 phases stay, the edges stay, the priorities stay. What changes is whether `runLocked` chains cycles inside one process invocation (current spec) or whether the scheduler drives one cycle per tick (proposed). When fca6.11 lands, this artifact's edges remain valid; only the "where the lock lives" annotation changes.
-
 ## What this diagram does NOT show
 
 - **Per-cycle mechanics inside `runLocked`.** How the orchestrator actually advances from one phase to the next within a cycle lives in [`sequences.md`](sequences.md) and [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md).
-- **Per-item disposition transitions.** Each `Items[*].Disposition.Kind` has its own micro-state machine (`nil → fixed | already_addressed | skipped | deferred | wont_fix | escalated | failed`) decided by Contract B; not drawn here.
+- **Per-item disposition transitions.** Each `Items[*].Disposition.Kind` has its own micro-state machine (`nil → fixed | already_addressed | skipped | deferred | wont_fix | escalated | failed`) decided by the fix contract; not drawn here.
 - **Per-reviewer Status transitions.** Each `Reviewers[r].Status` value (`not_requested → requested → in_progress → review_found | declined`) has its own micro-state machine driven by `pollLocked`'s engagement detection (§4.1); not drawn here.
 - **Lock contention as state.** `PRECONDITION_LOCK_HELD` (exit 75) is a transient API outcome, not a phase. A locked PR's phase is whatever the lock-holder last wrote.
 - **Scheduler-side retry policy.** What the scheduler does after a `RUNTIME_TRANSIENT` (exit 75) or `RUNTIME_CANCELLED` (exit 130/143) exit lives outside the state machine — see source spec §3.6.

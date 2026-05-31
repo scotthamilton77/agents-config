@@ -13,7 +13,7 @@
 | Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `runLocked` (§3.3) iterates cycles until quiescence or the hard cap. |
 | Round | A counter of *review-eliciting pushes prgroom has performed or observed* on the PR. Bumped by `pushLocked` on a successful CLI push and by `pollLocked` on detection of an external push (SHA transition). Bounded by `MaxRounds` (§3.5). |
 | Wake event | One of five conditions that exit `waitLocked` per §4.2: signal-cancel, poll-error, phase-moved, quiescence-trips, or (intentionally absent in MVP) hard wait-timeout. |
-| Disposition | The Contract B agent's per-comment classification: `fixed`, `already_addressed`, `skipped`, `deferred`, `wont_fix`, `escalated`, `failed`. |
+| Disposition | The fix contract agent's per-comment classification: `fixed`, `already_addressed`, `skipped`, `deferred`, `wont_fix`, `escalated`, `failed`. |
 | `prsession.Store` | The per-PR state store interface (§2). The pseudonym `state` in the diagrams below is shorthand for an in-memory `PRGroomingState` value backed by the file adapter's `Read`/`Write` operations under `flock(2)`. |
 
 ## Purpose
@@ -40,15 +40,15 @@ sequenceDiagram
     participant PG as prgroom (runLocked)
     participant State as prsession state file
     participant GH as GitHub
-    participant Cluster as Agent (Contract A — cluster)
-    participant Fix as Agent (Contract B — fix)
+    participant Cluster as Cluster agent
+    participant Fix as Fix agent
 
     Note over Op,GH: Initial PR push (out-of-band, before prgroom invocation)
     Op->>GH: git push + open PR
 
-    Note over Op,PG: Operator invokes prgroom run <pr>
-    Op->>PG: prgroom run <pr> --autonomous
-    PG->>State: Lock(prRef) — acquire flock(2); held until terminal exit
+    Note over Op,PG: Operator invokes prgroom run PR
+    Op->>PG: prgroom run PR --autonomous
+    PG->>State: Lock(prRef) — acquire flock(2), held until terminal exit
     PG->>State: Read — bootstrap zero-value PRGroomingState (SchemaVersion=1, Round=0)
 
     rect rgb(245, 245, 255)
@@ -56,7 +56,7 @@ sequenceDiagram
         PG->>GH: pollLocked — list comments / reviews / CI / head SHA
         GH-->>PG: items, reviewers requested, CI pending
         PG->>State: Write — Round=1 (bootstrap anchor), Phase=awaiting-review
-        Note over PG: pollLocked observes no fixable items yet; cycle resolver advances to awaiting-review
+        Note over PG: pollLocked observes no fixable items yet — cycle resolver advances to awaiting-review
         PG->>State: Write — phase resolution
         PG->>GH: waitLocked — sleep poll_interval, then re-poll
         loop poll_interval until activity
@@ -71,7 +71,7 @@ sequenceDiagram
         PG->>Cluster: cluster — bundle unprocessed items into fix-clusters
         Cluster-->>PG: clusters (JSON)
         PG->>State: Write — clusters recorded
-        PG->>Fix: fix — per-cluster Contract B dispatch (sonnet[1m])
+        PG->>Fix: fix — per-cluster fix contract dispatch (opus[1m])
         Fix-->>Fix: edits files in operator's worktree + git commit per fixed item
         Fix-->>PG: per-item dispositions (fixed / already_addressed / skipped / etc.) + commit SHAs
         PG->>State: Write — per-item Disposition recorded
@@ -106,8 +106,7 @@ sequenceDiagram
 - **One lock per PR for the entire cycle.** `Run` acquires the `prsession.Store` lock once and holds it until terminal exit — minutes to hours depending on reviewer cadence. A concurrent `prgroom run` invocation on the same PR exits immediately with `PRECONDITION_LOCK_HELD` (exit 75). The `status` verb is the lock-free carve-out for diagnostic polling.
 - **Round is incremented exactly once per push.** The bootstrap pollLocked sets `Round=1` to anchor the counter at the PR's currently observed HEAD; subsequent CLI pushes bump it via `pushLocked`; external pushes bump it via `pollLocked` SHA-transition attribution. The cap (default 3) counts CLI-observed rounds only — historical out-of-band pushes are invisible.
 - **Quiescence is the four hard gates plus the idle timer.** `G_REVIEWERS` (all Required reviewers terminal), `G_CI` (CIState in {success, absent}), `G_DISPOSITIONS` (every item dispositioned), `G_NO_BLOCKERS` (no escalated / failed items). The idle timer (default 10m) is the soft "let it settle" buffer for slow human reviewers.
-- **The fix agent owns its commits.** Contract B's agent runs `git commit` itself inside the operator's worktree; prgroom does the subsequent `git push`. prgroom does not commit, and Contract B does not push.
-- **Section 3 reworks are pending.** This diagram reflects the current blocking-model spec. fca6.11 is open to rework `runLocked` to a tick-based model — when it lands, the "one lock for the entire cycle" semantic flips to "one lock per tick" and `waitLocked` collapses to a per-tick predicate check.
+- **The fix agent owns its commits.** The fix contract agent runs `git commit` itself inside the operator's worktree; prgroom does the subsequent `git push`. prgroom does not commit, and the fix contract does not push.
 
 ---
 
@@ -125,9 +124,9 @@ sequenceDiagram
 
     Note over Op,GH: PR push with copilot as Required reviewer
     Op->>GH: git push + open PR + request copilot review
-    Op->>PG: prgroom run <pr> --autonomous
+    Op->>PG: prgroom run PR --autonomous
 
-    PG->>State: Lock(prRef); Read — bootstrap state
+    PG->>State: Lock(prRef) then Read — bootstrap state
     PG->>GH: pollLocked — initial fetch
     GH-->>PG: no items, ReviewerState[copilot].Status=requested, ReviewerState[copilot].LastRequestAt=PR-create-time
     PG->>State: Write — Round=1, Phase=awaiting-review
@@ -146,7 +145,7 @@ sequenceDiagram
     PG-->>State: Lock released
     PG-->>Op: exit 0 (terminal-for-CLI: quiesced)
 
-    Note over Op,PG: prgroom status <pr> later shows:<br/>copilot.DeclinedReason="timeout-no-start"<br/>(operator can tell silence from explicit decline)
+    Note over Op,PG: prgroom status PR later shows:<br/>copilot.DeclinedReason="timeout-no-start"<br/>(operator can tell silence from explicit decline)
 ```
 
 ### Notes on the bot-silence path
@@ -169,12 +168,12 @@ sequenceDiagram
     participant State as prsession state file
     participant GH as GitHub
     participant Sink as EscalationSink
-    participant Fix as Agent (Contract B)
+    participant Fix as Fix agent
 
     Op->>GH: git push + open PR (Round will bootstrap to 1)
-    Op->>PG: prgroom run <pr> --autonomous
+    Op->>PG: prgroom run PR --autonomous
 
-    PG->>State: Lock; Read — bootstrap
+    PG->>State: Lock then Read — bootstrap
     PG->>GH: poll → cluster → fix → push (Round=2)
     Note over PG: First fix round commits + pushes
     PG->>GH: rereview, reply, resolve
@@ -182,13 +181,13 @@ sequenceDiagram
 
     GH-->>PG: Copilot returns with more FIX comments
     PG->>GH: poll → cluster → fix → push (Round=3)
-    Note over PG: Second fix round commits + pushes<br/>pushLocked emits stderr warning:<br/>"this push reaches MaxRounds=3;<br/>subsequent fix work will gate to human-gated"
+    Note over PG: Second fix round commits + pushes<br/>pushLocked emits stderr warning:<br/>"this push reaches MaxRounds=3 —<br/>subsequent fix work will gate to human-gated"
     PG->>GH: rereview, reply, resolve
     PG->>GH: waitLocked — reviewer activity
 
     GH-->>PG: Copilot returns AGAIN with more FIX comments
     PG->>GH: pollLocked — observe items
-    PG->>Fix: fixLocked — Contract B produces more commits in worktree
+    PG->>Fix: fixLocked — the fix contract produces more commits in worktree
     Fix-->>PG: per-item dispositions + commit SHAs
     PG->>State: Write — items.Disposition recorded
 
@@ -201,7 +200,7 @@ sequenceDiagram
     PG-->>State: Lock released
     PG-->>Op: exit 0 (graceful terminal — LIFECYCLE_CAP tier)
 
-    Note over Op,PG: Recovery: operator runs prgroom resolve-escalated<br/>(or raises --max-rounds and re-invokes run);<br/>LastError clears automatically on next successful cycle.<br/>The human-review-required label is a merge constraint,<br/>NOT a lifecycle gate — operator does not need to remove it<br/>to exit human-gated (§4.4).
+    Note over Op,PG: Recovery: operator runs prgroom resolve-escalated<br/>(or raises --max-rounds and re-invokes run).<br/>LastError clears automatically on next successful cycle.<br/>The human-review-required label is a merge constraint,<br/>NOT a lifecycle gate — operator does not need to remove it<br/>to exit human-gated (§4.4).
 ```
 
 ### Notes on the hard-cap path
@@ -228,14 +227,14 @@ sequenceDiagram
     participant OS as OS / kernel
 
     Op->>GH: git push + open PR (copilot Required)
-    Op->>PG1: prgroom run <pr>
+    Op->>PG1: prgroom run PR
     PG1->>State: Lock — flock(2) on fd
-    PG1->>State: Read; Write — bootstrap, Round=1, Phase=awaiting-review<br/>ReviewerState[copilot].LastRequestAt=t0 (RFC3339 UTC)
+    PG1->>State: Read then Write — bootstrap, Round=1, Phase=awaiting-review<br/>ReviewerState[copilot].LastRequestAt=t0 (RFC3339 UTC)
     PG1->>GH: waitLocked — poll_interval sleep + re-poll loop
     loop a few iterations
         PG1->>GH: pollLocked re-check
         GH-->>PG1: no copilot activity
-        PG1->>State: Write — (no field changes; loop continues)
+        PG1->>State: Write — (no field changes, loop continues)
     end
 
     Note over PG1,OS: Process #1 dies mid-wait (kill -9 / OOM / panic / power)
@@ -244,7 +243,7 @@ sequenceDiagram
     Note over State: state file unchanged since last successful write<br/>LastRequestAt=t0 still intact
 
     Note over Op,PG2: Operator or scheduler re-invokes
-    Op->>PG2: prgroom run <pr>
+    Op->>PG2: prgroom run PR
     PG2->>State: Lock(prRef) — acquires immediately (no stale lock to clear)
     PG2->>State: Read — full PRGroomingState (incl. LastRequestAt=t0)
     PG2->>GH: waitLocked — first iteration enters
@@ -267,12 +266,16 @@ sequenceDiagram
 
 ---
 
+## Pending design that will reshape these flows
+
+**An RCA / issue-analysis pass is under design** (tracked separately; not yet ratified, not in the parity MVP). It would *accompany the cluster pass* — assessing each review item's true scope, impact, and nature before fix dispatch — and feed richer context into the fix step, potentially gating which clusters are worth a fix attempt at all. Candidate shapes (to be settled in a dedicated brainstorm): extend the cluster contract's output schema with per-cluster RCA metadata, or insert a dedicated analysis step between `cluster` and `fix`. **When that lands, Sequences 1–3 will gain a pre-/intra-cluster analysis interaction and the `cluster → fix` handoff will change shape.** See [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) for the structural counterpart of this note.
+
 ## What these diagrams do NOT show
 
 - **Phase transitions and the strike-vs-non-strike taxonomy.** The phase graph (`idle` ↔ `awaiting-review` ↔ `fixes-pending` ↔ `quiesced` / `human-gated` / `merged`) and the quiescence sub-states live in [`state-machine.md`](state-machine.md).
 - **The full failure-tier registry.** All seven tiers (`PRECONDITION_*`, `RUNTIME_*`, `CONTRACT_*`, `STATE_*`, `LIFECYCLE_*`) with their exit codes, escalation, and scheduler-retry semantics live in source spec §§3.6–3.7. Sequence 3 shows the `LIFECYCLE_CAP` happy-path exit; the runtime tiers are not drawn here.
 - **CAS aborts and retries inside `prsession.Store`.** The MVP `file` adapter uses `flock(2)` + atomic rename, not CAS — concurrent verbs on the same PR exit with `PRECONDITION_LOCK_HELD` rather than abort-and-retry. (PDLC orchestrator's `WorkTracker` uses CAS; prgroom's `prsession.Store` does not. Different shape for different needs.)
-- **Per-item disposition mechanics inside Contract B.** The disposition decisions (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) and their evidence requirements live in source spec §5 (Contract B audit rules).
+- **Per-item disposition mechanics inside the fix contract.** The disposition decisions (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) and their evidence requirements live in source spec §5 (fix contract audit rules).
 - **Component-level mechanics inside the prgroom binary.** See [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) for the components that execute these sequences.
 
 ## Cross-references

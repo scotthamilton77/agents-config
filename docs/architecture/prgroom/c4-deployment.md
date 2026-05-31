@@ -35,12 +35,12 @@ C4Deployment
         }
 
         Deployment_Node(prgroom_node, "prgroom binary", "Go static binary on PATH") {
-            Container(prgroom_bin, "prgroom", "Go executable", "Short-lived per invocation; one process per prgroom run. Contains all components from C4 L3.")
+            Container(prgroom_bin, "prgroom", "Go executable", "Terminal per invocation — runs to completion and exits; one process per prgroom run (seconds to many minutes). Contains all components from C4 L3.")
         }
 
         Deployment_Node(agent_subproc, "Agent subprocesses (ephemeral)", "forked by internal/agent") {
-            Container(agent_a, "Cluster agent (Contract A)", "ollama / claude / codex subprocess", "One per cluster invocation; exits after producing fix-bundles")
-            Container(agent_b, "Fix agent (Contract B)", "claude -p sonnet[1m] subprocess", "One per cluster fix invocation; edits worktree + git commit; exits after producing dispositions + commit SHAs")
+            Container(agent_a, "Cluster agent", "ollama / claude / codex subprocess", "One per cluster invocation; exits after producing fix-bundles")
+            Container(agent_b, "Fix agent", "claude -p opus[1m] subprocess", "One per cluster fix invocation; edits worktree + git commit; exits after producing dispositions + commit SHAs")
         }
 
         Deployment_Node(state_node, "prsession state directory", "filesystem under $XDG_STATE_HOME") {
@@ -49,13 +49,13 @@ C4Deployment
         }
 
         Deployment_Node(repo_node, "Operator's git repository", "git working tree") {
-            ContainerDb(worktree_fs, "PR branch worktree", "git working copy", "The branch prgroom was launched against. Contract B agent commits here.")
+            ContainerDb(worktree_fs, "PR branch worktree", "git working copy", "The branch prgroom was launched against. The fix contract agent commits here.")
         }
 
         Deployment_Node(agent_bins, "Agent runtime binaries", "on PATH") {
             Container(claude_cli, "claude (Claude Code)", "binary")
             Container(codex_cli, "codex (Codex CLI)", "binary")
-            Container(ollama_bin, "ollama (local)", "binary", "Optional; primary for Contract A local-first chain")
+            Container(ollama_bin, "ollama (local)", "binary", "Optional; primary for the cluster contract local-first chain")
             Container(opencode_cli, "opencode (OpenCode)", "binary", "Optional; available runtime for either contract via TOML config (not in the default chain)")
         }
 
@@ -83,7 +83,7 @@ C4Deployment
     Rel(agent_a, ollama_bin, "Local model inference (primary)")
     Rel(agent_a, claude_cli, "Cloud model inference (fallback 1)")
     Rel(agent_a, codex_cli, "Cloud model inference (fallback 2)")
-    Rel(agent_b, claude_cli, "Cloud model inference (sonnet[1m] primary)")
+    Rel(agent_b, claude_cli, "Cloud model inference (opus[1m] primary)")
 
     Rel(agent_b, worktree_fs, "Edits files + git commit (agent runs its own git, not prgroom)")
     Rel(prgroom_bin, git_remote, "git push (via gh / git binary)", "git over SSH or HTTPS")
@@ -106,8 +106,8 @@ This is deliberate: cross-host coordination, distributed locks, and shared state
 | `prgroom run --interactive` invocation | Same — blocks until terminal. |
 | `prgroom poll` / `cluster` / `fix` / `push` / `reply` / `resolve` / `rereview` / `resolve-escalated` invocation | Short — seconds. Acquires the lock, does one verb, releases. |
 | `prgroom status` invocation | Sub-second. Lock-free read by design (§3.3 carve-out). |
-| Cluster agent (Contract A) subprocess | Short — seconds to ~30s; one per cluster invocation. |
-| Fix agent (Contract B) subprocess | Variable — tens of seconds to minutes; one per cluster fix invocation; the agent decides AND implements. |
+| Cluster agent subprocess | Short — seconds to ~30s; one per cluster invocation. |
+| Fix agent subprocess | Variable — tens of seconds to minutes; one per cluster fix invocation; the agent decides AND implements. |
 | Scheduler (cron / systemd timer / `/loop` session) | Long-running; outside prgroom's awareness. |
 
 ### Per-PR concurrency
@@ -122,7 +122,7 @@ Three persistent stores on the workstation:
 
 1. **prsession state file** (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`) — owned by prgroom. One file per PR. Survives prgroom process exits, machine reboots (locks self-clear via `flock(2)`).
 2. **token-usage JSONL log** (`$XDG_STATE_HOME/prgroom/usage.jsonl`) — append-only audit log of agent invocations. MVP captures; no analysis.
-3. **git worktree** (the operator's working tree, wherever they cloned it) — owned by the operator. prgroom reads HEAD / branch ref; the Contract B agent commits here. prgroom does NOT manage the worktree lifecycle.
+3. **git worktree** (the operator's working tree, wherever they cloned it) — owned by the operator. prgroom reads HEAD / branch ref; the fix contract agent commits here. prgroom does NOT manage the worktree lifecycle.
 
 No databases. No shared volumes. No remote stores. The MVP boundary is "what fits on one workstation".
 

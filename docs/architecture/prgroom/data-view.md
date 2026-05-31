@@ -77,7 +77,7 @@ erDiagram
         string   ClusterID       "set by clusterLocked; empty = unclustered"
         bool     Replied         "set by replyLocked"
         bool     Resolved        "review_thread only; set by resolveLocked"
-        string   DuplicateOfGHID "set if Contract A clustered as duplicate"
+        string   DuplicateOfGHID "set if the cluster contract clustered as duplicate"
     }
 
     Identity {
@@ -95,7 +95,7 @@ erDiagram
         string          Gate            "full | lite — recommended gate the fix agent thought necessary"
         bool            EscalationFiled "escalated only; per-cycle dedup"
         time            DecidedAt       "UTC"
-        string          DecidedBy       "agent CLI id (e.g. claude -p sonnet[1m]) or human:<login>"
+        string          DecidedBy       "agent CLI id (e.g. claude -p opus[1m]) or human:<login>"
     }
 
     QuiescenceState {
@@ -111,6 +111,7 @@ erDiagram
 - `ReviewItem` list is ordered by `SeenAt` (append-only growth as `pollLocked` discovers new comments).
 - `Disposition` is a **pointer** field on `ReviewItem` — `nil` is the explicit "not yet processed" state. Once set, it's not unset (the lifecycle only forward-resolves dispositions).
 - `Identity` is shape-polymorphic by `Kind`: only `review_thread` carries `ThreadID` + `ReplyToCommentID`; only `issue_comment` carries `IssueCommentID`. `GHID` is always populated. The §2 spec notes this is enforced by runtime validation, not by separate struct types (the single-struct + discriminator shape is the MVP default for JSON-marshal simplicity).
+- **`ReviewerStatus` has no `approved` value, by design.** A submitted review — GitHub `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED` — all land the reviewer in `review_found` (§4.1). The approve-vs-changes distinction lives in the `ReviewItem`s the review produces (an approval yields zero actionable items, so quiescence trips via `G_DISPOSITIONS` + `G_NO_BLOCKERS`), not in the reviewer's status; and `G_REVIEWERS` only asks whether each Required reviewer reached a terminal verdict (`review_found | declined`), so a separate `approved` state would be redundant. The **merge-relevant** human approval is a different signal entirely — the `human-approved` label or a non-bot `APPROVED` review — owned by §4.4 and surfaced via `status --json` `auto_merge_eligible`, not by `ReviewerStatus`.
 
 ## Canonical-ownership boundaries
 
@@ -259,7 +260,7 @@ Wire-format example (`file` adapter — one JSON line per escalation):
     "author": "github-copilot[bot]",
     "body_excerpt": "Consider refactoring this loop to use a builder pattern...",
     "cluster_id": "c3",
-    "disposition": {"kind": "escalated", "rationale": "design choice spans 3 files; outside agent's confident scope", "decided_at": "2026-05-25T14:30:00Z", "decided_by": "claude -p sonnet[1m]"}
+    "disposition": {"kind": "escalated", "rationale": "design choice spans 3 files; outside agent's confident scope", "decided_at": "2026-05-25T14:30:00Z", "decided_by": "claude -p opus[1m]"}
   },
   "severity": "warn"
 }
@@ -278,7 +279,7 @@ Wire-format example (`file` adapter — one JSON line per escalation):
 | Triggering condition | Severity |
 |---|---|
 | Per-item `Disposition.Kind == escalated` | `warn` |
-| Per-item `Disposition.Kind == failed` (Contract B audit failure) | `warn` |
+| Per-item `Disposition.Kind == failed` (fix contract audit failure) | `warn` |
 | `state.LastError == LIFECYCLE_HARD_CAP_EXCEEDED` (§3.5) | `block` |
 | `state.LastError ∈ {STATE_CORRUPT, STATE_SCHEMA_UNKNOWN}` | `block` |
 | Future: deferred-from-spec advisories | `info` |

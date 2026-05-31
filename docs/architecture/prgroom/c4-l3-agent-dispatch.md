@@ -8,7 +8,7 @@
 
 ## Why this is a stub
 
-Section 5 of the source spec is ratified at the contract level (Contract A = cluster, Contract B = fix; provider chains; per-contract config; token-usage logging). The internal component breakdown of `internal/agent/` is not yet pinned at the same implementation-readiness level as `internal/lifecycle/` (drawn in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md)) because no `[Impl]` child bead has opened against `internal/agent/` yet.
+Section 5 of the source spec is ratified at the contract level (the cluster contract and fix contract; provider chains; per-contract config; token-usage logging). The internal component breakdown of `internal/agent/` is not yet pinned at the same implementation-readiness level as `internal/lifecycle/` (drawn in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md)) because no `[Impl]` child bead has opened against `internal/agent/` yet.
 
 This stub establishes the file's home and the components the eventual drawing must cover. When the impl bead opens, this file gets re-drawn at the same fidelity as the lifecycle L3.
 
@@ -16,24 +16,24 @@ This stub establishes the file's home and the components the eventual drawing mu
 
 The diagram should cover these named units inside `internal/agent/`:
 
-### Contract A — cluster
+### Cluster contract
 
 - **`ClusterContract` interface** — the `Cluster(ctx, items []ReviewItem) ([]Cluster, error)` surface that `internal/lifecycle/clusterLocked` consumes.
 - **Provider chain dispatcher** — the fallback ladder. Try the primary; on failure-or-malformed-output, fall to the next. Default chain: `ollama+Gemma` → `claude haiku` → `codex-mini`. Per-provider TOML config for model, timeout, prompt template.
 - **Per-provider invokers** — one per `claude`, `codex`, `opencode`, `ollama` subprocess shape. Each owns its own stdin/stdout serialisation and timeout.
-- **Cluster output validator** — Contract A invariants per §5: schema-conformant JSON AND every input item appears in some cluster. Violations trip `CONTRACT_CLUSTER_MALFORMED` or `CONTRACT_CLUSTER_COVERAGE` (§3.7) and trigger fall-back-to-per-item-clusters.
+- **Cluster output validator** — Cluster contract invariants per §5: schema-conformant JSON AND every input item appears in some cluster. Violations trip `CONTRACT_CLUSTER_MALFORMED` or `CONTRACT_CLUSTER_COVERAGE` (§3.7) and trigger fall-back-to-per-item-clusters.
 
-### Contract B — fix
+### Fix contract
 
 - **`FixContract` interface** — the `Fix(ctx, cluster Cluster) (FixResult, error)` surface that `internal/lifecycle/fixLocked` consumes.
-- **`sonnet[1m]` orchestrator dispatcher** — primary provider; runs in the operator's worktree; agent does its own `git commit`.
-- **Fix output validator** — Contract B invariants per §5: schema-conformant JSON; every claimed `commit_shas[i]` is reachable on the branch; no orphan commits (every commit on the branch is claimed by exactly one item). Violations trip `CONTRACT_FIX_MALFORMED` / `CONTRACT_FIX_ORPHAN_COMMIT` / `CONTRACT_FIX_UNREACHABLE_SHA` (§3.7) and flip the affected items to `Disposition.Kind = failed`.
-- **Disposition+evidence audit** — Contract B post-condition rules (`CONTRACT_FIX_AUDIT_FAILED` trip).
-- **EscalationSink wiring** — Contract B handles `escalated` disposition by writing a per-item escalation record; the cross-cutting `escalate_if_needed` hook in `internal/lifecycle` then surfaces it via the `EscalationSink`.
+- **`opus[1m]` orchestrator dispatcher** — primary provider; runs in the operator's worktree; agent does its own `git commit`.
+- **Fix output validator** — Fix contract invariants per §5: schema-conformant JSON; every claimed `commit_shas[i]` is reachable on the branch; no orphan commits (every commit on the branch is claimed by exactly one item). Violations trip `CONTRACT_FIX_MALFORMED` / `CONTRACT_FIX_ORPHAN_COMMIT` / `CONTRACT_FIX_UNREACHABLE_SHA` (§3.7) and flip the affected items to `Disposition.Kind = failed`.
+- **Disposition+evidence audit** — Fix contract post-condition rules (`CONTRACT_FIX_AUDIT_FAILED` trip).
+- **EscalationSink wiring** — the fix contract handles `escalated` disposition by writing a per-item escalation record; the cross-cutting `escalate_if_needed` hook in `internal/lifecycle` then surfaces it via the `EscalationSink`.
 
 ### Planned — RCA / issue-analysis pass (post-MVP, under design)
 
-A future enhancement, **not** in the parity MVP and **not yet ratified**: an RCA / issue-analysis step that *accompanies the cluster pass* to assess each reported review item's true **scope, impact, and nature** before fix dispatch — feeding richer context into Contract B, and potentially gating which clusters are worth a fix attempt at all. Candidate shapes (to be settled in a dedicated brainstorm): extend Contract A's output schema with per-cluster RCA metadata, or insert a dedicated analysis contract between `cluster` and `fix`. Drawn here only as forward context; the design is tracked separately and must be brainstormed before this L3 is drawn.
+A future enhancement, **not** in the parity MVP and **not yet ratified**: an RCA / issue-analysis step that *accompanies the cluster pass* to assess each reported review item's true **scope, impact, and nature** before fix dispatch — feeding richer context into the fix contract, and potentially gating which clusters are worth a fix attempt at all. Candidate shapes (to be settled in a dedicated brainstorm): extend the cluster contract's output schema with per-cluster RCA metadata, or insert a dedicated analysis contract between `cluster` and `fix`. Drawn here only as forward context; the design is tracked separately and must be brainstormed before this L3 is drawn.
 
 ### Cross-cutting components
 
