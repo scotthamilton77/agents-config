@@ -34,7 +34,7 @@ C4Container
     Person(operator, "Operator", "Developer running the installer from the agents-config repo")
 
     System_Boundary(installer_sys, "Python installer") {
-        Container(proc, "installer process", "Python 3.11 / uv — python -m installer.cli", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon, no persistent state of its own — every invocation runs to completion and exits.")
+        Container(proc, "installer process", "Python 3.11 / uv — python3 scripts/install.py", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon, no persistent state of its own — every invocation runs to completion and exits.")
     }
 
     System_Boundary(repo, "agents-config repo (read-only inputs)") {
@@ -81,7 +81,7 @@ C4Container
 
 The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon, no background work, no cache between runs. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, `prune`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
-The end-user entry point is `python3 scripts/install.py` (a tiny stub: `from installer.cli import main`). The currently valid module-style invocation is `python -m installer.cli`; post-parity, `scripts/install.sh` can collapse to the same module entrypoint until `installer/__main__.py` exists.
+The end-user entry point is `python3 scripts/install.py` (a tiny stub: `from installer.cli import main`) — the only currently runnable invocation. Post-parity (Epic H.4, once the package gains a `__main__.py`), `scripts/install.sh` collapses to `exec uv run --project packages/installer python -m installer "$@"`, so the bash and python entry points converge on the same process; the `python -m installer` module form is design-forward until then.
 
 ### Read-only inputs
 

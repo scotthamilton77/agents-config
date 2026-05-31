@@ -72,7 +72,7 @@ C4Component
     System_Ext(dest_ext, "Destination stores", "~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode, ~/.beads")
     System_Ext(term_ext, "Terminal", "stdin / stdout — diffs + confirmations")
 
-    Rel(operator, cli, "python3 scripts/install.py ... / python -m installer.cli ...")
+    Rel(operator, cli, "python3 scripts/install.py ...")
     Rel(cli, config, "build frozen Config")
     Rel(cli, orch, "invoke with Config + IOPort")
     Rel(config, treg, "auto-detect tools")

@@ -32,7 +32,7 @@ Together they answer: *who calls whom, in what order, where does state live (in-
 
 ## Sequence 1 — End-to-end install (happy path)
 
-One invocation: `python3 scripts/install.py --tools=claude,gemini` (equivalently `python -m installer.cli --tools=claude,gemini` — the stub and the module form converge on the same process today), with the beads plugin active. `Config` is resolved once; then the orchestrator loops per detected tool, building each tool's in-memory plan, overlaying plugins, and flushing to disk. The plan never touches disk except through `Sync`.
+One invocation: `python3 scripts/install.py --tools=claude,gemini` — the only current entrypoint (a tiny stub: `from installer.cli import main`), with the beads plugin active. (The `python -m installer` module form is *design-forward*: the post-parity entrypoint per Epic H.4, added once the package gains a `__main__.py` — not runnable today.) `Config` is resolved once; then the orchestrator loops per detected tool, building each tool's in-memory plan, overlaying plugins, and flushing to disk. The plan never touches disk except through `Sync`.
 
 ```mermaid
 sequenceDiagram
@@ -47,7 +47,7 @@ sequenceDiagram
     participant Sync as sync
     participant FS as filesystem
 
-    Op->>CLI: python3 scripts/install.py --tools=claude,gemini (or python -m installer.cli ...)
+    Op->>CLI: python3 scripts/install.py --tools=claude,gemini
     CLI->>Cfg: build Config
     Cfg->>FS: probe tool config dirs + load installer.toml
     FS-->>Cfg: detected tools, plugins, retired globs
