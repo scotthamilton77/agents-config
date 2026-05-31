@@ -5,11 +5,10 @@
 # (mktemp + mv on the same filesystem), and runs retention housekeeping.
 #
 # Usage:
-#   write-inventory.sh <state> <last_completed_phase> <inventory_json_path>
-#     state:                 complete | partial
-#     last_completed_phase:  phase identifier (e.g. "5a-verify-failed",
-#                            "7-write-inventory", "8-skill-b-done")
-#     inventory_json_path:   target path under ~/.claude/state/pr-inventory/
+#   write-inventory.sh --state <state> --phase <last_completed_phase> --output <inventory_json_path>
+#     --state:   complete | partial
+#     --phase:   phase identifier (e.g. "5a-verify-failed", "7-write-inventory", "8-skill-b-done")
+#     --output:  target path under ~/.claude/state/pr-inventory/
 #
 # The script:
 #   1. Reads inventory body from stdin.
@@ -23,35 +22,39 @@
 #
 # Exit codes:
 #   0  — write succeeded
-#   64 — invalid args: wrong count, unknown state, or empty phase/path (EX_USAGE)
+#   64 — invalid args: unknown flag, invalid state, or empty phase/path (EX_USAGE)
 #   65 — jq parse/write failed (EX_DATAERR)
 
 set -euo pipefail
 
-if [ "$#" -ne 3 ]; then
-    echo "usage: write-inventory.sh <state> <last_completed_phase> <inventory_json_path>" >&2
-    exit 64
-fi
+STATE=""
+PHASE=""
+PATH_OUT=""
 
-STATE="$1"
-PHASE="$2"
-PATH_OUT="$3"
+usage() {
+    echo "usage: write-inventory.sh --state <state> --phase <phase-id> --output <path>" >&2
+    exit 64
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --state)  [ "$#" -ge 2 ] || usage; STATE="${2:-}";    shift 2 ;;
+        --phase)  [ "$#" -ge 2 ] || usage; PHASE="${2:-}";    shift 2 ;;
+        --output) [ "$#" -ge 2 ] || usage; PATH_OUT="${2:-}"; shift 2 ;;
+        -h|--help) usage ;;
+        *) echo "error: unknown flag: $1" >&2; usage ;;
+    esac
+done
+
+[ -n "$STATE"    ] || { echo "error: --state is required" >&2; exit 64; }
+[ -n "$PHASE"    ] || { echo "error: --phase is required" >&2; exit 64; }
+[ -n "$PATH_OUT" ] || { echo "error: --output is required" >&2; exit 64; }
 
 case "$STATE" in
     complete) COMPLETED=true ;;
     partial)  COMPLETED=false ;;
-    *) echo "error: state must be 'complete' or 'partial', got '$STATE'" >&2; exit 64 ;;
+    *) echo "error: --state must be 'complete' or 'partial', got '$STATE'" >&2; exit 64 ;;
 esac
-
-if [ -z "$PHASE" ]; then
-    echo "error: last_completed_phase must be non-empty" >&2
-    exit 64
-fi
-
-if [ -z "$PATH_OUT" ]; then
-    echo "error: inventory_json_path must be non-empty" >&2
-    exit 64
-fi
 
 DIR_OUT="$(dirname "$PATH_OUT")"
 mkdir -p "$DIR_OUT"

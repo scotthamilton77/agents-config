@@ -3,7 +3,7 @@
 # Replaces CronCreate-based re-poll in wait-for-pr-comments skill.
 # Zero Anthropic API tokens consumed — pure bash + gh CLI.
 #
-# Usage: poll-new-comments.sh <owner/repo> <pr-number> <baseline-count> <interval-secs> <max-duration-secs>
+# Usage: poll-new-comments.sh --owner <o> --repo <r> --pr <n> --baseline <count> --interval <secs> --max-duration <secs>
 #
 # Exit codes:
 #   0 — New comments found (JSON on stdout)
@@ -24,27 +24,43 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 <owner/repo> <pr-number> <baseline-count> <interval-secs> <max-duration-secs>" >&2
+    echo "Usage: $0 --owner <o> --repo <r> --pr <n> --baseline <count> --interval <secs> --max-duration <secs>" >&2
     exit 3
 }
 
-[[ $# -eq 5 ]] || usage
+OWNER=""
+REPO=""
+PR=""
+BASELINE=""
+INTERVAL=""
+MAX_DURATION=""
 
-REPO="$1"
-PR="$2"
-BASELINE="$3"
-INTERVAL="$4"
-MAX_DURATION="$5"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --owner)        [[ $# -ge 2 ]] || usage; OWNER="${2:-}";        shift 2 ;;
+        --repo)         [[ $# -ge 2 ]] || usage; REPO="${2:-}";         shift 2 ;;
+        --pr)           [[ $# -ge 2 ]] || usage; PR="${2:-}";           shift 2 ;;
+        --baseline)     [[ $# -ge 2 ]] || usage; BASELINE="${2:-}";     shift 2 ;;
+        --interval)     [[ $# -ge 2 ]] || usage; INTERVAL="${2:-}";     shift 2 ;;
+        --max-duration) [[ $# -ge 2 ]] || usage; MAX_DURATION="${2:-}"; shift 2 ;;
+        *) echo "Error: unknown argument: $1" >&2; usage ;;
+    esac
+done
 
-validate_repo "$REPO"
+[[ -n "$OWNER" ]]        || { echo "Error: --owner is required" >&2; usage; }
+[[ -n "$REPO"  ]]        || { echo "Error: --repo is required" >&2; usage; }
+[[ -n "$PR"    ]]        || { echo "Error: --pr is required" >&2; usage; }
+[[ -n "$BASELINE" ]]     || { echo "Error: --baseline is required" >&2; usage; }
+[[ -n "$INTERVAL" ]]     || { echo "Error: --interval is required" >&2; usage; }
+[[ -n "$MAX_DURATION" ]] || { echo "Error: --max-duration is required" >&2; usage; }
 
 # Validate numeric arguments
 for arg in "$PR" "$BASELINE" "$INTERVAL" "$MAX_DURATION"; do
     [[ "$arg" =~ ^[0-9]+$ ]] || { echo "Error: numeric arguments must be non-negative integers" >&2; exit 3; }
 done
 
-[[ "$INTERVAL" -gt 0 ]] || { echo "Error: interval must be > 0" >&2; exit 3; }
-[[ "$MAX_DURATION" -gt 0 ]] || { echo "Error: max-duration must be > 0" >&2; exit 3; }
+[[ "$INTERVAL" -gt 0 ]]    || { echo "Error: --interval must be > 0" >&2; exit 3; }
+[[ "$MAX_DURATION" -gt 0 ]] || { echo "Error: --max-duration must be > 0" >&2; exit 3; }
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
@@ -62,7 +78,7 @@ for i in $(seq 1 "$max_iterations"); do
     sleep "$INTERVAL"
 
     # Single fetch — derive count client-side (avoids double API call on detection)
-    comments=$(gh_api "repos/${REPO}/pulls/${PR}/comments") || {
+    comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments") || {
         echo "Warning: comments API failed (attempt ${i}), continuing" >&2
         continue
     }

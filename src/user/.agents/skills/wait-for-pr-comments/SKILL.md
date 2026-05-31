@@ -81,7 +81,7 @@ default). Formulas pass `--mode autonomous --bead-id {{bead-id}}` explicitly.
 
 **9 phases total** (Phase 5 has three sub-phases). Each named phase is one
 named action with one defined failure mode. Unless otherwise noted, any
-unrecoverable failure invokes `write-inventory.sh partial <phase-id> <path>`,
+unrecoverable failure invokes `write-inventory.sh --state partial --phase <phase-id> --output <path>`,
 reports to the caller, and aborts (Skill B is NOT invoked on Phase 5x
 failure).
 
@@ -121,8 +121,8 @@ Background bash — zero Anthropic tokens during the wait.
     ```
 2. **Capture** `<polling_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
     This timestamp anchors the stale-cache guard for re-review rounds.
-3. **Launch** `poll-copilot-review.sh` in the background. Pass
-    `--skip-request-check` if step 1 returned > 0.
+3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"` in the background.
+    Pass `--skip-request-check` if step 1 returned > 0.
     In re-review context (round ≥ 2), also pass
     `--since-timestamp <polling_since_timestamp>` so the script rejects
     reviews that predate this run.
@@ -268,8 +268,9 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  partial 5a-verify-failed \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state partial \
+  --phase 5a-verify-failed \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
 
 rm -f /tmp/pr-inventory-build-<n>.json
@@ -285,8 +286,9 @@ Confirm each FIX/`committed` item's `fix_commit_sha` is in
 and invoke:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  partial 5b-commit-verify-failed \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state partial \
+  --phase 5b-commit-verify-failed \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
 
 rm -f /tmp/pr-inventory-build-<n>.json
@@ -301,8 +303,9 @@ Run `git push`.
 (no remote update happened), then:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  partial 5c-push-failed \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state partial \
+  --phase 5c-push-failed \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
 
 rm -f /tmp/pr-inventory-build-<n>.json
@@ -330,11 +333,12 @@ Abort.
 
 2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
-3. **Launch** `poll-copilot-rereview-start.sh` (80s max window:
+3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
    event that follows the fresh `review_requested`.
 
 4. **If** `copilot_work_started` detected, launch `poll-copilot-review.sh
+   --owner "$OWNER" --repo "$REPO" --pr "$PR"
    --skip-request-check --since-timestamp <rereview_since_timestamp>`
    to await the actual review. The `--since-timestamp` guard prevents the
    stale-cache bug where the script returns the prior round's review instead
@@ -364,8 +368,9 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  complete 7-write-inventory \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state complete \
+  --phase 7-write-inventory \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
 
 rm -f /tmp/pr-inventory-build-<n>.json
@@ -392,8 +397,9 @@ Skill(skill: "reply-and-resolve-pr-threads", args: "--from-inventory <path> [--m
 Write the intermediate completion marker so recovery knows Skill B ran:
 ```bash
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  complete 8-skill-b-done \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state complete \
+  --phase 8-skill-b-done \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
 ```
 Then proceed to Phase 9.
@@ -424,8 +430,9 @@ considering the await-review step done.
 4. **If count == 0**: write final completion state and clean up:
    ```bash
    ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-     complete 9-final-check-done \
-     ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+     --state complete \
+     --phase 9-final-check-done \
+     --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
      < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
 
    rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
@@ -690,8 +697,9 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 
 ${CLAUDE_SKILL_DIR}/write-inventory.sh \
-  <state> <last_completed_phase> \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --state <state> \
+  --phase <last_completed_phase> \
+  --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   < /tmp/pr-inventory-build-<n>.json
 
 rm -f /tmp/pr-inventory-build-<n>.json
@@ -762,7 +770,7 @@ agent has a copy-pasteable template:
 
 ```bash
 ${CLAUDE_SKILL_DIR}/validate-inventory.sh \
-  ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
+  --inventory ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
   || { echo "schema validation failed"; exit 1; }
 ```
 
@@ -900,13 +908,13 @@ process.
 | "The subagent's `already_addressed` report just says 'fixed earlier' — close enough" | Reject. The subagent MUST quote a diff hunk in `fix_summary` (audit guard). Re-classify to ESCALATE with `"subagent contract violated: already_addressed missing diff evidence"`. |
 | "A subagent committed twice — I'll just keep both commits" | Audit guard violated (`expected exactly one commit`). Re-classify to ESCALATE; if commits are stale/broken, `git reset --soft <pre_subagent_sha>` + `git stash push --include-untracked` to isolate. **Never `git reset --hard`.** |
 | "I'll let the agent write its own classification rationale, blank if needed" | Empty rationale is rejected by validation guard 1 (SKIP rationale becomes the public reply). Retry per-item classification with an explicit prompt until rationale is non-empty. |
-| "Phase 5a verify failed but the fixes look fine — push anyway" | No. 5x failures abort the chain. Invoke `write-inventory.sh partial 5a-verify-failed <path>` and report. Skill B is NOT invoked on Phase 5x failure. |
+| "Phase 5a verify failed but the fixes look fine — push anyway" | No. 5x failures abort the chain. Invoke `write-inventory.sh --state partial --phase 5a-verify-failed --output <path>` and report. Skill B is NOT invoked on Phase 5x failure. |
 | "I'll keep polling past the re-review window" | Phase 6 uses a fixed 80s max window (20s pre-sleep + 6 × 10s polls). Do not extend ad-hoc. If Copilot has not started by then, exit Phase 6 normally and proceed to Phase 7. |
 | "I'll merge while the polling script is still running" | Don't. Issue the guard warning; the review could arrive any moment. |
 | "I'll classify already-addressed items as their own bucket" | Already-addressed is NOT a classification. Classify FIX; the per-comment subagent returns `fix_outcome="already_addressed"` with the existing commit SHA. |
 | "Round 4 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 3 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
 | "I'll inline `--mode autonomous` from the hook text" | The hook does not pass `--mode`. Autonomous mode is set ONLY by formulas (which also pass `--bead-id`). If you're invoking from chat, leave it interactive. |
-| "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh complete 9-final-check-done` succeeds. |
+| "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh --state complete --phase 9-final-check-done --output <path>` succeeds. |
 | "I'll keep the squashed commits clean — combine all subagent fixes into one" | Each subagent's commit stands alone. **No squashing.** Commit message format pinned: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`. |
 | "I'll let the per-comment fix subagent inherit the orchestrator's model" | Wrong. The orchestrator runs `sonnet[1m]` (this skill's frontmatter). Inheriting means the fix subagent ALSO runs on `sonnet[1m]`, which regresses fix correctness — `wait-for-pr-comments` is the cheap triage tier; **fix work needs `opus`**. The Phase 4 `Agent({...})` dispatch MUST set `model: "opus"` explicitly. |
 
