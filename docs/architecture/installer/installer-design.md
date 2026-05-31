@@ -1,5 +1,7 @@
 # Rewrite `scripts/install.sh` as a Python package
 
+> **HLD artifacts**: see [`index.md`](index.md) for the C4 (L2 container / L3 engine), sequence, and data-view diagrams derived from this spec. This document is the design-of-record; the diagrams visualise it and are amended in step.
+
 ## Context
 
 `/Users/scott/src/projects/agents-config/scripts/install.sh` is 1788 lines of shell carrying ten subsystems: tool/plugin detection, 7-phase staging, three DYNAMIC-INCLUDE directive forms, a Gemini-only frontmatter transform, a sentinel-driven carrier-merge, JSON union-merge via embedded `jq`, path-aware backup routing, hash-compare sync, and orphan scan + prune. The script works but is brittle and not testable. Per `AGENTS.md` ("Python over Bash — any logic that needs good testing needs to be in Python"), the file is overdue for a port.
