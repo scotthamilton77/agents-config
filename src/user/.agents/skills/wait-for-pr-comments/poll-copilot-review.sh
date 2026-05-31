@@ -3,7 +3,7 @@
 # Replaces the background agent polling in wait-for-pr-comments skill.
 # Zero Anthropic API tokens consumed — pure bash + gh CLI.
 #
-# Usage: poll-copilot-review.sh <owner/repo> <pr-number> [--skip-request-check] [--since-timestamp <ISO-8601>]
+# Usage: poll-copilot-review.sh --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>]
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
@@ -27,20 +27,21 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 <owner/repo> <pr-number> [--skip-request-check] [--since-timestamp <ISO-8601>]" >&2
+    echo "Usage: $0 --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>]" >&2
     exit 3
 }
 
-[[ $# -ge 2 ]] || usage
-
-REPO="$1"
-PR="$2"
+OWNER=""
+REPO=""
+PR=""
 SKIP_REQUEST=false
 SINCE=""
 
-shift 2
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --owner) OWNER="${2:-}"; shift 2 ;;
+        --repo)  REPO="${2:-}";  shift 2 ;;
+        --pr)    PR="${2:-}";    shift 2 ;;
         --skip-request-check)
             SKIP_REQUEST=true
             shift
@@ -52,15 +53,17 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Error: unknown argument: $1" >&2
-            exit 3
+            usage
             ;;
     esac
 done
 
-validate_repo "$REPO"
+[[ -n "$OWNER" ]] || { echo "Error: --owner is required" >&2; usage; }
+[[ -n "$REPO"  ]] || { echo "Error: --repo is required" >&2; usage; }
+[[ -n "$PR"    ]] || { echo "Error: --pr is required" >&2; usage; }
 
 # Validate PR number is a positive integer
-[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
+[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -74,7 +77,7 @@ COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGI
 
 pr_is_open() {
     local state
-    state=$(gh_api "repos/${REPO}/pulls/${PR}" --jq '.state') || return 1
+    state=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.state') || return 1
     [[ "$state" == "open" ]]
 }
 
@@ -89,7 +92,7 @@ if [[ "$SKIP_REQUEST" == false ]]; then
     copilot_requested=false
 
     for i in 1 2 3; do
-        count=$(gh_api "repos/${REPO}/issues/${PR}/events" \
+        count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
             --jq "[.[] | select(
                 .event == \"review_requested\" and
                 .requested_reviewer.login and
@@ -120,7 +123,7 @@ fi
 echo "Sub-phase B: Checking for copilot_work_started event..." >&2
 
 for i in 1 2 3; do
-    count=$(gh_api "repos/${REPO}/issues/${PR}/events" \
+    count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
         --jq '[.[] | select(.event == "copilot_work_started")] | length') || {
         echo "Warning: events API failed during start detection, proceeding anyway" >&2
         break
@@ -155,7 +158,7 @@ for i in $(seq 1 20); do
     fi
 
     # Single fetch — derive count from the same response (avoids double API call)
-    reviews=$(gh_api "repos/${REPO}/pulls/${PR}/reviews" \
+    reviews=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/reviews" \
         --jq "[.[] | select(${COPILOT_REVIEW_FILTER})]") || {
         echo "Warning: reviews API failed (attempt ${i})" >&2; sleep 30; continue;
     }
@@ -176,7 +179,7 @@ for i in $(seq 1 20); do
         echo "  Copilot review found (attempt ${i})" >&2
 
         # Single fetch for all comments — split into copilot/human client-side
-        all_comments=$(gh_api "repos/${REPO}/pulls/${PR}/comments") || {
+        all_comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments") || {
             echo "Error: failed to fetch comments" >&2; exit 3;
         }
 

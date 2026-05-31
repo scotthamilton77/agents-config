@@ -53,7 +53,7 @@ Plus tail tokens (operator narration) that are warned-and-ignored.
 3. Bad JSON or missing file at the supplied path = fatal error (do NOT silently fall through).
 4. `--mode autonomous` without `--bead-id` = fatal error.
 5. Standalone invocation (no `--from-inventory` and no `--resume`) = fatal error in v1 (standalone mode is deferred to a follow-up bead).
-6. Schema validation (`validate-inventory.sh <path>`) failure = fatal error.
+6. Schema validation (`validate-inventory.sh --inventory <path>`) failure = fatal error.
 
 On any fatal error: emit a one-line diagnostic naming the rule violated, abort. No replies posted. No inventory writes.
 
@@ -72,7 +72,7 @@ Apply the six Phase 0 precedence rules above. After mode is resolved, run schema
 
 ```bash
 ~/.claude/skills/wait-for-pr-comments/validate-inventory.sh \
-  --phase 0 <inventory-path> \
+  --phase 0 --inventory <inventory-path> \
   || { echo "schema validation failed"; exit 1; }
 ```
 
@@ -228,7 +228,7 @@ ${CLAUDE_SKILL_DIR}/render-reply-bodies.sh \
 `render-reply-bodies.sh` populated every replyable item):
 
 ```bash
-~/.claude/skills/wait-for-pr-comments/validate-inventory.sh "$RENDERED" \
+~/.claude/skills/wait-for-pr-comments/validate-inventory.sh --inventory "$RENDERED" \
   || { echo "post-render validation failed"; exit 1; }
 ```
 

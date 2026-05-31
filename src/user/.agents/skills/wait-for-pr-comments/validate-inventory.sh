@@ -7,7 +7,7 @@
 # pass; non-zero with a human-readable error to stderr otherwise.
 #
 # Usage:
-#   validate-inventory.sh [--phase 0|2] <inventory_json_path>
+#   validate-inventory.sh --inventory <inventory_json_path> [--phase 0|2]
 #
 # --phase controls which guards run:
 #   --phase 2 (default) — runs all ten guards (the full post-render contract)
@@ -30,12 +30,17 @@ PHASE="2"
 PATH_IN=""
 
 usage() {
-    echo "usage: validate-inventory.sh [--phase 0|2] <inventory_json_path>" >&2
+    echo "usage: validate-inventory.sh --inventory <inventory_json_path> [--phase 0|2]" >&2
     exit 64
 }
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --inventory)
+            [ "$#" -ge 2 ] || usage
+            PATH_IN="$2"
+            shift 2
+            ;;
         --phase)
             [ "$#" -ge 2 ] || usage
             PHASE="$2"
@@ -44,14 +49,9 @@ while [ "$#" -gt 0 ]; do
         -h|--help)
             usage
             ;;
-        --*)
+        *)
             echo "error: unknown flag: $1" >&2
             usage
-            ;;
-        *)
-            [ -z "$PATH_IN" ] || usage
-            PATH_IN="$1"
-            shift
             ;;
     esac
 done

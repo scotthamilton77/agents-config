@@ -3,9 +3,9 @@
 # Looks for a copilot_work_started event that postdates the given timestamp.
 # Used after fixes are pushed to check if Copilot will perform a second pass.
 #
-# Usage: poll-copilot-rereview-start.sh <owner/repo> <pr-number> <after-timestamp>
+# Usage: poll-copilot-rereview-start.sh --owner <o> --repo <r> --pr <n> --after <ISO-8601-timestamp>
 #
-# after-timestamp: ISO 8601 timestamp — only events after this time are considered
+# --after: ISO 8601 timestamp — only events after this time are considered
 #
 # Configurable polling (set as env vars; defaults give the historical 80s window):
 #   INITIAL_SLEEP   pre-poll delay in seconds (default: 20)
@@ -31,23 +31,34 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 <owner/repo> <pr-number> <after-timestamp>" >&2
+    echo "Usage: $0 --owner <o> --repo <r> --pr <n> --after <ISO-8601-timestamp>" >&2
     exit 3
 }
 
-[[ $# -eq 3 ]] || usage
-
-REPO="$1"
-PR="$2"
-AFTER="$3"
+OWNER=""
+REPO=""
+PR=""
+AFTER=""
 
 INITIAL_SLEEP="${INITIAL_SLEEP:-20}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 POLL_COUNT="${POLL_COUNT:-6}"
 
-validate_repo "$REPO"
-[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
-[[ -n "$AFTER" ]] || { echo "Error: after-timestamp must not be empty" >&2; exit 3; }
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --owner) OWNER="${2:-}"; shift 2 ;;
+        --repo)  REPO="${2:-}";  shift 2 ;;
+        --pr)    PR="${2:-}";    shift 2 ;;
+        --after) AFTER="${2:-}"; shift 2 ;;
+        *) echo "Error: unknown argument: $1" >&2; usage ;;
+    esac
+done
+
+[[ -n "$OWNER" ]] || { echo "Error: --owner is required" >&2; usage; }
+[[ -n "$REPO"  ]] || { echo "Error: --repo is required" >&2; usage; }
+[[ -n "$PR"    ]] || { echo "Error: --pr is required" >&2; usage; }
+[[ -n "$AFTER" ]] || { echo "Error: --after is required" >&2; usage; }
+[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
 [[ "$INITIAL_SLEEP" =~ ^[0-9]+$ ]] || { echo "Error: INITIAL_SLEEP must be a non-negative integer" >&2; exit 3; }
 [[ "$POLL_INTERVAL" =~ ^[0-9]+$ ]] || { echo "Error: POLL_INTERVAL must be a non-negative integer" >&2; exit 3; }
 [[ "$POLL_COUNT" =~ ^[0-9]+$ ]] || { echo "Error: POLL_COUNT must be a non-negative integer" >&2; exit 3; }
@@ -65,7 +76,7 @@ sleep "$INITIAL_SLEEP"
 for ((i = 1; i <= POLL_COUNT; i++)); do
     sleep "$POLL_INTERVAL"
 
-    events=$(gh_api "repos/${REPO}/issues/${PR}/events" \
+    events=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
         --jq "[.[] | select(.event == \"copilot_work_started\" and .created_at > \"${AFTER}\")]") || {
         echo "Warning: events API failed (attempt ${i}), continuing" >&2
         continue
