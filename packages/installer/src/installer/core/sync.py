@@ -32,12 +32,18 @@ def sync(
     """Install one file from the adapter's source tree to its dest tree.
 
     Resolves ``adapter.source_dir(repo_root) / relpath`` and
-    ``adapter.dest_dir(home) / relpath``. Skips when the destination
+    ``adapter.dest_dir(home) / relpath``. Rejects a ``relpath`` that is
+    absolute or contains a ``..`` component with `ValueError`, since either
+    would let ``Path / relpath`` write outside the adapter tree. Skips when
+    the destination
     already holds matching bytes (sha-256); otherwise writes the source
     bytes — unless ``dry_run`` is set, in which case it previews the
     would-be write through ``io`` and touches nothing. Returns a
     `Counters` with exactly one of created / updated / skipped incremented.
     """
+    if relpath.is_absolute() or ".." in relpath.parts:
+        raise ValueError(f"relpath escapes the adapter tree: {relpath}")  # noqa: TRY003  # single call-site; subclass not justified
+
     counters = Counters()
     source = adapter.source_dir(repo_root) / relpath
     dest = adapter.dest_dir(home) / relpath

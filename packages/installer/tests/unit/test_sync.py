@@ -282,6 +282,58 @@ def test_missing_source_file_raises(tmp_path: Path) -> None:
         )
 
 
+def test_absolute_relpath_is_rejected(tmp_path: Path) -> None:
+    """
+    Given an absolute relpath (which ``Path / relpath`` would resolve to,
+    discarding the adapter source/dest roots entirely)
+    When sync runs
+    Then a ValueError surfaces before any write, and nothing lands outside
+    the dest root.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    src_root.mkdir()
+    dest_root.mkdir()
+    outside = tmp_path / "etc" / "passwd"
+    outside.parent.mkdir()
+
+    with pytest.raises(ValueError):
+        sync(
+            _IdentityAdapter(),
+            outside,  # absolute path — would escape the dest root entirely
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+        )
+
+    assert not outside.exists()
+
+
+def test_parent_traversal_relpath_is_rejected(tmp_path: Path) -> None:
+    """
+    Given a relpath containing a ``..`` component (which would climb out of
+    the adapter dest tree)
+    When sync runs
+    Then a ValueError surfaces before any write, and no file is created
+    above the dest root.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    src_root.mkdir()
+    dest_root.mkdir()
+
+    with pytest.raises(ValueError):
+        sync(
+            _IdentityAdapter(),
+            Path("../escape.md"),  # climbs out of the dest tree
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+        )
+
+    assert not (tmp_path / "escape.md").exists()
+
+
 def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path) -> None:
     """
     Given a destination that differs from the source and is read-only
