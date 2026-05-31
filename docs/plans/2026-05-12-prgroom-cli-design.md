@@ -624,10 +624,12 @@ function runLocked(pr, mode) (*PRGroomingState, error):
         # cycle. If it stayed terminal-for-CLI or advanced to merged, the
         # loop-top check returns cleanly.
 
-        # Cap re-arm (§3.5 "Recovery"): if the ONLY blocker is the hard cap and
-        # the operator has raised MaxRounds above the current Round (via
-        # --max-rounds / PRGROOM_MAX_ROUNDS / .prgroom.toml), clear the gate and
-        # re-enter the cycle so the refused fix commits push under the raised cap.
+        # Cap re-arm (§3.5 "Recovery"): clear the hard-cap gate when the operator
+        # has raised MaxRounds above the current Round (via --max-rounds /
+        # PRGROOM_MAX_ROUNDS / .prgroom.toml), then re-enter the cycle so the
+        # refused fix commits push under the raised cap. This clears the CAP gate
+        # specifically — it does NOT require the cap to be the sole blocker;
+        # escalated/failed items (if present) are re-asserted at end-of-cycle below.
         # This predicate is the exact inverse of the §3.5 pre-push cap-trip
         # condition, so it self-gates: a bare `run` with no raise leaves
         # Round >= MaxRounds → condition false → phase stays human-gated. The
@@ -927,9 +929,10 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 
 **Note on `PRECONDITION_LOCK_HELD` tier classification.** Named like a precondition but exits 75 (transient-equivalent) — see §3.7 for rationale. The reason: lock contention is short-lived; scheduler retry-on-cadence is the right recovery, identical to `RUNTIME_TRANSIENT`. The "precondition" naming captures the *pre-work check* shape; the exit-code captures the *retry semantics*.
 
-**`human-gated` re-entry:** the only paths OUT of `human-gated` are:
-- `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain.
+**`human-gated` re-entry:** the paths OUT of `human-gated` are:
+- `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain AND `LastError ∉ BlockingErrorCodes` (so a hard-cap gate is NOT cleared by `resolve-escalated` alone — see the cap re-arm path below).
 - `poll` observes externally-resolved state (operator pushed a fix manually, or merged the PR) and writes `fixes-pending` or `merged` accordingly.
+- `run` with a raised `--max-rounds` re-arms a hard-cap gate: the §3.3 entry probe clears `LIFECYCLE_HARD_CAP_EXCEEDED` and moves to `fixes-pending` when the cap no longer trips (§3.5 Recovery).
 - (Note: the `human-review-required` PR label per §4.4 is a merge constraint, NOT a lifecycle gate — operator does not need to clear it to exit `human-gated`.)
 
 ### 3.7 Error-code registry
