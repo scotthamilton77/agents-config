@@ -13,7 +13,7 @@
 | `StagedItem` | One planned destination file. The unit the merge + sync engines operate on. |
 | `Provenance` | `(kind: "tool" | "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
 | `FileKind` | The enum classifying a staged file. The **primary** merge-dispatch key. |
-| Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `formulas`) or `""`. The **secondary** merge-dispatch key. |
+| Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `formulas`) or `None` when the tool root itself owns the file. The **secondary** merge-dispatch key. |
 | `IncludeDirective` | A discriminated union (`FileInclude` | `AllRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: on disk, absent from the plan, matching a retired glob. |
 | `Counters` | The per-run tally (`staged` / `created` / `updated` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
@@ -31,7 +31,7 @@ The data view answers: *what shapes does the installer build in memory, what dri
 
 ## In-memory model ER diagram
 
-Field names below mirror the **implemented** dataclasses in `packages/installer/src/installer/core/model.py` verbatim (snake_case). Where a type is not yet built, the row is marked *design-forward* and traces to `installer-design.md`, not to current code.
+Field names below mirror the **implemented** dataclasses in `packages/installer/src/installer/core/model.py` verbatim (snake_case), plus the implemented `Config` dataclass in `packages/installer/src/installer/config.py`. Where a type is not yet built, the row is marked *design-forward* and traces to `installer-design.md`, not to current code.
 
 ```mermaid
 erDiagram
@@ -64,6 +64,7 @@ erDiagram
         Path     dest_relpath  "destination path, relative to the tool's install root (dict key)"
         FileKind kind          "DIR | SETTINGS_JSON | JSONC | TOML | NAMESPACED_MD | OTHER"
         string   namespace     "managed namespace or null — 2nd merge-dispatch key"
+        Provenance provenance  "tool vs plugin origin marker"
         bytes    content       "post-flatten bytes; null when kind == DIR (derived at sync)"
         bool     executable    "sync-phase mode bit 0o755 vs 0o644 (e.g. beads scripts)"
     }
@@ -190,7 +191,7 @@ flowchart LR
 
 ### Explicit non-ownership
 
-- The installer does **not** own source content — it copies and flattens it, but the human authoring the repo is canonical. A `StagedItem.Content` is a *derived* artifact (post-flatten, post-transform), not a source of truth.
+- The installer does **not** own source content — it copies and flattens it, but the human authoring the repo is canonical. A `StagedItem.content` is a *derived* artifact (post-flatten, post-transform), not a source of truth.
 - The installer does **not** own a tool's runtime interpretation of its store. It deposits files matching each tool's path + shape contract; how the tool loads them is the tool's concern.
 - The installer does **not** persist any of its own state between runs. There is no installer database, no manifest, no lockfile of "what I installed last time" — the destination store *is* the record, and hash-compare is how the next run reconciles.
 
