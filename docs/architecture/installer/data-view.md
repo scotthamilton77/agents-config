@@ -88,7 +88,8 @@ erDiagram
         int Skipped     "hash-equal or user-declined"
         int BackedUp    "files copied before overwrite/prune"
         int Pruned      "orphans removed"
-        int WouldChange "dry-run: created+updated that were previewed only"
+        int WouldCreate "dry-run mirror of Created — previewed, not written"
+        int WouldUpdate "dry-run mirror of Written — previewed, not written"
     }
 ```
 
@@ -108,14 +109,13 @@ The collision matrix, keyed exactly as `core/merge/registry.py` keys it. `NAMESP
 |---|---|---|---|
 | `NAMESPACED_MD` | `rules` | `append_rules` | Join `existing + "\n---\n" + incoming` — rules compose. |
 | `NAMESPACED_MD` | `commands` / `skills` / `agents` | `fatal` | **Raise** — two items with the same name is an authoring error; the message names both files. |
-| `NAMESPACED_MD` | `formulas` | `last_wins_silent` | Replace (formulas are whole-file owned). |
 | `SETTINGS_JSON` | — | `json_union` | Deep union: nested-dict precedence, array union + sort, type-mismatch surfaced. |
 | `JSONC` | — | `last_wins_warn` | Replace, with a warning that an existing file was overwritten. |
 | `TOML` | — | `last_wins_warn` | Replace, with a warning. |
 | `OTHER` | — | `last_wins_silent` | Replace silently. |
 | `DIR` | — | (n/a) | Directories are created, not merged. |
 
-> The `formulas` row reflects whole-file ownership of formula TOMLs; if a future requirement needs formula-merge semantics it gets its own strategy + registry row. The dispatch is data — adding a `(FileKind, namespace)` row is a registry change, not an engine change.
+> Formula files are `.toml`, so they classify as `FileKind.TOML` and route via `(TOML, —) → last_wins_warn`. `formulas` is a managed namespace for **backup / prune** routing (it is in the path-aware namespace set), NOT a `NAMESPACED_MD` merge namespace — the only `NAMESPACED_MD` namespaces that change the strategy are `rules` (append) and `commands`/`skills`/`agents` (fatal). The dispatch is data: adding a `(FileKind, namespace)` row is a registry change, not an engine change.
 
 ## `installer.toml` schema
 

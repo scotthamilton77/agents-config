@@ -80,10 +80,10 @@ sequenceDiagram
             loop per StagedItem in plan
                 Sync->>FS: hash-compare vs destination (see Sequence 3)
                 alt unchanged
-                    Note over Sync: skip — Counters.skipped++
+                    Note over Sync: skip — Counters.Skipped++
                 else changed or new
                     Sync->>FS: backup (if overwrite) + write
-                    Note over Sync: Counters.written++ / backed_up++
+                    Note over Sync: Counters.Written++ / BackedUp++
                 end
             end
             Sync-->>Orch: Counters
@@ -169,28 +169,28 @@ sequenceDiagram
     alt destination absent
         alt --dry-run
             Sync->>IO: info "would create FILE"
-            Note over Sync: Counters.would_create++ — no write
+            Note over Sync: Counters.WouldCreate++ — no write
         else
             Sync->>FS: write new file
-            Note over Sync: Counters.created++
+            Note over Sync: Counters.Created++
         end
     else destination present
         Sync->>Sync: hash(incoming) vs hash(dest)
         alt hashes equal
-            Note over Sync: identical — skip; Counters.skipped++
+            Note over Sync: identical — skip; Counters.Skipped++
         else hashes differ
             Sync->>IO: show_diff(dest, incoming)
             alt --dry-run
-                Note over Sync: preview only; Counters.would_update++ — no write
+                Note over Sync: preview only; Counters.WouldUpdate++ — no write
             else interactive
                 Sync->>IO: confirm("overwrite FILE?")
                 alt confirmed
                     Sync->>Bak: path-aware backup of dest
                     Bak->>FS: copy dest to namespace-backup/ (or in-place)
                     Sync->>FS: write incoming
-                    Note over Sync: Counters.written++ + backed_up++
+                    Note over Sync: Counters.Written++ + BackedUp++
                 else declined
-                    Note over Sync: keep existing; Counters.skipped++
+                    Note over Sync: keep existing; Counters.Skipped++
                 end
             end
         end
