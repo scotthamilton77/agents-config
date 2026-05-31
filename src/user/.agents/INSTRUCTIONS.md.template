@@ -13,6 +13,20 @@ Tool-agnostic principles for all AI coding assistants.
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
 - **Informed edits**: Research the codebase before editing - never change code you haven't read
+- **Spec, diagram and code agreement**: Specs and HLD diagrams state the
+  **desired** intent; code states the **current** reality. They needn't match in
+  *detail* (code outpaces the spec — expected), but must agree on any element both
+  describe. When authoring or reviewing a derived artifact (diagram, HLD, data view)
+  for an actively-developed system, read the real code — types, signatures,
+  structures — never invent a detail the code already defines, and mark which parts
+  are built vs still intended. Where the code is a refinement or superset of the
+  spec (extra fields, narrower types, added internal steps), that is asymmetry:
+  adopt the code's detail at the artifact's abstraction level and proceed. Where the
+  spec and code **directly conflict on a shared element** (opposite ownership,
+  reversed data direction, mutually exclusive structure), do not pick a winner or
+  paper over it — halt, surface both sides, and escalate to the caller or human to
+  reconcile which is stale. This halt is a risk-asymmetric default (like merge
+  authorization): when unsure which artifact is authoritative, don't guess.
 - **State the decision, not its history**: The main body of specs, plans, design docs,
   prose, and code carries only the current decision. No "Round-N amendment",
   "Supersedes...", "Previously X, now Y", "Changed in YYYY-MM-DD", or similar
