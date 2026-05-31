@@ -37,12 +37,12 @@ MAX_DURATION=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --owner)        OWNER="${2:-}";        shift 2 ;;
-        --repo)         REPO="${2:-}";         shift 2 ;;
-        --pr)           PR="${2:-}";           shift 2 ;;
-        --baseline)     BASELINE="${2:-}";     shift 2 ;;
-        --interval)     INTERVAL="${2:-}";     shift 2 ;;
-        --max-duration) MAX_DURATION="${2:-}"; shift 2 ;;
+        --owner)        [[ $# -ge 2 ]] || usage; OWNER="${2:-}";        shift 2 ;;
+        --repo)         [[ $# -ge 2 ]] || usage; REPO="${2:-}";         shift 2 ;;
+        --pr)           [[ $# -ge 2 ]] || usage; PR="${2:-}";           shift 2 ;;
+        --baseline)     [[ $# -ge 2 ]] || usage; BASELINE="${2:-}";     shift 2 ;;
+        --interval)     [[ $# -ge 2 ]] || usage; INTERVAL="${2:-}";     shift 2 ;;
+        --max-duration) [[ $# -ge 2 ]] || usage; MAX_DURATION="${2:-}"; shift 2 ;;
         *) echo "Error: unknown argument: $1" >&2; usage ;;
     esac
 done

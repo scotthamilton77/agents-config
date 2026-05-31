@@ -13,11 +13,6 @@ gh_api() {
     printf '%s' "$result"
 }
 
-# Validate owner/repo format — exits 3 on failure
-validate_repo() {
-    [[ "$1" == */* ]] || { echo "Error: first argument must be owner/repo" >&2; exit 3; }
-}
-
 # Pre-flight: verify gh auth and jq availability — exits 3 on failure
 preflight_checks() {
     if ! gh auth status &>/dev/null; then

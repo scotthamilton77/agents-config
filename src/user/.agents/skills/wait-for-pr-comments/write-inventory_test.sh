@@ -56,6 +56,11 @@ assert "exits 64 for invalid --state" "[ \$rc_bad_state -eq 64 ]"
 rc_bogus=$?
 assert "exits 64 for unknown flag" "[ \$rc_bogus -eq 64 ]"
 
+# Trailing flag with no value — must exit 64 (not silent exit 1)
+"$SCRIPT" --state 2>/dev/null
+rc_dangling=$?
+assert "exits 64 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 64 ]"
+
 # --- Happy path: complete state ---
 OUT_COMPLETE="$TMP/inv-complete.json"
 printf '{"schema_version":1,"pr":{"number":1},"items":[]}' | \

@@ -56,4 +56,9 @@ assert "exits 3 for non-integer --pr" "[ \$rc_bad_pr -eq 3 ]"
 rc_bogus=$?
 assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
 
+# Trailing flag with no value — must exit 3 (not silent exit 1)
+"$SCRIPT" --owner 2>/dev/null
+rc_dangling=$?
+assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
+
 exit $FAIL

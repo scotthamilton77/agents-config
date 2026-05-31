@@ -38,9 +38,9 @@ usage() {
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --state)  STATE="${2:-}";    shift 2 ;;
-        --phase)  PHASE="${2:-}";    shift 2 ;;
-        --output) PATH_OUT="${2:-}"; shift 2 ;;
+        --state)  [ "$#" -ge 2 ] || usage; STATE="${2:-}";    shift 2 ;;
+        --phase)  [ "$#" -ge 2 ] || usage; PHASE="${2:-}";    shift 2 ;;
+        --output) [ "$#" -ge 2 ] || usage; PATH_OUT="${2:-}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "error: unknown flag: $1" >&2; usage ;;
     esac
