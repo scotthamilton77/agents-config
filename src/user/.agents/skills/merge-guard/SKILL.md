@@ -42,7 +42,7 @@ digraph merge_guard {
 
 ### Step 1: Determine PR Context
 
-Identify the `owner/repo` and PR number from:
+Identify `owner`, `repo`, and PR number from:
 1. Explicit argument or conversation context
 2. Current branch: `gh pr view --json number,url`
 
@@ -51,7 +51,7 @@ Track how many review comments you have already seen and triaged in this convers
 ### Step 2: Run Eligibility Check
 
 ```bash
-${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh <owner/repo> <pr-number> <comments-seen>
+${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>
 ```
 
 The script checks three things:

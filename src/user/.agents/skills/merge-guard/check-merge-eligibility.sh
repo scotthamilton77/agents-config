@@ -2,11 +2,13 @@
 # check-merge-eligibility.sh — Check whether a PR is safe to merge.
 # Verifies no pending automated reviews and no unseen review comments.
 #
-# Usage: check-merge-eligibility.sh <owner/repo> <pr-number> <comments-seen>
+# Usage: check-merge-eligibility.sh --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>
 #
-#   owner/repo     — GitHub repository (e.g. "octocat/hello-world")
-#   pr-number      — Pull request number
-#   comments-seen  — Number of review comments the agent has already triaged.
+# Inputs:
+#   --owner          GitHub owner (e.g. "octocat")
+#   --repo           GitHub repository name (e.g. "hello-world")
+#   --pr             Pull request number
+#   --comments-seen  Number of review comments the agent has already triaged.
 #                    Pass 0 if the agent has not seen any comments.
 #
 # Exit codes:
@@ -27,24 +29,28 @@ set -euo pipefail
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 <owner/repo> <pr-number> <comments-seen>" >&2
+    echo "Usage: $0 --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>" >&2
     exit 3
 }
 
-[[ $# -ge 3 ]] || usage
+OWNER=""; REPO=""; PR=""; COMMENTS_SEEN=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --owner)         [[ $# -ge 2 ]] || usage; OWNER="${2:-}";         shift 2 ;;
+        --repo)          [[ $# -ge 2 ]] || usage; REPO="${2:-}";          shift 2 ;;
+        --pr)            [[ $# -ge 2 ]] || usage; PR="${2:-}";            shift 2 ;;
+        --comments-seen) [[ $# -ge 2 ]] || usage; COMMENTS_SEEN="${2:-}"; shift 2 ;;
+        *) usage ;;
+    esac
+done
 
-REPO="$1"
-PR="$2"
-COMMENTS_SEEN="$3"
+[[ -n "$OWNER"         ]] || usage
+[[ -n "$REPO"          ]] || usage
+[[ -n "$PR"            ]] || usage
+[[ -n "$COMMENTS_SEEN" ]] || usage
 
-# Validate owner/repo format
-[[ "$REPO" == */* ]] || { echo "Error: first argument must be owner/repo" >&2; exit 3; }
-
-# Validate PR number is a positive integer
-[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer" >&2; exit 3; }
-
-# Validate comments-seen is a non-negative integer
-[[ "$COMMENTS_SEEN" =~ ^[0-9]+$ ]] || { echo "Error: comments-seen must be a non-negative integer" >&2; exit 3; }
+[[ "$PR"            =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
+[[ "$COMMENTS_SEEN" =~ ^[0-9]+$ ]] || { echo "Error: --comments-seen must be a non-negative integer" >&2; exit 3; }
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -78,7 +84,7 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # Verify PR exists and is open
-pr_state=$(gh_api "repos/${REPO}/pulls/${PR}" --jq '.state') || {
+pr_state=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.state') || {
     echo "Error: failed to fetch PR #${PR}" >&2; exit 3;
 }
 if [[ "$pr_state" != "open" ]]; then
@@ -90,7 +96,7 @@ fi
 
 echo "Checking pending reviewers..." >&2
 
-pending_json=$(gh_api "repos/${REPO}/pulls/${PR}/requested_reviewers") || {
+pending_json=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/requested_reviewers") || {
     echo "Error: failed to fetch requested reviewers" >&2; exit 3;
 }
 
@@ -107,7 +113,7 @@ echo "Checking Copilot review status..." >&2
 
 # Was Copilot requested?
 copilot_requested=false
-request_count=$(gh_api "repos/${REPO}/issues/${PR}/events" \
+request_count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
     --jq "[.[] | select(
         .event == \"review_requested\" and
         .requested_reviewer.login and
@@ -125,7 +131,7 @@ fi
 # Did Copilot start working?
 copilot_work_started=false
 if [[ "$copilot_requested" == true ]]; then
-    work_count=$(gh_api "repos/${REPO}/issues/${PR}/events" \
+    work_count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
         --jq '[.[] | select(.event == "copilot_work_started")] | length') || work_count=0
 
     if [[ "$work_count" -gt 0 ]]; then
@@ -137,7 +143,7 @@ fi
 # Did Copilot complete a review?
 copilot_review_complete=false
 if [[ "$copilot_requested" == true ]]; then
-    review_count=$(gh_api "repos/${REPO}/pulls/${PR}/reviews" \
+    review_count=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/reviews" \
         --jq "[.[] | select(
             (.user.type == \"Bot\") and
             (.user.login | ${COPILOT_LOGIN_FILTER}) and
@@ -154,7 +160,7 @@ fi
 
 echo "Checking comment counts..." >&2
 
-total_comments=$(gh_api "repos/${REPO}/pulls/${PR}/comments" --jq 'length') || {
+total_comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments" --jq 'length') || {
     echo "Error: failed to fetch comments" >&2; exit 3;
 }
 
