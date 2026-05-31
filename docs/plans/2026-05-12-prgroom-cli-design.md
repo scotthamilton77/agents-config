@@ -27,7 +27,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 1. Moving phase orchestration out of skill prose and into a compiled Go binary (`prgroom`).
 2. Thinning the existing skills to one-line wrappers that shell out to the binary.
 3. Confining agent invocations to *named hand-off points* — comment classification, fix-implementation, escalation judgment — invoked via subprocess shell-out from the CLI, each with fresh agent context.
-4. Persisting state behind a `WorkTracker` interface so recovery, idempotency, and inspection are uniform regardless of caller (skill, cron, manual invocation, or — later — executable-bead).
+4. Persisting state behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform regardless of caller (skill, cron, manual invocation, or — later — executable-bead).
 
 ## Non-goals (MVP)
 
@@ -53,19 +53,19 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 │   cmd/prgroom/          cobra root + verbs               │
 │   internal/gh/          go-gh wrapper                    │
 │   internal/git/         git ops (worktree-aware)         │
-│   internal/tracker/     WorkTracker interface            │
+│   internal/prsession/   Store interface (PR session)     │
 │     file/                 default adapter (JSON/disk)    │
 │     bd/                   bd-notes adapter (later)       │
 │   internal/agent/       subprocess to claude/codex       │
-│   internal/lifecycle/   poll→cluster→fix→push→…          │
-│   internal/quiescence/  readiness probability + thresholds│
+│   internal/lifecycle/   poll→cluster→fix→push→… + §4      │
+│                         quiescence predicate (pure fn)    │
 └──────────────────────────────────────────────────────────┘
                           │
                           │ subprocess shell-out (fresh agent context)
                           ▼
-        ┌──────────────────────────────────┐
-        │ claude -p   /   codex exec       │
-        └──────────────────────────────────┘
+        ┌────────────────────────────────────┐
+        │ claude -p / codex exec / opencode  │
+        └────────────────────────────────────┘
 ```
 
 ### Three usage patterns
@@ -81,7 +81,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 - **Language:** Go (single static binary, native `github.com/cli/go-gh/v2` library reuses `gh auth` state, sub-100ms cold start). **Tooling note:** this is Scott's first end-to-end Go project; the implementation plan must begin with a *toolchain assessment* step that inventories what's installed on the dev machine (`go version`, `golangci-lint`, `gofumpt`, `govulncheck`, `delve`, `air`/hot-reload if desired, VS Code or other editor Go extensions) and installs/configures whatever's missing before any production code is written.
 - **CLI framework:** `cobra` (consistency with `gh` and `bd`)
 - **Repo placement:** same `agents-config` repo, new top-level `cmd/prgroom/` and `internal/` tree, Go module rooted at repo root
-- **Agent boundary:** CLI shells out to `claude -p` / `codex exec` as subprocess. Synchronous. Each invocation = fresh agent context.
+- **Agent boundary:** CLI shells out to `claude -p` / `codex exec` / `opencode run` as subprocess. Synchronous. Each invocation = fresh agent context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
 - **Command shape:** subcommand verbs (poll, cluster, fix, push, rereview, reply, resolve, resolve-escalated, wait, status, run, sweep)
 - **MVP scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers
 - **Migration path:** incremental. Phase 1 absorbs `wait-for-pr-comments`; Phase 2 absorbs `reply-and-resolve-pr-threads`. Each skill thins to a one-line invocation as functionality lands in the CLI.
@@ -92,7 +92,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 |---|---|
 | `wait-for-pr-comments` skill (~800 lines + 12 helpers) | Skill body: `bash: prgroom run <pr>` + thin report-parsing |
 | `reply-and-resolve-pr-threads` skill (~330 lines + 10 helpers) | Absorbed into `prgroom reply` + `prgroom resolve` |
-| JSON inventory at `~/.claude/state/pr-inventory/` | `WorkTracker` file-adapter default; bd-adapter optional (v2) |
+| JSON inventory at `~/.claude/state/pr-inventory/` | `prsession.Store` file-adapter default; bd-adapter optional (v2) |
 | 22 bash scripts | `internal/*` modules of `prgroom`, with proper unit + integration tests |
 | Skill prose enforces phase order, retries, recovery | CLI orchestrates phases; recovery is a re-invocation |
 | `Agent({...})` subagent dispatch from skill | `prgroom` shells out to `claude -p` (fresh context) |
@@ -142,12 +142,12 @@ Stdout remains reserved for normal verb output (status JSON, etc.) so agents can
 
 ---
 
-## Section 2 — `WorkTracker` interface + state schema
+## Section 2 — `prsession.Store` interface + state schema
 
 ### Interface
 
 ```go
-package tracker
+package prsession
 
 type PRRef struct {
     Owner  string
@@ -155,7 +155,12 @@ type PRRef struct {
     Number int
 }
 
-type WorkTracker interface {
+// Store persists a single PR's grooming session state. The interface is
+// deliberately a typed key-value store with locking — NOT a tracker (no
+// change-detection, no event-emission, no CAS predicates). See
+// docs/architecture/prgroom/c4-l1-context.md for the contrast with PDLC's
+// WorkTracker, which is a different shape entirely.
+type Store interface {
     // Returns ErrNotFound if no state for this PR yet.
     Read(PRRef) (*PRGroomingState, error)
 
@@ -182,14 +187,14 @@ type WorkTracker interface {
 | **`memory`** | Tests only (not in production builds) | In-process `map[PRRef]*PRGroomingState` | `sync.Mutex` per ref | Immediate |
 | **`bd`** | v2 | Linked bead's `notes` field (cap ~65KB; externalize to file w/ path-ref above that). Linkage label: `for-pr-<owner>-<repo>-<n>`. | Transient bd label `prgroom-lock-<pid>` (written/removed in single `bd update`) | `bd update --notes <new>` (replaces entire field) |
 
-Selection at runtime: `--tracker file` (default), `--tracker bd` (v2), or env var `PRGROOM_TRACKER`.
+Selection at runtime: `--store file` (default), `--store bd` (v2), or env var `PRGROOM_STORE`.
 
 ### State schema (`schema_version: 1`)
 
 The CLI is the schema owner. We absorb the *information* from the old inventory schema but don't preserve its layout — there is no Skill A/B contract to honor. Named so other CLI-internal state (if any) is unambiguous.
 
 ```go
-package tracker
+package prsession
 
 type PRGroomingState struct {
     SchemaVersion       int             `json:"schema_version"`
@@ -299,7 +304,7 @@ type Disposition struct {
     Gate         string          `json:"gate,omitempty"`          // full | lite — recommended gate the fix agent thought necessary
     EscalationFiled bool         `json:"escalation_filed,omitempty"` // escalated only
     DecidedAt    time.Time       `json:"decided_at"`
-    DecidedBy    string          `json:"decided_by"`              // agent CLI id (e.g. "claude -p sonnet[1m]") or "human:<login>"
+    DecidedBy    string          `json:"decided_by"`              // agent CLI id (e.g. "claude -p opus[1m]") or "human:<login>"
 }
 
 type ReviewItem struct {
@@ -378,7 +383,7 @@ type QuiescenceState struct {
 }
 ```
 
-**Agent-contract callout (forward reference to Section 5):** the CLI's interactions with agent-CLIs (Contract A: cluster, Contract B: fix) need strict input/output contracts. Section 5 is the owner; the state schema above carries only the *results* (`ClusterID`, `Disposition`).
+**Agent-contract callout (forward reference to Section 5):** the CLI's interactions with agent-CLIs (the cluster contract and fix contract) need strict input/output contracts. Section 5 is the owner; the state schema above carries only the *results* (`ClusterID`, `Disposition`).
 
 ### Transactional model (verb-level + run-aggregate)
 
@@ -387,7 +392,7 @@ type QuiescenceState struct {
 ```go
 // Public locking wrapper (one per verb)
 func Poll(prRef PRRef) error {
-    release, err := tracker.Lock(prRef)
+    release, err := store.Lock(prRef)
     if err != nil { return err }
     defer release()
     return pollLocked(prRef)
@@ -395,11 +400,11 @@ func Poll(prRef PRRef) error {
 
 // Lock-assuming internal lifecycle function
 func pollLocked(prRef PRRef) error {
-    state, err := tracker.Read(prRef)
+    state, err := store.Read(prRef)
     // ... mutate state in memory ...
     state.Phase = nextPhase
     state.LastActivityAt = time.Now().UTC()
-    return tracker.Write(prRef, state)
+    return store.Write(prRef, state)
 }
 ```
 
@@ -498,7 +503,7 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 
 For every `(current phase, verb invoked)`, the next phase and side effects are pinned. The matrix covers the **11 per-PR lifecycle verbs** (`poll`, `cluster`, `fix`, `push`, `reply`, `resolve`, `rereview`, `wait`, `resolve-escalated`, `status`, `run`). The optional `sweep` verb is a cross-PR aggregator outside this per-PR matrix; it iterates open PRs and invokes `run` for each, with no phase semantics of its own.
 
-**`sweep` lock semantics and failure isolation (MVP):** `sweep` iterates open PRs **serially**, acquiring one PR's lock at a time via `tracker.Lock(pr)` exactly as a direct `run <pr>` invocation would. **There is no tracker-wide or cross-PR `sweep` lock** — each PR is independently lockable, so a separate `run <other-pr>` invocation initiated by another process or operator does not block `sweep` from making progress on remaining PRs. **Failures are isolated per-PR:** a non-zero exit from one PR's `run` invocation (any tier — `RUNTIME_TRANSIENT`, `RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `RUNTIME_CANCELLED`, etc.) does NOT abort the sweep. `sweep` logs each failure to stderr (PR ref + exit code + first stderr line) and continues to the next PR. `sweep`'s own exit code is `0` if every PR's `run` reached a terminal-for-CLI or transient outcome without unhandled errors, non-zero only on `sweep`-level errors (e.g., `gh pr list` failure to enumerate open PRs at the start). Because `run --autonomous` blocks for the full lifecycle of each PR per §3.5, `sweep` over N PRs in `awaiting-review` may take O(N × per-PR-wait) to complete — concurrency caps and ordering policies are deferred to a later section.
+**`sweep` lock semantics and failure isolation (MVP):** `sweep` iterates open PRs **serially**, acquiring one PR's lock at a time via `store.Lock(pr)` exactly as a direct `run <pr>` invocation would. **There is no store-wide or cross-PR `sweep` lock** — each PR is independently lockable, so a separate `run <other-pr>` invocation initiated by another process or operator does not block `sweep` from making progress on remaining PRs. **Failures are isolated per-PR:** a non-zero exit from one PR's `run` invocation (any tier — `RUNTIME_TRANSIENT`, `RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `RUNTIME_CANCELLED`, etc.) does NOT abort the sweep. `sweep` logs each failure to stderr (PR ref + exit code + first stderr line) and continues to the next PR. `sweep`'s own exit code is `0` if every PR's `run` reached a terminal-for-CLI or transient outcome without unhandled errors, non-zero only on `sweep`-level errors (e.g., `gh pr list` failure to enumerate open PRs at the start). Because `run --autonomous` blocks for the full lifecycle of each PR per §3.5, `sweep` over N PRs in `awaiting-review` may take O(N × per-PR-wait) to complete — concurrency caps and ordering policies are deferred to a later section.
 
 **Default behavior is "with prework" (`PRECONDITION_SELFHEAL`).** Cells marked **precondition fail** show the terminal outcome you get with `--no-prework`. Under the default self-heal path (Section 1 cross-cutting precondition gating), the verb auto-runs the missing deterministic prework and re-evaluates rather than returning the precondition error. For example, `fix` invoked in `idle` with no clusters under the default self-heal path runs `poll` → `cluster` → retries `fix`, then transitions per the `fixes-pending` row. With `--no-prework`, it returns `PRECONDITION_NO_CLUSTERS` immediately. Cells marked **no-op** mean the verb returns success (exit 0) without state change.
 
@@ -538,8 +543,8 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 - Assumes the caller already holds the PR lock for the duration of the call.
 - Reads no state from disk; instead receives the current in-memory `*PRGroomingState` from the caller.
 - Returns `(*PRGroomingState, error)` — the (potentially) mutated state and any error tagged with its failure tier (§3.6).
-- Atomically `tracker.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
-- Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-7 re-entry path (§3.2) relies on it to avoid hot loops.
+- Atomically `store.Write`s state before returning, so the on-disk view always reflects the last successful internal call.
+- Is **idempotent on already-processed items**: `clusterLocked` is a no-op when every item has `ClusterID != ""`; `fixLocked` is a no-op when every item has `Disposition != nil`; `replyLocked` is a no-op when every item has `Replied == true`; `resolveLocked` is a no-op when no item is in `{fixed, already_addressed} ∧ Resolved == false`; `pushLocked` is a no-op when `has_queued_fix_commits` returns false. This idempotency contract is load-bearing — `runLocked`'s priority-6 re-entry path (§3.2) relies on it to avoid hot loops.
 - **`fixLocked` restart-safety under transient agent failures.** When a transient-tier agent failure (`RUNTIME_AGENT_TIMEOUT`, `RUNTIME_AGENT_UNAVAILABLE`) aborts a cycle mid-cluster, items already processed before the failure carry `Disposition != nil` and are skipped on the next `fixLocked` invocation per the idempotency rule above; items not yet processed carry `Disposition == nil` and are reprocessed. This guarantees that partial-cluster processing is never lost (no double-fixing of already-dispositioned items) and never starved (un-dispositioned items always get another attempt on the next `run` invocation, driven by the scheduler's retry of exit-75).
 
 **Tier → exit code mapping** (`exitCodeForTier`) — `Run`'s public wrapper applies this to translate a tier-tagged error into the documented sysexits code:
@@ -561,7 +566,7 @@ function exitCodeForTier(err):              # takes the full tier-tagged error, 
 
 ```text
 function Run(pr, mode):                       # mode ∈ {interactive, autonomous}
-    release, err := tracker.Lock(pr)          # public locking shell
+    release, err := store.Lock(pr)          # public locking shell
     if err != nil:
         return exitCodeForTier(err)      # likely PRECONDITION_LOCK_HELD → 75
     defer release()
@@ -572,7 +577,7 @@ function Run(pr, mode):                       # mode ∈ {interactive, autonomou
     return 0
 
 function runLocked(pr, mode) (*PRGroomingState, error):
-    state, err := tracker.Read(pr)
+    state, err := store.Read(pr)
     if errors.Is(err, ErrNotFound):
         # First invocation against this PR — bootstrap zero-value state.
         # Auto-bootstrap is performed regardless of --no-prework; absence of
@@ -594,7 +599,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             LastError:          "",
             LifecycleEscalationFiled: false,
         }
-        tracker.Write(pr, state)
+        store.Write(pr, state)
     else if err != nil:
         return state, taggedError(STATE_CORRUPT, err)
 
@@ -685,7 +690,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             state.Phase = "human-gated"
             state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"
             state.LifecycleEscalationFiled = false   # cleared so loop-top fires once
-            tracker.Write(state)
+            store.Write(pr, state)
             continue                                 # loop top emits + returns
 
         state, err = pushLocked(pr, state)
@@ -734,7 +739,7 @@ function runLocked(pr, mode) (*PRGroomingState, error):
             state.LastError = ""
             state.LifecycleEscalationFiled = false   # reset for next gate, if any
             state.HumanReviewLabelAdded = false      # §4.7: reset so next gating event re-adds the label
-        tracker.Write(state)
+        store.Write(pr, state)
         continue                                     # loop top handles terminal + emits
 }
 ```
@@ -749,10 +754,10 @@ Notes on the rewrite vs. earlier drafts:
 
 `escalate_if_needed(state)` semantics:
 
-- Walks `state.Items`: for any item with `Disposition.Kind ∈ {escalated, failed}` AND `Disposition.EscalationFiled == false`, calls `EscalationSink.File(...)` and sets `EscalationFiled = true`.
-- If `state.LastError != ""` AND `state.LifecycleEscalationFiled == false`, calls `EscalationSink.File(...)` for the lifecycle-tier condition and sets `LifecycleEscalationFiled = true`.
-- Atomically `tracker.Write`s state after emission.
-- **Sink failure handling:** if `EscalationSink.File(...)` returns an error (stderr write failure, bd-adapter API blip), the failure is swallowed (best-effort emit). The corresponding `EscalationFiled` / `LifecycleEscalationFiled` flag is NOT set on Sink error, so the next invocation of `escalate_if_needed` re-attempts the emission for the same item or lifecycle gate. Persistent Sink failures produce repeated retry attempts but never block lifecycle progression (the cycle continues; phase transitions still happen). Operators inspecting `prgroom status` see the gating condition via `state.LastError` and per-item `Disposition.Kind` regardless of Sink reachability. **Relation to the crash-window dedup paragraph below:** the Sink-error retry path produces the same double-fire risk as the crash window (next invocation re-emits) and relies on the same Sink-side dedup contract — bd-adapter must use label-only emit or content-hash dedup on notes; stderr sinks accept the duplicate as a single extra log line.
+- Walks `state.Items`: for any item with `Disposition.Kind ∈ {escalated, failed}` AND `Disposition.EscalationFiled == false`, calls `EscalationSink.Emit(...)` and sets `EscalationFiled = true`.
+- If `state.LastError != ""` AND `state.LifecycleEscalationFiled == false`, calls `EscalationSink.Emit(...)` for the lifecycle-tier condition and sets `LifecycleEscalationFiled = true`.
+- Atomically `store.Write`s state after emission.
+- **Sink failure handling:** if `EscalationSink.Emit(...)` returns an error (stderr write failure, bd-adapter API blip), the failure is swallowed (best-effort emit). The corresponding `EscalationFiled` / `LifecycleEscalationFiled` flag is NOT set on Sink error, so the next invocation of `escalate_if_needed` re-attempts the emission for the same item or lifecycle gate. Persistent Sink failures produce repeated retry attempts but never block lifecycle progression (the cycle continues; phase transitions still happen). Operators inspecting `prgroom status` see the gating condition via `state.LastError` and per-item `Disposition.Kind` regardless of Sink reachability. **Relation to the crash-window dedup paragraph below:** the Sink-error retry path produces the same double-fire risk as the crash window (next invocation re-emits) and relies on the same Sink-side dedup contract — bd-adapter must use label-only emit or content-hash dedup on notes; stderr sinks accept the duplicate as a single extra log line.
 
 **Crash-window dedup:** a crash between Sink emit and state write may double-fire on the next invocation. The Sink itself is expected to dedup idempotently — bd's `label add` is idempotent (acceptable); bd's `--append-notes` is NOT (would duplicate notes lines on retry), so the bd-adapter MUST use label-only emit, or content-hash dedup on notes. Stderr-only sinks have no dedup but the cost is one extra log line, accepted.
 
@@ -764,13 +769,13 @@ function handle_verb_error(err, state) Disposition:
     switch err.Tier:
         case RUNTIME_TRANSIENT:
             state.LastError = err.Code
-            tracker.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 75; scheduler retries
         case RUNTIME_TERMINAL_USER:
             state.Phase = "human-gated"
             state.LastError = err.Code
             state.LifecycleEscalationFiled = false   # invites loop-top emit
-            tracker.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 77
         case CONTRACT_AUDIT_FAILED:
             # Verb has already flipped affected items to Disposition.Kind = failed
@@ -781,7 +786,7 @@ function handle_verb_error(err, state) Disposition:
             state.Phase = "human-gated"
             state.LastError = err.Code
             state.LifecycleEscalationFiled = false
-            tracker.Write(state)
+            store.Write(pr, state)
             return Propagate                  # Run will exit 78
         case RUNTIME_CANCELLED:
             # Normal non-retryable lifecycle exit (SIGINT/SIGTERM from operator or scheduler).
@@ -793,7 +798,7 @@ function handle_verb_error(err, state) Disposition:
             # Unknown tier is a programmer error — the tier enum is exhaustive
             # over registered tiers (§3.6) and adding a new tier requires
             # updating both the registry and this switch. Crash-loud propagation
-            # is intentional: do NOT tracker.Write(state) here, because doing so
+            # is intentional: do NOT store.Write(pr, state) here, because doing so
             # would silently persist any verb-level state mutations carried in
             # the (potentially undefined) error and mask the bug from operators.
             # Run maps default-tier propagation to exit code 1 (generic failure)
@@ -811,9 +816,9 @@ function handle_verb_error(err, state) Disposition:
 
 **`run --interactive` differences:** identical control flow except the verb returns 0 on reaching `awaiting-review`, `idle`, or any terminal-for-CLI phase. It never calls `waitLocked`. On `idle`, the interactive variant emits a one-line stderr advisory (`prgroom: nothing to do — PR has no commits yet (phase=idle)`) so callers can distinguish "nothing to do" from "completed work." Escalations route through the default `EscalationSink` (stderr).
 
-**Lock-hold duration:** `Run --autonomous` holds the lock continuously from the first `tracker.Lock(pr)` call. Within each cycle, the lock is held through the full sequence `pollLocked → clusterLocked → fixLocked → pushLocked → [rereviewLocked] → replyLocked → resolveLocked → resolve_end_of_cycle_phase → tracker.Write` (no mid-cycle release). After each cycle's phase resolution, if the new phase is terminal-for-CLI (`quiesced`, `human-gated`, or `merged`), the loop `continue`s, the loop-top terminal check fires, `runLocked` returns, and the `defer release()` registered by `Run` releases the lock. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75); once the holder returns, the next invocation may acquire.
+**Lock-hold duration:** `Run --autonomous` holds the lock continuously from the first `store.Lock(pr)` call. Within each cycle, the lock is held through the full sequence `pollLocked → clusterLocked → fixLocked → pushLocked → [rereviewLocked] → replyLocked → resolveLocked → resolve_end_of_cycle_phase → store.Write` (no mid-cycle release). After each cycle's phase resolution, if the new phase is terminal-for-CLI (`quiesced`, `human-gated`, or `merged`), the loop `continue`s, the loop-top terminal check fires, `runLocked` returns, and the `defer release()` registered by `Run` releases the lock. Concurrent invocations on the same PR exit immediately with `PRECONDITION_LOCK_HELD` (exit 75); once the holder returns, the next invocation may acquire.
 
-**`status` read-only carve-out.** The `status` verb is the **single exception** to Section 2's "every verb acquires the PR lock" rule. `status` performs a single `tracker.Read(pr)` and prints the result without calling `tracker.Lock(pr)`. Rationale: under a long-running `run --autonomous` invocation that holds the lock for the entire `awaiting-review` wait (potentially minutes-to-hours per §4 quiescence semantics), a lock-acquiring `status` would block or exit `PRECONDITION_LOCK_HELD` for that whole duration — a UX regression versus the legacy `wait-for-pr-comments` skill, which exposes per-poll state readable at any time. The cost: a `status` invocation that races with an in-progress `tracker.Write` from another verb may observe a **stale-but-internally-consistent snapshot** — the pre-rename state from the prior write. Because writes are file-atomic per Section 2 (`mktemp` + `rename(2)` on the same filesystem), a reader always observes either the old complete file or the new complete file. Partial/corrupt JSON from a race is not possible; `status` does not retry on staleness (a single read is always parseable). True `STATE_CORRUPT` errors (hand-edited state file, filesystem corruption) remain distinguishable from lock-free staleness and surface via the normal `STATE_CORRUPT` handling. Operators who need a strictly-consistent read can invoke `prgroom status --locked <pr>`, which DOES acquire the lock via the standard `tracker.Lock(pr)` path. Under contention, `--locked` exits **75** (`PRECONDITION_LOCK_HELD` per §3.7) on the standard scheduler-retry cadence — it does NOT block indefinitely; the default lock-free `status` invocation is the right tool for diagnostic polling under a long-running `run --autonomous`.
+**`status` read-only carve-out.** The `status` verb is the **single exception** to Section 2's "every verb acquires the PR lock" rule. `status` performs a single `store.Read(pr)` and prints the result without calling `store.Lock(pr)`. Rationale: under a long-running `run --autonomous` invocation that holds the lock for the entire `awaiting-review` wait (potentially minutes-to-hours per §4 quiescence semantics), a lock-acquiring `status` would block or exit `PRECONDITION_LOCK_HELD` for that whole duration — a UX regression versus the legacy `wait-for-pr-comments` skill, which exposes per-poll state readable at any time. The cost: a `status` invocation that races with an in-progress `store.Write` from another verb may observe a **stale-but-internally-consistent snapshot** — the pre-rename state from the prior write. Because writes are file-atomic per Section 2 (`mktemp` + `rename(2)` on the same filesystem), a reader always observes either the old complete file or the new complete file. Partial/corrupt JSON from a race is not possible; `status` does not retry on staleness (a single read is always parseable). True `STATE_CORRUPT` errors (hand-edited state file, filesystem corruption) remain distinguishable from lock-free staleness and surface via the normal `STATE_CORRUPT` handling. Operators who need a strictly-consistent read can invoke `prgroom status --locked <pr>`, which DOES acquire the lock via the standard `store.Lock(pr)` path. Under contention, `--locked` exits **75** (`PRECONDITION_LOCK_HELD` per §3.7) on the standard scheduler-retry cadence — it does NOT block indefinitely; the default lock-free `status` invocation is the right tool for diagnostic polling under a long-running `run --autonomous`.
 
 **Resilience:** every internal `*Locked` writes state atomically (per Section 2's transactional model). If the process dies mid-`run`, the OS releases the file-adapter lock, the next invocation re-acquires it, reads the last-good state, and resumes from there. There is no `crash_recovery` flag.
 
@@ -870,7 +875,7 @@ These edge cases are accepted as **best-effort attribution**, not corrected auto
 - **Configurability:** `--max-rounds N` flag on `run` and `wait`; env var `PRGROOM_MAX_ROUNDS`; per-repo override in `.prgroom.toml` (file format owned by Section 7). **Precedence (highest → lowest):** CLI flag > env var > per-repo TOML > built-in default (3).
 - **Trigger location:** the cap is checked **pre-push**, inside `run`'s cycle loop (§3.3), so the push that would exceed it is refused rather than uploaded:
   - condition: `has_queued_fix_commits(state) AND state.Round >= MaxRounds`
-  - action: `state.Phase = "human-gated"`, `state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"`, emit one escalation via `EscalationSink`, `tracker.Write`, then return on next loop top (releasing lock).
+  - action: `state.Phase = "human-gated"`, `state.LastError = "LIFECYCLE_HARD_CAP_EXCEEDED"`, emit one escalation via `EscalationSink`, `store.Write`, then return on next loop top (releasing lock).
 - **Semantic clarification:** `MaxRounds` is the maximum count of *review-eliciting pushes the CLI will perform or observe* for this PR, including the initial push. The cap is a ceiling on `Round`, not on it-plus-one. With `MaxRounds=3` the visible push history is exactly: initial (Round=1) → fix-push #1 (Round=2) → fix-push #2 (Round=3) → cap blocks fix-push #3.
 - **`wait` verb interaction:** `waitLocked` is only invoked from `awaiting-review` or `idle` (not from `fixes-pending`). It does NOT itself check the cap; the cap check belongs to the pre-push branch of `runLocked`. `wait`'s break conditions are owned by §4.
 - **First-poll on an already-active PR (operator migration case).** When `prgroom run` is first invoked on a PR with prior reviewer rounds already on it (operator was running other tooling before adopting `prgroom`), the first `pollLocked` sets `Round = 1` per §3.4's bootstrap rule but does NOT retroactively count the historical rounds. **The cap counts only rounds observed by `prgroom`** — historical out-of-band rounds are not visible to the CLI and so do not consume the budget. If the operator wants the cap to reflect the PR's full lifetime, they can pass `--max-rounds` lower to compensate, or wait for a future enhancement.
@@ -890,7 +895,7 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 | `RUNTIME_TERMINAL_USER` | gh auth missing/expired, repo deleted, branch protection blocks push, OAuth scope insufficient | 77 (`EX_NOPERM`) | → `human-gated`; `LastError` set | yes | aborts; user/operator must resolve |
 | `RUNTIME_CANCELLED` | SIGINT / SIGTERM received during `waitLocked` (or other blocking internal); operator Ctrl-C or scheduler-issued cancellation (concrete codes: `RUNTIME_CANCELLED_SIGINT`, `RUNTIME_CANCELLED_SIGTERM` per §3.7) | 130 (SIGINT) / 143 (SIGTERM) — `128 + signum` per Unix convention | none; `LastError` left unchanged (cancellation is not a gating condition) | no | scheduler MUST NOT retry — non-retryable by convention; operator decides whether to re-invoke |
 | `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb. **`handle_verb_error` returns `Continue` for this tier — it does NOT set `state.LastError`.** End-of-cycle resolver §3.2 priority 3 promotes phase to `human-gated` (any `failed` item, any cause). The cause is available per-item via `Disposition.Rationale`, not via `state.LastError`. | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
-| `STATE_CORRUPT` | tracker JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
+| `STATE_CORRUPT` | store JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
 | `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
 
 **Retry policy for `RUNTIME_TRANSIENT`:** the retry budget is **per logical API call, not per verb**. A single `pollLocked` may issue several distinct gh API calls (comments, reviews, CI status, head SHA); each gets its own budget independently. Per API call: **up to 3 total attempts** (initial call + 2 retries) before propagating the error. Back-off between retries is exponential: 1s before retry #1, then 4s before retry #2. When the failure response carries a `Retry-After` header (e.g., gh API rate-limit responses), the CLI honors that value instead of the exponential schedule for that retry. The CLI never retries indefinitely inside one process; after the third attempt fails for a single API call, the verb exits with the tier's code (75 `EX_TEMPFAIL`) and the scheduler (cron, `/loop`, agent caller) drives long-horizon retry.
@@ -951,12 +956,12 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 
 | Code | What | Why | How |
 |------|------|-----|-----|
-| `CONTRACT_CLUSTER_MALFORMED` | Cluster output JSON failed schema validation | Contract A invariant violated | retry once; second failure falls back to per-item clusters |
-| `CONTRACT_CLUSTER_COVERAGE` | Some input items did not appear in any cluster after fallback | Contract A invariant: every item clustered | re-cluster; if persistent, file `failed` disposition for orphans |
-| `CONTRACT_FIX_MALFORMED` | Fix output JSON failed schema validation | Contract B invariant violated | item flipped to `failed`; escalate |
-| `CONTRACT_FIX_ORPHAN_COMMIT` | Commits exist on branch that no item claimed | Contract B invariant: every commit claimed | stash isolation applied; affected items flipped to `failed`; escalate |
-| `CONTRACT_FIX_UNREACHABLE_SHA` | Output claims `commit_shas[i]` not on branch | Contract B invariant violated | item flipped to `failed`; escalate |
-| `CONTRACT_FIX_AUDIT_FAILED` | Disposition+evidence combination violates audit rules | Contract B post-conditions | item flipped to `failed`; end-of-cycle resolution may promote phase to `human-gated` |
+| `CONTRACT_CLUSTER_MALFORMED` | Cluster output JSON failed schema validation | Cluster contract invariant violated | retry once; second failure falls back to per-item clusters |
+| `CONTRACT_CLUSTER_COVERAGE` | Some input items did not appear in any cluster after fallback | Cluster contract invariant: every item clustered | re-cluster; if persistent, file `failed` disposition for orphans |
+| `CONTRACT_FIX_MALFORMED` | Fix output JSON failed schema validation | Fix contract invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_ORPHAN_COMMIT` | Commits exist on branch that no item claimed | Fix contract invariant: every commit claimed | stash isolation applied; affected items flipped to `failed`; escalate |
+| `CONTRACT_FIX_UNREACHABLE_SHA` | Output claims `commit_shas[i]` not on branch | Fix contract invariant violated | item flipped to `failed`; escalate |
+| `CONTRACT_FIX_AUDIT_FAILED` | Disposition+evidence combination violates audit rules | Fix contract post-conditions | item flipped to `failed`; end-of-cycle resolution may promote phase to `human-gated` |
 
 #### `STATE_*`
 
@@ -1086,7 +1091,7 @@ function waitLocked(pr, state) (*PRGroomingState, error):
         if quiescencePredicate(state):
             state.Phase = quiesced
             state.Quiescence.QuiescedAt = time.Now().UTC()
-            tracker.Write(state)
+            store.Write(pr, state)
             return state, nil
 
         # Otherwise: loop back, sleep again
@@ -1293,7 +1298,7 @@ function request_human_review_if_needed(state):
         log_stderr("prgroom: warning — failed to add human-review-required label: " + err.Error())
         return                                                   # best-effort; flag stays false; next cycle retries
     state.HumanReviewLabelAdded = true
-    tracker.Write(state)
+    store.Write(pr, state)
 ```
 
 `request_human_review_if_needed` is invoked alongside `escalate_if_needed` at the **same two dedup-safe call sites in `runLocked`** (per §3.3): the loop-top terminal-for-CLI check, and immediately before each Propagate-return after `handle_verb_error`. Both functions are idempotent and best-effort; both follow the same crash-window dedup posture.
@@ -1328,12 +1333,12 @@ The cheap agent is bad at deciding intent but good at grouping; the heavy agent 
 - **Fix** (heavy agent / orchestrator) — for each cluster, decides per-item disposition AND implements the work where warranted. Inherits the full PR context, prior PR memories, and access to skills/agents.
 - **Resolve-escalated** (human-initiated verb) — flips an `escalated` disposition into a terminal one and lets the lifecycle continue.
 
-Each contract is a **stable, versioned interface** between the CLI and the agent-CLI. That stability is what lets us swap `claude -p` for `codex exec`, change models, run different agents per hand-off, or fall back when the primary is unavailable — without touching the CLI's lifecycle code.
+Each contract is a **stable, versioned interface** between the CLI and the agent-CLI. That stability is what lets us swap `claude -p` for `codex exec` or `opencode run`, change models, run different agents per hand-off, or fall back when the primary is unavailable — without touching the CLI's lifecycle code. Available runtimes (`claude -p`, `codex exec`, `opencode run`, local `ollama`) are selected per-contract in TOML config; the per-contract default chains below are just the shipped defaults, not the limit of what's supported.
 
-#### Contract A — `cluster`
+#### Cluster contract — the `cluster` verb
 
 - **When:** during the `cluster` verb. Operates on the set of items with `ClusterID == ""`.
-- **Default agent CLI (primary → fallback chain):** Prefer a local model via `ollama` (Gemma 4 or similar small classifier) if installed; otherwise `claude -p` with model `haiku` / effort `low`; otherwise `codex-mini`. Cheap, fast — grouping intent is NOT decisional work, so locally-runnable models are appropriate.
+- **Default agent CLI (primary → fallback chain):** Prefer a local model via `ollama` (Gemma 4 or similar small classifier) if installed; otherwise `claude -p` with model `haiku` / effort `high`; otherwise `codex-mini`. Cheap, fast — grouping intent is NOT decisional work, so locally-runnable models are appropriate.
 - **Input (JSON, written to a file passed by path):**
   ```json
   {
@@ -1359,10 +1364,10 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
 - **Audit guards:** every input item appears in exactly one cluster; cluster ids unique; rationale non-empty per cluster.
 - **Failure modes:** malformed JSON, items missing from output, agent timeout → retry once; on second failure, fall back to **per-item degenerate clusters** (one item per cluster) so the fix verb can still proceed.
 
-#### Contract B — `fix`
+#### Fix contract — the `fix` verb
 
 - **When:** during the `fix` verb, **once per cluster** (was: once per FIX item). Serial in MVP (parallel deferred).
-- **Default agent CLI:** `claude -p` with model `sonnet[1m]` and effort `medium`. This launches an **orchestrator** agent that will itself choose skills/sub-agents (e.g. `quality-reviewer`, `simplify`, language-specific debuggers). Model and effort for those sub-agents are set by the orchestrator, not by `prgroom`.
+- **Default agent CLI:** `claude -p` with model `opus[1m]` and effort `xhigh`. This launches an **orchestrator** agent that will itself choose skills/sub-agents (e.g. `quality-reviewer`, `simplify`, language-specific debuggers). Model and effort for those sub-agents are set by the orchestrator, not by `prgroom`.
 - **Input (JSON, written to a file passed by path):**
   ```json
   {
@@ -1421,12 +1426,15 @@ package escalation
 type Escalation struct {
     PR       PRRef
     Reason   string             // free-form, public-safe
-    Item     *tracker.ReviewItem // optional; the item that triggered the escalation
+    Item     *prsession.ReviewItem // optional; the item that triggered the escalation
     Severity Severity            // info | warn | block
 }
 
 type Sink interface {
-    File(Escalation) error
+    // Emit records ("files", verb-sense) an Escalation. The method name was
+    // chosen for clarity vs the `file` adapter; both `stderr`, `file`, and
+    // `bd` adapters implement this single method.
+    Emit(Escalation) error
 }
 ```
 
@@ -1465,12 +1473,12 @@ Per-contract agent CLI is configurable and supports a fallback for unavailabilit
 # prgroom config (location TBD in Section 7)
 [agents.cluster]
 primary  = { cli = "ollama", model = "gemma4" }                 # local; near-zero per-call cost
-fallback = { cli = "claude", model = "haiku", effort = "low" }
+fallback = { cli = "claude", model = "haiku", effort = "high" }
 fallback2 = { cli = "codex", model = "gpt-5.4-mini" }
 
 [agents.fix]
-primary  = { cli = "claude", model = "sonnet[1m]", effort = "medium" }
-fallback = { cli = "codex",  model = "gpt-5.4", write = true }
+primary  = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
+fallback = { cli = "codex",  model = "gpt-5.5", write = true }
 ```
 
 Fallback triggers: primary binary not on PATH; primary exits with quota/auth/network error code; primary times out (per-contract budget). If both primary AND fallback fail, the verb emits a `failed` disposition for the affected items + escalates via the `EscalationSink`.
@@ -1505,10 +1513,10 @@ Each contract's audit is a Go function with table-driven tests (parallels the cu
 
 Per the design's stated motivation ("the more we push into this modular monolith CLI codebase, the more we can put better unit and integration tests around these functions"), test discipline is a first-class constraint on the architecture itself, not a Section-7 afterthought:
 
-- **Interfaces designed FIRST for unit testability.** Every cross-module dependency goes behind an interface (gh, git, tracker, agent-dispatcher, clock, randomness). No direct stdlib reach-through from `internal/lifecycle/`.
+- **Interfaces designed FIRST for unit testability.** Every cross-module dependency goes behind an interface (gh, git, prsession, agent-dispatcher, clock, randomness). No direct stdlib reach-through from `internal/lifecycle/`.
 - **Fit-test commitment.** Each `internal/*` module ships with a `*_fit_test.go` that exercises the module's public surface against a minimal fake-implementation of its dependencies. A module without a passing fit-test does not merge.
 - **No mocks of code we own.** Fakes (full small implementations) for our own interfaces; mocks only at the system boundary (HTTP, subprocess, filesystem). Parallel to the existing `writing-unit-tests` skill's guidance.
-- **Test pyramid targets:** unit (`go test ./...`, fast, no I/O) — broad coverage; integration (fixture repos under `testdata/`, real git, real `tracker.file`) — narrower; end-to-end (recorded gh API responses via `gock` or equivalent) — narrowest.
+- **Test pyramid targets:** unit (`go test ./...`, fast, no I/O) — broad coverage; integration (fixture repos under `testdata/`, real git, real `prsession.file`) — narrower; end-to-end (recorded gh API responses via `gock` or equivalent) — narrowest.
 - **Coverage floor: 80% line / 70% branch on changed code per PR.** Inherited from the project's AGENTS.md.
 - **CI:** prgroom tests run in GHA on every PR. Merge-gate on `go test ./... -race` + `golangci-lint` + `govulncheck`.
 - **Coverage GHA gate:** GHA runs `go test ./... -coverprofile=cover.out`, then a coverage action (`codecov-action`, or in-line `go tool cover -func | awk` script) enforces the 80% line / 70% branch floor on changed code per PR. Build fails when the floor is breached; floor is reported as a PR status check. Choice of tool deferred to implementation; `codecov-action` is the likely default.
@@ -1519,15 +1527,15 @@ Across re-review rounds the `fix` agent needs to remember decisions from earlier
 
 **Not yet designed; called out so it isn't lost.** Open questions for the dedicated sub-design:
 
-- **Storage location.** **Both**: a per-PR directory (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>/memory/`) is the always-present file-backed home (agent-side this is `memory_dir` in Contract B); when bd is available it ALSO mirrors decisions into bd beads of type `decision` or `memory`, so beads remain a source of truth that survives outside the file-tracker. The file directory keeps the agent bd-agnostic; the bead mirror keeps the system memory durable and queryable.
+- **Storage location.** **Both**: a per-PR directory (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>/memory/`) is the always-present file-backed home (agent-side this is `memory_dir` in the fix contract); when bd is available it ALSO mirrors decisions into bd beads of type `decision` or `memory`, so beads remain a source of truth that survives outside the file-backed store. The file directory keeps the agent bd-agnostic; the bead mirror keeps the system memory durable and queryable.
 - **Memory shape.** Free-form markdown files. No schema enforced; the agent picks file names and structure that fit the round's content. Bead-mirrored entries carry the same markdown as their description/notes field.
-- **Read API.** Agent receives `memory_dir` path in its Contract B input. Reads what it wants.
+- **Read API.** Agent receives `memory_dir` path in its fix contract input. Reads what it wants.
 - **Write API.** Agent declares `memory_writes` in output. CLI audits that all writes landed inside `memory_dir`; mirroring to beads (when enabled) happens CLI-side after audit passes.
 - **Compaction / pruning.** Defer. Memory is PR-scoped so unbounded growth is not expected to be a problem in the normal case. Revisit only if it becomes one.
 - **Cross-PR memory.** Future enhancement; out of MVP scope. The bead mirror is a natural integration point if/when we want it.
 - **Skill ownership.** A new `pr-memory-management` skill that the `fix` agent invokes? Or simply documented prompt template guidance? Decision deferred; both are workable.
 
-This sub-design is deferred to a separate spec but **MVP must carve out the skeleton hooks** (memory_dir input, memory_writes output) so we don't rework Contract B again later.
+This sub-design is deferred to a separate spec but **MVP must carve out the skeleton hooks** (memory_dir input, memory_writes output) so we don't rework the fix contract again later.
 
 ---
 
@@ -1544,4 +1552,4 @@ This sub-design is deferred to a separate spec but **MVP must carve out the skel
 - **`detect-pr-push.sh` PostToolUse hook coexistence with `prgroom`** — the hook currently suggests `wait-for-pr-comments`. Reworking the hook to point at `prgroom run` (or be replaced entirely by a cron/autonomous trigger) is **deferred to v3+**. During MVP, the existing hook stays as-is and points at the (thinned) skill; the thinned skill shells out to `prgroom` internally, so the hook still works without changes.
 - **Auto-detection of in-flight PRs at cutover.** No migration tool. (See Section 6.)
 - **Parallel `fix` subagents.** Serial in MVP; file-overlap prediction is unsolved.
-- **`bd` adapter for `WorkTracker`.** File-only in MVP.
+- **`bd` adapter for `prsession.Store`.** File-only in MVP.

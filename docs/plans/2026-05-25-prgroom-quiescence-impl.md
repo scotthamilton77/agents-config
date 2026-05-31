@@ -10,7 +10,7 @@
 
 **Spec source:** `docs/plans/2026-05-12-prgroom-cli-design.md` §4 (lines 984-1320), with cross-references into §2 (schema), §3.3 (lifecycle pseudocode), §3.5 (hard cap), §3.6 (failure tiers), §3.7 (exit codes).
 
-> **`<module>` placeholder:** All Go code blocks in this plan use `<module>` as the Go module path (e.g., `"<module>/internal/tracker"`). Before running `go test`, replace `<module>` with the actual module name from the project's `go.mod` file (e.g., `github.com/scotthamilton77/prgroom`). A quick `grep ^module go.mod` gives the exact string.
+> **`<module>` placeholder:** All Go code blocks in this plan use `<module>` as the Go module path (e.g., `"<module>/internal/prsession"`). Before running `go test`, replace `<module>` with the actual module name from the project's `go.mod` file (e.g., `github.com/scotthamilton77/prgroom`). A quick `grep ^module go.mod` gives the exact string.
 
 ---
 
@@ -20,7 +20,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 
 1. **Foundation (`agents-config-abn9.8.1`)** — must have shipped:
    - Go module + `cmd/prgroom/` cobra root
-   - `internal/tracker/` with `WorkTracker` interface, `file` adapter, `memory` adapter
+   - `internal/prsession/` with `Store` interface, `file` adapter, `memory` adapter
    - `PRGroomingState`, `ReviewerState`, `QuiescenceState`, `ReviewItem`, `Disposition` Go types per §2 — **including** the §4-introduced fields: `PRGroomingState.HumanReviewLabelAdded bool`, `ReviewerState.LastReviewAt`, `ReviewerState.DeclinedAt`, `ReviewerState.DeclinedReason string`, `QuiescenceState.CIState string`, `QuiescenceState.QuiescedAt time.Time`, `ReviewerStatus` enum including `declined`
    - `internal/config/` TOML loader with CLI-flag / env-var / file precedence per §3.5
    - `internal/gh/` adapter abstraction (HTTP boundary only; concrete `gh` CLI shell-out behind interface)
@@ -54,9 +54,9 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/lifecycle/engagement_test.go` | Activity-type / actor-match / timestamp-ordering matrix |
 | `internal/lifecycle/reviewer_timeouts.go` | `evaluateReviewerTimeouts(state, cfg, now)` mutating function |
 | `internal/lifecycle/reviewer_timeouts_test.go` | Start-timeout, finish-timeout, no-double-decline, config-extension paths |
-| `internal/lifecycle/human_review.go` | `DeriveHumanReview(labels []string, approvals []ApprovalRecord)`, `ShouldRequestHumanReview(state *tracker.PRGroomingState)`, `RequestHumanReviewIfNeeded(ctx, state, adder LabelAdder, cfg HumanReviewCfg, write TrackerWriter)` |
+| `internal/lifecycle/human_review.go` | `DeriveHumanReview(labels []string, approvals []ApprovalRecord)`, `ShouldRequestHumanReview(state *prsession.PRGroomingState)`, `RequestHumanReviewIfNeeded(ctx, state, adder LabelAdder, cfg HumanReviewCfg, write StoreWriter)` |
 | `internal/lifecycle/human_review_test.go` | Derivation truth-table (label/approval/Bot-filter), dedup, reset, operator-override |
-| `internal/lifecycle/wait.go` | `waitLocked(ctx, pr, state, deps) (*PRGroomingState, error)` |
+| `internal/lifecycle/wait.go` | `waitLocked(ctx, pr, state, deps) (*prsession.PRGroomingState, error)` |
 | `internal/lifecycle/wait_test.go` | Five-wake-event tests with fake clock + fake pollLocked + fake ctx |
 
 **Modified files** (extended by this plan):
@@ -77,7 +77,7 @@ This plan executes on top of two earlier beads. Verify each before starting:
 | `internal/status/json_test.go` | Golden-file test for the JSON shape (per §4.6 stability commitment) |
 | `internal/lifecycle/lifecycle_fit_test.go` (or new) | End-to-end fit-tests: resumability across simulated restart, full lifecycle to quiesced, cap-trip→label-add |
 
-**Untouched** (do NOT modify in this plan): `internal/tracker/` schema or adapters (any schema gap is a prerequisite-bead bug, not this plan's scope). Note: `cmd/prgroom/` verb-logic files are also out of scope — **except** for the CLI flag additions in Task 1 (adding cobra flags for the 5 §4 config knobs is in scope; changing verb behavior is not).
+**Untouched** (do NOT modify in this plan): `internal/prsession/` schema or adapters (any schema gap is a prerequisite-bead bug, not this plan's scope). Note: `cmd/prgroom/` verb-logic files are also out of scope — **except** for the CLI flag additions in Task 1 (adding cobra flags for the 5 §4 config knobs is in scope; changing verb behavior is not).
 
 ---
 
@@ -255,21 +255,21 @@ import (
     "testing"
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 func TestQuiescencePredicate_AllGatesPassAndIdleElapsed(t *testing.T) {
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
-        Phase:          tracker.PhaseAwaitingReview,
+    state := &prsession.PRGroomingState{
+        Phase:          prsession.PhaseAwaitingReview,
         LastActivityAt: now.Add(-15 * time.Minute), // idle 15m, threshold 10m
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound},
         },
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
         },
-        Quiescence: tracker.QuiescenceState{CIState: "success"},
+        Quiescence: prsession.QuiescenceState{CIState: "success"},
     }
     cfg := QuiescenceCfg{IdleThreshold: 10 * time.Minute}
     if !QuiescencePredicate(state, cfg, now) {
@@ -280,93 +280,93 @@ func TestQuiescencePredicate_AllGatesPassAndIdleElapsed(t *testing.T) {
 func TestQuiescencePredicate_GatesFailingInPriorityOrder(t *testing.T) {
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
     cfg := QuiescenceCfg{IdleThreshold: 10 * time.Minute}
-    base := func() *tracker.PRGroomingState {
-        return &tracker.PRGroomingState{
+    base := func() *prsession.PRGroomingState {
+        return &prsession.PRGroomingState{
             LastActivityAt: now.Add(-15 * time.Minute),
-            Reviewers: map[string]tracker.ReviewerState{
-                "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound},
+            Reviewers: map[string]prsession.ReviewerState{
+                "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound},
             },
-            Items: []tracker.ReviewItem{
-                {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+            Items: []prsession.ReviewItem{
+                {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
             },
-            Quiescence: tracker.QuiescenceState{CIState: "success"},
+            Quiescence: prsession.QuiescenceState{CIState: "success"},
         }
     }
 
     cases := []struct {
         name       string
-        mutate     func(*tracker.PRGroomingState)
+        mutate     func(*prsession.PRGroomingState)
         wantGate   QuiescenceGate
     }{
         {
             name: "G_REVIEWERS_failing_required_in_progress",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Reviewers["copilot"] = tracker.ReviewerState{Identity: "copilot", Required: true, Status: tracker.ReviewerInProgress}
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Reviewers["copilot"] = prsession.ReviewerState{Identity: "copilot", Required: true, Status: prsession.ReviewerInProgress}
             },
             wantGate: GateReviewers,
         },
         {
             name: "G_REVIEWERS_optional_in_progress_does_not_fail",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Reviewers["alice"] = tracker.ReviewerState{Identity: "alice", Required: false, Status: tracker.ReviewerInProgress}
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Reviewers["alice"] = prsession.ReviewerState{Identity: "alice", Required: false, Status: prsession.ReviewerInProgress}
             },
             wantGate: GateNone, // optional reviewers don't gate
         },
         {
             name: "G_REVIEWERS_declined_counts",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Reviewers["copilot"] = tracker.ReviewerState{
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Reviewers["copilot"] = prsession.ReviewerState{
                     Identity: "copilot", Required: true,
-                    Status: tracker.ReviewerDeclined, DeclinedReason: "timeout-no-start",
+                    Status: prsession.ReviewerDeclined, DeclinedReason: "timeout-no-start",
                 }
             },
             wantGate: GateNone,
         },
         {
             name: "G_CI_failing_failure_state",
-            mutate: func(s *tracker.PRGroomingState) {
+            mutate: func(s *prsession.PRGroomingState) {
                 s.Quiescence.CIState = "failure"
             },
             wantGate: GateCI,
         },
         {
             name: "G_CI_pending_is_failing",
-            mutate: func(s *tracker.PRGroomingState) {
+            mutate: func(s *prsession.PRGroomingState) {
                 s.Quiescence.CIState = "pending"
             },
             wantGate: GateCI,
         },
         {
             name: "G_CI_absent_passes",
-            mutate: func(s *tracker.PRGroomingState) {
+            mutate: func(s *prsession.PRGroomingState) {
                 s.Quiescence.CIState = "absent"
             },
             wantGate: GateNone,
         },
         {
             name: "G_DISPOSITIONS_failing_nil_disposition",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Items = append(s.Items, tracker.ReviewItem{Disposition: nil})
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Items = append(s.Items, prsession.ReviewItem{Disposition: nil})
             },
             wantGate: GateDispositions,
         },
         {
             name: "G_NO_BLOCKERS_failing_escalated",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Items = append(s.Items, tracker.ReviewItem{Disposition: &tracker.Disposition{Kind: tracker.DispositionEscalated}})
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Items = append(s.Items, prsession.ReviewItem{Disposition: &prsession.Disposition{Kind: prsession.DispositionEscalated}})
             },
             wantGate: GateNoBlockers,
         },
         {
             name: "G_NO_BLOCKERS_failing_failed",
-            mutate: func(s *tracker.PRGroomingState) {
-                s.Items = append(s.Items, tracker.ReviewItem{Disposition: &tracker.Disposition{Kind: tracker.DispositionFailed}})
+            mutate: func(s *prsession.PRGroomingState) {
+                s.Items = append(s.Items, prsession.ReviewItem{Disposition: &prsession.Disposition{Kind: prsession.DispositionFailed}})
             },
             wantGate: GateNoBlockers,
         },
         {
             name: "GateIdle_failing_recent_activity",
-            mutate: func(s *tracker.PRGroomingState) {
+            mutate: func(s *prsession.PRGroomingState) {
                 s.LastActivityAt = now.Add(-5 * time.Minute) // 5m < 10m threshold
             },
             wantGate: GateIdle,
@@ -404,7 +404,7 @@ package lifecycle
 import (
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 type QuiescenceGate int
@@ -444,14 +444,14 @@ type QuiescenceCfg struct {
 
 // QuiescencePredicate returns true iff every hard gate passes AND the idle
 // timer has elapsed. See §4.1.
-func QuiescencePredicate(state *tracker.PRGroomingState, cfg QuiescenceCfg, now time.Time) bool {
+func QuiescencePredicate(state *prsession.PRGroomingState, cfg QuiescenceCfg, now time.Time) bool {
     return FailingGate(state, cfg, now) == GateNone
 }
 
 // FailingGate returns the first gate that fails, in the priority order
 // G_REVIEWERS → G_CI → G_DISPOSITIONS → G_NO_BLOCKERS → Idle. Returns
 // GateNone if all pass. Operators read this via `prgroom status`.
-func FailingGate(state *tracker.PRGroomingState, cfg QuiescenceCfg, now time.Time) QuiescenceGate {
+func FailingGate(state *prsession.PRGroomingState, cfg QuiescenceCfg, now time.Time) QuiescenceGate {
     if !allRequiredReviewersTerminal(state) {
         return GateReviewers
     }
@@ -470,12 +470,12 @@ func FailingGate(state *tracker.PRGroomingState, cfg QuiescenceCfg, now time.Tim
     return GateNone
 }
 
-func allRequiredReviewersTerminal(state *tracker.PRGroomingState) bool {
+func allRequiredReviewersTerminal(state *prsession.PRGroomingState) bool {
     for _, r := range state.Reviewers {
         if !r.Required {
             continue
         }
-        if r.Status != tracker.ReviewerReviewFound && r.Status != tracker.ReviewerDeclined {
+        if r.Status != prsession.ReviewerReviewFound && r.Status != prsession.ReviewerDeclined {
             return false
         }
     }
@@ -489,7 +489,7 @@ func ciGateAllows(ciState string) bool {
     // has never been written. The first pollLocked sets it explicitly per Task 6.
 }
 
-func allItemsDispositioned(state *tracker.PRGroomingState) bool {
+func allItemsDispositioned(state *prsession.PRGroomingState) bool {
     for i := range state.Items {
         if state.Items[i].Disposition == nil {
             return false
@@ -498,13 +498,13 @@ func allItemsDispositioned(state *tracker.PRGroomingState) bool {
     return true
 }
 
-func hasBlockerDisposition(state *tracker.PRGroomingState) bool {
+func hasBlockerDisposition(state *prsession.PRGroomingState) bool {
     for i := range state.Items {
         d := state.Items[i].Disposition
         if d == nil {
             continue
         }
-        if d.Kind == tracker.DispositionEscalated || d.Kind == tracker.DispositionFailed {
+        if d.Kind == prsession.DispositionEscalated || d.Kind == prsession.DispositionFailed {
             return true
         }
     }
@@ -733,7 +733,7 @@ import (
     "testing"
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 func TestEvaluateReviewerTimeouts(t *testing.T) {
@@ -745,58 +745,58 @@ func TestEvaluateReviewerTimeouts(t *testing.T) {
 
     cases := []struct {
         name           string
-        initialStatus  tracker.ReviewerStatus
+        initialStatus  prsession.ReviewerStatus
         lastRequestAt  time.Time
         lastReviewAt   time.Time
-        wantStatus     tracker.ReviewerStatus
+        wantStatus     prsession.ReviewerStatus
         wantReason     string
     }{
         {
             name:          "requested_within_start_window_no_change",
-            initialStatus: tracker.ReviewerRequested,
+            initialStatus: prsession.ReviewerRequested,
             lastRequestAt: now.Add(-2 * time.Minute),
-            wantStatus:    tracker.ReviewerRequested,
+            wantStatus:    prsession.ReviewerRequested,
         },
         {
             name:          "requested_past_start_window_declines",
-            initialStatus: tracker.ReviewerRequested,
+            initialStatus: prsession.ReviewerRequested,
             lastRequestAt: now.Add(-4 * time.Minute),
-            wantStatus:    tracker.ReviewerDeclined,
+            wantStatus:    prsession.ReviewerDeclined,
             wantReason:    "timeout-no-start",
         },
         {
             name:          "in_progress_within_finish_window_no_change",
-            initialStatus: tracker.ReviewerInProgress,
+            initialStatus: prsession.ReviewerInProgress,
             lastRequestAt: now.Add(-20 * time.Minute),
             lastReviewAt:  now.Add(-10 * time.Minute),
-            wantStatus:    tracker.ReviewerInProgress,
+            wantStatus:    prsession.ReviewerInProgress,
         },
         {
             name:          "in_progress_past_finish_window_declines",
-            initialStatus: tracker.ReviewerInProgress,
+            initialStatus: prsession.ReviewerInProgress,
             lastRequestAt: now.Add(-30 * time.Minute),
             lastReviewAt:  now.Add(-16 * time.Minute),
-            wantStatus:    tracker.ReviewerDeclined,
+            wantStatus:    prsession.ReviewerDeclined,
             wantReason:    "timeout-stalled",
         },
         {
             name:          "review_found_does_not_decline",
-            initialStatus: tracker.ReviewerReviewFound,
+            initialStatus: prsession.ReviewerReviewFound,
             lastRequestAt: now.Add(-30 * time.Minute),
-            wantStatus:    tracker.ReviewerReviewFound,
+            wantStatus:    prsession.ReviewerReviewFound,
         },
         {
             name:          "already_declined_does_not_re_decline",
-            initialStatus: tracker.ReviewerDeclined,
+            initialStatus: prsession.ReviewerDeclined,
             lastRequestAt: now.Add(-30 * time.Minute),
-            wantStatus:    tracker.ReviewerDeclined,
+            wantStatus:    prsession.ReviewerDeclined,
             wantReason:    "",
         },
     }
     for _, c := range cases {
         t.Run(c.name, func(t *testing.T) {
-            state := &tracker.PRGroomingState{
-                Reviewers: map[string]tracker.ReviewerState{
+            state := &prsession.PRGroomingState{
+                Reviewers: map[string]prsession.ReviewerState{
                     "copilot": {
                         Identity:      "copilot",
                         Required:      true,
@@ -814,7 +814,7 @@ func TestEvaluateReviewerTimeouts(t *testing.T) {
             if got.DeclinedReason != c.wantReason {
                 t.Errorf("DeclinedReason: got %q, want %q", got.DeclinedReason, c.wantReason)
             }
-            if c.wantStatus == tracker.ReviewerDeclined && c.wantReason != "" && got.DeclinedAt.IsZero() {
+            if c.wantStatus == prsession.ReviewerDeclined && c.wantReason != "" && got.DeclinedAt.IsZero() {
                 t.Errorf("DeclinedAt should be set on a fresh decline")
             }
         })
@@ -837,7 +837,7 @@ package lifecycle
 import (
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 type TimeoutsCfg struct {
@@ -849,29 +849,29 @@ type TimeoutsCfg struct {
 // Reviewers in {requested, in_progress} that exceed their respective timeout
 // transition to {declined} with a DeclinedReason of "timeout-no-start" or
 // "timeout-stalled". Reviewers in any other status are untouched.
-func EvaluateReviewerTimeouts(state *tracker.PRGroomingState, cfg TimeoutsCfg, now time.Time) {
+func EvaluateReviewerTimeouts(state *prsession.PRGroomingState, cfg TimeoutsCfg, now time.Time) {
     for id, r := range state.Reviewers {
         switch r.Status {
-        case tracker.ReviewerRequested:
+        case prsession.ReviewerRequested:
             if !r.LastReviewAt.IsZero() {
                 // Shouldn't happen — LastReviewAt being set implies in_progress or terminal.
                 // Skip rather than reclassify; pollLocked owns Status transitions.
                 continue
             }
             if now.Sub(r.LastRequestAt) > cfg.ReviewStartTimeout {
-                r.Status = tracker.ReviewerDeclined
+                r.Status = prsession.ReviewerDeclined
                 r.DeclinedAt = now
                 r.DeclinedReason = "timeout-no-start"
                 state.Reviewers[id] = r
             }
-        case tracker.ReviewerInProgress:
+        case prsession.ReviewerInProgress:
             if r.LastReviewAt.IsZero() {
                 // Inconsistent: in_progress implies engagement, which sets LastReviewAt.
                 // Skip; pollLocked owns the transition that should have set it.
                 continue
             }
             if now.Sub(r.LastReviewAt) > cfg.ReviewFinishTimeout {
-                r.Status = tracker.ReviewerDeclined
+                r.Status = prsession.ReviewerDeclined
                 r.DeclinedAt = now
                 r.DeclinedReason = "timeout-stalled"
                 state.Reviewers[id] = r
@@ -927,15 +927,15 @@ Test 1 — `LastActivityAt` updates on observed mutations:
 
 ```go
 func TestPollLocked_UpdatesLastActivityAtOnNewComment(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     start := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR:             pr,
-        Phase:          tracker.PhaseAwaitingReview,
+        Phase:          prsession.PhaseAwaitingReview,
         LastActivityAt: start.Add(-30 * time.Minute),
         LastPushedHeadSHA: "abc",
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerRequested, LastRequestAt: start.Add(-5 * time.Minute)},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerRequested, LastRequestAt: start.Add(-5 * time.Minute)},
         },
     }
     gh := &fakeGH{
@@ -961,7 +961,7 @@ Test 2 — `CIState` reflects latest check-run for the pushed head:
 ```go
 func TestPollLocked_CapturesCIStateForLastPushedHead(t *testing.T) {
     // Three scenarios in one test via subtests: success, failure, absent
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
     cases := []struct {
         name      string
@@ -975,7 +975,7 @@ func TestPollLocked_CapturesCIStateForLastPushedHead(t *testing.T) {
     }
     for _, c := range cases {
         t.Run(c.name, func(t *testing.T) {
-            state := &tracker.PRGroomingState{PR: pr, LastPushedHeadSHA: "abc"}
+            state := &prsession.PRGroomingState{PR: pr, LastPushedHeadSHA: "abc"}
             gh := &fakeGH{HeadSHA: "abc", CheckRuns: c.checkRuns}
             deps := pollDeps{GH: gh, Clock: func() time.Time { return now }, Cfg: TimeoutsCfg{}}
             state, err := pollLocked(pr, state, deps)
@@ -994,16 +994,16 @@ Test 3 — engagement flips `requested → in_progress`:
 
 ```go
 func TestPollLocked_EngagementFlipsRequestedToInProgress(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     start := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR:                pr,
         LastPushedHeadSHA: "abc",
-        Reviewers: map[string]tracker.ReviewerState{
+        Reviewers: map[string]prsession.ReviewerState{
             "copilot": {
                 Identity:      "copilot",
                 Required:      true,
-                Status:        tracker.ReviewerRequested,
+                Status:        prsession.ReviewerRequested,
                 LastRequestAt: start.Add(-5 * time.Minute),
             },
         },
@@ -1021,7 +1021,7 @@ func TestPollLocked_EngagementFlipsRequestedToInProgress(t *testing.T) {
         t.Fatalf("pollLocked: %v", err)
     }
     r := state.Reviewers["copilot"]
-    if r.Status != tracker.ReviewerInProgress {
+    if r.Status != prsession.ReviewerInProgress {
         t.Errorf("Status: got %v, want in_progress", r.Status)
     }
     if !r.LastReviewAt.Equal(activityTime) {
@@ -1034,16 +1034,16 @@ Test 4 — `EvaluateReviewerTimeouts` is invoked (request-side timeout):
 
 ```go
 func TestPollLocked_AutoDeclinesOnStartTimeout(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR:                pr,
         LastPushedHeadSHA: "abc",
-        Reviewers: map[string]tracker.ReviewerState{
+        Reviewers: map[string]prsession.ReviewerState{
             "copilot": {
                 Identity:      "copilot",
                 Required:      true,
-                Status:        tracker.ReviewerRequested,
+                Status:        prsession.ReviewerRequested,
                 LastRequestAt: now.Add(-5 * time.Minute), // past 3m start timeout
             },
         },
@@ -1056,7 +1056,7 @@ func TestPollLocked_AutoDeclinesOnStartTimeout(t *testing.T) {
         t.Fatalf("pollLocked: %v", err)
     }
     r := state.Reviewers["copilot"]
-    if r.Status != tracker.ReviewerDeclined || r.DeclinedReason != "timeout-no-start" {
+    if r.Status != prsession.ReviewerDeclined || r.DeclinedReason != "timeout-no-start" {
         t.Errorf("expected timeout-no-start decline; got Status=%v Reason=%q", r.Status, r.DeclinedReason)
     }
 }
@@ -1090,7 +1090,7 @@ state.Quiescence.CIState = summarizeCIState(checkRuns)
 // (b) Engagement detection per reviewer: flip requested → in_progress
 //     and bump LastReviewAt on first qualifying activity.
 for id, r := range state.Reviewers {
-    if r.Status != tracker.ReviewerRequested && r.Status != tracker.ReviewerInProgress {
+    if r.Status != prsession.ReviewerRequested && r.Status != prsession.ReviewerInProgress {
         continue
     }
     activities := collectReviewerActivities(comments, reviews, inlineComments, threadReplies)
@@ -1098,8 +1098,8 @@ for id, r := range state.Reviewers {
         if !IsReviewerEngagement(a, r.Identity, r.LastRequestAt, pushedAt) {
             continue
         }
-        if r.Status == tracker.ReviewerRequested {
-            r.Status = tracker.ReviewerInProgress
+        if r.Status == prsession.ReviewerRequested {
+            r.Status = prsession.ReviewerInProgress
         }
         if a.CreatedAt.After(r.LastReviewAt) {
             r.LastReviewAt = a.CreatedAt
@@ -1228,45 +1228,45 @@ import (
     "testing"
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 // fakePollFn is the seam for unit-testing waitLocked without going through the
 // real pollLocked + gh adapter. The wait_test.go file installs one of these
 // via waitDeps.PollFn.
-type fakePollFn func(pr tracker.PRRef, state *tracker.PRGroomingState, now time.Time) (*tracker.PRGroomingState, error)
+type fakePollFn func(pr prsession.PRRef, state *prsession.PRGroomingState, now time.Time) (*prsession.PRGroomingState, error)
 
 func TestWaitLocked_QuiescenceTripsAndReturns(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR:             pr,
-        Phase:          tracker.PhaseAwaitingReview,
+        Phase:          prsession.PhaseAwaitingReview,
         LastActivityAt: now.Add(-15 * time.Minute), // idle > 10m
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound},
         },
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
         },
-        Quiescence: tracker.QuiescenceState{CIState: "success"},
+        Quiescence: prsession.QuiescenceState{CIState: "success"},
     }
     deps := waitDeps{
-        PollFn: func(_ tracker.PRRef, s *tracker.PRGroomingState, _ time.Time) (*tracker.PRGroomingState, error) {
+        PollFn: func(_ prsession.PRRef, s *prsession.PRGroomingState, _ time.Time) (*prsession.PRGroomingState, error) {
             // Predicate is already satisfiable on entry; this poll is a no-op refresh.
             return s, nil
         },
         Clock:        func() time.Time { return now },
         Sleep:        func(_ context.Context, _ time.Duration) error { return nil }, // instant
         Cfg:          QuiescenceCfg{IdleThreshold: 10 * time.Minute},
-        TrackerWrite: func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil },
+        StoreWrite: func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil },
     }
     ctx := context.Background()
     state, err := waitLocked(ctx, pr, state, deps)
     if err != nil {
         t.Fatalf("waitLocked: %v", err)
     }
-    if state.Phase != tracker.PhaseQuiesced {
+    if state.Phase != prsession.PhaseQuiesced {
         t.Errorf("Phase: got %v, want quiesced", state.Phase)
     }
     if state.Quiescence.QuiescedAt.IsZero() {
@@ -1275,19 +1275,19 @@ func TestWaitLocked_QuiescenceTripsAndReturns(t *testing.T) {
 }
 
 func TestWaitLocked_CtxCancelledAtLoopTopReturnsCancelled(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{PR: pr, Phase: tracker.PhaseAwaitingReview}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{PR: pr, Phase: prsession.PhaseAwaitingReview}
     ctx, cancel := context.WithCancel(context.Background())
     cancel() // already cancelled on entry
     deps := waitDeps{
-        PollFn: func(_ tracker.PRRef, _ *tracker.PRGroomingState, _ time.Time) (*tracker.PRGroomingState, error) {
+        PollFn: func(_ prsession.PRRef, _ *prsession.PRGroomingState, _ time.Time) (*prsession.PRGroomingState, error) {
             t.Fatal("PollFn should not be called when ctx is already cancelled at loop top")
             return nil, nil
         },
         Clock:        func() time.Time { return time.Now().UTC() },
         Sleep:        func(_ context.Context, _ time.Duration) error { return nil },
         Cfg:          QuiescenceCfg{IdleThreshold: 10 * time.Minute},
-        TrackerWrite: func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil },
+        StoreWrite: func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil },
     }
     _, err := waitLocked(ctx, pr, state, deps)
     if err == nil {
@@ -1302,11 +1302,11 @@ func TestWaitLocked_CtxCancelledAtLoopTopReturnsCancelled(t *testing.T) {
 }
 
 func TestWaitLocked_CtxCancelledDuringSleepReturnsCancelled(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{PR: pr, Phase: tracker.PhaseAwaitingReview}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{PR: pr, Phase: prsession.PhaseAwaitingReview}
     ctx, cancel := context.WithCancel(context.Background())
     deps := waitDeps{
-        PollFn: func(_ tracker.PRRef, s *tracker.PRGroomingState, _ time.Time) (*tracker.PRGroomingState, error) {
+        PollFn: func(_ prsession.PRRef, s *prsession.PRGroomingState, _ time.Time) (*prsession.PRGroomingState, error) {
             return s, nil // predicate not satisfiable → loop continues to sleep
         },
         Clock: func() time.Time { return time.Now().UTC() },
@@ -1316,7 +1316,7 @@ func TestWaitLocked_CtxCancelledDuringSleepReturnsCancelled(t *testing.T) {
             return c.Err()
         },
         Cfg:          QuiescenceCfg{IdleThreshold: 10 * time.Minute},
-        TrackerWrite: func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil },
+        StoreWrite: func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil },
     }
     _, err := waitLocked(ctx, pr, state, deps)
     if err == nil || !IsRuntimeCancelledError(err) {
@@ -1341,25 +1341,25 @@ import (
     "context"
     "time"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 // waitDeps is the dependency surface for waitLocked. Production code wires
 // real implementations (the actual pollLocked, time.Sleep with ctx-aware select,
-// the real clock, the file tracker write); tests inject fakes.
+// the real clock, the file-backed prsession.Store write); tests inject fakes.
 type waitDeps struct {
-    PollFn       func(pr tracker.PRRef, state *tracker.PRGroomingState, now time.Time) (*tracker.PRGroomingState, error)
+    PollFn       func(pr prsession.PRRef, state *prsession.PRGroomingState, now time.Time) (*prsession.PRGroomingState, error)
     Clock        func() time.Time
     Sleep        func(ctx context.Context, d time.Duration) error // returns ctx.Err() if cancelled
     Cfg          QuiescenceCfg
     PollInterval time.Duration
-    TrackerWrite func(pr tracker.PRRef, state *tracker.PRGroomingState) error
+    StoreWrite func(pr prsession.PRRef, state *prsession.PRGroomingState) error
 }
 
 // waitLocked implements §4.2. The caller holds the PR lock; waitLocked
 // does NOT release during sleep. Cancellation honors ctx; signal handling is
 // the caller's job (Run sets up SIGINT/SIGTERM → ctx.cancel).
-func waitLocked(ctx context.Context, pr tracker.PRRef, state *tracker.PRGroomingState, deps waitDeps) (*tracker.PRGroomingState, error) {
+func waitLocked(ctx context.Context, pr prsession.PRRef, state *prsession.PRGroomingState, deps waitDeps) (*prsession.PRGroomingState, error) {
     for {
         // Wake event 1: signal-cancel at loop top.
         if err := ctx.Err(); err != nil {
@@ -1382,9 +1382,9 @@ func waitLocked(ctx context.Context, pr tracker.PRRef, state *tracker.PRGrooming
 
         // Wake event 5: quiescence predicate satisfied.
         if QuiescencePredicate(state, deps.Cfg, deps.Clock()) {
-            state.Phase = tracker.PhaseQuiesced
+            state.Phase = prsession.PhaseQuiesced
             state.Quiescence.QuiescedAt = deps.Clock()
-            if werr := deps.TrackerWrite(pr, state); werr != nil {
+            if werr := deps.StoreWrite(pr, state); werr != nil {
                 return state, werr
             }
             return state, nil
@@ -1468,43 +1468,43 @@ Append to `internal/lifecycle/wait_test.go`:
 
 ```go
 func TestWaitLocked_PhaseMovedOffAwaitingReviewExitsCleanly(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{PR: pr, Phase: tracker.PhaseAwaitingReview}
+    state := &prsession.PRGroomingState{PR: pr, Phase: prsession.PhaseAwaitingReview}
     deps := waitDeps{
-        PollFn: func(_ tracker.PRRef, s *tracker.PRGroomingState, _ time.Time) (*tracker.PRGroomingState, error) {
-            s.Phase = tracker.PhaseFixesPending // simulate fix commits arrived
+        PollFn: func(_ prsession.PRRef, s *prsession.PRGroomingState, _ time.Time) (*prsession.PRGroomingState, error) {
+            s.Phase = prsession.PhaseFixesPending // simulate fix commits arrived
             return s, nil
         },
         Clock:        func() time.Time { return now },
         Sleep:        func(_ context.Context, _ time.Duration) error { return nil },
         Cfg:          QuiescenceCfg{IdleThreshold: 10 * time.Minute},
         PollInterval: 30 * time.Second,
-        TrackerWrite: func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil },
+        StoreWrite: func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil },
     }
     state, err := waitLocked(context.Background(), pr, state, deps)
     if err != nil {
         t.Fatalf("waitLocked: %v", err)
     }
-    if state.Phase != tracker.PhaseFixesPending {
+    if state.Phase != prsession.PhaseFixesPending {
         t.Errorf("Phase: got %v, want fixes-pending", state.Phase)
     }
 }
 
 func TestWaitLocked_PollLockedErrorPropagates(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{PR: pr, Phase: tracker.PhaseAwaitingReview}
+    state := &prsession.PRGroomingState{PR: pr, Phase: prsession.PhaseAwaitingReview}
     wantErr := errors.New("transient gh failure")
     deps := waitDeps{
-        PollFn: func(_ tracker.PRRef, s *tracker.PRGroomingState, _ time.Time) (*tracker.PRGroomingState, error) {
+        PollFn: func(_ prsession.PRRef, s *prsession.PRGroomingState, _ time.Time) (*prsession.PRGroomingState, error) {
             return s, wantErr
         },
         Clock:        func() time.Time { return now },
         Sleep:        func(_ context.Context, _ time.Duration) error { return nil },
         Cfg:          QuiescenceCfg{IdleThreshold: 10 * time.Minute},
         PollInterval: 30 * time.Second,
-        TrackerWrite: func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil },
+        StoreWrite: func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil },
     }
     _, err := waitLocked(context.Background(), pr, state, deps)
     if !errors.Is(err, wantErr) {
@@ -1526,7 +1526,7 @@ In `internal/lifecycle/wait.go`, between the `if err != nil` check and the `Quie
         // Wake event 4: phase moved off awaiting-review/idle (fix commits
         // arrived, external push, PR merged externally) → return to let
         // runLocked re-enter the cycle.
-        if state.Phase != tracker.PhaseAwaitingReview && state.Phase != tracker.PhaseIdle {
+        if state.Phase != prsession.PhaseAwaitingReview && state.Phase != prsession.PhaseIdle {
             return state, nil
         }
 ```
@@ -1560,20 +1560,20 @@ Append to `internal/lifecycle/end_of_cycle_test.go`:
 ```go
 func TestResolveEndOfCyclePhase_Priority5QuiescenceTrips(t *testing.T) {
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
-        Phase:          tracker.PhaseFixesPending, // about to resolve
+    state := &prsession.PRGroomingState{
+        Phase:          prsession.PhaseFixesPending, // about to resolve
         LastActivityAt: now.Add(-15 * time.Minute),
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound},
         },
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
         },
-        Quiescence: tracker.QuiescenceState{CIState: "success"},
+        Quiescence: prsession.QuiescenceState{CIState: "success"},
     }
     cfg := QuiescenceCfg{IdleThreshold: 10 * time.Minute}
     newPhase := resolveEndOfCyclePhase(state, cfg, now)
-    if newPhase != tracker.PhaseQuiesced {
+    if newPhase != prsession.PhaseQuiesced {
         t.Errorf("Phase: got %v, want quiesced", newPhase)
     }
 }
@@ -1582,16 +1582,16 @@ func TestResolveEndOfCyclePhase_BlockerBeatsQuiescence(t *testing.T) {
     // §3.2 priority cascade: an escalated item must route to human-gated
     // BEFORE reaching priority 5 quiescence.
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
-        Phase:          tracker.PhaseFixesPending,
+    state := &prsession.PRGroomingState{
+        Phase:          prsession.PhaseFixesPending,
         LastActivityAt: now.Add(-15 * time.Minute),
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionEscalated}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionEscalated}},
         },
     }
     cfg := QuiescenceCfg{IdleThreshold: 10 * time.Minute}
     newPhase := resolveEndOfCyclePhase(state, cfg, now)
-    if newPhase != tracker.PhaseHumanGated {
+    if newPhase != prsession.PhaseHumanGated {
         t.Errorf("Phase: got %v, want human-gated (escalated item)", newPhase)
     }
 }
@@ -1613,11 +1613,11 @@ In `internal/lifecycle/end_of_cycle.go`, find `resolveEndOfCyclePhase`. After th
     // transition to quiesced. See §4.1.
     if QuiescencePredicate(state, cfg, now) {
         state.Quiescence.QuiescedAt = now
-        return tracker.PhaseQuiesced
+        return prsession.PhaseQuiesced
     }
 ```
 
-Update the signature: `func resolveEndOfCyclePhase(state *tracker.PRGroomingState, cfg QuiescenceCfg, now time.Time) tracker.PRPhase`.
+Update the signature: `func resolveEndOfCyclePhase(state *prsession.PRGroomingState, cfg QuiescenceCfg, now time.Time) prsession.PRPhase`.
 
 Update the caller in `internal/lifecycle/run.go` — the existing `state.Phase = resolveEndOfCyclePhase(state)` call site (see §3.3 pseudocode line 721) becomes `state.Phase = resolveEndOfCyclePhase(state, deps.QuiescenceCfg, deps.Clock())`. The `runLocked` deps struct gets two new fields: `QuiescenceCfg QuiescenceCfg` and `Clock func() time.Time`. (Likely already has Clock from Task 5's pollLocked refactor; if not, add it.)
 
@@ -2013,43 +2013,43 @@ import (
 func TestShouldRequestHumanReview(t *testing.T) {
     cases := []struct {
         name string
-        state *tracker.PRGroomingState
+        state *prsession.PRGroomingState
         want bool
     }{
         {
             name: "no_gating_condition_no",
-            state: &tracker.PRGroomingState{
-                Items: []tracker.ReviewItem{{Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}}},
+            state: &prsession.PRGroomingState{
+                Items: []prsession.ReviewItem{{Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}}},
             },
             want: false,
         },
         {
             name: "hard_cap_yes",
-            state: &tracker.PRGroomingState{LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"},
+            state: &prsession.PRGroomingState{LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"},
             want: true,
         },
         {
             name: "escalated_item_yes",
-            state: &tracker.PRGroomingState{
-                Items: []tracker.ReviewItem{{Disposition: &tracker.Disposition{Kind: tracker.DispositionEscalated}}},
+            state: &prsession.PRGroomingState{
+                Items: []prsession.ReviewItem{{Disposition: &prsession.Disposition{Kind: prsession.DispositionEscalated}}},
             },
             want: true,
         },
         {
             name: "failed_item_yes",
-            state: &tracker.PRGroomingState{
-                Items: []tracker.ReviewItem{{Disposition: &tracker.Disposition{Kind: tracker.DispositionFailed}}},
+            state: &prsession.PRGroomingState{
+                Items: []prsession.ReviewItem{{Disposition: &prsession.Disposition{Kind: prsession.DispositionFailed}}},
             },
             want: true,
         },
         {
             name: "runtime_terminal_user_no", // §4.7 explicit non-trigger
-            state: &tracker.PRGroomingState{LastError: "RUNTIME_TERMINAL_USER"},
+            state: &prsession.PRGroomingState{LastError: "RUNTIME_TERMINAL_USER"},
             want: false,
         },
         {
             name: "state_corrupt_no", // §4.7 explicit non-trigger
-            state: &tracker.PRGroomingState{LastError: "STATE_CORRUPT"},
+            state: &prsession.PRGroomingState{LastError: "STATE_CORRUPT"},
             want: false,
         },
     }
@@ -2069,7 +2069,7 @@ type fakeLabelAdder struct {
     callsFor  []string // labels added per call
 }
 
-func (f *fakeLabelAdder) AddLabel(_ context.Context, _ tracker.PRRef, label string) error {
+func (f *fakeLabelAdder) AddLabel(_ context.Context, _ prsession.PRRef, label string) error {
     f.callCount++
     if f.failNext {
         f.failNext = false
@@ -2080,12 +2080,12 @@ func (f *fakeLabelAdder) AddLabel(_ context.Context, _ tracker.PRRef, label stri
 }
 
 func TestRequestHumanReviewIfNeeded_AddsLabelAndSetsDedup(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
     adder := &fakeLabelAdder{}
     cfg := HumanReviewCfg{AutoRequest: true}
-    var written *tracker.PRGroomingState
-    write := func(_ tracker.PRRef, s *tracker.PRGroomingState) error { written = s; return nil }
+    var written *prsession.PRGroomingState
+    write := func(_ prsession.PRRef, s *prsession.PRGroomingState) error { written = s; return nil }
 
     RequestHumanReviewIfNeeded(context.Background(), state, adder, cfg, write)
 
@@ -2096,19 +2096,19 @@ func TestRequestHumanReviewIfNeeded_AddsLabelAndSetsDedup(t *testing.T) {
         t.Error("HumanReviewLabelAdded should be true after successful add")
     }
     if written == nil {
-        t.Error("tracker.Write should have been called after dedup flag set")
+        t.Error("store.Write should have been called after dedup flag set")
     }
 }
 
 func TestRequestHumanReviewIfNeeded_DedupSecondCallNoOp(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{
         PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED",
         HumanReviewLabelAdded: true, // already added this gating event
     }
     adder := &fakeLabelAdder{}
     cfg := HumanReviewCfg{AutoRequest: true}
-    write := func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil }
+    write := func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil }
 
     RequestHumanReviewIfNeeded(context.Background(), state, adder, cfg, write)
 
@@ -2118,11 +2118,11 @@ func TestRequestHumanReviewIfNeeded_DedupSecondCallNoOp(t *testing.T) {
 }
 
 func TestRequestHumanReviewIfNeeded_ApiFailureDoesNotSetDedup(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
     adder := &fakeLabelAdder{failNext: true}
     cfg := HumanReviewCfg{AutoRequest: true}
-    write := func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil }
+    write := func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil }
 
     RequestHumanReviewIfNeeded(context.Background(), state, adder, cfg, write)
 
@@ -2132,11 +2132,11 @@ func TestRequestHumanReviewIfNeeded_ApiFailureDoesNotSetDedup(t *testing.T) {
 }
 
 func TestRequestHumanReviewIfNeeded_AutoRequestDisabled(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
-    state := &tracker.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
+    state := &prsession.PRGroomingState{PR: pr, LastError: "LIFECYCLE_HARD_CAP_EXCEEDED"}
     adder := &fakeLabelAdder{}
     cfg := HumanReviewCfg{AutoRequest: false}
-    write := func(_ tracker.PRRef, _ *tracker.PRGroomingState) error { return nil }
+    write := func(_ prsession.PRRef, _ *prsession.PRGroomingState) error { return nil }
 
     RequestHumanReviewIfNeeded(context.Background(), state, adder, cfg, write)
 
@@ -2161,7 +2161,7 @@ import (
     "fmt"
     "os"
 
-    "<module>/internal/tracker"
+    "<module>/internal/prsession"
 )
 
 // HumanReviewCfg is the subset of config consumed by RequestHumanReviewIfNeeded.
@@ -2172,11 +2172,11 @@ type HumanReviewCfg struct {
 // LabelAdder is the narrow seam over gh.Client used by RequestHumanReviewIfNeeded.
 // The real implementation is *gh.Client; tests inject fakes.
 type LabelAdder interface {
-    AddLabel(ctx context.Context, pr tracker.PRRef, label string) error
+    AddLabel(ctx context.Context, pr prsession.PRRef, label string) error
 }
 
-// TrackerWriter is the narrow seam for persisting state after dedup-flag flip.
-type TrackerWriter func(pr tracker.PRRef, state *tracker.PRGroomingState) error
+// StoreWriter is the narrow seam for persisting state after dedup-flag flip.
+type StoreWriter func(pr prsession.PRRef, state *prsession.PRGroomingState) error
 
 // ShouldRequestHumanReview returns true iff the state matches a §4.7 trigger:
 //   - LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" (cap-trip), or
@@ -2184,7 +2184,7 @@ type TrackerWriter func(pr tracker.PRRef, state *tracker.PRGroomingState) error
 // All other LastError values (RUNTIME_TERMINAL_USER, STATE_CORRUPT, etc.) and
 // any state with no escalated/failed items are non-triggers, and the function
 // returns false.
-func ShouldRequestHumanReview(state *tracker.PRGroomingState) bool {
+func ShouldRequestHumanReview(state *prsession.PRGroomingState) bool {
     if state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" {
         return true
     }
@@ -2193,7 +2193,7 @@ func ShouldRequestHumanReview(state *tracker.PRGroomingState) bool {
         if d == nil {
             continue
         }
-        if d.Kind == tracker.DispositionEscalated || d.Kind == tracker.DispositionFailed {
+        if d.Kind == prsession.DispositionEscalated || d.Kind == prsession.DispositionFailed {
             return true
         }
     }
@@ -2205,10 +2205,10 @@ func ShouldRequestHumanReview(state *tracker.PRGroomingState) bool {
 // flag false so the next cycle retries. Idempotent under HumanReviewLabelAdded.
 func RequestHumanReviewIfNeeded(
     ctx context.Context,
-    state *tracker.PRGroomingState,
+    state *prsession.PRGroomingState,
     adder LabelAdder,
     cfg HumanReviewCfg,
-    write TrackerWriter,
+    write StoreWriter,
 ) {
     if !cfg.AutoRequest {
         return
@@ -2277,17 +2277,17 @@ Append to `internal/lifecycle/run_test.go` (or wherever the runLocked fit-test l
 
 ```go
 func TestRunLocked_HardCapTripAddsHumanReviewLabel(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
-        PR: pr, Phase: tracker.PhaseFixesPending, Round: 3,
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+    state := &prsession.PRGroomingState{
+        PR: pr, Phase: prsession.PhaseFixesPending, Round: 3,
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
         },
     }
     adder := &fakeLabelAdder{}
     // (Build whatever fake deps the foundation's runLocked accepts —
-    //  gh client, agent dispatcher, tracker writer, etc. Set MaxRounds=3
+    //  gh client, agent dispatcher, prsession.Store writer, etc. Set MaxRounds=3
     //  in config so this cycle trips the cap on push.)
     deps := buildTestRunDeps(t, fakeRunDepsOpts{
         Clock: func() time.Time { return now },
@@ -2303,7 +2303,7 @@ func TestRunLocked_HardCapTripAddsHumanReviewLabel(t *testing.T) {
     if err != nil {
         t.Fatalf("runLocked: %v", err)
     }
-    if state.Phase != tracker.PhaseHumanGated {
+    if state.Phase != prsession.PhaseHumanGated {
         t.Errorf("Phase: got %v, want human-gated", state.Phase)
     }
     if state.LastError != "LIFECYCLE_HARD_CAP_EXCEEDED" {
@@ -2318,19 +2318,19 @@ func TestRunLocked_HardCapTripAddsHumanReviewLabel(t *testing.T) {
 }
 
 func TestRunLocked_SuccessfulCycleResetsHumanReviewLabelAddedFlag(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
-        PR: pr, Phase: tracker.PhaseFixesPending,
+    state := &prsession.PRGroomingState{
+        PR: pr, Phase: prsession.PhaseFixesPending,
         LastError: "LIFECYCLE_HARD_CAP_EXCEEDED",
         HumanReviewLabelAdded: true, // carryover from prior cap-trip
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
         },
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound},
         },
-        Quiescence: tracker.QuiescenceState{CIState: "success"},
+        Quiescence: prsession.QuiescenceState{CIState: "success"},
     }
     deps := buildTestRunDeps(t, fakeRunDepsOpts{
         Clock: func() time.Time { return now },
@@ -2344,7 +2344,7 @@ func TestRunLocked_SuccessfulCycleResetsHumanReviewLabelAddedFlag(t *testing.T) 
     if err != nil {
         t.Fatalf("runLocked: %v", err)
     }
-    if state.Phase != tracker.PhaseQuiesced {
+    if state.Phase != prsession.PhaseQuiesced {
         t.Errorf("Phase: got %v, want quiesced", state.Phase)
     }
     if state.HumanReviewLabelAdded {
@@ -2369,7 +2369,7 @@ Open `internal/lifecycle/run.go`. The function `runLocked` should mirror the §3
 
 ```go
 state = escalate_if_needed(state)                            // existing
-RequestHumanReviewIfNeeded(ctx, state, deps.LabelAdder, deps.HumanReviewCfg, deps.TrackerWrite) // §4.7
+RequestHumanReviewIfNeeded(ctx, state, deps.LabelAdder, deps.HumanReviewCfg, deps.StoreWrite) // §4.7
 ```
 
 (Or whatever the project's naming style is — adapt to the existing call shape of `escalate_if_needed`.)
@@ -2387,7 +2387,7 @@ type runDeps struct {
     // ... existing ...
     LabelAdder     LabelAdder
     HumanReviewCfg HumanReviewCfg
-    TrackerWrite   TrackerWriter
+    StoreWrite   StoreWriter
 }
 ```
 
@@ -2428,21 +2428,21 @@ Create or extend the status test:
 
 ```go
 func TestStatusJSON_Section4Fields(t *testing.T) {
-    state := &tracker.PRGroomingState{
-        PR:                tracker.PRRef{Owner: "o", Repo: "r", Number: 42},
-        Phase:             tracker.PhaseQuiesced,
+    state := &prsession.PRGroomingState{
+        PR:                prsession.PRRef{Owner: "o", Repo: "r", Number: 42},
+        Phase:             prsession.PhaseQuiesced,
         Round:             2,
-        Quiescence:        tracker.QuiescenceState{CIState: "success", QuiescedAt: time.Date(2026, 5, 25, 14, 42, 11, 0, time.UTC)},
+        Quiescence:        prsession.QuiescenceState{CIState: "success", QuiescedAt: time.Date(2026, 5, 25, 14, 42, 11, 0, time.UTC)},
         LastActivityAt:    time.Date(2026, 5, 25, 14, 32, 11, 0, time.UTC),
-        Reviewers: map[string]tracker.ReviewerState{
-            "github-copilot[bot]": {Identity: "github-copilot[bot]", Kind: tracker.ReviewerBot, Required: true, Status: tracker.ReviewerReviewFound},
-            "alice":               {Identity: "alice", Kind: tracker.ReviewerHuman, Required: false, Status: tracker.ReviewerInProgress},
+        Reviewers: map[string]prsession.ReviewerState{
+            "github-copilot[bot]": {Identity: "github-copilot[bot]", Kind: prsession.ReviewerBot, Required: true, Status: prsession.ReviewerReviewFound},
+            "alice":               {Identity: "alice", Kind: prsession.ReviewerHuman, Required: false, Status: prsession.ReviewerInProgress},
         },
-        Items: []tracker.ReviewItem{
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}},
-            {Disposition: &tracker.Disposition{Kind: tracker.DispositionAlreadyAddressed}},
+        Items: []prsession.ReviewItem{
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}},
+            {Disposition: &prsession.Disposition{Kind: prsession.DispositionAlreadyAddressed}},
         },
     }
     labels := []string{"human-review-required"}
@@ -2473,11 +2473,11 @@ func TestStatusJSON_Section4Fields(t *testing.T) {
 }
 
 func TestStatusJSON_AutoMergeEligibleWhenAllGatesPass(t *testing.T) {
-    state := &tracker.PRGroomingState{
-        Phase:      tracker.PhaseQuiesced,
+    state := &prsession.PRGroomingState{
+        Phase:      prsession.PhaseQuiesced,
         LastError:  "",
-        Items:      []tracker.ReviewItem{{Disposition: &tracker.Disposition{Kind: tracker.DispositionFixed}}},
-        Quiescence: tracker.QuiescenceState{CIState: "success"},
+        Items:      []prsession.ReviewItem{{Disposition: &prsession.Disposition{Kind: prsession.DispositionFixed}}},
+        Quiescence: prsession.QuiescenceState{CIState: "success"},
     }
     labels := []string{}    // no human-review-required → constraint not active
     approvals := []lifecycle.ApprovalRecord{}
@@ -2488,7 +2488,7 @@ func TestStatusJSON_AutoMergeEligibleWhenAllGatesPass(t *testing.T) {
 }
 
 func TestStatusJSON_BotApprovalInCandidatesNotCounted(t *testing.T) {
-    state := &tracker.PRGroomingState{Phase: tracker.PhaseQuiesced}
+    state := &prsession.PRGroomingState{Phase: prsession.PhaseQuiesced}
     labels := []string{"human-review-required"}
     approvals := []lifecycle.ApprovalRecord{
         {Login: "github-copilot[bot]", State: "APPROVED", ActorType: "Bot"},
@@ -2545,11 +2545,11 @@ type MergeGates struct {
     HumanReviewSatisfied bool `json:"human_review_satisfied"`
 }
 
-func BuildStatusJSON(state *tracker.PRGroomingState, labels []string, approvals []lifecycle.ApprovalRecord) StatusJSON {
+func BuildStatusJSON(state *prsession.PRGroomingState, labels []string, approvals []lifecycle.ApprovalRecord) StatusJSON {
     hr := lifecycle.DeriveHumanReview(labels, approvals)
     summary := summarizeItems(state.Items)
     gates := MergeGates{
-        PhaseIsQuiesced:      state.Phase == tracker.PhaseQuiesced,
+        PhaseIsQuiesced:      state.Phase == prsession.PhaseQuiesced,
         LastErrorClear:       state.LastError == "",
         NoBlockerItems:       summary.Escalated == 0 && summary.Failed == 0,
         HumanReviewSatisfied: !hr.Required || hr.SatisfiedBy != "",
@@ -2565,7 +2565,7 @@ func BuildStatusJSON(state *tracker.PRGroomingState, labels []string, approvals 
     }
 }
 
-func summarizeItems(items []tracker.ReviewItem) ItemsSummary {
+func summarizeItems(items []prsession.ReviewItem) ItemsSummary {
     var s ItemsSummary
     for i := range items {
         d := items[i].Disposition
@@ -2573,13 +2573,13 @@ func summarizeItems(items []tracker.ReviewItem) ItemsSummary {
             continue
         }
         switch d.Kind {
-        case tracker.DispositionFixed:           s.Fixed++
-        case tracker.DispositionAlreadyAddressed: s.AlreadyAddressed++
-        case tracker.DispositionWontFix:         s.WontFix++
-        case tracker.DispositionEscalated:       s.Escalated++
-        case tracker.DispositionFailed:          s.Failed++
-        case tracker.DispositionSkipped:         s.Skipped++
-        case tracker.DispositionDeferred:        s.Deferred++
+        case prsession.DispositionFixed:           s.Fixed++
+        case prsession.DispositionAlreadyAddressed: s.AlreadyAddressed++
+        case prsession.DispositionWontFix:         s.WontFix++
+        case prsession.DispositionEscalated:       s.Escalated++
+        case prsession.DispositionFailed:          s.Failed++
+        case prsession.DispositionSkipped:         s.Skipped++
+        case prsession.DispositionDeferred:        s.Deferred++
         }
     }
     return s
@@ -2615,15 +2615,15 @@ Append to `internal/lifecycle/lifecycle_fit_test.go`:
 
 ```go
 func TestResumability_TimeoutDeadlinesAcrossSimulatedRestart(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 42}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 42}
     requestedAt := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR: pr,
-        Reviewers: map[string]tracker.ReviewerState{
+        Reviewers: map[string]prsession.ReviewerState{
             "copilot": {
                 Identity:      "copilot",
                 Required:      true,
-                Status:        tracker.ReviewerRequested,
+                Status:        prsession.ReviewerRequested,
                 LastRequestAt: requestedAt,
             },
         },
@@ -2644,18 +2644,18 @@ func TestResumability_TimeoutDeadlinesAcrossSimulatedRestart(t *testing.T) {
         t.Fatalf("pollLocked: %v", err)
     }
     r := state.Reviewers["copilot"]
-    if r.Status != tracker.ReviewerDeclined || r.DeclinedReason != "timeout-no-start" {
+    if r.Status != prsession.ReviewerDeclined || r.DeclinedReason != "timeout-no-start" {
         t.Errorf("post-restart auto-decline failed: Status=%v Reason=%q", r.Status, r.DeclinedReason)
     }
 }
 
 func TestResumability_ConfigChangeMidFlightExtendsExistingDeadline(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 42}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 42}
     requestedAt := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR: pr,
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerRequested, LastRequestAt: requestedAt},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerRequested, LastRequestAt: requestedAt},
         },
         LastPushedHeadSHA: "abc",
     }
@@ -2672,7 +2672,7 @@ func TestResumability_ConfigChangeMidFlightExtendsExistingDeadline(t *testing.T)
         t.Fatalf("pollLocked: %v", err)
     }
     r := state.Reviewers["copilot"]
-    if r.Status != tracker.ReviewerRequested {
+    if r.Status != prsession.ReviewerRequested {
         t.Errorf("config extension should suppress auto-decline; got Status=%v Reason=%q", r.Status, r.DeclinedReason)
     }
 }
@@ -2703,21 +2703,21 @@ git commit -m "test(prgroom): resumability fit-tests for §4 timeout deadlines"
 
 ```go
 func TestRunLocked_HappyPathQuiescenceTripsToQuiesced(t *testing.T) {
-    pr := tracker.PRRef{Owner: "o", Repo: "r", Number: 1}
+    pr := prsession.PRRef{Owner: "o", Repo: "r", Number: 1}
     start := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-    state := &tracker.PRGroomingState{
+    state := &prsession.PRGroomingState{
         PR:    pr,
-        Phase: tracker.PhaseFixesPending,
+        Phase: prsession.PhaseFixesPending,
         Round: 1,
-        Items: []tracker.ReviewItem{
+        Items: []prsession.ReviewItem{
             // pre-populated, ready to disposition; the fake fix verb resolves all
         },
-        Reviewers: map[string]tracker.ReviewerState{
-            "copilot": {Identity: "copilot", Required: true, Status: tracker.ReviewerReviewFound, LastRequestAt: start.Add(-10 * time.Minute)},
+        Reviewers: map[string]prsession.ReviewerState{
+            "copilot": {Identity: "copilot", Required: true, Status: prsession.ReviewerReviewFound, LastRequestAt: start.Add(-10 * time.Minute)},
         },
         LastActivityAt:    start.Add(-15 * time.Minute), // already idle
         LastPushedHeadSHA: "abc",
-        Quiescence:        tracker.QuiescenceState{CIState: "success"},
+        Quiescence:        prsession.QuiescenceState{CIState: "success"},
     }
     deps := buildTestRunDeps(t, fakeRunDepsOpts{
         Clock:          func() time.Time { return start },
@@ -2732,7 +2732,7 @@ func TestRunLocked_HappyPathQuiescenceTripsToQuiesced(t *testing.T) {
     if err != nil {
         t.Fatalf("runLocked: %v", err)
     }
-    if state.Phase != tracker.PhaseQuiesced {
+    if state.Phase != prsession.PhaseQuiesced {
         t.Errorf("Phase: got %v, want quiesced", state.Phase)
     }
     if state.Quiescence.QuiescedAt.IsZero() {
