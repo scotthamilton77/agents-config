@@ -16,12 +16,10 @@ class ClaudeAdapter:
     name: str = "claude"
     detection_signal: str = ".claude/settings.json"
 
-    # exercised by w1qls.2.2 (B.2)
-    def source_dir(self, repo_root: Path) -> Path:  # pragma: no cover
+    def source_dir(self, repo_root: Path) -> Path:
         return repo_root / "src" / "user" / ".claude"
 
-    # exercised by w1qls.2.2 (B.2)
-    def dest_dir(self, home: Path) -> Path:  # pragma: no cover
+    def dest_dir(self, home: Path) -> Path:
         return home / ".claude"
 
     def is_detected(self, home: Path) -> bool:
