@@ -479,7 +479,8 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
               │   (terminal-for-CLI; awaits human action)   │
               └────────────────────┬────────────────────────┘
                                    │ resolve-escalated, OR
-                                   │ poll observes external push
+                                   │ poll observes external push, OR
+                                   │ run --max-rounds (cap re-arm)
                                    ▼
                           (back to fixes-pending)
 ```
@@ -495,9 +496,9 @@ Section 2's sketch expanded to label every edge with its `(verb, condition)` tri
 - Any item has unresolved `Disposition.Kind == escalated`
 - A terminal-runtime failure occurred during the cycle
 
-**Terminal-for-CLI phases:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, or an operator-issued `resolve-escalated`.
+**Terminal-for-CLI phases:** `quiesced`, `human-gated`, `merged`. The CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator-issued `resolve-escalated`, or — when the gate is the hard cap — a `run` with raised `--max-rounds` (cap re-arm, §3.5).
 
-**Graph-terminal phase:** `merged` only. Both `quiesced` and `human-gated` can re-enter `fixes-pending` when new reviewer activity or escalation resolution occurs.
+**Graph-terminal phase:** `merged` only. Both `quiesced` and `human-gated` can re-enter `fixes-pending` when new reviewer activity, escalation resolution, or (for a cap-gated PR) a `--max-rounds` raise occurs.
 
 ### 3.2 Phase × verb transition matrix
 
@@ -521,7 +522,7 @@ For every `(current phase, verb invoked)`, the next phase and side effects are p
 | `wait` | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or signal-cancel (§4.2) | sleeps; returns when `waitLocked` contract (§3.3) breaks — phase change, quiescence trip (§4), or signal-cancel (§4.2); hard cap is NOT checked here (§3.5) | `PRECONDITION_WAIT_NOT_APPLICABLE` (exit 2 `EX_USAGE`) — `fixes-pending` has actionable work; the caller should invoke `run` (or `fix`+`push`) instead | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions to `fixes-pending` or `merged` | sleeps; returns when `waitLocked` contract (§3.3) breaks — typically poll-event transitions out | terminal; no-op |
 | `resolve-escalated` | `PRECONDITION_NO_ESCALATIONS` | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition.Kind` from `escalated` to a terminal value; phase unchanged | `PRECONDITION_NO_ESCALATIONS` | flips one item's `Disposition`; **only clears the `escalated` items gate** (§3.2 priority 4). Does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED` (requires `--max-rounds` raise + re-run), `STATE_CORRUPT` (requires operator state-file inspection), or `failed`-items gating (requires the operator to address the underlying `failed` disposition first). After the flip: phase moves to `fixes-pending` if and only if ALL of: (a) `state.Items` has no `escalated` items remaining, (b) `state.Items` has no `failed` items, AND (c) `state.LastError ∉ BlockingErrorCodes` (defined below). Otherwise phase stays `human-gated`. **`BlockingErrorCodes`** = { `LIFECYCLE_HARD_CAP_EXCEEDED`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_GH_TERMINAL`, `RUNTIME_PUSH_REJECTED` } — these codes signal conditions outside `resolve-escalated`'s scope and require the recovery paths in §3.6/§3.7. ("Repo deleted" is one of the conditions classified under `RUNTIME_GH_TERMINAL`, per §3.6's example list; no distinct `RUNTIME_REPO_DELETED` code is registered.) (`CONTRACT_AUDIT_FAILED` is intentionally NOT in this set: per §3.3 `handle_verb_error`, contract-audit failures are surfaced via per-item `Disposition.Kind = failed`, not via `state.LastError`; the `failed`-items check in clause (b) handles them.) | terminal; no-op |
 | `status` | read-only (**lock-free**; see §3.3 carve-out — `--locked` opt-in for strictly-consistent read) | read-only | read-only | read-only | read-only | read-only |
-| `run` | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes `pollLocked` **once** to detect external transitions (e.g., operator merged externally → `merged`; new reviewer activity → `fixes-pending`). If phase advances out of `quiesced`, re-enter the lifecycle loop; otherwise return 0. | invokes `pollLocked` **once** to detect external resolutions (operator pushed a fix → `fixes-pending`; operator merged → `merged`). If phase advances out of `human-gated`, re-enter the lifecycle loop; otherwise return 0 (awaits operator action). | returns 0 immediately (graph-terminal; `merged` is absorbing) |
+| `run` | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes lifecycle loop (§3.3) | invokes `pollLocked` **once** to detect external transitions (e.g., operator merged externally → `merged`; new reviewer activity → `fixes-pending`). If phase advances out of `quiesced`, re-enter the lifecycle loop; otherwise return 0. | invokes `pollLocked` **once** to detect external resolutions (operator pushed a fix → `fixes-pending`; operator merged → `merged`), then re-evaluates the hard cap: if `LastError == LIFECYCLE_HARD_CAP_EXCEEDED` and the cap no longer trips because the operator raised `--max-rounds` (cap re-arm, §3.5 Recovery), clears `LastError` and advances → `fixes-pending`. If phase advances out of `human-gated` by either path, re-enter the lifecycle loop; otherwise return 0 (awaits operator action). | returns 0 immediately (graph-terminal; `merged` is absorbing) |
 
 **End-of-cycle phase resolution** (applied by `run` after each cycle via `resolve_end_of_cycle_phase`, see §3.3): from `fixes-pending` the resolver chooses the next phase by evaluating these conditions in strict priority order — the first match wins.
 
@@ -622,6 +623,29 @@ function runLocked(pr, mode) (*PRGroomingState, error):
         # after external push from quiesced), the loop top below re-enters the
         # cycle. If it stayed terminal-for-CLI or advanced to merged, the
         # loop-top check returns cleanly.
+
+        # Cap re-arm (§3.5 "Recovery"): clear the hard-cap gate when the operator
+        # has raised MaxRounds above the current Round (via --max-rounds /
+        # PRGROOM_MAX_ROUNDS / .prgroom.toml), then re-enter the cycle so the
+        # refused fix commits push under the raised cap. This clears the CAP gate
+        # specifically — it does NOT require the cap to be the sole blocker;
+        # escalated/failed items (if present) are re-asserted at end-of-cycle below.
+        # This predicate is the exact inverse of the §3.5 pre-push cap-trip
+        # condition, so it self-gates: a bare `run` with no raise leaves
+        # Round >= MaxRounds → condition false → phase stays human-gated. The
+        # raised budget IS the explicit operator authorization; the cap is never
+        # silently lifted. Escalated/failed items are NOT bypassed — if any
+        # remain, the re-entered cycle pushes the queued commits and
+        # resolve_end_of_cycle_phase re-asserts human-gated via §3.2 priority 2/3.
+        if state.Phase == "human-gated" \
+           AND state.LastError == "LIFECYCLE_HARD_CAP_EXCEEDED" \
+           AND NOT (has_queued_fix_commits(state) AND state.Round >= MaxRounds):
+            state.Phase = "fixes-pending"
+            state.LastError = ""
+            state.LifecycleEscalationFiled = false   # re-arm, not suppress: a fresh gate after re-entry fires one Sink event
+            state.HumanReviewLabelAdded = false      # §4.7: reset so a later gate re-adds the label
+            store.Write(pr, state)
+            # loop top re-enters the cycle
 
     for {
         # Terminal-for-CLI: emit any pending escalations + auto-label, return.
@@ -880,7 +904,10 @@ These edge cases are accepted as **best-effort attribution**, not corrected auto
 - **`wait` verb interaction:** `waitLocked` is only invoked from `awaiting-review` or `idle` (not from `fixes-pending`). It does NOT itself check the cap; the cap check belongs to the pre-push branch of `runLocked`. `wait`'s break conditions are owned by §4.
 - **First-poll on an already-active PR (operator migration case).** When `prgroom run` is first invoked on a PR with prior reviewer rounds already on it (operator was running other tooling before adopting `prgroom`), the first `pollLocked` sets `Round = 1` per §3.4's bootstrap rule but does NOT retroactively count the historical rounds. **The cap counts only rounds observed by `prgroom`** — historical out-of-band rounds are not visible to the CLI and so do not consume the budget. If the operator wants the cap to reflect the PR's full lifetime, they can pass `--max-rounds` lower to compensate, or wait for a future enhancement.
 - **External pushes and the cap — "observed transitions only" rule.** External pushes count toward `MaxRounds` only when `pollLocked` observes them as a **SHA change between two consecutive poll invocations** (i.e., `newHeadSHA != state.LastPollSHA` AND `newHeadSHA != state.LastPushedHeadSHA`). The first-poll bootstrap (§3.4) sets `Round = 1` to anchor the counter at the PR's currently observed HEAD; it does NOT retroactively scan and count historical pushes that occurred before `prgroom` ever ran on this PR. Rationale: the cap measures review work `prgroom` has *observed* the PR ask of reviewers, not the PR's total lifetime push history. This makes the rule on line 807 and this rule fully consistent: historical pushes are invisible to `prgroom` and so do not count; pushes observed in-flight (CLI's own pushes counted by `pushLocked`, external pushes counted by `pollLocked` SHA-transition attribution) do count. The consequence: if an operator force-pushes three times while `prgroom run --autonomous` is in `awaiting-review` and polling, those three transitions each bump `Round` and may consume the cap; if the operator instead pushes three times BEFORE first launching `prgroom`, only the bootstrap `Round = 1` is recorded. To mitigate cap consumption from in-flight external activity, `pushLocked` emits a one-line stderr warning when the imminent push would advance `Round` to `MaxRounds` (e.g., `prgroom: warning — this push reaches MaxRounds=3; subsequent fix work will gate to human-gated`). Operators who want CLI-only round budgets should distinguish via `--max-rounds` adjustment when manual pushes occur, or file a follow-up bead to split `MaxRoundsCLI` vs `MaxRoundsTotal`.
-- **Recovery:** the operator may `resolve-escalated` the gating item(s), raise `--max-rounds`, and re-run. **`LastError` is cleared automatically on the next successful cycle completion** — defined as: end-of-cycle resolution writes any phase other than `human-gated` (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, or `merged`). The clearing is wired in §3.3's `runLocked` pseudocode immediately after `resolve_end_of_cycle_phase`. No `clear-error` verb is needed; manual state-file editing is never required. Alternatively, the operator may resolve out of band (manual push), which `pollLocked` will observe on the next invocation and re-enter `fixes-pending`.
+- **Recovery (cap re-arm).** Recovery is two *orthogonal* operator actions — escalation clearance and cap clearance are distinct authorizations:
+  - **Escalated items** (only if the gate carries any): `resolve-escalated <pr> <item-id> --as <disposition>` flips each. This clears the *escalated-items* gate only; it does NOT clear `LIFECYCLE_HARD_CAP_EXCEEDED`, which is in `BlockingErrorCodes` (§3.2).
+  - **The cap:** raise the budget (`--max-rounds N`, `PRGROOM_MAX_ROUNDS`, or `.prgroom.toml`) and re-invoke `run`. The §3.3 entry probe re-evaluates the cap: when `LastError == LIFECYCLE_HARD_CAP_EXCEEDED` and the raised budget means the cap no longer trips (`NOT (has_queued_fix_commits(state) AND Round >= MaxRounds)`), it clears `LastError`, sets `Phase = fixes-pending`, and re-enters the cycle. The refused fix commits then push under the raised cap, and end-of-cycle resolution writes a non-`human-gated` phase — the success path that also clears `LastError` (§3.3, immediately after `resolve_end_of_cycle_phase`). **The raised budget is the explicit operator authorization: a bare re-`run` with no raise leaves `Round >= MaxRounds`, the predicate is false, and the phase stays `human-gated` — the cap is never silently lifted.** No `clear-error` verb is needed; manual state-file editing is never required.
+  - **Or out of band:** a manual push, which `pollLocked` observes on the next invocation and re-enters `fixes-pending`.
 
 ### 3.6 Failure tier model
 
@@ -896,15 +923,16 @@ Extends Section 1's three-tier precondition gating into runtime errors. Every ve
 | `RUNTIME_CANCELLED` | SIGINT / SIGTERM received during `waitLocked` (or other blocking internal); operator Ctrl-C or scheduler-issued cancellation (concrete codes: `RUNTIME_CANCELLED_SIGINT`, `RUNTIME_CANCELLED_SIGTERM` per §3.7) | 130 (SIGINT) / 143 (SIGTERM) — `128 + signum` per Unix convention | none; `LastError` left unchanged (cancellation is not a gating condition) | no | scheduler MUST NOT retry — non-retryable by convention; operator decides whether to re-invoke |
 | `CONTRACT_AUDIT_FAILED` | fix-agent commit-orphan check failed; cluster output malformed after retry+fallback | 65 (`EX_DATAERR`) | affected item → `Disposition.Kind = failed` with `Rationale` set by the verb. **`handle_verb_error` returns `Continue` for this tier — it does NOT set `state.LastError`.** End-of-cycle resolver §3.2 priority 3 promotes phase to `human-gated` (any `failed` item, any cause). The cause is available per-item via `Disposition.Rationale`, not via `state.LastError`. | yes | the run loop continues through the rest of the cycle; resolver fires one escalation per cycle (deduped via the `EscalationFiled` flag on each item) |
 | `STATE_CORRUPT` | store JSON corrupt; `schema_version` unknown; lock file present but holding PID dead-and-not-self | 78 (`EX_CONFIG`) | → `human-gated`; `LastError` set | yes | aborts; operator inspects state file |
-| `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves or raises cap and re-runs |
+| `LIFECYCLE_CAP` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (§3.5) | 0 (graceful terminal exit) | → `human-gated`; `LastError = LIFECYCLE_HARD_CAP_EXCEEDED` | yes | aborts; operator resolves escalations and/or raises the cap and re-runs (cap re-arm, §3.5) |
 
 **Retry policy for `RUNTIME_TRANSIENT`:** the retry budget is **per logical API call, not per verb**. A single `pollLocked` may issue several distinct gh API calls (comments, reviews, CI status, head SHA); each gets its own budget independently. Per API call: **up to 3 total attempts** (initial call + 2 retries) before propagating the error. Back-off between retries is exponential: 1s before retry #1, then 4s before retry #2. When the failure response carries a `Retry-After` header (e.g., gh API rate-limit responses), the CLI honors that value instead of the exponential schedule for that retry. The CLI never retries indefinitely inside one process; after the third attempt fails for a single API call, the verb exits with the tier's code (75 `EX_TEMPFAIL`) and the scheduler (cron, `/loop`, agent caller) drives long-horizon retry.
 
 **Note on `PRECONDITION_LOCK_HELD` tier classification.** Named like a precondition but exits 75 (transient-equivalent) — see §3.7 for rationale. The reason: lock contention is short-lived; scheduler retry-on-cadence is the right recovery, identical to `RUNTIME_TRANSIENT`. The "precondition" naming captures the *pre-work check* shape; the exit-code captures the *retry semantics*.
 
-**`human-gated` re-entry:** the only paths OUT of `human-gated` are:
-- `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain.
+**`human-gated` re-entry:** the paths OUT of `human-gated` are:
+- `resolve-escalated <item-id>` flips the gating disposition; phase moves to `fixes-pending` once no `escalated` items remain AND `LastError ∉ BlockingErrorCodes` (so a hard-cap gate is NOT cleared by `resolve-escalated` alone — see the cap re-arm path below).
 - `poll` observes externally-resolved state (operator pushed a fix manually, or merged the PR) and writes `fixes-pending` or `merged` accordingly.
+- `run` with a raised `--max-rounds` re-arms a hard-cap gate: the §3.3 entry probe clears `LIFECYCLE_HARD_CAP_EXCEEDED` and moves to `fixes-pending` when the cap no longer trips (§3.5 Recovery).
 - (Note: the `human-review-required` PR label per §4.4 is a merge constraint, NOT a lifecycle gate — operator does not need to clear it to exit `human-gated`.)
 
 ### 3.7 Error-code registry
@@ -976,7 +1004,7 @@ Every code carries `what` / `why` / `how` per Section 1's structured-stderr cont
 
 | Code | What | Why | How |
 |------|------|-----|-----|
-| `LIFECYCLE_HARD_CAP_EXCEEDED` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (so `Round` is never allowed to exceed `MaxRounds`; the cap-tripping push is refused) | hard cap reached without quiescence | resolve outstanding escalations; raise `--max-rounds` and re-run (a successful cycle clears `LastError` automatically); or hand off to human review |
+| `LIFECYCLE_HARD_CAP_EXCEEDED` | pre-push cap guard tripped: `has_queued_fix_commits(state) AND Round >= MaxRounds` (so `Round` is never allowed to exceed `MaxRounds`; the cap-tripping push is refused) | hard cap reached without quiescence | resolve outstanding escalations; raise `--max-rounds` and re-run — the §3.3 entry probe re-arms the cap and a successful cycle clears `LastError` automatically (a bare re-run with no raise stays `human-gated`; see §3.5 Recovery); or hand off to human review |
 
 Adding new codes is straightforward; the registry's structure (`<CATEGORY>_<SPECIFIC>` with what/why/how) is the stable contract that agents and humans both consume.
 
