@@ -16,7 +16,7 @@
 | Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `formulas`) or `""`. The **secondary** merge-dispatch key. |
 | `IncludeDirective` | A discriminated union (`FileInclude` | `AllRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: on disk, absent from the plan, matching a retired glob. |
-| `Counters` | The per-run tally (created / written / skipped / backed-up / pruned …) surfaced in the exit summary. |
+| `Counters` | The per-run tally (`staged` / `created` / `updated` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
 | Canonical ownership | Which actor is the source of truth for a piece of data: the human (source tree), the installer (plan + writes), or the tool (deployed store at runtime). |
 
 ## Purpose
