@@ -75,7 +75,7 @@ C4Component
     }
 
     System_Ext(github_ext, "GitHub", "PR / reviews / threads / CI / labels")
-    System_Ext(agent_ext, "Agent CLIs", "claude -p / codex exec (subprocess)")
+    System_Ext(agent_ext, "Agent CLIs", "claude -p / codex exec / opencode run (subprocess)")
 
     Rel(operator, run, "Run wrapper invokes runLocked under acquired lock")
 

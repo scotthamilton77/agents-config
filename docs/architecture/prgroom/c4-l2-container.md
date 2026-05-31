@@ -22,7 +22,7 @@
 
 Open the `prgroom` system boundary and show its deployable / runnable units. Answers: *what runs, where does state live, how do the running pieces talk to each other?*
 
-A **container** here is a C4 container: a separately runnable process or persistent data store. The CLI dispatcher, lifecycle aggregator (`runLocked`), prsession store, agent-dispatch contracts, GitHub adapter, and escalation sink all live inside the single `prgroom` Go binary and are therefore **components** of that container, not containers themselves — they appear at L3. The same goes for the bd adapter (v2): `bd` itself is the external Work Tracker; the adapter that would call it is a component inside `prgroom`.
+A **container** here is a C4 container: a separately runnable process or persistent data store. The CLI dispatcher, lifecycle aggregator (`runLocked`), prsession store, agent-dispatch contracts, GitHub adapter, and escalation sink all live inside the single `prgroom` Go binary and are therefore **components** of that container, not containers themselves — they appear at L3. The same goes for the bd adapter (v2): `bd` itself is the external system; the bd-backed `prsession.Store` adapter that would call it is a component inside `prgroom`.
 
 ## Diagram
 
@@ -35,14 +35,14 @@ C4Container
     System_Boundary(prgroom, "prgroom CLI") {
         Container(prgroom_bin, "prgroom binary", "Go static binary (cobra root)", "Single short-lived process: parses verb args, acquires per-PR lock via prsession.Store, runs the lifecycle (poll/cluster/fix/push/rereview/reply/resolve/wait or runLocked), shells out to the agent subprocess, exits. No daemon, no background threads, no shared memory between invocations.")
         ContainerDb(state, "prsession state file", "JSON on local FS", "$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json. Sole survivor of process exit. flock(2) for concurrency; mktemp+rename(2) for atomicity. Schema versioned (schema_version: 1). Hand-edit-safe but not hand-edit-encouraged.")
-        Container(agent_proc, "Agent subprocess", "claude -p / codex exec", "Short-lived; forked per Contract A or Contract B call. Receives prompt on stdin + context env; emits structured output. Fresh agent context per invocation — no carryover between calls.")
+        Container(agent_proc, "Agent subprocess", "claude -p / codex exec / opencode run", "Short-lived; forked per Contract A or Contract B call. Receives prompt on stdin + context env; emits structured output. Fresh agent context per invocation — no carryover between calls.")
         ContainerDb(worktree, "Operator's git worktree", "git working tree on local FS", "The repo + branch the operator launched prgroom against. The Contract B fix agent edits + commits here; the push verb pushes commits to origin. prgroom does NOT manage the worktree lifecycle — the operator (or upstream skill) owns create/cleanup.")
     }
 
     System_Ext(github, "GitHub", "PR + reviews + threads + CI verdicts + human-review-required label")
     System_Ext(gh_cli, "gh CLI auth state", "OS keyring / config — reused via go-gh")
     System_Ext(scheduler, "Scheduler", "cron / systemd timer / GHA / prgroom sweep / /loop session")
-    System_Ext(bdTracker, "Work Tracker (bd) — v2", "Deferred prsession.Store adapter")
+    System_Ext(bd_adapter, "prsession.Store bd adapter (v2)", "Deferred prsession.Store adapter")
 
     Rel(operator, prgroom_bin, "Runs prgroom run / status / resolve-escalated", "CLI invocation")
     Rel(scheduler, prgroom_bin, "Triggers prgroom run (or prgroom sweep)", "tick / event")
@@ -52,7 +52,7 @@ C4Container
     Rel(prgroom_bin, gh_cli, "Reuses gh auth token + host config", "config file read")
     Rel(prgroom_bin, agent_proc, "Forks per Contract A (cluster) or Contract B (fix); pipes prompt; reads structured output", "stdin/stdout pipe")
     Rel(prgroom_bin, worktree, "Reads HEAD SHA, branch ref; the Contract B agent commits here when invoked", "git plumbing")
-    Rel(prgroom_bin, bdTracker, "v2: read/write state via bd notes (linkage label for-pr-<owner>-<repo>-<n>)", "bd CLI (deferred)")
+    Rel(prgroom_bin, bd_adapter, "v2: read/write state via bd notes (linkage label for-pr-<owner>-<repo>-<n>)", "bd CLI (deferred)")
 
     Rel(agent_proc, worktree, "Contract B only: edits files + git commit (the agent runs `git commit` itself, not prgroom)", "git from inside agent")
 
@@ -86,7 +86,7 @@ A single per-PR JSON file at `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json` (
 
 Concurrency: `flock(2)` on the file for the verb's duration (the `run` verb holds it for the whole grooming cycle). Atomicity: `mktemp` + `rename(2)` on the same filesystem — readers always observe either the complete prior file or the complete new file; no partial / corrupt JSON from a race. The `status` verb is the **single exception** to the lock-acquire rule (it does an unlocked `Read` to stay responsive under long-running `run --autonomous`).
 
-#### Agent subprocess — `claude -p` / `codex exec`
+#### Agent subprocess — `claude -p` / `codex exec` / `opencode run`
 
 Forked per agent dispatch. Two contracts share the subprocess mechanism:
 
@@ -104,7 +104,7 @@ The repo + branch the operator launched prgroom against. The Contract B agent ed
 - **GitHub** — at L1 this was a single "GitHub" box. At L2 the relationship list expands but the box stays singular; the components inside `prgroom` (`internal/gh`, `internal/lifecycle/{poll,push,reply,resolve,rereview}`) split the GitHub interactions into REST + GraphQL + label-mutation slices, but those splits live at L3.
 - **gh CLI auth state** — unchanged from L1. `prgroom` does not store credentials; it reuses what `gh auth` already established.
 - **Scheduler** — unchanged from L1. Whatever drives autonomous mode (cron, systemd timer, GitHub Actions, `prgroom sweep`, a `/loop` Claude Code session) is opaque to `prgroom`.
-- **Work Tracker (bd) — v2** — unchanged from L1. The `bd` adapter for `prsession.Store` is deferred; in MVP this box is "drawn for context, not wired".
+- **`prsession.Store` bd adapter (v2)** — unchanged from L1. The `bd` adapter for `prsession.Store` is deferred; in MVP this box is "drawn for context, not wired".
 
 ## Container-relationship discipline (worth memorising)
 

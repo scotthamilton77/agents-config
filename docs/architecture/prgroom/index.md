@@ -34,7 +34,7 @@ These artifacts are **evergreen reference material**: they describe how prgroom 
 
 **In scope** for this artifact set:
 
-- prgroom's place in its surrounding ecosystem (operator, scheduler, GitHub, agent CLIs, work tracker)
+- prgroom's place in its surrounding ecosystem (operator, scheduler, GitHub, agent CLIs, prsession state store)
 - prgroom's internal containers and their responsibilities at MVP
 - prgroom's runtime behaviour: one PR-grooming session's traversal through poll → cluster → fix → push → re-review → reply → resolve → wait, including the four canonical flows (happy, bot-silence, hard-cap, resumability)
 - prgroom's lifecycle state machine: phase transitions per §3 and quiescence sub-states per §4
@@ -69,7 +69,7 @@ Newcomers should read in this order; deep contributors may navigate freely.
 
 | File | Status | Synopsis |
 |---|---|---|
-| [`c4-l1-context.md`](c4-l1-context.md) | drawn | **C4 Level 1** — the `prgroom` CLI in its ecosystem: operator, scheduler (cron / `prgroom sweep`), GitHub (PR + reviews + threads), Claude/Codex agent CLIs, work tracker (via `prsession.Store` interface), local state file |
+| [`c4-l1-context.md`](c4-l1-context.md) | drawn | **C4 Level 1** — the `prgroom` CLI in its ecosystem: operator, scheduler (cron / `prgroom sweep`), GitHub (PR + reviews + threads), Claude/Codex/OpenCode agent CLIs, prsession state store (via `prsession.Store` interface), local state file |
 | [`c4-l2-container.md`](c4-l2-container.md) | drawn | **C4 Level 2** — separately runnable / persistent units of `prgroom`: the `prgroom` binary (single short-lived Go process), the local state file (`prsession.Store` file-adapter storage), the local git worktree (where fix commits land), and the agent subprocess (forked per Contract A / Contract B dispatch). Internal Go modules (`internal/lifecycle`, `internal/prsession`, `internal/agent`, `internal/gh`, `internal/escalation`, etc.) are L3 **components** inside the binary, not L2 containers. |
 | [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) | drawn | **C4 Level 3** (lifecycle) — components inside `internal/lifecycle`: the `runLocked` control flow with verb breakdown (`poll → cluster → fix → push → rereview → reply → resolve → wait`), showing `escalate_if_needed` and `request_human_review_if_needed` call sites |
 | [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) | **stub** | **C4 Level 3** (`internal/agent`) — placeholder; expected components: Contract A (cluster) provider chain (ollama → haiku → codex-mini), Contract B (fix) sonnet[1m] orchestrator + EscalationSink wiring, per-contract config loader, token-usage JSONL emitter |

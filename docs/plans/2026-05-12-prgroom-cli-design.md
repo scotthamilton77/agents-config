@@ -57,15 +57,15 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 │     file/                 default adapter (JSON/disk)    │
 │     bd/                   bd-notes adapter (later)       │
 │   internal/agent/       subprocess to claude/codex       │
-│   internal/lifecycle/   poll→cluster→fix→push→…          │
-│   internal/quiescence/  readiness probability + thresholds│
+│   internal/lifecycle/   poll→cluster→fix→push→… + §4      │
+│                         quiescence predicate (pure fn)    │
 └──────────────────────────────────────────────────────────┘
                           │
                           │ subprocess shell-out (fresh agent context)
                           ▼
-        ┌──────────────────────────────────┐
-        │ claude -p   /   codex exec       │
-        └──────────────────────────────────┘
+        ┌────────────────────────────────────┐
+        │ claude -p / codex exec / opencode  │
+        └────────────────────────────────────┘
 ```
 
 ### Three usage patterns
@@ -81,7 +81,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 - **Language:** Go (single static binary, native `github.com/cli/go-gh/v2` library reuses `gh auth` state, sub-100ms cold start). **Tooling note:** this is Scott's first end-to-end Go project; the implementation plan must begin with a *toolchain assessment* step that inventories what's installed on the dev machine (`go version`, `golangci-lint`, `gofumpt`, `govulncheck`, `delve`, `air`/hot-reload if desired, VS Code or other editor Go extensions) and installs/configures whatever's missing before any production code is written.
 - **CLI framework:** `cobra` (consistency with `gh` and `bd`)
 - **Repo placement:** same `agents-config` repo, new top-level `cmd/prgroom/` and `internal/` tree, Go module rooted at repo root
-- **Agent boundary:** CLI shells out to `claude -p` / `codex exec` as subprocess. Synchronous. Each invocation = fresh agent context.
+- **Agent boundary:** CLI shells out to `claude -p` / `codex exec` / `opencode run` as subprocess. Synchronous. Each invocation = fresh agent context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
 - **Command shape:** subcommand verbs (poll, cluster, fix, push, rereview, reply, resolve, resolve-escalated, wait, status, run, sweep)
 - **MVP scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers
 - **Migration path:** incremental. Phase 1 absorbs `wait-for-pr-comments`; Phase 2 absorbs `reply-and-resolve-pr-threads`. Each skill thins to a one-line invocation as functionality lands in the CLI.
@@ -1333,7 +1333,7 @@ The cheap agent is bad at deciding intent but good at grouping; the heavy agent 
 - **Fix** (heavy agent / orchestrator) — for each cluster, decides per-item disposition AND implements the work where warranted. Inherits the full PR context, prior PR memories, and access to skills/agents.
 - **Resolve-escalated** (human-initiated verb) — flips an `escalated` disposition into a terminal one and lets the lifecycle continue.
 
-Each contract is a **stable, versioned interface** between the CLI and the agent-CLI. That stability is what lets us swap `claude -p` for `codex exec`, change models, run different agents per hand-off, or fall back when the primary is unavailable — without touching the CLI's lifecycle code.
+Each contract is a **stable, versioned interface** between the CLI and the agent-CLI. That stability is what lets us swap `claude -p` for `codex exec` or `opencode run`, change models, run different agents per hand-off, or fall back when the primary is unavailable — without touching the CLI's lifecycle code. Available runtimes (`claude -p`, `codex exec`, `opencode run`, local `ollama`) are selected per-contract in TOML config; the per-contract default chains below are just the shipped defaults, not the limit of what's supported.
 
 #### Contract A — `cluster`
 
