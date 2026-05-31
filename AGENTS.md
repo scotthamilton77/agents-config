@@ -134,8 +134,8 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 
 Other notes:
 
-- No build system, tests, or linting - this is pure documentation
-- Changes should follow existing formatting conventions in each file type
+- Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
+- **Exception — `packages/installer/` is a real Python package with a mandatory quality gate.** Before pushing any change under `packages/installer/`, run `make ci-installer` from the repo root (or `make ci` for the whole repo). It runs lint, format-check, typecheck, coverage, audit, and entry-verify — the same gate CI enforces. See `packages/installer/AGENTS.md` for the package-scoped workflow.
 
 ## Project Milestones (current, not target)
 
