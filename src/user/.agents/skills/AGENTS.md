@@ -43,6 +43,8 @@ Drift policy: <accept-periodic-resync | rewrite-and-divorce | track-upstream | .
 
 The full unmodified upstream artifacts live under `<repo-root>/oss-snapshots/<snapshot-folder>/`. To inspect drift between an upstream snapshot and a modified deployed copy, `diff` the two trees. When a snapshot is refreshed to a newer upstream commit, bump the commit SHA and `Last sync` date in the deployed skill's header in the same change.
 
+**The provenance keys are audit grep-targets — never rename them.** Drift-audit tooling enumerates resync/lift candidates by grepping the literal keys (`Source: oss-snapshots`, `Drift policy:`). A skill that *amalgamates* — lifts specific patterns rather than resyncing byte-for-byte — keeps the same keys and encodes the amalgam semantics in the `Drift policy:` **value** (`selective-amalgamation`), never in a renamed key like `Amalgamation source:`. A renamed key silently drops the file from every future audit. If a new policy value is needed (e.g. `vendor-pinned`), add it to the enum above rather than inventing an ad-hoc key.
+
 ## Skill provenance registry
 
 Skills built from scratch in-repo do not appear here. This table tracks only OSS-derived or OSS-influenced skills shipped from `src/user/.agents/skills/`.

@@ -765,8 +765,9 @@ ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
 # stdout: {count: <n>, thread_ids: [...]}
 ```
 
-**Validate inventory** — Skill B Phase 0 invokes this; pinned here so the
-agent has a copy-pasteable template:
+**Validate inventory** — Skill B invokes this twice (Phase 0 with `--phase 0`
+pre-render; Phase 2 with the default `--phase 2` post-render). Skill A does not
+call it. Pinned here so the agent has a copy-pasteable template:
 
 ```bash
 ${CLAUDE_SKILL_DIR}/validate-inventory.sh \
@@ -780,8 +781,10 @@ Returns 0 if valid, non-zero with the violating item logged to stderr.
 
 ## Schema validation guards
 
-`validate-inventory.sh` runs these nine guards (Skill B Phase 0 invokes it;
-corrupt inventory → hard abort with no replies posted):
+`validate-inventory.sh` runs these ten guards. Skill B invokes it twice —
+`--phase 0` before `render-reply-bodies.sh` runs (guards 1–9), then the default
+`--phase 2` after render (all ten, adding guard 10). Corrupt inventory → hard
+abort with no replies posted:
 
 1. **Schema parse + version** — JSON parses and `schema_version == 1`.
 2. **Rationale non-empty** — every item has a non-empty `rationale`
@@ -809,6 +812,14 @@ corrupt inventory → hard abort with no replies posted):
    write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled
    ESCALATE at write time means a Skill A bug — Skill B would otherwise
    silently skip it without a reply.
+10. **Replyable has `reply_body`** (`--phase 2` only) — reject if any FIX,
+   SKIP, or filed-ESCALATE item has a null/empty `reply_body`. This guard runs
+   only after `render-reply-bodies.sh` (Skill B's helper, in
+   `reply-and-resolve-pr-threads/`) populates the field, so `--phase 0`
+   (pre-render, on the raw inventory) skips it. **Skill A never populates
+   `reply_body` — rendering is Skill B's job.** If the render helper looks
+   "missing" from `wait-for-pr-comments/`, it isn't broken; it lives in Skill
+   B's directory. Stop and check the boundary before working around it.
 
 On reject: log violating item to stderr; abort with no replies posted.
 

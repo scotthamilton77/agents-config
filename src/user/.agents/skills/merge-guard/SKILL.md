@@ -116,6 +116,8 @@ Do NOT count: comments you saw in a previous conversation, comments you "know ab
 
 When in doubt, pass 0 -- better to block and verify than to merge over unseen feedback.
 
+**The script counts your own replies too.** `check-merge-eligibility.sh` derives `total_comments` from `gh api .../pulls/<n>/comments | length`, which returns *every* inline review comment -- including replies you posted (e.g. via `reply-and-resolve-pr-threads`). It does not filter by author or subtract resolved threads. So after a reply cycle, 2 Copilot comments + your 2 replies = 4. When you re-run the check post-reply having genuinely read everything, pass `--comments-seen 4` (the full count), not 2 -- otherwise the script reports `unseen_comments` and false-blocks. When in genuine doubt, still pass 0 and re-triage.
+
 ## Red Flags
 
 | Thought | Reality |
