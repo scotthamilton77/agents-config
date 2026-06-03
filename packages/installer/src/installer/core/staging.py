@@ -1,10 +1,12 @@
-"""Staging-phase transforms applied to source files on their way into a StagingPlan.
+"""Staging-phase construction of a StagingPlan from source files.
 
-B.3: strip_template_suffix — removes the .template suffix from a path's final
-component so that AGENTS.md.template arrives at the destination as AGENTS.md.
-
-B.4 will extend this module with stage_file(), which calls strip_template_suffix
-internally alongside DYNAMIC-INCLUDE detection.
+Pure builders mirroring the bash installer's Phase 1-5 staging
+(``scripts/install.sh``): ``classify_file`` assigns a ``FileKind``;
+``stage_namespace`` walks one namespace subdir (skills/agents/rules/commands);
+``stage_templates`` and ``stage_settings`` collect tool-root instruction
+templates and settings; ``build_plan`` drives all five phases for one tool.
+``strip_template_suffix`` normalises ``.template`` names on the way to their
+destination.
 """
 
 from __future__ import annotations
@@ -84,6 +86,8 @@ def stage_templates(source_root: Path, *, provenance: Provenance) -> list[Staged
     ]
 
 
+# Three explicit globs in bash Phase 5 order (install.sh:806) — keep them
+# separate; collapsing into one brace pattern would lose the staging order.
 _SETTINGS_GLOBS = ("*.json.template", "*.jsonc.template", "*.toml.template")
 
 
