@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.model import FileKind
+from installer.core.model import FileKind, Provenance, StagedItem
 
 
 def strip_template_suffix(path: Path) -> Path:
@@ -48,3 +48,48 @@ def classify_file(path: Path, namespace: str | None) -> FileKind:
     if name.endswith(".md") and namespace:
         return FileKind.NAMESPACED_MD
     return FileKind.OTHER
+
+
+DEAD_MARKERS = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md"})
+"""In-repo host-instruction filenames. Hosts inject only the tree-root
+~/.<tool>/AGENTS.md as system context, never per-namespace copies, so these
+are dead files when found inside a namespace dir. Tool-root *.md.template
+files are NOT in this set (different name) and are staged via stage_templates."""
+
+
+def stage_namespace(
+    source_root: Path,
+    namespace: str,
+    *,
+    provenance: Provenance,
+) -> list[StagedItem]:
+    """Stage one namespace subdir into StagedItems.
+
+    Port of bash ``stage_content_from_dir`` (``scripts/install.sh:603-622``).
+    Walks ``source_root/namespace/*`` in sorted order; each entry is
+    classified, dead-marker-filtered, and turned into a ``StagedItem`` whose
+    ``dest_relpath`` is ``namespace/<name>`` with any ``.template`` suffix
+    stripped. Directory entries (skills/agents) carry ``content=None``;
+    file entries carry eager bytes. A missing namespace dir yields ``[]``.
+    """
+    src_dir = source_root / namespace
+    if not src_dir.is_dir():
+        return []
+
+    items: list[StagedItem] = []
+    for entry in sorted(src_dir.iterdir()):
+        if entry.is_file() and entry.name in DEAD_MARKERS:
+            continue
+        kind = classify_file(entry, namespace)
+        dest_name = strip_template_suffix(Path(entry.name))
+        items.append(
+            StagedItem(
+                source_path=entry,
+                dest_relpath=Path(namespace) / dest_name,
+                kind=kind,
+                namespace=namespace,
+                provenance=provenance,
+                content=None if kind == FileKind.DIR else entry.read_bytes(),
+            )
+        )
+    return items
