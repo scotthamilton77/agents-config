@@ -80,6 +80,36 @@ def stage_templates(source_root: Path, *, provenance: Provenance) -> list[Staged
     ]
 
 
+_SETTINGS_GLOBS = ("*.json.template", "*.jsonc.template", "*.toml.template")
+
+
+def stage_settings(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
+    """Stage tool-root settings templates (bash Phase 5).
+
+    Globs the JSON/JSONC/TOML template forms (each glob sorted, in the bash
+    order), classifies via ``classify_file``, strips ``.template``, and stages
+    each as a root-level item with no namespace. Shared settings are
+    intentionally never staged (bash note at install.sh:791-792). A missing
+    ``source_root`` yields ``[]``.
+    """
+    if not source_root.is_dir():
+        return []
+    items: list[StagedItem] = []
+    for pattern in _SETTINGS_GLOBS:
+        for entry in sorted(source_root.glob(pattern)):
+            items.append(
+                StagedItem(
+                    source_path=entry,
+                    dest_relpath=strip_template_suffix(Path(entry.name)),
+                    kind=classify_file(entry, None),
+                    namespace=None,
+                    provenance=provenance,
+                    content=entry.read_bytes(),
+                )
+            )
+    return items
+
+
 def stage_namespace(
     source_root: Path,
     namespace: str,

@@ -9,7 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.model import FileKind, Provenance
-from installer.core.staging import stage_namespace, stage_templates, strip_template_suffix
+from installer.core.staging import (
+    stage_namespace,
+    stage_settings,
+    stage_templates,
+    strip_template_suffix,
+)
 
 
 def test_template_suffix_is_stripped() -> None:
@@ -155,3 +160,34 @@ def test_stage_templates_ignores_raw_markdown(tmp_path: Path) -> None:
 
 def test_stage_templates_missing_root_returns_empty(tmp_path: Path) -> None:
     assert stage_templates(tmp_path / "nope", provenance=_prov()) == []
+
+
+def test_stage_settings_classifies_each_form(tmp_path: Path) -> None:
+    """settings.json.template, *.jsonc.template, *.toml.template each stage
+    to the plan root with the right FileKind and the .template suffix gone."""
+    (tmp_path / "settings.json.template").write_bytes(b"{}")
+    (tmp_path / "opencode.jsonc.template").write_bytes(b"{}")
+    (tmp_path / "config.toml.template").write_bytes(b"x=1")
+
+    items = stage_settings(tmp_path, provenance=_prov())
+    by_dest = {i.dest_relpath: i for i in items}
+
+    assert by_dest[Path("settings.json")].kind == FileKind.SETTINGS_JSON
+    assert by_dest[Path("opencode.jsonc")].kind == FileKind.JSONC
+    assert by_dest[Path("config.toml")].kind == FileKind.TOML
+    assert all(i.namespace is None for i in items)
+
+
+def test_stage_settings_ignores_md_and_dirs(tmp_path: Path) -> None:
+    """Only settings templates are staged here; .md and subdirs are not."""
+    (tmp_path / "AGENTS.md.template").write_bytes(b"x")
+    (tmp_path / "skills").mkdir()
+    (tmp_path / "settings.json.template").write_bytes(b"{}")
+
+    items = stage_settings(tmp_path, provenance=_prov())
+
+    assert [i.dest_relpath for i in items] == [Path("settings.json")]
+
+
+def test_stage_settings_missing_root_returns_empty(tmp_path: Path) -> None:
+    assert stage_settings(tmp_path / "nope", provenance=_prov()) == []
