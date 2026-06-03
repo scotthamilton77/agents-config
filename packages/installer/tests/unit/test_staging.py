@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.model import FileKind, Provenance
-from installer.core.staging import stage_namespace, strip_template_suffix
+from installer.core.staging import stage_namespace, stage_templates, strip_template_suffix
 
 
 def test_template_suffix_is_stripped() -> None:
@@ -125,3 +125,33 @@ def test_stage_namespace_is_deterministically_ordered(tmp_path: Path) -> None:
     items = stage_namespace(tmp_path, "rules", provenance=_prov())
 
     assert [i.dest_relpath.name for i in items] == ["a.md", "b.md", "c.md"]
+
+
+def test_stage_templates_strips_suffix_and_is_other(tmp_path: Path) -> None:
+    """A tool-root AGENTS.md.template stages to AGENTS.md as FileKind.OTHER
+    at the plan root (no namespace), with eager bytes."""
+    (tmp_path / "AGENTS.md.template").write_bytes(b"# agents\n")
+
+    items = stage_templates(tmp_path, provenance=_prov())
+
+    assert len(items) == 1
+    assert items[0].kind == FileKind.OTHER
+    assert items[0].namespace is None
+    assert items[0].dest_relpath == Path("AGENTS.md")
+    assert items[0].content == b"# agents\n"
+
+
+def test_stage_templates_ignores_raw_markdown(tmp_path: Path) -> None:
+    """Raw AGENTS.md / CLAUDE.md at the tool root (in-repo dev docs) are not
+    *.md.template and are never staged — only the template glob matches."""
+    (tmp_path / "AGENTS.md").write_bytes(b"dev doc")
+    (tmp_path / "CLAUDE.md").write_bytes(b"dev doc")
+    (tmp_path / "AGENTS.md.template").write_bytes(b"real")
+
+    items = stage_templates(tmp_path, provenance=_prov())
+
+    assert [i.dest_relpath for i in items] == [Path("AGENTS.md")]
+
+
+def test_stage_templates_missing_root_returns_empty(tmp_path: Path) -> None:
+    assert stage_templates(tmp_path / "nope", provenance=_prov()) == []

@@ -57,6 +57,29 @@ are dead files when found inside a namespace dir. Tool-root *.md.template
 files are NOT in this set (different name) and are staged via stage_templates."""
 
 
+def stage_templates(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
+    """Stage tool-root instruction templates (bash Phases 1 & 3).
+
+    Globs ``source_root/*.md.template`` (sorted), strips the ``.template``
+    suffix, and stages each as a root-level ``FileKind.OTHER`` item with no
+    namespace. Raw ``*.md`` files at the root (in-repo dev docs) are not
+    matched. A missing ``source_root`` yields ``[]``.
+    """
+    if not source_root.is_dir():
+        return []
+    return [
+        StagedItem(
+            source_path=entry,
+            dest_relpath=strip_template_suffix(Path(entry.name)),
+            kind=FileKind.OTHER,
+            namespace=None,
+            provenance=provenance,
+            content=entry.read_bytes(),
+        )
+        for entry in sorted(source_root.glob("*.md.template"))
+    ]
+
+
 def stage_namespace(
     source_root: Path,
     namespace: str,
