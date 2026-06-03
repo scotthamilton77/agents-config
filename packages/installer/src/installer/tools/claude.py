@@ -26,7 +26,7 @@ class ClaudeAdapter:
         return (home / ".claude" / "settings.json").is_file()
 
     # exercised by w1qls.3.1 (C.1)
-    def scoped_namespaces(self) -> tuple[str, ...]:  # pragma: no cover
+    def scoped_namespaces(self) -> tuple[str, ...]:
         return ("commands", "skills", "agents", "rules")
 
     # exercised by w1qls.3.1 (C.1)
@@ -34,7 +34,7 @@ class ClaudeAdapter:
         self,
         namespace: str,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
         source: str,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
-    ) -> bool:  # pragma: no cover
+    ) -> bool:
         return True
 
     # exercised by w1qls.4.4 (D.4)

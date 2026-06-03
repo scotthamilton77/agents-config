@@ -10,8 +10,12 @@ internally alongside DYNAMIC-INCLUDE detection.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from installer.core.model import FileKind, Provenance, StagedItem
+if TYPE_CHECKING:
+    from installer.tools.base import ToolAdapter
+
+from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 
 
 def strip_template_suffix(path: Path) -> Path:
@@ -146,3 +150,52 @@ def stage_namespace(
             )
         )
     return items
+
+
+_SHARED_NAMESPACES = ("skills", "agents", "rules")  # bash Phase 2 (no commands shared)
+
+
+def _add_item(plan: StagingPlan, item: StagedItem) -> None:
+    """Insert one item, raising on a duplicate dest_relpath.
+
+    The data model overwrites silently on a duplicate key (see StagingPlan
+    docstring); collision *resolution* (merge dispatch) is Epic E. Until then
+    a collision is a hard error so it can never silently drop content.
+    """
+    if item.dest_relpath in plan.items:
+        raise ValueError(  # noqa: TRY003  # single call-site; deferred-feature signal
+            f"staging collision at {item.dest_relpath}; merge dispatch lands in Epic E"
+        )
+    plan.items[item.dest_relpath] = item
+
+
+def build_plan(adapter: ToolAdapter, *, repo_root: Path) -> StagingPlan:
+    """Build a StagingPlan for one tool (bash Phases 1-5).
+
+    Stages, in bash order: shared templates (1), shared skills/agents/rules
+    namespaces (2), tool-root templates (3), tool namespaces from
+    ``adapter.scoped_namespaces()`` (4), and tool settings (5). Each namespace
+    is gated by ``adapter.should_install_namespace(ns, source)`` so a tool can
+    opt out (e.g. OpenCode skips shared agents). Plugin overlay (Phase 6) and
+    DYNAMIC-INCLUDE flatten (Phase 6.5) are later stories.
+    """
+    plan = StagingPlan(items={}, tool=Tool(adapter.name))
+    prov = Provenance(kind="tool", name=adapter.name)
+    shared_root = repo_root / "src" / "user" / ".agents"
+    tool_root = adapter.source_dir(repo_root)
+
+    for item in stage_templates(shared_root, provenance=prov):  # Phase 1
+        _add_item(plan, item)
+    for ns in _SHARED_NAMESPACES:  # Phase 2
+        if adapter.should_install_namespace(ns, "shared"):
+            for item in stage_namespace(shared_root, ns, provenance=prov):
+                _add_item(plan, item)
+    for item in stage_templates(tool_root, provenance=prov):  # Phase 3
+        _add_item(plan, item)
+    for ns in adapter.scoped_namespaces():  # Phase 4
+        if adapter.should_install_namespace(ns, "tool"):
+            for item in stage_namespace(tool_root, ns, provenance=prov):
+                _add_item(plan, item)
+    for item in stage_settings(tool_root, provenance=prov):  # Phase 5
+        _add_item(plan, item)
+    return plan
