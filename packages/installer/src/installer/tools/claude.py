@@ -35,7 +35,6 @@ class ClaudeAdapter:
     ) -> bool:
         return True
 
-    # exercised by w1qls.4.4 (D.4)
     def post_staging_transforms(
         self,
         plan: StagingPlan,
