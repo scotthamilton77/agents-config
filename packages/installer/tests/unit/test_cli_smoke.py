@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 
 from installer.cli import main
+from installer.core.model import Tool
+from installer.tools import registry
 
 
 def _home_with_claude_settings(tmp_path: Path) -> Path:
@@ -62,22 +64,27 @@ def test_main_tools_claude_returns_zero(tmp_path: Path) -> None:
     assert main(["--tools=claude"], home=tmp_path) == 0
 
 
-def test_main_tools_gemini_returns_2_and_writes_unknown_tool_to_stderr(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_main_tools_unregistered_returns_2_and_writes_unknown_tool_to_stderr(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    When main(["--tools=gemini"], home=any) is invoked
+    Given a Tool enum value whose adapter is absent from the registry
+    When main(["--tools=<that>"], home=any) is invoked
     Then it returns 2
-    And stderr contains "Unknown tool: 'gemini'".
+    And stderr contains "Unknown tool: '<that>'".
 
-    Pins: gemini is in the Tool enum but unregistered, so the CLI rejects it
-    (registry-is-truth). Uses the only remaining unregistered tool now that
-    opencode has a registered adapter.
+    Pins: the CLI rejects an enum value that has no registered adapter
+    (registry-is-truth). Every Tool now has an adapter, so the unregistered
+    case is simulated by removing one entry.
     """
-    rc = main(["--tools=gemini"], home=tmp_path)
+    reduced = {t: a for t, a in registry._REGISTRY.items() if t is not Tool.OPENCODE}
+    monkeypatch.setattr(registry, "_REGISTRY", reduced)
+    rc = main(["--tools=opencode"], home=tmp_path)
     assert rc == 2
     captured = capsys.readouterr()
-    assert "Unknown tool: 'gemini'" in captured.err
+    assert "Unknown tool: 'opencode'" in captured.err
 
 
 def test_main_tools_empty_returns_2_and_writes_usage_error_to_stderr(

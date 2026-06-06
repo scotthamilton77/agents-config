@@ -4,11 +4,13 @@ from installer.core.model import Tool
 from installer.tools.base import ToolAdapter
 from installer.tools.claude import ClaudeAdapter
 from installer.tools.codex import CodexAdapter
+from installer.tools.gemini import GeminiAdapter
 from installer.tools.opencode import OpenCodeAdapter
 
 _REGISTRY: dict[Tool, ToolAdapter] = {
     Tool.CLAUDE: ClaudeAdapter(),
     Tool.CODEX: CodexAdapter(),
+    Tool.GEMINI: GeminiAdapter(),
     Tool.OPENCODE: OpenCodeAdapter(),
 }
 

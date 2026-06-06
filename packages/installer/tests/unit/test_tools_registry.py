@@ -13,23 +13,31 @@ from __future__ import annotations
 import pytest
 
 from installer.core.model import Tool
+from installer.tools import registry
 from installer.tools.registry import (
     UnknownToolError,
-    get_adapter,
     parse_tool_name,
 )
 
 
-def test_get_adapter_on_unregistered_tool_raises_key_error() -> None:
+def test_get_adapter_on_unregistered_tool_raises_key_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
-    Given the registry does not contain Tool.GEMINI
-    When the caller invokes get_adapter(Tool.GEMINI)
+    Given a Tool whose adapter is absent from the registry
+    When the caller invokes get_adapter on it
     Then a KeyError is raised.
 
-    Pins: callers must validate via parse_tool_name first.
+    Pins: get_adapter does not silently absorb a missing key — callers must
+    validate via parse_tool_name first. Every Tool now has a registered
+    adapter, so the unregistered precondition is simulated by removing one
+    entry (this is also the safety net for a future Tool added to the enum
+    but not wired into the registry).
     """
+    reduced = {t: a for t, a in registry._REGISTRY.items() if t is not Tool.OPENCODE}
+    monkeypatch.setattr(registry, "_REGISTRY", reduced)
     with pytest.raises(KeyError):
-        get_adapter(Tool.GEMINI)
+        registry.get_adapter(Tool.OPENCODE)
 
 
 def test_parse_tool_name_accepts_registered_name() -> None:
@@ -52,6 +60,17 @@ def test_parse_tool_name_accepts_codex() -> None:
     assert parse_tool_name("codex") is Tool.CODEX
 
 
+def test_parse_tool_name_accepts_gemini() -> None:
+    """
+    Given Tool.GEMINI is registered
+    When parse_tool_name("gemini") is called
+    Then it returns Tool.GEMINI.
+
+    Pins: registry-is-truth for gemini — GeminiAdapter wired in the registry.
+    """
+    assert parse_tool_name("gemini") is Tool.GEMINI
+
+
 def test_parse_tool_name_accepts_opencode() -> None:
     """
     Given Tool.OPENCODE is registered
@@ -63,21 +82,27 @@ def test_parse_tool_name_accepts_opencode() -> None:
     assert parse_tool_name("opencode") is Tool.OPENCODE
 
 
-def test_parse_tool_name_rejects_enum_value_not_in_registry() -> None:
+def test_parse_tool_name_rejects_enum_value_not_in_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
-    Given the registry contains Tool.CLAUDE, Tool.CODEX, and Tool.OPENCODE
-    When parse_tool_name("gemini") is called
+    Given a Tool enum value whose adapter is absent from the registry
+    When parse_tool_name is called with that value's name
     Then UnknownToolError is raised
-    And the error.name is "gemini"
-    And the error.valid is ("claude", "codex", "opencode").
+    And error.name is the supplied name
+    And error.valid lists exactly the still-registered tool names.
 
-    Pins: registry-is-truth — Tool enum existence alone is insufficient
-    (Tool.GEMINI exists in the enum but has no registered adapter yet).
+    Pins: registry-is-truth — Tool enum membership alone is insufficient; the
+    registry, not the enum, gates validity. Every Tool now has a registered
+    adapter, so the precondition is simulated by removing one entry — this is
+    the safety net for a future Tool added to the enum but never registered.
     """
+    reduced = {t: a for t, a in registry._REGISTRY.items() if t is not Tool.OPENCODE}
+    monkeypatch.setattr(registry, "_REGISTRY", reduced)
     with pytest.raises(UnknownToolError) as exc_info:
-        parse_tool_name("gemini")
-    assert exc_info.value.name == "gemini"
-    assert exc_info.value.valid == ("claude", "codex", "opencode")
+        registry.parse_tool_name("opencode")
+    assert exc_info.value.name == "opencode"
+    assert exc_info.value.valid == ("claude", "codex", "gemini")
 
 
 def test_parse_tool_name_rejects_non_enum_string() -> None:

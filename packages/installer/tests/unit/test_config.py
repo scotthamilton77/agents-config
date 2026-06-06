@@ -14,6 +14,7 @@ import pytest
 
 from installer.config import resolve_tools
 from installer.core.model import Tool
+from installer.tools import registry
 from installer.tools.registry import UnknownToolError
 
 
@@ -124,16 +125,22 @@ def test_duplicate_csv_tokens_are_deduped_first_occurrence_wins(
     assert resolve_tools(home=tmp_path, override_csv="claude,claude") == (Tool.CLAUDE,)
 
 
-def test_unregistered_enum_value_in_csv_is_rejected(tmp_path: Path) -> None:
+def test_unregistered_enum_value_in_csv_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
-    When resolve_tools(home=any, override_csv="gemini") is called
+    Given a Tool enum value whose adapter is absent from the registry
+    When resolve_tools is called with that value in --tools=
     Then UnknownToolError is raised.
 
-    Pins: Tool.GEMINI exists in the enum but has no registered adapter, so
-    the registry — not the enum — gates CSV validation.
+    Pins: the registry — not the enum — gates CSV validation. Every Tool now
+    has a registered adapter, so the unregistered case is simulated by removing
+    one entry.
     """
+    reduced = {t: a for t, a in registry._REGISTRY.items() if t is not Tool.OPENCODE}
+    monkeypatch.setattr(registry, "_REGISTRY", reduced)
     with pytest.raises(UnknownToolError):
-        resolve_tools(home=tmp_path, override_csv="gemini")
+        resolve_tools(home=tmp_path, override_csv="opencode")
 
 
 def test_garbage_csv_token_is_rejected(tmp_path: Path) -> None:
