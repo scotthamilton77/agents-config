@@ -53,6 +53,33 @@ def test_bare_template_name_strips_to_stem() -> None:
     assert strip_template_suffix(Path("some.template")) == Path("some")
 
 
+def test_strip_template_suffix_against_embedded_match_is_unchanged() -> None:
+    """
+    Given a path where .template appears as a non-final suffix (e.g. .template.bak)
+    When strip_template_suffix is called
+    Then the path is returned unchanged — only the final suffix is tested.
+    """
+    assert strip_template_suffix(Path("AGENTS.md.template.bak")) == Path("AGENTS.md.template.bak")
+
+
+def test_strip_template_suffix_double_suffix_strips_outermost_only() -> None:
+    """
+    Given a path with two consecutive .template suffixes
+    When strip_template_suffix is called
+    Then only the outermost (final) suffix is stripped, leaving one .template.
+    """
+    assert strip_template_suffix(Path("file.template.template")) == Path("file.template")
+
+
+def test_strip_template_suffix_no_suffix_path_is_unchanged() -> None:
+    """
+    Given a path with no suffix at all (e.g. Makefile)
+    When strip_template_suffix is called
+    Then the path is returned unchanged.
+    """
+    assert strip_template_suffix(Path("Makefile")) == Path("Makefile")
+
+
 def _prov() -> Provenance:
     return Provenance(kind="tool", name="claude")
 
