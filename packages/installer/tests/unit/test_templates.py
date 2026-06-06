@@ -265,3 +265,38 @@ def test_all_rules_expands_to_sorted_concatenation(tmp_path: Path) -> None:
     )
 
     assert result == "RULE A\n\n---\nRULE B\n"
+
+
+# ───────────────────────── traversal guard ─────────────────────────
+
+
+def test_absolute_include_path_raises(tmp_path: Path) -> None:
+    """
+    Given a DYNAMIC-INCLUDE marker whose path is absolute
+    When flatten_template runs
+    Then it raises ValueError — absolute paths escape base_dir unconditionally.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="escapes"):
+        flatten_template(
+            "<!-- DYNAMIC-INCLUDE: /etc/passwd -->\n",
+            base_dir=tmp_path,
+            io=ScriptedIO(),
+        )
+
+
+def test_dotdot_include_path_raises(tmp_path: Path) -> None:
+    """
+    Given a DYNAMIC-INCLUDE marker whose path contains a '..' component
+    When flatten_template runs
+    Then it raises ValueError — '..' traversal escapes base_dir.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="escapes"):
+        flatten_template(
+            "<!-- DYNAMIC-INCLUDE: ../secret.md -->\n",
+            base_dir=tmp_path,
+            io=ScriptedIO(),
+        )
