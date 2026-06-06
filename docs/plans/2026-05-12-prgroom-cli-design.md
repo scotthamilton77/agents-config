@@ -1410,7 +1410,7 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
     "response_outbox_dir": "<path to directory the agent writes per-item response text files to>"
   }
   ```
-  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself. (There is deliberately no `root_cause_note` field — it does not apply to PR-grooming.) PR-memory dir is a forward-reference to **Section 8 — PR memory management** (a new sub-design).
+  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself. (There is deliberately no `root_cause_note` field — it does not apply to PR-grooming.) The `memory_dir` input is a forward-reference to **Section 8 — PR memory management** (a new sub-design).
 - **Output (JSON):**
   ```json
   {
@@ -1535,7 +1535,7 @@ The two skills are treated differently:
 #### 6.1 Migration principles
 
 1. **Prerequisite (not a phase) — prgroom must be installable first (cross-ref §7).** No skill can thin until `prgroom` is built and on `PATH` via `scripts/install.sh`. The first migration commit wires §7's build/install path; skills stay untouched until it lands.
-2. **Separate state stores, no collision.** prgroom writes `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`; the legacy skills write `~/.claude/state/pr-inventory/`. Neither reads the other.
+2. **Separate state stores, no collision.** prgroom writes `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json` (fallback `~/.local/state/prgroom/`); the legacy skills write `~/.claude/state/pr-inventory/`. Neither reads the other.
 3. **No legacy-state migration (locked).** In-flight PRs under the old inventory are not converted. The cutover protocol (§6.4) drains them instead.
 4. **Both deletions are git-revertible** — the rollback unit is the phase commit (§6.5).
 
@@ -1571,8 +1571,8 @@ Mode is selected from the trigger (chat = interactive; cron / `/loop` / GHA = au
 
 | Fate | Scripts |
 |---|---|
-| Absorbed → `internal/gh` + `poll`/`rereview`/`fix` | poll-copilot-review, poll-copilot-rereview-start, poll-new-comments, fetch-and-normalize-comments, detect-pr-context, request-rereview, count-unresolved-threads, audit-subagent-report |
-| Deleted, no 1:1 successor (format/plumbing) | build-inventory-body, write-inventory, validate-inventory (→ replaced by `prsession.Store` schema), lib.sh |
+| Absorbed → `internal/gh` + `poll`/`rereview`/`fix` | poll-copilot-review.sh, poll-copilot-rereview-start.sh, poll-new-comments.sh, fetch-and-normalize-comments.sh, detect-pr-context.sh, request-rereview.sh, count-unresolved-threads.sh, audit-subagent-report.sh |
+| Deleted, no 1:1 successor (format/plumbing) | build-inventory-body.sh, write-inventory.sh, validate-inventory.sh (→ replaced by `prsession.Store` schema), lib.sh |
 | Kept, with a one-line edit | detect-pr-push.sh (hook) — suggestion string updated `wait-for-pr-comments` → `monitor-pr`; full hook rework still deferred to v3 |
 
 All deleted scripts' `*_test.sh` go with them. After deletion, `install.sh --prune` removes the deployed copies.
@@ -1588,7 +1588,7 @@ Deliberately light: `reply` / `resolve` / `resolve-escalated` already shipped in
 
 | Fate | Scripts |
 |---|---|
-| Absorbed → `reply`/`resolve`/`status` + `internal/git` | render-reply-bodies, post-replies, resolve-threads, verify-head-sha, probe-fix-shas, build-final-report |
+| Absorbed → `reply`/`resolve`/`status` + `internal/git` | render-reply-bodies.sh, post-replies.sh, resolve-threads.sh, verify-head-sha.sh, probe-fix-shas.sh, build-final-report.sh |
 
   Tests deleted with them; `install.sh --prune`.
 - **Reference-repointing.** Rewrite the `completion-gate.md` / `delivery.md` clause "…invokes `reply-and-resolve-pr-threads`" → "…prgroom handles reply + resolve within `run`." Grep confirms no remaining references to the deleted skill.
