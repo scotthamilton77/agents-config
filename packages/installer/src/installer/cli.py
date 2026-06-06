@@ -51,7 +51,11 @@ def main(argv: list[str] | None = None, *, home: Path | None = None) -> int:
         )
         return 2
 
-    # B.1: instantiation proves Config construction succeeds end-to-end;
-    # B.2's sync engine will consume the returned value.
+    # B.1: instantiation proves Config construction succeeds end-to-end.
+    # The full install pipeline is not wired here yet. When core/sync.py grows
+    # to walk a StagingPlan (Epic E), main() must drive
+    # core.orchestrator.stage_and_transform(tools, ...) — NOT build_plan->sync
+    # directly — so adapter post-staging transforms (e.g. the Gemini frontmatter
+    # transform) actually run in real installs. Tracked as a dedicated story.
     Config(home=resolved_home, tools=tools)
     return 0

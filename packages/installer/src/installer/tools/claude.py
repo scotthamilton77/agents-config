@@ -39,5 +39,5 @@ class ClaudeAdapter:
         self,
         plan: StagingPlan,
         io: IOPort,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
-    ) -> StagingPlan:  # pragma: no cover
+    ) -> StagingPlan:
         return plan
