@@ -31,7 +31,7 @@ The data view answers: *what shapes does the installer build in memory, what dri
 
 ## In-memory model ER diagram
 
-Field names below mirror the **implemented** dataclasses in `packages/installer/src/installer/core/model.py` verbatim (snake_case), plus the implemented `Config` dataclass in `packages/installer/src/installer/config.py`. This represents target state, not necessarily current code.
+Field names mirror the target dataclasses in `packages/installer/src/installer/core/model.py` and `packages/installer/src/installer/config.py`. This represents target state, not necessarily current code — the ER is the design authority; implementation stories bring the code into alignment with it.
 
 ```mermaid
 erDiagram
