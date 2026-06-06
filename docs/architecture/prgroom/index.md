@@ -12,7 +12,7 @@
 |---|---|
 | HLD | High-Level Design — evergreen reference material describing how a subsystem is meant to be structured and behave. This folder *is* the HLD set for prgroom. |
 | C4 | A model for visualising software architecture in four levels (Context, Container, Component, Code); see [c4model.com](https://c4model.com). This folder uses L1, L2, L3, and Deployment. L4 (code) is intentionally absent. |
-| prgroom | The PR-grooming CLI — a single static Go binary that absorbs the responsibilities of the legacy `wait-for-pr-comments` + `reply-and-resolve-pr-threads` skills. Phase-orchestration moves from agent prose into deterministic code. |
+| prgroom | The PR-grooming CLI — a single static Go binary that owns the deterministic PR-grooming work, driven by the thin `monitor-pr` supervisor skill. Replaces the legacy `wait-for-pr-comments` (→ `monitor-pr`) and `reply-and-resolve-pr-threads` (deleted; work absorbed here) skills (§6). Phase-orchestration moves from agent prose into deterministic code. |
 | Verb | A prgroom subcommand. The MVP verb set is `poll`, `cluster`, `fix`, `push`, `rereview`, `reply`, `resolve`, `resolve-escalated`, `wait`, `status`, `run`, `sweep`. |
 | Phase | A position in prgroom's lifecycle for a single PR-grooming session. Each verb advances or operates within a phase; the run verb chains verbs to traverse phases. |
 | Round | A single review-iteration loop: poll → cluster → fix → push → re-review → reply → resolve. Bounded by the §3.5 hard cap. |
