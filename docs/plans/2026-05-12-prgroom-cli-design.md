@@ -25,7 +25,7 @@ The bulk of the *actual work* (gh API calls, git ops, JSON manipulation) is alre
 Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 
 1. Moving phase orchestration out of skill prose and into a compiled Go binary (`prgroom`).
-2. Collapsing the existing skill surface onto the binary — `reply-and-resolve-pr-threads` is retired, and `wait-for-pr-comments` shrinks to a thin contract-aware supervisor (`monitor-pr`) that shells out to it (see §6).
+2. Collapsing the existing skill surface onto the binary — `reply-and-resolve-pr-threads` is retired, and `wait-for-pr-comments` shrinks to a thin contract-aware supervisor (`monitor-pr`) that shells out to the `prgroom` binary (see §6).
 3. Confining agent invocations to *named hand-off points* — comment classification, fix-implementation, escalation judgment — invoked via subprocess shell-out from the CLI, each with fresh agent context.
 4. Persisting state behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform regardless of caller (skill, cron, manual invocation, or — later — executable-bead).
 
@@ -72,7 +72,7 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 
 | Pattern | Caller | CLI invocation |
 |---|---|---|
-| **Interactive** | User in chat, via thinned skill | `prgroom run <pr> --interactive` |
+| **Interactive** | User in chat, via the `monitor-pr` skill | `prgroom run <pr> --interactive` |
 | **Autonomous** | Cron / `/loop` session / GHA | `prgroom run <pr> --autonomous` (or `prgroom sweep <repo>`) |
 | **Executable-bead** (v2) | bd-side dispatcher | Bead payload string: `prgroom run --pr 123 --autonomous` |
 
@@ -1018,7 +1018,7 @@ Section 7 (build, distribution, test discipline) is still sketched — see its p
 
 Section 4 owns the **quiescence predicate** (when end-of-cycle resolution should transition `awaiting-review` → `quiesced`), the **`waitLocked` internals** (the `wait` verb's blocking-loop implementation declared at §3.3 line 794), the **human-review merge constraint** (a label-based satisfaction protocol that does NOT block the lifecycle), the **auto-merge eligibility contract** exposed by `prgroom status --json` (handoff surface for the future merge-gate `gmxo`/`td39`), and the **auto-request-human-review behavior** that adds a visible GitHub label when the CLI's lifecycle reaches a review-content gate.
 
-Section 4 chose **hard gates + idle timer** over the originally-sketched "weighted probability" framing. Operators reading `prgroom status` get an explicit named gate as the answer to "why didn't it quiesce?" — not a tuneable score.
+Section 4 uses **hard gates + an idle timer**, not a tuneable probability score. Operators reading `prgroom status` get an explicit named gate as the answer to "why didn't it quiesce?"
 
 ### 4.1 Quiescence decision: hard gates + idle timer
 
@@ -1394,7 +1394,7 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
 
 #### Fix contract — the `fix` verb
 
-- **When:** during the `fix` verb, **once per cluster** (was: once per FIX item). Serial in MVP (parallel deferred).
+- **When:** during the `fix` verb, **once per cluster**. Serial in MVP (parallel deferred).
 - **Default agent CLI:** `claude -p` with model `opus[1m]` and effort `xhigh`. This launches an **orchestrator** agent that will itself choose skills/sub-agents (e.g. `quality-reviewer`, `simplify`, language-specific debuggers). Model and effort for those sub-agents are set by the orchestrator, not by `prgroom`.
 - **Input (JSON, written to a file passed by path):**
   ```json
@@ -1410,7 +1410,7 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
     "response_outbox_dir": "<path to directory the agent writes per-item response text files to>"
   }
   ```
-  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself. Origin of `root_cause_note` (from the old contract): it was an artifact of `fix-bug` formulas — it does NOT apply to PR-grooming and is dropped. PR-memory dir is a forward-reference to **Section 8 — PR memory management** (a new sub-design).
+  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself. (There is deliberately no `root_cause_note` field — it does not apply to PR-grooming.) PR-memory dir is a forward-reference to **Section 8 — PR memory management** (a new sub-design).
 - **Output (JSON):**
   ```json
   {
@@ -1527,14 +1527,14 @@ Each contract's audit is a Go function with table-driven tests (parallels the cu
 
 This section defines the **incremental cutover** from the two prose skills to `prgroom`: what lands in each phase, the fate of every bash script, how the surviving skill is reshaped, the cutover protocol, and rollback. Locked constraints: **incremental, two-phase, no legacy-state migration.**
 
-One reframe over the original sketch: the two skills do **not** both survive as one-line wrappers.
+The two skills are treated differently:
 
 - `reply-and-resolve-pr-threads` is **deleted** — its work is fully covered by deterministic `prgroom` verbs.
 - `wait-for-pr-comments` is **replaced** by a new, thin *contract-aware supervisor* skill, **`monitor-pr`**, that drives `prgroom run` and owns the agent-side judgment prgroom hands back. prgroom does the grunt work; `monitor-pr` does the exception handling — the "5% troubleshooting" slice of the project vision.
 
 #### 6.1 Migration principles
 
-1. **Step 0 — prgroom must be installable first (cross-ref §7).** No skill can thin until `prgroom` is built and on `PATH` via `scripts/install.sh`. The first migration commit wires §7's build/install path; skills stay untouched until it lands.
+1. **Prerequisite (not a phase) — prgroom must be installable first (cross-ref §7).** No skill can thin until `prgroom` is built and on `PATH` via `scripts/install.sh`. The first migration commit wires §7's build/install path; skills stay untouched until it lands.
 2. **Separate state stores, no collision.** prgroom writes `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`; the legacy skills write `~/.claude/state/pr-inventory/`. Neither reads the other.
 3. **No legacy-state migration (locked).** In-flight PRs under the old inventory are not converted. The cutover protocol (§6.4) drains them instead.
 4. **Both deletions are git-revertible** — the rollback unit is the phase commit (§6.5).
@@ -1558,7 +1558,7 @@ One reframe over the original sketch: the two skills do **not** both survive as 
 | prgroom result | Interactive mode | Autonomous mode |
 |---|---|---|
 | exit 0, `phase ∈ {quiesced, merged}` | Report success summary from `status --json` | Exit 0; sink silent |
-| `phase = human-gated` (escalated/failed items, or `LIFECYCLE_HARD_CAP_EXCEEDED`) | Surface each item's rationale; hand over `prgroom resolve-escalated <pr> <id> --as … --rationale …`; re-invoke after | Route via `EscalationSink` (bd/file); exit non-zero |
+| `phase = human-gated` (escalated/failed items; or `last_error = LIFECYCLE_HARD_CAP_EXCEEDED`) | Surface each item's rationale; hand over `prgroom resolve-escalated <pr> <id> --as … --rationale …`; re-invoke after | Route via `EscalationSink` (bd/file); exit non-zero |
 | `RUNTIME_TERMINAL_USER` (gh auth expired, etc.) | Surface the infra problem; stop | Escalate via sink; exit non-zero |
 | `RUNTIME_TRANSIENT` | Re-invoke (bounded) | Let scheduler retry |
 | `RUNTIME_CANCELLED` | Report cancellation; stop | Exit per signal |
@@ -1597,7 +1597,7 @@ Deliberately light: `reply` / `resolve` / `resolve-escalated` already shipped in
 
 The concrete form of the locked "finish-on-legacy / new-on-prgroom":
 
-1. **Drain.** Before installing Phase 1, finish (merge or abandon) every PR with a live legacy inventory (`ls ~/.claude/state/pr-inventory/`).
+1. **Drain.** Before installing Phase 1, finish (merge or abandon) every PR with a live legacy inventory (`ls ~/.claude/state/pr-inventory/ 2>/dev/null` — tolerates a missing/already-drained dir).
    - **Why drain rather than hand over:** `resolve` is idempotent (resolving an already-resolved thread is a server-side no-op), but **`reply` is not** — pointing prgroom at a half-replied legacy PR would double-post. Draining is the clean boundary.
 2. **Install Phase 1.** From here every PR is prgroom-native, starting from a fresh `prsession`.
 3. **Stragglers.** A legacy PR that must be touched post-cutover: `git revert` Phase 1 temporarily (the rollback path doubles as the escape hatch), finish it on restored legacy tooling, then re-apply.
@@ -1671,7 +1671,7 @@ This sub-design is deferred to a separate spec but **MVP must carve out the skel
 
 ## Deferred to later versions
 
-- **`detect-pr-push.sh` PostToolUse hook coexistence with `prgroom`** — the hook currently suggests `wait-for-pr-comments`. Reworking the hook to point directly at `prgroom run` (or be replaced entirely by a cron/autonomous trigger) is **deferred to v3+**. During MVP, the hook keeps its post-push trigger and needs only a one-line suggestion-string update to name `monitor-pr` (§6.2), which then shells out to `prgroom` internally.
+- **`detect-pr-push.sh` hook → cron/autonomous-trigger rework.** Replacing the post-push hook with a cron/autonomous trigger (or pointing it directly at `prgroom run`) is **deferred to v3+**. **Not deferred:** renaming the hook's suggestion string `wait-for-pr-comments` → `monitor-pr` is mandatory Phase-1 cutover work (§6.2) — a hook pointing at a deleted skill is broken, so the rename ships *with* the cutover, not later.
 - **Auto-detection of in-flight PRs at cutover.** No migration tool. (See Section 6.)
 - **Parallel `fix` subagents.** Serial in MVP; file-overlap prediction is unsolved.
 - **`bd` adapter for `prsession.Store`.** File-only in MVP.
