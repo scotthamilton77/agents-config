@@ -48,5 +48,5 @@ class OpenCodeAdapter:
         self,
         plan: StagingPlan,
         io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCodeAdapter accepts uniformly
-    ) -> StagingPlan:  # pragma: no cover
+    ) -> StagingPlan:
         return plan

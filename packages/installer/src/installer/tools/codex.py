@@ -38,5 +38,5 @@ class CodexAdapter:
         self,
         plan: StagingPlan,
         io: IOPort,  # noqa: ARG002  # protocol parameter; CodexAdapter accepts uniformly
-    ) -> StagingPlan:  # pragma: no cover
+    ) -> StagingPlan:
         return plan
