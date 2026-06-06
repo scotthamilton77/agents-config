@@ -19,12 +19,13 @@ import pytest
 
 from installer.tools.opencode import OpenCodeAdapter
 
-_WHICH = "installer.tools.opencode.shutil.which"
+_WHICH = "installer.tools.opencode.which"
 
 
 def _stub_which(monkeypatch: pytest.MonkeyPatch, result: str | None) -> None:
-    """Force shutil.which('opencode') to a fixed result so the PATH branch
-    of is_detected is controlled rather than read from the real environment."""
+    """Force the module-local which('opencode') to a fixed result so the PATH
+    branch of is_detected is controlled rather than read from the real
+    environment (patches opencode's own binding, not the shared stdlib seam)."""
     fake: Callable[[str], str | None] = lambda _cmd: result  # noqa: E731
     monkeypatch.setattr(_WHICH, fake)
 

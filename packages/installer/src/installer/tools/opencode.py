@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
+from shutil import which
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ class OpenCodeAdapter:
         # The dir branch is "the install destination already exists" — derive it
         # from dest_dir() so the XDG path has a single source of truth and
         # detection can't drift from the destination.
-        return self.dest_dir(home).is_dir() or shutil.which("opencode") is not None
+        return self.dest_dir(home).is_dir() or which("opencode") is not None
 
     def scoped_namespaces(self) -> tuple[str, ...]:
         return ()
