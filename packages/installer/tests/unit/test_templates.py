@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from installer.core.io_port import ScriptedIO
 from installer.core.model import AllRulesInclude, FileInclude
 from installer.core.templates import flatten_template, parse_directive
@@ -183,12 +181,87 @@ def test_included_file_without_trailing_newline_glues_to_next_line(
     assert result == "FRAGMENTafter\n"
 
 
-def test_all_rules_marker_resolution_is_deferred(tmp_path: Path) -> None:
+def test_all_rules_empty_dir_warns_and_expands_blank(tmp_path: Path) -> None:
     """
-    Given a template containing the ALL-RULES marker
-    When flatten_template runs
-    Then it raises NotImplementedError — resolution lands in story C.2, and the
-    marker must fail loudly rather than emit a literal comment line.
+    Given an empty rules_dir (no *.md files)
+    When flatten_template runs with the ALL-RULES marker
+    Then it emits a warning and expands to the empty string.
     """
-    with pytest.raises(NotImplementedError):
-        flatten_template("<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n", base_dir=tmp_path, io=ScriptedIO())
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    io = ScriptedIO()
+
+    result = flatten_template(
+        "before\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\nafter\n",
+        base_dir=tmp_path,
+        rules_dir=rules_dir,
+        io=io,
+    )
+
+    assert result == "before\nafter\n"
+    warnings = [e for e in io.transcript if e.channel == "warn"]
+    assert len(warnings) == 1
+    assert "ALL-RULES" in warnings[0].message
+
+
+def test_all_rules_none_rules_dir_warns_and_expands_blank(tmp_path: Path) -> None:
+    """
+    Given rules_dir=None (no rules dir provided)
+    When flatten_template runs with the ALL-RULES marker
+    Then it emits a warning and expands to the empty string.
+    """
+    io = ScriptedIO()
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n",
+        base_dir=tmp_path,
+        rules_dir=None,
+        io=io,
+    )
+
+    assert result == ""
+    warnings = [e for e in io.transcript if e.channel == "warn"]
+    assert len(warnings) == 1
+    assert "ALL-RULES" in warnings[0].message
+
+
+def test_all_rules_directory_named_md_is_skipped(tmp_path: Path) -> None:
+    """
+    Given a rules_dir containing a directory whose name ends in .md
+    When flatten_template runs with the ALL-RULES marker
+    Then the directory is skipped (not crashed) — mirrors bash `find -type f`.
+    """
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "real.md").write_text("REAL RULE\n", encoding="utf-8")
+    (rules_dir / "weird.md").mkdir()  # directory named *.md
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n",
+        base_dir=tmp_path,
+        rules_dir=rules_dir,
+        io=ScriptedIO(),
+    )
+
+    assert result == "REAL RULE\n"
+
+
+def test_all_rules_expands_to_sorted_concatenation(tmp_path: Path) -> None:
+    """
+    Given two rule files in rules_dir (out of lexicographic order on disk)
+    When flatten_template runs with the ALL-RULES marker
+    Then both are concatenated in lexicographic filename order, joined by \\n---\\n.
+    """
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "b_rule.md").write_text("RULE B\n", encoding="utf-8")
+    (rules_dir / "a_rule.md").write_text("RULE A\n", encoding="utf-8")
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n",
+        base_dir=tmp_path,
+        rules_dir=rules_dir,
+        io=ScriptedIO(),
+    )
+
+    assert result == "RULE A\n\n---\nRULE B\n"
