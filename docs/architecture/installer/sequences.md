@@ -123,7 +123,7 @@ sequenceDiagram
     alt (NAMESPACED_MD, "rules")
         Reg-->>Caller: AppendRulesStrategy
         Caller->>Strat: merge(existing, incoming)
-        Strat-->>Caller: existing + "\n---\n" + incoming
+        Strat-->>Caller: existing rules joined with --- separator to incoming
     else (NAMESPACED_MD, "commands" | "skills" | "agents")
         Reg-->>Caller: FatalStrategy
         Caller->>Strat: merge(existing, incoming)
