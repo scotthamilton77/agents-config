@@ -89,7 +89,16 @@ def _jq_sort_key(value: Any) -> tuple[Any, ...]:
         # false < true; rely on int(False)=0 < int(True)=1.
         return (_RANK_BOOL, int(value))
     if isinstance(value, (int, float)):
-        return (_RANK_NUMBER, float(value))
+        try:
+            return (_RANK_NUMBER, float(value))
+        except OverflowError:
+            # A Python int too large for a float (valid JSON, e.g. a 400-digit
+            # integer literal): jq stores numbers as IEEE doubles, so an
+            # out-of-range int collapses to +/-inf. Mirror that here for
+            # ordering only — the element's exact value is preserved in the
+            # output bytes (json.dumps keeps int precision); just this sort key
+            # approximates, which would otherwise crash with OverflowError.
+            return (_RANK_NUMBER, float("inf") if value > 0 else float("-inf"))
     if isinstance(value, str):
         return (_RANK_STRING, value)
     if isinstance(value, list):

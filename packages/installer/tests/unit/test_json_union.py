@@ -1,4 +1,4 @@
-"""Unit tests for installer.core.merge.strategies.json_union (E.4).
+"""Unit tests for installer.core.merge.strategies.json_union.
 
 Each test pins a coded decision in the deep-union-merge contract for
 ``(SETTINGS_JSON, *)`` collisions. The behavioural spec is the jq program
@@ -172,6 +172,14 @@ def test_array_union_dedupes_within_a_single_side() -> None:
 def test_array_union_dedupes_int_and_float_with_same_value() -> None:
     """jq treats 1 and 1.0 as the same number, so they dedupe to one."""
     assert _merge({"x": [1]}, {"x": [1.0, 2]}) == {"x": [1, 2]}
+
+
+def test_array_union_handles_int_too_large_for_float() -> None:
+    """A 400-digit integer is valid JSON but overflows ``float()``; the jq
+    sort key falls back to +inf for ordering, so the union neither crashes nor
+    loses the value — the exact integer survives in the merged output."""
+    huge = 10**400
+    assert _merge({"x": [huge]}, {"x": [1]}) == {"x": [1, huge]}
 
 
 def test_array_union_jq_total_order_across_types() -> None:

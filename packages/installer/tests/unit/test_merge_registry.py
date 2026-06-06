@@ -1,6 +1,6 @@
 """Unit tests for installer.core.merge.registry.
 
-Each test pins a coded dispatch decision in the merge registry (E.1):
+Each test pins a coded dispatch decision in the merge registry:
 
 - A registered ``(kind, namespace)`` key resolves to its strategy.
 - ``NAMESPACED_MD`` dispatches BY namespace — ``"rules"`` and ``"commands"``

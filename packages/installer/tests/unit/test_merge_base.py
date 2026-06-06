@@ -1,6 +1,6 @@
 """Unit tests for installer.core.merge.base.
 
-Each test pins a coded decision in the merge contract (E.1):
+Each test pins a coded decision in the merge contract:
 
 - ``CollisionError`` names BOTH colliding source paths in its message so the
   fatal strategy can surface an actionable error.

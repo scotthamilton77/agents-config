@@ -1,4 +1,4 @@
-"""Unit tests for the last-wins collision strategies (E.5).
+"""Unit tests for the last-wins collision strategies.
 
 Two strategies share the "incoming wins" resolution but differ on whether
 they announce the overwrite:

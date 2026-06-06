@@ -1,4 +1,4 @@
-"""Unit tests for installer.core.merge.strategies.append_rules (E.2).
+"""Unit tests for installer.core.merge.strategies.append_rules.
 
 Each test pins a coded decision in the append-merge contract for
 ``(NAMESPACED_MD, namespace="rules")`` collisions:

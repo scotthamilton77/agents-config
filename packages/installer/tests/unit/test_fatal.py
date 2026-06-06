@@ -1,4 +1,4 @@
-"""Unit tests for installer.core.merge.strategies.fatal (E.3).
+"""Unit tests for installer.core.merge.strategies.fatal.
 
 ``FatalStrategy`` resolves the irreconcilable collisions — ``NAMESPACED_MD``
 in the ``commands`` / ``skills`` / ``agents`` namespaces, and ``DIR`` — by
