@@ -126,11 +126,14 @@ def test_duplicate_csv_tokens_are_deduped_first_occurrence_wins(
 
 def test_unregistered_enum_value_in_csv_is_rejected(tmp_path: Path) -> None:
     """
-    When resolve_tools(home=any, override_csv="opencode") is called
+    When resolve_tools(home=any, override_csv="gemini") is called
     Then UnknownToolError is raised.
+
+    Pins: Tool.GEMINI exists in the enum but has no registered adapter, so
+    the registry — not the enum — gates CSV validation.
     """
     with pytest.raises(UnknownToolError):
-        resolve_tools(home=tmp_path, override_csv="opencode")
+        resolve_tools(home=tmp_path, override_csv="gemini")
 
 
 def test_garbage_csv_token_is_rejected(tmp_path: Path) -> None:

@@ -22,14 +22,14 @@ from installer.tools.registry import (
 
 def test_get_adapter_on_unregistered_tool_raises_key_error() -> None:
     """
-    Given the registry does not contain Tool.OPENCODE
-    When the caller invokes get_adapter(Tool.OPENCODE)
+    Given the registry does not contain Tool.GEMINI
+    When the caller invokes get_adapter(Tool.GEMINI)
     Then a KeyError is raised.
 
     Pins: callers must validate via parse_tool_name first.
     """
     with pytest.raises(KeyError):
-        get_adapter(Tool.OPENCODE)
+        get_adapter(Tool.GEMINI)
 
 
 def test_parse_tool_name_accepts_registered_name() -> None:
@@ -52,20 +52,32 @@ def test_parse_tool_name_accepts_codex() -> None:
     assert parse_tool_name("codex") is Tool.CODEX
 
 
+def test_parse_tool_name_accepts_opencode() -> None:
+    """
+    Given Tool.OPENCODE is registered
+    When parse_tool_name("opencode") is called
+    Then it returns Tool.OPENCODE.
+
+    Pins: registry-is-truth for opencode — OpenCodeAdapter wired in the registry.
+    """
+    assert parse_tool_name("opencode") is Tool.OPENCODE
+
+
 def test_parse_tool_name_rejects_enum_value_not_in_registry() -> None:
     """
-    Given the registry contains Tool.CLAUDE and Tool.CODEX
-    When parse_tool_name("opencode") is called
+    Given the registry contains Tool.CLAUDE, Tool.CODEX, and Tool.OPENCODE
+    When parse_tool_name("gemini") is called
     Then UnknownToolError is raised
-    And the error.name is "opencode"
-    And the error.valid is ("claude", "codex").
+    And the error.name is "gemini"
+    And the error.valid is ("claude", "codex", "opencode").
 
-    Pins: registry-is-truth — Tool enum existence alone is insufficient.
+    Pins: registry-is-truth — Tool enum existence alone is insufficient
+    (Tool.GEMINI exists in the enum but has no registered adapter yet).
     """
     with pytest.raises(UnknownToolError) as exc_info:
-        parse_tool_name("opencode")
-    assert exc_info.value.name == "opencode"
-    assert exc_info.value.valid == ("claude", "codex")
+        parse_tool_name("gemini")
+    assert exc_info.value.name == "gemini"
+    assert exc_info.value.valid == ("claude", "codex", "opencode")
 
 
 def test_parse_tool_name_rejects_non_enum_string() -> None:

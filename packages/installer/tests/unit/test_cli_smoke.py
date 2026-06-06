@@ -62,18 +62,22 @@ def test_main_tools_claude_returns_zero(tmp_path: Path) -> None:
     assert main(["--tools=claude"], home=tmp_path) == 0
 
 
-def test_main_tools_opencode_returns_2_and_writes_unknown_tool_to_stderr(
+def test_main_tools_gemini_returns_2_and_writes_unknown_tool_to_stderr(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """
-    When main(["--tools=opencode"], home=any) is invoked
+    When main(["--tools=gemini"], home=any) is invoked
     Then it returns 2
-    And stderr contains "Unknown tool: 'opencode'".
+    And stderr contains "Unknown tool: 'gemini'".
+
+    Pins: gemini is in the Tool enum but unregistered, so the CLI rejects it
+    (registry-is-truth). Uses the only remaining unregistered tool now that
+    opencode has a registered adapter.
     """
-    rc = main(["--tools=opencode"], home=tmp_path)
+    rc = main(["--tools=gemini"], home=tmp_path)
     assert rc == 2
     captured = capsys.readouterr()
-    assert "Unknown tool: 'opencode'" in captured.err
+    assert "Unknown tool: 'gemini'" in captured.err
 
 
 def test_main_tools_empty_returns_2_and_writes_usage_error_to_stderr(
