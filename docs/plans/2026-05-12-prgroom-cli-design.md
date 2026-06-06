@@ -1671,7 +1671,7 @@ This sub-design is deferred to a separate spec but **MVP must carve out the skel
 
 ## Deferred to later versions
 
-- **`detect-pr-push.sh` hook → cron/autonomous-trigger rework.** Replacing the post-push hook with a cron/autonomous trigger (or pointing it directly at `prgroom run`) is **deferred to v3+**. **Not deferred:** renaming the hook's suggestion string `wait-for-pr-comments` → `monitor-pr` is mandatory Phase-1 cutover work (§6.2) — a hook pointing at a deleted skill is broken, so the rename ships *with* the cutover, not later.
+- **`detect-pr-push.sh` hook → cron/autonomous-trigger rework.** Replacing the post-push hook with a cron/autonomous trigger (or pointing it directly at `prgroom run` rather than at a skill) is deferred to v3+. (The Phase-1 cutover itself already renames the hook's suggestion string to `monitor-pr` — see §6.2.)
 - **Auto-detection of in-flight PRs at cutover.** No migration tool. (See Section 6.)
 - **Parallel `fix` subagents.** Serial in MVP; file-overlap prediction is unsolved.
 - **`bd` adapter for `prsession.Store`.** File-only in MVP.
