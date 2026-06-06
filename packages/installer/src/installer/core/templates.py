@@ -128,7 +128,7 @@ def _resolve_file_include(rel: Path, *, base_dir: Path, io: IOPort) -> str:
     the traversal guard in ``sync.py``.
     """
     if rel.is_absolute() or ".." in rel.parts:
-        raise ValueError(f"DYNAMIC-INCLUDE path escapes base_dir: {rel}")  # noqa: TRY003
+        raise ValueError(f"DYNAMIC-INCLUDE path escapes base_dir: {rel}")  # noqa: TRY003  # single call-site; subclass not justified
     target = base_dir / rel
     if not target.is_file():
         io.warn(f"DYNAMIC-INCLUDE not found: {rel}")
