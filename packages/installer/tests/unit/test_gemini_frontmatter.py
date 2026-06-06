@@ -1,0 +1,92 @@
+"""Behavioural tests for the Gemini frontmatter transform.
+
+Each test pins a coded decision (which keys are stripped, the tools
+string->sequence rule, the no-frontmatter passthrough, byte-identity when
+there is nothing to change, body preservation), never YAML/stdlib behaviour.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from installer.tools.gemini import transform_agent_frontmatter
+
+
+def _frontmatter(content: bytes) -> dict[str, object]:
+    """Parse the YAML frontmatter out of a transformed agent file, for
+    asserting on the resulting mapping."""
+    parsed = yaml.safe_load(content.decode("utf-8").split("---\n", 2)[1])
+    assert isinstance(parsed, dict)
+    return parsed
+
+
+def test_strips_claude_only_keys() -> None:
+    src = b"---\nname: a\nskills: x\ncolor: purple\nmemory: y\ntools: Read\n---\nbody\n"
+    fm = _frontmatter(transform_agent_frontmatter(src))
+    assert "skills" not in fm
+    assert "color" not in fm
+    assert "memory" not in fm
+    assert fm["name"] == "a"
+
+
+def test_converts_csv_tools_to_sequence() -> None:
+    src = b"---\nname: a\ntools: Read, Grep, Glob\n---\nbody\n"
+    assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read", "Grep", "Glob"]
+
+
+def test_single_tool_becomes_one_element_sequence() -> None:
+    src = b"---\nname: a\ntools: Read\n---\nbody\n"
+    assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read"]
+
+
+def test_already_sequence_tools_not_double_wrapped() -> None:
+    src = b"---\nname: a\ntools:\n  - Read\n  - Grep\n---\nbody\n"
+    assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read", "Grep"]
+
+
+def test_strips_key_with_indented_block() -> None:
+    src = b"---\nname: a\nskills:\n  - one\n  - two\ntools: Read\n---\nbody\n"
+    fm = _frontmatter(transform_agent_frontmatter(src))
+    assert "skills" not in fm
+    assert fm["name"] == "a"
+
+
+def test_no_frontmatter_passes_through_byte_identical() -> None:
+    src = b"# Just a markdown agent\nNo frontmatter here.\n"
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_unterminated_frontmatter_passes_through() -> None:
+    src = b"---\nname: a\ntools: Read\n(no closing fence)\n"
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_unchanged_frontmatter_returns_byte_identical() -> None:
+    # Quoted scalar + already-list tools: nothing to strip or convert, so the
+    # original bytes must survive verbatim (no gratuitous pyyaml reformatting
+    # such as dropping the quotes).
+    src = b'---\nname: a\ndescription: "keep quotes"\ntools:\n- Read\n---\nbody\n'
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_body_after_frontmatter_is_preserved() -> None:
+    body = "# Title\n\nLine with --- dashes\nclosing\n"
+    src = ("---\nname: a\ncolor: red\ntools: Read\n---\n" + body).encode("utf-8")
+    assert transform_agent_frontmatter(src).decode("utf-8").endswith(body)
+
+
+def test_real_source_agent_is_gemini_clean() -> None:
+    """Real-source coverage: the actually-shipped quality-reviewer agent loses
+    its Claude-only keys and gains a tools sequence."""
+    repo_root = Path(__file__).resolve().parents[4]
+    agent = repo_root / "src" / "user" / ".agents" / "agents" / "quality-reviewer.md"
+    if not agent.is_file():  # pragma: no cover  # defensive: real tree may move
+        pytest.skip(f"real agent source not found at {agent}")
+    fm = _frontmatter(transform_agent_frontmatter(agent.read_bytes()))
+    assert "color" not in fm
+    assert "skills" not in fm
+    assert "memory" not in fm
+    assert isinstance(fm["tools"], list)
