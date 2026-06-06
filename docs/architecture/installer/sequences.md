@@ -94,7 +94,7 @@ sequenceDiagram
         Orch->>Orch: prune flow (see Sequence 4)
     end
 
-    Orch-->>Op: summary (created / updated / skipped / backed-up per tool); exit 0
+    Orch-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
 ```
 
 ### Notes on the happy path
@@ -181,7 +181,7 @@ sequenceDiagram
         else hashes differ
             Sync->>IO: show_diff(dest, incoming)
             alt --dry-run
-                Note over Sync: preview only; Counters.updated++ (no write)
+                Note over Sync: preview only, Counters.updated++ (no write)
             else interactive
                 Sync->>IO: confirm("overwrite FILE?")
                 alt confirmed
@@ -190,7 +190,7 @@ sequenceDiagram
                     Sync->>FS: write incoming
                     Note over Sync: Counters.updated++ + backed_up++
                 else declined
-                    Note over Sync: keep existing; Counters.skipped++
+                    Note over Sync: keep existing, Counters.skipped++
                 end
             end
         end
