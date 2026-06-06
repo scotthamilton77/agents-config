@@ -11,10 +11,10 @@
 |---|---|
 | `StagingPlan` | The aggregate root of the in-memory model: a `dict[Path, StagedItem]` (plus the target `Tool`). One is built per detected tool. **In-memory only** — it has no on-disk form in the operational path. |
 | `StagedItem` | One planned destination file. The unit the merge + sync engines operate on. |
-| `Provenance` | `(kind: "tool" | "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
+| `Provenance` | `(kind: "tool" \| "plugin", name: str)` — preserves whether a `StagedItem` came from a tool's source tree or a plugin overlay, through the tool-vs-plugin registry asymmetry. |
 | `FileKind` | The enum classifying a staged file. The **primary** merge-dispatch key. |
 | Namespace | The managed sub-dir (`commands` / `skills` / `agents` / `rules` / `formulas`) or `None` when the tool root itself owns the file. The **secondary** merge-dispatch key. |
-| `IncludeDirective` | A discriminated union (`FileInclude` | `AllRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
+| `IncludeDirective` | A discriminated union (`FileInclude` \| `AllRulesInclude`) produced **transiently** while flattening DYNAMIC-INCLUDE markers; consumed during staging, not persisted on the `StagedItem`. |
 | `Orphan` | A prune candidate: on disk, absent from the plan, matching a retired glob. |
 | `Counters` | The per-run tally (`staged` / `created` / `updated` / `skipped` / `pruned` / `backed_up`) surfaced in the exit summary. |
 | Canonical ownership | Which actor is the source of truth for a piece of data: the human (source tree), the installer (plan + writes), or the tool (deployed store at runtime). |
@@ -31,7 +31,7 @@ The data view answers: *what shapes does the installer build in memory, what dri
 
 ## In-memory model ER diagram
 
-Field names below mirror the **implemented** dataclasses in `packages/installer/src/installer/core/model.py` verbatim (snake_case), plus the implemented `Config` dataclass in `packages/installer/src/installer/config.py`. Where a type is not yet built, the row is marked *design-forward* and traces to `installer-design.md`, not to current code.
+Field names below mirror the **implemented** dataclasses in `packages/installer/src/installer/core/model.py` verbatim (snake_case), plus the implemented `Config` dataclass in `packages/installer/src/installer/config.py`. This represents target state, not necessarily current code.
 
 ```mermaid
 erDiagram
@@ -44,14 +44,14 @@ erDiagram
     Config      ||--o{ Orphan            : "prune scan yields 0..N"
 
     Config {
-        Path      home           "destination root (per-tool dest via adapter) — implemented (B.1)"
-        ToolTuple tools          "resolved tool set (claude auto-detected; forced via --tools) — implemented (B.1)"
-        StrList   plugins        "design-forward: discovered by scanning src/plugins/"
-        bool      dry_run        "design-forward: --dry-run preview, no writes"
-        PruneMode prune          "design-forward: none | prune | prune_only"
-        Path      dump_stage     "design-forward: --dump-stage target (debug)"
-        StrList   retired_globs  "design-forward: installer.toml [prune].retired"
-        Map       tool_overrides "design-forward: installer.toml [tools]"
+        Path      home           "destination root (per-tool dest via adapter)"
+        ToolTuple tools          "resolved tool set (claude auto-detected; forced via --tools)"
+        StrList   plugins        "discovered by scanning src/plugins/"
+        bool      dry_run        "--dry-run preview, no writes"
+        PruneMode prune          "none | prune | prune_only"
+        Path      dump_stage     "--dump-stage target (debug)"
+        StrList   retired_globs  "installer.toml [prune].retired"
+        Map       tool_overrides "installer.toml [tools]"
     }
 
     StagingPlan {
@@ -98,7 +98,7 @@ erDiagram
 ### Cardinality + shape notes
 
 - **`StagingPlan` is the aggregate root of the install path; `Config` is the run root.** One `Config` per invocation drives one `StagingPlan` per detected tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. There are no cross-plan relationships — each tool's plan is independent.
-- **`Config` is built incrementally.** Only `home` + `tools` exist today (tool-selection scope); `plugins`, `dry_run`, `prune`, `dump_stage`, `retired_globs`, and `tool_overrides` are *design-forward* — they land in later stories (the `installer.toml` loader, prune, `--dump-stage`). The ER shows the target shape and tags each row accordingly.
+- **`Config` resolves the full run configuration.** `home` and `tools` anchor the tool-selection scope; `plugins`, `dry_run`, `prune`, `dump_stage`, `retired_globs`, and `tool_overrides` complete the picture for plugins, preview mode, pruning, and `installer.toml` overrides.
 - **`items` is a `dict[Path, StagedItem]`, not a list.** The `dest_relpath` is the key, which is exactly why collisions are detectable: a second item mapping to a key already present triggers the merge dispatch (Sequence 2). The dict is **in-memory** — the single most load-bearing fact in this model. `install.sh` materialised this as a temp directory tree; the Python rewrite keeps it in process memory and only `sync` writes individual files. (The bare dict silently overwrites on a duplicate key; the staging caller checks `dest_relpath in items` and routes to the merge registry — collision detection is the caller's job, not the dataclass's.)
 - **`Provenance` carries the tool-vs-plugin asymmetry.** Tools are enum-keyed (`Tool` enum + adapter registry); plugins are string-keyed (dynamic discovery, no enum). `Provenance(kind, name)` lets a single `StagedItem` record either origin uniformly — the `kind` discriminator disambiguates the flat `name` (a plugin named after a tool would otherwise be ambiguous), so the merge engine can reason about "base asset vs plugin overlay" without caring which registry the item came from.
 - **`IncludeDirective` is a transient `TypeAlias` union.** `FileInclude | AllRulesInclude`, produced while `templates.py` flattens a `<!-- DYNAMIC-INCLUDE: … -->` marker (file form) or the ALL-RULES marker, then consumed immediately — the flattened text lands in `StagedItem.content`; the directive objects do not survive on the `StagedItem`. `FileInclude` carries the fragment `path`; `AllRulesInclude` carries no fields — it expands the plan's already-staged rules collection, sorted and joined with a `---` separator.
@@ -106,7 +106,7 @@ erDiagram
 
 ## Merge-dispatch table — `(FileKind, namespace)` → `MergeStrategy`
 
-The collision matrix — the dispatch contract `core/merge/registry.py` will implement (Epic E; **not yet built**, so this table is the design intent from `installer-design.md`, not a description of current code). It keys on `(FileKind, namespace)`: `NAMESPACED_MD` is the only kind whose namespace changes the strategy; for every other kind the namespace component is unused and the lookup degenerates to a `FileKind`-only key. The strategy names below are the design's; the modules land in Epic E.
+The collision matrix — the dispatch contract `core/merge/registry.py` implements (see `installer-design.md`). It keys on `(FileKind, namespace)`: `NAMESPACED_MD` is the only kind whose namespace changes the strategy; for every other kind the namespace component is unused and the lookup degenerates to a `FileKind`-only key. The strategy names below are the design's; the modules land in Epic E.
 
 | FileKind | Namespace | Strategy | Behaviour on collision |
 |---|---|---|---|
@@ -140,8 +140,8 @@ retired = [
 
 | Key | Type | Drives | Notes |
 |---|---|---|---|
-| `[prune].retired` | list[str] (globs) | `Config.retired_globs` → `prune.py` *(design-forward)* | The orphan gate. A dest file absent from the plan is pruned **only** if it also matches one of these globs. |
-| `[tools].<tool>.dest` | str (path) | `Config.tool_overrides` → tool adapter *(design-forward)* | Override a tool's destination dir; commented out = built-in adapter default. |
+| `[prune].retired` | list[str] (globs) | `Config.retired_globs` → `prune.py` | The orphan gate. A dest file absent from the plan is pruned **only** if it also matches one of these globs. |
+| `[tools].<tool>.dest` | str (path) | `Config.tool_overrides` → tool adapter | Override a tool's destination dir; commented out = built-in adapter default. |
 
 ## Canonical-ownership boundaries
 

@@ -32,7 +32,7 @@ Together they answer: *who calls whom, in what order, where does state live (in-
 
 ## Sequence 1 — End-to-end install (happy path)
 
-One invocation: `python3 scripts/install.py --tools=claude,gemini` — the only current entrypoint (a tiny stub: `from installer.cli import main`), with the beads plugin active. (The `python -m installer` module form is *design-forward*: the post-parity entrypoint per Epic H.4, added once the package gains a `__main__.py` — not runnable today.) `Config` is resolved once; then the orchestrator loops per detected tool, building each tool's in-memory plan, overlaying plugins, and flushing to disk. The plan never touches disk except through `Sync`.
+One invocation: `python3 scripts/install.py --tools=claude,gemini` (equivalently `python -m installer --tools=claude,gemini`), with the beads plugin active. `Config` is resolved once; then the orchestrator loops per detected tool, building each tool's in-memory plan, overlaying plugins, and flushing to disk. The plan never touches disk except through `Sync`.
 
 ```mermaid
 sequenceDiagram
@@ -60,7 +60,7 @@ sequenceDiagram
             Orch->>Stage: build StagingPlan(adapter)
             Stage->>FS: walk + read source (shared .agents/ + per-tool)
             FS-->>Stage: source bytes
-            Stage->>Stage: strip .template suffix; scope namespaces
+            Stage->>Stage: strip .template suffix, scope namespaces
             Stage->>Stage: flatten DYNAMIC-INCLUDE (file form + ALL-RULES)
             Stage->>Stage: adapter.post_staging_transforms (gemini: frontmatter)
             Stage-->>Orch: StagingPlan = dict[Path, StagedItem]
@@ -177,7 +177,7 @@ sequenceDiagram
     else destination present
         Sync->>Sync: hash(incoming) vs hash(dest)
         alt hashes equal
-            Note over Sync: identical — skip; Counters.skipped++
+            Note over Sync: identical — skip, Counters.skipped++
         else hashes differ
             Sync->>IO: show_diff(dest, incoming)
             alt --dry-run

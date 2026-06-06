@@ -34,12 +34,12 @@ C4Container
     Person(operator, "Operator", "Developer running the installer from the agents-config repo")
 
     System_Boundary(installer_sys, "Python installer") {
-        Container(proc, "installer process", "Python 3.11 / uv — python3 scripts/install.py", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon, no persistent state of its own — every invocation runs to completion and exits.")
+        Container(proc, "installer process", "Python 3.11 / uv", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon, no persistent state of its own — every invocation runs to completion and exits.")
     }
 
     System_Boundary(repo, "agents-config repo (read-only inputs)") {
         ContainerDb(source, "Source config tree", "files on local FS", "src/user/.agents (shared) + src/user/.{claude,codex,gemini,opencode} (per-tool) + src/plugins/<name>/. The installer NEVER writes here — it is pure input.")
-        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — [prune].retired globs + [tools] registry overrides. Read once at Config build. Side-by-side window: install.sh still reads scripts/prune-list; install.py reads this.")
+        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — [prune].retired globs + [tools] registry overrides. Read once at Config build.")
     }
 
     System_Boundary(home, "User home (destination stores — installer-written)") {
@@ -54,7 +54,7 @@ C4Container
     System_Ext(assistants, "AI coding assistants", "Claude Code / Codex CLI / Gemini CLI / OpenCode — each reads ITS OWN destination store at the assistant's runtime, asynchronously, long after install exits.")
     System_Ext(bd_cli, "bd (beads CLI)", "Reads ~/.beads/ formulas + scripts at its own runtime.")
 
-    Rel(operator, proc, "Runs python3 scripts/install.py [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
+    Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
 
     Rel(proc, source, "Walks + reads source files; flattens DYNAMIC-INCLUDE; strips .template suffix", "FS read")
     Rel(proc, toml, "Reads prune globs + tool-registry overrides", "FS read")
@@ -81,12 +81,12 @@ C4Container
 
 The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon, no background work, no cache between runs. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, `prune`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
-The end-user entry point is `python3 scripts/install.py` (a tiny stub: `from installer.cli import main`) — the only currently runnable invocation. Post-parity (Epic H.4, once the package gains a `__main__.py`), `scripts/install.sh` collapses to `exec uv run --project packages/installer python -m installer "$@"`, so the bash and python entry points converge on the same process; the `python -m installer` module form is design-forward until then.
+The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/__main__.py`); both invoke the same `installer.cli.main`.
 
 ### Read-only inputs
 
 - **Source config tree** — `src/user/.agents/` (shared content installed to all tools), `src/user/.{claude,codex,gemini,opencode}/` (per-tool content), and `src/plugins/<name>/` (optional overlay content). The installer **never writes here**; this is the architectural guarantee that makes the source the single canonical authoring surface (the AGENTS.md "always edit source, never deployed artifacts" rule depends on it).
-- **`installer.toml`** — structured config read once at `Config` build: the `[prune].retired` glob list (retired paths to scan for and offer to remove) and optional `[tools]` registry overrides. During the side-by-side window `install.sh` reads the legacy `scripts/prune-list`; at the parity gate that file retires and `installer.toml` is the sole config.
+- **`installer.toml`** — structured config read once at `Config` build: the `[prune].retired` glob list (retired paths to scan for and offer to remove) and optional `[tools]` registry overrides. This is the sole installer config; `scripts/prune-list` is the legacy predecessor it replaces.
 
 ### Destination stores (installer-written)
 

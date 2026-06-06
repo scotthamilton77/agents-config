@@ -102,7 +102,10 @@ C4Component
     Rel(prune, dest_ext, "scan + remove")
     Rel(ioport, term_ext, "stdin/stdout")
 
+    Rel(tclaude, tbase, "implements")
+    Rel(tcodex, tbase, "implements")
     Rel(tgemini, tbase, "implements")
+    Rel(topencode, tbase, "implements")
     Rel(pbeads, pbase, "implements")
 
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="2")

@@ -20,7 +20,7 @@
 | `StagedItem` | One planned destination file: its content, `FileKind`, namespace, and `Provenance`. The unit the merge + sync engines operate on. |
 | `MergeStrategy` | A collision-resolution class (append-rules, JSON-union, fatal, last-wins-warn, last-wins-silent), each in its own module, dispatched by the registry on `(FileKind, namespace)`. |
 | `FileKind` | The enum classifying a staged file (`NAMESPACED_MD`, `SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) — the primary merge-dispatch key. |
-| `Provenance` | `(kind: "tool" | "plugin", name: str)` on each `StagedItem` — preserves tool-vs-plugin origin through the plan. |
+| `Provenance` | `(kind: "tool" \| "plugin", name: str)` on each `StagedItem` — preserves tool-vs-plugin origin through the plan. |
 | `IOPort` | The single injectable I/O abstraction (`info`/`warn`/`show_diff`/`confirm`/…). `TerminalIO` is real (via `rich`); `ScriptedIO` is the test fake. No module calls `print`/`input` directly. |
 | DYNAMIC-INCLUDE | The directive form (`<!-- DYNAMIC-INCLUDE: path -->` and the ALL-RULES variant) that flattens shared template fragments into assembled per-tool instruction files at staging time. |
 | Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `formulas`) — second component of the merge-dispatch key; drives append-vs-fatal collision behaviour. |
