@@ -52,20 +52,31 @@ def test_parse_tool_name_accepts_codex() -> None:
     assert parse_tool_name("codex") is Tool.CODEX
 
 
+def test_parse_tool_name_accepts_gemini() -> None:
+    """
+    Given Tool.GEMINI is registered
+    When parse_tool_name("gemini") is called
+    Then it returns Tool.GEMINI.
+
+    Pins: registry-is-truth for gemini — GeminiAdapter wired in the registry.
+    """
+    assert parse_tool_name("gemini") is Tool.GEMINI
+
+
 def test_parse_tool_name_rejects_enum_value_not_in_registry() -> None:
     """
-    Given the registry contains Tool.CLAUDE and Tool.CODEX
+    Given the registry does not contain Tool.OPENCODE
     When parse_tool_name("opencode") is called
     Then UnknownToolError is raised
     And the error.name is "opencode"
-    And the error.valid is ("claude", "codex").
+    And the error.valid is ("claude", "codex", "gemini").
 
     Pins: registry-is-truth — Tool enum existence alone is insufficient.
     """
     with pytest.raises(UnknownToolError) as exc_info:
         parse_tool_name("opencode")
     assert exc_info.value.name == "opencode"
-    assert exc_info.value.valid == ("claude", "codex")
+    assert exc_info.value.valid == ("claude", "codex", "gemini")
 
 
 def test_parse_tool_name_rejects_non_enum_string() -> None:
