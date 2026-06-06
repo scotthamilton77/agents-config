@@ -32,7 +32,7 @@ def transform_agent_frontmatter(content: bytes) -> bytes:
         return content
 
     lines = text.split("\n")
-    if not lines or lines[0] != "---":
+    if lines[0] != "---":
         return content
     closing = next((i for i in range(1, len(lines)) if lines[i] == "---"), None)
     if closing is None:

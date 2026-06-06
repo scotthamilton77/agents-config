@@ -107,6 +107,34 @@ def test_real_source_agent_is_gemini_clean() -> None:
     assert isinstance(fm["tools"], list)
 
 
+def test_invalid_utf8_passes_through_unchanged() -> None:
+    # A non-UTF-8 (e.g. binary) staged file must not crash the install.
+    src = b"\xff\xfe\x00not utf-8"
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_malformed_yaml_frontmatter_passes_through_unchanged() -> None:
+    # A YAML typo in one agent file must not abort the whole install — it is
+    # left verbatim rather than raised.
+    src = b'---\nkey: "unterminated\n---\nbody\n'
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_non_mapping_frontmatter_passes_through_unchanged() -> None:
+    # Frontmatter that parses to a sequence/scalar (not a mapping) is left as-is.
+    src = b"---\n- a\n- b\n---\nbody\n"
+    assert transform_agent_frontmatter(src) == src
+
+
+def test_empty_tools_string_is_not_converted() -> None:
+    # An empty tools value yields no sequence items, so it is left untouched
+    # (mirrors the bash length>0 guard); other keys still transform.
+    src = b'---\nname: a\ncolor: red\ntools: ""\n---\nbody\n'
+    fm = _frontmatter(transform_agent_frontmatter(src))
+    assert "color" not in fm
+    assert fm["tools"] == ""
+
+
 def test_post_staging_transforms_rewrites_agent_items() -> None:
     item = _agent_item("a.md", b"---\nname: a\ncolor: red\ntools: Read, Grep\n---\nbody\n")
     plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.GEMINI)
@@ -144,3 +172,20 @@ def test_post_staging_transforms_leaves_non_agent_items_untouched() -> None:
 def test_post_staging_transforms_returns_same_plan_when_no_agents() -> None:
     plan = StagingPlan(items={}, tool=Tool.GEMINI)
     assert GeminiAdapter().post_staging_transforms(plan, ScriptedIO()) is plan
+
+
+def test_post_staging_transforms_logs_phase_once_for_multiple_agents() -> None:
+    a = _agent_item("a.md", b"---\nname: a\ncolor: red\ntools: Read\n---\nx\n")
+    b = _agent_item("b.md", b"---\nname: b\ncolor: blue\ntools: Grep\n---\ny\n")
+    plan = StagingPlan(items={a.dest_relpath: a, b.dest_relpath: b}, tool=Tool.GEMINI)
+    io = ScriptedIO()
+    GeminiAdapter().post_staging_transforms(plan, io)
+    assert sum("frontmatter" in e.message.lower() for e in io.transcript) == 1
+
+
+def test_post_staging_transforms_keeps_already_clean_agent_item() -> None:
+    # An agent already in Gemini form is not re-wrapped in a new StagedItem.
+    item = _agent_item("a.md", b"---\nname: a\ntools:\n- Read\n---\nbody\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.GEMINI)
+    out = GeminiAdapter().post_staging_transforms(plan, ScriptedIO())
+    assert out.items[item.dest_relpath] is item
