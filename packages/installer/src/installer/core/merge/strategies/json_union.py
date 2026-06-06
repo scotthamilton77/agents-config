@@ -108,11 +108,16 @@ def _union_arrays(existing: list[Any], incoming: list[Any]) -> list[Any]:
     then drop adjacent duplicates (values with an equal sort key are jq-equal,
     which correctly treats ``1`` and ``1.0`` as one while keeping ``true`` and
     ``1`` distinct)."""
-    ordered = sorted(existing + incoming, key=_jq_sort_key)
+    # Compute each element's sort key once, then sort + dedupe by it. Sort on
+    # the key alone (``key=`` on the pair's first item): when two keys tie the
+    # raw values must not be compared, since dicts/lists are not orderable.
+    keyed = sorted(
+        ((_jq_sort_key(elem), elem) for elem in (*existing, *incoming)),
+        key=lambda pair: pair[0],
+    )
     deduped: list[Any] = []
     last_key: tuple[Any, ...] | None = None
-    for elem in ordered:
-        key = _jq_sort_key(elem)
+    for key, elem in keyed:
         if key != last_key:
             deduped.append(elem)
             last_key = key

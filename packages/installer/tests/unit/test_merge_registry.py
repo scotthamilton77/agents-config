@@ -26,8 +26,9 @@ from installer.core.model import FileKind, Provenance, StagedItem
 
 
 class _DummyStrategy:
-    """Identity strategy with a label so tests can assert WHICH strategy
-    resolve() returned without comparing object identity alone."""
+    """Minimal MergeStrategy stub. The constructor ``label`` is a readable
+    identifier for debugging; tests assert WHICH strategy resolve() returned
+    via object identity (``is``)."""
 
     def __init__(self, label: str) -> None:
         self.label = label
@@ -70,7 +71,7 @@ def test_namespaced_md_distinct_namespaces_do_not_collide() -> None:
     reg.register(FileKind.NAMESPACED_MD, "rules", rules)
     reg.register(FileKind.NAMESPACED_MD, "commands", commands)
 
-    assert reg.resolve(FileKind.NAMESPACED_MD, "rules").label == "rules"  # type: ignore[attr-defined]
+    assert reg.resolve(FileKind.NAMESPACED_MD, "rules") is rules
 
 
 def test_non_namespaced_kind_ignores_namespace_on_register_and_resolve() -> None:
