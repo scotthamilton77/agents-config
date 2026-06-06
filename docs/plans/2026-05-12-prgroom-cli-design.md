@@ -1,6 +1,6 @@
 # Design: `prgroom` CLI — replace wait-for-pr-comments + reply-and-resolve-pr-threads
 
-**Status:** Draft — brainstorming in progress (Sections 1, 2, 3, 5, 8 fleshed out; Sections 4, 6, 7 sketched).
+**Status:** Draft — brainstorming in progress (Sections 1, 2, 3, 4, 5, 6, 8 fleshed out; Section 7 sketched).
 **Date:** 2026-05-12
 **Related beads:**
 - `agents-config-d73c` (Optimize wait-for-pr-comments and reply-and-resolve-pr-threads skills) — **superseded by this design**
@@ -25,7 +25,7 @@ The bulk of the *actual work* (gh API calls, git ops, JSON manipulation) is alre
 Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 
 1. Moving phase orchestration out of skill prose and into a compiled Go binary (`prgroom`).
-2. Thinning the existing skills to one-line wrappers that shell out to the binary.
+2. Collapsing the existing skill surface onto the binary — `reply-and-resolve-pr-threads` is retired, and `wait-for-pr-comments` shrinks to a thin contract-aware supervisor (`monitor-pr`) that shells out to it (see §6).
 3. Confining agent invocations to *named hand-off points* — comment classification, fix-implementation, escalation judgment — invoked via subprocess shell-out from the CLI, each with fresh agent context.
 4. Persisting state behind a `prsession.Store` interface so recovery, idempotency, and inspection are uniform regardless of caller (skill, cron, manual invocation, or — later — executable-bead).
 
@@ -84,13 +84,13 @@ Reduce the PR-grooming agentic-token cost by an order of magnitude by:
 - **Agent boundary:** CLI shells out to `claude -p` / `codex exec` / `opencode run` as subprocess. Synchronous. Each invocation = fresh agent context. The runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable.
 - **Command shape:** subcommand verbs (poll, cluster, fix, push, rereview, reply, resolve, resolve-escalated, wait, status, run, sweep)
 - **MVP scope:** equivalent of `wait-for-pr-comments` + `reply-and-resolve-pr-threads`; excludes create-PR, merge, cleanup, and bead-lifecycle helpers
-- **Migration path:** incremental. Phase 1 absorbs `wait-for-pr-comments`; Phase 2 absorbs `reply-and-resolve-pr-threads`. Each skill thins to a one-line invocation as functionality lands in the CLI.
+- **Migration path:** incremental. Phase 1 absorbs `wait-for-pr-comments` (reborn as the `monitor-pr` supervisor); Phase 2 retires `reply-and-resolve-pr-threads` (deleted — its work is covered by prgroom verbs). See §6.
 
 ### Today → tomorrow translation
 
 | Today | Tomorrow |
 |---|---|
-| `wait-for-pr-comments` skill (~800 lines + 12 helpers) | Skill body: `bash: prgroom run <pr>` + thin report-parsing |
+| `wait-for-pr-comments` skill (~800 lines + 12 helpers) | Replaced by `monitor-pr` — thin supervisor: `prgroom run <pr>` + status-JSON interpretation + escalation handling (§6.2) |
 | `reply-and-resolve-pr-threads` skill (~330 lines + 10 helpers) | Absorbed into `prgroom reply` + `prgroom resolve` |
 | JSON inventory at `~/.claude/state/pr-inventory/` | `prsession.Store` file-adapter default; bd-adapter optional (v2) |
 | 22 bash scripts | `internal/*` modules of `prgroom`, with proper unit + integration tests |
@@ -1010,9 +1010,9 @@ Adding new codes is straightforward; the registry's structure (`<CATEGORY>_<SPEC
 
 ---
 
-## Sections 6, 7 — Open sub-designs (TBD)
+## Section 7 — Open sub-design (TBD)
 
-These sections are NOT YET DRAFTED. Listed here so the reviewer can leave annotations on the open questions. (Section 4 is drafted below; Section 5 is drafted further down; Section 8 is sketched at the end.)
+Section 7 (build, distribution, test discipline) is still sketched — see its placeholder near the end. (Sections 4, 5, 6, and 8 are drafted further down.)
 
 ## Section 4 — Quiescence model
 
@@ -1525,11 +1525,105 @@ Each contract's audit is a Go function with table-driven tests (parallels the cu
 
 ### Section 6 — Migration plan
 
-- Phase 1 (absorb wait-for-pr-comments): exact verb set landed; how the skill body changes; what bash scripts get deleted
-- Phase 2 (absorb reply-and-resolve-pr-threads): same
-- Rollback strategy if MVP fails in production
-- Coexistence with existing skills during transition (both can run side-by-side?)
-- **No legacy-state migration.** In-flight PRs under the old JSON inventory format are *not* automatically migrated. Cutover is ad-hoc: finish out any in-flight PR using the current skill before switching that PR's tooling to `prgroom`. New PRs use `prgroom` from day one.
+This section defines the **incremental cutover** from the two prose skills to `prgroom`: what lands in each phase, the fate of every bash script, how the surviving skill is reshaped, the cutover protocol, and rollback. Locked constraints: **incremental, two-phase, no legacy-state migration.**
+
+One reframe over the original sketch: the two skills do **not** both survive as one-line wrappers.
+
+- `reply-and-resolve-pr-threads` is **deleted** — its work is fully covered by deterministic `prgroom` verbs.
+- `wait-for-pr-comments` is **replaced** by a new, thin *contract-aware supervisor* skill, **`monitor-pr`**, that drives `prgroom run` and owns the agent-side judgment prgroom hands back. prgroom does the grunt work; `monitor-pr` does the exception handling — the "5% troubleshooting" slice of the project vision.
+
+#### 6.1 Migration principles
+
+1. **Step 0 — prgroom must be installable first (cross-ref §7).** No skill can thin until `prgroom` is built and on `PATH` via `scripts/install.sh`. The first migration commit wires §7's build/install path; skills stay untouched until it lands.
+2. **Separate state stores, no collision.** prgroom writes `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`; the legacy skills write `~/.claude/state/pr-inventory/`. Neither reads the other.
+3. **No legacy-state migration (locked).** In-flight PRs under the old inventory are not converted. The cutover protocol (§6.4) drains them instead.
+4. **Both deletions are git-revertible** — the rollback unit is the phase commit (§6.5).
+
+#### 6.2 Phase 1 — absorb `wait-for-pr-comments`; birth `monitor-pr`
+
+**Verbs that must be production-ready (the whole loop):** `poll`, `cluster`, `fix`, `push`, `rereview`, `wait`, `status`, `run`, plus the deterministic `reply`, `resolve`, and `resolve-escalated`. (`sweep` optional if cheap.)
+
+> **Why reply/resolve ship in Phase 1, not Phase 2.** They are "no-agent" deterministic verbs (§5 verb→contract table). `prgroom run` must be a no-regression drop-in for today's full post-push flow, which *includes* Skill A's Phase-8 hand-off to Skill B (reply + resolve). A Phase-1 `run` that stopped before reply/resolve would regress; the only alternative — having `run` shell out to the still-live Skill B — needs a throwaway prgroom→legacy-inventory bridge (format mismatch). We build the verbs natively instead. This makes **Phase 2 a light retirement phase** (§6.3), not a second build.
+
+**The `monitor-pr` skill (the reborn supervisor).** Body ≈ 50 lines, not 800. It is **contract-aware**: it interprets what prgroom returns and *acts on* the human-judgment kickbacks (it does not merely watch). It must know three prgroom contracts:
+
+| prgroom contract | Source | What `monitor-pr` does with it |
+|---|---|---|
+| **Exit-code registry** | §3.7 | Map exit code → action (success / retry / surface-to-human) — see decision table below |
+| **`status --json` shape** | §4.6 | Read `phase`, `items_summary`, `merge_gates`, `auto_merge_eligible`, escalated/failed items → build user summary + detect kickbacks |
+| **Terminal phases** | §3, §4 | `quiesced`/`merged` → report; `human-gated` → surface escalations + hand over the `resolve-escalated` recipe |
+
+**`monitor-pr` decision table** (authority for codes is §3.7; phases §3/§4):
+
+| prgroom result | Interactive mode | Autonomous mode |
+|---|---|---|
+| exit 0, `phase ∈ {quiesced, merged}` | Report success summary from `status --json` | Exit 0; sink silent |
+| `phase = human-gated` (escalated/failed items, or `LIFECYCLE_HARD_CAP_EXCEEDED`) | Surface each item's rationale; hand over `prgroom resolve-escalated <pr> <id> --as … --rationale …`; re-invoke after | Route via `EscalationSink` (bd/file); exit non-zero |
+| `RUNTIME_TERMINAL_USER` (gh auth expired, etc.) | Surface the infra problem; stop | Escalate via sink; exit non-zero |
+| `RUNTIME_TRANSIENT` | Re-invoke (bounded) | Let scheduler retry |
+| `RUNTIME_CANCELLED` | Report cancellation; stop | Exit per signal |
+
+Mode is selected from the trigger (chat = interactive; cron / `/loop` / GHA = autonomous), mirroring §1's three usage patterns; the skill passes `--interactive` / `--autonomous` to `prgroom run`.
+
+**Skill-body change.** `wait-for-pr-comments/SKILL.md` (~800 lines, 9 phases) is **deleted**; `monitor-pr/SKILL.md` is **created** with the supervisor body above. Treated as new-skill + delete-old rather than in-place rename, because identity, trigger wiring, and body all change.
+
+**Script fates — Skill A:**
+
+| Fate | Scripts |
+|---|---|
+| Absorbed → `internal/gh` + `poll`/`rereview`/`fix` | poll-copilot-review, poll-copilot-rereview-start, poll-new-comments, fetch-and-normalize-comments, detect-pr-context, request-rereview, count-unresolved-threads, audit-subagent-report |
+| Deleted, no 1:1 successor (format/plumbing) | build-inventory-body, write-inventory, validate-inventory (→ replaced by `prsession.Store` schema), lib.sh |
+| Kept, with a one-line edit | detect-pr-push.sh (hook) — suggestion string updated `wait-for-pr-comments` → `monitor-pr`; full hook rework still deferred to v3 |
+
+All deleted scripts' `*_test.sh` go with them. After deletion, `install.sh --prune` removes the deployed copies.
+
+**Reference-repointing (same commit).** Grep the rule set for the old skill name and repoint: `delivery.md` and `completion-gate.md` reference `wait-for-pr-comments` by name → update to `monitor-pr`. (The "by default invokes `reply-and-resolve-pr-threads`" clause is rewritten in Phase 2, when Skill B dies.)
+
+#### 6.3 Phase 2 — retire `reply-and-resolve-pr-threads`
+
+Deliberately light: `reply` / `resolve` / `resolve-escalated` already shipped in Phase 1. Phase 2 is **retirement + cleanup**, gated on Phase 1 baking (§6.5 readiness gate).
+
+- **Skill deletion.** `reply-and-resolve-pr-threads/SKILL.md` is deleted. Standalone reply/resolve becomes the verbs `prgroom reply <pr>` / `prgroom resolve <pr>`; the old `--resume` crash-recovery becomes "re-invoke prgroom" (reads `prsession` state; idempotent).
+- **Script fates — Skill B** (all absorbed by Phase 1's verbs; the files are deleted now):
+
+| Fate | Scripts |
+|---|---|
+| Absorbed → `reply`/`resolve`/`status` + `internal/git` | render-reply-bodies, post-replies, resolve-threads, verify-head-sha, probe-fix-shas, build-final-report |
+
+  Tests deleted with them; `install.sh --prune`.
+- **Reference-repointing.** Rewrite the `completion-gate.md` / `delivery.md` clause "…invokes `reply-and-resolve-pr-threads`" → "…prgroom handles reply + resolve within `run`." Grep confirms no remaining references to the deleted skill.
+
+#### 6.4 Cutover protocol — "drain before cutover"
+
+The concrete form of the locked "finish-on-legacy / new-on-prgroom":
+
+1. **Drain.** Before installing Phase 1, finish (merge or abandon) every PR with a live legacy inventory (`ls ~/.claude/state/pr-inventory/`).
+   - **Why drain rather than hand over:** `resolve` is idempotent (resolving an already-resolved thread is a server-side no-op), but **`reply` is not** — pointing prgroom at a half-replied legacy PR would double-post. Draining is the clean boundary.
+2. **Install Phase 1.** From here every PR is prgroom-native, starting from a fresh `prsession`.
+3. **Stragglers.** A legacy PR that must be touched post-cutover: `git revert` Phase 1 temporarily (the rollback path doubles as the escape hatch), finish it on restored legacy tooling, then re-apply.
+
+#### 6.5 Rollback strategy
+
+- **Unit:** the Phase-N git commit(s) in `agents-config`.
+- **Triggers (operator judgment; no auto-rollback):** prgroom corrupts/loses `prsession` state; posts a wrong or duplicate reply; resolves a thread that wasn't fixed; the fix agent ships a regression the audit missed; or measured token cost exceeds the skill it replaced (defeats the goal).
+- **Mechanism:** `git revert <phase-commit>` → `scripts/install.sh` **without** `--prune` (so reverted scripts redeploy).
+- **Why Phase-1 rollback is coherent:** Phase 1 does **not** touch `reply-and-resolve-pr-threads`. Reverting Phase 1 restores `wait-for-pr-comments`, whose Phase-8 hand-off targets the still-present Skill B — a complete legacy chain. prgroom's separate state store is untouched by the revert; the reverted PR re-grooms under legacy from a drained/fresh state.
+- **Phase-1 → Phase-2 readiness gate:** ≥3 real PRs groomed end-to-end to `quiesced`/`merged` with no revert and no observed wrong/duplicate replies or bad resolves. Skill B (the rollback anchor) is burned only after the loop is trusted.
+
+#### 6.6 Coexistence during transition
+
+- **Phase 1 window:** `monitor-pr` → prgroom owns the full loop for native PRs; `reply-and-resolve-pr-threads` remains intact, independently invokable, and serves as the dormant rollback anchor. Separate state stores; per-PR exclusivity (a PR is legacy XOR prgroom, never both — guaranteed by drain).
+- **Hook coexistence:** `detect-pr-push.sh` keeps firing post-push; its suggestion now names `monitor-pr`, which runs `prgroom run`. The hook transparently drives prgroom with no rework (just the one-line name edit from §6.2). Full hook → cron/autonomous-trigger rework stays deferred to v3.
+- **Phase 2 window:** Skill B is gone; prgroom is the sole reply/resolve path.
+
+#### 6.7 Phase → implementation-bead boundary
+
+Per this sub-design's acceptance criteria, the two implementation child beads fileable under the epic:
+
+| Bead | Scope | Depends on |
+|---|---|---|
+| **Phase 1 impl** | 8 core verbs + `reply`/`resolve`/`resolve-escalated` engine + `run` loop; create `monitor-pr`; delete Skill A prose + scripts; hook + rule repointing | Foundation bead (Store, preconditions, `EscalationSink`, config, Cluster + Fix contracts, verb skeletons); §7 install path |
+| **Phase 2 impl** | Delete `reply-and-resolve-pr-threads` + scripts; document standalone verbs + crash-recovery; rule re-repointing | Phase 1 baked (readiness gate, §6.5) |
 
 ### Section 7 — Build, distribution, and test discipline
 
@@ -1577,7 +1671,7 @@ This sub-design is deferred to a separate spec but **MVP must carve out the skel
 
 ## Deferred to later versions
 
-- **`detect-pr-push.sh` PostToolUse hook coexistence with `prgroom`** — the hook currently suggests `wait-for-pr-comments`. Reworking the hook to point at `prgroom run` (or be replaced entirely by a cron/autonomous trigger) is **deferred to v3+**. During MVP, the existing hook stays as-is and points at the (thinned) skill; the thinned skill shells out to `prgroom` internally, so the hook still works without changes.
+- **`detect-pr-push.sh` PostToolUse hook coexistence with `prgroom`** — the hook currently suggests `wait-for-pr-comments`. Reworking the hook to point directly at `prgroom run` (or be replaced entirely by a cron/autonomous trigger) is **deferred to v3+**. During MVP, the hook keeps its post-push trigger and needs only a one-line suggestion-string update to name `monitor-pr` (§6.2), which then shells out to `prgroom` internally.
 - **Auto-detection of in-flight PRs at cutover.** No migration tool. (See Section 6.)
 - **Parallel `fix` subagents.** Serial in MVP; file-overlap prediction is unsolved.
 - **`bd` adapter for `prsession.Store`.** File-only in MVP.
