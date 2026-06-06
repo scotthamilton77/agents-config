@@ -25,19 +25,16 @@ class ClaudeAdapter:
     def is_detected(self, home: Path) -> bool:
         return (home / ".claude" / "settings.json").is_file()
 
-    # exercised by w1qls.3.1 (C.1)
-    def scoped_namespaces(self) -> tuple[str, ...]:  # pragma: no cover
+    def scoped_namespaces(self) -> tuple[str, ...]:
         return ("commands", "skills", "agents", "rules")
 
-    # exercised by w1qls.3.1 (C.1)
     def should_install_namespace(
         self,
         namespace: str,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
         source: str,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
-    ) -> bool:  # pragma: no cover
+    ) -> bool:
         return True
 
-    # exercised by w1qls.4.4 (D.4)
     def post_staging_transforms(
         self,
         plan: StagingPlan,
