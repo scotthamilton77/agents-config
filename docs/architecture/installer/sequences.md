@@ -179,10 +179,16 @@ sequenceDiagram
         alt hashes equal
             Note over Sync: identical — skip, Counters.skipped++
         else hashes differ
-            Sync->>IO: show_diff(dest, incoming)
-            alt --dry-run
+            alt --yes (auto_yes)
+                Sync->>Bak: path-aware backup of dest
+                Bak->>FS: copy dest to namespace-backup/ (or in-place)
+                Sync->>FS: write incoming
+                Note over Sync: Counters.updated++ + backed_up++
+            else --dry-run
+                Sync->>IO: show_diff(dest, incoming)
                 Note over Sync: preview only, Counters.updated++ (no write)
             else interactive
+                Sync->>IO: show_diff(dest, incoming)
                 Sync->>IO: confirm("overwrite FILE?")
                 alt confirmed
                     Sync->>Bak: path-aware backup of dest
@@ -200,8 +206,9 @@ sequenceDiagram
 ### Notes on the sync decision
 
 - **Hash-compare is the skip gate.** Unchanged files are never rewritten, so re-running the installer is cheap and quiet — the common case (most files identical) produces no prompts and no backups.
+- **Three modes govern the hashes-differ branch.** `--yes` (auto_yes): backup and write unconditionally, no diff or prompt. `--dry-run`: show diff, no write. Interactive: show diff, prompt, write only on confirmation.
 - **`--dry-run` short-circuits before every write but still shows diffs.** It is the preview mode: the operator sees exactly what *would* change (created / updated counts + diffs) without touching disk. This is also the parity-gate smoke-test surface (`install.py --dry-run` vs `install.sh --dry-run`).
-- **Backup precedes overwrite, always.** No destination file is overwritten without first being copied to its path-aware backup location. The backup routing keeps namespaced backups out of the assistant's discovery walk.
+- **Backup precedes overwrite, always** — including under `--yes`. No destination file is overwritten without first being copied to its path-aware backup location. The backup routing keeps namespaced backups out of the assistant's discovery walk.
 - **All prompting is through `IOPort`.** `show_diff` and `confirm` never call the terminal directly; `ScriptedIO` drives them in tests, so every branch above is unit-testable without a TTY.
 
 ---
@@ -229,26 +236,34 @@ sequenceDiagram
     alt no orphans
         Prune-->>Orch: nothing to prune
     else orphans found
-        Prune->>IO: confirm_three_way("prune N orphans? [all / none / per-item]")
-        alt all
+        alt --yes (auto_yes)
             loop per Orphan
                 Prune->>Bak: path-aware backup
                 Bak->>FS: copy orphan -> backup
                 Prune->>FS: remove orphan
             end
-        else per-item
-            loop per Orphan
-                Prune->>IO: confirm("remove FILE?")
-                alt confirmed
-                    Prune->>Bak: backup
+        else interactive
+            Prune->>IO: confirm_three_way("prune N orphans? [all / none / per-item]")
+            alt all
+                loop per Orphan
+                    Prune->>Bak: path-aware backup
                     Bak->>FS: copy orphan -> backup
                     Prune->>FS: remove orphan
-                else declined
-                    Note over Prune: keep orphan
                 end
+            else per-item
+                loop per Orphan
+                    Prune->>IO: confirm("remove FILE?")
+                    alt confirmed
+                        Prune->>Bak: backup
+                        Bak->>FS: copy orphan -> backup
+                        Prune->>FS: remove orphan
+                    else declined
+                        Note over Prune: keep orphan
+                    end
+                end
+            else none
+                Note over Prune: keep all orphans
             end
-        else none
-            Note over Prune: keep all orphans
         end
         Prune-->>Orch: prune Counters (pruned + backed_up)
     end
@@ -257,9 +272,10 @@ sequenceDiagram
 ### Notes on the prune flow
 
 - **Prune is conservative by construction.** A file is only an orphan if it is on disk, absent from the freshly-built plan, **and** matches an `installer.toml` retired glob. A file the source simply doesn't produce (but that isn't on the retired list) is left alone — the retired-glob gate prevents the installer from deleting user-authored files it doesn't recognise.
-- **Backup before remove, same as overwrite.** Every pruned file is recoverable from its path-aware backup; prune is reversible.
-- **`--prune-only` skips staging + sync entirely.** It runs just the scan + interactive removal — and is mutually exclusive with `--dump-stage`.
-- **Three-way then per-item.** The operator chooses bulk (`all` / `none`) or drops into per-file confirmation — all via `IOPort`, so the whole flow is scripted in tests.
+- **`--yes` skips the three-way prompt entirely.** All orphans are removed unconditionally (with backup). Without `--yes`, the operator chooses bulk (`all` / `none`) or per-file confirmation — all via `IOPort`, so the whole flow is scripted in tests.
+- **Backup before remove, same as overwrite.** Every pruned file is recoverable from its path-aware backup; prune is reversible — including under `--yes`.
+- **`--prune-only` skips staging + sync entirely.** It runs just the scan + removal — mutually exclusive with `--dump-stage`. Non-interactive stdin without `--yes` hard-fails here: you cannot prune unattended without explicitly opting in.
+- **Non-interactive guard.** If `stdin` is not a TTY and neither `--dry-run` nor `--yes` is set, the installer exits with an error rather than silently skipping all prompts.
 
 ---
 

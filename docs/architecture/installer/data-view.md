@@ -48,6 +48,7 @@ erDiagram
         ToolTuple tools          "resolved tool set (claude auto-detected; forced via --tools)"
         StrList   plugins        "discovered by scanning src/plugins/"
         bool      dry_run        "--dry-run preview, no writes"
+        bool      auto_yes       "--yes/-y: skip confirm prompts, auto-accept all writes and prunes"
         PruneMode prune          "none | prune | prune_only"
         Path      dump_stage     "--dump-stage target (debug)"
         StrList   retired_globs  "installer.toml [prune].retired"
@@ -98,7 +99,7 @@ erDiagram
 ### Cardinality + shape notes
 
 - **`StagingPlan` is the aggregate root of the install path; `Config` is the run root.** One `Config` per invocation drives one `StagingPlan` per detected tool, one `Counters` tally, and (with `--prune`) a list of `Orphan`s. There are no cross-plan relationships — each tool's plan is independent.
-- **`Config` resolves the full run configuration.** `home` and `tools` anchor the tool-selection scope; `plugins`, `dry_run`, `prune`, `dump_stage`, `retired_globs`, and `tool_overrides` complete the picture for plugins, preview mode, pruning, and `installer.toml` overrides.
+- **`Config` resolves the full run configuration.** `home` and `tools` anchor the tool-selection scope; `dry_run` and `auto_yes` control the interaction model (preview vs auto-accept); `plugins`, `prune`, `dump_stage`, `retired_globs`, and `tool_overrides` complete the picture for plugins, pruning, and `installer.toml` overrides.
 - **`items` is a `dict[Path, StagedItem]`, not a list.** The `dest_relpath` is the key, which is exactly why collisions are detectable: a second item mapping to a key already present triggers the merge dispatch (Sequence 2). The dict is **in-memory** — the single most load-bearing fact in this model. `install.sh` materialised this as a temp directory tree; the Python rewrite keeps it in process memory and only `sync` writes individual files. (The bare dict silently overwrites on a duplicate key; the staging caller checks `dest_relpath in items` and routes to the merge registry — collision detection is the caller's job, not the dataclass's.)
 - **`Provenance` carries the tool-vs-plugin asymmetry.** Tools are enum-keyed (`Tool` enum + adapter registry); plugins are string-keyed (dynamic discovery, no enum). `Provenance(kind, name)` lets a single `StagedItem` record either origin uniformly — the `kind` discriminator disambiguates the flat `name` (a plugin named after a tool would otherwise be ambiguous), so the merge engine can reason about "base asset vs plugin overlay" without caring which registry the item came from.
 - **`IncludeDirective` is a transient `TypeAlias` union.** `FileInclude | AllRulesInclude`, produced while `templates.py` flattens a `<!-- DYNAMIC-INCLUDE: … -->` marker (file form) or the ALL-RULES marker, then consumed immediately — the flattened text lands in `StagedItem.content`; the directive objects do not survive on the `StagedItem`. `FileInclude` carries the fragment `path`; `AllRulesInclude` carries no fields — it expands the plan's already-staged rules collection, sorted and joined with a `---` separator.
