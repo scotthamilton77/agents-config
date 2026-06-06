@@ -1,6 +1,6 @@
-"""Concrete merge strategies, one module + test file per strategy.
+"""Concrete merge strategies — one module + test file per strategy.
 
-Empty package marker for E.1: parallel strategy agents (E.2-E.5) each add
-their own module here (``append_rules``, ``json_union``, ``fatal``, …)
-without touching this file.
+Each strategy (``append_rules``, ``fatal``, ``json_union``, ``last_wins_warn``,
+``last_wins_silent``) is an independent module; the ``registry`` module's
+``default_registry()`` binds them to their ``(FileKind, namespace)`` keys.
 """

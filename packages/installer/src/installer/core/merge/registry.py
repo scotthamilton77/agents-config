@@ -8,9 +8,10 @@ the strategy — e.g. ``(NAMESPACED_MD, "rules")`` append-merges while
 namespace component is irrelevant and is normalized to ``None`` on both
 ``register`` and ``resolve`` so the key degenerates to a ``FileKind``.
 
-The :class:`MergeRegistry` mechanism imports no concrete strategy; the
-:func:`default_registry` factory at the foot of this module is the one place
-that wires the concrete strategies onto their ``(FileKind, namespace)`` keys.
+The :class:`MergeRegistry` class depends only on the :class:`MergeStrategy`
+protocol — never on a concrete strategy. The :func:`default_registry` factory
+at the foot of this module is the one place that binds the concrete strategies
+onto their ``(FileKind, namespace)`` keys.
 """
 
 from __future__ import annotations

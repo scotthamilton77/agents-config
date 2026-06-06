@@ -8,7 +8,7 @@ Two symbols form the contract:
   ``dest_relpath`` (so ``dest_relpath``, ``kind``, and ``namespace`` are
   identical on both by definition of the collision).
 - :class:`CollisionError` — the shared *fatal-collision* signal, raised by
-  the fatal strategy (E.5) when two sources may not be merged. It is a
+  the fatal strategy when two sources may not be merged. It is a
   ``RuntimeError`` so it is distinct from the registry's lookup-miss error,
   which is a programmer/wiring error rather than a real file collision.
 """

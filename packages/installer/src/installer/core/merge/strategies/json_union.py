@@ -1,4 +1,4 @@
-"""Deep union-merge strategy for ``(SETTINGS_JSON, *)`` collisions (E.4).
+"""Deep union-merge strategy for ``(SETTINGS_JSON, *)`` collisions.
 
 When two ``settings.json`` payloads (e.g. a tool's and a plugin's) collide at
 the same destination they are not a conflict — they are combined. This is the
