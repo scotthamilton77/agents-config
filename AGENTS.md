@@ -27,7 +27,7 @@ The architecture has run into a problematic ocean of complexity and inverted eng
 That means that the current code architecture is a work in progress that is being cleaned up with the following goals in mind:
 
 - **Code over Prose** - Anything code can do better than agents, we're moving out of prose and into code helpers
-- **Python over Bash** - Thin shell script wrappers are fine but any logic that needs good testing needs to be in Python
+- **Python/Go/Node over Bash** - Thin shell script wrappers are fine but any logic that needs good testing needs to be in Python, Go or Node
 - **Amalgams over Conflicts** - There are currently competing priorities in certain plugins that contribute to context rot - we'll be consolidating "best of breed" from plugins' skills and other assets such as superpowers, pollock, karpathy, and so on
 - **Work vs beads** - While we'll continue to use the beads infrastructure (and possibly plugin) we'll be taking a step back from making that a first class citizen of this project's architecture, placing a "work" abstraction in front of it - end state is that beads is quarantined behind our own CLI
 
