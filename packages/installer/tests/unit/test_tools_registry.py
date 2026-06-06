@@ -1,7 +1,8 @@
 """Unit tests for installer.tools.registry.
 
 Each test pins a design decision from the B.1 spec
-(docs/specs/2026-05-23-w1qls.2.1-config-claude-adapter-design.md).
+(docs/specs/2026-05-23-w1qls.2.1-config-claude-adapter-design.md) and the
+D.1 CodexAdapter registration story.
 Tautology tests — isinstance(adapter, ToolAdapter), attribute-literal
 assertions like adapter.name == "claude", `@runtime_checkable` machinery
 — are deliberately absent. See the writing-unit-tests skill's Tautology
@@ -21,7 +22,7 @@ from installer.tools.registry import (
 
 def test_get_adapter_on_unregistered_tool_raises_key_error() -> None:
     """
-    Given the registry contains only Tool.CLAUDE
+    Given the registry does not contain Tool.OPENCODE
     When the caller invokes get_adapter(Tool.OPENCODE)
     Then a KeyError is raised.
 
@@ -40,20 +41,31 @@ def test_parse_tool_name_accepts_registered_name() -> None:
     assert parse_tool_name("claude") is Tool.CLAUDE
 
 
+def test_parse_tool_name_accepts_codex() -> None:
+    """
+    Given Tool.CODEX is registered
+    When parse_tool_name("codex") is called
+    Then it returns Tool.CODEX.
+
+    Pins: registry-is-truth for codex — CodexAdapter wired in the registry.
+    """
+    assert parse_tool_name("codex") is Tool.CODEX
+
+
 def test_parse_tool_name_rejects_enum_value_not_in_registry() -> None:
     """
-    Given the registry contains only Tool.CLAUDE
+    Given the registry contains Tool.CLAUDE and Tool.CODEX
     When parse_tool_name("opencode") is called
     Then UnknownToolError is raised
     And the error.name is "opencode"
-    And the error.valid is ("claude",).
+    And the error.valid is ("claude", "codex").
 
     Pins: registry-is-truth — Tool enum existence alone is insufficient.
     """
     with pytest.raises(UnknownToolError) as exc_info:
         parse_tool_name("opencode")
     assert exc_info.value.name == "opencode"
-    assert exc_info.value.valid == ("claude",)
+    assert exc_info.value.valid == ("claude", "codex")
 
 
 def test_parse_tool_name_rejects_non_enum_string() -> None:
