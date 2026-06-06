@@ -9,7 +9,7 @@ All git worktrees **must** be created inside `<project-root>/.claude/worktrees/`
 
 ## Worktree cleanup after merge
 
-Run cleanup from the **main repo root**, never from inside the worktree being removed. After a squash-merge (GitHub default), git sees the local branch as unmerged — `git branch -d` always fails; use `git branch -D`.
+Run cleanup from the **main repo root**, never from inside the worktree being removed. After a squash-merge (GitHub default), git sees the local branch as unmerged — `git branch -d` always fails; use `git branch -D`. The same applies to `ExitWorktree`: after a squash-merge, the tool sees the pre-squash commit as unmerged and refuses — always pass `discard_changes: true` after confirming the work is on main.
 
 ```bash
 cd <repo-root>
