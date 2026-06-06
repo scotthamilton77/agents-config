@@ -13,7 +13,7 @@
 | Scheduler | Whatever drives autonomous runs: cron, systemd timer, GitHub Actions, an outer `prgroom sweep` loop, or a `/loop` Claude Code session. prgroom does not care which. |
 | `$XDG_STATE_HOME` | The XDG-spec state directory; defaults to `~/.local/state` on Linux, `~/.local/state` (overridden by `$XDG_STATE_HOME` if set) on macOS. The `prsession.Store` file adapter writes here. |
 | Per-PR lock | The `flock(2)` advisory lock on the state file; one-at-a-time per PR. Auto-released on process death. |
-| Wrapping skill | An upstream AI-agent skill (the thinned legacy `wait-for-pr-comments` / `reply-and-resolve-pr-threads`, post-migration) that calls `prgroom run` as a subprocess and reads its exit code + JSON. prgroom drives the full fix→push→reply→resolve loop itself — the wrapper adds no separate reply-later stage. From the deployment view, indistinguishable from a human operator shell. |
+| Wrapping skill | The `monitor-pr` supervisor skill (§6) that calls `prgroom run` as a subprocess and reads its exit code + JSON. prgroom drives the full fix→push→reply→resolve loop itself — the wrapper adds no separate reply-later stage. From the deployment view, indistinguishable from a human operator shell. |
 
 ## Purpose
 
@@ -94,7 +94,7 @@ C4Deployment
 
 ### Deployment unit: one operator workstation
 
-Everything in the MVP runs on one machine, owned by one operator. The "operator" can be a human at a terminal OR a wrapping AI agent (the thinned legacy skills, post-migration); from the deployment view they're indistinguishable — both fork `prgroom` as a subprocess and read its exit code + stdout JSON. prgroom owns the full fix→push→reply→resolve loop regardless of caller.
+Everything in the MVP runs on one machine, owned by one operator. The "operator" can be a human at a terminal OR a wrapping AI agent (the `monitor-pr` supervisor skill); from the deployment view they're indistinguishable — both fork `prgroom` as a subprocess and read its exit code + stdout JSON. prgroom owns the full fix→push→reply→resolve loop regardless of caller.
 
 This is deliberate: cross-host coordination, distributed locks, and shared state stores are explicitly **post-MVP** — gated behind the v2 `bd` adapter for `prsession.Store`. The design proves out on one host before adding cross-host complexity.
 
