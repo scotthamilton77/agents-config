@@ -122,7 +122,13 @@ def _resolve_file_include(rel: Path, *, base_dir: Path, io: IOPort) -> str:
 
     Mirrors the bash ``[[ -f ... ]]`` guard: a missing target *or* a directory
     is non-fatal — it warns and resolves to the empty string.
+
+    Raises ``ValueError`` for absolute paths or paths containing ``..`` —
+    either would let ``base_dir / rel`` resolve outside ``base_dir``. Mirrors
+    the traversal guard in ``sync.py``.
     """
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"DYNAMIC-INCLUDE path escapes base_dir: {rel}")  # noqa: TRY003
     target = base_dir / rel
     if not target.is_file():
         io.warn(f"DYNAMIC-INCLUDE not found: {rel}")
