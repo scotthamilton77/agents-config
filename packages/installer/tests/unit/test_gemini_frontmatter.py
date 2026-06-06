@@ -12,7 +12,22 @@ from pathlib import Path
 import pytest
 import yaml
 
-from installer.tools.gemini import transform_agent_frontmatter
+from installer.core.io_port import ScriptedIO
+from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.tools.gemini import GeminiAdapter, transform_agent_frontmatter
+
+_PROV = Provenance(kind="tool", name="gemini")
+
+
+def _agent_item(relname: str, content: bytes) -> StagedItem:
+    return StagedItem(
+        source_path=Path("src") / relname,
+        dest_relpath=Path("agents") / relname,
+        kind=FileKind.NAMESPACED_MD,
+        namespace="agents",
+        provenance=_PROV,
+        content=content,
+    )
 
 
 def _frontmatter(content: bytes) -> dict[str, object]:
@@ -90,3 +105,42 @@ def test_real_source_agent_is_gemini_clean() -> None:
     assert "skills" not in fm
     assert "memory" not in fm
     assert isinstance(fm["tools"], list)
+
+
+def test_post_staging_transforms_rewrites_agent_items() -> None:
+    item = _agent_item("a.md", b"---\nname: a\ncolor: red\ntools: Read, Grep\n---\nbody\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.GEMINI)
+    out = GeminiAdapter().post_staging_transforms(plan, ScriptedIO())
+    new_content = out.items[item.dest_relpath].content
+    assert new_content is not None
+    assert b"color:" not in new_content
+    assert _frontmatter(new_content)["tools"] == ["Read", "Grep"]
+
+
+def test_post_staging_transforms_logs_phase_when_agents_present() -> None:
+    item = _agent_item("a.md", b"---\nname: a\ncolor: red\ntools: Read\n---\nbody\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.GEMINI)
+    io = ScriptedIO()
+    GeminiAdapter().post_staging_transforms(plan, io)
+    assert any("frontmatter" in e.message.lower() for e in io.transcript)
+
+
+def test_post_staging_transforms_leaves_non_agent_items_untouched() -> None:
+    item = StagedItem(
+        source_path=Path("src/GEMINI.md"),
+        dest_relpath=Path("GEMINI.md"),
+        kind=FileKind.OTHER,
+        namespace=None,
+        provenance=_PROV,
+        content=b"---\ncolor: red\ntools: Read\n---\nx\n",
+    )
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.GEMINI)
+    io = ScriptedIO()
+    out = GeminiAdapter().post_staging_transforms(plan, io)
+    assert out.items[item.dest_relpath].content == item.content
+    assert not any("frontmatter" in e.message.lower() for e in io.transcript)
+
+
+def test_post_staging_transforms_returns_same_plan_when_no_agents() -> None:
+    plan = StagingPlan(items={}, tool=Tool.GEMINI)
+    assert GeminiAdapter().post_staging_transforms(plan, ScriptedIO()) is plan

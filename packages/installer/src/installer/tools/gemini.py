@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -89,9 +90,20 @@ class GeminiAdapter:
     ) -> bool:
         return True
 
-    def post_staging_transforms(
-        self,
-        plan: StagingPlan,
-        io: IOPort,  # noqa: ARG002  # protocol parameter; GeminiAdapter accepts uniformly
-    ) -> StagingPlan:  # pragma: no cover
+    def post_staging_transforms(self, plan: StagingPlan, io: IOPort) -> StagingPlan:
+        """Apply the Claude→Gemini agent frontmatter transform to every staged
+        ``agents/`` file. Mirrors bash Phase 6.6 (scripts/install.sh:892-897):
+        emits one verbose phase line when agent files are present, then rewrites
+        each in place. Non-agent items and directory entries are left untouched.
+        """
+        logged = False
+        for relpath, item in list(plan.items.items()):
+            if item.namespace != "agents" or item.content is None:
+                continue
+            if not logged:
+                io.info("Transforming agent frontmatter for Gemini", verbose=True)
+                logged = True
+            new_content = transform_agent_frontmatter(item.content)
+            if new_content != item.content:
+                plan.items[relpath] = replace(item, content=new_content)
         return plan
