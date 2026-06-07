@@ -1465,12 +1465,15 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
       }
     ],
     "memory_writes": ["<path>", "..."],           // optional; files the agent created in memory_dir — ephemeral scratch, containment-audited (§8.4, §8.6)
-    "memory": [                                   // optional; classified memory the CLI routes (§8.3). MVP routes CONTEXTUAL→PR only; other classes accepted-but-deferred
-      {
-        "content": "<inline markdown>",           // either `content` or `path` (a memory_dir file) — exactly one required
+    "memory": [                                   // optional; classified memory the CLI routes (§8.3). MVP routes CONTEXTUAL→PR only; other classes accepted-but-deferred. Each entry sets EXACTLY ONE of `content` | `path`; `classification` ∈ {UNIVERSAL, PROJECT, PLANNED, HISTORICAL, CONTEXTUAL}
+      {                                           // inline form — thread-less PR-wide decision → `## Decisions` PR-body block
+        "content": "<inline markdown>",
+        "classification": "CONTEXTUAL"
+      },
+      {                                           // file form — note tied to a specific thread
         "path": "<file in memory_dir>",
-        "classification": "UNIVERSAL" | "PROJECT" | "PLANNED" | "HISTORICAL" | "CONTEXTUAL",
-        "target_hint": "<thread node-id>"         // optional; CONTEXTUAL thread-reply target. Thread-less CONTEXTUAL → `## Decisions` PR-body block
+        "classification": "CONTEXTUAL",
+        "target_hint": "<thread node-id>"         // optional; the CONTEXTUAL thread-reply target
       }
     ]
   }
