@@ -2,7 +2,7 @@
 
 > **Up**: [index](index.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (`prsession.Store` Protocol + state schema)
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (`prsession.Store` Protocol + state schema) + Section 8 (PR-memory read path)
 > **Container**: `src/prgroom/prsession/` inside the prgroom package (see [`c4-l2-container.md`](c4-l2-container.md))
 > **Status**: **STUB** — placeholder pending the `src/prgroom/prsession` implementation bead.
 
@@ -53,6 +53,10 @@ The transactional contract is at the verb level + the `run` aggregate level:
 - **Run-aggregate level** — `_run` (§3.3) holds the lock for an entire cycle; each `_`-prefixed invocation does its own atomic `write` before returning, so the state file is recoverable to the last completed verb even if the process dies mid-cycle.
 
 These commitments are realised by the `Store` Protocol itself — there are no explicit transaction begin/end methods. `lock` + atomic `write` + per-`_`-prefixed write discipline is the transaction.
+
+### §8 PR-memory — read-path source, no schema change
+
+The §8 PR-memory read path (§8.1) reads *through* this Store but adds **no** persisted fields. Before each fix dispatch, `src/prgroom/lifecycle` assembles the complete-PR snapshot, sourcing **prior-round dispositions** (`kind` / `rationale` / `commits` / `decided_by`) from the `PRGroomingState` this Store already persists (§2). The per-item `recurrence` signal is **derived from that disposition history at snapshot-assembly time** (§8.2) — never read from or written to the Store. `schema_version` therefore **stays `1`**: no `memory`, no `recurrence`, no Decisions-block fields enter the persisted schema — the PR itself is the durable memory (§8.0).
 
 ## Out of scope for this L3 (when drawn)
 
