@@ -55,7 +55,8 @@ def resolve_plugins(
     - `override_csv == ""` (or whitespace-only) -> () (install no plugins).
       Deliberate asymmetry with `resolve_tools`, which raises on empty
       `--tools=`: "no plugins" is a valid choice, "no tools" is a no-op error.
-      Matches scripts/install.sh:298-300 (PLUGINS_FLAG_SET + empty value).
+      Matches scripts/install.sh's plugin-detection block, where a set
+      `--plugins=` flag with an empty value yields no plugins.
     - Otherwise -> split on commas, strip whitespace, validate each via the
       discovered set, dedupe preserving first occurrence, preserve order.
     """
