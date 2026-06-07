@@ -34,11 +34,11 @@ C4Deployment
             Container(scheduler_svc, "Scheduler (optional)", "cron / systemd timer / /loop session", "Drives prgroom run --autonomous on a cadence; not required for interactive mode")
         }
 
-        Deployment_Node(prgroom_node, "prgroom binary", "Go static binary on PATH") {
-            Container(prgroom_bin, "prgroom", "Go executable", "Terminal per invocation — runs to completion and exits; one process per prgroom run (seconds to many minutes). Contains all components from C4 L3.")
+        Deployment_Node(prgroom_node, "prgroom console-script", "uv-installed entry point on PATH") {
+            Container(prgroom_bin, "prgroom", "Python console-script", "Terminal per invocation — runs to completion and exits; one process per prgroom run (seconds to many minutes). Contains all components from C4 L3.")
         }
 
-        Deployment_Node(agent_subproc, "Agent subprocesses (ephemeral)", "forked by internal/agent") {
+        Deployment_Node(agent_subproc, "Agent subprocesses (ephemeral)", "forked by src/prgroom/agent") {
             Container(agent_a, "Cluster agent", "ollama / claude / codex subprocess", "One per cluster invocation; exits after producing fix-bundles")
             Container(agent_b, "Fix agent", "claude -p opus[1m] subprocess", "One per cluster fix invocation; edits worktree + git commit; exits after producing dispositions + commit SHAs")
         }
@@ -60,7 +60,7 @@ C4Deployment
         }
 
         Deployment_Node(gh_bin_node, "gh CLI", "on PATH") {
-            Container(gh_bin, "gh", "GitHub CLI binary", "Provides go-gh with auth state + host config. Not invoked as a subprocess by prgroom — prgroom links against go-gh and reuses gh's auth config files directly.")
+            Container(gh_bin, "gh", "GitHub CLI binary", "Invoked as a subprocess by prgroom (subprocess.run) for all GitHub I/O, reusing gh's own auth state + host config.")
         }
     }
 
@@ -77,8 +77,8 @@ C4Deployment
     Rel(prgroom_bin, agent_a, "fork + stdin/stdout pipe", "subprocess")
     Rel(prgroom_bin, agent_b, "fork + stdin/stdout pipe", "subprocess")
     Rel(prgroom_bin, worktree_fs, "Read HEAD / branch ref; git push", "git plumbing")
-    Rel(prgroom_bin, github_api, "REST + GraphQL via go-gh", "HTTPS")
-    Rel(prgroom_bin, gh_bin, "Reuses auth config files", "filesystem read")
+    Rel(prgroom_bin, github_api, "REST + GraphQL via the gh subprocess", "HTTPS")
+    Rel(prgroom_bin, gh_bin, "Shells out (subprocess.run); reuses auth config files", "subprocess")
 
     Rel(agent_a, ollama_bin, "Local model inference (primary)")
     Rel(agent_a, claude_cli, "Cloud model inference (fallback 1)")
@@ -97,6 +97,15 @@ C4Deployment
 Everything in the MVP runs on one machine, owned by one operator. The "operator" can be a human at a terminal OR a wrapping AI agent (the `monitor-pr` supervisor skill); from the deployment view they're indistinguishable — both fork `prgroom` as a subprocess and read its exit code + stdout JSON. prgroom owns the full fix→push→reply→resolve loop regardless of caller.
 
 This is deliberate: cross-host coordination, distributed locks, and shared state stores are explicitly **post-MVP** — gated behind the v2 `bd` adapter for `prsession.Store`. The design proves out on one host before adding cross-host complexity.
+
+### How `prgroom` lands on the workstation (build & distribution)
+
+There is **no compiled binary**, no prebuilt-binary pipeline, and no artifact-transport ("scp the binary") step. `prgroom` is a `uv`-managed Python package at `packages/prgroom/` (standard `src/prgroom/` layout — a fourth sibling to `installer`, `pdlc`, and `holding-place`) that ships as a wheel built with `uv build`. Distribution is a `[project.scripts]` console-script entry point installed via `uv tool install ./packages/prgroom`, which places a `prgroom` executable on `PATH`. The install host already has `uv` (it runs the installer), so there is no new runtime to ship.
+
+- **Installer owns the install.** `scripts/install.sh` runs `uv tool install ./packages/prgroom` (idempotent; `--force` on upgrade), guarded by a `uv`-present check; `install.sh --prune` removes it via `uv tool uninstall`. The executable that the operator / scheduler / wrapping skill `exec`s is the one this install path put on `PATH`.
+- **Versioned with the repo, not released independently.** The version lives in `packages/prgroom/pyproject.toml` (semver). There is **no independent release cadence, no git tags, and no GitHub releases** for the MVP — `prgroom` ships with the repo, and upgrades land by re-running the installer (which re-runs `uv tool install --force`). Same lifecycle as `installer` and `pdlc`.
+- **Thin, pinned runtime deps.** `typer` + stdlib; GitHub access is a `subprocess.run` shell-out to `gh`, not a vendored client. `uv sync --frozen` reproduces the lockfile in CI.
+- **Cold start ~100–300 ms** for the `uv`-installed console-script — acceptable for a synchronous CLI invoked at hand-off points.
 
 ### Process lifetimes
 
@@ -128,7 +137,7 @@ No databases. No shared volumes. No remote stores. The MVP boundary is "what fit
 
 ### gh auth coupling
 
-`prgroom` does not store credentials of its own. It links against `github.com/cli/go-gh/v2`, which reads `gh`'s auth config files directly (`~/.config/gh/hosts.yml` and related). If the operator can run `gh pr view <pr>`, `prgroom` can talk to GitHub. If `gh auth login` is missing, `prgroom` trips `PRECONDITION_NO_AUTH` at startup (exit 2 `EX_USAGE`).
+`prgroom` does not store credentials of its own. It shells out to the `gh` subprocess (`subprocess.run`), which carries `gh`'s own auth state + host config (`~/.config/gh/hosts.yml` and related). If the operator can run `gh pr view <pr>`, `prgroom` can talk to GitHub. If `gh auth login` is missing, `prgroom` trips `PRECONDITION_NO_AUTH` at startup (exit 2 `EX_USAGE`).
 
 ### Scheduler integration is opaque
 
@@ -145,12 +154,12 @@ All four reduce to "exec `prgroom` and read its exit code." Scheduler-side retry
 
 | Failure | Surface |
 |---|---|
-| `prgroom` binary missing on PATH | `exec: command not found` from the scheduler / shell — outside prgroom's domain |
+| `prgroom` console-script missing on PATH | `exec: command not found` from the scheduler / shell — operator re-runs the installer (`uv tool install`); outside prgroom's domain |
 | `gh auth login` missing | `PRECONDITION_NO_AUTH` (exit 2) — operator runs `gh auth login` and re-invokes |
 | Agent CLI missing on PATH | `RUNTIME_AGENT_UNAVAILABLE` (exit 75) after primary + fallback both miss; scheduler retries on next cadence |
 | State file FS unwritable (disk full, perms) | `STATE_CORRUPT` (exit 78) — operator inspects |
 | Network outage to GitHub | `RUNTIME_GH_TRANSIENT` (exit 75); scheduler retries |
-| Process killed mid-`waitLocked` | `flock(2)` self-clears; next invocation re-evaluates timeouts from stored UTC timestamps (Sequence 4); no recovery code needed |
+| Process killed mid-`_wait` | `flock(2)` self-clears; next invocation re-evaluates timeouts from stored UTC timestamps (Sequence 4); no recovery code needed |
 | Operator runs prgroom from inside `.claude/worktrees/<branch>/` while git operations target the main repo tree | This is a known coordination hazard per the project's `worktrees.md` rule — out of prgroom's enforcement scope, but documented for awareness |
 
 ## Post-MVP markers
@@ -164,7 +173,7 @@ These shapes are explicitly out of scope for MVP and would require a deliberate 
 
 ## What this diagram does NOT show
 
-- **Internal Go module structure of the `prgroom` binary.** That's a C4 L3 concern; see [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md), [`c4-l3-prsession.md`](c4-l3-prsession.md), [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md).
+- **Internal module structure of the `prgroom` package (`src/prgroom/*`).** That's a C4 L3 concern; see [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md), [`c4-l3-prsession.md`](c4-l3-prsession.md), [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md).
 - **Network paths between the workstation and GitHub.** Standard HTTPS + git-over-SSH-or-HTTPS; nothing prgroom-specific.
 - **GHA runner topology when prgroom runs in CI.** The GHA runner is just another single-host workstation from prgroom's perspective.
 - **bd-adapter v2 deployment.** Marked as post-MVP; not drawn.
@@ -173,4 +182,4 @@ These shapes are explicitly out of scope for MVP and would require a deliberate 
 
 - **Previous**: [Data View](data-view.md)
 - **Related**: [C4 L1 — System Context](c4-l1-context.md), [C4 L2 — Container](c4-l2-container.md)
-- **Source spec**: [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 2 — `prsession.Store` interface](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source spec**: [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 2 — `prsession.Store` interface](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md), [Section 7 — Build, distribution, versioning, CI](../../plans/2026-05-12-prgroom-cli-design.md)
