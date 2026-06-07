@@ -182,6 +182,14 @@ def test_array_union_handles_negative_int_too_large_for_float() -> None:
     assert _merge({"x": [huge_neg]}, {"x": [1]}) == {"x": [huge_neg, 1]}
 
 
+def test_array_union_keeps_distinct_overflow_ints_sharing_a_sort_key() -> None:
+    """Two distinct ints that both overflow ``float()`` share the same +inf
+    sort key, but they are different full-precision integers that ``json.dumps``
+    preserves. Dedupe must break the sort-key tie by Python value equality so
+    neither is dropped — otherwise the second would be silently lost."""
+    assert _merge({"x": [10**400, 10**401]}, {"x": []}) == {"x": [10**400, 10**401]}
+
+
 def test_array_union_jq_total_order_across_types() -> None:
     """jq's total order ranks types null < false < true < number < string
     < array < object; ``unique`` sorts the unioned array by that order."""

@@ -126,10 +126,20 @@ def _union_arrays(existing: list[Any], incoming: list[Any]) -> list[Any]:
     )
     deduped: list[Any] = []
     last_key: tuple[Any, ...] | None = None
+    last_elem: Any = None
     for key, elem in keyed:
-        if key != last_key:
+        # Dedupe on the sort key, but break ties by Python value equality so a
+        # lossy sort key cannot collapse two distinct values. The overflow
+        # guard in ``_jq_sort_key`` maps every huge positive int to the same
+        # +inf key (and every huge negative int to -inf), so ``10**400`` and
+        # ``10**401`` share a key while being distinct, full-precision integers
+        # that ``json.dumps`` preserves verbatim. Without the value check the
+        # second would be silently dropped, losing data. ``1`` vs ``1.0`` still
+        # dedupe because ``1 == 1.0`` in Python, matching jq.
+        if key != last_key or elem != last_elem:
             deduped.append(elem)
             last_key = key
+            last_elem = elem
     return deduped
 
 
