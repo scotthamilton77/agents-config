@@ -31,7 +31,7 @@ Together they answer: *who calls whom, in what order, with what concurrency cont
 
 ## Sequence 1 — Happy path
 
-One PR's grooming session from initial push through to quiescence. Three cycles shown: the first triggered by the initial push, the second triggered by Copilot review comments, the third concluding with quiescence. Lock is acquired once by `run()` at the top of `_run` and released only on terminal exit (§3.3 line 814).
+One PR's grooming session from initial push through to quiescence. Three cycles shown: the first triggered by the initial push, the second triggered by Copilot review comments, the third concluding with quiescence. Lock is acquired once by `run()` at the top of `_run` and released only on terminal exit (§3.3).
 
 ```mermaid
 sequenceDiagram

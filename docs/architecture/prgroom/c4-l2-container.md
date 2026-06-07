@@ -48,7 +48,7 @@ C4Container
     Rel(scheduler, prgroom_proc, "Triggers prgroom run (or prgroom sweep)", "tick / event")
 
     Rel(prgroom_proc, state, "Read / atomically rewrite PRGroomingState; hold flock for verb duration", "local FS")
-    Rel(prgroom_proc, github, "Polls reviews / threads / comments / CI; posts replies; resolves threads (GraphQL); pushes commits; sets human-review-required label", "gh subprocess")
+    Rel(prgroom_proc, github, "Polls reviews / threads / comments / CI; posts replies; resolves threads (GraphQL); pushes commits; sets human-review-required label", "gh + git subprocess")
     Rel(prgroom_proc, gh_cli, "Reuses gh auth token + host config", "config file read")
     Rel(prgroom_proc, agent_proc, "Forks per cluster or fix; pipes prompt; reads structured output", "stdin/stdout pipe")
     Rel(prgroom_proc, worktree, "Reads HEAD SHA, branch ref; the fix contract agent commits here when invoked", "git plumbing")

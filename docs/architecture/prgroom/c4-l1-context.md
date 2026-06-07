@@ -42,7 +42,7 @@ C4Context
     Rel(operator, github, "Pushes the original PR; reviews escalated items; opens / merges the PR", "browser, git, gh")
     Rel(scheduler, prgroom, "Triggers prgroom run (or prgroom sweep)", "cron tick / GHA event / loop iteration")
 
-    Rel(prgroom, github, "Polls comments/reviews/CI; posts replies; resolves threads (GraphQL); pushes fix commits; raises human-review-required label", "gh subprocess")
+    Rel(prgroom, github, "Polls comments/reviews/CI; posts replies; resolves threads (GraphQL); pushes fix commits; raises human-review-required label", "gh + git subprocess")
     Rel(prgroom, agents, "Subprocesses cluster and fix; fresh context per call", "stdin/stdout pipe")
     Rel(prgroom, statefile, "Reads + atomically rewrites PRGroomingState; holds flock for the duration of one verb", "local FS")
     Rel(prgroom, bd_store, "v2: internal bd adapter reads/writes state via bd notes (linkage label for-pr-<owner>-<repo>-<n>)", "bd CLI (deferred)")
@@ -64,7 +64,7 @@ C4Context
 
 ### External systems
 
-- **GitHub** — the canonical authority on the PR being groomed. prgroom never invents PR state; it polls reviews + threads + comments + CI verdicts via the `gh` subprocess, posts replies, resolves threads via GraphQL `resolveReviewThread`, pushes fix commits the fix contract agent produced, and raises a `human-review-required` label on hard-cap or `escalated` items. The PR itself stays where it is — prgroom never opens or merges PRs (those are out of MVP scope).
+- **GitHub** — the canonical authority on the PR being groomed. prgroom never invents PR state; it polls reviews + threads + comments + CI verdicts via the `gh` subprocess, posts replies, resolves threads via GraphQL `resolveReviewThread`, pushes (via the `git` subprocess) the fix commits the fix contract agent produced, and raises a `human-review-required` label on hard-cap or `escalated` items. The PR itself stays where it is — prgroom never opens or merges PRs (those are out of MVP scope).
 
 - **AI agent CLIs** — `claude -p`, `codex exec`, `opencode run`, and local `ollama`. prgroom shells out to these as subprocesses with a fresh context per call. Which runtime serves a given contract is TOML-configurable per §5 — the contract is the stable API, the runtime is swappable (opencode is an available runtime, not part of the default chain). Two contract types per §5:
   - **Cluster contract** (`cluster` verb): cheap grouping of unprocessed review items into fix-bundles. Local-first chain: ollama+Gemma → claude haiku → codex-mini. No per-item disposition decided here.

@@ -255,7 +255,7 @@ class Deps:
     # (no randomness used in MVP)
 ```
 
-`_run(deps, pr, mode)` is the testable entry. The public `run()` wrapper composes the deps + acquires the lock + calls `_run` + releases. Tests inject fakes for `store` (the `InMemoryStore`), `gh` and `git` (recorded-subprocess fakes), `cluster` and `fix` (canned-disposition fakes), and `sink` (in-memory event collector). Concrete adapters structurally satisfy their Protocol — `mypy --strict` checks the fit; no production code is mocked of itself.
+`_run(pr, mode)` is the testable entry — a method on a lifecycle object constructed with the `Deps` above, so the deps are injected at construction rather than passed positionally (matching the pseudocode signature). The public `run()` wrapper builds the deps, constructs the object, acquires the lock, calls `_run`, and releases. Tests inject fakes for `store` (the `InMemoryStore`), `gh` and `git` (recorded-subprocess fakes), `cluster` and `fix` (canned-disposition fakes), and `sink` (in-memory event collector). Concrete adapters structurally satisfy their Protocol — `mypy --strict` checks the fit; no production code is mocked of itself.
 
 ## What this diagram does NOT show
 
