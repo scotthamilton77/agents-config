@@ -71,14 +71,15 @@ sequenceDiagram
         PG->>Cluster: cluster — bundle unprocessed items into fix-clusters
         Cluster-->>PG: clusters (JSON)
         PG->>State: write — clusters recorded
-        PG->>Fix: fix — per-cluster fix contract dispatch (opus[1m])
+        PG->>GH: _fix prework — fetch PR body / threads / labels for the complete-PR snapshot (§8.1)
+        PG->>Fix: fix — dispatch per cluster with the complete-PR snapshot (PR body incl. any Decisions block, plus per-item recurrence for repeat items — §8.1-8.2) (opus[1m])
         Fix-->>Fix: edits files in operator's worktree + git commit per fixed item
-        Fix-->>PG: per-item dispositions (fixed / already_addressed / skipped / etc.) + commit SHAs
+        Fix-->>PG: per-item dispositions + commit SHAs + classified memory[] channel (§8.3)
         PG->>State: write — per-item disposition recorded
         PG->>GH: _push — git push fix commits
         PG->>State: write — round=2, last_pushed_head_sha=new
         PG->>GH: _rereview — remove + re-add Copilot reviewer (force re-review)
-        PG->>GH: _reply — post replies per template + agent-authored response
+        PG->>GH: _reply — post replies (incl. CONTEXTUAL memory thread-replies) + PATCH the Decisions block in PR body (§8.3 — gh API edit, NOT a git commit)
         PG->>GH: _resolve — GraphQL resolveReviewThread for fixed / already_addressed items
         PG->>State: write — items.resolved=true for resolved threads
         Note over PG: End-of-cycle resolver: items dispositioned, push happened → phase=awaiting-review (priority 4)
@@ -107,6 +108,7 @@ sequenceDiagram
 - **Round is incremented exactly once per push.** The bootstrap `_poll` sets `round=1` to anchor the counter at the PR's currently observed HEAD; subsequent CLI pushes bump it via `_push`; external pushes bump it via `_poll` SHA-transition attribution. The cap (default 3) counts CLI-observed rounds only — historical out-of-band pushes are invisible.
 - **Quiescence is the four hard gates plus the idle timer.** `G_REVIEWERS` (all Required reviewers terminal), `G_CI` (ci_state in {success, absent}), `G_DISPOSITIONS` (every item dispositioned), `G_NO_BLOCKERS` (no escalated / failed items). The idle timer (default 10m) is the soft "let it settle" buffer for slow human reviewers.
 - **The fix agent owns its commits.** The fix contract agent runs `git commit` itself inside the operator's worktree; prgroom does the subsequent `git push`. prgroom does not commit, and the fix contract does not push.
+- **PR memory rides on the PR, not in prgroom state (§8).** Before each fix dispatch prgroom assembles a complete-PR snapshot — PR body (incl. the prgroom-maintained `## Decisions` block), all threads with full reply-chains, prior-round dispositions, and a per-item `recurrence` signal — so the fresh-context fix agent remembers earlier rounds without calling `gh` (§8.1–8.2). The agent's output carries a classified `memory` channel; prgroom routes CONTEXTUAL entries to the PR at reply time — thread replies for thread-tied notes, and a sentinel-bounded `## Decisions` block (PATCHed into the PR body, **not** committed) for PR-wide decisions, idempotent by `(round, source-item)` (§8.3). Cycle 2 is the first fix round, so its snapshot's `## Decisions` block is still empty and no item carries `recurrence` yet; both fill in on later rounds (cf. the §8.7 worked example).
 
 ---
 

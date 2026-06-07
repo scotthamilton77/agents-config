@@ -4,7 +4,7 @@
 > **Previous (reading order)**: [Sequences](sequences.md)
 > **Next (reading order)**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 3 (phase machine) + Section 4 (quiescence predicate)
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 3 (phase machine) + Section 4 (quiescence predicate) + Section 8 (PR-memory routing side-effect)
 
 ## Glossary
 
@@ -166,6 +166,10 @@ Three classes of edge re-enter the lifecycle from non-active phases. None of the
 Every transition INTO `human_gated` from `fixes_pending` triggers `request_human_review_if_needed(state)` from within `_run`, which POSTs a `human-review-required` label to the PR via the gh adapter and sets `state.human_review_label_added = True`. The flag is reset on the next successful end-of-cycle resolution that writes a non-`human-gated` phase, so subsequent gates within the same lifecycle can re-add the label cleanly.
 
 The label is a **merge constraint** consumed by future merge-gate components (`gmxo`, `td39`), NOT a lifecycle gate consumed by prgroom itself. Per §4.4, prgroom does NOT check or wait on the label; operators do not need to remove it to exit `human-gated`.
+
+## PR-memory routing side-effect (§8.3)
+
+Parallel to the auto-label side-effect: at `reply` time the cycle routes CONTEXTUAL fix-agent memory to the PR — thread-tied notes as thread replies, thread-less PR-wide decisions merged into the sentinel-bounded `## Decisions` block via a `gh` PATCH of the PR body (an API edit, **not** a git commit, **not** a phase change). It is idempotent (keyed by `(round, source-item)`) and, like the auto-label, is an outward side-effect on the cycle, not a state-machine transition.
 
 ## Failure tiers and `state.last_error`
 

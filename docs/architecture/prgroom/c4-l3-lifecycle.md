@@ -4,7 +4,7 @@
 > **Previous (reading order)**: [State Machine](state-machine.md)
 > **Next (reading order)**: [Data View](data-view.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 3 (lifecycle) + Section 4 (quiescence) + Section 5 (agent dispatch)
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 3 (lifecycle) + Section 4 (quiescence) + Section 5 (agent dispatch) + Section 8 (PR memory: snapshot + routing)
 > **Container**: `src/prgroom/lifecycle/` inside the prgroom package (see [`c4-l2-container.md`](c4-l2-container.md))
 
 ## Glossary
@@ -40,10 +40,10 @@ C4Component
             Component(run, "_run", "Python function", "Aggregator. Acquires lock once via the run() wrapper; chains _-prefixed verbs per cycle; calls resolve_end_of_cycle_phase + cross-cutting hooks; loops until phase is terminal-for-CLI.")
             Component(poll, "_poll", "Python function", "Queries gh for comments/reviews/CI/head-SHA; appends new items to state; flips reviewer status on observed engagement; calls evaluate_reviewer_timeouts; updates quiescence.ci_state + last_activity_at.")
             Component(cluster, "_cluster", "Python function", "Dispatches the cluster contract to bundle unprocessed items into fix-clusters. Sets cluster_id on items. Idempotent on already-clustered items.")
-            Component(fix, "_fix", "Python function", "Per cluster: dispatches the fix contract; receives per-item disposition + commit SHAs; runs §5 contract-audit (commit-orphan check, schema validation, commit-shas-on-branch check); flips affected items to disposition.kind=failed on audit failure.")
+            Component(fix, "_fix", "Python function", "Per cluster: assembles the complete-PR snapshot (PR body incl. Decisions block, labels, all threads w/ full reply-chains, prior-round dispositions + computed per-item recurrence; §8.1) immediately before dispatch; dispatches the fix contract; receives per-item disposition + commit SHAs + optional classified memory channel (§8.3); runs §5 contract-audit (orphan check, schema, shas-on-branch, memory classification + memory_dir containment §8.6); flips affected items to disposition.kind=failed on audit failure.")
             Component(push, "_push", "Python function", "git push queued commits to PR branch. round++ on successful push. Emits cap-warning stderr when push would reach max_rounds. Pre-push cap guard at §3.5.")
             Component(rereview, "_rereview", "Python function", "Remove + re-add required bot reviewers (the gh quirk dance). Idempotent. Invoked by _run immediately after a successful _push.")
-            Component(reply, "_reply", "Python function", "Renders templates + agent-authored responses; posts via gh REST. Marks replied=True per item. Idempotent.")
+            Component(reply, "_reply", "Python function", "Renders templates + agent-authored responses; posts via gh REST. Also routes the fix output's CONTEXTUAL memory (§8.3): thread-tied entries as thread replies, thread-less PR-wide decisions PATCHed into the sentinel-bounded Decisions block in the PR body (gh API edit, NOT a git commit). Marks replied=True per item. Idempotent — Decisions block keyed by (round, source-item), no persisted dedup flag.")
             Component(resolve, "_resolve", "Python function", "GraphQL resolveReviewThread for items with disposition.kind ∈ {fixed, already_addressed} AND resolved == False. Marks resolved=True.")
             Component(wait, "_wait", "Python function", "§4.2 blocking loop. Five wake events: signal-cancel, poll-error, phase-moved, quiescence-trips, (no hard wait-timeout in MVP). The cancel-token threading.Event is honored at loop top AND inside the interruptible sleep (Event.wait(timeout=...)).")
 
@@ -104,8 +104,9 @@ C4Component
     Rel(poll, gh_adapter, "list comments / reviews / CI / head SHA")
     Rel(push, git_adapter, "git push fix commits")
     Rel(fix, git_adapter, "commit-reachability audit (orphan + shas-on-branch)")
+    Rel(fix, gh_adapter, "assemble complete-PR snapshot pre-dispatch (§8.1)")
     Rel(rereview, gh_adapter, "remove + re-add reviewer")
-    Rel(reply, gh_adapter, "POST replies")
+    Rel(reply, gh_adapter, "POST replies + PATCH Decisions block in PR body (§8.3)")
     Rel(resolve, gh_adapter, "GraphQL resolveReviewThread")
     Rel(humanreq_hook, gh_adapter, "POST label human-review-required")
 
@@ -113,7 +114,7 @@ C4Component
 
     Rel(poll, store_iface, "read / write")
     Rel(cluster, store_iface, "write — cluster_id assignment")
-    Rel(fix, store_iface, "write — per-item disposition")
+    Rel(fix, store_iface, "read prior dispositions for snapshot (§8.1); write per-item disposition")
     Rel(push, store_iface, "write — last_pushed_head_sha, round++")
     Rel(reply, store_iface, "write — replied=True")
     Rel(resolve, store_iface, "write — resolved=True")
@@ -215,6 +216,13 @@ Each `_`-prefixed verb:
 3. Classifies its failures per §3.6 into one of the seven tiers and raises a tier-tagged error.
 
 The dependencies between them are linear (the order in `_run`'s loop) — there is no fan-out, no parallel verb dispatch in MVP. **Cluster + fix do fan out across clusters within a single verb invocation** (each cluster is one cluster contract or fix contract subprocess), but the per-verb loops over clusters serialise.
+
+### PR-memory: snapshot assembly + Decisions routing (§8)
+
+Two §8 PR-memory responsibilities attach to existing verbs — no new verb, no schema change (the PR is the durable store; §8.0):
+
+- **Snapshot assembly (read path) — inside `_fix`, immediately before dispatch (§8.1).** `_fix` builds the complete-PR snapshot the fix contract reads via `pr_detail_path`: PR body (including the prgroom-maintained `## Decisions` block), labels, every review thread with its full reply-chain, and prior-round dispositions sourced from `prsession`. It also computes the per-item **`recurrence`** signal (§8.2) — derived from disposition history at assembly time, never stored. Capture is deferred to just-before-dispatch (not top-of-cycle `_poll`) to minimise the staleness window. The fix agent never calls `gh`.
+- **CONTEXTUAL→PR routing (write path) — inside `_reply`, at reply time (§8.3).** The fix output's classified `memory` channel is routed by prgroom (the agent only *declares*): a CONTEXTUAL entry with a `target_hint` rides out as a **thread reply** on that thread; a thread-less CONTEXTUAL entry is merged into the **`## Decisions` block** in the PR body via a `gh` **PATCH of the description** — an API edit, **not** a git commit and **not** a phase change. prgroom owns the block between sentinel markers and rewrites it wholesale, so it is **idempotent without a persisted dedup flag**: entries are keyed by `(round, source-item)`, and a crash-and-re-run of the same round never double-appends (contrast the auto-label, which *does* carry the `human_review_label_added` flag). Non-CONTEXTUAL classes are accepted-but-deferred (logged, not routed).
 
 ### Cross-cutting components
 

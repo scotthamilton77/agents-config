@@ -89,7 +89,7 @@ Concurrency: `flock(2)` on the file for the verb's duration (the `run` verb hold
 Forked per agent dispatch. Two contracts share the subprocess mechanism:
 
 - **Cluster contract** (`cluster` verb) — cheap. Local-first provider chain: ollama+Gemma, falling back to claude haiku, falling back to codex-mini. Bundles unprocessed review items into fix-clusters; no per-item disposition decided here.
-- **Fix contract** (`fix` verb) — strong. `opus[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`.
+- **Fix contract** (`fix` verb) — strong. `opus[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`. Its input is a complete-PR snapshot (description incl. the `## Decisions` block, labels, every thread with full reply-chains, prior-round dispositions, per-item `recurrence`) that prgroom assembles immediately before dispatch (§8.1); its output adds a classified `memory` channel that prgroom routes to the PR (§8.3). The agent never calls `gh`.
 
 Each invocation is a **fresh context** — no conversation memory between calls. Per-call token-usage is logged to JSONL (`src/prgroom/agent` emits this) for later baseline analysis; MVP does no aggregation.
 

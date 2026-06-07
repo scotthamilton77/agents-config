@@ -4,7 +4,7 @@
 > **Previous (reading order)**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md)
 > **Next (reading order)**: [C4 Deployment](c4-deployment.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (state schema) + Section 4.6 (status output) + Section 5 (EscalationSink)
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (state schema) + Section 4.6 (status output) + Section 5 (EscalationSink) + Section 8 (PR-memory channel + recurrence)
 
 ## Glossary
 
@@ -295,6 +295,43 @@ If `EscalationSink.emit(...)` raises (stderr write failure, bd-adapter API blip)
 
 Sinks MUST be dedup-aware on the receiving end — bd-adapter uses label-only emit or content-hash dedup on notes; stderr accepts duplicates as extra log lines.
 
+## Boundary JSON contract #3 — Fix-contract memory & recurrence (§8)
+
+Two §8 PR-memory shapes cross the prgroom ↔ fix-agent boundary. **Neither is persisted** — `recurrence` is *computed* at snapshot-assembly from disposition history (§8.2); `memory` is *routed to the PR* then discarded (the PR is the durable store, §8.0). The §2 persistent-state ER above is therefore **unchanged** by §8. Routing mechanics live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (write path) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (contract + audit); this section fixes only the shapes.
+
+### Snapshot input — per-item `recurrence` (prgroom → fix agent)
+
+prgroom computes a deterministic `recurrence` for every item carrying a prior disposition and includes it in the complete-PR snapshot fed to the fix agent (§8.1). prgroom **detects**; the fix agent **interprets**.
+
+```python
+
+# computed at snapshot-assembly from disposition history; NOT a stored field
+@dataclass(frozen=True, slots=True)
+class Recurrence:
+    reopened: bool            # prior disposition exists AND a new reviewer reply arrived on the same thread
+    attempt_count: int        # times this item has been dispositioned (1 = first pass)
+    prior_disposition: str    # most recent prior DispositionKind value
+    prior_commits: list[str]  # SHAs from the most recent prior disposition; omitted from JSON when empty
+    first_seen_round: int     # round the item was first observed
+```
+
+### Fix output — classified `memory` channel (fix agent → prgroom)
+
+The fix output gains an optional `memory` channel (§5, §8.3). The agent *declares* memory; prgroom is the sole actuator of every PR write. MVP routes **`CONTEXTUAL` only, to the PR**; other classes are accepted-but-deferred (logged, not routed).
+
+```json
+"memory": [
+  { "content": "<inline markdown>", "classification": "CONTEXTUAL" },
+  { "path": "<file in memory_dir>", "classification": "CONTEXTUAL", "target_hint": "<thread node-id>" }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `content` \| `path` | **Exactly one** per entry. `content` = inline markdown; `path` = a file in `memory_dir`. The carrier does **not** decide routing — `target_hint` does (next row). |
+| `classification` | One of `UNIVERSAL \| PROJECT \| PLANNED \| HISTORICAL \| CONTEXTUAL`. MVP routes `CONTEXTUAL`; the rest accepted-but-deferred. |
+| `target_hint` | Optional GraphQL thread node-id (the CONTEXTUAL thread-reply target). Absent ⇒ routes to the `## Decisions` block. |
+
 ## Auxiliary persistent data
 
 Two append-only artifacts live alongside the per-PR state files:
@@ -319,4 +356,4 @@ Neither file is part of `prsession.Store` — they are output streams owned by `
 - **Previous**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md) — the components that read / write this data
 - **Next (reading order)**: [C4 Deployment](c4-deployment.md) — where this data physically lives on disk
 - **Related stubs**: [`c4-l3-prsession.md`](c4-l3-prsession.md) (state store adapters), [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (token-usage emitter)
-- **Source spec**: [Section 2 — `prsession.Store` interface + state schema](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4.6 Auto-merge eligibility contract](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md) (EscalationSink section)
+- **Source spec**: [Section 2 — `prsession.Store` interface + state schema](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4.6 Auto-merge eligibility contract](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md) (EscalationSink section), [Section 8 — PR memory management](../../plans/2026-05-12-prgroom-cli-design.md)

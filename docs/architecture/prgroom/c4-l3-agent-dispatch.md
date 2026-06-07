@@ -2,7 +2,7 @@
 
 > **Up**: [index](index.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 5 (Agent dispatch internals)
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 5 (Agent dispatch internals) + Section 8 (PR-memory channel)
 > **Container**: `src/prgroom/agent/` inside the prgroom package (see [`c4-l2-container.md`](c4-l2-container.md))
 > **Status**: **STUB** — placeholder pending the `src/prgroom/agent` implementation bead.
 
@@ -25,15 +25,21 @@ The diagram should cover these named units inside `src/prgroom/agent/`:
 
 ### Fix contract
 
-- **`FixContract` Protocol** — the `fix(cluster: Cluster) -> FixResult` surface that `src/prgroom/lifecycle._fix` consumes.
+- **`FixContract` Protocol** — the `fix(cluster: Cluster) -> FixResult` surface that `src/prgroom/lifecycle._fix` consumes. Input carries the complete-PR snapshot (`pr_detail_path`, including the `## Decisions` block) plus a per-item `recurrence` object for items with a prior disposition (§8.1–8.2); the agent never calls `gh`.
 - **`opus[1m]` orchestrator dispatcher** — primary provider; runs in the operator's worktree; agent does its own `git commit`.
 - **Fix output validator** — Fix contract invariants per §5: schema-conformant JSON; every claimed `commit_shas[i]` is reachable on the branch; no orphan commits (every commit on the branch is claimed by exactly one item). Violations trip `CONTRACT_FIX_MALFORMED` / `CONTRACT_FIX_ORPHAN_COMMIT` / `CONTRACT_FIX_UNREACHABLE_SHA` (§3.7) and flip the affected items to `disposition.kind = failed`.
 - **Disposition+evidence audit** — Fix contract post-condition rules (`CONTRACT_FIX_AUDIT_FAILED` trip).
+- **`memory`-channel validator (§8.6)** — the fix output carries an optional classified `memory[]` channel (§8.3 / §8.5): each entry sets exactly one of `content` / `path`, a five-class `classification`, and an optional `target_hint`. Enforces: `classification ∈ {UNIVERSAL, PROJECT, PLANNED, HISTORICAL, CONTEXTUAL}` (unknown → `CONTRACT_AUDIT_FAILED` for that item); a CONTEXTUAL `target_hint` must reference a real thread in the snapshot; non-CONTEXTUAL entries are accepted-but-deferred (logged, not errors). The agent **declares** memory; `src/prgroom/lifecycle` **actuates** the PR write — see [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md).
+- **`memory_dir` containment audit (§8.6)** — every `memory_writes` path must resolve inside `memory_dir` (ephemeral within-run scratch, NOT cross-round memory). An escaping path (absolute or `..` traversal) is a security-relevant hard violation: the offending cluster's items flip to `disposition.kind = failed` and an `EscalationSink` event fires. A declared-but-unwritten path is a soft stderr warning, not a failure.
 - **EscalationSink wiring** — the fix contract handles `escalated` disposition by writing a per-item escalation record; the cross-cutting `escalate_if_needed` hook in `src/prgroom/lifecycle` then surfaces it via the `EscalationSink`.
 
 ### Planned — RCA / issue-analysis pass (post-MVP, under design)
 
 A future enhancement, **not** in the parity MVP and **not yet ratified**: an RCA / issue-analysis step that *accompanies the cluster pass* to assess each reported review item's true **scope, impact, and nature** before fix dispatch — feeding richer context into the fix contract, and potentially gating which clusters are worth a fix attempt at all. Candidate shapes (to be settled in a dedicated brainstorm): extend the cluster contract's output schema with per-cluster RCA metadata, or insert a dedicated analysis contract between `_cluster` and `_fix`. Drawn here only as forward context; the design is tracked separately and must be brainstormed before this L3 is drawn.
+
+### PR-memory routing (§8)
+
+Actuation of the `memory` channel is deliberately **not** an agent-dispatch concern: the agent only *declares* memory; `src/prgroom/lifecycle` performs the two CONTEXTUAL routes (thread reply via `_reply`; thread-less PR-wide decision → `## Decisions` PR-body PATCH via the gh adapter, **not** a git commit). See [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md). The per-item `recurrence` input (above) is also the primary signal the **Planned RCA pass** (above) will consume if/when it lands.
 
 ### Cross-cutting components
 
