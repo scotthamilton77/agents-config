@@ -39,7 +39,7 @@ from pathlib import Path
 
 import pytest
 
-from installer.core.merge.base import CollisionError, MergeStrategy
+from installer.core.merge.base import CollisionError
 from installer.core.merge.strategies.json_union import JsonUnionStrategy
 from installer.core.model import FileKind, Provenance, StagedItem
 
@@ -75,15 +75,6 @@ def _merge(existing_obj: object, incoming_obj: object) -> object:
     merged = JsonUnionStrategy().merge(_item(existing_obj), _item(incoming_obj))
     assert merged.content is not None
     return json.loads(merged.content)
-
-
-# --- protocol conformance -------------------------------------------------
-
-
-def test_strategy_satisfies_merge_strategy_protocol() -> None:
-    """JsonUnionStrategy structurally honours the MergeStrategy contract."""
-    strategy: MergeStrategy = JsonUnionStrategy()
-    assert isinstance(strategy, MergeStrategy)
 
 
 # --- key presence rules ---------------------------------------------------
@@ -180,6 +171,15 @@ def test_array_union_handles_int_too_large_for_float() -> None:
     loses the value — the exact integer survives in the merged output."""
     huge = 10**400
     assert _merge({"x": [huge]}, {"x": [1]}) == {"x": [1, huge]}
+
+
+def test_array_union_handles_negative_int_too_large_for_float() -> None:
+    """The negative mirror of the overflow guard: a hugely negative integer
+    overflows ``float()`` too; the jq sort key falls back to -inf, so it sorts
+    BELOW every finite number while the exact integer survives — order
+    ``[huge_neg, 1]`` distinguishes the -inf branch from the +inf one."""
+    huge_neg = -(10**400)
+    assert _merge({"x": [huge_neg]}, {"x": [1]}) == {"x": [huge_neg, 1]}
 
 
 def test_array_union_jq_total_order_across_types() -> None:
@@ -404,3 +404,18 @@ def test_malformed_json_raises_collision_error() -> None:
 
     with pytest.raises(CollisionError):
         JsonUnionStrategy().merge(existing, incoming)
+
+
+def test_incoming_side_unparseable_raises_same_collision_error() -> None:
+    """The merge parses BOTH sides; a malformed INCOMING (existing good) is
+    equally irreconcilable and raises the SAME CollisionError — with the paths
+    still in canonical (existing, incoming) order, NOT swapped because the bad
+    side happens to be incoming."""
+    existing = _item({"a": 1}, source="/src/a/settings.json")
+    incoming = _item(None, raw=b"}{ broken", source="/src/b/settings.json")
+
+    with pytest.raises(CollisionError) as excinfo:
+        JsonUnionStrategy().merge(existing, incoming)
+
+    assert excinfo.value.existing == Path("/src/a/settings.json")
+    assert excinfo.value.incoming == Path("/src/b/settings.json")

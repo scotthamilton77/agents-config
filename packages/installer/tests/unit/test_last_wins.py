@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 
-from installer.core.merge.base import MergeStrategy
 from installer.core.merge.strategies.last_wins_silent import LastWinsSilentStrategy
 from installer.core.merge.strategies.last_wins_warn import LastWinsWarnStrategy
 from installer.core.model import FileKind, Provenance, StagedItem
@@ -83,10 +82,18 @@ def test_warn_strategy_warning_emitted_for_toml_kind() -> None:
     assert str(incoming.source_path) in message
 
 
-def test_warn_strategy_satisfies_merge_strategy_protocol() -> None:
-    """The warn strategy structurally satisfies the ``MergeStrategy`` protocol."""
-    strategy: MergeStrategy = LastWinsWarnStrategy()
-    assert isinstance(strategy, MergeStrategy)
+def test_warn_strategy_warning_names_destination() -> None:
+    """The warning names the destination relpath so an operator can see WHERE
+    the overwrite landed. Pinned with a dest that appears in NEITHER source
+    path, so only the dest_relpath interpolation can satisfy the assertion."""
+    existing = _item("/src/a/x.jsonc", FileKind.JSONC, dest="nested/here.jsonc")
+    incoming = _item("/src/b/x.jsonc", FileKind.JSONC, dest="nested/here.jsonc")
+
+    with pytest.warns(UserWarning) as record:
+        LastWinsWarnStrategy().merge(existing, incoming)
+
+    message = str(record[0].message)
+    assert str(incoming.dest_relpath) in message
 
 
 # --- LastWinsSilentStrategy --------------------------------------------------
@@ -113,9 +120,3 @@ def test_silent_strategy_emits_no_warning() -> None:
         result = LastWinsSilentStrategy().merge(existing, incoming)
 
     assert result is incoming
-
-
-def test_silent_strategy_satisfies_merge_strategy_protocol() -> None:
-    """The silent strategy structurally satisfies the ``MergeStrategy`` protocol."""
-    strategy: MergeStrategy = LastWinsSilentStrategy()
-    assert isinstance(strategy, MergeStrategy)

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.merge.base import MergeStrategy
 from installer.core.merge.strategies.append_rules import AppendRulesStrategy
 from installer.core.model import FileKind, Provenance, StagedItem
 
@@ -40,12 +39,6 @@ def _item(
         provenance=provenance or Provenance(kind="tool", name="claude"),
         content=content,
     )
-
-
-def test_strategy_satisfies_merge_strategy_protocol() -> None:
-    """AppendRulesStrategy structurally honours the MergeStrategy contract."""
-    strategy: MergeStrategy = AppendRulesStrategy()
-    assert isinstance(strategy, MergeStrategy)
 
 
 def test_non_empty_bodies_join_existing_then_incoming_with_separator() -> None:

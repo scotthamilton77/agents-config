@@ -12,8 +12,6 @@ Each test pins a coded decision:
   able to locate each side of the conflict).
 - The error carries both paths as structured attributes (callers assert on
   data, not prose) — and they come from the two *inputs*, in the right slots.
-- ``FatalStrategy`` structurally satisfies the ``MergeStrategy`` protocol
-  (the contract is method-shape, not inheritance).
 
 Tests that would only verify Python/stdlib semantics are deliberately absent.
 """
@@ -24,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from installer.core.merge.base import CollisionError, MergeStrategy
+from installer.core.merge.base import CollisionError
 from installer.core.merge.strategies.fatal import FatalStrategy
 from installer.core.model import FileKind, Provenance, StagedItem
 
@@ -99,10 +97,3 @@ def test_merge_raises_for_dir_kind() -> None:
 
     assert exc_info.value.existing == Path("/src/a/skills/x")
     assert exc_info.value.incoming == Path("/src/b/skills/x")
-
-
-def test_fatal_strategy_satisfies_merge_strategy_protocol() -> None:
-    """FatalStrategy structurally satisfies the MergeStrategy protocol — the
-    contract is method-shape, not inheritance."""
-    strategy: MergeStrategy = FatalStrategy()
-    assert isinstance(strategy, MergeStrategy)
