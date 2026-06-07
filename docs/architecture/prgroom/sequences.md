@@ -174,13 +174,13 @@ sequenceDiagram
     Op->>PG: prgroom run PR --autonomous
 
     PG->>State: lock then read — bootstrap
-    PG->>GH: poll → cluster → fix → push (round=2)
+    PG->>PG: cycle round=2 — _poll → _cluster → _fix → _push
     Note over PG: First fix round commits + pushes
     PG->>GH: rereview, reply, resolve
     PG->>GH: _wait — reviewer activity
 
     GH-->>PG: Copilot returns with more FIX comments
-    PG->>GH: poll → cluster → fix → push (round=3)
+    PG->>PG: cycle round=3 — _poll → _cluster → _fix → _push
     Note over PG: Second fix round commits + pushes<br/>_push emits stderr warning:<br/>"this push reaches max_rounds=3 —<br/>subsequent fix work will gate to human-gated"
     PG->>GH: rereview, reply, resolve
     PG->>GH: _wait — reviewer activity
