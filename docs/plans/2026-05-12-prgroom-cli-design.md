@@ -1442,14 +1442,14 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
     "pr": { "owner": "...", "repo": "...", "number": 123 },
     "cluster_id": "c-abc123",
     "item_gh_ids": ["<id>", "<id>"],
-    "items": [ { /* full ReviewItem entries for this cluster */ } ],
-    "pr_detail_path": "<path to file: full gh PR API output (title, body, files, all comments, reviews)>",
+    "items": [ { /* full ReviewItem entries for this cluster; items carrying a prior disposition also carry a `recurrence` object — see §8.2 */ } ],
+    "pr_detail_path": "<path to file: COMPLETE PR snapshot — description (incl. the `## Decisions` block), labels, every review thread with full reply-chains, and prior-round dispositions (kind/rationale/commits/decided_by). See §8.1>",
     "branch_state_path": "<path to file: recent commits + diff-since-base>",
-    "memory_dir": "<path to PR memory directory; agent may read prior rounds and MUST write new memories per the PR-memory skill (see Section 8)>",
+    "memory_dir": "<path to an ephemeral within-run scratchpad for the agent's internal sub-agents; NOT cross-round memory — that lives in the PR + prior dispositions. See §8.4>",
     "response_outbox_dir": "<path to directory the agent writes per-item response text files to>"
   }
   ```
-  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself. (There is deliberately no `root_cause_note` field — it does not apply to PR-grooming.) The `memory_dir` input is a forward-reference to **Section 8 — PR memory management** (a new sub-design).
+  The CLI does the gh-API legwork up-front and dumps everything to files; the agent does NOT re-call gh itself (rationale: runtime swappability, auth containment, rate-limit centralisation, reproducibility — see §8.1). (There is deliberately no `root_cause_note` field — it does not apply to PR-grooming.) The complete-snapshot guarantee and the `memory_dir` role are specified in **Section 8 — PR memory management**.
 - **Output (JSON):**
   ```json
   {
@@ -1464,7 +1464,18 @@ Each contract is a **stable, versioned interface** between the CLI and the agent
         "recommended_gate": "full" | "lite"       // required for fixed
       }
     ],
-    "memory_writes": ["<path>", "..."]            // optional; files the agent created in memory_dir (audited)
+    "memory_writes": ["<path>", "..."],           // optional; files the agent created in memory_dir — ephemeral scratch, containment-audited (§8.4, §8.6)
+    "memory": [                                   // optional; classified memory the CLI routes (§8.3). MVP routes CONTEXTUAL→PR only; other classes accepted-but-deferred. Each entry sets EXACTLY ONE of `content` | `path`; `classification` ∈ {UNIVERSAL, PROJECT, PLANNED, HISTORICAL, CONTEXTUAL}
+      {                                           // inline form — thread-less PR-wide decision → `## Decisions` PR-body block
+        "content": "<inline markdown>",
+        "classification": "CONTEXTUAL"
+      },
+      {                                           // file form — note tied to a specific thread
+        "path": "<file in memory_dir>",
+        "classification": "CONTEXTUAL",
+        "target_hint": "<thread node-id>"         // optional; the CONTEXTUAL thread-reply target
+      }
+    ]
   }
   ```
 - **Side effects allowed:** the agent may make **multiple commits** per item. Multiple-commit support is needed when the agent does an impl → review → fix cycle internally within the cluster work. The audit enforces that every claimed SHA is reachable AND that no orphan commits exist (every new commit on the branch is claimed by some item's `commit_shas`).
@@ -1722,21 +1733,121 @@ Per the design's stated motivation ("the more we push into this modular monolith
 - **Exhaustiveness, recovered without a compiler.** Python has no compile-time exhaustiveness check over a `StrEnum`. Where a verb dispatches on `PRPhase`, `DispositionKind`, or `ReviewerStatus`, we `match` on the enum with an explicit `case _:` arm that raises (`AssertionError`/`ValueError`), and we back it with `mypy --strict` plus a unit test that enumerates every member of the enum. The triple — closed `match`, type-checker, member-enumeration test — recovers the safety the compiler would have given, and a newly added enum member that no arm handles fails that test loudly rather than silently falling through.
 - **Error-path coverage is explicit, not incidental.** The error model is exception-based, so the tests assert on raises: `read()` raising `StateNotFoundError` when no state exists; the CLI catching `PreconditionError` and formatting the 4-line stderr block with the right registry code; the `lock()` context manager releasing in its `finally` even when the wrapped verb raises (no leaked lock — there is no manual release to forget). Terminal-no-work is asserted as a normal exit-0 return, *not* as an exception, so the success-with-nothing-to-do path is pinned distinctly from the failure paths.
 
-## Section 8 — PR memory management (new sub-design)
+## Section 8 — PR memory management
 
-Across re-review rounds the `fix` agent needs to remember decisions from earlier passes: "we already declined this with rationale X", "we agreed on Y pattern earlier", "the cluster of foo-related comments was deferred to a follow-up bead Z." Without persistent memory, the agent re-litigates closed disagreements and may regress prior decisions.
+Across re-review rounds the `fix` agent runs with fresh context each time (each dispatch is a new subprocess; see §5). It needs to remember decisions from earlier passes — "we already declined this with rationale X", "we adopted pattern Y PR-wide", "this cluster was deferred to follow-up bead Z" — or it re-litigates closed disagreements and regresses prior decisions.
 
-**Not yet designed; called out so it isn't lost.** Open questions for the dedicated sub-design:
+### 8.0 Premise — the PR *is* the memory
 
-- **Storage location.** **Both**: a per-PR directory (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>/memory/`) is the always-present file-backed home (agent-side this is `memory_dir` in the fix contract); when bd is available it ALSO mirrors decisions into bd beads of type `decision` or `memory`, so beads remain a source of truth that survives outside the file-backed store. The file directory keeps the agent bd-agnostic; the bead mirror keeps the system memory durable and queryable.
-- **Memory shape.** Free-form markdown files. No schema enforced; the agent picks file names and structure that fit the round's content. Bead-mirrored entries carry the same markdown as their description/notes field.
-- **Read API.** Agent receives `memory_dir` path in its fix contract input. Reads what it wants.
-- **Write API.** Agent declares `memory_writes` in output. CLI audits that all writes landed inside `memory_dir`; mirroring to beads (when enabled) happens CLI-side after audit passes.
-- **Compaction / pruning.** Defer. Memory is PR-scoped so unbounded growth is not expected to be a problem in the normal case. Revisit only if it becomes one.
-- **Cross-PR memory.** Future enhancement; out of MVP scope. The bead mirror is a natural integration point if/when we want it.
-- **Skill ownership.** A new `pr-memory-management` skill that the `fix` agent invokes? Or simply documented prompt template guidance? Decision deferred; both are workable.
+The PR itself is the durable, portable contextual memory: its **description**, **labels**, and **comment/review threads**. Any agent, in any harness, at any time can read a PR — so memory written *to the PR* is universally accessible, while anything kept only in prgroom's private state is invisible to everyone outside this toolset.
 
-This sub-design is deferred to a separate spec but **MVP must carve out the skeleton hooks** (memory_dir input, memory_writes output) so we don't rework the fix contract again later.
+This yields the load-bearing split:
+
+- **Portability lives on the *write* side.** Memory worth carrying forward is routed *to the PR*, not into a private store. prgroom's `prsession` state (§2) is a faithful **read-replica** of the PR plus prgroom's own bookkeeping — not a competing source of truth.
+- **The *read* mechanism is an internal optimization.** The fix agent reads a prgroom-provided snapshot (§8.1), not live `gh`. The snapshot is a copy of the same public PR; it does not fork the memory.
+
+Memory classification follows the project's five-class taxonomy — UNIVERSAL / PROJECT / PLANNED / HISTORICAL / CONTEXTUAL. **PR-grooming memory is almost always CONTEXTUAL** (relevant to work in flight). The general taxonomy, its routing rule, and the four non-CONTEXTUAL homes are a separate, repo-wide concern owned by `agents-config-abn9.23.4`; this section designs only the CONTEXTUAL→PR slice and the forward-compatible seam to the rest.
+
+### 8.1 Read path — prior memory reaches the fix agent
+
+Before each `fix` dispatch, prgroom assembles a **complete PR snapshot** and writes it to the files the fix contract already passes (`pr_detail_path`, `branch_state_path`; see §5). The snapshot is guaranteed to contain:
+
+- PR **description** (including the `## Decisions` block prgroom maintains — §8.3)
+- PR **labels**
+- **Every** review thread with its **full reply-chain** (not just the latest comment)
+- **Prior-round dispositions** for every already-processed item — `disposition.kind`, `rationale`, `commits`, `decided_by` — sourced from `prsession` state (§2), which already persists them across rounds (§3.2 rule 6)
+- The per-item **`recurrence`** signal (§8.2)
+
+**Capture timing:** the snapshot is taken **immediately before fix dispatch**, not at top-of-cycle `poll`, to minimise the staleness window to roughly the fix duration.
+
+**The fix agent does not call `gh`.** This is a locked §5 premise, and the reasons are load-bearing, not incidental:
+
+1. **Runtime swappability** — the contract must run on `claude -p`, `codex exec`, `opencode run`, or a local `ollama` model. Requiring live `gh` would force every runtime to carry `gh` + auth + network.
+2. **Auth blast radius** — the agent subprocess never holds GitHub credentials.
+3. **Centralised rate-limiting** — one actuator (prgroom) means one place to back off; N agents calling `gh` freely is how a `sweep` gets throttled.
+4. **Reproducibility** — "fix = pure function of input files → output JSON" is what makes a fix replayable and testable.
+
+A change to the PR *during* a long fix run is caught by the next cycle's `poll`; the lifecycle is convergent (§3), so it self-heals without live reads. A future prgroom-mediated mid-run refresh is possible but explicitly out of MVP scope.
+
+### 8.2 Recurrence signal — deterministic, prgroom-owned
+
+"The prior fix was inadequate" has three forms, separable by *who can detect them*. Only the first is deterministic, and prgroom owns it:
+
+| Case | Detection | Owner |
+|---|---|---|
+| Same thread reopened ("you said fixed, reviewer says still broken") | Deterministic — prgroom holds disposition history + thread state | **prgroom** computes, fix agent interprets |
+| Fix too narrow ("the pattern recurs in other files") | Judgment, proactive | RCA pass (`agents-config-p53nm`) |
+| Fix caused new problems ("your commit broke Y") | Judgment, reactive, causal | fix agent / RCA |
+
+prgroom **computes** a deterministic **`recurrence`** value for each item carrying a prior disposition and includes it in the snapshot fed to the fix agent (§8.1). It is **derived from `prsession` disposition history at snapshot-assembly time — not a persisted state field** (derived data is not stored, so §2's `ReviewItem`/`Disposition` schema is unchanged):
+
+```python
+@dataclass(frozen=True, slots=True)
+class Recurrence:
+    reopened: bool                  # a prior disposition exists AND a new reviewer reply arrived on the same thread
+    attempt_count: int              # how many times this item has been dispositioned (1 = first pass)
+    prior_disposition: str          # the most recent prior DispositionKind value
+    prior_commits: list[str]        # SHAs from the most recent prior disposition  # omitted from JSON when empty
+    first_seen_round: int           # round the item was first observed
+```
+
+prgroom **detects; it does not interpret.** The fix agent reads `recurrence` and decides how to respond — widen the sweep, rethink the approach, reaffirm the prior decision, or escalate. That interpretation is the producer's judgment (**MVP Option A**: the fix agent self-interprets; the RCA pass `agents-config-p53nm` is an *optional* enrichment, not a load-bearing dependency). `recurrence` is the primary new input that pass will consume if/when it lands.
+
+### 8.3 Write path — new memory routes to the PR
+
+**The fix agent never writes the PR.** Consistent with §5's produce/publish split, the agent *declares* memory in its contract output; **prgroom is the sole actuator** of every outward-facing write (push, reply, resolve, label, and now PR-body edits). This preserves prgroom's crash-safety guarantee (every outward effect is gated by state it controls; recovery = re-invoke) and keeps formatting deterministic regardless of which runtime produced the words.
+
+The fix contract output gains a classified **`memory`** channel (§5), each entry tagged with one taxonomy class. **MVP routes only `CONTEXTUAL`, and only to the PR**, two ways:
+
+1. **Thread reply** — a CONTEXTUAL note tied to a specific review thread rides out on that thread via the existing `reply` verb. No new mechanism.
+2. **`## Decisions` block in the PR body** — a CONTEXTUAL note *not* tied to a single thread (a PR-wide decision) is recorded in a prgroom-maintained `## Decisions` section, written by a `gh` **PATCH of the PR description** (an API edit, **not** a git commit). This runs at the same point as the `reply` verb.
+
+**`## Decisions` block format and idempotency.** prgroom owns the block between sentinel markers and rewrites it wholesale each time (read-modify-write the PR body), so re-runs never duplicate entries — the sentinels make the operation naturally idempotent without a state flag:
+
+```markdown
+<!-- prgroom:decisions:start -->
+## Decisions
+- **[r1] Result<T> error pattern** — adopted PR-wide for handlers (item #c1). _decided_by: claude -p opus[1m]_
+- **[r1] Declined rename AuthMiddleware→AuthHandler** — "Middleware" suffix denotes pipeline composition (item #a). _decided_by: claude -p opus[1m]_
+<!-- prgroom:decisions:end -->
+```
+
+Each entry carries the round it was decided, a title, a one-line rationale, the deciding agent, and the source item, and is **keyed by `(round, source-item)`**; merging skips a key that already exists, so a crash-and-re-run of the same round never double-appends. Entries accumulate across rounds within the block; prgroom never deletes a prior decision (the block is the cross-round decision ledger any future reader — ours or foreign — sees in the snapshot at §8.1).
+
+**Non-CONTEXTUAL classes are accepted-but-deferred.** UNIVERSAL / PROJECT / PLANNED / HISTORICAL entries pass schema validation (§8.6) and are logged as deferred; routing them to their homes (`~/.claude/memories/`, `AGENTS.md`, the work adapter, `docs/adr/`) is `agents-config-abn9.23.4`'s job, on this same channel. MVP does not route them.
+
+### 8.4 `memory_dir` — ephemeral within-run scratch
+
+`memory_dir` is retained from the carved-out skeleton hook, but its role is now narrow: an **ephemeral scratchpad for the fix orchestrator's own internal sub-agents** within a single run (e.g. notes an internal `quality-reviewer` leaves for an internal `simplify`). It is **not** cross-round memory — cross-round memory is the PR + dispositions (§8.1). `memory_writes` (paths the agent wrote in `memory_dir`) is retained solely for containment auditing (§8.6).
+
+### 8.5 Contract deltas (owned by §5)
+
+- **Fix input** (§5): complete-snapshot guarantee (§8.1); per-item `recurrence` (§8.2); `memory_dir` (scratch only).
+- **Fix output** (§5): keep `memory_writes` (scratch paths); **add** the classified `memory` channel — `[{ "content" | "path", "classification", "target_hint" }]`, where `target_hint` is an optional thread node-id for CONTEXTUAL thread-replies.
+
+### 8.6 Audit semantics
+
+- **`memory_dir` containment** — every `memory_writes` path must resolve inside `memory_dir`. A path that escapes (absolute, or `..` traversal) is a **hard violation**: the offending cluster's items flip to `disposition.kind = failed` with `rationale = "memory containment violation: <path>"`, an `EscalationSink` event is emitted, and the end-of-cycle resolver promotes to `human-gated` (§3.2 priority 2). This is security-relevant — the agent writing outside its sandbox — so it is never soft-failed.
+- **Classification enum** — each `memory` entry's `classification` must be one of the five classes; an unknown value is a `CONTRACT_AUDIT_FAILED` for that item.
+- **CONTEXTUAL routability** — a CONTEXTUAL entry with a `target_hint` must reference a real thread in the snapshot; a thread-less CONTEXTUAL entry routes to the `## Decisions` block.
+- **Non-CONTEXTUAL** — accepted, logged as deferred, **not** an error (forward-compat with `agents-config-abn9.23.4`).
+- **Declared-but-missing path** — a `memory_writes` path the agent declared but never wrote is a soft warning (stderr), not a cluster failure: the fix work already happened; this is bookkeeping drift, not a breach.
+
+### 8.7 Worked example — a 3-round PR
+
+**Round 1.** Copilot files three items. The fix agent disposes: item *a* (rename `AuthMiddleware`) → `wont_fix` ("suffix denotes pipeline semantics"); item *b* (missing null check) → `fixed` (commit `b1`); item *c* (ad-hoc error handling) → `fixed` (commit `c1`, adopting a `Result<T>` pattern). It declares two CONTEXTUAL `memory` entries: the `Result<T>` adoption and the rename rationale — both thread-less PR-wide decisions. prgroom posts thread replies, PATCHes the `## Decisions` block with both `[r1]` entries, and pushes `b1`,`c1`.
+
+**Round 2.** Copilot reopens thread *a* ("still think the rename is clearer") and files new item *d* (another handler with ad-hoc error handling). prgroom computes `recurrence` for *a*: `{reopened: true, attempt_count: 2, prior_disposition: "wont_fix", first_seen_round: 1}`. The snapshot to the fix agent now includes the `## Decisions` block, thread *a*'s full chain, and the recurrence flag. The agent: reaffirms *a* → `wont_fix`, citing the recorded rationale **without re-litigating**; disposes *d* → `fixed` (commit `d1`), applying the **same `Result<T>` pattern from the Decisions block** so the fix is consistent with round 1. prgroom appends nothing new to Decisions (no new PR-wide decision), replies, resolves, pushes `d1`.
+
+**Round 3.** Copilot files item *e* questioning the `Result<T>` choice ("why not exceptions here?"). The snapshot carries the `## Decisions` block, so the agent sees the round-1 PR-wide decision. It disposes *e* → `wont_fix`, pointing to the established decision — or, if it judges the reviewer has a genuinely new point, `escalated`. Either way the round-1 memory **prevented a silent regression and a re-litigation**: the decision survived two fresh-context agent dispatches because it lived in the PR, not in the agent's vanished context.
+
+### 8.8 Out of scope / explicitly dropped
+
+- **5-class routing for non-CONTEXTUAL memory** → `agents-config-abn9.23.4` (same `memory` channel, extended router).
+- **RCA interpretation of `recurrence`, and any forced post-round-1 analysis** → `agents-config-p53nm`.
+- **Resumable agent session capture / retrospection harvest** → `agents-config-9xj1f` (reserve `{runtime, session_id}` in the §5 dispatch/audit record when §5 is implemented).
+- **Dropped, do not build:** a `_memory_route` verb, file frontmatter parsing, ADR-writing from prgroom, and any mechanical "route memories" git commit. These solved the general-routing problem, which is `abn9.23.4`'s, not prgroom's.
+- **Compaction / pruning** of the `## Decisions` block and **cross-PR memory** remain deferred; revisit only if block growth becomes a real problem.
 
 ---
 
