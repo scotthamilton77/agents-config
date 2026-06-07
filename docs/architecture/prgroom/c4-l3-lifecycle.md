@@ -167,19 +167,22 @@ def _run(pr, mode) -> PRGroomingState:     # caller holds the per-PR lock
                 state = verb(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
-                    return flush(state)        # (flush, then re-raise in real code)
+                    state = flush(state)       # flush the hooks, then
+                    raise                      # propagate — the run() wrapper maps the tier to an exit code
         if push_uploaded_commits_this_cycle(state):
             try:
                 state = _rereview(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
-                    return flush(state)
+                    state = flush(state)
+                    raise
         for verb in (_reply, _resolve):
             try:
                 state = verb(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
-                    return flush(state)
+                    state = flush(state)
+                    raise
 
         # End-of-cycle phase resolution. NO hook calls here — they fire only at the two
         # exit sites above. A human-gated resolution is flushed (label POSTed) by the
@@ -193,7 +196,8 @@ def _run(pr, mode) -> PRGroomingState:     # caller holds the per-PR lock
                 state = _wait(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
-                    return flush(state)
+                    state = flush(state)
+                    raise
 
         # Loop back to terminal check (which flushes the hooks before any clean return)
 ```

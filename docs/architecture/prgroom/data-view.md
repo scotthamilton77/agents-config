@@ -90,7 +90,7 @@ erDiagram
     Disposition {
         DispositionKind kind             "fixed | already_addressed | skipped | deferred | wont_fix | escalated | failed"
         str             rationale        "required for skipped|deferred|wont_fix|failed; user-facing for soft kinds"
-        list_str        commits          "SHAs for fixed + already_addressed"
+        list_str        commits          "list[str]; SHAs for fixed + already_addressed"
         str             response_path    "str | None; path to fix-agent-authored response text"
         str             gate             "full | lite — recommended gate the fix agent thought necessary"
         bool            escalation_filed "escalated only; per-cycle dedup"
@@ -209,7 +209,7 @@ The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingS
 | `items_summary` | aggregation over `state.items` | Counts per `disposition.kind` |
 | `last_activity_at` | `state.last_activity_at` | RFC3339 UTC |
 | `quiesced_at` | `state.quiescence.quiesced_at` | Empty string if not quiesced |
-| `merge_gates.phase_is_quiesced` | `state.phase == quiesced` | Derived per-query |
+| `merge_gates.phase_is_quiesced` | `state.phase == PRPhase.QUIESCED` | Derived per-query |
 | `merge_gates.last_error_clear` | `state.last_error` is `None` (or empty) | Derived per-query |
 | `merge_gates.no_blocker_items` | no item with `disposition.kind ∈ {escalated, failed}` | Derived per-query |
 | `merge_gates.human_review_satisfied` | `NOT human_review.required OR human_review.satisfied_by != null` | Derived per-query |
