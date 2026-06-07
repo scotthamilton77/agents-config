@@ -2,36 +2,36 @@
 
 > **Up**: [index](index.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (`prsession.Store` interface + state schema)
-> **Container**: `internal/prsession/` inside the prgroom binary (see [`c4-l2-container.md`](c4-l2-container.md))
-> **Status**: **STUB** — placeholder pending the `internal/prsession` implementation bead.
+> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (`prsession.Store` Protocol + state schema)
+> **Container**: `src/prgroom/prsession/` inside the prgroom package (see [`c4-l2-container.md`](c4-l2-container.md))
+> **Status**: **STUB** — placeholder pending the `src/prgroom/prsession` implementation bead.
 
 ## Why this is a stub
 
-Section 2 of the source spec is ratified at the interface level (`Store` shape, three adapters, transactional model, schema versioning). The internal component breakdown of `internal/prsession/` is not yet pinned at the same implementation-readiness level as `internal/lifecycle/` because no `[Impl]` child bead has opened against `internal/prsession/` yet.
+Section 2 of the source spec is ratified at the interface level (`Store` shape, three adapters, transactional model, schema versioning). The internal component breakdown of `src/prgroom/prsession/` is not yet pinned at the same implementation-readiness level as `src/prgroom/lifecycle/` because no `[Impl]` child bead has opened against `src/prgroom/prsession/` yet.
 
 This stub establishes the file's home and the components the eventual drawing must cover. When the impl bead opens, this file gets re-drawn at the same fidelity as the lifecycle L3.
 
 ## Expected components (when drawn)
 
-The diagram should cover these named units inside `internal/prsession/`:
+The diagram should cover these named units inside `src/prgroom/prsession/`:
 
-### Interface + dispatch
+### Protocol + dispatch
 
-- **`Store` interface** — the public surface (§2): `Read / Write / Lock / List / Delete`. All five methods carry a `PRRef` parameter; the interface is per-PR keyed.
+- **`Store` Protocol** — the public surface (§2): `read / write / lock / list_refs / delete`. All five methods carry a `PRRef` parameter; the Protocol is per-PR keyed. Concrete adapters **structurally satisfy** the Protocol (no inheritance — `mypy --strict` checks the structural fit, exactly as `pdlc`'s `InMemoryWorkTracker` satisfies `WorkTracker`).
 - **Adapter registry** — the runtime selector that maps `--store file` / `--store bd` / `PRGROOM_STORE` to a concrete adapter constructor. Default = `file`.
 - **`PRGroomingState` type + schema validator** — the canonical schema (§2). Owns `schema_version` constant. Read-path validates the on-disk JSON; `STATE_SCHEMA_UNKNOWN` (exit 78) trips on mismatch.
-- **Atomicity primitive** — `WriteAtomic(path, bytes) error` helper that `mktemp`s a sibling file then `rename(2)`s onto the target path. Used by every adapter that backs to a filesystem.
+- **Atomicity primitive** — a `write_atomic(path, data)` helper that writes to a `tempfile.NamedTemporaryFile` sibling then `os.replace`s onto the target path. Used by every adapter that backs to a filesystem.
 
 ### Adapters
 
-- **`file` adapter** — MVP default.
+- **`file` adapter** (`FileStore`) — MVP default.
   - Path resolver: `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`, fallback `~/.local/state/prgroom/`.
-  - `flock(2)` lock holder. OS-released on process death (§3.7 line 958) — no stale-lock detection code.
-  - Uses `WriteAtomic`.
-- **`memory` adapter** — tests only.
-  - Build-tag-gated (`//go:build test_only`) or test-package-scoped to prevent production import.
-  - In-process `map[PRRef]*PRGroomingState`; `sync.Mutex` per ref for `Lock`.
+  - `fcntl.flock(fd, LOCK_EX)` lock holder. OS-released on process death (§3.7) — no stale-lock detection code.
+  - Uses `write_atomic`.
+- **`memory` adapter** (`InMemoryStore`) — tests only.
+  - **Test-package-scoped** — lives under `tests/`, structurally satisfies the `Store` Protocol, and is never imported by production code (Python has no build tags; visibility is enforced by package layout, not a compile-time gate).
+  - In-process `dict[PRRef, PRGroomingState]`; `threading.Lock` per ref for `lock`.
 - **`bd` adapter** — **v2 (deferred)**.
   - Persists `PRGroomingState` JSON in a linked bead's `notes` field (cap ~65KB; externalise to a path-ref on overflow).
   - Linkage label: `for-pr-<owner>-<repo>-<n>`.
@@ -42,27 +42,27 @@ The diagram should cover these named units inside `internal/prsession/`:
 ### Schema-migration plumbing
 
 - **Version constant** — `SchemaVersion = 1` in MVP. Bumped on any incompatible schema change.
-- **Migration registry** — a `map[int]func(oldBytes []byte) (newBytes []byte, error)` keyed by source version. MVP is empty (no migrations exist yet). Surface is reserved so the v2 → v3 path doesn't require adapter changes.
-- **Read-path branch** — on `schema_version` mismatch with a registered migration: rewrite the state file in place via `WriteAtomic`, then proceed. Without a registered migration: trip `STATE_SCHEMA_UNKNOWN`.
+- **Migration registry** — a `dict[int, Callable[[bytes], bytes]]` keyed by source version (each migrator raises on failure). MVP is empty (no migrations exist yet). Surface is reserved so the v2 → v3 path doesn't require adapter changes.
+- **Read-path branch** — on `schema_version` mismatch with a registered migration: rewrite the state file in place via `write_atomic`, then proceed. Without a registered migration: trip `STATE_SCHEMA_UNKNOWN`.
 
 ### Transactional model (§2)
 
 The transactional contract is at the verb level + the `run` aggregate level:
 
-- **Verb-level** — every public verb (the locking wrappers around `*Locked` functions) atomically replaces the full state at the end of its work. Crashed processes leave the prior `Write` intact; no partial state can exist on disk (per §2 + §3.7 `flock(2)` semantics).
-- **Run-aggregate level** — `runLocked` (§3.3) holds the lock for an entire cycle; each `*Locked` invocation does its own atomic `Write` before returning, so the state file is recoverable to the last completed verb even if the process dies mid-cycle.
+- **Verb-level** — every public verb (the locking wrappers around the `_`-prefixed internal functions) atomically replaces the full state at the end of its work. Crashed processes leave the prior `write` intact; no partial state can exist on disk (per §2 + §3.7 `flock(2)` semantics).
+- **Run-aggregate level** — `_run` (§3.3) holds the lock for an entire cycle; each `_`-prefixed invocation does its own atomic `write` before returning, so the state file is recoverable to the last completed verb even if the process dies mid-cycle.
 
-These commitments are realised by the `Store` interface itself — there are no explicit transaction begin/end methods. `Lock` + atomic `Write` + per-`*Locked` Write discipline is the transaction.
+These commitments are realised by the `Store` Protocol itself — there are no explicit transaction begin/end methods. `lock` + atomic `write` + per-`_`-prefixed write discipline is the transaction.
 
 ## Out of scope for this L3 (when drawn)
 
-- **`PRGroomingState` schema content** — the fields themselves (`Phase`, `Round`, `Items`, `Reviewers`, `Quiescence`, etc.) live in [`data-view.md`](data-view.md). This L3 covers the *adapter / migration / atomicity machinery*, not the data shape.
-- **Operator-facing state-file inspection tooling** — `prgroom status --json` is built by `internal/lifecycle` reading state through the `Store`; it's not a `prsession` component.
-- **Cross-PR enumeration semantics** — `List() ([]PRRef, error)` is on the interface; the `sweep` verb (`internal/lifecycle` or `cmd/prgroom`) consumes it. The adapter implementation is straightforward (file: `readdir` and parse filenames; bd: `bd list --label for-pr-*`).
+- **`PRGroomingState` schema content** — the fields themselves (`phase`, `round`, `items`, `reviewers`, `quiescence`, etc.) live in [`data-view.md`](data-view.md). This L3 covers the *adapter / migration / atomicity machinery*, not the data shape.
+- **Operator-facing state-file inspection tooling** — `prgroom status --json` is built by `src/prgroom/lifecycle` reading state through the `Store`; it's not a `prsession` component.
+- **Cross-PR enumeration semantics** — `list_refs() -> list[PRRef]` is on the Protocol; the `sweep` verb (`src/prgroom/lifecycle` or `cli.py`) consumes it. The adapter implementation is straightforward (file: read the state dir and parse filenames; bd: `bd list --label for-pr-*`).
 
 ## Cross-references
 
 - **Container view**: [`c4-l2-container.md`](c4-l2-container.md)
 - **Lifecycle that consumes the Store**: [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md)
 - **Data shape stored**: [`data-view.md`](data-view.md)
-- **Source spec**: [Section 2 — `prsession.Store` interface + state schema](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source spec**: [Section 2 — `prsession.Store` Protocol + state schema](../../plans/2026-05-12-prgroom-cli-design.md)

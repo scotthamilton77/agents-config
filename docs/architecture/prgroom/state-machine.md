@@ -11,11 +11,11 @@
 | Term | Meaning |
 |---|---|
 | Phase | The single-field `PRPhase` value carried on `PRGroomingState` (§2 schema). One of: `idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`. |
-| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `runLocked` (§3.3) iterates cycles. |
+| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles. |
 | End-of-cycle resolver | The function `resolve_end_of_cycle_phase` (§3.2) that, after each cycle, picks the next phase from `fixes-pending` by evaluating six conditions in strict priority order. |
-| Round | The CLI-observed-push counter; bounded by `MaxRounds` (default 3) per §3.5. |
-| Hard cap | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND Round >= MaxRounds` → refuse push, set `Phase=human-gated`, set `LastError=LIFECYCLE_HARD_CAP_EXCEEDED`. |
-| Quiescence predicate | The §4.1 boolean: all four hard gates (`G_REVIEWERS`, `G_CI`, `G_DISPOSITIONS`, `G_NO_BLOCKERS`) pass AND `now() - LastActivityAt >= idle_threshold`. |
+| Round | The CLI-observed-push counter; bounded by `max_rounds` (default 3) per §3.5. |
+| Hard cap | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND round >= max_rounds` → refuse push, set `phase=human-gated`, set `last_error=LIFECYCLE_HARD_CAP_EXCEEDED`. |
+| Quiescence predicate | The §4.1 boolean: all four hard gates (`G_REVIEWERS`, `G_CI`, `G_DISPOSITIONS`, `G_NO_BLOCKERS`) pass AND `now() - last_activity_at >= idle_threshold`. |
 | Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator `resolve-escalated`, or — when the gate is the hard cap — a `run` with a raised `--max-rounds` (cap re-arm, §3.5). `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
 | Graph-terminal | A phase with no outgoing edges. `merged` only. |
 | Blocking error codes | The closed set `{ LIFECYCLE_HARD_CAP_EXCEEDED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED }` that `resolve-escalated` cannot clear by itself; see §3.2. |
@@ -28,7 +28,7 @@ The complete phase graph for one PR's grooming lifecycle. Every transition the C
 - The `awaiting-review ↔ fixes-pending ↔ awaiting-review` push-and-iterate loop
 - The §3.5 hard-cap exit (`fixes-pending → human-gated`)
 - The §3.2-priority-2 / -3 routes to `human-gated` (failed items, escalated items, runtime-terminal errors)
-- The §4-quiescence trips into `quiesced` — from `fixes-pending` via end-of-cycle resolver priority 5, AND from `awaiting-review` via the `waitLocked` wake event (§4.2)
+- The §4-quiescence trips into `quiesced` — from `fixes-pending` via end-of-cycle resolver priority 5, AND from `awaiting-review` via the `_wait` wake event (§4.2)
 - The §4.7 human-review label addition (a side-effect on the `→ human-gated` edges, not a phase itself)
 - The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity; or, for a cap-gated PR, a `run` with raised `--max-rounds`)
 - The `→ merged` edges from every non-terminal phase
@@ -54,23 +54,23 @@ stateDiagram-v2
 
     awaiting_review --> fixes_pending : poll<br/>(new reviewer item observed)
     awaiting_review --> merged : poll<br/>(PR closed via merge)
-    awaiting_review --> quiesced : waitLocked quiescence trip (§4.2)<br/>(reviewers terminal — approved / declined /<br/>timed-out — no open items, CI ok,<br/>idle_threshold elapsed)
+    awaiting_review --> quiesced : _wait quiescence trip (§4.2)<br/>(reviewers terminal — approved / declined /<br/>timed-out — no open items, CI ok,<br/>idle_threshold elapsed)
 
-    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no cap trip, Round++)
-    fixes_pending --> quiesced : end-of-cycle priority 5<br/>(zero commits pushed AND<br/>quiescencePredicate(state) == true)
+    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no cap trip, round++)
+    fixes_pending --> quiesced : end-of-cycle priority 5<br/>(zero commits pushed AND<br/>quiescence_predicate(state) == true)
     fixes_pending --> awaiting_review : end-of-cycle priority 6<br/>(zero commits pushed AND quiescence<br/>has not tripped — e.g. all items<br/>skipped / deferred — re-wait for<br/>reviewer activity)
-    fixes_pending --> human_gated : end-of-cycle priority 1<br/>(hard cap pre-push:<br/>has_queued_fix_commits AND<br/>Round >= MaxRounds)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
-    fixes_pending --> human_gated : end-of-cycle priority 2<br/>(any item.Disposition.Kind == failed)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
-    fixes_pending --> human_gated : end-of-cycle priority 3<br/>(any item.Disposition.Kind == escalated)<br/>+ EscalationSink emit<br/>+ HumanReviewLabelAdded=true (§4.7)
+    fixes_pending --> human_gated : end-of-cycle priority 1<br/>(hard cap pre-push:<br/>has_queued_fix_commits AND<br/>round >= max_rounds)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
+    fixes_pending --> human_gated : end-of-cycle priority 2<br/>(any item.disposition.kind == failed)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
+    fixes_pending --> human_gated : end-of-cycle priority 3<br/>(any item.disposition.kind == escalated)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
     fixes_pending --> merged : poll<br/>(PR closed via merge mid-cycle)
 
     quiesced --> fixes_pending : poll<br/>(new reviewer item observed)
-    quiesced --> awaiting_review : poll<br/>(external push observed,<br/>Round++)
+    quiesced --> awaiting_review : poll<br/>(external push observed,<br/>round++)
     quiesced --> merged : poll<br/>(PR closed via merge)
 
-    human_gated --> fixes_pending : resolve-escalated<br/>(item gating cleared AND<br/>no failed items AND<br/>state.LastError ∉ BlockingErrorCodes)
+    human_gated --> fixes_pending : resolve-escalated<br/>(item gating cleared AND<br/>no failed items AND<br/>state.last_error ∉ BlockingErrorCodes)
     human_gated --> fixes_pending : poll<br/>(operator pushed fix manually)
-    human_gated --> fixes_pending : run --max-rounds raised<br/>(cap re-arm: LastError ==<br/>LIFECYCLE_HARD_CAP_EXCEEDED AND<br/>cap no longer trips — §3.3 entry probe)
+    human_gated --> fixes_pending : run --max-rounds raised<br/>(cap re-arm: last_error ==<br/>LIFECYCLE_HARD_CAP_EXCEEDED AND<br/>cap no longer trips — §3.3 entry probe)
     human_gated --> merged : poll<br/>(PR closed via merge)
 
     merged --> [*]
@@ -86,7 +86,7 @@ stateDiagram-v2
         (push happened — wait for reviewers)
 
         Priority 5 → quiesced
-        (zero pushes + quiescencePredicate true)
+        (zero pushes + quiescence_predicate true)
 
         Priority 6 → awaiting-review
         (zero pushes + quiescence not tripped —
@@ -106,7 +106,7 @@ stateDiagram-v2
     note right of human_gated
         Terminal-for-CLI, NOT graph-terminal.
         resolve-escalated only clears items;
-        it does NOT clear LastError ∈
+        it does NOT clear last_error ∈
         BlockingErrorCodes (incl. the hard
         cap). The cap clears via run with a
         raised --max-rounds (cap re-arm,
@@ -120,16 +120,16 @@ stateDiagram-v2
 
 ## Quiescence predicate (the gate behind `fixes-pending → quiesced`)
 
-Two transitions reach `quiesced`, both gated by the same `quiescencePredicate(state) == true`: `fixes_pending --> quiesced` (end-of-cycle resolver, priority 5) and `awaiting_review --> quiesced` (`waitLocked` wake event, §4.2). The predicate is four hard gates AND the idle timer:
+Two transitions reach `quiesced`, both gated by the same `quiescence_predicate(state) == true`: `fixes_pending --> quiesced` (end-of-cycle resolver, priority 5) and `awaiting_review --> quiesced` (`_wait` wake event, §4.2). The predicate is four hard gates AND the idle timer:
 
 ```mermaid
 flowchart LR
-    Q{quiescencePredicate}
-    G1["G_REVIEWERS<br/>all Required reviewers<br/>have Status ∈<br/>{review_found, declined}"]
-    G2["G_CI<br/>Quiescence.CIState ∈<br/>{success, absent}<br/>for LastPushedHeadSHA"]
-    G3["G_DISPOSITIONS<br/>every Items[*].Disposition != nil"]
-    G4["G_NO_BLOCKERS<br/>no item with Disposition.Kind ∈<br/>{escalated, failed}"]
-    G5["idle_threshold elapsed<br/>now - LastActivityAt >= 10m default"]
+    Q{quiescence_predicate}
+    G1["G_REVIEWERS<br/>all required reviewers<br/>have status ∈<br/>{review_found, declined}"]
+    G2["G_CI<br/>quiescence.ci_state ∈<br/>{success, absent}<br/>for last_pushed_head_sha"]
+    G3["G_DISPOSITIONS<br/>every items[*].disposition is not None"]
+    G4["G_NO_BLOCKERS<br/>no item with disposition.kind ∈<br/>{escalated, failed}"]
+    G5["idle_threshold elapsed<br/>now - last_activity_at >= 10m default"]
 
     Q --> G1
     Q --> G2
@@ -145,9 +145,9 @@ flowchart LR
     style G5 fill:#fff
 ```
 
-All five must be true (boolean AND). G_DISPOSITIONS and G_NO_BLOCKERS are sanity checks — structurally `fixLocked` should have dispositioned every item by the time the resolver runs, and the §3.2 priority cascade routes escalated / failed items to `human-gated` before the predicate is even evaluated. They appear in the predicate for defence-in-depth, not because they're expected to fire.
+All five must be true (boolean AND). G_DISPOSITIONS and G_NO_BLOCKERS are sanity checks — structurally `_fix` should have dispositioned every item by the time the resolver runs, and the §3.2 priority cascade routes escalated / failed items to `human-gated` before the predicate is even evaluated. They appear in the predicate for defence-in-depth, not because they're expected to fire.
 
-A Required reviewer can reach `declined` three ways, all gate-satisfying: human explicit pass (`DeclinedReason="user-declined"`), `review_start_timeout` (Copilot was requested but never engaged), or `review_finish_timeout` (Copilot engaged but never produced a terminal review).
+A required reviewer can reach `declined` three ways, all gate-satisfying: human explicit pass (`declined_reason="user-declined"`), `review_start_timeout` (Copilot was requested but never engaged), or `review_finish_timeout` (Copilot engaged but never produced a terminal review).
 
 ## Reverse-direction edges (the loops worth memorising)
 
@@ -156,22 +156,22 @@ Three classes of edge re-enter the lifecycle from non-active phases. None of the
 | From | To | Trigger | Notes |
 |---|---|---|---|
 | `quiesced` | `fixes_pending` | `poll` observes new reviewer item | Common: PR sat at quiesced, human reviewer left a final nit |
-| `quiesced` | `awaiting_review` | `poll` observes external push (SHA changed) | Round++; `pushLocked`'s ReviewerState flip semantics apply (§3.4) |
-| `human_gated` | `fixes_pending` | `resolve-escalated` flips item disposition AND no failed items AND `LastError ∉ BlockingErrorCodes` | Most common recovery path |
+| `quiesced` | `awaiting_review` | `poll` observes external push (SHA changed) | round++; `_push`'s ReviewerState flip semantics apply (§3.4) |
+| `human_gated` | `fixes_pending` | `resolve-escalated` flips item disposition AND no failed items AND `last_error ∉ BlockingErrorCodes` | Most common recovery path |
 | `human_gated` | `fixes_pending` | `poll` observes operator-pushed fix | Operator resolved out-of-band |
-| `human_gated` | `fixes_pending` | `run` entry probe: `LastError == LIFECYCLE_HARD_CAP_EXCEEDED` AND cap no longer trips (operator raised `--max-rounds`) | Cap re-arm; orthogonal to escalation clearance — clears the cap gate that `resolve-escalated` cannot |
+| `human_gated` | `fixes_pending` | `run` entry probe: `last_error == LIFECYCLE_HARD_CAP_EXCEEDED` AND cap no longer trips (operator raised `--max-rounds`) | Cap re-arm; orthogonal to escalation clearance — clears the cap gate that `resolve-escalated` cannot |
 
 ## Auto-label side-effect (§4.7)
 
-Every transition INTO `human_gated` from `fixes_pending` triggers `request_human_review_if_needed(state)` from within `runLocked`, which POSTs a `human-review-required` label to the PR via the gh API and sets `state.HumanReviewLabelAdded = true`. The flag is reset on the next successful end-of-cycle resolution that writes a non-`human-gated` phase, so subsequent gates within the same lifecycle can re-add the label cleanly.
+Every transition INTO `human_gated` from `fixes_pending` triggers `request_human_review_if_needed(state)` from within `_run`, which POSTs a `human-review-required` label to the PR via the gh adapter and sets `state.human_review_label_added = True`. The flag is reset on the next successful end-of-cycle resolution that writes a non-`human-gated` phase, so subsequent gates within the same lifecycle can re-add the label cleanly.
 
 The label is a **merge constraint** consumed by future merge-gate components (`gmxo`, `td39`), NOT a lifecycle gate consumed by prgroom itself. Per §4.4, prgroom does NOT check or wait on the label; operators do not need to remove it to exit `human-gated`.
 
-## Failure tiers and `state.LastError`
+## Failure tiers and `state.last_error`
 
 The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (`PRECONDITION_*` / `RUNTIME_*` / `CONTRACT_*` / `STATE_*` / `LIFECYCLE_*`) into a single observation: *did the failure put us in `human-gated`?*
 
-| Tier | Phase outcome | `state.LastError` | Note |
+| Tier | Phase outcome | `state.last_error` | Note |
 |---|---|---|---|
 | `PRECONDITION_SELFHEAL` | unchanged | unchanged | self-healed; proceeds |
 | `PRECONDITION_USER_ERROR` | unchanged | unchanged | aborts; user fixes invocation |
@@ -179,23 +179,23 @@ The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (
 | `RUNTIME_TRANSIENT` | unchanged | set | scheduler retries |
 | `RUNTIME_TERMINAL_USER` | → `human-gated` | set | requires operator action |
 | `RUNTIME_CANCELLED` | unchanged | unchanged | signal-cancel; non-retryable |
-| `CONTRACT_AUDIT_FAILED` | → `human-gated` (via priority 2) | NOT set (per-item `Disposition.Rationale` is the source of truth) | the run loop continues through the cycle; resolver promotes |
+| `CONTRACT_AUDIT_FAILED` | → `human-gated` (via priority 2) | NOT set (per-item `disposition.rationale` is the source of truth) | the run loop continues through the cycle; resolver promotes |
 | `STATE_CORRUPT` | → `human-gated` | set | operator inspects state file |
 | `LIFECYCLE_CAP` | → `human-gated` | set | clears via `run` + raised `--max-rounds` (cap re-arm, §3.5/§3.3 entry probe); resolve escalations separately if the gate also carries them |
 
-`state.LastError` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. For a cap-gated PR that success path is reached by the §3.3 entry-probe cap re-arm (operator raised `--max-rounds`), which re-enters the cycle; for other gates, by `poll` observing external resolution. No `clear-error` verb is needed.
+`state.last_error` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. For a cap-gated PR that success path is reached by the §3.3 entry-probe cap re-arm (operator raised `--max-rounds`), which re-enters the cycle; for other gates, by `poll` observing external resolution. No `clear-error` verb is needed.
 
 ## What this diagram does NOT show
 
-- **Per-cycle mechanics inside `runLocked`.** How the orchestrator actually advances from one phase to the next within a cycle lives in [`sequences.md`](sequences.md) and [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md).
-- **Per-item disposition transitions.** Each `Items[*].Disposition.Kind` has its own micro-state machine (`nil → fixed | already_addressed | skipped | deferred | wont_fix | escalated | failed`) decided by the fix contract; not drawn here.
-- **Per-reviewer Status transitions.** Each `Reviewers[r].Status` value (`not_requested → requested → in_progress → review_found | declined`) has its own micro-state machine driven by `pollLocked`'s engagement detection (§4.1); not drawn here.
+- **Per-cycle mechanics inside `_run`.** How the orchestrator actually advances from one phase to the next within a cycle lives in [`sequences.md`](sequences.md) and [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md).
+- **Per-item disposition transitions.** Each `items[*].disposition.kind` has its own micro-state machine (`None → fixed | already_addressed | skipped | deferred | wont_fix | escalated | failed`) decided by the fix contract; not drawn here.
+- **Per-reviewer status transitions.** Each `reviewers[r].status` value (`not_requested → requested → in_progress → review_found | declined`) has its own micro-state machine driven by `_poll`'s engagement detection (§4.1); not drawn here.
 - **Lock contention as state.** `PRECONDITION_LOCK_HELD` (exit 75) is a transient API outcome, not a phase. A locked PR's phase is whatever the lock-holder last wrote.
 - **Scheduler-side retry policy.** What the scheduler does after a `RUNTIME_TRANSIENT` (exit 75) or `RUNTIME_CANCELLED` (exit 130/143) exit lives outside the state machine — see source spec §3.6.
 
 ## Cross-references
 
 - **Companion sequence**: [`sequences.md`](sequences.md) — runtime ordering of these transitions across four canonical flows
-- **Companion structure**: [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) — components inside the binary that execute transitions
-- **Companion data**: [`data-view.md`](data-view.md) — where the phase, Round counter, reviewer state, and quiescence state live in `PRGroomingState`
+- **Companion structure**: [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) — components inside the package that execute transitions
+- **Companion data**: [`data-view.md`](data-view.md) — where the phase, round counter, reviewer state, and quiescence state live in `PRGroomingState`
 - **Source spec**: [Section 3.1 Phase state graph](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.2 Phase × verb transition matrix](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.5 Hard-cap behavior](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4 Quiescence model](../../plans/2026-05-12-prgroom-cli-design.md)
