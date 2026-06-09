@@ -1,6 +1,6 @@
 # prgroom implementation grinder — milestone execution plan
 
-**Status:** APPROVED, awaiting explicit go-ahead. **Do not start execution until Scott says go.**
+**Status:** APPROVED. **8.9 re-cut (step 0) COMPLETE & dolt-pushed** (see §3 for the label→ID map). Awaiting go-ahead for the first build run (`8.1` alone). **Do not start build execution until Scott says go.**
 **Subject epic:** `agents-config-abn9.8` — prgroom CLI implementation umbrella.
 **Companion design doc (source of truth for the code):** `docs/plans/2026-05-12-prgroom-cli-design.md` (1867 lines, §1–§8).
 **Architecture HLDs:** `docs/architecture/prgroom/` (`index.md` first; 10 files).
@@ -46,7 +46,7 @@ review/merge point and a real validation gate.
 
 ---
 
-## 3. The 8.9 re-cut (D9) — perform as execution step 0, NOT yet
+## 3. The 8.9 re-cut (D9) — COMPLETE
 
 Bead 8.9 ("lifecycle verbs: _poll, _cluster, _fix, _push, _rereview, _resolve") is split along the
 read → stage → write progression so milestone boundaries land on clean bead boundaries:
@@ -65,34 +65,22 @@ read → stage → write progression so milestone boundaries land on clean bead 
 - `8.9c → 8.10` (run needs the full verb set)
 - `8.10 → 8.12`, `8.6 → 8.13`, `8.11 → 8.13`, `8.12 → 8.13`, `8.13 → 8.14` (unchanged)
 
-**bd commands to run at execution step 0 (review before running; verify flags with `bd … --help`):**
-```bash
-# 1. Repurpose 8.9 as 8.9a (narrow scope to poll/read)
-bd update agents-config-abn9.8.9 \
-  --title "[Impl] prgroom lifecycle read verb — _poll + read path (over gh/git)" \
-  --description "<8.9a scope: _poll + item/reviewer ingest + state update; read-only; depends 8.5,8.8; NOT agent arm>"
-# (Optional: rename id to 8.9a if bd supports; else keep 8.9 as the 'a' part and note the alias.)
+**Label → real bd ID (authoritative; bd has no ID-rename, so 8.9 was repurposed in place):**
 
-# 2. Create 8.9b and 8.9c under the epic
-bd create --parent agents-config-abn9.8 --type task --priority 2 \
-  --title "[Impl] prgroom lifecycle stage verbs — _cluster + _fix (local staging)" \
-  --description "<8.9b scope: _cluster + _fix; stages commits locally; no GitHub writes>"
-bd create --parent agents-config-abn9.8 --type task --priority 2 \
-  --title "[Impl] prgroom lifecycle write verbs — _push + _rereview + _resolve (live GitHub)" \
-  --description "<8.9c scope: first live mutation: push branch, re-request review, resolve threads>"
+| Label | Real bd ID | Note |
+|-------|-----------|------|
+| **8.9a** | `agents-config-abn9.8.9` | repurposed in place — `8.9 ≡ 8.9a` |
+| **8.9b** | `agents-config-abn9.8.15` | created under the epic |
+| **8.9c** | `agents-config-abn9.8.16` | created under the epic |
 
-# 3. Re-point edges (use the real new IDs from step 2 in place of <8.9b>/<8.9c>)
-bd dep add <8.9b-id> agents-config-abn9.8.9        # 8.9b depends on 8.9a(=.9)
-bd dep add <8.9b-id> agents-config-abn9.8.7         # + agent audits
-bd dep add <8.9c-id> <8.9b-id>                       # 8.9c depends on 8.9b
-bd dep add agents-config-abn9.8.10 <8.9c-id>        # run depends on 8.9c
-# 8.11 already depends on 8.9(=8.9a) via the original 8.9→8.11 edge — verify it points to .9.
-# Remove the original 8.7→8.9 edge if it now wrongly blocks 8.9a (the read path):
-bd dep remove agents-config-abn9.8.9 agents-config-abn9.8.7   # verify arg order with --help
-```
-⚠️ Confirm bd's exact split/rename capability and `dep add/remove` arg order with `bd … --help`
-at execution time before mutating the graph. If bd cannot rename an ID, keep `8.9` as the 8.9a
-part and record the `8.9 ≡ 8.9a` alias in this doc. **Do not mutate the graph until go-ahead.**
+**Verified final `blocks` graph (read back from bd):**
+- `8.9a (.9)` — depends-on `{8.5, 8.8}` · blocks `{8.11, 8.9b}`
+- `8.9b (.15)` — depends-on `{8.9a, 8.7}` · blocks `{8.9c}`
+- `8.9c (.16)` — depends-on `{8.9b}` · blocks `{8.10}`
+- `8.10` depends-on `{8.9c}` (was 8.9) · `8.11` depends-on `{8.9a}` · `8.7` blocks `{8.9b}` (was 8.9)
+
+**Do not re-run** — the graph above is live in bd and pushed to the Dolt remote. Everywhere this
+doc says "8.9a / 8.9b / 8.9c", resolve to real IDs via the table above (`.9 / .15 / .16`).
 
 ---
 
