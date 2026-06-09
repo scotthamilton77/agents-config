@@ -45,6 +45,11 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# Every verb in cli.py is a foundation skeleton: the typer arguments are
+# load-bearing (they shape `--help` and the parse surface) but the body
+# intentionally ignores them until the lifecycle lands. ARG001 would fire on
+# all 12 verbs with one identical rationale, so it is scoped off here.
+"src/prgroom/cli.py" = ["ARG001"]
 
 [tool.ruff.format]
 docstring-code-format = true

@@ -15,8 +15,11 @@ Verb names with underscores in the function name render as hyphenated commands
 from __future__ import annotations
 
 import sys
+from typing import IO
 
 import typer
+
+from prgroom.errors import PreconditionError, PrgroomError, exit_code_for_tier
 
 # Foundation skeletons are not yet implemented; they exit non-zero so a caller
 # never mistakes a skeleton's silence for a successful no-op. EX_UNAVAILABLE
@@ -114,6 +117,29 @@ def sweep(repo: str = typer.Argument(..., help="owner/repo to sweep.")) -> None:
     _skeleton("sweep")
 
 
+def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
+    """Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6).
+
+    A :class:`PreconditionError` prints the canonical 4-line ``what/why/how``
+    block; any other :class:`PrgroomError` prints a one-line code. The exit code
+    is the tier's documented sysexits value.
+    """
+    out = stderr if stderr is not None else sys.stderr
+    if isinstance(err, PreconditionError):
+        out.write(err.render() + "\n")
+    else:
+        out.write(f"error: {err.code.value}\n")
+    return exit_code_for_tier(err)
+
+
 def main() -> None:
-    """Console-script entry point (``prgroom``)."""
-    app()
+    """Console-script entry point (``prgroom``).
+
+    Wraps the typer app so a tier-tagged :class:`PrgroomError` raised by a verb
+    is rendered through :func:`handle_cli_error` and turned into the documented
+    exit code, rather than surfacing as an uncaught traceback.
+    """
+    try:
+        app()
+    except PrgroomError as err:
+        raise SystemExit(handle_cli_error(err)) from err
