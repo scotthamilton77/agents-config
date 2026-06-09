@@ -18,6 +18,7 @@ import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeGuard
 
 from prgroom.prsession.migrations import MIGRATIONS, Migrator
 from prgroom.prsession.pr_ref import PRRef
@@ -59,6 +60,19 @@ def write_atomic(path: Path, data: bytes) -> None:
         raise
 
 
+def _is_int_version(version: object) -> TypeGuard[int]:
+    """True only for a genuine ``int`` schema version.
+
+    ``bool`` subclasses ``int`` (``True == 1``) and ``float`` compares equal
+    (``1.0 == 1``), so a naive ``== SCHEMA_VERSION`` gate would silently accept
+    ``schema_version: true`` / ``1.0`` as healthy v1 state — and ``bool`` would
+    even alias an integer key in the ``MIGRATIONS`` lookup (``hash(True) ==
+    hash(1)``). ``type(...) is int`` excludes both, routing malformed versions to
+    the migrate-or-reject path instead of masquerading as current.
+    """
+    return type(version) is int
+
+
 class FileStore:
     """Production Store adapter. Structurally satisfies ``Store``."""
 
@@ -92,7 +106,7 @@ class FileStore:
         except json.JSONDecodeError as exc:
             raise StateCorruptError(f"{path}: {exc}") from exc  # noqa: TRY003  # single call-site; message names the offending file
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION:
+        if not (_is_int_version(version) and version == SCHEMA_VERSION):
             payload = self._migrate(path, raw, version)
         return PRGroomingState.from_dict(payload)
 
@@ -105,8 +119,14 @@ class FileStore:
         A raising migrator maps to :class:`StateCorruptError` (its registry
         ``how`` — move aside, rebuild — fits a failed migration). No migrator:
         :class:`SchemaUnknownError` (the §3.7 ``STATE_SCHEMA_UNKNOWN`` path).
+
+        NOTE for the status/locking beads: this rewrites the file in place, so
+        ``read`` is no longer side-effect-free once a migrator is registered. The
+        lock-free ``status`` reader (§3.3 carve-out) must either migrate in memory
+        without writing, or take the lock before a migrating read — do not ship an
+        unlocked migrating reader. (Latent today: ``MIGRATIONS`` is empty.)
         """
-        migrator = self._migrations.get(from_version) if isinstance(from_version, int) else None
+        migrator = self._migrations.get(from_version) if _is_int_version(from_version) else None
         if migrator is None:
             raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
                 f"{path}: schema_version {from_version!r} != {SCHEMA_VERSION}"

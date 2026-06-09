@@ -94,3 +94,21 @@ def test_raising_migrator_surfaces_corrupt_and_leaves_file_byte_identical(
 
     # HARD requirement: a failed migration never rewrites the file.
     assert state_path.read_bytes() == original
+
+
+@pytest.mark.parametrize("bogus_version", [True, 1.0, "1"])
+def test_non_int_schema_version_is_rejected_not_loaded_as_current(
+    tmp_path: Path, bogus_version: object
+) -> None:
+    # bool subclasses int (True == 1) and 1.0 == 1, so a naive `!= SCHEMA_VERSION`
+    # gate would silently accept these as a healthy v1 state. A schema_version that
+    # is not a genuine int must route to the migrate-or-reject path (here: no
+    # migrator -> STATE_SCHEMA_UNKNOWN), never load as current.
+    ref = PRRef("octo", "demo", 7)
+    state_path = tmp_path / f"{ref.slug()}.json"
+    payload = _current_state(ref).to_dict()
+    payload["schema_version"] = bogus_version
+    state_path.write_bytes(json.dumps(payload).encode("utf-8"))
+    store = FileStore(state_dir=tmp_path, migrations={})
+    with pytest.raises(SchemaUnknownError):
+        store.read(ref)

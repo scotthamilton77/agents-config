@@ -39,12 +39,14 @@ def resolve_store(
     """Resolve a store name to a concrete adapter (flag > env > default ``file``).
 
     ``name`` is the ``--store`` flag value (``None`` when unset). Falls back to
-    ``env[PRGROOM_STORE]`` then the ``file`` default. ``bd`` (deferred) and any
-    unrecognized name raise :class:`PreconditionError` tagged
-    ``PRECONDITION_STORE_UNAVAILABLE`` (terminal user-error, exit 2).
+    ``env[PRGROOM_STORE]`` then the ``file`` default. A **blank** env var is
+    treated as unset (POSIX convention, mirroring ``resolve_state_dir``); a blank
+    ``--store ''`` flag is, by contrast, an explicit user mistake and errors.
+    ``bd`` (deferred) and any unrecognized name raise :class:`PreconditionError`
+    tagged ``PRECONDITION_STORE_UNAVAILABLE`` (terminal user-error, exit 2).
     """
     environ = env if env is not None else {}
-    resolved = name if name is not None else environ.get(ENV_VAR, DEFAULT_STORE)
+    resolved = name if name is not None else (environ.get(ENV_VAR) or DEFAULT_STORE)
     if resolved == StoreName.FILE:
         return FileStore(state_dir=state_dir)
     raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE, detail=resolved)

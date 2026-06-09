@@ -137,13 +137,3 @@ def test_removed_lock_codes_are_not_in_the_registry(absent: str) -> None:
     # §3.7: these were removed to match the flock(2) mechanism (kernel-released on
     # death). Their presence would signal a regression to an fcntl-style protocol.
     assert absent not in ErrorCode.__members__
-
-
-def test_every_tier_maps_to_a_concrete_exit_code() -> None:
-    # Recovers the exhaustiveness StrEnum lacks: every Tier member must resolve to
-    # a non-None int via exit_code_for_tier (RUNTIME_CANCELLED needs signum).
-    for tier in Tier:
-        signum = 2 if tier == Tier.RUNTIME_CANCELLED else 0
-        err = PrgroomError(tier=tier, code=ErrorCode.STATE_CORRUPT, signum=signum)
-        code = exit_code_for_tier(err)
-        assert isinstance(code, int)

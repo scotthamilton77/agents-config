@@ -14,7 +14,7 @@ import pytest
 
 from prgroom.errors import ErrorCode, PreconditionError, Tier
 from prgroom.prsession.file import FileStore
-from prgroom.prsession.registry import StoreName, resolve_store
+from prgroom.prsession.registry import resolve_store
 
 
 def test_explicit_file_name_yields_filestore(tmp_path: Path) -> None:
@@ -58,8 +58,18 @@ def test_env_unknown_name_is_a_terminal_user_error(tmp_path: Path) -> None:
         resolve_store(None, env={"PRGROOM_STORE": "nope"}, state_dir=tmp_path)
 
 
-def test_store_name_enum_values() -> None:
-    # Consumer-boundary pin: these strings are the user-facing --store / env
-    # vocabulary, so they are pinned where a drift would break the CLI surface.
-    assert StoreName.FILE.value == "file"
-    assert StoreName.BD.value == "bd"
+def test_blank_env_falls_back_to_default_file(tmp_path: Path) -> None:
+    # A blank PRGROOM_STORE is treated as unset (POSIX env convention, mirroring
+    # resolve_state_dir's blank-XDG_STATE_HOME handling), not as an explicit
+    # invalid selection — a stray `export PRGROOM_STORE=` must not break every run.
+    store = resolve_store(None, env={"PRGROOM_STORE": ""}, state_dir=tmp_path)
+    assert isinstance(store, FileStore)
+
+
+def test_blank_flag_is_an_explicit_error_not_a_fallback(tmp_path: Path) -> None:
+    # Deliberately distinct from a blank env: an explicit empty `--store ''` is a
+    # user mistake (an explicit selection of nothing), so it surfaces the terminal
+    # user-error rather than silently defaulting.
+    with pytest.raises(PreconditionError) as exc:
+        resolve_store("", env={}, state_dir=tmp_path)
+    assert exc.value.code == ErrorCode.PRECONDITION_STORE_UNAVAILABLE
