@@ -30,11 +30,19 @@ JsonObj = dict[str, Any]
 
 
 def _iso(dt: datetime) -> str:
+    # §4 resumability compares against stored UTC values, so naive datetimes —
+    # which serialize without an offset — are rejected at the boundary rather than
+    # silently corrupting the invariant.
+    if dt.tzinfo is None:
+        raise ValueError(f"datetime must be timezone-aware: {dt!r}")  # noqa: TRY003
     return dt.isoformat()
 
 
 def _parse_dt(raw: str) -> datetime:
-    return datetime.fromisoformat(raw)
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        raise ValueError(f"stored datetime must be timezone-aware: {raw!r}")  # noqa: TRY003
+    return dt
 
 
 @dataclass(frozen=True, slots=True)

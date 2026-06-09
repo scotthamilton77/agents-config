@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from prgroom.prsession.enums import (
     DispositionKind,
     ItemKind,
@@ -35,6 +37,7 @@ from prgroom.prsession.state import (
 )
 
 _T = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
+_NAIVE = datetime(2026, 6, 9, 12, 0, 0)  # no tzinfo
 _REF = PRRef(owner="octo", repo="demo", number=7)
 
 
@@ -218,6 +221,25 @@ def test_every_optional_field_round_trips_when_populated() -> None:
         lifecycle_escalation_filed=True,
     )
     assert PRGroomingState.from_dict(state.to_dict()) == state
+
+
+def test_serializing_a_naive_datetime_raises() -> None:
+    # §4 resumability compares against stored UTC values, so the wire form must be
+    # tz-aware. A naive datetime would serialize without an offset and silently
+    # break that invariant — reject it at the serialization boundary.
+    state = _minimal_state()
+    state.last_polled_at = _NAIVE
+    with pytest.raises(ValueError, match="timezone-aware"):
+        state.to_dict()
+
+
+def test_parsing_a_tz_naive_datetime_string_raises() -> None:
+    # Mirror guard on the read side: a stored datetime lacking a UTC offset is
+    # unusable for the resumability comparison and must not reconstruct as naive.
+    d = _minimal_state().to_dict()
+    d["last_polled_at"] = "2026-06-09T12:00:00"  # no offset
+    with pytest.raises(ValueError, match="timezone-aware"):
+        PRGroomingState.from_dict(d)
 
 
 def test_disposition_round_trips_through_item() -> None:
