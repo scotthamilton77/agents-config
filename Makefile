@@ -1,10 +1,13 @@
 .PHONY: ci ci-installer test-installer lint-installer format-check-installer \
         typecheck-installer cov-installer audit-installer lint-actions \
-        verify-entry-installer
+        verify-entry-installer \
+        ci-prgroom test-prgroom lint-prgroom format-check-prgroom \
+        typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom
 
 INSTALLER := packages/installer
+PRGROOM := packages/prgroom
 
-ci: ci-installer lint-actions
+ci: ci-installer ci-prgroom lint-actions
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer \
@@ -36,3 +39,33 @@ lint-actions:
 
 verify-entry-installer:
 	uv --project $(INSTALLER) run python scripts/install.py --help > /dev/null
+
+# ── prgroom (mirrors the ci-installer block one-for-one) ──
+
+ci-prgroom: lint-prgroom format-check-prgroom typecheck-prgroom \
+            cov-prgroom audit-prgroom \
+            verify-entry-prgroom
+
+test-prgroom:
+	cd $(PRGROOM) && uv run pytest -q
+
+lint-prgroom:
+	cd $(PRGROOM) && uv run ruff check
+
+format-check-prgroom:
+	cd $(PRGROOM) && uv run ruff format --check
+
+typecheck-prgroom:
+	cd $(PRGROOM) && uv run mypy --strict src
+
+cov-prgroom:
+	cd $(PRGROOM) && uv run pytest --cov --cov-report=term-missing
+
+audit-prgroom:
+	cd $(PRGROOM) && uv sync --frozen && uv run pip-audit
+
+# verify-entry-prgroom asserts the console-script entry point resolves and the
+# CLI root parses (`prgroom --help` exits 0). Run via `uv --project` so the
+# prgroom venv where the entry point is installed is selected.
+verify-entry-prgroom:
+	uv --project $(PRGROOM) run prgroom --help > /dev/null
