@@ -125,12 +125,22 @@ def _ref_from_state_file(path: Path) -> PRRef | None:
     The filename slug (``<owner>-<repo>-<n>``) is a *lossy* encoding — both owner
     and repo may contain the ``-`` delimiter — so enumeration reads the
     ``{owner, repo, number}`` object that :meth:`PRGroomingState.to_dict` persists
-    in the body, never by reverse-parsing the filename. Files that aren't
-    well-formed prgroom state (unreadable, non-object, or a missing/partial
-    ``pr``) are skipped: the dir may hold unrelated JSON.
+    in the body, never by reverse-parsing the filename. The gate mirrors
+    :meth:`FileStore.read`: the payload must be an object at the current
+    ``schema_version`` with a dict ``pr``. Anything else (unreadable, foreign, or
+    a partial ``pr``) is skipped — the dir may hold unrelated JSON, and a
+    spurious ref would silently mislead ``sweep``.
     """
     try:
         payload = json.loads(path.read_bytes())
-        return PRRef.from_dict(payload["pr"])
-    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+        return None
+    pr = payload.get("pr")
+    if not isinstance(pr, dict):
+        return None
+    try:
+        return PRRef.from_dict(pr)
+    except KeyError:
         return None

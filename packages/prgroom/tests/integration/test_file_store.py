@@ -153,17 +153,26 @@ def test_list_refs_empty_when_dir_absent(tmp_path: Path) -> None:
     assert store.list_refs() == []
 
 
-def test_list_refs_skips_files_that_are_not_prgroom_state(tmp_path: Path) -> None:
-    # The state dir may hold unrelated JSON. Enumeration reads each file's `pr`
-    # object from the body and skips anything that isn't well-formed state —
-    # never crashing `sweep` on a foreign file.
+def test_list_refs_skips_files_that_are_not_current_prgroom_state(tmp_path: Path) -> None:
+    # The state dir may hold unrelated JSON. Enumeration mirrors read()'s gate —
+    # the payload must be an object at the current schema_version with a dict `pr`
+    # — and skips anything else, never crashing `sweep` or returning a spurious PR.
     store = FileStore(state_dir=tmp_path)
     ref = PRRef("octo", "demo", 1)
     store.write(ref, _state(ref))
+    valid_pr = {"owner": "x", "repo": "y", "number": 3}
     (tmp_path / "unparseable.json").write_text("{ this is not json")  # bad JSON
     (tmp_path / "array.json").write_text("[1, 2, 3]")  # JSON, but not an object
-    (tmp_path / "no-pr.json").write_text("{}")  # object, but no `pr` key
-    (tmp_path / "partial-pr.json").write_text('{"pr": {"owner": "x"}}')  # incomplete `pr`
+    (tmp_path / "no-schema.json").write_text(json.dumps({"pr": valid_pr}))  # no schema_version
+    (tmp_path / "future-schema.json").write_text(
+        json.dumps({"schema_version": SCHEMA_VERSION + 1, "pr": valid_pr})
+    )  # foreign / future schema
+    (tmp_path / "pr-not-object.json").write_text(
+        json.dumps({"schema_version": SCHEMA_VERSION, "pr": "nope"})
+    )  # `pr` is not a dict
+    (tmp_path / "partial-pr.json").write_text(
+        json.dumps({"schema_version": SCHEMA_VERSION, "pr": {"owner": "x"}})
+    )  # incomplete `pr`
     assert store.list_refs() == [ref]
 
 
