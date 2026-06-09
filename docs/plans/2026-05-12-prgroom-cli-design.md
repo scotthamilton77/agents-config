@@ -1713,7 +1713,7 @@ A `ci-prgroom` Makefile target is added, mirroring `ci-installer` one-for-one an
 
 #### 7.5 Coverage floor
 
-Coverage floor is **80% line / 70% branch on changed code, per PR** — the project `AGENTS.md` floor, deliberately **not** the installer package's stricter 90% line. The floor is enforced via `coverage.py` / `pytest-cov` (`branch = true`, `source = ["src/prgroom"]`, `fail_under` set to the 80/70 floor) and surfaced as a PR status check; the build fails when the floor is breached on changed code. The `codecov-action` already wired into the workflow carries the status check with no change. Treat the floor as a *minimum behavioral target*, not a quality bar — it is cleared by testing real behavior at the right altitude (§7.6), never by anti-pattern tests written to move the number.
+Coverage floor is **`fail_under = 90` (branch) on the package**, enforced via `coverage.py` / `pytest-cov` (`branch = true`, `source = ["src/prgroom"]`) and run as part of `make ci-prgroom`; the build fails when the floor is breached. This matches the sibling `installer` package's gate. Treat the floor as a *minimum behavioral target*, not a quality bar — it is cleared by testing real behavior at the right altitude (§7.6), never by anti-pattern tests written to move the number.
 
 #### 7.6 Test discipline (load-bearing, not aspirational)
 
