@@ -14,12 +14,14 @@ Verb names with underscores in the function name render as hyphenated commands
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import IO
 
 import typer
 
 from prgroom.errors import PreconditionError, PrgroomError, exit_code_for_tier
+from prgroom.prsession.registry import resolve_store
 
 # Foundation skeletons are not yet implemented; they exit non-zero so a caller
 # never mistakes a skeleton's silence for a successful no-op. EX_UNAVAILABLE
@@ -32,6 +34,33 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+
+@app.callback()
+def _root(
+    store: str | None = typer.Option(
+        None,
+        "--store",
+        help="State store adapter: file (default) or bd (deferred).",
+        envvar=None,  # env precedence is owned by resolve_store, not typer
+    ),
+) -> None:
+    """Resolve the state store eagerly so an invalid --store fails before any verb.
+
+    The resolved Store is discarded here (verbs are skeletons); its sole purpose
+    in the foundation is to fail terminally on an invalid adapter. An invalid
+    ``--store`` renders the canonical 4-line block via :func:`handle_cli_error`
+    and exits with the tier code (2, no traceback) right here — so the behavior
+    is identical whether the app is driven through :func:`main` or directly (e.g.
+    typer's ``CliRunner``). Later beads keep the resolved Store on a context
+    object for the verbs to consume. Precedence (flag > env > default) lives in
+    :func:`resolve_store`, the single source of truth, so the CLI and a direct
+    ``resolve_store`` caller behave identically.
+    """
+    try:
+        resolve_store(store, env=os.environ)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 def _skeleton(verb: str) -> None:

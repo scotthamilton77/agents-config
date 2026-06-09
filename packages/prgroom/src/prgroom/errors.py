@@ -77,6 +77,7 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_ESCALATIONS = "PRECONDITION_NO_ESCALATIONS"
     PRECONDITION_WAIT_NOT_APPLICABLE = "PRECONDITION_WAIT_NOT_APPLICABLE"
     PRECONDITION_LOCK_HELD = "PRECONDITION_LOCK_HELD"
+    PRECONDITION_STORE_UNAVAILABLE = "PRECONDITION_STORE_UNAVAILABLE"
     # RUNTIME_*
     RUNTIME_GH_TRANSIENT = "RUNTIME_GH_TRANSIENT"
     RUNTIME_GH_TERMINAL = "RUNTIME_GH_TERMINAL"
@@ -181,6 +182,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         why="the concurrency model is one-at-a-time per PR",
         how="wait for the other invocation; the scheduler retries on next cadence",
     ),
+    ErrorCode.PRECONDITION_STORE_UNAVAILABLE: RegistryEntry(
+        what="the requested store adapter is unavailable",
+        why="--store/PRGROOM_STORE named an adapter not usable in this build",
+        how="use --store file (the default); 'bd' is deferred to a later release",
+    ),
     ErrorCode.RUNTIME_GH_TRANSIENT: RegistryEntry(
         what="gh API returned 5xx or rate-limited with Retry-After",
         why="the external service is degraded",
@@ -272,6 +278,20 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         how="resolve escalations; raise --max-rounds and re-run, or hand off to human review",
     ),
 }
+
+
+# Codes that gate `resolve-escalated` re-entry (§3.2, §3.6): an operator flipping
+# an escalated disposition cannot clear any of these — they require the recovery
+# paths in §3.6/§3.7 (cap re-arm, state-file inspection, gh/git reconciliation).
+BlockingErrorCodes: frozenset[ErrorCode] = frozenset(
+    {
+        ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED,
+        ErrorCode.STATE_CORRUPT,
+        ErrorCode.STATE_SCHEMA_UNKNOWN,
+        ErrorCode.RUNTIME_GH_TERMINAL,
+        ErrorCode.RUNTIME_PUSH_REJECTED,
+    }
+)
 
 
 class PrgroomError(Exception):

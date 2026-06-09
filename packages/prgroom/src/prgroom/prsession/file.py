@@ -15,10 +15,11 @@ import fcntl
 import json
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
+from prgroom.prsession.migrations import MIGRATIONS, Migrator
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import SCHEMA_VERSION, PRGroomingState
 from prgroom.prsession.store import (
@@ -61,8 +62,16 @@ def write_atomic(path: Path, data: bytes) -> None:
 class FileStore:
     """Production Store adapter. Structurally satisfies ``Store``."""
 
-    def __init__(self, *, state_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        state_dir: Path | None = None,
+        migrations: Mapping[int, Migrator] | None = None,
+    ) -> None:
         self._dir = state_dir if state_dir is not None else resolve_state_dir()
+        self._migrations: Mapping[int, Migrator] = (
+            migrations if migrations is not None else MIGRATIONS
+        )
 
     def _state_path(self, ref: PRRef) -> Path:
         return self._dir / f"{ref.slug()}.json"
@@ -84,10 +93,33 @@ class FileStore:
             raise StateCorruptError(f"{path}: {exc}") from exc  # noqa: TRY003  # single call-site; message names the offending file
         version = payload.get("schema_version")
         if version != SCHEMA_VERSION:
-            raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
-                f"{path}: schema_version {version!r} != {SCHEMA_VERSION}"
-            )
+            payload = self._migrate(path, raw, version)
         return PRGroomingState.from_dict(payload)
+
+    def _migrate(self, path: Path, raw: bytes, from_version: object) -> dict[str, object]:
+        """Apply a registered migrator for ``from_version`` or trip schema-unknown.
+
+        On a registered migrator: run it on the raw bytes, rewrite the file in
+        place via ``write_atomic`` (only on success — a raising migrator leaves
+        the file byte-identical), then re-parse and return the upgraded payload.
+        A raising migrator maps to :class:`StateCorruptError` (its registry
+        ``how`` — move aside, rebuild — fits a failed migration). No migrator:
+        :class:`SchemaUnknownError` (the §3.7 ``STATE_SCHEMA_UNKNOWN`` path).
+        """
+        migrator = self._migrations.get(from_version) if isinstance(from_version, int) else None
+        if migrator is None:
+            raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
+                f"{path}: schema_version {from_version!r} != {SCHEMA_VERSION}"
+            )
+        try:
+            migrated = migrator(raw)
+        except Exception as exc:  # a migrator failure must never corrupt on-disk state
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
+                f"{path}: migration from {from_version!r} failed: {exc}"
+            ) from exc
+        write_atomic(path, migrated)
+        parsed: dict[str, object] = json.loads(migrated)
+        return parsed
 
     def write(self, ref: PRRef, state: PRGroomingState) -> None:
         data = json.dumps(state.to_dict(), indent=2, sort_keys=True).encode("utf-8")
