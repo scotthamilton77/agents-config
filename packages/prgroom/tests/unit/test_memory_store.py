@@ -13,10 +13,15 @@ from datetime import UTC, datetime
 
 import pytest
 
-from prgroom.prsession.enums import PRPhase
+from prgroom.prsession.enums import ItemKind, PRPhase
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
-from prgroom.prsession.state import PRGroomingState, QuiescenceState
+from prgroom.prsession.state import (
+    Identity,
+    PRGroomingState,
+    QuiescenceState,
+    ReviewItem,
+)
 from prgroom.prsession.store import StateNotFoundError
 
 _T = datetime(2026, 6, 9, tzinfo=UTC)
@@ -52,6 +57,43 @@ def test_write_overwrites_prior_state() -> None:
     store.write(ref, _state(ref, PRPhase.IDLE))
     store.write(ref, _state(ref, PRPhase.QUIESCED))
     assert store.read(ref).phase == PRPhase.QUIESCED
+
+
+def test_read_returns_a_deep_copy_callers_cannot_corrupt_the_store() -> None:
+    # Isolation is the substrate every lifecycle test relies on: a caller mutating
+    # a returned state must not leak back into storage. Mutating a scalar catches a
+    # dropped copy entirely; mutating a nested list catches a downgrade to a shallow
+    # copy. Both must leave the stored snapshot untouched.
+    store = InMemoryStore()
+    ref = PRRef("octo", "demo", 1)
+    store.write(ref, _state(ref, PRPhase.IDLE))
+
+    borrowed = store.read(ref)
+    borrowed.phase = PRPhase.MERGED
+    borrowed.items.append(
+        ReviewItem(
+            kind=ItemKind.REVIEW_THREAD,
+            identity=Identity(gh_id="c1"),
+            author="bot",
+            body_excerpt="x",
+            seen_at=_T,
+        )
+    )
+
+    fresh = store.read(ref)
+    assert fresh.phase == PRPhase.IDLE
+    assert fresh.items == []
+
+
+def test_write_snapshots_so_later_caller_mutation_does_not_leak_in() -> None:
+    # The deep-copy on write means a caller holding the object it passed to write()
+    # cannot mutate the stored copy after the fact.
+    store = InMemoryStore()
+    ref = PRRef("octo", "demo", 1)
+    original = _state(ref, PRPhase.IDLE)
+    store.write(ref, original)
+    original.phase = PRPhase.MERGED
+    assert store.read(ref).phase == PRPhase.IDLE
 
 
 def test_lock_releases_on_context_exit_allowing_reacquire() -> None:

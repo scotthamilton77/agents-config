@@ -2,7 +2,7 @@
 
 Real filesystem, real ``flock``, real atomic rename. These verify the on-disk
 contract: round-trip through JSON, the XDG path resolver, atomic replacement,
-the corrupt-/unknown-schema error mapping, ref enumeration from filenames, and
+the corrupt-/unknown-schema error mapping, ref enumeration from state bodies, and
 delete-as-file-removal.
 """
 
@@ -129,7 +129,7 @@ def test_lock_releases_even_when_body_raises(tmp_path: Path) -> None:
         pass
 
 
-def test_list_refs_parses_slug_filenames(tmp_path: Path) -> None:
+def test_list_refs_enumerates_written_prs(tmp_path: Path) -> None:
     store = FileStore(state_dir=tmp_path)
     refs = [PRRef("octo", "demo", n) for n in (1, 2)]
     for ref in refs:
@@ -137,20 +137,33 @@ def test_list_refs_parses_slug_filenames(tmp_path: Path) -> None:
     assert sorted(store.list_refs(), key=lambda r: r.number) == refs
 
 
+def test_list_refs_round_trips_hyphenated_owner_and_repo(tmp_path: Path) -> None:
+    # Regression: the slug <owner>-<repo>-<n> is a *lossy* filename encoding when
+    # owner or repo contains the '-' delimiter. Enumeration must recover the exact
+    # ref from the authoritative `pr` object in the file body, never by reverse-
+    # parsing the filename.
+    store = FileStore(state_dir=tmp_path)
+    ref = PRRef("scott-hamilton", "agents-config", 8)
+    store.write(ref, _state(ref))
+    assert store.list_refs() == [ref]
+
+
 def test_list_refs_empty_when_dir_absent(tmp_path: Path) -> None:
     store = FileStore(state_dir=tmp_path / "does-not-exist-yet")
     assert store.list_refs() == []
 
 
-def test_list_refs_skips_filenames_that_are_not_valid_slugs(tmp_path: Path) -> None:
-    # A *.json file that does not match <owner>-<repo>-<n> is ignored, not crashed
-    # on — the dir may hold unrelated JSON.
+def test_list_refs_skips_files_that_are_not_prgroom_state(tmp_path: Path) -> None:
+    # The state dir may hold unrelated JSON. Enumeration reads each file's `pr`
+    # object from the body and skips anything that isn't well-formed state —
+    # never crashing `sweep` on a foreign file.
     store = FileStore(state_dir=tmp_path)
     ref = PRRef("octo", "demo", 1)
     store.write(ref, _state(ref))
-    (tmp_path / "nonumbertail.json").write_text("{}")  # no hyphen, no numeric tail
-    (tmp_path / "12345.json").write_text("{}")  # number only, empty owner-repo head
-    (tmp_path / "solo-5.json").write_text("{}")  # numeric tail but head lacks owner/repo split
+    (tmp_path / "unparseable.json").write_text("{ this is not json")  # bad JSON
+    (tmp_path / "array.json").write_text("[1, 2, 3]")  # JSON, but not an object
+    (tmp_path / "no-pr.json").write_text("{}")  # object, but no `pr` key
+    (tmp_path / "partial-pr.json").write_text('{"pr": {"owner": "x"}}')  # incomplete `pr`
     assert store.list_refs() == [ref]
 
 

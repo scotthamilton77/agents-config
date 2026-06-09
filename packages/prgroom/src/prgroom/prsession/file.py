@@ -110,7 +110,7 @@ class FileStore:
             return []
         refs: list[PRRef] = []
         for path in self._dir.glob("*.json"):
-            ref = _parse_slug(path.stem)
+            ref = _ref_from_state_file(path)
             if ref is not None:
                 refs.append(ref)
         return refs
@@ -119,17 +119,18 @@ class FileStore:
         self._state_path(ref).unlink(missing_ok=True)
 
 
-def _parse_slug(stem: str) -> PRRef | None:
-    """Reverse :meth:`PRRef.slug` — ``<owner>-<repo>-<n>`` -> PRRef, else None.
+def _ref_from_state_file(path: Path) -> PRRef | None:
+    """Recover the authoritative ``pr`` ref from a state file's JSON body.
 
-    The trailing ``-<n>`` is the PR number; everything before the last hyphen is
-    ``<owner>-<repo>``, and the first hyphen splits owner from repo. Filenames
-    that don't fit (no numeric tail, missing repo segment) are skipped.
+    The filename slug (``<owner>-<repo>-<n>``) is a *lossy* encoding — both owner
+    and repo may contain the ``-`` delimiter — so enumeration reads the
+    ``{owner, repo, number}`` object that :meth:`PRGroomingState.to_dict` persists
+    in the body, never by reverse-parsing the filename. Files that aren't
+    well-formed prgroom state (unreadable, non-object, or a missing/partial
+    ``pr``) are skipped: the dir may hold unrelated JSON.
     """
-    head, _, number_part = stem.rpartition("-")
-    if not head or not number_part.isdigit():
+    try:
+        payload = json.loads(path.read_bytes())
+        return PRRef.from_dict(payload["pr"])
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
         return None
-    owner, sep, repo = head.partition("-")
-    if not sep or not owner or not repo:
-        return None
-    return PRRef(owner=owner, repo=repo, number=int(number_part))
