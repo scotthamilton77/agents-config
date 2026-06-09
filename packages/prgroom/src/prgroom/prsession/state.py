@@ -256,7 +256,7 @@ class PRGroomingState:
     def to_dict(self) -> JsonObj:
         d: JsonObj = {
             "schema_version": self.schema_version,
-            "pr": {"owner": self.pr.owner, "repo": self.pr.repo, "number": self.pr.number},
+            "pr": self.pr.to_dict(),
             "phase": self.phase.value,
             "round": self.round,
             "last_polled_at": _iso(self.last_polled_at),
@@ -281,9 +281,8 @@ class PRGroomingState:
 
     @classmethod
     def from_dict(cls, d: JsonObj) -> PRGroomingState:
-        pr_raw = d["pr"]
         return cls(
-            pr=PRRef(owner=pr_raw["owner"], repo=pr_raw["repo"], number=pr_raw["number"]),
+            pr=PRRef.from_dict(d["pr"]),
             phase=PRPhase(d["phase"]),
             round=d["round"],
             last_polled_at=_parse_dt(d["last_polled_at"]),

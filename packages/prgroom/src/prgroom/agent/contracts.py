@@ -26,10 +26,6 @@ CONTRACT_VERSION = 1
 JsonObj = dict[str, Any]
 
 
-def _pr_dict(pr: PRRef) -> JsonObj:
-    return {"owner": pr.owner, "repo": pr.repo, "number": pr.number}
-
-
 # ───────────────────────── Cluster contract ─────────────────────────
 
 
@@ -45,7 +41,7 @@ class ClusterInput:
     def to_dict(self) -> JsonObj:
         d: JsonObj = {
             "contract_version": CONTRACT_VERSION,
-            "pr": _pr_dict(self.pr),
+            "pr": self.pr.to_dict(),
             "items": [item.to_dict() for item in self.items],
             "pr_context_path": self.pr_context_path,
         }
@@ -109,7 +105,7 @@ class FixInput:
     def to_dict(self) -> JsonObj:
         return {
             "contract_version": CONTRACT_VERSION,
-            "pr": _pr_dict(self.pr),
+            "pr": self.pr.to_dict(),
             "cluster_id": self.cluster_id,
             "item_gh_ids": list(self.item_gh_ids),
             "items": [item.to_dict() for item in self.items],

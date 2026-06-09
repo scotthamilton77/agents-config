@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,3 +21,11 @@ class PRRef:
     def display(self) -> str:
         """Human-facing GitHub shorthand: ``<owner>/<repo>#<n>``."""
         return f"{self.owner}/{self.repo}#{self.number}"
+
+    def to_dict(self) -> dict[str, Any]:
+        """The ``{owner, repo, number}`` JSON shape used in state + contract payloads."""
+        return {"owner": self.owner, "repo": self.repo, "number": self.number}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> PRRef:
+        return cls(owner=d["owner"], repo=d["repo"], number=d["number"])

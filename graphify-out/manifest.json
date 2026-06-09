@@ -180,8 +180,8 @@
     "hash": "0f748a3199911f802793c59ffc581d0f"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/tests/unit/test_pr_ref.py": {
-    "mtime": 1781013071.8622305,
-    "hash": "516ab1f8da351909d5d8943fca59e50b"
+    "mtime": 1781014130.7320378,
+    "hash": "ae770b9a836798418ea04d119170f974"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/tests/integration/__init__.py": {
     "mtime": 1781012848.8040104,
@@ -220,8 +220,8 @@
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/src/prgroom/agent/contracts.py": {
-    "mtime": 1781013409.8242857,
-    "hash": "4e3ecce94fb8067f93b3b371865b7327"
+    "mtime": 1781014121.163827,
+    "hash": "e94db0f43b02098f68d40589b3dc471e"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/src/prgroom/prsession/store.py": {
     "mtime": 1781013221.0849936,
@@ -236,8 +236,8 @@
     "hash": "ac7ac16d4f9c49eae6d316a1d04b6ff1"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/src/prgroom/prsession/pr_ref.py": {
-    "mtime": 1781013078.0608282,
-    "hash": "c6921d9c3fe419be7c9de709c622510c"
+    "mtime": 1781014083.700652,
+    "hash": "2e915e7f96c9cae97f52ce2616e266b7"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/src/prgroom/prsession/__init__.py": {
     "mtime": 1781012848.8040433,
@@ -248,8 +248,8 @@
     "hash": "cc614eefc762cb2bef437ef7e1a86c21"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/prgroom/src/prgroom/prsession/state.py": {
-    "mtime": 1781013871.9419537,
-    "hash": "e117cc63e6b5ff305cbdc8ec15c8f42e"
+    "mtime": 1781014097.172305,
+    "hash": "2ad6cac96d368009012731ebfe4441c2"
   },
   "/Users/scott/src/projects/agents-config/.claude/worktrees/prgroom-8.1-foundation/packages/holding-place/tests/__init__.py": {
     "mtime": 1781012597.3404226,
