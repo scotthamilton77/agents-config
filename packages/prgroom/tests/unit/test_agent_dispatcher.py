@@ -163,13 +163,26 @@ def test_toml_overrides_the_default_chain(tmp_path: Path) -> None:
     ]
 
 
-def test_provider_missing_cli_or_model_is_a_config_error(tmp_path: Path) -> None:
+def test_provider_missing_cli_or_model_names_the_full_path(tmp_path: Path) -> None:
     cfg = tmp_path / ".prgroom.toml"
     cfg.write_text(
         '[agents.cluster]\nprimary = { model = "haiku" }\n',  # no cli
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="string cli \\+ model"):
+    # Names the full agents.<contract>.<key> path so the user sees which entry.
+    with pytest.raises(ValueError, match=r"agents\.cluster\.primary needs string cli \+ model"):
+        load_chain("cluster", repo_config=cfg, model_override=None)
+
+
+def test_non_table_provider_names_the_full_contract_key_path(tmp_path: Path) -> None:
+    # The error must name the real .prgroom.toml path (agents.<contract>.<key>), not
+    # a bare agents.<key>, so a user debugging their config sees the right key.
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text(
+        '[agents.cluster]\nprimary = { cli = "ollama", model = "g" }\nfallback = "claude"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"agents\.cluster\.fallback must be a table"):
         load_chain("cluster", repo_config=cfg, model_override=None)
 
 

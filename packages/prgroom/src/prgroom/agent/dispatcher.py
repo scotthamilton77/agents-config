@@ -117,17 +117,19 @@ class AllProvidersFailedError(PrgroomError):
         )
 
 
-def _spec_from_toml(raw: Mapping[str, Any]) -> AgentSpec:
-    """Build an :class:`AgentSpec` from one TOML provider table.
+def _spec_from_toml(raw: Mapping[str, Any], *, path: str) -> AgentSpec:
+    """Build an :class:`AgentSpec` from one TOML provider table at ``path``.
 
     ``cli`` + ``model`` are required structural fields; every other key (``effort``,
     ``write``, …) flows into ``extra`` so the per-invoker shapes can read them
-    without this loader knowing each CLI's options.
+    without this loader knowing each CLI's options. ``path`` is the provider's full
+    ``agents.<contract>.<key>`` path, named in the error so a user sees which entry
+    is malformed.
     """
     cli = raw.get("cli")
     model = raw.get("model")
     if not isinstance(cli, str) or not isinstance(model, str):
-        msg = f"agent provider needs string cli + model, got {raw!r}"
+        msg = f"{path} needs string cli + model, got {raw!r}"
         raise ValueError(msg)  # noqa: TRY004  # config-domain validation; ValueError is the loader's uniform type
     extra = {k: v for k, v in raw.items() if k not in _STRUCTURAL_KEYS}
     return AgentSpec(cli=cli, model=model, extra=extra)
@@ -149,10 +151,13 @@ def _chain_from_toml(contract: ContractName, section: Mapping[str, Any]) -> list
         raw = section.get(key)
         if raw is None:
             continue
+        # Name the full .prgroom.toml path (agents.<contract>.<key>) so a user
+        # debugging their config sees the real key, not a bare agents.<key>.
+        path = f"agents.{contract}.{key}"
         if not isinstance(raw, dict):
-            msg = f"agents.{key} must be a table, got {raw!r}"
+            msg = f"{path} must be a table, got {raw!r}"
             raise ValueError(msg)  # noqa: TRY004  # config-domain validation; ValueError is the loader's uniform type
-        specs.append(_spec_from_toml(raw))
+        specs.append(_spec_from_toml(raw, path=path))
     return specs
 
 
