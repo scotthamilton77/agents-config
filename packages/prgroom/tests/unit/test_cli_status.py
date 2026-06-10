@@ -91,6 +91,21 @@ def test_status_malformed_ref(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "PRECONDITION_BAD_PR_REF" in result.output
 
 
+def test_status_locked_success_reads_under_lock(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The uncontended --locked path: acquire the lock, read, release, render. Proves
+    # the strictly-consistent read succeeds (the contention test only proves the raise).
+    patched.write(_REF, _quiesced_state())
+    monkeypatch.setattr(cli, "_build_gh", lambda: _gh())
+    result = runner.invoke(cli.app, ["status", "octo/demo#7", "--locked", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["pr"] == 7
+    # The lock was released on the way out, so a subsequent acquire succeeds.
+    assert patched.try_acquire(_REF)
+    patched.release(_REF)
+
+
 def test_status_locked_contention_exits_75(
     patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
