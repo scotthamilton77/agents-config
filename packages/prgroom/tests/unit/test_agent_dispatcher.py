@@ -180,6 +180,19 @@ def test_non_table_provider_is_a_config_error(tmp_path: Path) -> None:
         load_chain("cluster", repo_config=cfg, model_override=None)
 
 
+def test_present_section_without_primary_is_a_config_error(tmp_path: Path) -> None:
+    # A present [agents.cluster] that omits `primary` must be rejected, not silently
+    # accepted with fallback-as-head (or an empty chain that later raises a
+    # contentless both-fail). An absent section still falls through to the default.
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text(
+        '[agents.cluster]\nfallback = { cli = "ollama", model = "tinyllama" }\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="needs a 'primary' provider"):
+        load_chain("cluster", repo_config=cfg, model_override=None)
+
+
 def test_model_override_replaces_the_primary_model_only() -> None:
     # --cluster-model / --fix-model swaps the primary provider's model, keeping its
     # cli + the rest of the chain (operator wants "the same provider, this model").

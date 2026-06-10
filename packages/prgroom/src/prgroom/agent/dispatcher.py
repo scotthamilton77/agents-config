@@ -129,8 +129,17 @@ def _spec_from_toml(raw: Mapping[str, Any]) -> AgentSpec:
     return AgentSpec(cli=cli, model=model, extra=extra)
 
 
-def _chain_from_toml(section: Mapping[str, Any]) -> list[AgentSpec]:
-    """Read ``primary`` … ``fallback3`` from an ``[agents.<contract>]`` section."""
+def _chain_from_toml(contract: ContractName, section: Mapping[str, Any]) -> list[AgentSpec]:
+    """Read ``primary`` … ``fallback3`` from a present ``[agents.<contract>]`` section.
+
+    A present section MUST define ``primary``: a fallback-only section would build a
+    chain with fallback-as-head, and a key-less one an empty chain that later raises
+    a contentless both-fail. Both are baffling misconfigs, so reject them with the
+    loader's uniform ``ValueError`` rather than silently honoring them.
+    """
+    if "primary" not in section:
+        msg = f"agents.{contract} needs a 'primary' provider"
+        raise ValueError(msg)
     specs: list[AgentSpec] = []
     for key in _CHAIN_KEYS:
         raw = section.get(key)
@@ -160,7 +169,7 @@ def load_chain(
     table = _read_toml(repo_config)
     agents = _subtable(table, "agents")
     section = _subtable(agents, contract)
-    specs = _chain_from_toml(section) if section else list(_DEFAULT_CHAINS[contract])
+    specs = _chain_from_toml(contract, section) if section else list(_DEFAULT_CHAINS[contract])
     if model_override is not None and specs:
         head = specs[0]
         specs[0] = AgentSpec(cli=head.cli, model=model_override, extra=dict(head.extra))
