@@ -302,8 +302,9 @@ Then **STOP**. Wait for Scott.
   the `Makefile`); never run against, or write into, the main tree.
 - **bd state:** set `in_progress` on claim; record PR URL in notes; never `close` (Scott closes on
   merge).
-- After modifying code files, run `graphify update .` once per bead before the completion gate
-  (AST-only, no API cost) — repo convention.
+- **Never run `graphify update .` from a bead worktree** — it commits worktree-specific graph data
+  and repoints `.graphify_root`, polluting the PR. The graph refresh is deferred to `main` after the
+  stack merges (a post-merge maintenance step), never on a feature branch.
 - This is a dated plan file → bead IDs are allowed here (the no-tracker-IDs rule exempts dated
   plan/spec/audit files).
 - **First run stops after `8.1` alone** (D10); subsequent runs go milestone-by-milestone.
