@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.plugins.base import PluginRoute
 from installer.plugins.beads import BeadsPlugin
 from installer.plugins.registry import discover
 
 
-def _route_by_glob(adapter: BeadsPlugin, home: Path, glob: str) -> object:
+def _route_by_glob(adapter: BeadsPlugin, home: Path, glob: str) -> PluginRoute:
     """Pick the single route whose glob matches; raises if not exactly one."""
     matches = [r for r in adapter.routes(home) if r.glob == glob]
     assert len(matches) == 1, f"expected one {glob!r} route, got {len(matches)}"
