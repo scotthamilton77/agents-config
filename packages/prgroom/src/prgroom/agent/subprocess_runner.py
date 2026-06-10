@@ -410,9 +410,9 @@ class SubprocessAgentRunner:
 
         SIGTERM first, giving the child ``sigterm_grace_s`` to exit cleanly (flush
         buffers, release its ``.git/index.lock``). Only if it ignores SIGTERM do we
-        SIGKILL. Either way a final ``communicate`` drains the stdout/stderr/stdin
-        pipes and reaps the child, so no zombie lingers and no PIPE fd leaks before
-        the error propagates.
+        SIGKILL. Either way a final ``communicate`` reaps the child and reads its
+        stdout/stderr capture files (stdin was already closed in ``send_stdin``), so
+        no zombie lingers before the error propagates; ``cleanup`` unlinks the files.
         """
         proc.terminate()
         try:
