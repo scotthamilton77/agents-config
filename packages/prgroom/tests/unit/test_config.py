@@ -68,9 +68,12 @@ def test_cli_flag_overrides_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 def test_toml_parses_duration_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # §4.3: the quiescence duration knobs live under the [quiescence] table.
     monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
+    monkeypatch.delenv("PRGROOM_REVIEW_START_TIMEOUT", raising=False)
+    monkeypatch.delenv("PRGROOM_IDLE_THRESHOLD", raising=False)
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text('review_start_timeout = "5m"\nidle_threshold = "90s"\n')
+    toml.write_text('[quiescence]\nreview_start_timeout = "5m"\nidle_threshold = "90s"\n')
     cfg = PrgroomConfig.load(repo_config=toml)
     assert cfg.review_start_timeout == timedelta(minutes=5)
     assert cfg.idle_threshold == timedelta(seconds=90)
@@ -94,8 +97,10 @@ def test_non_string_duration_in_toml_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
+    monkeypatch.delenv("PRGROOM_IDLE_THRESHOLD", raising=False)
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("idle_threshold = 90\n")  # int, not the required duration string
+    # §4.3: int under [quiescence] is not the required duration string.
+    toml.write_text("[quiescence]\nidle_threshold = 90\n")
     with pytest.raises(ValueError, match="idle_threshold"):
         PrgroomConfig.load(repo_config=toml)
 
