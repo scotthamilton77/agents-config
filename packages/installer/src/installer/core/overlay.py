@@ -27,6 +27,7 @@ registry's fatal strategy. See ``_place``.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core.model import FileKind, Provenance
@@ -67,32 +68,40 @@ def overlay_plugins(
         for ns in _TOOL_NAMESPACES:
             if adapter.should_install_namespace(ns, "tool"):
                 for item in stage_namespace(tool_root, ns, provenance=prov):
-                    _place(plan, item, registry=registry)
+                    _place(plan, item, registry=registry, carrier_eligible=False)
         for item in stage_settings(tool_root, provenance=prov):
-            _place(plan, item, registry=registry)
+            _place(plan, item, registry=registry, carrier_eligible=False)
         for ns in _SHARED_NAMESPACES:
             if adapter.should_install_namespace(ns, "shared"):
                 for item in stage_namespace(shared_root, ns, provenance=prov):
-                    _place(plan, item, registry=registry)
+                    _place(plan, item, registry=registry, carrier_eligible=True)
     return plan
 
 
-def _place(plan: StagingPlan, incoming: StagedItem, *, registry: MergeRegistry) -> None:
+def _place(
+    plan: StagingPlan,
+    incoming: StagedItem,
+    *,
+    registry: MergeRegistry,
+    carrier_eligible: bool,
+) -> None:
     """Insert ``incoming`` into the plan, resolving a collision if the
     destination is already occupied.
 
-    The shared-carrier DIR path is intercepted before the registry: when an
-    incoming plugin directory collides with a ``shared_carrier`` DIR and their
+    The shared-carrier DIR path is intercepted before the registry: when a
+    ``carrier_eligible`` incoming directory (one staged from the plugin's
+    ``.agents/`` shared tree) collides with a ``shared_carrier`` DIR and their
     file sets are disjoint, the two directories carrier-merge (the carrier item
-    is kept with its flag cleared). Every other collision — including a
-    carrier-merge with overlapping files, a DIR collision on a non-carrier item,
-    and a second plugin colliding on an already-merged (flag-cleared) carrier —
-    routes through the registry, where ``FileKind.DIR`` is fatal."""
+    is kept with its flag cleared). Every other collision — a tool-scope plugin
+    DIR (``carrier_eligible=False``), a carrier-merge with overlapping files, a
+    DIR collision on a non-carrier item, and a second plugin colliding on an
+    already-merged (flag-cleared) carrier — routes through the registry, where
+    ``FileKind.DIR`` is fatal."""
     existing = plan.items.get(incoming.dest_relpath)
     if existing is None:
         plan.items[incoming.dest_relpath] = incoming
         return
-    if _carrier_merge_allowed(existing, incoming):
+    if carrier_eligible and _carrier_merge_allowed(existing, incoming):
         # Mirror bash `rm -f sentinel`: the carrier dir survives with the
         # plugin's disjoint files conceptually merged in; clearing the flag
         # makes any further plugin collision on this dir a true plugin-plugin
@@ -105,17 +114,27 @@ def _place(plan: StagingPlan, incoming: StagedItem, *, registry: MergeRegistry) 
 
 
 def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
-    """True when ``incoming`` (a plugin DIR) may carrier-merge into ``existing``
-    (a shared-carrier DIR): both are directories, ``existing`` still carries the
-    shared-carrier flag, and their on-disk file sets are disjoint.
+    """True when ``incoming`` (a plugin ``.agents/`` DIR) may carrier-merge into
+    ``existing`` (a shared-carrier DIR): both are directories, ``existing`` still
+    carries the shared-carrier flag, and their on-disk file sets are disjoint.
+    The ``.agents/``-origin precondition is enforced by the caller via
+    ``carrier_eligible`` — a tool-scope plugin DIR never reaches here.
 
     Port of the bash carrier-merge guard (``scripts/install.sh:550-595``): the
     disjoint-file-set check is the load-bearing precondition — overlapping names
-    fall through to the registry's fatal strategy."""
+    fall through to the registry's fatal strategy. Dotfiles are excluded from the
+    comparison to mirror bash's ``"$dir"/*`` globs, which skip dot-prefixed
+    entries."""
     if not (
         existing.kind is FileKind.DIR and incoming.kind is FileKind.DIR and existing.shared_carrier
     ):
         return False
-    existing_names = {p.name for p in existing.source_path.iterdir()}
-    incoming_names = {p.name for p in incoming.source_path.iterdir()}
+    existing_names = _visible_names(existing.source_path)
+    incoming_names = _visible_names(incoming.source_path)
     return existing_names.isdisjoint(incoming_names)
+
+
+def _visible_names(directory: Path) -> set[str]:
+    """The dot-excluded child names of ``directory`` — the entries a bash
+    ``"$dir"/*`` glob would iterate (dotfiles are skipped without ``dotglob``)."""
+    return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}

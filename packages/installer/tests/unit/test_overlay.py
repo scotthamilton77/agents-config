@@ -316,6 +316,34 @@ def test_non_carrier_dir_collision_is_fatal_even_when_disjoint(tmp_path: Path) -
         overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
 
 
+def test_tool_scope_plugin_dir_cannot_carrier_merge(tmp_path: Path) -> None:
+    """Carrier-merge is eligible ONLY for content from the plugin's .agents/
+    (shared) tree. A tool-scope plugin DIR (.<tool>/skills/...) colliding with a
+    shared_carrier dir is fatal even with a disjoint file set — mirrors the bash
+    guard requiring the incoming src under /src/plugins/<p>/.agents/."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    # Tool-scope (.claude/), NOT .agents/ — disjoint file set, but ineligible.
+    tool_skill = plugin.source_path / ".claude" / "skills" / "demo-skill"
+    tool_skill.mkdir(parents=True)
+    (tool_skill / "SKILL.md").write_bytes(b"plugin")
+
+    with pytest.raises(CollisionError):
+        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+
+def test_carrier_merge_ignores_dotfiles_in_disjoint_check(tmp_path: Path) -> None:
+    """Dotfiles are excluded from the disjointness comparison (bash `"$dir"/*`
+    skips them): a shared carrier and an incoming plugin dir that share only a
+    dot-prefixed entry still carrier-merge."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh", ".gitkeep"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", ".gitkeep"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.items[Path("skills/demo-skill")].shared_carrier is False
+
+
 def test_second_plugin_on_merged_carrier_is_fatal(tmp_path: Path) -> None:
     """After one plugin carrier-merges (clearing the flag), a SECOND plugin
     colliding on the same dir is a true plugin-plugin collision and fatal —
