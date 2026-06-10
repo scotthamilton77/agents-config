@@ -78,6 +78,7 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_UNRESOLVED = "PRECONDITION_NO_UNRESOLVED"
     PRECONDITION_NO_ESCALATIONS = "PRECONDITION_NO_ESCALATIONS"
     PRECONDITION_WAIT_NOT_APPLICABLE = "PRECONDITION_WAIT_NOT_APPLICABLE"
+    PRECONDITION_NO_STATE = "PRECONDITION_NO_STATE"
     PRECONDITION_LOCK_HELD = "PRECONDITION_LOCK_HELD"
     PRECONDITION_STORE_UNAVAILABLE = "PRECONDITION_STORE_UNAVAILABLE"
     # RUNTIME_*
@@ -178,6 +179,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="`wait` invoked while phase is fixes-pending",
         why="`wait` is for non-actionable phases; fixes-pending has work to do",
         how="invoke `run` (full cycle) or `fix`+`push` directly",
+    ),
+    ErrorCode.PRECONDITION_NO_STATE: RegistryEntry(
+        what="no grooming state exists for this PR yet",
+        why="`status` reads existing state; this PR has never been polled",
+        how="run `poll` (or `run`) first to record state, then re-check `status`",
     ),
     ErrorCode.PRECONDITION_LOCK_HELD: RegistryEntry(
         what="another prgroom invocation holds the PR lock",
