@@ -88,7 +88,17 @@ class StagedItem:
     `executable` is a sync-phase write attribute (mode bit 0o755 vs 0o644),
     not a merge-dispatch concern — see design doc §3.6. Directories
     ignore `executable`; the sync engine preserves the source tree's
-    mode bits for recursive copies."""
+    mode bits for recursive copies.
+
+    `shared_carrier` is the in-memory replacement for the bash
+    `.carrier-from-user-shared` sentinel file (`scripts/install.sh:517-529`).
+    It is set `True` only on `skills/` and `agents/` `kind==DIR` items first
+    staged from the shared carrier tree (`build_plan` Phase 2). The Phase 6
+    plugin overlay reads it to allow a carrier-merge (a plugin overlaying a
+    disjoint file set into a shared skill/agent dir) while keeping plugin-vs-
+    plugin directory collisions fatal. The overlay clears it after a merge —
+    mirroring the bash `rm -f sentinel` — so a second plugin colliding on the
+    same dir is a true plugin-plugin collision (fatal)."""
 
     source_path: Path
     dest_relpath: Path
@@ -97,6 +107,7 @@ class StagedItem:
     provenance: Provenance
     content: bytes | None = None
     executable: bool = False
+    shared_carrier: bool = False
 
 
 @dataclass(slots=True)

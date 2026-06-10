@@ -9,6 +9,7 @@ single call.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -71,3 +72,53 @@ def test_stage_and_transform_dispatches_correct_adapter_per_tool(tmp_path: Path)
     assert gemini_content is not None
     assert "color" not in _frontmatter(gemini_content)
     assert plans[Tool.CLAUDE].items[_AGENT].content == _CLAUDE_AGENT
+
+
+@dataclass(frozen=True, slots=True)
+class _Plugin:
+    """Minimal active PluginAdapter for the overlay-wiring test."""
+
+    name: str
+    source_path: Path
+
+    def is_detected(self, home: Path) -> bool:  # noqa: ARG002  # inert  # pragma: no cover
+        return True
+
+
+def test_stage_and_transform_overlays_active_plugins(tmp_path: Path) -> None:
+    """Phase 6 wiring: an active plugin's content is overlaid onto the tool's
+    plan between base staging and the post-staging transform."""
+    repo = _make_repo(tmp_path)
+    plugin_root = tmp_path / "plugins" / "test-plugin"
+    (plugin_root / ".claude" / "rules").mkdir(parents=True)
+    (plugin_root / ".claude" / "rules" / "plugin-rule.md").write_bytes(b"from plugin")
+
+    plans = stage_and_transform(
+        [Tool.CLAUDE],
+        repo_root=repo,
+        io=ScriptedIO(),
+        plugins=[_Plugin(name="test-plugin", source_path=plugin_root)],
+    )
+
+    assert plans[Tool.CLAUDE].items[Path("rules/plugin-rule.md")].content == b"from plugin"
+
+
+def test_stage_and_transform_overlay_runs_before_gemini_transform(tmp_path: Path) -> None:
+    """A plugin-contributed Gemini agent must still pass through the Gemini
+    frontmatter transform — proving the overlay runs BEFORE post_staging_transforms
+    (brief phase ladder: 6 overlay, then 6.95 Gemini transform)."""
+    repo = _make_repo(tmp_path)
+    plugin_root = tmp_path / "plugins" / "test-plugin"
+    (plugin_root / ".agents" / "agents").mkdir(parents=True)
+    (plugin_root / ".agents" / "agents" / "plug-agent.md").write_bytes(_CLAUDE_AGENT)
+
+    plans = stage_and_transform(
+        [Tool.GEMINI],
+        repo_root=repo,
+        io=ScriptedIO(),
+        plugins=[_Plugin(name="test-plugin", source_path=plugin_root)],
+    )
+
+    content = plans[Tool.GEMINI].items[Path("agents/plug-agent.md")].content
+    assert content is not None
+    assert "color" not in _frontmatter(content)  # transform ran on plugin content
