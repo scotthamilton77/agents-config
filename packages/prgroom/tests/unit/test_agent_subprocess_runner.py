@@ -279,8 +279,9 @@ def test_stdin_broken_pipe_does_not_crash_and_falls_through(tmp_path: Path) -> N
 
 
 def test_run_polls_repeatedly_until_a_slow_child_finishes(tmp_path: Path) -> None:
-    # A child that needs two polls before completing exercises the poll-sleep-repoll
-    # loop with a real (tiny) non-zero interval — not just the first-poll-done path.
+    # finishes_after=3 → poll() returns running (None) three times before the code,
+    # exercising the poll-sleep-repoll loop with a real (tiny) non-zero interval —
+    # not just the first-poll-done path.
     proc = FakeProcess(returncode=0, stdout="DONE", finishes_after=3)
     runner = SubprocessAgentRunner(
         spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
