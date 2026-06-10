@@ -11,6 +11,8 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
+import pytest
+
 from prgroom.proc import CommandResult, CommandRunner, SubprocessRunner
 from tests.fakes import RecordedRunner, TimeoutRunner
 
@@ -52,20 +54,12 @@ def test_recorded_runner_satisfies_protocol_and_records_calls() -> None:
 
 def test_recorded_runner_raises_when_exhausted() -> None:
     runner = RecordedRunner([])
-    try:
+    with pytest.raises(AssertionError, match="exhausted"):
         runner.run(["gh", "api", "x"])
-    except AssertionError as exc:
-        assert "exhausted" in str(exc)
-    else:  # pragma: no cover - the call above must raise
-        raise AssertionError("expected RecordedRunner to raise when exhausted")
 
 
 def test_timeout_runner_raises_timeout_expired() -> None:
     runner = TimeoutRunner()
     assert isinstance(runner, CommandRunner)
-    try:
+    with pytest.raises(subprocess.TimeoutExpired):
         runner.run(["git", "push"], timeout=1.0)
-    except subprocess.TimeoutExpired:
-        pass
-    else:  # pragma: no cover - the call above must raise
-        raise AssertionError("expected TimeoutRunner to raise TimeoutExpired")

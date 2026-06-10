@@ -37,7 +37,7 @@ class CommandRunner(Protocol):
         self,
         argv: Sequence[str],
         *,
-        input: str | None = None,  # noqa: A002  # stdlib name; matches subprocess.run's keyword
+        input: str | None = None,  # stdlib name; matches subprocess.run's keyword
         timeout: float | None = None,
     ) -> CommandResult: ...  # pragma: no cover
 
@@ -55,10 +55,10 @@ class SubprocessRunner:
         self,
         argv: Sequence[str],
         *,
-        input: str | None = None,  # noqa: A002  # stdlib name; matches subprocess.run's keyword
+        input: str | None = None,  # stdlib name; matches subprocess.run's keyword
         timeout: float | None = None,
     ) -> CommandResult:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603  # argv is internally built (gh/git verb + typed args), never shell-interpolated user input; this IS the sanctioned boundary
             list(argv),
             capture_output=True,
             text=True,

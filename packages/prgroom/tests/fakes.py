@@ -35,7 +35,7 @@ class RecordedRunner:
         self,
         argv: Sequence[str],
         *,
-        input: str | None = None,  # noqa: A002  # matches the Protocol's keyword name
+        input: str | None = None,  # matches the Protocol's keyword name
         timeout: float | None = None,  # noqa: ARG002  # recorded runner ignores timeout
     ) -> CommandResult:
         self.calls.append(list(argv))
@@ -60,7 +60,7 @@ class TimeoutRunner:
         self,
         argv: Sequence[str],
         *,
-        input: str | None = None,  # noqa: A002  # matches the Protocol's keyword name
+        input: str | None = None,  # noqa: ARG002  # part of the Protocol signature; unused here
         timeout: float | None = None,
     ) -> CommandResult:  # pragma: no cover - never returns; raises below
         self.calls.append(list(argv))
