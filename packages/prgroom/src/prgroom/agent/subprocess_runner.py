@@ -21,6 +21,7 @@ job — keeping that policy out of the boundary keeps this layer a pure mechanis
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -222,8 +223,12 @@ class _PopenHandle:  # pragma: no cover - OS boundary; tests inject a fake handl
 
     def send_stdin(self, data: str) -> None:
         assert self._proc.stdin is not None  # noqa: S101  # only called when stdin=PIPE was opened
-        self._proc.stdin.write(data)
-        self._proc.stdin.close()
+        # Close the pipe even if the write throws (child exited first → BrokenPipe),
+        # so the fd never leaks; the caller swallows BrokenPipeError as best-effort.
+        try:
+            self._proc.stdin.write(data)
+        finally:
+            self._proc.stdin.close()
 
     def terminate(self) -> None:
         self._proc.terminate()
@@ -319,8 +324,12 @@ class SubprocessAgentRunner:
         proc = self._spawn(invocation.argv, stdin=invocation.stdin)
         # Deliver stdin (and close the pipe) immediately so a stdin-reading child
         # (ollama) can make progress; without this it blocks until the budget.
+        # Best-effort: a child that already exited (e.g. ollama erroring out before
+        # reading stdin) makes the write hit a closed pipe — swallow it so the child
+        # is reported via its returncode/stderr and falls through, not a crash.
         if invocation.stdin is not None:
-            proc.send_stdin(invocation.stdin)
+            with contextlib.suppress(BrokenPipeError):
+                proc.send_stdin(invocation.stdin)
         while True:
             if cancel is not None and cancel.is_set():
                 self._terminate(proc)

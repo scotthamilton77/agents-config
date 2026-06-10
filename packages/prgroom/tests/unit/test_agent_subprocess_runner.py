@@ -62,12 +62,14 @@ class FakeProcess:
         stderr: str = "",
         finishes_after: int | None = 0,
         survives_sigterm: bool = False,
+        stdin_raises: bool = False,
     ) -> None:
         self._returncode = returncode
         self._stdout = stdout
         self._stderr = stderr
         self._finishes_after = finishes_after
         self._survives_sigterm = survives_sigterm
+        self._stdin_raises = stdin_raises
         self._polls = 0
         self.terminated = False
         self.killed = False
@@ -87,6 +89,10 @@ class FakeProcess:
         return None
 
     def send_stdin(self, data: str) -> None:
+        # Models a child that exited before reading stdin: the write hits a closed
+        # pipe. The real _PopenHandle closes its pipe in finally regardless.
+        if self._stdin_raises:
+            raise BrokenPipeError(32, "Broken pipe")
         self.delivered_stdin = data
 
     def terminate(self) -> None:
@@ -249,6 +255,27 @@ def test_non_stdin_cli_delivers_no_stdin(tmp_path: Path) -> None:
         time_budget_s=5.0,
     )
     assert proc.delivered_stdin is None
+
+
+def test_stdin_broken_pipe_does_not_crash_and_falls_through(tmp_path: Path) -> None:
+    # A child (e.g. ollama) that exits before reading stdin makes the write hit a
+    # closed pipe (BrokenPipeError). Delivery is best-effort: the runner must NOT
+    # crash — it surfaces the child's returncode + stderr so the dispatcher's ladder
+    # turns it into a _LinkFailure and falls through to the next provider.
+    proc = FakeProcess(returncode=1, stderr="model not found", stdin_raises=True)
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = runner.run(
+        _spec("ollama", "gemma4"),
+        prompt_template=_PROMPT,
+        render_data={},
+        contract_payload={},
+        time_budget_s=5.0,
+    )
+    assert result.returncode == 1  # surfaced, not raised
+    assert "model not found" in result.stderr
 
 
 def test_run_polls_repeatedly_until_a_slow_child_finishes(tmp_path: Path) -> None:
