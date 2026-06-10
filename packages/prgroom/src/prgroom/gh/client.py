@@ -5,7 +5,8 @@
 :class:`~prgroom.proc.CommandRunner` boundary, and maps failures onto the
 existing :class:`~prgroom.errors.ErrorCode` registry:
 
-* 5xx / rate-limit (403|429 naming a rate limit) -> ``RUNTIME_GH_TRANSIENT``
+* 5xx, or rate-limit (429 always; 403 only when stderr names a rate limit)
+  -> ``RUNTIME_GH_TRANSIENT``
 * other 4xx (not 404, not rate-limit)            -> ``RUNTIME_GH_TERMINAL``
 * 404                                            -> :class:`GhNotFoundError`
   (a typed signal; the caller's startup precondition owns
