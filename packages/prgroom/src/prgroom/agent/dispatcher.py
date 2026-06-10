@@ -165,15 +165,22 @@ def load_chain(
     """Resolve the provider chain for ``contract`` (TOML section, else default).
 
     Reads ``[agents.<contract>]`` from the per-repo ``.prgroom.toml`` via the
-    foundation loader; an absent section (or file) yields the shipped default
-    chain. ``model_override`` (``--cluster-model`` / ``--fix-model``) swaps the
-    **primary** provider's model only, leaving its cli and the rest of the chain
-    intact — "same provider, this model".
+    foundation loader; a truly **absent** section (or file) yields the shipped
+    default chain, while a **present** section — even an empty one — must define
+    ``primary`` (else it is rejected). ``model_override`` (``--cluster-model`` /
+    ``--fix-model``) swaps the **primary** provider's model only, leaving its cli
+    and the rest of the chain intact — "same provider, this model".
     """
     table = _read_toml(repo_config)
     agents = _subtable(table, "agents")
-    section = _subtable(agents, contract)
-    specs = _chain_from_toml(contract, section) if section else list(_DEFAULT_CHAINS[contract])
+    # Distinguish key-PRESENT from value-EMPTY by membership, not truthiness: an
+    # empty-but-present [agents.<contract>] table is still a present section, so it
+    # must route through _chain_from_toml (where the missing-primary check fires).
+    # Only a truly ABSENT key falls through to the shipped default chain.
+    if contract in agents:
+        specs = _chain_from_toml(contract, _subtable(agents, contract))
+    else:
+        specs = list(_DEFAULT_CHAINS[contract])
     if model_override is not None and specs:
         head = specs[0]
         specs[0] = AgentSpec(cli=head.cli, model=model_override, extra=dict(head.extra))

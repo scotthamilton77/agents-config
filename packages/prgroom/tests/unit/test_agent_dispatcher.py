@@ -173,13 +173,6 @@ def test_provider_missing_cli_or_model_is_a_config_error(tmp_path: Path) -> None
         load_chain("cluster", repo_config=cfg, model_override=None)
 
 
-def test_non_table_provider_is_a_config_error(tmp_path: Path) -> None:
-    cfg = tmp_path / ".prgroom.toml"
-    cfg.write_text('[agents.cluster]\nprimary = "claude"\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="must be a table"):
-        load_chain("cluster", repo_config=cfg, model_override=None)
-
-
 def test_present_section_without_primary_is_a_config_error(tmp_path: Path) -> None:
     # A present [agents.cluster] that omits `primary` must be rejected, not silently
     # accepted with fallback-as-head (or an empty chain that later raises a
@@ -191,6 +184,30 @@ def test_present_section_without_primary_is_a_config_error(tmp_path: Path) -> No
     )
     with pytest.raises(ValueError, match="needs a 'primary' provider"):
         load_chain("cluster", repo_config=cfg, model_override=None)
+
+
+def test_present_but_empty_section_is_a_config_error(tmp_path: Path) -> None:
+    # A present-but-empty [agents.cluster] is key-present, so it must route through
+    # the missing-primary check — NOT fall through to the shipped default. (Truthiness
+    # of the returned subtable can't tell empty-present from absent; key membership can.)
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text("[agents.cluster]\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="needs a 'primary' provider"):
+        load_chain("cluster", repo_config=cfg, model_override=None)
+
+
+def test_absent_section_still_falls_through_to_the_default(tmp_path: Path) -> None:
+    # A config file with NO [agents.cluster] key (only an unrelated section) must
+    # still yield the shipped default chain — only a truly absent section, not an
+    # empty one, gets the default.
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text('[agents.fix]\nprimary = { cli = "claude", model = "opus" }\n', encoding="utf-8")
+    chain = load_chain("cluster", repo_config=cfg, model_override=None)
+    assert [(p.cli, p.model) for p in chain.providers] == [
+        ("ollama", "gemma4"),
+        ("claude", "haiku"),
+        ("codex", "gpt-5.4-mini"),
+    ]
 
 
 def test_model_override_replaces_the_primary_model_only() -> None:
