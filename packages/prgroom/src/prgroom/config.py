@@ -94,7 +94,11 @@ def _resolve_duration(
     if not isinstance(raw, str):
         msg = f"{table_key} must be a duration string, got {raw!r}"
         raise ValueError(msg)  # noqa: TRY004  # config-domain validation error; ValueError is the loader's uniform type
-    return parse_duration(raw)
+    try:
+        return parse_duration(raw)
+    except ValueError as exc:
+        msg = f"{table_key} must be a duration string, got {raw!r}"
+        raise ValueError(msg) from exc
 
 
 def _resolve_bool(
@@ -210,6 +214,16 @@ def _read_toml(path: Path | None) -> dict[str, Any]:
 
 
 def _subtable(table: dict[str, Any], key: str) -> dict[str, Any]:
-    """Return the named sub-table, or an empty dict if absent or not a table."""
+    """Return the named sub-table; ``{}`` if absent, raise if present-but-not-a-table.
+
+    An absent key falls through to per-setting defaults. A present-but-wrong-typed key
+    (e.g. ``quiescence = "..."``) is a config error — failing fast keeps the loader's
+    type validation consistent rather than silently ignoring a malformed override.
+    """
     raw = table.get(key)
-    return raw if isinstance(raw, dict) else {}
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        msg = f"{key} must be a table, got {raw!r}"
+        raise ValueError(msg)  # noqa: TRY004  # config-domain validation error; ValueError is the loader's uniform type
+    return raw

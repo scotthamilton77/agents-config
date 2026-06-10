@@ -195,18 +195,16 @@ class FileStore:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            holder_pid = _read_lock_pid(lock_path)
-            os.close(fd)
-            raise lock_held_error(ref, pid=holder_pid) from exc
-        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise lock_held_error(ref, pid=_read_lock_pid(lock_path)) from exc
             os.ftruncate(fd, 0)
             os.write(fd, f"{os.getpid()}\n".encode())
             os.fsync(fd)
             yield
         finally:
-            os.close(fd)  # closing the fd releases the flock
+            os.close(fd)  # single exit path — always closes the fd (releases the flock)
 
     def list_refs(self) -> list[PRRef]:
         if not self._dir.is_dir():

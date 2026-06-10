@@ -8,6 +8,7 @@ boolean ``auto_request_human_review`` and the ``poll_interval`` added here.
 
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,19 +23,12 @@ from prgroom.config import (
     PrgroomConfig,
 )
 
-_QUIESCENCE_ENV = [
-    "PRGROOM_IDLE_THRESHOLD",
-    "PRGROOM_POLL_INTERVAL",
-    "PRGROOM_REVIEW_START_TIMEOUT",
-    "PRGROOM_REVIEW_FINISH_TIMEOUT",
-    "PRGROOM_AUTO_REQUEST_HUMAN_REVIEW",
-    "PRGROOM_MAX_ROUNDS",
-]
-
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in _QUIESCENCE_ENV:
+    # Hermeticity: `load()` reads every PRGROOM_* var, so clear ALL of them (not a
+    # hand-maintained subset) so the suite is deterministic under any ambient env.
+    for name in [key for key in os.environ if key.startswith("PRGROOM_")]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -134,3 +128,28 @@ def test_non_bool_auto_request_in_quiescence_table_raises(tmp_path: Path) -> Non
     toml.write_text('[quiescence]\nauto_request_human_review = "yes"\n')  # string, not a bool
     with pytest.raises(ValueError, match="auto_request_human_review"):
         PrgroomConfig.load(repo_config=toml)
+
+
+def test_invalid_toml_duration_names_the_key(tmp_path: Path) -> None:
+    # A malformed-but-string TOML duration must name its key (parity with the env
+    # path), not leak a bare "invalid duration string" from parse_duration.
+    toml = tmp_path / ".prgroom.toml"
+    toml.write_text('[quiescence]\npoll_interval = "soon"\n')
+    with pytest.raises(ValueError, match="poll_interval"):
+        PrgroomConfig.load(repo_config=toml)
+
+
+def test_wrongly_typed_quiescence_table_raises_not_silently_ignored(tmp_path: Path) -> None:
+    # A present-but-wrong-typed [quiescence] (here a string, not a table) must fail
+    # fast like every other type error — never be silently treated as absent.
+    toml = tmp_path / ".prgroom.toml"
+    toml.write_text('quiescence = "oops"\n')
+    with pytest.raises(ValueError, match="quiescence"):
+        PrgroomConfig.load(repo_config=toml)
+
+
+def test_autouse_fixture_clears_every_prgroom_var() -> None:
+    # Hermeticity guard: after the autouse _clear_env fixture runs, NO PRGROOM_* var
+    # survives — so an ambient env (e.g. an operator's exported PRGROOM_POLL_INTERVAL)
+    # cannot perturb any default-path assertion in this module.
+    assert [key for key in os.environ if key.startswith("PRGROOM_")] == []

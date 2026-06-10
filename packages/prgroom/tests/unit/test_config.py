@@ -8,6 +8,7 @@ config file.
 
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -18,6 +19,15 @@ from prgroom.config import (
     PrgroomConfig,
     parse_duration,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermeticity: `load()` reads every PRGROOM_* var, so clear ALL of them up front
+    # so no ambient override leaks into a default- or TOML-path assertion. Tests that
+    # exercise env precedence set their var explicitly AFTER this fixture runs.
+    for name in [key for key in os.environ if key.startswith("PRGROOM_")]:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -40,14 +50,12 @@ def test_parse_duration_rejects_malformed_strings(bad: str) -> None:
         parse_duration(bad)
 
 
-def test_defaults_when_no_file_no_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
+def test_defaults_when_no_file_no_env(tmp_path: Path) -> None:
     cfg = PrgroomConfig.load(repo_config=tmp_path / "absent.toml")
     assert cfg.max_rounds == DEFAULT_MAX_ROUNDS == 3
 
 
-def test_toml_overrides_built_in_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
+def test_toml_overrides_built_in_default(tmp_path: Path) -> None:
     toml = tmp_path / ".prgroom.toml"
     toml.write_text("max_rounds = 5\n")
     assert PrgroomConfig.load(repo_config=toml).max_rounds == 5
@@ -67,11 +75,8 @@ def test_cli_flag_overrides_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert PrgroomConfig.load(repo_config=toml, max_rounds_flag=9).max_rounds == 9
 
 
-def test_toml_parses_duration_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_toml_parses_duration_keys(tmp_path: Path) -> None:
     # §4.3: the quiescence duration knobs live under the [quiescence] table.
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
-    monkeypatch.delenv("PRGROOM_REVIEW_START_TIMEOUT", raising=False)
-    monkeypatch.delenv("PRGROOM_IDLE_THRESHOLD", raising=False)
     toml = tmp_path / ".prgroom.toml"
     toml.write_text('[quiescence]\nreview_start_timeout = "5m"\nidle_threshold = "90s"\n')
     cfg = PrgroomConfig.load(repo_config=toml)
@@ -79,8 +84,7 @@ def test_toml_parses_duration_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert cfg.idle_threshold == timedelta(seconds=90)
 
 
-def test_invalid_max_rounds_in_toml_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
+def test_invalid_max_rounds_in_toml_raises(tmp_path: Path) -> None:
     toml = tmp_path / ".prgroom.toml"
     toml.write_text('max_rounds = "lots"\n')
     with pytest.raises(ValueError, match="max_rounds"):
@@ -93,11 +97,7 @@ def test_env_non_integer_max_rounds_raises(tmp_path: Path, monkeypatch: pytest.M
         PrgroomConfig.load(repo_config=tmp_path / "absent.toml")
 
 
-def test_non_string_duration_in_toml_raises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
-    monkeypatch.delenv("PRGROOM_IDLE_THRESHOLD", raising=False)
+def test_non_string_duration_in_toml_raises(tmp_path: Path) -> None:
     toml = tmp_path / ".prgroom.toml"
     # §4.3: int under [quiescence] is not the required duration string.
     toml.write_text("[quiescence]\nidle_threshold = 90\n")
@@ -105,11 +105,8 @@ def test_non_string_duration_in_toml_raises(
         PrgroomConfig.load(repo_config=toml)
 
 
-def test_boolean_max_rounds_in_toml_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_boolean_max_rounds_in_toml_is_rejected(tmp_path: Path) -> None:
     # bool is an int subclass in Python; the loader must reject `true` as a count.
-    monkeypatch.delenv("PRGROOM_MAX_ROUNDS", raising=False)
     toml = tmp_path / ".prgroom.toml"
     toml.write_text("max_rounds = true\n")
     with pytest.raises(ValueError, match="max_rounds"):

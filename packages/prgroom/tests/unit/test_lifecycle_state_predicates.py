@@ -119,6 +119,16 @@ def test_new_lifecycle_gate_false_when_no_error() -> None:
     assert new_lifecycle_gate_this_cycle(_state(last_error=None), previous_error=None) is False
 
 
+def test_new_lifecycle_gate_false_when_error_changed_non_none_to_non_none() -> None:
+    # §3.3/§4: the predicate means "a gate APPEARED this cycle" (unset->set), so it
+    # fires exactly one Sink event per gate. A PR that was ALREADY gated last cycle
+    # (a non-None last_error) is not a fresh gate even if the specific code differs;
+    # re-firing would emit a duplicate Sink event for an already-reported condition.
+    state = _state(last_error="STATE_CORRUPT")
+    result = new_lifecycle_gate_this_cycle(state, previous_error="LIFECYCLE_HARD_CAP_EXCEEDED")
+    assert result is False
+
+
 # -- flip_stale_required_reviews -------------------------------------------
 
 

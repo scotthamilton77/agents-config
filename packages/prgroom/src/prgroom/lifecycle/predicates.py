@@ -50,13 +50,18 @@ def push_uploaded_commits_this_cycle(
 
 
 def new_lifecycle_gate_this_cycle(state: PRGroomingState, *, previous_error: str | None) -> bool:
-    """True iff ``last_error`` became set this cycle and was unset before (§3.4).
+    """True iff a lifecycle gate APPEARED this cycle — unset->set (§3.3, §4).
 
-    Used to clear ``lifecycle_escalation_filed`` exactly once per fresh gate so the
-    loop-top Sink emits one event per gate, not one per cycle. ``previous_error`` is
-    the cycle-start snapshot of ``state.last_error`` the run-loop hands back.
+    A "new gate" is the transition from no gating error to one (``previous_error is
+    None`` and ``state.last_error`` now set), per the §3.4 definition ("was set this
+    cycle and was NOT set in the prior cycle"). The run-loop uses this to clear
+    ``lifecycle_escalation_filed`` exactly once per gate so the loop-top Sink emits one
+    event per gate, not one per cycle. A PR that was ALREADY gated last cycle (a
+    non-None prior error) is not a fresh gate even if the specific code differs —
+    re-firing would emit a duplicate Sink event for an already-reported condition.
+    ``previous_error`` is the cycle-start snapshot of ``state.last_error``.
     """
-    return state.last_error is not None and state.last_error != previous_error
+    return previous_error is None and state.last_error is not None
 
 
 def flip_stale_required_reviews(reviewers: dict[str, ReviewerState]) -> bool:

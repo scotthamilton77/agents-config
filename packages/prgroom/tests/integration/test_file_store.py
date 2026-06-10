@@ -8,6 +8,7 @@ delete-as-file-removal.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from datetime import UTC, datetime
@@ -129,6 +130,35 @@ def test_lock_releases_even_when_body_raises(tmp_path: Path) -> None:
         raise RuntimeError("boom")
     with store.lock(ref):
         pass
+
+
+def test_lock_closes_fd_when_flock_raises_non_blocking_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: an OSError from flock that is NOT BlockingIOError (EPERM/ENOSYS/
+    # EBADF) must still close the lock-file fd — otherwise the descriptor leaks.
+    # A single outer try/finally guarantees os.close runs on every exit path.
+    import fcntl
+
+    from prgroom.prsession import file as file_mod
+
+    closed: list[int] = []
+    real_close = os.close
+    monkeypatch.setattr(file_mod.os, "close", lambda fd: (closed.append(fd), real_close(fd))[1])
+
+    def _flock_eperm(fd: int, op: int) -> None:  # noqa: ARG001  # signature matches fcntl.flock; args unused
+        raise OSError(errno.EPERM, "operation not permitted")
+
+    monkeypatch.setattr(fcntl, "flock", _flock_eperm)
+
+    store = FileStore(state_dir=tmp_path)
+    ref = PRRef("octo", "demo", 7)
+    with pytest.raises(OSError, match="not permitted") as exc_info, store.lock(ref):
+        pass  # pragma: no cover - flock raises on entry, before the body
+    # The non-BlockingIOError propagated (not swallowed into a lock-held error)...
+    assert not isinstance(exc_info.value, BlockingIOError)
+    # ...AND the fd was still closed exactly once despite bypassing the happy path.
+    assert len(closed) == 1
 
 
 def test_second_invocation_exits_75_naming_pid(tmp_path: Path) -> None:
