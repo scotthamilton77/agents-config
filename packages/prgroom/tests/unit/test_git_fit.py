@@ -14,7 +14,7 @@ import pytest
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.git import GitCli, GitClient
 from prgroom.proc import CommandResult
-from tests.fakes import RecordedRunner, TimeoutRunner
+from tests.fakes import MissingBinaryRunner, RecordedRunner, TimeoutRunner
 
 
 def _ok(stdout: str) -> CommandResult:
@@ -147,6 +147,25 @@ def test_unclassifiable_git_failure_falls_back_to_git_transient() -> None:
     # would gate a PR on a possibly-flaky local condition.
     runner = RecordedRunner([_fail("fatal: some unexpected git error\n")])
     client = GitCli(runner)
+    with pytest.raises(PrgroomError) as exc:
+        client.push("origin", "feature")
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TRANSIENT
+
+
+def test_git_forwards_a_bounded_timeout_to_the_runner() -> None:
+    # A hung git call must not block forever holding the PR lock; the adapter
+    # passes a bounded default timeout to the boundary on every call.
+    runner = RecordedRunner([_ok("")])
+    GitCli(runner).head_sha()
+    assert runner.timeouts[0] is not None
+    assert runner.timeouts[0] > 0
+
+
+def test_git_missing_binary_classifies_as_git_transient() -> None:
+    # A missing `git` binary surfaces as OSError from the boundary; the adapter
+    # must map it to a registry error, never let a raw traceback escape. The
+    # registry has no git-terminal code, so it maps to transient (tracked).
+    client = GitCli(MissingBinaryRunner())
     with pytest.raises(PrgroomError) as exc:
         client.push("origin", "feature")
     assert exc.value.code is ErrorCode.RUNTIME_GIT_TRANSIENT

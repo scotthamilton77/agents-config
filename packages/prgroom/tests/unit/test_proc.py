@@ -39,6 +39,30 @@ def test_subprocess_runner_forwards_args_and_shapes_result(monkeypatch: Any) -> 
     assert kwargs["timeout"] == 5.0
 
 
+def test_subprocess_runner_forces_c_locale(monkeypatch: Any) -> None:
+    # Failure classification matches English stderr substrings; a non-C locale
+    # would localize git/gh stderr and break that match. The runner must pin
+    # LC_ALL=C / LANG=C so the classified output is always English.
+    captured: dict[str, Any] = {}
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["env"] = kwargs.get("env")
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
+    monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    SubprocessRunner().run(["git", "push"])
+
+    env = captured["env"]
+    assert env is not None
+    assert env["LC_ALL"] == "C"
+    assert env["LANG"] == "C"
+    # The rest of the parent environment is preserved (e.g. PATH so the binary resolves).
+    assert "PATH" in env
+
+
 def test_subprocess_runner_structurally_satisfies_protocol() -> None:
     assert isinstance(SubprocessRunner(), CommandRunner)
 

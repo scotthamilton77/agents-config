@@ -7,12 +7,18 @@ exactly two git outcomes, so the classification is a clean dichotomy:
 
 * a recognized **push rejection** (non-fast-forward, protected branch, hook
   decline) -> ``RUNTIME_PUSH_REJECTED`` (terminal — a blind retry is futile)
-* **any other** non-zero exit or a boundary ``TimeoutExpired`` (network blip,
-  transient lock) -> ``RUNTIME_GIT_TRANSIENT`` (retry on the next cadence)
+* **any other** non-zero exit, a boundary ``TimeoutExpired``, or a missing
+  ``git`` binary (``OSError``) -> ``RUNTIME_GIT_TRANSIENT`` (retry next cadence)
 
 There is deliberately no third "git-terminal" code in the registry; the
 non-rejection branch is the registry's only non-rejection git code, so unknown
-failures fall to transient rather than inventing a code.
+failures (including a missing binary) fall to transient rather than inventing a
+code — that gap is tracked for the verb bead.
+
+Every call passes a bounded ``DEFAULT_SUBPROCESS_TIMEOUT`` so a hung ``git``
+cannot block forever while holding the PR lock. Callers only ever see a
+registry-tagged :class:`~prgroom.errors.PrgroomError` — no raw subprocess
+exception escapes ``_run``.
 
 ``GitCli`` **structurally satisfies** :class:`GitClient` (no inheritance);
 ``mypy --strict`` checks the fit.
@@ -24,7 +30,7 @@ import subprocess
 from typing import Protocol, runtime_checkable
 
 from prgroom.errors import ErrorCode, PrgroomError, Tier
-from prgroom.proc import CommandRunner
+from prgroom.proc import DEFAULT_SUBPROCESS_TIMEOUT, CommandRunner
 
 # Substrings git emits when a push is rejected by the remote. These are terminal
 # (manual reconciliation required); everything else non-zero is transient.
@@ -89,10 +95,16 @@ class GitCli:
 
     def _run(self, argv: list[str]) -> str:
         try:
-            result = self._runner.run(argv)
+            result = self._runner.run(argv, timeout=DEFAULT_SUBPROCESS_TIMEOUT)
         except subprocess.TimeoutExpired as exc:
             # A hung network op never returns a code; it is unambiguously transient.
             detail = f"git timed out: {' '.join(argv)}"
+            raise _transient(detail) from exc
+        except OSError as exc:
+            # A missing `git` binary (or other PATH/exec failure) raises OSError
+            # before any command runs. The registry has no git-terminal code, so
+            # it maps to transient (the gap is tracked for the verb bead).
+            detail = f"git not runnable: {exc}"
             raise _transient(detail) from exc
         if result.returncode != 0:
             raise _classify_git_failure(result.stderr)

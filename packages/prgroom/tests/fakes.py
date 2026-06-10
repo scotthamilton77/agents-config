@@ -30,16 +30,18 @@ class RecordedRunner:
         self._results = list(results)
         self.calls: list[list[str]] = []
         self.inputs: list[str | None] = []
+        self.timeouts: list[float | None] = []
 
     def run(
         self,
         argv: Sequence[str],
         *,
         input: str | None = None,  # matches the Protocol's keyword name
-        timeout: float | None = None,  # noqa: ARG002  # recorded runner ignores timeout
+        timeout: float | None = None,
     ) -> CommandResult:
         self.calls.append(list(argv))
         self.inputs.append(input)
+        self.timeouts.append(timeout)
         if not self._results:
             msg = f"RecordedRunner exhausted: unexpected call {list(argv)!r}"
             raise AssertionError(msg)
@@ -49,8 +51,8 @@ class RecordedRunner:
 class TimeoutRunner:
     """A :class:`CommandRunner` fake that always raises ``TimeoutExpired``.
 
-    Models the network-timeout boundary failure the git adapter must classify
-    as ``RUNTIME_GIT_TRANSIENT`` (and the gh adapter could see too).
+    Models the hung-call boundary failure both adapters must classify as their
+    transient code (``RUNTIME_GIT_TRANSIENT`` / ``RUNTIME_GH_TRANSIENT``).
     """
 
     def __init__(self) -> None:
@@ -65,3 +67,25 @@ class TimeoutRunner:
     ) -> CommandResult:  # pragma: no cover - never returns; raises below
         self.calls.append(list(argv))
         raise subprocess.TimeoutExpired(cmd=list(argv), timeout=timeout or 0.0)
+
+
+class MissingBinaryRunner:
+    """A :class:`CommandRunner` fake that always raises ``FileNotFoundError``.
+
+    Models a missing ``gh`` / ``git`` binary on ``PATH`` — the OSError the real
+    boundary raises before any command runs. Each adapter must map this to a
+    registry error rather than leak the raw traceback.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        input: str | None = None,  # noqa: ARG002  # part of the Protocol signature; unused here
+        timeout: float | None = None,  # noqa: ARG002  # part of the Protocol signature; unused here
+    ) -> CommandResult:  # pragma: no cover - never returns; raises below
+        self.calls.append(list(argv))
+        raise FileNotFoundError(2, "No such file or directory", argv[0])

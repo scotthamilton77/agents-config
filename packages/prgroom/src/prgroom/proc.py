@@ -10,10 +10,17 @@ the Protocol (no inheritance); ``mypy --strict`` checks the fit.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+# Default wall-clock budget for one external gh/git call. Bounds a hung
+# subprocess so it cannot block forever while holding the PR lock. A later
+# config bead may make this per-call or operator-overridable; for now it is a
+# single conservative default shared by both adapters.
+DEFAULT_SUBPROCESS_TIMEOUT = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +56,11 @@ class SubprocessRunner:
     classify failures from the returncode + stderr themselves, mapping to the
     structured :class:`~prgroom.errors.ErrorCode` registry rather than letting a
     raw ``CalledProcessError`` escape.
+
+    Runs every command under a pinned ``C`` locale. Failure classification
+    matches English stderr substrings (git push-rejection markers, gh ``(HTTP
+    NNN)`` tokens); a localized stderr from an operator's non-C locale would
+    silently break that match and misclassify a terminal failure as transient.
     """
 
     def run(
@@ -58,6 +70,7 @@ class SubprocessRunner:
         input: str | None = None,  # stdlib name; matches subprocess.run's keyword
         timeout: float | None = None,
     ) -> CommandResult:
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
         completed = subprocess.run(  # noqa: S603  # argv is internally built (gh/git verb + typed args), never shell-interpolated user input; this IS the sanctioned boundary
             list(argv),
             capture_output=True,
@@ -65,6 +78,7 @@ class SubprocessRunner:
             check=False,
             input=input,
             timeout=timeout,
+            env=env,
         )
         return CommandResult(
             returncode=completed.returncode,
