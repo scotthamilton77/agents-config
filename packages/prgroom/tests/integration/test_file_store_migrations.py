@@ -96,6 +96,38 @@ def test_raising_migrator_surfaces_corrupt_and_leaves_file_byte_identical(
     assert state_path.read_bytes() == original
 
 
+def test_migrator_returning_invalid_json_does_not_corrupt_the_file(tmp_path: Path) -> None:
+    # A migrator that returns unparseable bytes WITHOUT raising must not overwrite
+    # the good file: validation happens before the atomic write.
+    ref = PRRef("octo", "demo", 7)
+    state_path = tmp_path / f"{ref.slug()}.json"
+    original = _write_old_schema_file(state_path, ref)
+
+    def _garbage(_raw: bytes) -> bytes:
+        return b"not valid json{{{"
+
+    store = FileStore(state_dir=tmp_path, migrations={_OLD: _garbage})
+    with pytest.raises(StateCorruptError):
+        store.read(ref)
+    assert state_path.read_bytes() == original
+
+
+def test_migrator_returning_non_object_json_does_not_corrupt_the_file(tmp_path: Path) -> None:
+    # Parseable but non-object JSON (e.g. a bare number) is not valid state; it
+    # must be rejected before the write, leaving the good file byte-identical.
+    ref = PRRef("octo", "demo", 7)
+    state_path = tmp_path / f"{ref.slug()}.json"
+    original = _write_old_schema_file(state_path, ref)
+
+    def _scalar(_raw: bytes) -> bytes:
+        return b"5"
+
+    store = FileStore(state_dir=tmp_path, migrations={_OLD: _scalar})
+    with pytest.raises(StateCorruptError):
+        store.read(ref)
+    assert state_path.read_bytes() == original
+
+
 @pytest.mark.parametrize("bogus_version", [True, 1.0, "1"])
 def test_non_int_schema_version_is_rejected_not_loaded_as_current(
     tmp_path: Path, bogus_version: object

@@ -131,14 +131,24 @@ class FileStore:
             raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
                 f"{path}: schema_version {from_version!r} != {SCHEMA_VERSION}"
             )
+        # Both the migrator call and the parse sit inside the try: a raising OR an
+        # invalid-JSON migrator must not corrupt on-disk state.
         try:
             migrated = migrator(raw)
-        except Exception as exc:  # a migrator failure must never corrupt on-disk state
+            decoded = json.loads(migrated)
+        except Exception as exc:
             raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
                 f"{path}: migration from {from_version!r} failed: {exc}"
             ) from exc
+        if not isinstance(decoded, dict):
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
+                f"{path}: migration from {from_version!r} produced non-object JSON"
+            )
+        # Validate-before-commit: write_atomic runs ONLY after the migrated bytes
+        # are confirmed parseable AND a JSON object, so a migrator that returns
+        # garbage without raising can never overwrite good on-disk state.
         write_atomic(path, migrated)
-        parsed: dict[str, object] = json.loads(migrated)
+        parsed: dict[str, object] = decoded
         return parsed
 
     def write(self, ref: PRRef, state: PRGroomingState) -> None:
