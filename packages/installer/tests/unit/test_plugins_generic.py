@@ -52,3 +52,18 @@ def test_is_detected_false_when_footprint_is_a_file_not_a_directory(
     (tmp_path / ".myplugin").write_text("not a directory")
     adapter = GenericPluginAdapter(name="myplugin", source_path=tmp_path / "src")
     assert adapter.is_detected(tmp_path) is False
+
+
+def test_generic_plugin_has_no_bespoke_routes(tmp_path: Path) -> None:
+    """
+    Given a generic plugin adapter
+    When routes(home) is consulted
+    Then it returns an empty tuple.
+
+    Pins: a generic plugin's content installs through the per-tool namespace
+    overlay (F.2), not through bespoke destination routes — only specialized
+    adapters (beads) route outside a tool tree. Empty here means "no special
+    routing; overlay handles me."
+    """
+    adapter = GenericPluginAdapter(name="myplugin", source_path=tmp_path / "src")
+    assert adapter.routes(tmp_path) == ()

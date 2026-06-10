@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from installer.plugins.base import PluginRoute
+
 
 @dataclass(frozen=True, slots=True)
 class GenericPluginAdapter:
@@ -17,3 +19,11 @@ class GenericPluginAdapter:
 
     def is_detected(self, home: Path) -> bool:
         return (home / f".{self.name}").is_dir()
+
+    def routes(
+        self,
+        home: Path,  # noqa: ARG002  # protocol parameter; generic plugins route nothing bespoke
+    ) -> tuple[PluginRoute, ...]:
+        # A generic plugin's content installs through the per-tool namespace
+        # overlay (F.2), not bespoke destinations. No routes to declare.
+        return ()
