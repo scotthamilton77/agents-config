@@ -3,8 +3,11 @@
 The unit fit-test proves classification against recorded boundary output; this
 narrower integration test proves the happy-path adapter actually drives real
 ``git`` correctly — ``head_sha`` and ``rev_list`` parse genuine git output, not
-just our hand-recorded fixtures. Uses ``SubprocessRunner`` (the real boundary)
-on a throwaway ``tmp_path`` repo.
+just our hand-recorded fixtures. Drives real ``git`` on a throwaway ``tmp_path``
+repo via ``SubprocessRunner`` (the ``git --version`` smoke) and a cwd-pinned
+``_CwdRunner`` mirror of it (the push-rejection case, which needs the repo as the
+working directory). ``_CwdRunner`` replicates the production C-locale + timeout
+behavior so the assertions stay faithful.
 """
 
 from __future__ import annotations
@@ -40,12 +43,21 @@ class _CwdRunner:
         self,
         argv: list[str],
         *,
-        input: str | None = None,  # noqa: ARG002  # Protocol signature; unused here
-        timeout: float | None = None,  # noqa: ARG002  # Protocol signature; unused here
+        input: str | None = None,  # noqa: ARG002  # git commands here take no stdin
+        timeout: float | None = None,
     ) -> CommandResult:
-        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+        # Faithful mirror of production SubprocessRunner: pin LANGUAGE too (gettext
+        # precedence over LC_ALL) and honor the bounded timeout GitCli forwards, so
+        # this real-git path can't localize stderr or hang.
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C", "LANGUAGE": "C"}
         completed = subprocess.run(  # noqa: S603  # internally-built git argv on a tmp fixture repo
-            argv, capture_output=True, text=True, check=False, cwd=self._cwd, env=env
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=self._cwd,
+            env=env,
+            timeout=timeout,
         )
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
