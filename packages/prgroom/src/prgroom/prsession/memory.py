@@ -15,10 +15,12 @@ file adapter's snapshot-on-read semantics).
 from __future__ import annotations
 
 import copy
+import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from prgroom.errors import lock_held_error
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import PRGroomingState
 from prgroom.prsession.store import StateNotFoundError
@@ -54,8 +56,16 @@ class InMemoryStore:
 
     @contextmanager
     def lock(self, ref: PRRef) -> Iterator[None]:
+        """Acquire the per-ref lock non-blocking; raise on a live holder (§2).
+
+        ``acquire(blocking=False)`` returning ``False`` means another holder owns the
+        lock, so this raises ``PreconditionError(PRECONDITION_LOCK_HELD)`` (exit 75)
+        instead of blocking — mirroring the file adapter's contention contract. In-
+        memory contention is same-process, so the holder pid is this process.
+        """
         lock = self._lock_for(ref)
-        lock.acquire()
+        if not lock.acquire(blocking=False):
+            raise lock_held_error(ref, pid=os.getpid())
         try:
             yield
         finally:

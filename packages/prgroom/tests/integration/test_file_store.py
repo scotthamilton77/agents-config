@@ -8,12 +8,15 @@ delete-as-file-removal.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from prgroom.errors import ErrorCode, PreconditionError, exit_code_for_tier
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.file import FileStore, resolve_state_dir, write_atomic
 from prgroom.prsession.pr_ref import PRRef
@@ -127,6 +130,96 @@ def test_lock_releases_even_when_body_raises(tmp_path: Path) -> None:
         raise RuntimeError("boom")
     with store.lock(ref):
         pass
+
+
+def test_lock_closes_fd_when_flock_raises_non_blocking_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: an OSError from flock that is NOT BlockingIOError (EPERM/ENOSYS/
+    # EBADF) must still close the lock-file fd — otherwise the descriptor leaks.
+    # A single outer try/finally guarantees os.close runs on every exit path.
+    import fcntl
+
+    from prgroom.prsession import file as file_mod
+
+    closed: list[int] = []
+    real_close = os.close
+    monkeypatch.setattr(file_mod.os, "close", lambda fd: (closed.append(fd), real_close(fd))[1])
+
+    def _flock_eperm(fd: int, op: int) -> None:  # noqa: ARG001  # signature matches fcntl.flock; args unused
+        raise OSError(errno.EPERM, "operation not permitted")
+
+    monkeypatch.setattr(fcntl, "flock", _flock_eperm)
+
+    store = FileStore(state_dir=tmp_path)
+    ref = PRRef("octo", "demo", 7)
+    with pytest.raises(OSError, match="not permitted") as exc_info, store.lock(ref):
+        pass  # pragma: no cover - flock raises on entry, before the body
+    # The non-BlockingIOError propagated (not swallowed into a lock-held error)...
+    assert not isinstance(exc_info.value, BlockingIOError)
+    # ...AND the fd was still closed exactly once despite bypassing the happy path.
+    assert len(closed) == 1
+
+
+def test_second_invocation_exits_75_naming_pid(tmp_path: Path) -> None:
+    # §2 concurrency posture: a second invocation while one holds the lock must
+    # exit IMMEDIATELY (non-blocking) with PRECONDITION_LOCK_HELD (exit 75), naming
+    # the holder pid. Two FileStore instances on the same dir use separate open()
+    # fds → separate flock file descriptions → they genuinely contend, in-process,
+    # no subprocess/fork needed.
+    store_a = FileStore(state_dir=tmp_path)
+    store_b = FileStore(state_dir=tmp_path)
+    ref = PRRef("octo", "demo", 7)
+    with store_a.lock(ref), pytest.raises(PreconditionError) as exc_info, store_b.lock(ref):
+        pass  # pragma: no cover - acquire raises before the body runs
+    err = exc_info.value
+    assert err.code == ErrorCode.PRECONDITION_LOCK_HELD
+    assert exit_code_for_tier(err) == 75
+    assert ref.display() in err.detail
+    # The holder wrote its pid into the lock file, so the contender names it.
+    assert f"pid {os.getpid()}" in err.detail
+
+
+def test_lock_reacquirable_after_contention_resolves(tmp_path: Path) -> None:
+    # The contender's failed non-blocking acquire must not corrupt the lock: once
+    # the holder releases, a later acquire succeeds normally.
+    store_a = FileStore(state_dir=tmp_path)
+    store_b = FileStore(state_dir=tmp_path)
+    ref = PRRef("octo", "demo", 7)
+    with store_a.lock(ref), pytest.raises(PreconditionError), store_b.lock(ref):
+        pass  # pragma: no cover
+    with store_b.lock(ref):
+        pass  # the holder released; the contender can now acquire
+
+
+def test_read_lock_pid_returns_none_when_path_is_unreadable(tmp_path: Path) -> None:
+    # The pid read is best-effort: an OSError on read (here, a directory standing in
+    # for the lock path → IsADirectoryError, an OSError subclass) yields None, which
+    # the contention error renders as `(pid unknown)` rather than crashing.
+    from prgroom.prsession.file import _read_lock_pid
+
+    a_directory = tmp_path / "not-a-lock-file"
+    a_directory.mkdir()
+    assert _read_lock_pid(a_directory) is None
+
+
+def test_contention_pid_unknown_when_lock_file_empty(tmp_path: Path) -> None:
+    # Defensive: if the lock file exists but carries no readable pid (crash between
+    # create and write, or a pre-existing empty file), the contender reports
+    # `(pid unknown)` rather than guessing — and never defaults to its OWN pid.
+    store_a = FileStore(state_dir=tmp_path)
+    store_b = FileStore(state_dir=tmp_path)
+    ref = PRRef("octo", "demo", 7)
+    lock_path = tmp_path / f"{ref.slug()}.lock"
+
+    with store_a.lock(ref):
+        # Blank the holder-written pid out from under the live holder to model the
+        # empty/unparseable case the contender must tolerate.
+        lock_path.write_text("")
+        with pytest.raises(PreconditionError) as exc_info, store_b.lock(ref):
+            pass  # pragma: no cover
+    assert "pid unknown" in exc_info.value.detail
+    assert str(os.getpid()) not in exc_info.value.detail
 
 
 def test_list_refs_enumerates_written_prs(tmp_path: Path) -> None:

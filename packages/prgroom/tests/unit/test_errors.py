@@ -18,7 +18,11 @@ from prgroom.errors import (
     PrgroomError,
     Tier,
     exit_code_for_tier,
+    lock_held_error,
 )
+from prgroom.prsession.pr_ref import PRRef
+
+_PR = PRRef(owner="octo", repo="demo", number=7)
 
 
 @pytest.mark.parametrize(
@@ -137,3 +141,21 @@ def test_removed_lock_codes_are_not_in_the_registry(absent: str) -> None:
     # §3.7: these were removed to match the flock(2) mechanism (kernel-released on
     # death). Their presence would signal a regression to an fcntl-style protocol.
     assert absent not in ErrorCode.__members__
+
+
+def test_lock_held_error_names_ref_and_pid_and_maps_to_exit_75() -> None:
+    # §2: the store builds this on contention. Lives in errors (not lifecycle) so
+    # the store can raise it without a backward dependency on the lifecycle layer.
+    err = lock_held_error(_PR, pid=9999)
+    assert err.code == ErrorCode.PRECONDITION_LOCK_HELD
+    assert err.tier == Tier.PRECONDITION_LOCK_HELD
+    assert exit_code_for_tier(err) == 75
+    assert _PR.display() in err.detail
+    assert "pid 9999" in err.detail
+
+
+def test_lock_held_error_renders_pid_unknown_when_none() -> None:
+    # A contention error is NEVER attributed to the contender's own process: a
+    # missing holder pid renders `(pid unknown)`, not the caller's getpid().
+    err = lock_held_error(_PR, pid=None)
+    assert "pid unknown" in err.detail

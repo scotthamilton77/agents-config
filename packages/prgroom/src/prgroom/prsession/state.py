@@ -305,3 +305,31 @@ class PRGroomingState:
             last_error=d.get("last_error"),
             lifecycle_escalation_filed=d.get("lifecycle_escalation_filed", False),
         )
+
+
+def bootstrap_state(pr: PRRef, *, now: datetime) -> PRGroomingState:
+    """The zero-value state a first ``run`` invocation starts from (§3.3).
+
+    Every non-default field is set explicitly so the result round-trips cleanly:
+    ``schema_version=1`` (a default 0 would fail STATE_SCHEMA_UNKNOWN on the next
+    read), ``phase=idle``, ``round=0``, empty SHAs, empty reviewer/item containers
+    (never ``None`` — subsequent appends/inserts must be safe), no prior error,
+    and all dedup flags cleared. ``now`` (the injected clock's reading) seeds both
+    timestamps so the §4 idle timer measures from first contact, not epoch.
+    """
+    return PRGroomingState(
+        pr=pr,
+        phase=PRPhase.IDLE,
+        round=0,
+        last_polled_at=now,
+        last_activity_at=now,
+        quiescence=QuiescenceState(),
+        schema_version=SCHEMA_VERSION,
+        last_poll_sha="",
+        last_pushed_head_sha="",
+        human_review_label_added=False,
+        reviewers={},
+        items=[],
+        last_error=None,
+        lifecycle_escalation_filed=False,
+    )
