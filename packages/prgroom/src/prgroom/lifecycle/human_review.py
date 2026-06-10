@@ -44,9 +44,10 @@ class ApprovalCandidate:
     """One examined PR-approval review with its bot-filter outcome (§4.6).
 
     ``counted`` is whether this approval could satisfy the constraint (a non-bot
-    APPROVED); ``reason`` is ``"bot"`` for a filtered bot approval, ``""`` for a
-    counted human one. The row exists purely for operator debuggability — "why
-    didn't approval X count?".
+    APPROVED with a login); ``reason`` is ``"bot"`` for a filtered bot approval,
+    ``"no-login"`` for an anonymous/loginless approval, and ``""`` for a counted
+    human one. The row exists purely for operator debuggability — "why didn't
+    approval X count?".
     """
 
     login: str
