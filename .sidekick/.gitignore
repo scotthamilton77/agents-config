@@ -1,10 +1,4 @@
 # Sidekick — managed file, do not edit manually
-logs/
-sessions/
-state/
-setup-status.json
 .env
 .env.local
-sidekick*.pid
-sidekick*.token
 *.local.yaml

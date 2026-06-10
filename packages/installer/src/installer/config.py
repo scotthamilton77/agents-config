@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from installer.core.model import Tool
+from installer.plugins.base import PluginAdapter
+from installer.plugins.registry import UnknownPluginError, discover
 from installer.tools.registry import get_adapter, known_tools, parse_tool_name
 
 
@@ -41,3 +43,38 @@ def resolve_tools(*, home: Path, override_csv: str | None) -> tuple[Tool, ...]:
         tool = parse_tool_name(name)
         seen.setdefault(tool, None)
     return tuple(seen.keys())
+
+
+def resolve_plugins(
+    *, home: Path, plugins_root: Path, override_csv: str | None
+) -> tuple[PluginAdapter, ...]:
+    """Translate the `--plugins=` CLI value into the resolved plugin tuple.
+
+    - `override_csv is None` -> auto-detect: discovered adapters whose
+      `is_detected(home)` is True.
+    - `override_csv == ""` (or whitespace-only) -> () (install no plugins).
+      Deliberate asymmetry with `resolve_tools`, which raises on empty
+      `--tools=`: "no plugins" is a valid choice, "no tools" is a no-op error.
+      Matches scripts/install.sh's plugin-detection block, where a set
+      `--plugins=` flag with an empty value yields no plugins.
+    - Otherwise -> split on commas, strip whitespace, validate each via the
+      discovered set, dedupe preserving first occurrence, preserve order.
+    """
+    discovered = discover(plugins_root)
+
+    if override_csv is None:
+        return tuple(a for a in discovered.values() if a.is_detected(home))
+
+    if override_csv.strip() == "":
+        return ()
+
+    valid = tuple(discovered.keys())
+    seen: dict[str, None] = {}
+    for raw in override_csv.split(","):
+        name = raw.strip()
+        if not name:
+            raise ValueError("--plugins= contains an empty plugin name (check for stray commas)")  # noqa: TRY003  # single call-site; subclass not justified
+        if name not in discovered:
+            raise UnknownPluginError(name, valid)
+        seen.setdefault(name, None)
+    return tuple(discovered[name] for name in seen)
