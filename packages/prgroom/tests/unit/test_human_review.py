@@ -76,6 +76,42 @@ def test_bot_detected_by_login_suffix_when_type_absent() -> None:
     assert hr.candidates_seen[0].reason == "bot"
 
 
+def test_empty_login_approval_does_not_satisfy() -> None:
+    # An anonymous/loginless APPROVED review cannot satisfy human review — it must
+    # NOT yield satisfied_by="approval:" (an empty login). It is recorded as a
+    # non-counted candidate with reason "no-login" for operator debuggability.
+    hr = derive_human_review(
+        labels=["human-review-required"],
+        reviews=[_review("", type_="User")],
+    )
+    assert hr.satisfied_by is None
+    assert hr.candidates_seen[0].login == ""
+    assert hr.candidates_seen[0].counted is False
+    assert hr.candidates_seen[0].reason == "no-login"
+
+
+def test_missing_user_approval_does_not_satisfy() -> None:
+    # No `user` object at all → no login → not a valid approver.
+    hr = derive_human_review(
+        labels=["human-review-required"],
+        reviews=[{"state": "APPROVED"}],
+    )
+    assert hr.satisfied_by is None
+    assert hr.candidates_seen[0].counted is False
+    assert hr.candidates_seen[0].reason == "no-login"
+
+
+def test_loginless_then_human_skips_loginless_picks_human() -> None:
+    # A loginless approval is skipped; the first VALID human approval still wins.
+    hr = derive_human_review(
+        labels=["human-review-required"],
+        reviews=[_review("", type_="User"), _review("carol")],
+    )
+    assert hr.satisfied_by == "approval:carol"
+    assert hr.candidates_seen[0].reason == "no-login"
+    assert hr.candidates_seen[1].counted is True
+
+
 def test_bot_then_human_skips_bot_picks_human() -> None:
     hr = derive_human_review(
         labels=["human-review-required"],

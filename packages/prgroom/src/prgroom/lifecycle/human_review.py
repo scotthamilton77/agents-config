@@ -103,10 +103,13 @@ def derive_human_review(*, labels: list[str], reviews: list[JsonObj]) -> HumanRe
 
     ``required`` = the ``human-review-required`` label is present (case-insensitive).
     ``satisfied_by`` resolves in PRECEDENCE order: ``"label"`` (a ``human-approved``
-    label) > ``"approval:{login}"`` (the FIRST non-bot APPROVED review, in API order)
-    > ``None``. ``candidates_seen`` carries one row per APPROVED review with its
-    bot-filter outcome. Label satisfaction does not manufacture a candidate row —
-    candidates are PR-approval reviews only.
+    label) > ``"approval:{login}"`` (the FIRST counted APPROVED review, in API order)
+    > ``None``. A review is counted only when it is non-bot AND carries a non-empty
+    ``login`` — a bot approval (``reason="bot"``) and an anonymous/loginless approval
+    (``reason="no-login"``) are both recorded non-counted and cannot satisfy.
+    ``candidates_seen`` carries one row per APPROVED review with its filter outcome.
+    Label satisfaction does not manufacture a candidate row — candidates are
+    PR-approval reviews only.
     """
     lowered = {label.lower() for label in labels}
     required = _REQUIRED_LABEL in lowered
@@ -118,16 +121,20 @@ def derive_human_review(*, labels: list[str], reviews: list[JsonObj]) -> HumanRe
         if str(review.get("state", "")) != _APPROVED_STATE:
             continue
         login = str((review.get("user") or {}).get("login", ""))
-        bot = _is_bot(review)
+        # Reason precedence: a bot is filtered first (the load-bearing §4.4 filter);
+        # a loginless human approval cannot identify an approver, so it cannot
+        # satisfy either — recorded non-counted for operator debuggability.
+        if _is_bot(review):
+            reason = "bot"
+        elif not login:
+            reason = "no-login"
+        else:
+            reason = ""
+        counted = reason == ""
         candidates.append(
-            ApprovalCandidate(
-                login=login,
-                approved=True,
-                counted=not bot,
-                reason="bot" if bot else "",
-            )
+            ApprovalCandidate(login=login, approved=True, counted=counted, reason=reason)
         )
-        if not bot and first_human is None:
+        if counted and first_human is None:
             first_human = login
 
     if label_satisfies:

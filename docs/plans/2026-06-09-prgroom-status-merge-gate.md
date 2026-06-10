@@ -6,7 +6,7 @@
 
 **Architecture:** Three layers. (1) `lifecycle/human_review.py` — a **pure** derivation (`derive_human_review`) over already-fetched gh inputs (labels + review candidates) producing the `human_review` block (`required`, `satisfied_by`, `candidates_seen`) plus a thin gh-enrichment fetch that turns two REST GETs into those inputs. (2) `lifecycle/status.py` — assembles the §4.6 envelope from the in-memory `PRGroomingState` + the human-review block, derives the four `merge_gates` bools and `auto_merge_eligible`. (3) `cli.py` `status` wiring — default path is an **unlocked** `store.read`; `--locked` wraps the read in `with_lock`; renders `--json` or a human-readable default. Nothing here is persisted to state.
 
-**Tech Stack:** Python 3.14, typer, dataclasses, the existing `prsession` state/enums/`Store`, `lifecycle.quiescence` (gates), `lifecycle.locking.with_lock`, `gh.GhClient`, `errors` registry.
+**Tech Stack:** Python >=3.11 (the package's declared `requires-python`; developed on 3.14), typer, dataclasses, the existing `prsession` state/enums/`Store`, `lifecycle.quiescence` (gates), `lifecycle.locking.with_lock`, `gh.GhClient`, `errors` registry.
 
 ---
 
@@ -15,8 +15,8 @@
 - **human_review uses a LIVE gh fetch, not stored state.** §4.4 prose says "no new API calls" (premised on a `_poll` that fetches labels), but the authoritative data-view (`data-view.md`, contract #1, same source bead) pins `human_review.required` / `satisfied_by` / `candidates_seen` as a "live gh fetch / Source: GitHub, not state". The built state schema stores **neither** labels **nor** approval-actor-type (`ReviewerStatus` has no `approved` value, by design — data-view line 114), so state-only derivation is impossible. The data-view wins. The fetch is isolated in `fetch_human_review_inputs(gh, ref)` (two REST GETs); the precedence + bot-filter logic is a **pure** function over the fetched payloads, unit-tested without a fake subprocess.
 - **Bot filter signal:** `user.type == "Bot"` (the §4.4 pinned signal "reviewer.actor.type != Bot"). GitHub's reviews API returns `user.type: "Bot"` for app/bot reviewers (`github-copilot[bot]`). A `login` ending in `[bot]` is a defensive secondary signal (covers payloads where `type` is absent).
 - **`satisfied_by` precedence:** `"label"` (a `human-approved` label, case-insensitive) > `"approval:{login}"` (FIRST non-bot APPROVED review, in API order) > `None`.
-- **`candidates_seen`:** one row per APPROVED review candidate — `{"login", "approved": true, "counted": bool, "reason": str}`. `counted` is true for the non-bot approval(s); `reason` is `"bot"` for a filtered bot, `""` for a counted human. Label-satisfaction does not manufacture a candidate row (candidates are PR-approval reviews only, per §4.6).
-- **`status` against a never-polled PR:** the lock-free read raises `StateNotFoundError`. Re-raised as `PreconditionError(PRECONDITION_NO_ITEMS)` (its registry `how` = "run `poll` first" is the exact remediation) with a status-specific detail. Reuses an existing code rather than expanding the §3.7 registry (out of scope).
+- **`candidates_seen`:** one row per APPROVED review candidate — `{"login", "approved": true, "counted": bool, "reason": str}`. A review is `counted` only when it is non-bot AND carries a non-empty `login`; `reason` is `"bot"` for a filtered bot, `"no-login"` for an anonymous/loginless approval (which cannot identify an approver), `""` for a counted human. Label-satisfaction does not manufacture a candidate row (candidates are PR-approval reviews only, per §4.6).
+- **`status` against a never-polled PR:** the lock-free read raises `StateNotFoundError`. Re-raised as a **dedicated `PreconditionError(PRECONDITION_NO_STATE)`** (user-error tier → exit 2, registry `how` = "run `poll` (or `run`) first"). Reusing `PRECONDITION_NO_ITEMS` was rejected: it is a no-work code → exit **0**, which would falsely tell a scheduler "done" for a PR that was simply never started. `PRECONDITION_NO_STATE` is the only option whose exit code AND operator message are both correct — worth the one new registry entry.
 - **No new state fields, no writes.** `status` never calls `store.write`. `human_review_satisfied` is derived per-query, never persisted, and never feeds quiescence.
 
 ---
@@ -151,15 +151,17 @@ def derive_human_review(
         if str(review.get("state", "")) != _APPROVED_STATE:
             continue
         login = str((review.get("user") or {}).get("login", ""))
-        bot = _is_bot(review)
-        counted = not bot
+        # Reason precedence: bot (the load-bearing §4.4 filter) > no-login (an
+        # anonymous approval cannot identify an approver) > counted human.
+        if _is_bot(review):
+            reason = "bot"
+        elif not login:
+            reason = "no-login"
+        else:
+            reason = ""
+        counted = reason == ""
         candidates.append(
-            ApprovalCandidate(
-                login=login,
-                approved=True,
-                counted=counted,
-                reason="bot" if bot else "",
-            )
+            ApprovalCandidate(login=login, approved=True, counted=counted, reason=reason)
         )
         if counted and first_human is None:
             first_human = login
@@ -648,9 +650,10 @@ def status(
             try:
                 return store.read(ref)
             except StateNotFoundError as exc:
+                # Dedicated user-error code (exit 2); NOT a no-work code (exit 0).
                 raise PreconditionError(
-                    ErrorCode.PRECONDITION_NO_ITEMS,
-                    detail=f"no grooming state for {ref.display()} yet",
+                    ErrorCode.PRECONDITION_NO_STATE,
+                    detail=ref.display(),
                 ) from exc
 
         state = with_lock(store, ref, _read) if locked else _read()
@@ -686,7 +689,7 @@ Imports to add at top of `cli.py`: `import json`; `from prgroom.errors import Er
 - [ ] **Step 1: Write failing tests** (`test_cli_status.py`) — mirror `test_cli_poll.py`'s harness (monkeypatch `_build_store`, `_build_gh`; `CliRunner`). The gh fake here only needs the two human-review reads (labels, reviews), so a small `RecordedRunner([_ok(labels), _ok(reviews)])` `GhCli` suffices. Cover:
   - `--json` against a quiesced, all-green state → exit 0, parseable envelope, `auto_merge_eligible == true`.
   - default (human-readable) render → exit 0, contains `auto_merge_eligible`.
-  - never-polled PR (no state) → exit 2, `PRECONDITION_NO_ITEMS`, `how:` block.
+  - never-polled PR (no state) → exit 2, `PRECONDITION_NO_STATE`, `how:` block.
   - malformed ref → exit 2, `PRECONDITION_BAD_PR_REF`.
   - `--locked` under contention (pre-acquire the lock) → exit 75, `PRECONDITION_LOCK_HELD`; assert the gh fake was NOT consulted (lock fails before fetch).
   - default lock-free read SUCCEEDS while the lock is held by another holder (pre-acquire, invoke without `--locked`) → exit 0 — proves the carve-out.
@@ -761,7 +764,7 @@ def test_status_missing_state_is_precondition(monkeypatch) -> None:
     monkeypatch.setattr(cli, "_build_gh", lambda: _gh())
     result = runner.invoke(cli.app, ["status", "octo/demo#7"])
     assert result.exit_code == 2
-    assert "PRECONDITION_NO_ITEMS" in result.output
+    assert "PRECONDITION_NO_STATE" in result.output
     assert "how:" in result.output
 
 
