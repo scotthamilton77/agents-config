@@ -85,6 +85,10 @@ _CHAIN_KEYS = ("primary", "fallback", "fallback2", "fallback3")
 # TOML provider keys that are NOT part of `extra` — they are the structural fields.
 _STRUCTURAL_KEYS = frozenset({"cli", "model"})
 
+# Cap on a single link's failure reason in the escalation detail (post-collapse),
+# so a verbose agent stderr cannot bloat the one-line summary.
+_REASON_MAX_CHARS = 120
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderChain:
@@ -178,10 +182,22 @@ def load_chain(
 
 @dataclass(frozen=True, slots=True)
 class _LinkFailure:
-    """One chain link's failure, recorded for the both-fail escalation detail."""
+    """One chain link's failure, recorded for the both-fail escalation detail.
+
+    ``reason`` is normalized to a single line at construction: every source (an
+    agent stderr, a timeout ``detail``, a parse exception message) may contain
+    interior newlines, but the escalation ``detail`` is documented as a one-line
+    summary — so collapse all whitespace once, centrally, here.
+    """
 
     spec: AgentSpec
     reason: str
+
+    def __post_init__(self) -> None:
+        # Collapse all whitespace (one-line guarantee), then cap so a huge agent
+        # stderr cannot bloat the escalation detail. Both apply to every source.
+        collapsed = " ".join(self.reason.split())
+        object.__setattr__(self, "reason", collapsed[:_REASON_MAX_CHARS])
 
 
 class _Dispatcher:
@@ -247,8 +263,8 @@ class _Dispatcher:
         except FileNotFoundError:
             return _LinkFailure(spec, "binary not on PATH")
         if result.returncode != 0:
-            reason = f"exit {result.returncode}: {result.stderr.strip()[:120]}"
-            return _LinkFailure(spec, reason)
+            # _LinkFailure normalizes whitespace + caps length centrally.
+            return _LinkFailure(spec, f"exit {result.returncode}: {result.stderr}")
         return result.stdout
 
 

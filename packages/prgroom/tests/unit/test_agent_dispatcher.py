@@ -300,6 +300,20 @@ def test_all_providers_fail_detail_names_each_link_and_its_reason() -> None:
     assert "exit 7" in detail and "quota exceeded" in detail
 
 
+def test_multiline_stderr_collapses_to_a_single_line_detail() -> None:
+    # The detail is documented as a one-line summary; a multi-line agent stderr
+    # (traceback, multi-line quota notice) must not smuggle interior newlines into
+    # it. .strip() alone would leave them — the reason must collapse all whitespace.
+    multiline = "Traceback (most recent call last):\n  File x\nRuntimeError: boom"
+    runner = FakeAgentRunner([ExitsWith(1, multiline)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    with pytest.raises(AllProvidersFailedError) as excinfo:
+        dispatcher.cluster(_cluster_input())
+    detail = excinfo.value.detail
+    assert "\n" not in detail
+    assert "Traceback" in detail and "RuntimeError: boom" in detail  # content preserved
+
+
 def test_fix_dispatcher_parses_fix_output() -> None:
     runner = FakeAgentRunner([Succeeds(FIX_OK)])
     dispatcher = FixDispatcher(runner=runner, chain=_chain(AgentSpec("claude", "opus[1m]")))
