@@ -75,12 +75,17 @@ def test_status_default_render(patched: InMemoryStore, monkeypatch: pytest.Monke
 
 @pytest.mark.usefixtures("patched")
 def test_status_missing_state_is_precondition(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "_build_gh", lambda: _gh())
+    # Build the gh fake inline so we can inspect its runner: the missing-state path
+    # must raise PRECONDITION_NO_STATE BEFORE any gh I/O (no live enrichment on a PR
+    # prgroom has never recorded), so the runner sees zero calls.
+    gh_runner = RecordedRunner([_ok([{"name": "human-review-required"}]), _ok([])])
+    monkeypatch.setattr(cli, "_build_gh", lambda: GhCli(gh_runner))
     result = runner.invoke(cli.app, ["status", "octo/demo#7"])
     assert result.exit_code == 2
     assert "PRECONDITION_NO_STATE" in result.output
     assert "run `poll`" in result.output
     assert "how:" in result.output
+    assert gh_runner.calls == []  # raised before touching gh
 
 
 @pytest.mark.usefixtures("patched")
@@ -190,6 +195,28 @@ def test_status_gh_failure_propagates(
         lambda: GhCli(
             RecordedRunner(
                 [CommandResult(returncode=1, stdout="{}", stderr="gh: Bad credentials (HTTP 401)")]
+            )
+        ),
+    )
+    result = runner.invoke(cli.app, ["status", "octo/demo#7", "--json"])
+    assert result.exit_code == 77
+    assert "RUNTIME_GH_TERMINAL" in result.output
+
+
+def test_status_gh_404_enrichment_maps_to_terminal(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A 404 during the live human-review enrichment (PR closed/deleted, or repo
+    # access lost between the lock-free state read and the enrichment) must map to a
+    # terminal PrgroomError (exit 77), NOT escape as a raw GhNotFoundError traceback —
+    # the same convention poll.py's _vanished_pr_terminal pins.
+    patched.write(_REF, _quiesced_state())
+    monkeypatch.setattr(
+        cli,
+        "_build_gh",
+        lambda: GhCli(
+            RecordedRunner(
+                [CommandResult(returncode=1, stdout="{}", stderr="gh: Not Found (HTTP 404)")]
             )
         ),
     )

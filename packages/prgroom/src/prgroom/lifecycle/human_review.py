@@ -20,6 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from prgroom.errors import ErrorCode, PrgroomError, Tier
+from prgroom.gh.client import GhNotFoundError
+
 if TYPE_CHECKING:
     from prgroom.gh.client import GhClient
     from prgroom.prsession.pr_ref import PRRef
@@ -137,16 +140,38 @@ def derive_human_review(*, labels: list[str], reviews: list[JsonObj]) -> HumanRe
     return HumanReview(required=required, satisfied_by=satisfied_by, candidates_seen=candidates)
 
 
+def _get(gh: GhClient, ref: PRRef, path: str) -> Any:
+    """``gh.rest("GET", path)`` with a 404 mapped to a terminal ``PrgroomError``.
+
+    ``gh.rest`` raises :class:`~prgroom.gh.client.GhNotFoundError` (NOT a
+    :class:`PrgroomError`) on a 404. Status enrichment races the lock-free state
+    read: the PR can close/delete, or repo access can drop, between the two. A blind
+    retry won't bring it back, so a 404 here is terminal (``RUNTIME_GH_TERMINAL``,
+    exit 77) — the same mapping ``poll.py``'s ``_vanished_pr_terminal`` pins.
+    Other gh failures already arrive as registry-tagged :class:`PrgroomError`s and
+    propagate unchanged.
+    """
+    try:
+        return gh.rest("GET", path)
+    except GhNotFoundError as exc:
+        raise PrgroomError(
+            tier=Tier.RUNTIME_TERMINAL_USER,
+            code=ErrorCode.RUNTIME_GH_TERMINAL,
+            detail=f"PR resource not found: {ref.display()}",
+        ) from exc
+
+
 def fetch_human_review_inputs(gh: GhClient, ref: PRRef) -> tuple[list[str], list[JsonObj]]:
     """Live gh reads for the human-review derivation: labels + PR-approval reviews.
 
     Two REST GETs — the issue's labels (``issues/{n}/labels``) and the PR's reviews
-    (``pulls/{n}/reviews``). Read-only; any gh failure propagates as the adapter's
-    registry-tagged error. The caller hands the payloads to :func:`derive_human_review`.
+    (``pulls/{n}/reviews``). Read-only. A 404 maps to a terminal ``PrgroomError`` via
+    :func:`_get`; other gh failures propagate as the adapter's registry-tagged error.
+    The caller hands the payloads to :func:`derive_human_review`.
     """
     base = f"repos/{ref.owner}/{ref.repo}"
-    raw_labels = gh.rest("GET", f"{base}/issues/{ref.number}/labels")
-    raw_reviews = gh.rest("GET", f"{base}/pulls/{ref.number}/reviews")
+    raw_labels = _get(gh, ref, f"{base}/issues/{ref.number}/labels")
+    raw_reviews = _get(gh, ref, f"{base}/pulls/{ref.number}/reviews")
     labels = [str(entry.get("name", "")) for entry in raw_labels]
     reviews = [entry for entry in raw_reviews if isinstance(entry, dict)]
     return labels, reviews

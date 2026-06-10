@@ -100,6 +100,15 @@ def test_all_gates_green_is_auto_merge_eligible() -> None:
     assert env["auto_merge_eligible"] is True
 
 
+def test_two_simultaneously_false_gates_still_block_eligibility() -> None:
+    # Completeness for the AND truth table: two gates false at once (non-quiesced
+    # phase AND unsatisfied human review) must still yield auto_merge_eligible=False.
+    env = build_status(_state(phase=PRPhase.AWAITING_REVIEW), _UNSATISFIED)
+    assert env["merge_gates"]["phase_is_quiesced"] is False
+    assert env["merge_gates"]["human_review_satisfied"] is False
+    assert env["auto_merge_eligible"] is False
+
+
 def test_non_quiesced_phase_blocks_eligibility() -> None:
     env = build_status(_state(phase=PRPhase.AWAITING_REVIEW), _SATISFIED)
     assert env["merge_gates"]["phase_is_quiesced"] is False

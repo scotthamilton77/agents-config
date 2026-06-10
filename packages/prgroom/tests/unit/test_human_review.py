@@ -8,6 +8,10 @@ logic stays free of any subprocess.
 
 from __future__ import annotations
 
+import pytest
+
+from prgroom.errors import ErrorCode, PrgroomError, Tier
+from prgroom.gh.client import GhNotFoundError
 from prgroom.lifecycle.human_review import (
     derive_human_review,
     fetch_human_review_inputs,
@@ -149,3 +153,26 @@ def test_fetch_maps_payloads_to_inputs() -> None:
     labels, reviews = fetch_human_review_inputs(gh, ref)  # type: ignore[arg-type]
     assert labels == ["human-review-required", "bug"]
     assert reviews == [_review("alice")]
+
+
+class _NotFoundGh:
+    """A structural ``GhClient`` whose every REST GET raises a 404."""
+
+    def rest(
+        self,
+        method: str,  # noqa: ARG002  # part of the GhClient.rest signature; unused here
+        path: str,  # noqa: ARG002  # part of the GhClient.rest signature; unused here
+        *,
+        fields: object = None,  # noqa: ARG002  # part of the GhClient.rest signature; unused here
+    ) -> object:
+        raise GhNotFoundError
+
+
+def test_fetch_404_maps_to_terminal_prgroom_error() -> None:
+    # A 404 during enrichment (PR vanished / access lost) is a terminal PrgroomError,
+    # NOT a raw GhNotFoundError — mirroring poll.py's _vanished_pr_terminal convention.
+    ref = PRRef(owner="octo", repo="demo", number=7)
+    with pytest.raises(PrgroomError) as excinfo:
+        fetch_human_review_inputs(_NotFoundGh(), ref)  # type: ignore[arg-type]
+    assert excinfo.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert excinfo.value.tier is Tier.RUNTIME_TERMINAL_USER

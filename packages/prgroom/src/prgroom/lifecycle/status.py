@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from prgroom.lifecycle.quiescence import BLOCKER_DISPOSITIONS
 from prgroom.prsession.enums import DispositionKind, PRPhase, ReviewerKind
 
 if TYPE_CHECKING:
@@ -20,20 +21,16 @@ if TYPE_CHECKING:
 
 JsonObj = dict[str, Any]
 
-# Dispositions that block auto-merge (§4.6 no_blocker_items). The same blocker set
-# the quiescence predicate screens on — do NOT fork a parallel notion.
-_BLOCKER_DISPOSITIONS: frozenset[DispositionKind] = frozenset(
-    {DispositionKind.ESCALATED, DispositionKind.FAILED}
-)
-
 
 def _last_error_clear(state: PRGroomingState) -> bool:
     return state.last_error is None or state.last_error == ""
 
 
 def _no_blocker_items(state: PRGroomingState) -> bool:
+    # §4.6 no_blocker_items screens on the SAME set the §4.1 quiescence predicate
+    # uses (BLOCKER_DISPOSITIONS) — one source of truth, never a parallel notion.
     return not any(
-        item.disposition is not None and item.disposition.kind in _BLOCKER_DISPOSITIONS
+        item.disposition is not None and item.disposition.kind in BLOCKER_DISPOSITIONS
         for item in state.items
     )
 

@@ -29,9 +29,11 @@ _CI_OK: frozenset[str] = frozenset({"success", "absent"})
 _REVIEWER_DONE: frozenset[ReviewerStatus] = frozenset(
     {ReviewerStatus.REVIEW_FOUND, ReviewerStatus.DECLINED}
 )
-# Dispositions that block quiescence — they route to human-gated before this
-# predicate is reached, so reaching them here is a defensive sanity gate (§4.1).
-_BLOCKER_DISPOSITIONS: frozenset[DispositionKind] = frozenset(
+# Dispositions that block auto-merge progress — the §4.1 quiescence sanity gate
+# (G_NO_BLOCKERS) AND the §4.6 status envelope's ``no_blocker_items`` both screen on
+# this single set, so a future blocker-disposition addition cannot silently diverge
+# the two. PUBLIC and shared (imported by ``status.py``) — one source of truth.
+BLOCKER_DISPOSITIONS: frozenset[DispositionKind] = frozenset(
     {DispositionKind.ESCALATED, DispositionKind.FAILED}
 )
 
@@ -64,7 +66,7 @@ def _g_dispositions(state: PRGroomingState) -> bool:
 
 def _g_no_blockers(state: PRGroomingState) -> bool:
     return not any(
-        item.disposition is not None and item.disposition.kind in _BLOCKER_DISPOSITIONS
+        item.disposition is not None and item.disposition.kind in BLOCKER_DISPOSITIONS
         for item in state.items
     )
 
