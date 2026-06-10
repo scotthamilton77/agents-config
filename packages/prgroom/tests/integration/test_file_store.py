@@ -167,6 +167,10 @@ def test_list_refs_skips_files_that_are_not_current_prgroom_state(tmp_path: Path
     (tmp_path / "future-schema.json").write_text(
         json.dumps({"schema_version": SCHEMA_VERSION + 1, "pr": valid_pr})
     )  # foreign / future schema
+    # bool/float schema_version (True==1, 1.0==1) must NOT enumerate as current —
+    # enumeration stays consistent with read()'s type-strict gate.
+    (tmp_path / "bool-schema.json").write_text(json.dumps({"schema_version": True, "pr": valid_pr}))
+    (tmp_path / "float-schema.json").write_text(json.dumps({"schema_version": 1.0, "pr": valid_pr}))
     (tmp_path / "pr-not-object.json").write_text(
         json.dumps({"schema_version": SCHEMA_VERSION, "pr": "nope"})
     )  # `pr` is not a dict

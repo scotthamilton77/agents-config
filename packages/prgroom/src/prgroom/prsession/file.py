@@ -204,7 +204,10 @@ def _ref_from_state_file(path: Path) -> PRRef | None:
         payload = json.loads(path.read_bytes())
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(payload, dict):
+        return None
+    version = payload.get("schema_version")
+    if not (_is_int_version(version) and version == SCHEMA_VERSION):
         return None
     pr = payload.get("pr")
     if not isinstance(pr, dict):
