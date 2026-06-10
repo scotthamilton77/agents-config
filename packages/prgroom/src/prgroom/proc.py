@@ -68,8 +68,10 @@ class SubprocessRunner:
         argv: Sequence[str],
         *,
         input: str | None = None,  # stdlib name; matches subprocess.run's keyword
-        timeout: float | None = None,
+        timeout: float | None = DEFAULT_SUBPROCESS_TIMEOUT,
     ) -> CommandResult:
+        # Fail-safe: bound by default so a caller that omits `timeout` cannot hang
+        # forever holding the PR lock. Pass `timeout=None` explicitly to opt out.
         env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
         completed = subprocess.run(  # noqa: S603  # argv is internally built (gh/git verb + typed args), never shell-interpolated user input; this IS the sanctioned boundary
             list(argv),

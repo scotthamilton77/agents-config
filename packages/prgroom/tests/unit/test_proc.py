@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from prgroom.proc import CommandResult, CommandRunner, SubprocessRunner
+from prgroom.proc import (
+    DEFAULT_SUBPROCESS_TIMEOUT,
+    CommandResult,
+    CommandRunner,
+    SubprocessRunner,
+)
 from tests.fakes import RecordedRunner, TimeoutRunner
 
 
@@ -61,6 +66,22 @@ def test_subprocess_runner_forces_c_locale(monkeypatch: Any) -> None:
     assert env["LANG"] == "C"
     # The rest of the parent environment is preserved (e.g. PATH so the binary resolves).
     assert "PATH" in env
+
+
+def test_subprocess_runner_defaults_to_bounded_timeout(monkeypatch: Any) -> None:
+    # Fail-safe: a caller that omits `timeout` must still get the bounded default,
+    # never an unbounded subprocess that could hang forever while holding the PR
+    # lock. The adapters pass it explicitly, but the seam itself must be safe too.
+    captured: dict[str, Any] = {}
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    SubprocessRunner().run(["git", "--version"])  # no explicit timeout
+
+    assert captured["timeout"] == DEFAULT_SUBPROCESS_TIMEOUT
 
 
 def test_subprocess_runner_structurally_satisfies_protocol() -> None:

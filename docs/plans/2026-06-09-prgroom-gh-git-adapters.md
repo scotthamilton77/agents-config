@@ -12,7 +12,7 @@
 
 ## Reconciliation pins (from spec §3.6/§3.7 + errors.py)
 
-- gh 5xx OR rate-limit (403/429 with `Retry-After` / `X-RateLimit-Remaining: 0`) → `Tier.RUNTIME_TRANSIENT` + `ErrorCode.RUNTIME_GH_TRANSIENT`
+- gh 5xx, OR a rate limit (HTTP 429, or a 4xx whose `gh` stderr contains `rate limit exceeded`) → `Tier.RUNTIME_TRANSIENT` + `ErrorCode.RUNTIME_GH_TRANSIENT` (the gh CLI surfaces rate limiting via stderr text, not parsed HTTP headers)
 - gh 4xx ≠ 404 ≠ rate → `Tier.RUNTIME_TERMINAL_USER` + `ErrorCode.RUNTIME_GH_TERMINAL`
 - gh 404 → `GhNotFoundError` (typed signal; NOT a PrgroomError — caller's startup precondition owns `PRECONDITION_REPO_UNREACHABLE`)
 - gh GraphQL: exit 0 but `errors[]` present in JSON → `Tier.RUNTIME_TRANSIENT` + `ErrorCode.RUNTIME_GRAPHQL_FAILED`
@@ -62,7 +62,7 @@
   - classification arms: 503 stderr `gh: ... (HTTP 503)` → `RUNTIME_GH_TRANSIENT`; 429 with rate-limit → `RUNTIME_GH_TRANSIENT`; 422 → `RUNTIME_GH_TERMINAL`; 404 → `GhNotFoundError`.
   - structural fit: `isinstance(GhCli(RecordedRunner()), GhClient)`.
 - [ ] Step 2: Run → FAIL.
-- [ ] Step 3: Implement `gh/client.py`: `GhNotFoundError(Exception)`; `@runtime_checkable GhClient(Protocol)` with `head_ref_oid`, `rest`, `graphql`; `GhCli(runner)` adapter; `_classify_gh_failure(result)` parsing `(HTTP NNN)` from stderr, rate-limit via stderr/`Retry-After`, raising the mapped error. GraphQL success-with-errors detected by inspecting parsed JSON.
+- [ ] Step 3: Implement `gh/client.py`: `GhNotFoundError(Exception)`; `@runtime_checkable GhClient(Protocol)` with `head_ref_oid`, `rest`, `graphql`; `GhCli(runner)` adapter; `_classify_gh_failure(result)` parsing the trailing `(HTTP NNN)` from stderr, rate-limit via the `rate limit exceeded` stderr phrase (429 unconditionally), raising the mapped error. GraphQL success-with-errors detected by inspecting parsed JSON.
 - [ ] Step 4: Run → PASS.
 - [ ] Step 5: Commit `feat(prgroom): gh subprocess adapter + failure classification (8.5)`.
 
