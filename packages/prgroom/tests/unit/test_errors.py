@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from prgroom.errors import (
+    BlockingErrorCodes,
     ErrorCode,
     PreconditionError,
     PrgroomError,
@@ -104,3 +105,35 @@ def test_precondition_tier_rejects_a_non_precondition_code() -> None:
     # on a runtime code is a programming error, surfaced as ValueError.
     with pytest.raises(ValueError, match="not a PRECONDITION"):
         ErrorCode.RUNTIME_GH_TERMINAL.precondition_tier()
+
+
+def test_store_unavailable_is_user_error_tier() -> None:
+    err = PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE, detail="bd")
+    assert err.tier == Tier.PRECONDITION_USER_ERROR
+    assert exit_code_for_tier(err) == 2
+
+
+def test_store_unavailable_carries_detail_in_message() -> None:
+    err = PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE, detail="frobnicate")
+    assert "frobnicate" in str(err)
+
+
+def test_blocking_error_codes_is_the_exact_documented_set() -> None:
+    # §3.2 / §3.6: resolve-escalated cannot clear these. Exact-set equality so a
+    # stray addition or omission fails here, not silently downstream.
+    assert BlockingErrorCodes == frozenset(
+        {
+            ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED,
+            ErrorCode.STATE_CORRUPT,
+            ErrorCode.STATE_SCHEMA_UNKNOWN,
+            ErrorCode.RUNTIME_GH_TERMINAL,
+            ErrorCode.RUNTIME_PUSH_REJECTED,
+        }
+    )
+
+
+@pytest.mark.parametrize("absent", ["STATE_LOCK_STALE", "NOTICE_LOCK_STALE_CLEANED"])
+def test_removed_lock_codes_are_not_in_the_registry(absent: str) -> None:
+    # §3.7: these were removed to match the flock(2) mechanism (kernel-released on
+    # death). Their presence would signal a regression to an fcntl-style protocol.
+    assert absent not in ErrorCode.__members__

@@ -15,10 +15,12 @@ import fcntl
 import json
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeGuard
 
+from prgroom.prsession.migrations import MIGRATIONS, Migrator
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import SCHEMA_VERSION, PRGroomingState
 from prgroom.prsession.store import (
@@ -58,11 +60,32 @@ def write_atomic(path: Path, data: bytes) -> None:
         raise
 
 
+def _is_int_version(version: object) -> TypeGuard[int]:
+    """True only for a genuine ``int`` schema version.
+
+    ``bool`` subclasses ``int`` (``True == 1``) and ``float`` compares equal
+    (``1.0 == 1``), so a naive ``== SCHEMA_VERSION`` gate would silently accept
+    ``schema_version: true`` / ``1.0`` as healthy v1 state — and ``bool`` would
+    even alias an integer key in the ``MIGRATIONS`` lookup (``hash(True) ==
+    hash(1)``). ``type(...) is int`` excludes both, routing malformed versions to
+    the migrate-or-reject path instead of masquerading as current.
+    """
+    return type(version) is int
+
+
 class FileStore:
     """Production Store adapter. Structurally satisfies ``Store``."""
 
-    def __init__(self, *, state_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        state_dir: Path | None = None,
+        migrations: Mapping[int, Migrator] | None = None,
+    ) -> None:
         self._dir = state_dir if state_dir is not None else resolve_state_dir()
+        self._migrations: Mapping[int, Migrator] = (
+            migrations if migrations is not None else MIGRATIONS
+        )
 
     def _state_path(self, ref: PRRef) -> Path:
         return self._dir / f"{ref.slug()}.json"
@@ -83,11 +106,57 @@ class FileStore:
         except json.JSONDecodeError as exc:
             raise StateCorruptError(f"{path}: {exc}") from exc  # noqa: TRY003  # single call-site; message names the offending file
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION:
-            raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
-                f"{path}: schema_version {version!r} != {SCHEMA_VERSION}"
-            )
+        if not (_is_int_version(version) and version == SCHEMA_VERSION):
+            payload = self._migrate(path, raw, version)
         return PRGroomingState.from_dict(payload)
+
+    def _migrate(self, path: Path, raw: bytes, from_version: object) -> dict[str, object]:
+        """Apply a registered migrator for ``from_version`` or trip schema-unknown.
+
+        On a registered migrator: run it on the raw bytes, rewrite the file in
+        place via ``write_atomic`` (only on success — a raising migrator leaves
+        the file byte-identical), then re-parse and return the upgraded payload.
+        A raising migrator maps to :class:`StateCorruptError` (its registry
+        ``how`` — move aside, rebuild — fits a failed migration). No migrator:
+        :class:`SchemaUnknownError` (the §3.7 ``STATE_SCHEMA_UNKNOWN`` path).
+
+        NOTE for the status/locking beads: this rewrites the file in place, so
+        ``read`` is no longer side-effect-free once a migrator is registered. The
+        lock-free ``status`` reader (§3.3 carve-out) must either migrate in memory
+        without writing, or take the lock before a migrating read — do not ship an
+        unlocked migrating reader. (Latent today: ``MIGRATIONS`` is empty.)
+        """
+        migrator = self._migrations.get(from_version) if _is_int_version(from_version) else None
+        if migrator is None:
+            raise SchemaUnknownError(  # noqa: TRY003  # single call-site; message names the file + version mismatch
+                f"{path}: schema_version {from_version!r} != {SCHEMA_VERSION}"
+            )
+        # Both the migrator call and the parse sit inside the try: a raising OR an
+        # invalid-JSON migrator must not corrupt on-disk state.
+        try:
+            migrated = migrator(raw)
+            decoded = json.loads(migrated)
+        except Exception as exc:
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
+                f"{path}: migration from {from_version!r} failed: {exc}"
+            ) from exc
+        if not isinstance(decoded, dict):
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
+                f"{path}: migration from {from_version!r} produced non-object JSON"
+            )
+        new_version = decoded.get("schema_version")
+        if not (_is_int_version(new_version) and new_version == SCHEMA_VERSION):
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + result version
+                f"{path}: migration from {from_version!r} did not reach "
+                f"schema_version {SCHEMA_VERSION} (got {new_version!r})"
+            )
+        # Validate-before-commit: write_atomic runs ONLY after the migrated bytes
+        # are confirmed parseable, a JSON object, AND at the current schema_version,
+        # so a migrator that returns garbage or an unmigrated payload without raising
+        # can never overwrite good on-disk state.
+        write_atomic(path, migrated)
+        parsed: dict[str, object] = decoded
+        return parsed
 
     def write(self, ref: PRRef, state: PRGroomingState) -> None:
         data = json.dumps(state.to_dict(), indent=2, sort_keys=True).encode("utf-8")
@@ -135,7 +204,10 @@ def _ref_from_state_file(path: Path) -> PRRef | None:
         payload = json.loads(path.read_bytes())
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(payload, dict):
+        return None
+    version = payload.get("schema_version")
+    if not (_is_int_version(version) and version == SCHEMA_VERSION):
         return None
     pr = payload.get("pr")
     if not isinstance(pr, dict):
