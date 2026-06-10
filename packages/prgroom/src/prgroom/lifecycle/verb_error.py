@@ -14,8 +14,11 @@ Tier policy (§3.6):
 - ``RUNTIME_TRANSIENT`` → PROPAGATE, set ``last_error``, no phase change (scheduler retries).
 - ``RUNTIME_TERMINAL_USER`` / ``STATE_CORRUPT`` / ``STATE_SCHEMA_UNKNOWN`` → PROPAGATE,
   gate ``human-gated``, set ``last_error``, re-arm ``lifecycle_escalation_filed=False``.
-- ``CONTRACT_AUDIT_FAILED`` → CONTINUE, no ``last_error`` (the verb already flipped the
-  affected item to ``FAILED`` with a rationale; the resolver gates phase at priority 2).
+- ``CONTRACT_AUDIT_FAILED`` → CONTINUE; does **not** write ``last_error`` (§3.3: the arm
+  writes ``last_error`` only on PROPAGATE; the cause lives in the per-item
+  ``disposition.rationale`` after the verb flips the item to ``FAILED``; the resolver gates
+  phase at priority 2). A pre-existing ``last_error`` is intentionally left intact — it is
+  cleared only on successful cycle completion (§2), never by this CONTINUE arm.
 - ``RUNTIME_CANCELLED`` → PROPAGATE, no mutation (state stays exactly as last written
   so ``status`` reports the true last phase; the run-loop maps it to 130/143).
 - Any other tier → PROPAGATE without mutation (crash-loud safety: never silently
