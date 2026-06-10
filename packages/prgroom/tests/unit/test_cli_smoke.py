@@ -50,8 +50,11 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
 
 # Each single-PR-arg skeleton verb invoked with a positional ref. resolve-escalated
 # has a richer signature and is exercised separately below. ``poll`` is no longer a
-# skeleton (8.9a wired it for real); its behavior is covered by test_cli_poll.py.
-_SINGLE_ARG_VERBS = [v for v in MVP_VERBS if v not in {"resolve-escalated", "sweep", "poll"}]
+# skeleton (8.9a wired it for real); ``status`` likewise (8.11) — their behavior is
+# covered by test_cli_poll.py / test_cli_status.py.
+_SINGLE_ARG_VERBS = [
+    v for v in MVP_VERBS if v not in {"resolve-escalated", "sweep", "poll", "status"}
+]
 
 
 @pytest.mark.parametrize("verb", _SINGLE_ARG_VERBS)

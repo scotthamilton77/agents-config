@@ -14,6 +14,7 @@ Verb names with underscores in the function name render as hyphenated commands
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from typing import IO
@@ -22,15 +23,17 @@ import typer
 
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
-from prgroom.errors import PreconditionError, PrgroomError, exit_code_for_tier
+from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, exit_code_for_tier
 from prgroom.gh import GhClient
 from prgroom.gh.client import GhCli
 from prgroom.lifecycle import poll_pr
+from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
+from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.registry import resolve_store
-from prgroom.prsession.state import bootstrap_state
+from prgroom.prsession.state import PRGroomingState, bootstrap_state
 from prgroom.prsession.store import StateNotFoundError, Store
 
 # Foundation skeletons are not yet implemented; they exit non-zero so a caller
@@ -186,9 +189,54 @@ def wait(pr: str = typer.Argument(..., help="PR ref.")) -> None:
 
 
 @app.command()
-def status(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Print current grooming state for inspection."""
-    _skeleton("status")
+def status(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+    json_out: bool = typer.Option(False, "--json", help="Emit the §4.6 status envelope as JSON."),
+    locked: bool = typer.Option(
+        False,
+        "--locked",
+        help="Acquire the PR lock for a strictly-consistent read (exit 75 under contention).",
+    ),
+) -> None:
+    """Print current grooming state + the §4.6 merge-gate envelope (read-only).
+
+    The §3.3 carve-out: the default path is LOCK-FREE — a single ``store.read`` that
+    may observe a stale-but-internally-consistent snapshot under a concurrent write,
+    never a partial one (writes are file-atomic). ``--locked`` acquires the PR lock
+    via :func:`with_lock` for a strictly-consistent read and exits 75 under
+    contention rather than blocking. Human-review is a live gh enrichment (labels +
+    PR-approval reviews); ``human_review_satisfied`` is derived per-query, never
+    persisted, and never gates the lifecycle.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+
+        def _read() -> PRGroomingState:
+            try:
+                return store.read(ref)
+            except StateNotFoundError as exc:
+                # No state file yet — the PR was never polled. This is a user error
+                # (exit 2), NOT a no-work success (a scheduler must not read exit-0
+                # "done" for a PR that was simply never started). `status` is the
+                # lock-free read carve-out, so it cannot self-heal by running prework.
+                raise PreconditionError(
+                    ErrorCode.PRECONDITION_NO_STATE,
+                    detail=ref.display(),
+                ) from exc
+
+        state = with_lock(store, ref, _read) if locked else _read()
+        # Build the gh adapter LAZILY — only after the state read succeeds — so the
+        # fast-fail precondition paths (NO_STATE on a never-polled PR; LOCK_HELD under
+        # --locked contention, which fails on the pre-read acquire) stay gh-independent.
+        gh = _build_gh()
+        labels, reviews = fetch_human_review_inputs(gh, ref)
+        human_review = derive_human_review(labels=labels, reviews=reviews)
+        envelope = build_status(state, human_review)
+        _render_status(envelope, json_out=json_out)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()
@@ -201,6 +249,28 @@ def run(pr: str = typer.Argument(..., help="PR ref.")) -> None:
 def sweep(repo: str = typer.Argument(..., help="owner/repo to sweep.")) -> None:
     """Cross-PR autonomous mode: list open PRs and run each serially."""
     _skeleton("sweep")
+
+
+def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
+    """Render the §4.6 status envelope as JSON (``--json``) or a human summary.
+
+    ``--json`` emits the stable merge-gate handoff contract verbatim (indented). The
+    default human view surfaces the operator-relevant fields — phase, CI, items,
+    each merge gate, and the final ``auto_merge_eligible`` verdict — without losing
+    the envelope's nested structure.
+    """
+    if json_out:
+        sys.stdout.write(json.dumps(envelope, indent=2) + "\n")
+        return
+    last_error = envelope["last_error"] or "(clear)"
+    sys.stdout.write(
+        f"PR #{envelope['pr']}  phase={envelope['phase']}  round={envelope['round']}\n"
+        f"  ci={envelope['ci_state']}  last_error={last_error}\n"
+        f"  items={envelope['items_summary']}\n"
+        f"  merge_gates={envelope['merge_gates']}\n"
+        f"  human_review={envelope['human_review']}\n"
+        f"  auto_merge_eligible={envelope['auto_merge_eligible']}\n"
+    )
 
 
 def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
