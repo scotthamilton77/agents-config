@@ -74,6 +74,7 @@ class FakeProcess:
         self.terminated = False
         self.killed = False
         self.reaped = False
+        self.cleaned_up = False
         self.delivered_stdin: str | None = None
         self._signalled = False
 
@@ -114,6 +115,11 @@ class FakeProcess:
     def communicate(self) -> tuple[str, str]:
         self.reaped = True
         return self._stdout, self._stderr
+
+    def cleanup(self) -> None:
+        # The real handle unlinks its stdout/stderr temp files here; the runner must
+        # call this on EVERY exit path (success, timeout, cancel, exception).
+        self.cleaned_up = True
 
 
 def _spec(cli: str = "claude", model: str = "haiku", **extra: object) -> AgentSpec:
@@ -343,6 +349,23 @@ def test_successful_run_returns_result_with_duration_and_returncode(tmp_path: Pa
     assert result.stdout == "OK"
     assert result.duration_ms >= 0
     assert proc.reaped  # normal completion reaps the child (no zombie / leaked pipes)
+    assert proc.cleaned_up  # output temp files removed on the success path
+
+
+def test_large_captured_output_flows_through(tmp_path: Path) -> None:
+    # A chatty fix agent emits far more than a pipe buffer (~64KB). Captured via temp
+    # files (not an undrained PIPE), large output flows through intact without the
+    # child blocking on a full pipe — the deadlock this design prevents.
+    big = "x" * 200_000
+    proc = FakeProcess(returncode=0, stdout=big, stderr="warn\n" * 5000)
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = _run_ok(runner)
+    assert result.stdout == big
+    assert result.stderr == "warn\n" * 5000
+    assert proc.cleaned_up
 
 
 def test_nonzero_exit_is_returned_not_raised(tmp_path: Path) -> None:
@@ -380,6 +403,7 @@ def test_timeout_escalates_sigterm_to_sigkill_and_reaps(tmp_path: Path) -> None:
         )
     assert proc.terminated and proc.killed  # SIGTERM first, then SIGKILL on survival
     assert proc.reaped  # reaped before the error propagates
+    assert proc.cleaned_up  # output temp files removed even on the timeout path
     assert excinfo.value.code is ErrorCode.RUNTIME_AGENT_TIMEOUT
 
 
@@ -424,6 +448,7 @@ def test_cancel_token_terminates_and_reaps_child(tmp_path: Path) -> None:
         )
     assert proc.terminated
     assert proc.reaped  # cancel path reaps too — no leaked child
+    assert proc.cleaned_up  # output temp files removed even on the cancel path
     assert excinfo.value.code is ErrorCode.RUNTIME_CANCELLED_SIGTERM
 
 

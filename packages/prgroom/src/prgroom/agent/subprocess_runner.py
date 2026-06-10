@@ -134,8 +134,10 @@ class ProcessHandle(Protocol):
 
     Beyond poll/terminate/kill, the wrapper needs to (a) DELIVER stdin to the child
     (``send_stdin`` — ollama reads the prompt there; without it the child blocks
-    forever), and (b) REAP a signalled child (``wait`` / ``communicate``) so no
-    zombie lingers and no PIPE fd leaks.
+    forever), (b) REAP a signalled child and collect its captured output
+    (``wait`` / ``communicate``), and (c) ``cleanup`` any capture scratch (the real
+    handle redirects stdout/stderr to temp files to avoid a pipe-buffer deadlock —
+    see :class:`_PopenHandle`). ``cleanup`` is called on every exit path.
     """
 
     def poll(self) -> int | None: ...  # pragma: no cover
@@ -144,6 +146,7 @@ class ProcessHandle(Protocol):
     def kill(self) -> None: ...  # pragma: no cover
     def wait(self, timeout: float | None = None) -> int: ...  # pragma: no cover
     def communicate(self) -> tuple[str, str]: ...  # pragma: no cover
+    def cleanup(self) -> None: ...  # pragma: no cover
 
 
 # A spawn function: given argv + optional stdin, start the process and return a
@@ -212,14 +215,21 @@ def build_invocation(spec: AgentSpec, *, prompt: str) -> AgentInvocation:
 class _PopenHandle:  # pragma: no cover - OS boundary; tests inject a fake handle
     """Adapts ``subprocess.Popen`` to :class:`ProcessHandle`.
 
-    ``send_stdin`` writes the prompt to the child and CLOSES the pipe (an ollama
-    child blocks on an open-but-unwritten stdin); ``communicate`` (called with no
-    further input) then drains stdout/stderr and reaps. Not unit-tested — it is the
-    OS boundary the ``spawn`` seam exists to keep out of the tested path.
+    The child's stdout/stderr are redirected to **temp files**, NOT pipes. A pipe
+    has a bounded OS buffer (~64KB); a chatty agent that writes more than that while
+    the runner is still polling (not yet draining) would block on the full pipe and
+    never exit — a false budget timeout on a job that would succeed. Files never
+    block the writer, so the poll-until-exit loop stays deadlock-free. ``stdin``
+    stays a pipe (``send_stdin`` writes the prompt and closes it). ``communicate``
+    reaps the child then reads the two files; ``cleanup`` unlinks them and is called
+    by the runner on every exit path. Not unit-tested — it IS the OS boundary the
+    ``spawn`` seam keeps out of the tested path.
     """
 
-    def __init__(self, proc: subprocess.Popen[str]) -> None:
+    def __init__(self, proc: subprocess.Popen[bytes], *, out_path: Path, err_path: Path) -> None:
         self._proc = proc
+        self._out_path = out_path
+        self._err_path = err_path
 
     def poll(self) -> int | None:
         return self._proc.poll()
@@ -229,7 +239,7 @@ class _PopenHandle:  # pragma: no cover - OS boundary; tests inject a fake handl
         # Close the pipe even if the write throws (child exited first → BrokenPipe),
         # so the fd never leaks; the caller swallows BrokenPipeError as best-effort.
         try:
-            self._proc.stdin.write(data)
+            self._proc.stdin.write(data.encode())
         finally:
             self._proc.stdin.close()
 
@@ -243,23 +253,42 @@ class _PopenHandle:  # pragma: no cover - OS boundary; tests inject a fake handl
         return self._proc.wait(timeout=timeout)
 
     def communicate(self) -> tuple[str, str]:
-        return self._proc.communicate()
+        # Reap the child, then read what it wrote to the capture files. The child's
+        # stdout/stderr fds are closed on exit, so the files are complete here.
+        self._proc.wait()
+        out = self._out_path.read_text(encoding="utf-8", errors="replace")
+        err = self._err_path.read_text(encoding="utf-8", errors="replace")
+        return out, err
+
+    def cleanup(self) -> None:
+        self._out_path.unlink(missing_ok=True)
+        self._err_path.unlink(missing_ok=True)
 
 
 def _popen_spawn(argv: Sequence[str], *, stdin: str | None) -> ProcessHandle:  # pragma: no cover
     """Production spawn: start a real child via ``subprocess.Popen``.
 
+    stdout/stderr are redirected to temp files (deadlock-free capture — see
+    :class:`_PopenHandle`); stdin stays a pipe only when there is input to deliver.
     Not covered by unit tests — it IS the OS boundary the ``spawn`` seam exists to
     keep out of the tested code path; tests inject a fake handle instead.
     """
-    proc = subprocess.Popen(  # noqa: S603  # argv is internally built per-invoker, never shell-interpolated user input
-        list(argv),
-        stdin=subprocess.PIPE if stdin is not None else None,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    return _PopenHandle(proc)
+    out_fd, out_name = tempfile.mkstemp(suffix=".out", prefix="prgroom-agent-")
+    err_fd, err_name = tempfile.mkstemp(suffix=".err", prefix="prgroom-agent-")
+    out_path, err_path = Path(out_name), Path(err_name)
+    try:
+        with os.fdopen(out_fd, "wb") as out_fh, os.fdopen(err_fd, "wb") as err_fh:
+            proc = subprocess.Popen(  # noqa: S603  # argv is internally built per-invoker, never shell-interpolated user input
+                list(argv),
+                stdin=subprocess.PIPE if stdin is not None else None,
+                stdout=out_fh,
+                stderr=err_fh,
+            )
+    except BaseException:
+        out_path.unlink(missing_ok=True)
+        err_path.unlink(missing_ok=True)
+        raise
+    return _PopenHandle(proc, out_path=out_path, err_path=err_path)
 
 
 class SubprocessAgentRunner:
@@ -325,14 +354,29 @@ class SubprocessAgentRunner:
         start = time.monotonic()
         deadline = start + time_budget_s
         proc = self._spawn(invocation.argv, stdin=invocation.stdin)
-        # Deliver stdin (and close the pipe) immediately so a stdin-reading child
-        # (ollama) can make progress; without this it blocks until the budget.
-        # Best-effort: a child that already exited (e.g. ollama erroring out before
-        # reading stdin) makes the write hit a closed pipe — swallow it so the child
-        # is reported via its returncode/stderr and falls through, not a crash.
-        if invocation.stdin is not None:
-            with contextlib.suppress(BrokenPipeError):
-                proc.send_stdin(invocation.stdin)
+        # cleanup() unlinks the handle's stdout/stderr capture files; run it on EVERY
+        # exit path (success, timeout, cancel, exception), so the scratch never leaks.
+        try:
+            # Deliver stdin (and close the pipe) immediately so a stdin-reading child
+            # (ollama) can make progress; without this it blocks until the budget.
+            # Best-effort: a child that already exited (e.g. ollama erroring out before
+            # reading stdin) makes the write hit a closed pipe — swallow it so the child
+            # is reported via its returncode/stderr and falls through, not a crash.
+            if invocation.stdin is not None:
+                with contextlib.suppress(BrokenPipeError):
+                    proc.send_stdin(invocation.stdin)
+            return self._poll_until_done(proc, start=start, deadline=deadline, cancel=cancel)
+        finally:
+            proc.cleanup()
+
+    def _poll_until_done(
+        self,
+        proc: ProcessHandle,
+        *,
+        start: float,
+        deadline: float,
+        cancel: threading.Event | None,
+    ) -> AgentRunResult:
         while True:
             if cancel is not None and cancel.is_set():
                 self._terminate(proc)
@@ -356,7 +400,7 @@ class SubprocessAgentRunner:
                 raise AgentTimeoutError(
                     tier=Tier.RUNTIME_TRANSIENT,
                     code=ErrorCode.RUNTIME_AGENT_TIMEOUT,
-                    detail=f"agent exceeded its {time_budget_s}s time budget",
+                    detail=f"agent exceeded its {deadline - start:.0f}s time budget",
                 )
             if self._poll_interval_s:
                 time.sleep(self._poll_interval_s)
