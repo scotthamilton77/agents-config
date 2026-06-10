@@ -75,17 +75,23 @@ def test_status_default_render(patched: InMemoryStore, monkeypatch: pytest.Monke
 
 @pytest.mark.usefixtures("patched")
 def test_status_missing_state_is_precondition(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Build the gh fake inline so we can inspect its runner: the missing-state path
-    # must raise PRECONDITION_NO_STATE BEFORE any gh I/O (no live enrichment on a PR
-    # prgroom has never recorded), so the runner sees zero calls.
-    gh_runner = RecordedRunner([_ok([{"name": "human-review-required"}]), _ok([])])
-    monkeypatch.setattr(cli, "_build_gh", lambda: GhCli(gh_runner))
+    # The missing-state path must fast-fail with PRECONDITION_NO_STATE with ZERO gh
+    # dependency: the gh adapter is built lazily AFTER the state read, so on this path
+    # _build_gh is never even called (let alone any gh call).
+    build_calls = 0
+
+    def _spy_build_gh() -> GhCli:
+        nonlocal build_calls
+        build_calls += 1
+        return GhCli(RecordedRunner([_ok([]), _ok([])]))
+
+    monkeypatch.setattr(cli, "_build_gh", _spy_build_gh)
     result = runner.invoke(cli.app, ["status", "octo/demo#7"])
     assert result.exit_code == 2
     assert "PRECONDITION_NO_STATE" in result.output
     assert "run `poll`" in result.output
     assert "how:" in result.output
-    assert gh_runner.calls == []  # raised before touching gh
+    assert build_calls == 0  # gh adapter never constructed on the fast-fail path
 
 
 @pytest.mark.usefixtures("patched")
@@ -115,7 +121,16 @@ def test_status_locked_contention_exits_75(
     patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     patched.write(_REF, _quiesced_state())
-    monkeypatch.setattr(cli, "_build_gh", lambda: _gh())
+    # The lock is acquired before the state read, so --locked contention is the other
+    # gh-independent fast-fail path: the adapter is never constructed.
+    build_calls = 0
+
+    def _spy_build_gh() -> GhCli:
+        nonlocal build_calls
+        build_calls += 1
+        return _gh()
+
+    monkeypatch.setattr(cli, "_build_gh", _spy_build_gh)
     # Pre-hold the lock so --locked's acquire fails non-blocking → exit 75.
     assert patched.try_acquire(_REF)
     try:
@@ -124,6 +139,7 @@ def test_status_locked_contention_exits_75(
         patched.release(_REF)
     assert result.exit_code == 75
     assert "PRECONDITION_LOCK_HELD" in result.output
+    assert build_calls == 0  # contention fails before constructing gh
 
 
 def test_status_lockfree_reads_under_held_lock(

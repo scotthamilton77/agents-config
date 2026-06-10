@@ -212,7 +212,6 @@ def status(
     store: Store = ctx.obj
     try:
         ref = PRRef.parse(pr)
-        gh = _build_gh()
 
         def _read() -> PRGroomingState:
             try:
@@ -228,6 +227,10 @@ def status(
                 ) from exc
 
         state = with_lock(store, ref, _read) if locked else _read()
+        # Build the gh adapter LAZILY — only after the state read succeeds — so the
+        # fast-fail precondition paths (NO_STATE on a never-polled PR; LOCK_HELD under
+        # --locked contention, which fails on the pre-read acquire) stay gh-independent.
+        gh = _build_gh()
         labels, reviews = fetch_human_review_inputs(gh, ref)
         human_review = derive_human_review(labels=labels, reviews=reviews)
         envelope = build_status(state, human_review)
