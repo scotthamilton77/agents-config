@@ -144,9 +144,16 @@ class FileStore:
             raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + from-version
                 f"{path}: migration from {from_version!r} produced non-object JSON"
             )
+        new_version = decoded.get("schema_version")
+        if not (_is_int_version(new_version) and new_version == SCHEMA_VERSION):
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + result version
+                f"{path}: migration from {from_version!r} did not reach "
+                f"schema_version {SCHEMA_VERSION} (got {new_version!r})"
+            )
         # Validate-before-commit: write_atomic runs ONLY after the migrated bytes
-        # are confirmed parseable AND a JSON object, so a migrator that returns
-        # garbage without raising can never overwrite good on-disk state.
+        # are confirmed parseable, a JSON object, AND at the current schema_version,
+        # so a migrator that returns garbage or an unmigrated payload without raising
+        # can never overwrite good on-disk state.
         write_atomic(path, migrated)
         parsed: dict[str, object] = decoded
         return parsed

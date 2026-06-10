@@ -128,6 +128,24 @@ def test_migrator_returning_non_object_json_does_not_corrupt_the_file(tmp_path: 
     assert state_path.read_bytes() == original
 
 
+def test_migrator_not_reaching_current_version_is_rejected(tmp_path: Path) -> None:
+    # A migrator that returns valid state but fails to bump schema_version to the
+    # current version is a FAILED migration (the single-step _migrate expects the
+    # result to be current). It must surface STATE_CORRUPT and not be committed,
+    # else `from_dict` (which accepts any schema_version) would silently load it.
+    ref = PRRef("octo", "demo", 7)
+    state_path = tmp_path / f"{ref.slug()}.json"
+    original = _write_old_schema_file(state_path, ref)
+
+    def _forgot_to_bump(raw: bytes) -> bytes:
+        return raw  # valid object, but still at the OLD schema_version
+
+    store = FileStore(state_dir=tmp_path, migrations={_OLD: _forgot_to_bump})
+    with pytest.raises(StateCorruptError):
+        store.read(ref)
+    assert state_path.read_bytes() == original
+
+
 @pytest.mark.parametrize("bogus_version", [True, 1.0, "1"])
 def test_non_int_schema_version_is_rejected_not_loaded_as_current(
     tmp_path: Path, bogus_version: object
