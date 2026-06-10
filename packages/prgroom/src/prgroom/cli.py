@@ -99,7 +99,7 @@ def _skeleton(verb: str) -> None:
 @app.command()
 def poll(
     ctx: typer.Context,
-    pr: str = typer.Argument(..., help="PR number, owner/repo#n, or URL."),
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
 ) -> None:
     """Query gh for new review items, reviews, and CI status; update state (read-only).
 
@@ -107,6 +107,10 @@ def poll(
     §2 ``with_lock`` wrapper, then runs ``read → poll_pr → write`` under it. A
     malformed ref, lock contention, or a gh failure renders through
     :func:`handle_cli_error` with the tier's exit code — never a raw traceback.
+
+    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is NOT yet resolvable
+    (it needs a current-repo context seam — git remote → owner/repo — deferred to a
+    later bead), so ``PRRef.parse`` is called without a ``default_repo`` here.
     """
     store: Store = ctx.obj
     try:

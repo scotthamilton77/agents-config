@@ -255,13 +255,18 @@ def _review(rid: int, login: str = "copilot") -> dict[str, object]:
     }
 
 
-def _review_comment(cid: int, login: str = "copilot") -> dict[str, object]:
-    return {
+def _review_comment(
+    cid: int, login: str = "copilot", *, in_reply_to_id: int | None = None
+) -> dict[str, object]:
+    entry: dict[str, object] = {
         "id": cid,
         "user": {"login": login},
         "body": "inline nit",
         "created_at": "2026-06-09T11:06:00Z",
     }
+    if in_reply_to_id is not None:
+        entry["in_reply_to_id"] = in_reply_to_id
+    return entry
 
 
 def test_new_reviewer_item_moves_awaiting_review_to_fixes_pending() -> None:
@@ -308,36 +313,144 @@ def test_duplicate_item_not_reappended_and_does_not_retrigger_phase() -> None:
     assert state.phase is PRPhase.AWAITING_REVIEW  # no new-item edge fired
 
 
-def test_review_thread_carries_reply_to_comment_id() -> None:
+def test_top_level_review_comment_has_no_parent() -> None:
+    # A top-level inline comment carries no in_reply_to_id → reply_to_comment_id 0.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     gh = _gh(head_oid="same", review_comments=[_review_comment(31)])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     thread = next(i for i in state.items if i.kind is ItemKind.REVIEW_THREAD)
-    assert thread.identity.reply_to_comment_id == 31
+    assert thread.identity.gh_id == "31"
+    assert thread.identity.reply_to_comment_id == 0
+
+
+def test_reply_review_comment_carries_parent_in_reply_to_id() -> None:
+    # A reply comment exposes in_reply_to_id (the PARENT comment's id) — that is
+    # what reply_to_comment_id records, NOT the comment's own id.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(head_oid="same", review_comments=[_review_comment(32, in_reply_to_id=31)])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    thread = next(i for i in state.items if i.kind is ItemKind.REVIEW_THREAD)
+    assert thread.identity.gh_id == "32"  # the reply's own id
+    assert thread.identity.reply_to_comment_id == 31  # the parent it replies to
 
 
 # ── reviewer engagement (§4.1) ──
 
 
-def test_requested_reviewer_engages_to_in_progress_on_authored_review() -> None:
-    # The reviewer was requested before the fixture's review timestamp (11:05Z),
-    # so the review counts as post-request engagement (§4.1).
-    reviewers = {
-        "copilot": ReviewerState(
-            identity="copilot",
+def _requested_at(login: str = "copilot", *, at: datetime) -> dict[str, ReviewerState]:
+    return {
+        login: ReviewerState(
+            identity=login,
             kind=ReviewerKind.BOT,
             status=ReviewerStatus.REQUESTED,
             required=True,
-            last_request_at=_T0 - timedelta(hours=2),  # 10:00Z, before the 11:05Z review
+            last_request_at=at,
         )
     }
+
+
+# The fixture activity timestamps cluster at 11:00 to 11:06Z; a poll-time just
+# after keeps the §4.1 finish-timeout (15m) from tripping so engagement is isolated.
+_JUST_AFTER_ACTIVITY = datetime(2026, 6, 9, 11, 10, 0, tzinfo=UTC)
+# For the 11:30Z multi-verdict fixture, a poll-time within the finish window.
+_JUST_AFTER_VERDICT = datetime(2026, 6, 9, 11, 35, 0, tzinfo=UTC)
+
+
+def test_requested_reviewer_engages_to_in_progress_on_non_review_comment() -> None:
+    # A non-review activity (issue comment) after the request window is engagement
+    # but NOT a terminal verdict — the reviewer advances to in_progress (§4.1).
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))  # before the 11:00Z comment
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
-    gh = _gh(head_oid="same", reviews=[_review(21, login="copilot")])
-    now = _T0 + timedelta(minutes=1)
-    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    gh = _gh(head_oid="same", issue_comments=[_issue_comment(11, login="copilot")])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
     rv = state.reviewers["copilot"]
     assert rv.status is ReviewerStatus.IN_PROGRESS
-    assert rv.last_review_at == now
+
+
+def test_engagement_stamps_activity_time_not_poll_time() -> None:
+    # §4.1: last_review_at = the activity's own created_at/submitted_at, NOT poll
+    # time — otherwise a crash gap resets the stall clock and defeats auto-decline.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    # The issue comment's created_at is 2026-06-09T11:00:00Z; poll time (now) is later.
+    activity_time = datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
+    now = _T0 + timedelta(hours=3)
+    gh = _gh(head_oid="same", issue_comments=[_issue_comment(11, login="copilot")])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    assert state.reviewers["copilot"].last_review_at == activity_time
+
+
+def test_approved_review_flips_required_reviewer_to_review_found() -> None:
+    # §4.1 + sequences.md L96: an APPROVED review is a terminal verdict written by
+    # _poll → REVIEW_FOUND (satisfies G_REVIEWERS).
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    approved = _review(21, login="copilot")
+    approved["state"] = "APPROVED"
+    gh = _gh(head_oid="same", reviews=[approved])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_changes_requested_review_flips_required_reviewer_to_review_found() -> None:
+    # CHANGES_REQUESTED is equally terminal for G_REVIEWERS (the fix items it
+    # produces gate via dispositions, not via reviewer status).
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(head_oid="same", reviews=[_review(21, login="copilot")])  # CHANGES_REQUESTED
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_commented_review_does_not_flip_to_review_found_in_mvp() -> None:
+    # §4.1 hedges the COMMENTED-terminal question to Section 5's contract; MVP
+    # treats a COMMENTED review as engagement only (in_progress), not terminal.
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    commented = _review(21, login="copilot")
+    commented["state"] = "COMMENTED"
+    gh = _gh(head_oid="same", reviews=[commented])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.IN_PROGRESS
+
+
+def test_review_predating_request_does_not_flip_to_review_found() -> None:
+    # A terminal review whose submitted_at predates last_request_at is pre-window
+    # noise — it must not satisfy G_REVIEWERS on a stale verdict.
+    reviewers = _requested_at(at=_T0 + timedelta(hours=1))  # requested AFTER the 11:05Z review
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    approved = _review(21, login="copilot")
+    approved["state"] = "APPROVED"
+    gh = _gh(head_oid="same", reviews=[approved])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.REQUESTED
+
+
+def test_terminal_verdict_keeps_latest_and_skips_authorless_review() -> None:
+    # Two APPROVED reviews from one login (newer first, older second) must keep the
+    # NEWER timestamp; a terminal review with no author login is skipped.
+    newer = {
+        "id": 22,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "lgtm",
+        "submitted_at": "2026-06-09T11:30:00Z",
+    }
+    older = {
+        "id": 23,
+        "user": {"login": "copilot"},
+        "state": "APPROVED",
+        "body": "earlier pass",
+        "submitted_at": "2026-06-09T11:05:00Z",
+    }
+    authorless = {"id": 24, "user": {}, "state": "APPROVED", "submitted_at": "2026-06-09T11:40:00Z"}
+    reviewers = _requested_at(at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    gh = _gh(head_oid="same", reviews=[newer, older, authorless])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_VERDICT), config=_config())
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 30, 0, tzinfo=UTC)  # the newer verdict
 
 
 def test_terminal_reviewer_not_regressed_by_new_activity() -> None:
@@ -366,7 +479,8 @@ def test_engaged_terminal_reviewer_refreshes_last_review_without_status_change()
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
     rv = state.reviewers["copilot"]
     assert rv.status is ReviewerStatus.REVIEW_FOUND  # unchanged
-    assert rv.last_review_at == now  # refreshed
+    # Refreshed to the activity's own timestamp (the 11:00Z comment), not poll time.
+    assert rv.last_review_at == datetime(2026, 6, 9, 11, 0, 0, tzinfo=UTC)
 
 
 def test_item_predating_request_does_not_count_as_engagement() -> None:
@@ -414,6 +528,30 @@ def test_ci_success_recorded() -> None:
     gh = _gh(head_oid="same", ci="success")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.quiescence.ci_state == "success"
+
+
+def test_ci_failure_passed_through() -> None:
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(head_oid="same", ci="failure")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "failure"
+
+
+def test_ci_unknown_rollup_maps_to_pending() -> None:
+    # An empty/unknown combined-status state (not in {success, pending, failure})
+    # is treated as pending — CI exists but is not yet a gate-satisfying verdict.
+    results = [
+        _ok({"headRefOid": "same"}),
+        _ok({"state": "open", "merged_at": None}),
+        _ok([]),
+        _ok([]),
+        _ok([]),
+        _ok({"state": ""}),  # gh returns empty when no rollup verdict yet
+    ]
+    gh = GhCli(RecordedRunner(results))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "pending"
 
 
 def test_ci_404_maps_to_absent() -> None:

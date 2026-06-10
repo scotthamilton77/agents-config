@@ -96,6 +96,26 @@ def test_poll_malformed_ref_exits_two_with_block(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.usefixtures("patched")
+def test_poll_bare_number_is_bad_ref_pending_repo_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The poll verb parses without a default_repo (current-repo resolution is a
+    # later bead), so a bare `<n>` is a bad ref, not a silent success.
+    monkeypatch.setattr(cli, "_build_gh", lambda: _gh_with_head("abc"))
+    result = runner.invoke(cli.app, ["poll", "123"])
+    assert result.exit_code == 2
+    assert "PRECONDITION_BAD_PR_REF" in result.output
+
+
+def test_poll_help_does_not_advertise_bare_number() -> None:
+    # Finding: the help must match reality — a bare number is not yet resolvable.
+    result = runner.invoke(cli.app, ["poll", "--help"])
+    assert result.exit_code == 0
+    assert "owner/repo#n" in result.output
+    assert "PR number" not in result.output
+
+
+@pytest.mark.usefixtures("patched")
 def test_poll_transient_gh_error_exits_seventyfive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "_build_gh", lambda: _gh_transient())
     result = runner.invoke(cli.app, ["poll", "octo/demo#7"])

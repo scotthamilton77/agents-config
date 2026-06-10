@@ -85,11 +85,11 @@ def poll_pr(
     merged = _pr_is_merged(gh, ref)
     activity = False
 
-    new_items = _ingest_items(gh, ref, state, now=now)
+    new_items, terminal_reviews = _ingest_items(gh, ref, state, now=now)
     if new_items:
         state.items.extend(new_items)
         activity = True
-    if _observe_engagement(state, new_items, now=now):
+    if _observe_engagement(state, new_items, terminal_reviews):
         activity = True
 
     new_ci = _ci_state(gh, ref, new_head)
@@ -138,10 +138,23 @@ def _pr_is_merged(gh: GhClient, ref: PRRef) -> bool:
     return bool(pr.get("merged_at"))
 
 
+# GitHub review states that count as a terminal verdict written by _poll (§4.1).
+# COMMENTED is intentionally excluded: §4.1 hedges whether a COMMENTED review is
+# terminal to Section 5's fix contract, so MVP treats it as engagement only.
+_TERMINAL_REVIEW_STATES: frozenset[str] = frozenset({"APPROVED", "CHANGES_REQUESTED"})
+
+
 def _ingest_items(
     gh: GhClient, ref: PRRef, state: PRGroomingState, *, now: datetime
-) -> list[ReviewItem]:
-    """Fetch the three item sources and return only items new to ``state`` (§3.2)."""
+) -> tuple[list[ReviewItem], dict[str, datetime]]:
+    """Fetch the three item sources; return new items + per-reviewer terminal verdicts.
+
+    The second element maps a reviewer login to the timestamp of its latest
+    APPROVED/CHANGES_REQUESTED review (§4.1) so ``_observe_engagement`` can promote
+    that reviewer to ``review_found``. Only items new to ``state`` (natural key
+    ``(kind, gh_id)``) are returned; the terminal-verdict map is derived from the
+    full reviews response (a verdict can repeat across polls without a new item).
+    """
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
     base = f"repos/{ref.owner}/{ref.repo}"
     raw_issue = gh.rest("GET", f"{base}/issues/{ref.number}/comments")
@@ -159,7 +172,22 @@ def _ingest_items(
             if (item.kind, item.identity.gh_id) not in seen:
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)
-    return new
+    return new, _terminal_review_verdicts(raw_reviews, now=now)
+
+
+def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, datetime]:
+    """Map each reviewer login to its latest APPROVED/CHANGES_REQUESTED time (§4.1)."""
+    verdicts: dict[str, datetime] = {}
+    for entry in raw_reviews:
+        if str(entry.get("state", "")) not in _TERMINAL_REVIEW_STATES:
+            continue
+        login = str(entry.get("user", {}).get("login", ""))
+        if not login:
+            continue
+        submitted = _parse_ts(entry.get("submitted_at"), now=now)
+        if login not in verdicts or submitted > verdicts[login]:
+            verdicts[login] = submitted
+    return verdicts
 
 
 def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str, *, now: datetime) -> ReviewItem:
@@ -167,7 +195,12 @@ def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str, *, now: datet
     gh_id = str(entry["id"])
     identity = Identity(gh_id=gh_id)
     if kind is ItemKind.REVIEW_THREAD:
-        identity = Identity(gh_id=gh_id, reply_to_comment_id=int(entry["id"]))
+        # GitHub's pulls/{n}/comments exposes the PARENT comment id as
+        # `in_reply_to_id` (present only on replies); a top-level inline comment
+        # has no parent → 0. The comment's own id lives in `gh_id`.
+        parent = entry.get("in_reply_to_id")
+        reply_to = int(parent) if parent is not None else 0
+        identity = Identity(gh_id=gh_id, reply_to_comment_id=reply_to)
     body = str(entry.get("body") or "")
     return ReviewItem(
         kind=kind,
@@ -192,29 +225,50 @@ def _parse_ts(raw: object, *, now: datetime) -> datetime:
 
 
 def _observe_engagement(
-    state: PRGroomingState, new_items: list[ReviewItem], *, now: datetime
+    state: PRGroomingState,
+    new_items: list[ReviewItem],
+    terminal_reviews: dict[str, datetime],
 ) -> bool:
-    """Flip a reviewer to ``in_progress`` on first observed engagement (§4.1).
+    """Update reviewer engagement + terminal verdict from this poll's activity (§4.1).
 
     Engagement is activity a reviewer's gh login produced **after** its
-    ``last_request_at`` (§4.1) — a stale comment predating the (re-)request window is
-    pre-window noise, not engagement. On the first qualifying item: set
-    ``last_review_at = now`` and, if the reviewer was merely ``requested`` /
-    ``not_requested``, advance ``status`` to ``in_progress`` (a reviewer already at a
-    terminal ``review_found`` / ``declined`` is left as-is). Returns whether anything
-    changed.
+    ``last_request_at`` — a stale item predating the (re-)request window is pre-window
+    noise. (§4.1 also requires "after the most-recent push timestamp"; the MVP state
+    schema carries no push timestamp, only ``last_pushed_head_sha``, so that clause is
+    approximated by ``last_request_at`` — a stale-activity-on-a-superseded-SHA edge —
+    pending a stored push timestamp.) On qualifying activity:
+
+    - ``last_review_at`` is set to the **activity's own timestamp** (its
+      ``created_at`` / ``submitted_at``, carried on ``item.seen_at``), NOT poll time, so
+      the §4.1 stall clock survives crash gaps and resumes correctly.
+    - An APPROVED / CHANGES_REQUESTED review (a post-request terminal verdict, in
+      ``terminal_reviews``) promotes the reviewer to ``review_found``; any other
+      engagement merely advances ``requested`` / ``not_requested`` → ``in_progress``. A
+      reviewer already at terminal ``review_found`` / ``declined`` keeps its status.
+
+    Returns whether anything changed.
     """
     changed = False
     for reviewer in state.reviewers.values():
-        engaged = any(
-            item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
+        activity_times = [
+            item.seen_at
             for item in new_items
-        )
-        if engaged:
-            reviewer.last_review_at = now
-            if reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
-                reviewer.status = ReviewerStatus.IN_PROGRESS
-            changed = True
+            if item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
+        ]
+        verdict_at = terminal_reviews.get(reviewer.identity)
+        if verdict_at is not None and verdict_at > reviewer.last_request_at:
+            activity_times.append(verdict_at)  # post-request terminal verdict
+            new_status: ReviewerStatus | None = ReviewerStatus.REVIEW_FOUND
+        elif reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
+            new_status = ReviewerStatus.IN_PROGRESS
+        else:
+            new_status = None  # engaged but already terminal — keep current status
+        if not activity_times:
+            continue
+        reviewer.last_review_at = max(activity_times)
+        if new_status is not None:
+            reviewer.status = new_status
+        changed = True
     return changed
 
 
