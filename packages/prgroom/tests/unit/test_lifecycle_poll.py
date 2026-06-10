@@ -15,8 +15,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
+from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle import poll_pr
 from prgroom.proc import CommandResult
@@ -444,3 +447,69 @@ def test_last_activity_unchanged_on_quiet_poll() -> None:
     gh = _gh(head_oid="same", ci="success")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
     assert state.last_activity_at == _T0
+
+
+# ── gh error-code mapping (read-only; §3.6/§3.7) ──
+
+
+def test_transient_gh_failure_propagates_unchanged() -> None:
+    # A 503 on the reviews list surfaces RUNTIME_GH_TRANSIENT from the adapter;
+    # poll_pr lets it propagate unchanged (scheduler retries).
+    results = [
+        _ok({"headRefOid": "same"}),
+        _ok({"state": "open", "merged_at": None}),
+        _ok([]),  # issue comments
+        _gh_http_error(503, "Service Unavailable"),  # reviews list fails
+    ]
+    gh = GhCli(_QueueRunner(results))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TRANSIENT
+    assert exc.value.tier is Tier.RUNTIME_TRANSIENT
+
+
+def test_terminal_gh_failure_propagates_unchanged() -> None:
+    # A 401 on the head-oid read surfaces RUNTIME_GH_TERMINAL; propagated as-is.
+    gh = GhCli(_QueueRunner([_gh_http_error(401, "Bad credentials")]))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_pr_resource_404_maps_to_gh_terminal() -> None:
+    # A 404 on the PR resource (PR/repo vanished mid-run) is terminal — the
+    # adapter raises the typed GhNotFoundError, poll_pr maps it to RUNTIME_GH_TERMINAL.
+    results = [
+        _ok({"headRefOid": "same"}),
+        _gh_http_error(404, "Not Found"),  # pulls/{n} 404
+    ]
+    gh = GhCli(_QueueRunner(results))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_graphql_failed_error_propagates_unchanged() -> None:
+    # poll_pr issues no GraphQL in MVP, but any PrgroomError a gh call raises —
+    # including RUNTIME_GRAPHQL_FAILED — must propagate untouched (no re-wrap).
+    class _RaisingGh:
+        def head_ref_oid(self, ref: PRRef) -> str:  # noqa: ARG002
+            raise PrgroomError(
+                tier=Tier.RUNTIME_TRANSIENT, code=ErrorCode.RUNTIME_GRAPHQL_FAILED
+            )
+
+        def rest(self, method: str, path: str, *, fields=None):  # noqa: ARG002
+            raise AssertionError("unreachable")  # pragma: no cover
+
+        def graphql(self, query: str, variables):  # noqa: ARG002
+            raise AssertionError("unreachable")  # pragma: no cover
+
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=_RaisingGh(), deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GRAPHQL_FAILED
