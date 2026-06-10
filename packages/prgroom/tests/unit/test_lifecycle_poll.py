@@ -171,9 +171,7 @@ def test_bootstrap_empty_head_leaves_round_zero_and_idle() -> None:
 
 def test_bootstrap_does_not_double_bump_when_push_already_anchored() -> None:
     # _push may have already set round=1; bootstrap is idempotent (max(round, 1)).
-    start = _state(
-        phase=PRPhase.IDLE, round_=1, last_poll_sha="", last_pushed_head_sha="abc"
-    )
+    start = _state(phase=PRPhase.IDLE, round_=1, last_poll_sha="", last_pushed_head_sha="abc")
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
     assert state.round == 1
     assert state.last_poll_sha == "abc"
@@ -427,6 +425,52 @@ def test_bootstrap_with_existing_item_jumps_to_fixes_pending() -> None:
     assert state.phase is PRPhase.FIXES_PENDING
 
 
+# ── poll from terminal-for-CLI phases (§3.2 poll row) ──
+
+
+def test_poll_from_merged_is_noop() -> None:
+    # merged is graph-terminal; a poll observes nothing actionable and stays.
+    start = _state(phase=PRPhase.MERGED, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=_gh(head_oid="same"), deps=_deps(), config=_config())
+    assert state.phase is PRPhase.MERGED
+
+
+def test_quiesced_external_push_reenters_awaiting_review() -> None:
+    start = _state(
+        phase=PRPhase.QUIESCED, round_=1, last_poll_sha="old", last_pushed_head_sha="mine"
+    )
+    state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
+    assert state.phase is PRPhase.AWAITING_REVIEW
+    assert state.round == 2
+
+
+def test_human_gated_external_push_reenters_fixes_pending() -> None:
+    start = _state(
+        phase=PRPhase.HUMAN_GATED, round_=1, last_poll_sha="old", last_pushed_head_sha="mine"
+    )
+    state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
+    assert state.phase is PRPhase.FIXES_PENDING
+    assert state.round == 2
+
+
+def test_quiesced_new_item_reenters_fixes_pending() -> None:
+    start = _state(phase=PRPhase.QUIESCED, last_poll_sha="same")
+    gh = _gh(head_oid="same", issue_comments=[_issue_comment(11)])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.phase is PRPhase.FIXES_PENDING
+
+
+def test_item_with_missing_timestamp_uses_clock_now() -> None:
+    # A gh comment payload missing its timestamp field falls back to clock now()
+    # rather than crashing (defensive — gh shapes vary).
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    no_ts = {"id": 11, "user": {"login": "copilot"}, "body": "no timestamp"}
+    now = _T0 + timedelta(minutes=3)
+    gh = _gh(head_oid="same", issue_comments=[no_ts])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    assert state.items[0].seen_at == now
+
+
 # ── last_activity_at advances on observed mutation ──
 
 
@@ -499,9 +543,7 @@ def test_graphql_failed_error_propagates_unchanged() -> None:
     # including RUNTIME_GRAPHQL_FAILED — must propagate untouched (no re-wrap).
     class _RaisingGh:
         def head_ref_oid(self, ref: PRRef) -> str:  # noqa: ARG002
-            raise PrgroomError(
-                tier=Tier.RUNTIME_TRANSIENT, code=ErrorCode.RUNTIME_GRAPHQL_FAILED
-            )
+            raise PrgroomError(tier=Tier.RUNTIME_TRANSIENT, code=ErrorCode.RUNTIME_GRAPHQL_FAILED)
 
         def rest(self, method: str, path: str, *, fields=None):  # noqa: ARG002
             raise AssertionError("unreachable")  # pragma: no cover

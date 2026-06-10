@@ -85,7 +85,7 @@ def poll_pr(
     merged = _pr_is_merged(gh, ref)
     activity = False
 
-    new_items = _ingest_items(gh, ref, state)
+    new_items = _ingest_items(gh, ref, state, now=now)
     if new_items:
         state.items.extend(new_items)
         activity = True
@@ -117,7 +117,6 @@ def poll_pr(
         merged=merged,
         new_item=bool(new_items),
         external_push=external_push,
-        bootstrapped=state.last_poll_sha == new_head and not external_push,
         has_items=bool(state.items),
     )
     return state
@@ -139,7 +138,9 @@ def _pr_is_merged(gh: GhClient, ref: PRRef) -> bool:
     return bool(pr.get("merged_at"))
 
 
-def _ingest_items(gh: GhClient, ref: PRRef, state: PRGroomingState) -> list[ReviewItem]:
+def _ingest_items(
+    gh: GhClient, ref: PRRef, state: PRGroomingState, *, now: datetime
+) -> list[ReviewItem]:
     """Fetch the three item sources and return only items new to ``state`` (§3.2)."""
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
     base = f"repos/{ref.owner}/{ref.repo}"
@@ -154,14 +155,14 @@ def _ingest_items(gh: GhClient, ref: PRRef, state: PRGroomingState) -> list[Revi
         (ItemKind.REVIEW_THREAD, raw_review_comments, "created_at"),
     ):
         for entry in raw:
-            item = _to_item(kind, entry, ts_field)
+            item = _to_item(kind, entry, ts_field, now=now)
             if (item.kind, item.identity.gh_id) not in seen:
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)
     return new
 
 
-def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str) -> ReviewItem:
+def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str, *, now: datetime) -> ReviewItem:
     """Build a :class:`ReviewItem` from one gh comment/review payload."""
     gh_id = str(entry["id"])
     identity = Identity(gh_id=gh_id)
@@ -173,16 +174,21 @@ def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str) -> ReviewItem
         identity=identity,
         author=str(entry.get("user", {}).get("login", "")),
         body_excerpt=body[:_BODY_EXCERPT_LEN],
-        seen_at=_parse_ts(entry.get(ts_field)),
+        seen_at=_parse_ts(entry.get(ts_field), now=now),
     )
 
 
-def _parse_ts(raw: object) -> datetime:
-    from datetime import UTC, datetime
+def _parse_ts(raw: object, *, now: datetime) -> datetime:
+    """Parse a gh ISO-8601 timestamp; fall back to the injected ``now`` when absent.
+
+    The fallback uses the run-loop's clock reading (never ``datetime.now``) so the
+    §7.6 no-stdlib-singleton discipline holds and the seam stays deterministic.
+    """
+    from datetime import datetime
 
     if isinstance(raw, str) and raw:
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    return datetime.now(UTC)
+    return now
 
 
 def _observe_engagement(
@@ -248,17 +254,20 @@ def _resolve_poll_phase(
     merged: bool,
     new_item: bool,
     external_push: bool,
-    bootstrapped: bool,
     has_items: bool,
 ) -> PRPhase:
-    """Resolve the next phase from the §3.2 poll row (first applicable edge wins)."""
+    """Resolve the next phase from the §3.2 poll row (first applicable edge wins).
+
+    Reaching this resolver with ``phase is IDLE`` implies a non-empty HEAD was
+    observed this poll (an empty HEAD returns from ``poll_pr`` before phase
+    resolution), so the bootstrap anchor has fired — the only question left for an
+    ``idle`` PR is whether a reviewer item is already on file.
+    """
     if phase is PRPhase.MERGED:
         return PRPhase.MERGED
     if merged:
         return PRPhase.MERGED
     if phase is PRPhase.IDLE:
-        if not bootstrapped:
-            return PRPhase.IDLE
         # First push observed: a reviewer item already filed jumps straight to
         # fixes-pending (the direct idle→fixes-pending edge); else awaiting-review.
         return PRPhase.FIXES_PENDING if has_items else PRPhase.AWAITING_REVIEW
