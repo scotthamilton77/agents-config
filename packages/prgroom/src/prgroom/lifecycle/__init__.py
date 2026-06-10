@@ -17,7 +17,16 @@ The terminal sets distinguish the two notions of "done" (§3.1):
 
 from __future__ import annotations
 
+from prgroom.lifecycle.poll import poll_pr
 from prgroom.prsession.enums import PRPhase
+
+__all__ = [
+    "GRAPH_TERMINAL_PHASES",
+    "TERMINAL_FOR_CLI_PHASES",
+    "is_graph_terminal",
+    "is_terminal_for_cli",
+    "poll_pr",
+]
 
 TERMINAL_FOR_CLI_PHASES: frozenset[PRPhase] = frozenset(
     {PRPhase.QUIESCED, PRPhase.HUMAN_GATED, PRPhase.MERGED}

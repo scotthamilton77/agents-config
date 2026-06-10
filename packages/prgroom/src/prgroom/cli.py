@@ -20,8 +20,18 @@ from typing import IO
 
 import typer
 
+from prgroom.config import PrgroomConfig
+from prgroom.deps import Deps
 from prgroom.errors import PreconditionError, PrgroomError, exit_code_for_tier
+from prgroom.gh import GhClient
+from prgroom.gh.client import GhCli
+from prgroom.lifecycle import poll_pr
+from prgroom.lifecycle.locking import with_lock
+from prgroom.proc import SubprocessRunner
+from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.registry import resolve_store
+from prgroom.prsession.state import bootstrap_state
+from prgroom.prsession.store import StateNotFoundError, Store
 
 # Foundation skeletons are not yet implemented; they exit non-zero so a caller
 # never mistakes a skeleton's silence for a successful no-op. EX_UNAVAILABLE
@@ -36,8 +46,28 @@ app = typer.Typer(
 )
 
 
+def _build_store(name: str | None) -> Store:
+    """Resolve the configured Store adapter (flag > env > default ``file``).
+
+    A seam: tests monkeypatch this to inject an InMemoryStore. Production resolves
+    the real ``file`` adapter via the registry's single-source-of-truth precedence.
+    """
+    return resolve_store(name, env=os.environ)
+
+
+def _build_gh() -> GhClient:
+    """Build the production gh adapter (real subprocess boundary).
+
+    A seam: tests monkeypatch this to inject a recorded-response ``GhCli``, so the
+    one production-wiring line is the boundary itself — exercised by the gh fit
+    tests against ``GhCli``, never through this constructor.
+    """
+    return GhCli(SubprocessRunner())  # pragma: no cover - production boundary wiring
+
+
 @app.callback()
 def _root(
+    ctx: typer.Context,
     store: str | None = typer.Option(
         None,
         "--store",
@@ -47,18 +77,15 @@ def _root(
 ) -> None:
     """Resolve the state store eagerly so an invalid --store fails before any verb.
 
-    The resolved Store is discarded here (verbs are skeletons); its sole purpose
-    in the foundation is to fail terminally on an invalid adapter. An invalid
-    ``--store`` renders the canonical 4-line block via :func:`handle_cli_error`
-    and exits with the tier code (2, no traceback) right here — so the behavior
-    is identical whether the app is driven through :func:`main` or directly (e.g.
-    typer's ``CliRunner``). Later beads keep the resolved Store on a context
-    object for the verbs to consume. Precedence (flag > env > default) lives in
-    :func:`resolve_store`, the single source of truth, so the CLI and a direct
-    ``resolve_store`` caller behave identically.
+    An invalid ``--store`` renders the canonical 4-line block via
+    :func:`handle_cli_error` and exits with the tier code (2, no traceback) right
+    here — so the behavior is identical whether the app is driven through
+    :func:`main` or directly (e.g. typer's ``CliRunner``). The resolved Store is
+    stashed on ``ctx.obj`` for the verbs to consume. Precedence (flag > env >
+    default) lives in :func:`resolve_store`, the single source of truth.
     """
     try:
-        resolve_store(store, env=os.environ)
+        ctx.obj = _build_store(store)
     except PrgroomError as err:
         raise typer.Exit(code=handle_cli_error(err)) from err
 
@@ -70,9 +97,39 @@ def _skeleton(verb: str) -> None:
 
 
 @app.command()
-def poll(pr: str = typer.Argument(..., help="PR number, owner/repo#n, or URL.")) -> None:
-    """Query gh for new review items, reviews, and CI status; update state."""
-    _skeleton("poll")
+def poll(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Query gh for new review items, reviews, and CI status; update state (read-only).
+
+    A locked verb (not the ``status`` carve-out): it acquires the PR lock via the
+    §2 ``with_lock`` wrapper, then runs ``read → poll_pr → write`` under it. A
+    malformed ref, lock contention, or a gh failure renders through
+    :func:`handle_cli_error` with the tier's exit code — never a raw traceback.
+
+    Accepts ``owner/repo#n`` or a full PR URL. A bare ``<n>`` is NOT yet resolvable
+    (it needs a current-repo context seam — git remote → owner/repo — deferred to a
+    later bead), so ``PRRef.parse`` is called without a ``default_repo`` here.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+        deps = Deps.system()
+        config = PrgroomConfig.load()
+
+        def _poll() -> None:
+            try:
+                state = store.read(ref)
+            except StateNotFoundError:
+                state = bootstrap_state(ref, now=deps.clock.now())
+            state = poll_pr(state, ref=ref, gh=gh, deps=deps, config=config)
+            store.write(ref, state)
+
+        with_lock(store, ref, _poll)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()
