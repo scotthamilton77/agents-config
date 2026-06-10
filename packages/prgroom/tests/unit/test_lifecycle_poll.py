@@ -686,6 +686,71 @@ def test_last_activity_unchanged_on_quiet_poll() -> None:
     assert state.last_activity_at == _T0
 
 
+def _review_found_at(verdict_at: datetime, *, requested_at: datetime) -> dict[str, ReviewerState]:
+    return {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=requested_at,
+            last_review_at=verdict_at,
+        )
+    }
+
+
+def _ingested_review_summary(rid: int, *, login: str = "copilot") -> ReviewItem:
+    # The REVIEW_SUMMARY item a prior poll would already hold for review id `rid`,
+    # so a steady-state re-poll re-observes the verdict without ingesting a new item.
+    return ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id=str(rid)),
+        author=login,
+        body_excerpt="please fix the loop",
+        seen_at=datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC),
+    )
+
+
+def test_stable_terminal_review_quiet_poll_is_a_noop() -> None:
+    # Steady state: the reviewer is already REVIEW_FOUND with last_review_at at the
+    # verdict time, the verdict's REVIEW_SUMMARY item is ALREADY in state (ingested a
+    # prior poll), and the SAME APPROVED review is still in the gh payload. A
+    # subsequent quiet poll must be a NO-OP — engagement is idempotent — so
+    # last_activity_at does NOT advance (else the idle gate could never trip and the
+    # PR would never quiesce).
+    verdict_at = datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC)  # the _review submitted_at
+    reviewers = _review_found_at(verdict_at, requested_at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.quiescence = QuiescenceState(ci_state="success")
+    start.items.append(_ingested_review_summary(21))  # already seen → not re-ingested
+    approved = _review(21, login="copilot")
+    approved["state"] = "APPROVED"
+    now = _T0 + timedelta(minutes=2)
+    gh = _gh(head_oid="same", reviews=[approved], ci="success")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+    assert state.last_activity_at == _T0  # idle clock NOT reset by a stable verdict
+
+
+def test_stable_terminal_review_does_not_regress_last_review_at() -> None:
+    # A newer non-review comment previously advanced last_review_at past the verdict
+    # time; a later quiet poll carrying only the stable (older) terminal verdict must
+    # NOT pull last_review_at back to the older verdict timestamp.
+    verdict_at = datetime(2026, 6, 9, 11, 5, 0, tzinfo=UTC)
+    newer_review_at = datetime(2026, 6, 9, 11, 30, 0, tzinfo=UTC)  # a later comment bumped it
+    reviewers = _review_found_at(newer_review_at, requested_at=_T0 - timedelta(hours=2))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.quiescence = QuiescenceState(ci_state="success")
+    start.items.append(_ingested_review_summary(21))  # already seen → not re-ingested
+    approved = _review(21, login="copilot")  # submitted_at == verdict_at (11:05Z, older)
+    approved["state"] = "APPROVED"
+    now = _T0 + timedelta(minutes=2)
+    gh = _gh(head_oid="same", reviews=[approved], ci="success")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    assert state.reviewers["copilot"].last_review_at == newer_review_at  # not regressed
+    assert verdict_at < newer_review_at  # guard: the verdict really is the older time
+
+
 def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
     # §4.1 (idle-timer paragraph): last_activity_at tracks PR-SIDE mutations only
     # (new comment / review / push / CI change / label change); it is explicitly

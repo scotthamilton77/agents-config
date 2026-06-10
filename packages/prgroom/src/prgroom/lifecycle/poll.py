@@ -238,9 +238,11 @@ def _observe_engagement(
     approximated by ``last_request_at`` — a stale-activity-on-a-superseded-SHA edge —
     pending a stored push timestamp.) On qualifying activity:
 
-    - ``last_review_at`` is set to the **activity's own timestamp** (its
+    - ``last_review_at`` is advanced to the **activity's own timestamp** (its
       ``created_at`` / ``submitted_at``, carried on ``item.seen_at``), NOT poll time, so
-      the §4.1 stall clock survives crash gaps and resumes correctly.
+      the §4.1 stall clock survives crash gaps and resumes correctly. It only ever
+      moves **forward** — a later non-review comment that bumped it is never pulled
+      back by a re-observed older terminal verdict.
     - An APPROVED / CHANGES_REQUESTED review (a post-request terminal verdict, in
       ``terminal_reviews``) sets the reviewer to ``review_found`` — a genuine verdict
       **supersedes a prior decline** (§4.1: an auto-decline is a fallback for a missing
@@ -249,6 +251,13 @@ def _observe_engagement(
       only the reported status changes). Any other engagement merely advances
       ``requested`` / ``not_requested`` → ``in_progress`` and leaves an already-terminal
       ``review_found`` / ``declined`` reviewer's status as-is.
+
+    **Idempotent in steady state.** ``terminal_reviews`` is recomputed from the full
+    reviews list every poll, so a stable, already-recorded verdict reappears each
+    poll; this returns ``True`` ONLY when something actually changed — a status
+    transition OR a strictly-newer ``last_review_at``. A poll over an unchanged verdict
+    is a no-op, so the caller does not spuriously advance ``last_activity_at`` and the
+    §4.1 idle gate can still trip and let the PR quiesce.
 
     Returns whether anything changed.
     """
@@ -262,17 +271,24 @@ def _observe_engagement(
         verdict_at = terminal_reviews.get(reviewer.identity)
         if verdict_at is not None and verdict_at > reviewer.last_request_at:
             activity_times.append(verdict_at)  # post-request terminal verdict
-            new_status: ReviewerStatus | None = ReviewerStatus.REVIEW_FOUND
+            target_status: ReviewerStatus | None = ReviewerStatus.REVIEW_FOUND
         elif reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
-            new_status = ReviewerStatus.IN_PROGRESS
+            target_status = ReviewerStatus.IN_PROGRESS
         else:
-            new_status = None  # engaged but already terminal — keep current status
+            target_status = None  # engaged but already terminal — keep current status
         if not activity_times:
             continue
-        reviewer.last_review_at = max(activity_times)
-        if new_status is not None:
-            reviewer.status = new_status
-        changed = True
+        # Advance last_review_at only on a strictly-newer activity time (never
+        # regress to a re-observed older verdict); flip status only on a real change.
+        candidate = max(activity_times)
+        advanced = reviewer.last_review_at is None or candidate > reviewer.last_review_at
+        if advanced:
+            reviewer.last_review_at = candidate
+        if target_status is not None and reviewer.status is not target_status:
+            reviewer.status = target_status
+            changed = True
+        if advanced:
+            changed = True
     return changed
 
 
