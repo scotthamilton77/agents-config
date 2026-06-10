@@ -8,11 +8,13 @@ structurally satisfies the Store Protocol — that fit is mypy's job, not a test
 
 from __future__ import annotations
 
+import os
 import threading
 from datetime import UTC, datetime
 
 import pytest
 
+from prgroom.errors import ErrorCode, PreconditionError, exit_code_for_tier
 from prgroom.prsession.enums import ItemKind, PRPhase
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
@@ -146,6 +148,21 @@ def test_locks_on_distinct_refs_do_not_interfere() -> None:
     ref_b = PRRef("octo", "demo", 2)
     with store.lock(ref_a), store.lock(ref_b):
         pass  # two distinct refs lock independently
+
+
+def test_second_lock_acquire_raises_lock_held_naming_pid() -> None:
+    # §2: a second acquire while the lock is held must raise (non-blocking), not
+    # block, surfacing PRECONDITION_LOCK_HELD (exit 75). In-memory contention is
+    # same-process, so the holder pid is this process.
+    store = InMemoryStore()
+    ref = PRRef("octo", "demo", 1)
+    with store.lock(ref), pytest.raises(PreconditionError) as exc_info, store.lock(ref):
+        pass  # pragma: no cover - acquire raises before the body runs
+    err = exc_info.value
+    assert err.code == ErrorCode.PRECONDITION_LOCK_HELD
+    assert exit_code_for_tier(err) == 75
+    assert ref.display() in err.detail
+    assert f"pid {os.getpid()}" in err.detail
 
 
 def test_list_refs_enumerates_written_prs() -> None:

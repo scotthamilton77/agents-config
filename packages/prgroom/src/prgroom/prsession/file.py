@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeGuard
 
+from prgroom.errors import lock_held_error
 from prgroom.prsession.migrations import MIGRATIONS, Migrator
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import SCHEMA_VERSION, PRGroomingState
@@ -71,6 +72,24 @@ def _is_int_version(version: object) -> TypeGuard[int]:
     the migrate-or-reject path instead of masquerading as current.
     """
     return type(version) is int
+
+
+def _read_lock_pid(lock_path: Path) -> int | None:
+    """Best-effort read of the holder pid a lock file carries (§2 contention).
+
+    Returns the pid the live holder wrote, or ``None`` when the file is empty,
+    unparseable, or unreadable (a crash between create and pid-write, or a
+    pre-existing empty file). ``None`` renders ``(pid unknown)`` rather than
+    misattributing contention to the contender's own process.
+    """
+    try:
+        text = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 class FileStore:
@@ -164,15 +183,30 @@ class FileStore:
 
     @contextmanager
     def lock(self, ref: PRRef) -> Iterator[None]:
+        """Acquire the per-PR lock non-blocking; raise on a live holder (§2).
+
+        ``flock(LOCK_EX | LOCK_NB)`` fails immediately with :class:`BlockingIOError`
+        when another invocation holds the lock — so a second invocation exits 75
+        (``PRECONDITION_LOCK_HELD``) naming the holder pid instead of blocking. On a
+        clean acquire the holder writes its own pid into the lock file so a future
+        contender can name it. Closing the fd in ``finally`` releases the kernel lock.
+        """
         lock_path = self._lock_path(ref)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            holder_pid = _read_lock_pid(lock_path)
+            os.close(fd)
+            raise lock_held_error(ref, pid=holder_pid) from exc
+        try:
+            os.ftruncate(fd, 0)
+            os.write(fd, f"{os.getpid()}\n".encode())
+            os.fsync(fd)
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            os.close(fd)
+            os.close(fd)  # closing the fd releases the flock
 
     def list_refs(self) -> list[PRRef]:
         if not self._dir.is_dir():

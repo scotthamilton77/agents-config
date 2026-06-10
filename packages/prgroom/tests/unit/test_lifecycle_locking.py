@@ -3,38 +3,21 @@
 Pins the wrapper contract the public verbs share: acquire ``store.lock(ref)``,
 delegate to the lock-assuming internal, release in ``finally`` even when the
 internal raises. ``run`` is the carve-out that acquires once and threads several
-internals. Lock contention surfaces as ``PreconditionError(PRECONDITION_LOCK_HELD)``
-(exit 75) naming ``owner/repo#n`` + the holder pid — modeled here with a fake store
-whose ``lock`` raises that error on entry.
+internals. Contention is exercised against the **real** non-blocking
+``InMemoryStore`` (not a fake): the wrappers do not build the contention error —
+they let the store's ``PreconditionError(PRECONDITION_LOCK_HELD)`` propagate.
 """
 
 from __future__ import annotations
 
-import os
-from collections.abc import Iterator
-from contextlib import contextmanager
-
 import pytest
 
-from prgroom.errors import ErrorCode, PreconditionError, Tier, exit_code_for_tier
-from prgroom.lifecycle.locking import lock_held_error, run_locked, with_lock
+from prgroom.errors import ErrorCode, PreconditionError, exit_code_for_tier
+from prgroom.lifecycle.locking import run_locked, with_lock
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
 
 _PR = PRRef(owner="octo", repo="demo", number=7)
-
-
-class _ContendedStore:
-    """A Store-shaped fake whose ``lock`` always reports contention on entry."""
-
-    def __init__(self, ref: PRRef, *, pid: int = 4321) -> None:
-        self._ref = ref
-        self._pid = pid
-
-    @contextmanager
-    def lock(self, ref: PRRef) -> Iterator[None]:
-        raise lock_held_error(ref, pid=self._pid)
-        yield  # pragma: no cover - unreachable; documents the contextmanager shape
 
 
 # -- with_lock structural contract -----------------------------------------
@@ -76,11 +59,15 @@ def test_with_lock_releases_even_when_internal_raises() -> None:
     store.release(_PR)
 
 
-def test_with_lock_propagates_contention_error() -> None:
-    store = _ContendedStore(_PR)
-    with pytest.raises(PreconditionError) as exc_info:
+def test_with_lock_propagates_store_contention_error() -> None:
+    # The wrapper does not build the error; the real store raises it when a holder
+    # already owns the lock, and with_lock lets it propagate unchanged.
+    store = InMemoryStore()
+    with store.lock(_PR), pytest.raises(PreconditionError) as exc_info:
         with_lock(store, _PR, lambda: "never runs")
-    assert exc_info.value.code == ErrorCode.PRECONDITION_LOCK_HELD
+    err = exc_info.value
+    assert err.code == ErrorCode.PRECONDITION_LOCK_HELD
+    assert exit_code_for_tier(err) == 75
 
 
 # -- run_locked acquires once ----------------------------------------------
@@ -112,20 +99,3 @@ def test_run_locked_releases_on_internal_raise() -> None:
         run_locked(store, _PR, body)
     assert store.try_acquire(_PR) is True
     store.release(_PR)
-
-
-# -- lock_held_error shape -------------------------------------------------
-
-
-def test_lock_held_error_names_ref_and_pid_and_maps_to_exit_75() -> None:
-    err = lock_held_error(_PR, pid=9999)
-    assert err.code == ErrorCode.PRECONDITION_LOCK_HELD
-    assert err.tier == Tier.PRECONDITION_LOCK_HELD
-    assert exit_code_for_tier(err) == 75
-    assert _PR.display() in err.detail
-    assert "9999" in err.detail
-
-
-def test_lock_held_error_defaults_pid_to_current_process() -> None:
-    err = lock_held_error(_PR)
-    assert str(os.getpid()) in err.detail

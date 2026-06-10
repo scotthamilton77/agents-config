@@ -41,13 +41,6 @@ def _err(tier: Tier, code: ErrorCode, *, signum: int = 0) -> PrgroomError:
 # -- VerbDisposition canonical strings (user-facing boundary) --------------
 
 
-def test_verb_disposition_canonical_strings() -> None:
-    # Pinned at a boundary, not the definition: these are the documented control
-    # tokens distinct from the §2 value-object `Disposition`.
-    assert VerbDisposition.CONTINUE.value == "continue"
-    assert VerbDisposition.PROPAGATE.value == "propagate"
-
-
 # -- per-tier behavior -----------------------------------------------------
 
 

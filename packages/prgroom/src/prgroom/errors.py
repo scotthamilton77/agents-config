@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import assert_never
 
+from prgroom.prsession.pr_ref import PRRef
+
 
 class Tier(StrEnum):
     """Failure tier (§3.6). Drives the exit code via :func:`exit_code_for_tier`."""
@@ -328,6 +330,27 @@ class PreconditionError(PrgroomError):
             f"  why:  {entry.why}\n"
             f"  how:  {entry.how}"
         )
+
+
+def lock_held_error(ref: PRRef, *, pid: int | None = None) -> PreconditionError:
+    """Build the ``PRECONDITION_LOCK_HELD`` error naming the ref and holder pid (§2).
+
+    The detail reads ``another invocation holds the lock for <owner>/<repo>#<n> (pid
+    <pid>)`` per the §2 concurrency posture. This lives in ``errors`` (not the
+    lifecycle layer) because the **store adapter** raises it on contention, and the
+    store cannot import the lifecycle (that would be a backward dependency); ``errors``
+    is already a store-layer dependency.
+
+    ``pid`` is the *holder's* pid: the in-memory adapter passes ``os.getpid()`` (same-
+    process contention); the file adapter passes the pid it read from the lock file,
+    or ``None`` when that read fails. A ``None`` pid renders ``(pid unknown)`` — a
+    contention error is NEVER attributed to the contender's own process.
+    """
+    holder = str(pid) if pid is not None else "unknown"
+    return PreconditionError(
+        ErrorCode.PRECONDITION_LOCK_HELD,
+        detail=f"another invocation holds the lock for {ref.display()} (pid {holder})",
+    )
 
 
 def exit_code_for_tier(err: PrgroomError) -> int:
