@@ -7,11 +7,20 @@ existing :class:`~prgroom.errors.ErrorCode` registry:
 
 * 5xx, or rate-limit (429 always; 403 only when stderr names a rate limit)
   -> ``RUNTIME_GH_TRANSIENT``
+* a hung call (``subprocess.TimeoutExpired``)     -> ``RUNTIME_GH_TRANSIENT``
+  (symmetric with the git adapter; retry on the next cadence)
 * other 4xx (not 404, not rate-limit)            -> ``RUNTIME_GH_TERMINAL``
+* a missing ``gh`` binary (``OSError``)           -> ``RUNTIME_GH_TERMINAL``
+  (a local config gap a retry won't fix)
 * 404                                            -> :class:`GhNotFoundError`
   (a typed signal; the caller's startup precondition owns
   ``PRECONDITION_REPO_UNREACHABLE`` per §3.7 — the adapter does not guess)
 * GraphQL request returns 200 but carries ``errors[]`` -> ``RUNTIME_GRAPHQL_FAILED``
+
+Every call passes a bounded ``DEFAULT_SUBPROCESS_TIMEOUT`` so a hung ``gh``
+cannot block forever while holding the PR lock. Callers only ever see a
+registry-tagged :class:`~prgroom.errors.PrgroomError` or
+:class:`GhNotFoundError` — no raw subprocess exception escapes ``_run``.
 
 It **structurally satisfies** :class:`GhClient` (no inheritance); ``mypy
 --strict`` checks the fit, mirroring ``FileStore`` vs ``Store``.
@@ -21,17 +30,25 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from typing import Any, Protocol, runtime_checkable
 
 from prgroom.errors import ErrorCode, PrgroomError, Tier
-from prgroom.proc import CommandRunner
+from prgroom.proc import DEFAULT_SUBPROCESS_TIMEOUT, CommandRunner
 from prgroom.prsession.pr_ref import PRRef
 
 JsonObj = dict[str, Any]
 
 # gh prints `gh: <message> (HTTP NNN)` to stderr on an API error; the exit code is
-# always 1, so the status token in stderr is the only classification signal.
+# always 1, so the status token in stderr is the only classification signal. gh's
+# own status token is trailing, so we anchor on the LAST match — an upstream
+# status echoed earlier in the message must not win.
 _HTTP_STATUS = re.compile(r"\(HTTP (\d{3})\)")
+
+# gh's actual secondary-rate-limit phrasing. Scoped tightly so a permissions 403
+# whose human message merely contains the words "rate limit" is not mistaken for
+# a throttle.
+_RATE_LIMIT_PHRASE = "rate limit exceeded"
 
 
 class GhNotFoundError(Exception):
@@ -59,8 +76,8 @@ class GhClient(Protocol):
 
 def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundError:
     """Map a failed ``gh`` invocation to its registry error (§3.6/§3.7)."""
-    match = _HTTP_STATUS.search(stderr)
-    if match is None:
+    matches = _HTTP_STATUS.findall(stderr)
+    if not matches:
         # No parseable status: cannot prove transient, so treat as terminal
         # rather than invite an unbounded scheduler retry loop.
         return PrgroomError(
@@ -68,15 +85,15 @@ def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundE
             code=ErrorCode.RUNTIME_GH_TERMINAL,
             detail=stderr.strip() or stdout.strip(),
         )
-    status = int(match.group(1))
+    status = int(matches[-1])  # gh's own status token is trailing
     detail = stderr.strip()
     if status == 404:  # HTTP status literal is self-documenting
         return GhNotFoundError(detail)
     # 429 is definitionally rate-limited; 403 is ambiguous (permissions vs
-    # secondary rate limit) so it only counts as transient when the message
-    # names a rate limit. 5xx is always a degraded-service transient.
+    # secondary rate limit) so it only counts as transient when gh's actual
+    # rate-limit phrasing is present. 5xx is always a degraded-service transient.
     is_rate_limit = status == 429 or (  # Too Many Requests
-        status == 403 and "rate limit" in stderr.lower()  # Forbidden
+        status == 403 and _RATE_LIMIT_PHRASE in stderr.lower()  # Forbidden
     )
     if status >= 500 or is_rate_limit:  # 5xx server-error band
         return PrgroomError(
@@ -133,7 +150,25 @@ class GhCli:
         return data
 
     def _run(self, argv: list[str]) -> str:
-        result = self._runner.run(argv)
+        try:
+            result = self._runner.run(argv, timeout=DEFAULT_SUBPROCESS_TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            # A hung gh call is transient — symmetric with the git adapter; retry
+            # on the next scheduler cadence.
+            raise PrgroomError(
+                tier=Tier.RUNTIME_TRANSIENT,
+                code=ErrorCode.RUNTIME_GH_TRANSIENT,
+                detail=f"gh timed out: {' '.join(argv)}",
+            ) from exc
+        except OSError as exc:
+            # A missing `gh` binary (or other PATH/exec failure) raises OSError
+            # before any command runs. A retry won't fix a local config gap, so
+            # it is terminal.
+            raise PrgroomError(
+                tier=Tier.RUNTIME_TERMINAL_USER,
+                code=ErrorCode.RUNTIME_GH_TERMINAL,
+                detail=f"gh not runnable: {exc}",
+            ) from exc
         if result.returncode != 0:
             raise _classify_gh_failure(result.stdout, result.stderr)
         return result.stdout

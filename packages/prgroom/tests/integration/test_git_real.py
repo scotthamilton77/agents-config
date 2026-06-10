@@ -9,12 +9,14 @@ on a throwaway ``tmp_path`` repo.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from prgroom.errors import ErrorCode, PrgroomError
 from prgroom.git import GitCli
 from prgroom.proc import CommandResult, CommandRunner, SubprocessRunner
 
@@ -23,7 +25,13 @@ pytestmark = pytest.mark.skipif(not _HAS_GIT, reason="git not on PATH")
 
 
 class _CwdRunner:
-    """A SubprocessRunner pinned to a working directory (so the test repo is the cwd)."""
+    """A SubprocessRunner pinned to a working directory (so the test repo is the cwd).
+
+    Mirrors the production :class:`SubprocessRunner` C-locale pinning so the
+    push-rejection assertion is a faithful ground-truth anchor for both the
+    English marker-matching AND the locale fix — the installed git's real stderr
+    under ``C`` must contain a recognized rejection marker.
+    """
 
     def __init__(self, cwd: Path) -> None:
         self._cwd = cwd
@@ -35,8 +43,9 @@ class _CwdRunner:
         input: str | None = None,  # noqa: ARG002  # Protocol signature; unused here
         timeout: float | None = None,  # noqa: ARG002  # Protocol signature; unused here
     ) -> CommandResult:
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
         completed = subprocess.run(  # noqa: S603  # internally-built git argv on a tmp fixture repo
-            argv, capture_output=True, text=True, check=False, cwd=self._cwd
+            argv, capture_output=True, text=True, check=False, cwd=self._cwd, env=env
         )
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
@@ -87,3 +96,43 @@ def test_subprocess_runner_runs_real_git_version() -> None:
     result = SubprocessRunner().run(["git", "--version"])
     assert result.returncode == 0
     assert result.stdout.startswith("git version")
+
+
+def _clone_with_identity(origin: Path, dest: Path) -> None:
+    _git(dest.parent, "clone", str(origin), dest.name)
+    _git(dest, "config", "user.email", "test@example.com")
+    _git(dest, "config", "user.name", "Test")
+
+
+def test_push_rejection_against_real_git(tmp_path: Path) -> None:
+    # Ground-truth anchor: drive the installed git to emit a REAL non-fast-forward
+    # rejection (no network — a bare file:// origin) and assert GitCli classifies
+    # it terminal. A future git stderr reword would fail HERE rather than silently
+    # misclassifying in production. Doubles as the locale fix's anchor (C locale).
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "-b", "main", "origin.git")
+
+    clone_a = tmp_path / "a"
+    _clone_with_identity(origin, clone_a)
+    (clone_a / "f.txt").write_text("a1\n")
+    _git(clone_a, "add", "f.txt")
+    _git(clone_a, "commit", "-m", "a1")
+    _git(clone_a, "push", "origin", "main")
+
+    # Clone B starts from the same origin tip, then both diverge.
+    clone_b = tmp_path / "b"
+    _clone_with_identity(origin, clone_b)
+
+    (clone_a / "f.txt").write_text("a2\n")
+    _git(clone_a, "add", "f.txt")
+    _git(clone_a, "commit", "-m", "a2")
+    _git(clone_a, "push", "origin", "main")  # origin now ahead of B
+
+    (clone_b / "g.txt").write_text("b1\n")
+    _git(clone_b, "add", "g.txt")
+    _git(clone_b, "commit", "-m", "b1")
+
+    client = GitCli(_CwdRunner(clone_b))
+    with pytest.raises(PrgroomError) as exc:
+        client.push("origin", "main")  # non-fast-forward -> rejected
+    assert exc.value.code is ErrorCode.RUNTIME_PUSH_REJECTED

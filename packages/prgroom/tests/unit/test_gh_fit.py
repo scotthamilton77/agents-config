@@ -19,7 +19,7 @@ from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli, GhClient, GhNotFoundError
 from prgroom.proc import CommandResult
 from prgroom.prsession.pr_ref import PRRef
-from tests.fakes import RecordedRunner
+from tests.fakes import MissingBinaryRunner, RecordedRunner, TimeoutRunner
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "gh"
 
@@ -196,3 +196,84 @@ def test_unparseable_error_falls_back_to_gh_terminal() -> None:
     with pytest.raises(PrgroomError) as exc:
         client.rest("GET", "user")
     assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+
+
+# ── timeout / binary-missing boundary failures ──
+
+
+def test_gh_forwards_a_bounded_timeout_to_the_runner() -> None:
+    runner = RecordedRunner([_ok("{}")])
+    GhCli(runner).rest("GET", "user")
+    assert runner.timeouts[0] is not None
+    assert runner.timeouts[0] > 0
+
+
+def test_gh_subprocess_timeout_classifies_as_gh_transient() -> None:
+    # A hung gh call surfaces as TimeoutExpired from the boundary; symmetric with
+    # the git adapter, it maps to the transient code (retry on next cadence).
+    client = GhCli(TimeoutRunner())
+    with pytest.raises(PrgroomError) as exc:
+        client.rest("GET", "user")
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TRANSIENT
+    assert exc.value.tier is Tier.RUNTIME_TRANSIENT
+
+
+def test_gh_missing_binary_classifies_as_gh_terminal() -> None:
+    # A missing `gh` binary surfaces as OSError; the adapter maps it to a registry
+    # error rather than leaking a raw traceback. gh-missing is a local config
+    # problem a retry won't fix, so it is terminal.
+    client = GhCli(MissingBinaryRunner())
+    with pytest.raises(PrgroomError) as exc:
+        client.rest("GET", "user")
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+# ── parse hardening (last-match, scoped rate-limit phrase) ──
+
+
+def test_classification_anchors_on_the_last_http_token() -> None:
+    # gh's own status token is trailing; an upstream status echoed earlier in the
+    # message must not win. Earlier (HTTP 503) decoy, real trailing (HTTP 422).
+    runner = RecordedRunner(
+        [
+            CommandResult(
+                returncode=1,
+                stdout="{}",
+                stderr="gh: upstream said (HTTP 503) but validation failed (HTTP 422)",
+            )
+        ]
+    )
+    client = GhCli(runner)
+    with pytest.raises(PrgroomError) as exc:
+        client.rest("POST", "repos/octo/demo/issues")
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+
+
+def test_permissions_403_mentioning_rate_limit_stays_terminal() -> None:
+    # A genuine permissions 403 whose human message merely contains the words
+    # "rate limit" must NOT be mistaken for a throttle; only gh's actual
+    # secondary-rate-limit phrasing ("rate limit exceeded") counts as transient.
+    runner = RecordedRunner(
+        [
+            CommandResult(
+                returncode=1,
+                stdout='{"message": "You cannot change the rate limit policy", "status": "403"}',
+                stderr="gh: You cannot change the rate limit policy (HTTP 403)",
+            )
+        ]
+    )
+    client = GhCli(runner)
+    with pytest.raises(PrgroomError) as exc:
+        client.rest("PATCH", "repos/octo/demo")
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+
+
+# ── REST empty-body (204) ──
+
+
+def test_rest_empty_body_returns_empty_dict() -> None:
+    # A 204 No Content (e.g. DELETE) returns an empty stdout; rest() must yield {}.
+    runner = RecordedRunner([_ok("")])
+    client = GhCli(runner)
+    assert client.rest("DELETE", "repos/octo/demo/issues/1/labels/wontfix") == {}
