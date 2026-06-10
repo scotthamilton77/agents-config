@@ -29,8 +29,9 @@ class Recurrence:
     """How many times this item has been dispositioned (``1`` == first pass)."""
     prior_disposition: str
     """The most recent prior ``DispositionKind`` value (its wire string)."""
-    prior_commits: list[str]
-    """SHAs from the most recent prior disposition. Omitted from JSON when empty."""
+    prior_commits: tuple[str, ...]
+    """SHAs from the most recent prior disposition (a tuple so the frozen value type
+    stays immutable + hashable). Serializes as a JSON list; omitted when empty."""
     first_seen_round: int
     """The round the item was first observed."""
 
