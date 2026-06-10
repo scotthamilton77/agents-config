@@ -38,8 +38,10 @@ class UnresolvedPlaceholderError(KeyError):
     """A template referenced a ``{placeholder}`` the render data did not supply.
 
     Subclasses :class:`KeyError` because that is what ``str.format_map`` raises on
-    a missing key; the dispatcher catches this distinct type to fail the dispatch
-    loudly rather than send a half-filled prompt to the agent.
+    a missing key. This is a shipped-template/packaging bug, not a runtime input
+    error, so it is **not** caught by the dispatcher's per-provider fallback ladder:
+    it propagates out of the runner and aborts the dispatch loudly, rather than
+    silently falling through to the next provider with a half-filled prompt.
     """
 
 
