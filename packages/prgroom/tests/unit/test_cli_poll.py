@@ -22,6 +22,7 @@ from prgroom.proc import CommandResult
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
+from tests.fakes import RecordedRunner
 
 runner = CliRunner()
 
@@ -32,26 +33,9 @@ def _ok(payload: object) -> CommandResult:
     return CommandResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
 
-class _QueueRunner:
-    def __init__(self, results: list[CommandResult]) -> None:
-        self._results = list(results)
-
-    def run(
-        self,
-        argv,  # Sequence[str]; matches the CommandRunner Protocol
-        *,
-        input: str | None = None,  # noqa: ARG002  # Protocol keyword, unused here
-        timeout: float | None = None,  # noqa: ARG002  # Protocol keyword, unused here
-    ) -> CommandResult:
-        if not self._results:
-            msg = f"queue exhausted: {list(argv)!r}"
-            raise AssertionError(msg)
-        return self._results.pop(0)
-
-
 def _gh_with_head(head: str, *, ci: str = "success") -> GhCli:
     return GhCli(
-        _QueueRunner(
+        RecordedRunner(
             [
                 _ok({"headRefOid": head}),
                 _ok({"state": "open", "merged_at": None}),
@@ -67,7 +51,7 @@ def _gh_with_head(head: str, *, ci: str = "success") -> GhCli:
 def _gh_terminal() -> GhCli:
     # 401 on the head-oid read → RUNTIME_GH_TERMINAL (exit 77).
     return GhCli(
-        _QueueRunner(
+        RecordedRunner(
             [CommandResult(returncode=1, stdout="{}", stderr="gh: Bad credentials (HTTP 401)")]
         )
     )
@@ -76,7 +60,7 @@ def _gh_terminal() -> GhCli:
 def _gh_transient() -> GhCli:
     # 503 on the head-oid read → RUNTIME_GH_TRANSIENT (exit 75).
     return GhCli(
-        _QueueRunner(
+        RecordedRunner(
             [CommandResult(returncode=1, stdout="{}", stderr="gh: Service Unavailable (HTTP 503)")]
         )
     )

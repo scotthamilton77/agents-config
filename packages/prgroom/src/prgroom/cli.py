@@ -112,13 +112,15 @@ def poll(
     try:
         ref = PRRef.parse(pr)
         gh = _build_gh()
+        deps = Deps.system()
+        config = PrgroomConfig.load()
 
         def _poll() -> None:
             try:
                 state = store.read(ref)
             except StateNotFoundError:
-                state = bootstrap_state(ref, now=Deps.system().clock.now())
-            state = poll_pr(state, ref=ref, gh=gh, deps=Deps.system(), config=PrgroomConfig.load())
+                state = bootstrap_state(ref, now=deps.clock.now())
+            state = poll_pr(state, ref=ref, gh=gh, deps=deps, config=config)
             store.write(ref, state)
 
         with_lock(store, ref, _poll)

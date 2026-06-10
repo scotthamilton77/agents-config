@@ -39,6 +39,7 @@ from prgroom.prsession.state import (
     bootstrap_state,
 )
 from tests.conftest import FixedRandomness, FrozenClock
+from tests.fakes import RecordedRunner
 
 _REF = PRRef(owner="octo", repo="demo", number=7)
 _T0 = datetime(2026, 6, 9, 12, 0, 0, tzinfo=UTC)
@@ -51,32 +52,6 @@ def _ok(payload: object) -> CommandResult:
 def _gh_http_error(status: int, message: str) -> CommandResult:
     body = json.dumps({"message": message, "status": str(status)})
     return CommandResult(returncode=1, stdout=body, stderr=f"gh: {message} (HTTP {status})")
-
-
-class _QueueRunner:
-    """A CommandRunner fake replaying queued CommandResults in FIFO order.
-
-    Mirrors ``tests.fakes.RecordedRunner`` but records nothing extra — poll tests
-    assert on resulting state, not argv. Exhaustion raises so an unexpected extra
-    gh call is never silently masked by an empty result.
-    """
-
-    def __init__(self, results: list[CommandResult]) -> None:
-        self._results = list(results)
-        self.calls: list[list[str]] = []
-
-    def run(
-        self,
-        argv,  # Sequence[str]; matches the CommandRunner Protocol
-        *,
-        input: str | None = None,  # noqa: ARG002  # Protocol keyword, unused here
-        timeout: float | None = None,  # noqa: ARG002  # Protocol keyword, unused here
-    ) -> CommandResult:
-        self.calls.append(list(argv))
-        if not self._results:
-            msg = f"_QueueRunner exhausted: unexpected call {list(argv)!r}"
-            raise AssertionError(msg)
-        return self._results.pop(0)
 
 
 def _gh(
@@ -102,7 +77,7 @@ def _gh(
         _ok(review_comments or []),
         _ok({"state": ci}),
     ]
-    return GhCli(_QueueRunner(results))
+    return GhCli(RecordedRunner(results))
 
 
 def _deps(now: datetime = _T0) -> Deps:
@@ -162,7 +137,7 @@ def test_bootstrap_non_empty_head_anchors_round_one_and_awaiting_review() -> Non
 
 def test_bootstrap_empty_head_leaves_round_zero_and_idle() -> None:
     # An empty remote HEAD short-circuits: head_ref_oid is the only gh call.
-    gh = GhCli(_QueueRunner([_ok({"headRefOid": ""})]))
+    gh = GhCli(RecordedRunner([_ok({"headRefOid": ""})]))
     state = poll_pr(_idle_state(), ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.round == 0
     assert state.last_poll_sha == ""
@@ -398,7 +373,7 @@ def test_ci_404_maps_to_absent() -> None:
         _ok([]),
         _gh_http_error(404, "Not Found"),
     ]
-    gh = GhCli(_QueueRunner(results))
+    gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.quiescence.ci_state == "absent"
@@ -505,7 +480,7 @@ def test_transient_gh_failure_propagates_unchanged() -> None:
         _ok([]),  # issue comments
         _gh_http_error(503, "Service Unavailable"),  # reviews list fails
     ]
-    gh = GhCli(_QueueRunner(results))
+    gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     with pytest.raises(PrgroomError) as exc:
         poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
@@ -515,7 +490,7 @@ def test_transient_gh_failure_propagates_unchanged() -> None:
 
 def test_terminal_gh_failure_propagates_unchanged() -> None:
     # A 401 on the head-oid read surfaces RUNTIME_GH_TERMINAL; propagated as-is.
-    gh = GhCli(_QueueRunner([_gh_http_error(401, "Bad credentials")]))
+    gh = GhCli(RecordedRunner([_gh_http_error(401, "Bad credentials")]))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     with pytest.raises(PrgroomError) as exc:
         poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
@@ -530,7 +505,7 @@ def test_pr_resource_404_maps_to_gh_terminal() -> None:
         _ok({"headRefOid": "same"}),
         _gh_http_error(404, "Not Found"),  # pulls/{n} 404
     ]
-    gh = GhCli(_QueueRunner(results))
+    gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     with pytest.raises(PrgroomError) as exc:
         poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
