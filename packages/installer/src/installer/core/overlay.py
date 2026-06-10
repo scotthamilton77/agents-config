@@ -154,13 +154,20 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     """The plugin DIR's disjoint files, keyed by their relpath under
     ``directory`` to their bytes — the file-carry payload of a carrier-merge.
 
-    Mirrors the bash carrier-merge copy loop (``scripts/install.sh:585-592``):
+    Approximates the bash carrier-merge copy loop (``scripts/install.sh:585-592``):
     ``for sfile in "$src"/*`` iterates the dot-excluded TOP-LEVEL entries, then
-    ``cp -R`` copies a subdir wholesale (its inner dotfiles included). So a
-    top-level dotfile is dropped — matching the same dotfile exclusion the
-    disjoint check applies via ``_visible_names`` — while a dotfile nested under
-    a carried subdir is kept. Keys are relpaths so a nested file lands at
-    ``subdir/file`` under the carrier DIR's destination."""
+    ``cp -R`` descends each subdir. So a top-level dotfile is dropped — matching
+    the same dotfile exclusion the disjoint check applies via ``_visible_names``
+    — while a dotfile nested under a carried subdir is kept. Keys are relpaths so
+    a nested file lands at ``subdir/file`` under the carrier DIR's destination.
+
+    Only files are recorded; ``dir_overrides`` maps relpaths to bytes and so has
+    no representation for a directory entry. A *truly empty* subdir that bash
+    ``cp -R`` would have created is therefore not carried — a deliberate gap, not
+    an oversight: plugin source trees are git-tracked, and git cannot store an
+    empty directory, so an empty subdir cannot reach this function in the first
+    place (an intentional empty dir ships a ``.keep`` placeholder, which IS a
+    file and IS carried)."""
     carried: dict[Path, bytes] = {}
     for entry in sorted(directory.iterdir()):
         if entry.name.startswith("."):
