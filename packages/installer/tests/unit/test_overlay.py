@@ -323,6 +323,26 @@ def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(tmp_path: Path
     assert plan.dir_overrides[dest] == {Path("SKILL.md"): b"plugin"}
 
 
+def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(tmp_path: Path) -> None:
+    """dir_overrides is a shared side channel (carrier-merge now, F.5 patched
+    bytes later). A carrier-merge merges its carried files INTO any existing
+    inner-relpath map for that dest rather than replacing the whole map, so a
+    file a prior producer recorded under a different inner relpath survives —
+    last-writer-wins per inner relpath, not per dest directory."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    dest = Path("skills/demo-skill")
+    # A prior producer (stand-in for F.5) already recorded a file at this dest.
+    plan.dir_overrides[dest] = {Path("PATCHED.md"): b"prior"}
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.dir_overrides[dest] == {
+        Path("PATCHED.md"): b"prior",
+        Path("SKILL.md"): b"plugin",
+    }
+
+
 def test_carrier_merge_carries_every_plugin_file(tmp_path: Path) -> None:
     """A plugin contributing several disjoint files has ALL of them represented
     in dir_overrides, not just the first — the carry iterates the whole added

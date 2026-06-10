@@ -108,7 +108,14 @@ def _place(
         # source_path and so cannot itself express a second source tree), then
         # clear the flag so any further plugin collision on this dir is a true
         # plugin-plugin collision (fatal via the registry).
-        plan.dir_overrides[incoming.dest_relpath] = _carry_files(incoming.source_path)
+        #
+        # Merge per inner relpath rather than replacing the dest's whole map:
+        # dir_overrides is shared with the later F.5 patched-bytes producer, so
+        # a contribution it recorded for this dest under a different inner
+        # relpath must survive (last-writer-wins per file, not per directory).
+        plan.dir_overrides.setdefault(incoming.dest_relpath, {}).update(
+            _carry_files(incoming.source_path)
+        )
         plan.items[incoming.dest_relpath] = replace(existing, shared_carrier=False)
         return
     plan.items[incoming.dest_relpath] = registry.resolve(incoming.kind, incoming.namespace).merge(
