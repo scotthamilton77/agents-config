@@ -52,10 +52,13 @@ if TYPE_CHECKING:
 _BODY_EXCERPT_LEN = 200
 
 # Combined-status states the gh "commits/{sha}/status" endpoint returns, mapped to
-# the §4.1 ci_state vocabulary. GitHub's combined status uses {success, pending,
-# failure}; an empty/unknown value is treated as pending (CI exists but is not yet
-# green), and a 404 (no CI configured) maps to "absent" at the call site.
-_CI_STATES: frozenset[str] = frozenset({"success", "pending", "failure"})
+# the §4.1 ci_state vocabulary {success, pending, failure, absent}. GitHub's combined
+# status is one of {success, pending, failure, error}; `error` (a CI infrastructure
+# error, e.g. a check that errored out) is a non-green terminal verdict and maps to
+# `failure`. A 404 (no CI configured) maps to `absent` at the call site; any other
+# empty/unknown value is treated as `pending` (CI exists but has no verdict yet).
+_CI_STATES_PASSTHROUGH: frozenset[str] = frozenset({"success", "pending", "failure"})
+_CI_STATES_FAILURE: frozenset[str] = frozenset({"error"})
 
 
 def poll_pr(
@@ -76,7 +79,7 @@ def poll_pr(
     now = deps.clock.now()
     state.last_polled_at = now
 
-    new_head = gh.head_ref_oid(ref)
+    new_head = _head_ref_oid(gh, ref)
     if not new_head:
         # Empty remote HEAD (PR opened with no commits): leave round/last_poll_sha
         # untouched, no phase change. The next poll re-evaluates the bootstrap.
@@ -122,19 +125,41 @@ def poll_pr(
     return state
 
 
+def _vanished_pr_terminal(ref: PRRef) -> PrgroomError:
+    """Map a 404 on a required PR/repo read to ``RUNTIME_GH_TERMINAL`` (§3.6/§3.7).
+
+    A mid-run 404 on the head-oid, PR-resource, or comment/review reads means the
+    PR or repo vanished — a blind retry won't bring it back, so it is terminal. The
+    startup precondition that owns ``PRECONDITION_REPO_UNREACHABLE`` is out of this
+    verb's scope. The CI-status 404 is the one documented exception: no CI configured
+    is not a missing PR, so ``_ci_state`` maps that to ``absent`` instead.
+    """
+    return PrgroomError(
+        tier=Tier.RUNTIME_TERMINAL_USER,
+        code=ErrorCode.RUNTIME_GH_TERMINAL,
+        detail=f"PR resource not found: {ref.display()}",
+    )
+
+
+def _head_ref_oid(gh: GhClient, ref: PRRef) -> str:
+    """Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)."""
+    try:
+        return gh.head_ref_oid(ref)
+    except GhNotFoundError as exc:
+        raise _vanished_pr_terminal(ref) from exc
+
+
+def _gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
+    """``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)."""
+    try:
+        return gh.rest("GET", path)
+    except GhNotFoundError as exc:
+        raise _vanished_pr_terminal(ref) from exc
+
+
 def _pr_is_merged(gh: GhClient, ref: PRRef) -> bool:
     """True iff the PR resource shows a merged close (§3.2 poll-row merge edge)."""
-    try:
-        pr = gh.rest("GET", f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
-    except GhNotFoundError as exc:
-        # The PR/repo vanished mid-run. The startup precondition that owns
-        # PRECONDITION_REPO_UNREACHABLE is out of this verb's scope, so a mid-flight
-        # 404 is terminal — a blind retry will not bring the resource back.
-        raise PrgroomError(
-            tier=Tier.RUNTIME_TERMINAL_USER,
-            code=ErrorCode.RUNTIME_GH_TERMINAL,
-            detail=f"PR resource not found: {ref.display()}",
-        ) from exc
+    pr = _gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
     return bool(pr.get("merged_at"))
 
 
@@ -157,9 +182,9 @@ def _ingest_items(
     """
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
     base = f"repos/{ref.owner}/{ref.repo}"
-    raw_issue = gh.rest("GET", f"{base}/issues/{ref.number}/comments")
-    raw_reviews = gh.rest("GET", f"{base}/pulls/{ref.number}/reviews")
-    raw_review_comments = gh.rest("GET", f"{base}/pulls/{ref.number}/comments")
+    raw_issue = _gh_get(gh, ref, f"{base}/issues/{ref.number}/comments")
+    raw_reviews = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/reviews")
+    raw_review_comments = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/comments")
 
     new: list[ReviewItem] = []
     for kind, raw, ts_field in (
@@ -298,9 +323,15 @@ def _ci_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
         status = gh.rest("GET", f"repos/{ref.owner}/{ref.repo}/commits/{head_sha}/status")
     except GhNotFoundError:
         # No CI configured for this commit → absent (a gate-satisfying state, §4.1).
+        # Distinct from a vanished PR: a 404 on the status endpoint is the documented
+        # "no CI" case, NOT terminal — so this read does NOT go through _gh_get.
         return "absent"
     raw = str(status.get("state") or "")
-    return raw if raw in _CI_STATES else "pending"
+    if raw in _CI_STATES_PASSTHROUGH:
+        return raw
+    if raw in _CI_STATES_FAILURE:  # `error` is a CI error → failure, before the fallback
+        return "failure"
+    return "pending"
 
 
 def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:

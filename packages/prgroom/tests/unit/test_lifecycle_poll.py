@@ -597,6 +597,15 @@ def test_ci_404_maps_to_absent() -> None:
     assert state.quiescence.ci_state == "absent"
 
 
+def test_ci_error_maps_to_failure() -> None:
+    # GitHub's combined-status returns state in {success, pending, failure, error};
+    # an `error` rollup is a CI error, not "not yet" — map it to failure, not pending.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = _gh(head_oid="same", ci="error")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "failure"
+
+
 # ── merge detection ──
 
 
@@ -806,6 +815,34 @@ def test_pr_resource_404_maps_to_gh_terminal() -> None:
     results = [
         _ok({"headRefOid": "same"}),
         _gh_http_error(404, "Not Found"),  # pulls/{n} 404
+    ]
+    gh = GhCli(RecordedRunner(results))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_head_oid_404_maps_to_gh_terminal_not_raw_not_found() -> None:
+    # head_ref_oid is a separate 404-capable call (the FIRST gh read). A vanished
+    # PR/repo must surface as PrgroomError/RUNTIME_GH_TERMINAL (the CLI only catches
+    # PrgroomError) — NOT a raw GhNotFoundError that escapes as an uncaught traceback.
+    gh = GhCli(RecordedRunner([_gh_http_error(404, "Not Found")]))  # head-oid 404
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    with pytest.raises(PrgroomError) as exc:
+        poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_ingest_list_404_maps_to_gh_terminal() -> None:
+    # A 404 on one of the comment/review list GETs (PR/repo vanished mid-ingest)
+    # is equally terminal — blast-radius parity with the head-oid and PR-resource reads.
+    results = [
+        _ok({"headRefOid": "same"}),
+        _ok({"state": "open", "merged_at": None}),
+        _gh_http_error(404, "Not Found"),  # issue-comments list 404
     ]
     gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
