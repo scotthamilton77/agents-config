@@ -151,6 +151,17 @@ def test_codex_read_only_omits_sandbox_write() -> None:
     assert "workspace-write" not in inv.argv
 
 
+def test_codex_workspace_write_requires_boolean_true_not_truthy() -> None:
+    # Config-driven privilege: workspace-write must be gated on the literal TOML
+    # boolean `true`, not any truthy value. A mistyped write = "false" (a non-empty,
+    # truthy STRING) or write = 1 must NOT silently grant the agent edit rights.
+    for truthy_non_bool in ("false", "true", "yes", 1):
+        inv = build_invocation(_spec("codex", "m", write=truthy_non_bool), prompt="P")
+        assert "workspace-write" not in inv.argv
+    # Only the real boolean True enables it.
+    assert "workspace-write" in build_invocation(_spec("codex", "m", write=True), prompt="P").argv
+
+
 def test_opencode_invocation_shape() -> None:
     inv = build_invocation(_spec("opencode", "some-model"), prompt="read /x")
     assert inv.argv[0] == "opencode"

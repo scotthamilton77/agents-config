@@ -165,8 +165,11 @@ def _invocation_for_codex(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # `codex exec` is the non-interactive entry point; the config `write = true`
     # grants edit permission via the sandbox POLICY (`--sandbox workspace-write`),
     # not a bare flag. Read-only specs leave the default sandbox in place.
+    # Gate on the literal boolean `true`, NOT truthiness: a mistyped string like
+    # write = "false" is truthy and would silently grant edit rights — a
+    # config-driven privilege escalation. `is True` accepts only the TOML boolean.
     argv = ["codex", "exec", "--model", spec.model]
-    if spec.extra.get("write"):
+    if spec.extra.get("write") is True:
         argv += ["--sandbox", "workspace-write"]
     argv += [prompt]
     return AgentInvocation(argv=argv)
