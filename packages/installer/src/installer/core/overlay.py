@@ -103,9 +103,12 @@ def _place(
         return
     if carrier_eligible and _carrier_merge_allowed(existing, incoming):
         # Mirror bash `rm -f sentinel`: the carrier dir survives with the
-        # plugin's disjoint files conceptually merged in; clearing the flag
-        # makes any further plugin collision on this dir a true plugin-plugin
-        # collision (fatal via the registry).
+        # plugin's disjoint files merged in. Record those added files' bytes in
+        # the dir_overrides side channel (the carrier DIR item has a single
+        # source_path and so cannot itself express a second source tree), then
+        # clear the flag so any further plugin collision on this dir is a true
+        # plugin-plugin collision (fatal via the registry).
+        plan.dir_overrides[incoming.dest_relpath] = _carry_files(incoming.source_path)
         plan.items[incoming.dest_relpath] = replace(existing, shared_carrier=False)
         return
     plan.items[incoming.dest_relpath] = registry.resolve(incoming.kind, incoming.namespace).merge(
@@ -138,3 +141,26 @@ def _visible_names(directory: Path) -> set[str]:
     """The dot-excluded child names of ``directory`` — the entries a bash
     ``"$dir"/*`` glob would iterate (dotfiles are skipped without ``dotglob``)."""
     return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}
+
+
+def _carry_files(directory: Path) -> dict[Path, bytes]:
+    """The plugin DIR's disjoint files, keyed by their relpath under
+    ``directory`` to their bytes — the file-carry payload of a carrier-merge.
+
+    Mirrors the bash carrier-merge copy loop (``scripts/install.sh:585-592``):
+    ``for sfile in "$src"/*`` iterates the dot-excluded TOP-LEVEL entries, then
+    ``cp -R`` copies a subdir wholesale (its inner dotfiles included). So a
+    top-level dotfile is dropped — matching the same dotfile exclusion the
+    disjoint check applies via ``_visible_names`` — while a dotfile nested under
+    a carried subdir is kept. Keys are relpaths so a nested file lands at
+    ``subdir/file`` under the carrier DIR's destination."""
+    carried: dict[Path, bytes] = {}
+    for entry in sorted(directory.iterdir()):
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            for nested in sorted(p for p in entry.rglob("*") if p.is_file()):
+                carried[nested.relative_to(directory)] = nested.read_bytes()
+        else:
+            carried[Path(entry.name)] = entry.read_bytes()
+    return carried
