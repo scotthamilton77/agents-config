@@ -320,7 +320,17 @@ def test_review_thread_carries_reply_to_comment_id() -> None:
 
 
 def test_requested_reviewer_engages_to_in_progress_on_authored_review() -> None:
-    reviewers = _required_reviewer(ReviewerStatus.REQUESTED)
+    # The reviewer was requested before the fixture's review timestamp (11:05Z),
+    # so the review counts as post-request engagement (§4.1).
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REQUESTED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),  # 10:00Z, before the 11:05Z review
+        )
+    }
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
     gh = _gh(head_oid="same", reviews=[_review(21, login="copilot")])
     now = _T0 + timedelta(minutes=1)
@@ -336,6 +346,49 @@ def test_terminal_reviewer_not_regressed_by_new_activity() -> None:
     gh = _gh(head_oid="same", issue_comments=[_issue_comment(11, login="copilot")])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_engaged_terminal_reviewer_refreshes_last_review_without_status_change() -> None:
+    # A post-request item from a reviewer already at review_found refreshes
+    # last_review_at but does NOT regress the terminal status (§4.1).
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REVIEW_FOUND,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),  # before the 11:00Z comment
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    now = _T0 + timedelta(minutes=1)
+    gh = _gh(head_oid="same", issue_comments=[_issue_comment(11, login="copilot")])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REVIEW_FOUND  # unchanged
+    assert rv.last_review_at == now  # refreshed
+
+
+def test_item_predating_request_does_not_count_as_engagement() -> None:
+    # §4.1: engagement is activity AFTER last_request_at. A stale comment authored
+    # before the (re-)request window must not flip the reviewer to in_progress.
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.REQUESTED,
+            required=True,
+            last_request_at=_T0 + timedelta(hours=1),  # requested AFTER the comment below
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    # The comment's created_at (_issue_comment uses 2026-06-09T11:00:00Z == _T0-1h)
+    # predates last_request_at, so it is pre-window noise, not engagement.
+    gh = _gh(head_oid="same", issue_comments=[_issue_comment(11, login="copilot")])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    rv = state.reviewers["copilot"]
+    assert rv.status is ReviewerStatus.REQUESTED  # not advanced
+    assert rv.last_review_at is None
 
 
 # ── reviewer timeout (§4.1 auto-decline) ──

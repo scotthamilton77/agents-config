@@ -196,15 +196,21 @@ def _observe_engagement(
 ) -> bool:
     """Flip a reviewer to ``in_progress`` on first observed engagement (§4.1).
 
-    A reviewer whose gh login authored any new item this poll has engaged: set
-    ``last_review_at`` and, if it was merely ``requested``/``not_requested``, advance
-    ``status`` to ``in_progress`` (a submitted-review reviewer that reached a terminal
-    ``review_found``/``declined`` is left as-is). Returns whether anything changed.
+    Engagement is activity a reviewer's gh login produced **after** its
+    ``last_request_at`` (§4.1) — a stale comment predating the (re-)request window is
+    pre-window noise, not engagement. On the first qualifying item: set
+    ``last_review_at = now`` and, if the reviewer was merely ``requested`` /
+    ``not_requested``, advance ``status`` to ``in_progress`` (a reviewer already at a
+    terminal ``review_found`` / ``declined`` is left as-is). Returns whether anything
+    changed.
     """
-    authors = {item.author for item in new_items if item.author}
     changed = False
     for reviewer in state.reviewers.values():
-        if reviewer.identity in authors:
+        engaged = any(
+            item.author == reviewer.identity and item.seen_at > reviewer.last_request_at
+            for item in new_items
+        )
+        if engaged:
             reviewer.last_review_at = now
             if reviewer.status in {ReviewerStatus.NOT_REQUESTED, ReviewerStatus.REQUESTED}:
                 reviewer.status = ReviewerStatus.IN_PROGRESS
