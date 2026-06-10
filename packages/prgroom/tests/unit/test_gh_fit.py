@@ -71,6 +71,15 @@ def test_rest_returns_parsed_json() -> None:
     assert runner.calls[0][:3] == ["gh", "api", "--method"]
 
 
+def test_rest_returns_array_for_list_endpoints() -> None:
+    # gh api on a collection endpoint returns a JSON array, not an object — rest()
+    # returns it as-is (the return type is Any; the caller narrows). The old
+    # JsonObj annotation was a lie for these endpoints.
+    runner = RecordedRunner([_ok('[{"number": 1}, {"number": 2}]')])
+    client = GhCli(runner)
+    assert client.rest("GET", "repos/octo/demo/pulls") == [{"number": 1}, {"number": 2}]
+
+
 def test_rest_with_fields_passes_each_as_field_flag() -> None:
     runner = RecordedRunner([_ok("{}")])
     client = GhCli(runner)

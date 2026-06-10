@@ -68,8 +68,8 @@ class GhClient(Protocol):
     def head_ref_oid(self, ref: PRRef) -> str: ...  # pragma: no cover
 
     def rest(
-        self, method: str, path: str, *, fields: JsonObj | None = None
-    ) -> JsonObj: ...  # pragma: no cover
+        self, method: str, path: str, *, fields: dict[str, str] | None = None
+    ) -> Any: ...  # pragma: no cover  # gh api returns object|array|primitive; caller narrows
 
     def graphql(self, query: str, variables: JsonObj) -> JsonObj: ...  # pragma: no cover
 
@@ -126,13 +126,15 @@ class GhCli:
         parsed: JsonObj = json.loads(out)
         return str(parsed["headRefOid"])
 
-    def rest(self, method: str, path: str, *, fields: JsonObj | None = None) -> JsonObj:
+    def rest(self, method: str, path: str, *, fields: dict[str, str] | None = None) -> Any:
         argv = ["gh", "api", "--method", method, path]
         for key, value in (fields or {}).items():
             argv += ["-f", f"{key}={value}"]
         out = self._run(argv)
-        parsed: JsonObj = json.loads(out) if out.strip() else {}
-        return parsed
+        # gh api returns a JSON object, array, or primitive depending on the
+        # endpoint — the caller (which knows the endpoint) narrows. An empty body
+        # (e.g. a 204) normalizes to {}.
+        return json.loads(out) if out.strip() else {}
 
     def graphql(self, query: str, variables: JsonObj) -> JsonObj:
         argv = ["gh", "api", "graphql", "-f", f"query={query}"]

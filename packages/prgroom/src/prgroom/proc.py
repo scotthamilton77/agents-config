@@ -72,7 +72,10 @@ class SubprocessRunner:
     ) -> CommandResult:
         # Fail-safe: bound by default so a caller that omits `timeout` cannot hang
         # forever holding the PR lock. Pass `timeout=None` explicitly to opt out.
-        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+        # LANGUAGE takes precedence over LC_ALL/LANG for gettext message
+        # translation (git/gh use gettext), so it must be pinned too — otherwise a
+        # box with LANGUAGE set would still localize stderr and break classification.
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C", "LANGUAGE": "C"}
         completed = subprocess.run(  # noqa: S603  # argv is internally built (gh/git verb + typed args), never shell-interpolated user input; this IS the sanctioned boundary
             list(argv),
             capture_output=True,

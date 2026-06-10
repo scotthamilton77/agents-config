@@ -56,6 +56,9 @@ def test_subprocess_runner_forces_c_locale(monkeypatch: Any) -> None:
 
     monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
     monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+    # LANGUAGE overrides LC_ALL/LANG for gettext message translation (git uses
+    # gettext), so it must be pinned too or stderr would still localize under C.
+    monkeypatch.setenv("LANGUAGE", "fr_FR")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     SubprocessRunner().run(["git", "push"])
@@ -64,6 +67,7 @@ def test_subprocess_runner_forces_c_locale(monkeypatch: Any) -> None:
     assert env is not None
     assert env["LC_ALL"] == "C"
     assert env["LANG"] == "C"
+    assert env["LANGUAGE"] == "C"
     # The rest of the parent environment is preserved (e.g. PATH so the binary resolves).
     assert "PATH" in env
 
