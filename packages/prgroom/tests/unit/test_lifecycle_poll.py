@@ -402,6 +402,33 @@ def test_changes_requested_review_flips_required_reviewer_to_review_found() -> N
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
 
 
+def test_genuine_terminal_review_supersedes_a_prior_decline() -> None:
+    # §4.1 reconciliation: an auto-decline (timeout-no-start / timeout-stalled) is a
+    # *fallback* for a missing verdict — "requested but never engaged" / "engaged but
+    # never produced a terminal review". A genuine post-request APPROVED /
+    # CHANGES_REQUESTED review IS the verdict the decline stood in for, so it
+    # supersedes the stale DECLINED and the reported status becomes REVIEW_FOUND.
+    # (Both satisfy G_REVIEWERS, so quiescence is unaffected — only the reported
+    # status changes, toward the more truthful one.)
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.DECLINED,
+            required=True,
+            last_request_at=_T0 - timedelta(hours=2),  # before the 11:05Z review
+            declined_at=_T0 - timedelta(hours=1),
+            declined_reason="timeout-no-start",
+        )
+    }
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    approved = _review(21, login="copilot")
+    approved["state"] = "APPROVED"
+    gh = _gh(head_oid="same", reviews=[approved])
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(_JUST_AFTER_ACTIVITY), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
+
+
 def test_commented_review_does_not_flip_to_review_found_in_mvp() -> None:
     # §4.1 hedges the COMMENTED-terminal question to Section 5's contract; MVP
     # treats a COMMENTED review as engagement only (in_progress), not terminal.
@@ -657,6 +684,25 @@ def test_last_activity_unchanged_on_quiet_poll() -> None:
     gh = _gh(head_oid="same", ci="success")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(now), config=_config())
     assert state.last_activity_at == _T0
+
+
+def test_auto_decline_only_poll_does_not_advance_last_activity() -> None:
+    # §4.1 (idle-timer paragraph): last_activity_at tracks PR-SIDE mutations only
+    # (new comment / review / push / CI change / label change); it is explicitly
+    # "not to detect bot inactivity (per-reviewer timeouts ... own that case)". An
+    # auto-decline is prgroom's own internal timeout firing — NOT PR activity — so
+    # it must not advance last_activity_at, or the idle gate could never trip and
+    # the PR would never quiesce.
+    reviewers = _required_reviewer(ReviewerStatus.REQUESTED)  # last_request_at == _T0
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same", reviewers=reviewers)
+    start.quiescence = QuiescenceState(ci_state="success")  # no CI-change mutation either
+    # No new items; advance the clock past the 3m start timeout so the reviewer
+    # auto-declines and that is the ONLY state change this poll.
+    later = _T0 + timedelta(minutes=5)
+    gh = _gh(head_oid="same", ci="success")
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(later), config=_config())
+    assert state.reviewers["copilot"].status is ReviewerStatus.DECLINED  # the timeout fired
+    assert state.last_activity_at == _T0  # but the idle clock did NOT reset
 
 
 # ── gh error-code mapping (read-only; §3.6/§3.7) ──

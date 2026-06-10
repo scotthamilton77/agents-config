@@ -24,11 +24,19 @@ def test_parse_full_url() -> None:
     )
 
 
-def test_parse_full_url_with_trailing_path() -> None:
-    # gh URLs sometimes carry a trailing /files or #discussion fragment.
-    assert PRRef.parse("https://github.com/octo/demo/pull/7/files") == PRRef(
-        owner="octo", repo="demo", number=7
-    )
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/octo/demo/pull/7/files",  # trailing /path
+        "https://github.com/octo/demo/pull/7#discussion_r123",  # #fragment directly after n
+        "https://github.com/octo/demo/pull/7?tab=files",  # ?query directly after n
+        "https://github.com/octo/demo/pull/7/files#diff-abc",  # /path then #fragment
+    ],
+)
+def test_parse_full_url_with_trailing_path_fragment_or_query(url: str) -> None:
+    # Real GitHub PR URLs commonly carry a trailing /path, #fragment, or ?query
+    # after the PR number; everything after the number is ignored.
+    assert PRRef.parse(url) == PRRef(owner="octo", repo="demo", number=7)
 
 
 def test_parse_bare_number_with_default() -> None:
@@ -45,7 +53,18 @@ def test_parse_bare_number_without_default_is_bad_ref() -> None:
 
 @pytest.mark.parametrize(
     "bad",
-    ["", "not-a-ref", "octo/demo", "octo/demo#abc", "octo#7", "octo/demo#", "octo/demo#0"],
+    [
+        "",
+        "not-a-ref",
+        "octo/demo",
+        "octo/demo#abc",
+        "octo#7",
+        "octo/demo#",
+        "octo/demo#0",
+        # A non-delimiter suffix on the number is NOT a valid trailing path/fragment.
+        "https://github.com/octo/demo/pull/7abc",
+        "https://github.com/octo/demo/pull/0",
+    ],
 )
 def test_parse_malformed_raises_bad_pr_ref(bad: str) -> None:
     with pytest.raises(PreconditionError) as exc:

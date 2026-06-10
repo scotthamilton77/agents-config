@@ -242,9 +242,13 @@ def _observe_engagement(
       ``created_at`` / ``submitted_at``, carried on ``item.seen_at``), NOT poll time, so
       the §4.1 stall clock survives crash gaps and resumes correctly.
     - An APPROVED / CHANGES_REQUESTED review (a post-request terminal verdict, in
-      ``terminal_reviews``) promotes the reviewer to ``review_found``; any other
-      engagement merely advances ``requested`` / ``not_requested`` → ``in_progress``. A
-      reviewer already at terminal ``review_found`` / ``declined`` keeps its status.
+      ``terminal_reviews``) sets the reviewer to ``review_found`` — a genuine verdict
+      **supersedes a prior decline** (§4.1: an auto-decline is a fallback for a missing
+      verdict — "requested but never engaged" / "engaged but never produced a terminal
+      review" — so the real verdict it stood in for wins; both satisfy G_REVIEWERS, so
+      only the reported status changes). Any other engagement merely advances
+      ``requested`` / ``not_requested`` → ``in_progress`` and leaves an already-terminal
+      ``review_found`` / ``declined`` reviewer's status as-is.
 
     Returns whether anything changed.
     """
