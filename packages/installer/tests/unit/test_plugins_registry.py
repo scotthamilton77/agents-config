@@ -74,6 +74,21 @@ def test_discover_dispatches_to_specialized_class_when_registered(
     assert type(discovered["beads"]) is _FakeSpecialized
 
 
+def test_discover_returns_empty_for_a_missing_plugins_root(tmp_path: Path) -> None:
+    """
+    Given a plugins_root path that does not exist on disk
+    When discover() scans it
+    Then it returns {} rather than raising FileNotFoundError.
+
+    Pins the F.1-deferred decision (resolved in F.2): a missing plugins_root is
+    "no plugins to overlay", not a hard error — `src/plugins/` is optional, and
+    the overlay must tolerate its absence. Resolves the latent unguarded
+    `iterdir()` flagged in the F.1 review.
+    """
+    missing = tmp_path / "does-not-exist"
+    assert discover(missing) == {}
+
+
 def test_unknown_plugin_error_exposes_structured_attributes() -> None:
     """
     When UnknownPluginError("gamma", ("alpha", "beta")) is constructed

@@ -34,7 +34,13 @@ def discover(
     `plugins_root`. Non-directory entries (e.g. `AGENTS.md`) and `.`/`_`-
     prefixed directories are skipped. Each plugin gets a `GenericPluginAdapter`
     unless its name is in `specialized`. Returns a name-keyed mapping; entries
-    are sorted by name for deterministic downstream ordering."""
+    are sorted by name for deterministic downstream ordering.
+
+    A missing `plugins_root` yields `{}` (no plugins to overlay) rather than
+    raising — `src/plugins/` is optional, so the overlay must tolerate its
+    absence (F.1-deferred decision, resolved in F.2)."""
+    if not plugins_root.is_dir():
+        return {}
     discovered: dict[str, PluginAdapter] = {}
     for entry in sorted(plugins_root.iterdir()):
         name = entry.name

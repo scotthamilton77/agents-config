@@ -11,6 +11,7 @@ destination.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -158,6 +159,27 @@ def stage_namespace(
 
 _SHARED_NAMESPACES = ("skills", "agents", "rules")  # bash Phase 2 (no commands shared)
 
+# Shared namespaces whose DIR units are carrier dirs (bash install.sh:525) — a
+# plugin may carrier-merge disjoint files into one of these; rules/ holds files,
+# not dirs, so it is excluded.
+_CARRIER_NAMESPACES = frozenset({"skills", "agents"})
+
+
+def _mark_carrier(item: StagedItem) -> StagedItem:
+    """Stamp the shared-carrier flag on a shared skills/agents DIR item.
+
+    Port of the bash ``.carrier-from-user-shared`` sentinel drop
+    (``scripts/install.sh:517-529``). Only ``kind==DIR`` items in the carrier
+    namespaces are marked; every other item passes through unchanged so the
+    flag never spuriously appears on rules files, agent ``*.md`` files, or
+    templates. Mark only during shared (Phase 2) staging — plugin staging must
+    NOT self-mark, which is why this lives in ``build_plan`` and not in the
+    shared ``stage_namespace`` walker.
+    """
+    if item.kind is FileKind.DIR and item.namespace in _CARRIER_NAMESPACES:
+        return replace(item, shared_carrier=True)
+    return item
+
 
 def _add_item(plan: StagingPlan, item: StagedItem) -> None:
     """Insert one item, raising on a duplicate dest_relpath.
@@ -193,7 +215,7 @@ def build_plan(adapter: ToolAdapter, *, repo_root: Path) -> StagingPlan:
     for ns in _SHARED_NAMESPACES:  # Phase 2
         if adapter.should_install_namespace(ns, "shared"):
             for item in stage_namespace(shared_root, ns, provenance=prov):
-                _add_item(plan, item)
+                _add_item(plan, _mark_carrier(item))
     for item in stage_templates(tool_root, provenance=prov):  # Phase 3
         _add_item(plan, item)
     for ns in adapter.scoped_namespaces():  # Phase 4
