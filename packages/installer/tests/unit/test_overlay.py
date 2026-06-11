@@ -79,6 +79,23 @@ def test_disjoint_plugin_content_is_added_to_the_plan(tmp_path: Path) -> None:
     item = plan.items[Path("rules/extra.md")]
     assert item.content == b"plugin rule"
     assert item.provenance == Provenance(kind="plugin", name="test-plugin")
+    # No carrier-merge happened, so the side channel stays empty.
+    assert plan.dir_overrides == {}
+
+
+def test_skill_dir_overlay_without_collision_records_no_override(tmp_path: Path) -> None:
+    """A plugin skill dir landing on an UNOCCUPIED destination is added as a
+    plain DIR item (its bytes come from source_path at sync); it is not a
+    carrier-merge, so nothing is written to dir_overrides. The channel is only
+    for the second-source-tree case."""
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    plan = overlay_plugins(
+        _empty_plan(), [plugin], adapter=ClaudeAdapter(), registry=default_registry()
+    )
+
+    assert plan.items[Path("skills/demo-skill")].kind is FileKind.DIR
+    assert plan.dir_overrides == {}
 
 
 def _base_item(
@@ -289,6 +306,107 @@ def test_carrier_merge_disjoint_files_succeeds_and_clears_flag(tmp_path: Path) -
     merged = plan.items[Path("skills/demo-skill")]
     assert merged.kind is FileKind.DIR
     assert merged.shared_carrier is False
+
+
+def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(tmp_path: Path) -> None:
+    """The carrier-merge does not silently drop the plugin's added file: its
+    bytes are recorded in plan.dir_overrides, keyed by the carrier DIR's
+    dest_relpath then the inner file relpath. This is the F.3 file-carry channel
+    that the later plan-walking DIR-sync emits alongside the carrier's own
+    files."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    dest = Path("skills/demo-skill")
+    assert plan.dir_overrides[dest] == {Path("SKILL.md"): b"plugin"}
+
+
+def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(tmp_path: Path) -> None:
+    """dir_overrides is a shared side channel (carrier-merge now, F.5 patched
+    bytes later). A carrier-merge merges its carried files INTO any existing
+    inner-relpath map for that dest rather than replacing the whole map, so a
+    file a prior producer recorded under a different inner relpath survives —
+    last-writer-wins per inner relpath, not per dest directory."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    dest = Path("skills/demo-skill")
+    # A prior producer (stand-in for F.5) already recorded a file at this dest.
+    plan.dir_overrides[dest] = {Path("PATCHED.md"): b"prior"}
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.dir_overrides[dest] == {
+        Path("PATCHED.md"): b"prior",
+        Path("SKILL.md"): b"plugin",
+    }
+
+
+def test_carrier_merge_carries_every_plugin_file(tmp_path: Path) -> None:
+    """A plugin contributing several disjoint files has ALL of them represented
+    in dir_overrides, not just the first — the carry iterates the whole added
+    file set."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", "ref.md", "helper.py"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {
+        Path("SKILL.md"): b"plugin",
+        Path("ref.md"): b"plugin",
+        Path("helper.py"): b"plugin",
+    }
+
+
+def test_carrier_merge_override_holds_only_plugin_files_not_carrier_own(tmp_path: Path) -> None:
+    """The override map holds the PLUGIN's added files only. The carrier's own
+    files (read from its source_path at sync) are not duplicated into the
+    channel — dir_overrides is the second source tree, not the merged whole."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh", "README.md"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    overrides = plan.dir_overrides[Path("skills/demo-skill")]
+    assert overrides == {Path("SKILL.md"): b"plugin"}
+    assert Path("_test.sh") not in overrides
+    assert Path("README.md") not in overrides
+
+
+def test_carrier_merge_does_not_carry_top_level_dotfiles(tmp_path: Path) -> None:
+    """A top-level dotfile in the plugin dir is NOT carried: bash's
+    `for sfile in "$src"/*` skips dot-prefixed entries, so they never reach the
+    copy. This matches the dotfile exclusion the disjoint check already
+    applies — a shared `.gitkeep` does not block the merge AND is not copied."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh", ".gitkeep"])
+    plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", ".gitkeep"])
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"plugin"}
+
+
+def test_carrier_merge_carries_nested_subdirectory_files(tmp_path: Path) -> None:
+    """A subdirectory in the plugin dir is carried wholesale (bash `cp -R`):
+    each nested file is represented under its relpath (e.g. `lib/util.py`), and
+    a dotfile NESTED under a carried subdir is kept (cp -R copies it) — unlike a
+    top-level dotfile."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    skill_dir = plugin.source_path / ".agents" / "skills" / "demo-skill"
+    (skill_dir / "lib").mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_bytes(b"top")
+    (skill_dir / "lib" / "util.py").write_bytes(b"nested")
+    (skill_dir / "lib" / ".keep").write_bytes(b"dot-nested")
+
+    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {
+        Path("SKILL.md"): b"top",
+        Path("lib/util.py"): b"nested",
+        Path("lib/.keep"): b"dot-nested",
+    }
 
 
 def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path) -> None:

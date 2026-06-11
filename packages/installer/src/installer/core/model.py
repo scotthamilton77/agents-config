@@ -9,7 +9,7 @@ See `docs/specs/2026-05-17-w1qls.1.2-model-design.md` for the rationale
 behind every design decision in this file.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, TypeAlias
@@ -121,10 +121,27 @@ class StagingPlan:
     before assigning and route through the merge registry when the key is
     already present; this dataclass is bare storage, not a collision
     detector. A future helper may absorb the check, but A.2 deliberately
-    holds the engine behaviour out of the data layer."""
+    holds the engine behaviour out of the data layer.
+
+    `dir_overrides` is the side channel for bytes that cannot be expressed
+    through a single-`source_path` DIR `StagedItem`. It is keyed by the DIR
+    item's `dest_relpath`, then by each inner file's relpath (relative to the
+    dir), to that file's bytes. Two producers write here, both targeting an
+    existing DIR item rather than replacing it:
+
+    - the Phase 6 plugin carrier-merge (overlay) records the plugin's disjoint
+      added files, since a DIR item has only one `source_path` and two source
+      dirs land at one destination;
+    - `apply_extensions` (F.5) records YAML-patched file bytes for a skill/agent
+      dir whose opaque DIR item it cannot mutate (`content` stays `None`).
+
+    The future plan-walking DIR-sync emits each carrier DIR's own
+    `source_path` tree first, then overlays `dir_overrides[dest]` on top.
+    Empty by default — the common case stages no override bytes."""
 
     items: dict[Path, StagedItem]
     tool: Tool
+    dir_overrides: dict[Path, dict[Path, bytes]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
