@@ -413,12 +413,19 @@ class SubprocessAgentRunner:
         SIGKILL. Either way a final ``communicate`` reaps the child and reads its
         stdout/stderr capture files (stdin was already closed in ``send_stdin``), so
         no zombie lingers before the error propagates; ``cleanup`` unlinks the files.
+
+        Both signals are best-effort: a child that already exited between the poll
+        loop and here (a fast-failure race) makes ``terminate``/``kill`` raise
+        ``ProcessLookupError``. There is nothing left to signal, so we suppress it and
+        let ``communicate`` reap — keeping the timeout/cancel error deterministic.
         """
-        proc.terminate()
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
         try:
             proc.wait(timeout=self._sigterm_grace_s)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
         proc.communicate()
 
 

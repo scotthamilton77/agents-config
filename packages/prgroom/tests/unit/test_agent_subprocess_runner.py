@@ -63,6 +63,7 @@ class FakeProcess:
         finishes_after: int | None = 0,
         survives_sigterm: bool = False,
         stdin_raises: bool = False,
+        signal_raises: bool = False,
     ) -> None:
         self._returncode = returncode
         self._stdout = stdout
@@ -70,6 +71,9 @@ class FakeProcess:
         self._finishes_after = finishes_after
         self._survives_sigterm = survives_sigterm
         self._stdin_raises = stdin_raises
+        # signal_raises models the poll/signal race: the child already exited, so
+        # terminate()/kill() raise ProcessLookupError (no such process).
+        self._signal_raises = signal_raises
         self._polls = 0
         self.terminated = False
         self.killed = False
@@ -97,10 +101,14 @@ class FakeProcess:
         self.delivered_stdin = data
 
     def terminate(self) -> None:
+        if self._signal_raises:
+            raise ProcessLookupError(3, "No such process")
         self.terminated = True
         self._signalled = True
 
     def kill(self) -> None:
+        if self._signal_raises:
+            raise ProcessLookupError(3, "No such process")
         self.killed = True
         self._signalled = True
 
@@ -422,6 +430,33 @@ def test_timeout_lets_a_well_behaved_child_die_on_sigterm_alone(tmp_path: Path) 
         )
     assert proc.terminated and not proc.killed
     assert proc.reaped
+
+
+def test_terminate_suppresses_process_lookup_error_when_child_already_exited(
+    tmp_path: Path,
+) -> None:
+    # Race: the child exits between the last poll() and the terminate()/kill() signal,
+    # so BOTH signals raise ProcessLookupError. The runner must SUPPRESS that (nothing
+    # left to signal), still reap via communicate(), and surface the intended
+    # AgentTimeoutError — never leak the ProcessLookupError as an unexpected error.
+    proc = FakeProcess(finishes_after=None, survives_sigterm=True, signal_raises=True)
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
+        scratch_dir=tmp_path,
+        poll_interval_s=0.0,
+        sigterm_grace_s=0.0,
+    )
+    with pytest.raises(AgentTimeoutError) as excinfo:
+        runner.run(
+            _spec(),
+            prompt_template=_PROMPT,
+            render_data={},
+            contract_payload={},
+            time_budget_s=0.0,
+        )
+    assert proc.reaped  # communicate() still reaps the already-dead child
+    assert proc.cleaned_up  # output temp files removed even when signalling raced
+    assert excinfo.value.code is ErrorCode.RUNTIME_AGENT_TIMEOUT
 
 
 # ── cancel-token: terminate, grace, reap when the Event is set ──
