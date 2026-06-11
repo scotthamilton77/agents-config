@@ -183,7 +183,13 @@ def load_chain(
     # must route through _chain_from_toml (where the missing-primary check fires).
     # Only a truly ABSENT key falls through to the shipped default chain.
     if contract in agents:
-        specs = _chain_from_toml(contract, _subtable(agents, contract))
+        section = agents[contract]
+        if not isinstance(section, dict):
+            # Name the full agents.<contract> path (not _subtable's bare key) so the
+            # error matches the per-provider agents.<contract>.<key> errors below.
+            msg = f"agents.{contract} must be a table, got {section!r}"
+            raise ValueError(msg)
+        specs = _chain_from_toml(contract, section)
     else:
         specs = list(_DEFAULT_CHAINS[contract])
     if model_override is not None and specs:

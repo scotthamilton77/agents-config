@@ -186,6 +186,16 @@ def test_non_table_provider_names_the_full_contract_key_path(tmp_path: Path) -> 
         load_chain("cluster", repo_config=cfg, model_override=None)
 
 
+def test_non_table_section_names_the_full_agents_contract_path(tmp_path: Path) -> None:
+    # A present [agents.<contract>] that is not a table at all (e.g. agents.cluster =
+    # "...") must name the full agents.<contract> path — consistent with the
+    # per-provider errors — not the foundation _subtable's bare-key message.
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text('[agents]\ncluster = "ollama"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"agents\.cluster must be a table"):
+        load_chain("cluster", repo_config=cfg, model_override=None)
+
+
 def test_present_section_without_primary_is_a_config_error(tmp_path: Path) -> None:
     # A present [agents.cluster] that omits `primary` must be rejected, not silently
     # accepted with fallback-as-head (or an empty chain that later raises a
