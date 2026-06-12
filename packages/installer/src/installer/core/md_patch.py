@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 
+import yaml
+
 FRONTMATTER = "frontmatter"
 """Sentinel ``target-section`` value selecting the leading frontmatter block."""
 
@@ -141,4 +143,40 @@ def _scan_headers(lines: list[str]) -> list[tuple[int, int, str]]:
 
 
 def _patch_frontmatter(lines: list[str], precision: Precision, content: str) -> list[str]:
-    raise NotImplementedError  # Task 5
+    """R5: the frontmatter block is a section whose header is the opening
+    ``---`` and whose body is the YAML between delimiters. Every verb except
+    ``insert_before`` mutates the YAML body and must re-parse cleanly."""
+    close = _frontmatter_close(lines)
+    content_lines = content.split("\n")
+    if precision is Precision.INSERT_BEFORE:
+        # Lands above the block; the YAML body is untouched, so no re-parse.
+        # Side effect (spec-documented): the file no longer begins with a
+        # frontmatter block, so later frontmatter patches will fail per R3.
+        return content_lines + lines
+    if precision in (Precision.INSERT_AFTER, Precision.PREPEND):
+        body = content_lines + lines[1:close]
+    elif precision is Precision.APPEND:
+        body = lines[1:close] + content_lines
+    else:  # Precision.REPLACE — complete YAML body, delimiters preserved
+        body = content_lines
+    _validate_yaml_body(body)
+    return lines[:1] + body + lines[close:]
+
+
+def _frontmatter_close(lines: list[str]) -> int:
+    """Index of the closing ``---`` line. The block must open at byte 0 —
+    any preceding content (BOM, blank line, anything) means no frontmatter
+    exists (R3)."""
+    if not lines or lines[0] != "---":
+        raise PatchError(_NO_FRONTMATTER)
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            return i
+    raise PatchError(_NO_FRONTMATTER)
+
+
+def _validate_yaml_body(body: list[str]) -> None:
+    try:
+        yaml.safe_load("\n".join(body))
+    except yaml.YAMLError as exc:
+        raise PatchError(f"post-patch frontmatter is not valid YAML: {exc}") from exc  # noqa: TRY003

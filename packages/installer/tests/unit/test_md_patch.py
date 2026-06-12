@@ -170,3 +170,66 @@ def test_ambiguous_section_is_terminal_and_counts_matches() -> None:
         apply_patch(
             "## Dup\na\n## Dup\nb\n", section="Dup", precision=Precision.APPEND, content="X"
         )
+
+
+FM_DOC = "---\ntitle: x\n---\nbody\n"
+
+
+def test_frontmatter_append_inserts_before_closing_delimiter() -> None:
+    out = apply_patch(FM_DOC, section="frontmatter", precision=Precision.APPEND, content="extra: 1")
+    assert out == "---\ntitle: x\nextra: 1\n---\nbody\n"
+
+
+def test_frontmatter_insert_after_and_prepend_land_below_opening_delimiter() -> None:
+    expected = "---\nextra: 1\ntitle: x\n---\nbody\n"
+    for verb in (Precision.INSERT_AFTER, Precision.PREPEND):
+        out = apply_patch(FM_DOC, section="frontmatter", precision=verb, content="extra: 1")
+        assert out == expected
+
+
+def test_frontmatter_replace_swaps_yaml_body_and_preserves_both_delimiters() -> None:
+    out = apply_patch(
+        FM_DOC, section="frontmatter", precision=Precision.REPLACE, content="only: key"
+    )
+    assert out == "---\nonly: key\n---\nbody\n"
+
+
+def test_frontmatter_insert_before_lands_above_block_without_yaml_validation() -> None:
+    """R5: content above the opening --- is allowed (and not YAML-validated —
+    it is outside the YAML body); the file then no longer has leading
+    frontmatter by the byte-0 rule."""
+    out = apply_patch(
+        FM_DOC, section="frontmatter", precision=Precision.INSERT_BEFORE, content="<!-- note -->"
+    )
+    assert out == "<!-- note -->\n---\ntitle: x\n---\nbody\n"
+    with pytest.raises(PatchError, match="no leading frontmatter"):
+        apply_patch(out, section="frontmatter", precision=Precision.APPEND, content="k: v")
+
+
+def test_frontmatter_mutation_failing_yaml_reparse_is_terminal() -> None:
+    with pytest.raises(PatchError, match="post-patch frontmatter is not valid YAML"):
+        apply_patch(
+            FM_DOC, section="frontmatter", precision=Precision.APPEND, content=": not yaml ["
+        )
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        "no frontmatter at all\n",
+        "\n---\ntitle: x\n---\n",  # preceding blank line
+        "\ufeff---\ntitle: x\n---\n",  # BOM before the opening ---
+        "---\ntitle: x\n",  # opener but no closing ---
+    ],
+)
+def test_missing_or_malformed_frontmatter_block_is_terminal(doc: str) -> None:
+    """R3: the block must open at byte 0 and have a closing --- line."""
+    with pytest.raises(PatchError, match="no leading frontmatter block"):
+        apply_patch(doc, section="frontmatter", precision=Precision.APPEND, content="k: v")
+
+
+def test_frontmatter_append_on_empty_block() -> None:
+    out = apply_patch(
+        "---\n---\nbody\n", section="frontmatter", precision=Precision.APPEND, content="k: v"
+    )
+    assert out == "---\nk: v\n---\nbody\n"
