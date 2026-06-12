@@ -29,6 +29,7 @@ or-fall-through; it parses the output shape but does not validate its invariants
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -235,12 +236,17 @@ class _Dispatcher:
         runner: AgentRunner,
         chain: ProviderChain,
         prompt: PromptTemplate | None = None,
+        cancel: threading.Event | None = None,
     ) -> None:
         self._runner = runner
         self._chain = chain
         # The prompt template is loaded once (§5 "loaded once at startup"); a caller
         # may inject one to avoid disk I/O in a tight test.
         self._prompt = prompt if prompt is not None else load_prompt(self._contract)
+        # The cancel token is forwarded to EVERY runner invocation, so the lifecycle
+        # (or the run verb's SIGTERM handler) can abort an in-flight dispatch — the
+        # contract surfaces (cluster()/fix()) carry no parameter for it.
+        self._cancel = cancel
 
     def _run_chain(self, payload: dict[str, Any], parse: Callable[[str], T]) -> T:
         """Try each provider; return the first parseable output, else raise both-fail.
@@ -275,6 +281,7 @@ class _Dispatcher:
                 render_data={"contract_version": str(payload.get("contract_version", 1))},
                 contract_payload=payload,
                 time_budget_s=self._chain.time_budget_s,
+                cancel=self._cancel,
             )
         except AgentTimeoutError as exc:
             return _LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}")

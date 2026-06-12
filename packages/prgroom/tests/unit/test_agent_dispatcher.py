@@ -14,8 +14,10 @@ proven in ``test_agent_subprocess_runner``; here we prove the LADDER logic.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,6 +29,7 @@ from prgroom.agent.dispatcher import (
     ProviderChain,
     load_chain,
 )
+from prgroom.agent.prompt_loader import PromptTemplate
 from prgroom.agent.subprocess_runner import (
     AgentCancelledError,
     AgentRunResult,
@@ -69,14 +72,41 @@ class BinaryMissing(_Outcome):
 
 
 class FakeAgentRunner:
-    """Replays one queued :class:`_Outcome` per ``run`` call, recording the specs tried."""
+    """Replays one queued :class:`_Outcome` per ``run`` call, recording every call.
+
+    The signature mirrors the ``AgentRunner`` Protocol EXACTLY — no ``**kwargs``
+    swallowing — so a dispatcher that drops or misnames a forwarded argument fails
+    loudly here instead of staying green. ``calls`` records each invocation's
+    kwargs so tests pin the dispatcher→runner contract (per-link budget, prompt
+    template, render data, cancel token), not just which specs were tried.
+    """
 
     def __init__(self, outcomes: Sequence[_Outcome]) -> None:
         self._outcomes = list(outcomes)
         self.specs_tried: list[AgentSpec] = []
+        self.calls: list[dict[str, Any]] = []
 
-    def run(self, spec: AgentSpec, **_kwargs: object) -> AgentRunResult:
+    def run(
+        self,
+        spec: AgentSpec,
+        *,
+        prompt_template: PromptTemplate,
+        render_data: dict[str, str],
+        contract_payload: dict[str, Any],
+        time_budget_s: float,
+        cancel: threading.Event | None = None,
+    ) -> AgentRunResult:
         self.specs_tried.append(spec)
+        self.calls.append(
+            {
+                "spec": spec,
+                "prompt_template": prompt_template,
+                "render_data": render_data,
+                "contract_payload": contract_payload,
+                "time_budget_s": time_budget_s,
+                "cancel": cancel,
+            }
+        )
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, Succeeds):
             return AgentRunResult(returncode=0, stdout=outcome.stdout, stderr="", duration_ms=1)
@@ -89,6 +119,10 @@ class FakeAgentRunner:
                 tier=Tier.RUNTIME_TRANSIENT, code=ErrorCode.RUNTIME_AGENT_TIMEOUT
             )
         if isinstance(outcome, Cancelled):
+            # Cancellation is only reachable in production when the dispatcher
+            # forwards a SET cancel token — enforce it so this fake cannot pin a
+            # code path the real plumbing does not have.
+            assert cancel is not None and cancel.is_set(), "cancel token not forwarded"
             raise AgentCancelledError(
                 tier=Tier.RUNTIME_CANCELLED, code=ErrorCode.RUNTIME_CANCELLED_SIGTERM, signum=15
             )
@@ -286,15 +320,40 @@ def test_primary_quota_exit_falls_to_fallback() -> None:
 def test_cancel_token_aborts_the_chain_without_trying_the_fallback() -> None:
     # A cancel-token kill is operator/scheduler shutdown — it must NOT be treated as
     # a per-provider failure and fall through to the next link. It propagates out,
-    # aborting the whole dispatch, and the fallback is never touched.
+    # aborting the whole dispatch, and the fallback is never touched. The token is
+    # REAL plumbing: the dispatcher must forward its own Event to every runner call
+    # (the fake refuses to cancel unless it received a set token).
+    cancel = threading.Event()
+    cancel.set()
     runner = FakeAgentRunner([Cancelled(), Succeeds(CLUSTER_OK)])
     dispatcher = ClusterDispatcher(
-        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku"))
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku")),
+        cancel=cancel,
     )
     with pytest.raises(AgentCancelledError) as excinfo:
         dispatcher.cluster(_cluster_input())
     assert excinfo.value.code is ErrorCode.RUNTIME_CANCELLED_SIGTERM
+    assert runner.calls[0]["cancel"] is cancel  # the dispatcher's OWN event reached the runner
     assert [s.cli for s in runner.specs_tried] == ["ollama"]  # fallback never tried
+
+
+def test_dispatcher_forwards_the_runner_contract_kwargs() -> None:
+    # The dispatcher→runner seam pinned end to end: the per-link budget, the loaded
+    # prompt template, the contract_version render datum, and the cancel token must
+    # all reach the runner — a dropped kwarg is a silent regression otherwise.
+    cancel = threading.Event()
+    prompt = PromptTemplate(name="t", text="x")
+    runner = FakeAgentRunner([Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")), prompt=prompt, cancel=cancel
+    )
+    dispatcher.cluster(_cluster_input())
+    call = runner.calls[0]
+    assert call["time_budget_s"] == 5.0  # the chain's per-link budget
+    assert call["prompt_template"] is prompt
+    assert call["render_data"] == {"contract_version": "1"}
+    assert call["cancel"] is cancel
 
 
 def test_all_providers_fail_raises_caller_mappable_error() -> None:
