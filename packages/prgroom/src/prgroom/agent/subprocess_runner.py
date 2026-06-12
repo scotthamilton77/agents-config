@@ -2,7 +2,9 @@
 
 Owns the ``subprocess`` plumbing for the four agent CLIs (``claude -p`` /
 ``codex exec`` / ``opencode run`` / ``ollama``): it writes the contract JSON to a
-temp file passed **by path** (§5 "JSON, written to a file passed by path"), builds
+temp file passed **by path** (§5 "JSON, written to a file passed by path") for the
+file-capable CLIs — a tool-less ``ollama run`` child instead gets the payload and
+referenced file contents INLINE in its prompt (see :func:`_input_section`) — builds
 the per-invoker argv/stdin shape, enforces a per-contract wall-clock budget
 (kills the child and raises a timeout-tagged error on overrun), and terminates the
 child when a :class:`threading.Event` cancel-token is set.
@@ -46,10 +48,11 @@ DEFAULT_POLL_INTERVAL_S = 0.1
 # deterministic escalation.
 DEFAULT_SIGTERM_GRACE_S = 5.0
 
-# The render-data key the runner injects: the temp input-file path. The contract
-# prompt templates name this placeholder; only the runner knows the real path
-# (it owns the temp file), so it fills this last, after writing the payload.
-INPUT_PATH_KEY = "input_path"
+# The render-data key the runner injects: the per-invoker payload-delivery section.
+# The contract prompt templates name this placeholder; only the runner knows the
+# delivery mode (file path for file-capable CLIs, inline content for ollama — see
+# _input_section), so it fills this last, after writing the payload.
+INPUT_SECTION_KEY = "input_section"
 
 # The four agent CLIs §5 names. The value is the cli token in TOML config.
 _KNOWN_CLIS = frozenset({"claude", "codex", "opencode", "ollama"})
@@ -152,6 +155,42 @@ class ProcessHandle(Protocol):
 # A spawn function: given argv + optional stdin, start the process and return a
 # handle. The seam the runner depends on instead of `subprocess.Popen` directly.
 SpawnFn = Callable[..., ProcessHandle]
+
+
+def _input_section(cli: str, *, input_path: Path, payload: dict[str, Any]) -> str:
+    """The per-invoker payload-delivery section rendered into the prompt template.
+
+    File-capable CLIs (claude/codex/opencode spawn tool-using agents) get the §5
+    pass-by-path shape: the section names the temp input file and the agent reads
+    it. A bare ``ollama run`` child is a tool-less text generator that cannot open
+    ANY file, so its section carries the content INLINE — the contract JSON plus
+    the contents of every ``*_path`` file the payload references — and never
+    instructs the model to read a path. (The HLD's "each invoker owns its own
+    stdin/stdout serialisation" is what licenses the per-invoker delivery mode.)
+    """
+    if cli != "ollama":
+        return f"from this file:\n\n  {input_path}"
+    parts = [
+        "inline below. You CANNOT read files — every file's content you need is",
+        "already included in this prompt; any *_path values in the JSON are",
+        "labels for the inline blocks that follow, not paths for you to open:",
+        "",
+        "```json",
+        json.dumps(payload, indent=2),
+        "```",
+    ]
+    for key, value in payload.items():
+        # Inline each referenced document. Best-effort: a missing/unreadable file
+        # (snapshot not assembled yet) is skipped, not a crash — the agent still
+        # gets the contract JSON and can act on what is present.
+        if not key.endswith("_path") or not isinstance(value, str):
+            continue
+        try:
+            content = Path(value).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        parts += ["", f"Contents of {key} ({value}):", "```", content, "```"]
+    return "\n".join(parts)
 
 
 def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
@@ -320,17 +359,21 @@ class SubprocessAgentRunner:
         """Dispatch ``spec`` against ``contract_payload``, returning the captured result.
 
         Writes ``contract_payload`` to a temp ``.json`` file, renders
-        ``prompt_template`` with ``render_data`` plus the temp path (under
-        :data:`INPUT_PATH_KEY`), builds the per-invoker argv, spawns the child,
-        delivers any stdin, and waits — polling the cancel-token and the wall-clock
-        deadline. A budget overrun raises :class:`AgentTimeoutError`; a cancel-token
-        set raises :class:`AgentCancelledError`; both stop and reap the child first.
-        The temp input file is always cleaned up. The runner owns the temp path, so
-        it is the only place that can fill the prompt's ``{input_path}`` placeholder.
+        ``prompt_template`` with ``render_data`` plus the per-invoker payload
+        delivery section (under :data:`INPUT_SECTION_KEY` — pass-by-path for the
+        file-capable CLIs, inline content for ollama), builds the per-invoker argv,
+        spawns the child, delivers any stdin, and waits — polling the cancel-token
+        and the wall-clock deadline. A budget overrun raises
+        :class:`AgentTimeoutError`; a cancel-token set raises
+        :class:`AgentCancelledError`; both stop and reap the child first. The temp
+        input file is always cleaned up. The runner owns the temp path and the
+        delivery mode, so it is the only place that can fill the prompt's
+        ``{input_section}`` placeholder.
         """
         input_path = self._write_payload(contract_payload)
         try:
-            prompt = prompt_template.render({**render_data, INPUT_PATH_KEY: str(input_path)})
+            section = _input_section(spec.cli, input_path=input_path, payload=contract_payload)
+            prompt = prompt_template.render({**render_data, INPUT_SECTION_KEY: section})
             invocation = build_invocation(spec, prompt=prompt)
             return self._spawn_and_wait(invocation, time_budget_s=time_budget_s, cancel=cancel)
         finally:

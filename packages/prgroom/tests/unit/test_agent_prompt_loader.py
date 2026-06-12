@@ -32,24 +32,25 @@ def test_loads_shipped_fix_template() -> None:
     assert load_prompt("fix").text
 
 
-_INPUT = "/var/run/prgroom/in.json"
+# The runner-built payload-delivery section (file mode here; ollama gets inline).
+_SECTION = "from this file:\n\n  /var/run/prgroom/in.json"
 
 
 def test_shipped_cluster_template_renders_with_every_placeholder_filled() -> None:
     # The shipped template embeds literal JSON ({{ }} -> { }), so braces survive
     # by design. The invariant §5 cares about is that no NAMED {placeholder} is
     # left unresolved — render must not raise and must substitute the field values.
-    rendered = load_prompt("cluster").render({"contract_version": "1", "input_path": _INPUT})
+    rendered = load_prompt("cluster").render({"contract_version": "1", "input_section": _SECTION})
     assert "{contract_version}" not in rendered
-    assert "{input_path}" not in rendered
-    assert _INPUT in rendered
+    assert "{input_section}" not in rendered
+    assert _SECTION in rendered
 
 
 def test_shipped_fix_template_renders_with_every_placeholder_filled() -> None:
-    rendered = load_prompt("fix").render({"contract_version": "1", "input_path": _INPUT})
+    rendered = load_prompt("fix").render({"contract_version": "1", "input_section": _SECTION})
     assert "{contract_version}" not in rendered
-    assert "{input_path}" not in rendered
-    assert _INPUT in rendered
+    assert "{input_section}" not in rendered
+    assert _SECTION in rendered
 
 
 def test_override_dir_wins_for_matching_filename(

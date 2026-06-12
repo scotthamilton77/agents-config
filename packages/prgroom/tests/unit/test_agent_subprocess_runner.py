@@ -33,9 +33,9 @@ from prgroom.agent.subprocess_runner import (
 )
 from prgroom.errors import ErrorCode
 
-# A prompt template whose only placeholder is the runner-injected input path, so a
-# test can assert the runner filled in the real temp-file path.
-_PROMPT = PromptTemplate(name="t", text="process the input at {input_path}")
+# A prompt template whose only placeholder is the runner-injected input section, so
+# a test can assert the runner filled in the per-invoker payload-delivery shape.
+_PROMPT = PromptTemplate(name="t", text="process the input {input_section}")
 
 
 class FakeProcess:
@@ -209,10 +209,10 @@ def test_runner_writes_contract_json_to_a_temp_file_and_names_it_in_the_prompt(
 
     def spawn(argv: Sequence[str], *, stdin: str | None) -> FakeProcess:  # noqa: ARG001
         # The rendered prompt (a claude positional) names the real temp path; that
-        # path is the argv token that exists as a file on disk.
-        prompt = next(t for t in argv if "input at" in t)
-        path = prompt.removeprefix("process the input at ")
-        captured["path"] = path
+        # path is the last token of the file-delivery section and exists on disk.
+        prompt = next(t for t in argv if "process the input" in t)
+        path = prompt.split()[-1]
+        captured["prompt"] = prompt
         captured["content"] = Path(path).read_text(encoding="utf-8")
         return FakeProcess(returncode=0, stdout='{"clusters": []}')
 
@@ -225,6 +225,8 @@ def test_runner_writes_contract_json_to_a_temp_file_and_names_it_in_the_prompt(
         time_budget_s=5.0,
     )
     assert json.loads(captured["content"]) == {"contract_version": 1, "items": []}
+    # File-capable CLIs get pass-by-path ONLY — the payload is never inlined.
+    assert '"items"' not in captured["prompt"]
     assert result.stdout == '{"clusters": []}'
 
 
@@ -232,8 +234,8 @@ def test_runner_cleans_up_the_temp_input_file(tmp_path: Path) -> None:
     seen: dict[str, Path] = {}
 
     def spawn(argv: Sequence[str], *, stdin: str | None) -> FakeProcess:  # noqa: ARG001
-        prompt = next(t for t in argv if "input at" in t)
-        seen["path"] = Path(prompt.removeprefix("process the input at "))
+        prompt = next(t for t in argv if "process the input" in t)
+        seen["path"] = Path(prompt.split()[-1])
         return FakeProcess(returncode=0, stdout="{}")
 
     runner = SubprocessAgentRunner(spawn=spawn, scratch_dir=tmp_path)
@@ -261,7 +263,51 @@ def test_ollama_run_delivers_the_rendered_prompt_to_the_child_stdin(tmp_path: Pa
         time_budget_s=5.0,
     )
     assert proc.delivered_stdin is not None
-    assert "process the input at " in proc.delivered_stdin
+    assert "process the input" in proc.delivered_stdin
+
+
+def test_ollama_stdin_inlines_payload_and_referenced_file_contents(tmp_path: Path) -> None:
+    # A bare `ollama run` child is a tool-less text generator — it cannot open any
+    # file. Its prompt must carry the contract JSON AND the contents of the payload's
+    # *_path files INLINE, and must not instruct the model to read a file.
+    ctx = tmp_path / "pr-context.txt"
+    ctx.write_text("PR-CONTEXT-SENTINEL", encoding="utf-8")
+    proc = FakeProcess(returncode=0, stdout="{}")
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    runner.run(
+        _spec("ollama", "gemma4"),
+        prompt_template=_PROMPT,
+        render_data={},
+        contract_payload={"contract_version": 1, "pr_context_path": str(ctx)},
+        time_budget_s=5.0,
+    )
+    assert proc.delivered_stdin is not None
+    assert '"contract_version": 1' in proc.delivered_stdin  # contract JSON inlined
+    assert "PR-CONTEXT-SENTINEL" in proc.delivered_stdin  # referenced file inlined
+    # No read-this-file instruction: the file-delivery phrasing must not appear.
+    assert "from this file" not in proc.delivered_stdin
+
+
+def test_ollama_inline_skips_unreadable_path_values(tmp_path: Path) -> None:
+    # A *_path value that does not exist (or cannot be read) is skipped, not a
+    # crash: the contract JSON still goes inline and the dispatch proceeds.
+    proc = FakeProcess(returncode=0, stdout="{}")
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: proc,  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    runner.run(
+        _spec("ollama", "gemma4"),
+        prompt_template=_PROMPT,
+        render_data={},
+        contract_payload={"contract_version": 1, "memory_path": "/does/not/exist"},
+        time_budget_s=5.0,
+    )
+    assert proc.delivered_stdin is not None
+    assert '"contract_version": 1' in proc.delivered_stdin
 
 
 def test_non_stdin_cli_delivers_no_stdin(tmp_path: Path) -> None:
