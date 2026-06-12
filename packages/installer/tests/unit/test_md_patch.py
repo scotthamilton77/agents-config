@@ -39,3 +39,25 @@ def test_append_into_empty_section_lands_directly_under_header() -> None:
     below the header (spec-silent edge; pinned here as the coded decision)."""
     out = apply_patch("## Foo\n## Next\n", section="Foo", precision=Precision.APPEND, content="X")
     assert out == "## Foo\nX\n## Next\n"
+
+
+def test_insert_before_places_content_above_the_header() -> None:
+    out = apply_patch(
+        "intro\n## Foo\nbody\n", section="Foo", precision=Precision.INSERT_BEFORE, content="X"
+    )
+    assert out == "intro\nX\n## Foo\nbody\n"
+
+
+def test_insert_after_places_content_below_header_before_existing_body() -> None:
+    out = apply_patch(
+        "## Foo\nbody\n", section="Foo", precision=Precision.INSERT_AFTER, content="X"
+    )
+    assert out == "## Foo\nX\nbody\n"
+
+
+def test_prepend_is_physically_identical_to_insert_after() -> None:
+    """R4: intentionally redundant verbs — same physical position."""
+    doc = "## Foo\nbody\n## Next\n"
+    via_prepend = apply_patch(doc, section="Foo", precision=Precision.PREPEND, content="X\nY")
+    via_insert = apply_patch(doc, section="Foo", precision=Precision.INSERT_AFTER, content="X\nY")
+    assert via_prepend == via_insert == "## Foo\nX\nY\nbody\n## Next\n"

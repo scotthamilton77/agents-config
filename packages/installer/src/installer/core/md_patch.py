@@ -68,10 +68,14 @@ def _patch_body_section(
 ) -> list[str]:
     idx, end = _section_bounds(lines, section)
     content_lines = content.split("\n")
+    if precision is Precision.INSERT_BEFORE:
+        return lines[:idx] + content_lines + lines[idx:]
+    if precision in (Precision.INSERT_AFTER, Precision.PREPEND):
+        return lines[: idx + 1] + content_lines + lines[idx + 1 :]
     if precision is Precision.APPEND:
         at = _append_point(lines, idx, end)
         return lines[:at] + content_lines + lines[at:]
-    raise NotImplementedError  # remaining verbs land in Tasks 2-3
+    raise NotImplementedError  # REPLACE lands in Task 3
 
 
 def _append_point(lines: list[str], idx: int, end: int) -> int:
