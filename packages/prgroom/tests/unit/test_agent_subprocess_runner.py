@@ -199,6 +199,25 @@ def test_unknown_cli_is_rejected() -> None:
         build_invocation(_spec("borg", "model"), prompt="P")
 
 
+def test_unrecognized_extra_keys_warn_but_do_not_fail(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # `extra` is a deliberate growth surface, so unknown keys are NOT an error —
+    # but a typo (`effrot`, `timout`) must not vanish without trace either. The
+    # invoker warns, names the keys, and proceeds.
+    with caplog.at_level("WARNING"):
+        inv = build_invocation(_spec("claude", "haiku", effrot="high"), prompt="P")
+    assert inv.argv[0] == "claude"  # invocation still built
+    assert "effrot" in caplog.text and "claude" in caplog.text
+
+
+def test_recognized_extra_keys_do_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING"):
+        build_invocation(_spec("claude", "haiku", effort="high"), prompt="P")
+        build_invocation(_spec("codex", "gpt-5.5", write=True), prompt="P")
+    assert not caplog.records
+
+
 # ── JSON-input-by-path ──
 
 

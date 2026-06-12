@@ -84,7 +84,7 @@ _DEFAULT_BUDGETS: dict[ContractName, float] = {
 _CHAIN_KEYS = ("primary", "fallback", "fallback2", "fallback3")
 
 # TOML provider keys that are NOT part of `extra` — they are the structural fields.
-_STRUCTURAL_KEYS = frozenset({"cli", "model"})
+_STRUCTURAL_KEYS = frozenset({"cli", "model", "timeout"})
 
 # Cap on a single link's failure reason in the escalation detail (post-collapse),
 # so a verbose agent stderr cannot bloat the one-line summary.
@@ -93,7 +93,13 @@ _REASON_MAX_CHARS = 120
 
 @dataclass(frozen=True, slots=True)
 class ProviderChain:
-    """An ordered provider chain plus the shared per-contract time budget."""
+    """An ordered provider chain plus the shared per-contract time budget.
+
+    ``time_budget_s`` applies **per chain link**, not per dispatch: each provider
+    gets the full budget (unless its own ``timeout`` TOML key overrides it), so the
+    worst-case wall-clock for one dispatch is budget x chain length — all while the
+    per-PR lock is held.
+    """
 
     providers: list[AgentSpec]
     time_budget_s: float
@@ -121,19 +127,32 @@ class AllProvidersFailedError(PrgroomError):
 def _spec_from_toml(raw: Mapping[str, Any], *, path: str) -> AgentSpec:
     """Build an :class:`AgentSpec` from one TOML provider table at ``path``.
 
-    ``cli`` + ``model`` are required structural fields; every other key (``effort``,
-    ``write``, …) flows into ``extra`` so the per-invoker shapes can read them
-    without this loader knowing each CLI's options. ``path`` is the provider's full
-    ``agents.<contract>.<key>`` path, named in the error so a user sees which entry
-    is malformed.
+    ``cli`` + ``model`` are required structural fields; an optional ``timeout``
+    (positive seconds) overrides the contract's per-link budget for this provider.
+    Every other key (``effort``, ``write``, …) flows into ``extra`` so the
+    per-invoker shapes can read them without this loader knowing each CLI's
+    options. ``path`` is the provider's full ``agents.<contract>.<key>`` path,
+    named in the error so a user sees which entry is malformed.
     """
     cli = raw.get("cli")
     model = raw.get("model")
     if not isinstance(cli, str) or not isinstance(model, str):
         msg = f"{path} needs string cli + model, got {raw!r}"
         raise ValueError(msg)  # noqa: TRY004  # config-domain validation; ValueError is the loader's uniform type
+    budget: float | None = None
+    raw_timeout = raw.get("timeout")
+    if raw_timeout is not None:
+        # bool is an int subclass — `timeout = true` must not become a 1s budget.
+        if (
+            isinstance(raw_timeout, bool)
+            or not isinstance(raw_timeout, int | float)
+            or raw_timeout <= 0
+        ):
+            msg = f"{path}.timeout must be a positive number (seconds), got {raw_timeout!r}"
+            raise ValueError(msg)
+        budget = float(raw_timeout)
     extra = {k: v for k, v in raw.items() if k not in _STRUCTURAL_KEYS}
-    return AgentSpec(cli=cli, model=model, extra=extra)
+    return AgentSpec(cli=cli, model=model, extra=extra, time_budget_s=budget)
 
 
 def _chain_from_toml(contract: ContractName, section: Mapping[str, Any]) -> list[AgentSpec]:
@@ -280,7 +299,14 @@ class _Dispatcher:
                 prompt_template=self._prompt,
                 render_data={"contract_version": str(payload.get("contract_version", 1))},
                 contract_payload=payload,
-                time_budget_s=self._chain.time_budget_s,
+                # Per-link: the provider's own `timeout` override, else the
+                # contract default (see ProviderChain — budget x chain length
+                # is the worst-case dispatch wall-clock).
+                time_budget_s=(
+                    spec.time_budget_s
+                    if spec.time_budget_s is not None
+                    else self._chain.time_budget_s
+                ),
                 cancel=self._cancel,
             )
         except AgentTimeoutError as exc:

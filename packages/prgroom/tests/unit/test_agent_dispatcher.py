@@ -267,6 +267,57 @@ def test_absent_section_still_falls_through_to_the_default(tmp_path: Path) -> No
     ]
 
 
+def test_provider_timeout_key_overrides_that_links_budget(tmp_path: Path) -> None:
+    # The HLD names per-provider TOML config for model + timeout: a provider-level
+    # `timeout` (seconds) overrides the contract default for THAT link only; links
+    # without one keep the contract default. The key is structural, not `extra`.
+    cfg = tmp_path / ".prgroom.toml"
+    cfg.write_text(
+        "\n".join(
+            [
+                "[agents.cluster]",
+                'primary = { cli = "ollama", model = "gemma4", timeout = 300 }',
+                'fallback = { cli = "claude", model = "haiku" }',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    chain = load_chain("cluster", repo_config=cfg, model_override=None)
+    assert chain.providers[0].time_budget_s == 300.0
+    assert "timeout" not in chain.providers[0].extra
+    assert chain.providers[1].time_budget_s is None  # falls back to the contract budget
+
+
+def test_dispatcher_honors_a_per_link_timeout_override() -> None:
+    # The per-link override must actually reach the runner; the un-overridden link
+    # still gets the chain's contract default.
+    runner = FakeAgentRunner([TimesOut(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(
+            AgentSpec("ollama", "gemma4", time_budget_s=7.0), AgentSpec("claude", "haiku")
+        ),
+    )
+    dispatcher.cluster(_cluster_input())
+    assert runner.calls[0]["time_budget_s"] == 7.0  # the link's own override
+    assert runner.calls[1]["time_budget_s"] == 5.0  # the chain default
+
+
+def test_provider_timeout_must_be_a_positive_number(tmp_path: Path) -> None:
+    # Invalid timeouts are rejected naming the full agents.<contract>.<key>.timeout
+    # path — never silently swallowed into `extra` (the pre-fix behavior).
+    for bad in ('"5m"', "-3", "0", "true"):
+        cfg = tmp_path / ".prgroom.toml"
+        cfg.write_text(
+            f'[agents.cluster]\nprimary = {{ cli = "ollama", model = "g", timeout = {bad} }}\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(
+            ValueError, match=r"agents\.cluster\.primary\.timeout must be a positive number"
+        ):
+            load_chain("cluster", repo_config=cfg, model_override=None)
+
+
 def test_model_override_replaces_the_primary_model_only() -> None:
     # --cluster-model / --fix-model swaps the primary provider's model, keeping its
     # cli + the rest of the chain (operator wants "the same provider, this model").

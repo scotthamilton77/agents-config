@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -57,19 +58,35 @@ INPUT_SECTION_KEY = "input_section"
 # The four agent CLIs §5 names. The value is the cli token in TOML config.
 _KNOWN_CLIS = frozenset({"claude", "codex", "opencode", "ollama"})
 
+# The `extra` keys each invoker actually consumes. Anything else in a provider
+# table is warned about (a typo like `effrot` must not vanish silently) but NOT
+# rejected — `extra` is a deliberate growth surface.
+_RECOGNIZED_EXTRA: dict[str, frozenset[str]] = {
+    "claude": frozenset({"effort"}),
+    "codex": frozenset({"write"}),
+    "opencode": frozenset(),
+    "ollama": frozenset(),
+}
+
+_logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, slots=True)
 class AgentSpec:
     """One provider's config: which CLI, which model, and CLI-specific extras.
 
-    ``extra`` carries the per-provider TOML knobs that are not universal —
-    ``effort`` (claude), ``write`` (codex). Unknown keys for a given CLI are
-    ignored by its invoker, so the config surface can grow without breaking.
+    ``time_budget_s`` is the provider-level ``timeout`` TOML key: when set it
+    overrides the contract's default budget for THIS chain link only; ``None``
+    means "use the contract default". ``extra`` carries the per-provider TOML
+    knobs that are not universal — ``effort`` (claude), ``write`` (codex).
+    Unknown keys for a given CLI are warned about and ignored by its invoker,
+    so the config surface can grow without breaking.
     """
 
     cli: str
     model: str
     extra: dict[str, Any] = field(default_factory=dict)
+    time_budget_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +265,13 @@ def build_invocation(spec: AgentSpec, *, prompt: str) -> AgentInvocation:
     if invoker is None:
         msg = f"unknown agent cli: {spec.cli!r} (expected one of {sorted(_KNOWN_CLIS)})"
         raise ValueError(msg)
+    unrecognized = sorted(set(spec.extra) - _RECOGNIZED_EXTRA[spec.cli])
+    if unrecognized:
+        _logger.warning(
+            "ignoring unrecognized config keys for cli %r: %s",
+            spec.cli,
+            ", ".join(unrecognized),
+        )
     return invoker(spec, prompt)
 
 
