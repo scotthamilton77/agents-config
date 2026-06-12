@@ -407,11 +407,11 @@ class SubprocessAgentRunner:
 
     def _write_payload(self, payload: dict[str, Any]) -> Path:
         fd, name = tempfile.mkstemp(suffix=".json", prefix="prgroom-agent-", dir=self._scratch_dir)
-        os.close(fd)
-        path = Path(name)
-        with path.open("w", encoding="utf-8") as fh:
+        # Write through the fd mkstemp returned: reopening by path would leave a
+        # TOCTOU window where the path could be swapped between close and open.
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(payload, fh)
-        return path
+        return Path(name)
 
     def _spawn_and_wait(
         self,
