@@ -92,8 +92,11 @@ _CHAIN_KEYS = ("primary", "fallback", "fallback2", "fallback3")
 _STRUCTURAL_KEYS = frozenset({"cli", "model", "timeout"})
 
 # Cap on a single link's failure reason in the escalation detail (post-collapse),
-# so a verbose agent stderr cannot bloat the one-line summary.
+# so a verbose agent stderr cannot bloat the one-line summary. Capping keeps the
+# head AND the tail (tracebacks and CLI stderr put the actual error LAST).
 _REASON_MAX_CHARS = 120
+_REASON_HEAD_CHARS = 40
+_REASON_ELLIPSIS = " ... "
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,9 +248,14 @@ class _LinkFailure:
 
     def __post_init__(self) -> None:
         # Collapse all whitespace (one-line guarantee), then cap so a huge agent
-        # stderr cannot bloat the escalation detail. Both apply to every source.
+        # stderr cannot bloat the escalation detail. The cap keeps head AND tail:
+        # the informative line of a traceback is the LAST one, so head-only
+        # truncation would keep boilerplate and drop the cause.
         collapsed = " ".join(self.reason.split())
-        object.__setattr__(self, "reason", collapsed[:_REASON_MAX_CHARS])
+        if len(collapsed) > _REASON_MAX_CHARS:
+            tail_chars = _REASON_MAX_CHARS - _REASON_HEAD_CHARS - len(_REASON_ELLIPSIS)
+            collapsed = collapsed[:_REASON_HEAD_CHARS] + _REASON_ELLIPSIS + collapsed[-tail_chars:]
+        object.__setattr__(self, "reason", collapsed)
 
 
 class _Dispatcher:
@@ -367,10 +375,47 @@ class _Dispatcher:
             return _LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}", kind="timeout")
         except FileNotFoundError:
             return _LinkFailure(spec, "binary not on PATH", kind="unavailable")
+        except OSError as exc:
+            # Present-but-unspawnable (non-executable binary, exec-format error) is
+            # the same provider-unavailable trigger as a missing one — fall through.
+            return _LinkFailure(spec, f"spawn failed: {exc}", kind="unavailable")
         if result.returncode != 0:
             # _LinkFailure normalizes whitespace + caps length centrally.
             return _LinkFailure(spec, f"exit {result.returncode}: {result.stderr}", kind="error")
         return result.stdout
+
+
+def _loads_lenient(stdout: str) -> Any:
+    """Parse agent stdout as JSON, tolerating banner noise around the object.
+
+    Strict parse first (the §5 contract: pure JSON on stdout). On failure, scan the
+    text for complete top-level JSON objects and return the LAST one — real CLIs
+    decorate stdout with progress lines and timing banners, and exhausting a whole
+    chain over decoration is worse than reading the object out of it. No parseable
+    object at all raises :class:`ValueError`, so the attempt becomes this link's
+    malformed-output failure and falls through.
+    """
+    try:
+        return json.loads(stdout)
+    except ValueError:
+        pass
+    decoder = json.JSONDecoder()
+    found = False
+    last: Any = None
+    idx = stdout.find("{")
+    while idx != -1:
+        try:
+            obj, end = decoder.raw_decode(stdout, idx)
+        except ValueError:
+            idx = stdout.find("{", idx + 1)
+            continue
+        found = True
+        last = obj
+        idx = stdout.find("{", end)
+    if not found:
+        msg = "no JSON object in agent stdout"
+        raise ValueError(msg)
+    return last
 
 
 class ClusterDispatcher(_Dispatcher):
@@ -379,7 +424,9 @@ class ClusterDispatcher(_Dispatcher):
     _contract: ContractName = "cluster"
 
     def cluster(self, request: ClusterInput) -> ClusterOutput:
-        return self._run_chain(request.to_dict(), lambda s: ClusterOutput.from_dict(json.loads(s)))
+        return self._run_chain(
+            request.to_dict(), lambda s: ClusterOutput.from_dict(_loads_lenient(s))
+        )
 
 
 class FixDispatcher(_Dispatcher):
@@ -388,7 +435,7 @@ class FixDispatcher(_Dispatcher):
     _contract: ContractName = "fix"
 
     def fix(self, request: FixInput) -> FixOutput:
-        return self._run_chain(request.to_dict(), lambda s: FixOutput.from_dict(json.loads(s)))
+        return self._run_chain(request.to_dict(), lambda s: FixOutput.from_dict(_loads_lenient(s)))
 
 
 def _render_failures(contract: ContractName, failures: list[_LinkFailure]) -> str:

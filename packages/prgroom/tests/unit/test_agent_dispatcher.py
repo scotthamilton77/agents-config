@@ -72,6 +72,10 @@ class BinaryMissing(_Outcome):
     """The agent binary was not on PATH (FileNotFoundError) — a fallback trigger."""
 
 
+class SpawnOSError(_Outcome):
+    """Spawn failed with a non-FileNotFound OSError (present but not executable)."""
+
+
 class FakeAgentRunner:
     """Replays one queued :class:`_Outcome` per ``run`` call, recording every call.
 
@@ -127,6 +131,8 @@ class FakeAgentRunner:
             raise AgentCancelledError(
                 tier=Tier.RUNTIME_CANCELLED, code=ErrorCode.RUNTIME_CANCELLED_SIGTERM, signum=15
             )
+        if isinstance(outcome, SpawnOSError):
+            raise PermissionError(13, "Permission denied", spec.cli)
         raise FileNotFoundError(2, "No such file or directory", spec.cli)
 
 
@@ -463,6 +469,75 @@ def test_multiline_stderr_collapses_to_a_single_line_detail() -> None:
     detail = excinfo.value.detail
     assert "\n" not in detail
     assert "Traceback" in detail and "RuntimeError: boom" in detail  # content preserved
+
+
+def test_spawn_oserror_falls_through_like_binary_missing() -> None:
+    # A present-but-non-executable binary (PermissionError, exec-format error) is
+    # morally the same provider-unavailable trigger as a missing one — it must fall
+    # through to the next link, never crash the whole dispatch.
+    runner = FakeAgentRunner([SpawnOSError(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku"))
+    )
+    dispatcher.cluster(_cluster_input())
+    assert [s.cli for s in runner.specs_tried] == ["ollama", "claude"]
+
+
+def test_spawn_oserror_detail_names_the_failure() -> None:
+    runner = FakeAgentRunner([SpawnOSError()])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    with pytest.raises(AllProvidersFailedError) as excinfo:
+        dispatcher.cluster(_cluster_input())
+    assert "spawn failed" in excinfo.value.detail
+    assert "Permission denied" in excinfo.value.detail
+
+
+def test_long_failure_reason_keeps_the_informative_tail() -> None:
+    # Tracebacks and CLI stderr put the real error LAST — head-only truncation kept
+    # pure boilerplate and dropped the cause. The cap must keep head AND tail.
+    long_stderr = (
+        "Traceback (most recent call last):\n"
+        + "\n".join(f'  File "/x/mod{i}.py", line {i}, in step{i}' for i in range(10))
+        + "\nRuntimeError: the actual cause"
+    )
+    runner = FakeAgentRunner([ExitsWith(1, long_stderr)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    with pytest.raises(AllProvidersFailedError) as excinfo:
+        dispatcher.cluster(_cluster_input())
+    detail = excinfo.value.detail
+    assert "Traceback" in detail  # the head survives
+    assert "RuntimeError: the actual cause" in detail  # the tail survives the cap
+
+
+# ── lenient stdout parsing: banner noise must not exhaust the chain ──
+
+
+def test_banner_wrapped_json_still_parses() -> None:
+    # Real CLIs decorate stdout (progress lines, timing banners). The contract
+    # object inside the noise must parse rather than exhausting the whole chain.
+    noisy = "Loading model gemma4...\n" + CLUSTER_OK + "\nDone in 3.2s"
+    runner = FakeAgentRunner([Succeeds(noisy)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    out = dispatcher.cluster(_cluster_input())
+    assert out.clusters == []
+
+
+def test_stray_brace_in_banner_noise_is_skipped() -> None:
+    # A "{" that does not start a valid JSON object (shell prompt art, progress
+    # format strings) must be skipped over, not abort the scan.
+    noisy = "progress {percent} done " + CLUSTER_OK
+    runner = FakeAgentRunner([Succeeds(noisy)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    out = dispatcher.cluster(_cluster_input())
+    assert out.clusters == []
+
+
+def test_last_json_object_wins_when_stdout_carries_several() -> None:
+    noisy = '{"progress": "warming up"} chatter ' + CLUSTER_OK
+    runner = FakeAgentRunner([Succeeds(noisy)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    out = dispatcher.cluster(_cluster_input())
+    assert out.clusters == []  # the LAST object is the contract output
 
 
 def test_fix_dispatcher_parses_fix_output() -> None:
