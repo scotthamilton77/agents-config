@@ -17,7 +17,7 @@ maps to a ``failed`` disposition + ``EscalationSink`` event (§5), never a crash
 
 The chain is resolved by :func:`load_chain` from the per-repo ``.prgroom.toml``
 ``[agents.cluster]`` / ``[agents.fix]`` sections — read through the foundation TOML
-loader (:func:`prgroom.config._read_toml`) so the agent config shares the one
+loader (:func:`prgroom.config.read_toml`) so the agent config shares the one
 ``.prgroom.toml`` parse path — falling back to the shipped default chains. A
 ``--cluster-model`` / ``--fix-model`` override swaps the primary provider's model.
 
@@ -51,7 +51,7 @@ from prgroom.agent.subprocess_runner import (
     AgentTimeoutError,
 )
 from prgroom.agent.usage import UsageRecord
-from prgroom.config import _read_toml, _subtable
+from prgroom.config import read_toml, subtable
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.prsession.pr_ref import PRRef
 
@@ -204,8 +204,8 @@ def load_chain(
     ``--fix-model``) swaps the **primary** provider's model only, leaving its cli
     and the rest of the chain intact — "same provider, this model".
     """
-    table = _read_toml(repo_config)
-    agents = _subtable(table, "agents")
+    table = read_toml(repo_config)
+    agents = subtable(table, "agents")
     # Distinguish key-PRESENT from value-EMPTY by membership, not truthiness: an
     # empty-but-present [agents.<contract>] table is still a present section, so it
     # must route through _chain_from_toml (where the missing-primary check fires).
@@ -213,7 +213,7 @@ def load_chain(
     if contract in agents:
         section = agents[contract]
         if not isinstance(section, dict):
-            # Name the full agents.<contract> path (not _subtable's bare key) so the
+            # Name the full agents.<contract> path (not subtable's bare key) so the
             # error matches the per-provider agents.<contract>.<key> errors below.
             msg = f"agents.{contract} must be a table, got {section!r}"
             raise ValueError(msg)
