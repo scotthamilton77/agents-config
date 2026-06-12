@@ -75,7 +75,11 @@ def _patch_body_section(
     if precision is Precision.APPEND:
         at = _append_point(lines, idx, end)
         return lines[:at] + content_lines + lines[at:]
-    raise NotImplementedError  # REPLACE lands in Task 3
+    # Precision.REPLACE: swap the body; both boundary headers survive. At
+    # EOF (no next-section header) the replacement is newline-terminated.
+    if end == len(lines) and content_lines[-1] != "":
+        content_lines = [*content_lines, ""]
+    return lines[: idx + 1] + content_lines + lines[end:]
 
 
 def _append_point(lines: list[str], idx: int, end: int) -> int:

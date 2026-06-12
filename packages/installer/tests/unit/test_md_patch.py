@@ -61,3 +61,44 @@ def test_prepend_is_physically_identical_to_insert_after() -> None:
     via_prepend = apply_patch(doc, section="Foo", precision=Precision.PREPEND, content="X\nY")
     via_insert = apply_patch(doc, section="Foo", precision=Precision.INSERT_AFTER, content="X\nY")
     assert via_prepend == via_insert == "## Foo\nX\nY\nbody\n## Next\n"
+
+
+def test_replace_swaps_body_and_preserves_both_boundary_headers() -> None:
+    out = apply_patch(
+        "## Foo\nold1\nold2\n## Next\nkeep\n",
+        section="Foo",
+        precision=Precision.REPLACE,
+        content="new",
+    )
+    assert out == "## Foo\nnew\n## Next\nkeep\n"
+
+
+def test_replace_keeps_nested_subsection_inside_the_replaced_range() -> None:
+    """A depth D+1 header does NOT terminate the section — it is part of the
+    body and is consumed by replace (R4 boundary: next header at depth <= D)."""
+    out = apply_patch(
+        "## Foo\nbody\n### Sub\nsub-body\n## Next\n",
+        section="Foo",
+        precision=Precision.REPLACE,
+        content="new",
+    )
+    assert out == "## Foo\nnew\n## Next\n"
+
+
+def test_replace_on_last_section_runs_to_eof_and_terminates_with_newline() -> None:
+    """No next-section boundary: body extends to EOF; replacement content is
+    newline-terminated if not already (R4)."""
+    out = apply_patch("## Foo\nold\n", section="Foo", precision=Precision.REPLACE, content="new")
+    assert out == "## Foo\nnew\n"
+
+
+def test_append_skips_nested_subsection_boundary_and_lands_at_section_end() -> None:
+    """Counterpart pin for append: the D+1 subsection is inside the body, so
+    append lands after ITS last non-blank line (AC #3 nested-subsection case)."""
+    out = apply_patch(
+        "## Foo\nbody\n### Sub\nsub-body\n## Next\n",
+        section="Foo",
+        precision=Precision.APPEND,
+        content="X",
+    )
+    assert out == "## Foo\nbody\n### Sub\nsub-body\nX\n## Next\n"
