@@ -240,7 +240,8 @@ def _invocation_for_opencode(spec: AgentSpec, prompt: str) -> AgentInvocation:
 
 def _invocation_for_ollama(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # ollama reads the prompt on STDIN (`ollama run <model>`), so the prompt — which
-    # carries the input path — is fed on stdin, not as an argv positional.
+    # carries the contract payload INLINE (see _input_section; a tool-less ollama
+    # child cannot open files) — is fed on stdin, not as an argv positional.
     return AgentInvocation(argv=["ollama", "run", spec.model], stdin=prompt)
 
 
@@ -255,11 +256,12 @@ _INVOKERS: dict[str, Callable[[AgentSpec, str], AgentInvocation]] = {
 def build_invocation(spec: AgentSpec, *, prompt: str) -> AgentInvocation:
     """Build the argv/stdin shape for ``spec.cli`` (§5 per-invoker shapes).
 
-    ``prompt`` is the fully-rendered prompt that already names the contract input
-    file by path (none of the four CLIs has an ``--input-file`` flag — the agent
-    reads the path out of the prompt). Raises :class:`ValueError` for a cli outside
-    the four §5 runtimes — a config typo must fail loudly at dispatch, not silently
-    pick a default.
+    ``prompt`` is the fully-rendered prompt whose payload-delivery section was
+    already filled per-invoker (path for file-capable CLIs, inline content for
+    ollama — none of the four CLIs has an ``--input-file`` flag, so delivery lives
+    in the prompt). Raises :class:`ValueError` for a cli outside the four §5
+    runtimes — a config typo must fail loudly at dispatch, not silently pick a
+    default.
     """
     invoker = _INVOKERS.get(spec.cli)
     if invoker is None:
