@@ -34,11 +34,15 @@ class UsageRecord:
     provider: str
     """The agent CLI that ran (``claude`` / ``codex`` / ``opencode`` / ``ollama``)."""
     model: str
-    input_tokens: int
-    output_tokens: int
+    input_tokens: int | None
+    """Prompt tokens from the agent CLI's usage line; ``None`` until a usage-line
+    parser exists to extract them (serializes as JSON null)."""
+    output_tokens: int | None
     duration_ms: int
     outcome: str
-    """``success`` / ``timeout`` / ``error`` — the invocation's terminal disposition."""
+    """``success`` / ``timeout`` / ``unavailable`` / ``error`` / ``malformed`` /
+    ``cancelled`` — the attempt's terminal disposition, one record per chain link
+    tried (the dispatcher emits these through its usage hook)."""
 
     def to_dict(self) -> dict[str, Any]:
         """The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand."""

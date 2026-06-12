@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
@@ -43,12 +45,15 @@ from prgroom.agent.contracts import (
 )
 from prgroom.agent.prompt_loader import PromptTemplate, load_prompt
 from prgroom.agent.subprocess_runner import (
+    AgentCancelledError,
     AgentRunner,
     AgentSpec,
     AgentTimeoutError,
 )
+from prgroom.agent.usage import UsageRecord
 from prgroom.config import _read_toml, _subtable
 from prgroom.errors import ErrorCode, PrgroomError, Tier
+from prgroom.prsession.pr_ref import PRRef
 
 ContractName = Literal["cluster", "fix"]
 
@@ -218,6 +223,10 @@ def load_chain(
     return ProviderChain(providers=specs, time_budget_s=_DEFAULT_BUDGETS[contract])
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 @dataclass(frozen=True, slots=True)
 class _LinkFailure:
     """One chain link's failure, recorded for the both-fail escalation detail.
@@ -225,11 +234,14 @@ class _LinkFailure:
     ``reason`` is normalized to a single line at construction: every source (an
     agent stderr, a timeout ``detail``, a parse exception message) may contain
     interior newlines, but the escalation ``detail`` is documented as a one-line
-    summary — so collapse all whitespace once, centrally, here.
+    summary — so collapse all whitespace once, centrally, here. ``kind`` is the
+    usage-telemetry outcome tag for the failed attempt (``timeout`` /
+    ``unavailable`` / ``error`` / ``malformed``).
     """
 
     spec: AgentSpec
     reason: str
+    kind: str
 
     def __post_init__(self) -> None:
         # Collapse all whitespace (one-line guarantee), then cap so a huge agent
@@ -256,6 +268,9 @@ class _Dispatcher:
         chain: ProviderChain,
         prompt: PromptTemplate | None = None,
         cancel: threading.Event | None = None,
+        usage_hook: Callable[[UsageRecord], None] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        now: Callable[[], str] = _utc_now_iso,
     ) -> None:
         self._runner = runner
         self._chain = chain
@@ -266,6 +281,13 @@ class _Dispatcher:
         # (or the run verb's SIGTERM handler) can abort an in-flight dispatch — the
         # contract surfaces (cluster()/fix()) carry no parameter for it.
         self._cancel = cancel
+        # §5 usage logging: one UsageRecord per ATTEMPT (failed links included) is
+        # pushed through this hook — the lifecycle wires it to usage.append_usage.
+        # Token counts stay None until a usage-line parser exists. `clock` (monotonic,
+        # durations) and `now` (wall, the ts field) are injectable so tests never sleep.
+        self._usage_hook = usage_hook
+        self._clock = clock
+        self._now = now
 
     def _run_chain(self, payload: dict[str, Any], parse: Callable[[str], T]) -> T:
         """Try each provider; return the first parseable output, else raise both-fail.
@@ -277,19 +299,51 @@ class _Dispatcher:
         """
         failures: list[_LinkFailure] = []
         for spec in self._chain.providers:
-            outcome = self._try_one(spec, payload)
+            started = self._clock()
+            try:
+                outcome = self._try_one(spec, payload)
+            except AgentCancelledError:
+                # The abort-everything path still leaves a telemetry trace of the
+                # attempt before propagating past the ladder.
+                self._emit_usage(spec, payload, started=started, outcome="cancelled")
+                raise
             if isinstance(outcome, _LinkFailure):
+                self._emit_usage(spec, payload, started=started, outcome=outcome.kind)
                 failures.append(outcome)
                 continue
             try:
-                return parse(outcome)
+                parsed = parse(outcome)
             except (KeyError, TypeError, ValueError) as exc:
                 # ValueError subsumes json.JSONDecodeError AND an out-of-enum
                 # DispositionKind (StrEnum raises ValueError): a model emitting bogus
                 # JSON or a bogus disposition is THIS provider's malformed output —
                 # fall through to the next link, never crash the whole dispatch.
-                failures.append(_LinkFailure(spec, f"malformed output: {exc}"))
+                self._emit_usage(spec, payload, started=started, outcome="malformed")
+                failures.append(_LinkFailure(spec, f"malformed output: {exc}", kind="malformed"))
+                continue
+            self._emit_usage(spec, payload, started=started, outcome="success")
+            return parsed
         raise AllProvidersFailedError(detail=_render_failures(self._contract, failures))
+
+    def _emit_usage(
+        self, spec: AgentSpec, payload: dict[str, Any], *, started: float, outcome: str
+    ) -> None:
+        """Push one per-attempt :class:`UsageRecord` through the hook, if wired."""
+        if self._usage_hook is None:
+            return
+        self._usage_hook(
+            UsageRecord(
+                ts=self._now(),
+                pr=PRRef.from_dict(payload["pr"]),
+                contract=self._contract,
+                provider=spec.cli,
+                model=spec.model,
+                input_tokens=None,
+                output_tokens=None,
+                duration_ms=int((self._clock() - started) * 1000),
+                outcome=outcome,
+            )
+        )
 
     def _try_one(self, spec: AgentSpec, payload: dict[str, Any]) -> str | _LinkFailure:
         """Run one provider; return its stdout on a 0-exit, else a :class:`_LinkFailure`."""
@@ -310,12 +364,12 @@ class _Dispatcher:
                 cancel=self._cancel,
             )
         except AgentTimeoutError as exc:
-            return _LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}")
+            return _LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}", kind="timeout")
         except FileNotFoundError:
-            return _LinkFailure(spec, "binary not on PATH")
+            return _LinkFailure(spec, "binary not on PATH", kind="unavailable")
         if result.returncode != 0:
             # _LinkFailure normalizes whitespace + caps length centrally.
-            return _LinkFailure(spec, f"exit {result.returncode}: {result.stderr}")
+            return _LinkFailure(spec, f"exit {result.returncode}: {result.stderr}", kind="error")
         return result.stdout
 
 

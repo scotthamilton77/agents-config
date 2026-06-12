@@ -36,6 +36,7 @@ from prgroom.agent.subprocess_runner import (
     AgentSpec,
     AgentTimeoutError,
 )
+from prgroom.agent.usage import UsageRecord
 from prgroom.errors import ErrorCode, PrgroomError, Tier, exit_code_for_tier
 from prgroom.prsession.pr_ref import PRRef
 
@@ -494,6 +495,73 @@ def test_malformed_agent_json_falls_through_to_the_next_provider() -> None:
     )
     dispatcher.cluster(_cluster_input())
     assert [s.cli for s in runner.specs_tried] == ["ollama", "claude"]
+
+
+# ── usage telemetry: one record per attempt escapes the dispatcher ──
+
+
+def test_usage_hook_emits_one_record_per_attempt_across_the_ladder() -> None:
+    # Per-invocation telemetry must escape the dispatcher — one record per attempt,
+    # failed links included — or the fallback ladder is invisible to the lifecycle
+    # and the §5 usage log can never be correct.
+    records: list[UsageRecord] = []
+    ticks = iter(range(100))
+    runner = FakeAgentRunner([TimesOut(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku")),
+        usage_hook=records.append,
+        clock=lambda: float(next(ticks)),  # 1s per clock pair -> 1000ms durations
+        now=lambda: "2026-06-12T00:00:00+00:00",
+    )
+    dispatcher.cluster(_cluster_input())
+    assert [(r.provider, r.outcome) for r in records] == [
+        ("ollama", "timeout"),
+        ("claude", "success"),
+    ]
+    first = records[0]
+    assert first.contract == "cluster"
+    assert first.model == "gemma4"
+    assert first.pr == PR  # rebuilt from the contract payload
+    assert first.ts == "2026-06-12T00:00:00+00:00"  # injected wall clock
+    assert first.duration_ms == 1000  # injected monotonic clock
+    assert first.input_tokens is None and first.output_tokens is None  # no parser yet
+
+
+def test_usage_hook_tags_unavailable_error_and_malformed_attempts() -> None:
+    records: list[UsageRecord] = []
+    runner = FakeAgentRunner(
+        [BinaryMissing(), ExitsWith(1, "quota"), Succeeds("not json"), Succeeds(CLUSTER_OK)]
+    )
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(
+            AgentSpec("ollama", "g"),
+            AgentSpec("claude", "h"),
+            AgentSpec("codex", "m"),
+            AgentSpec("opencode", "o"),
+        ),
+        usage_hook=records.append,
+    )
+    dispatcher.cluster(_cluster_input())
+    assert [r.outcome for r in records] == ["unavailable", "error", "malformed", "success"]
+
+
+def test_usage_hook_records_a_cancelled_attempt_before_the_abort() -> None:
+    # Even the abort-everything path leaves a telemetry trace of the attempt.
+    records: list[UsageRecord] = []
+    cancel = threading.Event()
+    cancel.set()
+    runner = FakeAgentRunner([Cancelled()])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "gemma4")),
+        cancel=cancel,
+        usage_hook=records.append,
+    )
+    with pytest.raises(AgentCancelledError):
+        dispatcher.cluster(_cluster_input())
+    assert [r.outcome for r in records] == ["cancelled"]
 
 
 # ── structural fit: the concrete dispatchers satisfy the foundation Protocols ──

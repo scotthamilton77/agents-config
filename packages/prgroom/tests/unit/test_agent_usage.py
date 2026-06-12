@@ -69,6 +69,32 @@ def test_append_creates_parent_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert (tmp_path / "deep" / "nested" / "prgroom" / "usage.jsonl").is_file()
 
 
+def test_none_token_counts_serialize_as_null(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No usage-line parser exists yet, so the dispatcher emits records with unknown
+    # token counts — those must serialize as JSON null, not crash or be dropped.
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    record = UsageRecord(
+        ts="2026-06-12T00:00:00+00:00",
+        pr=PRRef(owner="octo", repo="demo", number=7),
+        contract="cluster",
+        provider="ollama",
+        model="gemma4",
+        input_tokens=None,
+        output_tokens=None,
+        duration_ms=10,
+        outcome="timeout",
+    )
+    append_usage(record)
+
+    usage_file = tmp_path / "prgroom" / "usage.jsonl"
+    line = json.loads(usage_file.read_text(encoding="utf-8").splitlines()[0])
+    assert line["input_tokens"] is None
+    assert line["output_tokens"] is None
+    assert line["outcome"] == "timeout"
+
+
 def test_absent_usage_is_a_noop_not_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
