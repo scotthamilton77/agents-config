@@ -122,7 +122,9 @@ def _load_extension(yaml_path: Path) -> _Extension:
     target_file = Path(fields["target-file"])
     if target_file.is_absolute() or ".." in target_file.parts:
         raise ExtensionError(
-            yaml_path, "target-file must be a relative path inside the install root"
+            yaml_path,
+            "target-file must be a relative path inside the install root",
+            target_file=target_file,
         )
     if target_file.suffix != ".md":
         raise ExtensionError(

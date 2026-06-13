@@ -109,6 +109,21 @@ def test_schema_validation_is_terminal_with_cited_reason(
     assert exc_info.value.yaml_path == yaml_path
 
 
+def test_traversal_guard_error_carries_target_file_citation(tmp_path: Path) -> None:
+    """The relative-path guard cites ``target_file`` like the adjacent .md
+    guard, so callers keep the structured ``.target_file`` attribution (R7
+    citation consistency across sibling guards)."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00-bad.yaml",
+        _ext_yaml(target_file="../escape.md"),
+    )
+
+    with pytest.raises(ExtensionError) as exc_info:
+        apply_extensions(_plan_with_agent_md(), [plugin])
+    assert exc_info.value.target_file == Path("../escape.md")
+
+
 def test_non_utf8_extension_file_is_terminal_with_cited_reason(tmp_path: Path) -> None:
     """A non-UTF-8 extension yaml is a cited terminal ExtensionError (R7),
     mirroring _apply_one's UTF-8 handling for target markdown — not a raw
