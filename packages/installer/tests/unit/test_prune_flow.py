@@ -19,7 +19,10 @@ Covered decisions:
 - a malformed timestamp under a deleting path (auto_yes) raises before any delete,
 - a malformed timestamp under dry_run does NOT raise (no timestamp is resolved),
 - a symlink-to-directory orphan is unlinked (not rmtree'd): the link is removed,
-  its target directory survives, and the flow completes without raising.
+  its target directory survives, and the flow completes without raising,
+- a broken-symlink orphan (link present, target missing) is unlinked WITHOUT a
+  backup: ``exists()`` is False so backup is skipped (backed_up == 0), the link
+  is still removed (pruned == 1), and the flow does not raise.
 """
 
 from __future__ import annotations
@@ -308,4 +311,35 @@ def test_symlink_to_directory_orphan_unlinked_not_rmtree(tmp_path: Path) -> None
     assert not link.is_symlink()
     assert target_dir.is_dir()  # the link target is untouched
     assert (target_dir / "keep.md").read_text() == "survives"
+    assert counters.pruned == 1
+
+
+def test_broken_symlink_orphan_unlinked_without_backup(tmp_path: Path) -> None:
+    """
+    Given a skills/ orphan that is a symlink whose target does not exist
+    When run_prune deletes it under auto_yes
+    Then the backup is skipped (backed_up == 0), the dangling link is still
+    removed (pruned == 1), and the flow completes without raising.
+
+    Pins the existence guard in ``_back_up_and_delete``: ``Path.exists()`` follows
+    the link to a missing target and returns False, so ``back_up`` (which would
+    fall through to ``copy2`` on the dead link and raise ``FileNotFoundError``,
+    aborting the whole prune run) must be skipped — mirroring the bash
+    ``backup()`` ``[[ -e ]]`` no-op. The broken link is still unlinked, matching
+    ``rm -rf`` removing a dangling symlink.
+    """
+    ns_dir = tmp_path / ".claude" / "skills"
+    ns_dir.mkdir(parents=True)
+    link = ns_dir / "dangling"
+    link.symlink_to(tmp_path / "does-not-exist")
+    assert link.is_symlink()
+    assert not link.exists()  # broken: target is missing
+    orphan = Orphan(tool="claude", namespace="skills", path=link, kind="file")
+
+    io = ScriptedIO(interactive=False)
+
+    counters = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
+
+    assert not link.is_symlink()  # the dangling link is gone
+    assert counters.backed_up == 0  # nothing to back up
     assert counters.pruned == 1

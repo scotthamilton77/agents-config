@@ -151,12 +151,18 @@ def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> Cou
 def _back_up_and_delete(orphan: Orphan, *, io: IOPort, timestamp: str, counters: Counters) -> None:
     """Back up an orphan, then remove it (bash ``_delete_orphan``, install.sh:1580-1588).
 
-    Backup ALWAYS precedes deletion so the original bytes are recoverable even
-    if the delete is interrupted.
+    Backup precedes deletion so the original bytes are recoverable even if the
+    delete is interrupted — but only when there is something to back up. A broken
+    symlink (or a path that vanished mid-run) has nothing recoverable: ``exists()``
+    follows the dead link to a missing target and returns False, so ``back_up``
+    would fall through to ``copy2``/``copytree`` and raise, aborting the whole run.
+    Mirror the bash ``backup()`` ``[[ -e "$target" ]]`` no-op — skip the backup but
+    still remove the link below (``rm -rf`` deletes a broken link unconditionally).
     """
-    dest = back_up(orphan.path, timestamp)
-    counters.backed_up += 1
-    io.info(f"Backed up {orphan.path.name} -> {dest.parent.name}/{dest.name}", verbose=True)
+    if orphan.path.exists():
+        dest = back_up(orphan.path, timestamp)
+        counters.backed_up += 1
+        io.info(f"Backed up {orphan.path.name} -> {dest.parent.name}/{dest.name}", verbose=True)
     # A symlink (to a dir OR a file) is removed with ``unlink``, which deletes
     # the link itself, never its target. ``rmtree`` is reserved for real
     # directories: ``Path.is_dir()`` follows symlinks, so a dir-symlink would
