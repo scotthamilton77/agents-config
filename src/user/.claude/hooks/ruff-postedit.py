@@ -27,10 +27,15 @@ def _read_file_path():
     if not isinstance(payload, dict):
         return None
     tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return None
     fp = tool_input.get("file_path")
     if not fp or not isinstance(fp, str):
         return None
-    return Path(fp).resolve()
+    try:
+        return Path(fp).resolve()
+    except OSError:
+        return None
 
 
 def _find_config_root(start: Path):

@@ -64,6 +64,11 @@ assert_rc "malformed JSON -> exit 0" 0 "$RC"
 run_hook "{}"
 assert_rc "missing file_path -> exit 0" 0 "$RC"
 
+# 6b. tool_input present but not a dict (string) -> silent 0, no traceback
+run_hook "{\"tool_input\":\"oops\"}"
+assert_rc "non-dict tool_input -> exit 0" 0 "$RC"
+case "$ERR" in *Traceback*) FAIL=$((FAIL+1)); echo "FAIL: non-dict tool_input emitted a traceback";; *) PASS=$((PASS+1));; esac
+
 # 7. ruff absent (PATH has only python3) -> silent 0
 PYBIN="$WORK/pybin"; mkdir -p "$PYBIN"; ln -s "$(command -v python3)" "$PYBIN/python3"
 ERR="$(printf '%s' "{\"tool_input\":{\"file_path\":\"$PROJ/clean.py\"}}" | PATH="$PYBIN" python3 "$HOOK" 2>&1 >/dev/null)"; RC=$?
