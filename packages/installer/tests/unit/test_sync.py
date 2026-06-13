@@ -364,3 +364,328 @@ def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path
             home=dest_root,
             io=ScriptedIO(),
         )
+
+
+# ─────────────────────── G.1: path-aware backup ───────────────────────
+#
+# These tests pin the path-aware backup contract ported from the bash
+# installer's backup() (scripts/install.sh:352-388): an existing
+# destination that is about to be overwritten is copied to a timestamped
+# backup BEFORE the write. The routing decision is coded — a scoped
+# namespace dir routes to a sibling <ns>-backup/, everything else gets an
+# in-place .backup-<ts> suffix — so each test pins that decision, not
+# Path/shutil semantics.
+
+_FIXED_TS = "20260613-120000"
+
+
+@pytest.mark.parametrize("namespace", ["commands", "skills", "agents", "rules", "formulas"])
+def test_overwrite_in_scoped_namespace_backs_up_to_sibling_dir(
+    tmp_path: Path, namespace: str
+) -> None:
+    """
+    Given an existing destination inside a scoped namespace dir whose
+    bytes differ from the source
+    When sync overwrites it
+    Then the original bytes are copied to a sibling ``<namespace>-backup/``
+    directory under a ``<name>.backup-<ts>`` filename — the coded routing
+    decision for the five prune-managed namespaces.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / namespace).mkdir(parents=True)
+    (dest_root / namespace).mkdir(parents=True)
+    (src_root / namespace / "f.md").write_bytes(b"new\n")
+    (dest_root / namespace / "f.md").write_bytes(b"old\n")
+
+    sync(
+        _IdentityAdapter(),
+        Path(namespace) / "f.md",
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    backup = dest_root / f"{namespace}-backup" / f"f.md.backup-{_FIXED_TS}"
+    assert backup.read_bytes() == b"old\n"
+    assert (dest_root / namespace / "f.md").read_bytes() == b"new\n"
+
+
+def test_overwrite_outside_namespace_backs_up_in_place(tmp_path: Path) -> None:
+    """
+    Given an existing destination NOT inside a scoped namespace dir whose
+    bytes differ from the source
+    When sync overwrites it
+    Then the original bytes are copied alongside the file under a
+    ``<name>.backup-<ts>`` suffix — the coded fallback routing decision.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    src_root.mkdir()
+    dest_root.mkdir()
+    (src_root / "AGENTS.md").write_bytes(b"new\n")
+    (dest_root / "AGENTS.md").write_bytes(b"old\n")
+
+    sync(
+        _IdentityAdapter(),
+        Path("AGENTS.md"),
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    backup = dest_root / f"AGENTS.md.backup-{_FIXED_TS}"
+    assert backup.read_bytes() == b"old\n"
+    assert (dest_root / "AGENTS.md").read_bytes() == b"new\n"
+
+
+def test_namespace_routing_keys_on_parent_dir_not_path_depth(tmp_path: Path) -> None:
+    """
+    Given a destination whose immediate parent is a scoped namespace dir
+    that is itself nested below the root (``tool_dir/commands/f.md``)
+    When sync overwrites it
+    Then routing keys on the immediate parent's name regardless of how deep
+    the namespace sits — backup lands in a sibling ``commands-backup/``
+    beside the nested ``commands`` dir, mirroring the bash
+    ``basename "$(dirname "$target")"`` decision, not the file's depth.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    rel = Path("tool_dir") / "commands" / "f.md"
+    (src_root / "tool_dir" / "commands").mkdir(parents=True)
+    (dest_root / "tool_dir" / "commands").mkdir(parents=True)
+    (src_root / rel).write_bytes(b"new\n")
+    (dest_root / rel).write_bytes(b"old\n")
+
+    sync(
+        _IdentityAdapter(),
+        rel,
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    backup = dest_root / "tool_dir" / "commands-backup" / f"f.md.backup-{_FIXED_TS}"
+    assert backup.read_bytes() == b"old\n"
+
+
+def test_namespace_name_as_grandparent_routes_in_place(tmp_path: Path) -> None:
+    """
+    Given a nested file whose immediate parent is NOT a scoped namespace
+    but whose grandparent IS (``skills/foo/SKILL.md`` — the real nested-skill
+    case)
+    When sync overwrites it
+    Then routing falls through to the in-place ``.backup-<ts>`` suffix
+    beside the file — the namespace check keys on the immediate parent
+    (``foo``), not any ancestor, so neither ``foo-backup/`` nor
+    ``skills-backup/`` is created.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "skills" / "foo").mkdir(parents=True)
+    (dest_root / "skills" / "foo").mkdir(parents=True)
+    (src_root / "skills" / "foo" / "SKILL.md").write_bytes(b"new\n")
+    (dest_root / "skills" / "foo" / "SKILL.md").write_bytes(b"old\n")
+
+    sync(
+        _IdentityAdapter(),
+        Path("skills") / "foo" / "SKILL.md",
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    in_place = dest_root / "skills" / "foo" / f"SKILL.md.backup-{_FIXED_TS}"
+    assert in_place.read_bytes() == b"old\n"
+    assert not (dest_root / "skills" / "foo-backup").exists()
+    assert not (dest_root / "skills-backup").exists()
+
+
+def test_overwrite_increments_backed_up_counter(tmp_path: Path) -> None:
+    """
+    Given an existing destination that is overwritten
+    When sync runs
+    Then exactly one backup is counted in the returned summary alongside
+    the update.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    src_root.mkdir()
+    dest_root.mkdir()
+    (src_root / "AGENTS.md").write_bytes(b"new\n")
+    (dest_root / "AGENTS.md").write_bytes(b"old\n")
+
+    counters = sync(
+        _IdentityAdapter(),
+        Path("AGENTS.md"),
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    assert counters.backed_up == 1
+    assert counters.updated == 1
+
+
+def test_new_file_is_not_backed_up(tmp_path: Path) -> None:
+    """
+    Given a destination that does not yet exist
+    When sync creates it
+    Then no backup file or backup dir is written and nothing is counted as
+    backed up — there was no original to preserve.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "commands").mkdir(parents=True)
+    (src_root / "commands" / "f.md").write_bytes(b"hello\n")
+
+    counters = sync(
+        _IdentityAdapter(),
+        Path("commands") / "f.md",
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    assert counters.backed_up == 0
+    assert not (dest_root / "commands-backup").exists()
+
+
+def test_identical_destination_is_not_backed_up(tmp_path: Path) -> None:
+    """
+    Given a destination whose bytes already match the source (a skip)
+    When sync runs
+    Then no backup is taken — backup is coupled to the overwrite branch,
+    not to mere destination existence.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "rules").mkdir(parents=True)
+    (dest_root / "rules").mkdir(parents=True)
+    (src_root / "rules" / "f.md").write_bytes(b"same\n")
+    (dest_root / "rules" / "f.md").write_bytes(b"same\n")
+
+    counters = sync(
+        _IdentityAdapter(),
+        Path("rules") / "f.md",
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+    )
+
+    assert counters.backed_up == 0
+    assert not (dest_root / "rules-backup").exists()
+
+
+def test_dry_run_overwrite_writes_no_backup(tmp_path: Path) -> None:
+    """
+    Given --dry-run and an existing destination that would be overwritten
+    When sync runs
+    Then no backup is written to disk and none is counted — dry-run touches
+    nothing, including backups.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "rules").mkdir(parents=True)
+    (dest_root / "rules").mkdir(parents=True)
+    (src_root / "rules" / "f.md").write_bytes(b"new\n")
+    (dest_root / "rules" / "f.md").write_bytes(b"old\n")
+
+    counters = sync(
+        _IdentityAdapter(),
+        Path("rules") / "f.md",
+        repo_root=src_root,
+        home=dest_root,
+        io=ScriptedIO(),
+        dry_run=True,
+        timestamp=_FIXED_TS,
+    )
+
+    assert counters.backed_up == 0
+    assert not (dest_root / "rules-backup").exists()
+    assert (dest_root / "rules" / "f.md").read_bytes() == b"old\n"
+
+
+@pytest.mark.parametrize(
+    "bad_ts",
+    [
+        "../../evil",  # path separators — would escape <ns>-backup/
+        "2026-06-13",  # wrong shape, no separators, but not %Y%m%d-%H%M%S
+    ],
+)
+def test_malformed_timestamp_is_rejected_before_any_write(tmp_path: Path, bad_ts: str) -> None:
+    """
+    Given an existing destination that would be overwritten and a
+    caller-supplied ``timestamp`` that does not match the documented
+    ``YYYYMMDD-HHMMSS`` contract
+    When sync runs
+    Then a ValueError surfaces BEFORE any filesystem mutation: no backup
+    file or backup dir is created, and the destination keeps its original
+    bytes. Pins the coded guard that blocks a path-traversal timestamp
+    (e.g. ``../../evil``) from escaping the backup directory.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "rules").mkdir(parents=True)
+    (dest_root / "rules").mkdir(parents=True)
+    (src_root / "rules" / "f.md").write_bytes(b"new\n")
+    (dest_root / "rules" / "f.md").write_bytes(b"old\n")
+
+    with pytest.raises(ValueError):
+        sync(
+            _IdentityAdapter(),
+            Path("rules") / "f.md",
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+            timestamp=bad_ts,
+        )
+
+    # Guard fires before _backup writes anything: destination untouched and
+    # no backup landed anywhere under the dest root.
+    assert (dest_root / "rules" / "f.md").read_bytes() == b"old\n"
+    assert not (dest_root / "rules-backup").exists()
+    assert not any(dest_root.rglob("*.backup-*"))
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root bypasses the 0o444 mode bit, so the write would succeed",
+)
+def test_backup_survives_a_failed_write(tmp_path: Path) -> None:
+    """
+    Given a read-only existing destination whose bytes differ (the write
+    will raise PermissionError)
+    When sync runs
+    Then the timestamped backup of the original bytes already exists on
+    disk — proving the backup is taken BEFORE the write, so a failed write
+    leaves the original recoverable.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "rules").mkdir(parents=True)
+    (dest_root / "rules").mkdir(parents=True)
+    (src_root / "rules" / "f.md").write_bytes(b"new\n")
+    dest = dest_root / "rules" / "f.md"
+    dest.write_bytes(b"old\n")
+    dest.chmod(0o444)
+
+    with pytest.raises(PermissionError):
+        sync(
+            _IdentityAdapter(),
+            Path("rules") / "f.md",
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+            timestamp=_FIXED_TS,
+        )
+
+    backup = dest_root / "rules-backup" / f"f.md.backup-{_FIXED_TS}"
+    assert backup.read_bytes() == b"old\n"
