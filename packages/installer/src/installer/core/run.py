@@ -20,8 +20,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from installer.core.model import Counters, Tool
 from installer.core.prune import scan_orphans
 from installer.core.prune_flow import run_prune
+from installer.core.sync import sync_plan
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 
     from installer.core.installer_toml import InstallerToml
     from installer.core.io_port import IOPort
-    from installer.core.model import Counters, StagingPlan, Tool
+    from installer.core.model import StagingPlan
     from installer.tools.base import ToolAdapter
 
 
@@ -60,3 +62,41 @@ def prune_pipeline(
         prune_only=prune_only,
         timestamp=timestamp,
     )
+
+
+def install_pipeline(
+    adapters: Iterable[ToolAdapter],
+    *,
+    plans: dict[Tool, StagingPlan],
+    home: Path,
+    io: IOPort,
+    dry_run: bool = False,
+    timestamp: str | None = None,
+) -> Counters:
+    """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``; sum the totals.
+
+    The install-side analog of ``prune_pipeline``: ``cli.main`` (W3) calls this
+    ahead of the prune step to perform the real install. Each adapter's plan is
+    looked up by its tool (``Tool(adapter.name)``) and written under
+    ``adapter.dest_dir(home)``. Returns the aggregate `Counters`
+    (created / updated / skipped / backed_up summed across tools).
+
+    Unlike ``scan_orphans``'s tolerant ``.get``, the per-tool plan is indexed
+    strictly — an adapter without a staged plan is an orchestrator bug (a loud
+    `KeyError`), not a silent no-op.
+    """
+    total = Counters()
+    for adapter in adapters:
+        result = sync_plan(
+            adapter,
+            plans[Tool(adapter.name)],
+            home=home,
+            io=io,
+            dry_run=dry_run,
+            timestamp=timestamp,
+        )
+        total.created += result.created
+        total.updated += result.updated
+        total.skipped += result.skipped
+        total.backed_up += result.backed_up
+    return total
