@@ -178,14 +178,14 @@ def test_no_orphan_when_every_new_commit_is_claimed() -> None:
             FixItemResult(gh_id="C_2", disposition=DispositionKind.FIXED, commit_shas=["n2"]),
         ]
     )
-    assert audit_orphans(out, new_in_cluster={"n1", "n2"}) is None
+    assert audit_orphans(out, new_in_cluster={"n1", "n2"}, requested_gh_ids={"C_1", "C_2"}) is None
 
 
 def test_unclaimed_new_commit_is_an_orphan_violation() -> None:
     out = FixOutput(
         items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
     )
-    v = audit_orphans(out, new_in_cluster={"n1", "n2"})
+    v = audit_orphans(out, new_in_cluster={"n1", "n2"}, requested_gh_ids={"C_1"})
     assert v is not None
     assert v.code is ErrorCode.CONTRACT_FIX_ORPHAN_COMMIT
     assert v.gh_id is None  # structural, cluster-level
@@ -196,4 +196,20 @@ def test_no_new_commits_means_no_orphan() -> None:
     out = FixOutput(
         items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.SKIPPED, rationale="x")]
     )
-    assert audit_orphans(out, new_in_cluster=set()) is None
+    assert audit_orphans(out, new_in_cluster=set(), requested_gh_ids={"C_1"}) is None
+
+
+def test_orphan_ignores_commits_claimed_only_by_unrequested_rows() -> None:
+    # Security: a GHOST row (gh_id never requested) must not be able to "claim" a
+    # new commit and thereby suppress orphan detection (and the hard flip + stash).
+    # Only commits claimed by REQUESTED items count toward coverage.
+    out = FixOutput(
+        items=[
+            FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"]),
+            FixItemResult(gh_id="GHOST", disposition=DispositionKind.FIXED, commit_shas=["n2"]),
+        ]
+    )
+    v = audit_orphans(out, new_in_cluster={"n1", "n2"}, requested_gh_ids={"C_1"})
+    assert v is not None
+    assert v.code is ErrorCode.CONTRACT_FIX_ORPHAN_COMMIT
+    assert "n2" in v.detail  # the GHOST's claim does not cover it

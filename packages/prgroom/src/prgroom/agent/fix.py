@@ -102,7 +102,9 @@ def run_fix(
     item_violations = audit_fix_items(
         req, out, ancestors_of_pre=ancestors_of_pre, new_in_cluster=new_in_cluster
     )
-    orphan = audit_orphans(out, new_in_cluster=new_in_cluster)
+    orphan = audit_orphans(
+        out, new_in_cluster=new_in_cluster, requested_gh_ids=set(req.item_gh_ids)
+    )
     memory = audit_memory(
         out,
         memory_dir=req.memory_dir,
@@ -175,7 +177,13 @@ def _build_result(
     # unknown CONTEXTUAL target_hint): the fix commits are valid, only the memory
     # bookkeeping is malformed — surface them as escalations, never flip or stash.
     hard_memory = [v for v in memory_violations if v.severity is Severity.BLOCK]
-    cluster_flip = orphan is not None or bool(hard_memory)
+    # The hard cluster-flipping violations, in cause order (orphan first, then any
+    # containment breach). Their joined detail becomes the rationale of every clean
+    # item swept into FAILED, so the lifecycle (which reads disposition.rationale,
+    # not last_error) carries the real cause, not a generic marker.
+    hard_violations = ([orphan] if orphan is not None else []) + hard_memory
+    cluster_flip = bool(hard_violations)
+    cluster_flip_detail = "; ".join(v.detail for v in hard_violations)
 
     requested = set(req.item_gh_ids)
     duplicates = _duplicate_gh_ids(out)
@@ -205,6 +213,7 @@ def _build_result(
             decided_by=decided_by,
             per_item_violation=per_item_violation,
             cluster_flip=cluster_flip,
+            cluster_flip_detail=cluster_flip_detail,
         )
         dispositions[row.gh_id] = disposition
         if escalation is not None:
@@ -243,6 +252,7 @@ def _disposition_for_item(
     decided_by: str,
     per_item_violation: AuditViolation | None,
     cluster_flip: bool,
+    cluster_flip_detail: str,
 ) -> tuple[Disposition, Escalation | None]:
     """Map one fix row to its disposition (+ escalation if it fails).
 
@@ -252,7 +262,7 @@ def _disposition_for_item(
     """
     violation = per_item_violation
     if cluster_flip and violation is None:
-        violation = _cluster_flip_marker(row)
+        violation = _cluster_flip_marker(row, detail=cluster_flip_detail)
 
     if violation is not None:
         disposition = failed_disposition(violation, now=now, decided_by=decided_by)
@@ -261,11 +271,15 @@ def _disposition_for_item(
     return _clean_disposition(row, now=now, decided_by=decided_by), None
 
 
-def _cluster_flip_marker(row: FixItemResult) -> AuditViolation:
-    """A FAILED marker for an otherwise-clean item swept up by a cluster-wide breach."""
+def _cluster_flip_marker(row: FixItemResult, *, detail: str) -> AuditViolation:
+    """A FAILED marker for an otherwise-clean item swept up by a cluster-wide breach.
+
+    ``detail`` carries the underlying hard-violation cause (orphan shas / containment
+    path) so the swept-up item's rationale names WHY it failed, not just that it did.
+    """
     return AuditViolation(
         code=ErrorCode.CONTRACT_FIX_AUDIT_FAILED,
-        detail="cluster failed by a structural/containment violation",
+        detail=f"cluster failed: {detail}",
         gh_id=row.gh_id,
     )
 

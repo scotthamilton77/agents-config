@@ -197,6 +197,39 @@ def test_item_with_audit_violation_flips_to_failed_only_for_that_item() -> None:
     assert res.stashed is False
 
 
+# ───────────────────────── cluster-flip cause + orphan bypass ─────────────────────────
+
+
+def test_cluster_flip_rationale_carries_the_hard_violation_detail() -> None:
+    # A clean item swept up by a cluster-wide hard violation must carry the cause in
+    # its disposition.rationale (the lifecycle reads rationale, not last_error), not
+    # a generic marker. Here C_1 is a valid 'fixed' but n2 is an unclaimed orphan.
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
+    )
+    git = _git(ancestors=["pre"], new=["n1", "n2"])
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    assert res.stashed is True
+    flipped = res.dispositions["C_1"]
+    assert flipped.kind is DispositionKind.FAILED
+    assert "n2" in flipped.rationale  # the orphan detail, not a generic marker
+
+
+def test_ghost_row_cannot_suppress_orphan_detection() -> None:
+    # A GHOST (unrequested) row claiming the new commit must not hide the orphan:
+    # the orphan still fires, the cluster flips, and stash isolates the contamination.
+    out = FixOutput(
+        items=[
+            FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"]),
+            FixItemResult(gh_id="GHOST", disposition=DispositionKind.FIXED, commit_shas=["n2"]),
+        ]
+    )
+    git = _git(ancestors=["pre"], new=["n1", "n2"])
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    assert res.stashed is True  # orphan detected despite the GHOST's claim
+    assert "GHOST" not in res.dispositions  # unrequested rows are never dispositioned
+
+
 # ───────────────────────── reconciliation against requested item set ─────────────────────────
 
 

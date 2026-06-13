@@ -136,9 +136,16 @@ def _audit_rationale(row: FixItemResult) -> AuditViolation | None:
     return None
 
 
-def audit_orphans(out: FixOutput, *, new_in_cluster: set[str]) -> AuditViolation | None:
-    """Every new commit must be claimed by some item; else one structural orphan."""
-    claimed = {sha for row in out.items for sha in row.commit_shas}
+def audit_orphans(
+    out: FixOutput, *, new_in_cluster: set[str], requested_gh_ids: set[str]
+) -> AuditViolation | None:
+    """Every new commit must be claimed by a REQUESTED item; else one structural orphan.
+
+    Only commits claimed by ``requested_gh_ids`` count: a malformed/malicious agent
+    must not be able to suppress orphan detection (and the hard cluster flip + stash)
+    by inventing an unrequested GHOST row that "claims" every new commit.
+    """
+    claimed = {sha for row in out.items if row.gh_id in requested_gh_ids for sha in row.commit_shas}
     orphans = sorted(new_in_cluster - claimed)
     if not orphans:
         return None
