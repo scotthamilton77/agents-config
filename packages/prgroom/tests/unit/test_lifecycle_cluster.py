@@ -217,9 +217,13 @@ def test_cluster_writes_pr_context_file(tmp_path: Path) -> None:
     assert dispatcher.last_request is not None
     ctx_path = Path(dispatcher.last_request.pr_context_path)
     assert ctx_path.is_file()
-    ctx = ctx_path.read_text(encoding="utf-8")
-    assert "My PR" in ctx  # title from the gh PR resource
-    assert "abc recent commit" in ctx  # recent commits from git
+    ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+    assert ctx["title"] == "My PR"  # title from the gh PR resource
+    assert "abc recent commit" in ctx["recent_commits"]  # recent commits from git
+    # ci_state comes from the poll-derived state.quiescence.ci_state, NOT a gh field
+    # on the REST PR payload (which carries no statusCheckRollup) — guards the
+    # always-empty dead-field regression.
+    assert ctx["ci_state"] == "success"
 
 
 def test_cluster_404_on_pr_context_read_is_terminal(tmp_path: Path) -> None:

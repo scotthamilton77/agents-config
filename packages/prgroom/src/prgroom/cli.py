@@ -212,7 +212,7 @@ def _read_or_no_state(store: Store, ref: PRRef) -> PRGroomingState:
 
     Direct invocation does NOT self-heal (the ``--no-prework`` column, §3.2): a
     missing state is a terminal user error (exit 2), not an auto-run-``poll`` path.
-    The self-heal/prework chaining is the ``run`` aggregate's job (bead 8.10).
+    The self-heal/prework chaining is the ``run`` aggregate's job (§3.3).
     """
     try:
         return store.read(ref)
@@ -239,9 +239,10 @@ def cluster(
 
     A locked verb: ``read → cluster_pr → write`` under the §2 ``with_lock`` wrapper.
     Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
-    ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an already-clustered
-    state → no-op exit 0; items exist but none need clustering → ``PRECONDITION_NO_ITEMS``
-    (no-work exit 0). Cluster decides no disposition and changes no phase.
+    ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase, an already-clustered state,
+    or all items already processed → idempotent no-op exit 0; zero items in state →
+    ``PRECONDITION_NO_ITEMS`` (no-work exit 0). Cluster decides no disposition and
+    changes no phase.
     """
     store: Store = ctx.obj
     try:
@@ -290,8 +291,8 @@ def fix(
     Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
     ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an all-dispositioned
     state → no-op exit 0; no clustered-unprocessed items → ``PRECONDITION_NO_CLUSTERS``
-    (no-work exit 0). Fix makes no phase change (end-of-cycle resolution is bead 8.10)
-    and sets no ``last_error``. Commits land locally; nothing is pushed here.
+    (no-work exit 0). Fix makes no phase change (end-of-cycle resolution is the run
+    aggregate's job) and sets no ``last_error``. Commits land locally; nothing is pushed here.
     """
     store: Store = ctx.obj
     try:

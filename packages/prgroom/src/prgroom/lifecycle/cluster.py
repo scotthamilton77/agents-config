@@ -14,10 +14,11 @@ idempotent — a no-op when every item is already clustered (§3.3 idempotency
 contract).
 
 prgroom does the gh/git legwork for the light PR-context file the cluster
-contract passes (``pr_context_path``): the PR title/body + recent commits + a CI
-summary, written under the caller-provided scratch dir. ``decided_by`` is part of
-the uniform 8.7 signature; clustering decides no disposition, so ``run_cluster``
-ignores it (it is threaded through for signature symmetry with the fix path).
+contract passes (``pr_context_path``): the PR title/body + recent commits + the
+poll-derived CI summary, written under the caller-provided scratch dir.
+``decided_by`` is part of the uniform ``run_cluster``/``run_fix`` signature;
+clustering decides no disposition, so ``run_cluster`` ignores it (it is threaded
+through for signature symmetry with the fix path).
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ def cluster_pr(
     if not pending:
         return state
 
-    context_path = _write_pr_context(ref, gh, git, scratch_dir)
+    context_path = _write_pr_context(ref, gh, git, scratch_dir, ci_state=state.quiescence.ci_state)
     req = ClusterInput(pr=ref, items=pending, pr_context_path=str(context_path))
     result = run_cluster(req, dispatcher, now=deps.clock.now(), decided_by=decided_by)
 
@@ -90,13 +91,18 @@ def _unclustered_unprocessed(items: list[ReviewItem]) -> list[ReviewItem]:
     return [item for item in items if item.cluster_id == "" and item.disposition is None]
 
 
-def _write_pr_context(ref: PRRef, gh: GhClient, git: GitClient, scratch_dir: Path) -> Path:
+def _write_pr_context(
+    ref: PRRef, gh: GhClient, git: GitClient, scratch_dir: Path, *, ci_state: str
+) -> Path:
     """Write the light PR-context file the cluster contract passes (§5).
 
     A read-only gh GET (PR resource: title/body/base) + a git ``log`` of recent
-    commits over ``origin/<base>..HEAD`` form a compact context the cheap cluster
-    model groups against. A 404 (vanished PR/repo) maps to a terminal error via the
-    shared :func:`~prgroom.lifecycle.snapshot.gh_get`; other gh/git errors propagate.
+    commits over ``origin/<base>..HEAD`` + the poll-derived ``ci_state`` form a
+    compact context the cheap cluster model groups against. ``ci_state`` is the
+    combined-status poll already resolved into ``state.quiescence.ci_state`` (§4.1),
+    reused here so the context needs no extra gh round-trip. A 404 (vanished
+    PR/repo) maps to a terminal error via the shared
+    :func:`~prgroom.lifecycle.snapshot.gh_get`; other gh/git errors propagate.
     """
     pr = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
     base_ref = str((pr.get("base") or {}).get("ref") or "")
@@ -105,7 +111,7 @@ def _write_pr_context(ref: PRRef, gh: GhClient, git: GitClient, scratch_dir: Pat
         "title": str(pr.get("title") or ""),
         "body": str(pr.get("body") or ""),
         "recent_commits": git.log(range_),
-        "ci_state": str((pr.get("statusCheckRollup") or {}).get("state") or ""),
+        "ci_state": ci_state,
     }
     path = scratch_dir / _PR_CONTEXT_FILENAME
     path.write_text(json.dumps(context, indent=2), encoding="utf-8")

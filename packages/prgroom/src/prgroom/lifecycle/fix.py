@@ -1,8 +1,8 @@
 """``fix_pr`` — the lock-held ``_fix`` lifecycle internal (§3.2, §5, §8).
 
 ``fix_pr`` is the APPLY side of the fix path and the sharpest expression of the
-8.7 boundary: **8.7 computes; the lifecycle (8.15) applies.** For each cluster it
-assembles the §8.1 complete PR snapshot (via
+compute/apply boundary: **the agent layer computes; the lifecycle applies.** For
+each cluster it assembles the §8.1 complete PR snapshot (via
 :func:`~prgroom.lifecycle.snapshot.assemble_snapshot` — the recurrence map and the
 ephemeral ``memory_dir`` / ``response_outbox_dir` ride on the result), builds the
 :class:`~prgroom.agent.contracts.FixInput`, calls 8.7's pure
@@ -19,7 +19,7 @@ ephemeral ``memory_dir`` / ``response_outbox_dir` ride on the result), builds th
 It mirrors :func:`~prgroom.lifecycle.poll.poll_pr` — works on a deepcopy, never
 touches the store (the caller owns ``store.write``), and returns the mutated copy.
 Clusters are processed **serially** (MVP; §5). It makes **no** phase change
-(§3.2 fix row: phase resolution is end-of-cycle, owned by bead 8.10) and does
+(§3.2 fix row: phase resolution is end-of-cycle, owned by the run aggregate verb) and does
 **not** set ``state.last_error`` (FAILED dispositions carry their own rationale;
 the end-of-cycle resolver reads them later). ``result.stashed`` is informational.
 """

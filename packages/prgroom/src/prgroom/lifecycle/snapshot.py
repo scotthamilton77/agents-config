@@ -7,7 +7,7 @@ dumps everything to the two files the fix contract already passes —
 ``pr_detail_path`` and ``branch_state_path`` (see :class:`SnapshotPaths`):
 
 * ``pr_detail_path`` (JSON): the PR **description** (with the ``## Decisions``
-  block read verbatim — writing it is bead 8.12, here we only READ it), the PR
+  block read verbatim — writing it is the §8.3 write path, here we only READ it), the PR
   **labels**, the review threads with their reply-chains, the **prior-round
   dispositions** for already-processed items (kind / rationale / commits /
   decided_by, from ``prsession`` state), and the per-item **recurrence** (§8.2).
@@ -23,7 +23,7 @@ dumps everything to the two files the fix contract already passes —
 The two ephemeral working dirs the fix contract needs (``memory_dir`` scratch,
 ``response_outbox_dir``) are created here too and carried on the result.
 
-8.2 boundary: prgroom **detects, it does not interpret** (§8.2). The recurrence
+Detect/interpret boundary: prgroom **detects, it does not interpret** (§8.2). The recurrence
 signal is **derived at snapshot time, not persisted** (§2 schema unchanged). The
 MVP §2 schema retains exactly one :class:`~prgroom.prsession.state.Disposition`
 per item and no first-seen-round, so ``attempt_count`` reports the schema floor
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from prgroom.prsession.state import PRGroomingState, ReviewItem
 
 # Sentinel markers prgroom owns the ``## Decisions`` block between (§8.3). Here we
-# only READ the block into the snapshot; writing it is bead 8.12.
+# only READ the block into the snapshot; writing it is the §8.3 write path.
 DECISIONS_START = "<!-- prgroom:decisions:start -->"
 DECISIONS_END = "<!-- prgroom:decisions:end -->"
 
@@ -98,7 +98,7 @@ class SnapshotPaths:
 def extract_decisions_block(body: str) -> str:
     """Return the ``## Decisions`` block (between sentinels) verbatim, else ``""``.
 
-    The block is read-only here (writing it is bead 8.3/8.12). A body missing
+    The block is read-only here (writing it is the §8.3 write path). A body missing
     either sentinel — or with them out of order — has no block, so this returns
     the empty string rather than guessing a boundary.
     """
