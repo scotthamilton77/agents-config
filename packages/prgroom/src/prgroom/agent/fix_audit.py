@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 from prgroom.agent.errors import AuditViolation
 from prgroom.errors import ErrorCode
+from prgroom.escalation import Severity
 from prgroom.prsession.enums import DispositionKind
 
 if TYPE_CHECKING:
@@ -153,4 +154,7 @@ def audit_orphans(
         code=ErrorCode.CONTRACT_FIX_ORPHAN_COMMIT,
         detail=f"unclaimed commits on the branch: {orphans}",
         gh_id=None,
+        # An orphan is a HARD cluster-flip + git-stash event, so its escalation is
+        # BLOCK (like containment), distinguishable from soft audit WARNs.
+        severity=Severity.BLOCK,
     )

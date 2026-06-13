@@ -18,6 +18,7 @@ import pytest
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput
 from prgroom.agent.fix_audit import audit_fix_items, audit_orphans
 from prgroom.errors import ErrorCode
+from prgroom.escalation import Severity
 from prgroom.prsession.enums import DispositionKind, ItemKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import Identity, ReviewItem
@@ -213,3 +214,14 @@ def test_orphan_ignores_commits_claimed_only_by_unrequested_rows() -> None:
     assert v is not None
     assert v.code is ErrorCode.CONTRACT_FIX_ORPHAN_COMMIT
     assert "n2" in v.detail  # the GHOST's claim does not cover it
+
+
+def test_orphan_violation_is_block_severity() -> None:
+    # An orphan triggers a hard cluster flip + git stash; its escalation must be
+    # BLOCK so sinks/operators distinguish it from soft audit WARNs (like containment).
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
+    )
+    v = audit_orphans(out, new_in_cluster={"n1", "n2"}, requested_gh_ids={"C_1"})
+    assert v is not None
+    assert v.severity is Severity.BLOCK
