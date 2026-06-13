@@ -106,12 +106,15 @@ def main(
         )
         return 2
 
-    # B.1: instantiation proves Config construction succeeds end-to-end. The
-    # full plan-walking install sync is not wired here yet. When core/sync.py
-    # grows to walk a StagingPlan (Epic E), main() must drive
-    # core.orchestrator.stage_and_transform(tools, ...) — NOT build_plan->sync
-    # directly — so adapter post-staging transforms (e.g. the Gemini frontmatter
-    # transform) actually run in real installs. Tracked as a dedicated story.
+    # B.1: instantiation proves Config construction succeeds end-to-end; the
+    # object is intentionally not bound — the full plan-walking install sync is
+    # not wired here yet. When core/sync.py grows to walk a StagingPlan (Epic E),
+    # main() must drive core.orchestrator.stage_and_transform(tools, ...) — NOT
+    # build_plan->sync directly — so adapter post-staging transforms (e.g. the
+    # Gemini frontmatter transform) actually run in real installs, and that sync
+    # is where Config.auto_yes finds its consumer. Today auto_yes reaches the
+    # prune path directly via args.yes below; the Config field is forward-wiring
+    # for when sync() reads it. Tracked as a dedicated story.
     Config(home=resolved_home, tools=tools, auto_yes=args.yes)
 
     if args.prune or args.prune_only:

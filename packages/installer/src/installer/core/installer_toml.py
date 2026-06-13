@@ -31,7 +31,15 @@ class InstallerToml:
     happens in ``core/prune.py``). ``tool_dest_overrides`` maps a tool name to
     a dest-dir override string; empty unless a ``[tools]`` table declares one.
     Both default empty so the missing-file path constructs a valid, inert
-    config without special-casing at every call site."""
+    config without special-casing at every call site.
+
+    ``tool_dest_overrides`` is parsed and surfaced but NOT yet consumed: dest
+    resolution still goes through ``adapter.dest_dir(home)`` everywhere
+    (including the prune scan), so a declared override is currently inert.
+    Threading the override into dest resolution is a deliberate later story —
+    the schema ships now (it is documented in the design doc) so the loader is
+    forward-compatible. Until a consumer lands, a ``[tools]`` ``dest`` entry has
+    no runtime effect."""
 
     prune_globs: list[str] = field(default_factory=list)
     tool_dest_overrides: dict[str, str] = field(default_factory=dict)
