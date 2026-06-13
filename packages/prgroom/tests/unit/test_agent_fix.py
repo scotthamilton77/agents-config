@@ -76,10 +76,12 @@ class FakeGit:
         self._post = post
         self._ancestors = ancestors
         self._new = new
+        self.head_calls = 0
         self.stash_calls = 0
         self.pushes: list[tuple[str, str]] = []
 
     def head_sha(self) -> str:
+        self.head_calls += 1
         return self._heads.pop(0)
 
     def rev_list(self, range_: str) -> list[str]:
@@ -127,8 +129,9 @@ def test_both_fail_does_not_read_head_or_rev_list() -> None:
     disp = FixDispatcherStub(AllProvidersFailedError(detail="down"))
     git = FakeGit(pre="pre", post="post", ancestors=["pre"], new=[])
     run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
-    # head_sha was called at most once (pre); post was never consumed.
-    assert git._heads == ["post"]
+    # head_sha was read once (pre); post was never consumed because the both-fail
+    # short-circuit returns before computing the commit sets.
+    assert git.head_calls == 1
 
 
 # ───────────────────────── clean passthrough ─────────────────────────

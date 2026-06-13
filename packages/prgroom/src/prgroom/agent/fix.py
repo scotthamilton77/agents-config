@@ -134,10 +134,14 @@ def _resolve_thread_ids(req: FixInput, known_thread_ids: set[str] | None) -> set
     return {it.identity.thread_id for it in req.items if it.identity.thread_id}
 
 
+def _items_by_gh(req: FixInput) -> dict[str, ReviewItem]:
+    return {it.identity.gh_id: it for it in req.items}
+
+
 def _both_fail_result(
     req: FixInput, exc: AllProvidersFailedError, *, now: datetime, decided_by: str
 ) -> FixRunResult:
-    by_gh = {it.identity.gh_id: it for it in req.items}
+    by_gh = _items_by_gh(req)
     dispositions = {
         gh_id: provider_failure_disposition(exc.detail, now=now, decided_by=decided_by)
         for gh_id in req.item_gh_ids
@@ -164,7 +168,7 @@ def _build_result(
     deferred_memory: list[MemoryEntry],
     unwritten: list[str],
 ) -> FixRunResult:
-    by_gh = {it.identity.gh_id: it for it in req.items}
+    by_gh = _items_by_gh(req)
     cluster_flip = orphan is not None or bool(memory_violations)
 
     dispositions: dict[str, Disposition] = {}

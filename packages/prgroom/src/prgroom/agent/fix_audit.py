@@ -97,6 +97,9 @@ def _unreachable(row: FixItemResult, sha: str) -> AuditViolation:
 def _audit_fixed(
     row: FixItemResult, *, ancestors_of_pre: set[str], new_in_cluster: set[str]
 ) -> AuditViolation | None:
+    # First offending sha wins: the item fails as a whole regardless of which sha
+    # tripped it (the contract is one violation per item, keyed by gh_id), so there
+    # is no value in collecting every bad sha.
     if not row.commit_shas:
         return _fail(row, f"item {row.gh_id!r} is 'fixed' but claims no commits")
     for sha in row.commit_shas:
@@ -111,6 +114,7 @@ def _audit_fixed(
 def _audit_already_addressed(
     row: FixItemResult, *, ancestors_of_pre: set[str], new_in_cluster: set[str]
 ) -> AuditViolation | None:
+    # First offending sha wins (see _audit_fixed): one violation per item.
     for sha in row.commit_shas:
         if sha in ancestors_of_pre:
             continue
