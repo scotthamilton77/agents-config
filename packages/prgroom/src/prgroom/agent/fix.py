@@ -194,7 +194,9 @@ def _build_result(
         if row.gh_id in duplicates:
             # Duplicate requested id: never silently clobber dispositions[gh_id] —
             # flip it to FAILED so the malformed shape is visible and resolvable.
-            per_item_violation = _duplicate_violation(row.gh_id)
+            # Prefer a genuine per-item audit violation's richer detail when present;
+            # the duplicate-shape message is the fallback for an otherwise-clean row.
+            per_item_violation = per_item_violation or _duplicate_violation(row.gh_id)
         disposition, escalation = _disposition_for_item(
             row,
             item=by_gh.get(row.gh_id),

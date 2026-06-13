@@ -277,6 +277,26 @@ def test_duplicate_gh_id_in_output_fails_that_item_with_one_disposition() -> Non
     assert any(e.item is not None and e.item.identity.gh_id == "A" for e in res.escalations)
 
 
+def test_duplicate_with_real_audit_violation_keeps_the_richer_violation_detail() -> None:
+    # When a duplicated id's first row ALSO has a genuine audit violation (here a
+    # 'fixed' with no commits), the richer per-item detail wins over the generic
+    # duplicate-shape message — both flip to FAILED, but the actionable cause is kept.
+    req = _req("A")
+    out = FixOutput(
+        items=[
+            FixItemResult(gh_id="A", disposition=DispositionKind.FIXED, commit_shas=[]),
+            FixItemResult(gh_id="A", disposition=DispositionKind.WONT_FIX, rationale="other"),
+        ]
+    )
+    disp = FixDispatcherStub(out)
+    git = _git(ancestors=["pre"], new=[])
+    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    assert res.dispositions["A"].kind is DispositionKind.FAILED
+    # The per-item audit detail (no commits) is preserved, not overwritten by the
+    # duplicate-shape message.
+    assert "claims no commits" in res.dispositions["A"].rationale
+
+
 # ───────────────────────── orphan → cluster FAILED + stash ─────────────────────────
 
 
