@@ -126,11 +126,12 @@ def sync_plan(
     caller-supplied value is validated against ``YYYYMMDD-HHMMSS`` before any
     backup is written, since it is interpolated raw into the backup path. A
     ``dest_relpath`` that is absolute or carries a ``..`` component is rejected
-    with `ValueError` before any write. Path containment is **lexical** — like
+    with `ValueError` before *that item* is written — the guard is per-item, not
+    a whole-plan precondition. Path containment is **lexical** — like
     ``sync``/``dump``, symlinked dest *parents* are not resolved, so the guard
     is not resolved-path safety. The walk is **non-transactional**: a failure on
-    item N leaves items 1..N-1 installed (matching the bash streaming installer;
-    no rollback). Returns aggregate `Counters`.
+    item N leaves items 1..N-1 **already installed** (matching the bash streaming
+    installer; no rollback of earlier items). Returns aggregate `Counters`.
     """
     counters = Counters()
     dest_dir = adapter.dest_dir(home)
