@@ -115,3 +115,143 @@ def test_unknown_precision_error_lists_the_valid_verbs(tmp_path: Path) -> None:
         match="expected one of: replace, insert_before, insert_after, prepend, append",
     ):
         apply_extensions(_plan_with_agent_md(), [plugin])
+
+
+def _skill_dir_item(tmp_path: Path, name: str, skill_md: str) -> StagedItem:
+    """A base shared-carrier skill DIR item with a real on-disk SKILL.md,
+    mirroring Phase 2 staging."""
+    src = tmp_path / "base" / "skills" / name
+    _write(src / "SKILL.md", skill_md)
+    return StagedItem(
+        source_path=src,
+        dest_relpath=Path("skills") / name,
+        kind=FileKind.DIR,
+        namespace="skills",
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+        shared_carrier=True,
+    )
+
+
+def test_direct_file_item_is_patched_in_place(tmp_path: Path) -> None:
+    """An agents/*.md NAMESPACED_MD item (non-SKILL.md base, AC #10) gets its
+    content bytes replaced; provenance and kind are untouched."""
+    plugin = _plugin(tmp_path, "p")
+    _write(plugin.source_path / ".agents" / "extensions" / "00.yaml", _ext_yaml())
+
+    plan = apply_extensions(_plan_with_agent_md(), [plugin])
+
+    item = plan.items[Path("agents/reviewer.md")]
+    assert item.content == b"# Reviewer\n\n## Boundaries\nbase\npatched\n"
+    assert item.provenance == Provenance(kind="tool", name="claude")
+    assert plan.dir_overrides == {}
+
+
+def test_file_inside_dir_item_patches_into_dir_overrides(tmp_path: Path) -> None:
+    """SKILL.md inside an opaque DIR item: patched bytes land in
+    dir_overrides keyed by (dir dest, inner relpath); the DIR item itself
+    stays content=None."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(target_file="skills/demo/SKILL.md", target_section="Usage"),
+    )
+    item = _skill_dir_item(tmp_path, "demo", "# Demo\n\n## Usage\nbase\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
+
+    plan = apply_extensions(plan, [plugin])
+
+    patched = plan.dir_overrides[Path("skills/demo")][Path("SKILL.md")]
+    assert patched == b"# Demo\n\n## Usage\nbase\npatched\n"
+    assert plan.items[Path("skills/demo")].content is None
+
+
+def test_second_patch_sees_first_patch_result_in_dir_overrides(tmp_path: Path) -> None:
+    """R6: later patches apply to the already-mutated bytes, not the source."""
+    plugin = _plugin(tmp_path, "p")
+    ext_dir = plugin.source_path / ".agents" / "extensions"
+    _write(
+        ext_dir / "00.yaml",
+        _ext_yaml(target_file="skills/demo/SKILL.md", target_section="Usage", content="first"),
+    )
+    _write(
+        ext_dir / "01.yaml",
+        _ext_yaml(target_file="skills/demo/SKILL.md", target_section="Usage", content="second"),
+    )
+    item = _skill_dir_item(tmp_path, "demo", "# Demo\n\n## Usage\nbase\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
+
+    plan = apply_extensions(plan, [plugin])
+
+    patched = plan.dir_overrides[Path("skills/demo")][Path("SKILL.md")]
+    assert patched == b"# Demo\n\n## Usage\nbase\nfirst\nsecond\n"
+
+
+def test_carrier_merge_contribution_for_other_inner_file_survives(tmp_path: Path) -> None:
+    """dir_overrides is shared with the F.3 carrier-merge: a patch to
+    SKILL.md must not clobber a carrier-carried sibling file's entry."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(target_file="skills/demo/SKILL.md", target_section="Usage"),
+    )
+    item = _skill_dir_item(tmp_path, "demo", "# Demo\n\n## Usage\nbase\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
+    plan.dir_overrides[Path("skills/demo")] = {Path("cheats.md"): b"carried"}
+
+    plan = apply_extensions(plan, [plugin])
+
+    overrides = plan.dir_overrides[Path("skills/demo")]
+    assert overrides[Path("cheats.md")] == b"carried"
+    assert overrides[Path("SKILL.md")].endswith(b"patched\n")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "agents/missing.md",  # no plan item at all
+        "skills/demo/ABSENT.md",  # DIR item exists, inner file does not
+        "skills/demo",  # names the DIR itself, not a file
+    ],
+)
+def test_unresolvable_target_file_is_terminal(tmp_path: Path, target: str) -> None:
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(target_file=target),
+    )
+    item = _skill_dir_item(tmp_path, "demo", "# Demo\n\n## Usage\nbase\n")
+    plan = StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
+
+    with pytest.raises(ExtensionError, match="target-file not found in staging tree") as ei:
+        apply_extensions(plan, [plugin])
+    assert ei.value.target_file == Path(target)
+
+
+def test_frontmatter_precision_through_extension_on_agent_md(tmp_path: Path) -> None:
+    """AC #10: a frontmatter precision exercised through the full extension
+    path against a non-SKILL.md base asset."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(target_section="frontmatter", content="model: haiku"),
+    )
+
+    plan = apply_extensions(_plan_with_agent_md("---\nname: reviewer\n---\n# Reviewer\n"), [plugin])
+
+    assert plan.items[Path("agents/reviewer.md")].content == (
+        b"---\nname: reviewer\nmodel: haiku\n---\n# Reviewer\n"
+    )
+
+
+def test_section_errors_carry_yaml_and_target_citation(tmp_path: Path) -> None:
+    """PatchError reasons surface as ExtensionError with both citation
+    fields (R7 target-resolution rows)."""
+    plugin = _plugin(tmp_path, "p")
+    yaml_path = plugin.source_path / ".agents" / "extensions" / "00.yaml"
+    _write(yaml_path, _ext_yaml(target_section="No Such Header"))
+
+    with pytest.raises(ExtensionError, match='"No Such Header" not found') as ei:
+        apply_extensions(_plan_with_agent_md(), [plugin])
+    assert ei.value.yaml_path == yaml_path
+    assert ei.value.target_file == Path("agents/reviewer.md")
