@@ -16,7 +16,7 @@ from pathlib import Path
 
 PY_SUFFIXES = {".py", ".pyi"}
 CONFIG_FILENAMES = ("ruff.toml", ".ruff.toml")
-TIMEOUT_SECONDS = 10
+TIMEOUT_SECONDS = 4  # 3 calls × 4s = 12s worst-case, under the 15s outer hook timeout
 
 
 def _read_file_path():
@@ -30,7 +30,7 @@ def _read_file_path():
     fp = tool_input.get("file_path")
     if not fp or not isinstance(fp, str):
         return None
-    return Path(fp)
+    return Path(fp).resolve()
 
 
 def _find_config_root(start: Path):
