@@ -120,6 +120,13 @@ def _load_extension(yaml_path: Path) -> _Extension:
         raise ExtensionError(
             yaml_path, "target-file must be a relative path inside the install root"
         )
+    if target_file.suffix != ".md":
+        raise ExtensionError(
+            yaml_path,
+            "target-file must be a markdown asset (.md); the patch engine only "
+            "operates on staged markdown",
+            target_file=target_file,
+        )
     return _Extension(
         yaml_path=yaml_path,
         target_file=target_file,

@@ -90,6 +90,7 @@ def _plan_with_agent_md(text: str = "# Reviewer\n\n## Boundaries\nbase\n") -> St
         (_ext_yaml(precision="upsert"), "unknown precision: upsert"),
         (_ext_yaml(target_file="/etc/passwd"), "must be a relative path"),
         (_ext_yaml(target_file="../escape.md"), "must be a relative path"),
+        (_ext_yaml(target_file="settings.json"), "must be a markdown asset"),
         (
             "target-file: f.md\ntarget-section: 7\nprecision: append\ncontent: c\n",
             "field target-section must be a string",
@@ -212,7 +213,6 @@ def test_carrier_merge_contribution_for_other_inner_file_survives(tmp_path: Path
     [
         "agents/missing.md",  # no plan item at all
         "skills/demo/ABSENT.md",  # DIR item exists, inner file does not
-        "skills/demo",  # names the DIR itself, not a file
     ],
 )
 def test_unresolvable_target_file_is_terminal(tmp_path: Path, target: str) -> None:
