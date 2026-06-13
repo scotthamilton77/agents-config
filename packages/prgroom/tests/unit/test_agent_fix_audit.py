@@ -109,6 +109,15 @@ def test_already_addressed_claiming_brand_new_sha_is_audit_failed() -> None:
     assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
 
 
+def test_already_addressed_with_no_commits_is_audit_failed() -> None:
+    # §5: commit_shas is REQUIRED for already_addressed (same as fixed). An empty
+    # list claims "a prior commit handles it" while naming no commit — malformed.
+    req = _req("C_1")
+    out = FixOutput(items=[_row("C_1", DispositionKind.ALREADY_ADDRESSED, commit_shas=[])])
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster=set())
+    assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
+
+
 # ───────────────────────── rationale-only dispositions ─────────────────────────
 
 

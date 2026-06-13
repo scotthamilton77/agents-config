@@ -16,9 +16,10 @@ from datetime import UTC, datetime
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEntry
 from prgroom.agent.dispatcher import AllProvidersFailedError
 from prgroom.agent.fix import run_fix
+from prgroom.escalation import Severity
 from prgroom.prsession.enums import DispositionKind, ItemKind
 from prgroom.prsession.pr_ref import PRRef
-from prgroom.prsession.state import Identity, ReviewItem
+from prgroom.prsession.state import Disposition, Identity, ReviewItem
 
 _NOW = datetime(2026, 6, 13, 12, 0, tzinfo=UTC)
 _REF = PRRef("octo", "demo", 7)
@@ -196,6 +197,86 @@ def test_item_with_audit_violation_flips_to_failed_only_for_that_item() -> None:
     assert res.stashed is False
 
 
+# ───────────────────────── reconciliation against requested item set ─────────────────────────
+
+
+def _malformed(disposition: Disposition) -> bool:
+    return (
+        disposition.kind is DispositionKind.FAILED
+        and "fix output omitted requested item" in disposition.rationale
+    )
+
+
+def test_requested_item_missing_from_output_gets_failed_disposition_and_escalation() -> None:
+    # req=[A,B] but the agent's output omits B entirely. Every requested item MUST
+    # get a disposition: B is synthesized FAILED (CONTRACT_FIX_MALFORMED) + escalation.
+    req = _req("A", "B")
+    out = FixOutput(
+        items=[
+            FixItemResult(
+                gh_id="A",
+                disposition=DispositionKind.FIXED,
+                commit_shas=["n1"],
+                recommended_gate="full",
+            ),
+        ]
+    )
+    disp = FixDispatcherStub(out)
+    git = _git(ancestors=["pre"], new=["n1"])
+    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    # Keys are exactly the authoritative requested set.
+    assert set(res.dispositions) == {"A", "B"}
+    assert res.dispositions["A"].kind is DispositionKind.FIXED
+    assert _malformed(res.dispositions["B"])
+    assert "B" in res.dispositions["B"].rationale
+    # B's omission produced an escalation tied to the missing item.
+    assert any(e.item is not None and e.item.identity.gh_id == "B" for e in res.escalations)
+    # A bookkeeping-shape violation does not stash — no contamination on the branch.
+    assert res.stashed is False
+
+
+def test_extra_unrequested_item_escalates_but_gets_no_disposition() -> None:
+    # The agent emits a GHOST item never requested. It MUST NOT become a disposition
+    # (we never dispose an item we didn't ask about), but it IS surfaced as an escalation.
+    req = _req("A")
+    out = FixOutput(
+        items=[
+            FixItemResult(
+                gh_id="A",
+                disposition=DispositionKind.FIXED,
+                commit_shas=["n1"],
+                recommended_gate="full",
+            ),
+            FixItemResult(gh_id="GHOST", disposition=DispositionKind.WONT_FIX, rationale="huh"),
+        ]
+    )
+    disp = FixDispatcherStub(out)
+    git = _git(ancestors=["pre"], new=["n1"])
+    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    assert set(res.dispositions) == {"A"}  # GHOST is NOT disposed
+    assert res.dispositions["A"].kind is DispositionKind.FIXED
+    # GHOST is surfaced for visibility.
+    assert any("GHOST" in e.reason for e in res.escalations)
+
+
+def test_duplicate_gh_id_in_output_fails_that_item_with_one_disposition() -> None:
+    # The agent lists A twice. Last-write-wins would silently clobber; instead A is
+    # flipped to FAILED (CONTRACT_FIX_MALFORMED) with exactly one disposition per id.
+    req = _req("A")
+    out = FixOutput(
+        items=[
+            FixItemResult(gh_id="A", disposition=DispositionKind.FIXED, commit_shas=["n1"]),
+            FixItemResult(gh_id="A", disposition=DispositionKind.WONT_FIX, rationale="other"),
+        ]
+    )
+    disp = FixDispatcherStub(out)
+    git = _git(ancestors=["pre"], new=["n1"])
+    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    assert set(res.dispositions) == {"A"}  # exactly one disposition for the id
+    assert res.dispositions["A"].kind is DispositionKind.FAILED
+    assert any(e.item is not None and e.item.identity.gh_id == "A" for e in res.escalations)
+
+
 # ───────────────────────── orphan → cluster FAILED + stash ─────────────────────────
 
 
@@ -242,6 +323,39 @@ def test_containment_violation_flips_cluster_and_stashes() -> None:
     assert res.stashed is True
     assert git.stash_calls == 1
     assert any(e.severity.value == "block" for e in res.escalations)
+
+
+# ───────────────────────── soft memory WARN does not cluster-flip ─────────────────────────
+
+
+def test_warn_memory_violation_surfaces_escalation_without_flip_or_stash() -> None:
+    # §8.6: a soft per-entry WARN (here: unknown classification) means the memory
+    # bookkeeping is malformed, but the actual fix commits are valid. The cluster
+    # MUST NOT flip and MUST NOT stash; the WARN is surfaced as an escalation only.
+    req = _req("C_1", "C_2", memory_dir="/run/mem")
+    out = FixOutput(
+        items=[
+            FixItemResult(
+                gh_id="C_1",
+                disposition=DispositionKind.FIXED,
+                commit_shas=["n1"],
+                recommended_gate="full",
+            ),
+            FixItemResult(gh_id="C_2", disposition=DispositionKind.WONT_FIX, rationale="ok"),
+        ],
+        memory=[MemoryEntry(classification="BOGUS", content="x")],
+    )
+    disp = FixDispatcherStub(out)
+    git = _git(ancestors=["pre"], new=["n1"])
+    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    # Items keep their agent dispositions — the WARN did not flip them.
+    assert res.dispositions["C_1"].kind is DispositionKind.FIXED
+    assert res.dispositions["C_2"].kind is DispositionKind.WONT_FIX
+    # No stash for a soft WARN.
+    assert res.stashed is False
+    assert git.stash_calls == 0
+    # The WARN is still surfaced as a WARN-severity escalation.
+    assert any(e.severity is Severity.WARN for e in res.escalations)
 
 
 # ───────────────────────── deferred memory + soft warnings ─────────────────────────

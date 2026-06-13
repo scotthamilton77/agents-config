@@ -169,23 +169,54 @@ def _build_result(
     unwritten: list[str],
 ) -> FixRunResult:
     by_gh = _items_by_gh(req)
-    cluster_flip = orphan is not None or bool(memory_violations)
+    # Only orphan commits and a containment breach (Severity.BLOCK) are hard
+    # cluster-flipping violations (§8.6). The other memory violations are soft
+    # per-entry WARNs (unknown/empty classification, neither/both content|path,
+    # unknown CONTEXTUAL target_hint): the fix commits are valid, only the memory
+    # bookkeeping is malformed — surface them as escalations, never flip or stash.
+    hard_memory = [v for v in memory_violations if v.severity is Severity.BLOCK]
+    cluster_flip = orphan is not None or bool(hard_memory)
+
+    requested = set(req.item_gh_ids)
+    duplicates = _duplicate_gh_ids(out)
 
     dispositions: dict[str, Disposition] = {}
     escalations: list[Escalation] = []
     for row in out.items:
+        if row.gh_id not in requested:
+            # Extra: the agent disposed an item we never asked about. Surface it for
+            # visibility but NEVER create a disposition for an unrequested item.
+            escalations.append(_extra_escalation(row.gh_id, pr=req.pr))
+            continue
+        if row.gh_id in dispositions:
+            continue  # a duplicate already produced the (FAILED) disposition for this id
+        per_item_violation = item_violations.get(row.gh_id)
+        if row.gh_id in duplicates:
+            # Duplicate requested id: never silently clobber dispositions[gh_id] —
+            # flip it to FAILED so the malformed shape is visible and resolvable.
+            per_item_violation = _duplicate_violation(row.gh_id)
         disposition, escalation = _disposition_for_item(
             row,
             item=by_gh.get(row.gh_id),
             pr=req.pr,
             now=now,
             decided_by=decided_by,
-            per_item_violation=item_violations.get(row.gh_id),
+            per_item_violation=per_item_violation,
             cluster_flip=cluster_flip,
         )
         dispositions[row.gh_id] = disposition
         if escalation is not None:
             escalations.append(escalation)
+
+    # Missing: every requested item MUST get a disposition. Any requested id the
+    # output omitted is synthesized FAILED (CONTRACT_FIX_MALFORMED) + escalation,
+    # so dispositions' keys are exactly the authoritative requested set.
+    for gh_id in req.item_gh_ids:
+        if gh_id in dispositions:
+            continue
+        violation = _missing_violation(gh_id)
+        dispositions[gh_id] = failed_disposition(violation, now=now, decided_by=decided_by)
+        escalations.append(escalation_for(violation, pr=req.pr, item=by_gh.get(gh_id)))
 
     escalations.extend(_cluster_escalations(orphan, memory_violations, pr=req.pr))
 
@@ -234,6 +265,46 @@ def _cluster_flip_marker(row: FixItemResult) -> AuditViolation:
         code=ErrorCode.CONTRACT_FIX_AUDIT_FAILED,
         detail="cluster failed by a structural/containment violation",
         gh_id=row.gh_id,
+    )
+
+
+def _duplicate_gh_ids(out: FixOutput) -> set[str]:
+    """gh_ids that appear more than once in the output (a malformed-shape signal)."""
+    seen: set[str] = set()
+    dupes: set[str] = set()
+    for row in out.items:
+        if row.gh_id in seen:
+            dupes.add(row.gh_id)
+        seen.add(row.gh_id)
+    return dupes
+
+
+def _missing_violation(gh_id: str) -> AuditViolation:
+    """The MALFORMED violation for a requested item the output omitted entirely."""
+    return AuditViolation(
+        code=ErrorCode.CONTRACT_FIX_MALFORMED,
+        detail=f"fix output omitted requested item {gh_id}",
+        gh_id=gh_id,
+    )
+
+
+def _duplicate_violation(gh_id: str) -> AuditViolation:
+    """The MALFORMED violation for a requested item the output listed more than once."""
+    return AuditViolation(
+        code=ErrorCode.CONTRACT_FIX_MALFORMED,
+        detail=f"fix output listed requested item {gh_id} more than once",
+        gh_id=gh_id,
+    )
+
+
+def _extra_escalation(gh_id: str, *, pr: PRRef) -> Escalation:
+    """A visibility-only escalation for an item the agent disposed but we never requested."""
+    return escalation_for(
+        AuditViolation(
+            code=ErrorCode.CONTRACT_FIX_MALFORMED,
+            detail=f"fix output disposed unrequested item {gh_id}",
+        ),
+        pr=pr,
     )
 
 

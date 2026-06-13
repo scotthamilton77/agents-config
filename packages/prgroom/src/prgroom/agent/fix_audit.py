@@ -114,6 +114,10 @@ def _audit_fixed(
 def _audit_already_addressed(
     row: FixItemResult, *, ancestors_of_pre: set[str], new_in_cluster: set[str]
 ) -> AuditViolation | None:
+    # commit_shas is REQUIRED for already_addressed (§5, same as fixed): the
+    # disposition asserts a prior commit handles the item, so it must name one.
+    if not row.commit_shas:
+        return _fail(row, f"item {row.gh_id!r} is 'already_addressed' but claims no commits")
     # First offending sha wins (see _audit_fixed): one violation per item.
     for sha in row.commit_shas:
         if sha in ancestors_of_pre:
