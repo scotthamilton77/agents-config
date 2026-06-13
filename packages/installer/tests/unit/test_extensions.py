@@ -109,6 +109,20 @@ def test_schema_validation_is_terminal_with_cited_reason(
     assert exc_info.value.yaml_path == yaml_path
 
 
+def test_non_utf8_extension_file_is_terminal_with_cited_reason(tmp_path: Path) -> None:
+    """A non-UTF-8 extension yaml is a cited terminal ExtensionError (R7),
+    mirroring _apply_one's UTF-8 handling for target markdown — not a raw
+    UnicodeDecodeError that bypasses the yaml-path citation."""
+    plugin = _plugin(tmp_path, "p")
+    yaml_path = plugin.source_path / ".agents" / "extensions" / "00-bad.yaml"
+    yaml_path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_path.write_bytes(b"target-file: x.md\n\xff\xfe bad bytes\n")
+
+    with pytest.raises(ExtensionError, match="extension file is not valid UTF-8") as exc_info:
+        apply_extensions(_plan_with_agent_md(), [plugin])
+    assert exc_info.value.yaml_path == yaml_path
+
+
 def test_unknown_precision_error_lists_the_valid_verbs(tmp_path: Path) -> None:
     plugin = _plugin(tmp_path, "p")
     _write(plugin.source_path / ".agents" / "extensions" / "00.yaml", _ext_yaml(precision="bogus"))

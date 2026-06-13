@@ -100,7 +100,11 @@ def _extension_files(plugin: PluginAdapter, tool_name: str) -> list[Path]:
 def _load_extension(yaml_path: Path) -> _Extension:
     """Parse + schema-validate one extension yaml (R2, R7 schema rows)."""
     try:
-        data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+        raw = yaml_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ExtensionError(yaml_path, f"extension file is not valid UTF-8: {exc}") from exc
+    try:
+        data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
         raise ExtensionError(yaml_path, f"malformed YAML: {exc}") from exc
     if not isinstance(data, dict):
