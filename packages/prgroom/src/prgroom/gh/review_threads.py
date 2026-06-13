@@ -43,11 +43,16 @@ def fetch_thread_id_map(gh: GhClient, ref: PRRef) -> dict[str, str]:
     failures surface from the adapter as ``RUNTIME_GRAPHQL_FAILED`` before reaching here.
     """
     data = gh.graphql(_THREAD_ID_QUERY, {"owner": ref.owner, "repo": ref.repo, "pr": ref.number})
+    # Envelope levels are guarded because a 200 can carry a hollow data block (a
+    # vanished PR returns a null pullRequest). Per-thread fields below are indexed
+    # directly: the query pins them non-null (reviewThreads.id is ID!, comments is a
+    # non-null connection), and an errors[] payload is already mapped to
+    # RUNTIME_GRAPHQL_FAILED upstream before reaching here.
     pr = (data.get("repository") or {}).get("pullRequest") or {}
     nodes = (pr.get("reviewThreads") or {}).get("nodes") or []
     out: dict[str, str] = {}
     for thread in nodes:
-        node_id = str(thread["id"])  # reviewThreads.id is ID! (non-null)
+        node_id = str(thread["id"])
         for comment in thread["comments"]["nodes"]:
             # databaseId is nullable in GraphQL (e.g. a pending review comment has no
             # REST representation) — such a comment contributes no key to the map.

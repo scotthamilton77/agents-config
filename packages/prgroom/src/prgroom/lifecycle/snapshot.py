@@ -289,7 +289,10 @@ def _fetch_review_threads(gh: GhClient, ref: PRRef) -> dict[str, list[dict[str, 
     node id** (via :func:`~prgroom.gh.review_threads.fetch_thread_id_map`) so the key
     matches an :class:`Identity`'s ``thread_id`` and §8.2 ``_thread_reopened`` lookups
     hit. A root absent from the map (e.g. beyond the GraphQL page cap) degrades to its
-    REST root-comment id — harmless, since that thread's items also carry no node id.
+    REST root-comment id. poll fetches its own map separately, so at the pagination
+    boundary a thread can be mapped at poll time yet unmapped here; that fails safe —
+    ``_thread_reopened`` then misses and reports ``reopened == False`` (a missed reopen,
+    never a false one), pending the tracked pagination follow-up.
     """
     raw = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments")
     roots: dict[int, list[dict[str, Any]]] = {}

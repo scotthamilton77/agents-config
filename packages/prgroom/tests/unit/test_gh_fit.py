@@ -98,6 +98,22 @@ def test_graphql_returns_data() -> None:
     assert argv[:3] == ["gh", "api", "graphql"]
 
 
+def test_graphql_string_variables_use_literal_flag_ints_use_typed() -> None:
+    # gh's -F does typed coercion (numbers->Int, true/false->Boolean); -f keeps the
+    # value a literal string. A String!-typed variable whose value looks numeric (a
+    # purely-numeric owner/repo name) must go via -f, or gh coerces it to Int and the
+    # server rejects it against String! — an unfixable transient that retries forever.
+    runner = RecordedRunner([_ok(_fixture("graphql_resolve_ok.json"))])
+    client = GhCli(runner)
+    client.graphql("query {...}", {"owner": "octo", "repo": "365", "pr": 7})
+    argv = runner.calls[0]
+    # String variables ride -f (literal): a repo literally named "365" stays a string.
+    assert argv[argv.index("owner=octo") - 1] == "-f"
+    assert argv[argv.index("repo=365") - 1] == "-f"
+    # Int variables ride -F (typed) so they satisfy Int! (e.g. $pr).
+    assert argv[argv.index("pr=7") - 1] == "-F"
+
+
 # ── failure classification ──
 
 

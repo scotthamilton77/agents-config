@@ -139,7 +139,12 @@ class GhCli:
     def graphql(self, query: str, variables: JsonObj) -> JsonObj:
         argv = ["gh", "api", "graphql", "-f", f"query={query}"]
         for key, value in variables.items():
-            argv += ["-F", f"{key}={value}"]
+            # -F coerces typed scalars (int->Int, bool->Boolean); -f keeps the value a
+            # literal string. Route by Python type so a String!-typed variable whose
+            # value looks numeric (e.g. a purely-numeric owner/repo name) is never
+            # coerced to Int and rejected against String!. (bool is an int subclass → -F.)
+            flag = "-F" if isinstance(value, int) else "-f"
+            argv += [flag, f"{key}={value}"]
         out = self._run(argv)
         envelope: JsonObj = json.loads(out)
         if envelope.get("errors"):
