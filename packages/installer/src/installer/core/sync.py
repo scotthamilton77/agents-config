@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core.model import Counters
+from installer.core.paths import is_safe_relpath
 
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
@@ -41,7 +42,7 @@ def sync(
     would-be write through ``io`` and touches nothing. Returns a
     `Counters` with exactly one of created / updated / skipped incremented.
     """
-    if relpath.is_absolute() or ".." in relpath.parts:
+    if not is_safe_relpath(relpath):
         raise ValueError(f"relpath escapes the adapter tree: {relpath}")  # noqa: TRY003  # single call-site; subclass not justified
 
     counters = Counters()
