@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 from prgroom.agent.recurrence import Recurrence
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh.client import GhNotFoundError
+from prgroom.gh.review_threads import fetch_thread_id_map
 
 if TYPE_CHECKING:
     from prgroom.gh.client import GhClient
@@ -127,13 +128,11 @@ def derive_recurrence(
     * ``prior_disposition`` / ``prior_commits`` — from the item's single recorded
       :class:`~prgroom.prsession.state.Disposition` (schema-backed).
     * ``reopened`` — true iff a reply on the item's thread is newer than the
-      disposition's ``decided_at``. **MVP floor: this is always ``False`` in the
-      integrated poll→cluster→fix path** — poll's ingest does not yet populate
-      :attr:`Identity.thread_id` (and the snapshot keys threads by root-comment id,
-      a different key-space), so ``_thread_reopened`` finds no thread to match. The
-      derivation is correct and unit-tested with populated identities; wiring poll
-      to set ``thread_id`` (and reconciling the key-space) is a poll-side follow-up,
-      not this bead. Reported as a gap alongside the two counters below.
+      disposition's ``decided_at``. The item's :attr:`Identity.thread_id` (the GraphQL
+      ``PRRT_*`` node id poll populates) is matched against the snapshot's threads,
+      which :func:`_fetch_review_threads` keys by that same node id. A comment beyond
+      the GraphQL page cap carries no node id, so its item degrades to
+      ``reopened == False`` rather than mis-matching.
     * ``attempt_count`` — ``1`` (the MVP schema retains one disposition; a true
       count needs history tracking — reported as a schema gap).
     * ``first_seen_round`` — ``state.round`` (the schema has no first-seen field;
@@ -284,10 +283,16 @@ def _prior_dispositions(state: PRGroomingState) -> list[dict[str, Any]]:
 def _fetch_review_threads(gh: GhClient, ref: PRRef) -> dict[str, list[dict[str, Any]]]:
     """Group every PR review comment into its thread's full reply-chain (§8.1).
 
-    A top-level inline comment (no ``in_reply_to_id``) anchors a thread keyed by
-    its own id; replies (``in_reply_to_id`` set) attach under their root. The key
-    is a string id so it matches a :class:`Identity`'s ``thread_id`` when present,
-    falling back to the root comment id otherwise.
+    A top-level inline comment (no ``in_reply_to_id``) anchors a thread; replies
+    (``in_reply_to_id`` set) attach under their root. The grouping is built over the
+    REST root-comment id, then each thread is **re-keyed by its GraphQL ``PRRT_*``
+    node id** (via :func:`~prgroom.gh.review_threads.fetch_thread_id_map`) so the key
+    matches an :class:`Identity`'s ``thread_id`` and §8.2 ``_thread_reopened`` lookups
+    hit. A root absent from the map (e.g. beyond the GraphQL page cap) degrades to its
+    REST root-comment id. poll fetches its own map separately, so at the pagination
+    boundary a thread can be mapped at poll time yet unmapped here; that fails safe —
+    ``_thread_reopened`` then misses and reports ``reopened == False`` (a missed reopen,
+    never a false one), pending the tracked pagination follow-up.
     """
     raw = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments")
     roots: dict[int, list[dict[str, Any]]] = {}
@@ -301,7 +306,10 @@ def _fetch_review_threads(gh: GhClient, ref: PRRef) -> dict[str, list[dict[str, 
     for entry in raw:
         cid = int(entry["id"])
         roots[by_id[cid]].append(entry)
-    return {str(root): comments for root, comments in roots.items()}
+    if not roots:
+        return {}
+    thread_id_map = fetch_thread_id_map(gh, ref)
+    return {thread_id_map.get(str(root), str(root)): comments for root, comments in roots.items()}
 
 
 def _thread_chains(threads: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
