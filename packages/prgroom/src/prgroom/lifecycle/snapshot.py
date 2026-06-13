@@ -175,7 +175,7 @@ def assemble_snapshot(
     recurrence. A 404 on a required read maps to ``RUNTIME_GH_TERMINAL`` (the PR
     or repo vanished mid-run — a blind retry won't bring it back).
     """
-    pr = _gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
+    pr = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
     base_ref = str((pr.get("base") or {}).get("ref") or "")
     body = str(pr.get("body") or "")
     labels = [str(label.get("name", "")) for label in (pr.get("labels") or [])]
@@ -263,7 +263,7 @@ def _fetch_review_threads(gh: GhClient, ref: PRRef) -> dict[str, list[dict[str, 
     is a string id so it matches a :class:`Identity`'s ``thread_id`` when present,
     falling back to the root comment id otherwise.
     """
-    raw = _gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments")
+    raw = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments")
     roots: dict[int, list[dict[str, Any]]] = {}
     by_id: dict[int, int] = {}  # comment id -> its thread root id
     for entry in raw:
@@ -297,12 +297,14 @@ def _thread_chains(threads: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
     ]
 
 
-def _vanished_pr_terminal(ref: PRRef) -> PrgroomError:
+def vanished_pr_terminal(ref: PRRef) -> PrgroomError:
     """Map a 404 on a required snapshot read to ``RUNTIME_GH_TERMINAL`` (§3.6).
 
     Mirrors ``poll.py``'s mapping: a mid-run 404 on the PR resource or its
     comments means the PR/repo vanished — terminal, since a blind retry can't
     bring it back. (The startup ``PRECONDITION_REPO_UNREACHABLE`` is out of scope.)
+    Public so the sibling ``cluster`` internal — which does the same read-only PR
+    GET for its light context file — shares the one mapping.
     """
     return PrgroomError(
         tier=Tier.RUNTIME_TERMINAL_USER,
@@ -311,9 +313,9 @@ def _vanished_pr_terminal(ref: PRRef) -> PrgroomError:
     )
 
 
-def _gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
+def gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
     """``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)."""
     try:
         return gh.rest("GET", path)
     except GhNotFoundError as exc:
-        raise _vanished_pr_terminal(ref) from exc
+        raise vanished_pr_terminal(ref) from exc

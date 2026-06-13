@@ -28,8 +28,7 @@ from typing import TYPE_CHECKING
 
 from prgroom.agent.cluster import run_cluster
 from prgroom.agent.contracts import ClusterInput
-from prgroom.errors import ErrorCode, PrgroomError, Tier
-from prgroom.gh.client import GhNotFoundError
+from prgroom.lifecycle.snapshot import gh_get
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,16 +95,10 @@ def _write_pr_context(ref: PRRef, gh: GhClient, git: GitClient, scratch_dir: Pat
 
     A read-only gh GET (PR resource: title/body/base) + a git ``log`` of recent
     commits over ``origin/<base>..HEAD`` form a compact context the cheap cluster
-    model groups against. Errors from the gh/git adapters propagate unchanged.
+    model groups against. A 404 (vanished PR/repo) maps to a terminal error via the
+    shared :func:`~prgroom.lifecycle.snapshot.gh_get`; other gh/git errors propagate.
     """
-    try:
-        pr = gh.rest("GET", f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
-    except GhNotFoundError as exc:
-        raise PrgroomError(
-            tier=Tier.RUNTIME_TERMINAL_USER,
-            code=ErrorCode.RUNTIME_GH_TERMINAL,
-            detail=f"PR resource not found: {ref.display()}",
-        ) from exc
+    pr = gh_get(gh, ref, f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
     base_ref = str((pr.get("base") or {}).get("ref") or "")
     range_ = f"origin/{base_ref}..HEAD" if base_ref else "HEAD"
     context = {
