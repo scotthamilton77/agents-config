@@ -23,7 +23,7 @@ from installer.core.paths import is_safe_relpath
 )
 def test_plain_relative_path_is_safe(rel: Path) -> None:
     """A relative path with no parent-dir component joins safely under a base."""
-    assert is_safe_relpath(rel) is True
+    assert is_safe_relpath(rel)
 
 
 @pytest.mark.parametrize(
@@ -35,7 +35,7 @@ def test_plain_relative_path_is_safe(rel: Path) -> None:
 )
 def test_absolute_path_is_unsafe(abs: Path) -> None:
     """An absolute path discards the base on join, so it can never be safe."""
-    assert is_safe_relpath(abs) is False
+    assert not is_safe_relpath(abs)
 
 
 @pytest.mark.parametrize(
@@ -48,7 +48,7 @@ def test_absolute_path_is_unsafe(abs: Path) -> None:
 )
 def test_parent_dir_component_is_unsafe(rel: Path) -> None:
     """Any ``..`` component lets the join climb out of the base — unsafe."""
-    assert is_safe_relpath(rel) is False
+    assert not is_safe_relpath(rel)
 
 
 def test_dotdot_substring_in_filename_is_safe() -> None:
@@ -58,4 +58,4 @@ def test_dotdot_substring_in_filename_is_safe() -> None:
     Pins the membership check against a naive ``".." in str(path)`` rewrite,
     which would wrongly reject this path.
     """
-    assert is_safe_relpath(Path("foo..bar.md")) is True
+    assert is_safe_relpath(Path("foo..bar.md"))
