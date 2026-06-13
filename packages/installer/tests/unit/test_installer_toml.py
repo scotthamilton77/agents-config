@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from installer.core.installer_toml import load_installer_toml
 
 
@@ -85,3 +87,55 @@ def test_tool_dest_overrides_empty_when_tools_section_absent(tmp_path: Path) -> 
     config = load_installer_toml(toml)
 
     assert config.tool_dest_overrides == {}
+
+
+def test_prune_not_a_table_raises_value_error(tmp_path: Path) -> None:
+    """
+    Given a type-malformed [prune] (a scalar, not a table)
+    When the loader reads it
+    Then a ValueError is raised rather than an AttributeError on .get().
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text('prune = "x"\n')
+
+    with pytest.raises(ValueError, match=r"\[prune\] must be a table"):
+        load_installer_toml(toml)
+
+
+def test_retired_as_string_raises_value_error(tmp_path: Path) -> None:
+    """
+    Given retired declared as a bare string instead of a list
+    When the loader reads it
+    Then a ValueError is raised — guarding the list("*/foo") single-char shred.
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text('[prune]\nretired = "*/skills/foo"\n')
+
+    with pytest.raises(ValueError, match=r"retired must be a list of strings"):
+        load_installer_toml(toml)
+
+
+def test_retired_with_non_string_elements_raises_value_error(tmp_path: Path) -> None:
+    """
+    Given a retired list whose elements are not strings
+    When the loader reads it
+    Then a ValueError is raised rather than passing ints downstream to fnmatch.
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text("[prune]\nretired = [1, 2]\n")
+
+    with pytest.raises(ValueError, match=r"retired must be a list of strings"):
+        load_installer_toml(toml)
+
+
+def test_tools_not_a_table_raises_value_error(tmp_path: Path) -> None:
+    """
+    Given a type-malformed [tools] (a scalar, not a table)
+    When the loader reads it
+    Then a ValueError is raised rather than silently iterating a non-dict.
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text('tools = "x"\n')
+
+    with pytest.raises(ValueError, match=r"\[tools\] must be a table"):
+        load_installer_toml(toml)

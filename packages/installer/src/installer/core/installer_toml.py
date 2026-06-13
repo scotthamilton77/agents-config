@@ -53,6 +53,12 @@ def load_installer_toml(path: Path) -> InstallerToml:
     failure. A present file with no ``[prune]`` section likewise yields an empty
     prune list; the section is optional. The ``[tools]`` table is read as a
     flat ``{tool: dest}`` mapping from each ``<tool>.dest`` entry.
+
+    Raises ``ValueError`` when the file is present but type-malformed: ``prune``
+    or ``tools`` decoded to a non-table, or ``prune.retired`` decoded to
+    anything other than a list of strings. Catching these at load time turns a
+    silent corruption — ``retired = "*/foo"`` would otherwise ``list()``-shred
+    into single-character globs — into a clear configuration error.
     """
     if not path.is_file():
         return InstallerToml()
@@ -60,9 +66,22 @@ def load_installer_toml(path: Path) -> InstallerToml:
     data = tomllib.loads(path.read_text())
 
     prune_section = data.get("prune", {})
-    prune_globs = list(prune_section.get("retired", []))
+    if not isinstance(prune_section, dict):
+        got = type(prune_section).__name__
+        msg = f"installer.toml: [prune] must be a table, got {got}"
+        raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
+
+    retired = prune_section.get("retired", [])
+    if not isinstance(retired, list) or not all(isinstance(g, str) for g in retired):
+        msg = "installer.toml: [prune] retired must be a list of strings (glob patterns)"
+        raise ValueError(msg)
+    prune_globs = list(retired)
 
     tools_section = data.get("tools", {})
+    if not isinstance(tools_section, dict):
+        got = type(tools_section).__name__
+        msg = f"installer.toml: [tools] must be a table, got {got}"
+        raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
     tool_dest_overrides = {
         tool: table["dest"]
         for tool, table in tools_section.items()
