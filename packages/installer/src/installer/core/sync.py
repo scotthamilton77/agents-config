@@ -210,13 +210,19 @@ def _install_dir(
 
     A missing or non-directory ``source_path``, or a dest already occupied by a
     non-directory (a file), is rejected with `ValueError` rather than crashing
-    the walk with a raw ``FileNotFoundError`` / ``NotADirectoryError``. Symlinks
-    in the source tree are dereferenced by ``copytree`` (its default) — a
-    behavioural choice flagged for the golden-master parity pass."""
+    the walk with a raw ``FileNotFoundError`` / ``NotADirectoryError``. All
+    override relpaths are validated **up-front, before any filesystem mutation**,
+    so a ``dry_run`` surfaces the same error a real run would and an unsafe
+    override never lands after a backup/replace has begun. Symlinks in the source
+    tree are dereferenced by ``copytree`` (its default) — a behavioural choice
+    flagged for the golden-master parity pass."""
     if not source_path.is_dir():
         raise ValueError(f"DIR item source is not a directory: {source_path}")  # noqa: TRY003  # single call-site; subclass not justified
     if dest.exists() and not dest.is_dir():
         raise ValueError(f"dest exists but is not a directory: {dest}")  # noqa: TRY003  # single call-site; subclass not justified
+    for inner in overrides:
+        if not is_safe_relpath(inner):
+            raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
     if not dry_run:
         if dest_exists:
@@ -225,8 +231,6 @@ def _install_dir(
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_path, dest)
         for inner, inner_content in overrides.items():
-            if not is_safe_relpath(inner):
-                raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
             inner_dest = dest / inner
             inner_dest.parent.mkdir(parents=True, exist_ok=True)
             inner_dest.write_bytes(inner_content)

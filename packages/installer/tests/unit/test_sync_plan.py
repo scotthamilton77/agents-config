@@ -329,6 +329,58 @@ def test_unsafe_dir_override_relpath_is_rejected(tmp_path: Path) -> None:
     assert not (home / "skills" / "evil.md").exists()
 
 
+def test_dry_run_still_rejects_unsafe_dir_override(tmp_path: Path) -> None:
+    """
+    Given --dry-run and a DIR item whose dir_overrides carry an unsafe inner
+    relpath
+    When sync_plan runs
+    Then a ValueError still surfaces — a dry-run preview validates the same as a
+    real run — and nothing is materialised.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(
+        items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
+        tool=Tool.CLAUDE,
+        dir_overrides={Path("skills/s"): {Path("../evil.md"): b"evil\n"}},
+    )
+
+    with pytest.raises(ValueError, match="escape"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), dry_run=True)
+
+    assert not (home / "skills" / "s").exists()
+
+
+def test_unsafe_dir_override_does_not_touch_an_existing_dest(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose dest already exists and whose dir_overrides carry an
+    unsafe inner relpath
+    When sync_plan runs
+    Then the override is rejected BEFORE any filesystem mutation — the existing
+    dest dir is neither backed up nor replaced.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "new.md").write_bytes(b"new\n")
+    home = tmp_path / "home"
+    existing = home / "skills" / "s"
+    existing.mkdir(parents=True)
+    (existing / "keep.md").write_bytes(b"keep\n")
+    plan = StagingPlan(
+        items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
+        tool=Tool.CLAUDE,
+        dir_overrides={Path("skills/s"): {Path("../evil.md"): b"evil\n"}},
+    )
+
+    with pytest.raises(ValueError, match="escape"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+    assert (existing / "keep.md").read_bytes() == b"keep\n"  # untouched
+    assert not (home / "skills-backup").exists()  # not backed up
+
+
 def test_overwrite_with_malformed_timestamp_is_rejected_before_any_write(tmp_path: Path) -> None:
     """
     Given an overwrite and a caller-supplied timestamp that violates the
