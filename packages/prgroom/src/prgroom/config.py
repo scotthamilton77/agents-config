@@ -148,8 +148,8 @@ class PrgroomConfig:
         auto_request_human_review_flag: bool | None = None,
     ) -> PrgroomConfig:
         """Resolve config with CLI > env > TOML > default precedence (§3.5, §4.3)."""
-        table = _read_toml(repo_config)
-        quiescence = _subtable(table, _QUIESCENCE_TABLE)
+        table = read_toml(repo_config)
+        quiescence = subtable(table, _QUIESCENCE_TABLE)
 
         return cls(
             max_rounds=cls._resolve_max_rounds(table, max_rounds_flag),
@@ -206,14 +206,19 @@ class PrgroomConfig:
         return DEFAULT_MAX_ROUNDS
 
 
-def _read_toml(path: Path | None) -> dict[str, Any]:
+def read_toml(path: Path | None) -> dict[str, Any]:
+    """Parse the per-repo ``.prgroom.toml`` (missing file -> ``{}``).
+
+    The single parse path for the config file — :class:`PrgroomConfig` and the
+    agent chain loader both read through here, so the file is interpreted one way.
+    """
     if path is None or not path.is_file():
         return {}
     with path.open("rb") as fh:
         return tomllib.load(fh)
 
 
-def _subtable(table: dict[str, Any], key: str) -> dict[str, Any]:
+def subtable(table: dict[str, Any], key: str) -> dict[str, Any]:
     """Return the named sub-table; ``{}`` if absent, raise if present-but-not-a-table.
 
     An absent key falls through to per-setting defaults. A present-but-wrong-typed key
