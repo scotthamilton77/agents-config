@@ -20,8 +20,9 @@ if TYPE_CHECKING:
 # Repo root is four parents up from this file:
 # packages/installer/src/installer/cli.py -> repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-# Bundled installer config (prune list + tool overrides) and plugin source root.
-_INSTALLER_TOML = _REPO_ROOT / "packages" / "installer" / "installer.toml"
+# Plugin source root. (The bundled installer.toml path is derived per-run inside
+# _run_prune from the injected repo_root, so the config tracks the same root as
+# staging — and the missing-file case stays testable.)
 _PLUGINS_ROOT = _REPO_ROOT / "src" / "plugins"
 
 
@@ -150,6 +151,13 @@ def _run_prune(
     sequencing is structured so the install phase slots in ahead of this call
     when that story lands.
 
+    The prune list is read from ``installer.toml`` under the passed
+    ``repo_root`` (not off ``__file__``), so the config tracks the same root as
+    ``stage_and_transform``. When that file is absent — e.g. a wheel/install
+    that bundles only ``src/installer`` and omits ``installer.toml`` — the load
+    yields an empty prune list, so nothing would be pruned; a warning is emitted
+    naming the missing path so the no-op is explained rather than silent.
+
     Returns 0 on success, 1 when the non-interactive consent guard or the
     prune-only flow aborts the run.
     """
@@ -159,7 +167,13 @@ def _run_prune(
         except ConsentRequiredError:
             return 1
 
-    config = load_installer_toml(_INSTALLER_TOML)
+    installer_toml = repo_root / "packages" / "installer" / "installer.toml"
+    if not installer_toml.is_file():
+        io.warn(
+            f"installer.toml not found at {installer_toml}; the prune list is "
+            "empty, so nothing will be pruned."
+        )
+    config = load_installer_toml(installer_toml)
     plugins = resolve_plugins(home=home, plugins_root=_PLUGINS_ROOT, override_csv=None)
     plans = stage_and_transform(tools, repo_root=repo_root, io=io, plugins=plugins)
     adapters = [get_adapter(tool) for tool in tools]

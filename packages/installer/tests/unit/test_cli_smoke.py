@@ -23,6 +23,18 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
+    """Create a repo_root whose packages/installer/installer.toml carries the
+    given prune list — mirroring where _run_prune now derives the config path
+    (off the injected repo_root, not __file__)."""
+    repo = tmp_path / "repo"
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    retired_lines = "\n".join(f'  "{glob}",' for glob in retired)
+    (toml_dir / "installer.toml").write_text(f"[prune]\nretired = [\n{retired_lines}\n]\n")
+    return repo
+
+
 def test_main_help_exits_with_status_zero() -> None:
     """
     When main(["--help"]) is invoked
@@ -167,21 +179,64 @@ def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Pa
     install half, and --yes waives the non-interactive guard.
     """
     home = _home_with_claude_settings(tmp_path)
-    # "*/skills/ralf-it" is in the bundled installer.toml prune list.
     retired = home / ".claude" / "skills" / "ralf-it"
     retired.mkdir(parents=True)
-    empty_repo = tmp_path / "empty-repo"
-    empty_repo.mkdir()
+    # Source repo is empty (nothing staged) but carries an installer.toml whose
+    # prune list matches the orphan, so _run_prune loads a non-empty list.
+    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
+    io = ScriptedIO(interactive=False)
 
     rc = main(
         ["--prune-only", "--yes", "--tools=claude"],
         home=home,
-        io=ScriptedIO(interactive=False),
-        repo_root=empty_repo,
+        io=io,
+        repo_root=repo,
     )
 
     assert rc == 0
     assert not retired.exists()
+    # Companion to the missing-config case: when installer.toml IS present, the
+    # missing-config warning is not emitted.
+    assert not any(
+        e.channel == "warn" and "installer.toml not found" in e.message for e in io.transcript
+    )
+
+
+def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
+    """
+    Given a repo_root whose packages/installer/installer.toml does NOT exist,
+    under --prune-only --yes
+    When main runs (non-interactive io)
+    Then a warning naming the missing path is emitted through io and the run
+    still exits cleanly (0) — an absent prune list deletes nothing (fail-safe),
+    so the no-op is explained rather than silent.
+
+    Pins: _run_prune derives the config path from repo_root and warns on the
+    missing-file case (PR #151 comment 3408241642).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    # An orphan that WOULD match the bundled prune list, to prove it is the
+    # empty list (not a non-match) that spares it from pruning.
+    retired = home / ".claude" / "skills" / "ralf-it"
+    retired.mkdir(parents=True)
+    empty_repo = tmp_path / "no-toml-repo"
+    empty_repo.mkdir()  # no packages/installer/installer.toml underneath
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=io,
+        repo_root=empty_repo,
+    )
+
+    assert rc == 0
+    assert retired.exists()  # empty prune list => nothing pruned
+    warnings = [
+        e for e in io.transcript if e.channel == "warn" and "installer.toml not found" in e.message
+    ]
+    assert len(warnings) == 1
+    assert str(empty_repo / "packages" / "installer" / "installer.toml") in warnings[0].message
 
 
 def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
@@ -192,14 +247,13 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     """
     home = _home_with_claude_settings(tmp_path)
     (home / ".claude" / "skills" / "ralf-it").mkdir(parents=True)
-    empty_repo = tmp_path / "empty-repo"
-    empty_repo.mkdir()
+    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
 
     rc = main(
         ["--prune-only", "--tools=claude"],
         home=home,
         io=ScriptedIO(interactive=False),
-        repo_root=empty_repo,
+        repo_root=repo,
     )
 
     assert rc != 0
