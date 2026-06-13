@@ -125,8 +125,8 @@ def _resolve_file_include(rel: Path, *, base_dir: Path, io: IOPort) -> str:
     is non-fatal — it warns and resolves to the empty string.
 
     Raises ``ValueError`` for absolute paths or paths containing ``..`` —
-    either would let ``base_dir / rel`` resolve outside ``base_dir`` (the
-    shared ``is_safe_relpath`` guard).
+    either would let ``base_dir / rel`` escape ``base_dir`` (rejected by the
+    shared lexical ``is_safe_relpath`` guard, which does not resolve symlinks).
     """
     if not is_safe_relpath(rel):
         raise ValueError(f"DYNAMIC-INCLUDE path escapes base_dir: {rel}")  # noqa: TRY003  # single call-site; subclass not justified
