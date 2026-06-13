@@ -35,6 +35,17 @@ def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
     return repo
 
 
+def _repo_with_malformed_installer_toml(tmp_path: Path) -> Path:
+    """Create a repo_root whose installer.toml is type-malformed: prune.retired
+    is a bare string, which load_installer_toml rejects with ValueError (it would
+    otherwise list()-shred into single-character globs)."""
+    repo = tmp_path / "repo"
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    (toml_dir / "installer.toml").write_text('[prune]\nretired = "*/skills/ralf-it"\n')
+    return repo
+
+
 def test_main_help_exits_with_status_zero() -> None:
     """
     When main(["--help"]) is invoked
@@ -257,6 +268,87 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     )
 
     assert rc != 0
+
+
+def test_prune_only_with_malformed_installer_toml_returns_2_and_errs_through_io(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a repo_root whose packages/installer/installer.toml is type-malformed
+    (prune.retired is a string, not a list), under --prune-only --yes
+    When main runs (non-interactive io)
+    Then it returns 2 (the config-error exit convention)
+    And the malformed-config message is surfaced through io's err channel
+    And no uncaught traceback escapes.
+
+    Pins: _run_prune catches the ValueError that load_installer_toml raises on a
+    type-malformed installer.toml and fails cleanly via io.err + return 2 rather
+    than crashing the CLI (PR #151 comment 3408271848).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    repo = _repo_with_malformed_installer_toml(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    errs = [
+        e
+        for e in io.transcript
+        if e.channel == "err" and "retired must be a list of strings" in e.message
+    ]
+    assert len(errs) == 1
+
+
+def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> None:
+    """
+    Given two repo_roots — one whose src/plugins/ contains a plugin directory and
+    one lacking src/plugins entirely — each with a valid installer.toml,
+    under --prune-only --yes
+    When main runs against each (non-interactive io)
+    Then plugin discovery resolves against the *injected* repo_root: the run
+    completes cleanly (0) in both cases, and the run whose repo_root lacks
+    src/plugins discovers nothing (no plugin staging is attempted off the real
+    repo's src/plugins).
+
+    Pins: _run_prune derives plugins_root from the injected repo_root
+    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, so
+    repo_root is fully authoritative (PR #151 comment 3408271853). With a
+    repo_root lacking src/plugins, discover() returns {} — proving the real
+    repo's plugins are not consulted.
+    """
+    home = _home_with_claude_settings(tmp_path)
+
+    # repo_root WITH a plugin under src/plugins/: discovery has something to find
+    # there, and the run must not error reaching for the real repo's plugins.
+    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with", retired=[])
+    (repo_with_plugins / "src" / "plugins" / "beads").mkdir(parents=True)
+    rc_with = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo_with_plugins,
+    )
+    assert rc_with == 0
+
+    # repo_root WITHOUT src/plugins: discover() returns {} for the injected root.
+    # If discovery had ignored repo_root and used the real _REPO_ROOT/src/plugins,
+    # this assertion could not distinguish the two — the injected empty root is
+    # what makes "no plugins" observable.
+    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without", retired=[])
+    assert not (repo_no_plugins / "src" / "plugins").exists()
+    rc_without = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo_no_plugins,
+    )
+    assert rc_without == 0
 
 
 def test_plain_prune_non_interactive_without_yes_fails_on_consent_guard(tmp_path: Path) -> None:

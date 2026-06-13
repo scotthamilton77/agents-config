@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 
 # Repo root is four parents up from this file:
 # packages/installer/src/installer/cli.py -> repo root.
+# Both the bundled installer.toml path and the plugin source root are derived
+# per-run inside _run_prune from the injected repo_root (default: _REPO_ROOT),
+# so config + plugin discovery track the same root as staging — keeping
+# repo_root fully authoritative and the missing-path cases testable.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-# Plugin source root. (The bundled installer.toml path is derived per-run inside
-# _run_prune from the injected repo_root, so the config tracks the same root as
-# staging — and the missing-file case stays testable.)
-_PLUGINS_ROOT = _REPO_ROOT / "src" / "plugins"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -156,10 +156,19 @@ def _run_prune(
     ``stage_and_transform``. When that file is absent — e.g. a wheel/install
     that bundles only ``src/installer`` and omits ``installer.toml`` — the load
     yields an empty prune list, so nothing would be pruned; a warning is emitted
-    naming the missing path so the no-op is explained rather than silent.
+    naming the missing path so the no-op is explained rather than silent. A
+    *present but type-malformed* ``installer.toml`` makes ``load_installer_toml``
+    raise ``ValueError``; that is caught here and surfaced through ``io`` as a
+    clean error with ``return 2`` (the CLI's config-error exit convention),
+    never an uncaught traceback.
+
+    Plugin discovery is likewise rooted at the passed ``repo_root``
+    (``repo_root / "src" / "plugins"``), so ``repo_root`` is fully
+    authoritative — config and plugins resolve against one injected root rather
+    than splitting between the argument and a module-level constant.
 
     Returns 0 on success, 1 when the non-interactive consent guard or the
-    prune-only flow aborts the run.
+    prune-only flow aborts the run, 2 when ``installer.toml`` is malformed.
     """
     if not prune_only:
         try:
@@ -173,8 +182,13 @@ def _run_prune(
             f"installer.toml not found at {installer_toml}; the prune list is "
             "empty, so nothing will be pruned."
         )
-    config = load_installer_toml(installer_toml)
-    plugins = resolve_plugins(home=home, plugins_root=_PLUGINS_ROOT, override_csv=None)
+    try:
+        config = load_installer_toml(installer_toml)
+    except ValueError as exc:
+        io.err(f"installer: {exc}")
+        return 2
+    plugins_root = repo_root / "src" / "plugins"
+    plugins = resolve_plugins(home=home, plugins_root=plugins_root, override_csv=None)
     plans = stage_and_transform(tools, repo_root=repo_root, io=io, plugins=plugins)
     adapters = [get_adapter(tool) for tool in tools]
 
