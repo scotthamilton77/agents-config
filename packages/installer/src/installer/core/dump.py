@@ -47,9 +47,18 @@ def dump_plan(plans: Mapping[Tool, StagingPlan], target: Path, *, io: IOPort) ->
     whatever already sits there — leaving stale files from a prior run to
     misrepresent the plan. An empty or absent ``target`` is fine (the operator
     may pre-create it).
+
+    Refuses a ``target`` that exists but is **not a directory** (a file, or a
+    symlink to a file — ``is_dir()`` follows symlinks) with `ValueError` too:
+    otherwise ``iterdir()`` would raise ``NotADirectoryError`` (an ``OSError``,
+    not ``ValueError``), bypassing the CLI's ``ValueError`` handling and dying
+    with an uncaught traceback instead of a clean ``installer: …`` / exit 2.
     """
-    if target.exists() and any(target.iterdir()):
-        raise ValueError(f"dump target is not empty: {target}")  # noqa: TRY003  # single call-site; debug-only guard
+    if target.exists():
+        if not target.is_dir():
+            raise ValueError(f"dump target is not a directory: {target}")  # noqa: TRY003  # debug-only guard; subclass not justified
+        if any(target.iterdir()):
+            raise ValueError(f"dump target is not empty: {target}")  # noqa: TRY003  # single call-site; debug-only guard
     for tool, plan in plans.items():
         tool_root = target / tool.value
         for item in plan.items.values():

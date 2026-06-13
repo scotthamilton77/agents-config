@@ -177,6 +177,20 @@ def test_non_empty_target_is_refused(tmp_path: Path) -> None:
         dump_plan({Tool.CLAUDE: plan}, target, io=ScriptedIO())
 
 
+def test_file_target_is_refused_as_value_error(tmp_path: Path) -> None:
+    """A ``target`` that exists but is a *file* (or symlink to one) is refused as
+    a ``ValueError`` — not the ``NotADirectoryError`` that an unguarded
+    ``iterdir()`` would raise. The CLI only catches ``ValueError``, so this is
+    what keeps a ``--dump-stage <file>`` invocation a clean exit 2 instead of an
+    uncaught traceback."""
+    target = tmp_path / "dump"
+    target.write_bytes(b"i am a file, not a dir\n")
+    plan = StagingPlan(items={Path("AGENTS.md"): _file_item("AGENTS.md", b"x\n")}, tool=Tool.CLAUDE)
+
+    with pytest.raises(ValueError, match="not a directory"):
+        dump_plan({Tool.CLAUDE: plan}, target, io=ScriptedIO())
+
+
 def test_empty_existing_target_is_accepted(tmp_path: Path) -> None:
     """An existing but empty ``target`` is fine — only non-empty is refused, so
     an operator can pre-create the directory."""
