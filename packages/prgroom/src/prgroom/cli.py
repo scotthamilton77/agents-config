@@ -17,23 +17,35 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
+from pathlib import Path
 from typing import IO
 
 import typer
 
+from prgroom.agent.contracts import ClusterContract, FixContract
+from prgroom.agent.dispatcher import (
+    ClusterDispatcher,
+    FixDispatcher,
+    ProviderChain,
+    load_chain,
+)
+from prgroom.agent.subprocess_runner import SubprocessAgentRunner
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, exit_code_for_tier
+from prgroom.escalation import Sink, StderrSink
 from prgroom.gh import GhClient
 from prgroom.gh.client import GhCli
-from prgroom.lifecycle import poll_pr
+from prgroom.git import GitCli, GitClient
+from prgroom.lifecycle import cluster_pr, fix_pr, is_terminal_for_cli, poll_pr
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.registry import resolve_store
-from prgroom.prsession.state import PRGroomingState, bootstrap_state
+from prgroom.prsession.state import PRGroomingState, ReviewItem, bootstrap_state
 from prgroom.prsession.store import StateNotFoundError, Store
 
 # Foundation skeletons are not yet implemented; they exit non-zero so a caller
@@ -66,6 +78,66 @@ def _build_gh() -> GhClient:
     tests against ``GhCli``, never through this constructor.
     """
     return GhCli(SubprocessRunner())  # pragma: no cover - production boundary wiring
+
+
+def _build_git() -> GitClient:
+    """Build the production git adapter (real subprocess boundary).
+
+    A seam: tests monkeypatch this to inject a fake ``GitClient``. The one
+    production-wiring line is exercised by the git fit tests against ``GitCli``.
+    """
+    return GitCli(SubprocessRunner())  # pragma: no cover - production boundary wiring
+
+
+def _decided_by(chain: ProviderChain) -> str:
+    """Derive ``decided_by`` from a resolved chain's primary provider (``"<cli> <model>"``).
+
+    The primary (first) provider is the one prgroom prefers; its ``cli`` + ``model``
+    name the deciding agent on every disposition this run stamps (e.g.
+    ``"claude opus[1m]"``). An empty chain (a misconfig the dispatcher would reject
+    on dispatch) degrades to ``"prgroom"`` so the field is never blank.
+    """
+    if not chain.providers:
+        return "prgroom"
+    head = chain.providers[0]
+    return f"{head.cli} {head.model}"
+
+
+def _build_cluster_dispatcher() -> tuple[ClusterContract, str]:
+    """Resolve the cluster provider chain + a dispatcher (flag/env/TOML → default).
+
+    A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
+    ``decided_by``. Production resolves the chain via :func:`load_chain` and wires a
+    :class:`ClusterDispatcher` over the real :class:`SubprocessAgentRunner`.
+    """
+    chain = load_chain("cluster", repo_config=None, model_override=None)  # pragma: no cover
+    dispatcher = ClusterDispatcher(  # pragma: no cover - production wiring
+        runner=SubprocessAgentRunner(), chain=chain
+    )
+    return dispatcher, _decided_by(chain)  # pragma: no cover - production wiring
+
+
+def _build_fix_dispatcher() -> tuple[FixContract, str]:
+    """Resolve the fix provider chain + a dispatcher (flag/env/TOML → default).
+
+    A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
+    ``decided_by``. Production resolves the chain via :func:`load_chain` and wires a
+    :class:`FixDispatcher` over the real :class:`SubprocessAgentRunner`.
+    """
+    chain = load_chain("fix", repo_config=None, model_override=None)  # pragma: no cover
+    dispatcher = FixDispatcher(  # pragma: no cover - production wiring
+        runner=SubprocessAgentRunner(), chain=chain
+    )
+    return dispatcher, _decided_by(chain)  # pragma: no cover - production wiring
+
+
+def _build_sink() -> Sink:
+    """Build the default escalation sink (stderr).
+
+    A seam: tests monkeypatch this to record emitted escalations. The ``--bd-bead``
+    / ``--escalation-file`` adapter selection is a later bead; MVP defaults to stderr.
+    """
+    return StderrSink()  # pragma: no cover - trivial production default
 
 
 @app.callback()
@@ -135,16 +207,126 @@ def poll(
         raise typer.Exit(code=handle_cli_error(err)) from err
 
 
-@app.command()
-def cluster(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Group unprocessed items into fix-bundles for cohesive fix work."""
-    _skeleton("cluster")
+def _read_or_no_state(store: Store, ref: PRRef) -> PRGroomingState:
+    """Read the PR's state, raising ``PRECONDITION_NO_STATE`` if it was never polled.
+
+    Direct invocation does NOT self-heal (the ``--no-prework`` column, §3.2): a
+    missing state is a terminal user error (exit 2), not an auto-run-``poll`` path.
+    The self-heal/prework chaining is the ``run`` aggregate's job (bead 8.10).
+    """
+    try:
+        return store.read(ref)
+    except StateNotFoundError as exc:
+        raise PreconditionError(ErrorCode.PRECONDITION_NO_STATE, detail=ref.display()) from exc
+
+
+def _needs_clustering(items: list[ReviewItem]) -> bool:
+    """True iff any item still needs clustering (unclustered AND unprocessed)."""
+    return any(item.cluster_id == "" and item.disposition is None for item in items)
+
+
+def _has_clusters(items: list[ReviewItem]) -> bool:
+    """True iff any clustered item is still unprocessed (fix has work to do)."""
+    return any(item.cluster_id != "" and item.disposition is None for item in items)
 
 
 @app.command()
-def fix(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Dispatch the fix agent per cluster: decide disposition AND implement."""
-    _skeleton("fix")
+def cluster(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Group unprocessed items into fix-bundles for cohesive fix work.
+
+    A locked verb: ``read → cluster_pr → write`` under the §2 ``with_lock`` wrapper.
+    Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
+    ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an already-clustered
+    state → no-op exit 0; items exist but none need clustering → ``PRECONDITION_NO_ITEMS``
+    (no-work exit 0). Cluster decides no disposition and changes no phase.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+        git = _build_git()
+        deps = Deps.system()
+        config = PrgroomConfig.load()
+
+        def _cluster() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_terminal_for_cli(state.phase):
+                return  # terminal-for-CLI: no autonomous work (no-op exit 0)
+            if not state.items:
+                raise PreconditionError(ErrorCode.PRECONDITION_NO_ITEMS, detail=ref.display())
+            if not _needs_clustering(state.items):
+                return  # already clustered / all processed → idempotent no-op exit 0
+            dispatcher, decided_by = _build_cluster_dispatcher()
+            with tempfile.TemporaryDirectory(prefix="prgroom-cluster-") as scratch:
+                state = cluster_pr(
+                    state,
+                    ref=ref,
+                    gh=gh,
+                    git=git,
+                    deps=deps,
+                    config=config,
+                    dispatcher=dispatcher,
+                    decided_by=decided_by,
+                    scratch_dir=Path(scratch),
+                )
+            store.write(ref, state)
+
+        with_lock(store, ref, _cluster)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
+
+
+@app.command()
+def fix(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Dispatch the fix agent per cluster: decide disposition AND implement (local).
+
+    A locked verb: ``read → fix_pr → write`` under the §2 ``with_lock`` wrapper.
+    Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
+    ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an all-dispositioned
+    state → no-op exit 0; no clustered-unprocessed items → ``PRECONDITION_NO_CLUSTERS``
+    (no-work exit 0). Fix makes no phase change (end-of-cycle resolution is bead 8.10)
+    and sets no ``last_error``. Commits land locally; nothing is pushed here.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+        git = _build_git()
+        deps = Deps.system()
+        config = PrgroomConfig.load()
+
+        def _fix() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_terminal_for_cli(state.phase):
+                return  # terminal-for-CLI: no autonomous work (no-op exit 0)
+            if not _has_clusters(state.items):
+                raise PreconditionError(ErrorCode.PRECONDITION_NO_CLUSTERS, detail=ref.display())
+            dispatcher, decided_by = _build_fix_dispatcher()
+            sink = _build_sink()
+            with tempfile.TemporaryDirectory(prefix="prgroom-fix-") as scratch:
+                state = fix_pr(
+                    state,
+                    ref=ref,
+                    gh=gh,
+                    git=git,
+                    deps=deps,
+                    config=config,
+                    dispatcher=dispatcher,
+                    sink=sink,
+                    decided_by=decided_by,
+                    scratch_dir=Path(scratch),
+                )
+            store.write(ref, state)
+
+        with_lock(store, ref, _fix)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()

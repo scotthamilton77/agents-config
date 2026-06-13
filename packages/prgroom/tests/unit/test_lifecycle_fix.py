@@ -195,12 +195,8 @@ def test_fix_applies_dispositions_from_result(tmp_path: Path) -> None:
     dispatcher = FixDispatcherStub(
         [
             _out(
-                FixItemResult(
-                    gh_id="a", disposition=DispositionKind.FIXED, commit_shas=["sha1"]
-                ),
-                FixItemResult(
-                    gh_id="b", disposition=DispositionKind.SKIPPED, rationale="ack only"
-                ),
+                FixItemResult(gh_id="a", disposition=DispositionKind.FIXED, commit_shas=["sha1"]),
+                FixItemResult(gh_id="b", disposition=DispositionKind.SKIPPED, rationale="ack only"),
             )
         ]
     )

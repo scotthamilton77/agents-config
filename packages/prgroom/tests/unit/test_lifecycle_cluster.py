@@ -14,9 +14,12 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from prgroom.agent.contracts import ClusterInput, ClusterOutput, ClusterResult
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
+from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle.cluster import cluster_pr
 from prgroom.proc import CommandResult
@@ -217,3 +220,15 @@ def test_cluster_writes_pr_context_file(tmp_path: Path) -> None:
     ctx = ctx_path.read_text(encoding="utf-8")
     assert "My PR" in ctx  # title from the gh PR resource
     assert "abc recent commit" in ctx  # recent commits from git
+
+
+def test_cluster_404_on_pr_context_read_is_terminal(tmp_path: Path) -> None:
+    # A 404 building the PR-context file means the PR/repo vanished → terminal
+    # RUNTIME_GH_TERMINAL, never a crash or a blind retry.
+    not_found = CommandResult(returncode=1, stdout="{}", stderr="gh: Not Found (HTTP 404)")
+    gh = GhCli(RecordedRunner([not_found]))
+    dispatcher = ClusterDispatcherStub([])
+    with pytest.raises(PrgroomError) as exc:
+        _run(_state(_item("a")), dispatcher, tmp_path, gh=gh)
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER

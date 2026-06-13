@@ -16,6 +16,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
+from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle.snapshot import (
     DECISIONS_END,
@@ -197,6 +200,36 @@ def test_extract_decisions_block_absent_returns_empty() -> None:
     assert extract_decisions_block("a PR body with no decisions section") == ""
 
 
+def test_extract_decisions_block_start_without_end_returns_empty() -> None:
+    # A start sentinel with no matching end has no parseable boundary → empty,
+    # rather than guessing where the block ends.
+    body = f"intro\n{DECISIONS_START}\n## Decisions\n- dangling"
+    assert extract_decisions_block(body) == ""
+
+
+def test_derive_recurrence_no_thread_id_is_not_reopened() -> None:
+    # An item with no thread_id (e.g. an issue_comment) cannot be "reopened" by a
+    # thread reply — the reopened signal degrades to False.
+    disp = Disposition(kind=DispositionKind.SKIPPED, decided_at=_T0, decided_by="x")
+    item = _item("a", disposition=disp)  # no thread_id → issue_comment kind
+    rec = derive_recurrence(
+        item, _state(item), threads={"PRT_a": [{"created_at": _T1.isoformat()}]}
+    )
+    assert rec is not None
+    assert rec.reopened is False
+
+
+def test_derive_recurrence_ignores_malformed_reply_timestamp() -> None:
+    # A reply with a missing/blank created_at cannot prove a reopen — skipped, not
+    # crashed; with no other newer reply the item is not reopened.
+    disp = Disposition(kind=DispositionKind.FIXED, decided_at=_T0, decided_by="x")
+    item = _item("a", thread_id="PRT_a", disposition=disp)
+    threads = {"PRT_a": [{"created_at": ""}, {"body": "no timestamp at all"}]}
+    rec = derive_recurrence(item, _state(item), threads=threads)
+    assert rec is not None
+    assert rec.reopened is False
+
+
 # ───────────────────────── assemble_snapshot ─────────────────────────
 
 
@@ -205,9 +238,7 @@ def test_assemble_snapshot_writes_both_files(tmp_path: Path) -> None:
     state = _state(item)
     gh = _gh(base_ref="main", body="body", labels=["bug", "needs-fix"])
     git = FakeGit(log="commit log here", diff_stat="2 files changed")
-    snap = assemble_snapshot(
-        state, [item], ref=_REF, gh=gh, git=git, scratch_dir=tmp_path
-    )
+    snap = assemble_snapshot(state, [item], ref=_REF, gh=gh, git=git, scratch_dir=tmp_path)
     assert Path(snap.pr_detail_path).is_file()
     assert Path(snap.branch_state_path).is_file()
     # The branch-state file carries the git log + diff-stat dump verbatim.
@@ -243,9 +274,7 @@ def test_assemble_snapshot_detail_carries_prior_dispositions(tmp_path: Path) -> 
     todo = _item("todo", thread_id="PRT_todo")
     state = _state(done, todo)
     gh = _gh()
-    snap = assemble_snapshot(
-        state, [todo], ref=_REF, gh=gh, git=FakeGit(), scratch_dir=tmp_path
-    )
+    snap = assemble_snapshot(state, [todo], ref=_REF, gh=gh, git=FakeGit(), scratch_dir=tmp_path)
     detail = json.loads(Path(snap.pr_detail_path).read_text(encoding="utf-8"))
     prior = detail["prior_dispositions"]
     assert len(prior) == 1
@@ -280,6 +309,20 @@ def test_assemble_snapshot_returns_ephemeral_dirs(tmp_path: Path) -> None:
     )
     assert Path(snap.memory_dir).is_dir()
     assert Path(snap.response_outbox_dir).is_dir()
+
+
+def test_assemble_snapshot_404_on_pr_resource_is_terminal(tmp_path: Path) -> None:
+    # A mid-run 404 on the PR resource means the PR/repo vanished → terminal
+    # RUNTIME_GH_TERMINAL (mirrors poll.py), never a crash or a blind retry.
+    item = _item("11", thread_id="PRT_11")
+    not_found = CommandResult(returncode=1, stdout="{}", stderr="gh: Not Found (HTTP 404)")
+    gh = GhCli(RecordedRunner([not_found]))
+    with pytest.raises(PrgroomError) as exc:
+        assemble_snapshot(
+            _state(item), [item], ref=_REF, gh=gh, git=FakeGit(), scratch_dir=tmp_path
+        )
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
 
 
 def test_assemble_snapshot_embeds_recurrence_for_prior_disposition_items(
