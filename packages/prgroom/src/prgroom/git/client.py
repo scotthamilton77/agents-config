@@ -52,6 +52,10 @@ class GitClient(Protocol):
 
     def rev_list(self, range_: str) -> list[str]: ...  # pragma: no cover
 
+    def log(self, range_: str) -> str: ...  # pragma: no cover
+
+    def diff_stat(self, range_: str) -> str: ...  # pragma: no cover
+
     def push(self, remote: str, branch: str) -> None: ...  # pragma: no cover
 
     def stash(self) -> None: ...  # pragma: no cover
@@ -86,6 +90,16 @@ class GitCli:
     def rev_list(self, range_: str) -> list[str]:
         out = self._run(["git", "rev-list", range_])
         return out.split()
+
+    def log(self, range_: str) -> str:
+        # Snapshot read (§8.1 branch_state): recent-commits text, passed to the
+        # fix agent verbatim — return it unparsed, the caller dumps it to a file.
+        return self._run(["git", "log", range_])
+
+    def diff_stat(self, range_: str) -> str:
+        # Snapshot read (§8.1 branch_state): the diff-since-base summary. `--stat`
+        # keeps the dump bounded (per-file line counts, not full hunks).
+        return self._run(["git", "diff", "--stat", range_])
 
     def push(self, remote: str, branch: str) -> None:
         self._run(["git", "push", remote, branch])

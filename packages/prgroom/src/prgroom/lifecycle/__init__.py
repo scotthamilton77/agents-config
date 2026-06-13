@@ -17,12 +17,16 @@ The terminal sets distinguish the two notions of "done" (§3.1):
 
 from __future__ import annotations
 
+from prgroom.lifecycle.cluster import cluster_pr
+from prgroom.lifecycle.fix import fix_pr
 from prgroom.lifecycle.poll import poll_pr
 from prgroom.prsession.enums import PRPhase
 
 __all__ = [
     "GRAPH_TERMINAL_PHASES",
     "TERMINAL_FOR_CLI_PHASES",
+    "cluster_pr",
+    "fix_pr",
     "is_graph_terminal",
     "is_terminal_for_cli",
     "poll_pr",
