@@ -157,10 +157,16 @@ def _back_up_and_delete(orphan: Orphan, *, io: IOPort, timestamp: str, counters:
     dest = back_up(orphan.path, timestamp)
     counters.backed_up += 1
     io.info(f"Backed up {orphan.path.name} -> {dest.parent.name}/{dest.name}", verbose=True)
-    if orphan.path.is_dir():
-        shutil.rmtree(orphan.path)
-    else:
+    # A symlink (to a dir OR a file) is removed with ``unlink``, which deletes
+    # the link itself, never its target. ``rmtree`` is reserved for real
+    # directories: ``Path.is_dir()`` follows symlinks, so a dir-symlink would
+    # otherwise reach ``rmtree`` — which refuses a symlink and raises OSError.
+    # The bash original used ``rm -rf``, which handles symlinks fine; this keeps
+    # port parity.
+    if orphan.path.is_symlink() or not orphan.path.is_dir():
         orphan.path.unlink()
+    else:
+        shutil.rmtree(orphan.path)
     counters.pruned += 1
 
 

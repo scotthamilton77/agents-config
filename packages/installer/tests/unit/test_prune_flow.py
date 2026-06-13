@@ -17,7 +17,9 @@ Covered decisions:
 - backup precedes delete (a sibling <namespace>-backup/ copy survives the rm),
 - directory orphans are backed up recursively,
 - a malformed timestamp under a deleting path (auto_yes) raises before any delete,
-- a malformed timestamp under dry_run does NOT raise (no timestamp is resolved).
+- a malformed timestamp under dry_run does NOT raise (no timestamp is resolved),
+- a symlink-to-directory orphan is unlinked (not rmtree'd): the link is removed,
+  its target directory survives, and the flow completes without raising.
 """
 
 from __future__ import annotations
@@ -274,3 +276,36 @@ def test_malformed_timestamp_under_dry_run_does_not_raise(tmp_path: Path) -> Non
     assert o1.path.exists()
     assert counters.pruned == 0
     assert counters.backed_up == 0
+
+
+def test_symlink_to_directory_orphan_unlinked_not_rmtree(tmp_path: Path) -> None:
+    """
+    Given a skills/ orphan that is a symlink pointing at a real directory
+    When run_prune deletes it under auto_yes
+    Then the link is removed via unlink, its target directory survives, and the
+    flow completes without raising.
+
+    Pins the symlink branch in ``_back_up_and_delete``: ``Path.is_dir()`` follows
+    symlinks, so a dir-symlink would reach ``shutil.rmtree`` — which refuses a
+    symlink and raises OSError. The ``is_symlink()`` guard routes it to
+    ``unlink`` (deletes the link, not the target), matching the bash ``rm -rf``.
+    """
+    target_dir = tmp_path / "real-target"
+    target_dir.mkdir()
+    (target_dir / "keep.md").write_text("survives")
+
+    ns_dir = tmp_path / ".claude" / "skills"
+    ns_dir.mkdir(parents=True)
+    link = ns_dir / "linked"
+    link.symlink_to(target_dir, target_is_directory=True)
+    orphan = Orphan(tool="claude", namespace="skills", path=link, kind="dir")
+
+    io = ScriptedIO(interactive=False)
+
+    counters = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
+
+    assert not link.exists()  # the symlink itself is gone
+    assert not link.is_symlink()
+    assert target_dir.is_dir()  # the link target is untouched
+    assert (target_dir / "keep.md").read_text() == "survives"
+    assert counters.pruned == 1
