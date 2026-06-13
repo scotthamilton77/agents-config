@@ -22,6 +22,18 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _hermetic_repo(tmp_path: Path) -> Path:
+    """A minimal source repo: one shared template so a Claude plan is
+    non-empty, plus empty tool-root dirs the adapters expect."""
+    repo = tmp_path / "repo"
+    shared = repo / "src" / "user" / ".agents"
+    shared.mkdir(parents=True)
+    (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
+    for tool in ("claude", "codex", "gemini", "opencode"):
+        (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    return repo
+
+
 def test_main_help_exits_with_status_zero() -> None:
     """
     When main(["--help"]) is invoked
@@ -134,3 +146,86 @@ def test_main_no_args_against_empty_home_returns_2_with_detection_diagnostic(
     assert "settings.json" in captured.err
     assert str(tmp_path) in captured.err
     assert "--tools=" in captured.err
+
+
+def test_dump_stage_materialises_plan_and_returns_zero(tmp_path: Path) -> None:
+    """
+    Given a hermetic source repo and a Claude install signal in home
+    When main(["--dump-stage=<out>", "--tools=claude"], repo_root=repo) runs
+    Then it returns 0
+    And the staged shared template lands at <out>/claude/INSTRUCTIONS.md.
+    """
+    repo = _hermetic_repo(tmp_path)
+    out = tmp_path / "dump"
+
+    rc = main(
+        [f"--dump-stage={out}", "--tools=claude"],
+        home=tmp_path,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (out / "claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
+
+
+def test_dump_stage_writes_nothing_under_home(tmp_path: Path) -> None:
+    """
+    Given a home with a Claude detection signal but no installed config tree
+    When main runs in --dump-stage mode
+    Then the only thing under .claude is the detection signal that was already
+    there — the dump touches no install destination.
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    out = tmp_path / "dump"
+
+    main([f"--dump-stage={out}", "--tools=claude"], home=home, repo_root=repo)
+
+    under_claude = sorted(p.name for p in (home / ".claude").iterdir())
+    assert under_claude == ["settings.json"]
+
+
+def test_dump_stage_prints_dump_path_to_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    When main runs in --dump-stage mode
+    Then the dump path is printed to stdout (operator-facing breadcrumb).
+
+    Whitespace is collapsed before the substring check: rich's Console
+    soft-wraps long lines at the detected terminal width (80 under capsys), so
+    a long temp path is split across physical lines. That wrapping is a
+    rendering artifact of console width — an injectable concern, per the
+    io_port suite's width=120 Console — not part of the "path is printed"
+    contract.
+    """
+    repo = _hermetic_repo(tmp_path)
+    out = tmp_path / "dump"
+
+    main([f"--dump-stage={out}", "--tools=claude"], home=tmp_path, repo_root=repo)
+
+    printed = "".join(capsys.readouterr().out.split())
+    assert "".join(str(out).split()) in printed
+
+
+def test_dump_stage_non_empty_target_returns_2_with_stderr_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a --dump-stage target that already holds files
+    When main runs in --dump-stage mode
+    Then it returns 2 (not an uncaught traceback)
+    And stderr names the not-empty target.
+
+    Pins: the debug flag fails cleanly on a dirty target rather than crashing,
+    consistent with the CLI's other return-2 error paths.
+    """
+    repo = _hermetic_repo(tmp_path)
+    out = tmp_path / "dump"
+    out.mkdir()
+    (out / "stale.txt").write_bytes(b"old\n")
+
+    rc = main([f"--dump-stage={out}", "--tools=claude"], home=tmp_path, repo_root=repo)
+
+    assert rc == 2
+    assert "not empty" in capsys.readouterr().err
