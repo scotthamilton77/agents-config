@@ -7,7 +7,7 @@ dumps everything to the two files the fix contract already passes —
 ``pr_detail_path`` and ``branch_state_path`` (see :class:`SnapshotPaths`):
 
 * ``pr_detail_path`` (JSON): the PR **description** (with the ``## Decisions``
-  block read verbatim — writing it is the §8.3 write path, here we only READ it), the PR
+  block read (whitespace-trimmed) — writing it is the §8.3 write path, here we only READ it), the PR
   **labels**, the review threads with their reply-chains, the **prior-round
   dispositions** for already-processed items (kind / rationale / commits /
   decided_by, from ``prsession`` state), and the per-item **recurrence** (§8.2).
@@ -96,11 +96,12 @@ class SnapshotPaths:
 
 
 def extract_decisions_block(body: str) -> str:
-    """Return the ``## Decisions`` block (between sentinels) verbatim, else ``""``.
+    """Return the ``## Decisions`` block (between sentinels), whitespace-trimmed, else ``""``.
 
-    The block is read-only here (writing it is the §8.3 write path). A body missing
-    either sentinel — or with them out of order — has no block, so this returns
-    the empty string rather than guessing a boundary.
+    The block is read-only here (writing it is the §8.3 write path). The inner text
+    is ``.strip()``-ed of surrounding whitespace/newlines before being embedded in
+    the snapshot. A body missing either sentinel — or with them out of order — has
+    no block, so this returns the empty string rather than guessing a boundary.
     """
     start = body.find(DECISIONS_START)
     if start == -1:
@@ -162,7 +163,13 @@ def _thread_reopened(
         raw = comment.get("created_at")
         if not isinstance(raw, str) or not raw:
             continue
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            # A malformed (non-ISO) timestamp can't prove a reopen — treat it as
+            # non-evidence and skip rather than crash snapshot assembly (which would
+            # abort `fix`). Real GitHub always emits valid Z-suffixed ISO-8601.
+            continue
         # A naive (offsetless) timestamp can't be compared to the tz-aware
         # decided_at without raising — it can't prove a reopen, so skip it rather
         # than crash. Real GitHub always emits Z-suffixed (aware) timestamps.

@@ -220,11 +220,19 @@ def test_derive_recurrence_no_thread_id_is_not_reopened() -> None:
 
 
 def test_derive_recurrence_ignores_malformed_reply_timestamp() -> None:
-    # A reply with a missing/blank created_at cannot prove a reopen — skipped, not
-    # crashed; with no other newer reply the item is not reopened.
+    # A reply with a blank/missing created_at OR a truly malformed (non-ISO) string
+    # cannot prove a reopen — each is skipped, not crashed (a non-ISO value would
+    # otherwise raise ValueError out of datetime.fromisoformat and abort `fix`).
+    # With no other newer reply the item is not reopened.
     disp = Disposition(kind=DispositionKind.FIXED, decided_at=_T0, decided_by="x")
     item = _item("a", thread_id="PRT_a", disposition=disp)
-    threads = {"PRT_a": [{"created_at": ""}, {"body": "no timestamp at all"}]}
+    threads = {
+        "PRT_a": [
+            {"created_at": ""},
+            {"body": "no timestamp at all"},
+            {"created_at": "not-a-real-timestamp"},  # non-ISO → must be skipped, not crash
+        ]
+    }
     rec = derive_recurrence(item, _state(item), threads=threads)
     assert rec is not None
     assert rec.reopened is False
