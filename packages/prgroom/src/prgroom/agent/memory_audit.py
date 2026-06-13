@@ -73,7 +73,11 @@ def _is_contained(path: str, memory_dir: str) -> bool:
     norm_path = os.path.normpath(path)
     if norm_path == norm_dir:
         return True
-    return norm_path.startswith(norm_dir + os.sep)
+    # normpath("/") == "/" already ends in os.sep; a naive `norm_dir + os.sep`
+    # would form "//" and reject every real path under root. Only append the
+    # separator when the dir does not already end in one.
+    prefix = norm_dir if norm_dir.endswith(os.sep) else norm_dir + os.sep
+    return norm_path.startswith(prefix)
 
 
 def audit_memory(

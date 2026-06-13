@@ -81,6 +81,17 @@ def test_sibling_prefix_path_is_a_block_violation() -> None:
     assert res.violations[0].severity is Severity.BLOCK
 
 
+def test_root_memory_dir_contains_every_absolute_path() -> None:
+    # memory_dir == "/" is pathological but must not produce false BLOCKs: normpath
+    # "/" already ends in os.sep, so a naive `norm_dir + os.sep` ("//") rejects every
+    # real path. Root contains everything absolute.
+    out = _out(memory_writes=["/etc/passwd", "/"])
+    res = audit_memory(
+        out, memory_dir="/", written_paths={"/etc/passwd", "/"}, known_thread_ids=set()
+    )
+    assert res.violations == []
+
+
 # ───────────────────────── classification enum ─────────────────────────
 
 
