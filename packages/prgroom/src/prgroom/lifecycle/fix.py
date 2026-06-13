@@ -81,14 +81,12 @@ def fix_pr(
     if not clusters:
         return state
 
-    by_gh = {item.identity.gh_id: item for item in state.items}
     now = deps.clock.now()
     for cluster_id, cluster_items in clusters.items():
         _fix_one_cluster(
             state,
             cluster_id=cluster_id,
             cluster_items=cluster_items,
-            by_gh=by_gh,
             ref=ref,
             gh=gh,
             git=git,
@@ -107,7 +105,6 @@ def _fix_one_cluster(
     *,
     cluster_id: str,
     cluster_items: list[ReviewItem],
-    by_gh: dict[str, ReviewItem],
     ref: PRRef,
     gh: GhClient,
     git: GitClient,
@@ -138,6 +135,11 @@ def _fix_one_cluster(
     )
     result = run_fix(req, dispatcher, git, now=now, decided_by=decided_by)
 
+    # Apply via a per-cluster map over THIS cluster's items only. run_fix returns
+    # dispositions keyed by gh_id for exactly these items, and the codebase's natural
+    # key is (kind, gh_id) — a state-wide gh_id map could mis-target an item from
+    # another cluster/kind that happens to share a gh_id.
+    by_gh = {item.identity.gh_id: item for item in cluster_items}
     for gh_id, disposition in result.dispositions.items():
         item = by_gh.get(gh_id)
         if item is not None:

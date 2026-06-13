@@ -210,6 +210,38 @@ def test_fix_applies_dispositions_from_result(tmp_path: Path) -> None:
     assert by_id["b"].kind is DispositionKind.SKIPPED
 
 
+def test_fix_applies_per_cluster_not_state_wide_gh_id(tmp_path: Path) -> None:
+    # Two items share gh_id "dup" but differ in kind (the natural key is
+    # (kind, gh_id), not gh_id alone). The clustered-unprocessed one must receive the
+    # disposition; the already-processed sibling sharing the gh_id must be untouched —
+    # a state-wide gh_id map would mis-target the sibling (PR #152 comment 3408284563).
+    target = _item("dup", cluster_id="c-1")  # REVIEW_THREAD, unprocessed
+    prior = Disposition(
+        kind=DispositionKind.SKIPPED, decided_at=_T0, decided_by="x", rationale="kept"
+    )
+    sibling = ReviewItem(
+        kind=ItemKind.ISSUE_COMMENT,
+        identity=Identity(gh_id="dup", issue_comment_id=99),
+        author="copilot",
+        body_excerpt="other",
+        seen_at=_T0,
+        cluster_id="",
+        disposition=prior,
+    )
+    dispatcher = FixDispatcherStub(
+        [_out(FixItemResult(gh_id="dup", disposition=DispositionKind.FIXED, commit_shas=["sha1"]))]
+    )
+    out, _sink, _git = _run(
+        _state(target, sibling), dispatcher, tmp_path, git=FakeGit(new_commits=["sha1"])
+    )
+    rt = next(it for it in out.items if it.kind is ItemKind.REVIEW_THREAD)
+    ic = next(it for it in out.items if it.kind is ItemKind.ISSUE_COMMENT)
+    assert rt.disposition is not None and rt.disposition.kind is DispositionKind.FIXED
+    # the same-gh_id sibling kept its prior disposition; it was NOT clobbered
+    assert ic.disposition is not None and ic.disposition.kind is DispositionKind.SKIPPED
+    assert ic.disposition.rationale == "kept"
+
+
 def test_fix_no_phase_change_and_no_last_error(tmp_path: Path) -> None:
     a = _item("a")
     dispatcher = FixDispatcherStub(
