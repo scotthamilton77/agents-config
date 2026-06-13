@@ -444,29 +444,32 @@ def test_overwrite_outside_namespace_backs_up_in_place(tmp_path: Path) -> None:
 def test_namespace_routing_keys_on_parent_dir_not_path_depth(tmp_path: Path) -> None:
     """
     Given a destination whose immediate parent is a scoped namespace dir
-    nested deeper than one level (``commands/sub/f.md``)
+    that is itself nested below the root (``tool_dir/commands/f.md``)
     When sync overwrites it
-    Then routing keys on the immediate parent's name — backup lands in a
-    sibling ``commands-backup/`` beside the ``commands`` dir, mirroring the
-    bash ``basename "$(dirname "$target")"`` decision, not the file's depth.
+    Then routing keys on the immediate parent's name regardless of how deep
+    the namespace sits — backup lands in a sibling ``commands-backup/``
+    beside the nested ``commands`` dir, mirroring the bash
+    ``basename "$(dirname "$target")"`` decision, not the file's depth.
     """
     src_root = tmp_path / "repo"
     dest_root = tmp_path / "home"
-    (src_root / "commands").mkdir(parents=True)
-    (dest_root / "commands").mkdir(parents=True)
-    (src_root / "commands" / "f.md").write_bytes(b"new\n")
-    (dest_root / "commands" / "f.md").write_bytes(b"old\n")
+    rel = Path("tool_dir") / "commands" / "f.md"
+    (src_root / "tool_dir" / "commands").mkdir(parents=True)
+    (dest_root / "tool_dir" / "commands").mkdir(parents=True)
+    (src_root / rel).write_bytes(b"new\n")
+    (dest_root / rel).write_bytes(b"old\n")
 
     sync(
         _IdentityAdapter(),
-        Path("commands") / "f.md",
+        rel,
         repo_root=src_root,
         home=dest_root,
         io=ScriptedIO(),
         timestamp=_FIXED_TS,
     )
 
-    assert (dest_root / "commands-backup" / f"f.md.backup-{_FIXED_TS}").read_bytes() == b"old\n"
+    backup = dest_root / "tool_dir" / "commands-backup" / f"f.md.backup-{_FIXED_TS}"
+    assert backup.read_bytes() == b"old\n"
 
 
 def test_namespace_name_as_grandparent_routes_in_place(tmp_path: Path) -> None:
