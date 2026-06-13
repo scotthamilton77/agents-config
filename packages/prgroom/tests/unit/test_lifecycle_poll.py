@@ -61,9 +61,16 @@ def _gh(
     issue_comments: list[dict[str, object]] | None = None,
     reviews: list[dict[str, object]] | None = None,
     review_comments: list[dict[str, object]] | None = None,
+    thread_nodes: list[dict[str, object]] | None = None,
     ci: str = "success",
 ) -> GhCli:
-    """Build a GhCli queuing the six poll reads in the order ``poll_pr`` issues them."""
+    """Build a GhCli queuing the poll reads in the order ``poll_pr`` issues them.
+
+    When ``review_comments`` is non-empty, ``poll_pr`` issues an extra GraphQL
+    ``reviewThreads`` read (the thread-id map) between the review-comments REST read
+    and the CI read; ``thread_nodes`` supplies that envelope's nodes (default empty
+    → every review-thread item degrades to ``thread_id == ""``).
+    """
     pr = (
         {"state": "closed", "merged_at": "2026-06-09T10:00:00Z"}
         if pr_merged
@@ -75,8 +82,10 @@ def _gh(
         _ok(issue_comments or []),
         _ok(reviews or []),
         _ok(review_comments or []),
-        _ok({"state": ci}),
     ]
+    if review_comments:
+        results.append(_thread_map_ok(thread_nodes or []))
+    results.append(_ok({"state": ci}))
     return GhCli(RecordedRunner(results))
 
 
@@ -332,6 +341,56 @@ def test_reply_review_comment_carries_parent_in_reply_to_id() -> None:
     thread = next(i for i in state.items if i.kind is ItemKind.REVIEW_THREAD)
     assert thread.identity.gh_id == "32"  # the reply's own id
     assert thread.identity.reply_to_comment_id == 31  # the parent it replies to
+
+
+def _thread_map_ok(nodes: list[dict[str, object]]) -> CommandResult:
+    """A gh-api-graphql reviewThreads success envelope (the thread-id map read)."""
+    return _ok({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}})
+
+
+def test_review_thread_item_gets_graphql_node_id_as_thread_id() -> None:
+    # The core qmoz5 fix: a review-thread item's thread_id is the GraphQL PRRT_*
+    # node id its comment maps to — not "" (the old floor) and not the REST id.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = GhCli(
+        RecordedRunner(
+            [
+                _ok({"headRefOid": "same"}),
+                _ok({"state": "open", "merged_at": None}),
+                _ok([]),  # issue comments
+                _ok([]),  # reviews
+                _ok([_review_comment(31)]),  # review comments (REST databaseId 31)
+                _thread_map_ok([{"id": "PRRT_x", "comments": {"nodes": [{"databaseId": 31}]}}]),
+                _ok({"state": "success"}),  # CI status
+            ]
+        )
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    thread = next(i for i in state.items if i.kind is ItemKind.REVIEW_THREAD)
+    assert thread.identity.gh_id == "31"
+    assert thread.identity.thread_id == "PRRT_x"
+
+
+def test_review_thread_thread_id_empty_when_unmapped() -> None:
+    # A comment absent from the GraphQL map (e.g. beyond the page cap) degrades to
+    # "" rather than mis-keying — the §8.2 floor, applied per-item.
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    gh = GhCli(
+        RecordedRunner(
+            [
+                _ok({"headRefOid": "same"}),
+                _ok({"state": "open", "merged_at": None}),
+                _ok([]),
+                _ok([]),
+                _ok([_review_comment(31)]),
+                _thread_map_ok([]),  # empty map → no node id for comment 31
+                _ok({"state": "success"}),
+            ]
+        )
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    thread = next(i for i in state.items if i.kind is ItemKind.REVIEW_THREAD)
+    assert thread.identity.thread_id == ""
 
 
 # ── reviewer engagement (§4.1) ──

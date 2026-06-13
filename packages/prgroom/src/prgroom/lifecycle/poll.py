@@ -6,7 +6,7 @@ copy (the caller owns ``store.write``). It is **read-only over GitHub** — ever
 call is a REST ``GET`` via the injected :class:`~prgroom.gh.client.GhClient`; no
 push, no review re-request, no resolve.
 
-One poll issues six reads in this fixed order:
+One poll issues six REST reads in this fixed order (plus one conditional GraphQL read):
 
 1. ``head_ref_oid`` — the remote HEAD SHA. Drives the §3.4 bootstrap / attribution
    / push-detection math. An empty HEAD short-circuits the rest (a PR with no
@@ -18,6 +18,11 @@ One poll issues six reads in this fixed order:
 3. issue comments, 4. reviews, 5. review (inline) comments — ingested into
    :class:`ReviewItem`s (natural key ``(kind, gh_id)``; never re-appended) and used
    to flip reviewer engagement (§4.1).
+5a. **GraphQL ``reviewThreads`` thread-id map** — issued only when step 5 returned
+   inline comments. It resolves each review-thread item's :attr:`Identity.thread_id`
+   to its ``PRRT_*`` node id (the id ``resolveReviewThread`` consumes and §8.2
+   recurrence keys on); REST exposes only comment databaseIds, so this one GraphQL
+   read bridges the key-space. A comment absent from the map degrades to ``""``.
 6. CI combined-status for the head SHA — mapped to ``success | pending | failure |
    absent`` for ``quiescence.ci_state``. A 404 there means no CI configured →
    ``absent`` (not an error).
@@ -36,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh.client import GhNotFoundError
+from prgroom.gh.review_threads import fetch_thread_id_map
 from prgroom.lifecycle.predicates import flip_stale_required_reviews
 from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
 from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerStatus
@@ -185,6 +191,9 @@ def _ingest_items(
     raw_issue = _gh_get(gh, ref, f"{base}/issues/{ref.number}/comments")
     raw_reviews = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/reviews")
     raw_review_comments = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/comments")
+    # Only review-thread items carry a thread_id, so the bridging GraphQL read is
+    # skipped entirely when this PR surfaced no inline comments (most polls).
+    thread_id_map = fetch_thread_id_map(gh, ref) if raw_review_comments else {}
 
     new: list[ReviewItem] = []
     for kind, raw, ts_field in (
@@ -193,7 +202,7 @@ def _ingest_items(
         (ItemKind.REVIEW_THREAD, raw_review_comments, "created_at"),
     ):
         for entry in raw:
-            item = _to_item(kind, entry, ts_field, now=now)
+            item = _to_item(kind, entry, ts_field, now=now, thread_id_map=thread_id_map)
             if (item.kind, item.identity.gh_id) not in seen:
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)
@@ -215,17 +224,34 @@ def _terminal_review_verdicts(raw_reviews: Any, *, now: datetime) -> dict[str, d
     return verdicts
 
 
-def _to_item(kind: ItemKind, entry: dict[str, Any], ts_field: str, *, now: datetime) -> ReviewItem:
-    """Build a :class:`ReviewItem` from one gh comment/review payload."""
+def _to_item(
+    kind: ItemKind,
+    entry: dict[str, Any],
+    ts_field: str,
+    *,
+    now: datetime,
+    thread_id_map: dict[str, str],
+) -> ReviewItem:
+    """Build a :class:`ReviewItem` from one gh comment/review payload.
+
+    ``thread_id_map`` ({REST comment databaseId -> GraphQL ``PRRT_*`` node id})
+    populates a review-thread item's ``thread_id``; a comment absent from the map
+    (or any non-thread kind) leaves it ``""``.
+    """
     gh_id = str(entry["id"])
     identity = Identity(gh_id=gh_id)
     if kind is ItemKind.REVIEW_THREAD:
         # GitHub's pulls/{n}/comments exposes the PARENT comment id as
         # `in_reply_to_id` (present only on replies); a top-level inline comment
-        # has no parent → 0. The comment's own id lives in `gh_id`.
+        # has no parent → 0. The comment's own id lives in `gh_id`. The GraphQL
+        # node id (thread_id) comes from the bridging map, keyed by that same gh_id.
         parent = entry.get("in_reply_to_id")
         reply_to = int(parent) if parent is not None else 0
-        identity = Identity(gh_id=gh_id, reply_to_comment_id=reply_to)
+        identity = Identity(
+            gh_id=gh_id,
+            reply_to_comment_id=reply_to,
+            thread_id=thread_id_map.get(gh_id, ""),
+        )
     body = str(entry.get("body") or "")
     return ReviewItem(
         kind=kind,

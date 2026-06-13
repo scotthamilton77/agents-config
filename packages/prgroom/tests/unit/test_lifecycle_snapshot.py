@@ -48,6 +48,11 @@ def _ok(payload: object) -> CommandResult:
     return CommandResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
 
+def _thread_map_ok(nodes: list[dict[str, object]]) -> CommandResult:
+    """A gh-api-graphql reviewThreads success envelope (the thread-id map read)."""
+    return _ok({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}})
+
+
 def _item(
     gh_id: str,
     *,
@@ -117,8 +122,15 @@ def _gh(
     body: str = "PR body",
     labels: list[str] | None = None,
     review_comments: list[dict[str, object]] | None = None,
+    thread_nodes: list[dict[str, object]] | None = None,
 ) -> GhCli:
-    """Queue the snapshot's gh reads: PR resource, labels, review comments."""
+    """Queue the snapshot's gh reads: PR resource, review comments, thread-id map.
+
+    When ``review_comments`` is non-empty, ``_fetch_review_threads`` issues an extra
+    GraphQL ``reviewThreads`` read after the REST comments read; ``thread_nodes``
+    supplies that envelope's nodes (default empty → threads degrade to their REST
+    root-comment id key).
+    """
     pr_resource = {
         "body": body,
         "base": {"ref": base_ref},
@@ -128,6 +140,8 @@ def _gh(
         _ok(pr_resource),
         _ok(review_comments or []),
     ]
+    if review_comments:
+        results.append(_thread_map_ok(thread_nodes or []))
     return GhCli(RecordedRunner(results))
 
 
@@ -319,6 +333,42 @@ def test_assemble_snapshot_threads_carry_full_reply_chain(tmp_path: Path) -> Non
     bodies = [c["body"] for thread in chains for c in thread["comments"]]
     assert "top" in bodies
     assert "reply" in bodies
+
+
+def test_assemble_snapshot_keys_threads_by_graphql_node_id(tmp_path: Path) -> None:
+    # The snapshot keys each thread by its GraphQL PRRT_* node id (the key-space
+    # Identity.thread_id and resolveReviewThread use) — NOT the REST root-comment id.
+    review_comments = [
+        {"id": 11, "in_reply_to_id": None, "body": "top", "created_at": _T0.isoformat()},
+    ]
+    thread_nodes = [{"id": "PRRT_x", "comments": {"nodes": [{"databaseId": 11}]}}]
+    item = _item("11", thread_id="PRRT_x")
+    gh = _gh(review_comments=review_comments, thread_nodes=thread_nodes)
+    snap = assemble_snapshot(
+        _state(item), [item], ref=_REF, gh=gh, git=FakeGit(), scratch_dir=tmp_path
+    )
+    detail = json.loads(Path(snap.pr_detail_path).read_text(encoding="utf-8"))
+    assert [t["thread_id"] for t in detail["review_threads"]] == ["PRRT_x"]
+
+
+def test_assemble_snapshot_recurrence_reopened_via_graphql_keyed_threads(tmp_path: Path) -> None:
+    # The payoff: an item carrying its GraphQL node id (set by a prior poll) is
+    # flagged reopened when a newer reply lands — because the snapshot now keys
+    # threads by that same PRRT_* node id, so _thread_reopened's lookup hits.
+    disp = Disposition(kind=DispositionKind.FIXED, decided_at=_T0, decided_by="x")
+    item = _item("11", thread_id="PRRT_x", disposition=disp)
+    review_comments = [
+        {"id": 11, "in_reply_to_id": None, "body": "top", "created_at": _T0.isoformat()},
+        {"id": 12, "in_reply_to_id": 11, "body": "ping", "created_at": _T1.isoformat()},
+    ]
+    thread_nodes = [
+        {"id": "PRRT_x", "comments": {"nodes": [{"databaseId": 11}, {"databaseId": 12}]}}
+    ]
+    gh = _gh(review_comments=review_comments, thread_nodes=thread_nodes)
+    snap = assemble_snapshot(
+        _state(item), [item], ref=_REF, gh=gh, git=FakeGit(), scratch_dir=tmp_path
+    )
+    assert snap.recurrence["11"].reopened is True
 
 
 def test_assemble_snapshot_returns_ephemeral_dirs(tmp_path: Path) -> None:
