@@ -52,18 +52,22 @@ def load_installer_toml(path: Path) -> InstallerToml:
     no error — absence of installer-level config is a valid state, not a
     failure. A present file with no ``[prune]`` section likewise yields an empty
     prune list; the section is optional. The ``[tools]`` table is read as a
-    flat ``{tool: dest}`` mapping from each ``<tool>.dest`` entry.
+    flat ``{tool: dest}`` mapping from each ``<tool>.dest`` entry; each ``dest``
+    must be a string.
 
     Raises ``ValueError`` when the file is present but type-malformed: ``prune``
-    or ``tools`` decoded to a non-table, or ``prune.retired`` decoded to
-    anything other than a list of strings. Catching these at load time turns a
-    silent corruption — ``retired = "*/foo"`` would otherwise ``list()``-shred
-    into single-character globs — into a clear configuration error.
+    or ``tools`` decoded to a non-table, ``prune.retired`` decoded to anything
+    other than a list of strings, or a ``[tools]`` ``dest`` decoded to a
+    non-string. Catching these at load time turns a silent corruption —
+    ``retired = "*/foo"`` would otherwise ``list()``-shred into single-character
+    globs — into a clear configuration error.
     """
     if not path.is_file():
         return InstallerToml()
 
-    data = tomllib.loads(path.read_text())
+    # TOML is defined as UTF-8; read explicitly rather than rely on the
+    # locale-dependent platform default (matches the rest of the installer).
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
 
     prune_section = data.get("prune", {})
     if not isinstance(prune_section, dict):
@@ -82,10 +86,15 @@ def load_installer_toml(path: Path) -> InstallerToml:
         got = type(tools_section).__name__
         msg = f"installer.toml: [tools] must be a table, got {got}"
         raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
-    tool_dest_overrides = {
-        tool: table["dest"]
-        for tool, table in tools_section.items()
-        if isinstance(table, dict) and "dest" in table
-    }
+    tool_dest_overrides: dict[str, str] = {}
+    for tool, table in tools_section.items():
+        if not (isinstance(table, dict) and "dest" in table):
+            continue
+        dest = table["dest"]
+        if not isinstance(dest, str):
+            got = type(dest).__name__
+            msg = f"installer.toml: [tools] {tool}.dest must be a string, got {got}"
+            raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
+        tool_dest_overrides[tool] = dest
 
     return InstallerToml(prune_globs=prune_globs, tool_dest_overrides=tool_dest_overrides)

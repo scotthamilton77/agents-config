@@ -139,3 +139,32 @@ def test_tools_not_a_table_raises_value_error(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"\[tools\] must be a table"):
         load_installer_toml(toml)
+
+
+def test_tool_dest_non_string_raises_value_error(tmp_path: Path) -> None:
+    """
+    Given a [tools] entry whose dest leaf is a non-string (an int)
+    When the loader reads it
+    Then a ValueError is raised — the dest leaf is validated, not just the
+    container shape, so a non-string never reaches a later string consumer.
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text("[tools]\nclaude.dest = 123\n")
+
+    with pytest.raises(ValueError, match=r"claude\.dest must be a string"):
+        load_installer_toml(toml)
+
+
+def test_tool_entry_without_dest_key_is_skipped_not_an_error(tmp_path: Path) -> None:
+    """
+    Given a [tools] entry that declares no dest key (only some other field)
+    When the loader reads it
+    Then the entry is silently skipped (no override surfaced, no error) —
+    only <tool>.dest entries contribute to the override mapping.
+    """
+    toml = tmp_path / "installer.toml"
+    toml.write_text('[tools]\nclaude.other = "x"\n')
+
+    config = load_installer_toml(toml)
+
+    assert config.tool_dest_overrides == {}
