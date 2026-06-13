@@ -180,6 +180,24 @@ def test_tool_scoped_glob_does_not_match_other_tool(tmp_path: Path) -> None:
     assert orphans == []
 
 
+def test_adapter_with_no_plan_entry_still_scans_dest(tmp_path: Path) -> None:
+    """
+    Given an adapter active for the run but absent from the plans mapping
+    When scan_orphans runs
+    Then its dest tree is still scanned (a missing plan stages nothing, so a
+    matching dest entry is an orphan).
+
+    Pins the ``plan is None`` branch: an active tool with no built plan must not
+    suppress its orphan scan.
+    """
+    _make_dest_dir(tmp_path, "skills", "retired-skill")
+    config = InstallerToml(prune_globs=["*/skills/retired-skill"])
+
+    orphans = scan_orphans([_ClaudeLikeAdapter()], plans={}, home=tmp_path, config=config)
+
+    assert [o.path.name for o in orphans] == ["retired-skill"]
+
+
 def test_beads_formulas_scanned_with_no_beads_plan(tmp_path: Path) -> None:
     """
     Given a ~/.beads/formulas entry and no beads content in any plan

@@ -232,3 +232,21 @@ def test_directory_orphan_backed_up_recursively(tmp_path: Path) -> None:
     backup_inner = tmp_path / ".claude" / "skills-backup" / f"retired-dir.backup-{_TS}" / "inner.md"
     assert backup_inner.read_text() == "inner"
     assert not o1.path.exists()
+
+
+def test_malformed_timestamp_rejected_before_any_delete(tmp_path: Path) -> None:
+    """
+    Given an orphan and a caller-supplied timestamp that escapes the format
+    When run_prune executes
+    Then it raises ValueError and the orphan is untouched.
+
+    Pins the guardrail: the timestamp is interpolated raw into the backup path,
+    so a path-separator-bearing value must be rejected before any I/O.
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "a")
+    io = ScriptedIO(interactive=False)
+
+    with pytest.raises(ValueError, match="YYYYMMDD-HHMMSS"):
+        run_prune([o1], io=io, auto_yes=True, timestamp="../evil")
+
+    assert o1.path.exists()

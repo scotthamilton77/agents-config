@@ -203,3 +203,24 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     )
 
     assert rc != 0
+
+
+def test_plain_prune_non_interactive_without_yes_fails_on_consent_guard(tmp_path: Path) -> None:
+    """
+    Given plain --prune (not --prune-only), a non-interactive io, and no --yes
+    When main runs
+    Then it returns non-zero — the consent guard refuses a destructive run that
+    cannot prompt (G.7), before any orphan scan.
+    """
+    home = _home_with_claude_settings(tmp_path)
+    empty_repo = tmp_path / "empty-repo"
+    empty_repo.mkdir()
+
+    rc = main(
+        ["--prune", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=empty_repo,
+    )
+
+    assert rc != 0
