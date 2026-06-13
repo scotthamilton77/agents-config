@@ -45,7 +45,7 @@ def valid_timestamp(timestamp: str) -> bool:
     return _TIMESTAMP_RE.match(timestamp) is not None
 
 
-def backup_path_for(target: Path, timestamp: str) -> Path:
+def _backup_path_for(target: Path, timestamp: str) -> Path:
     """Resolve the backup destination for ``target`` (no I/O).
 
     A target whose parent is a scoped namespace routes to
@@ -62,11 +62,12 @@ def backup_path_for(target: Path, timestamp: str) -> Path:
 def back_up(target: Path, timestamp: str) -> Path:
     """Copy ``target`` (file or directory) to its timestamped backup; return the path.
 
-    Creates the sibling ``<namespace>-backup/`` directory when routing there.
+    Routes via ``_backup_path_for`` (scoped namespace -> sibling
+    ``<namespace>-backup/``; else in-place), creating the backup dir as needed.
     Directories are copied recursively (``shutil.copytree``), files via
     ``shutil.copy2`` — mirroring the bash ``cp -R`` / ``cp`` split.
     """
-    dest = backup_path_for(target, timestamp)
+    dest = _backup_path_for(target, timestamp)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if target.is_dir():
         shutil.copytree(target, dest)

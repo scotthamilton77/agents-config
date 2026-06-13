@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from installer.core.model import Orphan, Tool
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from installer.core.installer_toml import InstallerToml
     from installer.core.model import StagingPlan
@@ -74,7 +74,7 @@ def _scan_namespace(
     namespace: str,
     dest: Path,
     staged: set[str],
-    prune_globs: Iterable[str],
+    prune_globs: Sequence[str],
 ) -> list[Orphan]:
     """Collect orphans in one dest namespace dir (bash ``_scan_namespace``).
 
@@ -84,7 +84,6 @@ def _scan_namespace(
     if not dest.is_dir():
         return []
 
-    globs = list(prune_globs)
     orphans: list[Orphan] = []
     for entry in sorted(dest.iterdir()):
         base = entry.name
@@ -93,7 +92,7 @@ def _scan_namespace(
         if base in staged:
             continue
         key = f"{tool}/{namespace}/{base}"
-        if not any(fnmatch(key, pattern) for pattern in globs):
+        if not any(fnmatch(key, pattern) for pattern in prune_globs):
             continue
         orphans.append(
             Orphan(
