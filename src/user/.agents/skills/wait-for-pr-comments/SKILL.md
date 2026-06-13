@@ -346,7 +346,7 @@ Abort.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 
-**Hard cap**: when round >= 3 AND Phase 6 detects a new review, do **one
+**Hard cap**: when round >= 6 AND Phase 6 detects a new review, do **one
 final Phase 3 inventory pull** (no Phase 4). Classify the round-N+1 items
 normally (FIX/SKIP/ESCALATE per the usual rules). Then mark **only** the
 FIX-classified round-N+1 items as
@@ -923,7 +923,7 @@ process.
 | "I'll keep polling past the re-review window" | Phase 6 uses a fixed 80s max window (20s pre-sleep + 6 × 10s polls). Do not extend ad-hoc. If Copilot has not started by then, exit Phase 6 normally and proceed to Phase 7. |
 | "I'll merge while the polling script is still running" | Don't. Issue the guard warning; the review could arrive any moment. |
 | "I'll classify already-addressed items as their own bucket" | Already-addressed is NOT a classification. Classify FIX; the per-comment subagent returns `fix_outcome="already_addressed"` with the existing commit SHA. |
-| "Round 4 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 3 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
+| "Round 7 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 6 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
 | "I'll inline `--mode autonomous` from the hook text" | The hook does not pass `--mode`. Autonomous mode is set ONLY by formulas (which also pass `--bead-id`). If you're invoking from chat, leave it interactive. |
 | "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh --state complete --phase 9-final-check-done --output <path>` succeeds. |
 | "I'll keep the squashed commits clean — combine all subagent fixes into one" | Each subagent's commit stands alone. **No squashing.** Commit message format pinned: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`. |
