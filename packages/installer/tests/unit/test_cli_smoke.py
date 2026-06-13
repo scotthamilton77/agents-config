@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from installer.cli import main
+from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
 from installer.tools import registry
 
@@ -134,3 +135,71 @@ def test_main_no_args_against_empty_home_returns_2_with_detection_diagnostic(
     assert "settings.json" in captured.err
     assert str(tmp_path) in captured.err
     assert "--tools=" in captured.err
+
+
+# ── G.5 / G.7: prune flags + --yes wiring ──
+
+
+def test_prune_and_prune_only_together_is_mutually_exclusive_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    When main(["--prune", "--prune-only"]) is invoked
+    Then argparse exits 2 (mutually exclusive group rejects both).
+
+    Pins: --prune and --prune-only cannot be combined (installer-design.md G.5).
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--prune", "--prune-only"], home=tmp_path)
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "not allowed with" in captured.err
+
+
+def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Path) -> None:
+    """
+    Given a home with a claude skills/ entry matching the bundled prune list and
+    an empty source repo (nothing staged), under --prune-only --yes
+    When main runs (non-interactive io)
+    Then the unstaged, retired entry is removed.
+
+    Pins: --prune-only scans + prunes against the in-memory plan without an
+    install half, and --yes waives the non-interactive guard.
+    """
+    home = _home_with_claude_settings(tmp_path)
+    # "*/skills/ralf-it" is in the bundled installer.toml prune list.
+    retired = home / ".claude" / "skills" / "ralf-it"
+    retired.mkdir(parents=True)
+    empty_repo = tmp_path / "empty-repo"
+    empty_repo.mkdir()
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=empty_repo,
+    )
+
+    assert rc == 0
+    assert not retired.exists()
+
+
+def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
+    """
+    Given --prune-only with a matching orphan, a non-interactive io, and no --yes
+    When main runs
+    Then it returns a non-zero status (the prune flow's hard-fail guard).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    (home / ".claude" / "skills" / "ralf-it").mkdir(parents=True)
+    empty_repo = tmp_path / "empty-repo"
+    empty_repo.mkdir()
+
+    rc = main(
+        ["--prune-only", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=empty_repo,
+    )
+
+    assert rc != 0
