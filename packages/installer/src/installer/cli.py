@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from installer.config import Config, resolve_plugins, resolve_tools
 from installer.core.consent import ConsentRequiredError, require_consent
+from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
@@ -17,12 +18,15 @@ if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import Tool
 
-# Repo root is four parents up from this file:
-# packages/installer/src/installer/cli.py -> repo root.
-# Both the bundled installer.toml path and the plugin source root are derived
-# per-run inside _run_prune from the injected repo_root (default: _REPO_ROOT),
-# so config + plugin discovery track the same root as staging — keeping
-# repo_root fully authoritative and the missing-path cases testable.
+# The repo root is the agents-config checkout containing ``src/user/.agents`` and
+# ``src/plugins``. ``cli.py`` lives at ``<repo>/packages/installer/src/installer/
+# cli.py``, so the fourth parent is the repo root. ``uv`` installs this package
+# editable, so ``__file__`` stays inside the source tree and this resolution holds
+# at runtime; tests inject ``repo_root`` directly. Mirrors the bash installer's
+# ``PROJECT_ROOT="$SCRIPT_DIR/.."`` (scripts/install.sh:197-198). The bundled
+# installer.toml path and the plugin source root are derived per-run from the
+# injected repo_root (default: _REPO_ROOT), keeping repo_root fully authoritative
+# for staging, config, and plugin discovery alike.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
@@ -52,20 +56,31 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show what would be done without making changes.",
     )
-    # --prune and --prune-only are mutually exclusive. This group is the seam a
-    # later story extends to add the --dump-stage ⊥ --prune exclusion (the
-    # --dump-stage flag lands in a sibling PR); keep prune flags grouped so that
-    # integration only has to widen the group, not restructure the parser.
-    prune_group = parser.add_mutually_exclusive_group()
-    prune_group.add_argument(
+    # --dump-stage, --prune, and --prune-only are three mutually exclusive
+    # terminal modes (dump the staging plan / install-then-prune / prune-only),
+    # so any combination is rejected by argparse.
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--prune",
         action="store_true",
         help="After install, remove retired paths from installer.toml (with backup).",
     )
-    prune_group.add_argument(
+    mode_group.add_argument(
         "--prune-only",
         action="store_true",
         help="Skip install; scan + remove retired paths from installer.toml.",
+    )
+    mode_group.add_argument(
+        "--dump-stage",
+        metavar="PATH",
+        default=None,
+        type=Path,
+        help=(
+            "Materialise the in-memory staging plan to PATH as a real directory "
+            "tree (PATH/<tool>/...), print the path, and exit. Writes no install "
+            "destination. For debugging template flattening, plugin overlay, and "
+            "collision resolution."
+        ),
     )
     return parser
 
@@ -106,6 +121,23 @@ def main(
             "To force installation, pass --tools=<csv>, e.g. --tools=claude.\n"
         )
         return 2
+
+    if args.dump_stage is not None:
+        plugins = resolve_plugins(
+            home=resolved_home,
+            plugins_root=resolved_repo_root / "src" / "plugins",
+            override_csv=None,
+        )
+        plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
+        try:
+            dump_plan(plans, args.dump_stage, io=io)
+        except ValueError as exc:
+            # A non-empty target or an escaping plan path fails the dump cleanly
+            # (exit 2) rather than as an uncaught traceback, matching the CLI's
+            # other guarded error paths.
+            sys.stderr.write(f"installer: {exc}\n")
+            return 2
+        return 0
 
     # B.1: instantiation proves Config construction succeeds end-to-end; the
     # object is intentionally not bound — the full plan-walking install sync is

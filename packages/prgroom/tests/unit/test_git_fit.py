@@ -69,6 +69,40 @@ def test_stash_succeeds_returns_none() -> None:
     assert runner.calls[0] == ["git", "stash"]
 
 
+def test_log_returns_raw_output_and_builds_argv() -> None:
+    # `log` is a snapshot read (§8.1 branch_state): the recent-commits text is
+    # passed verbatim to the fix agent, so the adapter returns it unparsed.
+    runner = RecordedRunner([_ok("abc Subject one\ndef Subject two\n")])
+    client = GitCli(runner)
+    assert client.log("origin/main..HEAD") == "abc Subject one\ndef Subject two\n"
+    assert runner.calls[0] == ["git", "log", "origin/main..HEAD"]
+
+
+def test_diff_stat_returns_raw_output_and_builds_argv() -> None:
+    # `diff_stat` is the §8.1 diff-since-base summary; raw text, no parsing.
+    runner = RecordedRunner([_ok(" file.py | 3 +++\n 1 file changed\n")])
+    client = GitCli(runner)
+    assert client.diff_stat("origin/main..HEAD") == " file.py | 3 +++\n 1 file changed\n"
+    assert runner.calls[0] == ["git", "diff", "--stat", "origin/main..HEAD"]
+
+
+def test_log_failure_classifies_as_git_transient() -> None:
+    # A failed snapshot read reuses _run's classification — a non-push local
+    # failure is conservatively transient (the snapshot retries next cadence).
+    runner = RecordedRunner([_fail("fatal: bad revision 'origin/main..HEAD'\n")])
+    client = GitCli(runner)
+    with pytest.raises(PrgroomError) as exc:
+        client.log("origin/main..HEAD")
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TRANSIENT
+
+
+def test_diff_stat_timeout_classifies_as_git_transient() -> None:
+    client = GitCli(TimeoutRunner())
+    with pytest.raises(PrgroomError) as exc:
+        client.diff_stat("origin/main..HEAD")
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TRANSIENT
+
+
 # ── failure classification ──
 
 
