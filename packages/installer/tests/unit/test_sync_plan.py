@@ -381,6 +381,65 @@ def test_unsafe_dir_override_does_not_touch_an_existing_dest(tmp_path: Path) -> 
     assert not (home / "skills-backup").exists()  # not backed up
 
 
+def test_file_item_with_a_file_in_its_parent_path_is_rejected(tmp_path: Path) -> None:
+    """
+    Given a FILE item whose intermediate parent component is a regular file
+    (``<dest>/rules`` is a file, not a directory)
+    When sync_plan tries to create the parent directory
+    Then a ValueError surfaces rather than a raw ``FileExistsError`` from mkdir —
+    consistent with the engine's other type-mismatch guards.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "rules").write_bytes(b"i am a file\n")
+    plan = StagingPlan(
+        items={Path("rules/b.md"): _file_item(Path("rules/b.md"), b"x\n")}, tool=Tool.CLAUDE
+    )
+
+    with pytest.raises(ValueError, match="parent director"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+
+def test_dir_item_with_a_file_in_its_parent_path_is_rejected(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose intermediate parent component is a regular file
+    (``<dest>/skills`` is a file)
+    When sync_plan tries to create the parent directory
+    Then a ValueError surfaces rather than a raw mkdir ``OSError``.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "skills").write_bytes(b"i am a file\n")
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    with pytest.raises(ValueError, match="parent director"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+
+def test_dir_override_with_a_file_in_its_inner_parent_path_is_rejected(tmp_path: Path) -> None:
+    """
+    Given a dir_override whose inner relpath needs a directory where the copied
+    source tree has a regular file (``a`` is a file; override targets ``a/deep.md``)
+    When sync_plan writes the override
+    Then a ValueError surfaces rather than a raw mkdir ``OSError``.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "a").write_bytes(b"file-a\n")  # 'a' is a file in the source tree
+    home = tmp_path / "home"
+    plan = StagingPlan(
+        items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
+        tool=Tool.CLAUDE,
+        dir_overrides={Path("skills/s"): {Path("a/deep.md"): b"deep\n"}},
+    )
+
+    with pytest.raises(ValueError, match="parent director"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+
 def test_overwrite_with_malformed_timestamp_is_rejected_before_any_write(tmp_path: Path) -> None:
     """
     Given an overwrite and a caller-supplied timestamp that violates the

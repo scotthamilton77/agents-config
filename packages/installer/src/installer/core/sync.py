@@ -189,7 +189,7 @@ def _install_file(
     if not dry_run:
         if dest_exists:
             _back_up(dest, timestamp, counters)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_parent_dir(dest)
         dest.write_bytes(content)
         dest.chmod(0o755 if executable else 0o644)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
@@ -229,11 +229,11 @@ def _install_dir(
         if dest_exists:
             _back_up(dest, timestamp, counters)
             shutil.rmtree(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_parent_dir(dest)
         shutil.copytree(source_path, dest)
         for inner, inner_content in overrides.items():
             inner_dest = dest / inner
-            inner_dest.parent.mkdir(parents=True, exist_ok=True)
+            _ensure_parent_dir(inner_dest)
             inner_dest.write_bytes(inner_content)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
 
@@ -261,6 +261,17 @@ def _back_up(target: Path, timestamp: str | None, counters: Counters) -> None:
         raise ValueError(f"timestamp must be YYYYMMDD-HHMMSS: {ts!r}")  # noqa: TRY003  # single call-site; subclass not justified
     back_up(target, ts)
     counters.backed_up += 1
+
+
+def _ensure_parent_dir(target: Path) -> None:
+    """Create ``target``'s parent directories, converting a file-in-the-path
+    collision (``FileExistsError`` / ``NotADirectoryError`` when an intermediate
+    component is a regular file) into a clean `ValueError` — consistent with the
+    engine's other filesystem type-mismatch guards."""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except (FileExistsError, NotADirectoryError) as exc:
+        raise ValueError(f"cannot create parent directory for {target}: {exc}") from exc  # noqa: TRY003  # single call-site; subclass not justified
 
 
 def _sha256(data: bytes) -> bytes:
