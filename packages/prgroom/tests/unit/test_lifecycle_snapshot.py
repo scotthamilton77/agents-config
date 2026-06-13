@@ -230,6 +230,17 @@ def test_derive_recurrence_ignores_malformed_reply_timestamp() -> None:
     assert rec.reopened is False
 
 
+def test_derive_recurrence_naive_reply_timestamp_does_not_crash() -> None:
+    # A present-but-naive (offsetless) timestamp can't be compared to the tz-aware
+    # decided_at; it is skipped (can't prove a reopen) rather than raising TypeError.
+    disp = Disposition(kind=DispositionKind.FIXED, decided_at=_T0, decided_by="x")
+    item = _item("a", thread_id="PRT_a", disposition=disp)
+    threads = {"PRT_a": [{"created_at": "2026-06-10T12:00:00"}]}  # no offset → naive
+    rec = derive_recurrence(item, _state(item), threads=threads)
+    assert rec is not None
+    assert rec.reopened is False
+
+
 # ───────────────────────── assemble_snapshot ─────────────────────────
 
 

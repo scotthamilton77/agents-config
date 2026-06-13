@@ -8,10 +8,14 @@ dumps everything to the two files the fix contract already passes —
 
 * ``pr_detail_path`` (JSON): the PR **description** (with the ``## Decisions``
   block read verbatim — writing it is bead 8.12, here we only READ it), the PR
-  **labels**, **every review thread with its full reply-chain**, the
-  **prior-round dispositions** for already-processed items (kind / rationale /
-  commits / decided_by, from ``prsession`` state), and the per-item
-  **recurrence** (§8.2).
+  **labels**, the review threads with their reply-chains, the **prior-round
+  dispositions** for already-processed items (kind / rationale / commits /
+  decided_by, from ``prsession`` state), and the per-item **recurrence** (§8.2).
+  **MVP completeness caveat:** §8.1 promises *every* thread with its *full*
+  reply-chain, but the ``gh`` adapter does not paginate yet, so the comments read
+  is capped at the first gh page (~30 comments). On a busy PR the snapshot is
+  page-1-complete, not whole-PR-complete; adding ``gh api --paginate`` to the
+  adapter (and using it here) is a tracked follow-up that spans the gh layer.
 * ``branch_state_path`` (text): the recent commits (``git log``) + the
   diff-since-base summary (``git diff --stat``), scoped to ``origin/<base>..HEAD``
   where ``<base>`` is the gh PR resource's ``base.ref``.
@@ -62,7 +66,9 @@ class SnapshotPaths:
     passes to the agent; ``memory_dir`` / ``response_outbox_dir`` are the ephemeral
     working dirs it writes into; ``recurrence`` maps a cluster item's ``gh_id`` to
     its §8.2 :class:`~prgroom.agent.recurrence.Recurrence` (only items carrying a
-    prior disposition appear).
+    prior disposition appear). The agent reads recurrence from
+    ``pr_detail.json["recurrence"]``; the field is surfaced on the result purely for
+    tests + a forward-compat consumer (e.g. an RCA pass), not read by ``fix_pr``.
     """
 
     __slots__ = (
@@ -120,8 +126,13 @@ def derive_recurrence(
     * ``prior_disposition`` / ``prior_commits`` — from the item's single recorded
       :class:`~prgroom.prsession.state.Disposition` (schema-backed).
     * ``reopened`` — true iff a reply on the item's thread is newer than the
-      disposition's ``decided_at`` (deterministic from the snapshot's thread
-      reply-chains).
+      disposition's ``decided_at``. **MVP floor: this is always ``False`` in the
+      integrated poll→cluster→fix path** — poll's ingest does not yet populate
+      :attr:`Identity.thread_id` (and the snapshot keys threads by root-comment id,
+      a different key-space), so ``_thread_reopened`` finds no thread to match. The
+      derivation is correct and unit-tested with populated identities; wiring poll
+      to set ``thread_id`` (and reconciling the key-space) is a poll-side follow-up,
+      not this bead. Reported as a gap alongside the two counters below.
     * ``attempt_count`` — ``1`` (the MVP schema retains one disposition; a true
       count needs history tracking — reported as a schema gap).
     * ``first_seen_round`` — ``state.round`` (the schema has no first-seen field;
@@ -151,7 +162,11 @@ def _thread_reopened(
         raw = comment.get("created_at")
         if not isinstance(raw, str) or not raw:
             continue
-        if datetime.fromisoformat(raw.replace("Z", "+00:00")) > decided_at:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        # A naive (offsetless) timestamp can't be compared to the tz-aware
+        # decided_at without raising — it can't prove a reopen, so skip it rather
+        # than crash. Real GitHub always emits Z-suffixed (aware) timestamps.
+        if parsed.tzinfo is not None and parsed > decided_at:
             return True
     return False
 
@@ -192,14 +207,18 @@ def assemble_snapshot(
         "recurrence": {gh_id: rec.to_dict() for gh_id, rec in recurrence.items()},
     }
 
-    pr_detail_path = scratch_dir / _PR_DETAIL_FILENAME
+    # Each call gets its own subdir so serial clusters sharing one scratch_dir
+    # don't overwrite each other's detail files — and parallel dispatch (a deferred
+    # MVP item) won't reintroduce the data race. memory/outbox are already isolated.
+    snap_dir = Path(tempfile.mkdtemp(prefix="snap-", dir=scratch_dir))
+    pr_detail_path = snap_dir / _PR_DETAIL_FILENAME
     pr_detail_path.write_text(json.dumps(detail, indent=2), encoding="utf-8")
 
-    branch_state_path = scratch_dir / _BRANCH_STATE_FILENAME
+    branch_state_path = snap_dir / _BRANCH_STATE_FILENAME
     branch_state_path.write_text(_branch_state(git, base_ref), encoding="utf-8")
 
-    memory_dir = Path(tempfile.mkdtemp(prefix="memory-", dir=scratch_dir))
-    response_outbox_dir = Path(tempfile.mkdtemp(prefix="outbox-", dir=scratch_dir))
+    memory_dir = Path(tempfile.mkdtemp(prefix="memory-", dir=snap_dir))
+    response_outbox_dir = Path(tempfile.mkdtemp(prefix="outbox-", dir=snap_dir))
 
     return SnapshotPaths(
         pr_detail_path=str(pr_detail_path),
