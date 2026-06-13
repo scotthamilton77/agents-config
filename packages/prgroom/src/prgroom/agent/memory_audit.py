@@ -61,22 +61,28 @@ class MemoryAuditResult:
     unwritten: list[str] = field(default_factory=list)
 
 
+def _anchor(path: str, memory_dir: str) -> str:
+    """Lexically anchor a (possibly relative) ``path`` to ``memory_dir``. Pure, no fs.
+
+    The agent declares memory_writes RELATIVE to memory_dir (§8.5 examples), so
+    anchor with PurePath's ``/`` before the lexical normpath collapse. The join
+    semantics also keep the escape check correct: an ABSOLUTE path resets the join
+    (discards memory_dir, so an absolute escape is still detectable), and a ``..``
+    traversal normalizes out of the dir. Containment AND the declared-but-unwritten
+    comparison both anchor through here so they share one lexical model.
+    """
+    return os.path.normpath(str(PurePath(memory_dir) / path))
+
+
 def _is_contained(path: str, memory_dir: str) -> bool:
     """Pure lexical containment: is ``path`` inside ``memory_dir``? No fs access.
 
-    Normalizes both lexically (collapsing ``.``/``..`` and separators) and tests
-    that the normalized path equals the dir or sits under ``dir + os.sep``. The
-    ``+ sep`` guard rejects sibling-prefix escapes (``/x/mem-evil`` is not under
-    ``/x/mem``). An absolute path under a relative dir (or vice-versa) cannot be
-    contained, which the prefix test correctly rejects.
+    Anchors ``path`` to ``memory_dir`` (see :func:`_anchor`) then tests that the
+    result equals the dir or sits under ``dir + os.sep``. The ``+ sep`` guard
+    rejects sibling-prefix escapes (``/x/mem-evil`` is not under ``/x/mem``).
     """
     norm_dir = os.path.normpath(memory_dir)
-    # The agent declares memory_writes RELATIVE to memory_dir (§8.5 examples), so
-    # anchor with PurePath's `/` before the lexical normpath collapse. The join
-    # semantics keep the escape check correct for free: an ABSOLUTE path resets the
-    # join (discards memory_dir, so an absolute escape still fails the prefix test
-    # below), and a `..` traversal normalizes out of the dir (also caught).
-    norm_path = os.path.normpath(str(PurePath(memory_dir) / path))
+    norm_path = _anchor(path, memory_dir)
     if norm_path == norm_dir:
         return True
     # normpath("/") == "/" already ends in os.sep; a naive `norm_dir + os.sep`
@@ -112,7 +118,11 @@ def audit_memory(
             entry, known_thread_ids=known_thread_ids, violations=violations, deferred=deferred
         )
 
-    unwritten = [p for p in out.memory_writes if p not in written_paths]
+    # Compare under the same lexical anchoring as containment, so a relative declared
+    # path and an absolute written path (as a filesystem-stating caller would supply)
+    # match. Report the declared form ``p`` for a human-readable warning.
+    anchored_written = {_anchor(w, memory_dir) for w in written_paths}
+    unwritten = [p for p in out.memory_writes if _anchor(p, memory_dir) not in anchored_written]
     return MemoryAuditResult(violations=violations, deferred=deferred, unwritten=unwritten)
 
 

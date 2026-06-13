@@ -211,3 +211,25 @@ def test_written_declared_path_is_not_in_unwritten() -> None:
     out = _out(memory_writes=[p])
     res = audit_memory(out, memory_dir=_MEM, written_paths={p}, known_thread_ids=set())
     assert res.unwritten == []
+
+
+def test_unwritten_uses_containment_anchoring_for_comparison() -> None:
+    # A filesystem-stating caller supplies written_paths ABSOLUTE while the agent
+    # declared the path RELATIVE. Both sides must anchor to memory_dir (the same
+    # lexical semantics as containment), else the relative declared path is falsely
+    # reported unwritten.
+    out = _out(memory_writes=["scratch/a.md"])
+    res = audit_memory(
+        out, memory_dir=_MEM, written_paths={f"{_MEM}/scratch/a.md"}, known_thread_ids=set()
+    )
+    assert res.unwritten == []
+
+
+def test_genuinely_unwritten_relative_path_still_reported() -> None:
+    # Anchoring must not suppress a real miss: a declared path with no matching write
+    # is still reported (in its declared form, for the human-readable warning).
+    out = _out(memory_writes=["scratch/missing.md"])
+    res = audit_memory(
+        out, memory_dir=_MEM, written_paths={f"{_MEM}/scratch/other.md"}, known_thread_ids=set()
+    )
+    assert res.unwritten == ["scratch/missing.md"]
