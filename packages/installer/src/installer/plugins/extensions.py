@@ -35,6 +35,7 @@ import yaml
 
 from installer.core.md_patch import PatchError, Precision, apply_patch
 from installer.core.model import FileKind
+from installer.core.paths import is_safe_relpath
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -120,7 +121,7 @@ def _load_extension(yaml_path: Path) -> _Extension:
             "replace, insert_before, insert_after, prepend, append",
         ) from None
     target_file = Path(fields["target-file"])
-    if target_file.is_absolute() or ".." in target_file.parts:
+    if not is_safe_relpath(target_file):
         raise ExtensionError(
             yaml_path,
             "target-file must be a relative path inside the install root",
