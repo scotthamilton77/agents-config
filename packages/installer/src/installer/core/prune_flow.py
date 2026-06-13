@@ -21,7 +21,7 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
-from installer.core.backup import back_up, new_timestamp, valid_timestamp
+from installer.core.backup import back_up, new_timestamp
 from installer.core.model import Counters
 
 if TYPE_CHECKING:
@@ -71,9 +71,10 @@ def run_prune(
        deletes nothing.
 
     ``timestamp`` is the ``YYYYMMDD-HHMMSS`` backup suffix; injected so tests
-    assert exact backup names, it defaults to the current local time. A
-    caller-supplied value that does not match the format raises ``ValueError``
-    before any backup is written.
+    assert exact backup names, it defaults to the current local time. It is only
+    resolved on paths that may delete, so a ``dry_run`` never computes one; on a
+    deleting path a malformed value raises ``ValueError`` from ``back_up`` (the
+    validation boundary) before any backup is written.
     """
     if not io.is_interactive() and not dry_run and not auto_yes:
         if prune_only:
@@ -86,15 +87,16 @@ def run_prune(
         io.info("No orphans detected.")
         return Counters()
 
-    ts = timestamp if timestamp is not None else new_timestamp()
-    if not valid_timestamp(ts):
-        raise ValueError(f"timestamp must be YYYYMMDD-HHMMSS: {ts!r}")  # noqa: TRY003  # single call-site
-
     _display(orphans, io)
 
     if dry_run:
         io.info(f"Dry-run: {len(orphans)} orphan(s) listed above; no changes made.")
         return Counters()
+
+    # Resolve the backup suffix only on paths that may actually delete; the
+    # dry-run early-return above never needs it. ``back_up`` validates the value
+    # at the filesystem boundary, so no explicit ``valid_timestamp`` check here.
+    ts = timestamp if timestamp is not None else new_timestamp()
 
     if auto_yes:
         return _delete_all(orphans, io=io, timestamp=ts)

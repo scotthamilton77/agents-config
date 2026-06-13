@@ -62,11 +62,18 @@ def _backup_path_for(target: Path, timestamp: str) -> Path:
 def back_up(target: Path, timestamp: str) -> Path:
     """Copy ``target`` (file or directory) to its timestamped backup; return the path.
 
+    Validates ``timestamp`` against the ``YYYYMMDD-HHMMSS`` contract before any
+    I/O (``ValueError`` otherwise): the value is interpolated raw into the backup
+    path, so this guard is the path-traversal security boundary — safe by default
+    rather than relying on every caller to pre-validate.
+
     Routes via ``_backup_path_for`` (scoped namespace -> sibling
     ``<namespace>-backup/``; else in-place), creating the backup dir as needed.
     Directories are copied recursively (``shutil.copytree``), files via
     ``shutil.copy2`` — mirroring the bash ``cp -R`` / ``cp`` split.
     """
+    if not valid_timestamp(timestamp):
+        raise ValueError(f"timestamp must be YYYYMMDD-HHMMSS: {timestamp!r}")  # noqa: TRY003  # single call-site
     dest = _backup_path_for(target, timestamp)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if target.is_dir():

@@ -15,7 +15,9 @@ Covered decisions:
 - dry_run -> display only, no deletes,
 - empty orphan list -> no prompt, no deletes,
 - backup precedes delete (a sibling <namespace>-backup/ copy survives the rm),
-- directory orphans are backed up recursively.
+- directory orphans are backed up recursively,
+- a malformed timestamp under a deleting path (auto_yes) raises before any delete,
+- a malformed timestamp under dry_run does NOT raise (no timestamp is resolved).
 """
 
 from __future__ import annotations
@@ -234,14 +236,16 @@ def test_directory_orphan_backed_up_recursively(tmp_path: Path) -> None:
     assert not o1.path.exists()
 
 
-def test_malformed_timestamp_rejected_before_any_delete(tmp_path: Path) -> None:
+def test_malformed_timestamp_under_auto_yes_rejected_before_any_delete(tmp_path: Path) -> None:
     """
-    Given an orphan and a caller-supplied timestamp that escapes the format
+    Given a non-empty orphan list, auto_yes, and a timestamp that escapes the format
     When run_prune executes
     Then it raises ValueError and the orphan is untouched.
 
-    Pins the guardrail: the timestamp is interpolated raw into the backup path,
-    so a path-separator-bearing value must be rejected before any I/O.
+    Pins the guardrail on a *deleting* path: the timestamp is interpolated raw
+    into the backup path, so a path-separator-bearing value must be rejected
+    before any I/O. The raise now originates at the ``back_up`` boundary
+    (safe-by-default), not from an explicit check in ``run_prune``.
     """
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")
     io = ScriptedIO(interactive=False)
@@ -250,3 +254,23 @@ def test_malformed_timestamp_rejected_before_any_delete(tmp_path: Path) -> None:
         run_prune([o1], io=io, auto_yes=True, timestamp="../evil")
 
     assert o1.path.exists()
+
+
+def test_malformed_timestamp_under_dry_run_does_not_raise(tmp_path: Path) -> None:
+    """
+    Given a non-empty orphan list, dry_run, and a timestamp that escapes the format
+    When run_prune executes
+    Then it lists the orphan, returns empty Counters, and does NOT raise.
+
+    Pins the dry-run skip: a dry-run performs no backup, so it must never resolve
+    or validate a timestamp it will not use. A malformed value is irrelevant on
+    this path (mirrors sync.py, which validates only on the actual-write path).
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "a")
+    io = ScriptedIO(interactive=False)
+
+    counters = run_prune([o1], io=io, dry_run=True, timestamp="../evil")
+
+    assert o1.path.exists()
+    assert counters.pruned == 0
+    assert counters.backed_up == 0
