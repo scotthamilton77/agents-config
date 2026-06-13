@@ -166,6 +166,9 @@ def test_fix_all_dispositioned_is_idempotent_noop(
     result = runner.invoke(cli.app, ["fix", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert dispatcher.calls == 0  # nothing to fix → no dispatch
+    # All-dispositioned is the idempotent "already done" no-op — NOT the misleading
+    # NO_CLUSTERS "run cluster first" precondition (which also exits 0).
+    assert "PRECONDITION_NO_CLUSTERS" not in result.output
 
 
 def test_fix_terminal_phase_is_noop(

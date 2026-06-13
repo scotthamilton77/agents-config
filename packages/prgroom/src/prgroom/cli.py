@@ -288,11 +288,13 @@ def fix(
     """Dispatch the fix agent per cluster: decide disposition AND implement (local).
 
     A locked verb: ``read → fix_pr → write`` under the §2 ``with_lock`` wrapper.
-    Direct-invocation preconditions (the ``--no-prework`` column, §3.2): no state →
-    ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an all-dispositioned
-    state → no-op exit 0; no clustered-unprocessed items → ``PRECONDITION_NO_CLUSTERS``
-    (no-work exit 0). Fix makes no phase change (end-of-cycle resolution is the run
-    aggregate's job) and sets no ``last_error``. Commits land locally; nothing is pushed here.
+    Direct-invocation preconditions (the ``--no-prework`` column, §3.2), in order:
+    no state → ``PRECONDITION_NO_STATE`` (exit 2); a terminal phase or an
+    all-dispositioned state (work already done) → idempotent no-op exit 0; items
+    remain but none are clustered-unprocessed → ``PRECONDITION_NO_CLUSTERS``
+    (no-work exit 0, "run cluster first"). Fix makes no phase change (end-of-cycle
+    resolution is the run aggregate's job) and sets no ``last_error``. Commits land
+    locally; nothing is pushed here.
     """
     store: Store = ctx.obj
     try:
@@ -307,6 +309,11 @@ def fix(
             if is_terminal_for_cli(state.phase):
                 return  # terminal-for-CLI: no autonomous work (no-op exit 0)
             if not _has_clusters(state.items):
+                # No clustered-unprocessed work. An all-dispositioned state is the
+                # idempotent "already done" no-op (silent exit 0); only a genuinely
+                # un-clustered state is the NO_CLUSTERS precondition ("run cluster").
+                if state.items and all(item.disposition is not None for item in state.items):
+                    return
                 raise PreconditionError(ErrorCode.PRECONDITION_NO_CLUSTERS, detail=ref.display())
             dispatcher, decided_by = _build_fix_dispatcher()
             sink = _build_sink()
