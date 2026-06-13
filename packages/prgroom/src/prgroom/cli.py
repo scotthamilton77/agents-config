@@ -104,11 +104,15 @@ def _decided_by(chain: ProviderChain) -> str:
 
 
 def _build_cluster_dispatcher() -> tuple[ClusterContract, str]:
-    """Resolve the cluster provider chain + a dispatcher (flag/env/TOML → default).
+    """Resolve the cluster provider chain + a dispatcher.
 
     A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
-    ``decided_by``. Production resolves the chain via :func:`load_chain` and wires a
-    :class:`ClusterDispatcher` over the real :class:`SubprocessAgentRunner`.
+    ``decided_by``. Production wires a :class:`ClusterDispatcher` over the real
+    :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
+    ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
+    used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
+    pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides and a
+    ``--cluster-model`` flag stay inert pending that cross-verb config-path wiring.
     """
     chain = load_chain("cluster", repo_config=None, model_override=None)  # pragma: no cover
     dispatcher = ClusterDispatcher(  # pragma: no cover - production wiring
@@ -118,11 +122,15 @@ def _build_cluster_dispatcher() -> tuple[ClusterContract, str]:
 
 
 def _build_fix_dispatcher() -> tuple[FixContract, str]:
-    """Resolve the fix provider chain + a dispatcher (flag/env/TOML → default).
+    """Resolve the fix provider chain + a dispatcher.
 
     A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
-    ``decided_by``. Production resolves the chain via :func:`load_chain` and wires a
-    :class:`FixDispatcher` over the real :class:`SubprocessAgentRunner`.
+    ``decided_by``. Production wires a :class:`FixDispatcher` over the real
+    :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
+    ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
+    used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
+    pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides and a
+    ``--fix-model`` flag stay inert pending that cross-verb config-path wiring.
     """
     chain = load_chain("fix", repo_config=None, model_override=None)  # pragma: no cover
     dispatcher = FixDispatcher(  # pragma: no cover - production wiring
