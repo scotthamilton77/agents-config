@@ -12,11 +12,17 @@ from installer.tools.registry import get_adapter, known_tools, parse_tool_name
 @dataclass(frozen=True, slots=True)
 class Config:
     """Resolved installer configuration. Frozen so the engine can pass it
-    freely without defensive copies. B.1 scope: only fields needed for
-    tool selection. Later stories add fields as their behaviour requires."""
+    freely without defensive copies. Later stories add fields as their
+    behaviour requires.
+
+    ``auto_yes`` (G.7) carries the ``--yes`` / ``-y`` flag: it waives the
+    non-interactive consent guard (``core/consent.py``) and is the intended
+    scripted-install path. Defaults ``False`` so existing constructions are
+    unaffected."""
 
     home: Path
     tools: tuple[Tool, ...]
+    auto_yes: bool = False
 
 
 def resolve_tools(*, home: Path, override_csv: str | None) -> tuple[Tool, ...]:

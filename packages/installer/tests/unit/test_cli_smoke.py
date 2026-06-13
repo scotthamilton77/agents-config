@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from installer.cli import main
+from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
 from installer.tools import registry
 
@@ -20,6 +21,29 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude" / "settings.json").write_text("{}")
     return tmp_path
+
+
+def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
+    """Create a repo_root whose packages/installer/installer.toml carries the
+    given prune list — mirroring where _run_prune now derives the config path
+    (off the injected repo_root, not __file__)."""
+    repo = tmp_path / "repo"
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    retired_lines = "\n".join(f'  "{glob}",' for glob in retired)
+    (toml_dir / "installer.toml").write_text(f"[prune]\nretired = [\n{retired_lines}\n]\n")
+    return repo
+
+
+def _repo_with_malformed_installer_toml(tmp_path: Path) -> Path:
+    """Create a repo_root whose installer.toml is type-malformed: prune.retired
+    is a bare string, which load_installer_toml rejects with ValueError (it would
+    otherwise list()-shred into single-character globs)."""
+    repo = tmp_path / "repo"
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    (toml_dir / "installer.toml").write_text('[prune]\nretired = "*/skills/ralf-it"\n')
+    return repo
 
 
 def _hermetic_repo(tmp_path: Path) -> Path:
@@ -148,6 +172,218 @@ def test_main_no_args_against_empty_home_returns_2_with_detection_diagnostic(
     assert "--tools=" in captured.err
 
 
+# ── G.5 / G.7: prune flags + --yes wiring ──
+
+
+def test_prune_and_prune_only_together_is_mutually_exclusive_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    When main(["--prune", "--prune-only"]) is invoked
+    Then argparse exits 2 (mutually exclusive group rejects both).
+
+    Pins: --prune and --prune-only cannot be combined (installer-design.md G.5).
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--prune", "--prune-only"], home=tmp_path)
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "not allowed with" in captured.err
+
+
+def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Path) -> None:
+    """
+    Given a home with a claude skills/ entry matching the bundled prune list and
+    an empty source repo (nothing staged), under --prune-only --yes
+    When main runs (non-interactive io)
+    Then the unstaged, retired entry is removed.
+
+    Pins: --prune-only scans + prunes against the in-memory plan without an
+    install half, and --yes waives the non-interactive guard.
+    """
+    home = _home_with_claude_settings(tmp_path)
+    retired = home / ".claude" / "skills" / "ralf-it"
+    retired.mkdir(parents=True)
+    # Source repo is empty (nothing staged) but carries an installer.toml whose
+    # prune list matches the orphan, so _run_prune loads a non-empty list.
+    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert not retired.exists()
+    # Companion to the missing-config case: when installer.toml IS present, the
+    # missing-config warning is not emitted.
+    assert not any(
+        e.channel == "warn" and "installer.toml not found" in e.message for e in io.transcript
+    )
+
+
+def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
+    """
+    Given a repo_root whose packages/installer/installer.toml does NOT exist,
+    under --prune-only --yes
+    When main runs (non-interactive io)
+    Then a warning naming the missing path is emitted through io and the run
+    still exits cleanly (0) — an absent prune list deletes nothing (fail-safe),
+    so the no-op is explained rather than silent.
+
+    Pins: _run_prune derives the config path from repo_root and warns on the
+    missing-file case (PR #151 comment 3408241642).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    # An orphan that WOULD match the bundled prune list, to prove it is the
+    # empty list (not a non-match) that spares it from pruning.
+    retired = home / ".claude" / "skills" / "ralf-it"
+    retired.mkdir(parents=True)
+    empty_repo = tmp_path / "no-toml-repo"
+    empty_repo.mkdir()  # no packages/installer/installer.toml underneath
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=io,
+        repo_root=empty_repo,
+    )
+
+    assert rc == 0
+    assert retired.exists()  # empty prune list => nothing pruned
+    warnings = [
+        e for e in io.transcript if e.channel == "warn" and "installer.toml not found" in e.message
+    ]
+    assert len(warnings) == 1
+    assert str(empty_repo / "packages" / "installer" / "installer.toml") in warnings[0].message
+
+
+def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
+    """
+    Given --prune-only with a matching orphan, a non-interactive io, and no --yes
+    When main runs
+    Then it returns a non-zero status (the prune flow's hard-fail guard).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    (home / ".claude" / "skills" / "ralf-it").mkdir(parents=True)
+    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
+
+    rc = main(
+        ["--prune-only", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc != 0
+
+
+def test_prune_only_with_malformed_installer_toml_returns_2_and_errs_through_io(
+    tmp_path: Path,
+) -> None:
+    """
+    Given a repo_root whose packages/installer/installer.toml is type-malformed
+    (prune.retired is a string, not a list), under --prune-only --yes
+    When main runs (non-interactive io)
+    Then it returns 2 (the config-error exit convention)
+    And the malformed-config message is surfaced through io's err channel
+    And no uncaught traceback escapes.
+
+    Pins: _run_prune catches the ValueError that load_installer_toml raises on a
+    type-malformed installer.toml and fails cleanly via io.err + return 2 rather
+    than crashing the CLI (PR #151 comment 3408271848).
+    """
+    home = _home_with_claude_settings(tmp_path)
+    repo = _repo_with_malformed_installer_toml(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    errs = [
+        e
+        for e in io.transcript
+        if e.channel == "err" and "retired must be a list of strings" in e.message
+    ]
+    assert len(errs) == 1
+
+
+def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> None:
+    """
+    Given two repo_roots — one whose src/plugins/ contains a plugin directory and
+    one lacking src/plugins entirely — each with a valid installer.toml,
+    under --prune-only --yes
+    When main runs against each (non-interactive io)
+    Then plugin discovery resolves against the *injected* repo_root: the run
+    completes cleanly (0) in both cases, and the run whose repo_root lacks
+    src/plugins discovers nothing (no plugin staging is attempted off the real
+    repo's src/plugins).
+
+    Pins: _run_prune derives plugins_root from the injected repo_root
+    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, so
+    repo_root is fully authoritative (PR #151 comment 3408271853). With a
+    repo_root lacking src/plugins, discover() returns {} — proving the real
+    repo's plugins are not consulted.
+    """
+    home = _home_with_claude_settings(tmp_path)
+
+    # repo_root WITH a plugin under src/plugins/: discovery has something to find
+    # there, and the run must not error reaching for the real repo's plugins.
+    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with", retired=[])
+    (repo_with_plugins / "src" / "plugins" / "beads").mkdir(parents=True)
+    rc_with = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo_with_plugins,
+    )
+    assert rc_with == 0
+
+    # repo_root WITHOUT src/plugins: discover() returns {} for the injected root.
+    # If discovery had ignored repo_root and used the real _REPO_ROOT/src/plugins,
+    # this assertion could not distinguish the two — the injected empty root is
+    # what makes "no plugins" observable.
+    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without", retired=[])
+    assert not (repo_no_plugins / "src" / "plugins").exists()
+    rc_without = main(
+        ["--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo_no_plugins,
+    )
+    assert rc_without == 0
+
+
+def test_plain_prune_non_interactive_without_yes_fails_on_consent_guard(tmp_path: Path) -> None:
+    """
+    Given plain --prune (not --prune-only), a non-interactive io, and no --yes
+    When main runs
+    Then it returns non-zero — the consent guard refuses a destructive run that
+    cannot prompt (G.7), before any orphan scan.
+    """
+    home = _home_with_claude_settings(tmp_path)
+    empty_repo = tmp_path / "empty-repo"
+    empty_repo.mkdir()
+
+    rc = main(
+        ["--prune", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=empty_repo,
+    )
+
+    assert rc != 0
+
+
 def test_dump_stage_materialises_plan_and_returns_zero(tmp_path: Path) -> None:
     """
     Given a hermetic source repo and a Claude install signal in home
@@ -229,3 +465,23 @@ def test_dump_stage_non_empty_target_returns_2_with_stderr_message(
 
     assert rc == 2
     assert "not empty" in capsys.readouterr().err
+
+
+# ── Integration: --dump-stage ⊥ --prune/--prune-only (cross-PR seam) ──
+
+
+def test_dump_stage_and_prune_together_is_mutually_exclusive_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    When main(["--dump-stage=<p>", "--prune"]) is invoked
+    Then argparse exits 2 — --dump-stage and --prune share one mutually
+    exclusive group, so the three terminal modes cannot combine.
+
+    Pins the cross-PR integration seam: --dump-stage ⊥ --prune/--prune-only,
+    realised when the prune pipeline and the --dump-stage debug flag merged.
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--dump-stage", str(tmp_path / "out"), "--prune"], home=tmp_path)
+    assert exc_info.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err
