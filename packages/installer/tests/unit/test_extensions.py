@@ -44,11 +44,12 @@ def _ext_yaml(
     precision: str = "append",
     content: str = "patched",
 ) -> str:
+    block = "".join(f"  {line}\n" for line in content.split("\n"))
     return (
         f"target-file: {target_file}\n"
         f"target-section: {target_section}\n"
         f"precision: {precision}\n"
-        f"content: |\n  {content}\n"
+        f"content: |\n{block}"
     )
 
 
@@ -255,3 +256,120 @@ def test_section_errors_carry_yaml_and_target_citation(tmp_path: Path) -> None:
         apply_extensions(_plan_with_agent_md(), [plugin])
     assert ei.value.yaml_path == yaml_path
     assert ei.value.target_file == Path("agents/reviewer.md")
+
+
+def test_r6_ordering_plugin_alpha_then_shared_before_tool_then_filename(
+    tmp_path: Path,
+) -> None:
+    """Four appends to one section across (plugin alpha x scope x filename)
+    land in R6 order. Ordering is observable: appends compose positionally."""
+    alpha = _plugin(tmp_path, "alpha")
+    zeta = _plugin(tmp_path, "zeta")
+    _write(
+        alpha.source_path / ".agents" / "extensions" / "10.yaml",
+        _ext_yaml(content="alpha-shared-10"),
+    )
+    _write(
+        alpha.source_path / ".agents" / "extensions" / "20.yaml",
+        _ext_yaml(content="alpha-shared-20"),
+    )
+    _write(
+        alpha.source_path / ".claude" / "extensions" / "00.yaml",
+        _ext_yaml(content="alpha-tool-00"),
+    )  # filename sorts first; scope still loses
+    _write(
+        zeta.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(content="zeta-shared-00"),
+    )
+
+    # Pass plugins deliberately unsorted: ordering is the module's decision.
+    plan = apply_extensions(_plan_with_agent_md("## Boundaries\nbase\n"), [zeta, alpha])
+
+    assert plan.items[Path("agents/reviewer.md")].content == (
+        b"## Boundaries\nbase\nalpha-shared-10\nalpha-shared-20\nalpha-tool-00\nzeta-shared-00\n"
+    )
+
+
+def test_ordering_changes_the_result_for_replace(tmp_path: Path) -> None:
+    """AC #5: with two replaces on one section, the R6-last patch wins —
+    a different order would leave different bytes."""
+    alpha = _plugin(tmp_path, "alpha")
+    zeta = _plugin(tmp_path, "zeta")
+    _write(
+        alpha.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(precision="replace", content="from-alpha"),
+    )
+    _write(
+        zeta.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(precision="replace", content="from-zeta"),
+    )
+
+    plan = apply_extensions(_plan_with_agent_md("## Boundaries\nbase\n"), [alpha, zeta])
+
+    assert plan.items[Path("agents/reviewer.md")].content == b"## Boundaries\nfrom-zeta\n"
+
+
+def test_patch_introduced_header_is_targetable_by_a_later_patch(tmp_path: Path) -> None:
+    """AC #6 now-resolvable: 0 matches without the earlier patch, 1 with it."""
+    plugin = _plugin(tmp_path, "p")
+    ext_dir = plugin.source_path / ".agents" / "extensions"
+    _write(ext_dir / "00.yaml", _ext_yaml(content="## Brand New\nseed"))
+    _write(ext_dir / "01.yaml", _ext_yaml(target_section="Brand New", content="landed"))
+
+    plan = apply_extensions(_plan_with_agent_md("## Boundaries\nbase\n"), [plugin])
+
+    assert plan.items[Path("agents/reviewer.md")].content == (
+        b"## Boundaries\nbase\n## Brand New\nseed\nlanded\n"
+    )
+
+
+def test_patch_introduced_duplicate_header_makes_later_patch_ambiguous(
+    tmp_path: Path,
+) -> None:
+    """AC #6 now-ambiguous: 1 match without the earlier patch, 2 with it."""
+    plugin = _plugin(tmp_path, "p")
+    ext_dir = plugin.source_path / ".agents" / "extensions"
+    _write(ext_dir / "00.yaml", _ext_yaml(content="## Boundaries\nshadow"))
+    _write(ext_dir / "01.yaml", _ext_yaml(content="never-applied"))
+
+    with pytest.raises(ExtensionError, match="appears 2 times; ambiguous"):
+        apply_extensions(_plan_with_agent_md("## Boundaries\nbase\n"), [plugin])
+
+
+def test_tool_scope_applies_only_to_its_own_tool(tmp_path: Path) -> None:
+    """AC #7: a .claude/extensions patch lands in the Claude plan only; a
+    .agents/extensions patch lands in both Claude and Codex plans."""
+    plugin = _plugin(tmp_path, "p")
+    _write(
+        plugin.source_path / ".agents" / "extensions" / "00.yaml",
+        _ext_yaml(content="shared"),
+    )
+    _write(
+        plugin.source_path / ".claude" / "extensions" / "00.yaml",
+        _ext_yaml(content="claude-only"),
+    )
+
+    claude_plan = apply_extensions(_plan_with_agent_md("## Boundaries\nbase\n"), [plugin])
+    codex_plan = apply_extensions(
+        StagingPlan(
+            items=dict(_plan_with_agent_md("## Boundaries\nbase\n").items), tool=Tool.CODEX
+        ),
+        [plugin],
+    )
+
+    assert claude_plan.items[Path("agents/reviewer.md")].content == (
+        b"## Boundaries\nbase\nshared\nclaude-only\n"
+    )
+    assert codex_plan.items[Path("agents/reviewer.md")].content == (
+        b"## Boundaries\nbase\nshared\n"
+    )
+
+
+def test_plugin_without_extension_dirs_is_a_noop(tmp_path: Path) -> None:
+    plugin = _plugin(tmp_path, "p")
+    base = _plan_with_agent_md()
+    original = base.items[Path("agents/reviewer.md")].content
+
+    plan = apply_extensions(base, [plugin])
+
+    assert plan.items[Path("agents/reviewer.md")].content == original
