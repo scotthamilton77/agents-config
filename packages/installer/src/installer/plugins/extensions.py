@@ -128,8 +128,6 @@ def _load_extension(yaml_path: Path) -> _Extension:
         # YAML `|` block scalars terminate with one newline; the precision
         # verbs add their own line separation (R4), so a single terminal
         # newline is normalized away — `|` and `|-` author identically.
-        # An intentional trailing blank line is an explicit blank line in
-        # the block scalar, which survives this strip.
         content=fields["content"].removesuffix("\n"),
     )
 
@@ -188,7 +186,13 @@ class _DirTarget:
 def _resolve(plan: StagingPlan, ext: _Extension) -> _FileTarget | _DirTarget:
     """Locate ``target-file`` in the CURRENT plan state. Precedence inside a
     DIR item: an earlier patch's (or carrier-merge's) dir_overrides bytes win
-    over the source tree — later patches must see earlier effects (R6)."""
+    over the source tree — later patches must see earlier effects (R6).
+
+    Namespace opt-outs (e.g. OpenCode skipping shared ``agents/``) need no
+    explicit check here: a skipped namespace stages no plan item or DIR
+    ancestor, so a patch targeting it falls through to the terminal
+    "not found" below. The gating is enforced transitively by plan
+    membership, not re-consulted from the adapter."""
     item = plan.items.get(ext.target_file)
     if item is not None and item.kind is not FileKind.DIR and item.content is not None:
         return _FileTarget(dest=ext.target_file, current=item.content)
