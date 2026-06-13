@@ -51,8 +51,8 @@ class _ClaudeLikeAdapter:
         return plan
 
 
-def _empty_plan() -> StagingPlan:
-    return StagingPlan(items={}, tool=Tool.CLAUDE)
+def _empty_plan(tool: Tool = Tool.CLAUDE) -> StagingPlan:
+    return StagingPlan(items={}, tool=tool)
 
 
 def _staged_dir(namespace: str, name: str) -> StagedItem:
@@ -174,7 +174,10 @@ def test_tool_scoped_glob_does_not_match_other_tool(tmp_path: Path) -> None:
     config = InstallerToml(prune_globs=["claude/rules/git-commits.md"])
 
     orphans = scan_orphans(
-        [_CodexLikeAdapter()], plans={Tool.CODEX: _empty_plan()}, home=tmp_path, config=config
+        [_CodexLikeAdapter()],
+        plans={Tool.CODEX: _empty_plan(Tool.CODEX)},
+        home=tmp_path,
+        config=config,
     )
 
     assert orphans == []
