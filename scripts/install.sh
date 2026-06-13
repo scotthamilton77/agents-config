@@ -799,7 +799,7 @@ stage_and_install_tool() {
             stage_item "$template" "$staging/$(basename "$template")" "other"
         done
 
-        for subdir in commands skills agents rules; do
+        for subdir in commands skills agents rules hooks; do
             stage_content_from_dir "$src_tool" "$staging" "$subdir"
         done
 
@@ -921,7 +921,7 @@ stage_and_install_tool() {
     sync_templates "$staging" "$dest_dir" "staged"
 
     # Sync subdirectories
-    for subdir in rules commands skills agents; do
+    for subdir in rules commands skills agents hooks; do
         # OpenCode: skip agents (frontmatter format differs; see OPENCODE-EXTENSIONS.md)
         # and skip rules (inlined into AGENTS.md via DYNAMIC-INCLUDE-ALL-RULES; OpenCode
         # has no rules/ destination directory)
