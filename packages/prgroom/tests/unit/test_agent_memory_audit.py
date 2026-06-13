@@ -81,6 +81,32 @@ def test_sibling_prefix_path_is_a_block_violation() -> None:
     assert res.violations[0].severity is Severity.BLOCK
 
 
+def test_relative_path_is_anchored_to_memory_dir_and_clean() -> None:
+    # §8.5 examples declare memory_writes RELATIVE to memory_dir ("scratch/a.md").
+    # The containment check must anchor a relative path to memory_dir before the
+    # prefix test, else every documented happy-path write is a false BLOCK that
+    # flips + stashes a clean run.
+    out = _out(memory_writes=["scratch/a.md", "sub/deep/note.md"])
+    res = audit_memory(
+        out,
+        memory_dir=_MEM,
+        written_paths={"scratch/a.md", "sub/deep/note.md"},
+        known_thread_ids=set(),
+    )
+    assert res.violations == []
+
+
+def test_relative_dotdot_escaping_memory_dir_is_still_block() -> None:
+    # Anchoring must not weaken the escape check: a relative path that climbs out
+    # via .. is still a BLOCK violation.
+    out = _out(memory_writes=["../../etc/shadow"])
+    res = audit_memory(
+        out, memory_dir=_MEM, written_paths={"../../etc/shadow"}, known_thread_ids=set()
+    )
+    assert len(res.violations) == 1
+    assert res.violations[0].severity is Severity.BLOCK
+
+
 def test_root_memory_dir_contains_every_absolute_path() -> None:
     # memory_dir == "/" is pathological but must not produce false BLOCKs: normpath
     # "/" already ends in os.sep, so a naive `norm_dir + os.sep` ("//") rejects every

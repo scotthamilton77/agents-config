@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import PurePath
 from typing import TYPE_CHECKING
 
 from prgroom.agent.errors import AuditViolation
@@ -70,7 +71,12 @@ def _is_contained(path: str, memory_dir: str) -> bool:
     contained, which the prefix test correctly rejects.
     """
     norm_dir = os.path.normpath(memory_dir)
-    norm_path = os.path.normpath(path)
+    # The agent declares memory_writes RELATIVE to memory_dir (§8.5 examples), so
+    # anchor with PurePath's `/` before the lexical normpath collapse. The join
+    # semantics keep the escape check correct for free: an ABSOLUTE path resets the
+    # join (discards memory_dir, so an absolute escape still fails the prefix test
+    # below), and a `..` traversal normalizes out of the dir (also caught).
+    norm_path = os.path.normpath(str(PurePath(memory_dir) / path))
     if norm_path == norm_dir:
         return True
     # normpath("/") == "/" already ends in os.sep; a naive `norm_dir + os.sep`
