@@ -1,4 +1,4 @@
-"""Shared path-safety helper (core/paths.py).
+"""Unit tests for installer.core.paths — the shared path-safety helper.
 
 Behavioural tests for ``is_safe_relpath`` — the single relpath-traversal guard
 consolidated from sync.py, templates.py, and extensions.py. Each test pins one
