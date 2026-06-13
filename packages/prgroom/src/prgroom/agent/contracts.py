@@ -170,6 +170,23 @@ class FixOutput:
 
     @classmethod
     def from_dict(cls, d: JsonObj) -> FixOutput:
+        # Leniency is TYPE-level, not just value-level: an agent emitting `null`, a
+        # string, or any non-list for memory_writes/memory must NOT raise here — a
+        # parse error would fall the whole dispatch through the chain (and discard
+        # valid item dispositions). A non-list channel becomes empty; a non-string
+        # write path / non-dict memory entry is dropped (it cannot be a real write
+        # path or routable entry, and would otherwise land in the §8.6 audit as a
+        # type landmine). The §8.6 audit still owns VALUE validation.
+        raw_writes = d.get("memory_writes")
+        memory_writes = (
+            [p for p in raw_writes if isinstance(p, str)] if isinstance(raw_writes, list) else []
+        )
+        raw_memory = d.get("memory")
+        memory = (
+            [MemoryEntry.from_dict(m) for m in raw_memory if isinstance(m, dict)]
+            if isinstance(raw_memory, list)
+            else []
+        )
         return cls(
             items=[
                 FixItemResult(
@@ -182,8 +199,8 @@ class FixOutput:
                 )
                 for row in d["items"]
             ],
-            memory_writes=list(d.get("memory_writes", [])),
-            memory=[MemoryEntry.from_dict(m) for m in d.get("memory", [])],
+            memory_writes=memory_writes,
+            memory=memory,
         )
 
 

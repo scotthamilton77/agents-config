@@ -71,3 +71,37 @@ def test_memory_entry_missing_classification_defaults_empty() -> None:
     assert entry.content == "x"
     assert entry.path is None
     assert entry.target_hint is None
+
+
+def test_memory_writes_non_list_parses_empty_not_raises() -> None:
+    # Leniency is type-level too: an agent emitting `null` / a string / a non-list
+    # for memory_writes must NOT raise (which the dispatcher would mistake for a
+    # malformed chain link and fall through, discarding valid item dispositions).
+    for bad in (None, "scratch/a.md", 42, {"a": 1}):
+        out = FixOutput.from_dict({"items": [], "memory_writes": bad})
+        assert out.memory_writes == []
+
+
+def test_memory_non_list_parses_empty_not_raises() -> None:
+    for bad in (None, "CONTEXTUAL", 7):
+        out = FixOutput.from_dict({"items": [], "memory": bad})
+        assert out.memory == []
+
+
+def test_memory_writes_keeps_only_string_elements() -> None:
+    # A non-string element cannot be a real write path and would crash the §8.6
+    # containment check (os.path on a non-str); drop it rather than carry a landmine.
+    out = FixOutput.from_dict({"items": [], "memory_writes": ["scratch/a.md", 5, None]})
+    assert out.memory_writes == ["scratch/a.md"]
+
+
+def test_memory_skips_non_dict_entries() -> None:
+    # A non-dict memory entry is malformed shape, not a routable entry; skip it so
+    # the valid entries (and the item dispositions) survive the parse.
+    out = FixOutput.from_dict(
+        {
+            "items": [],
+            "memory": ["not-a-dict", {"content": "x", "classification": "CONTEXTUAL"}, 9],
+        }
+    )
+    assert out.memory == [MemoryEntry(classification="CONTEXTUAL", content="x")]
