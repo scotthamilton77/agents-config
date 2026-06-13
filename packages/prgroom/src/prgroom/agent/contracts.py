@@ -129,15 +129,44 @@ class FixItemResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoryEntry:
+    """One classified memory entry on the fix-output ``memory`` channel (§8.5).
+
+    ``classification`` is kept as a RAW string, not enum-parsed: an unknown value
+    must reach the §8.6 audit as data (where it becomes an AUDIT failure), never
+    raise during parsing (which the dispatcher would mistake for a malformed
+    chain link and fall through). Each entry sets EXACTLY ONE of
+    ``content`` | ``path`` — the §8.6 audit enforces that invariant, not the parser.
+    """
+
+    classification: str
+    content: str | None = None
+    path: str | None = None
+    target_hint: str | None = None
+
+    @classmethod
+    def from_dict(cls, d: JsonObj) -> MemoryEntry:
+        return cls(
+            classification=d.get("classification", ""),
+            content=d.get("content"),
+            path=d.get("path"),
+            target_hint=d.get("target_hint"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class FixOutput:
     """Output of the fix contract (§5).
 
-    The ``memory_writes`` / ``memory`` channels (§8) are accepted-but-deferred in
-    the MVP; the foundation parses the per-item disposition rows that the
-    lifecycle audit consumes.
+    Parsing the ``memory_writes`` / ``memory`` channels (§8.5) is LENIENT — the
+    §8.6 audit owns validation, so a bad memory entry survives ``from_dict`` as
+    data and fails in the audit, not here. The defaults keep older payloads
+    (which omit both keys) backward-compatible.
     """
 
     items: list[FixItemResult]
+    memory_writes: list[str] = field(default_factory=list)
+    memory: list[MemoryEntry] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: JsonObj) -> FixOutput:
@@ -152,7 +181,9 @@ class FixOutput:
                     recommended_gate=row.get("recommended_gate", ""),
                 )
                 for row in d["items"]
-            ]
+            ],
+            memory_writes=list(d.get("memory_writes", [])),
+            memory=[MemoryEntry.from_dict(m) for m in d.get("memory", [])],
         )
 
 
