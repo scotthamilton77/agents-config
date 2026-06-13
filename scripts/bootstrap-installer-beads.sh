@@ -2,7 +2,7 @@
 # bootstrap-installer-beads.sh
 #
 # Bootstrap the bd work-tracking structure for the Python installer rewrite.
-# See docs/specs/2026-05-17-python-installer-rewrite.md for the full spec
+# See docs/architecture/installer/installer-design.md for the full spec
 # and dependency graph.
 #
 # Creates (in full-run mode):
@@ -38,7 +38,7 @@
 
 set -euo pipefail
 
-SPEC="docs/specs/2026-05-17-python-installer-rewrite.md"
+SPEC="docs/architecture/installer/installer-design.md"
 
 ############################################################
 # CLI parsing

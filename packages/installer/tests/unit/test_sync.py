@@ -1,7 +1,7 @@
 """Unit tests for installer.core.sync (B.2 — minimal single-file sync).
 
 Each test pins a behaviour the B.2 story contract requires
-(docs/specs/2026-05-17-python-installer-rewrite.md, Epic B.2). The sync
+(docs/architecture/installer/installer-design.md, Epic B.2). The sync
 engine is exercised through a minimal identity-pass-through ToolAdapter so
 the tests are independent of any real tool's path layout; the real
 ClaudeAdapter is driven once, end-to-end, in test_sync_claude.py to cover

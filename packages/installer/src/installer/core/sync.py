@@ -2,7 +2,7 @@
 
 Copies one source file to one destination, resolving both ends through a
 `ToolAdapter`. The smallest slice of the eventual Phase-7 sync described in
-`docs/specs/2026-05-17-python-installer-rewrite.md`: later stories grow it
+`docs/architecture/installer/installer-design.md`: later stories grow it
 to walk a `StagingPlan` and route conflicts through the merge registry.
 
 Path-aware backup (G.1) ports the bash installer's ``backup()``
