@@ -274,12 +274,15 @@ def _disposition_for_item(
 def _cluster_flip_marker(row: FixItemResult, *, detail: str) -> AuditViolation:
     """A FAILED marker for an otherwise-clean item swept up by a cluster-wide breach.
 
-    ``detail`` carries the underlying hard-violation cause (orphan shas / containment
-    path) so the swept-up item's rationale names WHY it failed, not just that it did.
+    ``detail`` is the raw joined hard-violation cause (orphan shas / containment
+    path). It is used VERBATIM as the swept-up item's rationale — §8.6 documents the
+    exact per-item string (e.g. "memory containment violation: <path>") that the
+    lifecycle/resolver read as the source of truth for the cause, so no prefix is
+    added that would diverge from the contract.
     """
     return AuditViolation(
         code=ErrorCode.CONTRACT_FIX_AUDIT_FAILED,
-        detail=f"cluster failed: {detail}",
+        detail=detail,
         gh_id=row.gh_id,
     )
 

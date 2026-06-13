@@ -215,6 +215,21 @@ def test_cluster_flip_rationale_carries_the_hard_violation_detail() -> None:
     assert "n2" in flipped.rationale  # the orphan detail, not a generic marker
 
 
+def test_swept_item_rationale_is_the_spec_string_with_no_added_prefix() -> None:
+    # §8.6: on a containment sweep each affected item's FAILED rationale is exactly
+    # "memory containment violation: <path>". The swept-up marker must NOT prepend
+    # "cluster failed: " — that diverges from the documented contract string the
+    # lifecycle/resolver read as the source of truth for the cause.
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])],
+        memory_writes=["/etc/passwd"],  # escapes memory_dir → hard containment BLOCK
+    )
+    git = _git(ancestors=["pre"], new=["n1"])  # n1 claimed → no orphan, only containment
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    assert res.stashed is True
+    assert res.dispositions["C_1"].rationale == "memory containment violation: /etc/passwd"
+
+
 def test_ghost_row_cannot_suppress_orphan_detection() -> None:
     # A GHOST (unrequested) row claiming the new commit must not hide the orphan:
     # the orphan still fires, the cluster flips, and stash isolates the contamination.
