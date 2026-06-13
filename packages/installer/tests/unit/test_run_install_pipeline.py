@@ -20,13 +20,13 @@ from installer.tools.registry import get_adapter
 _FIXED_TS = "20260613-120000"
 
 
-def _file_item(relpath: Path, content: bytes) -> StagedItem:
+def _file_item(relpath: Path, content: bytes, *, tool: str = "claude") -> StagedItem:
     return StagedItem(
         source_path=Path("/unused") / relpath,
         dest_relpath=relpath,
         kind=FileKind.OTHER,
         namespace=None,
-        provenance=Provenance(kind="tool", name="claude"),
+        provenance=Provenance(kind="tool", name=tool),
         content=content,
     )
 
@@ -50,7 +50,7 @@ def test_install_pipeline_aggregates_counters_across_tools(tmp_path: Path) -> No
             items={Path("a.md"): _file_item(Path("a.md"), b"A\n")}, tool=Tool.CLAUDE
         ),
         Tool.CODEX: StagingPlan(
-            items={Path("b.md"): _file_item(Path("b.md"), b"B\n")}, tool=Tool.CODEX
+            items={Path("b.md"): _file_item(Path("b.md"), b"B\n", tool="codex")}, tool=Tool.CODEX
         ),
     }
 

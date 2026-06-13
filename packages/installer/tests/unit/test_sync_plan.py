@@ -396,7 +396,7 @@ def test_file_item_with_a_file_in_its_parent_path_is_rejected(tmp_path: Path) ->
         items={Path("rules/b.md"): _file_item(Path("rules/b.md"), b"x\n")}, tool=Tool.CLAUDE
     )
 
-    with pytest.raises(ValueError, match="parent director"):
+    with pytest.raises(ValueError, match="parent path"):
         sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
 
@@ -415,7 +415,7 @@ def test_dir_item_with_a_file_in_its_parent_path_is_rejected(tmp_path: Path) -> 
     (home / "skills").write_bytes(b"i am a file\n")
     plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
 
-    with pytest.raises(ValueError, match="parent director"):
+    with pytest.raises(ValueError, match="parent path"):
         sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
 
@@ -436,8 +436,29 @@ def test_dir_override_with_a_file_in_its_inner_parent_path_is_rejected(tmp_path:
         dir_overrides={Path("skills/s"): {Path("a/deep.md"): b"deep\n"}},
     )
 
-    with pytest.raises(ValueError, match="parent director"):
+    with pytest.raises(ValueError, match="parent path"):
         sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+
+def test_dry_run_still_rejects_a_file_in_the_parent_path(tmp_path: Path) -> None:
+    """
+    Given --dry-run and a FILE item whose intermediate parent component is a
+    regular file (``<dest>/rules`` is a file)
+    When sync_plan previews the install
+    Then the non-mutating parent-chain validation surfaces a ValueError too — a
+    faithful preview fails where a real run would — and nothing is written.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "rules").write_bytes(b"i am a file\n")
+    plan = StagingPlan(
+        items={Path("rules/b.md"): _file_item(Path("rules/b.md"), b"x\n")}, tool=Tool.CLAUDE
+    )
+
+    with pytest.raises(ValueError, match="parent path"):
+        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), dry_run=True)
+
+    assert not (home / "rules" / "b.md").exists()
 
 
 def test_overwrite_with_malformed_timestamp_is_rejected_before_any_write(tmp_path: Path) -> None:

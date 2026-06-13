@@ -186,10 +186,10 @@ def _install_file(
     if dest_exists and _sha256(dest.read_bytes()) == _sha256(content):
         counters.skipped += 1
         return
+    _ensure_parent_dir(dest, dry_run=dry_run)
     if not dry_run:
         if dest_exists:
             _back_up(dest, timestamp, counters)
-        _ensure_parent_dir(dest)
         dest.write_bytes(content)
         dest.chmod(0o755 if executable else 0o644)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
@@ -225,15 +225,15 @@ def _install_dir(
         if not is_safe_relpath(inner):
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
+    _ensure_parent_dir(dest, dry_run=dry_run)
     if not dry_run:
         if dest_exists:
             _back_up(dest, timestamp, counters)
             shutil.rmtree(dest)
-        _ensure_parent_dir(dest)
         shutil.copytree(source_path, dest)
         for inner, inner_content in overrides.items():
             inner_dest = dest / inner
-            _ensure_parent_dir(inner_dest)
+            _ensure_parent_dir(inner_dest, dry_run=dry_run)
             inner_dest.write_bytes(inner_content)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
 
@@ -263,15 +263,22 @@ def _back_up(target: Path, timestamp: str | None, counters: Counters) -> None:
     counters.backed_up += 1
 
 
-def _ensure_parent_dir(target: Path) -> None:
-    """Create ``target``'s parent directories, converting a file-in-the-path
-    collision (``FileExistsError`` / ``NotADirectoryError`` when an intermediate
-    component is a regular file) into a clean `ValueError` — consistent with the
-    engine's other filesystem type-mismatch guards."""
-    try:
+def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
+    """Validate ``target``'s parent chain and, unless ``dry_run``, create it.
+
+    Raises `ValueError` if the first existing ancestor of ``target`` is a regular
+    file (a file where a directory must go) — a **non-mutating** check, so a
+    ``dry_run`` preview fails in exactly the cases a real install would while only
+    a real run creates the directories. Converts what would otherwise be a raw
+    ``FileExistsError`` / ``NotADirectoryError`` from ``mkdir`` into a clean error,
+    consistent with the engine's other filesystem type-mismatch guards."""
+    for ancestor in target.parents:
+        if ancestor.exists():
+            if not ancestor.is_dir():
+                raise ValueError(f"parent path is not a directory: {ancestor}")  # noqa: TRY003  # single call-site; subclass not justified
+            break
+    if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
-    except (FileExistsError, NotADirectoryError) as exc:
-        raise ValueError(f"cannot create parent directory for {target}: {exc}") from exc  # noqa: TRY003  # single call-site; subclass not justified
 
 
 def _sha256(data: bytes) -> bytes:
