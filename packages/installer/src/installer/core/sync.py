@@ -14,6 +14,7 @@ write leaves it recoverable.
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,13 @@ _SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formul
 # Backup timestamp format, matching ``date +%Y%m%d-%H%M%S`` in
 # `scripts/install.sh:365`.
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
+
+# A caller-supplied ``timestamp`` is interpolated raw into the backup
+# filename (`_backup`), so it must match the documented ``YYYYMMDD-HHMMSS``
+# contract exactly — otherwise a value carrying path separators (``../``)
+# would split into Path components and write the backup outside the
+# intended ``<namespace>-backup/`` directory.
+_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 
 def sync(
@@ -62,7 +70,10 @@ def sync(
     failed write leaves it recoverable (G.1). ``timestamp`` is the
     backup's ``YYYYMMDD-HHMMSS`` suffix; injected so tests assert exact
     backup names, it defaults to the current local time at the call
-    boundary.
+    boundary. A caller-supplied ``timestamp`` that does not match that
+    format is rejected with `ValueError` before any backup is written —
+    it is interpolated raw into the backup path, so an unvalidated value
+    carrying ``..``/path separators would escape the backup directory.
 
     Returns a `Counters` with exactly one of created / updated / skipped
     incremented, plus ``backed_up`` when an overwrite was preserved.
@@ -87,6 +98,8 @@ def sync(
     else:
         if dest_exists:
             ts = timestamp if timestamp is not None else _now_timestamp()
+            if not _TIMESTAMP_RE.match(ts):
+                raise ValueError(f"timestamp must be YYYYMMDD-HHMMSS: {ts!r}")  # noqa: TRY003  # single call-site; subclass not justified
             _backup(dest, ts)
             counters.backed_up += 1
         dest.parent.mkdir(parents=True, exist_ok=True)

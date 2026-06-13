@@ -613,6 +613,48 @@ def test_dry_run_overwrite_writes_no_backup(tmp_path: Path) -> None:
     assert (dest_root / "rules" / "f.md").read_bytes() == b"old\n"
 
 
+@pytest.mark.parametrize(
+    "bad_ts",
+    [
+        "../../evil",  # path separators — would escape <ns>-backup/
+        "2026-06-13",  # wrong shape, no separators, but not %Y%m%d-%H%M%S
+    ],
+)
+def test_malformed_timestamp_is_rejected_before_any_write(tmp_path: Path, bad_ts: str) -> None:
+    """
+    Given an existing destination that would be overwritten and a
+    caller-supplied ``timestamp`` that does not match the documented
+    ``YYYYMMDD-HHMMSS`` contract
+    When sync runs
+    Then a ValueError surfaces BEFORE any filesystem mutation: no backup
+    file or backup dir is created, and the destination keeps its original
+    bytes. Pins the coded guard that blocks a path-traversal timestamp
+    (e.g. ``../../evil``) from escaping the backup directory.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    (src_root / "rules").mkdir(parents=True)
+    (dest_root / "rules").mkdir(parents=True)
+    (src_root / "rules" / "f.md").write_bytes(b"new\n")
+    (dest_root / "rules" / "f.md").write_bytes(b"old\n")
+
+    with pytest.raises(ValueError):
+        sync(
+            _IdentityAdapter(),
+            Path("rules") / "f.md",
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+            timestamp=bad_ts,
+        )
+
+    # Guard fires before _backup writes anything: destination untouched and
+    # no backup landed anywhere under the dest root.
+    assert (dest_root / "rules" / "f.md").read_bytes() == b"old\n"
+    assert not (dest_root / "rules-backup").exists()
+    assert not any(dest_root.rglob("*.backup-*"))
+
+
 @pytest.mark.skipif(
     os.geteuid() == 0,
     reason="root bypasses the 0o444 mode bit, so the write would succeed",
