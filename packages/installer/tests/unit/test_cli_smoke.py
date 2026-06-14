@@ -328,11 +328,11 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
     src/plugins discovers nothing (no plugin staging is attempted off the real
     repo's src/plugins).
 
-    Pins: _run_prune derives plugins_root from the injected repo_root
-    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, so
-    repo_root is fully authoritative (PR #151 comment 3408271853). With a
-    repo_root lacking src/plugins, discover() returns {} — proving the real
-    repo's plugins are not consulted.
+    Pins: main resolves plugins against the injected repo_root
+    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, and passes
+    them to _run_prune, so repo_root is fully authoritative (PR #151 comment
+    3408271853). With a repo_root lacking src/plugins, discover() returns {} —
+    proving the real repo's plugins are not consulted.
     """
     home = _home_with_claude_settings(tmp_path)
 
@@ -485,3 +485,119 @@ def test_dump_stage_and_prune_together_is_mutually_exclusive_error(
         main(["--dump-stage", str(tmp_path / "out"), "--prune"], home=tmp_path)
     assert exc_info.value.code == 2
     assert "not allowed with" in capsys.readouterr().err
+
+
+# ── W4: --plugins flag wiring ──
+
+
+def _repo_with_widget_plugin(tmp_path: Path) -> Path:
+    """A hermetic repo plus a discoverable 'widget' plugin whose overlay
+    contributes a Claude rules file. The rule lands in the Claude plan only
+    when the widget plugin is active for the run."""
+    repo = _hermetic_repo(tmp_path)
+    rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
+    rule.parent.mkdir(parents=True)
+    rule.write_bytes(b"widget rule\n")
+    return repo
+
+
+def test_dump_stage_honors_plugins_override_over_footprint_autodetect(tmp_path: Path) -> None:
+    """
+    Given a discoverable 'widget' plugin (overlaying claude rules/widget-rule.md)
+    and a home carrying the ~/.widget footprint plugin auto-detection keys on
+    When --dump-stage runs WITHOUT --plugins
+    Then the plugin's rule is staged (auto-detect includes the footprint plugin);
+    And when --dump-stage runs WITH an empty --plugins=
+    Then the plugin's rule is absent.
+
+    Pins: args.plugins flows to the dump-stage resolve_plugins call. An empty
+    --plugins= installs no plugins (resolve_plugins '' -> ()), overriding the
+    footprint auto-detect. Fails while the call site hardcodes override_csv=None
+    — the empty value would be ignored and widget staged regardless.
+    """
+    repo = _repo_with_widget_plugin(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    (home / ".widget").mkdir()
+    staged = Path("claude") / "rules" / "widget-rule.md"
+
+    auto_out = tmp_path / "auto"
+    assert main([f"--dump-stage={auto_out}", "--tools=claude"], home=home, repo_root=repo) == 0
+    assert (auto_out / staged).exists()
+
+    empty_out = tmp_path / "empty"
+    rc = main(
+        [f"--dump-stage={empty_out}", "--tools=claude", "--plugins="],
+        home=home,
+        repo_root=repo,
+    )
+    assert rc == 0
+    assert not (empty_out / staged).exists()
+
+
+def test_unknown_plugin_value_returns_2_and_names_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a repo whose discoverable plugin set does not include 'bogus'
+    When main(["--plugins=bogus", "--tools=claude"]) runs a plain install
+    Then it returns 2
+    And stderr names the unknown plugin ("Unknown plugin: 'bogus'").
+
+    Pins: --plugins is validated up front on every path — not only --dump-stage
+    and --prune — so a bad value fails fast and cleanly (exit 2) rather than
+    being silently ignored or crashing with a traceback. Mirrors the --tools=
+    guard. Fails on the plain path while plugins are resolved only inside the
+    --dump-stage / --prune branches.
+    """
+    repo = _repo_with_widget_plugin(tmp_path)
+    rc = main(["--plugins=bogus", "--tools=claude"], home=tmp_path, repo_root=repo)
+    assert rc == 2
+    assert "Unknown plugin: 'bogus'" in capsys.readouterr().err
+
+
+def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
+    """
+    Given a 'widget' plugin overlaying claude rules/widget-rule.md, a dest entry
+    ~/.claude/rules/widget-rule.md, an installer.toml retiring that key, and NO
+    ~/.widget footprint (so auto-detect alone would exclude widget)
+    When --prune-only --yes runs with --plugins=widget
+    Then the dest entry is spared — an active plugin stages that basename, so the
+    orphan scan treats it as known rather than retired;
+    And when the same dest is run again with an empty --plugins=
+    Then the dest entry is pruned — excluded, nothing stages it, so it is an
+    orphan matching the retired glob.
+
+    Pins: the up-front resolved plugins tuple is threaded into _run_prune. Fails
+    while _run_prune re-resolves plugins internally with override_csv=None —
+    which, absent the footprint, excludes widget even under --plugins=widget and
+    prunes the dest.
+    """
+    repo = _repo_with_installer_toml(tmp_path, retired=["claude/rules/widget-rule.md"])
+    rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
+    rule.parent.mkdir(parents=True)
+    rule.write_bytes(b"widget rule\n")
+
+    home = _home_with_claude_settings(tmp_path)
+    dest_rule = home / ".claude" / "rules" / "widget-rule.md"
+    dest_rule.parent.mkdir(parents=True)
+    dest_rule.write_bytes(b"installed widget rule\n")
+
+    # Active via explicit override (no footprint) -> staged -> spared.
+    rc_active = main(
+        ["--prune-only", "--yes", "--tools=claude", "--plugins=widget"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc_active == 0
+    assert dest_rule.exists()
+
+    # Excluded via empty override -> unstaged -> pruned.
+    rc_excluded = main(
+        ["--prune-only", "--yes", "--tools=claude", "--plugins="],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc_excluded == 0
+    assert not dest_rule.exists()
