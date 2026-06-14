@@ -7,7 +7,7 @@ description: Find deepening opportunities in a codebase, informed by the domain 
 Source: oss-snapshots/pocock/improve-codebase-architecture/
 Upstream: https://github.com/mattpocock/skills @ e74f0061bb67222181640effa98c675bdb2fdaa7
 Last sync: 2026-05-23
-Drift policy: accept-periodic-resync
+Drift policy: rewrite-and-divorce (project-extended fork)
 -->
 
 # Improve Codebase Architecture
@@ -34,6 +34,14 @@ Key principles (see [LANGUAGE.md](LANGUAGE.md) for the full list):
 - **One adapter = hypothetical seam. Two adapters = real seam.**
 
 This skill is _informed_ by the project's domain model. The domain language gives names to good seams; ADRs record decisions the skill should not re-litigate.
+
+## Designing the contract
+
+The process below is for *finding* shallow modules to deepen. This section is the generative counterpart — the discipline for *writing* a deep module so its contract, not its body, carries the weight. The interface is the decision; the implementation is the consequence.
+
+- **Name the outside world in the signature.** Pass dependencies on config, clients, clocks, and credentials as arguments — never reach for them through a module global. A dependency pulled from a global is a hidden part of the **interface**: it defeats the **deletion test** (you can no longer see what the module needs) and scatters **locality** (the real seam moves somewhere invisible). Explicit dependencies keep the seam where the signature says it is.
+- **Error modes are part of the interface.** Model *expected* failures in the type — a Result, or a typed/discriminated error with one variant per failure mode — so callers handle them without reading the implementation. Reserve *raised* exceptions for contract violations and genuinely unexpected state: fail loud and fast with a specific, contextful error. No silent fallbacks, no bare catches, no defaults that mask missing data. Parse and validate once at the seam, then trust the type inward rather than re-validating at every call.
+- **Premature abstraction breaks locality too.** A seam with a single adapter is indirection, not depth (**one adapter = hypothetical, two = real**); let the deletion test decide whether a shared abstraction earns its keep before you extract one. *Security carve-out:* trust and authorization decisions centralize even at a single site — duplicating an authz check is a vulnerability waiting to drift out of sync, not loose coupling.
 
 ## Process
 
