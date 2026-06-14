@@ -165,9 +165,11 @@ def main(
 
     # Stage once, up front: the same StagingPlan set feeds both the install and
     # the prune orphan-scan, so --prune is install-then-prune over ONE plan, not
-    # two independent stagings. Staging touches no io channel and is
-    # deterministic, so producing it before the prune-only toml-load below
-    # changes no observable behaviour.
+    # two independent stagings. Staging is deterministic, writes nothing to disk,
+    # and does not read installer.toml, so producing the plan before the
+    # prune-only toml-load below changes neither the prune outcome nor its error
+    # handling — only a verbose adapter transform notice (e.g. Gemini) may now
+    # precede a toml error, which is immaterial.
     adapters = [get_adapter(tool) for tool in tools]
     plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
 
