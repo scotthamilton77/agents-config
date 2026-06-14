@@ -559,15 +559,12 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
 def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
     """Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6).
 
-    A :class:`PreconditionError` prints the canonical 4-line ``what/why/how``
-    block; any other :class:`PrgroomError` prints a one-line code. The exit code
-    is the tier's documented sysexits value.
+    Every tier-tagged error renders the registry ``what/why/how`` block (plus the
+    raw ``detail`` when present) so a user-resolvable failure carries the richest
+    telemetry, not a bare code. The exit code is the tier's documented sysexits value.
     """
     out = stderr if stderr is not None else sys.stderr
-    if isinstance(err, PreconditionError):
-        out.write(err.render() + "\n")
-    else:
-        out.write(f"error: {err.code.value}\n")
+    out.write(err.render() + "\n")
     return exit_code_for_tier(err)
 
 

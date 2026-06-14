@@ -77,6 +77,30 @@ def test_precondition_error_formats_four_line_block() -> None:
     assert lines[3].strip().startswith("how:")
 
 
+def test_precondition_error_appends_detail_line() -> None:
+    # render() now appends the raw detail as a 5th line for detail-carrying errors
+    # (richer telemetry); pin it on a precondition so the contract is regression-safe.
+    err = PreconditionError(ErrorCode.PRECONDITION_BAD_PR_REF, detail="not-a-ref")
+    lines = err.render().splitlines()
+    assert lines[0] == "error: PRECONDITION_BAD_PR_REF"
+    assert lines[-1].strip() == "detail: not-a-ref"
+
+
+def test_render_redacts_credentials_embedded_in_detail() -> None:
+    # git echoes the remote URL in "Authentication failed for '<url>'" — and an
+    # automation remote can carry a token (https://x-access-token:TOKEN@host). Since
+    # render() now surfaces raw stderr on every tier, it must mask URL credentials so
+    # a token never reaches stderr/logs.
+    err = PrgroomError(
+        tier=Tier.RUNTIME_TERMINAL_USER,
+        code=ErrorCode.RUNTIME_GIT_TERMINAL,
+        detail="fatal: Authentication failed for 'https://x-access-token:ghs_SECRET@github.com/o/r/'",
+    )
+    rendered = err.render()
+    assert "ghs_SECRET" not in rendered
+    assert "***@github.com" in rendered
+
+
 def test_precondition_error_tier_is_user_error_by_default() -> None:
     err = PreconditionError(ErrorCode.PRECONDITION_NO_PR_DETECTED)
     assert err.tier == Tier.PRECONDITION_USER_ERROR

@@ -214,3 +214,33 @@ def test_git_missing_binary_classifies_as_git_terminal() -> None:
         client.push("origin", "feature")
     assert exc.value.code is ErrorCode.RUNTIME_GIT_TERMINAL
     assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_git_not_a_repository_is_terminal() -> None:
+    # CWD outside a git repo: a retry won't relocate the process into a repo, so
+    # this is terminal (fail-fast), not a transient blip the scheduler should loop on.
+    stderr = "fatal: not a git repository (or any of the parent directories): .git\n"
+    client = GitCli(RecordedRunner([_fail(stderr)]))
+    with pytest.raises(PrgroomError) as exc:
+        client.head_sha()
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+
+
+def test_git_push_auth_failure_is_terminal() -> None:
+    stderr = "fatal: Authentication failed for 'https://github.com/octo/demo.git/'\n"
+    client = GitCli(RecordedRunner([_fail(stderr)]))
+    with pytest.raises(PrgroomError) as exc:
+        client.push("origin", "feature")
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TERMINAL
+
+
+def test_git_push_permission_denied_is_terminal() -> None:
+    stderr = (
+        "git@github.com: Permission denied (publickey).\n"
+        "fatal: Could not read from remote repository.\n"
+    )
+    client = GitCli(RecordedRunner([_fail(stderr)]))
+    with pytest.raises(PrgroomError) as exc:
+        client.push("origin", "feature")
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TERMINAL

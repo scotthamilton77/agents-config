@@ -33,6 +33,8 @@ import copy
 from typing import TYPE_CHECKING
 
 from prgroom.errors import ErrorCode, PreconditionError
+from prgroom.gh.client import GhNotFoundError
+from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.lifecycle.predicates import flip_stale_required_reviews
 from prgroom.lifecycle.warn import default_warn
 
@@ -64,38 +66,42 @@ def push_pr(
     are queued (§3.4). No phase change (§3.2 push row), no ``state.last_error``.
     """
     state = copy.deepcopy(state)
-    branch = gh.head_ref_name(ref)
+    try:
+        branch = gh.head_ref_name(ref)
 
-    # Guard the live mutation: `_push` uploads the local PR-branch HEAD (§3.4). An
-    # ambient checkout on some other branch (or a detached HEAD, which reads as the
-    # literal "HEAD") would publish the wrong commits, so refuse before the
-    # queued-commit read and the push that could publish, rather than trust the
-    # working tree.
-    current = git.current_branch()
-    if current != branch:
-        raise PreconditionError(
-            ErrorCode.PRECONDITION_WRONG_BRANCH,
-            detail=f"worktree on '{current}', expected PR head branch '{branch}'",
-        )
+        # Guard the live mutation: `_push` uploads the local PR-branch HEAD (§3.4).
+        # An ambient checkout on some other branch (or a detached HEAD, which reads
+        # as the literal "HEAD") would publish the wrong commits, so refuse before
+        # the queued-commit read and the push that could publish, rather than trust
+        # the working tree.
+        current = git.current_branch()
+        if current != branch:
+            raise PreconditionError(
+                ErrorCode.PRECONDITION_WRONG_BRANCH,
+                detail=f"worktree on '{current}', expected PR head branch '{branch}'",
+            )
 
-    remote_head = gh.head_ref_oid(ref)
-    queued = git.rev_list(f"{remote_head}..HEAD")
-    if not queued:
-        return state  # nothing queued — idempotent no-op (§3.4)
+        remote_head = gh.head_ref_oid(ref)
+        queued = git.rev_list(f"{remote_head}..HEAD")
+        if not queued:
+            return state  # nothing queued — idempotent no-op (§3.4)
 
-    git.push(_REMOTE, f"HEAD:{branch}")
+        git.push(_REMOTE, f"HEAD:{branch}")
 
-    # Mutate only after the push succeeds: a rejected push propagates its tagged
-    # error (RUNTIME_PUSH_REJECTED / RUNTIME_GIT_*) with state untouched.
-    state.last_pushed_head_sha = git.head_sha()
-    state.round += 1  # bootstrap 0->1 and N->N+1 are both a single increment (§3.4)
-    flip_stale_required_reviews(state.reviewers)
+        # Mutate only after the push succeeds: a rejected push propagates its tagged
+        # error (RUNTIME_PUSH_REJECTED / RUNTIME_GIT_*) with state untouched.
+        state.last_pushed_head_sha = git.head_sha()
+        state.round += 1  # bootstrap 0->1 and N->N+1 are both a single increment (§3.4)
+        flip_stale_required_reviews(state.reviewers)
 
-    if state.round == config.max_rounds:
-        # Fire only on the push that advances round *to* the cap (§3.5) — not with
-        # >=, which would re-warn (inaccurately) on every direct push past it.
-        warn(
-            f"this push reaches max_rounds={config.max_rounds}; "
-            "subsequent fix work will gate to human-gated"
-        )
+        if state.round == config.max_rounds:
+            # Fire only on the push that advances round *to* the cap (§3.5) — not
+            # with >=, which would re-warn (inaccurately) on every push past it.
+            warn(
+                f"this push reaches max_rounds={config.max_rounds}; "
+                "subsequent fix work will gate to human-gated"
+            )
+    except GhNotFoundError as exc:
+        # The PR/repo vanished mid-run (404) — terminal, not a raw traceback.
+        raise vanished_pr_terminal(ref) from exc
     return state

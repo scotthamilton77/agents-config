@@ -15,6 +15,7 @@ import pytest
 
 from prgroom.config import PrgroomConfig
 from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, Tier
+from prgroom.gh import GhNotFoundError
 from prgroom.lifecycle.push import push_pr
 from prgroom.prsession.enums import PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.pr_ref import PRRef
@@ -71,6 +72,18 @@ class FakeGit:
 
     def push(self, remote: str, branch: str) -> None:
         self.pushes.append((remote, branch))
+
+
+class VanishedGh:
+    """A gh surface whose reads 404 (PR/repo deleted mid-run)."""
+
+    def head_ref_oid(self, ref: PRRef) -> str:
+        del ref
+        raise GhNotFoundError
+
+    def head_ref_name(self, ref: PRRef) -> str:
+        del ref
+        raise GhNotFoundError
 
 
 class RejectingGit(FakeGit):
@@ -172,6 +185,23 @@ def test_push_flips_stale_required_review_found_to_not_requested() -> None:
     assert out.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
     # Optional reviewers are untouched — only required reviews gate quiescence.
     assert out.reviewers["human"].status is ReviewerStatus.REVIEW_FOUND
+
+
+def test_push_maps_a_vanished_pr_to_a_terminal_error() -> None:
+    # A 404 mid-run (PR/repo deleted) must surface as a terminal PrgroomError, not
+    # leak GhNotFoundError as a raw traceback past the CLI's `except PrgroomError`.
+    git = FakeGit(queued=["c1"])
+    with pytest.raises(PrgroomError) as exc:
+        push_pr(
+            _state(round_=1),
+            ref=_REF,
+            gh=VanishedGh(),
+            git=git,
+            config=PrgroomConfig(),
+        )
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
+    assert git.pushes == []
 
 
 def test_push_rejection_propagates_and_leaves_state_unmutated() -> None:

@@ -7,16 +7,19 @@ three git outcomes, classified by signal:
 
 * a recognized **push rejection** (non-fast-forward, protected branch, hook
   decline) -> ``RUNTIME_PUSH_REJECTED`` (terminal — a blind retry is futile)
-* a missing / non-executable ``git`` binary (``OSError`` before any command
-  runs) -> ``RUNTIME_GIT_TERMINAL`` (terminal — a local environment gap a retry
-  won't fix), mirroring the gh adapter's ``OSError``->``RUNTIME_GH_TERMINAL``
+* a **terminal-marker** stderr (``not a git repository`` from a wrong CWD, or an
+  auth/permission failure) OR a missing / non-executable ``git`` binary
+  (``OSError`` before any command runs) -> ``RUNTIME_GIT_TERMINAL`` (terminal — a
+  local-environment / credential gap a retry won't fix), mirroring the gh
+  adapter's ``OSError``->``RUNTIME_GH_TERMINAL``
 * **any other** non-zero exit or a boundary ``TimeoutExpired`` ->
   ``RUNTIME_GIT_TRANSIENT`` (retry next cadence)
 
-A non-zero exit stays transient because its stderr cannot be reliably partitioned
-into permanent-vs-transient without brittle string heuristics; only the structural
-``OSError`` signal (no binary) is an unambiguous terminal, so that is the one arm
-promoted off transient.
+The terminal arms use only **narrow allowlists** (``_PUSH_REJECTED_MARKERS`` /
+``_GIT_TERMINAL_MARKERS``) plus the structural ``OSError`` signal — never
+open-ended stderr parsing. The long tail of ambiguous non-zero exits stays
+transient on purpose: a needless retry is cheaper than wrongly gating a PR on a
+flaky local condition.
 
 Every call passes a bounded ``DEFAULT_SUBPROCESS_TIMEOUT`` so a hung ``git``
 cannot block forever while holding the PR lock. Callers only ever see a
@@ -44,6 +47,20 @@ _PUSH_REJECTED_MARKERS = (
     "protected branch",
     "hook declined",
     "failed to push",
+)
+
+# Substrings that unambiguously signal a permanent, user-resolvable git failure —
+# a wrong CWD or an auth/permission gap a blind retry will never fix. A narrow
+# allowlist (like _PUSH_REJECTED_MARKERS), NOT open-ended stderr parsing: the long
+# tail of ambiguous non-zero exits stays transient on purpose.
+_GIT_TERMINAL_MARKERS = (
+    "not a git repository",  # CWD is outside a git repo
+    "could not read Username",  # no non-interactive credential available
+    "Authentication failed",  # bad / expired credentials
+    # Capitalized form is the SSH/remote publickey case (terminal). Load-bearing:
+    # git's local repo-database write failure uses lowercase "insufficient
+    # permission", which must stay transient — do NOT lowercase this marker.
+    "Permission denied",  # SSH key / repo-write permission
 )
 
 
@@ -78,6 +95,12 @@ def _classify_git_failure(stderr: str) -> PrgroomError:
         return PrgroomError(
             tier=Tier.RUNTIME_TERMINAL_USER,
             code=ErrorCode.RUNTIME_PUSH_REJECTED,
+            detail=stderr.strip(),
+        )
+    if any(marker in stderr for marker in _GIT_TERMINAL_MARKERS):
+        return PrgroomError(
+            tier=Tier.RUNTIME_TERMINAL_USER,
+            code=ErrorCode.RUNTIME_GIT_TERMINAL,
             detail=stderr.strip(),
         )
     return _transient(stderr.strip())

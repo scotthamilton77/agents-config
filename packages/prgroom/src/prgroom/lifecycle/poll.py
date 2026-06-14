@@ -39,9 +39,9 @@ import copy
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
-from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh.client import GhNotFoundError
 from prgroom.gh.review_threads import fetch_thread_id_map
+from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.lifecycle.predicates import flip_stale_required_reviews
 from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
 from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerStatus
@@ -131,28 +131,12 @@ def poll_pr(
     return state
 
 
-def _vanished_pr_terminal(ref: PRRef) -> PrgroomError:
-    """Map a 404 on a required PR/repo read to ``RUNTIME_GH_TERMINAL`` (§3.6/§3.7).
-
-    A mid-run 404 on the head-oid, PR-resource, or comment/review reads means the
-    PR or repo vanished — a blind retry won't bring it back, so it is terminal. The
-    startup precondition that owns ``PRECONDITION_REPO_UNREACHABLE`` is out of this
-    verb's scope. The CI-status 404 is the one documented exception: no CI configured
-    is not a missing PR, so ``_ci_state`` maps that to ``absent`` instead.
-    """
-    return PrgroomError(
-        tier=Tier.RUNTIME_TERMINAL_USER,
-        code=ErrorCode.RUNTIME_GH_TERMINAL,
-        detail=f"PR resource not found: {ref.display()}",
-    )
-
-
 def _head_ref_oid(gh: GhClient, ref: PRRef) -> str:
     """Read the remote HEAD SHA; a 404 (vanished PR/repo) is terminal (§3.6)."""
     try:
         return gh.head_ref_oid(ref)
     except GhNotFoundError as exc:
-        raise _vanished_pr_terminal(ref) from exc
+        raise vanished_pr_terminal(ref) from exc
 
 
 def _gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
@@ -160,7 +144,7 @@ def _gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
     try:
         return gh.rest("GET", path)
     except GhNotFoundError as exc:
-        raise _vanished_pr_terminal(ref) from exc
+        raise vanished_pr_terminal(ref) from exc
 
 
 def _pr_is_merged(gh: GhClient, ref: PRRef) -> bool:

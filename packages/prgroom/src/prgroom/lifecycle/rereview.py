@@ -23,6 +23,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
+from prgroom.gh.client import GhNotFoundError
+from prgroom.lifecycle.gh_errors import vanished_pr_terminal
 from prgroom.prsession.enums import ReviewerStatus
 
 if TYPE_CHECKING:
@@ -53,16 +55,20 @@ def rereview_pr(
     state = copy.deepcopy(state)
     path = f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/requested_reviewers"
     now = deps.clock.now()
-    for reviewer in state.reviewers.values():
-        if not (reviewer.required and reviewer.status in _REFRESHABLE):
-            continue
-        fields = {"reviewers[]": reviewer.identity}
-        # DELETE then POST is the dance order; the status flip is applied only after
-        # BOTH succeed. A POST failure (or a crash before the caller writes state)
-        # leaves the reviewer in the refreshable set, so the next run repeats the
-        # whole dance — DELETE is idempotent, so the retry is safe.
-        gh.rest("DELETE", path, fields=fields)
-        gh.rest("POST", path, fields=fields)
-        reviewer.status = ReviewerStatus.REQUESTED
-        reviewer.last_request_at = now
+    try:
+        for reviewer in state.reviewers.values():
+            if not (reviewer.required and reviewer.status in _REFRESHABLE):
+                continue
+            fields = {"reviewers[]": reviewer.identity}
+            # DELETE then POST is the dance order; the status flip is applied only
+            # after BOTH succeed. A POST failure (or a crash before the caller writes
+            # state) leaves the reviewer in the refreshable set, so the next run
+            # repeats the whole dance — DELETE is idempotent, so the retry is safe.
+            gh.rest("DELETE", path, fields=fields)
+            gh.rest("POST", path, fields=fields)
+            reviewer.status = ReviewerStatus.REQUESTED
+            reviewer.last_request_at = now
+    except GhNotFoundError as exc:
+        # The PR/repo vanished mid-run (404) — terminal, not a raw traceback.
+        raise vanished_pr_terminal(ref) from exc
     return state

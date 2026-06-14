@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from prgroom.deps import Deps
+from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.gh import GhCli
 from prgroom.lifecycle.rereview import rereview_pr
 from prgroom.proc import CommandResult
@@ -29,6 +32,10 @@ _LATER = datetime(2026, 6, 9, 13, 0, 0, tzinfo=UTC)
 
 def _ok() -> CommandResult:
     return CommandResult(returncode=0, stdout="{}", stderr="")
+
+
+def _not_found() -> CommandResult:
+    return CommandResult(returncode=1, stdout="", stderr="gh: Not Found (HTTP 404)")
 
 
 def _deps(now: datetime = _LATER) -> Deps:
@@ -88,6 +95,20 @@ def test_rereview_re_requests_a_declined_required_reviewer() -> None:
     )
     assert [c[3] for c in runner.calls] == ["DELETE", "POST"]
     assert out.reviewers["copilot"].status is ReviewerStatus.REQUESTED
+
+
+def test_rereview_maps_a_vanished_pr_to_a_terminal_error() -> None:
+    # A 404 on the reviewer-request call (PR/repo deleted mid-run) must surface as
+    # a terminal PrgroomError, not leak GhNotFoundError as a raw traceback.
+    with pytest.raises(PrgroomError) as exc:
+        rereview_pr(
+            _state({"copilot": _reviewer(ReviewerStatus.NOT_REQUESTED)}),
+            ref=_REF,
+            gh=GhCli(RecordedRunner([_not_found()])),
+            deps=_deps(),
+        )
+    assert exc.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER
 
 
 def test_rereview_skips_a_non_required_reviewer() -> None:
