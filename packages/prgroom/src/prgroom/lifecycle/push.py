@@ -68,8 +68,9 @@ def push_pr(
 
     # Guard the live mutation: `_push` uploads the local PR-branch HEAD (§3.4). An
     # ambient checkout on some other branch (or a detached HEAD, which reads as the
-    # literal "HEAD") would publish the wrong commits, so refuse before any git read
-    # or push rather than trust the working tree.
+    # literal "HEAD") would publish the wrong commits, so refuse before the
+    # queued-commit read and the push that could publish, rather than trust the
+    # working tree.
     current = git.current_branch()
     if current != branch:
         raise PreconditionError(

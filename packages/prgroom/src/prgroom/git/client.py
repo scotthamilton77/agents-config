@@ -3,7 +3,7 @@
 ``GitCli`` shells out to ``git`` (rev-parse, rev-list, push, stash) through the
 injected :class:`~prgroom.proc.CommandRunner` boundary and maps failures onto
 the existing :class:`~prgroom.errors.ErrorCode` registry. The registry defines
-exactly two git outcomes, so the classification is a clean dichotomy:
+three git outcomes, classified by signal:
 
 * a recognized **push rejection** (non-fast-forward, protected branch, hook
   decline) -> ``RUNTIME_PUSH_REJECTED`` (terminal — a blind retry is futile)
