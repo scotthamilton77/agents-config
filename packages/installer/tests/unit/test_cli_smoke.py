@@ -80,24 +80,41 @@ def test_main_help_prints_usage(capsys: pytest.CaptureFixture[str]) -> None:
     assert "installer" in captured.out
 
 
-def test_main_no_args_returns_zero_against_hermetic_home_with_settings(
-    tmp_path: Path,
-) -> None:
+def test_main_dry_run_auto_detect_with_claude_signal_returns_zero(tmp_path: Path) -> None:
     """
-    Given a home directory with a file at .claude/settings.json
-    When main([], home=that_home) is invoked
-    Then it returns 0.
+    Given a home with a .claude/settings.json install signal and a hermetic repo,
+    under --dry-run with no --tools
+    When main runs (auto-detect)
+    Then it returns 0 — auto-detection finds claude and proceeds past resolution
+    (the success counterpart to the empty-home exit-2 path), and --dry-run lets
+    the real install path preview without prompting or writing.
+
+    Pins: auto-detect of an installed tool does NOT take the no-tools exit-2
+    guard; the run reaches and completes the (dry-run) install path.
     """
     home = _home_with_claude_settings(tmp_path)
-    assert main([], home=home) == 0
+    repo = _hermetic_repo(tmp_path)
+    assert main(["--dry-run"], home=home, io=ScriptedIO(interactive=False), repo_root=repo) == 0
 
 
-def test_main_tools_claude_returns_zero(tmp_path: Path) -> None:
+def test_main_tools_claude_dry_run_returns_zero_and_writes_nothing(tmp_path: Path) -> None:
     """
-    When main(["--tools=claude"], home=any) is invoked
-    Then it returns 0.
+    When main(["--tools=claude", "--dry-run"]) runs against a hermetic repo
+    Then it returns 0 and writes nothing under ~/.claude — --dry-run previews the
+    install without prompting (waiving consent) and touches no destination.
+
+    Pins: --tools=claude resolves and the install path runs in preview mode; the
+    dry-run write-suppression holds end-to-end through main.
     """
-    assert main(["--tools=claude"], home=tmp_path) == 0
+    repo = _hermetic_repo(tmp_path)
+    rc = main(
+        ["--tools=claude", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+    assert not (tmp_path / ".claude").exists()
 
 
 def test_main_tools_unregistered_returns_2_and_writes_unknown_tool_to_stderr(
@@ -329,10 +346,11 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
     repo's src/plugins).
 
     Pins: main resolves plugins against the injected repo_root
-    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, and passes
-    them to _run_prune, so repo_root is fully authoritative (PR #151 comment
-    3408271853). With a repo_root lacking src/plugins, discover() returns {} —
-    proving the real repo's plugins are not consulted.
+    (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, builds the
+    staging plans with them, and passes those plans to _run_prune — so repo_root
+    is fully authoritative for plugin discovery (PR #151 comment 3408271853).
+    With a repo_root lacking src/plugins, discover() returns {} — proving the
+    real repo's plugins are not consulted.
     """
     home = _home_with_claude_settings(tmp_path)
 
@@ -367,8 +385,10 @@ def test_plain_prune_non_interactive_without_yes_fails_on_consent_guard(tmp_path
     """
     Given plain --prune (not --prune-only), a non-interactive io, and no --yes
     When main runs
-    Then it returns non-zero — the consent guard refuses a destructive run that
-    cannot prompt (G.7), before any orphan scan.
+    Then it returns non-zero — the install half's consent guard
+    (install_pipeline -> sync_plan -> require_consent) refuses a destructive run
+    that cannot prompt (G.7) before any file is written or orphan scanned, and
+    main surfaces it as exit 1.
     """
     home = _home_with_claude_settings(tmp_path)
     empty_repo = tmp_path / "empty-repo"
@@ -569,10 +589,11 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     Then the dest entry is pruned — excluded, nothing stages it, so it is an
     orphan matching the retired glob.
 
-    Pins: the up-front resolved plugins tuple is threaded into _run_prune. Fails
-    while _run_prune re-resolves plugins internally with override_csv=None —
-    which, absent the footprint, excludes widget even under --plugins=widget and
-    prunes the dest.
+    Pins: the resolved plugin set builds the staging plans in main, and those
+    plans are threaded into _run_prune — so the --plugins selection reaches the
+    orphan scan via the plans. Fails if the plans dropped the override (e.g.
+    plugins resolved with override_csv=None): absent the footprint, widget would
+    be unstaged even under --plugins=widget and the dest pruned.
     """
     repo = _repo_with_installer_toml(tmp_path, retired=["claude/rules/widget-rule.md"])
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
@@ -603,3 +624,94 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     )
     assert rc_excluded == 0
     assert not dest_rule.exists()
+
+
+# ── W3: default-path real install (install_pipeline wired into main) ──
+
+
+def test_main_default_install_writes_staged_plan_to_dest(tmp_path: Path) -> None:
+    """
+    Given a hermetic source repo (a shared template -> a non-empty claude plan),
+    under --tools=claude --yes
+    When main runs (non-interactive io; --yes waives the consent prompt)
+    Then the staged shared template is written to ~/.claude/INSTRUCTIONS.md
+    And main returns 0.
+
+    Pins: the default (no terminal-mode flag) path performs a REAL install — it
+    walks each tool's StagingPlan to disk via install_pipeline, honoring
+    Config.auto_yes. Fails while main builds Config, discards it, and returns 0
+    without installing.
+    """
+    repo = _hermetic_repo(tmp_path)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (tmp_path / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
+
+
+def test_main_default_install_non_interactive_without_consent_returns_one(tmp_path: Path) -> None:
+    """
+    Given a hermetic source repo and a non-interactive io, under --tools=claude
+    with neither --yes nor --dry-run
+    When main runs the default install path
+    Then it returns 1 — install_pipeline -> sync_plan's require_consent refuses a
+    destructive run that cannot prompt (G.7);
+    And nothing is written under ~/.claude (the guard fires before any write).
+
+    Pins: the W2 consent contract is enforced at the CLI boundary — main catches
+    ConsentRequiredError from the install and returns 1, rather than letting it
+    escape as an uncaught traceback. Fails (errors out) while the install_pipeline
+    call is unguarded.
+    """
+    repo = _hermetic_repo(tmp_path)
+
+    rc = main(
+        ["--tools=claude"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 1
+    assert not (tmp_path / ".claude" / "INSTRUCTIONS.md").exists()
+
+
+def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
+    """
+    Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home
+    holding that retired orphan, under --prune --yes
+    When main runs (non-interactive io; --yes waives consent)
+    Then the staged shared template is installed at ~/.claude/INSTRUCTIONS.md
+    (install half) AND the retired orphan ~/.claude/skills/ralf-it is removed
+    (prune half), and main returns 0.
+
+    Pins: --prune is install-then-prune over ONE shared staging plan — main
+    installs the plan, then _run_prune scans the same plan for orphans. Fails
+    while --prune skips the install half (the pre-W3 prune-only behaviour of the
+    default branch).
+    """
+    repo = _hermetic_repo(tmp_path)
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
+
+    home = tmp_path / "home"
+    orphan = home / ".claude" / "skills" / "ralf-it"
+    orphan.mkdir(parents=True)
+
+    rc = main(
+        ["--prune", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (home / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
+    assert not orphan.exists()

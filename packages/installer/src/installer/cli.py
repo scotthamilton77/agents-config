@@ -6,18 +6,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.config import Config, resolve_plugins, resolve_tools
-from installer.core.consent import ConsentRequiredError, require_consent
+from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
-from installer.core.run import prune_pipeline
+from installer.core.run import install_pipeline, prune_pipeline
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
-    from installer.core.model import Tool
-    from installer.plugins.base import PluginAdapter
+    from installer.core.model import StagingPlan, Tool
+    from installer.tools.base import ToolAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
 # ``src/plugins``. ``cli.py`` lives at ``<repo>/packages/installer/src/installer/
@@ -161,78 +161,95 @@ def main(
             return 2
         return 0
 
-    # B.1: instantiation proves Config construction succeeds end-to-end; the
-    # object is intentionally not bound — the full plan-walking install sync is
-    # not wired here yet. When core/sync.py grows to walk a StagingPlan (Epic E),
-    # main() must drive core.orchestrator.stage_and_transform(tools, ...) — NOT
-    # build_plan->sync directly — so adapter post-staging transforms (e.g. the
-    # Gemini frontmatter transform) actually run in real installs, and that sync
-    # is where Config.auto_yes finds its consumer. Today auto_yes reaches the
-    # prune path directly via args.yes below; the Config field is forward-wiring
-    # for when sync() reads it. Tracked as a dedicated story.
-    Config(home=resolved_home, tools=tools, auto_yes=args.yes)
+    config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
+
+    # Stage once, up front: the same StagingPlan set feeds both the install and
+    # the prune orphan-scan, so --prune is install-then-prune over ONE plan, not
+    # two independent stagings. Staging touches no io channel and is
+    # deterministic, so producing it before the prune-only toml-load below
+    # changes no observable behaviour.
+    adapters = [get_adapter(tool) for tool in tools]
+    plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
+
+    # Default install path (also the install half of --prune): walk each active
+    # tool's StagingPlan to disk via install_pipeline. Skipped only for
+    # --prune-only, which removes retired paths without installing. Slots ahead
+    # of the prune branch so --prune is install-then-prune, mirroring the bash
+    # installer (scripts/install.sh copies before the retire sweep). Driving the
+    # install through stage_and_transform is also what makes adapter post-staging
+    # transforms (e.g. the Gemini frontmatter transform) fire in real installs,
+    # not just --dump-stage / --prune.
+    if not args.prune_only:
+        try:
+            install_pipeline(
+                adapters,
+                plans=plans,
+                home=resolved_home,
+                io=io,
+                dry_run=args.dry_run,
+                auto_yes=config.auto_yes,
+            )
+        except ConsentRequiredError:
+            # A non-interactive run lacking --yes/--dry-run cannot answer the
+            # per-file overwrite prompt; sync_plan's up-front guard raises before
+            # any write. Surface it as the CLI's exit 1 (the prune flow uses the
+            # same convention) rather than an uncaught traceback.
+            return 1
 
     if args.prune or args.prune_only:
         return _run_prune(
-            tools,
+            adapters,
+            plans=plans,
             io=io,
             home=resolved_home,
             repo_root=resolved_repo_root,
             dry_run=args.dry_run,
-            auto_yes=args.yes,
+            auto_yes=config.auto_yes,
             prune_only=args.prune_only,
-            plugins=plugins,
         )
 
     return 0
 
 
 def _run_prune(
-    tools: tuple[Tool, ...],
+    adapters: list[ToolAdapter],
     *,
+    plans: dict[Tool, StagingPlan],
     io: IOPort,
     home: Path,
     repo_root: Path,
     dry_run: bool,
     auto_yes: bool,
     prune_only: bool,
-    plugins: tuple[PluginAdapter, ...],
 ) -> int:
     """Drive the prune pipeline behind --prune / --prune-only.
 
-    Builds the in-memory plans (the prune scan compares the dest tree against
-    them), then runs scan + interactive flow. The install half of --prune is not
-    performed: the plan-walking install sync is not yet wired into main() (see
-    the Config note above), so today --prune performs only its prune half. The
-    sequencing is structured so the install phase slots in ahead of this call
-    when that story lands.
+    Scans each active tool's dest tree against its already-built ``StagingPlan``
+    (``plans``, produced once by ``main`` and shared with the install half), then
+    runs the scan + interactive flow. Consent for ``--prune`` is owned upstream:
+    ``main`` runs ``install_pipeline`` (whose ``sync_plan`` guard refuses a
+    non-interactive run lacking ``--yes``/``--dry-run``) before this call, so the
+    prune step needs no separate consent gate; ``--prune-only`` skips install and
+    relies on the prune flow's own non-interactive hard-fail.
 
-    The prune list is read from ``installer.toml`` under the passed
-    ``repo_root`` (not off ``__file__``), so the config tracks the same root as
-    ``stage_and_transform``. When that file is absent — e.g. a wheel/install
-    that bundles only ``src/installer`` and omits ``installer.toml`` — the load
-    yields an empty prune list, so nothing would be pruned; a warning is emitted
-    naming the missing path so the no-op is explained rather than silent. A
-    *present but type-malformed* ``installer.toml`` makes ``load_installer_toml``
-    raise ``ValueError``; that is caught here and surfaced through ``io`` as a
-    clean error with ``return 2`` (the CLI's config-error exit convention),
-    never an uncaught traceback.
+    The prune list is read from ``installer.toml`` under the passed ``repo_root``
+    (not off ``__file__``), so the config tracks the same root the plans were
+    staged from. When that file is absent — e.g. a wheel/install that bundles
+    only ``src/installer`` and omits ``installer.toml`` — the load yields an empty
+    prune list, so nothing would be pruned; a warning is emitted naming the
+    missing path so the no-op is explained rather than silent. A *present but
+    type-malformed* ``installer.toml`` makes ``load_installer_toml`` raise
+    ``ValueError``; that is caught here and surfaced through ``io`` as a clean
+    error with ``return 2`` (the CLI's config-error exit convention), never an
+    uncaught traceback.
 
-    The active ``plugins`` are resolved by ``main`` (against
-    ``repo_root / "src" / "plugins"``) and passed in, so the ``--plugins``
-    selection reaches the prune scan and ``repo_root`` stays authoritative —
-    config and plugin source resolve against one injected root rather than
-    splitting between the argument and a module-level constant.
+    The ``plans`` reflect the active ``--plugins`` selection (``main`` builds them
+    with the resolved plugin set), so a plugin's overlaid files reach the orphan
+    scan as known entries rather than retired ones.
 
-    Returns 0 on success, 1 when the non-interactive consent guard or the
-    prune-only flow aborts the run, 2 when ``installer.toml`` is malformed.
+    Returns 0 on success, 1 when the prune-only flow aborts the run, 2 when
+    ``installer.toml`` is malformed.
     """
-    if not prune_only:
-        try:
-            require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
-        except ConsentRequiredError:
-            return 1
-
     installer_toml = repo_root / "packages" / "installer" / "installer.toml"
     if not installer_toml.is_file():
         io.warn(
@@ -244,8 +261,6 @@ def _run_prune(
     except ValueError as exc:
         io.err(f"installer: {exc}")
         return 2
-    plans = stage_and_transform(tools, repo_root=repo_root, io=io, plugins=plugins)
-    adapters = [get_adapter(tool) for tool in tools]
 
     try:
         prune_pipeline(
