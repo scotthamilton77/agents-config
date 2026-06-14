@@ -19,6 +19,7 @@ import shutil
 from typing import TYPE_CHECKING
 
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
+from installer.core.consent import require_consent
 from installer.core.model import Counters
 from installer.core.paths import is_safe_relpath
 
@@ -106,6 +107,7 @@ def sync_plan(
     home: Path,
     io: IOPort,
     dry_run: bool = False,
+    auto_yes: bool = False,
     timestamp: str | None = None,
 ) -> Counters:
     """Walk a ``StagingPlan`` and install every item under the adapter's dest root.
@@ -132,7 +134,14 @@ def sync_plan(
     is not resolved-path safety. The walk is **non-transactional**: a failure on
     item N leaves items 1..N-1 **already installed** (matching the bash streaming
     installer; no rollback of earlier items). Returns aggregate `Counters`.
+
+    The shared no-TTY guard (`require_consent`) runs once up front: a
+    non-interactive run with neither ``auto_yes`` nor ``dry_run`` cannot answer a
+    per-item prompt, so it hard-fails before any write rather than silently
+    overwriting. ``auto_yes`` auto-accepts every changed-item prompt (still backing
+    up first); ``dry_run`` previews without prompting.
     """
+    require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
     counters = Counters()
     dest_dir = adapter.dest_dir(home)
     for item in plan.items.values():
@@ -147,6 +156,7 @@ def sync_plan(
                 plan.dir_overrides.get(item.dest_relpath, {}),
                 io=io,
                 dry_run=dry_run,
+                auto_yes=auto_yes,
                 timestamp=timestamp,
                 counters=counters,
             )
@@ -157,6 +167,7 @@ def sync_plan(
                 executable=item.executable,
                 io=io,
                 dry_run=dry_run,
+                auto_yes=auto_yes,
                 timestamp=timestamp,
                 counters=counters,
             )
@@ -170,6 +181,7 @@ def _install_file(
     executable: bool,
     io: IOPort,
     dry_run: bool,
+    auto_yes: bool,
     timestamp: str | None,
     counters: Counters,
 ) -> None:
@@ -177,13 +189,28 @@ def _install_file(
     dest before the overwrite, and write the bytes with a deterministic mode
     bit (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``.
 
+    A *changed* dest (present, bytes differ) passes through the consent gate
+    (`_consent_to_overwrite`) before any backup or write: an interactive decline
+    keeps the existing bytes and counts the item as skipped; ``auto_yes`` accepts
+    silently; ``dry_run`` previews without prompting. The gate fires only on an
+    existing dest — a first install is not a destructive overwrite.
+
     A dest already occupied by a non-file (a directory) is rejected with
     `ValueError` rather than crashing the walk with a raw ``IsADirectoryError`` —
     matching ``dump``'s type-guard so the CLI surfaces a clean error."""
     if dest.exists() and not dest.is_file():
         raise ValueError(f"dest exists but is not a file: {dest}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.is_file()
-    if dest_exists and _sha256(dest.read_bytes()) == _sha256(content):
+    old = dest.read_bytes() if dest_exists else None
+    if old is not None and _sha256(old) == _sha256(content):
+        counters.skipped += 1
+        return
+    if (
+        old is not None
+        and not dry_run
+        and not _consent_to_overwrite(dest, diff=(old, content), io=io, auto_yes=auto_yes)
+    ):
+        io.warn(f"skipped {dest}")
         counters.skipped += 1
         return
     _ensure_parent_dir(dest, dry_run=dry_run)
@@ -202,12 +229,18 @@ def _install_dir(
     *,
     io: IOPort,
     dry_run: bool,
+    auto_yes: bool,
     timestamp: str | None,
     counters: Counters,
 ) -> None:
     """Materialise one DIR item: back up then cleanly replace an existing dest,
     copy the ``source_path`` tree, then overlay ``overrides`` (override wins on
     a name collision, matching dump-time semantics). Mutates ``counters``.
+
+    An existing dest passes through the consent gate before the backup/replace:
+    an interactive decline keeps the existing tree and counts a skip; ``auto_yes``
+    accepts silently; ``dry_run`` previews without prompting. A directory has no
+    ``IOPort`` byte-diff, so the change is surfaced as a notice, not a unified diff.
 
     A missing or non-directory ``source_path``, or a dest already occupied by a
     non-directory (a file), is rejected with `ValueError` rather than crashing
@@ -225,6 +258,14 @@ def _install_dir(
         if not is_safe_relpath(inner):
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
+    if (
+        dest_exists
+        and not dry_run
+        and not _consent_to_overwrite(dest, diff=None, io=io, auto_yes=auto_yes)
+    ):
+        io.warn(f"skipped {dest}")
+        counters.skipped += 1
+        return
     _ensure_parent_dir(dest, dry_run=dry_run)
     if not dry_run:
         if dest_exists:
@@ -236,6 +277,35 @@ def _install_dir(
             _ensure_parent_dir(inner_dest, dry_run=dry_run)
             inner_dest.write_bytes(inner_content)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
+
+
+def _consent_to_overwrite(
+    dest: Path,
+    *,
+    diff: tuple[bytes, bytes] | None,
+    io: IOPort,
+    auto_yes: bool,
+) -> bool:
+    """Decide whether a changed dest may be overwritten — the install consent gate.
+
+    ``auto_yes`` short-circuits to ``True`` without prompting (the scripted-install
+    path); the caller still backs up before the write, so ``--yes`` is never a
+    data-loss path. Otherwise the change is surfaced and an interactive y/N confirm
+    decides: a FILE item (``diff`` carries its old/new bytes) is shown a unified
+    diff; a DIR item (``diff`` is ``None`` — a directory tree has no ``IOPort``
+    byte-diff primitive) gets a plain 'changed' notice. A decline returns ``False``
+    and the caller keeps the existing dest untouched.
+
+    Reached only after `require_consent` has guaranteed the run can prompt when
+    ``auto_yes`` is ``False`` — so the session is interactive here by construction.
+    """
+    if auto_yes:
+        return True
+    if diff is not None:
+        io.show_diff(str(dest), *diff)
+    else:
+        io.warn(f"{dest} changed (directory will be replaced)")
+    return io.confirm(f"Overwrite {dest}?", default=False)
 
 
 def _record_write(

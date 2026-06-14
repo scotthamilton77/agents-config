@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from installer.core.consent import ConsentRequiredError
 from installer.core.io_port import IOPort, ScriptedIO
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.sync import sync_plan
@@ -143,7 +144,10 @@ def test_changed_file_item_is_backed_up_before_overwrite(tmp_path: Path) -> None
         items={Path("AGENTS.md"): _file_item(Path("AGENTS.md"), b"new\n")}, tool=Tool.CLAUDE
     )
 
-    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+    # auto_yes bypasses the W2 consent gate so this pins the backup/overwrite mechanics
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
 
     assert (home / f"AGENTS.md.backup-{_FIXED_TS}").read_bytes() == b"old\n"
     assert (home / "AGENTS.md").read_bytes() == b"new\n"
@@ -278,7 +282,10 @@ def test_existing_dir_is_backed_up_then_cleanly_replaced(tmp_path: Path) -> None
     (existing / "stale.md").write_bytes(b"stale\n")
     plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
 
-    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+    # auto_yes bypasses the W2 consent gate so this pins the backup-then-clean-replace
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
 
     backup = home / "skills-backup" / f"s.backup-{_FIXED_TS}"
     assert (backup / "stale.md").read_bytes() == b"stale\n"
@@ -476,7 +483,10 @@ def test_overwrite_with_malformed_timestamp_is_rejected_before_any_write(tmp_pat
     plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"new\n")}, tool=Tool.CLAUDE)
 
     with pytest.raises(ValueError, match="YYYYMMDD"):
-        sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp="../evil")
+        # auto_yes bypasses the W2 consent gate so the timestamp guard is what trips
+        sync_plan(
+            _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp="../evil"
+        )
 
     assert (home / "f.md").read_bytes() == b"old\n"
     assert not any(home.glob("*.backup-*"))
@@ -494,7 +504,8 @@ def test_overwrite_without_a_timestamp_backs_up_with_a_generated_suffix(tmp_path
     (home / "f.md").write_bytes(b"old\n")
     plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"new\n")}, tool=Tool.CLAUDE)
 
-    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO())
+    # auto_yes bypasses the W2 consent gate so this pins the generated-suffix backup
+    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True)
 
     assert (home / "f.md").read_bytes() == b"new\n"
     assert counters.backed_up == 1
@@ -572,3 +583,182 @@ def test_walk_is_non_transactional_earlier_items_survive_a_later_failure(tmp_pat
         sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
     assert (home / "good.md").read_bytes() == b"good\n"  # earlier item survived
+
+
+# ── W2: interactive install consent ──────────────────────────────────────────
+# sync_plan gains a per-changed-item diff+confirm gate (full parity with the
+# bash installer's confirm()). The shared no-TTY guard (consent.require_consent)
+# runs once up front; auto_yes / dry_run waive the per-item prompt.
+
+
+def test_non_interactive_run_without_waiver_raises_before_any_write(tmp_path: Path) -> None:
+    """
+    Given a non-interactive session (no TTY to answer a prompt), not dry_run and
+    not auto_yes
+    When sync_plan is asked to install a plan
+    Then it raises ConsentRequiredError up front — before any item lands —
+    reusing the shared no-TTY guard rather than silently overwriting.
+    """
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"hi\n")}, tool=Tool.CLAUDE)
+
+    with pytest.raises(ConsentRequiredError):
+        sync_plan(
+            _IdentityAdapter(),
+            plan,
+            home=home,
+            io=ScriptedIO(interactive=False),
+            timestamp=_FIXED_TS,
+        )
+
+    assert not (home / "f.md").exists()
+
+
+def test_interactive_decline_keeps_existing_file_and_counts_skipped(tmp_path: Path) -> None:
+    """
+    Given a changed FILE item whose dest holds different bytes, and an
+    interactive user who declines the overwrite
+    When sync_plan reaches the per-file consent gate
+    Then the dest keeps its ORIGINAL bytes, no backup is taken, and the item is
+    counted as skipped — decline keeps existing (parity with bash confirm()).
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "AGENTS.md").write_bytes(b"old\n")
+    plan = StagingPlan(
+        items={Path("AGENTS.md"): _file_item(Path("AGENTS.md"), b"new\n")}, tool=Tool.CLAUDE
+    )
+
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(confirms=[False]), timestamp=_FIXED_TS
+    )
+
+    assert (home / "AGENTS.md").read_bytes() == b"old\n"  # decline keeps existing
+    assert not any(home.glob("AGENTS.md.backup-*"))  # no backup on decline
+    assert (counters.skipped, counters.updated, counters.backed_up) == (1, 0, 0)
+
+
+def test_interactive_accept_shows_diff_then_overwrites_with_backup(tmp_path: Path) -> None:
+    """
+    Given a changed FILE item and an interactive user who accepts the overwrite
+    When sync_plan reaches the per-file consent gate
+    Then the user is shown a diff before confirming, the original is backed up,
+    the dest holds the NEW bytes, and updated + backed_up are counted.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "AGENTS.md").write_bytes(b"old\n")
+    io = ScriptedIO(confirms=[True])
+    plan = StagingPlan(
+        items={Path("AGENTS.md"): _file_item(Path("AGENTS.md"), b"new\n")}, tool=Tool.CLAUDE
+    )
+
+    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    assert (home / "AGENTS.md").read_bytes() == b"new\n"
+    assert (home / f"AGENTS.md.backup-{_FIXED_TS}").read_bytes() == b"old\n"
+    assert (counters.updated, counters.backed_up) == (1, 1)
+    # the change was surfaced as a diff carrying the old/new bytes before the prompt
+    diffs = [e for e in io.transcript if e.channel == "diff"]
+    assert diffs and diffs[0].payload == (b"old\n", b"new\n")
+
+
+def test_auto_yes_overwrites_changed_file_without_prompting(tmp_path: Path) -> None:
+    """
+    Given --yes and a changed FILE item
+    When sync_plan runs (with NO queued confirm answers)
+    Then the overwrite proceeds without consuming a prompt — auto_yes suppresses
+    the gate — yet the original is STILL backed up first (--yes is never a
+    data-loss path), and no confirm/diff is recorded.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "AGENTS.md").write_bytes(b"old\n")
+    io = ScriptedIO()  # empty queues: a prompt would raise ScriptExhaustedError
+    plan = StagingPlan(
+        items={Path("AGENTS.md"): _file_item(Path("AGENTS.md"), b"new\n")}, tool=Tool.CLAUDE
+    )
+
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=io, auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert (home / "AGENTS.md").read_bytes() == b"new\n"
+    assert (home / f"AGENTS.md.backup-{_FIXED_TS}").read_bytes() == b"old\n"  # still backed up
+    assert (counters.updated, counters.backed_up) == (1, 1)
+    assert not [e for e in io.transcript if e.channel in ("confirm", "diff")]
+
+
+def test_interactive_new_file_installs_without_a_prompt(tmp_path: Path) -> None:
+    """
+    Given a NEW FILE item (dest absent) and an interactive session with NO queued
+    confirm answers
+    When sync_plan runs
+    Then the file installs without any prompt — a first install is not a
+    destructive overwrite, so the consent gate fires only on existing dests.
+    """
+    home = tmp_path / "home"
+    io = ScriptedIO()  # a prompt would raise ScriptExhaustedError
+    plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"hi\n")}, tool=Tool.CLAUDE)
+
+    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    assert (home / "f.md").read_bytes() == b"hi\n"
+    assert counters.created == 1
+    assert not [e for e in io.transcript if e.channel == "confirm"]
+
+
+def test_interactive_decline_keeps_existing_dir_tree(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose dest already exists, and an interactive user who
+    declines the replace
+    When sync_plan reaches the per-dir consent gate
+    Then the existing tree is left untouched (its stale file survives, no backup
+    taken), nothing from the source lands, and the item is counted as skipped.
+    A directory has no IOPort byte-diff, so the change is surfaced as a notice,
+    not a unified diff.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "new.md").write_bytes(b"new\n")
+    home = tmp_path / "home"
+    existing = home / "skills" / "s"
+    existing.mkdir(parents=True)
+    (existing / "stale.md").write_bytes(b"stale\n")
+    io = ScriptedIO(confirms=[False])
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    assert (existing / "stale.md").read_bytes() == b"stale\n"  # untouched
+    assert not (existing / "new.md").exists()  # source not copied in
+    assert not (home / "skills-backup").exists()  # no backup on decline
+    assert (counters.skipped, counters.updated, counters.backed_up) == (1, 0, 0)
+    assert not [e for e in io.transcript if e.channel == "diff"]  # notice, not a byte-diff
+
+
+def test_auto_yes_replaces_existing_dir_without_prompting(tmp_path: Path) -> None:
+    """
+    Given --yes and a DIR item whose dest already exists
+    When sync_plan runs with NO queued confirm answers
+    Then the dir is backed up and cleanly replaced without consuming a prompt —
+    auto_yes suppresses the gate for directories too.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "new.md").write_bytes(b"new\n")
+    home = tmp_path / "home"
+    existing = home / "skills" / "s"
+    existing.mkdir(parents=True)
+    (existing / "stale.md").write_bytes(b"stale\n")
+    io = ScriptedIO()  # a prompt would raise ScriptExhaustedError
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=io, auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert (home / "skills" / "s" / "new.md").read_bytes() == b"new\n"
+    assert not (home / "skills" / "s" / "stale.md").exists()  # clean replace
+    assert (counters.updated, counters.backed_up) == (1, 1)
+    assert not [e for e in io.transcript if e.channel == "confirm"]

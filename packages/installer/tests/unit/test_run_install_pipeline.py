@@ -60,3 +60,29 @@ def test_install_pipeline_aggregates_counters_across_tools(tmp_path: Path) -> No
 
     assert (claude.dest_dir(home) / "a.md").read_bytes() == b"A\n"
     assert (counters.created, counters.skipped) == (1, 1)
+
+
+def test_install_pipeline_forwards_auto_yes_to_each_sync_plan(tmp_path: Path) -> None:
+    """
+    Given a tool whose dest already holds different bytes than its plan, and --yes
+    When install_pipeline runs with NO queued confirm answers
+    Then the overwrite proceeds without prompting — install_pipeline forwards
+    auto_yes into each sync_plan call (the default would otherwise trip the W2
+    consent gate and raise ScriptExhaustedError on the empty confirm queue).
+    """
+    home = tmp_path / "home"
+    claude = get_adapter(Tool.CLAUDE)
+    claude.dest_dir(home).mkdir(parents=True)
+    (claude.dest_dir(home) / "a.md").write_bytes(b"old\n")
+    plans = {
+        Tool.CLAUDE: StagingPlan(
+            items={Path("a.md"): _file_item(Path("a.md"), b"new\n")}, tool=Tool.CLAUDE
+        ),
+    }
+
+    counters = install_pipeline(
+        [claude], plans=plans, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert (claude.dest_dir(home) / "a.md").read_bytes() == b"new\n"
+    assert (counters.updated, counters.backed_up) == (1, 1)

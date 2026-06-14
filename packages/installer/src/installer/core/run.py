@@ -71,6 +71,7 @@ def install_pipeline(
     home: Path,
     io: IOPort,
     dry_run: bool = False,
+    auto_yes: bool = False,
     timestamp: str | None = None,
 ) -> Counters:
     """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``; sum the totals.
@@ -80,6 +81,11 @@ def install_pipeline(
     looked up by its tool (``Tool(adapter.name)``) and written under
     ``adapter.dest_dir(home)``. Returns the aggregate `Counters`
     (created / updated / skipped / backed_up summed across tools).
+
+    ``dry_run`` and ``auto_yes`` are forwarded verbatim into every ``sync_plan``
+    call, so the W2 consent gate and the shared no-TTY guard apply uniformly
+    across tools (``auto_yes`` auto-accepts changed-item overwrites; ``dry_run``
+    previews without prompting).
 
     Unlike ``scan_orphans``'s tolerant ``.get``, the per-tool plan is indexed
     strictly — an adapter without a staged plan is an orchestrator bug (a loud
@@ -93,6 +99,7 @@ def install_pipeline(
             home=home,
             io=io,
             dry_run=dry_run,
+            auto_yes=auto_yes,
             timestamp=timestamp,
         )
         total.created += result.created
