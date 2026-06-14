@@ -129,15 +129,15 @@ decides what lands.
 > **What went well:** The todo list on the multi-step fix — *why:* it externalized
 > state so nothing got dropped mid-task. Keep requesting it for anything multi-step.
 >
-> **What slowed us down:** Skipped project AGENTS.md, so a documented "register flags
-> in two places" rule was missed `[context / compliance failure]` — the rule existed
-> and was ignored, so more prose won't help.
+> **What slowed us down:** Skipped the project's AGENTS.md, so a documented "register
+> flags in two places" rule was missed `[Agent context / Compliance failure]` — the
+> rule existed and was ignored, so more prose won't help.
 >
 > | Recommendation | Target | Root cause | Impact | Effort | Priority |
 > |---|---|---|---|---|---|
-> | Pre-edit hook blocking first edit until AGENTS.md is read | Tooling | Compliance | High | Med | P0 |
-> | CI check: flag must appear in both registration sites | Tooling | Compliance | High | Low | P0 |
-> | Add "asserts a registry contains an entry" to the tautology-test memory | Context | Context gap | Med | Low | P1 |
+> | Pre-edit hook blocking the first edit until AGENTS.md is read | Tool availability & selection | Compliance failure | High | Med | P0 |
+> | CI check: a flag must appear in both registration sites | Tool availability & selection | Compliance failure | High | Low | P0 |
+> | Record the newly-seen test-tautology pattern in the existing testing guidance | Agent context | Context gap | Med | Low | P1 |
 
 ## Common Mistakes
 
