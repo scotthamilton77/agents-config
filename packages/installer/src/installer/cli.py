@@ -17,6 +17,7 @@ from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import Tool
+    from installer.plugins.base import PluginAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
 # ``src/plugins``. ``cli.py`` lives at ``<repo>/packages/installer/src/installer/
@@ -43,6 +44,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "Comma-separated tool list to install "
             f"(valid: {', '.join(t.value for t in known_tools())}). "
             "Default: auto-detect against $HOME."
+        ),
+    )
+    parser.add_argument(
+        "--plugins",
+        metavar="CSV",
+        default=None,
+        help=(
+            "Comma-separated plugin list to install (discovered under "
+            "src/plugins). Default: auto-detect against $HOME. "
+            "Pass --plugins= (empty) to install no plugins."
         ),
     )
     parser.add_argument(
@@ -122,12 +133,23 @@ def main(
         )
         return 2
 
-    if args.dump_stage is not None:
+    # Resolve plugins up front (after tools) so an invalid --plugins fails fast
+    # on every path — matching the bash installer, which validates --plugins
+    # before dispatching any mode (scripts/install.sh:298-307). The resolved set
+    # feeds both --dump-stage and --prune below.
+    try:
         plugins = resolve_plugins(
             home=resolved_home,
             plugins_root=resolved_repo_root / "src" / "plugins",
-            override_csv=None,
+            override_csv=args.plugins,
         )
+    except ValueError as exc:
+        # UnknownPluginError (unknown name) and the stray-comma ValueError both
+        # subclass ValueError; surface cleanly with exit 2, mirroring resolve_tools.
+        sys.stderr.write(f"installer: {exc}\n")
+        return 2
+
+    if args.dump_stage is not None:
         plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
         try:
             dump_plan(plans, args.dump_stage, io=io)
@@ -159,6 +181,7 @@ def main(
             dry_run=args.dry_run,
             auto_yes=args.yes,
             prune_only=args.prune_only,
+            plugins=plugins,
         )
 
     return 0
@@ -173,6 +196,7 @@ def _run_prune(
     dry_run: bool,
     auto_yes: bool,
     prune_only: bool,
+    plugins: tuple[PluginAdapter, ...],
 ) -> int:
     """Drive the prune pipeline behind --prune / --prune-only.
 
@@ -194,10 +218,11 @@ def _run_prune(
     clean error with ``return 2`` (the CLI's config-error exit convention),
     never an uncaught traceback.
 
-    Plugin discovery is likewise rooted at the passed ``repo_root``
-    (``repo_root / "src" / "plugins"``), so ``repo_root`` is fully
-    authoritative — config and plugins resolve against one injected root rather
-    than splitting between the argument and a module-level constant.
+    The active ``plugins`` are resolved by ``main`` (against
+    ``repo_root / "src" / "plugins"``) and passed in, so the ``--plugins``
+    selection reaches the prune scan and ``repo_root`` stays authoritative —
+    config and plugin source resolve against one injected root rather than
+    splitting between the argument and a module-level constant.
 
     Returns 0 on success, 1 when the non-interactive consent guard or the
     prune-only flow aborts the run, 2 when ``installer.toml`` is malformed.
@@ -219,8 +244,6 @@ def _run_prune(
     except ValueError as exc:
         io.err(f"installer: {exc}")
         return 2
-    plugins_root = repo_root / "src" / "plugins"
-    plugins = resolve_plugins(home=home, plugins_root=plugins_root, override_csv=None)
     plans = stage_and_transform(tools, repo_root=repo_root, io=io, plugins=plugins)
     adapters = [get_adapter(tool) for tool in tools]
 
