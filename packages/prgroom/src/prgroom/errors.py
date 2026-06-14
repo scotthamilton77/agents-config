@@ -71,6 +71,7 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_AUTH = "PRECONDITION_NO_AUTH"
     PRECONDITION_REPO_UNREACHABLE = "PRECONDITION_REPO_UNREACHABLE"
     PRECONDITION_BAD_PR_REF = "PRECONDITION_BAD_PR_REF"
+    PRECONDITION_WRONG_BRANCH = "PRECONDITION_WRONG_BRANCH"
     PRECONDITION_NO_ITEMS = "PRECONDITION_NO_ITEMS"
     PRECONDITION_NO_CLUSTERS = "PRECONDITION_NO_CLUSTERS"
     PRECONDITION_NO_COMMITS = "PRECONDITION_NO_COMMITS"
@@ -87,6 +88,7 @@ class ErrorCode(StrEnum):
     RUNTIME_GRAPHQL_FAILED = "RUNTIME_GRAPHQL_FAILED"
     RUNTIME_PUSH_REJECTED = "RUNTIME_PUSH_REJECTED"
     RUNTIME_GIT_TRANSIENT = "RUNTIME_GIT_TRANSIENT"
+    RUNTIME_GIT_TERMINAL = "RUNTIME_GIT_TERMINAL"
     RUNTIME_AGENT_UNAVAILABLE = "RUNTIME_AGENT_UNAVAILABLE"
     RUNTIME_AGENT_TIMEOUT = "RUNTIME_AGENT_TIMEOUT"
     RUNTIME_CANCELLED_SIGINT = "RUNTIME_CANCELLED_SIGINT"
@@ -144,6 +146,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="the provided PR ref is malformed",
         why="a parseable PR ref is required",
         how="pass <number>, <owner>/<repo>#<n>, or a full URL",
+    ),
+    ErrorCode.PRECONDITION_WRONG_BRANCH: RegistryEntry(
+        what="the worktree is not checked out on the PR's head branch",
+        why="`push` uploads the local PR-branch HEAD; a stray checkout would publish wrong commits",
+        how="check out the PR head branch (or run from its worktree), then re-invoke",
     ),
     ErrorCode.PRECONDITION_NO_ITEMS: RegistryEntry(
         what="the verb requires items but state has none",
@@ -219,6 +226,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="a git network operation timed out",
         why="an upstream connectivity blip",
         how="retry on the next cadence",
+    ),
+    ErrorCode.RUNTIME_GIT_TERMINAL: RegistryEntry(
+        what="the `git` binary is missing or not executable",
+        why="a local environment gap a retry won't fix",
+        how="install git / repair PATH, then re-invoke",
     ),
     ErrorCode.RUNTIME_AGENT_UNAVAILABLE: RegistryEntry(
         what="the primary AND fallback agent CLIs both failed",
@@ -298,6 +310,7 @@ BlockingErrorCodes: frozenset[ErrorCode] = frozenset(
         ErrorCode.STATE_SCHEMA_UNKNOWN,
         ErrorCode.RUNTIME_GH_TERMINAL,
         ErrorCode.RUNTIME_PUSH_REJECTED,
+        ErrorCode.RUNTIME_GIT_TERMINAL,
     }
 )
 

@@ -27,12 +27,12 @@ the end-of-cycle resolver reads them later). ``result.stashed`` is informational
 from __future__ import annotations
 
 import copy
-import sys
 from typing import TYPE_CHECKING
 
 from prgroom.agent.contracts import FixInput
 from prgroom.agent.fix import run_fix
 from prgroom.lifecycle.snapshot import assemble_snapshot
+from prgroom.lifecycle.warn import default_warn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,11 +49,6 @@ if TYPE_CHECKING:
     from prgroom.prsession.state import PRGroomingState, ReviewItem
 
 
-def _default_warn(message: str) -> None:
-    """Default soft-warning sink: a one-line prgroom stderr notice."""
-    sys.stderr.write(f"prgroom: {message}\n")
-
-
 def fix_pr(
     state: PRGroomingState,
     *,
@@ -66,7 +61,7 @@ def fix_pr(
     sink: Sink,
     decided_by: str,
     scratch_dir: Path,
-    warn: Callable[[str], None] = _default_warn,
+    warn: Callable[[str], None] = default_warn,
 ) -> PRGroomingState:
     """Fix every clustered-unprocessed item, applying dispositions to a state copy.
 

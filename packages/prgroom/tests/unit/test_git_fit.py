@@ -42,6 +42,14 @@ def test_head_sha_strips_output() -> None:
     assert runner.calls[0] == ["git", "rev-parse", "HEAD"]
 
 
+def test_current_branch_strips_output() -> None:
+    runner = RecordedRunner([_ok("feature-x\n")])
+    client = GitCli(runner)
+    assert client.current_branch() == "feature-x"
+    # `--abbrev-ref HEAD` yields the branch name (or the literal "HEAD" if detached).
+    assert runner.calls[0] == ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+
+
 def test_rev_list_splits_lines() -> None:
     runner = RecordedRunner([_ok("sha1\nsha2\nsha3\n")])
     client = GitCli(runner)
@@ -195,11 +203,14 @@ def test_git_forwards_a_bounded_timeout_to_the_runner() -> None:
     assert runner.timeouts[0] > 0
 
 
-def test_git_missing_binary_classifies_as_git_transient() -> None:
-    # A missing `git` binary surfaces as OSError from the boundary; the adapter
-    # must map it to a registry error, never let a raw traceback escape. The
-    # registry has no git-terminal code, so it maps to transient (tracked).
+def test_git_missing_binary_classifies_as_git_terminal() -> None:
+    # A missing `git` binary surfaces as OSError from the boundary — a permanent
+    # local-environment gap a blind retry will never fix. The adapter maps it to
+    # the terminal code (exit 77, human-gated), mirroring the gh adapter's own
+    # OSError->RUNTIME_GH_TERMINAL mapping; it never floats up as a raw traceback
+    # and never masquerades as a retryable transient.
     client = GitCli(MissingBinaryRunner())
     with pytest.raises(PrgroomError) as exc:
         client.push("origin", "feature")
-    assert exc.value.code is ErrorCode.RUNTIME_GIT_TRANSIENT
+    assert exc.value.code is ErrorCode.RUNTIME_GIT_TERMINAL
+    assert exc.value.tier is Tier.RUNTIME_TERMINAL_USER

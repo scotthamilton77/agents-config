@@ -132,6 +132,7 @@ def test_blocking_error_codes_is_the_exact_documented_set() -> None:
             ErrorCode.STATE_SCHEMA_UNKNOWN,
             ErrorCode.RUNTIME_GH_TERMINAL,
             ErrorCode.RUNTIME_PUSH_REJECTED,
+            ErrorCode.RUNTIME_GIT_TERMINAL,
         }
     )
 

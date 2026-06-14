@@ -20,6 +20,9 @@ from __future__ import annotations
 from prgroom.lifecycle.cluster import cluster_pr
 from prgroom.lifecycle.fix import fix_pr
 from prgroom.lifecycle.poll import poll_pr
+from prgroom.lifecycle.push import push_pr
+from prgroom.lifecycle.rereview import rereview_pr
+from prgroom.lifecycle.resolve import resolve_pr
 from prgroom.prsession.enums import PRPhase
 
 __all__ = [
@@ -30,6 +33,9 @@ __all__ = [
     "is_graph_terminal",
     "is_terminal_for_cli",
     "poll_pr",
+    "push_pr",
+    "rereview_pr",
+    "resolve_pr",
 ]
 
 TERMINAL_FOR_CLI_PHASES: frozenset[PRPhase] = frozenset(
