@@ -3,17 +3,23 @@
 ``GitCli`` shells out to ``git`` (rev-parse, rev-list, push, stash) through the
 injected :class:`~prgroom.proc.CommandRunner` boundary and maps failures onto
 the existing :class:`~prgroom.errors.ErrorCode` registry. The registry defines
-exactly two git outcomes, so the classification is a clean dichotomy:
+three git outcomes, classified by signal:
 
 * a recognized **push rejection** (non-fast-forward, protected branch, hook
   decline) -> ``RUNTIME_PUSH_REJECTED`` (terminal — a blind retry is futile)
-* **any other** non-zero exit, a boundary ``TimeoutExpired``, or a missing
-  ``git`` binary (``OSError``) -> ``RUNTIME_GIT_TRANSIENT`` (retry next cadence)
+* a **terminal-marker** stderr (``not a git repository`` from a wrong CWD, or an
+  auth/permission failure) OR a missing / non-executable ``git`` binary
+  (``OSError`` before any command runs) -> ``RUNTIME_GIT_TERMINAL`` (terminal — a
+  local-environment / credential gap a retry won't fix), mirroring the gh
+  adapter's ``OSError``->``RUNTIME_GH_TERMINAL``
+* **any other** non-zero exit or a boundary ``TimeoutExpired`` ->
+  ``RUNTIME_GIT_TRANSIENT`` (retry next cadence)
 
-There is deliberately no third "git-terminal" code in the registry; the
-non-rejection branch is the registry's only non-rejection git code, so unknown
-failures (including a missing binary) fall to transient rather than inventing a
-code — that gap is tracked for the verb bead.
+The terminal arms use only **narrow allowlists** (``_PUSH_REJECTED_MARKERS`` /
+``_GIT_TERMINAL_MARKERS``) plus the structural ``OSError`` signal — never
+open-ended stderr parsing. The long tail of ambiguous non-zero exits stays
+transient on purpose: a needless retry is cheaper than wrongly gating a PR on a
+flaky local condition.
 
 Every call passes a bounded ``DEFAULT_SUBPROCESS_TIMEOUT`` so a hung ``git``
 cannot block forever while holding the PR lock. Callers only ever see a
@@ -43,12 +49,28 @@ _PUSH_REJECTED_MARKERS = (
     "failed to push",
 )
 
+# Substrings that unambiguously signal a permanent, user-resolvable git failure —
+# a wrong CWD or an auth/permission gap a blind retry will never fix. A narrow
+# allowlist (like _PUSH_REJECTED_MARKERS), NOT open-ended stderr parsing: the long
+# tail of ambiguous non-zero exits stays transient on purpose.
+_GIT_TERMINAL_MARKERS = (
+    "not a git repository",  # CWD is outside a git repo
+    "could not read Username",  # no non-interactive credential available
+    "Authentication failed",  # bad / expired credentials
+    # Capitalized form is the SSH/remote publickey case (terminal). Load-bearing:
+    # git's local repo-database write failure uses lowercase "insufficient
+    # permission", which must stay transient — do NOT lowercase this marker.
+    "Permission denied",  # SSH key / repo-write permission
+)
+
 
 @runtime_checkable
 class GitClient(Protocol):
     """The worktree-git surface the lifecycle verbs depend on (§3.4)."""
 
     def head_sha(self) -> str: ...  # pragma: no cover
+
+    def current_branch(self) -> str: ...  # pragma: no cover
 
     def rev_list(self, range_: str) -> list[str]: ...  # pragma: no cover
 
@@ -75,6 +97,12 @@ def _classify_git_failure(stderr: str) -> PrgroomError:
             code=ErrorCode.RUNTIME_PUSH_REJECTED,
             detail=stderr.strip(),
         )
+    if any(marker in stderr for marker in _GIT_TERMINAL_MARKERS):
+        return PrgroomError(
+            tier=Tier.RUNTIME_TERMINAL_USER,
+            code=ErrorCode.RUNTIME_GIT_TERMINAL,
+            detail=stderr.strip(),
+        )
     return _transient(stderr.strip())
 
 
@@ -86,6 +114,12 @@ class GitCli:
 
     def head_sha(self) -> str:
         return self._run(["git", "rev-parse", "HEAD"]).strip()
+
+    def current_branch(self) -> str:
+        # `--abbrev-ref HEAD` yields the branch name, or the literal "HEAD" when
+        # detached — which never matches a real PR branch, so the push guard's
+        # equality check fails closed on a detached worktree.
+        return self._run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
 
     def rev_list(self, range_: str) -> list[str]:
         out = self._run(["git", "rev-list", range_])
@@ -116,10 +150,13 @@ class GitCli:
             raise _transient(detail) from exc
         except OSError as exc:
             # A missing `git` binary (or other PATH/exec failure) raises OSError
-            # before any command runs. The registry has no git-terminal code, so
-            # it maps to transient (the gap is tracked for the verb bead).
-            detail = f"git not runnable: {exc}"
-            raise _transient(detail) from exc
+            # before any command runs — a permanent local-environment gap a retry
+            # won't fix. Terminal, mirroring the gh adapter's OSError mapping.
+            raise PrgroomError(
+                tier=Tier.RUNTIME_TERMINAL_USER,
+                code=ErrorCode.RUNTIME_GIT_TERMINAL,
+                detail=f"git not runnable: {exc}",
+            ) from exc
         if result.returncode != 0:
             raise _classify_git_failure(result.stderr)
         return result.stdout

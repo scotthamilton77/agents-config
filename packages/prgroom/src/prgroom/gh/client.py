@@ -67,6 +67,8 @@ class GhClient(Protocol):
 
     def head_ref_oid(self, ref: PRRef) -> str: ...  # pragma: no cover
 
+    def head_ref_name(self, ref: PRRef) -> str: ...  # pragma: no cover
+
     def rest(
         self, method: str, path: str, *, fields: dict[str, str] | None = None
     ) -> Any: ...  # pragma: no cover  # gh api returns object|array|primitive; caller narrows
@@ -125,6 +127,22 @@ class GhCli:
         )
         parsed: JsonObj = json.loads(out)
         return str(parsed["headRefOid"])
+
+    def head_ref_name(self, ref: PRRef) -> str:
+        out = self._run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(ref.number),
+                "--repo",
+                f"{ref.owner}/{ref.repo}",
+                "--json",
+                "headRefName",
+            ]
+        )
+        parsed: JsonObj = json.loads(out)
+        return str(parsed["headRefName"])
 
     def rest(self, method: str, path: str, *, fields: dict[str, str] | None = None) -> Any:
         argv = ["gh", "api", "--method", method, path]

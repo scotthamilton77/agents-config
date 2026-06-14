@@ -61,6 +61,17 @@ def test_head_ref_oid_parses_json(ref: PRRef) -> None:
     argv = runner.calls[0]
     assert argv[:3] == ["gh", "pr", "view"]
     assert "headRefOid" in argv
+
+
+def test_head_ref_name_parses_json(ref: PRRef) -> None:
+    # The push-target branch source: `gh pr view <n> --json headRefName`, the
+    # authoritative PR head-branch name `_push` pushes `HEAD:<name>` to.
+    runner = RecordedRunner([_ok(json.dumps({"headRefName": "feature-x"}))])
+    client = GhCli(runner)
+    assert client.head_ref_name(ref) == "feature-x"
+    argv = runner.calls[0]
+    assert argv[:3] == ["gh", "pr", "view"]
+    assert "headRefName" in argv
     assert "octo/demo" in argv
 
 

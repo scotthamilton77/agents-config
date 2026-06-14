@@ -38,7 +38,16 @@ from prgroom.escalation import Sink, StderrSink
 from prgroom.gh import GhClient
 from prgroom.gh.client import GhCli
 from prgroom.git import GitCli, GitClient
-from prgroom.lifecycle import cluster_pr, fix_pr, is_terminal_for_cli, poll_pr
+from prgroom.lifecycle import (
+    cluster_pr,
+    fix_pr,
+    is_graph_terminal,
+    is_terminal_for_cli,
+    poll_pr,
+    push_pr,
+    rereview_pr,
+    resolve_pr,
+)
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
 from prgroom.lifecycle.status import build_status
@@ -346,15 +355,67 @@ def fix(
 
 
 @app.command()
-def push(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Push any accumulated commits the fix agent produced."""
-    _skeleton("push")
+def push(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Upload the fix agent's queued commits to the PR head branch (first live write).
+
+    A locked verb: ``read -> push_pr -> write`` under the §2 ``with_lock`` wrapper.
+    Direct-invocation preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE``
+    (exit 2); a terminal-for-CLI phase (``quiesced`` / ``human-gated`` / ``merged``)
+    -> no-op exit 0; no queued commits -> idempotent no-op exit 0. On a successful
+    push: ``round`` bumps, ``last_pushed_head_sha`` records the pushed SHA, and stale
+    required reviews flip so a follow-up ``rereview`` re-asks them. No phase change.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+        git = _build_git()
+        config = PrgroomConfig.load()
+
+        def _push() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_terminal_for_cli(state.phase):
+                return  # terminal-for-CLI: no autonomous push (no-op exit 0)
+            state = push_pr(state, ref=ref, gh=gh, git=git, config=config)
+            store.write(ref, state)
+
+        with_lock(store, ref, _push)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()
-def rereview(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Re-request review from required bot reviewers."""
-    _skeleton("rereview")
+def rereview(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Re-request review from stale required reviewers via the remove/add dance.
+
+    A locked verb: ``read -> rereview_pr -> write`` under the §2 ``with_lock``
+    wrapper. Preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE`` (exit 2);
+    the graph-terminal ``merged`` phase -> no-op exit 0. Unlike ``push``, it still
+    acts in ``quiesced`` / ``human-gated`` (re-asking a stale required reviewer is
+    idempotent). A no-op exit 0 when no required reviewer is stale. No phase change.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+        deps = Deps.system()
+
+        def _rereview() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_graph_terminal(state.phase):
+                return  # merged is absorbing: no re-request (no-op exit 0)
+            state = rereview_pr(state, ref=ref, gh=gh, deps=deps)
+            store.write(ref, state)
+
+        with_lock(store, ref, _rereview)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()
@@ -364,9 +425,33 @@ def reply(pr: str = typer.Argument(..., help="PR ref.")) -> None:
 
 
 @app.command()
-def resolve(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Resolve review threads whose disposition is fixed or already_addressed."""
-    _skeleton("resolve")
+def resolve(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Resolve review threads whose disposition is fixed or already_addressed.
+
+    A locked verb: ``read -> resolve_pr -> write`` under the §2 ``with_lock``
+    wrapper. Preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE`` (exit 2);
+    the graph-terminal ``merged`` phase -> no-op exit 0. Like ``rereview`` it still
+    acts in ``quiesced`` / ``human-gated`` (resolving an outstanding thread is
+    idempotent). A no-op exit 0 when no resolvable thread remains. No phase change.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+
+        def _resolve() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_graph_terminal(state.phase):
+                return  # merged is absorbing: no resolve (no-op exit 0)
+            state = resolve_pr(state, gh=gh)
+            store.write(ref, state)
+
+        with_lock(store, ref, _resolve)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command(name="resolve-escalated")
@@ -474,15 +559,12 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
 def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int:
     """Render a tier-tagged error and return its process exit code (§1, §3.3, §7.6).
 
-    A :class:`PreconditionError` prints the canonical 4-line ``what/why/how``
-    block; any other :class:`PrgroomError` prints a one-line code. The exit code
-    is the tier's documented sysexits value.
+    Every tier-tagged error renders the registry ``what/why/how`` block (plus the
+    raw ``detail`` when present) so a user-resolvable failure carries the richest
+    telemetry, not a bare code. The exit code is the tier's documented sysexits value.
     """
     out = stderr if stderr is not None else sys.stderr
-    if isinstance(err, PreconditionError):
-        out.write(err.render() + "\n")
-    else:
-        out.write(f"error: {err.code.value}\n")
+    out.write(err.render() + "\n")
     return exit_code_for_tier(err)
 
 

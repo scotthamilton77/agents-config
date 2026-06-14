@@ -13,11 +13,23 @@ phase/escalation effects live in the lifecycle (later beads).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import assert_never
 
 from prgroom.prsession.pr_ref import PRRef
+
+# Mask URL credentials (``scheme://user:token@host`` -> ``scheme://***@host``).
+# git echoes the remote URL in ``Authentication failed for '<url>'``, and an
+# automation remote can embed a token, so any stderr surfaced as error ``detail``
+# is scrubbed before it reaches logs.
+_CREDENTIAL_URL_RE = re.compile(r"://[^/\s@]+@")
+
+
+def _redact(text: str) -> str:
+    """Strip URL userinfo from ``text`` so a tokenized remote never reaches output."""
+    return _CREDENTIAL_URL_RE.sub("://***@", text)
 
 
 class Tier(StrEnum):
@@ -71,6 +83,7 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_AUTH = "PRECONDITION_NO_AUTH"
     PRECONDITION_REPO_UNREACHABLE = "PRECONDITION_REPO_UNREACHABLE"
     PRECONDITION_BAD_PR_REF = "PRECONDITION_BAD_PR_REF"
+    PRECONDITION_WRONG_BRANCH = "PRECONDITION_WRONG_BRANCH"
     PRECONDITION_NO_ITEMS = "PRECONDITION_NO_ITEMS"
     PRECONDITION_NO_CLUSTERS = "PRECONDITION_NO_CLUSTERS"
     PRECONDITION_NO_COMMITS = "PRECONDITION_NO_COMMITS"
@@ -87,6 +100,7 @@ class ErrorCode(StrEnum):
     RUNTIME_GRAPHQL_FAILED = "RUNTIME_GRAPHQL_FAILED"
     RUNTIME_PUSH_REJECTED = "RUNTIME_PUSH_REJECTED"
     RUNTIME_GIT_TRANSIENT = "RUNTIME_GIT_TRANSIENT"
+    RUNTIME_GIT_TERMINAL = "RUNTIME_GIT_TERMINAL"
     RUNTIME_AGENT_UNAVAILABLE = "RUNTIME_AGENT_UNAVAILABLE"
     RUNTIME_AGENT_TIMEOUT = "RUNTIME_AGENT_TIMEOUT"
     RUNTIME_CANCELLED_SIGINT = "RUNTIME_CANCELLED_SIGINT"
@@ -144,6 +158,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="the provided PR ref is malformed",
         why="a parseable PR ref is required",
         how="pass <number>, <owner>/<repo>#<n>, or a full URL",
+    ),
+    ErrorCode.PRECONDITION_WRONG_BRANCH: RegistryEntry(
+        what="the worktree is not checked out on the PR's head branch",
+        why="`push` uploads the local PR-branch HEAD; a stray checkout would publish wrong commits",
+        how="check out the PR head branch (or run from its worktree), then re-invoke",
     ),
     ErrorCode.PRECONDITION_NO_ITEMS: RegistryEntry(
         what="the verb requires items but state has none",
@@ -219,6 +238,11 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="a git network operation timed out",
         why="an upstream connectivity blip",
         how="retry on the next cadence",
+    ),
+    ErrorCode.RUNTIME_GIT_TERMINAL: RegistryEntry(
+        what="git failed terminally: missing binary, wrong CWD, or an auth/permission gap",
+        why="a local-environment or credential gap a retry won't fix",
+        how="inspect detail; run from the PR worktree, install git, or fix credentials",
     ),
     ErrorCode.RUNTIME_AGENT_UNAVAILABLE: RegistryEntry(
         what="the primary AND fallback agent CLIs both failed",
@@ -298,6 +322,7 @@ BlockingErrorCodes: frozenset[ErrorCode] = frozenset(
         ErrorCode.STATE_SCHEMA_UNKNOWN,
         ErrorCode.RUNTIME_GH_TERMINAL,
         ErrorCode.RUNTIME_PUSH_REJECTED,
+        ErrorCode.RUNTIME_GIT_TERMINAL,
     }
 )
 
@@ -316,6 +341,24 @@ class PrgroomError(Exception):
         self.detail = detail
         super().__init__(f"{code.value}: {detail}" if detail else code.value)
 
+    def render(self) -> str:
+        """Render the registry ``error / what / why / how`` block (§1).
+
+        The raw ``detail`` (the underlying gh/git stderr) is appended when present
+        so the fail-fast, user-resolvable errors carry the *richest* telemetry — the
+        operator needs the actual failure, not just the code.
+        """
+        entry = self.code.registry_entry()
+        block = (
+            f"error: {self.code.value}\n"
+            f"  what: {entry.what}\n"
+            f"  why:  {entry.why}\n"
+            f"  how:  {entry.how}"
+        )
+        if self.detail:
+            block += f"\n  detail: {_redact(self.detail)}"
+        return block
+
 
 class PreconditionError(PrgroomError):
     """A precondition failure with a structured what/why/how stderr block (§1).
@@ -326,16 +369,6 @@ class PreconditionError(PrgroomError):
 
     def __init__(self, code: ErrorCode, *, detail: str = "") -> None:
         super().__init__(tier=code.precondition_tier(), code=code, detail=detail)
-
-    def render(self) -> str:
-        """Render the canonical 4-line ``error / what / why / how`` block (§1)."""
-        entry = self.code.registry_entry()
-        return (
-            f"error: {self.code.value}\n"
-            f"  what: {entry.what}\n"
-            f"  why:  {entry.why}\n"
-            f"  how:  {entry.how}"
-        )
 
 
 def lock_held_error(ref: PRRef, *, pid: int | None = None) -> PreconditionError:
