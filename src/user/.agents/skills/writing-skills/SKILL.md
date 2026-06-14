@@ -234,10 +234,6 @@ error messages, symptoms, synonyms, tool names. "Hook timed out,"
 `condition-based-waiting` beats `async-test-helpers`. Gerunds (`-ing`) work
 well for processes.
 
-**Token efficiency.** Frequently-loaded skills (those in getting-started or
-referenced from every conversation) should aim for under 200 words total.
-Other skills should target under 500. `wc -w SKILL.md` to check.
-
 ## Principle of Lack of Surprise
 
 A skill's contents must not surprise the user in their intent if described.
