@@ -235,3 +235,20 @@ def test_push_below_the_cap_is_silent() -> None:
         warn=msgs.append,
     )
     assert msgs == []
+
+
+def test_push_past_the_cap_does_not_re_warn() -> None:
+    # §3.5: the advisory fires only on the push that advances round *to* the cap,
+    # not on every push once past it. A direct `prgroom push` at round==max (no
+    # pre-push guard) takes round to max+1 and must stay silent — re-warning here
+    # would print an inaccurate "reaches max_rounds=3" for an already-exceeded cap.
+    msgs: list[str] = []
+    push_pr(
+        _state(round_=3),
+        ref=_REF,
+        gh=FakeGh(),
+        git=FakeGit(queued=["c1"]),
+        config=PrgroomConfig(max_rounds=3),
+        warn=msgs.append,
+    )
+    assert msgs == []

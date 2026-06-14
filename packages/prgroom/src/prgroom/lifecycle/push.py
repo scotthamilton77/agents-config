@@ -90,7 +90,9 @@ def push_pr(
     state.round += 1  # bootstrap 0->1 and N->N+1 are both a single increment (§3.4)
     flip_stale_required_reviews(state.reviewers)
 
-    if state.round >= config.max_rounds:
+    if state.round == config.max_rounds:
+        # Fire only on the push that advances round *to* the cap (§3.5) — not with
+        # >=, which would re-warn (inaccurately) on every direct push past it.
         warn(
             f"this push reaches max_rounds={config.max_rounds}; "
             "subsequent fix work will gate to human-gated"
