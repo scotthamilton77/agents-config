@@ -1,15 +1,12 @@
 """Run-orchestration seam: stage every active tool (Phases 1-5), overlay active
 plugins (Phase 6), then apply its post-staging transform pass.
 
-This is the FIRST call site for ``ToolAdapter.post_staging_transforms`` across
-all four adapters. It is deliberately NOT yet invoked from ``cli.main()``: the
-plan-walking sync that would consume these transformed plans does not exist yet
-(``core/sync.py`` is the single-file B.2 slice; plan-walking sync arrives with
-the Epic E merge dispatch). When the full install pipeline is wired into
-``main()``, it MUST route every active tool through this function — not
-``build_plan``->``sync`` directly — or adapter transforms (e.g. the Gemini
-frontmatter transform) will silently never run in real installs. That wiring is
-tracked as its own story.
+This is the call site for ``ToolAdapter.post_staging_transforms`` across all four
+adapters. ``cli.main`` (W3) routes every active tool through this function and
+feeds the transformed plans to ``install_pipeline`` (and the prune scan) — NOT
+``build_plan``->``sync`` directly — so adapter transforms (e.g. the Gemini
+frontmatter transform) run in real installs, not only when materialising the
+stage via ``--dump-stage``.
 
 Phase ordering (epic Plugin Seam Integration Brief): plugin overlay (6) runs
 AFTER base staging; plugin extensions (6.5, F.5 YAML patches) run AFTER the
