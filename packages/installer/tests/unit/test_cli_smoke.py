@@ -510,10 +510,12 @@ def test_dump_stage_honors_plugins_override_over_footprint_autodetect(tmp_path: 
     And when --dump-stage runs WITH an empty --plugins=
     Then the plugin's rule is absent.
 
-    Pins: args.plugins flows to the dump-stage resolve_plugins call. An empty
-    --plugins= installs no plugins (resolve_plugins '' -> ()), overriding the
-    footprint auto-detect. Fails while the call site hardcodes override_csv=None
-    — the empty value would be ignored and widget staged regardless.
+    Pins: args.plugins reaches plugin resolution and feeds the --dump-stage
+    plan. main() resolves plugins once up front (resolve_plugins '' -> ()) and
+    passes the resolved tuple into stage_and_transform, so an empty --plugins=
+    installs no plugins, overriding the footprint auto-detect. Fails if
+    --plugins is unregistered or its value is dropped (e.g. resolve_plugins
+    pinned to override_csv=None) — widget would then be staged regardless.
     """
     repo = _repo_with_widget_plugin(tmp_path)
     home = _home_with_claude_settings(tmp_path)
