@@ -176,7 +176,7 @@ Pure-function tests against the core engine, exercised through a `FakeToolAdapte
 
 - `core/templates.py` — directive recognition; ALL-RULES join; trailing-newline preservation; Gemini frontmatter strip + tools-list YAML conversion (the conversion lives in `tools/gemini.py` but the test plugs it into the core).
 - `core/merge/strategies/append_rules.py` — empty/non-empty concat; separator placement.
-- `core/merge/strategies/json_union.py` — nested dict precedence; array union+sort; type mismatch; key only in incoming.
+- `core/merge/strategies/json_union.py` — nested dict precedence; array union+dedupe (first-seen order); type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
 - `core/merge/registry.py` — `(FileKind, namespace)` dispatch correctness (NAMESPACED_MD with namespace "rules" vs "commands" dispatches to different strategies; non-namespaced kinds ignore the namespace); unknown `(FileKind, namespace)` key raises.
 - `core/prune.py` — TOML prune-list load; glob matching (`*/skills/foo` vs exact match).
