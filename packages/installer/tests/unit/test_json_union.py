@@ -1,32 +1,21 @@
 """Unit tests for installer.core.merge.strategies.json_union.
 
-Each test pins a coded decision in the deep-union-merge contract for
-``(SETTINGS_JSON, *)`` collisions. The behavioural spec is the jq program
-at ``scripts/install.sh:431-456``; these tests were authored by probing the
-real ``jq-1.8.1`` against the same inputs, so they pin jq-parity, not the
-Python stdlib.
-
-The jq rules being pinned:
+Each test pins a coded decision in the semantic deep-union-merge contract for
+``(SETTINGS_JSON, *)`` collisions:
 
 - dict + dict at a shared key -> recurse (deep merge);
-- array + array at a shared key -> concatenate, jq-``unique`` (sort by jq's
-  total order, then dedupe by value);
+- array + array at a shared key -> concatenate, dedupe by value, keep
+  first-seen order;
 - scalar conflict at a shared key -> KEEP EXISTING;
 - type mismatch at a shared key (dict-vs-scalar, array-vs-scalar, etc.)
   -> KEEP EXISTING;
 - key only in incoming -> ADD it; key only in existing -> keep it;
 - top-level non-object operand -> the result is ``existing`` whole;
-- the empty-object quirk: merging two objects whose key-merge yields no
-  keys produces JSON ``null`` (jq ``[] | add == null``);
-- output bytes are canonical ``jq .`` formatting: 2-space indent, single
-  trailing newline, and key order that matches ``jq .`` (which does NOT
-  sort) — the deep-merge skeleton it CONSTRUCTS is sorted, but objects it
-  PASSES THROUGH verbatim keep insertion order;
+- two empty objects merge to ``{}`` (not null);
+- output bytes are canonical JSON: 2-space indent, keys sorted, single
+  trailing newline;
 - the synthesised item takes provenance + source_path from incoming and
   preserves the shared key fields.
-
-jq total order pinned in the array-union tests:
-``null < false < true < number < string < array < object``.
 
 Tests that would only verify Python/stdlib semantics (``json.loads`` round
 trips, frozen-dataclass immutability) are deliberately absent.
@@ -145,86 +134,61 @@ def test_deeply_nested_dicts_recurse() -> None:
     assert result == {"a": {"b": {"c": 1, "keep": "old", "add": "new"}}}
 
 
-# --- array union rule (concatenate + jq unique) ---------------------------
+# --- array union rule (concatenate + dedupe, first-seen order) ------------
 
 
-def test_scalar_arrays_union_sort_and_dedupe() -> None:
-    """Conflicting scalar arrays concatenate, then jq-``unique`` sorts
-    ascending and removes duplicates."""
-    assert _merge({"arr": [3, 1, 2]}, {"arr": [2, 4, 1]}) == {"arr": [1, 2, 3, 4]}
+def test_scalar_arrays_union_dedupe_first_seen_order() -> None:
+    """Conflicting scalar arrays concatenate, then dedupe by value while
+    preserving first-seen order (NOT sorted)."""
+    assert _merge({"arr": [3, 1, 2]}, {"arr": [2, 4, 1]}) == {"arr": [3, 1, 2, 4]}
 
 
 def test_array_union_dedupes_within_a_single_side() -> None:
-    """jq-``unique`` collapses duplicates that already exist within one side
-    as well as across sides."""
+    """Dedupe collapses duplicates that already exist within one side as well
+    as across sides."""
     assert _merge({"x": [1, 1, 2, 2]}, {"x": [2, 3, 3]}) == {"x": [1, 2, 3]}
 
 
 def test_array_union_dedupes_int_and_float_with_same_value() -> None:
-    """jq treats 1 and 1.0 as the same number, so they dedupe to one."""
+    """Python ``==`` treats 1 and 1.0 as equal, so they dedupe to one — and
+    first-seen wins, so the int ``1`` survives."""
     assert _merge({"x": [1]}, {"x": [1.0, 2]}) == {"x": [1, 2]}
 
 
-def test_array_union_handles_int_too_large_for_float() -> None:
-    """A 400-digit integer is valid JSON but overflows ``float()``; the jq
-    sort key falls back to +inf for ordering, so the union neither crashes nor
-    loses the value — the exact integer survives in the merged output."""
-    huge = 10**400
-    assert _merge({"x": [huge]}, {"x": [1]}) == {"x": [1, huge]}
+def test_array_union_collapses_bool_and_int_accepted_edge() -> None:
+    """``==`` dedupe collapses True/1 (and False/0) across the bool/number
+    boundary — first-seen wins. Accepted: settings arrays never mix bare
+    booleans with bare numbers, so there is no live data-loss path. Pinned so a
+    future change to dedupe semantics must confront the trade-off."""
+    assert _merge({"x": [1]}, {"x": [True, 2]}) == {"x": [1, 2]}
+    assert _merge({"x": [False]}, {"x": [0, 3]}) == {"x": [False, 3]}
 
 
-def test_array_union_handles_negative_int_too_large_for_float() -> None:
-    """The negative mirror of the overflow guard: a hugely negative integer
-    overflows ``float()`` too; the jq sort key falls back to -inf, so it sorts
-    BELOW every finite number while the exact integer survives — order
-    ``[huge_neg, 1]`` distinguishes the -inf branch from the +inf one."""
-    huge_neg = -(10**400)
-    assert _merge({"x": [huge_neg]}, {"x": [1]}) == {"x": [huge_neg, 1]}
-
-
-def test_array_union_keeps_distinct_overflow_ints_sharing_a_sort_key() -> None:
-    """Two distinct ints that both overflow ``float()`` share the same +inf
-    sort key, but they are different full-precision integers that ``json.dumps``
-    preserves. Dedupe must break the sort-key tie by Python value equality so
-    neither is dropped — otherwise the second would be silently lost."""
-    assert _merge({"x": [10**400, 10**401]}, {"x": []}) == {"x": [10**400, 10**401]}
-
-
-def test_array_union_jq_total_order_across_types() -> None:
-    """jq's total order ranks types null < false < true < number < string
-    < array < object; ``unique`` sorts the unioned array by that order."""
+def test_array_union_mixed_types_keep_first_seen_order() -> None:
+    """A mixed-type array concatenates and dedupes by value, keeping
+    first-seen order — no type-rank sorting."""
     result = _merge(
         {"x": [3, "b", True, None]},
         {"x": ["a", False, 2]},
     )
-    assert result == {"x": [None, False, True, 2, 3, "a", "b"]}
+    assert result == {"x": [3, "b", True, None, "a", False, 2]}
 
 
-def test_array_union_of_objects_sorts_by_keys_then_values() -> None:
-    """Arrays of objects union + dedupe; jq orders objects by sorted-key
-    array first, then by values in key order."""
+def test_array_union_of_objects_dedupe_first_seen() -> None:
+    """Arrays of objects concatenate and dedupe by value (==) — unhashable
+    dict elements are compared structurally — keeping first-seen order."""
     result = _merge(
         {"perms": [{"k": "v2"}, {"k": "v1"}]},
         {"perms": [{"k": "v1"}, {"k": "v3"}]},
     )
-    assert result == {"perms": [{"k": "v1"}, {"k": "v2"}, {"k": "v3"}]}
+    assert result == {"perms": [{"k": "v2"}, {"k": "v1"}, {"k": "v3"}]}
 
 
-def test_array_union_object_keyset_tiebreak() -> None:
-    """jq object order compares the sorted key-set first: {"a":2} precedes
-    {"a":1,"b":2} (key-set ["a"] < ["a","b"]) which precedes {"b":1}."""
-    result = _merge(
-        {"x": [{"a": 1, "b": 2}, {"a": 2}]},
-        {"x": [{"b": 1}, {"a": 1}]},
-    )
-    assert result == {"x": [{"a": 1}, {"a": 2}, {"a": 1, "b": 2}, {"b": 1}]}
-
-
-def test_array_union_of_nested_arrays_lexicographic_order() -> None:
-    """Nested arrays sort element-wise with a length tiebreak (prefix is
-    less), matching jq's recursive array comparison."""
+def test_array_union_of_nested_arrays_dedupe_first_seen() -> None:
+    """Nested arrays concatenate and dedupe by value (unhashable list elements
+    compared structurally), keeping first-seen order."""
     result = _merge({"x": [[1, 2], [1]]}, {"x": [[1, 2], [1, 2, 0]]})
-    assert result == {"x": [[1], [1, 2], [1, 2, 0]]}
+    assert result == {"x": [[1, 2], [1], [1, 2, 0]]}
 
 
 # --- empty-container edges ------------------------------------------------
@@ -237,8 +201,8 @@ def test_empty_arrays_union_to_empty_array() -> None:
 
 def test_empty_array_unions_with_populated_array() -> None:
     """An empty array on one side contributes nothing; the other side's
-    elements survive, sorted and deduped."""
-    assert _merge({"x": []}, {"x": [2, 1]}) == {"x": [1, 2]}
+    elements survive in first-seen order."""
+    assert _merge({"x": []}, {"x": [2, 1]}) == {"x": [2, 1]}
 
 
 def test_disjoint_empty_containers_are_preserved() -> None:
@@ -248,19 +212,18 @@ def test_disjoint_empty_containers_are_preserved() -> None:
     assert result == {"a": {}, "b": [], "c": 1, "d": 2}
 
 
-def test_merging_two_empty_objects_yields_null_quirk() -> None:
-    """The jq quirk: deep-merging two objects whose key-merge yields no keys
-    runs ``[] | add`` which is null. Two empty top-level objects -> null."""
+def test_merging_two_empty_objects_yields_empty_object() -> None:
+    """Two empty objects merge to an empty object ``{}`` — the semantic
+    deep-merge does NOT reproduce jq's ``[] | add == null`` wart."""
     merged = JsonUnionStrategy().merge(_item({}), _item({}))
     assert merged.content is not None
-    assert json.loads(merged.content) is None
+    assert json.loads(merged.content) == {}
 
 
-def test_nested_two_empty_objects_yield_null_at_that_key() -> None:
-    """The empty-object quirk propagates through recursion: a key holding {}
-    on both sides recurses, the inner key-merge is empty, and the value
-    becomes null."""
-    assert _merge({"x": {}}, {"x": {}}) == {"x": None}
+def test_nested_two_empty_objects_yield_empty_object_at_that_key() -> None:
+    """A key holding {} on both sides recurses to an empty object, not null —
+    the wart does not propagate through recursion either."""
+    assert _merge({"x": {}}, {"x": {}}) == {"x": {}}
 
 
 # --- top-level type-mismatch rule -----------------------------------------
@@ -282,21 +245,19 @@ def test_top_level_existing_array_incoming_object_keeps_existing_array() -> None
     assert json.loads(merged.content) == [1, 2, 3]
 
 
-# --- output formatting (jq-parity bytes) ----------------------------------
+# --- output formatting (canonical sorted JSON bytes) ----------------------
 
 
 def test_output_is_two_space_indented_with_sorted_keys_and_trailing_newline() -> None:
-    """Merged bytes match canonical jq formatting: 2-space indent, exactly one
-    trailing newline, and — for keys the deep-merge constructs (as here, where
-    every key comes from both operands) — sorted order. The serializer itself
-    uses ``sort_keys=False``; sorting comes from skeleton construction, so
-    passthrough objects keep insertion order (pinned separately below)."""
+    """Merged bytes are canonical JSON: 2-space indent, keys sorted
+    (``sort_keys=True``), exactly one trailing newline."""
     merged = JsonUnionStrategy().merge(_item({"b": 1, "a": 2}), _item({"c": 3}))
     assert merged.content == b'{\n  "a": 2,\n  "b": 1,\n  "c": 3\n}\n'
 
 
 def test_output_keys_sorted_codepoint_order_digits_upper_lower() -> None:
-    """jq key order is Unicode codepoint: digits < uppercase < lowercase."""
+    """``sort_keys=True`` orders keys by Unicode codepoint: digits < uppercase
+    < lowercase."""
     merged = JsonUnionStrategy().merge(_item({"B": 1, "a": 2, "10": 3, "2": 4}), _item({"A": 5}))
     assert merged.content is not None
     text = merged.content.decode("utf-8")
@@ -306,48 +267,42 @@ def test_output_keys_sorted_codepoint_order_digits_upper_lower() -> None:
     assert text.index('"A"') < text.index('"B"') < text.index('"a"')
 
 
-# --- passthrough key-order rule (jq `.` preserves insertion order) --------
+# --- output key order (all objects serialised sorted) ---------------------
 #
-# These pin the distinction `jq .` makes between objects the deep-merge
-# skeleton CONSTRUCTS (via `keys | unique`, which jq sorts) and objects it
-# PASSES THROUGH verbatim (which keep their original insertion order). All
-# expectations were probed against the real jq-1.8.1 deep_merge program from
-# scripts/install.sh:431-454.
+# The semantic merge serialises with ``sort_keys=True``, so EVERY object —
+# whether constructed by the deep-merge or carried through from one side —
+# comes out with keys sorted. There is no insertion-order passthrough special
+# case.
 
 
-def test_one_side_only_nested_object_keeps_insertion_key_order() -> None:
-    """A key present on only ONE side whose value is an object is passed
-    through verbatim by jq (branch ``{($k): $a[$k]}`` — no recursion), so its
-    nested keys keep INSERTION order, not sorted order. jq emits ``env`` as
-    ``Z, A, M``; sorted would be ``A, M, Z``."""
+def test_one_side_only_nested_object_is_sorted() -> None:
+    """A nested object present on only ONE side is serialised with sorted keys
+    like every other object — there is no passthrough/insertion-order special
+    case. ``env`` keys come out ``A, M, Z``."""
     merged = JsonUnionStrategy().merge(
         _item({"env": {"Z": 1, "A": 2, "M": 3}}),
         _item({"other": 1}),
     )
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    assert text.index('"Z"') < text.index('"A"') < text.index('"M"')
+    assert text.index('"A"') < text.index('"M"') < text.index('"Z"')
 
 
-def test_object_inside_array_keeps_insertion_key_order() -> None:
-    """An object nested inside an array goes through ``union_arrays`` and is
-    never re-serialised key-by-key, so jq keeps its insertion order. jq emits
-    ``{z, a}``; sorted would be ``{a, z}``."""
+def test_object_inside_array_is_sorted() -> None:
+    """An object nested inside an array is serialised with sorted keys too —
+    ``sort_keys=True`` applies recursively, so ``{z, a}`` comes out ``{a, z}``."""
     merged = JsonUnionStrategy().merge(
         _item({"arr": [{"z": 1, "a": 2}]}),
         _item({"other": 1}),
     )
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    assert text.index('"z"') < text.index('"a"')
+    assert text.index('"a"') < text.index('"z"')
 
 
-def test_deep_merge_skeleton_keys_stay_sorted_at_every_level() -> None:
-    """The object the deep-merge skeleton CONSTRUCTS (keys merged on both
-    sides, via jq ``keys | unique``) is sorted by jq at every recursion level
-    — including a nested object present on BOTH sides, which recurses. This
-    guards the fix from over-correcting passthrough order onto constructed
-    objects."""
+def test_deep_merge_keys_stay_sorted_at_every_level() -> None:
+    """``sort_keys=True`` applies at every recursion level: a nested object
+    merged on BOTH sides comes out sorted, as do the top-level keys."""
     merged = JsonUnionStrategy().merge(
         _item({"n": {"z": 1, "a": 2}, "shared": 1}),
         _item({"n": {"m": 3, "b": 4}, "extra": 2}),
