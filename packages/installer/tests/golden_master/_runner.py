@@ -67,6 +67,14 @@ def _run(
     )
 
 
+def _require_ok(result: subprocess.CompletedProcess[str], label: str) -> None:
+    """Raise if a run failed, so a warm-up run's exit code can't be silently
+    masked by the later captured run (only the final run's result is returned)."""
+    if result.returncode != 0:
+        msg = f"{label} failed (rc={result.returncode}): {result.stderr}"
+        raise RuntimeError(msg)
+
+
 def run_parity(
     tmp_path: Path,
     *,
@@ -97,11 +105,14 @@ def run_parity(
         seed(home_b)
 
     extra_env = {"INSTALLER_PLUGINS_SRC": str(plugins_src)} if plugins_src is not None else None
-    # Discard the warm-up runs; capture only the final run's exit/stderr. For
-    # repeat=1 the loop runs zero times, so behaviour is unchanged.
-    for _ in range(repeat - 1):
-        _run([_BASH, str(_INSTALL_SH), *args], home_a, extra_env=extra_env)
-        _run([sys.executable, str(_INSTALL_PY), *args], home_b, extra_env=extra_env)
+    # Run the warm-up rounds for their filesystem effect; capture only the final
+    # run's exit/stderr below. A warm-up failure still raises (it must not be
+    # masked by a later run). For repeat=1 the loop runs zero times.
+    for i in range(repeat - 1):
+        warm_a = _run([_BASH, str(_INSTALL_SH), *args], home_a, extra_env=extra_env)
+        warm_b = _run([sys.executable, str(_INSTALL_PY), *args], home_b, extra_env=extra_env)
+        _require_ok(warm_a, f"bash warm-up run {i + 1}")
+        _require_ok(warm_b, f"python warm-up run {i + 1}")
 
     bash = _run([_BASH, str(_INSTALL_SH), *args], home_a, extra_env=extra_env)
     python = _run([sys.executable, str(_INSTALL_PY), *args], home_b, extra_env=extra_env)

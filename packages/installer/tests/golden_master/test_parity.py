@@ -150,6 +150,15 @@ def test_autodetect_fresh_home(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
+def test_warmup_run_failure_is_surfaced(tmp_path: Path) -> None:
+    """A failing warm-up run (repeat>1) must raise, not be silently discarded —
+    otherwise a first-run install failure in an idempotency scenario would be
+    masked by a later run's exit code. Bogus ``--tools`` makes the warm-up run
+    fail fast at argument validation."""
+    with pytest.raises(RuntimeError, match="warm-up"):
+        run_parity(tmp_path, args=["--tools=bogus-tool", "--plugins=", "--yes"], repeat=2)
+
+
 @pytest.mark.xfail(
     strict=True,
     reason="Re-install must be idempotent: the Python port re-backs-up directories on "
