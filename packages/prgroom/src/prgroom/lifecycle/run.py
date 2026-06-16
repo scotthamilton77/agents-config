@@ -497,9 +497,11 @@ def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
 
     From ``quiesced`` / ``human-gated`` run ``_poll`` once to detect an external merge
     or a manual fix-push that cleared the gate; then, if still hard-cap-gated and the
-    operator has raised ``--max-rounds`` so the cap no longer trips, clear the gate and
-    advance to ``fixes-pending`` for the refused commits to push under the raised cap. A
-    bare re-run with no raise leaves ``round >= max_rounds`` → the cap stays gated.
+    cap no longer trips, clear the gate and advance to ``fixes-pending`` for the refused
+    commits to push. The cap stays gated only while it still trips — ``round >=
+    max_rounds`` AND commits are still queued (the exact inverse of the §3.5 cap-trip).
+    So a bare re-run with the refused commits still queued stays gated, whereas raising
+    ``--max-rounds`` (round now below the cap) OR an emptied queue re-arms.
     """
     if ctx.state.phase not in {PRPhase.QUIESCED, PRPhase.HUMAN_GATED}:
         return
