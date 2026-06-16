@@ -381,13 +381,16 @@ def _run(ctx: RunContext, verbs: Verbs) -> PRGroomingState:
         # === FIXES_PENDING: the ordered pipeline ===
         ctx.cycle_start_pushed_sha = ctx.state.last_pushed_head_sha
         ctx.cycle_start_error = ctx.state.last_error
-        capped = False
+        pipeline_terminated = False
         for step in pipeline:
             _execute_step(step, ctx)
             if is_terminal_for_cli(ctx.state.phase):
-                capped = True  # the pre-push cap guard gated this cycle
+                # A step set a terminal-for-CLI phase on a clean return (today only the
+                # pre-push cap guard does — verb errors gate via PROPAGATE, which
+                # re-raises out of the loop). Skip end-of-cycle resolution.
+                pipeline_terminated = True
                 break
-        if not capped:
+        if not pipeline_terminated:
             _resolve_end_of_cycle(ctx, verbs)
         # loop continues; the loop top handles the terminal phase + flush
 
