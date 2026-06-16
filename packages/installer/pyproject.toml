@@ -24,6 +24,11 @@ dev = [
   "pip-audit",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+  "golden_master: bash-vs-python parity scenario; slow (spawns both installers). Excluded from the fast coverage gate; run via `make golden-master-installer`.",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
