@@ -101,6 +101,20 @@ def _to_bytes(value: Any) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
+def merge_settings_bytes(existing: bytes, incoming: bytes) -> bytes:
+    """Deep union-merge two settings.json byte payloads to canonical bytes.
+
+    The reusable core of the union: parse both, deep-merge (``existing`` wins on a
+    scalar conflict, arrays union, keys present on only one side carried through),
+    and serialise canonically. The sync engine uses it to union a staged
+    settings.json into the user's existing dest file (bash ``sync_settings_file``,
+    ``scripts/install.sh:1268-1335``), so user values survive an install. Raises
+    ``ValueError`` if either side is not valid JSON — the caller decides how to
+    recover.
+    """
+    return _to_bytes(_deep_merge(json.loads(existing), json.loads(incoming)))
+
+
 class JsonUnionStrategy:
     """Deep union-merge two colliding JSON payloads.
 
