@@ -295,6 +295,31 @@ def test_entry_probe_no_rearm_on_bare_rerun() -> None:
     assert ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
 
 
+def test_entry_probe_skips_has_queued_when_poll_exits_gate() -> None:
+    # PR #165 review: a poll that moves the PR out of human-gated (external merge) must
+    # NOT trigger the effectful has_queued read — a transient failure there would corrupt
+    # an otherwise-clean terminal run. has_queued raises here; the probe must not call it.
+    reads: list[int] = []
+
+    def poll(ctx: RunContext) -> PRGroomingState:
+        ctx.state.phase = PRPhase.MERGED  # operator merged externally
+        return ctx.state
+
+    def spy(_ctx: RunContext) -> bool:
+        reads.append(1)
+        return False
+
+    state = _quiescent_state(
+        phase=PRPhase.HUMAN_GATED,
+        round=3,
+        last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value,
+    )
+    ctx = _ctx(state, config=PrgroomConfig(max_rounds=3))
+    _entry_probe(ctx, _verbs([], poll=poll, has_queued_fn=spy))
+    assert ctx.state.phase is PRPhase.MERGED  # left terminal
+    assert reads == []  # has_queued never read after the poll exits the gate
+
+
 # ── _resolve_end_of_cycle ───────────────────────────────────────────────────
 
 

@@ -501,12 +501,16 @@ def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
     if ctx.state.phase not in {PRPhase.QUIESCED, PRPhase.HUMAN_GATED}:
         return
     _execute_step(VerbStep("poll", verbs.poll), ctx)
-    # `round >= max_rounds` is checked first so a raised cap short-circuits the gh read.
-    cap_still_trips = ctx.state.round >= ctx.config.max_rounds and verbs.has_queued(ctx)
+    # Probe the cap ONLY when the poll left us still hard-cap-gated. A poll that moved
+    # the PR out of human-gated (external merge, operator fix-push) must NOT trigger the
+    # effectful has_queued gh/git read — it is wasted there and a transient failure would
+    # turn an otherwise-clean terminal run into an error. The phase + cap-error checks
+    # short-circuit before the read; within them, `round >= max_rounds` is checked first
+    # so a raised --max-rounds also short-circuits the read.
     if (
         ctx.state.phase is PRPhase.HUMAN_GATED
         and ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
-        and not cap_still_trips
+        and not (ctx.state.round >= ctx.config.max_rounds and verbs.has_queued(ctx))
     ):
         ctx.state.phase = PRPhase.FIXES_PENDING
         ctx.state.last_error = None
