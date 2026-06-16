@@ -100,6 +100,19 @@ def test_rest_with_fields_passes_each_as_field_flag() -> None:
     assert "body=new body" in argv
 
 
+def test_add_label_posts_labels_array_field(ref: PRRef) -> None:
+    # §4.7: the human-review auto-label add. POSTs to the issue's labels collection
+    # with gh's array placeholder syntax (`labels[]=<name>`), which the server treats
+    # idempotently — a label already present is a no-op, never an error.
+    runner = RecordedRunner([_ok('[{"name": "human-review-required"}]')])
+    client = GhCli(runner)
+    assert client.add_label(ref, "human-review-required") is None
+    argv = runner.calls[0]
+    assert argv[:4] == ["gh", "api", "--method", "POST"]
+    assert "repos/octo/demo/issues/7/labels" in argv
+    assert "labels[]=human-review-required" in argv
+
+
 def test_graphql_returns_data() -> None:
     runner = RecordedRunner([_ok(_fixture("graphql_resolve_ok.json"))])
     client = GhCli(runner)

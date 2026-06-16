@@ -51,9 +51,9 @@ def test_each_verb_has_its_own_help(verb: str) -> None:
 # Each single-PR-arg skeleton verb invoked with a positional ref. resolve-escalated
 # has a richer signature and is exercised separately below. ``poll`` is no longer a
 # skeleton (8.9a wired it for real); ``status`` likewise (8.11); ``cluster`` + ``fix``
-# (8.15); ``push`` + ``rereview`` + ``resolve`` (8.16) — their behavior is covered by
-# the per-verb test_cli_*.py suites. The remaining single-arg skeletons are
-# ``reply`` / ``wait`` / ``run``.
+# (8.15); ``push`` + ``rereview`` + ``resolve`` (8.16); ``run`` + ``wait`` (8.10) — their
+# behavior is covered by the per-verb test_cli_*.py suites. The remaining single-arg
+# skeleton is ``reply``.
 _WIRED_VERBS = {
     "resolve-escalated",
     "sweep",
@@ -64,6 +64,8 @@ _WIRED_VERBS = {
     "push",
     "rereview",
     "resolve",
+    "run",
+    "wait",
 }
 _SINGLE_ARG_VERBS = [v for v in MVP_VERBS if v not in _WIRED_VERBS]
 
