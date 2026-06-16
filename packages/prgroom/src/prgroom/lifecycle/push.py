@@ -50,6 +50,27 @@ if TYPE_CHECKING:
 _REMOTE = "origin"
 
 
+def has_queued_fix_commits(gh: GhClient, git: GitClient, ref: PRRef) -> bool:
+    """True iff the local PR-branch HEAD has ≥1 commit not yet on the remote (§3.4).
+
+    The remote tip is the source of truth for the commit queue (§3.4 forbids a state
+    field): it reads the authoritative remote HEAD via ``gh.head_ref_oid`` and lists
+    local commits ahead of it with ``git.rev_list``. Shared by :func:`push_pr` (its
+    no-op guard) and the run-loop's §3.5 pre-push cap check, so the cap decision and
+    the push agree on exactly what "queued" means. A 404 (vanished PR/repo) is mapped
+    to a terminal :class:`~prgroom.errors.PrgroomError` here — never re-raised as a raw
+    :class:`~prgroom.gh.client.GhNotFoundError` — so every caller (including the
+    run-loop's ``_execute_step``, which only catches ``PrgroomError``) handles it
+    through the tagged-error path rather than a stray traceback. Other gh/git failures
+    already arrive as the adapter's registry-tagged ``PrgroomError``.
+    """
+    try:
+        remote_head = gh.head_ref_oid(ref)
+    except GhNotFoundError as exc:
+        raise vanished_pr_terminal(ref) from exc
+    return bool(git.rev_list(f"{remote_head}..HEAD"))
+
+
 def push_pr(
     state: PRGroomingState,
     *,
@@ -81,9 +102,7 @@ def push_pr(
                 detail=f"worktree on '{current}', expected PR head branch '{branch}'",
             )
 
-        remote_head = gh.head_ref_oid(ref)
-        queued = git.rev_list(f"{remote_head}..HEAD")
-        if not queued:
+        if not has_queued_fix_commits(gh, git, ref):
             return state  # nothing queued — idempotent no-op (§3.4)
 
         git.push(_REMOTE, f"HEAD:{branch}")

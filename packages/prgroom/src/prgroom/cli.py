@@ -50,6 +50,7 @@ from prgroom.lifecycle import (
 )
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
+from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
 from prgroom.prsession.pr_ref import PRRef
@@ -466,9 +467,30 @@ def resolve_escalated(
 
 
 @app.command()
-def wait(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Sleep/poll until SHA changes or quiescence threshold trips."""
-    _skeleton("wait")
+def wait(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Block until the PR's phase moves, quiescence trips, or a signal cancels (§4.2).
+
+    The locking wrapper around ``_wait``: acquires the PR lock once and holds it for
+    the whole blocking poll (no mid-sleep release). Installs SIGINT/SIGTERM handlers so
+    a Ctrl-C / scheduler stop exits 130 / 143 cleanly (never the scheduler-retry 75).
+    Preconditions (§3.2): ``fixes-pending`` → ``PRECONDITION_WAIT_NOT_APPLICABLE`` (exit
+    2, it has actionable work); ``merged`` → no-op; a never-polled PR →
+    ``PRECONDITION_NO_STATE`` (exit 2). The §4.3 cadence knobs (``poll_interval`` /
+    ``idle_threshold`` / reviewer timeouts) resolve from env / ``.prgroom.toml``.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
+    code = wait_lifecycle(
+        store=store, ref=ref, gh=_build_gh(), deps=Deps.system(), config=PrgroomConfig.load()
+    )
+    if code != 0:
+        raise typer.Exit(code=code)
 
 
 @app.command()
@@ -523,9 +545,58 @@ def status(
 
 
 @app.command()
-def run(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Aggregate: orchestrate the verbs in sequence until quiescent or capped."""
-    _skeleton("run")
+def run(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive/--autonomous",
+        help="Interactive returns at awaiting-review/idle (caller owns the wait); "
+        "autonomous (default) blocks through the wait until quiescent or capped.",
+    ),
+    max_rounds: int | None = typer.Option(
+        None, "--max-rounds", help="Hard cap on review-eliciting pushes (§3.5; default 3)."
+    ),
+    no_prework: bool = typer.Option(
+        False,
+        "--no-prework",
+        help="Accepted for parity with the per-verb flag; the run aggregate always "
+        "orchestrates its own prework (§3.2), so this has no effect here.",
+    ),
+) -> None:
+    """Aggregate: orchestrate the verbs under one lock until quiescent or capped (§3.3).
+
+    Acquires the PR lock once and threads ``_poll → _cluster → _fix → [cap] → _push →
+    [_rereview] → _reply → _resolve`` per cycle, blocking in ``_wait`` between cycles
+    (autonomous) until the phase reaches ``quiesced`` / ``human-gated`` / ``merged``,
+    then flushes terminal signals and releases. A concurrent run on the same PR exits
+    75. Exit code is the propagated tier's sysexits value (0 on a clean terminal). The
+    §4.3 cadence knobs resolve from env / ``.prgroom.toml``.
+    """
+    del no_prework  # parity-only; the aggregate always orchestrates its own prework
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
+    cluster_dispatcher, cluster_decided_by = _build_cluster_dispatcher()
+    fix_dispatcher, fix_decided_by = _build_fix_dispatcher()
+    code = run_lifecycle(
+        store=store,
+        ref=ref,
+        gh=_build_gh(),
+        git=_build_git(),
+        deps=Deps.system(),
+        config=PrgroomConfig.load(max_rounds_flag=max_rounds),
+        sink=_build_sink(),
+        mode=Mode.INTERACTIVE if interactive else Mode.AUTONOMOUS,
+        cluster_dispatcher=cluster_dispatcher,
+        cluster_decided_by=cluster_decided_by,
+        fix_dispatcher=fix_dispatcher,
+        fix_decided_by=fix_decided_by,
+    )
+    if code != 0:
+        raise typer.Exit(code=code)
 
 
 @app.command()

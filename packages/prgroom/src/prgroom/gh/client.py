@@ -75,6 +75,8 @@ class GhClient(Protocol):
 
     def graphql(self, query: str, variables: JsonObj) -> JsonObj: ...  # pragma: no cover
 
+    def add_label(self, ref: PRRef, label: str) -> None: ...  # pragma: no cover
+
 
 def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundError:
     """Map a failed ``gh`` invocation to its registry error (§3.6/§3.7)."""
@@ -173,6 +175,18 @@ class GhCli:
             )
         data: JsonObj = envelope.get("data") or {}
         return data
+
+    def add_label(self, ref: PRRef, label: str) -> None:
+        # POST to the issue's labels collection with gh's array placeholder syntax
+        # (`labels[]=<name>`). The server treats a label already present as a no-op,
+        # so this is idempotent — §4.7's auto-add re-issues it safely every gating
+        # event. Routed through `rest` so a failure arrives as the registry-tagged
+        # PrgroomError the §4.7 hook swallows (best-effort label add).
+        self.rest(
+            "POST",
+            f"repos/{ref.owner}/{ref.repo}/issues/{ref.number}/labels",
+            fields={"labels[]": label},
+        )
 
     def _run(self, argv: list[str]) -> str:
         try:
