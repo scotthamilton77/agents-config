@@ -211,6 +211,12 @@ Scenarios: bare install; pre-existing settings; user-modified skill; `--prune --
 
 **AGENTS.md update (Milestone 1):** add a short section noting that `packages/installer/tests/golden_master/` is a transitional bash-vs-python parity suite expected to retire once parity is confirmed and the cutover lands. This keeps future contributors from treating it as a permanent fixture.
 
+**Parity exceptions (recorded deliberate divergences).** The golden master proves the rewrite does not *lose* ground; it does not force the Python installer to reproduce latent bash quirks. The differ accepts these by-design divergences:
+
+- **settings.json array order** — `json_union` unions arrays in first-seen order (preserving the authored `hooks.*` execution order); bash's jq `unique` sorts them. Same elements, different order. The differ compares settings JSON arrays order-insensitively, so it still catches an element added or dropped.
+- **settings.json file mode** — the Python installer writes `0o644`; bash `mv`s a `mktemp` file left at `0o600`. The differ compares the executable bit only.
+- **Namespace dead markers** — bash deploys per-namespace `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` source-dir docs; the Python installer correctly omits them (its `DEAD_MARKERS` rule). The differ drops them on both sides.
+
 ### Fixture strategy
 
 - `tests/fixtures/states/` — versioned, on-disk, hand-curated snapshots of pre-install user-state (one subdir per scenario). Committed to git so reviewers can inspect them.

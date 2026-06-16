@@ -66,3 +66,22 @@ def test_user_modified_file_is_backed_up(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
     backups = list(result.home_b.glob(".claude/CLAUDE.md.backup-*"))
     assert backups, "expected a timestamped backup of the user-modified CLAUDE.md"
+
+
+def test_settings_merge_with_overlapping_array(tmp_path: Path) -> None:
+    """A user settings.json whose permissions.deny overlaps the template exercises
+    array union. bash's jq sorts the merged array; json_union keeps first-seen
+    order. The differ compares settings arrays order-insensitively, so element
+    parity holds despite the (accepted) order divergence."""
+
+    def seed(home: Path) -> None:
+        claude = home / ".claude"
+        claude.mkdir(parents=True, exist_ok=True)
+        (claude / "settings.json").write_text('{"permissions": {"deny": ["Custom(user-rule)"]}}')
+
+    result = run_parity(tmp_path, args=_CLAUDE_ARGS, seed=seed)
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()

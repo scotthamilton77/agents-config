@@ -32,14 +32,33 @@ def normalize_relpath(relpath: str) -> str:
     return _BACKUP_TS_RE.sub(_BACKUP_TS_PLACEHOLDER, relpath)
 
 
+def _order_insensitive(value: object) -> object:
+    """Canonicalise a parsed JSON value so array ORDER is ignored.
+
+    ``json_union`` unions settings arrays (``permissions.deny``, ``hooks.*``) in
+    first-seen order; bash's jq ``unique`` sorts them. Same elements, different
+    order is an *accepted* deliberate divergence (Python preserves authored hook
+    order that jq would scramble), so the differ compares arrays as multisets —
+    it still catches an element added or dropped, only ignores a pure reorder.
+    """
+    if isinstance(value, dict):
+        return {k: _order_insensitive(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return sorted(
+            (_order_insensitive(v) for v in value),
+            key=lambda v: json.dumps(v, sort_keys=True),
+        )
+    return value
+
+
 def json_semantically_equal(a: bytes, b: bytes) -> bool:
-    """True if ``a`` and ``b`` parse as JSON to deep-equal structures.
+    """True if ``a`` and ``b`` parse as JSON to the same value, ignoring array order.
 
     A parse failure on either side yields ``False`` — the caller treats that as a
     mismatch rather than guessing.
     """
     try:
-        return json.loads(a) == json.loads(b)
+        return _order_insensitive(json.loads(a)) == _order_insensitive(json.loads(b))
     except (json.JSONDecodeError, UnicodeDecodeError):
         return False
 
@@ -94,6 +113,15 @@ def _index_tree(root: Path) -> dict[str, Path]:
             rel = normalize_relpath(path.relative_to(root).as_posix())
             if _is_namespace_dead_marker(rel):
                 continue
+            if rel in index:
+                # Two real files collapsed to one key (e.g. two backups of the
+                # same name). Surfacing loudly beats silently dropping one and
+                # comparing only the survivor — that would be a false-green.
+                msg = (
+                    f"backup-normalisation collision under {root}: "
+                    f"{index[rel]} and {path} both map to {rel!r}"
+                )
+                raise ValueError(msg)
             index[rel] = path
     return index
 

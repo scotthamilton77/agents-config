@@ -37,6 +37,23 @@ def test_json_unparseable_input_is_not_equal() -> None:
     assert not json_semantically_equal(b"<<not json>>", b"<<not json>>")
 
 
+def test_json_array_order_is_ignored() -> None:
+    # json_union unions arrays in first-seen order; bash's jq `unique` sorts them.
+    # Same elements, different order is an accepted divergence (settings arrays).
+    assert json_semantically_equal(b'{"deny": [1, 2, 3]}', b'{"deny": [3, 1, 2]}')
+
+
+def test_json_array_with_object_elements_order_ignored() -> None:
+    a = b'{"hooks": [{"m": "A"}, {"m": "B"}]}'
+    b = b'{"hooks": [{"m": "B"}, {"m": "A"}]}'
+    assert json_semantically_equal(a, b)
+
+
+def test_json_array_element_difference_is_still_caught() -> None:
+    # Order-insensitive must still catch a real add/drop (ground lost/gained).
+    assert not json_semantically_equal(b'{"deny": [1, 2]}', b'{"deny": [1, 3]}')
+
+
 def test_normalize_collapses_in_place_backup_timestamp() -> None:
     assert normalize_relpath("skills/foo.md.backup-20260615-120000") == "skills/foo.md.backup-<TS>"
 

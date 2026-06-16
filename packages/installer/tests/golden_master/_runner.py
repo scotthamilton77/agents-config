@@ -46,10 +46,12 @@ class ParityResult:
 
 
 def _run(cmd: list[str], home: Path) -> subprocess.CompletedProcess[str]:
+    # Override HOME for isolation and pin the locale so any locale-sensitive sort
+    # (bash ALL-RULES uses ``LC_ALL=C sort``) is reproducible across machines/CI.
     return subprocess.run(  # noqa: S603 — fixed argv, no shell, hermetic HOME
         cmd,
         cwd=REPO_ROOT,
-        env={**os.environ, "HOME": str(home)},
+        env={**os.environ, "HOME": str(home), "LC_ALL": "C", "LANG": "C"},
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
