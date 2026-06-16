@@ -45,20 +45,36 @@ class ParityResult:
         return diff_trees(self.home_a, self.home_b)
 
 
+def _build_env(home: Path, extra_env: dict[str, str] | None) -> dict[str, str]:
+    """Hermetic environment for an installer subprocess.
+
+    Inherits the ambient env (for PATH etc.), then PINS every input the
+    installers read so a leaked ambient value can't make a run non-hermetic:
+    HOME isolates the install, LC_ALL/LANG fix locale-sensitive sorts (bash
+    ALL-RULES uses ``LC_ALL=C sort``), and INSTALLER_PLUGINS_SRC defaults to ""
+    — which both installers treat as unset, so a value a developer or CI runner
+    exported can never bleed into a default scenario. ``extra_env`` overrides
+    last (e.g. a fixture plugin tree for plugin scenarios).
+    """
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "LC_ALL": "C",
+        "LANG": "C",
+        "INSTALLER_PLUGINS_SRC": "",
+    }
+    if extra_env:
+        env.update(extra_env)
+    return env
+
+
 def _run(
     cmd: list[str], home: Path, *, extra_env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    # Override HOME for isolation and pin the locale so any locale-sensitive sort
-    # (bash ALL-RULES uses ``LC_ALL=C sort``) is reproducible across machines/CI.
-    # ``extra_env`` injects parity seams (e.g. INSTALLER_PLUGINS_SRC) into both
-    # installers identically.
-    env = {**os.environ, "HOME": str(home), "LC_ALL": "C", "LANG": "C"}
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(  # noqa: S603 — fixed argv, no shell, hermetic HOME
+    return subprocess.run(  # noqa: S603 — fixed argv, no shell, hermetic env
         cmd,
         cwd=REPO_ROOT,
-        env=env,
+        env=_build_env(home, extra_env),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
