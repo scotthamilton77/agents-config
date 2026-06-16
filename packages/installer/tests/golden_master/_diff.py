@@ -127,7 +127,10 @@ def _index_tree(root: Path) -> dict[str, Path]:
 
 
 def _is_executable(path: Path) -> bool:
-    return bool(path.stat().st_mode & 0o100)
+    # Any execute bit (owner/group/other), matching POSIX ``test -x`` intent —
+    # not just owner-execute. Git stores only 0o644/0o755, so the two agree on
+    # real inputs; 0o111 is the correct idiom and guards non-git-tracked modes.
+    return bool(path.stat().st_mode & 0o111)
 
 
 def _files_equal(relpath: str, a: Path, b: Path) -> bool:

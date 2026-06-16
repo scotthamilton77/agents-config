@@ -155,8 +155,9 @@ def stage_namespace(
                 content=entry.read_bytes() if is_file else None,
                 # Preserve the source mode bit so hook scripts land +x (sync
                 # writes 0o755 vs 0o644 from this). Mirrors bash ``cp``, which
-                # carries the executable bit through staging.
-                executable=is_file and bool(entry.stat().st_mode & 0o100),
+                # carries the executable bit through staging. Any execute bit
+                # (owner/group/other) counts, matching POSIX ``test -x`` intent.
+                executable=is_file and bool(entry.stat().st_mode & 0o111),
             )
         )
     return items
