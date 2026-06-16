@@ -57,10 +57,17 @@ def has_queued_fix_commits(gh: GhClient, git: GitClient, ref: PRRef) -> bool:
     field): it reads the authoritative remote HEAD via ``gh.head_ref_oid`` and lists
     local commits ahead of it with ``git.rev_list``. Shared by :func:`push_pr` (its
     no-op guard) and the run-loop's §3.5 pre-push cap check, so the cap decision and
-    the push agree on exactly what "queued" means. May raise the gh adapter's tagged
-    error (or :class:`~prgroom.gh.client.GhNotFoundError`) — callers handle it.
+    the push agree on exactly what "queued" means. A 404 (vanished PR/repo) is mapped
+    to a terminal :class:`~prgroom.errors.PrgroomError` here — never re-raised as a raw
+    :class:`~prgroom.gh.client.GhNotFoundError` — so every caller (including the
+    run-loop's ``_execute_step``, which only catches ``PrgroomError``) handles it
+    through the tagged-error path rather than a stray traceback. Other gh/git failures
+    already arrive as the adapter's registry-tagged ``PrgroomError``.
     """
-    remote_head = gh.head_ref_oid(ref)
+    try:
+        remote_head = gh.head_ref_oid(ref)
+    except GhNotFoundError as exc:
+        raise vanished_pr_terminal(ref) from exc
     return bool(git.rev_list(f"{remote_head}..HEAD"))
 
 

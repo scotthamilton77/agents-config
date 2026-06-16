@@ -469,6 +469,28 @@ def _flush_terminal_signals(ctx: RunContext) -> None:
     )
 
 
+def _guarded_has_queued(ctx: RunContext, verbs: Verbs) -> bool:
+    """Read ``has_queued`` (an effectful gh/git read) under the §3.3 error discipline.
+
+    The §3.5 cap re-arm (entry probe) and the end-of-cycle resolver read the queue
+    OUTSIDE the VerbStep pipeline, so they cannot rely on ``_execute_step``. A tagged
+    failure here gets the same treatment a verb error would: ``handle_verb_error``
+    applies its per-tier mutation, the state is persisted, the two terminal signals
+    flush, and the error re-raises to ``run``/``wait``'s reporting wrapper — so a
+    vanished PR (404 → ``RUNTIME_GH_TERMINAL``) or a gh blip never escapes the
+    lifecycle's tagged-error handling. (A gh read only ever yields ``PROPAGATE`` tiers;
+    ``CONTINUE`` is reserved for ``CONTRACT_AUDIT_FAILED``, which this read cannot
+    raise.)
+    """
+    try:
+        return verbs.has_queued(ctx)
+    except PrgroomError as err:
+        handle_verb_error(err, ctx.state)
+        ctx.store.write(ctx.ref, ctx.state)
+        _flush_terminal_signals(ctx)
+        raise
+
+
 def _read_or_bootstrap(ctx: RunContext) -> PRGroomingState:
     """Read the PR's state, bootstrapping a zero-value state on first contact (§3.3).
 
@@ -515,7 +537,7 @@ def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
     if (
         ctx.state.phase is PRPhase.HUMAN_GATED
         and ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
-        and not (ctx.state.round >= ctx.config.max_rounds and verbs.has_queued(ctx))
+        and not (ctx.state.round >= ctx.config.max_rounds and _guarded_has_queued(ctx, verbs))
     ):
         ctx.state.phase = PRPhase.FIXES_PENDING
         ctx.state.last_error = None
@@ -542,7 +564,7 @@ def _resolve_end_of_cycle(ctx: RunContext, verbs: Verbs) -> None:
         ctx.state,
         now=now,
         max_rounds=ctx.config.max_rounds,
-        has_queued_commits=verbs.has_queued(ctx),
+        has_queued_commits=_guarded_has_queued(ctx, verbs),
         pushed_this_cycle=push_uploaded_commits_this_cycle(
             ctx.state, cycle_start_pushed_sha=ctx.cycle_start_pushed_sha
         ),

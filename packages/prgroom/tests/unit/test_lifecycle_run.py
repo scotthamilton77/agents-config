@@ -364,6 +364,27 @@ def test_resolve_end_of_cycle_caps_when_queue_survives_at_cap() -> None:
     assert ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
 
 
+def test_guarded_has_queued_routes_tagged_error_through_discipline() -> None:
+    # PR #165: the cap re-arm + end-of-cycle reads call has_queued OUTSIDE the VerbStep
+    # pipeline. A tagged failure must still go through handle_verb_error + persist +
+    # flush + re-raise, never escape the lifecycle's error handling.
+    from prgroom.lifecycle.run import _guarded_has_queued
+
+    def boom(_ctx: RunContext) -> bool:
+        raise PrgroomError(tier=Tier.RUNTIME_TERMINAL_USER, code=ErrorCode.RUNTIME_GH_TERMINAL)
+
+    sink = RecordingSink()
+    store = InMemoryStore()
+    store.write(_REF, _quiescent_state(phase=PRPhase.FIXES_PENDING))
+    ctx = _ctx(_quiescent_state(phase=PRPhase.FIXES_PENDING), store=store, sink=sink)
+    with pytest.raises(PrgroomError) as excinfo:
+        _guarded_has_queued(ctx, _verbs([], has_queued_fn=boom))
+    assert excinfo.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+    assert ctx.state.phase is PRPhase.HUMAN_GATED  # handle_verb_error gated it
+    assert len(sink.emitted) == 1  # flushed before the re-raise
+    assert store.read(_REF).phase is PRPhase.HUMAN_GATED  # persisted
+
+
 # ── full _run scenarios ─────────────────────────────────────────────────────
 
 

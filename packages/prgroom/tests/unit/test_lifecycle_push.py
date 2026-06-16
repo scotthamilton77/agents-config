@@ -16,7 +16,7 @@ import pytest
 from prgroom.config import PrgroomConfig
 from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, Tier
 from prgroom.gh import GhNotFoundError
-from prgroom.lifecycle.push import push_pr
+from prgroom.lifecycle.push import has_queued_fix_commits, push_pr
 from prgroom.prsession.enums import PRPhase, ReviewerKind, ReviewerStatus
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import (
@@ -282,3 +282,13 @@ def test_push_past_the_cap_does_not_re_warn() -> None:
         warn=msgs.append,
     )
     assert msgs == []
+
+
+def test_has_queued_fix_commits_maps_404_to_terminal() -> None:
+    # PR #165 review: a 404 on the remote-HEAD read (vanished PR/repo) maps to a
+    # terminal PrgroomError here, never a raw GhNotFoundError — so the run-loop's
+    # PrgroomError-only handlers (_execute_step / run_lifecycle) catch it.
+    with pytest.raises(PrgroomError) as excinfo:
+        has_queued_fix_commits(VanishedGh(), FakeGit(), _REF)
+    assert excinfo.value.tier is Tier.RUNTIME_TERMINAL_USER
+    assert excinfo.value.code is ErrorCode.RUNTIME_GH_TERMINAL
