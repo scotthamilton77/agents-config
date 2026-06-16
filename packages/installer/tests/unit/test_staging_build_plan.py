@@ -38,6 +38,11 @@ def _make_repo(tmp_path: Path) -> Path:
     (claude / "AGENTS.md.template").write_bytes(b"# claude root tmpl")
     (claude / "AGENTS.md").write_bytes(b"in-repo dev doc")  # must NOT stage
     (claude / "settings.json.template").write_bytes(b"{}")
+    # hooks namespace — scripts staged like other tool namespaces, +x preserved
+    (claude / "hooks").mkdir(parents=True)
+    hook = claude / "hooks" / "ruff-postedit.py"
+    hook.write_bytes(b"#!/usr/bin/env python3\n")
+    hook.chmod(0o755)
     return repo
 
 
@@ -62,6 +67,15 @@ def test_build_plan_filters_namespace_marker_file(tmp_path: Path) -> None:
     repo = _make_repo(tmp_path)
     plan = build_plan(ClaudeAdapter(), repo_root=repo)
     assert Path("skills/AGENTS.md") not in plan.items
+
+
+def test_build_plan_stages_hooks_namespace_with_exec_bit(tmp_path: Path) -> None:
+    """The Claude installer stages src/user/.claude/hooks/ -> hooks/ and preserves
+    the +x bit on hook scripts (8.7 parity with install.sh's hooks/ support)."""
+    repo = _make_repo(tmp_path)
+    plan = build_plan(ClaudeAdapter(), repo_root=repo)
+    assert Path("hooks/ruff-postedit.py") in plan.items
+    assert plan.items[Path("hooks/ruff-postedit.py")].executable is True
 
 
 def test_build_plan_assigns_namespaces_and_kinds(tmp_path: Path) -> None:
