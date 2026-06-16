@@ -137,12 +137,12 @@ def test_bare_install_opencode(tmp_path: Path) -> None:
 def test_autodetect_fresh_home(tmp_path: Path) -> None:
     """No --tools: auto-detect against an empty HOME. Bash treats Claude as
     always-installed; the Python port requires ~/.claude/settings.json to detect
-    it. Pins the fresh-machine bootstrap path to parity. PATH is pinned to a
-    minimal set so ``command -v``/``which`` probes are deterministic — no host
-    tool (opencode, gemini, …) bleeds into the auto-detected set."""
-    result = run_parity(
-        tmp_path, args=["--plugins=", "--yes"], env_overrides={"PATH": "/usr/bin:/bin"}
-    )
+    it, so it detects nothing. That asymmetry guarantees a divergence on any
+    host regardless of PATH — no PATH manipulation is needed to keep this xfail
+    deterministic. (When this is wired green, tool-detection must be isolated —
+    opencode/gemini/codex absent — while bash's required binaries, notably jq,
+    stay reachable; a bare PATH=/usr/bin:/bin would starve bash's jq guard.)"""
+    result = run_parity(tmp_path, args=["--plugins=", "--yes"])
 
     assert result.bash_returncode == 0, result.bash_stderr
     assert result.python_returncode == 0, result.python_stderr

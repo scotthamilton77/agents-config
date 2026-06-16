@@ -74,7 +74,6 @@ def run_parity(
     seed: SeedFn | None = None,
     plugins_src: Path | None = None,
     repeat: int = 1,
-    env_overrides: dict[str, str] | None = None,
 ) -> ParityResult:
     """Run both installers with ``args`` into fresh homes under ``tmp_path``.
 
@@ -88,11 +87,6 @@ def run_parity(
     times into its home; the returned result reflects the *last* run.
     ``repeat=2`` exercises re-install idempotency — the second run lands on a
     tree the first already created.
-
-    ``env_overrides`` (optional) is merged into both installers' environments
-    identically — e.g. a pinned minimal ``PATH`` so auto-detection probes
-    (``command -v``/``which``) are deterministic regardless of what the host has
-    installed.
     """
     home_a = tmp_path / "home_a"
     home_b = tmp_path / "home_b"
@@ -102,11 +96,7 @@ def run_parity(
         seed(home_a)
         seed(home_b)
 
-    extra_env: dict[str, str] = {}
-    if plugins_src is not None:
-        extra_env["INSTALLER_PLUGINS_SRC"] = str(plugins_src)
-    if env_overrides:
-        extra_env.update(env_overrides)
+    extra_env = {"INSTALLER_PLUGINS_SRC": str(plugins_src)} if plugins_src is not None else None
     # Discard the warm-up runs; capture only the final run's exit/stderr. For
     # repeat=1 the loop runs zero times, so behaviour is unchanged.
     for _ in range(repeat - 1):
