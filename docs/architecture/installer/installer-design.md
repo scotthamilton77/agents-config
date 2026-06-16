@@ -207,9 +207,9 @@ The parity safety net for the side-by-side window only. Harness at `tests/golden
 
 Scenarios: bare install; pre-existing settings; user-modified skill; `--prune --yes` with orphan; `--prune-only`; plugin overlay; single-tool single-no-plugin; Gemini frontmatter end-to-end.
 
-**Retirement plan:** once parity holds for 14 consecutive days of CI AND the user has run install.py against their real home with zero unexpected diffs, golden-master moves to a `tests/golden_master/_retired/` directory (or is deleted outright), install.sh collapses to its uv-wrapper form, and the AGENTS.md note about the transitional nature is updated to reflect retirement.
+**Retirement plan:** once parity is confirmed — the full golden-master suite green, install.py run against the maintainer's real home with zero unexpected diffs, and no blocker-severity parity issues — and the maintainer signs off, golden-master moves to a `tests/golden_master/_retired/` directory (or is deleted outright), install.sh collapses to its uv-wrapper form, and the AGENTS.md note about the transitional nature is updated to reflect retirement.
 
-**AGENTS.md update (Milestone 1):** add a short section noting that `packages/installer/tests/golden_master/` is a transitional bash-vs-python parity suite expected to retire at parity-gate-plus-14-days. This keeps future contributors from treating it as a permanent fixture.
+**AGENTS.md update (Milestone 1):** add a short section noting that `packages/installer/tests/golden_master/` is a transitional bash-vs-python parity suite expected to retire once parity is confirmed and the cutover lands. This keeps future contributors from treating it as a permanent fixture.
 
 ### Fixture strategy
 
@@ -307,7 +307,7 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 
 - **H.1** Golden-master harness + first three scenarios (bare install, settings merge, user-modified file).
 - **H.2** Remaining golden-master scenarios (prune, prune-only, plugin overlay, single-tool single-no-plugin, Gemini frontmatter).
-- **H.3** Parity confirmation — 14 days clean CI; real-home smoke test against the actual repo home; sign-off recorded in the bead notes.
+- **H.3** Parity confirmation — full golden-master suite green; real-home smoke test against the actual repo home with zero unexpected diffs; no blocker-severity parity issues; maintainer sign-off recorded in the bead notes.
 - **H.4** `install.sh` collapse to `exec uv run --project packages/installer python -m installer "$@"`; `scripts/prune-list` retired (contents already live in `packages/installer/installer.toml` from G.2).
 - **H.5** Docs cleanup — AGENTS.md golden-master retirement note updated; README install instructions updated; `tests/golden_master/` moved to `_retired/` or deleted.
 
