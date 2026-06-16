@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from installer.config import Config, resolve_plugins, resolve_tools
+from installer.config import Config, resolve_plugins, resolve_plugins_root, resolve_tools
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
@@ -140,7 +141,7 @@ def main(
     try:
         plugins = resolve_plugins(
             home=resolved_home,
-            plugins_root=resolved_repo_root / "src" / "plugins",
+            plugins_root=resolve_plugins_root(resolved_repo_root, os.environ),
             override_csv=args.plugins,
         )
     except ValueError as exc:

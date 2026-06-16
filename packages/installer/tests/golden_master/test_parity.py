@@ -85,3 +85,83 @@ def test_settings_merge_with_overlapping_array(tmp_path: Path) -> None:
     assert result.python_returncode == 0, result.python_stderr
     diff = result.diff()
     assert diff.is_parity(), diff.render()
+
+
+def test_bare_install_codex(tmp_path: Path) -> None:
+    """Single-tool parity for Codex — a dot-dir tool with its own templates."""
+    result = run_parity(tmp_path, args=["--tools=codex", "--plugins=", "--yes"])
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Gemini agent transform must match bash byte-for-byte (inline tools:[...], "
+    "surgical edit); the Python port's pyyaml round-trip reformats it. Not yet ported.",
+)
+def test_bare_install_gemini(tmp_path: Path) -> None:
+    """Single-tool parity for Gemini — another dot-dir tool, flat instruction file."""
+    result = run_parity(tmp_path, args=["--tools=gemini", "--plugins=", "--yes"])
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="OpenCode must not install a standalone rules/ namespace (bash inlines rules "
+    "into AGENTS.md); the Python adapter still stages rules/ files. Not yet ported.",
+)
+def test_bare_install_opencode(tmp_path: Path) -> None:
+    """Single-tool parity for OpenCode — the XDG (~/.config/opencode) tool that
+    skips shared agents/ and flattens rules into AGENTS.md. Confirms the Python
+    adapter wrongly installs a standalone rules/ namespace."""
+    result = run_parity(tmp_path, args=["--tools=opencode", "--plugins=", "--yes"])
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Auto-detect must install Claude unconditionally to match bash; the Python "
+    "port requires ~/.claude/settings.json and so detects nothing here. Not yet ported.",
+)
+def test_autodetect_fresh_home(tmp_path: Path) -> None:
+    """No --tools: auto-detect against an empty HOME. Bash treats Claude as
+    always-installed; the Python port requires ~/.claude/settings.json to detect
+    it. Pins the fresh-machine bootstrap path to parity. PATH is pinned to a
+    minimal set so ``command -v``/``which`` probes are deterministic — no host
+    tool (opencode, gemini, …) bleeds into the auto-detected set."""
+    result = run_parity(
+        tmp_path, args=["--plugins=", "--yes"], env_overrides={"PATH": "/usr/bin:/bin"}
+    )
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Re-install must be idempotent: the Python port re-backs-up directories on "
+    "every run, so a second run leaves spurious backups bash does not. Not yet ported.",
+)
+def test_reinstall_is_idempotent(tmp_path: Path) -> None:
+    """Running each installer twice into the same HOME must converge to the same
+    tree — no spurious second-run backups. Exercises re-install idempotency
+    (Python re-backs-up directories every run)."""
+    result = run_parity(tmp_path, args=_CLAUDE_ARGS, repeat=2)
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()

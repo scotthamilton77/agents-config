@@ -198,7 +198,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_USER="$PROJECT_ROOT/src/user"
 SRC_SHARED="$SRC_USER/.agents"
-SRC_PLUGINS="$PROJECT_ROOT/src/plugins"
+# Plugin source root. Default-inert override (INSTALLER_PLUGINS_SRC) lets the
+# golden-master parity harness point both installers at a fixture plugin tree;
+# unset => the repo's src/plugins, identical to before. The Python installer
+# carries the symmetric override (installer.config.resolve_plugins_root).
+SRC_PLUGINS="${INSTALLER_PLUGINS_SRC:-$PROJECT_ROOT/src/plugins}"
 
 if [[ ! -d "$SRC_SHARED" ]]; then
     err "Shared source directory not found: $SRC_SHARED"

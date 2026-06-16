@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from installer.config import resolve_plugins
+from installer.config import resolve_plugins, resolve_plugins_root
 from installer.plugins.registry import UnknownPluginError
 
 
@@ -113,3 +113,26 @@ def test_stray_empty_element_raises_value_error(tmp_path: Path) -> None:
     home = tmp_path / "home"
     with pytest.raises(ValueError):
         resolve_plugins(home=home, plugins_root=root, override_csv="alpha,,beta")
+
+
+def test_plugins_root_defaults_to_repo_src_plugins() -> None:
+    """With INSTALLER_PLUGINS_SRC unset, the plugins root is <repo>/src/plugins —
+    the seam is inert, matching bash's $PROJECT_ROOT/src/plugins default."""
+    repo = Path("/repo")
+    assert resolve_plugins_root(repo, {}) == repo / "src" / "plugins"
+
+
+def test_plugins_root_env_override_wins() -> None:
+    """INSTALLER_PLUGINS_SRC overrides the default so the golden-master harness
+    can point both installers at a fixture plugin tree. The bash installer has
+    the symmetric ${INSTALLER_PLUGINS_SRC:-...} override."""
+    repo = Path("/repo")
+    env = {"INSTALLER_PLUGINS_SRC": "/srv/fixtures/plugins"}
+    assert resolve_plugins_root(repo, env) == Path("/srv/fixtures/plugins")
+
+
+def test_plugins_root_empty_env_value_is_inert() -> None:
+    """An empty INSTALLER_PLUGINS_SRC is treated as unset, so an exported-but-
+    empty var can never collapse the root to Path('') (the cwd)."""
+    repo = Path("/repo")
+    assert resolve_plugins_root(repo, {"INSTALLER_PLUGINS_SRC": ""}) == repo / "src" / "plugins"
