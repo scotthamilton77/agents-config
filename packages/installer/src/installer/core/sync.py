@@ -15,12 +15,14 @@ live in `core/backup.py`, shared with the prune flow (G.4).
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from typing import TYPE_CHECKING
 
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
-from installer.core.model import Counters
+from installer.core.merge.strategies.json_union import merge_settings_bytes
+from installer.core.model import Counters, FileKind
 from installer.core.paths import is_safe_relpath
 
 if TYPE_CHECKING:
@@ -30,6 +32,33 @@ if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
     from installer.tools.base import ToolAdapter
+
+
+def _effective_content(content: bytes, old: bytes | None, *, kind: FileKind) -> bytes:
+    """The bytes to actually write for one item.
+
+    A ``settings.json`` over an existing user file is union-merged into that file
+    (bash ``sync_settings_file``) so user values survive; any other kind, or a
+    fresh install, writes the staged content unchanged. An existing settings file
+    that is not valid JSON falls back to overwrite — bash warns and replaces.
+    """
+    if kind is not FileKind.SETTINGS_JSON or old is None:
+        return content
+    try:
+        return merge_settings_bytes(existing=old, incoming=content)
+    except ValueError:
+        return content
+
+
+def _is_unchanged(old: bytes, new: bytes, *, kind: FileKind) -> bool:
+    """Settings compare semantically — a reformat is not a change; every other
+    file compares byte-for-byte via sha-256."""
+    if kind is FileKind.SETTINGS_JSON:
+        try:
+            return bool(json.loads(old) == json.loads(new))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return False
+    return _sha256(old) == _sha256(new)
 
 
 def sync(
@@ -165,6 +194,7 @@ def sync_plan(
                 dest,
                 content,
                 executable=item.executable,
+                kind=item.kind,
                 io=io,
                 dry_run=dry_run,
                 auto_yes=auto_yes,
@@ -179,17 +209,23 @@ def _install_file(
     content: bytes,
     *,
     executable: bool,
+    kind: FileKind,
     io: IOPort,
     dry_run: bool,
     auto_yes: bool,
     timestamp: str | None,
     counters: Counters,
 ) -> None:
-    """Install one FILE item: hash-skip an unchanged dest, back up a differing
-    dest before the overwrite, and write the bytes with a deterministic mode
-    bit (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``.
+    """Install one FILE item: skip an unchanged dest, back up a differing dest
+    before the overwrite, and write the bytes with a deterministic mode bit
+    (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``.
 
-    A *changed* dest (present, bytes differ) passes through the consent gate
+    A ``SETTINGS_JSON`` item is union-merged into an existing user file rather
+    than overwritten (``_effective_content``), so user values survive an install;
+    the change check is then semantic (``_is_unchanged``), so a pure reformat is a
+    skip, not a spurious backup-and-rewrite.
+
+    A *changed* dest (present, content differs) passes through the consent gate
     (`_consent_to_overwrite`) before any backup or write: an interactive decline
     keeps the existing bytes and counts the item as skipped; ``auto_yes`` accepts
     silently; ``dry_run`` previews without prompting. The gate fires only on an
@@ -202,13 +238,14 @@ def _install_file(
         raise ValueError(f"dest exists but is not a file: {dest}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.is_file()
     old = dest.read_bytes() if dest_exists else None
-    if old is not None and _sha256(old) == _sha256(content):
+    effective = _effective_content(content, old, kind=kind)
+    if old is not None and _is_unchanged(old, effective, kind=kind):
         counters.skipped += 1
         return
     if (
         old is not None
         and not dry_run
-        and not _consent_to_overwrite(dest, diff=(old, content), io=io, auto_yes=auto_yes)
+        and not _consent_to_overwrite(dest, diff=(old, effective), io=io, auto_yes=auto_yes)
     ):
         io.warn(f"skipped {dest}")
         counters.skipped += 1
@@ -217,7 +254,7 @@ def _install_file(
     if not dry_run:
         if dest_exists:
             _back_up(dest, timestamp, counters)
-        dest.write_bytes(content)
+        dest.write_bytes(effective)
         dest.chmod(0o755 if executable else 0o644)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
 

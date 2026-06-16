@@ -29,17 +29,26 @@ is not yet recognised and passes through as a non-directive line.
 from __future__ import annotations
 
 import re
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, assert_never
 
 from installer.core.model import AllRulesInclude, FileInclude, IncludeDirective
 from installer.core.paths import is_safe_relpath
+from installer.core.staging import strip_template_suffix
 
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
+    from installer.core.model import StagingPlan
 
 _FILE_INCLUDE_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE: (.*) -->$")
 _ALL_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-ALL-RULES -->$")
+
+# Tool-root instruction files the bash installer flattens (install.sh:854):
+# ``AGENTS.md.template`` and ``GEMINI.md.template`` — here keyed by their
+# ``.template``-stripped dest, which is how the plan stores them.
+_FLATTENABLE_DESTS: tuple[Path, ...] = (Path("AGENTS.md"), Path("GEMINI.md"))
 
 
 def parse_directive(line: str) -> IncludeDirective | None:
@@ -98,6 +107,65 @@ def flatten_template(
             case _:  # pragma: no cover - exhaustiveness guard for future variants
                 assert_never(directive)
     return "".join(out)
+
+
+def flatten_plan_templates(plan: StagingPlan, *, repo_root: Path, io: IOPort) -> None:
+    """Phase 6.5/6.75: flatten the plan's instruction templates, then drop the
+    include-only templates they inline.
+
+    Mirrors the bash installer (``scripts/install.sh:849-890``): for each
+    flattenable instruction file present in the plan (``AGENTS.md`` /
+    ``GEMINI.md``), replace its content with the DYNAMIC-INCLUDE-flattened text —
+    file includes resolved from ``repo_root``, ALL-RULES from the plan's own
+    staged rules — then remove the include-only templates from the plan so they
+    are not also deployed standalone. Mutates ``plan`` in place.
+    """
+    include_only: set[Path] = set()
+    for dest in _FLATTENABLE_DESTS:
+        item = plan.items.get(dest)
+        if item is None or item.content is None:
+            continue
+        text = item.content.decode("utf-8")
+        include_only |= _file_include_dests(text)
+        flattened = _flatten_with_plan_rules(text, plan=plan, repo_root=repo_root, io=io)
+        plan.items[dest] = replace(item, content=flattened.encode("utf-8"))
+    for dest in include_only:
+        plan.items.pop(dest, None)
+
+
+def _file_include_dests(text: str) -> set[Path]:
+    """The dests of the include-only templates referenced by file markers.
+
+    Each marker's basename, ``.template``-stripped, is how the plan stores the
+    standalone copy — those are what Phase 6.75 removes.
+    """
+    dests: set[Path] = set()
+    for line in text.splitlines():
+        directive = parse_directive(line)
+        if isinstance(directive, FileInclude):
+            dests.add(strip_template_suffix(Path(directive.path.name)))
+    return dests
+
+
+def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, io: IOPort) -> str:
+    """Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.
+
+    The bash installer reads ALL-RULES from the on-disk staging tree; the Python
+    installer stages in memory, so when (and only when) the template needs rules
+    they are materialised to a temp dir for ``flatten_template`` to read —
+    matching ``find $staging/rules -name '*.md' | sort``.
+    """
+    needs_rules = any(
+        isinstance(parse_directive(line), AllRulesInclude) for line in text.splitlines()
+    )
+    if not needs_rules:
+        return flatten_template(text, base_dir=repo_root, io=io, rules_dir=None)
+    with tempfile.TemporaryDirectory() as tmp:
+        rules_dir = Path(tmp)
+        for rel, staged in plan.items.items():
+            if staged.namespace == "rules" and staged.content is not None:
+                (rules_dir / rel.name).write_bytes(staged.content)
+        return flatten_template(text, base_dir=repo_root, io=io, rules_dir=rules_dir)
 
 
 def _resolve_all_rules(*, rules_dir: Path | None, io: IOPort) -> str:

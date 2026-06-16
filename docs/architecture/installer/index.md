@@ -25,7 +25,7 @@
 | DYNAMIC-INCLUDE | The directive form (`<!-- DYNAMIC-INCLUDE: path -->` and the ALL-RULES variant) that flattens shared template fragments into assembled per-tool instruction files at staging time. |
 | Namespace | The managed sub-directory a file belongs to (`commands` / `skills` / `agents` / `rules` / `formulas`) — second component of the merge-dispatch key; drives append-vs-fatal collision behaviour. |
 | Parity gate | The point at which the golden-master suite proves the Python installer byte-matches `install.sh`, after which `install.sh` collapses to a `uv run` wrapper and deliberate divergence is allowed. |
-| Golden-master | The **transitional** bash-vs-python parity suite; retires ~14 days after the parity gate. |
+| Golden-master | The **transitional** bash-vs-python parity suite; retires once parity is confirmed and the cutover lands. |
 
 Each artifact file in this folder carries its **own short glossary** at the top, listing the terms used in that specific file.
 

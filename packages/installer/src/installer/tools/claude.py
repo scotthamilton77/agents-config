@@ -26,7 +26,7 @@ class ClaudeAdapter:
         return (home / ".claude" / "settings.json").is_file()
 
     def scoped_namespaces(self) -> tuple[str, ...]:
-        return ("commands", "skills", "agents", "rules")
+        return ("commands", "skills", "agents", "rules", "hooks")
 
     def should_install_namespace(
         self,

@@ -159,6 +159,25 @@ def test_stage_namespace_is_deterministically_ordered(tmp_path: Path) -> None:
     assert [i.dest_relpath.name for i in items] == ["a.md", "b.md", "c.md"]
 
 
+def test_stage_namespace_preserves_executable_bit(tmp_path: Path) -> None:
+    """An executable source file (a hook script) stages with executable=True; a
+    non-executable sibling stages with executable=False. The sync engine writes
+    0o755 vs 0o644 from this bit, so hook scripts must land +x (8.7 parity)."""
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    script = hooks / "ruff-postedit.py"
+    script.write_bytes(b"#!/usr/bin/env python3\n")
+    script.chmod(0o755)
+    plain = hooks / "notes.md"
+    plain.write_bytes(b"x")
+    plain.chmod(0o644)
+
+    items = {i.dest_relpath.name: i for i in stage_namespace(tmp_path, "hooks", provenance=_prov())}
+
+    assert items["ruff-postedit.py"].executable is True
+    assert items["notes.md"].executable is False
+
+
 def test_stage_templates_strips_suffix_and_is_other(tmp_path: Path) -> None:
     """A tool-root AGENTS.md.template stages to AGENTS.md as FileKind.OTHER
     at the plan root (no namespace), with eager bytes."""
