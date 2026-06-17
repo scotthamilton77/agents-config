@@ -18,7 +18,6 @@ class OpenCodeAdapter:
     `command -v opencode || [[ -d ~/.config/opencode ]]`."""
 
     name: str = "opencode"
-    detection_signal: str = ".config/opencode"
 
     def source_dir(self, repo_root: Path) -> Path:
         return repo_root / "src" / "user" / ".opencode"

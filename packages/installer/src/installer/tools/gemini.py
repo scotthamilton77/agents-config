@@ -69,7 +69,6 @@ class GeminiAdapter:
     mirrors the bash installer's [[ -d "$HOME/.gemini" ]] detection."""
 
     name: str = "gemini"
-    detection_signal: str = ".gemini"
 
     def source_dir(self, repo_root: Path) -> Path:
         return repo_root / "src" / "user" / ".gemini"

@@ -98,6 +98,7 @@ def run_parity(
     seed: SeedFn | None = None,
     plugins_src: Path | None = None,
     repeat: int = 1,
+    env: dict[str, str] | None = None,
 ) -> ParityResult:
     """Run both installers with ``args`` into fresh homes under ``tmp_path``.
 
@@ -111,6 +112,11 @@ def run_parity(
     times into its home; the returned result reflects the *last* run.
     ``repeat=2`` exercises re-install idempotency — the second run lands on a
     tree the first already created.
+
+    ``env`` (optional) overrides extra environment for both installers — e.g. a
+    pinned ``PATH`` that isolates tool auto-detection deterministically. It is
+    applied after ``plugins_src`` (so it can override that too) on top of the
+    ``HOME``/locale pins ``_build_env`` always applies.
     """
     home_a = tmp_path / "home_a"
     home_b = tmp_path / "home_b"
@@ -120,7 +126,11 @@ def run_parity(
         seed(home_a)
         seed(home_b)
 
-    extra_env = {"INSTALLER_PLUGINS_SRC": str(plugins_src)} if plugins_src is not None else None
+    extra_env: dict[str, str] = {}
+    if plugins_src is not None:
+        extra_env["INSTALLER_PLUGINS_SRC"] = str(plugins_src)
+    if env:
+        extra_env.update(env)
     # Run the warm-up rounds for their filesystem effect; capture only the final
     # run's exit/stderr below. A warm-up failure still raises (it must not be
     # masked by a later run). For repeat=1 the loop runs zero times.

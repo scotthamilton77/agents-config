@@ -162,31 +162,21 @@ def test_main_tools_foo_returns_2(tmp_path: Path) -> None:
     assert main(["--tools=foo"], home=tmp_path) == 2
 
 
-def test_main_no_args_against_empty_home_returns_2_with_detection_diagnostic(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_main_autodetect_empty_home_dry_run_selects_claude_returns_zero(
+    tmp_path: Path,
 ) -> None:
     """
-    Given an empty home directory (no agent tools detectable)
-    When main([], home=that_home) is invoked
-    Then it returns 2
-    And stderr names the failure ("no agent tools detected")
-    And stderr lists each known tool by name
-    And stderr lists each tool's detection signal
-    And stderr names the home directory that was probed
-    And stderr suggests the --tools= escape hatch.
+    Given an empty home directory (no install signals) and a hermetic repo,
+    under --dry-run with no --tools
+    When main(["--dry-run"], home=that_home) is invoked
+    Then it returns 0 — auto-detect falls back to claude and proceeds.
 
-    Pins: empty auto-detect must NOT silently succeed — see Codex
-    adversarial review of PR #86 (2026-05-23). Forces operators to
-    either install a recognized tool or pass --tools= explicitly.
+    Pins: a bare home no longer takes a no-tools exit-2 guard; claude is the
+    auto-detect floor, matching install.sh's unconditional `TOOLS=(claude)`.
     """
-    rc = main([], home=tmp_path)
-    assert rc == 2
-    captured = capsys.readouterr()
-    assert "no agent tools detected" in captured.err
-    assert "claude" in captured.err
-    assert "settings.json" in captured.err
-    assert str(tmp_path) in captured.err
-    assert "--tools=" in captured.err
+    repo = _hermetic_repo(tmp_path)
+    rc = main(["--dry-run"], home=tmp_path, io=ScriptedIO(interactive=False), repo_root=repo)
+    assert rc == 0
 
 
 # ── G.5 / G.7: prune flags + --yes wiring ──

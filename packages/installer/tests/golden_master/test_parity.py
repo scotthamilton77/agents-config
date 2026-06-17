@@ -8,6 +8,8 @@ run them with ``make golden-master-installer``.
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,23 @@ pytestmark = pytest.mark.golden_master
 
 
 _CLAUDE_ARGS = ["--tools=claude", "--plugins=", "--yes"]
+
+
+def _tool_isolated_path(tmp_path: Path) -> str:
+    """A PATH that hides the opencode/gemini/codex CLIs so auto-detect is
+    deterministic — none are found on PATH, and a fresh HOME has none of their
+    config dirs — while keeping the binaries the bash installer needs reachable.
+    A symlink farm holds jq (bash's hard precondition, often Homebrew-only on
+    macOS) plus bash/git; /usr/bin:/bin supplies the coreutils. The third-party
+    tool CLIs are never symlinked and don't live in /usr/bin:/bin, so both
+    ``command -v opencode`` (bash) and ``which("opencode")`` (Python) miss."""
+    farm = tmp_path / "isolated_bin"
+    farm.mkdir()
+    for tool in ("jq", "bash", "git"):
+        resolved = shutil.which(tool)
+        if resolved is not None:
+            (farm / tool).symlink_to(resolved)
+    return os.pathsep.join([str(farm), "/usr/bin", "/bin"])
 
 
 def test_bare_install_single_tool_no_plugins(tmp_path: Path) -> None:
@@ -129,20 +148,23 @@ def test_bare_install_opencode(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Auto-detect must install Claude unconditionally to match bash; the Python "
-    "port requires ~/.claude/settings.json and so detects nothing here. Not yet ported.",
-)
 def test_autodetect_fresh_home(tmp_path: Path) -> None:
-    """No --tools: auto-detect against an empty HOME. Bash treats Claude as
-    always-installed; the Python port requires ~/.claude/settings.json to detect
-    it, so it detects nothing. That asymmetry guarantees a divergence on any
-    host regardless of PATH — no PATH manipulation is needed to keep this xfail
-    deterministic. (When this is wired green, tool-detection must be isolated —
-    opencode/gemini/codex absent — while bash's required binaries, notably jq,
-    stay reachable; a bare PATH=/usr/bin:/bin would starve bash's jq guard.)"""
-    result = run_parity(tmp_path, args=["--plugins=", "--yes"])
+    """No --tools: auto-detect against an empty HOME. Both installers treat
+    Claude as always-on (bash's ``TOOLS=(claude)`` floor; the Python port's
+    ClaudeAdapter is unconditionally detected), so a fresh machine installs
+    exactly Claude and reaches parity.
+
+    Tool-detection is isolated via a pinned PATH (``_tool_isolated_path``):
+    opencode/gemini/codex CLIs are absent so neither installer auto-adds them
+    (which would otherwise drag in still-diverging install paths), while jq
+    stays reachable for bash's hard precondition."""
+    if shutil.which("jq") is None:
+        pytest.skip("bash installer requires jq on PATH")
+    result = run_parity(
+        tmp_path,
+        args=["--plugins=", "--yes"],
+        env={"PATH": _tool_isolated_path(tmp_path)},
+    )
 
     assert result.bash_returncode == 0, result.bash_stderr
     assert result.python_returncode == 0, result.python_stderr

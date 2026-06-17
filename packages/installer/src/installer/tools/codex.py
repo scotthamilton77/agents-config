@@ -13,7 +13,6 @@ class CodexAdapter:
     mirrors the bash installer's [[ -d "$HOME/.codex" ]] detection."""
 
     name: str = "codex"
-    detection_signal: str = ".codex"
 
     def source_dir(self, repo_root: Path) -> Path:
         return repo_root / "src" / "user" / ".codex"
