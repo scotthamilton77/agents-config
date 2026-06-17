@@ -162,7 +162,7 @@ def test_main_tools_foo_returns_2(tmp_path: Path) -> None:
     assert main(["--tools=foo"], home=tmp_path) == 2
 
 
-def test_main_no_args_against_empty_home_auto_selects_claude_returns_zero(
+def test_main_autodetect_empty_home_dry_run_selects_claude_returns_zero(
     tmp_path: Path,
 ) -> None:
     """
