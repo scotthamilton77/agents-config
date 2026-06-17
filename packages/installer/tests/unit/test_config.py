@@ -37,18 +37,33 @@ def test_autodetect_includes_claude_when_settings_json_exists(
     assert resolve_tools(home=home, override_csv=None) == (Tool.CLAUDE,)
 
 
-def test_autodetect_excludes_claude_when_settings_json_absent(
+def test_autodetect_includes_claude_when_settings_json_absent(
     tmp_path: Path,
 ) -> None:
     """
     Given an empty home directory
     When resolve_tools(home=that_home, override_csv=None) is called
-    Then the result is ().
+    Then the result is (Tool.CLAUDE,).
 
-    Pins: the deliberate divergence from install.sh's unconditional
-    claude inclusion.
+    Pins: claude is unconditionally selected under auto-detect, matching
+    install.sh's `TOOLS=(claude)` ("claude always; others if ~/.<tool>/").
+    A fresh machine with no ~/.claude/settings.json still installs claude.
     """
-    assert resolve_tools(home=tmp_path, override_csv=None) == ()
+    assert resolve_tools(home=tmp_path, override_csv=None) == (Tool.CLAUDE,)
+
+
+def test_autodetect_claude_always_plus_detected_other(tmp_path: Path) -> None:
+    """
+    Given a home with ~/.codex/ (a codex marker) but no ~/.claude/settings.json
+    When resolve_tools(home=that_home, override_csv=None) is called
+    Then the result is (Tool.CLAUDE, Tool.CODEX).
+
+    Pins: the always-on claude rule composes with — does not suppress —
+    detection of other tools, and claude leads (known_tools() sorts it first,
+    matching bash's claude-first auto-detect order).
+    """
+    (tmp_path / ".codex").mkdir()
+    assert resolve_tools(home=tmp_path, override_csv=None) == (Tool.CLAUDE, Tool.CODEX)
 
 
 def test_explicit_tools_claude_is_accepted(tmp_path: Path) -> None:
@@ -59,16 +74,19 @@ def test_explicit_tools_claude_is_accepted(tmp_path: Path) -> None:
     assert resolve_tools(home=tmp_path, override_csv="claude") == (Tool.CLAUDE,)
 
 
-def test_explicit_tools_claude_overrides_empty_autodetect(
+def test_explicit_tools_suppresses_autodetected_others(
     tmp_path: Path,
 ) -> None:
     """
-    Given an empty home directory
+    Given a home with ~/.codex/ (a codex marker)
     When resolve_tools(home=that_home, override_csv="claude") is called
-    Then the result is (Tool.CLAUDE,).
+    Then the result is (Tool.CLAUDE,) — codex is NOT auto-added.
 
-    Pins: override is "I know what I'm doing" — no settings.json gate.
+    Pins: an explicit --tools list is authoritative; it bypasses auto-detect
+    entirely (including the always-on claude rule's sibling detection), so the
+    user gets exactly what they asked for.
     """
+    (tmp_path / ".codex").mkdir()
     assert resolve_tools(home=tmp_path, override_csv="claude") == (Tool.CLAUDE,)
 
 

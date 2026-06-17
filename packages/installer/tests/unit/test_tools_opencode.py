@@ -6,9 +6,8 @@ the XDG config dir exists OR `opencode` is on PATH (mirrors the bash
 one branch of that OR. The live PATH probe is global state, so every test
 stubs `shutil.which` explicitly to stay hermetic.
 
-Tautology tests (attribute literals like adapter.name, detection_signal
-string, @runtime_checkable machinery) are absent per the writing-unit-tests
-tautology filter."""
+Tautology tests (attribute literals like adapter.name, @runtime_checkable
+machinery) are absent per the writing-unit-tests tautology filter."""
 
 from __future__ import annotations
 

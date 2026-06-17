@@ -119,21 +119,6 @@ def main(
         sys.stderr.write(f"installer: {exc}\n")
         return 2
 
-    if not tools:
-        sys.stderr.write(
-            "installer: no agent tools detected; cannot proceed.\n"
-            "Auto-detection checks each known tool's installation signal:\n"
-        )
-        for known in known_tools():
-            adapter = get_adapter(known)
-            detected_path = resolved_home / adapter.detection_signal
-            sys.stderr.write(f"  {known.value}: {detected_path}\n")
-        sys.stderr.write(
-            f"None of the above were found under {resolved_home}.\n"
-            "To force installation, pass --tools=<csv>, e.g. --tools=claude.\n"
-        )
-        return 2
-
     # Resolve plugins up front (after tools) so an invalid --plugins fails fast
     # on every path — matching the bash installer, which validates --plugins
     # before dispatching any mode (scripts/install.sh:298-307). The resolved set

@@ -9,12 +9,12 @@ if TYPE_CHECKING:
 
 
 class ClaudeAdapter:
-    """Adapter for Anthropic's Claude Code. Probes ~/.claude/settings.json
-    as the detection marker — deliberate divergence from install.sh's
-    'always include claude' rule."""
+    """Adapter for Anthropic's Claude Code. Always detected: install.sh treats
+    claude as its unconditional tool (`TOOLS=(claude)` — "claude always; others
+    if ~/.<tool>/ exists"), so auto-detect always selects it, even on a fresh
+    machine with no ~/.claude yet."""
 
     name: str = "claude"
-    detection_signal: str = ".claude/settings.json"
 
     def source_dir(self, repo_root: Path) -> Path:
         return repo_root / "src" / "user" / ".claude"
@@ -22,8 +22,11 @@ class ClaudeAdapter:
     def dest_dir(self, home: Path) -> Path:
         return home / ".claude"
 
-    def is_detected(self, home: Path) -> bool:
-        return (home / ".claude" / "settings.json").is_file()
+    def is_detected(
+        self,
+        home: Path,  # noqa: ARG002  # protocol parameter; claude is unconditionally detected
+    ) -> bool:
+        return True
 
     def scoped_namespaces(self) -> tuple[str, ...]:
         return ("commands", "skills", "agents", "rules", "hooks")

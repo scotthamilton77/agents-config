@@ -30,7 +30,9 @@ def resolve_tools(*, home: Path, override_csv: str | None) -> tuple[Tool, ...]:
     """Translate the `--tools=` CLI value into the resolved tool tuple.
 
     - `override_csv is None` -> auto-detect: walk known_tools(), keep
-      those whose adapter reports `is_detected(home) is True`.
+      those whose adapter reports `is_detected(home) is True`. claude's
+      adapter is always-on (install.sh's `TOOLS=(claude)` floor), so it is
+      always selected; known_tools() sorts it first, so it also leads.
     - `override_csv == ""` (or whitespace-only) -> ValueError.
     - Otherwise -> split on commas, strip whitespace, validate each via
       `parse_tool_name`, dedupe preserving first occurrence, preserve
