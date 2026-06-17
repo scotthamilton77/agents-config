@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,3 +85,17 @@ def resolve_plugins(
             raise UnknownPluginError(name, valid)
         seen.setdefault(name, None)
     return tuple(discovered[name] for name in seen)
+
+
+def resolve_plugins_root(repo_root: Path, env: Mapping[str, str]) -> Path:
+    """Resolve the plugin *source* root.
+
+    Defaults to ``repo_root/src/plugins``. The ``INSTALLER_PLUGINS_SRC`` env var
+    overrides it — a default-inert seam used only by the golden-master parity
+    harness to point both installers at a fixture plugin tree. The bash
+    installer carries the symmetric ``${INSTALLER_PLUGINS_SRC:-...}`` override
+    (scripts/install.sh). An unset *or empty* value falls back to the default,
+    so an exported-but-empty var can never collapse the root to ``Path('')``.
+    """
+    override = env.get("INSTALLER_PLUGINS_SRC")
+    return Path(override) if override else repo_root / "src" / "plugins"
