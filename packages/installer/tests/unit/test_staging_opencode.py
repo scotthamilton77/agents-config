@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.io_port import ScriptedIO
 from installer.core.model import StagingPlan, Tool
 from installer.core.staging import build_plan
 from installer.tools.opencode import OpenCodeAdapter
@@ -88,3 +89,27 @@ def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path) -> None:
     plan = build_plan(OpenCodeAdapter(), repo_root=repo)
 
     assert Path("opencode.jsonc") in plan.items
+
+
+def test_opencode_post_staging_transforms_drops_rules(tmp_path: Path) -> None:
+    """
+    Given an OpenCode plan that still carries shared rules/ items (build_plan keeps
+    them so the DYNAMIC-INCLUDE-ALL-RULES flatten can inline them)
+    When OpenCodeAdapter.post_staging_transforms runs
+    Then every rules/ item is dropped, while non-rules items (skills/, templates)
+    survive.
+
+    Pins: OpenCode writes no standalone rules/ namespace — rules live only inline in
+    AGENTS.md. The drop runs post-flatten (mirrors install.sh Phase 7, which stages
+    rules then skips writing the rules/ subdir for opencode), so the inliner still
+    sees the rules but sync does not.
+    """
+    repo = _make_opencode_repo(tmp_path)
+    plan = build_plan(OpenCodeAdapter(), repo_root=repo)
+    assert Path("rules/delegation.md") in plan.items  # precondition: staged for inlining
+
+    result = OpenCodeAdapter().post_staging_transforms(plan, ScriptedIO())
+
+    assert not any(item.namespace == "rules" for item in result.items.values())
+    assert Path("rules/delegation.md") not in result.items
+    assert Path("skills/shared-skill") in result.items

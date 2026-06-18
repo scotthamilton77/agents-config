@@ -131,15 +131,11 @@ def test_bare_install_gemini(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OpenCode must not install a standalone rules/ namespace (bash inlines rules "
-    "into AGENTS.md); the Python adapter still stages rules/ files. Not yet ported.",
-)
 def test_bare_install_opencode(tmp_path: Path) -> None:
     """Single-tool parity for OpenCode — the XDG (~/.config/opencode) tool that
-    skips shared agents/ and flattens rules into AGENTS.md. Confirms the Python
-    adapter wrongly installs a standalone rules/ namespace."""
+    skips shared agents/ and inlines rules into AGENTS.md (no standalone rules/
+    namespace; the adapter drops rules from the plan after the ALL-RULES flatten,
+    mirroring install.sh Phase 7's rules/-subdir sync skip)."""
     result = run_parity(tmp_path, args=["--tools=opencode", "--plugins=", "--yes"])
 
     assert result.bash_returncode == 0, result.bash_stderr

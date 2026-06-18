@@ -46,6 +46,14 @@ class OpenCodeAdapter:
     def post_staging_transforms(
         self,
         plan: StagingPlan,
-        io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCodeAdapter accepts uniformly
+        io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCode mutates only the plan
     ) -> StagingPlan:
+        """Drop staged rules/ items before sync: OpenCode has no standalone rules/
+        destination. The rules are inlined into the flat AGENTS.md by the
+        DYNAMIC-INCLUDE-ALL-RULES flatten — which runs earlier in stage_and_transform
+        and sources them from these same staged items — so dropping them here mirrors
+        install.sh Phase 7, which stages rules then skips writing the rules/ subdir
+        for opencode (scripts/install.sh:928-934)."""
+        for relpath in [rp for rp, item in plan.items.items() if item.namespace == "rules"]:
+            del plan.items[relpath]
         return plan
