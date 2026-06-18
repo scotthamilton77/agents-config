@@ -116,13 +116,12 @@ def test_bare_install_codex(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Gemini agent transform must match bash byte-for-byte (inline tools:[...], "
-    "surgical edit); the Python port's pyyaml round-trip reformats it. Not yet ported.",
-)
 def test_bare_install_gemini(tmp_path: Path) -> None:
-    """Single-tool parity for Gemini — another dot-dir tool, flat instruction file."""
+    """Single-tool parity for Gemini — another dot-dir tool, flat instruction
+    file. The agent frontmatter transform is a surgical line port of the bash
+    awk (inline ``tools: [...]`` wrapping the raw value, Claude-only keys
+    stripped, every other line byte-identical), so a real agent's block-scalar
+    ``description`` survives unreflowed."""
     result = run_parity(tmp_path, args=["--tools=gemini", "--plugins=", "--yes"])
 
     assert result.bash_returncode == 0, result.bash_stderr

@@ -47,9 +47,14 @@ def test_strips_claude_only_keys() -> None:
     assert fm["name"] == "a"
 
 
-def test_converts_csv_tools_to_sequence() -> None:
-    src = b"---\nname: a\ntools: Read, Grep, Glob\n---\nbody\n"
-    assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read", "Grep", "Glob"]
+def test_csv_tools_wrapped_inline_preserving_raw_spacing() -> None:
+    # Bash awk wraps the RAW value string in brackets (printf "tools: [%s]"), so
+    # the source comma-space spacing survives byte-for-byte. A pyyaml round-trip
+    # would instead emit a block sequence — the exact divergence this fixes.
+    src = b"---\nname: a\ntools: Read, Edit, Write, Grep, Glob, Bash\n---\nbody\n"
+    out = transform_agent_frontmatter(src)
+    assert b"\ntools: [Read, Edit, Write, Grep, Glob, Bash]\n" in out
+    assert b"\n- Read\n" not in out  # never a block sequence
 
 
 def test_single_tool_becomes_one_element_sequence() -> None:
@@ -57,9 +62,33 @@ def test_single_tool_becomes_one_element_sequence() -> None:
     assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read"]
 
 
+def test_already_inline_tools_not_double_wrapped() -> None:
+    # A value already starting with `[` (inline flow sequence) fails the bash
+    # `val !~ /^\[/` guard, so it is left verbatim — never `[[...]]`.
+    src = b"---\nname: a\ntools: [Read, Grep]\n---\nbody\n"
+    out = transform_agent_frontmatter(src)
+    assert b"\ntools: [Read, Grep]\n" in out
+    assert b"[[" not in out
+
+
 def test_already_sequence_tools_not_double_wrapped() -> None:
     src = b"---\nname: a\ntools:\n  - Read\n  - Grep\n---\nbody\n"
     assert _frontmatter(transform_agent_frontmatter(src))["tools"] == ["Read", "Grep"]
+
+
+def test_description_block_scalar_preserved_while_stripping_and_wrapping() -> None:
+    # The headline parity guarantee: a `description: |-` block scalar survives
+    # byte-for-byte even as color: is stripped and tools: is wrapped. The pyyaml
+    # round-trip reflowed the block (quoting/spacing/style); the line port leaves
+    # every untouched line verbatim. Mirrors install.sh transform_gemini_agent_
+    # frontmatter (the surgical awk).
+    block = "description: |-\n  Line one.\n\n  Line two with: a colon and  weird   spacing.\n"
+    src = ("---\nname: a\n" + block + "tools: Read, Grep\ncolor: purple\n---\nbody\n").encode()
+    out = transform_agent_frontmatter(src).decode("utf-8")
+    assert block in out  # block scalar byte-identical
+    assert "\ntools: [Read, Grep]\n" in out  # tools wrapped inline
+    assert "color:" not in out  # claude-only key stripped
+    assert out.startswith("---\nname: a\n")
 
 
 def test_strips_key_with_indented_block() -> None:
@@ -74,9 +103,27 @@ def test_no_frontmatter_passes_through_byte_identical() -> None:
     assert transform_agent_frontmatter(src) == src
 
 
-def test_unterminated_frontmatter_passes_through() -> None:
+def test_missing_trailing_newline_is_normalized_like_awk() -> None:
+    # awk terminates every record with \n, so a file lacking a final newline
+    # gains one (matching bash). Pins the record-reconstruction decision.
+    src = b"# no frontmatter, no trailing newline"
+    assert transform_agent_frontmatter(src) == src + b"\n"
+
+
+def test_empty_content_returns_empty_like_awk() -> None:
+    # A 0-byte file never enters awk's main loop, so bash emits nothing. Without
+    # the empty guard, record reconstruction would add a stray newline.
+    assert transform_agent_frontmatter(b"") == b""
+
+
+def test_unterminated_frontmatter_still_transforms_like_bash() -> None:
+    # Bash awk has no closing-fence guard: once the opening --- is seen it keeps
+    # transforming every subsequent line. Mirror that — tools: is wrapped even
+    # with no closing ---, and the trailing non-frontmatter line is preserved.
     src = b"---\nname: a\ntools: Read\n(no closing fence)\n"
-    assert transform_agent_frontmatter(src) == src
+    out = transform_agent_frontmatter(src)
+    assert b"\ntools: [Read]\n" in out
+    assert b"(no closing fence)\n" in out
 
 
 def test_unchanged_frontmatter_returns_byte_identical() -> None:
@@ -114,25 +161,38 @@ def test_invalid_utf8_passes_through_unchanged() -> None:
 
 
 def test_malformed_yaml_frontmatter_passes_through_unchanged() -> None:
-    # A YAML typo in one agent file must not abort the whole install — it is
-    # left verbatim rather than raised.
+    # The line port never parses YAML, so a typo can't abort the install: no line
+    # is a Claude-only key or a `tools:` line, so nothing matches and the bytes
+    # survive verbatim.
     src = b'---\nkey: "unterminated\n---\nbody\n'
     assert transform_agent_frontmatter(src) == src
 
 
 def test_non_mapping_frontmatter_passes_through_unchanged() -> None:
-    # Frontmatter that parses to a sequence/scalar (not a mapping) is left as-is.
+    # Sequence/scalar frontmatter has no key=value line to match either, so the
+    # line port leaves it byte-identical (no structural validation happens).
     src = b"---\n- a\n- b\n---\nbody\n"
     assert transform_agent_frontmatter(src) == src
 
 
-def test_empty_tools_string_is_not_converted() -> None:
-    # An empty tools value yields no sequence items, so it is left untouched
-    # (mirrors the bash length>0 guard); other keys still transform.
+def test_quoted_empty_tools_string_is_bracket_wrapped_like_bash() -> None:
+    # Bash's length>0 guard is on the RAW substring after `tools:`, not on parsed
+    # items — so a quoted empty string (`tools: ""`, length 2) is non-empty and
+    # gets wrapped to `tools: [""]`. Only a truly empty value (`tools:` with
+    # nothing after) is left alone. color: is still stripped.
     src = b'---\nname: a\ncolor: red\ntools: ""\n---\nbody\n'
-    fm = _frontmatter(transform_agent_frontmatter(src))
-    assert "color" not in fm
-    assert fm["tools"] == ""
+    out = transform_agent_frontmatter(src)
+    assert b'\ntools: [""]\n' in out
+    assert b"color:" not in out
+
+
+def test_bare_empty_tools_value_left_untouched() -> None:
+    # `tools:` with nothing after it (raw value length 0) fails the bash length>0
+    # guard, so the line is printed verbatim — no `[]` wrapping.
+    src = b"---\nname: a\ntools:\n---\nbody\n"
+    out = transform_agent_frontmatter(src)
+    assert b"\ntools:\n" in out
+    assert b"tools: [" not in out
 
 
 def test_post_staging_transforms_rewrites_agent_items() -> None:

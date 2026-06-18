@@ -4,64 +4,73 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
 
-_CLAUDE_ONLY_KEYS = ("skills", "color", "memory")
+_CLAUDE_ONLY_FIELDS = ("skills:", "color:", "memory:")
 
 
 def transform_agent_frontmatter(content: bytes) -> bytes:
     """Translate a shared (Claude-style) agent file's YAML frontmatter into the
     form Gemini's agent loader accepts: drop Claude-only keys (skills, color,
-    memory) and convert a comma-separated ``tools:`` string into a YAML
-    sequence. Port of bash ``transform_gemini_agent_frontmatter``
-    (scripts/install.sh:639-684), via a pyyaml round-trip.
+    memory) and rewrite a comma-separated ``tools:`` string into an inline YAML
+    flow sequence.
 
-    Returns ``content`` unchanged when it has no leading ``---``…``---`` block,
-    when that block is unterminated, when it does not parse to a mapping, or
-    when there is nothing to strip or convert (so an already-clean file is
-    never gratuitously reformatted). The body after the closing fence is
-    preserved byte-for-byte.
+    Surgical line port of bash ``transform_gemini_agent_frontmatter``
+    (scripts/install.sh:643-688): a fence-counting state machine that edits only
+    the lines it must and emits every other line verbatim. That verbatim path is
+    why a ``description: |-`` block scalar — and any quoting or spacing — survives
+    byte-for-byte; a pyyaml round-trip would reflow it. The ``tools:`` value is
+    wrapped whole (``tools: [Read, Grep]``), preserving its raw spacing, rather
+    than re-serialised item by item.
+
+    Non-UTF-8 content is returned unchanged (an undecodable agent file must not
+    abort the install). Like awk, every emitted record is newline-terminated.
     """
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
         return content
 
-    lines = text.split("\n")
-    if lines[0] != "---":
-        return content
-    closing = next((i for i in range(1, len(lines)) if lines[i] == "---"), None)
-    if closing is None:
-        return content
+    if not text:
+        return content  # awk's main loop never runs on a 0-byte file: empty in, empty out
 
-    try:
-        data = yaml.safe_load("\n".join(lines[1:closing]))
-    except yaml.YAMLError:
-        return content
-    if not isinstance(data, dict):
-        return content
+    # awk reads \n-separated records; a trailing \n is a terminator, not an empty
+    # final record. Drop that artifact so an unchanged file round-trips identically.
+    records = text.split("\n")
+    if text.endswith("\n"):
+        records = records[:-1]
 
-    changed = False
-    for key in _CLAUDE_ONLY_KEYS:
-        if key in data:
-            del data[key]
-            changed = True
-    tools = data.get("tools")
-    if isinstance(tools, str):
-        items = [t.strip() for t in tools.split(",") if t.strip()]
-        if items:
-            data["tools"] = items
-            changed = True
-    if not changed:
-        return content
+    out: list[str] = []
+    fences = 0  # number of '---' lines seen (frontmatter is the span where == 1)
+    skipping = False  # inside a stripped key's indented continuation block
+    for line in records:
+        if line == "---":
+            fences += 1
+            skipping = False
+            out.append(line)
+            continue
+        if fences == 1:
+            if skipping:
+                if not line or line[0].isspace():
+                    continue  # swallow the stripped key's blank/indented block
+                skipping = False
+            # awk's $1 splits on its default FS (space/tab only), so match the
+            # first space/tab-delimited token — not str.split(), which would also
+            # break on \f/\v and strip a key bash would keep.
+            field = line.lstrip(" \t").split(" ", 1)[0].split("\t", 1)[0]
+            if field in _CLAUDE_ONLY_FIELDS:
+                skipping = True
+                continue
+            if line.startswith("tools:"):
+                value = line[len("tools:") :].lstrip()
+                if value and not value.startswith("["):
+                    out.append(f"tools: [{value}]")
+                    continue
+        out.append(line)
 
-    dumped = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-    body = "\n".join(lines[closing + 1 :])
-    return ("---\n" + dumped + "---\n" + body).encode("utf-8")
+    return "".join(f"{rec}\n" for rec in out).encode("utf-8")
 
 
 class GeminiAdapter:
