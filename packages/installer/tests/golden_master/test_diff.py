@@ -192,12 +192,26 @@ def test_settings_backup_only_in_bash_with_divergent_live_still_flags(tmp_path: 
 
 
 def test_non_json_backup_only_in_bash_still_flags(tmp_path: Path) -> None:
-    # Only `.json` merge backups are the accepted array-order artifact. A non-JSON
-    # backup present on only one side (e.g. a spurious dir/file backup) is not
-    # exempt and must still flag.
+    # Only the union-merged settings file produces the accepted array-order
+    # artifact. A non-JSON backup present on only one side (e.g. a spurious
+    # dir/file backup) is not exempt and must still flag.
     a, b = tmp_path / "a", tmp_path / "b"
     _write(a / ".claude/AGENTS.md", b"x")
     _write(a / ".claude/AGENTS.md.backup-20260619-120000", b"old")
     _write(b / ".claude/AGENTS.md", b"x")
     result = diff_trees(a, b)
     assert ".claude/AGENTS.md.backup-<TS>" in result.only_in_a
+
+
+def test_non_settings_json_backup_only_in_bash_still_flags(tmp_path: Path) -> None:
+    # The exemption is anchored to the union-merged `settings.json` — the only
+    # file whose array order bash's jq re-sorts. A bash-only backup of any OTHER
+    # `.json` (which is copied verbatim, never merged) cannot be that artifact, so
+    # it must still flag even when its live copy matches semantically — otherwise
+    # the oracle would silently swallow an unrelated bash-only backup.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/other.json", b'{"x": [1, 2]}')
+    _write(a / ".claude/other.json.backup-20260619-120000", b'{"x": [2, 1]}')
+    _write(b / ".claude/other.json", b'{"x": [2, 1]}')
+    result = diff_trees(a, b)
+    assert ".claude/other.json.backup-<TS>" in result.only_in_a

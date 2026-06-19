@@ -136,17 +136,19 @@ def _is_accepted_settings_backup(
     when it re-merges the settings file, so it sees a "change" and backs up the
     prior copy; Python's order-preserving union is idempotent and writes no backup.
     That surplus backup is the same accepted divergence leaking onto disk — accept
-    it, but only narrowly: the backup must target a ``.json`` file whose live copy
-    exists on BOTH sides and is semantically equal. A non-``.json`` backup, a
-    missing live counterpart, or a genuinely different target (element added or
-    dropped, not a pure reorder) is not exempt and still flags. The exemption is
-    deliberately one-sided — a Python-only backup means Python itself was
-    non-idempotent, the very regression this scenario guards, so the caller applies
-    this only to ``only_in_a`` (bash)."""
+    it, but only narrowly: the backup must target a ``settings.json`` file (the
+    only union-merged file, hence the only one whose array order bash re-sorts)
+    whose live copy exists on BOTH sides and is semantically equal. A backup of any
+    other file (a verbatim-copied ``.json``, a non-JSON file), a missing live
+    counterpart, or a genuinely different target (element added or dropped, not a
+    pure reorder) is not exempt and still flags. The exemption is deliberately
+    one-sided — a Python-only backup means Python itself was non-idempotent, the
+    very regression this scenario guards, so the caller applies this only to
+    ``only_in_a`` (bash)."""
     if not relpath.endswith(_BACKUP_TS_PLACEHOLDER):
         return False
     target = relpath[: -len(_BACKUP_TS_PLACEHOLDER)]
-    if not target.endswith(".json"):
+    if Path(target).name != "settings.json":
         return False
     live_a, live_b = index_a.get(target), index_b.get(target)
     if live_a is None or live_b is None:
