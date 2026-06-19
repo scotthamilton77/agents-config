@@ -32,6 +32,9 @@ _ESCALATED_BODY = (
 _ESCALATED_CAP_BODY = (
     "Round limit reached on this PR; deferring further iterations to a human reviewer."
 )
+# Word-boundary match: the cap rationale names "cap" as a standalone word ("hard cap of
+# N rounds"). A raw substring test would mis-fire on "captured"/"capacity"/"escape".
+_CAP_RE = re.compile(r"\bcap\b", re.IGNORECASE)
 _REPLYABLE = frozenset(
     {
         DispositionKind.FIXED,
@@ -55,7 +58,7 @@ def _render_body(disp: Disposition) -> str:
         sha = disp.commits[0] if disp.commits else ""
         return _T_ALREADY.render({"sha": sha})
     if kind is DispositionKind.ESCALATED:
-        return _ESCALATED_CAP_BODY if "cap" in disp.rationale.lower() else _ESCALATED_BODY
+        return _ESCALATED_CAP_BODY if _CAP_RE.search(disp.rationale) else _ESCALATED_BODY
     return _T_RATIONALE.render({"rationale": disp.rationale})
 
 
@@ -89,11 +92,14 @@ def _decisions_line(rm: RoutedMemory) -> str:
 
 def _splice_block(body: str, block: str) -> str:
     start = body.find(DECISIONS_START)
-    if start == -1:
+    end = body.find(DECISIONS_END, start) if start != -1 else -1
+    if start == -1 or end == -1:
+        # No clean sentinel PAIR — either absent, or a corrupted orphan start without its
+        # end. Never guess a boundary or truncate the body (matches extract_decisions_block's
+        # no-guess contract); append the fresh block, preserving every existing byte.
         sep = "\n\n" if body.strip() else ""
         return f"{body}{sep}{block}"
-    end = body.find(DECISIONS_END, start)
-    tail = body[end + len(DECISIONS_END) :] if end != -1 else ""
+    tail = body[end + len(DECISIONS_END) :]
     return body[:start] + block + tail
 
 

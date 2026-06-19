@@ -98,6 +98,24 @@ def test_escalated_cap_variant_when_rationale_names_cap() -> None:
     )
 
 
+def test_escalated_substring_cap_does_not_trigger_cap_variant() -> None:
+    # "captured" contains "cap" as a substring but NOT as a standalone word — it must
+    # render the normal escalated body, not the cap variant (word-boundary match).
+    gh = _RecordingGh()
+    state = _state(
+        [
+            _item(
+                ItemKind.REVIEW_THREAD,
+                "8",
+                DispositionKind.ESCALATED,
+                rationale="captured the edge case for a human",
+            )
+        ]
+    )
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"].startswith("Captured for follow-up")
+
+
 def test_nested_reply_uses_reply_to_comment_id() -> None:
     gh = _RecordingGh()
     state = _state(

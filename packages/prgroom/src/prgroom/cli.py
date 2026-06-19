@@ -522,7 +522,7 @@ def resolve_escalated(
     store: Store = ctx.obj
     try:
         ref = PRRef.parse(pr)
-        commit_list = [c for c in commits.split(",") if c]
+        commit_list = [c.strip() for c in commits.split(",") if c.strip()]
         decided_by = "human:" + _git_user()
 
         def _resolve_escalated() -> None:

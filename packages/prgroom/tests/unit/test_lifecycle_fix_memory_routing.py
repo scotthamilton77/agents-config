@@ -91,6 +91,23 @@ def test_path_form_read_verbatim(tmp_path: Path) -> None:
     assert routed[0].content == "file body"
 
 
+def test_relative_path_is_anchored_to_memory_dir_not_cwd(tmp_path: Path) -> None:
+    # The agent declares entry.path RELATIVE to memory_dir (§8.5). A relative path must
+    # anchor to memory_dir, NOT resolve against CWD — else it false-BLOCKs (cluster-flip)
+    # and reads the wrong file. Regression for the bare-realpath(entry.path) bug.
+    (tmp_path / "note.md").write_text("anchored body", encoding="utf-8")
+    routed, blocked = resolve_routed_memory(
+        [_Entry(path="note.md")],
+        memory_dir=str(tmp_path),
+        round_=1,
+        decided_by="agent",
+        cluster_id="c1",
+        warn=lambda _m: None,
+    )
+    assert blocked is None  # NOT a false containment BLOCK
+    assert routed[0].content == "anchored body"  # read from memory_dir, not CWD
+
+
 def test_symlink_escape_is_blocked_not_read(tmp_path: Path) -> None:
     secret = tmp_path / "secret.txt"
     secret.write_text("TOPSECRET", encoding="utf-8")

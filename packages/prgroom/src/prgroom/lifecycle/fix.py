@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 from prgroom.agent.contracts import FixInput
 from prgroom.agent.errors import AuditViolation, escalation_for, failed_disposition
 from prgroom.agent.fix import run_fix
+from prgroom.agent.memory_audit import anchor
 from prgroom.errors import ErrorCode
 from prgroom.escalation import Severity
 from prgroom.lifecycle.snapshot import assemble_snapshot
@@ -201,11 +202,17 @@ def resolve_routed_memory(
     routed: list[RoutedMemory] = []
     for ordinal, entry in enumerate(entries):
         if entry.path is not None:
-            real = os.path.realpath(entry.path)
+            # The agent declares entry.path RELATIVE to memory_dir (§8.5), so anchor it
+            # through the SAME lexical model the audit uses (a relative path joins
+            # memory_dir; an absolute one resets the join) BEFORE realpath. A bare
+            # realpath on a relative path resolves against CWD — a false containment
+            # BLOCK (cluster-flip) plus a wrong-file read.
+            anchored = anchor(entry.path, memory_dir)
+            real = os.path.realpath(anchored)
             if real != real_dir and not real.startswith(real_dir + os.sep):
                 return [], f"memory containment violation (realpath): {entry.path}"
             try:
-                content = Path(entry.path).read_text(encoding="utf-8")
+                content = Path(anchored).read_text(encoding="utf-8")
             except OSError as exc:
                 warn(f"fix: routable memory path unreadable, skipped: {entry.path} ({exc})")
                 continue

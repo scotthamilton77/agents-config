@@ -154,3 +154,20 @@ def test_resolve_escalated_flips_disposition(
     assert disposition is not None
     assert disposition.kind is DispositionKind.SKIPPED
     assert disposition.decided_by == "human:tester"  # "human:" + _git_user() seam
+
+
+def test_resolve_escalated_fixed_strips_commit_whitespace(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # --commits "abc, def" must yield ["abc", "def"], not ["abc", " def"] — the leading
+    # space after the comma would otherwise ride into the SHA.
+    monkeypatch.setattr(cli, "_build_git", lambda: _FakeGit())
+    patched.write(_REF, _state())
+    result = runner.invoke(
+        cli.app,
+        ["resolve-escalated", "octo/demo#7", "100", "--as", "fixed", "--commits", "abc123, def456"],
+    )
+    assert result.exit_code == 0, result.output
+    disposition = patched.read(_REF).items[0].disposition
+    assert disposition is not None
+    assert disposition.commits == ["abc123", "def456"]

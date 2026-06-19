@@ -57,6 +57,17 @@ def test_merge_is_byte_identical_on_rerun() -> None:
     assert once == twice
 
 
+def test_merge_does_not_truncate_body_on_orphan_start_sentinel() -> None:
+    # A corrupted body with a start sentinel but NO end sentinel must not lose the text
+    # after the orphan start — merge appends a fresh block, preserving every existing byte.
+    body = "intro\n<!-- prgroom:decisions:start -->\norphan tail that must survive"
+    out = merge_decisions_block(
+        body, [RoutedMemory(content="new", round=1, source_item="c1#0", decided_by="a")]
+    )
+    assert "orphan tail that must survive" in out
+    assert "new" in out
+
+
 def test_merge_appends_distinct_same_round_keys() -> None:
     body = merge_decisions_block(
         "",
