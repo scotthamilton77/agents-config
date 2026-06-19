@@ -131,6 +131,41 @@ def test_route_unchanged_script_is_skipped_but_lost_exec_bit_is_restored(
     assert (counters.skipped, counters.updated) == (1, 0)
 
 
+def test_route_lost_exec_restore_emits_verbose_detail_but_clean_skip_does_not(
+    tmp_path: Path,
+) -> None:
+    """
+    Given two exec routes that both hash-skip — one whose dest lost its exec bit
+    (0o644 -> repaired) and one whose dest already carries it (0o755 -> untouched)
+    When sync_routes runs
+    Then ONLY the repaired one emits a verbose-tagged "Restored +x" line — the
+    parity equivalent of bash ``vinfo "Restored +x on scripts/X"``
+    (scripts/install.sh:1096), which fires only when the repair actually happens.
+
+    Pins: the exec-bit repair on a hash-equal skip is announced under --verbose
+    (and silent without it), and a skip that does no repair stays quiet on that
+    line — so the "up to date" message is never misleadingly preceded by a
+    phantom restore. Fails if the restore is silent or fires unconditionally.
+    """
+    src = tmp_path / "src" / "scripts"
+    dest = tmp_path / "home" / ".beads" / "scripts"
+    _seed_file(src / "lost.sh", b"#!/bin/sh\n", mode=0o755)
+    _seed_file(dest / "lost.sh", b"#!/bin/sh\n", mode=0o644)  # same bytes, no +x
+    _seed_file(src / "kept.sh", b"#!/bin/sh\necho ok\n", mode=0o755)
+    _seed_file(dest / "kept.sh", b"#!/bin/sh\necho ok\n", mode=0o755)  # same bytes, +x intact
+    routes = [PluginRoute(src, dest, "*.sh", executable=True)]
+    io = ScriptedIO()
+
+    sync_routes(routes, io=io, timestamp=_FIXED_TS)
+
+    restored = [e for e in io.transcript if e.verbose and "Restored +x" in e.message]
+    assert len(restored) == 1
+    assert str(dest / "lost.sh") in restored[0].message
+    assert not any(
+        str(dest / "kept.sh") in e.message and "Restored +x" in e.message for e in io.transcript
+    )
+
+
 def test_route_restore_adds_exec_without_widening_existing_rw_bits(tmp_path: Path) -> None:
     """
     Given an exec route whose dest holds byte-identical content but was tightened

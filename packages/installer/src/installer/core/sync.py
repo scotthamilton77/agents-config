@@ -276,7 +276,9 @@ def _install_file(
 ) -> None:
     """Install one FILE item: skip an unchanged dest, back up a differing dest
     before the overwrite, and write the bytes with a deterministic mode bit
-    (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``.
+    (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``. An
+    unchanged-dest skip emits a verbose-gated "X is up to date" line (bash
+    ``vok``, scripts/install.sh:1166), silent without ``--verbose``.
 
     A ``SETTINGS_JSON`` item is union-merged into an existing user file rather
     than overwritten (``_effective_content``), so user values survive an install;
@@ -304,8 +306,9 @@ def _install_file(
     old = dest.read_bytes() if dest_exists else None
     effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
-        if restore_exec_on_skip and executable and not dry_run:
-            _restore_exec_bit(dest)
+        if restore_exec_on_skip and executable and not dry_run and _restore_exec_bit(dest):
+            io.info(f"Restored +x on {dest}", verbose=True)
+        io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         return
     if (
@@ -363,11 +366,13 @@ def _install_dir(
     An existing dest whose contents already match (`_dir_is_unchanged`) is left
     untouched and counted as a skip — so a re-install is idempotent and produces
     no spurious backups (bash ``sync_directory``'s "up to date" branch,
-    `scripts/install.sh:1230`). A changed existing dest passes through the
-    consent gate before the backup/replace: an interactive decline keeps the
-    existing tree and counts a skip; ``auto_yes`` accepts silently; ``dry_run``
-    previews without prompting. A directory has no ``IOPort`` byte-diff, so the
-    change is surfaced as a notice, not a unified diff.
+    `scripts/install.sh:1230`); the skip emits a verbose-gated "X is up to date"
+    line (bash ``vok``, scripts/install.sh:1237), silent without ``--verbose``.
+    A changed existing dest passes through the consent gate before the
+    backup/replace: an interactive decline keeps the existing tree and counts a
+    skip; ``auto_yes`` accepts silently; ``dry_run`` previews without prompting.
+    A directory has no ``IOPort`` byte-diff, so the change is surfaced as a
+    notice, not a unified diff.
 
     A missing or non-directory ``source_path``, or a dest already occupied by a
     non-directory (a file), is rejected with `ValueError` rather than crashing
@@ -386,6 +391,7 @@ def _install_dir(
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
     if dest_exists and _dir_is_unchanged(dest, source_path, overrides):
+        io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         return
     if (
@@ -442,10 +448,15 @@ def _record_write(
     dest: Path, *, dest_exists: bool, io: IOPort, dry_run: bool, counters: Counters
 ) -> None:
     """Preview the would-be write under ``dry_run`` and tally it as a create or
-    update. Shared by the file and dir installers; mutates ``counters``."""
+    update. On a real (non-``dry_run``) write, emit a verbose-gated per-item line
+    ("Installed X (new)" / "Updated X") so ``--verbose`` yields bash ``vok``
+    per-file detail (scripts/install.sh:1158,1180) while a quiet run stays
+    silent. Shared by the file and dir installers; mutates ``counters``."""
     if dry_run:
         verb = "update" if dest_exists else "create"
         io.info(f"would {verb} {dest}")
+    else:
+        io.ok(f"Updated {dest}" if dest_exists else f"Installed {dest} (new)", verbose=True)
     if dest_exists:
         counters.updated += 1
     else:
@@ -481,17 +492,22 @@ def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _restore_exec_bit(dest: Path) -> None:
+def _restore_exec_bit(dest: Path) -> bool:
     """Restore a lost exec bit on a hash-equal dest without a full rewrite.
     Route-scoped port of ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``):
     fires only when no exec bit is set, and then *adds* the exec bits to the
     existing mode (``mode | 0o111``) rather than forcing ``0o755`` — so a
     user-tightened file (e.g. ``0o600``) gains exec without widening its
     read/write bits, mirroring ``chmod +x``. The any-exec-bit gate matches the
-    differ's executability definition (``_diff.py::_is_executable``)."""
+    differ's executability definition (``_diff.py::_is_executable``). Returns
+    ``True`` when the mode was changed (so the caller can announce the repair
+    under ``--verbose``, mirroring bash ``vinfo "Restored +x ..."``,
+    scripts/install.sh:1096), ``False`` when the exec bit was already set."""
     mode = dest.stat().st_mode
-    if not mode & 0o111:
-        dest.chmod(mode | 0o111)
+    if mode & 0o111:
+        return False
+    dest.chmod(mode | 0o111)
+    return True
 
 
 def _sha256(data: bytes) -> bytes:

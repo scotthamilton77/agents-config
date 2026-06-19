@@ -68,6 +68,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show what would be done without making changes.",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show per-file progress (installed / up-to-date / updated).",
+    )
     # --dump-stage, --prune, and --prune-only are three mutually exclusive
     # terminal modes (dump the staging plan / install-then-prune / prune-only),
     # so any combination is rejected by argparse.
@@ -111,7 +117,7 @@ def main(
     if io is None:
         from installer.core.io_port import TerminalIO
 
-        io = TerminalIO()
+        io = TerminalIO(verbose=args.verbose)
 
     try:
         tools = resolve_tools(home=resolved_home, override_csv=args.tools)
