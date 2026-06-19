@@ -115,16 +115,25 @@ def test_install_invokes_uv_tool_install_force(tmp_path: Path) -> None:
     assert str(REPO_ROOT / "packages" / "prgroom") in invocations, invocations
 
 
-def _path_without_uv() -> str | None:
-    """Ambient PATH with uv's directory removed, or None if it can't be isolated.
+def _core_tools_present(path: str) -> bool:
+    """True if the bash installer's core tools all resolve under ``path``."""
+    return all(shutil.which(t, path=path) is not None for t in ("bash", "jq", "git"))
 
-    Returns None (caller skips) when uv is absent already (nothing to test) or
-    when stripping uv's dir would also drop a core tool the bash installer needs
-    — i.e. uv shares a directory with bash/jq/git and can't be isolated cleanly.
+
+def _path_without_uv() -> str | None:
+    """A PATH on which uv is absent but the installer's core tools resolve, or
+    None when that can't be arranged.
+
+    When uv is already absent, the ambient PATH already satisfies the condition —
+    return it so the graceful-skip branch is exercised exactly where it matters
+    most (a host with no uv), rather than skipping the test there. When uv is
+    present, strip its directory; return None only if uv stays reachable via
+    another entry or stripping it would also drop a core tool.
     """
     uv = shutil.which("uv")
     if uv is None:
-        return None
+        ambient = os.environ.get("PATH", "")
+        return ambient if _core_tools_present(ambient) else None
     uv_dir = Path(uv).parent.resolve()
     kept = [
         e for e in os.environ.get("PATH", "").split(os.pathsep) if e and Path(e).resolve() != uv_dir
@@ -132,7 +141,7 @@ def _path_without_uv() -> str | None:
     reduced = os.pathsep.join(kept)
     if shutil.which("uv", path=reduced) is not None:
         return None  # uv reachable via another PATH entry — can't isolate
-    if any(shutil.which(t, path=reduced) is None for t in ("bash", "jq", "git")):
+    if not _core_tools_present(reduced):
         return None  # core tool shared uv's dir — isolating uv would break install
     return reduced
 
