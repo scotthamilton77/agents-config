@@ -52,7 +52,7 @@ code alone, decides terminal handling — a hard-cap terminal exits 0 yet lands 
 | prgroom result | Interactive | Autonomous |
 |---|---|---|
 | exit 0, `phase ∈ {quiesced, merged}` | Report the success summary from `status --json` (dispositions, `auto_merge_eligible`) | Exit 0; sink stays silent |
-| `phase = human-gated` (escalated/failed items, or `last_error = LIFECYCLE_HARD_CAP_EXCEEDED`) | Surface each escalation; hand over the resolve recipe (§4); re-invoke after the human decides | prgroom already routed escalations to its sink; exit non-zero |
+| `phase = human-gated` (escalated/failed items, or `last_error = LIFECYCLE_HARD_CAP_EXCEEDED`) | Surface each escalation; hand over the resolve recipe (§4); re-invoke after the human decides | prgroom already routed escalations to its sink; the supervisor itself exits non-zero on `human-gated` — even when prgroom exited 0 (hard-cap rides on exit 0) — so the scheduler sees the gate |
 | exit 77 — `RUNTIME_TERMINAL_USER` (gh auth expired, push rejected) | Surface the infra problem from stderr; stop (retry is futile until it is fixed) | Sink; exit non-zero |
 | exit 75 — `RUNTIME_TRANSIENT` (gh/git 5xx, lock held) | Re-invoke, bounded (a couple of attempts) | Let the scheduler retry on its next cadence |
 | exit 130 / 143 — `RUNTIME_CANCELLED` (SIGINT / SIGTERM) | Report the cancellation; stop | Exit per the signal; a scheduler must NOT treat 143 as retryable |
@@ -88,11 +88,11 @@ Surface each item's rationale to the human, then route by its disposition:
   loop re-attempt on the next `run`), not `resolve-escalated`, which rejects it.
 
 - **`LIFECYCLE_HARD_CAP_EXCEEDED`** — raise the cap and re-run:
-  `prgroom run … --max-rounds <n>` (a bare re-run stays `human-gated`).
+  `prgroom run <owner>/<repo>#<n> --max-rounds <n>` (a bare re-run stays `human-gated`).
 
-After the blockers clear, re-invoke `prgroom run … --interactive`. The loop
-releases `human-gated` back to `fixes-pending` only once no `escalated` and no
-`failed` items remain and `last_error` is clear, then finishes.
+After the blockers clear, re-invoke `prgroom run <owner>/<repo>#<n> --interactive`.
+The loop releases `human-gated` back to `fixes-pending` only once no `escalated`
+and no `failed` items remain and `last_error` is clear, then finishes.
 
 ## Red flags
 

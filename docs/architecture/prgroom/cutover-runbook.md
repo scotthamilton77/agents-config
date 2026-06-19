@@ -17,8 +17,10 @@ prgroom writes its own session store and never reads the legacy one:
 | prgroom | `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json` (fallback `~/.local/state/prgroom/`) |
 | legacy skills | `~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json` |
 
-Because neither reads the other, a PR is **legacy XOR prgroom — never both**. The
-procedures below preserve that invariant across the cutover.
+Because neither reads the other, each PR **must be groomed by exactly one —
+legacy XOR prgroom**. This is an operator-maintained invariant, not an automatic
+guarantee: nothing stops both loops from running against the same PR, which would
+risk double-posting. The procedures below exist to preserve it across the cutover.
 
 ## Drain before cutover
 
