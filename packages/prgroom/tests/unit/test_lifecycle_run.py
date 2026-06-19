@@ -76,9 +76,14 @@ class RecordingSink:
 class FakeGh:
     def __init__(self) -> None:
         self.added: list[tuple[PRRef, str]] = []
+        self.rest_calls: list[tuple[str, str, dict]] = []
 
     def add_label(self, ref: PRRef, label: str) -> None:
         self.added.append((ref, label))
+
+    def rest(self, method: str, path: str, *, fields=None) -> dict:
+        self.rest_calls.append((method, path, dict(fields or {})))
+        return {}
 
 
 class CountingStore:
@@ -552,10 +557,10 @@ def test_run_maps_unreadable_state_to_state_tier(exc: Exception, tier: Tier) -> 
     assert excinfo.value.tier is tier  # § 3.3 read-failure mapping (exit 78)
 
 
-def test_run_drives_real_reply_skeleton_as_noop() -> None:
-    # The §3.3 pipeline-slotting pin: the loop wires the REAL `_reply` (a no-op
-    # skeleton until the deterministic-verbs bead). Drive a cycle through it and assert
-    # it leaves the item untouched (replied stays False) — a safe passthrough.
+def test_run_drives_real_reply_posts_for_replyable_item() -> None:
+    # The §3.3 pipeline-slotting pin: the loop wires the REAL `_reply` adapter. Drive a
+    # FIXED REVIEW_THREAD item through a cycle and assert the real reply fired — a POST
+    # to the thread-reply endpoint and `replied` flipped — while the cycle still quiesces.
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
         identity=Identity(gh_id="1"),
@@ -565,12 +570,16 @@ def test_run_drives_real_reply_skeleton_as_noop() -> None:
         disposition=Disposition(kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude"),
     )
     calls: list[str] = []
+    gh = FakeGh()
     store = InMemoryStore()
     store.write(_REF, _quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]))
-    ctx = _ctx(_quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]), store=store)
+    ctx = _ctx(_quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]), store=store, gh=gh)
     out = _run(ctx, _verbs(calls, has_queued=False, reply=_reply))  # real reply adapter
     assert out.phase is PRPhase.QUIESCED
-    assert out.items[0].replied is False  # reply_pr no-op skeleton touched nothing
+    assert out.items[0].replied is True
+    assert gh.rest_calls == [
+        ("POST", "repos/octo/demo/pulls/7/comments/1/replies", {"body": "Fixed in ."})
+    ]
 
 
 # ── run_lifecycle wrapper ───────────────────────────────────────────────────

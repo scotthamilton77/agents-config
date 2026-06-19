@@ -212,7 +212,7 @@ def _resolve(ctx: RunContext) -> PRGroomingState:
 
 
 def _reply(ctx: RunContext) -> PRGroomingState:
-    return reply_pr(ctx.state)
+    return reply_pr(ctx.state, gh=ctx.gh, ref=ctx.ref)
 
 
 def _has_queued(ctx: RunContext) -> bool:
