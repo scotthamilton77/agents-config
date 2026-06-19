@@ -149,6 +149,20 @@ def test_escalated_substring_cap_does_not_trigger_cap_variant() -> None:
     assert gh.rest_calls[0][2]["body"].startswith("Captured for follow-up")
 
 
+def test_empty_rendered_body_skips_post_and_keeps_replied_false() -> None:
+    # SKIPPED/DEFERRED/WONT_FIX render from rationale; an empty rationale (reachable via
+    # `resolve-escalated --as skipped` with no --rationale) renders "". Posting "" fails the
+    # GitHub API — skip the POST and leave replied False so a later rationale can still reply.
+    gh = _RecordingGh()
+    out = reply_pr(
+        _state([_item(ItemKind.REVIEW_THREAD, "9", DispositionKind.SKIPPED, rationale="")]),
+        gh=gh,
+        ref=_ref(),
+    )
+    assert gh.rest_calls == []
+    assert out.items[0].replied is False
+
+
 def test_nested_reply_uses_reply_to_comment_id() -> None:
     gh = _RecordingGh()
     state = _state(

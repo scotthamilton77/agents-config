@@ -167,7 +167,14 @@ def reply_pr(
                 continue
             if item.disposition.kind not in _REPLYABLE:
                 continue
-            _post_reply(gh, ref, item, _render_body(item.disposition))
+            body = _render_body(item.disposition)
+            if not body.strip():
+                # A rationale-rendered disposition (SKIPPED/DEFERRED/WONT_FIX) with an empty
+                # rationale renders no body (reachable via `resolve-escalated` with no
+                # --rationale). Posting "" fails the GitHub API; skip it and leave `replied`
+                # False so a later rationale can still reply.
+                continue
+            _post_reply(gh, ref, item, body)
             item.replied = True
         _route_memory(state, gh=gh, ref=ref)
     except GhNotFoundError as exc:
