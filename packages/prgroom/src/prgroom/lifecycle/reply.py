@@ -9,14 +9,15 @@ from typing import TYPE_CHECKING
 from prgroom.agent.prompt_loader import PromptTemplate
 from prgroom.gh.client import GhNotFoundError
 from prgroom.lifecycle.gh_errors import vanished_pr_terminal
-from prgroom.lifecycle.snapshot import DECISIONS_END, DECISIONS_START
-from prgroom.lifecycle.warn import default_warn
+from prgroom.lifecycle.snapshot import (
+    DECISIONS_END,
+    DECISIONS_START,
+    extract_decisions_block,
+)
 from prgroom.prsession.enums import DispositionKind, ItemKind
 from prgroom.prsession.state import RoutedMemory
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from prgroom.gh.client import GhClient
     from prgroom.prsession.pr_ref import PRRef
     from prgroom.prsession.state import Disposition, PRGroomingState, ReviewItem
@@ -86,16 +87,6 @@ def _decisions_line(rm: RoutedMemory) -> str:
     return f"{marker} - **[r{rm.round}]** {_sanitize(rm.content)} _(decided_by: {rm.decided_by})_"
 
 
-def _extract_block(body: str) -> str:
-    start = body.find(DECISIONS_START)
-    if start == -1:
-        return ""
-    end = body.find(DECISIONS_END, start)
-    if end == -1:
-        return ""
-    return body[start + len(DECISIONS_START) : end]
-
-
 def _splice_block(body: str, block: str) -> str:
     start = body.find(DECISIONS_START)
     if start == -1:
@@ -116,7 +107,7 @@ def merge_decisions_block(body: str, entries: list[RoutedMemory]) -> str:
     same-round re-run is byte-identical; an existing key for item A does not block a new
     same-round entry for item B.
     """
-    existing = _extract_block(body)
+    existing = extract_decisions_block(body)
     ordered: dict[str, str] = {}
     for line in existing.splitlines():
         m = _MARKER_RE.match(line.strip())
@@ -154,13 +145,12 @@ def reply_pr(
     *,
     gh: GhClient,
     ref: PRRef,
-    warn: Callable[[str], None] = default_warn,  # noqa: ARG001  # kept for verb symmetry (resolve_pr)
 ) -> PRGroomingState:
     """Post per-item replies and route pending CONTEXTUAL memory (§3.2 reply row).
 
     Works on a deepcopy; caller persists once (verb-atomic). No phase change, no
-    ``last_error``. Per-item replies dedup via ``ReviewItem.replied``. (Memory
-    routing — Task 10 — appends below the per-item loop in this same function.)
+    ``last_error``. Per-item replies dedup via ``ReviewItem.replied``; pending
+    CONTEXTUAL memory routes to thread replies / the PR-body Decisions block.
     """
     state = copy.deepcopy(state)
     try:
