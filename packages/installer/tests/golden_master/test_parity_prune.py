@@ -105,6 +105,11 @@ def test_hooks_orphan_survives_prune(tmp_path: Path) -> None:
     assert (result.home_b / ".claude" / "hooks" / "user-local-hook.py").is_file(), (
         "an unmanaged hooks/ file must survive --prune"
     )
+    assert (
+        result.home_b / ".claude" / "hooks" / "user-local-hook.py"
+    ).read_text() == "# user-managed hook, not from src\n", (
+        "hooks/ orphan content must be untouched — install must not overwrite an unmanaged hook"
+    )
     # And it was never backed up (no prune action touched the hooks/ namespace).
     assert not (result.home_b / ".claude" / "hooks-backup").exists(), (
         "no hooks-backup dir - prune must not back up anything under hooks/"
