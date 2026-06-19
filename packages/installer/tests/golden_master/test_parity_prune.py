@@ -25,12 +25,19 @@ _CLAUDE_ARGS = ["--tools=claude", "--plugins=", "--yes"]
 
 
 def _seed_orphans(home: Path) -> None:
-    """Place retired files into the Claude tool tree to act as prune targets."""
+    """Place retired files into the Claude tool tree to act as prune targets.
+
+    ``condition-based-waiting`` is seeded as a directory (real Claude skills are
+    directories), so backup routes through ``shutil.copytree`` and removal through
+    ``shutil.rmtree`` rather than the file-only ``copy2`` / ``unlink`` paths.
+    """
     skills = home / ".claude" / "skills"
     agents = home / ".claude" / "agents"
     skills.mkdir(parents=True, exist_ok=True)
     agents.mkdir(parents=True, exist_ok=True)
-    (skills / "condition-based-waiting").write_text("# retired skill\n")
+    orphan_skill = skills / "condition-based-waiting"
+    orphan_skill.mkdir()
+    (orphan_skill / "SKILL.md").write_text("# retired skill\n")
     (agents / "bead-implementor.md").write_text("# retired agent\n")
 
 
@@ -57,6 +64,12 @@ def test_prune_yes_removes_orphans(tmp_path: Path) -> None:
     assert (result.home_b / ".claude" / "agents-backup").is_dir(), (
         "expected agents-backup dir — prune must have run"
     )
+    assert list(
+        (result.home_b / ".claude" / "skills-backup").glob("condition-based-waiting.backup-*")
+    ), "skills-backup must hold a timestamped backup of the pruned skill"
+    assert list(
+        (result.home_b / ".claude" / "agents-backup").glob("bead-implementor.md.backup-*")
+    ), "agents-backup must hold a timestamped backup of the pruned agent"
 
 
 def test_prune_only_removes_orphans(tmp_path: Path) -> None:
@@ -69,6 +82,11 @@ def test_prune_only_removes_orphans(tmp_path: Path) -> None:
     assert result.python_returncode == 0, result.python_stderr
     diff = result.diff()
     assert diff.is_parity(), diff.render()
+    # CLAUDE.md is unconditionally installed by the normal install phase; its
+    # absence proves Phase 7 was skipped and only the prune phase ran.
+    assert not (result.home_b / ".claude" / "CLAUDE.md").exists(), (
+        "--prune-only must skip the install phase — CLAUDE.md must not be installed"
+    )
     # Confirm prune actually fired on the Python side (parity ensures bash matches).
     assert not (result.home_b / ".claude" / "skills" / "condition-based-waiting").exists(), (
         "orphan must be gone after prune-only"
@@ -82,3 +100,9 @@ def test_prune_only_removes_orphans(tmp_path: Path) -> None:
     assert (result.home_b / ".claude" / "agents-backup").is_dir(), (
         "expected agents-backup dir — prune must have run"
     )
+    assert list(
+        (result.home_b / ".claude" / "skills-backup").glob("condition-based-waiting.backup-*")
+    ), "skills-backup must hold a timestamped backup of the pruned skill"
+    assert list(
+        (result.home_b / ".claude" / "agents-backup").glob("bead-implementor.md.backup-*")
+    ), "agents-backup must hold a timestamped backup of the pruned agent"
