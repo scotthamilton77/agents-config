@@ -201,6 +201,31 @@ def test_adapter_with_no_plan_entry_still_scans_dest(tmp_path: Path) -> None:
     assert [o.path.name for o in orphans] == ["retired-skill"]
 
 
+def test_hooks_namespace_is_never_pruned(tmp_path: Path) -> None:
+    """
+    Given an unstaged dest ``hooks/`` entry that matches an aggressive prune glob
+    When scan_orphans runs
+    Then it is NOT reported - ``hooks`` is outside the scanned namespace set.
+
+    Parity: bash scans only ``commands/skills/agents/rules`` for orphans
+    (``scripts/install.sh`` ``prune_subdirs``); ``hooks/`` is prune-EXEMPT by
+    omission. This pins the Python ``_PRUNE_SUBDIRS`` choice - adding ``hooks``
+    to it (the regression this guards) would make a glob-matched hook script
+    deletable, diverging from bash. Contrast with
+    ``test_unstaged_entry_matching_glob_is_orphan``: the same setup shape under a
+    scanned namespace yields an orphan; under ``hooks`` it must not.
+    """
+    (tmp_path / ".claude" / "hooks").mkdir(parents=True)
+    (tmp_path / ".claude" / "hooks" / "ruff-postedit.py").write_text("x")
+    config = InstallerToml(prune_globs=["*/hooks/*", "claude/hooks/ruff-postedit.py"])
+
+    orphans = scan_orphans(
+        [_ClaudeLikeAdapter()], plans={Tool.CLAUDE: _empty_plan()}, home=tmp_path, config=config
+    )
+
+    assert orphans == []
+
+
 def test_beads_formulas_scanned_with_no_beads_plan(tmp_path: Path) -> None:
     """
     Given a ~/.beads/formulas entry and no beads content in any plan

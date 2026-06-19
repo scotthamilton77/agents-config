@@ -49,6 +49,31 @@ def test_bare_install_single_tool_no_plugins(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
+def test_hooks_namespace_staged_with_exec_bit(tmp_path: Path) -> None:
+    """The real ``src/user/.claude/hooks/`` namespace installs to ``~/.claude/hooks/``
+    at parity, preserving each script's source mode bit: ``ruff-postedit.py`` is
+    git-tracked 100755 and must land executable, while ``ruff-postedit_test.sh`` is
+    100644 and must land non-executable. The bare-install scenario already compares
+    the exec bit tree-wide; this pins the hooks/ namespace explicitly (8.7 parity
+    with install.sh's hooks/ subdir staging + cp mode preservation), so a future
+    regression in either installer surfaces here by name rather than as an opaque
+    tree diff."""
+    result = run_parity(tmp_path, args=_CLAUDE_ARGS)
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+
+    hooks_b = result.home_b / ".claude" / "hooks"
+    exec_hook = hooks_b / "ruff-postedit.py"
+    plain_hook = hooks_b / "ruff-postedit_test.sh"
+    assert exec_hook.is_file(), "hook script must install to ~/.claude/hooks/"
+    assert plain_hook.is_file(), "non-exec hook sibling must install to ~/.claude/hooks/"
+    assert exec_hook.stat().st_mode & 0o111, "executable source hook must land +x"
+    assert not (plain_hook.stat().st_mode & 0o111), "non-executable source hook must stay -x"
+
+
 def test_pre_existing_settings_merge(tmp_path: Path) -> None:
     """A pre-existing user settings.json is union-merged by both installers. The
     bash side uses jq, the Python side json_union — the differ compares JSON

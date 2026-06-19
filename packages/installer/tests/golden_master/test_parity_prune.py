@@ -72,6 +72,38 @@ def test_prune_yes_removes_orphans(tmp_path: Path) -> None:
     ), "agents-backup must hold a timestamped backup of the pruned agent"
 
 
+def _seed_hooks_orphan(home: Path) -> None:
+    """Place an unmanaged file into the Claude ``hooks/`` tree under a name that an
+    aggressive prune glob would match. ``hooks/`` is prune-EXEMPT, so this file
+    must survive a ``--prune`` run untouched on both installers."""
+    hooks = home / ".claude" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    (hooks / "user-local-hook.py").write_text("# user-managed hook, not from src\n")
+
+
+def test_hooks_orphan_survives_prune(tmp_path: Path) -> None:
+    """--prune --yes with a stray ``hooks/`` file present: ``hooks/`` is outside the
+    pruned namespace set (bash ``prune_subdirs`` = commands/skills/agents/rules;
+    Python ``_PRUNE_SUBDIRS`` mirrors it), so the stray file must remain after the
+    install-then-prune pass on BOTH installers. Parity proves bash and Python agree
+    that hooks/ is never pruned; the explicit existence check proves the exemption
+    actually held rather than the file having been removed identically by both."""
+    result = run_parity(tmp_path, args=[*_CLAUDE_ARGS, "--prune"], seed=_seed_hooks_orphan)
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+    # The exemption held: the stray hook is still there, not pruned.
+    assert (result.home_b / ".claude" / "hooks" / "user-local-hook.py").is_file(), (
+        "hooks/ is prune-exempt - the stray hook must survive --prune"
+    )
+    # And it was never backed up (no prune action touched it at all).
+    assert not (result.home_b / ".claude" / "hooks-backup").exists(), (
+        "no hooks-backup dir - prune must never visit the hooks/ namespace"
+    )
+
+
 def test_prune_only_removes_orphans(tmp_path: Path) -> None:
     """--prune-only --yes: Phase 7 install is skipped; orphaned retired files are
     backed up and removed.  Both installers must produce identical homes containing
