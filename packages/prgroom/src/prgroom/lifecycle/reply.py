@@ -94,13 +94,21 @@ def _decisions_line(rm: RoutedMemory) -> str:
 
 def _splice_block(body: str, block: str) -> str:
     start = body.find(DECISIONS_START)
-    end = body.find(DECISIONS_END, start) if start != -1 else -1
-    if start == -1 or end == -1:
-        # No clean sentinel PAIR — either absent, or a corrupted orphan start without its
-        # end. Never guess a boundary or truncate the body (matches extract_decisions_block's
-        # no-guess contract); append the fresh block, preserving every existing byte.
+    if start == -1:
+        # No block at all — append the fresh block, preserving every existing byte.
         sep = "\n\n" if body.strip() else ""
         return f"{body}{sep}{block}"
+    end = body.find(DECISIONS_END, start)
+    if end == -1:
+        # Orphan start (start present, end missing): re-pair in place, never truncate.
+        # extract_decisions_block reads from the FIRST start sentinel, so appending a fresh
+        # block at the end would leave the orphan first — the new block would be unreadable
+        # (extract would span orphan-start..appended-end, capturing a nested sentinel) and
+        # re-merges would keep appending. Replace the orphan start marker with the fresh
+        # block and keep everything after it as the tail: the first start is paired again,
+        # the block is readable, and merges stay idempotent.
+        tail = body[start + len(DECISIONS_START) :]
+        return body[:start] + block + tail
     tail = body[end + len(DECISIONS_END) :]
     return body[:start] + block + tail
 

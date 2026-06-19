@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from prgroom.lifecycle.reply import _sanitize, merge_decisions_block, reply_pr
+from prgroom.lifecycle.snapshot import DECISIONS_START, extract_decisions_block
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import RoutedMemory, bootstrap_state
@@ -66,6 +67,21 @@ def test_merge_does_not_truncate_body_on_orphan_start_sentinel() -> None:
     )
     assert "orphan tail that must survive" in out
     assert "new" in out
+
+
+def test_merge_on_orphan_start_is_readable_and_idempotent() -> None:
+    # extract_decisions_block reads from the FIRST start sentinel, so appending a fresh
+    # block at the end (round-1 behaviour) left the orphan start first — the new block was
+    # unreadable (extract returned garbage containing a nested start) and re-merges kept
+    # appending. The in-place re-pair makes the block readable and the merge idempotent.
+    body = "intro\n<!-- prgroom:decisions:start -->\norphan tail that must survive"
+    rm = [RoutedMemory(content="kept", round=1, source_item="c1#0", decided_by="a")]
+    once = merge_decisions_block(body, rm)
+    block = extract_decisions_block(once)
+    assert "kept" in block
+    assert DECISIONS_START not in block  # no nested/orphan sentinel leaks into the read block
+    assert "orphan tail that must survive" in once
+    assert merge_decisions_block(once, rm) == once  # idempotent re-pair, not re-append
 
 
 def test_merge_appends_distinct_same_round_keys() -> None:
