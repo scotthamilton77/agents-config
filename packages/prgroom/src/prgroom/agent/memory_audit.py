@@ -53,11 +53,14 @@ class MemoryAuditResult:
 
     ``violations`` are HARD breaches (containment BLOCK + per-entry WARNs);
     ``deferred`` are accepted non-CONTEXTUAL entries the repo-wide router will
-    later home; ``unwritten`` are declared-but-unwritten paths (soft warnings).
+    later home; ``routable`` are valid CONTEXTUAL entries the lifecycle
+    (``_reply``) will route; ``unwritten`` are declared-but-unwritten paths
+    (soft warnings).
     """
 
     violations: list[AuditViolation] = field(default_factory=list)
     deferred: list[MemoryEntry] = field(default_factory=list)
+    routable: list[MemoryEntry] = field(default_factory=list)
     unwritten: list[str] = field(default_factory=list)
 
 
@@ -102,6 +105,7 @@ def audit_memory(
     """Validate the §8.5 memory channel. Pure; returns a :class:`MemoryAuditResult`."""
     violations: list[AuditViolation] = []
     deferred: list[MemoryEntry] = []
+    routable: list[MemoryEntry] = []
 
     for write_path in out.memory_writes:
         if not _is_contained(write_path, memory_dir):
@@ -115,7 +119,11 @@ def audit_memory(
 
     for entry in out.memory:
         _audit_entry(
-            entry, known_thread_ids=known_thread_ids, violations=violations, deferred=deferred
+            entry,
+            known_thread_ids=known_thread_ids,
+            violations=violations,
+            deferred=deferred,
+            routable=routable,
         )
 
     # Compare under the same lexical anchoring as containment, so a relative declared
@@ -123,7 +131,9 @@ def audit_memory(
     # match. Report the declared form ``p`` for a human-readable warning.
     anchored_written = {_anchor(w, memory_dir) for w in written_paths}
     unwritten = [p for p in out.memory_writes if _anchor(p, memory_dir) not in anchored_written]
-    return MemoryAuditResult(violations=violations, deferred=deferred, unwritten=unwritten)
+    return MemoryAuditResult(
+        violations=violations, deferred=deferred, routable=routable, unwritten=unwritten
+    )
 
 
 def _audit_entry(
@@ -132,6 +142,7 @@ def _audit_entry(
     known_thread_ids: set[str],
     violations: list[AuditViolation],
     deferred: list[MemoryEntry],
+    routable: list[MemoryEntry],
 ) -> None:
     if entry.classification not in _VALID_CLASSES:
         violations.append(
@@ -164,3 +175,7 @@ def _audit_entry(
                 detail=f"CONTEXTUAL memory target_hint names unknown thread {entry.target_hint!r}",
             )
         )
+        return
+
+    # Passed every gate — a valid CONTEXTUAL entry the lifecycle will route (§8.3).
+    routable.append(entry)
