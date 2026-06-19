@@ -70,6 +70,8 @@ class GitClient(Protocol):
 
     def head_sha(self) -> str: ...  # pragma: no cover
 
+    def config_user(self) -> str: ...  # pragma: no cover
+
     def current_branch(self) -> str: ...  # pragma: no cover
 
     def rev_list(self, range_: str) -> list[str]: ...  # pragma: no cover
@@ -114,6 +116,14 @@ class GitCli:
 
     def head_sha(self) -> str:
         return self._run(["git", "rev-parse", "HEAD"]).strip()
+
+    def config_user(self) -> str:
+        # Identity for resolve-escalated provenance (decided_by="human:<user>"). Prefer
+        # user.name; fall back to user.email so an email-only git config still attributes.
+        name = self._run(["git", "config", "user.name"]).strip()
+        if name:
+            return name
+        return self._run(["git", "config", "user.email"]).strip()
 
     def current_branch(self) -> str:
         # `--abbrev-ref HEAD` yields the branch name, or the literal "HEAD" when
