@@ -14,8 +14,8 @@ no-op (the §3.3 idempotency contract).
 
 Mirrors the other lock-held internals: works on a deepcopy, never touches the store
 (the caller owns ``store.write``), makes no phase change (§3.2 rereview row), and
-sets no ``state.last_error``. A no-op (no gh calls, state unchanged) when no required
-reviewer is stale.
+sets no ``state.last_error``. When no required reviewer is stale it makes no gh
+calls, but still advances the rereviewed-SHA stamp (the guard gated entry).
 """
 
 from __future__ import annotations
@@ -48,8 +48,9 @@ def rereview_pr(
     """Re-request review from every stale required reviewer via the remove/add dance.
 
     Caller must hold the per-ref lock (see ``lock()``). Works on a deepcopy of
-    ``state``; returns the copy for the caller to persist. A no-op when no required
-    reviewer is in ``{not_requested, declined}``. No phase change (§3.2 rereview
+    ``state``; returns the copy for the caller to persist. Makes no gh calls when no
+    required reviewer is in ``{not_requested, declined}``, but still advances the
+    rereviewed-SHA stamp (the guard gated entry). No phase change (§3.2 rereview
     row), no ``state.last_error``.
     """
     state = copy.deepcopy(state)
@@ -68,6 +69,10 @@ def rereview_pr(
             gh.rest("POST", path, fields=fields)
             reviewer.status = ReviewerStatus.REQUESTED
             reviewer.last_request_at = now
+        # Reviewers will now see the invalidated HEAD; stamp it so
+        # ``push_awaiting_rereview`` flips false. After the loop (a mid-loop POST
+        # failure raises and discards the deepcopy, leaving the stamp un-advanced).
+        state.last_rereviewed_sha = state.last_review_invalidated_sha
     except GhNotFoundError as exc:
         # The PR/repo vanished mid-run (404) — terminal, not a raw traceback.
         raise vanished_pr_terminal(ref) from exc
