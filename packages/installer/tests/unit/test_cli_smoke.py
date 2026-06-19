@@ -703,7 +703,10 @@ def test_verbose_install_renders_per_file_detail_quiet_install_does_not(
     rc_v = main(["--tools=claude", "--yes", "--verbose"], home=home_v, repo_root=repo_v)
     assert rc_v == 0
     verbose_out = capsys.readouterr().out
-    assert "INSTRUCTIONS.md" in verbose_out
+    # Collapse whitespace before asserting: terminals in CI wrap long paths at
+    # ~80 chars, splitting "INSTRUCTIONS.md" across lines and breaking naive
+    # substring checks.
+    assert "INSTRUCTIONS.md" in "".join(verbose_out.split())
 
     # Quiet re-install into a fresh home: the same install produces no per-file
     # line on stdout (the default-quiet contract).
@@ -713,7 +716,7 @@ def test_verbose_install_renders_per_file_detail_quiet_install_does_not(
     rc_q = main(["--tools=claude", "--yes"], home=home_q, repo_root=repo_q)
     assert rc_q == 0
     quiet_out = capsys.readouterr().out
-    assert "INSTRUCTIONS.md" not in quiet_out
+    assert "INSTRUCTIONS.md" not in "".join(quiet_out.split())
     # sanity: the verbose dest path is the one we expect main to have installed.
     assert dest.exists()
 
