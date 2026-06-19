@@ -16,3 +16,15 @@
   `claude`; it adds `codex` / `gemini` only when `~/.codex/` / `~/.gemini/`
   exists, or when `--tools=` forces them. Don't describe it as "detecting
   installed CLIs".
+- **Namespace-dir replace is backup-free in bash, backed-up in Python — an
+  intentional divergence.** `sync_directory` replaces a *changed*
+  `commands` / `skills` / `agents` / `rules` / `hooks` item with
+  `rm -rf "$dest_item"; cp -R` and **no `backup()` call** — a user-modified
+  skill/agent/hook is silently destroyed. The Python port (`packages/installer/`)
+  backs the item up to `<namespace>-backup/` before replacing, deliberately
+  fixing that latent data-loss bug. **Consequence for parity comparisons:** a
+  real-home (drifted-state) `install.sh`-vs-`install.py` diff shows Python-only
+  `<namespace>-backup/…` directories and `<namespace>/<file>.backup-*` entries —
+  expected (Python preserving content bash would destroy), **not** a regression.
+  The hermetic golden-master suite never seeds a content-drifted namespace dir,
+  so it does not surface this; a real-home smoke does.
