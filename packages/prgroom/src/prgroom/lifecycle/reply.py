@@ -148,11 +148,15 @@ def _route_memory(state: PRGroomingState, *, gh: GhClient, ref: PRRef) -> None:
         detail = gh.rest("GET", f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}")
         body = str(detail.get("body") or "")
         merged = merge_decisions_block(body, thread_less)
-        gh.rest(
-            "PATCH",
-            f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}",
-            fields={"body": merged},
-        )
+        # merge_decisions_block is byte-identical on rerun, so a crash-resume with the same
+        # pending_memory re-derives the same body. Skip the no-op PATCH (avoid API churn /
+        # triggering PR automations, and shrink the GET→PATCH overwrite window).
+        if merged != body:
+            gh.rest(
+                "PATCH",
+                f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}",
+                fields={"body": merged},
+            )
     state.pending_memory = []
 
 

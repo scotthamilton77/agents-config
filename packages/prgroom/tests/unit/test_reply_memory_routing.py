@@ -121,3 +121,17 @@ def test_thread_less_routes_via_patch_and_clears() -> None:
     patch = next(f for m, p, f in gh.rest_calls if m == "PATCH")
     assert "decision" in patch["body"] and "orig body" in patch["body"]
     assert out.pending_memory == []
+
+
+def test_thread_less_noop_merge_skips_patch_but_clears() -> None:
+    # On an idempotent re-run (crash-after-PATCH-before-store.write resumes with the same
+    # pending_memory), merge_decisions_block returns a byte-identical body. Skip the no-op
+    # PATCH (avoid API churn / triggering PR automations) but still clear pending_memory.
+    rm = RoutedMemory(content="decision", round=1, source_item="c1#0", decided_by="a")
+    already = merge_decisions_block("orig body", [rm])
+    gh = _RecordingGh(body=already)  # PR body already carries the merged block
+    out = reply_pr(_state_with_pending([rm]), gh=gh, ref=_ref())
+    methods = [(m, p) for m, p, _ in gh.rest_calls]
+    assert ("GET", "repos/o/r/pulls/7") in methods  # still reads to compare
+    assert not any(m == "PATCH" for m, _ in methods)  # no no-op PATCH
+    assert out.pending_memory == []  # still cleared
