@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.pr_ref import PRRef
-from prgroom.prsession.state import PRGroomingState, RoutedMemory, QuiescenceState, bootstrap_state
+from prgroom.prsession.state import PRGroomingState, RoutedMemory, bootstrap_state
 
-_NOW = datetime(2026, 6, 19, tzinfo=timezone.utc)
+_NOW = datetime(2026, 6, 19, tzinfo=UTC)
 
 
 def _ref() -> PRRef:
