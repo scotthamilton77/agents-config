@@ -165,9 +165,14 @@ def _is_executable(path: Path) -> bool:
 
 def _files_equal(relpath: str, a: Path, b: Path) -> bool:
     data_a, data_b = a.read_bytes(), b.read_bytes()
+    # Byte-identical is always equal — including two unparseable ``.json`` files
+    # (both installers skipping a malformed settings.json), which
+    # ``json_semantically_equal`` alone would report unequal on its parse failure.
+    if data_a == data_b:
+        return True
     if relpath.endswith(".json"):
         return json_semantically_equal(data_a, data_b)
-    return data_a == data_b
+    return False
 
 
 def diff_trees(root_a: Path, root_b: Path) -> TreeDiff:

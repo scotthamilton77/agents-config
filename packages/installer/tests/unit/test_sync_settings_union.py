@@ -78,17 +78,32 @@ def test_sync_settings_backs_up_user_file_before_union(tmp_path: Path) -> None:
     assert json.loads(backups[0].read_bytes()) == {"userKey": "keep-me"}
 
 
-def test_sync_overwrites_when_existing_settings_is_invalid_json(tmp_path: Path) -> None:
-    """A malformed existing settings.json cannot be unioned; the installer falls
-    back to overwrite (bash warns and replaces) rather than crashing."""
+def test_sync_preserves_and_skips_invalid_existing_settings(tmp_path: Path) -> None:
+    """An existing settings.json that is not valid JSON is left untouched and
+    reported as an error, not overwritten — matching bash, which refuses to touch a
+    file it cannot parse (``scripts/install.sh:1299-1304``: err + skip + return, the
+    file left in place). The earlier Python behaviour clobbered it with the template
+    (the user's content survived only in a backup); these assertions pin the
+    skip-and-preserve contract."""
     home = tmp_path / "home"
     home.mkdir()
-    (home / "settings.json").write_text("{ not valid json")
+    invalid = "{ not valid json"
+    (home / "settings.json").write_text(invalid)
     plan = StagingPlan(
         items={Path("settings.json"): _settings_item(b'{"templateKey": 1}')},
         tool=Tool.CLAUDE,
     )
+    io = ScriptedIO()
 
-    sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_TS)
+    counters = sync_plan(_IdentityAdapter(), plan, home=home, io=io, auto_yes=True, timestamp=_TS)
 
-    assert json.loads((home / "settings.json").read_bytes()) == {"templateKey": 1}
+    # the malformed file is preserved verbatim — not overwritten, not backed up
+    assert (home / "settings.json").read_text() == invalid
+    assert not list(home.glob("settings.json.backup-*"))
+    # it is counted as skipped, not updated
+    assert counters.skipped == 1
+    assert counters.updated == 0
+    # an actionable error names the offending file
+    errs = [e for e in io.transcript if e.channel == "err"]
+    assert errs, "expected an error about the invalid settings.json"
+    assert "invalid JSON" in errs[0].message

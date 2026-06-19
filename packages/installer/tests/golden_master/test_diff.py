@@ -103,6 +103,19 @@ def test_json_compared_semantically_not_bytewise(tmp_path: Path) -> None:
     assert result.is_parity(), result.render()
 
 
+def test_byte_identical_invalid_json_is_parity(tmp_path: Path) -> None:
+    # When both installers refuse to touch a malformed settings.json (invalid-JSON
+    # skip), they leave byte-identical unparseable bytes. The differ must treat
+    # identical bytes as equal even though neither side parses as JSON —
+    # json_semantically_equal alone returns False on a parse failure, so the
+    # byte-equality short-circuit in _files_equal is what keeps this at parity.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/settings.json", b"{ not valid json\n")
+    _write(b / ".claude/settings.json", b"{ not valid json\n")
+    result = diff_trees(a, b)
+    assert result.is_parity(), result.render()
+
+
 def test_non_json_compared_bytewise(tmp_path: Path) -> None:
     a, b = tmp_path / "a", tmp_path / "b"
     _write(a / "note.md", b"alpha")

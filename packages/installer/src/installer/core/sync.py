@@ -40,25 +40,36 @@ def _effective_content(content: bytes, old: bytes | None, *, kind: FileKind) -> 
 
     A ``settings.json`` over an existing user file is union-merged into that file
     (bash ``sync_settings_file``) so user values survive; any other kind, or a
-    fresh install, writes the staged content unchanged. An existing settings file
-    that is not valid JSON falls back to overwrite — bash warns and replaces.
+    fresh install, writes the staged content unchanged. The caller guarantees an
+    existing settings file is valid JSON before this runs (an invalid one is
+    skipped with an error — bash ``scripts/install.sh:1299-1304``), so the union
+    never has to reconcile unparseable bytes.
     """
     if kind is not FileKind.SETTINGS_JSON or old is None:
         return content
+    return merge_settings_bytes(existing=old, incoming=content)
+
+
+def _is_valid_json(data: bytes) -> bool:
+    """Whether ``data`` parses as JSON — the guard bash runs as ``jq empty`` before
+    union-merging an existing ``settings.json`` (``scripts/install.sh:1299``)."""
     try:
-        return merge_settings_bytes(existing=old, incoming=content)
-    except ValueError:
-        return content
+        json.loads(data)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return True
 
 
 def _is_unchanged(old: bytes, new: bytes, *, kind: FileKind) -> bool:
     """Settings compare semantically — a reformat is not a change; every other
-    file compares byte-for-byte via sha-256."""
+    file compares byte-for-byte via sha-256.
+
+    For ``SETTINGS_JSON`` both sides are valid JSON when this runs: ``_install_file``
+    skips an invalid existing settings file (``_is_valid_json``) before reaching
+    here, and ``new`` is always a union-merge result. So the parse cannot fail on
+    the guarded path — an unparseable ``old`` would have been skipped upstream."""
     if kind is FileKind.SETTINGS_JSON:
-        try:
-            return bool(json.loads(old) == json.loads(new))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return False
+        return bool(json.loads(old) == json.loads(new))
     return _sha256(old) == _sha256(new)
 
 
@@ -281,7 +292,10 @@ def _install_file(
     A ``SETTINGS_JSON`` item is union-merged into an existing user file rather
     than overwritten (``_effective_content``), so user values survive an install;
     the change check is then semantic (``_is_unchanged``), so a pure reformat is a
-    skip, not a spurious backup-and-rewrite.
+    skip, not a spurious backup-and-rewrite. An existing settings file that is not
+    valid JSON is left untouched and reported as an error (it cannot be merged, and
+    a blind overwrite would destroy a recoverable hand-edit), counted as a skip —
+    bash's ``jq empty`` guard (``scripts/install.sh:1299-1304``).
 
     A *changed* dest (present, content differs) passes through the consent gate
     (`_consent_to_overwrite`) before any backup or write: an interactive decline
@@ -302,6 +316,13 @@ def _install_file(
         raise ValueError(f"dest exists but is not a file: {dest}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.is_file()
     old = dest.read_bytes() if dest_exists else None
+    if kind is FileKind.SETTINGS_JSON and old is not None and not _is_valid_json(old):
+        # Refuse to touch an unparseable settings.json: union-merge is impossible
+        # and a blind overwrite would destroy the user's (recoverable) hand-edit.
+        # bash skips with the same guidance (``scripts/install.sh:1299-1304``).
+        io.err(f"{dest} contains invalid JSON. Fix it manually or remove it.")
+        counters.skipped += 1
+        return
     effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
         if restore_exec_on_skip and executable and not dry_run:
