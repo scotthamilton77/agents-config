@@ -325,6 +325,26 @@ def _install_file(
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
 
 
+def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, bytes]) -> bool:
+    """Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would
+    leave its contents byte-identical — the directory idempotency check.
+
+    Mirrors bash ``sync_directory``'s ``src_hash == dest_hash`` "up to date"
+    branch (`scripts/install.sh:1230`), whose directory hash folds every file's
+    relpath and bytes (`compute_hash`, `scripts/install.sh:402-403`). The
+    expected file map is the source tree with ``overrides`` overlaid (override
+    wins on a name collision — dump-time semantics), compared against the actual
+    dest tree. Bytes are read through symlinks to match ``copytree``'s
+    dereferencing; only files participate, so empty dirs are ignored — matching
+    the golden-master differ."""
+    expected = {
+        p.relative_to(source_path): p.read_bytes() for p in source_path.rglob("*") if p.is_file()
+    }
+    expected.update(overrides)
+    actual = {p.relative_to(dest): p.read_bytes() for p in dest.rglob("*") if p.is_file()}
+    return expected == actual
+
+
 def _install_dir(
     dest: Path,
     source_path: Path,
@@ -340,10 +360,14 @@ def _install_dir(
     copy the ``source_path`` tree, then overlay ``overrides`` (override wins on
     a name collision, matching dump-time semantics). Mutates ``counters``.
 
-    An existing dest passes through the consent gate before the backup/replace:
-    an interactive decline keeps the existing tree and counts a skip; ``auto_yes``
-    accepts silently; ``dry_run`` previews without prompting. A directory has no
-    ``IOPort`` byte-diff, so the change is surfaced as a notice, not a unified diff.
+    An existing dest whose contents already match (`_dir_is_unchanged`) is left
+    untouched and counted as a skip — so a re-install is idempotent and produces
+    no spurious backups (bash ``sync_directory``'s "up to date" branch,
+    `scripts/install.sh:1230`). A changed existing dest passes through the
+    consent gate before the backup/replace: an interactive decline keeps the
+    existing tree and counts a skip; ``auto_yes`` accepts silently; ``dry_run``
+    previews without prompting. A directory has no ``IOPort`` byte-diff, so the
+    change is surfaced as a notice, not a unified diff.
 
     A missing or non-directory ``source_path``, or a dest already occupied by a
     non-directory (a file), is rejected with `ValueError` rather than crashing
@@ -361,6 +385,9 @@ def _install_dir(
         if not is_safe_relpath(inner):
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
+    if dest_exists and _dir_is_unchanged(dest, source_path, overrides):
+        counters.skipped += 1
+        return
     if (
         dest_exists
         and not dry_run

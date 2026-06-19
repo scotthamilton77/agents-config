@@ -294,6 +294,68 @@ def test_existing_dir_is_backed_up_then_cleanly_replaced(tmp_path: Path) -> None
     assert (counters.updated, counters.backed_up) == (1, 1)
 
 
+def test_unchanged_dir_item_is_skipped_without_backup(tmp_path: Path) -> None:
+    """
+    Given a DIR item already materialised by a prior identical run
+    When sync_plan re-runs into the same dest
+    Then the unchanged dir is skipped — no backup is created and skipped is
+    counted — mirroring bash sync_directory's ``src_hash == dest_hash`` "up to
+    date" branch (scripts/install.sh:1230) so a re-install is idempotent.
+    """
+    src = tmp_path / "src_skill"
+    (src / "sub").mkdir(parents=True)
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    (src / "sub" / "x.md").write_bytes(b"nested\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    first = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+    assert first.created == 1
+
+    second = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert second.skipped == 1
+    assert (second.created, second.updated, second.backed_up) == (0, 0, 0)
+    assert not (home / "skills-backup").exists()
+    assert (home / "skills" / "s" / "SKILL.md").read_bytes() == b"skill\n"
+    assert (home / "skills" / "s" / "sub" / "x.md").read_bytes() == b"nested\n"
+
+
+def test_unchanged_dir_item_with_overrides_is_skipped(tmp_path: Path) -> None:
+    """
+    Given a DIR item plus an override file, already materialised by a prior run
+    When sync_plan re-runs
+    Then the overlaid override is folded into the unchanged comparison, so the
+    dir is recognised as up to date and skipped — the override file in dest is
+    not mistaken for drift that would force a spurious backup/replace.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "shared.md").write_bytes(b"from-source\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(
+        items={Path("skills/s"): _dir_item(Path("skills/s"), src)},
+        tool=Tool.CLAUDE,
+        dir_overrides={Path("skills/s"): {Path("extra.md"): b"added\n"}},
+    )
+
+    sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+    second = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert second.skipped == 1
+    assert second.backed_up == 0
+    assert not (home / "skills-backup").exists()
+    assert (home / "skills" / "s" / "extra.md").read_bytes() == b"added\n"
+
+
 def test_dry_run_does_not_materialize_dir(tmp_path: Path) -> None:
     """
     Given --dry-run and a DIR item whose dest is absent
