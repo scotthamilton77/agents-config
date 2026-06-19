@@ -106,6 +106,29 @@ def test_settings_merge_with_overlapping_array(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
 
+def test_pre_existing_invalid_settings_is_preserved(tmp_path: Path) -> None:
+    """A pre-existing settings.json that is NOT valid JSON: both installers refuse
+    to touch it — bash errors and skips (install.sh:1299-1304), and the Python port
+    now matches — leaving the user's malformed file in place rather than clobbering
+    it with the template. Parity holds because neither installer writes the settings
+    file (no overwrite, no backup); the rest of the install proceeds normally."""
+
+    def seed(home: Path) -> None:
+        claude = home / ".claude"
+        claude.mkdir(parents=True, exist_ok=True)
+        (claude / "settings.json").write_text("{ not valid json\n")
+
+    result = run_parity(tmp_path, args=_CLAUDE_ARGS, seed=seed)
+
+    assert result.bash_returncode == 0, result.bash_stderr
+    assert result.python_returncode == 0, result.python_stderr
+    diff = result.diff()
+    assert diff.is_parity(), diff.render()
+    # both leave the malformed file exactly as seeded — no overwrite, no backup
+    assert (result.home_b / ".claude" / "settings.json").read_text() == "{ not valid json\n"
+    assert not list((result.home_b / ".claude").glob("settings.json.backup-*"))
+
+
 def test_bare_install_codex(tmp_path: Path) -> None:
     """Single-tool parity for Codex — a dot-dir tool with its own templates."""
     result = run_parity(tmp_path, args=["--tools=codex", "--plugins=", "--yes"])
