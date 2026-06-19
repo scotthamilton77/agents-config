@@ -80,6 +80,12 @@ Newcomers should read in this order; deep contributors may navigate freely.
 | [`state-machine.md`](state-machine.md) | drawn | **Phase graph + quiescence predicate**: the six §2 `PRPhase` values (`idle` / `awaiting-review` / `fixes-pending` / `quiesced` / `human-gated` / `merged`) with their §3.2-priority-cascade transition edges, the `Round` counter loop, the §3.5 hard-cap exit (with `EscalationSink` emit + §4.7 auto-label side-effect), the resurrection edges from `quiesced` and `human-gated` back into the loop (including the `run --max-rounds` cap re-arm), and a companion `flowchart` for the §4.1 quiescence predicate's 4 hard gates + idle timer |
 | [`data-view.md`](data-view.md) | drawn | **State + contract data**: ER for `PRGroomingState` / `ReviewItem` / `Disposition` / `ReviewerState` / `QuiescenceState`; annotated JSON for the §4.6 `status` output, the Section 5 escalation events, and the §8 fix-contract `memory` channel + `recurrence` snapshot-input (non-persisted boundary shapes — the persisted ER is unchanged); canonical-ownership boundaries (state-file vs PR vs git) |
 
+## Operational runbooks
+
+Operator-facing procedures (not HLD diagrams) that live alongside this artifact set:
+
+- **[`cutover-runbook.md`](cutover-runbook.md)** — the staged legacy → prgroom migration: drain-before-cutover, the readiness gate for retiring the legacy tooling, and the git-revert rollback / straggler escape hatch. Distils companion-spec §6.4–6.6.
+
 ## Conventions
 
 - **Diagram notation**: Mermaid throughout, for native GitHub rendering. No SVG artifacts — `.md` files are the deliverable.
