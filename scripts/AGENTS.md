@@ -28,3 +28,28 @@
   expected (Python preserving content bash would destroy), **not** a regression.
   The hermetic golden-master suite never seeds a content-drifted namespace dir,
   so it does not surface this; a real-home smoke does.
+
+## Known bug — `flatten_agents_md` drops the last named rule
+
+`flatten_agents_md` splits a `<!-- DYNAMIC-INCLUDE-RULES: a,b -->` marker with
+`printf '%s' "$rule_names" | tr ',' '\n'` and feeds it to a `while read` loop.
+`printf '%s'` emits no trailing newline, so the **last** comma-field arrives with
+no terminating newline and `read` returns non-zero on it — and the inner rules
+loop omits the `|| [[ -n "$rule_name" ]]` guard that the function's outer
+line-reading loop has. The result: the last field of every named-RULES marker is
+silently dropped. A single-name subset (`a`) inlines nothing; `a,b` inlines only
+`a`. The bug is masked whenever the trailing field is a no-op anyway (empty entry
+or a missing rule), which is why it went unnoticed — no live template uses the
+marker yet.
+
+The Python port (`packages/installer/src/installer/core/templates.py`,
+`_resolve_named_rules`) **intentionally diverges to the correct behaviour** — it
+inlines every listed rule, including the last/only one. The golden-master
+differential (`tests/golden_master/test_parity_named_rules.py`) pins this: it
+asserts parity only on bug-neutral inputs and asserts the corrected Python output
+on a single-name subset.
+
+Fix for the bash side (deferred — `install.sh` is slated for retirement once the
+port reaches full parity): add the `|| [[ -n "$rule_name" ]]` guard to the inner
+rules loop, matching the outer loop. Do this before any real template adopts the
+`DYNAMIC-INCLUDE-RULES` marker.

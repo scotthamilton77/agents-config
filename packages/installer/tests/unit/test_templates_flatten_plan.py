@@ -59,6 +59,26 @@ def test_flatten_inlines_all_rules_from_staged_plan_rules(tmp_path: Path) -> Non
     assert plan.items[Path("GEMINI.md")].content == b"top\nFIRST\n---\nSECOND"
 
 
+def test_flatten_inlines_named_rules_subset_from_source_dir(tmp_path: Path) -> None:
+    """A named-RULES subset marker is replaced by the listed rules in order,
+    resolved from the fixed ``src/user/.claude/rules/`` source dir under
+    repo_root — NOT from the plan's staged rules tree (that is the ALL-RULES
+    source). The subset can name rules the staged tree does not even carry."""
+    rules_src = tmp_path / "src/user/.claude/rules"
+    rules_src.mkdir(parents=True)
+    (rules_src / "second.md").write_bytes(b"SECOND\n")
+    (rules_src / "first.md").write_bytes(b"FIRST\n")
+    agents_md = _item(
+        Path("AGENTS.md"),
+        b"top\n<!-- DYNAMIC-INCLUDE-RULES: second,first -->\n",
+    )
+    plan = _plan(agents_md)
+
+    flatten_plan_templates(plan, repo_root=tmp_path, io=ScriptedIO())
+
+    assert plan.items[Path("AGENTS.md")].content == b"top\nSECOND\n\n---\nFIRST\n"
+
+
 def test_flatten_leaves_other_items_and_markerless_templates_untouched(tmp_path: Path) -> None:
     """Non-flattenable items and a marker-free instruction file are unchanged, and
     nothing is dropped when there are no includes."""
