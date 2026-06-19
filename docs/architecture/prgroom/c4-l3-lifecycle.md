@@ -42,8 +42,8 @@ C4Component
             Component(cluster, "_cluster", "Python function", "Dispatches the cluster contract to bundle unprocessed items into fix-clusters. Sets cluster_id on items. Idempotent on already-clustered items.")
             Component(fix, "_fix", "Python function", "Per cluster: assembles the complete-PR snapshot (PR body incl. Decisions block, labels, all threads w/ full reply-chains, prior-round dispositions + computed per-item recurrence; §8.1) immediately before dispatch; dispatches the fix contract; receives per-item disposition + commit SHAs + optional classified memory channel (§8.3); runs §5 contract-audit (orphan check, schema, shas-on-branch, memory classification + memory_dir containment §8.6); flips affected items to disposition.kind=failed on audit failure.")
             Component(push, "_push", "Python function", "git push queued commits to PR branch. round++ on successful push. Emits cap-warning stderr when push would reach max_rounds. Pre-push cap guard at §3.5.")
-            Component(rereview, "_rereview", "Python function", "Remove + re-add required bot reviewers (the gh quirk dance). Idempotent. Invoked by _run immediately after a successful _push.")
-            Component(reply, "_reply", "Python function", "Renders templates + agent-authored responses; posts via gh REST. Also routes the fix output's CONTEXTUAL memory (§8.3): thread-tied entries as thread replies, thread-less PR-wide decisions PATCHed into the sentinel-bounded Decisions block in the PR body (gh API edit, NOT a git commit). Marks replied=True per item. Idempotent — Decisions block keyed by (round, source-item), no persisted dedup flag.")
+            Component(rereview, "_rereview", "Python function", "Remove + re-add required bot reviewers (the gh quirk dance). Idempotent. Runs LAST in the cycle (after _reply/_resolve close out the round); guarded by push_awaiting_rereview (last_pushed_head_sha != last_rereviewed_sha) AND has_required_reviewers_to_refresh, and stamps last_rereviewed_sha = last_pushed_head_sha on success so the trigger is resumable across a failed reply/resolve.")
+            Component(reply, "_reply", "Python function", "Renders templates + agent-authored responses; posts via gh REST. Also routes the fix output's CONTEXTUAL memory (§8.3): thread-tied entries as thread replies, thread-less PR-wide decisions PATCHed into the sentinel-bounded Decisions block in the PR body (gh API edit, NOT a git commit). Marks replied=True per item. Drains+clears the persisted state.pending_memory (durability across cap-trip / transient failure). Decisions-block ROUTING dedup stays flagless — keyed by (round, source-item), rewritten wholesale; the persisted pending_memory guarantees no entry is LOST, not POST idempotency.")
             Component(resolve, "_resolve", "Python function", "GraphQL resolveReviewThread for items with disposition.kind ∈ {fixed, already_addressed} AND resolved == False. Marks resolved=True.")
             Component(wait, "_wait", "Python function", "§4.2 blocking loop. Five wake events: signal-cancel, poll-error, phase-moved, quiescence-trips, (no hard wait-timeout in MVP). The cancel-token threading.Event is honored at loop top AND inside the interruptible sleep (Event.wait(timeout=...)).")
 
@@ -85,9 +85,9 @@ C4Component
     Rel(run, cluster, "After poll, if items unclustered")
     Rel(run, fix, "After cluster, if clusters exist")
     Rel(run, push, "After fix, if commits queued (cap-gated)")
-    Rel(run, rereview, "After successful push")
-    Rel(run, reply, "After rereview (or directly if no push)")
-    Rel(run, resolve, "After reply")
+    Rel(run, reply, "After push: per-item replies + drain pending_memory")
+    Rel(run, resolve, "After reply: resolve FIXED threads")
+    Rel(run, rereview, "Last: if push_awaiting_rereview AND required reviewers stale")
     Rel(run, resolver, "End-of-cycle phase resolution")
     Rel(run, wait, "If end-of-cycle resolved to awaiting-review / idle")
 
@@ -163,23 +163,21 @@ def _run(pr, mode) -> PRGroomingState:     # caller holds the per-PR lock
         # both purely for readability. Do NOT copy either shape into the implementation:
         # the guard belongs in ONE place via a verb-step pipeline, and the dispatch
         # belongs on state.phase. See "Implementation guidance" after this block.
-        for verb in (_poll, _cluster, _fix, _push):
+        for verb in (_poll, _cluster, _fix, _push, _reply, _resolve):
             try:
                 state = verb(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
                     state = flush(state)       # flush the hooks, then
                     raise                      # propagate — the run() wrapper maps the tier to an exit code
-        if push_uploaded_commits_this_cycle(state):
+        # _rereview runs LAST (reply/resolve close out the round; rereview kicks off the
+        # next). Its guard is the PERSISTED push_awaiting_rereview (last_pushed_head_sha !=
+        # last_rereviewed_sha) — NOT the cycle-relative push_uploaded_commits_this_cycle —
+        # so a push that succeeded in a PRIOR cycle whose reply/resolve then Propagated is
+        # still rereviewed on resume. _rereview stamps last_rereviewed_sha on success.
+        if push_awaiting_rereview(state) and has_required_reviewers_to_refresh(state):
             try:
                 state = _rereview(pr, state)
-            except TaggedError as err:
-                if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
-                    state = flush(state)
-                    raise
-        for verb in (_reply, _resolve):
-            try:
-                state = verb(pr, state)
             except TaggedError as err:
                 if handle_verb_error(err, state) is VerbDisposition.PROPAGATE:
                     state = flush(state)
@@ -205,7 +203,7 @@ def _run(pr, mode) -> PRGroomingState:     # caller holds the per-PR lock
 
 The lock is acquired by the public `run()` wrapper (one level up); `_run` assumes it's held. The lock is released exactly when `_run` returns — at any of the terminal-for-CLI exits or on a Propagate failure. (`store`, `escalate_if_needed`, the verbs, etc. resolve through the injected deps surface — see Testability notes; they are written bare here for pseudocode brevity.)
 
-> **Implementation guidance — factor the cycle, don't transcribe it.** The pseudocode above spells out each `_`-prefixed call with its own inline `handle_verb_error` guard purely for readability. Do **not** carry that per-verb repetition into the implementation — it duplicates the error-handling contract on every line and makes adding or reordering a verb a copy-paste. Model the cycle instead as an ordered **pipeline of verb steps** — e.g. a `list[VerbStep]` where `VerbStep` is a dataclass `(name: str, run: Callable[[Deps, PRGroomingState], PRGroomingState], guard: Callable[[PRGroomingState], bool])` — and iterate it once, applying the shared `handle_verb_error` → `{Continue, Propagate}` logic in exactly **one** place. Conditional verbs become a `guard` predicate (`_rereview`'s guard = `push_uploaded_commits_this_cycle`), not an `if` in straight-line code. This keeps the §3.6 tier→decision mapping defined once and turns "add a verb" into a data change. (A strategy / pipeline pattern; the exact shape is settled during implementation of `src/prgroom/lifecycle`, not in this diagram.)
+> **Implementation guidance — factor the cycle, don't transcribe it.** The pseudocode above spells out each `_`-prefixed call with its own inline `handle_verb_error` guard purely for readability. Do **not** carry that per-verb repetition into the implementation — it duplicates the error-handling contract on every line and makes adding or reordering a verb a copy-paste. Model the cycle instead as an ordered **pipeline of verb steps** — e.g. a `list[VerbStep]` where `VerbStep` is a dataclass `(name: str, run: Callable[[Deps, PRGroomingState], PRGroomingState], guard: Callable[[PRGroomingState], bool])` — and iterate it once, applying the shared `handle_verb_error` → `{Continue, Propagate}` logic in exactly **one** place. Conditional verbs become a `guard` predicate (`_rereview`'s guard = `push_awaiting_rereview AND has_required_reviewers_to_refresh`), not an `if` in straight-line code. This keeps the §3.6 tier→decision mapping defined once and turns "add a verb" into a data change. (A strategy / pipeline pattern; the exact shape is settled during implementation of `src/prgroom/lifecycle`, not in this diagram.)
 
 ### Per-verb components
 
@@ -219,10 +217,10 @@ The dependencies between them are linear (the order in `_run`'s loop) — there 
 
 ### PR-memory: snapshot assembly + Decisions routing (§8)
 
-Two §8 PR-memory responsibilities attach to existing verbs — no new verb, no schema change (the PR is the durable store; §8.0):
+Two §8 PR-memory responsibilities attach to existing verbs — no new verb. The PR remains the durable *publication* store (§8.0), but routing carries a **deliberate additive schema change**: a persisted `pending_memory: list[RoutedMemory]` field (`_fix` appends, `_reply` drains+clears, written atomically with the dispositions it derives from). The in-memory alternative loses the decision memo on *every* cycle that ends before `_reply` (the hard-cap trip, any transient gh failure on push), which is too lossy for a "the PR is the memory" design. The field is omit-when-empty, so `schema_version` stays `1` (old state files load `[]`). (Sibling additive field from the same bead: `last_rereviewed_sha`, the resumable-rereview marker — see the `_rereview` component.)
 
 - **Snapshot assembly (read path) — inside `_fix`, immediately before dispatch (§8.1).** `_fix` builds the complete-PR snapshot the fix contract reads via `pr_detail_path`: PR body (including the prgroom-maintained `## Decisions` block), labels, every review thread with its full reply-chain, and prior-round dispositions sourced from `prsession`. It also computes the per-item **`recurrence`** signal (§8.2) — derived from disposition history at assembly time, never stored. Capture is deferred to just-before-dispatch (not top-of-cycle `_poll`) to minimise the staleness window. The fix agent never calls `gh`.
-- **CONTEXTUAL→PR routing (write path) — inside `_reply`, at reply time (§8.3).** The fix output's classified `memory` channel is routed by prgroom (the agent only *declares*): a CONTEXTUAL entry with a `target_hint` rides out as a **thread reply** on that thread; a thread-less CONTEXTUAL entry is merged into the **`## Decisions` block** in the PR body via a `gh` **PATCH of the description** — an API edit, **not** a git commit and **not** a phase change. prgroom owns the block between sentinel markers and rewrites it wholesale, so it is **idempotent without a persisted dedup flag**: entries are keyed by `(round, source-item)`, and a crash-and-re-run of the same round never double-appends (contrast the auto-label, which *does* carry the `human_review_label_added` flag). Non-CONTEXTUAL classes are accepted-but-deferred (logged, not routed).
+- **CONTEXTUAL→PR routing (write path) — inside `_reply`, at reply time (§8.3).** `_fix` resolves the fix output's classified `memory` channel into `RoutedMemory` records appended to the persisted `state.pending_memory`; `_reply` drains and routes them (the agent only *declares*): a CONTEXTUAL entry with a `target_hint` rides out as a **thread reply** on that thread; a thread-less CONTEXTUAL entry is merged into the **`## Decisions` block** in the PR body via a `gh` **PATCH of the description** — an API edit, **not** a git commit and **not** a phase change, then `pending_memory` is cleared. **Two distinct idempotency mechanisms:** the `pending_memory` field provides *durability* (a memo is never LOST — it survives until a clean `_reply` clears it); the Decisions-block *routing dedup* needs **no extra flag** — prgroom owns the block between sentinel markers, keys entries by `(round, source-item)`, and rewrites wholesale, so a same-round re-run is byte-identical (contrast the auto-label's `human_review_label_added` flag). Thread-reply memory shares the per-reply non-idempotent-POST window that per-item replies do. Non-CONTEXTUAL classes are accepted-but-deferred (logged, not routed).
 
 ### Cross-cutting components
 
