@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.io_port import ScriptedIO
-from installer.core.model import AllRulesInclude, FileInclude
+from installer.core.model import AllRulesInclude, FileInclude, NamedRulesInclude
 from installer.core.templates import flatten_template, parse_directive
 
 # ───────────────────────── parse_directive ─────────────────────────
@@ -54,13 +54,26 @@ def test_marker_with_leading_whitespace_is_not_a_directive() -> None:
     assert parse_directive("    <!-- DYNAMIC-INCLUDE: rules/foo.md -->") is None
 
 
-def test_named_rules_form_is_not_recognised() -> None:
+def test_named_rules_form_is_recognised_with_raw_list() -> None:
     """
-    Given the deferred named-RULES form (story C.3, absent from the model)
+    Given a named-RULES marker carrying a comma-separated rule list
     When parse_directive is called
-    Then it returns None rather than being mistaken for the file form.
+    Then it returns NamedRulesInclude carrying the verbatim capture — the bash
+    sed capture `\\(.*\\)`; trimming/splitting happens at flatten time.
     """
-    assert parse_directive("<!-- DYNAMIC-INCLUDE-RULES: a, b -->") is None
+    assert parse_directive("<!-- DYNAMIC-INCLUDE-RULES: a, b -->") == NamedRulesInclude(
+        names="a, b"
+    )
+
+
+def test_empty_named_rules_list_is_not_a_directive() -> None:
+    """
+    Given a named-RULES marker with an empty list
+    When parse_directive is called
+    Then it returns None — mirrors the bash `-n "$rule_names"` non-empty guard,
+    so the line passes through as prose.
+    """
+    assert parse_directive("<!-- DYNAMIC-INCLUDE-RULES:  -->") is None
 
 
 def test_empty_path_marker_is_not_a_directive() -> None:
@@ -265,6 +278,118 @@ def test_all_rules_expands_to_sorted_concatenation(tmp_path: Path) -> None:
     )
 
     assert result == "RULE A\n\n---\nRULE B\n"
+
+
+# ───────────────────── named-RULES subset form ─────────────────────
+
+
+def _write_named_rule(base_dir: Path, name: str, body: str) -> None:
+    """Materialise a rule at the fixed named-RULES source path under base_dir."""
+    rules_src = base_dir / "src/user/.claude/rules"
+    rules_src.mkdir(parents=True, exist_ok=True)
+    (rules_src / f"{name}.md").write_text(body, encoding="utf-8")
+
+
+def test_named_rules_inlines_in_listed_order_not_lexicographic(tmp_path: Path) -> None:
+    """
+    Given a named-RULES marker listing rules in non-lexicographic order
+    When flatten_template runs
+    Then the rules are inlined in the order listed, joined by \\n---\\n —
+    distinguishing the subset form from ALL-RULES (which sorts).
+    """
+    _write_named_rule(tmp_path, "zeta", "ZETA\n")
+    _write_named_rule(tmp_path, "alpha", "ALPHA\n")
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-RULES: zeta,alpha -->\n",
+        base_dir=tmp_path,
+        io=ScriptedIO(),
+    )
+
+    assert result == "ZETA\n\n---\nALPHA\n"
+
+
+def test_named_rules_trims_whitespace_around_names(tmp_path: Path) -> None:
+    """
+    Given a named-RULES list with whitespace around the names
+    When flatten_template runs
+    Then each name is trimmed before resolution — mirrors the bash per-name
+    sed trim — so the surrounding spaces do not break the lookup.
+    """
+    _write_named_rule(tmp_path, "one", "ONE\n")
+    _write_named_rule(tmp_path, "two", "TWO\n")
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-RULES:  one ,  two  -->\n",
+        base_dir=tmp_path,
+        io=ScriptedIO(),
+    )
+
+    assert result == "ONE\n\n---\nTWO\n"
+
+
+def test_named_rules_skips_empty_entries_between_commas(tmp_path: Path) -> None:
+    """
+    Given a named-RULES list with empty entries (consecutive commas)
+    When flatten_template runs
+    Then empty entries are skipped — mirrors the bash `[[ -n ]] || continue` —
+    and only the real rules are inlined with one separator between them.
+    """
+    _write_named_rule(tmp_path, "a", "AAA\n")
+    _write_named_rule(tmp_path, "b", "BBB\n")
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-RULES: a,,b -->\n",
+        base_dir=tmp_path,
+        io=ScriptedIO(),
+    )
+
+    assert result == "AAA\n\n---\nBBB\n"
+
+
+def test_named_rules_missing_rule_warns_and_is_skipped(tmp_path: Path) -> None:
+    """
+    Given a named-RULES list where the first rule is missing and the second
+    exists
+    When flatten_template runs
+    Then the missing rule warns and is skipped, and because the separator only
+    advances on a successful inline, the output is just the present rule with no
+    leading \\n---\\n — mirroring the bash `first_rule` flip-on-success.
+    """
+    _write_named_rule(tmp_path, "present", "PRESENT\n")
+    io = ScriptedIO()
+
+    result = flatten_template(
+        "<!-- DYNAMIC-INCLUDE-RULES: absent,present -->\n",
+        base_dir=tmp_path,
+        io=io,
+    )
+
+    assert result == "PRESENT\n"
+    warnings = [e for e in io.transcript if e.channel == "warn"]
+    assert len(warnings) == 1
+    assert "absent.md" in warnings[0].message
+
+
+def test_named_rules_all_missing_expands_blank_with_warnings(tmp_path: Path) -> None:
+    """
+    Given a named-RULES list where no rule resolves
+    When flatten_template runs
+    Then the marker line expands to the empty string and each missing name
+    produces a warning — there is no aggregate "no rules found" warning for the
+    named form (unlike ALL-RULES), matching the bash per-name warn loop.
+    """
+    io = ScriptedIO()
+
+    result = flatten_template(
+        "before\n<!-- DYNAMIC-INCLUDE-RULES: nope,gone -->\nafter\n",
+        base_dir=tmp_path,
+        io=io,
+    )
+
+    assert result == "before\nafter\n"
+    warnings = [e for e in io.transcript if e.channel == "warn"]
+    assert len(warnings) == 2
 
 
 # ───────────────────────── traversal guard ─────────────────────────

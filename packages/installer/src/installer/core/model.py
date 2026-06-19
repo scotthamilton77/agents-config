@@ -66,11 +66,25 @@ class AllRulesInclude:
     behaviour lives in `core/templates.py`."""
 
 
-IncludeDirective: TypeAlias = FileInclude | AllRulesInclude
+@dataclass(frozen=True, slots=True)
+class NamedRulesInclude:
+    """DYNAMIC-INCLUDE form — inline a comma-separated *subset* of rules, by
+    name, **in the order listed**, joined with ``\\n---\\n``. Unlike
+    `AllRulesInclude` (staged tree, lexicographic) the named subset resolves
+    from the fixed ``src/user/.claude/rules/`` source dir and preserves the
+    author's ordering. ``names`` holds the verbatim sed capture (the raw
+    comma-list text); splitting, trimming, and empty-entry skipping happen at
+    flatten time in `core/templates.py`, mirroring the bash ``tr ',' '\\n'`` +
+    per-name trim loop."""
+
+    names: str
+
+
+IncludeDirective: TypeAlias = FileInclude | AllRulesInclude | NamedRulesInclude
 """Discriminated union of the DYNAMIC-INCLUDE directive forms.
 
 Consumers should `match` on this union and use `typing.assert_never` in
-the default arm so that adding a third variant fails type-checking at
+the default arm so that adding a fourth variant fails type-checking at
 every call site rather than silently passing through."""
 
 
