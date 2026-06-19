@@ -26,11 +26,12 @@ from installer.core.model import Counters, FileKind
 from installer.core.paths import is_safe_relpath
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
+    from installer.plugins.base import PluginRoute
     from installer.tools.base import ToolAdapter
 
 
@@ -204,6 +205,62 @@ def sync_plan(
     return counters
 
 
+def sync_routes(
+    routes: Iterable[PluginRoute],
+    *,
+    io: IOPort,
+    dry_run: bool = False,
+    auto_yes: bool = False,
+    timestamp: str | None = None,
+) -> Counters:
+    """Install every plugin route's globbed files at its dest root.
+
+    The in-memory port of the bash installer's ``stage_and_install_beads``
+    (``scripts/install.sh:948-1124``): for each ``PluginRoute``, glob
+    ``source_dir`` for the route's pattern (sorted, files only) and install each
+    match at ``dest_dir/<name>`` with the route's exec bit, reusing the FILE
+    installer's skip / consent / backup contract. A route whose ``source_dir`` is
+    absent contributes nothing (bash ``[[ -d ... ]] || continue``,
+    ``scripts/install.sh:969,1056``). Unlike the tool-file path, a hash-equal skip
+    restores a lost exec bit (``scripts/install.sh:1096``) — route-scoped, since
+    bash carries no general executable reconcile.
+
+    The shared no-TTY guard (`require_consent`) runs once up front, mirroring
+    ``sync_plan``: a non-interactive run with neither ``auto_yes`` nor ``dry_run``
+    hard-fails before any write. ``dest_dir`` is created lazily on the first write
+    (the differ ignores empty dirs); ``timestamp`` is the backup suffix. Returns
+    aggregate `Counters`.
+    """
+    require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
+    counters = Counters()
+    for route in routes:
+        if not route.source_dir.is_dir():
+            continue
+        # ``route.glob`` is a trusted, non-recursive, in-repo adapter pattern
+        # (e.g. ``*.toml``/``*.sh`` from ``beads.py``), so the dest needs no
+        # ``is_safe_relpath`` guard like the tool path: every match is a direct
+        # child of ``source_dir`` and ``src.name`` is a pure basename, so
+        # ``dest_dir / src.name`` cannot escape ``dest_dir``. A future recursive
+        # (``**``) route would break that invariant — add containment validation
+        # before introducing one.
+        for src in sorted(route.source_dir.glob(route.glob)):
+            if not src.is_file():
+                continue
+            _install_file(
+                route.dest_dir / src.name,
+                src.read_bytes(),
+                executable=route.executable,
+                kind=FileKind.OTHER,
+                io=io,
+                dry_run=dry_run,
+                auto_yes=auto_yes,
+                timestamp=timestamp,
+                counters=counters,
+                restore_exec_on_skip=True,
+            )
+    return counters
+
+
 def _install_file(
     dest: Path,
     content: bytes,
@@ -215,6 +272,7 @@ def _install_file(
     auto_yes: bool,
     timestamp: str | None,
     counters: Counters,
+    restore_exec_on_skip: bool = False,
 ) -> None:
     """Install one FILE item: skip an unchanged dest, back up a differing dest
     before the overwrite, and write the bytes with a deterministic mode bit
@@ -231,6 +289,12 @@ def _install_file(
     silently; ``dry_run`` previews without prompting. The gate fires only on an
     existing dest — a first install is not a destructive overwrite.
 
+    ``restore_exec_on_skip`` (default ``False``) opts the *skip* path into
+    restoring a lost exec bit without a rewrite — the plugin-route behaviour at
+    ``scripts/install.sh:1096``. It is off for tool files because bash carries no
+    general executable reconcile (only beads scripts), so enabling it there would
+    diverge from the spec; ``sync_routes`` turns it on.
+
     A dest already occupied by a non-file (a directory) is rejected with
     `ValueError` rather than crashing the walk with a raw ``IsADirectoryError`` —
     matching ``dump``'s type-guard so the CLI surfaces a clean error."""
@@ -240,6 +304,8 @@ def _install_file(
     old = dest.read_bytes() if dest_exists else None
     effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
+        if restore_exec_on_skip and executable and not dry_run:
+            _restore_exec_bit(dest)
         counters.skipped += 1
         return
     if (
@@ -386,6 +452,19 @@ def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
             break
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _restore_exec_bit(dest: Path) -> None:
+    """Restore a lost exec bit on a hash-equal dest without a full rewrite.
+    Route-scoped port of ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``):
+    fires only when no exec bit is set, and then *adds* the exec bits to the
+    existing mode (``mode | 0o111``) rather than forcing ``0o755`` — so a
+    user-tightened file (e.g. ``0o600``) gains exec without widening its
+    read/write bits, mirroring ``chmod +x``. The any-exec-bit gate matches the
+    differ's executability definition (``_diff.py::_is_executable``)."""
+    mode = dest.stat().st_mode
+    if not mode & 0o111:
+        dest.chmod(mode | 0o111)
 
 
 def _sha256(data: bytes) -> bytes:

@@ -26,16 +26,11 @@ _FIXTURE_COLLISION = _FIXTURES / "collision"  # overlay rule colliding with a sh
 _BEADS_ARGS = ["--tools=claude", "--plugins=beads", "--yes"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Plugin routes (~/.beads/formulas + scripts) must be installed; the Python "
-    "pipeline never dispatches PluginRoute.routes(). Not yet wired.",
-)
 def test_plugin_routes(tmp_path: Path) -> None:
     """The fixture beads plugin ships formulas + an executable script, routed to
-    ~/.beads/formulas and ~/.beads/scripts. Bash installs them; the Python port
-    never wires plugin routes, so ~/.beads content is the expected divergence
-    until routes() is dispatched into the pipeline."""
+    ~/.beads/formulas and ~/.beads/scripts. Both installers place them identically,
+    including the script's exec bit — the Python pipeline now dispatches
+    PluginRoute.routes() through install_plugin_routes (G2)."""
     result = run_parity(tmp_path, args=_BEADS_ARGS, plugins_src=_FIXTURE_BASIC)
 
     assert result.bash_returncode == 0, result.bash_stderr

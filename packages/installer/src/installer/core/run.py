@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from installer.core.model import Counters, Tool
 from installer.core.prune import scan_orphans
 from installer.core.prune_flow import run_prune
-from installer.core.sync import sync_plan
+from installer.core.sync import sync_plan, sync_routes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from installer.core.installer_toml import InstallerToml
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
+    from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
 
 
@@ -105,3 +106,29 @@ def install_pipeline(
         total.skipped += result.skipped
         total.backed_up += result.backed_up
     return total
+
+
+def install_plugin_routes(
+    plugins: Iterable[PluginAdapter],
+    *,
+    home: Path,
+    io: IOPort,
+    dry_run: bool = False,
+    auto_yes: bool = False,
+    timestamp: str | None = None,
+) -> Counters:
+    """Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``).
+
+    The plugin-side analog of ``install_pipeline``: it flattens each plugin's
+    ``routes(home)`` and walks them through ``sync_routes``. Generic plugins
+    return no routes, so a routes-free or tool-only plugin set is a clean no-op.
+    ``cli.main`` (W3) calls this after ``install_pipeline`` (gated by
+    ``not --prune-only``), mirroring the bash installer, which runs
+    ``stage_and_install_beads`` after the tool sync (``scripts/install.sh:948``).
+
+    ``dry_run`` and ``auto_yes`` thread into ``sync_routes`` so the consent gate
+    and no-TTY guard apply uniformly with the tool install. Returns the aggregate
+    `Counters` from the route walk.
+    """
+    routes = [route for plugin in plugins for route in plugin.routes(home)]
+    return sync_routes(routes, io=io, dry_run=dry_run, auto_yes=auto_yes, timestamp=timestamp)
