@@ -203,6 +203,12 @@ SRC_SHARED="$SRC_USER/.agents"
 # unset => the repo's src/plugins, identical to before. The Python installer
 # carries the symmetric override (installer.config.resolve_plugins_root).
 SRC_PLUGINS="${INSTALLER_PLUGINS_SRC:-$PROJECT_ROOT/src/plugins}"
+# prgroom package source — same default-inert override idiom as SRC_PLUGINS.
+# Unset => the repo's packages/prgroom. A test may point this at an ABSENT path
+# to exercise the "package dropped from the source tree" prune-uninstall branch
+# (_prune_prgroom). install.py owns no prgroom step — design §7.2 makes
+# install.sh the sole owner of the `uv tool install` lifecycle.
+SRC_PRGROOM="${INSTALLER_PRGROOM_SRC:-$PROJECT_ROOT/packages/prgroom}"
 
 if [[ ! -d "$SRC_SHARED" ]]; then
     err "Shared source directory not found: $SRC_SHARED"
@@ -1690,6 +1696,71 @@ prune_orphans() {
     done
 }
 
+# ── prgroom CLI install/uninstall (uv-managed tool) ───────────────────────────
+#
+# install.sh is the sole owner of the prgroom install lifecycle (design §7.2):
+# it installs the `prgroom` console-script on PATH via `uv tool install` and,
+# under --prune, uninstalls it once the package leaves the source tree. The
+# INSTALLER_PRGROOM master toggle (default 1) lets the golden-master parity
+# harness disable BOTH paths — install.py performs no prgroom step, so the
+# hermetic homes must match with prgroom handling switched off entirely.
+
+# Master toggle (default on). One home for the default so the two callers can't
+# drift apart.
+_prgroom_enabled() { [[ "${INSTALLER_PRGROOM:-1}" == "1" ]]; }
+
+_install_prgroom() {
+    _prgroom_enabled || return 0
+    if [[ ! -d "$SRC_PRGROOM" ]]; then
+        vinfo "prgroom: package not in source tree ($SRC_PRGROOM) -- skipping install"
+        return 0
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        warn "prgroom: uv not found on PATH -- skipping CLI install (install uv to enable the 'prgroom' command)"
+        return 0
+    fi
+    if [[ "$DRY_RUN" == true ]]; then
+        info "Dry-run: would install prgroom CLI via 'uv tool install --force $SRC_PRGROOM'"
+        return 0
+    fi
+    info "Installing prgroom CLI (uv tool install)..."
+    # --force makes re-runs idempotent and doubles as the upgrade path (§7.3:
+    # upgrades land by re-running the installer, which re-runs `uv tool install
+    # --force`). A failure is non-fatal -- config deployment already succeeded;
+    # surface it loudly rather than aborting the whole installer for one CLI.
+    if uv tool install --force "$SRC_PRGROOM"; then
+        if command -v prgroom >/dev/null 2>&1; then
+            ok "prgroom CLI installed."
+        else
+            warn "prgroom installed but not on PATH -- add uv's tool bin dir (see 'uv tool dir --bin') to PATH."
+        fi
+    else
+        warn "prgroom: 'uv tool install' failed -- the prgroom CLI is unavailable."
+    fi
+}
+
+_prune_prgroom() {
+    _prgroom_enabled || return 0
+    # Only an orphan once the package has left the source tree, mirroring how
+    # --prune removes other orphaned deploy outputs. Still in source => not an
+    # orphan; uv absent or prgroom not installed => nothing to remove.
+    [[ -d "$SRC_PRGROOM" ]] && return 0
+    command -v uv >/dev/null 2>&1 || return 0
+    # uv tool list prints "<name> <version>" at column 0; the trailing space
+    # anchors an exact package match (not a 'prgroom-extra' prefix).
+    uv tool list 2>/dev/null | grep -q '^prgroom ' || return 0
+    if [[ "$DRY_RUN" == true ]]; then
+        info "Dry-run: would uninstall prgroom CLI via 'uv tool uninstall prgroom' (package left the source tree)"
+        return 0
+    fi
+    info "Pruning prgroom CLI (uv tool uninstall) -- package no longer in source tree..."
+    if uv tool uninstall prgroom; then
+        ok "prgroom CLI uninstalled."
+    else
+        warn "prgroom: 'uv tool uninstall' failed."
+    fi
+}
+
 # ── Staging directory (cleaned up on exit) ────────────────────────────────────
 
 STAGING_DIR="$(mktemp -d /tmp/agents-config-install-XXXXXX)"
@@ -1714,10 +1785,17 @@ if plugin_enabled "beads" || prune_active; then
     stage_and_install_beads
 fi
 
+# Install the prgroom CLI (uv-managed tool). Part of the install phase, so it is
+# skipped under --prune-only (which runs no install); see _install_prgroom.
+if [[ "$PRUNE_ONLY" != true ]]; then
+    _install_prgroom
+fi
+
 # Prune phase (post-install) — only when --prune or --prune-only is active
 if prune_active; then
     scan_orphans
     prune_orphans
+    _prune_prgroom
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────
