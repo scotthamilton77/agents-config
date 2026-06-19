@@ -79,7 +79,7 @@ def install_pipeline(
     ahead of the prune step to perform the real install. Each adapter's plan is
     looked up by its tool (``Tool(adapter.name)``) and written under
     ``adapter.dest_dir(home)``. Returns the aggregate `Counters`
-    (created / updated / skipped / backed_up summed across tools).
+    (created / updated / merged / skipped / backed_up summed across tools).
 
     ``dry_run`` and ``auto_yes`` are forwarded verbatim into every ``sync_plan``
     call, so the W2 consent gate and the shared no-TTY guard apply uniformly
@@ -103,6 +103,7 @@ def install_pipeline(
         )
         total.created += result.created
         total.updated += result.updated
+        total.merged += result.merged
         total.skipped += result.skipped
         total.backed_up += result.backed_up
     return total

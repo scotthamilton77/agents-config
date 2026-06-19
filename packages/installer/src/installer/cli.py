@@ -13,11 +13,15 @@ from installer.core.installer_toml import load_installer_toml
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.run import install_pipeline, install_plugin_routes, prune_pipeline
+from installer.plugins.registry import discover
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan, Tool
+    from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
@@ -141,6 +145,19 @@ def main(
         sys.stderr.write(f"installer: {exc}\n")
         return 2
 
+    # Warn about plugins an EXPLICIT --plugins= override dropped (bash gates this on
+    # PLUGINS_FLAG_SET, scripts/install.sh:308 — auto-detect dropping an undetected
+    # plugin is normal, not warn-worthy). Routed through io.warn after resolution and
+    # before any mode dispatch so it fires on every path (plain / --dump-stage /
+    # --prune / --prune-only) the override reaches.
+    if args.plugins is not None:
+        _warn_excluded_plugins(
+            resolved=plugins,
+            repo_root=resolved_repo_root,
+            io=io,
+            prune_active=args.prune or args.prune_only,
+        )
+
     if args.dump_stage is not None:
         plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
         try:
@@ -214,6 +231,40 @@ def main(
         )
 
     return 0
+
+
+def _warn_excluded_plugins(
+    *,
+    resolved: Iterable[PluginAdapter],
+    repo_root: Path,
+    io: IOPort,
+    prune_active: bool,
+) -> None:
+    """Warn about each discovered plugin an explicit ``--plugins=`` override dropped.
+
+    Mirrors bash ``scripts/install.sh:317-328``: for every plugin in the discovered
+    set absent from the resolved selection, emit a warning naming it. The wording
+    branches on whether a prune phase is active — under ``--prune``/``--prune-only``
+    the excluded plugin's already-installed files become orphans that may be removed
+    (strict mode); otherwise they are left in place. Caller gates this on an explicit
+    override, so an auto-detected exclusion stays silent.
+    """
+    resolved_names = {adapter.name for adapter in resolved}
+    discovered = discover(resolve_plugins_root(repo_root, os.environ))
+    for name in discovered:
+        if name in resolved_names:
+            continue
+        if prune_active:
+            io.warn(
+                f"Plugin '{name}' excluded via --plugins= — under --prune, "
+                "previously-installed files become orphans and may be removed."
+            )
+        else:
+            io.warn(
+                f"Plugin '{name}' excluded via --plugins= — files already installed "
+                "are not removed (use --prune or --prune-only to remove orphans "
+                "under strict mode)."
+            )
 
 
 def _run_prune(

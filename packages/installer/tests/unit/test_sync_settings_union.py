@@ -78,6 +78,54 @@ def test_sync_settings_backs_up_user_file_before_union(tmp_path: Path) -> None:
     assert json.loads(backups[0].read_bytes()) == {"userKey": "keep-me"}
 
 
+def test_sync_settings_union_over_existing_counts_merged_not_updated(tmp_path: Path) -> None:
+    """A settings.json union that changes an existing user file is tallied as a
+    *merge*, not a plain update — bash increments ``tool_merged`` (not
+    ``tool_updated``) when ``sync_settings_file`` applies a changed union over an
+    existing dest (``scripts/install.sh:1366``). The 'Merged' summary line counts
+    exactly these. Pins: the changed-existing settings path increments
+    ``Counters.merged`` and leaves created/updated at zero. Fails while the merge
+    path tallies through ``_record_write`` (created/updated) and ``merged`` stays 0."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "settings.json").write_text('{"userKey": "keep-me"}\n')
+    plan = StagingPlan(
+        items={Path("settings.json"): _settings_item(b'{"templateKey": 1}')},
+        tool=Tool.CLAUDE,
+    )
+
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_TS
+    )
+
+    assert counters.merged == 1
+    assert counters.updated == 0
+    assert counters.created == 0
+
+
+def test_sync_fresh_settings_counts_created_not_merged(tmp_path: Path) -> None:
+    """A first settings.json install (no existing dest) is a plain create, not a
+    merge — bash increments ``tool_installed`` on the new-file branch
+    (``scripts/install.sh:1303``), never ``tool_merged``. Pins: the no-existing-dest
+    settings path increments ``created`` and leaves ``merged`` at zero. Fails if the
+    merge tally fires on a fresh install (e.g. keyed on kind alone, not on an
+    existing dest)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    plan = StagingPlan(
+        items={Path("settings.json"): _settings_item(b'{"templateKey": 1}')},
+        tool=Tool.CLAUDE,
+    )
+
+    counters = sync_plan(
+        _IdentityAdapter(), plan, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_TS
+    )
+
+    assert counters.created == 1
+    assert counters.merged == 0
+    assert counters.updated == 0
+
+
 def test_sync_preserves_and_skips_invalid_existing_settings(tmp_path: Path) -> None:
     """An existing settings.json that is not valid JSON is left untouched and
     reported as an error, not overwritten — matching bash, which refuses to touch a
