@@ -27,17 +27,22 @@ the end-of-cycle resolver reads them later). ``result.stashed`` is informational
 from __future__ import annotations
 
 import copy
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from prgroom.agent.contracts import FixInput
+from prgroom.agent.errors import AuditViolation, escalation_for, failed_disposition
 from prgroom.agent.fix import run_fix
+from prgroom.errors import ErrorCode
+from prgroom.escalation import Severity
 from prgroom.lifecycle.snapshot import assemble_snapshot
 from prgroom.lifecycle.warn import default_warn
+from prgroom.prsession.state import RoutedMemory
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
-    from pathlib import Path
 
     from prgroom.agent.contracts import FixContract, MemoryEntry
     from prgroom.config import PrgroomConfig
@@ -130,6 +135,26 @@ def _fix_one_cluster(
     )
     result = run_fix(req, dispatcher, git, now=now, decided_by=decided_by)
 
+    routed, blocked = resolve_routed_memory(
+        result.contextual_memory,
+        memory_dir=snapshot.memory_dir,
+        round_=state.round,
+        decided_by=decided_by,
+        cluster_id=cluster_id,
+        warn=warn,
+    )
+    if blocked is not None:
+        # Realpath containment breach — parity with the lexical BLOCK in _build_result:
+        # flip the whole cluster to FAILED, stash, route NO memory.
+        violation = AuditViolation(
+            code=ErrorCode.CONTRACT_FIX_AUDIT_FAILED, detail=blocked, severity=Severity.BLOCK
+        )
+        for cluster_item in cluster_items:
+            cluster_item.disposition = failed_disposition(violation, now=now, decided_by=decided_by)
+        sink.emit(escalation_for(violation, pr=ref))
+        git.stash()
+        return
+
     # Apply via a per-cluster map over THIS cluster's items only. run_fix returns
     # dispositions keyed by gh_id for exactly these items, and the codebase's natural
     # key is (kind, gh_id) — a state-wide gh_id map could mis-target an item from
@@ -145,11 +170,57 @@ def _fix_one_cluster(
         warn(f"fix: declared memory path was not written (unwritten): {path}")
     for entry in result.deferred_memory:
         warn(_deferred_memory_message(entry))
+    state.pending_memory.extend(routed)
 
 
 def _deferred_memory_message(entry: MemoryEntry) -> str:
     """A one-line notice for an accepted-but-deferred non-CONTEXTUAL memory entry (§8.3)."""
     return f"fix: deferred non-CONTEXTUAL memory entry (classification={entry.classification})"
+
+
+def resolve_routed_memory(
+    entries: list[MemoryEntry],
+    *,
+    memory_dir: str,
+    round_: int,
+    decided_by: str,
+    cluster_id: str,
+    warn: Callable[[str], None],
+) -> tuple[list[RoutedMemory], str | None]:
+    """Resolve routable CONTEXTUAL entries into RoutedMemory (§8.3). Two-layer containment.
+
+    The audit already lexically anchored each path under ``memory_dir`` (never via
+    ``realpath``). This adds the realpath/no-symlink layer immediately before the read:
+    a symlink inside ``memory_dir`` resolving OUTSIDE it is a hard containment breach —
+    return ``([], detail)`` so the caller cluster-flips (parity with the lexical BLOCK
+    in ``agent/fix._build_result``). A read failure on a contained, non-symlinked path
+    is a soft ``warn`` (bookkeeping drift), entry skipped. The per-entry ordinal keys
+    the Decisions-block dedup so two thread-less decisions in one round stay distinct.
+    """
+    real_dir = os.path.realpath(memory_dir)
+    routed: list[RoutedMemory] = []
+    for ordinal, entry in enumerate(entries):
+        if entry.path is not None:
+            real = os.path.realpath(entry.path)
+            if real != real_dir and not real.startswith(real_dir + os.sep):
+                return [], f"memory containment violation (realpath): {entry.path}"
+            try:
+                content = Path(entry.path).read_text(encoding="utf-8")
+            except OSError as exc:
+                warn(f"fix: routable memory path unreadable, skipped: {entry.path} ({exc})")
+                continue
+        else:
+            content = entry.content or ""
+        routed.append(
+            RoutedMemory(
+                content=content,
+                round=round_,
+                source_item=f"{cluster_id}#{ordinal}",
+                decided_by=decided_by,
+                target_hint=entry.target_hint,
+            )
+        )
+    return routed, None
 
 
 def _group_unprocessed_by_cluster(items: list[ReviewItem]) -> dict[str, list[ReviewItem]]:
