@@ -1,29 +1,92 @@
-"""``reply_pr`` — the foundation no-op skeleton for the ``reply`` verb (§3.3).
-
-The run-loop wires the §3.3 pipeline against a **no-op skeleton** of ``_reply`` (the
-pipeline-slotting pin): it occupies the ``_push → _rereview → _reply → _resolve`` slot
-so the loop's ordering and write discipline are exercised end-to-end, but renders and
-posts nothing. The full template-matrix reply (rendering per-item responses and
-posting them via the gh API) lands in the deterministic-verbs bead.
-
-Keeping it a real, idempotent passthrough — rather than omitting the slot — means the
-run-loop's pipeline list and its per-step write discipline need no change when the
-real ``reply`` arrives; only this body is filled in.
-"""
+"""``reply_pr`` — render + post per-item replies and route CONTEXTUAL memory (§3.3, §8.3)."""
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
+from prgroom.agent.prompt_loader import PromptTemplate
+from prgroom.gh.client import GhNotFoundError
+from prgroom.lifecycle.gh_errors import vanished_pr_terminal
+from prgroom.lifecycle.warn import default_warn
+from prgroom.prsession.enums import DispositionKind, ItemKind
+
 if TYPE_CHECKING:
-    from prgroom.prsession.state import PRGroomingState
+    from collections.abc import Callable
+
+    from prgroom.gh.client import GhClient
+    from prgroom.prsession.pr_ref import PRRef
+    from prgroom.prsession.state import Disposition, PRGroomingState, ReviewItem
+
+_T_FIXED = PromptTemplate(name="reply-fixed", text="Fixed in {sha}. {rationale}")
+_T_FIXED_BARE = PromptTemplate(name="reply-fixed-bare", text="Fixed in {sha}.")
+_T_ALREADY = PromptTemplate(name="reply-already", text="Already addressed in {sha}.")
+_T_RATIONALE = PromptTemplate(name="reply-rationale", text="{rationale}")
+_ESCALATED_BODY = (
+    "Captured for follow-up; will respond on a later push to this PR or in a related issue."
+)
+_ESCALATED_CAP_BODY = (
+    "Round limit reached on this PR; deferring further iterations to a human reviewer."
+)
+_REPLYABLE = frozenset(
+    {
+        DispositionKind.FIXED,
+        DispositionKind.ALREADY_ADDRESSED,
+        DispositionKind.SKIPPED,
+        DispositionKind.DEFERRED,
+        DispositionKind.WONT_FIX,
+        DispositionKind.ESCALATED,
+    }
+)
 
 
-def reply_pr(state: PRGroomingState) -> PRGroomingState:
-    """No-op skeleton: return ``state`` unchanged (§3.3 pipeline-slotting pin).
+def _render_body(disp: Disposition) -> str:
+    kind = disp.kind
+    if kind is DispositionKind.FIXED:
+        sha = disp.commits[0] if disp.commits else ""
+        if disp.rationale:
+            return _T_FIXED.render({"sha": sha, "rationale": disp.rationale})
+        return _T_FIXED_BARE.render({"sha": sha})
+    if kind is DispositionKind.ALREADY_ADDRESSED:
+        sha = disp.commits[0] if disp.commits else ""
+        return _T_ALREADY.render({"sha": sha})
+    if kind is DispositionKind.ESCALATED:
+        return _ESCALATED_CAP_BODY if "cap" in disp.rationale.lower() else _ESCALATED_BODY
+    return _T_RATIONALE.render({"rationale": disp.rationale})
 
-    Caller must hold the per-ref lock (see ``lock()``). Idempotent by construction —
-    every item is left exactly as received, so the run-loop's ``_reply`` slot is a
-    safe passthrough until the deterministic-verbs bead fills it in.
+
+def _post_reply(gh: GhClient, ref: PRRef, item: ReviewItem, body: str) -> None:
+    if item.kind is ItemKind.REVIEW_THREAD:
+        reply_id = item.identity.reply_to_comment_id or int(item.identity.gh_id)
+        path = f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments/{reply_id}/replies"
+    else:
+        path = f"repos/{ref.owner}/{ref.repo}/issues/{ref.number}/comments"
+    gh.rest("POST", path, fields={"body": body})
+
+
+def reply_pr(
+    state: PRGroomingState,
+    *,
+    gh: GhClient,
+    ref: PRRef,
+    warn: Callable[[str], None] = default_warn,  # noqa: ARG001  # reserved for §8.3 memory routing (Task 10)
+) -> PRGroomingState:
+    """Post per-item replies and route pending CONTEXTUAL memory (§3.2 reply row).
+
+    Works on a deepcopy; caller persists once (verb-atomic). No phase change, no
+    ``last_error``. Per-item replies dedup via ``ReviewItem.replied``. (Memory
+    routing — Task 10 — appends below the per-item loop in this same function.)
     """
+    state = copy.deepcopy(state)
+    try:
+        for item in state.items:
+            if item.replied or item.disposition is None:
+                continue
+            if item.disposition.kind not in _REPLYABLE:
+                continue
+            _post_reply(gh, ref, item, _render_body(item.disposition))
+            item.replied = True
+        # --- Task 10 inserts CONTEXTUAL memory routing here ---
+    except GhNotFoundError as exc:
+        raise vanished_pr_terminal(ref) from exc
     return state
