@@ -616,6 +616,108 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     assert not dest_rule.exists()
 
 
+# ── 8.13: --verbose/-v flag parsing + plumbing into the IOPort ──
+
+
+@pytest.mark.parametrize("flag", ["--verbose", "-v"])
+def test_verbose_flag_constructs_terminal_io_verbose(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
+) -> None:
+    """
+    Given --verbose (or its -v alias) and no injected io
+    When main builds the default TerminalIO
+    Then TerminalIO is constructed with verbose=True.
+
+    Pins: args.verbose is parsed (both spellings) and threaded into the
+    TerminalIO construction in main — the plumbing the bash installer's
+    VERBOSE=true wiring (scripts/install.sh:110) ports to. A spy on the lazily
+    imported TerminalIO captures the kwarg without touching a real terminal.
+    Fails while the flag is unparsed (argparse SystemExit) or constructed with a
+    hard-coded verbose=False.
+    """
+    import installer.core.io_port as io_port_mod
+
+    captured: dict[str, bool] = {}
+
+    def _spy(*, verbose: bool = False, **_kwargs: object) -> ScriptedIO:
+        captured["verbose"] = verbose
+        return ScriptedIO(interactive=False)
+
+    monkeypatch.setattr(io_port_mod, "TerminalIO", _spy)
+    repo = _hermetic_repo(tmp_path)
+
+    main([flag, "--tools=claude", "--dry-run"], home=tmp_path, repo_root=repo)
+
+    assert captured == {"verbose": True}
+
+
+def test_no_verbose_flag_constructs_terminal_io_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Given NO --verbose flag and no injected io
+    When main builds the default TerminalIO
+    Then TerminalIO is constructed with verbose=False — the default-quiet
+    contract, so per-file detail stays suppressed.
+
+    Pins: the absence of --verbose yields verbose=False, the other direction of
+    the plumbing.
+    """
+    import installer.core.io_port as io_port_mod
+
+    captured: dict[str, bool] = {}
+
+    def _spy(*, verbose: bool = False, **_kwargs: object) -> ScriptedIO:
+        captured["verbose"] = verbose
+        return ScriptedIO(interactive=False)
+
+    monkeypatch.setattr(io_port_mod, "TerminalIO", _spy)
+    repo = _hermetic_repo(tmp_path)
+
+    main(["--tools=claude", "--dry-run"], home=tmp_path, repo_root=repo)
+
+    assert captured == {"verbose": False}
+
+
+def test_verbose_install_renders_per_file_detail_quiet_install_does_not(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    Given a hermetic repo (one shared template -> a non-empty claude plan),
+    under --tools=claude --yes
+    When main runs a REAL install with --verbose vs without it (default io)
+    Then --verbose renders a per-file line naming the installed dest on stdout,
+    while the quiet run renders no such per-file line.
+
+    End-to-end parity assertion: the flag reaches the file-operation sites and
+    its presence/absence flips per-file chatter on/off, matching bash vok. The
+    install_pipeline emits the staged template's dest under ~/.claude on the
+    verbose run only. Uses the real default TerminalIO (no injected io) so the
+    whole flag->IOPort->emission chain is exercised; stdout is captured by
+    capsys.
+    """
+    dest = tmp_path / ".claude" / "INSTRUCTIONS.md"
+
+    repo_v = _hermetic_repo(tmp_path / "v")
+    home_v = tmp_path
+    rc_v = main(["--tools=claude", "--yes", "--verbose"], home=home_v, repo_root=repo_v)
+    assert rc_v == 0
+    verbose_out = capsys.readouterr().out
+    assert "INSTRUCTIONS.md" in verbose_out
+
+    # Quiet re-install into a fresh home: the same install produces no per-file
+    # line on stdout (the default-quiet contract).
+    repo_q = _hermetic_repo(tmp_path / "q")
+    home_q = tmp_path / "qhome"
+    home_q.mkdir()
+    rc_q = main(["--tools=claude", "--yes"], home=home_q, repo_root=repo_q)
+    assert rc_q == 0
+    quiet_out = capsys.readouterr().out
+    assert "INSTRUCTIONS.md" not in quiet_out
+    # sanity: the verbose dest path is the one we expect main to have installed.
+    assert dest.exists()
+
+
 # ── W3: default-path real install (install_pipeline wired into main) ──
 
 

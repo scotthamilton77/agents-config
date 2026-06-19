@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from installer.core.consent import ConsentRequiredError
-from installer.core.io_port import IOPort, ScriptedIO
+from installer.core.io_port import IOPort, ScriptedIO, TranscriptEntry
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.sync import sync_plan
 
@@ -698,6 +698,138 @@ def test_interactive_decline_keeps_existing_file_and_counts_skipped(tmp_path: Pa
     assert (home / "AGENTS.md").read_bytes() == b"old\n"  # decline keeps existing
     assert not any(home.glob("AGENTS.md.backup-*"))  # no backup on decline
     assert (counters.skipped, counters.updated, counters.backed_up) == (1, 0, 0)
+
+
+# ── 8.13: verbose per-file detail (bash parity) ──
+#
+# The bash installer emits per-file chatter via ``vok`` at the real-install
+# outcomes — "Installed X (new)" / "X is up to date" / "Updated X"
+# (scripts/install.sh:1158,1166,1180,1224,1237,1255). The Python port routes
+# these through the IOPort with ``verbose=True`` so ``TerminalIO`` suppresses
+# them unless constructed with ``verbose=True`` — matching ``vok``'s
+# silent-unless-``--verbose`` contract (scripts/install.sh:166-168). These tests
+# assert the emission AND its ``verbose=True`` tag at the ScriptedIO transcript
+# boundary; the suppression direction itself is pinned in test_io_port.py.
+
+
+def _verbose_lines(io: ScriptedIO) -> list[TranscriptEntry]:
+    """Output entries tagged verbose=True — the per-file detail that is silent
+    without --verbose."""
+    return [e for e in io.transcript if e.channel in ("info", "ok", "warn") and e.verbose]
+
+
+def test_created_file_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
+    """
+    Given a NEW FILE item (dest absent) installed for real (not dry-run)
+    When sync_plan walks it
+    Then a verbose-tagged per-file line naming the dest is emitted — the parity
+    equivalent of bash ``vok "Installed X (new)"`` — and it carries verbose=True
+    so a default (quiet) TerminalIO suppresses it.
+
+    Pins: the real-install create path emits per-file detail behind the verbose
+    gate. Fails while the Python port stays silent on a real install.
+    """
+    home = tmp_path / "home"
+    io = ScriptedIO()
+    plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"hi\n")}, tool=Tool.CLAUDE)
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    detail = _verbose_lines(io)
+    assert any(str(home / "f.md") in e.message for e in detail)
+
+
+def test_updated_file_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
+    """
+    Given a CHANGED FILE item overwritten for real under --yes
+    When sync_plan walks it
+    Then a verbose-tagged per-file line naming the dest is emitted — the parity
+    equivalent of bash ``vok "Updated X"``.
+
+    Pins: the real-install update path emits per-file detail behind the verbose
+    gate, distinct from the create path.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "f.md").write_bytes(b"old\n")
+    io = ScriptedIO()
+    plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"new\n")}, tool=Tool.CLAUDE)
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=io, auto_yes=True, timestamp=_FIXED_TS)
+
+    detail = _verbose_lines(io)
+    assert any(str(home / "f.md") in e.message for e in detail)
+
+
+def test_skipped_file_emits_verbose_up_to_date_detail(tmp_path: Path) -> None:
+    """
+    Given an UNCHANGED FILE item whose dest already holds matching bytes
+    When sync_plan walks it
+    Then a verbose-tagged per-file "up to date" line naming the dest is emitted —
+    the parity equivalent of bash ``vok "X is up to date"``.
+
+    Pins: the skip path is NOT silent under verbose — bash announces up-to-date
+    files. Fails while the Python skip path emits nothing.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "f.md").write_bytes(b"same\n")
+    io = ScriptedIO()
+    plan = StagingPlan(items={Path("f.md"): _file_item(Path("f.md"), b"same\n")}, tool=Tool.CLAUDE)
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    detail = _verbose_lines(io)
+    assert any(str(home / "f.md") in e.message and "up to date" in e.message for e in detail)
+
+
+def test_created_dir_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
+    """
+    Given a NEW DIR item materialised for real
+    When sync_plan walks it
+    Then a verbose-tagged per-dir line naming the dest is emitted — the parity
+    equivalent of bash ``vok "Installed dir/item (new)"``.
+
+    Pins: the DIR install path emits per-item detail behind the verbose gate too,
+    not just the FILE path.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    home = tmp_path / "home"
+    io = ScriptedIO()
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+
+    sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    detail = _verbose_lines(io)
+    assert any(str(home / "skills" / "s") in e.message for e in detail)
+
+
+def test_skipped_dir_emits_verbose_up_to_date_detail(tmp_path: Path) -> None:
+    """
+    Given an UNCHANGED DIR item already materialised by a prior identical run
+    When sync_plan re-runs into the same dest
+    Then a verbose-tagged per-dir "up to date" line naming the dest is emitted —
+    the parity equivalent of bash ``vok "dir/item is up to date"``.
+
+    Pins: the DIR skip path announces up-to-date items under verbose, mirroring
+    the FILE skip path.
+    """
+    src = tmp_path / "src_skill"
+    src.mkdir()
+    (src / "SKILL.md").write_bytes(b"skill\n")
+    home = tmp_path / "home"
+    plan = StagingPlan(items={Path("skills/s"): _dir_item(Path("skills/s"), src)}, tool=Tool.CLAUDE)
+    sync_plan(_IdentityAdapter(), plan, home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+    io = ScriptedIO()
+    sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
+
+    detail = _verbose_lines(io)
+    assert any(
+        str(home / "skills" / "s") in e.message and "up to date" in e.message for e in detail
+    )
 
 
 def test_interactive_accept_shows_diff_then_overwrites_with_backup(tmp_path: Path) -> None:

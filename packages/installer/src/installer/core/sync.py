@@ -276,7 +276,9 @@ def _install_file(
 ) -> None:
     """Install one FILE item: skip an unchanged dest, back up a differing dest
     before the overwrite, and write the bytes with a deterministic mode bit
-    (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``.
+    (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``. An
+    unchanged-dest skip emits a verbose-gated "X is up to date" line (bash
+    ``vok``, scripts/install.sh:1166), silent without ``--verbose``.
 
     A ``SETTINGS_JSON`` item is union-merged into an existing user file rather
     than overwritten (``_effective_content``), so user values survive an install;
@@ -306,6 +308,7 @@ def _install_file(
     if old is not None and _is_unchanged(old, effective, kind=kind):
         if restore_exec_on_skip and executable and not dry_run:
             _restore_exec_bit(dest)
+        io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         return
     if (
@@ -363,11 +366,13 @@ def _install_dir(
     An existing dest whose contents already match (`_dir_is_unchanged`) is left
     untouched and counted as a skip — so a re-install is idempotent and produces
     no spurious backups (bash ``sync_directory``'s "up to date" branch,
-    `scripts/install.sh:1230`). A changed existing dest passes through the
-    consent gate before the backup/replace: an interactive decline keeps the
-    existing tree and counts a skip; ``auto_yes`` accepts silently; ``dry_run``
-    previews without prompting. A directory has no ``IOPort`` byte-diff, so the
-    change is surfaced as a notice, not a unified diff.
+    `scripts/install.sh:1230`); the skip emits a verbose-gated "X is up to date"
+    line (bash ``vok``, scripts/install.sh:1237), silent without ``--verbose``.
+    A changed existing dest passes through the consent gate before the
+    backup/replace: an interactive decline keeps the existing tree and counts a
+    skip; ``auto_yes`` accepts silently; ``dry_run`` previews without prompting.
+    A directory has no ``IOPort`` byte-diff, so the change is surfaced as a
+    notice, not a unified diff.
 
     A missing or non-directory ``source_path``, or a dest already occupied by a
     non-directory (a file), is rejected with `ValueError` rather than crashing
@@ -386,6 +391,7 @@ def _install_dir(
             raise ValueError(f"dir override relpath escapes the dir: {inner}")  # noqa: TRY003  # single call-site; subclass not justified
     dest_exists = dest.exists()
     if dest_exists and _dir_is_unchanged(dest, source_path, overrides):
+        io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         return
     if (
@@ -442,10 +448,15 @@ def _record_write(
     dest: Path, *, dest_exists: bool, io: IOPort, dry_run: bool, counters: Counters
 ) -> None:
     """Preview the would-be write under ``dry_run`` and tally it as a create or
-    update. Shared by the file and dir installers; mutates ``counters``."""
+    update. On a real (non-``dry_run``) write, emit a verbose-gated per-item line
+    ("Installed X" / "Updated X") so ``--verbose`` yields bash ``vok`` per-file
+    detail (scripts/install.sh:1158,1180) while a quiet run stays silent. Shared
+    by the file and dir installers; mutates ``counters``."""
     if dry_run:
         verb = "update" if dest_exists else "create"
         io.info(f"would {verb} {dest}")
+    else:
+        io.ok(f"{'Updated' if dest_exists else 'Installed'} {dest}", verbose=True)
     if dest_exists:
         counters.updated += 1
     else:
