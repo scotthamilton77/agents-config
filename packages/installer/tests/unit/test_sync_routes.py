@@ -131,6 +131,30 @@ def test_route_unchanged_script_is_skipped_but_lost_exec_bit_is_restored(
     assert (counters.skipped, counters.updated) == (1, 0)
 
 
+def test_route_restore_adds_exec_without_widening_existing_rw_bits(tmp_path: Path) -> None:
+    """
+    Given an exec route whose dest holds byte-identical content but was tightened
+    to 0o600 (rw-------, no exec)
+    When sync_routes runs
+    Then exec bits are ADDED on top of the existing mode (0o711), not clobbered to
+    a fixed 0o755 — bash's ``chmod +x`` preserves read/write bits and never widens
+    group/other read.
+
+    Pins faithfulness to ``install.sh:1096`` ``chmod +x`` semantics (add exec,
+    preserve the rest), so a user-tightened file is not silently re-opened.
+    """
+    src = tmp_path / "src" / "scripts"
+    dest = tmp_path / "home" / ".beads" / "scripts"
+    _seed_file(src / "go.sh", b"#!/bin/sh\n", mode=0o755)
+    _seed_file(dest / "go.sh", b"#!/bin/sh\n", mode=0o600)  # same bytes, tightened
+    routes = [PluginRoute(src, dest, "*.sh", executable=True)]
+
+    counters = sync_routes(routes, io=ScriptedIO(), timestamp=_FIXED_TS)
+
+    assert (dest / "go.sh").stat().st_mode & 0o777 == 0o711  # rw preserved, +x added
+    assert counters.skipped == 1
+
+
 def test_route_unchanged_nonexec_formula_is_not_chmod_executable(tmp_path: Path) -> None:
     """
     Given a non-exec route whose dest already holds byte-identical content (0o644)

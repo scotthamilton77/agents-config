@@ -455,12 +455,16 @@ def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
 
 
 def _restore_exec_bit(dest: Path) -> None:
-    """Restore the canonical ``0o755`` mode on a hash-equal dest whose exec bit
-    was lost, without a full rewrite. Route-scoped port of
-    ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``): fires only when ALL
-    exec bits are missing, so a file that still carries any exec bit is untouched."""
-    if not dest.stat().st_mode & 0o111:
-        dest.chmod(0o755)
+    """Restore a lost exec bit on a hash-equal dest without a full rewrite.
+    Route-scoped port of ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``):
+    fires only when no exec bit is set, and then *adds* the exec bits to the
+    existing mode (``mode | 0o111``) rather than forcing ``0o755`` — so a
+    user-tightened file (e.g. ``0o600``) gains exec without widening its
+    read/write bits, mirroring ``chmod +x``. The any-exec-bit gate matches the
+    differ's executability definition (``_diff.py::_is_executable``)."""
+    mode = dest.stat().st_mode
+    if not mode & 0o111:
+        dest.chmod(mode | 0o111)
 
 
 def _sha256(data: bytes) -> bytes:
