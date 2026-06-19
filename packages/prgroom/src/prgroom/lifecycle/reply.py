@@ -154,7 +154,7 @@ def reply_pr(
     *,
     gh: GhClient,
     ref: PRRef,
-    warn: Callable[[str], None] = default_warn,  # noqa: ARG001  # reserved for §8.3 memory routing (Task 10)
+    warn: Callable[[str], None] = default_warn,  # noqa: ARG001  # kept for verb symmetry (resolve_pr)
 ) -> PRGroomingState:
     """Post per-item replies and route pending CONTEXTUAL memory (§3.2 reply row).
 

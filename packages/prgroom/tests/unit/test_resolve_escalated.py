@@ -47,6 +47,7 @@ def test_flip_to_skipped_and_advance_phase() -> None:
         now=_NOW,
     )
     assert out.items[0].disposition.kind is DispositionKind.SKIPPED
+    assert out.items[0].disposition.decided_by == "human:scott"  # provenance pinned
     assert out.phase is PRPhase.FIXES_PENDING
     assert out.round == s.round
 
@@ -121,6 +122,30 @@ def test_ambiguous_bare_gh_id_rejected_compound_resolves() -> None:
     )
     flipped = next(i for i in out.items if i.kind is ItemKind.ISSUE_COMMENT)
     assert flipped.disposition.kind is DispositionKind.SKIPPED
+
+
+def test_matched_item_that_is_not_escalated_raises() -> None:
+    # Exactly one item matches the id, but it is NOT escalated — while a DIFFERENT item
+    # is (so the NO_ESCALATIONS gate passes and we reach the per-item escalated check).
+    target = ReviewItem(
+        kind=ItemKind.REVIEW_THREAD,
+        identity=Identity(gh_id="100"),
+        author="a",
+        body_excerpt="b",
+        seen_at=_NOW,
+        disposition=Disposition(kind=DispositionKind.SKIPPED, decided_at=_NOW, decided_by="agent"),
+    )
+    with pytest.raises(PrgroomError) as ei:
+        resolve_escalated_pr(
+            _state([target, _esc_item("200")]),
+            item_id="100",
+            as_disposition=DispositionKind.SKIPPED,
+            rationale="",
+            commits=[],
+            decided_by="h",
+            now=_NOW,
+        )
+    assert ei.value.code is ErrorCode.PRECONDITION_ITEM_NOT_ESCALATED
 
 
 def test_no_phase_advance_while_escalations_remain() -> None:

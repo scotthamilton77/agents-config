@@ -119,11 +119,14 @@ class GitCli:
 
     def config_user(self) -> str:
         # Identity for resolve-escalated provenance (decided_by="human:<user>"). Prefer
-        # user.name; fall back to user.email so an email-only git config still attributes.
-        name = self._run(["git", "config", "user.name"]).strip()
+        # user.name, falling back to user.email so an email-only git config still
+        # attributes. ``--default ""`` makes an UNSET key return "" with exit 0 (git
+        # 2.18+) instead of exit 1 — which ``_run`` would otherwise raise as a transient
+        # git error, stranding the fallback on the common no-user.name box.
+        name = self._run(["git", "config", "--default", "", "user.name"]).strip()
         if name:
             return name
-        return self._run(["git", "config", "user.email"]).strip()
+        return self._run(["git", "config", "--default", "", "user.email"]).strip()
 
     def current_branch(self) -> str:
         # `--abbrev-ref HEAD` yields the branch name, or the literal "HEAD" when

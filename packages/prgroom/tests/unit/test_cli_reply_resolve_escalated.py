@@ -41,6 +41,35 @@ class _FakeGit:
         return "tester"
 
 
+class _RecordingGh:
+    """Minimal ``GhClient`` stand-in recording the reply POST; reply_pr ignores returns."""
+
+    def __init__(self) -> None:
+        self.rest_calls: list[tuple[str, str, dict]] = []
+        self.graphql_calls: list[tuple[str, dict]] = []
+
+    def rest(self, method: str, path: str, *, fields: dict | None = None) -> dict:
+        self.rest_calls.append((method, path, dict(fields or {})))
+        return {}
+
+    def graphql(self, query: str, variables: dict) -> dict:
+        self.graphql_calls.append((query, dict(variables)))
+        return {}
+
+
+def _fixed_item() -> ReviewItem:
+    return ReviewItem(
+        kind=ItemKind.REVIEW_THREAD,
+        identity=Identity(gh_id="555"),
+        author="copilot",
+        body_excerpt="tighten the bound",
+        seen_at=_T0,
+        disposition=Disposition(
+            kind=DispositionKind.FIXED, decided_at=_T0, decided_by="agent", commits=["abc1234"]
+        ),
+    )
+
+
 def _escalated_item() -> ReviewItem:
     return ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
@@ -86,6 +115,31 @@ def test_reply_no_state_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "PRECONDITION_NO_STATE" in result.output
 
 
+def test_reply_posts_and_persists_replied(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Happy path: the lock wrapper reads state, runs the real reply_pr (which POSTs),
+    # and writes the replied flag back. Proves the CLI wiring, not just the no-state gate.
+    gh = _RecordingGh()
+    monkeypatch.setattr(cli, "_build_gh", lambda: gh)
+    state = PRGroomingState(
+        pr=_REF,
+        phase=PRPhase.FIXES_PENDING,
+        round=1,
+        last_polled_at=_T0,
+        last_activity_at=_T0,
+        quiescence=QuiescenceState(),
+        items=[_fixed_item()],
+    )
+    patched.write(_REF, state)
+    result = runner.invoke(cli.app, ["reply", "octo/demo#7"])
+    assert result.exit_code == 0, result.output
+    assert gh.rest_calls == [
+        ("POST", "repos/octo/demo/pulls/7/comments/555/replies", {"body": "Fixed in abc1234."})
+    ]
+    assert patched.read(_REF).items[0].replied is True
+
+
 def test_resolve_escalated_flips_disposition(
     patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -99,3 +153,4 @@ def test_resolve_escalated_flips_disposition(
     disposition = patched.read(_REF).items[0].disposition
     assert disposition is not None
     assert disposition.kind is DispositionKind.SKIPPED
+    assert disposition.decided_by == "human:tester"  # "human:" + _git_user() seam

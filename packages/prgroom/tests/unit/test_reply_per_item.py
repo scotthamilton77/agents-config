@@ -63,6 +63,41 @@ def test_fixed_top_level_review_thread_reply() -> None:
     assert out.items[0].replied is True
 
 
+def test_fixed_with_rationale_appends_it() -> None:
+    gh = _RecordingGh()
+    state = _state(
+        [
+            _item(
+                ItemKind.REVIEW_THREAD,
+                "555",
+                DispositionKind.FIXED,
+                commits=["abc1234"],
+                rationale="tightened the bound",
+            )
+        ]
+    )
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"] == "Fixed in abc1234. tightened the bound"
+
+
+def test_escalated_cap_variant_when_rationale_names_cap() -> None:
+    gh = _RecordingGh()
+    state = _state(
+        [
+            _item(
+                ItemKind.REVIEW_THREAD,
+                "7",
+                DispositionKind.ESCALATED,
+                rationale="hard cap of 3 rounds reached",
+            )
+        ]
+    )
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"] == (
+        "Round limit reached on this PR; deferring further iterations to a human reviewer."
+    )
+
+
 def test_nested_reply_uses_reply_to_comment_id() -> None:
     gh = _RecordingGh()
     state = _state(
