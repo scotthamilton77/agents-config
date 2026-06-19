@@ -139,6 +139,19 @@ def test_push_uploads_queued_commits_and_bumps_round() -> None:
     assert out.last_pushed_head_sha == "newhead"
 
 
+def test_push_stamps_review_invalidated_sha() -> None:
+    git = FakeGit(head="newhead", queued=["c1"])
+    out = push_pr(
+        _state(round_=1),
+        ref=_REF,
+        gh=FakeGh(head_name="feature-x"),
+        git=git,
+        config=PrgroomConfig(),
+    )
+    assert out.last_pushed_head_sha == "newhead"
+    assert out.last_review_invalidated_sha == "newhead"
+
+
 def test_push_no_queued_commits_is_a_noop() -> None:
     # Remote tip already matches local (rev_list empty) → nothing to push: no git
     # push, round untouched, last_pushed_head_sha untouched (§3.4 idempotency).

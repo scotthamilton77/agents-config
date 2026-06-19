@@ -366,6 +366,7 @@ def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
     state.round += 1
     state.last_poll_sha = new_head
     flip_stale_required_reviews(state.reviewers)
+    state.last_review_invalidated_sha = new_head
     return True
 
 

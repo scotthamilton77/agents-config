@@ -112,6 +112,7 @@ def push_pr(
         state.last_pushed_head_sha = git.head_sha()
         state.round += 1  # bootstrap 0->1 and N->N+1 are both a single increment (§3.4)
         flip_stale_required_reviews(state.reviewers)
+        state.last_review_invalidated_sha = state.last_pushed_head_sha
 
         if state.round == config.max_rounds:
             # Fire only on the push that advances round *to* the cap (§3.5) — not
