@@ -22,9 +22,12 @@ if TYPE_CHECKING:
     from prgroom.prsession.pr_ref import PRRef
     from prgroom.prsession.state import Disposition, PRGroomingState, ReviewItem
 
-_T_FIXED = PromptTemplate(name="reply-fixed", text="Fixed in {sha}. {rationale}")
-_T_FIXED_BARE = PromptTemplate(name="reply-fixed-bare", text="Fixed in {sha}.")
-_T_ALREADY = PromptTemplate(name="reply-already", text="Already addressed in {sha}.")
+# {location} is " in {sha}" when a commit is known, else "" — guards against a bare
+# "Fixed in ." when a FIXED/ALREADY_ADDRESSED disposition carries no commit (reachable
+# via `resolve-escalated --as fixed` with no --commits, or legacy/corrupt state).
+_T_FIXED = PromptTemplate(name="reply-fixed", text="Fixed{location}. {rationale}")
+_T_FIXED_BARE = PromptTemplate(name="reply-fixed-bare", text="Fixed{location}.")
+_T_ALREADY = PromptTemplate(name="reply-already", text="Already addressed{location}.")
 _T_RATIONALE = PromptTemplate(name="reply-rationale", text="{rationale}")
 _ESCALATED_BODY = (
     "Captured for follow-up; will respond on a later push to this PR or in a related issue."
@@ -49,14 +52,13 @@ _REPLYABLE = frozenset(
 
 def _render_body(disp: Disposition) -> str:
     kind = disp.kind
+    location = f" in {disp.commits[0]}" if disp.commits else ""
     if kind is DispositionKind.FIXED:
-        sha = disp.commits[0] if disp.commits else ""
         if disp.rationale:
-            return _T_FIXED.render({"sha": sha, "rationale": disp.rationale})
-        return _T_FIXED_BARE.render({"sha": sha})
+            return _T_FIXED.render({"location": location, "rationale": disp.rationale})
+        return _T_FIXED_BARE.render({"location": location})
     if kind is DispositionKind.ALREADY_ADDRESSED:
-        sha = disp.commits[0] if disp.commits else ""
-        return _T_ALREADY.render({"sha": sha})
+        return _T_ALREADY.render({"location": location})
     if kind is DispositionKind.ESCALATED:
         return _ESCALATED_CAP_BODY if _CAP_RE.search(disp.rationale) else _ESCALATED_BODY
     return _T_RATIONALE.render({"rationale": disp.rationale})

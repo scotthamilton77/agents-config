@@ -80,6 +80,39 @@ def test_fixed_with_rationale_appends_it() -> None:
     assert gh.rest_calls[0][2]["body"] == "Fixed in abc1234. tightened the bound"
 
 
+def test_fixed_empty_commits_renders_grammatical() -> None:
+    # A FIXED disposition with no commits (reachable via `resolve-escalated --as fixed`
+    # with no --commits) must not post the broken "Fixed in ." — it drops the sha clause.
+    gh = _RecordingGh()
+    state = _state([_item(ItemKind.REVIEW_THREAD, "1", DispositionKind.FIXED)])
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"] == "Fixed."
+
+
+def test_fixed_empty_commits_with_rationale() -> None:
+    gh = _RecordingGh()
+    state = _state(
+        [
+            _item(
+                ItemKind.REVIEW_THREAD,
+                "1",
+                DispositionKind.FIXED,
+                rationale="manual human resolution",
+            )
+        ]
+    )
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"] == "Fixed. manual human resolution"
+
+
+def test_already_addressed_empty_commits_renders_grammatical() -> None:
+    # Same defect class as FIXED: no commits must not post "Already addressed in .".
+    gh = _RecordingGh()
+    state = _state([_item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.ALREADY_ADDRESSED)])
+    reply_pr(state, gh=gh, ref=_ref())
+    assert gh.rest_calls[0][2]["body"] == "Already addressed."
+
+
 def test_escalated_cap_variant_when_rationale_names_cap() -> None:
     gh = _RecordingGh()
     state = _state(

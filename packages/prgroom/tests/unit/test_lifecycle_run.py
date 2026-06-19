@@ -599,7 +599,9 @@ def test_run_drives_real_reply_posts_for_replyable_item() -> None:
         author="copilot",
         body_excerpt="x",
         seen_at=_NOW,
-        disposition=Disposition(kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude"),
+        disposition=Disposition(
+            kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude", commits=["abc1234"]
+        ),
     )
     calls: list[str] = []
     gh = FakeGh()
@@ -610,7 +612,7 @@ def test_run_drives_real_reply_posts_for_replyable_item() -> None:
     assert out.phase is PRPhase.QUIESCED
     assert out.items[0].replied is True
     assert gh.rest_calls == [
-        ("POST", "repos/octo/demo/pulls/7/comments/1/replies", {"body": "Fixed in ."})
+        ("POST", "repos/octo/demo/pulls/7/comments/1/replies", {"body": "Fixed in abc1234."})
     ]
 
 

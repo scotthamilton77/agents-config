@@ -26,8 +26,6 @@ Open the `src/prgroom/lifecycle/` container boundary and show its components. An
 
 This is the most-detailed structural artifact in the set. It is the L3 zoom that an implementer reads alongside fca6.10 (the [Impl] Section 3 bead) when wiring `_run`.
 
-> **Target vs built (8.12 in flight):** the post-push verb order (`… → reply → resolve → rereview`), the `push_awaiting_rereview` rereview guard, and the persisted `pending_memory` / `last_rereviewed_sha` fields documented below reflect the **8.12 target**. Until 8.12 lands, the in-tree code still runs `push → rereview → reply → resolve` with the cycle-relative guard and no persisted memory. Remove this note when 8.12 ships.
-
 ## Diagram
 
 ```mermaid
