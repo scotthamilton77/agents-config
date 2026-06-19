@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.golden_master._runner import run_parity
+from tests.golden_master._runner import REPO_ROOT, run_parity
 
 pytestmark = pytest.mark.golden_master
 
@@ -51,13 +51,24 @@ def test_bare_install_single_tool_no_plugins(tmp_path: Path) -> None:
 
 def test_hooks_namespace_staged_with_exec_bit(tmp_path: Path) -> None:
     """The real ``src/user/.claude/hooks/`` namespace installs to ``~/.claude/hooks/``
-    at parity, preserving each script's source mode bit: ``ruff-postedit.py`` is
-    git-tracked 100755 and must land executable, while ``ruff-postedit_test.sh`` is
-    100644 and must land non-executable. The bare-install scenario already compares
-    the exec bit tree-wide; this pins the hooks/ namespace explicitly (8.7 parity
-    with install.sh's hooks/ subdir staging + cp mode preservation), so a future
-    regression in either installer surfaces here by name rather than as an opaque
-    tree diff."""
+    at parity, preserving each script's source mode bit: an executable source hook
+    must land +x and a non-executable one must stay -x. The bare-install scenario
+    already compares the exec bit tree-wide; this pins the hooks/ namespace
+    explicitly (8.7 parity with install.sh's hooks/ subdir staging + cp mode
+    preservation), so a future regression surfaces here by name rather than as an
+    opaque tree diff.
+
+    The two probe files are derived from the real source tree by mode bit (not
+    hardcoded by name), so the test follows a hook rename and only requires that
+    ``src/user/.claude/hooks/`` keep at least one executable and one
+    non-executable script."""
+    src_hooks = REPO_ROOT / "src" / "user" / ".claude" / "hooks"
+    src_files = sorted(f for f in src_hooks.iterdir() if f.is_file())
+    exec_name = next((f.name for f in src_files if f.stat().st_mode & 0o111), None)
+    plain_name = next((f.name for f in src_files if not (f.stat().st_mode & 0o111)), None)
+    assert exec_name is not None, "fixture invariant: an executable source hook must exist"
+    assert plain_name is not None, "fixture invariant: a non-executable source hook must exist"
+
     result = run_parity(tmp_path, args=_CLAUDE_ARGS)
 
     assert result.bash_returncode == 0, result.bash_stderr
@@ -66,9 +77,9 @@ def test_hooks_namespace_staged_with_exec_bit(tmp_path: Path) -> None:
     assert diff.is_parity(), diff.render()
 
     hooks_b = result.home_b / ".claude" / "hooks"
-    exec_hook = hooks_b / "ruff-postedit.py"
-    plain_hook = hooks_b / "ruff-postedit_test.sh"
-    assert exec_hook.is_file(), "hook script must install to ~/.claude/hooks/"
+    exec_hook = hooks_b / exec_name
+    plain_hook = hooks_b / plain_name
+    assert exec_hook.is_file(), "executable hook must install to ~/.claude/hooks/"
     assert plain_hook.is_file(), "non-exec hook sibling must install to ~/.claude/hooks/"
     assert exec_hook.stat().st_mode & 0o111, "executable source hook must land +x"
     assert not (plain_hook.stat().st_mode & 0o111), "non-executable source hook must stay -x"
