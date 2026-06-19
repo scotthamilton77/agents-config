@@ -61,16 +61,19 @@ class FixRunResult:
     ``dispositions`` has one entry per gh_id in the cluster; ``escalations`` are
     the events the lifecycle will emit; ``stashed`` records whether the isolation
     effect fired; ``deferred_memory`` are accepted non-CONTEXTUAL entries the
-    repo-wide router will later home; ``unwritten`` are declared-but-unwritten
-    memory paths — a SOFT warning the lifecycle logs (not an escalation). Logging
-    is an *effect*, so it stays on the 8.15 side of the boundary; 8.7 only carries
-    the data. In the MVP (declared==written) this is always empty.
+    repo-wide router will later home; ``contextual_memory`` are valid CONTEXTUAL
+    entries the lifecycle (``_reply``) will route; ``unwritten`` are
+    declared-but-unwritten memory paths — a SOFT warning the lifecycle logs (not an
+    escalation). Logging is an *effect*, so it stays on the 8.15 side of the
+    boundary; 8.7 only carries the data. In the MVP (declared==written) this is
+    always empty.
     """
 
     dispositions: dict[str, Disposition]
     escalations: list[Escalation]
     stashed: bool
     deferred_memory: list[MemoryEntry] = field(default_factory=list)
+    contextual_memory: list[MemoryEntry] = field(default_factory=list)
     unwritten: list[str] = field(default_factory=list)
 
 
@@ -126,6 +129,7 @@ def run_fix(
         orphan=orphan,
         memory_violations=memory.violations,
         deferred_memory=memory.deferred,
+        memory_routable=memory.routable,
         unwritten=memory.unwritten,
     )
 
@@ -168,6 +172,7 @@ def _build_result(
     orphan: AuditViolation | None,
     memory_violations: list[AuditViolation],
     deferred_memory: list[MemoryEntry],
+    memory_routable: list[MemoryEntry],
     unwritten: list[str],
 ) -> FixRunResult:
     by_gh = _items_by_gh(req)
@@ -239,6 +244,7 @@ def _build_result(
         escalations=escalations,
         stashed=cluster_flip,
         deferred_memory=deferred_memory,
+        contextual_memory=memory_routable,
         unwritten=unwritten,
     )
 
