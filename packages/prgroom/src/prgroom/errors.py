@@ -90,6 +90,8 @@ class ErrorCode(StrEnum):
     PRECONDITION_NO_UNREPLIED = "PRECONDITION_NO_UNREPLIED"
     PRECONDITION_NO_UNRESOLVED = "PRECONDITION_NO_UNRESOLVED"
     PRECONDITION_NO_ESCALATIONS = "PRECONDITION_NO_ESCALATIONS"
+    PRECONDITION_FIXED_NEEDS_COMMITS = "PRECONDITION_FIXED_NEEDS_COMMITS"
+    PRECONDITION_ITEM_NOT_ESCALATED = "PRECONDITION_ITEM_NOT_ESCALATED"
     PRECONDITION_WAIT_NOT_APPLICABLE = "PRECONDITION_WAIT_NOT_APPLICABLE"
     PRECONDITION_NO_STATE = "PRECONDITION_NO_STATE"
     PRECONDITION_LOCK_HELD = "PRECONDITION_LOCK_HELD"
@@ -193,6 +195,16 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         what="`resolve-escalated` invoked but no escalated items exist",
         why="nothing to resolve",
         how="re-check `status`; the item may have been resolved already",
+    ),
+    ErrorCode.PRECONDITION_FIXED_NEEDS_COMMITS: RegistryEntry(
+        what="resolve-escalated --as fixed was given no commits",
+        why="a 'Fixed in <sha>' reply needs at least one commit SHA to cite",
+        how="pass --commits <sha>[,<sha>...] or pick a non-fixed disposition",
+    ),
+    ErrorCode.PRECONDITION_ITEM_NOT_ESCALATED: RegistryEntry(
+        what="the named item_id is absent, not escalated, or ambiguous",
+        why="resolve-escalated only flips a single currently-escalated item",
+        how="check 'prgroom status' for escalated item ids; disambiguate with kind:gh_id",
     ),
     ErrorCode.PRECONDITION_WAIT_NOT_APPLICABLE: RegistryEntry(
         what="`wait` invoked while phase is fixes-pending",
