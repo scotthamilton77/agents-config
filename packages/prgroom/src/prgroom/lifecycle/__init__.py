@@ -21,8 +21,10 @@ from prgroom.lifecycle.cluster import cluster_pr
 from prgroom.lifecycle.fix import fix_pr
 from prgroom.lifecycle.poll import poll_pr
 from prgroom.lifecycle.push import push_pr
+from prgroom.lifecycle.reply import reply_pr
 from prgroom.lifecycle.rereview import rereview_pr
 from prgroom.lifecycle.resolve import resolve_pr
+from prgroom.lifecycle.resolve_escalated import resolve_escalated_pr
 from prgroom.prsession.enums import PRPhase
 
 __all__ = [
@@ -34,7 +36,9 @@ __all__ = [
     "is_terminal_for_cli",
     "poll_pr",
     "push_pr",
+    "reply_pr",
     "rereview_pr",
+    "resolve_escalated_pr",
     "resolve_pr",
 ]
 

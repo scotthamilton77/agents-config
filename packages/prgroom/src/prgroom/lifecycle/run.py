@@ -42,6 +42,7 @@ from prgroom.lifecycle.poll import poll_pr
 from prgroom.lifecycle.predicates import (
     has_required_reviewers_to_refresh,
     new_lifecycle_gate_this_cycle,
+    push_awaiting_rereview,
     push_uploaded_commits_this_cycle,
 )
 from prgroom.lifecycle.push import has_queued_fix_commits, push_pr
@@ -212,7 +213,7 @@ def _resolve(ctx: RunContext) -> PRGroomingState:
 
 
 def _reply(ctx: RunContext) -> PRGroomingState:
-    return reply_pr(ctx.state)
+    return reply_pr(ctx.state, gh=ctx.gh, ref=ctx.ref)
 
 
 def _has_queued(ctx: RunContext) -> bool:
@@ -396,15 +397,15 @@ def _run(ctx: RunContext, verbs: Verbs) -> PRGroomingState:
 
 
 def _build_pipeline(verbs: Verbs) -> list[VerbStep]:
-    """The ordered FIXES_PENDING pipeline (§3.3): cluster→fix→cap→push→[rereview]→reply→resolve."""
+    """The ordered FIXES_PENDING pipeline (§3.3): cluster→fix→cap→push→reply→resolve→[rereview]."""
     return [
         VerbStep("cluster", verbs.cluster),
         VerbStep("fix", verbs.fix),
         VerbStep("cap-guard", _cap_guard_step(verbs)),
         VerbStep("push", verbs.push),
-        VerbStep("rereview", verbs.rereview, guard=_rereview_guard),
         VerbStep("reply", verbs.reply),
         VerbStep("resolve", verbs.resolve),
+        VerbStep("rereview", verbs.rereview, guard=_rereview_guard),
     ]
 
 
@@ -429,10 +430,8 @@ def _cap_guard_step(verbs: Verbs) -> Callable[[RunContext], PRGroomingState]:
 
 
 def _rereview_guard(ctx: RunContext) -> bool:
-    """True iff this cycle's push uploaded commits AND a required reviewer needs refresh (§3.3)."""
-    return push_uploaded_commits_this_cycle(
-        ctx.state, cycle_start_pushed_sha=ctx.cycle_start_pushed_sha
-    ) and has_required_reviewers_to_refresh(ctx.state)
+    """True iff a push awaits rereview AND a required reviewer needs refresh (§3.3, §6)."""
+    return push_awaiting_rereview(ctx.state) and has_required_reviewers_to_refresh(ctx.state)
 
 
 def _execute_step(step: VerbStep, ctx: RunContext) -> None:

@@ -49,6 +49,19 @@ def push_uploaded_commits_this_cycle(
     return state.last_pushed_head_sha != cycle_start_pushed_sha
 
 
+def push_awaiting_rereview(state: PRGroomingState) -> bool:
+    """True iff a review-invalidating HEAD has not yet been rereviewed (§3.4, §6).
+
+    Compares the persisted ``last_review_invalidated_sha`` (stamped by ``_push`` on
+    its own commit upload AND by ``_poll`` on an observed external push) against
+    ``last_rereviewed_sha`` (stamped by ``_rereview`` on a clean re-request). Unlike
+    the cycle-relative ``push_uploaded_commits_this_cycle``, this is durable across a
+    cycle that pushed then aborted in ``_reply``/``_resolve``, and it fires for
+    external pushes too. Gated downstream by ``has_required_reviewers_to_refresh``.
+    """
+    return state.last_review_invalidated_sha != state.last_rereviewed_sha
+
+
 def new_lifecycle_gate_this_cycle(state: PRGroomingState, *, previous_error: str | None) -> bool:
     """True iff a lifecycle gate APPEARED this cycle — unset->set (§3.3, §4).
 

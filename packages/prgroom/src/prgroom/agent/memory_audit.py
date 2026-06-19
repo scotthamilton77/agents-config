@@ -53,15 +53,18 @@ class MemoryAuditResult:
 
     ``violations`` are HARD breaches (containment BLOCK + per-entry WARNs);
     ``deferred`` are accepted non-CONTEXTUAL entries the repo-wide router will
-    later home; ``unwritten`` are declared-but-unwritten paths (soft warnings).
+    later home; ``routable`` are valid CONTEXTUAL entries the lifecycle
+    (``_reply``) will route; ``unwritten`` are declared-but-unwritten paths
+    (soft warnings).
     """
 
     violations: list[AuditViolation] = field(default_factory=list)
     deferred: list[MemoryEntry] = field(default_factory=list)
+    routable: list[MemoryEntry] = field(default_factory=list)
     unwritten: list[str] = field(default_factory=list)
 
 
-def _anchor(path: str, memory_dir: str) -> str:
+def anchor(path: str, memory_dir: str) -> str:
     """Lexically anchor a (possibly relative) ``path`` to ``memory_dir``. Pure, no fs.
 
     The agent declares memory_writes RELATIVE to memory_dir (§8.5 examples), so
@@ -69,7 +72,9 @@ def _anchor(path: str, memory_dir: str) -> str:
     semantics also keep the escape check correct: an ABSOLUTE path resets the join
     (discards memory_dir, so an absolute escape is still detectable), and a ``..``
     traversal normalizes out of the dir. Containment AND the declared-but-unwritten
-    comparison both anchor through here so they share one lexical model.
+    comparison both anchor through here so they share one lexical model. Public so the
+    realpath layer in :func:`prgroom.lifecycle.fix.resolve_routed_memory` anchors a
+    routable entry's path through the SAME model before its fs/symlink resolution.
     """
     return os.path.normpath(str(PurePath(memory_dir) / path))
 
@@ -77,12 +82,12 @@ def _anchor(path: str, memory_dir: str) -> str:
 def _is_contained(path: str, memory_dir: str) -> bool:
     """Pure lexical containment: is ``path`` inside ``memory_dir``? No fs access.
 
-    Anchors ``path`` to ``memory_dir`` (see :func:`_anchor`) then tests that the
+    Anchors ``path`` to ``memory_dir`` (see :func:`anchor`) then tests that the
     result equals the dir or sits under ``dir + os.sep``. The ``+ sep`` guard
     rejects sibling-prefix escapes (``/x/mem-evil`` is not under ``/x/mem``).
     """
     norm_dir = os.path.normpath(memory_dir)
-    norm_path = _anchor(path, memory_dir)
+    norm_path = anchor(path, memory_dir)
     if norm_path == norm_dir:
         return True
     # normpath("/") == "/" already ends in os.sep; a naive `norm_dir + os.sep`
@@ -102,6 +107,7 @@ def audit_memory(
     """Validate the §8.5 memory channel. Pure; returns a :class:`MemoryAuditResult`."""
     violations: list[AuditViolation] = []
     deferred: list[MemoryEntry] = []
+    routable: list[MemoryEntry] = []
 
     for write_path in out.memory_writes:
         if not _is_contained(write_path, memory_dir):
@@ -115,15 +121,21 @@ def audit_memory(
 
     for entry in out.memory:
         _audit_entry(
-            entry, known_thread_ids=known_thread_ids, violations=violations, deferred=deferred
+            entry,
+            known_thread_ids=known_thread_ids,
+            violations=violations,
+            deferred=deferred,
+            routable=routable,
         )
 
     # Compare under the same lexical anchoring as containment, so a relative declared
     # path and an absolute written path (as a filesystem-stating caller would supply)
     # match. Report the declared form ``p`` for a human-readable warning.
-    anchored_written = {_anchor(w, memory_dir) for w in written_paths}
-    unwritten = [p for p in out.memory_writes if _anchor(p, memory_dir) not in anchored_written]
-    return MemoryAuditResult(violations=violations, deferred=deferred, unwritten=unwritten)
+    anchored_written = {anchor(w, memory_dir) for w in written_paths}
+    unwritten = [p for p in out.memory_writes if anchor(p, memory_dir) not in anchored_written]
+    return MemoryAuditResult(
+        violations=violations, deferred=deferred, routable=routable, unwritten=unwritten
+    )
 
 
 def _audit_entry(
@@ -132,6 +144,7 @@ def _audit_entry(
     known_thread_ids: set[str],
     violations: list[AuditViolation],
     deferred: list[MemoryEntry],
+    routable: list[MemoryEntry],
 ) -> None:
     if entry.classification not in _VALID_CLASSES:
         violations.append(
@@ -164,3 +177,7 @@ def _audit_entry(
                 detail=f"CONTEXTUAL memory target_hint names unknown thread {entry.target_hint!r}",
             )
         )
+        return
+
+    # Passed every gate — a valid CONTEXTUAL entry the lifecycle will route (§8.3).
+    routable.append(entry)

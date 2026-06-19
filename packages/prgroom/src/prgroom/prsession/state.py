@@ -119,6 +119,44 @@ class Disposition:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RoutedMemory:
+    """A CONTEXTUAL memory entry resolved by ``_fix``, awaiting routing by ``_reply`` (§8.3).
+
+    ``content`` is resolved verbatim (inline content, or the file body for a
+    path-form entry). ``(round, source_item)`` is the Decisions-block dedup key.
+    ``target_hint`` is a thread node-id (``PRRT_*``) for a thread reply; ``None``
+    routes to the PR-body ``## Decisions`` block.
+    """
+
+    content: str
+    round: int
+    source_item: str
+    decided_by: str
+    target_hint: str | None = None
+
+    def to_dict(self) -> JsonObj:
+        d: JsonObj = {
+            "content": self.content,
+            "round": self.round,
+            "source_item": self.source_item,
+            "decided_by": self.decided_by,
+        }
+        if self.target_hint is not None:
+            d["target_hint"] = self.target_hint
+        return d
+
+    @classmethod
+    def from_dict(cls, d: JsonObj) -> RoutedMemory:
+        return cls(
+            content=d["content"],
+            round=d["round"],
+            source_item=d["source_item"],
+            decided_by=d["decided_by"],
+            target_hint=d.get("target_hint"),
+        )
+
+
 @dataclass(slots=True)
 class ReviewItem:
     """One reviewer-produced item (§2). ``disposition is None`` == not yet processed."""
@@ -255,11 +293,14 @@ class PRGroomingState:
     schema_version: int = SCHEMA_VERSION
     last_poll_sha: str = ""
     last_pushed_head_sha: str = ""
+    last_rereviewed_sha: str = ""
+    last_review_invalidated_sha: str = ""
     human_review_label_added: bool = False
     reviewers: dict[str, ReviewerState] = field(default_factory=dict)
     items: list[ReviewItem] = field(default_factory=list)
     last_error: str | None = None
     lifecycle_escalation_filed: bool = False
+    pending_memory: list[RoutedMemory] = field(default_factory=list)
 
     def to_dict(self) -> JsonObj:
         d: JsonObj = {
@@ -275,6 +316,10 @@ class PRGroomingState:
             d["last_poll_sha"] = self.last_poll_sha
         if self.last_pushed_head_sha:
             d["last_pushed_head_sha"] = self.last_pushed_head_sha
+        if self.last_rereviewed_sha:
+            d["last_rereviewed_sha"] = self.last_rereviewed_sha
+        if self.last_review_invalidated_sha:
+            d["last_review_invalidated_sha"] = self.last_review_invalidated_sha
         if self.human_review_label_added:
             d["human_review_label_added"] = self.human_review_label_added
         if self.reviewers:
@@ -285,6 +330,8 @@ class PRGroomingState:
             d["last_error"] = self.last_error
         if self.lifecycle_escalation_filed:
             d["lifecycle_escalation_filed"] = self.lifecycle_escalation_filed
+        if self.pending_memory:
+            d["pending_memory"] = [m.to_dict() for m in self.pending_memory]
         return d
 
     @classmethod
@@ -299,11 +346,14 @@ class PRGroomingState:
             schema_version=d.get("schema_version", SCHEMA_VERSION),
             last_poll_sha=d.get("last_poll_sha", ""),
             last_pushed_head_sha=d.get("last_pushed_head_sha", ""),
+            last_rereviewed_sha=d.get("last_rereviewed_sha", ""),
+            last_review_invalidated_sha=d.get("last_review_invalidated_sha", ""),
             human_review_label_added=d.get("human_review_label_added", False),
             reviewers={k: ReviewerState.from_dict(v) for k, v in d.get("reviewers", {}).items()},
             items=[ReviewItem.from_dict(item) for item in d.get("items", [])],
             last_error=d.get("last_error"),
             lifecycle_escalation_filed=d.get("lifecycle_escalation_filed", False),
+            pending_memory=[RoutedMemory.from_dict(m) for m in d.get("pending_memory", [])],
         )
 
 

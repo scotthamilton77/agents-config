@@ -76,9 +76,14 @@ class RecordingSink:
 class FakeGh:
     def __init__(self) -> None:
         self.added: list[tuple[PRRef, str]] = []
+        self.rest_calls: list[tuple[str, str, dict]] = []
 
     def add_label(self, ref: PRRef, label: str) -> None:
         self.added.append((ref, label))
+
+    def rest(self, method: str, path: str, *, fields=None) -> dict:
+        self.rest_calls.append((method, path, dict(fields or {})))
+        return {}
 
 
 class CountingStore:
@@ -235,7 +240,7 @@ def test_cap_guard_no_trip_without_queued_commits() -> None:
     assert guard(ctx).phase is PRPhase.FIXES_PENDING  # at cap but nothing queued
 
 
-def test_rereview_guard_true_when_pushed_and_reviewer_stale() -> None:
+def test_rereview_guard_true_when_awaiting_and_reviewer_stale() -> None:
     reviewers = {
         "copilot": ReviewerState(
             identity="copilot",
@@ -245,15 +250,46 @@ def test_rereview_guard_true_when_pushed_and_reviewer_stale() -> None:
             last_request_at=_NOW,
         )
     }
-    ctx = _ctx(_quiescent_state(last_pushed_head_sha="newsha", reviewers=reviewers))
-    ctx.cycle_start_pushed_sha = "oldsha"  # push advanced it this cycle
+    state = _quiescent_state(reviewers=reviewers)
+    state.last_review_invalidated_sha = "h1"  # a push invalidated review at this HEAD
+    state.last_rereviewed_sha = ""  # not yet rereviewed
+    ctx = _ctx(state)
     assert _rereview_guard(ctx) is True
 
 
-def test_rereview_guard_false_when_no_push_this_cycle() -> None:
-    ctx = _ctx(_quiescent_state(last_pushed_head_sha="samesha"))
-    ctx.cycle_start_pushed_sha = "samesha"  # push did not advance HEAD
+def test_rereview_guard_false_when_caught_up() -> None:
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_NOW,
+        )
+    }
+    state = _quiescent_state(reviewers=reviewers)
+    state.last_review_invalidated_sha = "h1"
+    state.last_rereviewed_sha = "h1"  # already rereviewed this HEAD
+    ctx = _ctx(state)
     assert _rereview_guard(ctx) is False
+
+
+def test_rereview_guard_survives_cycle_that_pushed_then_aborted() -> None:
+    reviewers = {
+        "copilot": ReviewerState(
+            identity="copilot",
+            kind=ReviewerKind.BOT,
+            status=ReviewerStatus.NOT_REQUESTED,
+            required=True,
+            last_request_at=_NOW,
+        )
+    }
+    state = _quiescent_state(reviewers=reviewers)
+    state.last_review_invalidated_sha = "h1"  # _push stamped it
+    state.last_rereviewed_sha = ""  # rereview never ran (reply/resolve aborted)
+    ctx = _ctx(state)
+    ctx.cycle_start_pushed_sha = state.last_pushed_head_sha  # NO push this (resumed) cycle
+    assert _rereview_guard(ctx) is True  # still armed — guard is persisted, not cycle-relative
 
 
 # ── _entry_probe + cap re-arm ───────────────────────────────────────────────
@@ -437,6 +473,7 @@ def test_run_rereview_runs_after_push_uploads() -> None:
     def push(ctx: RunContext) -> PRGroomingState:
         calls.append("push")
         ctx.state.last_pushed_head_sha = "newsha"  # uploaded a commit
+        ctx.state.last_review_invalidated_sha = "newsha"  # push.py invalidates review at HEAD
         return ctx.state
 
     def wait(ctx: RunContext) -> PRGroomingState:
@@ -552,25 +589,31 @@ def test_run_maps_unreadable_state_to_state_tier(exc: Exception, tier: Tier) -> 
     assert excinfo.value.tier is tier  # § 3.3 read-failure mapping (exit 78)
 
 
-def test_run_drives_real_reply_skeleton_as_noop() -> None:
-    # The §3.3 pipeline-slotting pin: the loop wires the REAL `_reply` (a no-op
-    # skeleton until the deterministic-verbs bead). Drive a cycle through it and assert
-    # it leaves the item untouched (replied stays False) — a safe passthrough.
+def test_run_drives_real_reply_posts_for_replyable_item() -> None:
+    # The §3.3 pipeline-slotting pin: the loop wires the REAL `_reply` adapter. Drive a
+    # FIXED REVIEW_THREAD item through a cycle and assert the real reply fired — a POST
+    # to the thread-reply endpoint and `replied` flipped — while the cycle still quiesces.
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
         identity=Identity(gh_id="1"),
         author="copilot",
         body_excerpt="x",
         seen_at=_NOW,
-        disposition=Disposition(kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude"),
+        disposition=Disposition(
+            kind=DispositionKind.FIXED, decided_at=_NOW, decided_by="claude", commits=["abc1234"]
+        ),
     )
     calls: list[str] = []
+    gh = FakeGh()
     store = InMemoryStore()
     store.write(_REF, _quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]))
-    ctx = _ctx(_quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]), store=store)
+    ctx = _ctx(_quiescent_state(phase=PRPhase.FIXES_PENDING, items=[item]), store=store, gh=gh)
     out = _run(ctx, _verbs(calls, has_queued=False, reply=_reply))  # real reply adapter
     assert out.phase is PRPhase.QUIESCED
-    assert out.items[0].replied is False  # reply_pr no-op skeleton touched nothing
+    assert out.items[0].replied is True
+    assert gh.rest_calls == [
+        ("POST", "repos/octo/demo/pulls/7/comments/1/replies", {"body": "Fixed in abc1234."})
+    ]
 
 
 # ── run_lifecycle wrapper ───────────────────────────────────────────────────
@@ -666,8 +709,8 @@ def test_build_pipeline_order() -> None:
         "fix",
         "cap-guard",
         "push",
-        "rereview",
         "reply",
         "resolve",
+        "rereview",
     ]
-    assert pipeline[4].guard is _rereview_guard  # only rereview is guarded
+    assert pipeline[6].guard is _rereview_guard  # only rereview is guarded, and it runs last
