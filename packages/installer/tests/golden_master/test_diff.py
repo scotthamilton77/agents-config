@@ -147,3 +147,71 @@ def test_tool_root_instruction_file_is_not_exempt(tmp_path: Path) -> None:
     _write(b / ".claude/AGENTS.md", b"beta")
     result = diff_trees(a, b)
     assert ".claude/AGENTS.md" in result.content_mismatch
+
+
+def test_settings_reinstall_backup_only_in_bash_is_accepted(tmp_path: Path) -> None:
+    # bash's jq `unique` sorts settings arrays on a re-install merge and backs up
+    # the prior file; Python's order-preserving union is idempotent and writes no
+    # backup. The surplus bash backup is the accepted artifact of that array-order
+    # divergence, provided the live settings.json matches on both sides.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/settings.json", b'{"permissions": {"deny": [1, 2]}}')
+    _write(
+        a / ".claude/settings.json.backup-20260619-120000",
+        b'{"permissions": {"deny": [2, 1]}}',
+    )
+    _write(b / ".claude/settings.json", b'{"permissions": {"deny": [2, 1]}}')
+    result = diff_trees(a, b)
+    assert result.is_parity(), result.render()
+
+
+def test_settings_backup_only_in_python_still_flags(tmp_path: Path) -> None:
+    # The exemption is asymmetric: a Python-only settings backup means Python was
+    # non-idempotent on a re-install — exactly the regression this parity scenario
+    # guards — so it must still break parity.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/settings.json", b'{"deny": [1, 2]}')
+    _write(b / ".claude/settings.json", b'{"deny": [1, 2]}')
+    _write(b / ".claude/settings.json.backup-20260619-120000", b'{"deny": [1, 2]}')
+    result = diff_trees(a, b)
+    assert ".claude/settings.json.backup-<TS>" in result.only_in_b
+
+
+def test_settings_backup_only_in_bash_with_divergent_live_still_flags(tmp_path: Path) -> None:
+    # The exemption requires the live target to match on both sides. A backup whose
+    # live settings.json genuinely differs (element added/dropped, not a pure
+    # reorder) is a real divergence — both the surplus backup and the live content
+    # mismatch must flag.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/settings.json", b'{"deny": [1, 2]}')
+    _write(a / ".claude/settings.json.backup-20260619-120000", b'{"deny": [9]}')
+    _write(b / ".claude/settings.json", b'{"deny": [1, 2, 3]}')
+    result = diff_trees(a, b)
+    assert ".claude/settings.json.backup-<TS>" in result.only_in_a
+    assert ".claude/settings.json" in result.content_mismatch
+
+
+def test_non_json_backup_only_in_bash_still_flags(tmp_path: Path) -> None:
+    # Only the union-merged settings file produces the accepted array-order
+    # artifact. A non-JSON backup present on only one side (e.g. a spurious
+    # dir/file backup) is not exempt and must still flag.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/AGENTS.md", b"x")
+    _write(a / ".claude/AGENTS.md.backup-20260619-120000", b"old")
+    _write(b / ".claude/AGENTS.md", b"x")
+    result = diff_trees(a, b)
+    assert ".claude/AGENTS.md.backup-<TS>" in result.only_in_a
+
+
+def test_non_settings_json_backup_only_in_bash_still_flags(tmp_path: Path) -> None:
+    # The exemption is anchored to the union-merged `settings.json` — the only
+    # file whose array order bash's jq re-sorts. A bash-only backup of any OTHER
+    # `.json` (which is copied verbatim, never merged) cannot be that artifact, so
+    # it must still flag even when its live copy matches semantically — otherwise
+    # the oracle would silently swallow an unrelated bash-only backup.
+    a, b = tmp_path / "a", tmp_path / "b"
+    _write(a / ".claude/other.json", b'{"x": [1, 2]}')
+    _write(a / ".claude/other.json.backup-20260619-120000", b'{"x": [2, 1]}')
+    _write(b / ".claude/other.json", b'{"x": [2, 1]}')
+    result = diff_trees(a, b)
+    assert ".claude/other.json.backup-<TS>" in result.only_in_a

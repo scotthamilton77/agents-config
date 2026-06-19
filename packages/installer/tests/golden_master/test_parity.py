@@ -176,15 +176,11 @@ def test_warmup_run_failure_is_surfaced(tmp_path: Path) -> None:
         run_parity(tmp_path, args=["--tools=bogus-tool", "--plugins=", "--yes"], repeat=2)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Re-install must be idempotent: the Python port re-backs-up directories on "
-    "every run, so a second run leaves spurious backups bash does not. Not yet ported.",
-)
 def test_reinstall_is_idempotent(tmp_path: Path) -> None:
     """Running each installer twice into the same HOME must converge to the same
-    tree — no spurious second-run backups. Exercises re-install idempotency
-    (Python re-backs-up directories every run)."""
+    tree. ``_install_dir`` skips an unchanged directory (no spurious second-run
+    backup), and the differ accepts bash's lone settings.json re-merge backup —
+    the on-disk trace of the array-order divergence it already normalises away."""
     result = run_parity(tmp_path, args=_CLAUDE_ARGS, repeat=2)
 
     assert result.bash_returncode == 0, result.bash_stderr

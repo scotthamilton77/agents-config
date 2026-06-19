@@ -126,6 +126,36 @@ def _index_tree(root: Path) -> dict[str, Path]:
     return index
 
 
+def _is_accepted_settings_backup(
+    relpath: str, index_a: dict[str, Path], index_b: dict[str, Path]
+) -> bool:
+    """Whether a bash-only ``<x>.json.backup-<TS>`` is the accepted artifact of the
+    settings array-order divergence (see ``_order_insensitive``).
+
+    On a re-install, bash's jq ``unique`` sorts ``permissions.deny`` / ``hooks.*``
+    when it re-merges the settings file, so it sees a "change" and backs up the
+    prior copy; Python's order-preserving union is idempotent and writes no backup.
+    That surplus backup is the same accepted divergence leaking onto disk — accept
+    it, but only narrowly: the backup must target a ``settings.json`` file (the
+    only union-merged file, hence the only one whose array order bash re-sorts)
+    whose live copy exists on BOTH sides and is semantically equal. A backup of any
+    other file (a verbatim-copied ``.json``, a non-JSON file), a missing live
+    counterpart, or a genuinely different target (element added or dropped, not a
+    pure reorder) is not exempt and still flags. The exemption is deliberately
+    one-sided — a Python-only backup means Python itself was non-idempotent, the
+    very regression this scenario guards, so the caller applies this only to
+    ``only_in_a`` (bash)."""
+    if not relpath.endswith(_BACKUP_TS_PLACEHOLDER):
+        return False
+    target = relpath[: -len(_BACKUP_TS_PLACEHOLDER)]
+    if Path(target).name != "settings.json":
+        return False
+    live_a, live_b = index_a.get(target), index_b.get(target)
+    if live_a is None or live_b is None:
+        return False
+    return json_semantically_equal(live_a.read_bytes(), live_b.read_bytes())
+
+
 def _is_executable(path: Path) -> bool:
     # Any execute bit (owner/group/other), matching POSIX ``test -x`` intent —
     # not just owner-execute. Git stores only 0o644/0o755, so the two agree on
@@ -160,8 +190,15 @@ def diff_trees(root_a: Path, root_b: Path) -> TreeDiff:
         if _is_executable(path_a) != _is_executable(path_b):
             mode_mismatch.append(relpath)
 
+    only_in_a = tuple(
+        sorted(
+            rel
+            for rel in keys_a - keys_b
+            if not _is_accepted_settings_backup(rel, index_a, index_b)
+        )
+    )
     return TreeDiff(
-        only_in_a=tuple(sorted(keys_a - keys_b)),
+        only_in_a=only_in_a,
         only_in_b=tuple(sorted(keys_b - keys_a)),
         content_mismatch=tuple(content_mismatch),
         mode_mismatch=tuple(mode_mismatch),
