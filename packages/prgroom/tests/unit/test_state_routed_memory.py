@@ -12,8 +12,11 @@ def _ref() -> PRRef:
 
 def test_routed_memory_roundtrip_thread_form() -> None:
     rm = RoutedMemory(
-        content="decided X", round=2, source_item="c1#0",
-        decided_by="claude -p opus[1m]", target_hint="PRRT_abc",
+        content="decided X",
+        round=2,
+        source_item="c1#0",
+        decided_by="claude -p opus[1m]",
+        target_hint="PRRT_abc",
     )
     assert RoutedMemory.from_dict(rm.to_dict()) == rm
 
