@@ -1,6 +1,6 @@
 """Unit tests for installer.core.run.install_plugin_routes (G2 — plugin-route dispatch).
 
-The bead's core bug: ``PluginRoute.routes()`` had zero call sites; ``core/run.py``
+The core bug this dispatch fixes: ``PluginRoute.routes()`` had zero call sites; ``core/run.py``
 iterated only tool adapters, never plugin routes, so every Python install with the
 beads plugin silently dropped all ``~/.beads`` content. ``install_plugin_routes``
 is the missing dispatch — the plugin-side analog of ``install_pipeline``, driving
