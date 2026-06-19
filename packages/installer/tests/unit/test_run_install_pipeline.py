@@ -31,6 +31,17 @@ def _file_item(relpath: Path, content: bytes, *, tool: str = "claude") -> Staged
     )
 
 
+def _settings_item(content: bytes, *, tool: str = "claude") -> StagedItem:
+    return StagedItem(
+        source_path=Path("/unused/settings.json"),
+        dest_relpath=Path("settings.json"),
+        kind=FileKind.SETTINGS_JSON,
+        namespace=None,
+        provenance=Provenance(kind="tool", name=tool),
+        content=content,
+    )
+
+
 def test_install_pipeline_aggregates_counters_across_tools(tmp_path: Path) -> None:
     """
     Given two adapters — one installing a new file, one whose dest file already
@@ -86,3 +97,34 @@ def test_install_pipeline_forwards_auto_yes_to_each_sync_plan(tmp_path: Path) ->
 
     assert (claude.dest_dir(home) / "a.md").read_bytes() == b"new\n"
     assert (counters.updated, counters.backed_up) == (1, 1)
+
+
+def test_install_pipeline_aggregates_merged_counter(tmp_path: Path) -> None:
+    """
+    Given a tool whose dest already holds a settings.json that a staged
+    settings.json union would change (a merge, not a plain update)
+    When install_pipeline runs with --yes
+    Then the aggregate Counters carry merged=1 (and updated=0).
+
+    Pins: install_pipeline sums each sync_plan's ``merged`` field into the
+    returned total — the field the 'Merged' summary line reports. Fails while the
+    aggregation drops ``merged`` (sums only created/updated/skipped/backed_up), so
+    a real merge never reaches the summary.
+    """
+    home = tmp_path / "home"
+    claude = get_adapter(Tool.CLAUDE)
+    claude.dest_dir(home).mkdir(parents=True)
+    (claude.dest_dir(home) / "settings.json").write_bytes(b'{"userKey": "keep-me"}\n')
+    plans = {
+        Tool.CLAUDE: StagingPlan(
+            items={Path("settings.json"): _settings_item(b'{"templateKey": 1}')},
+            tool=Tool.CLAUDE,
+        ),
+    }
+
+    counters = install_pipeline(
+        [claude], plans=plans, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
+    )
+
+    assert counters.merged == 1
+    assert counters.updated == 0

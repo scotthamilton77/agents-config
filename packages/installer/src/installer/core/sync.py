@@ -346,7 +346,15 @@ def _install_file(
             _back_up(dest, timestamp, counters)
         dest.write_bytes(effective)
         dest.chmod(0o755 if executable else 0o644)
-    _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
+    # A changed settings.json union over an EXISTING dest is a merge, not a plain
+    # update — bash tallies ``tool_merged`` (not ``tool_updated``) on that branch
+    # (scripts/install.sh:1358 dry-run / 1366 applied). A fresh settings.json (no
+    # existing dest) is a plain create (scripts/install.sh:1303), so the merge tally
+    # is gated on ``dest_exists``.
+    is_merge = kind is FileKind.SETTINGS_JSON and dest_exists
+    _record_write(
+        dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters, merged=is_merge
+    )
 
 
 def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, bytes]) -> bool:
@@ -466,19 +474,36 @@ def _consent_to_overwrite(
 
 
 def _record_write(
-    dest: Path, *, dest_exists: bool, io: IOPort, dry_run: bool, counters: Counters
+    dest: Path,
+    *,
+    dest_exists: bool,
+    io: IOPort,
+    dry_run: bool,
+    counters: Counters,
+    merged: bool = False,
 ) -> None:
-    """Preview the would-be write under ``dry_run`` and tally it as a create or
-    update. On a real (non-``dry_run``) write, emit a verbose-gated per-item line
-    ("Installed X (new)" / "Updated X") so ``--verbose`` yields bash ``vok``
-    per-file detail (scripts/install.sh:1158,1180) while a quiet run stays
-    silent. Shared by the file and dir installers; mutates ``counters``."""
+    """Preview the would-be write under ``dry_run`` and tally it as a create,
+    update, or merge. On a real (non-``dry_run``) write, emit a verbose-gated
+    per-item line ("Installed X (new)" / "Updated X" / "Merged X") so ``--verbose``
+    yields bash ``vok`` per-file detail (scripts/install.sh:1158,1180,1365) while a
+    quiet run stays silent.
+
+    ``merged`` is True only for a changed settings.json union over an existing dest
+    (``_install_file``): bash tallies that as ``tool_merged`` rather than
+    ``tool_updated`` (scripts/install.sh:1358 dry-run / 1366 applied). It is
+    mutually exclusive with the create branch — a merge always overwrites an
+    existing dest — so ``merged`` is only ever set alongside ``dest_exists``. Shared
+    by the file and dir installers; mutates ``counters``."""
     if dry_run:
-        verb = "update" if dest_exists else "create"
+        verb = "merge" if merged else "update" if dest_exists else "create"
         io.info(f"would {verb} {dest}")
+    elif merged:
+        io.ok(f"Merged {dest}", verbose=True)
     else:
         io.ok(f"Updated {dest}" if dest_exists else f"Installed {dest} (new)", verbose=True)
-    if dest_exists:
+    if merged:
+        counters.merged += 1
+    elif dest_exists:
         counters.updated += 1
     else:
         counters.created += 1

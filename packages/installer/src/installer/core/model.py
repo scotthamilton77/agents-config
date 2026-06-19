@@ -181,6 +181,7 @@ class Counters:
     staged: int = 0
     created: int = 0
     updated: int = 0
+    merged: int = 0
     skipped: int = 0
     pruned: int = 0
     backed_up: int = 0

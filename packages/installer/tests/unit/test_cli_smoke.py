@@ -567,6 +567,91 @@ def test_unknown_plugin_value_returns_2_and_names_it(
     assert "Unknown plugin: 'bogus'" in capsys.readouterr().err
 
 
+# ── 8.15: prune-exclusion warning when --plugins= excludes a discovered plugin ──
+
+
+def test_explicit_plugins_override_warns_about_excluded_plugin(tmp_path: Path) -> None:
+    """
+    Given a discoverable 'widget' plugin and an explicit --plugins= that excludes it
+    When main runs a plain install (no --prune)
+    Then a warning naming 'widget' and the non-prune guidance is emitted.
+
+    Pins: an explicit --plugins= override that drops a discovered plugin warns the
+    operator the already-installed files are NOT removed — bash
+    scripts/install.sh:325. Fails while the Python installer drops excluded plugins
+    silently (resolve_plugins returns the resolved set with no exclusion warning).
+    """
+    repo = _repo_with_widget_plugin(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--tools=claude", "--plugins=", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    warns = [e.message for e in io.transcript if e.channel == "warn"]
+    assert any("widget" in m and "excluded via --plugins=" in m for m in warns), warns
+    # non-prune wording: files already installed are not removed
+    assert any("not removed" in m for m in warns), warns
+
+
+def test_explicit_plugins_override_with_prune_warns_orphan_wording(tmp_path: Path) -> None:
+    """
+    Given a discoverable 'widget' plugin excluded via --plugins= AND --prune-only
+    When main runs
+    Then the exclusion warning uses the prune wording (excluded files become
+    orphans and may be removed) — bash scripts/install.sh:323.
+
+    Pins: the wording branches on whether a prune phase is active. Fails if the
+    warning is unconditional (always the non-prune text) or absent under --prune.
+    --prune-only is used so the run needs no installer.toml-present install half.
+    """
+    repo = _repo_with_widget_plugin(tmp_path)
+    # _run_prune reads installer.toml off repo_root; give it an (empty) prune list
+    # so the prune phase is a clean no-op rather than a missing-file warning.
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True, exist_ok=True)
+    (toml_dir / "installer.toml").write_text("[prune]\nretired = []\n")
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--tools=claude", "--plugins=", "--prune-only", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    warns = [e.message for e in io.transcript if e.channel == "warn"]
+    assert any("widget" in m and "become orphans" in m for m in warns), warns
+
+
+def test_autodetect_does_not_warn_about_excluded_plugins(tmp_path: Path) -> None:
+    """
+    Given a discoverable 'widget' plugin with NO ~/.widget footprint (so
+    auto-detect excludes it) and NO explicit --plugins=
+    When main runs a plain install
+    Then NO exclusion warning is emitted.
+
+    Pins: the exclusion warning fires only under an EXPLICIT --plugins= override
+    (bash gates it on PLUGINS_FLAG_SET, scripts/install.sh:308). Auto-detect
+    dropping an undetected plugin is normal, not warn-worthy. Fails if the warning
+    keys on the discovered-vs-resolved delta regardless of how plugins were
+    resolved.
+    """
+    repo = _repo_with_widget_plugin(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(["--tools=claude", "--yes"], home=tmp_path, io=io, repo_root=repo)
+
+    assert rc == 0
+    warns = [e.message for e in io.transcript if e.channel == "warn"]
+    assert not any("excluded via --plugins=" in m for m in warns), warns
+
+
 def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     """
     Given a 'widget' plugin overlaying claude rules/widget-rule.md, a dest entry
