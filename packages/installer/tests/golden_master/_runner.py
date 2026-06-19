@@ -62,6 +62,13 @@ def _build_env(home: Path, extra_env: dict[str, str] | None) -> dict[str, str]:
         "LC_ALL": "C",
         "LANG": "C",
         "INSTALLER_PLUGINS_SRC": "",
+        # install.sh owns a prgroom `uv tool install` step that install.py has no
+        # counterpart for (design §7.2). Left on, only the bash side would create
+        # a uv-managed `prgroom` console script under home_a's uv tool-bin dir — a
+        # spurious parity divergence — and it would need a real (slow, networked)
+        # wheel build, breaking hermeticity. The master toggle pins it off for
+        # BOTH installers (inert for install.py, which has no prgroom step).
+        "INSTALLER_PRGROOM": "0",
     }
     if extra_env:
         env.update(extra_env)
