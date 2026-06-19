@@ -306,8 +306,8 @@ def _install_file(
     old = dest.read_bytes() if dest_exists else None
     effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
-        if restore_exec_on_skip and executable and not dry_run:
-            _restore_exec_bit(dest)
+        if restore_exec_on_skip and executable and not dry_run and _restore_exec_bit(dest):
+            io.info(f"Restored +x on {dest}", verbose=True)
         io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
         return
@@ -449,14 +449,14 @@ def _record_write(
 ) -> None:
     """Preview the would-be write under ``dry_run`` and tally it as a create or
     update. On a real (non-``dry_run``) write, emit a verbose-gated per-item line
-    ("Installed X" / "Updated X") so ``--verbose`` yields bash ``vok`` per-file
-    detail (scripts/install.sh:1158,1180) while a quiet run stays silent. Shared
-    by the file and dir installers; mutates ``counters``."""
+    ("Installed X (new)" / "Updated X") so ``--verbose`` yields bash ``vok``
+    per-file detail (scripts/install.sh:1158,1180) while a quiet run stays
+    silent. Shared by the file and dir installers; mutates ``counters``."""
     if dry_run:
         verb = "update" if dest_exists else "create"
         io.info(f"would {verb} {dest}")
     else:
-        io.ok(f"{'Updated' if dest_exists else 'Installed'} {dest}", verbose=True)
+        io.ok(f"Updated {dest}" if dest_exists else f"Installed {dest} (new)", verbose=True)
     if dest_exists:
         counters.updated += 1
     else:
@@ -492,17 +492,22 @@ def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _restore_exec_bit(dest: Path) -> None:
+def _restore_exec_bit(dest: Path) -> bool:
     """Restore a lost exec bit on a hash-equal dest without a full rewrite.
     Route-scoped port of ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``):
     fires only when no exec bit is set, and then *adds* the exec bits to the
     existing mode (``mode | 0o111``) rather than forcing ``0o755`` — so a
     user-tightened file (e.g. ``0o600``) gains exec without widening its
     read/write bits, mirroring ``chmod +x``. The any-exec-bit gate matches the
-    differ's executability definition (``_diff.py::_is_executable``)."""
+    differ's executability definition (``_diff.py::_is_executable``). Returns
+    ``True`` when the mode was changed (so the caller can announce the repair
+    under ``--verbose``, mirroring bash ``vinfo "Restored +x ..."``,
+    scripts/install.sh:1096), ``False`` when the exec bit was already set."""
     mode = dest.stat().st_mode
-    if not mode & 0o111:
-        dest.chmod(mode | 0o111)
+    if mode & 0o111:
+        return False
+    dest.chmod(mode | 0o111)
+    return True
 
 
 def _sha256(data: bytes) -> bytes:

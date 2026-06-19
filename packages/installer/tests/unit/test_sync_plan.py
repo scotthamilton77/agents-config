@@ -736,7 +736,10 @@ def test_created_file_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
     sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
 
     detail = _verbose_lines(io)
-    assert any(str(home / "f.md") in e.message for e in detail)
+    assert any(
+        str(home / "f.md") in e.message and "Installed" in e.message and "(new)" in e.message
+        for e in detail
+    )
 
 
 def test_updated_file_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
@@ -758,7 +761,10 @@ def test_updated_file_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
     sync_plan(_IdentityAdapter(), plan, home=home, io=io, auto_yes=True, timestamp=_FIXED_TS)
 
     detail = _verbose_lines(io)
-    assert any(str(home / "f.md") in e.message for e in detail)
+    assert any(
+        str(home / "f.md") in e.message and "Updated" in e.message and "(new)" not in e.message
+        for e in detail
+    )
 
 
 def test_skipped_file_emits_verbose_up_to_date_detail(tmp_path: Path) -> None:
@@ -803,7 +809,12 @@ def test_created_dir_emits_verbose_detail_naming_dest(tmp_path: Path) -> None:
     sync_plan(_IdentityAdapter(), plan, home=home, io=io, timestamp=_FIXED_TS)
 
     detail = _verbose_lines(io)
-    assert any(str(home / "skills" / "s") in e.message for e in detail)
+    assert any(
+        str(home / "skills" / "s") in e.message
+        and "Installed" in e.message
+        and "(new)" in e.message
+        for e in detail
+    )
 
 
 def test_skipped_dir_emits_verbose_up_to_date_detail(tmp_path: Path) -> None:
