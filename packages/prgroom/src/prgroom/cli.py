@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+from enum import StrEnum
 from pathlib import Path
 from typing import IO
 
@@ -45,7 +46,9 @@ from prgroom.lifecycle import (
     is_terminal_for_cli,
     poll_pr,
     push_pr,
+    reply_pr,
     rereview_pr,
+    resolve_escalated_pr,
     resolve_pr,
 )
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
@@ -53,6 +56,7 @@ from prgroom.lifecycle.locking import with_lock
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
+from prgroom.prsession.enums import DispositionKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.registry import resolve_store
 from prgroom.prsession.state import PRGroomingState, ReviewItem, bootstrap_state
@@ -97,6 +101,20 @@ def _build_git() -> GitClient:
     production-wiring line is exercised by the git fit tests against ``GitCli``.
     """
     return GitCli(SubprocessRunner())  # pragma: no cover - production boundary wiring
+
+
+class ResolveAsKind(StrEnum):
+    """The four terminal dispositions a human may flip an escalated item to (§3.2)."""
+
+    FIXED = "fixed"
+    SKIPPED = "skipped"
+    DEFERRED = "deferred"
+    WONT_FIX = "wont_fix"
+
+
+def _git_user() -> str:
+    """Resolve the local git user for ``resolve-escalated`` provenance (via the seam)."""
+    return _build_git().config_user()
 
 
 def _decided_by(chain: ProviderChain) -> str:
@@ -420,9 +438,33 @@ def rereview(
 
 
 @app.command()
-def reply(pr: str = typer.Argument(..., help="PR ref.")) -> None:
-    """Render and post replies for every item per template matrix."""
-    _skeleton("reply")
+def reply(
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+) -> None:
+    """Render and post replies for every unreplied item; route pending CONTEXTUAL memory.
+
+    A locked verb: ``read -> reply_pr -> write`` under the §2 ``with_lock`` wrapper.
+    Preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE`` (exit 2); the
+    graph-terminal ``merged`` phase -> no-op exit 0. Like ``resolve`` it still acts in
+    ``quiesced`` / ``human-gated`` (posting an unreplied item's reply is idempotent via
+    ``ReviewItem.replied``). No phase change.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        gh = _build_gh()
+
+        def _reply() -> None:
+            state = _read_or_no_state(store, ref)
+            if is_graph_terminal(state.phase):
+                return  # merged is absorbing: no reply (no-op exit 0)
+            state = reply_pr(state, gh=gh, ref=ref)
+            store.write(ref, state)
+
+        with_lock(store, ref, _reply)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()
@@ -457,13 +499,48 @@ def resolve(
 
 @app.command(name="resolve-escalated")
 def resolve_escalated(
-    pr: str = typer.Argument(..., help="PR ref."),
-    item_id: str = typer.Argument(..., help="gh id of the escalated item."),
-    as_: str = typer.Option(..., "--as", help="Terminal disposition to flip the item to."),
+    ctx: typer.Context,
+    pr: str = typer.Argument(..., help="PR ref: owner/repo#n or a full PR URL."),
+    item_id: str = typer.Argument(..., help="Escalated item id: gh_id or kind:gh_id."),
+    # B008: ruff's typer-call exemption only recognizes builtin-annotated params; an
+    # enum-annotated default trips it. The whole file uses the bare-default style, and
+    # an Annotated param can't follow the Argument defaults above, so suppress here.
+    as_: ResolveAsKind = typer.Option(..., "--as", help="Terminal disposition to flip to."),  # noqa: B008
     rationale: str = typer.Option("", "--rationale", help="Human rationale for the flip."),
+    commits: str = typer.Option(
+        "", "--commits", help="Comma-separated SHAs (required for --as fixed)."
+    ),
 ) -> None:
-    """Human-initiated reclassification of an escalated item."""
-    _skeleton("resolve-escalated")
+    """Human reclassification of one escalated item to a terminal disposition (§3.2).
+
+    A locked verb: ``read -> resolve_escalated_pr -> write`` under the §2
+    ``with_lock`` wrapper. An invalid ``--as`` is rejected at parse (typer choice,
+    exit 2) before any state read. ``decided_by`` stamps ``human:<git-user>`` via the
+    git seam. Flipping the last escalated item may release ``human-gated`` ->
+    ``fixes-pending``; never clears cap/failed gating, never bumps ``round``.
+    """
+    store: Store = ctx.obj
+    try:
+        ref = PRRef.parse(pr)
+        commit_list = [c for c in commits.split(",") if c]
+        decided_by = "human:" + _git_user()
+
+        def _resolve_escalated() -> None:
+            state = _read_or_no_state(store, ref)
+            state = resolve_escalated_pr(
+                state,
+                item_id=item_id,
+                as_disposition=DispositionKind(as_.value),
+                rationale=rationale,
+                commits=commit_list,
+                decided_by=decided_by,
+                now=Deps.system().clock.now(),
+            )
+            store.write(ref, state)
+
+        with_lock(store, ref, _resolve_escalated)
+    except PrgroomError as err:
+        raise typer.Exit(code=handle_cli_error(err)) from err
 
 
 @app.command()

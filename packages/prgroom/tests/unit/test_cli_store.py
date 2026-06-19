@@ -3,9 +3,9 @@
 The store is resolved eagerly in the root callback so an invalid adapter fails
 terminally — rendered 4-line block, exit 2, no traceback — BEFORE any verb body
 runs. A valid `--store file` (or the default) falls through to the verb. The
-probe verb is ``reply`` (still a foundation skeleton), so these tests exercise
-ONLY the root-callback store resolution, not any verb's own logic. Proves
-`--store` beats `PRGROOM_STORE` via a set env var.
+probe verb is ``sweep`` (the lone remaining foundation skeleton), so these tests
+exercise ONLY the root-callback store resolution, not any verb's own logic.
+Proves `--store` beats `PRGROOM_STORE` via a set env var.
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ from prgroom.cli import SKELETON_EXIT_CODE, app
 
 runner = CliRunner()
 
-# A still-skeleton single-arg verb used purely to probe the root callback. ``poll``
-# (8.9a), ``status`` (8.11), ``cluster`` / ``fix`` (8.15), and ``push`` / ``rereview``
-# / ``resolve`` (8.16) are wired for real, so ``reply`` is the remaining skeleton that
-# serves as the fall-through probe.
-_PROBE = "reply"
+# A still-skeleton verb used purely to probe the root callback. After 8.12 wired
+# ``reply`` / ``resolve-escalated``, ``sweep`` is the lone remaining skeleton, so it
+# serves as the fall-through probe. Its single positional ``repo`` accepts the bare
+# ``"123"`` the store tests pass; the store callback runs before the verb body either
+# way, so the verb's arg shape is irrelevant to what these tests exercise.
+_PROBE = "sweep"
 
 
 def test_invalid_store_bd_exits_two_with_block_before_verb() -> None:
