@@ -12,7 +12,7 @@ from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
-from installer.core.run import install_pipeline, prune_pipeline
+from installer.core.run import install_pipeline, install_plugin_routes, prune_pipeline
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 
 if TYPE_CHECKING:
@@ -172,6 +172,17 @@ def main(
             install_pipeline(
                 adapters,
                 plans=plans,
+                home=resolved_home,
+                io=io,
+                dry_run=args.dry_run,
+                auto_yes=config.auto_yes,
+            )
+            # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land outside
+            # any tool tree, so they install in a dedicated pass after the tool
+            # sync — mirroring the bash installer's stage_and_install_beads phase
+            # (scripts/install.sh:948). Same consent gate; --prune-only skips it.
+            install_plugin_routes(
+                plugins,
                 home=resolved_home,
                 io=io,
                 dry_run=args.dry_run,
