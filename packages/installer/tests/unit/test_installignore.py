@@ -42,16 +42,20 @@ def test_surrounding_whitespace_is_trimmed(tmp_path: Path) -> None:
     assert ignore.dirnames == frozenset({"rules-readmes"})
 
 
-def test_excludes_matches_files_against_basenames(tmp_path: Path) -> None:
-    ignore = InstallIgnore(basenames=frozenset({"AGENTS.md"}), dirnames=frozenset({"rules-readmes"}))
+def test_excludes_matches_files_against_basenames() -> None:
+    ignore = InstallIgnore(
+        basenames=frozenset({"AGENTS.md"}), dirnames=frozenset({"rules-readmes"})
+    )
 
     assert ignore.excludes("AGENTS.md", is_dir=False) is True
     assert ignore.excludes("AGENTS.md.template", is_dir=False) is False  # never the real file
     assert ignore.excludes("rules-readmes", is_dir=False) is False  # dir entry, file query
 
 
-def test_excludes_matches_directories_against_dirnames(tmp_path: Path) -> None:
-    ignore = InstallIgnore(basenames=frozenset({"AGENTS.md"}), dirnames=frozenset({"rules-readmes"}))
+def test_excludes_matches_directories_against_dirnames() -> None:
+    ignore = InstallIgnore(
+        basenames=frozenset({"AGENTS.md"}), dirnames=frozenset({"rules-readmes"})
+    )
 
     assert ignore.excludes("rules-readmes", is_dir=True) is True
     assert ignore.excludes("AGENTS.md", is_dir=True) is False  # basename entry, dir query
