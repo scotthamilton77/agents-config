@@ -15,6 +15,8 @@ Each plugin directory follows this layout (all subdirs are optional):
         agents/                   Agent definitions — unique names required (fatal on collision)
         settings.json.template    Settings injection (MCP servers, hooks, permissions) — union-merged
       .agents/                    Shared content installed to all active tools
+        rules/                    Rule files (same collision rules as .<tool>/rules/)
+        rules-readmes/            Source-only rationale docs — NOT installed
         skills/
         agents/
 
@@ -45,3 +47,6 @@ Each plugin directory follows this layout (all subdirs are optional):
 
 | Plugin | Auto-detect sentinel | What it installs |
 |--------|---------------------|-----------------|
+| `beads` | `bd` on PATH or `~/.beads/` exists | beads CLI + discovered-work rules, skills, formulas, scripts |
+| `graphify` | _registration + detection pending_ | graphify discipline rule |
+| `codex` | _registration + detection pending_ | Codex routing rule (Claude-only) |

@@ -65,7 +65,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
-  - `rules/` - Claude-specific workflow rules (`claude-sandbox.md`, `claude-to-codex-routing.md`); general rules are sourced from `src/user/.agents/rules/`
+  - `rules/` - Claude-specific workflow rules (`claude-sandbox.md`, `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`); general rules are sourced from `src/user/.agents/rules/`
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)
@@ -80,8 +80,10 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `AGENTS.md.template` - Flat instruction skeleton with dynamic-include markers
   - `OPENCODE-EXTENSIONS.md.template` - OpenCode-specific notes and conventions
   - `opencode.jsonc.template` - Settings (model, permissions, skills paths)
-- `src/plugins/` - **Optional plugin content** (installed only when detected)
-  - `beads/` - beads plugin: skills, Claude rules, formulas
+- `src/plugins/` - **Optional plugin content** (installed only when detected; a plugin's rules deploy only when its tool is detected)
+  - `beads/` - beads plugin: skills, Claude rules, formulas, plus the beads CLI + discovered-work rules
+  - `graphify/` - graphify plugin: the graphify discipline rule (installer detection wiring pending)
+  - `codex/` - codex plugin: the Codex routing rule (installer detection wiring pending)
 - `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.
 
 Other notes:
