@@ -40,6 +40,8 @@ class ParityResult:
     python_returncode: int
     bash_stderr: str
     python_stderr: str
+    bash_stdout: str
+    python_stdout: str
 
     def diff(self) -> TreeDiff:
         return diff_trees(self.home_a, self.home_b)
@@ -157,4 +159,6 @@ def run_parity(
         python_returncode=python.returncode,
         bash_stderr=bash.stderr,
         python_stderr=python.stderr,
+        bash_stdout=bash.stdout,
+        python_stdout=python.stdout,
     )

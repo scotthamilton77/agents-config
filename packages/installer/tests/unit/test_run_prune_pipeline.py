@@ -44,7 +44,7 @@ def test_unstaged_matched_entry_is_scanned_and_pruned(tmp_path: Path) -> None:
     plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
     config = InstallerToml(prune_globs=["*/skills/retired-skill"])
 
-    counters = prune_pipeline(
+    per_tool = prune_pipeline(
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
@@ -55,7 +55,46 @@ def test_unstaged_matched_entry_is_scanned_and_pruned(tmp_path: Path) -> None:
     )
 
     assert not retired.exists()
-    assert counters.pruned == 1
+    assert per_tool["claude"].pruned == 1
+
+
+def test_prune_pipeline_groups_counters_by_orphan_tool(tmp_path: Path) -> None:
+    """
+    Given a claude skills/ orphan AND a ~/.beads/formulas orphan, both matching
+    the prune globs
+    When prune_pipeline runs under auto_yes
+    Then the returned mapping buckets each pruned orphan under its OWN
+    Orphan.tool — claude.pruned==1 and beads.pruned==1 — rather than summing both
+    into one tool's tally.
+
+    Pins the 8.18 prune plumbing change: the beads bucket carries a plugin
+    namespace (not a Tool) and must surface separately so the summary can report
+    a plugin pruned outside the active tool set (bash AC#19). Fails while
+    run_prune returns a single aggregate Counters.
+    """
+    home = _claude_home_with_settings(tmp_path)
+    claude_orphan = home / ".claude" / "skills" / "retired-skill"
+    claude_orphan.mkdir(parents=True)
+    beads_orphan = home / ".beads" / "formulas" / "stale.toml"
+    beads_orphan.parent.mkdir(parents=True)
+    beads_orphan.write_text("x")
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+    config = InstallerToml(prune_globs=["*/skills/retired-skill", "beads/formulas/*"])
+
+    per_tool = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plans=plans,
+        home=home,
+        config=config,
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert not claude_orphan.exists()
+    assert not beads_orphan.exists()
+    assert per_tool["claude"].pruned == 1
+    assert per_tool["beads"].pruned == 1
 
 
 def test_empty_plan_with_excluded_plugin_file_flags_it(tmp_path: Path) -> None:
@@ -72,7 +111,7 @@ def test_empty_plan_with_excluded_plugin_file_flags_it(tmp_path: Path) -> None:
     plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
     config = InstallerToml(prune_globs=["beads/formulas/*"])
 
-    counters = prune_pipeline(
+    per_tool = prune_pipeline(
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
@@ -83,7 +122,7 @@ def test_empty_plan_with_excluded_plugin_file_flags_it(tmp_path: Path) -> None:
     )
 
     assert not formula.exists()
-    assert counters.pruned == 1
+    assert per_tool["beads"].pruned == 1
 
 
 def test_no_orphans_is_clean_noop(tmp_path: Path) -> None:
@@ -96,7 +135,7 @@ def test_no_orphans_is_clean_noop(tmp_path: Path) -> None:
     plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
     config = InstallerToml(prune_globs=["*/skills/never-matches"])
 
-    counters = prune_pipeline(
+    per_tool = prune_pipeline(
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
@@ -105,4 +144,5 @@ def test_no_orphans_is_clean_noop(tmp_path: Path) -> None:
         timestamp=_TS,
     )
 
-    assert counters.pruned == 0
+    # No orphans -> a clean no-op -> no per-tool buckets at all.
+    assert per_tool == {}

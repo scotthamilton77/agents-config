@@ -53,8 +53,14 @@ def run_prune(
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
-) -> Counters:
-    """Confirm and delete orphans; return a ``Counters`` of the work done.
+) -> dict[str, Counters]:
+    """Confirm and delete orphans; return per-target ``Counters`` of the work done.
+
+    The mapping is keyed by ``Orphan.tool`` — each tool or plugin namespace whose
+    orphans were pruned gets its own bucket (pruned / backed_up), so the install
+    summary can report a plugin pruned outside the active tool set (bash AC#19).
+    Every no-deletion path (guard skip, empty list, dry-run, cancel) returns an
+    empty mapping.
 
     Guard order (bash ``prune_orphans``):
 
@@ -81,17 +87,17 @@ def run_prune(
             io.err("prune-only requires --yes or --dry-run in non-interactive mode")
             raise PruneAbortedError("prune-only requires --yes or --dry-run")  # noqa: TRY003  # single call-site
         io.warn("prune phase requires confirmation, skipping")
-        return Counters()
+        return {}
 
     if not orphans:
         io.info("No orphans detected.")
-        return Counters()
+        return {}
 
     _display(orphans, io)
 
     if dry_run:
         io.info(f"Dry-run: {len(orphans)} orphan(s) listed above; no changes made.")
-        return Counters()
+        return {}
 
     # Resolve the backup suffix only on paths that may actually delete; the
     # dry-run early-return above never needs it. ``back_up`` validates the value
@@ -104,7 +110,9 @@ def run_prune(
     return _prompt_and_delete(orphans, io=io, timestamp=ts)
 
 
-def _prompt_and_delete(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> Counters:
+def _prompt_and_delete(
+    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+) -> dict[str, Counters]:
     """Three-way prompt then act (bash interactive branch, install.sh:1636-1686)."""
     choice = io.confirm_three_way(
         "Action? [a]ll, [o]ne-by-one, [c]ancel",
@@ -116,10 +124,12 @@ def _prompt_and_delete(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str)
     if choice == _ONE_BY_ONE:
         return _delete_one_by_one(orphans, io=io, timestamp=timestamp)
     io.info("Cancelled. No changes made.")
-    return Counters()
+    return {}
 
 
-def _delete_one_by_one(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> Counters:
+def _delete_one_by_one(
+    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+) -> dict[str, Counters]:
     """Per-item drill-down (bash ``o|O`` branch, install.sh:1650-1676).
 
     A per-item ``quit`` leaves every un-answered orphan in place; an orphan the
@@ -130,26 +140,32 @@ def _delete_one_by_one(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str)
         "Delete each orphan? [y/N/q]",
         items=[str(o.path) for o in orphans],
     )
-    counters = Counters()
+    per_tool: dict[str, Counters] = {}
     for orphan in orphans:
         if result.decisions.get(str(orphan.path)):
-            _back_up_and_delete(orphan, io=io, timestamp=timestamp, counters=counters)
+            _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
     if result.quit:
         io.info("Quit per-item loop; remaining orphans left in place.")
-    return counters
+    return per_tool
 
 
-def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> Counters:
+def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> dict[str, Counters]:
     """Back up + delete every orphan (bash ``_delete_all_orphans``, install.sh:1592-1600)."""
-    counters = Counters()
+    per_tool: dict[str, Counters] = {}
     for orphan in orphans:
-        _back_up_and_delete(orphan, io=io, timestamp=timestamp, counters=counters)
-    io.ok(f"Pruned {counters.pruned} orphan(s).")
-    return counters
+        _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
+    pruned = sum(c.pruned for c in per_tool.values())
+    io.ok(f"Pruned {pruned} orphan(s).")
+    return per_tool
 
 
-def _back_up_and_delete(orphan: Orphan, *, io: IOPort, timestamp: str, counters: Counters) -> None:
+def _back_up_and_delete(
+    orphan: Orphan, *, io: IOPort, timestamp: str, per_tool: dict[str, Counters]
+) -> None:
     """Back up an orphan, then remove it (bash ``_delete_orphan``, install.sh:1580-1588).
+
+    Tallies into the ``per_tool[orphan.tool]`` bucket (created on first sight) so
+    pruned/backed_up land under the orphan's own tool or plugin namespace.
 
     Backup precedes deletion so the original bytes are recoverable even if the
     delete is interrupted — but only when there is something to back up. A broken
@@ -159,6 +175,7 @@ def _back_up_and_delete(orphan: Orphan, *, io: IOPort, timestamp: str, counters:
     Mirror the bash ``backup()`` ``[[ -e "$target" ]]`` no-op — skip the backup but
     still remove the link below (``rm -rf`` deletes a broken link unconditionally).
     """
+    counters = per_tool.setdefault(orphan.tool, Counters())
     if orphan.path.exists():
         dest = back_up(orphan.path, timestamp)
         counters.backed_up += 1

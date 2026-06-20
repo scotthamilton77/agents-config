@@ -3,7 +3,9 @@
 Each test pins a coded decision in ``run_prune``, the port of the bash
 ``prune_orphans`` (``scripts/install.sh:1602-1687``). The engine is driven
 through ``ScriptedIO`` and asserted against real filesystem end-state plus the
-returned ``Counters`` — never against which IOPort method was called.
+returned per-target ``dict[str, Counters]`` (keyed by ``Orphan.tool``) — never
+against which IOPort method was called. A no-deletion path returns ``{}``; a
+deleting path returns one bucket per pruned orphan's tool.
 
 Covered decisions:
 - three-way "all" -> every orphan backed up then deleted,
@@ -63,11 +65,11 @@ def test_three_way_all_deletes_every_orphan(tmp_path: Path) -> None:
     o2 = _file_orphan(tmp_path, "claude", "skills", "b")
     io = ScriptedIO(three_ways=["a"])
 
-    counters = run_prune([o1, o2], io=io, timestamp=_TS)
+    per_tool = run_prune([o1, o2], io=io, timestamp=_TS)
 
     assert not o1.path.exists()
     assert not o2.path.exists()
-    assert counters.pruned == 2
+    assert per_tool["claude"].pruned == 2
 
 
 def test_three_way_one_by_one_respects_per_item_choices(tmp_path: Path) -> None:
@@ -83,11 +85,11 @@ def test_three_way_one_by_one_respects_per_item_choices(tmp_path: Path) -> None:
         per_items=[PerItemResult(decisions={str(o1.path): False, str(o2.path): True}, quit=False)],
     )
 
-    counters = run_prune([o1, o2], io=io, timestamp=_TS)
+    per_tool = run_prune([o1, o2], io=io, timestamp=_TS)
 
     assert o1.path.exists()
     assert not o2.path.exists()
-    assert counters.pruned == 1
+    assert per_tool["claude"].pruned == 1
 
 
 def test_three_way_one_by_one_quit_leaves_remaining(tmp_path: Path) -> None:
@@ -103,11 +105,11 @@ def test_three_way_one_by_one_quit_leaves_remaining(tmp_path: Path) -> None:
         per_items=[PerItemResult(decisions={str(o1.path): True}, quit=True)],
     )
 
-    counters = run_prune([o1, o2], io=io, timestamp=_TS)
+    per_tool = run_prune([o1, o2], io=io, timestamp=_TS)
 
     assert not o1.path.exists()
     assert o2.path.exists()
-    assert counters.pruned == 1
+    assert per_tool["claude"].pruned == 1
 
 
 def test_three_way_cancel_deletes_nothing(tmp_path: Path) -> None:
@@ -119,10 +121,10 @@ def test_three_way_cancel_deletes_nothing(tmp_path: Path) -> None:
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")
     io = ScriptedIO(three_ways=["c"])
 
-    counters = run_prune([o1], io=io, timestamp=_TS)
+    per_tool = run_prune([o1], io=io, timestamp=_TS)
 
     assert o1.path.exists()
-    assert counters.pruned == 0
+    assert per_tool == {}
 
 
 def test_non_interactive_prune_only_without_auth_raises(tmp_path: Path) -> None:
@@ -149,10 +151,10 @@ def test_non_interactive_plain_prune_skips_without_deleting(tmp_path: Path) -> N
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([o1], io=io, prune_only=False, timestamp=_TS)
+    per_tool = run_prune([o1], io=io, prune_only=False, timestamp=_TS)
 
     assert o1.path.exists()
-    assert counters.pruned == 0
+    assert per_tool == {}
 
 
 def test_auto_yes_deletes_all_without_prompting(tmp_path: Path) -> None:
@@ -165,11 +167,11 @@ def test_auto_yes_deletes_all_without_prompting(tmp_path: Path) -> None:
     o2 = _file_orphan(tmp_path, "claude", "skills", "b")
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([o1, o2], io=io, auto_yes=True, timestamp=_TS)
+    per_tool = run_prune([o1, o2], io=io, auto_yes=True, timestamp=_TS)
 
     assert not o1.path.exists()
     assert not o2.path.exists()
-    assert counters.pruned == 2
+    assert per_tool["claude"].pruned == 2
 
 
 def test_dry_run_displays_without_deleting(tmp_path: Path) -> None:
@@ -181,10 +183,10 @@ def test_dry_run_displays_without_deleting(tmp_path: Path) -> None:
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([o1], io=io, dry_run=True, timestamp=_TS)
+    per_tool = run_prune([o1], io=io, dry_run=True, timestamp=_TS)
 
     assert o1.path.exists()
-    assert counters.pruned == 0
+    assert per_tool == {}
 
 
 def test_empty_orphan_list_is_noop() -> None:
@@ -200,9 +202,9 @@ def test_empty_orphan_list_is_noop() -> None:
     """
     io = ScriptedIO(interactive=True)
 
-    counters = run_prune([], io=io, prune_only=True, timestamp=_TS)
+    per_tool = run_prune([], io=io, prune_only=True, timestamp=_TS)
 
-    assert counters.pruned == 0
+    assert per_tool == {}
 
 
 def test_backup_precedes_delete_into_sibling_namespace_dir(tmp_path: Path) -> None:
@@ -218,11 +220,11 @@ def test_backup_precedes_delete_into_sibling_namespace_dir(tmp_path: Path) -> No
     o1 = _file_orphan(tmp_path, "claude", "skills", "retired", body="precious")
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([o1], io=io, auto_yes=True, timestamp=_TS)
+    per_tool = run_prune([o1], io=io, auto_yes=True, timestamp=_TS)
 
     backup = tmp_path / ".claude" / "skills-backup" / f"retired.backup-{_TS}"
     assert backup.read_text() == "precious"
-    assert counters.backed_up == 1
+    assert per_tool["claude"].backed_up == 1
 
 
 def test_directory_orphan_backed_up_recursively(tmp_path: Path) -> None:
@@ -274,11 +276,11 @@ def test_malformed_timestamp_under_dry_run_does_not_raise(tmp_path: Path) -> Non
     o1 = _file_orphan(tmp_path, "claude", "skills", "a")
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([o1], io=io, dry_run=True, timestamp="../evil")
+    per_tool = run_prune([o1], io=io, dry_run=True, timestamp="../evil")
 
     assert o1.path.exists()
-    assert counters.pruned == 0
-    assert counters.backed_up == 0
+    # Dry-run resolves no timestamp and deletes nothing -> empty mapping.
+    assert per_tool == {}
 
 
 def test_symlink_to_directory_orphan_unlinked_not_rmtree(tmp_path: Path) -> None:
@@ -305,13 +307,13 @@ def test_symlink_to_directory_orphan_unlinked_not_rmtree(tmp_path: Path) -> None
 
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
+    per_tool = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
 
     assert not link.exists()  # the symlink itself is gone
     assert not link.is_symlink()
     assert target_dir.is_dir()  # the link target is untouched
     assert (target_dir / "keep.md").read_text() == "survives"
-    assert counters.pruned == 1
+    assert per_tool["claude"].pruned == 1
 
 
 def test_broken_symlink_orphan_unlinked_without_backup(tmp_path: Path) -> None:
@@ -338,8 +340,8 @@ def test_broken_symlink_orphan_unlinked_without_backup(tmp_path: Path) -> None:
 
     io = ScriptedIO(interactive=False)
 
-    counters = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
+    per_tool = run_prune([orphan], io=io, auto_yes=True, timestamp=_TS)
 
     assert not link.is_symlink()  # the dangling link is gone
-    assert counters.backed_up == 0  # nothing to back up
-    assert counters.pruned == 1
+    assert per_tool["claude"].backed_up == 0  # nothing to back up
+    assert per_tool["claude"].pruned == 1
