@@ -1,6 +1,6 @@
 ---
 name: where-does-this-fit
-description: Use when a user asks how a specific work item (task, epic, story, feature, bug, PR, issue — open, in-progress, or complete) fits into the broader project architecture, goals, or structural context, rather than just the narrow scope of the item itself.
+description: Use when a user asks for the bigger picture for a context, or how a specific work item (task, epic, story, feature, bug, PR, issue — open, in-progress, or complete) fits into the broader project architecture, goals, or structural context, rather than just the narrow scope of the item itself.
 model: sonnet[1m]
 ---
 
