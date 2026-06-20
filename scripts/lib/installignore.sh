@@ -16,7 +16,7 @@ declare -A _INSTALLIGNORE_DIRNAMES
 load_installignore() {
     local file="$1" line name
     if [[ ! -r "$file" ]]; then
-        echo "Error: .installignore not found at $file; refusing to install with exclusions disabled" >&2
+        echo "Error: .installignore missing or unreadable at $file; refusing to install with exclusions disabled" >&2
         exit 1
     fi
     _INSTALLIGNORE_BASENAMES=()
