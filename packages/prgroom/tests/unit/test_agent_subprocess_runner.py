@@ -150,6 +150,43 @@ def test_claude_invocation_shape() -> None:
     assert "read /x" in inv.argv  # prompt (carrying the path) is a positional
 
 
+def test_claude_write_role_grants_headless_dontask_and_scoped_allowed_tools() -> None:
+    # A WRITE-capable claude agent (the fix role) MUST be dispatched headless-correct:
+    # `claude -p` in the default permission mode queues Edit/Bash tool calls awaiting
+    # an interactive approval that never arrives (no TTY) and commits nothing. dontAsk
+    # fail-closes (never prompts, denies unlisted) + a TIGHT allow-list = enough to
+    # edit + commit, nothing destructive. The allow-list uses CLI space-form grammar
+    # `Bash(git *)` (POC-verified working), NOT settings colon-form `Bash(git:*)`.
+    inv = build_invocation(_spec("claude", "opus[1m]", effort="xhigh", write=True), prompt="P")
+    assert "--permission-mode" in inv.argv
+    assert "dontAsk" in inv.argv
+    assert "--allowedTools" in inv.argv
+    assert "Read Edit Write Bash(git *)" in inv.argv
+
+
+def test_claude_read_only_role_grants_no_write_permissions() -> None:
+    # The cluster role (no `write`) must stay least-privilege: NO permission flags,
+    # so dontAsk never fail-closes a read-only agent's tools. Same default as today.
+    inv = build_invocation(_spec("claude", "haiku", effort="high"), prompt="P")
+    assert "--permission-mode" not in inv.argv
+    assert "--allowedTools" not in inv.argv
+
+
+def test_claude_write_requires_boolean_true_not_truthy() -> None:
+    # Config-driven privilege: the write grant must be gated on the literal TOML
+    # boolean `true`, not any truthy value — same rule codex's sandbox-write obeys.
+    # A mistyped write = "false" (a non-empty, truthy STRING) or write = 1 must NOT
+    # silently hand the headless agent edit + commit rights.
+    for truthy_non_bool in ("false", "true", "yes", 1):
+        inv = build_invocation(_spec("claude", "m", write=truthy_non_bool), prompt="P")
+        assert "--permission-mode" not in inv.argv
+        assert "--allowedTools" not in inv.argv
+    # Only the real boolean True enables it.
+    assert (
+        "--permission-mode" in build_invocation(_spec("claude", "m", write=True), prompt="P").argv
+    )
+
+
 def test_codex_invocation_shape_maps_write_to_workspace_sandbox() -> None:
     inv = build_invocation(_spec("codex", "gpt-5.5", write=True), prompt="read /x")
     assert inv.argv[0] == "codex"
@@ -214,6 +251,7 @@ def test_unrecognized_extra_keys_warn_but_do_not_fail(
 def test_recognized_extra_keys_do_not_warn(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level("WARNING"):
         build_invocation(_spec("claude", "haiku", effort="high"), prompt="P")
+        build_invocation(_spec("claude", "opus[1m]", write=True), prompt="P")
         build_invocation(_spec("codex", "gpt-5.5", write=True), prompt="P")
     assert not caplog.records
 

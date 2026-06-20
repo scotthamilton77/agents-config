@@ -175,13 +175,18 @@ def test_default_cluster_chain_is_ollama_then_claude_haiku_then_codex() -> None:
     assert chain.providers[1].extra.get("effort") == "high"
 
 
-def test_default_fix_chain_is_opus_then_codex_write() -> None:
+def test_default_fix_chain_makes_both_links_write_capable() -> None:
+    # The fix role edits + commits, so BOTH default providers must be write-capable:
+    # claude via `write=True` (-> headless dontAsk + scoped allow-list in the invoker;
+    # without it a headless `claude -p` commits nothing) and codex via `write=True`
+    # (-> --sandbox workspace-write). The cluster chain's claude link stays read-only.
     chain = load_chain("fix", repo_config=None, model_override=None)
     assert [(p.cli, p.model) for p in chain.providers] == [
         ("claude", "opus[1m]"),
         ("codex", "gpt-5.5"),
     ]
     assert chain.providers[0].extra.get("effort") == "xhigh"
+    assert chain.providers[0].extra.get("write") is True
     assert chain.providers[1].extra.get("write") is True
 
 

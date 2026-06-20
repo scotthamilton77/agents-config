@@ -73,7 +73,11 @@ _DEFAULT_CHAINS: dict[ContractName, list[AgentSpec]] = {
         AgentSpec(cli="codex", model="gpt-5.4-mini"),
     ],
     "fix": [
-        AgentSpec(cli="claude", model="opus[1m]", extra={"effort": "xhigh"}),
+        # The fix role edits + commits. `write=True` grants each CLI its write
+        # capability: claude -> headless dontAsk + a scoped allow-list (see
+        # _invocation_for_claude); codex -> --sandbox workspace-write. The cluster
+        # chain's claude link omits `write`, staying read-only (least-privilege).
+        AgentSpec(cli="claude", model="opus[1m]", extra={"effort": "xhigh", "write": True}),
         AgentSpec(cli="codex", model="gpt-5.5", extra={"write": True}),
     ],
 }
