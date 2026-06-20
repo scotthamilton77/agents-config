@@ -7,14 +7,6 @@ All git worktrees **must** be created inside `<project-root>/.claude/worktrees/`
 
 **Override:** The `using-git-worktrees` skill defaults to `.worktrees/` at the project root. Disregard that default — `<project-root>/.claude/worktrees/` is the required location regardless of what any skill specifies.
 
-## Worktree cleanup after merge
+## Cleanup after merge
 
-Run cleanup from the **main repo root**, never from inside the worktree being removed. After a squash-merge (GitHub default), git sees the local branch as unmerged — `git branch -d` always fails; use `git branch -D`. The same applies to `ExitWorktree`: after a squash-merge, the tool sees the pre-squash commit as unmerged and refuses — always pass `discard_changes: true` after confirming the work is on main.
-
-```bash
-cd <repo-root>
-git worktree remove .claude/worktrees/<name>
-git branch -D <branch>
-# Verify:
-git worktree list  # should show only main
-```
+Run from the main repo root, never inside the worktree being removed. After a squash-merge both git and `ExitWorktree` read the branch as unmerged — use `git branch -D` (not `-d`) and `ExitWorktree(discard_changes: true)`, after confirming the work landed on main.

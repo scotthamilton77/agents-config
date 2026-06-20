@@ -4,11 +4,11 @@ Implements shared `<verification-checklist>` steps 1–5 with Claude-specific to
 
 MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typos):
 
-1. `quality-reviewer` agent — review changes against plan and standards (checklist step 1)
-2. Address any findings from quality-reviewer (checklist step 2)
-3. `simplify` skill — simplify/refine changed code (checklist step 3)
-4. Address any findings from the `simplify` skill (checklist step 4)
-5. `verify-checklist` skill — run tests, build, lint; evidence before claims; structured completion report (checklist step 5)
+1. `quality-reviewer` agent — review changes against plan and standards
+2. Address any findings from quality-reviewer
+3. `simplify` skill — simplify/refine changed code
+4. Address any findings from the `simplify` skill
+5. `verify-checklist` skill — run tests, build, lint; evidence before claims; structured completion report
 
 No exceptions. No partial runs. Each step feeds the next.
 
@@ -19,4 +19,4 @@ No exceptions. No partial runs. Each step feeds the next.
 **HARD STOP**: After this gate, AUTOMATICALLY execute delivery steps. Do NOT pause for authorization.
 DO NOT commit to main. DO NOT push directly.
 
-Execute IN ORDER, without asking: (1) `using-git-worktrees` if not already in one, (2) `finishing-a-development-branch`, (3) `wait-for-pr-comments` (which internally chains to `reply-and-resolve-pr-threads` for thread reply + resolve). Only pause at the merge step — see `delivery.md` for the action categorization.
+Execute IN ORDER, without asking: (1) `using-git-worktrees` if not already in one, (2) `finishing-a-development-branch`, (3) `wait-for-pr-comments` (which internally chains to `reply-and-resolve-pr-threads` for thread reply + resolve). Only pause at the merge step — the delivery rule's action categories define automatic vs. authorized steps.

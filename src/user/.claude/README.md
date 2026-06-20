@@ -11,7 +11,9 @@ by default.
 - `rules/` — Claude-specific workflow rules (general rules now live in
   `src/user/.agents/rules/` and are staged into `~/.claude/rules/` at install time):
   - `claude-sandbox.md` — commit style under the Claude Code sandbox
-  - `claude-to-codex-routing.md` — when to delegate to the Codex plugin, and which model
+  - `headless-claude.md` — fail-closed flags for `claude -p` headless dispatch
+  - `orchestrating-subagents.md` — pointer to the subagent-orchestration skill
+  - `worktree-safety.md` — worktree isolation and path-safety traps
 - `AGENTS.md.template` — Top-level instruction file that pulls in the shared
   `INSTRUCTIONS.md`, personas, and `CLAUDE-EXTENSIONS.md`.
 - `CLAUDE.md.template` — Thin wrapper pointing at `AGENTS.md`.

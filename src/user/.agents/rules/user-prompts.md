@@ -1,7 +1,5 @@
 # User Prompts
 
-Rules for asking the user a question and stopping for an answer.
-
 - **`AskUserQuestion` is capped at 4 options.** The tool's input schema enforces `options.maxItems = 4` (and `questions.maxItems = 4`). A call with 5+ options — or 5+ questions in one call — fails input validation at runtime. Audit any skill, command, or agent prompt that calls `AskUserQuestion` against this cap before shipping it.
 - **For 5+ options, use a prose letter-prompt fallback.** Print the options inline as a lettered list (A, B, C, D, E, ...), one per line, each with a one-line description. The letter is the user's reply token; do not embed the letter inside the option label.
 - **For 5+ questions, use a prose numbered-question fallback.** Print the questions inline as a numbered list (1, 2, 3, 4, 5, ...), one per line. Ask the user to answer each by number.

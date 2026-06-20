@@ -141,6 +141,10 @@ etc. The agent reads only the relevant reference file.
 - `name`: letters, numbers, and hyphens only. Must match the folder name.
 - `description`: third person, "Use when..." opening, trigger-dense, **no
   workflow summary** (see Writing the Description, next section).
+- `model:` (optional): do not pin a small/cheap model. A skill runs inside the
+  parent conversation and inherits its full context, so a model window smaller
+  than that context errors (`ContextLimitExceeded`). Pin small models on agents
+  (which get fresh context), not skills.
 
 **Recommended body sections:**
 
