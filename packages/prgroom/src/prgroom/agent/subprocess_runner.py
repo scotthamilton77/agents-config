@@ -62,7 +62,7 @@ _KNOWN_CLIS = frozenset({"claude", "codex", "opencode", "ollama"})
 # table is warned about (a typo like `effrot` must not vanish silently) but NOT
 # rejected — `extra` is a deliberate growth surface.
 _RECOGNIZED_EXTRA: dict[str, frozenset[str]] = {
-    "claude": frozenset({"effort"}),
+    "claude": frozenset({"effort", "write"}),
     "codex": frozenset({"write"}),
     "opencode": frozenset(),
     "ollama": frozenset(),
@@ -78,7 +78,7 @@ class AgentSpec:
     ``time_budget_s`` is the provider-level ``timeout`` TOML key: when set it
     overrides the contract's default budget for THIS chain link only; ``None``
     means "use the contract default". ``extra`` carries the per-provider TOML
-    knobs that are not universal — ``effort`` (claude), ``write`` (codex).
+    knobs that are not universal — ``effort`` (claude), ``write`` (claude + codex).
     Unknown keys for a given CLI are warned about and ignored by its invoker,
     so the config surface can grow without breaking.
     """
@@ -210,6 +210,20 @@ def _input_section(cli: str, *, input_path: Path, payload: dict[str, Any]) -> st
     return "\n".join(parts)
 
 
+# The least-privilege tool allow-list granted to a WRITE-capable headless claude
+# agent (the fix role). Under `--permission-mode dontAsk` everything unlisted is
+# DENIED, so this floor covers exactly edit + commit: Read / Edit / Write for the
+# file changes, Bash(git *) for the commit — no sub-agent spawn, no `gh`, no
+# build/test/lint. NOTE: `Bash(git *)` is a COARSE grant — it ALSO permits network
+# (push / fetch / pull) and destructive (reset --hard, clean -fd) git subcommands;
+# the fix agent is bounded by its trust scope + the fix prompt's "local commits
+# only" instruction, NOT by this grammar. A finer-grained per-subcommand allow-list
+# (and a configurable multi-source allow-list) is tracked as a separate enhancement.
+# CLI space-form grammar `Bash(git *)` (POC-verified working), NOT the settings.json
+# colon-form `Bash(git:*)`.
+_CLAUDE_WRITE_ALLOWED_TOOLS = "Read Edit Write Bash(git *)"
+
+
 def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # `claude -p <prompt>` runs headless. The contract input path is already inside
     # `prompt` (the agent reads the file) — claude has no --input-file flag.
@@ -217,6 +231,11 @@ def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
     effort = spec.extra.get("effort")
     if effort:
         argv += ["--effort", str(effort)]
+    # Gate on the literal boolean `true`, NOT truthiness — same config-driven-
+    # privilege rule as codex's sandbox: a mistyped write = "false" is a truthy
+    # STRING and must NOT silently grant the headless agent edit + commit rights.
+    if spec.extra.get("write") is True:
+        argv += ["--permission-mode", "dontAsk", "--allowedTools", _CLAUDE_WRITE_ALLOWED_TOOLS]
     return AgentInvocation(argv=argv)
 
 
