@@ -9,4 +9,4 @@ All git worktrees **must** be created inside `<project-root>/.claude/worktrees/`
 
 ## Cleanup after merge
 
-Run from the main repo root, never inside the worktree being removed. After a squash-merge both git and `ExitWorktree` read the branch as unmerged — use `git branch -D` (not `-d`) and `ExitWorktree(discard_changes: true)`, after confirming the work landed on main.
+Run from the main repo root, never inside the worktree being removed. After a squash-merge both git and `ExitWorktree` read the branch as unmerged — use `git branch -D` (not `-d`), and pass `ExitWorktree` its `discard_changes: true` option, after confirming the work landed on main.

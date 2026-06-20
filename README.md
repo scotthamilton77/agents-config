@@ -41,7 +41,7 @@ This configuration relies on two Claude Code plugins being installed:
 - **[obra/superpowers](https://github.com/obra/superpowers)** - Provides the skill/agent framework referenced throughout: brainstorming, TDD, verification-before-completion, dispatching-parallel-agents, finishing-a-development-branch, and more
 - **[steveyegge/beads](https://github.com/steveyegge/beads)** - Git-backed issue tracker providing the `bd` command used for task tracking in the AGENTS.md template
 
-Without these plugins, the shared `<orchestration>` section in `src/user/.agents/INSTRUCTIONS.md.template` (installed as `INSTRUCTIONS.md` in the target tool config directory) and several Claude-specific workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.claude/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
+Without these plugins, the shared `<orchestration>` section in `src/user/.agents/INSTRUCTIONS.md.template` (installed as `INSTRUCTIONS.md` in the target tool config directory) and several shared workflow rules (`delegation`, `completion-gate`, `delivery` under `src/user/.agents/rules/`, and `beads` under `src/plugins/beads/`) will reference skills and commands that don't exist.
 
 ## What's Inside
 
@@ -55,13 +55,14 @@ src/
 ├── user/
 │   ├── .agents/                    # Shared content (copied into all detected tools)
 │   │   ├── agents/                 # Role-based agent definitions
+│   │   ├── rules/                  # Shared workflow rules (delegation, delivery, completion-gate, subagents, worktrees)
 │   │   ├── skills/                 # Methodology guides with examples
 │   │   ├── INSTRUCTIONS.md.template      # Shared laws, constraints, workflow
 │   │   ├── AGENT-PERSONA.md.template     # Agent persona/personality
 │   │   └── USER-PERSONA.md.template      # User persona
 │   ├── .claude/                    # Claude-specific (→ ~/.claude/)
 │   │   ├── commands/               # Slash commands
-│   │   ├── rules/                  # Workflow rules (delegation, completion-gate, delivery, git-commits, codex-routing, subagents)
+│   │   ├── rules/                  # Claude-specific rules (claude-sandbox, headless-claude, orchestrating-subagents, worktree-safety)
 │   │   ├── AGENTS.md.template      # Claude instruction file
 │   │   ├── CLAUDE.md.template      # Points to AGENTS.md
 │   │   ├── CLAUDE-EXTENSIONS.md.template  # Stub header (content moved to rules/)
@@ -129,7 +130,7 @@ Slash commands that can be invoked directly:
 > **Note:** The templates contain content specific to the author's setup:
 > - The persona templates reflect personal interaction preferences
 > - The `beads` plugin (under `src/plugins/beads/`) assumes use of [steveyegge/beads](https://github.com/steveyegge/beads) as a task tracker
-> - The `<orchestration>` section (in `INSTRUCTIONS.md`) and the `delegation`, `completion-gate`, and `delivery` rules (in `src/user/.claude/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
+> - The `<orchestration>` section (in `INSTRUCTIONS.md`) and the `delegation`, `completion-gate`, and `delivery` rules (in `src/user/.agents/rules/`) assume [obra/superpowers](https://github.com/obra/superpowers) skills are available
 > - Various constraints have a TypeScript/Node.js bias
 >
 > You'll want to customize or remove these to match your own workflow.
@@ -241,7 +242,7 @@ The `.template` files ship with the author's personal configuration and must be 
 **Adjust to your workflow:**
 3. **`INSTRUCTIONS.md`** — Laws, constraints, workflow, and orchestration. The `<orchestration>` section references [superpowers](https://github.com/obra/superpowers) skills — remove or replace if not using that plugin
 4. **Tool-specific extensions** — Remove rules for plugins you don't use:
-   - **Claude:** workflow rules live in `src/user/.claude/rules/` — `delegation.md`, `completion-gate.md`, `delivery.md`, `git-commits.md`, `codex-routing.md`, `subagents.md`. `delegation` and `completion-gate` reference superpowers skills; `delivery` wires worktree isolation, PR creation, and Copilot review monitoring
+   - **Claude:** shared workflow rules live in `src/user/.agents/rules/` — `delegation.md`, `completion-gate.md`, `delivery.md`, `subagents.md`, `worktrees.md`; Claude-specific rules in `src/user/.claude/rules/` — `claude-sandbox.md`, `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`. `delegation` and `completion-gate` reference superpowers skills; `delivery` wires worktree isolation, PR creation, and Copilot review monitoring
    - **Beads plugin** (`src/plugins/beads/`) — adds `beads.md` to `rules/` at install time; assumes [beads](https://github.com/steveyegge/beads)
    - **Codex/Gemini** — see `CODEX-EXTENSIONS.md` or `GEMINI-EXTENSIONS.md`
 5. **`settings.json`** (Claude only) — Adjust permission allowlists, hooks, and deny rules to match your needs
