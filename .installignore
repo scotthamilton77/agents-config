@@ -17,5 +17,7 @@ CLAUDE.md
 GEMINI.md
 README.md
 SESSION-PRIMER-README.md
-# Source-only rationale directories (never installed):
+# Defensive directory coverage. The current rules-readmes/ dirs live at tool
+# roots (siblings of rules/), which are never staged, so they need no entry —
+# this guards the hypothetical case of a namespace-level rules-readmes/ child.
 rules-readmes/

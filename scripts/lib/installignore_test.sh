@@ -29,6 +29,13 @@ assert "dir name excluded" "drop" "$r"
 is_installignored "rules-readmes" false && r=drop || r=keep
 assert "dir entry does not match a file query" "keep" "$r"
 
+# A degenerate "/" line must not abort the loader. Run under `set -e` (as install.sh
+# does): the unguarded code would assign to an empty array key (`bad array subscript`)
+# and abort; the guard skips it, matching the Python loader.
+printf '%s\n' '/' 'AGENTS.md' > "$work/slash"
+( set -e; source "$LIB"; load_installignore "$work/slash" ) 2>/dev/null && r=0 || r=$?
+assert "bare slash line does not abort under set -e" "0" "$r"
+
 # Fail-fast on a missing manifest (run in a subshell so its exit does not kill us).
 ( source "$LIB"; load_installignore "$work/nope" ) 2>/dev/null && r=0 || r=$?
 assert "missing manifest fail-fast (nonzero exit)" "1" "$r"

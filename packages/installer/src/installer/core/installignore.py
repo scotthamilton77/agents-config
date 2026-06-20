@@ -55,7 +55,9 @@ def load_installignore(path: Path) -> InstallIgnore:
         if not line or line.startswith("#"):
             continue
         if line.endswith("/"):
-            dirnames.add(line[:-1])
+            name = line[:-1]
+            if name:  # a bare "/" has no directory name; skip it (parity with bash)
+                dirnames.add(name)
         else:
             basenames.add(line)
     return InstallIgnore(basenames=frozenset(basenames), dirnames=frozenset(dirnames))

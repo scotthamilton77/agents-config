@@ -14,7 +14,7 @@ declare -A _INSTALLIGNORE_DIRNAMES
 # load_installignore <path>: populate the matcher from the manifest. A missing or
 # unreadable file is a HARD ERROR (fail-fast) — mirrors the Python loader.
 load_installignore() {
-    local file="$1" line
+    local file="$1" line name
     if [[ ! -r "$file" ]]; then
         echo "Error: .installignore not found at $file; refusing to install with exclusions disabled" >&2
         exit 1
@@ -26,7 +26,8 @@ load_installignore() {
         line="${line%"${line##*[![:space:]]}"}"    # rtrim
         [[ -z "$line" || "$line" == \#* ]] && continue
         if [[ "$line" == */ ]]; then
-            _INSTALLIGNORE_DIRNAMES["${line%/}"]=1
+            name="${line%/}"
+            [[ -n "$name" ]] && _INSTALLIGNORE_DIRNAMES["$name"]=1   # skip a bare "/" (parity with Python)
         else
             _INSTALLIGNORE_BASENAMES["$line"]=1
         fi
