@@ -172,13 +172,14 @@ def main(
         )
 
     # Load the shared exclusion manifest up front, mirroring the bash installer's
-    # early fail-fast. Absent or unreadable .installignore is a hard error (exit 2)
-    # rather than a silent empty-exclusion install — the manifest is load-bearing
-    # policy, and a missing one would re-leak dead-docs identically on both
-    # installers (shared wrongness the parity oracle cannot see).
+    # early fail-fast. An absent, unreadable, or non-UTF-8 .installignore is a hard
+    # error (exit 2) rather than a silent empty-exclusion install — the manifest is
+    # load-bearing policy, and a missing one would re-leak dead-docs identically on
+    # both installers (shared wrongness the parity oracle cannot see). UnicodeDecodeError
+    # is a ValueError (not an OSError), so it is caught explicitly here.
     try:
         ignore = load_installignore(resolved_repo_root / ".installignore")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write(f"installer: {exc}\n")
         return 2
 

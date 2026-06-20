@@ -41,8 +41,9 @@ def load_installignore(path: Path) -> InstallIgnore:
 
     Raises ``FileNotFoundError`` when the file is absent (fail-fast — see module
     docstring). A present-but-unreadable file raises naturally from ``read_text``
-    (``PermissionError`` / ``OSError``). Both are surfaced cleanly by the CLI as
-    exit 2.
+    (``PermissionError`` / ``OSError``); a non-UTF-8 file raises
+    ``UnicodeDecodeError`` (a ``ValueError``, not an ``OSError``). The CLI catches
+    both ``OSError`` and ``UnicodeDecodeError`` and surfaces them as exit 2.
     """
     if not path.is_file():
         msg = f".installignore not found at {path}; refusing to install with exclusions disabled"
