@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.installignore import InstallIgnore
 from installer.core.model import FileKind
 from installer.core.staging import build_plan
 from installer.tools.claude import ClaudeAdapter
@@ -32,36 +33,38 @@ def _make_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_shared_skill_dir_is_marked_carrier(tmp_path: Path) -> None:
+def test_shared_skill_dir_is_marked_carrier(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A shared skills/ DIR item carries shared_carrier=True so the overlay
     can carrier-merge a plugin's disjoint additions into it."""
-    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path))
+    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path), ignore=ignore)
     item = plan.items[Path("skills/shared-skill")]
     assert item.kind is FileKind.DIR
     assert item.shared_carrier is True
 
 
-def test_shared_agent_dir_is_marked_carrier(tmp_path: Path) -> None:
+def test_shared_agent_dir_is_marked_carrier(tmp_path: Path, ignore: InstallIgnore) -> None:
     """The carrier mark covers agents/ DIR items too, not just skills/."""
-    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path))
+    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path), ignore=ignore)
     assert plan.items[Path("agents/shared-agent-dir")].shared_carrier is True
 
 
-def test_shared_non_dir_namespace_item_is_not_carrier(tmp_path: Path) -> None:
+def test_shared_non_dir_namespace_item_is_not_carrier(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A shared rules/*.md file is not a DIR, so it must NOT be marked —
     carrier-merge applies only to skill/agent directory units."""
-    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path))
+    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path), ignore=ignore)
     assert plan.items[Path("rules/delegation.md")].shared_carrier is False
 
 
-def test_shared_agent_md_file_is_not_carrier(tmp_path: Path) -> None:
+def test_shared_agent_md_file_is_not_carrier(tmp_path: Path, ignore: InstallIgnore) -> None:
     """An agents/*.md file (kind OTHER-of-namespace, not DIR) is not a carrier
     even though it lives under agents/ — the mark keys on kind==DIR."""
-    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path))
+    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path), ignore=ignore)
     assert plan.items[Path("agents/shared-agent.md")].shared_carrier is False
 
 
-def test_shared_template_is_not_carrier(tmp_path: Path) -> None:
+def test_shared_template_is_not_carrier(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A Phase 1 root template is neither skills/ nor agents/, so unmarked."""
-    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path))
+    plan = build_plan(ClaudeAdapter(), repo_root=_make_repo(tmp_path), ignore=ignore)
     assert plan.items[Path("INSTRUCTIONS.md")].shared_carrier is False

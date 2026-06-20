@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
     from pathlib import Path
 
+    from installer.core.installignore import InstallIgnore
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
@@ -43,6 +44,7 @@ def stage_and_transform(
     *,
     repo_root: Path,
     io: IOPort,
+    ignore: InstallIgnore,
     plugins: Sequence[PluginAdapter] = (),
 ) -> dict[Tool, StagingPlan]:
     """Build a StagingPlan for each active tool (staging Phases 1-5), overlay the
@@ -57,8 +59,8 @@ def stage_and_transform(
     plans: dict[Tool, StagingPlan] = {}
     for tool in tools:
         adapter = get_adapter(tool)
-        plan = build_plan(adapter, repo_root=repo_root)
-        plan = overlay_plugins(plan, plugins, adapter=adapter, registry=registry)
+        plan = build_plan(adapter, repo_root=repo_root, ignore=ignore)
+        plan = overlay_plugins(plan, plugins, adapter=adapter, registry=registry, ignore=ignore)
         plan = apply_extensions(plan, plugins)
         flatten_plan_templates(plan, repo_root=repo_root, io=io)
         plans[tool] = adapter.post_staging_transforms(plan, io)

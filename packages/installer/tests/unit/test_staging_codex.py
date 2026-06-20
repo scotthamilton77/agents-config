@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.installignore import InstallIgnore
 from installer.core.model import StagingPlan, Tool
 from installer.core.staging import build_plan
 from installer.tools.codex import CodexAdapter
@@ -34,7 +35,7 @@ def _make_codex_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_codex_build_plan_stages_shared_namespaces(tmp_path: Path) -> None:
+def test_codex_build_plan_stages_shared_namespaces(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
     Given a repo with shared rules/skills/agents content
     When build_plan runs with CodexAdapter
@@ -45,7 +46,7 @@ def test_codex_build_plan_stages_shared_namespaces(tmp_path: Path) -> None:
     """
     repo = _make_codex_repo(tmp_path)
 
-    plan = build_plan(CodexAdapter(), repo_root=repo)
+    plan = build_plan(CodexAdapter(), repo_root=repo, ignore=ignore)
 
     assert isinstance(plan, StagingPlan)
     assert plan.tool == Tool.CODEX
@@ -56,7 +57,7 @@ def test_codex_build_plan_stages_shared_namespaces(tmp_path: Path) -> None:
     assert Path("AGENTS.md") in dests  # tool template (Phase 3), suffix stripped
 
 
-def test_codex_build_plan_stages_no_tool_namespaces(tmp_path: Path) -> None:
+def test_codex_build_plan_stages_no_tool_namespaces(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
     Given CodexAdapter.scoped_namespaces() returns ()
     When build_plan runs
@@ -67,6 +68,6 @@ def test_codex_build_plan_stages_no_tool_namespaces(tmp_path: Path) -> None:
     """
     repo = _make_codex_repo(tmp_path)
 
-    plan = build_plan(CodexAdapter(), repo_root=repo)
+    plan = build_plan(CodexAdapter(), repo_root=repo, ignore=ignore)
 
     assert not any(i.namespace == "commands" for i in plan.items.values())

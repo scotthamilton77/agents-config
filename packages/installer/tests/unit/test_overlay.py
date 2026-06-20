@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from installer.core.installignore import InstallIgnore
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import default_registry
 from installer.core.model import (
@@ -64,7 +65,9 @@ def _write(path: Path, content: bytes) -> None:
     path.write_bytes(content)
 
 
-def test_disjoint_plugin_content_is_added_to_the_plan(tmp_path: Path) -> None:
+def test_disjoint_plugin_content_is_added_to_the_plan(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A plugin rule with no base-side collision simply lands in the plan."""
     plugin = _plugin(tmp_path, "test-plugin")
     _write(plugin.source_path / ".claude" / "rules" / "extra.md", b"plugin rule")
@@ -74,6 +77,7 @@ def test_disjoint_plugin_content_is_added_to_the_plan(tmp_path: Path) -> None:
         [plugin],
         adapter=ClaudeAdapter(),
         registry=default_registry(),
+        ignore=ignore,
     )
 
     item = plan.items[Path("rules/extra.md")]
@@ -83,7 +87,9 @@ def test_disjoint_plugin_content_is_added_to_the_plan(tmp_path: Path) -> None:
     assert plan.dir_overrides == {}
 
 
-def test_skill_dir_overlay_without_collision_records_no_override(tmp_path: Path) -> None:
+def test_skill_dir_overlay_without_collision_records_no_override(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A plugin skill dir landing on an UNOCCUPIED destination is added as a
     plain DIR item (its bytes come from source_path at sync); it is not a
     carrier-merge, so nothing is written to dir_overrides. The channel is only
@@ -91,7 +97,7 @@ def test_skill_dir_overlay_without_collision_records_no_override(tmp_path: Path)
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
     plan = overlay_plugins(
-        _empty_plan(), [plugin], adapter=ClaudeAdapter(), registry=default_registry()
+        _empty_plan(), [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
     )
 
     assert plan.items[Path("skills/demo-skill")].kind is FileKind.DIR
@@ -123,7 +129,7 @@ def _seeded_plan(item: StagedItem) -> StagingPlan:
     return StagingPlan(items={item.dest_relpath: item}, tool=Tool.CLAUDE)
 
 
-def test_plugin_rule_appends_to_base_rule(tmp_path: Path) -> None:
+def test_plugin_rule_appends_to_base_rule(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin rules/foo.md colliding with a base rules/foo.md append-merges:
     the two bodies are joined with the canonical b'\\n---\\n' separator
     (bead AC #1)."""
@@ -138,12 +144,16 @@ def test_plugin_rule_appends_to_base_rule(tmp_path: Path) -> None:
     plugin = _plugin(tmp_path, "test-plugin")
     _write(plugin.source_path / ".claude" / "rules" / "shared.md", b"plugin")
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.items[Path("rules/shared.md")].content == b"base\n---\nplugin"
 
 
-def test_plugin_command_same_name_as_base_command_is_fatal(tmp_path: Path) -> None:
+def test_plugin_command_same_name_as_base_command_is_fatal(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A plugin commands/foo.md colliding with a base commands/foo.md is an
     irreconcilable collision — the registry routes (NAMESPACED_MD, "commands")
     to the fatal strategy (bead AC #2)."""
@@ -156,10 +166,12 @@ def test_plugin_command_same_name_as_base_command_is_fatal(tmp_path: Path) -> No
     _write(plugin.source_path / ".claude" / "commands" / "go.md", b"plugin")
 
     with pytest.raises(CollisionError):
-        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+        )
 
 
-def test_plugin_settings_deep_union_merges_into_base(tmp_path: Path) -> None:
+def test_plugin_settings_deep_union_merges_into_base(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin settings.json fragment deep-union-merges into the base settings:
     a base-only key and a plugin-only key both survive (bead AC #3)."""
     plan = _seeded_plan(
@@ -173,13 +185,17 @@ def test_plugin_settings_deep_union_merges_into_base(tmp_path: Path) -> None:
     plugin = _plugin(tmp_path, "test-plugin")
     _write(plugin.source_path / ".claude" / "settings.json.template", b'{"plugin": 2}')
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     merged = json.loads(plan.items[Path("settings.json")].content or b"{}")
     assert merged == {"base": 1, "plugin": 2}
 
 
-def test_plugin_toml_collision_is_last_wins_with_warning(tmp_path: Path) -> None:
+def test_plugin_toml_collision_is_last_wins_with_warning(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A plugin *.toml colliding with a base *.toml resolves last-wins and warns
     (the registry routes (TOML, None) to LastWinsWarnStrategy)."""
     plan = _seeded_plan(
@@ -189,12 +205,14 @@ def test_plugin_toml_collision_is_last_wins_with_warning(tmp_path: Path) -> None
     _write(plugin.source_path / ".claude" / "config.toml.template", b"plugin=2")
 
     with pytest.warns(UserWarning):
-        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+        )
 
     assert plan.items[Path("config.toml")].content == b"plugin=2"
 
 
-def test_plugins_apply_in_alphabetical_order(tmp_path: Path) -> None:
+def test_plugins_apply_in_alphabetical_order(tmp_path: Path, ignore: InstallIgnore) -> None:
     """Two plugins both contribute config.toml; the later (alphabetical) plugin
     wins the last-wins collision. Passing them in REVERSE order proves the
     overlay sorts internally rather than honouring caller order (bead AC #4)."""
@@ -210,13 +228,14 @@ def test_plugins_apply_in_alphabetical_order(tmp_path: Path) -> None:
             [z_plugin, a_plugin],
             adapter=ClaudeAdapter(),
             registry=default_registry(),
+            ignore=ignore,
         )
 
     # z applied last (alphabetical), so z wins regardless of input order.
     assert plan.items[Path("config.toml")].content == b"who='z'"
 
 
-def test_overlay_reuses_tool_adapter_namespace_skip(tmp_path: Path) -> None:
+def test_overlay_reuses_tool_adapter_namespace_skip(tmp_path: Path, ignore: InstallIgnore) -> None:
     """The overlay has no namespace routing of its own — it consults the tool
     adapter's should_install_namespace. OpenCode skips the shared agents/
     namespace, so a plugin's .agents/agents/ content is dropped while its
@@ -230,6 +249,7 @@ def test_overlay_reuses_tool_adapter_namespace_skip(tmp_path: Path) -> None:
         [plugin],
         adapter=OpenCodeAdapter(),
         registry=default_registry(),
+        ignore=ignore,
     )
 
     assert Path("agents/skipme.md") not in plan.items
@@ -249,7 +269,9 @@ class _CommandsOptOutAdapter:
         return not (namespace == "commands" and source == "tool")
 
 
-def test_overlay_gates_tool_scope_namespaces_via_adapter(tmp_path: Path) -> None:
+def test_overlay_gates_tool_scope_namespaces_via_adapter(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     plugin = _plugin(tmp_path, "test-plugin")
     _write(plugin.source_path / ".claude" / "commands" / "skipme.md", b"cmd")
     _write(plugin.source_path / ".claude" / "rules" / "keepme.md", b"rule")
@@ -259,6 +281,7 @@ def test_overlay_gates_tool_scope_namespaces_via_adapter(tmp_path: Path) -> None
         [plugin],
         adapter=_CommandsOptOutAdapter(),  # type: ignore[arg-type]  # structural ToolAdapter subset
         registry=default_registry(),
+        ignore=ignore,
     )
 
     assert Path("commands/skipme.md") not in plan.items
@@ -294,21 +317,27 @@ def _plugin_skill_dir(tmp_path: Path, name: str, *, files: list[str]) -> _Plugin
     return plugin
 
 
-def test_carrier_merge_disjoint_files_succeeds_and_clears_flag(tmp_path: Path) -> None:
+def test_carrier_merge_disjoint_files_succeeds_and_clears_flag(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A plugin skill dir overlaying a shared_carrier dir with a DISJOINT file
     set carrier-merges: no fatal error, the carrier item stays, and its
     shared_carrier flag is cleared (mirrors bash `rm -f sentinel`)."""
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     merged = plan.items[Path("skills/demo-skill")]
     assert merged.kind is FileKind.DIR
     assert merged.shared_carrier is False
 
 
-def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(tmp_path: Path) -> None:
+def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """The carrier-merge does not silently drop the plugin's added file: its
     bytes are recorded in plan.dir_overrides, keyed by the carrier DIR's
     dest_relpath then the inner file relpath. This is the F.3 file-carry channel
@@ -317,13 +346,17 @@ def test_carrier_merge_records_plugin_file_bytes_in_dir_overrides(tmp_path: Path
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     dest = Path("skills/demo-skill")
     assert plan.dir_overrides[dest] == {Path("SKILL.md"): b"plugin"}
 
 
-def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(tmp_path: Path) -> None:
+def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """dir_overrides is a shared side channel (carrier-merge now, F.5 patched
     bytes later). A carrier-merge merges its carried files INTO any existing
     inner-relpath map for that dest rather than replacing the whole map, so a
@@ -335,7 +368,9 @@ def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(tmp_path: 
     plan.dir_overrides[dest] = {Path("PATCHED.md"): b"prior"}
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.dir_overrides[dest] == {
         Path("PATCHED.md"): b"prior",
@@ -343,14 +378,16 @@ def test_carrier_merge_preserves_existing_overrides_for_the_same_dest(tmp_path: 
     }
 
 
-def test_carrier_merge_carries_every_plugin_file(tmp_path: Path) -> None:
+def test_carrier_merge_carries_every_plugin_file(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin contributing several disjoint files has ALL of them represented
     in dir_overrides, not just the first — the carry iterates the whole added
     file set."""
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", "ref.md", "helper.py"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.dir_overrides[Path("skills/demo-skill")] == {
         Path("SKILL.md"): b"plugin",
@@ -359,14 +396,18 @@ def test_carrier_merge_carries_every_plugin_file(tmp_path: Path) -> None:
     }
 
 
-def test_carrier_merge_override_holds_only_plugin_files_not_carrier_own(tmp_path: Path) -> None:
+def test_carrier_merge_override_holds_only_plugin_files_not_carrier_own(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """The override map holds the PLUGIN's added files only. The carrier's own
     files (read from its source_path at sync) are not duplicated into the
     channel — dir_overrides is the second source tree, not the merged whole."""
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh", "README.md"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     overrides = plan.dir_overrides[Path("skills/demo-skill")]
     assert overrides == {Path("SKILL.md"): b"plugin"}
@@ -374,7 +415,9 @@ def test_carrier_merge_override_holds_only_plugin_files_not_carrier_own(tmp_path
     assert Path("README.md") not in overrides
 
 
-def test_carrier_merge_does_not_carry_top_level_dotfiles(tmp_path: Path) -> None:
+def test_carrier_merge_does_not_carry_top_level_dotfiles(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A top-level dotfile in the plugin dir is NOT carried: bash's
     `for sfile in "$src"/*` skips dot-prefixed entries, so they never reach the
     copy. This matches the dotfile exclusion the disjoint check already
@@ -382,12 +425,16 @@ def test_carrier_merge_does_not_carry_top_level_dotfiles(tmp_path: Path) -> None
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh", ".gitkeep"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", ".gitkeep"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"plugin"}
 
 
-def test_carrier_merge_carries_nested_subdirectory_files(tmp_path: Path) -> None:
+def test_carrier_merge_carries_nested_subdirectory_files(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A subdirectory in the plugin dir is carried wholesale (bash `cp -R`):
     each nested file is represented under its relpath (e.g. `lib/util.py`), and
     a dotfile NESTED under a carried subdir is kept (cp -R copies it) — unlike a
@@ -400,7 +447,9 @@ def test_carrier_merge_carries_nested_subdirectory_files(tmp_path: Path) -> None
     (skill_dir / "lib" / "util.py").write_bytes(b"nested")
     (skill_dir / "lib" / ".keep").write_bytes(b"dot-nested")
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.dir_overrides[Path("skills/demo-skill")] == {
         Path("SKILL.md"): b"top",
@@ -409,7 +458,7 @@ def test_carrier_merge_carries_nested_subdirectory_files(tmp_path: Path) -> None
     }
 
 
-def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path) -> None:
+def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin skill dir overlaying a shared_carrier dir with an OVERLAPPING
     file name cannot carrier-merge — it is a real conflict and falls through to
     the registry's fatal DIR strategy."""
@@ -417,10 +466,14 @@ def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path) -> None:
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])
 
     with pytest.raises(CollisionError):
-        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+        )
 
 
-def test_non_carrier_dir_collision_is_fatal_even_when_disjoint(tmp_path: Path) -> None:
+def test_non_carrier_dir_collision_is_fatal_even_when_disjoint(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A DIR collision on a NON-carrier item is fatal regardless of file-set
     disjointness — the shared_carrier flag, not the file sets, is what unlocks
     carrier-merge."""
@@ -431,10 +484,12 @@ def test_non_carrier_dir_collision_is_fatal_even_when_disjoint(tmp_path: Path) -
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md"])  # disjoint
 
     with pytest.raises(CollisionError):
-        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+        )
 
 
-def test_tool_scope_plugin_dir_cannot_carrier_merge(tmp_path: Path) -> None:
+def test_tool_scope_plugin_dir_cannot_carrier_merge(tmp_path: Path, ignore: InstallIgnore) -> None:
     """Carrier-merge is eligible ONLY for content from the plugin's .agents/
     (shared) tree. A tool-scope plugin DIR (.<tool>/skills/...) colliding with a
     shared_carrier dir is fatal even with a disjoint file set — mirrors the bash
@@ -447,22 +502,28 @@ def test_tool_scope_plugin_dir_cannot_carrier_merge(tmp_path: Path) -> None:
     (tool_skill / "SKILL.md").write_bytes(b"plugin")
 
     with pytest.raises(CollisionError):
-        overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+        )
 
 
-def test_carrier_merge_ignores_dotfiles_in_disjoint_check(tmp_path: Path) -> None:
+def test_carrier_merge_ignores_dotfiles_in_disjoint_check(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """Dotfiles are excluded from the disjointness comparison (bash `"$dir"/*`
     skips them): a shared carrier and an incoming plugin dir that share only a
     dot-prefixed entry still carrier-merge."""
     plan = _carrier_dir_plan(tmp_path, files=["_test.sh", ".gitkeep"])
     plugin = _plugin_skill_dir(tmp_path, "test-plugin", files=["SKILL.md", ".gitkeep"])
 
-    overlay_plugins(plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry())
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
 
     assert plan.items[Path("skills/demo-skill")].shared_carrier is False
 
 
-def test_second_plugin_on_merged_carrier_is_fatal(tmp_path: Path) -> None:
+def test_second_plugin_on_merged_carrier_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:
     """After one plugin carrier-merges (clearing the flag), a SECOND plugin
     colliding on the same dir is a true plugin-plugin collision and fatal —
     even with a disjoint file set (mirrors bash `rm -f sentinel`)."""
@@ -471,7 +532,13 @@ def test_second_plugin_on_merged_carrier_is_fatal(tmp_path: Path) -> None:
     second = _plugin_skill_dir(tmp_path, "z-plugin", files=["OTHER.md"])  # disjoint from carrier
 
     with pytest.raises(CollisionError):
-        overlay_plugins(plan, [first, second], adapter=ClaudeAdapter(), registry=default_registry())
+        overlay_plugins(
+            plan,
+            [first, second],
+            adapter=ClaudeAdapter(),
+            registry=default_registry(),
+            ignore=ignore,
+        )
 
 
 # ── Against the canonical committed test-plugin fixture ──────────────────────
@@ -483,7 +550,7 @@ def _test_plugin_adapter() -> GenericPluginAdapter:
     return GenericPluginAdapter(name="test-plugin", source_path=_SOURCES / "test-plugin")
 
 
-def test_fixture_plugin_rule_appends_to_a_colliding_base_rule() -> None:
+def test_fixture_plugin_rule_appends_to_a_colliding_base_rule(ignore: InstallIgnore) -> None:
     """End-to-end against the committed fixture: its .claude/rules/test-plugin-
     rule.md append-merges onto a colliding base rule of the same name."""
     plan = _seeded_plan(
@@ -496,7 +563,11 @@ def test_fixture_plugin_rule_appends_to_a_colliding_base_rule() -> None:
     )
 
     overlay_plugins(
-        plan, [_test_plugin_adapter()], adapter=ClaudeAdapter(), registry=default_registry()
+        plan,
+        [_test_plugin_adapter()],
+        adapter=ClaudeAdapter(),
+        registry=default_registry(),
+        ignore=ignore,
     )
 
     merged = plan.items[Path("rules/test-plugin-rule.md")].content
@@ -505,7 +576,7 @@ def test_fixture_plugin_rule_appends_to_a_colliding_base_rule() -> None:
     assert b"test-plugin-rule" in merged
 
 
-def test_fixture_plugin_command_collision_is_fatal() -> None:
+def test_fixture_plugin_command_collision_is_fatal(ignore: InstallIgnore) -> None:
     """The fixture's .claude/commands/test-plugin-command.md is fatal when it
     collides with a base command of the same name."""
     plan = _seeded_plan(
@@ -519,11 +590,15 @@ def test_fixture_plugin_command_collision_is_fatal() -> None:
 
     with pytest.raises(CollisionError):
         overlay_plugins(
-            plan, [_test_plugin_adapter()], adapter=ClaudeAdapter(), registry=default_registry()
+            plan,
+            [_test_plugin_adapter()],
+            adapter=ClaudeAdapter(),
+            registry=default_registry(),
+            ignore=ignore,
         )
 
 
-def test_fixture_plugin_settings_union_merges_with_base() -> None:
+def test_fixture_plugin_settings_union_merges_with_base(ignore: InstallIgnore) -> None:
     """The fixture's .claude/settings.json.template deep-union-merges with a base
     settings.json: the base permission survives alongside the plugin's."""
     plan = _seeded_plan(
@@ -536,7 +611,11 @@ def test_fixture_plugin_settings_union_merges_with_base() -> None:
     )
 
     overlay_plugins(
-        plan, [_test_plugin_adapter()], adapter=ClaudeAdapter(), registry=default_registry()
+        plan,
+        [_test_plugin_adapter()],
+        adapter=ClaudeAdapter(),
+        registry=default_registry(),
+        ignore=ignore,
     )
 
     merged = json.loads(plan.items[Path("settings.json")].content or b"{}")
@@ -545,7 +624,7 @@ def test_fixture_plugin_settings_union_merges_with_base() -> None:
     assert "Bash(test-plugin:*)" in allow
 
 
-def test_fixture_plugin_skill_overlays_without_collision() -> None:
+def test_fixture_plugin_skill_overlays_without_collision(ignore: InstallIgnore) -> None:
     """The fixture's shared-scope .agents/skills/test-plugin-skill/ lands in the
     plan as a DIR when no base item occupies that destination."""
     plan = overlay_plugins(
@@ -553,6 +632,7 @@ def test_fixture_plugin_skill_overlays_without_collision() -> None:
         [_test_plugin_adapter()],
         adapter=ClaudeAdapter(),
         registry=default_registry(),
+        ignore=ignore,
     )
 
     assert plan.items[Path("skills/test-plugin-skill")].kind is FileKind.DIR

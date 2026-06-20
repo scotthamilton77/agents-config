@@ -10,6 +10,7 @@ from installer.config import Config, resolve_plugins, resolve_plugins_root, reso
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
+from installer.core.installignore import load_installignore
 from installer.core.model import Counters
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
@@ -170,8 +171,21 @@ def main(
             prune_active=args.prune or args.prune_only,
         )
 
+    # Load the shared exclusion manifest up front, mirroring the bash installer's
+    # early fail-fast. Absent or unreadable .installignore is a hard error (exit 2)
+    # rather than a silent empty-exclusion install — the manifest is load-bearing
+    # policy, and a missing one would re-leak dead-docs identically on both
+    # installers (shared wrongness the parity oracle cannot see).
+    try:
+        ignore = load_installignore(resolved_repo_root / ".installignore")
+    except OSError as exc:
+        sys.stderr.write(f"installer: {exc}\n")
+        return 2
+
     if args.dump_stage is not None:
-        plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
+        plans = stage_and_transform(
+            tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
+        )
         try:
             dump_plan(plans, args.dump_stage, io=io)
         except ValueError as exc:
@@ -192,7 +206,9 @@ def main(
     # handling — only a verbose adapter transform notice (e.g. Gemini) may now
     # precede a toml error, which is immaterial.
     adapters = [get_adapter(tool) for tool in tools]
-    plans = stage_and_transform(tools, repo_root=resolved_repo_root, io=io, plugins=plugins)
+    plans = stage_and_transform(
+        tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
+    )
 
     # Default install path (also the install half of --prune): walk each active
     # tool's StagingPlan to disk via install_pipeline. Skipped only for

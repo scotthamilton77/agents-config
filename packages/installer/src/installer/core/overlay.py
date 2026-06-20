@@ -36,6 +36,7 @@ from installer.core.staging import stage_namespace, stage_settings
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from installer.core.installignore import InstallIgnore
     from installer.core.merge.registry import MergeRegistry
     from installer.core.model import StagedItem, StagingPlan
     from installer.plugins.base import PluginAdapter
@@ -53,6 +54,7 @@ def overlay_plugins(
     *,
     adapter: ToolAdapter,
     registry: MergeRegistry,
+    ignore: InstallIgnore,
 ) -> StagingPlan:
     """Overlay every plugin in ``plugins`` onto ``plan``, in alphabetical name
     order, mutating and returning ``plan``. Each plugin contributes its
@@ -67,13 +69,13 @@ def overlay_plugins(
 
         for ns in _TOOL_NAMESPACES:
             if adapter.should_install_namespace(ns, "tool"):
-                for item in stage_namespace(tool_root, ns, provenance=prov):
+                for item in stage_namespace(tool_root, ns, provenance=prov, ignore=ignore):
                     _place(plan, item, registry=registry, carrier_eligible=False)
         for item in stage_settings(tool_root, provenance=prov):
             _place(plan, item, registry=registry, carrier_eligible=False)
         for ns in _SHARED_NAMESPACES:
             if adapter.should_install_namespace(ns, "shared"):
-                for item in stage_namespace(shared_root, ns, provenance=prov):
+                for item in stage_namespace(shared_root, ns, provenance=prov, ignore=ignore):
                     _place(plan, item, registry=registry, carrier_eligible=True)
     return plan
 

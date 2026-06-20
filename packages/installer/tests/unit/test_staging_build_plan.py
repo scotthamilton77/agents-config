@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from installer.core.installignore import InstallIgnore
 from installer.core.model import FileKind, StagingPlan, Tool
 from installer.core.staging import build_plan
 from installer.tools.claude import ClaudeAdapter
@@ -46,10 +47,10 @@ def _make_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_build_plan_includes_shared_and_tool_phases(tmp_path: Path) -> None:
+def test_build_plan_includes_shared_and_tool_phases(tmp_path: Path, ignore: InstallIgnore) -> None:
     repo = _make_repo(tmp_path)
 
-    plan = build_plan(ClaudeAdapter(), repo_root=repo)
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
 
     assert isinstance(plan, StagingPlan)
     assert plan.tool == Tool.CLAUDE
@@ -63,24 +64,26 @@ def test_build_plan_includes_shared_and_tool_phases(tmp_path: Path) -> None:
     assert Path("settings.json") in dests  # tool settings
 
 
-def test_build_plan_filters_namespace_marker_file(tmp_path: Path) -> None:
+def test_build_plan_filters_namespace_marker_file(tmp_path: Path, ignore: InstallIgnore) -> None:
     repo = _make_repo(tmp_path)
-    plan = build_plan(ClaudeAdapter(), repo_root=repo)
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
     assert Path("skills/AGENTS.md") not in plan.items
 
 
-def test_build_plan_stages_hooks_namespace_with_exec_bit(tmp_path: Path) -> None:
+def test_build_plan_stages_hooks_namespace_with_exec_bit(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """The Claude installer stages src/user/.claude/hooks/ -> hooks/ and preserves
     the +x bit on hook scripts (8.7 parity with install.sh's hooks/ support)."""
     repo = _make_repo(tmp_path)
-    plan = build_plan(ClaudeAdapter(), repo_root=repo)
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
     assert Path("hooks/ruff-postedit.py") in plan.items
     assert plan.items[Path("hooks/ruff-postedit.py")].executable is True
 
 
-def test_build_plan_assigns_namespaces_and_kinds(tmp_path: Path) -> None:
+def test_build_plan_assigns_namespaces_and_kinds(tmp_path: Path, ignore: InstallIgnore) -> None:
     repo = _make_repo(tmp_path)
-    plan = build_plan(ClaudeAdapter(), repo_root=repo)
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
 
     assert plan.items[Path("rules/delegation.md")].kind == FileKind.NAMESPACED_MD
     assert plan.items[Path("rules/delegation.md")].namespace == "rules"
@@ -88,7 +91,7 @@ def test_build_plan_assigns_namespaces_and_kinds(tmp_path: Path) -> None:
     assert plan.items[Path("settings.json")].kind == FileKind.SETTINGS_JSON
 
 
-def test_build_plan_raises_on_collision(tmp_path: Path) -> None:
+def test_build_plan_raises_on_collision(tmp_path: Path, ignore: InstallIgnore) -> None:
     """Two sources mapping to the same dest_relpath must raise — merge
     dispatch is deferred to Epic E, so a silent overwrite is unacceptable."""
     repo = _make_repo(tmp_path)
@@ -100,4 +103,4 @@ def test_build_plan_raises_on_collision(tmp_path: Path) -> None:
     (repo / "src" / "user" / ".claude" / "rules" / "delegation.md").write_bytes(b"dup")
 
     with pytest.raises(ValueError, match="collision"):
-        build_plan(ClaudeAdapter(), repo_root=repo)
+        build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)

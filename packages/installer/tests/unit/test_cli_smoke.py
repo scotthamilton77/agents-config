@@ -23,6 +23,17 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _write_installignore(repo: Path) -> None:
+    """Mirror the real repo-root .installignore so cli.main's up-front fail-fast
+    load finds it. main() refuses to run without one (exit 2), so every hermetic
+    repo a CLI smoke test points main() at must carry the manifest."""
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / ".installignore").write_text(
+        "AGENTS.md\nCLAUDE.md\nGEMINI.md\nREADME.md\nSESSION-PRIMER-README.md\nrules-readmes/\n",
+        encoding="utf-8",
+    )
+
+
 def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
     """Create a repo_root whose packages/installer/installer.toml carries the
     given prune list — mirroring where _run_prune now derives the config path
@@ -32,6 +43,7 @@ def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
     toml_dir.mkdir(parents=True)
     retired_lines = "\n".join(f'  "{glob}",' for glob in retired)
     (toml_dir / "installer.toml").write_text(f"[prune]\nretired = [\n{retired_lines}\n]\n")
+    _write_installignore(repo)
     return repo
 
 
@@ -43,6 +55,7 @@ def _repo_with_malformed_installer_toml(tmp_path: Path) -> Path:
     toml_dir = repo / "packages" / "installer"
     toml_dir.mkdir(parents=True)
     (toml_dir / "installer.toml").write_text('[prune]\nretired = "*/skills/ralf-it"\n')
+    _write_installignore(repo)
     return repo
 
 
@@ -55,6 +68,7 @@ def _hermetic_repo(tmp_path: Path) -> Path:
     (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
     for tool in ("claude", "codex", "gemini", "opencode"):
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    _write_installignore(repo)
     return repo
 
 
@@ -251,6 +265,7 @@ def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: P
     retired.mkdir(parents=True)
     empty_repo = tmp_path / "no-toml-repo"
     empty_repo.mkdir()  # no packages/installer/installer.toml underneath
+    _write_installignore(empty_repo)  # but the exclusion manifest is required to run
     io = ScriptedIO(interactive=False)
 
     rc = main(
@@ -383,6 +398,7 @@ def test_plain_prune_non_interactive_without_yes_fails_on_consent_guard(tmp_path
     home = _home_with_claude_settings(tmp_path)
     empty_repo = tmp_path / "empty-repo"
     empty_repo.mkdir()
+    _write_installignore(empty_repo)  # required to reach the consent guard this test pins
 
     rc = main(
         ["--prune", "--tools=claude"],
