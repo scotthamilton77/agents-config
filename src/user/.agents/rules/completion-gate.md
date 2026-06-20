@@ -12,7 +12,7 @@ MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typ
 
 No exceptions. No partial runs. Each step feeds the next.
 
-**Subagents**: When dispatching subagents to do implementation work, always include the full completion gate workflow (review, simplify, verify) in their instructions. Subagent work that skips the gate is incomplete work.
+**Subagents**: subagent-produced work must still pass this gate — but mind *who* runs it and *how*. A dispatched worker MAY run the full gate on its own work, provided it does so **without spawning its own subagents**: run each step inline (its own review pass, its own simplification, its own tests/build/lint). A worker generally cannot reliably await a child agent it spawns, so a worker that tries to gate by dispatching reviewer/fixer agents will stall silently. When a gate step genuinely needs a *separate* agent, the dispatcher owns it: have the worker report DONE, then gate the returned work yourself before delivery.
 
 **Optional adversarial pass** (operator-initiated): For high-stakes changes (architecture shifts, security-sensitive code, final pre-merge), add `/codex:adversarial-review --wait --model gpt-5.5` as defense-in-depth after the in-house review steps.
 

@@ -1,0 +1,18 @@
+[
+  {"id": "Q1",  "should_trigger": true,  "query": "I dispatched a subagent to refactor the auth module and told it to spin up its own reviewer agent when it's done — but it's just sitting there doing nothing. What's going on?"},
+  {"id": "Q2",  "should_trigger": true,  "query": "I want to fan out 5 agents to each migrate a package, and each one should kick off a test-writer agent for its package. How should I wire that up?"},
+  {"id": "Q3",  "should_trigger": true,  "query": "my worker agent launched a sub-agent and now neither of them is responding, the whole thing is hung"},
+  {"id": "Q4",  "should_trigger": true,  "query": "What's the right way to have an orchestrator coordinate workers that themselves need to delegate part of their task to another agent?"},
+  {"id": "Q5",  "should_trigger": true,  "query": "I'm building a pipeline where agent A produces a draft, agent B (spawned by A) critiques it, and A revises. A keeps ending its turn right after spawning B and never continues."},
+  {"id": "Q6",  "should_trigger": true,  "query": "can a subagent wait for an agent it starts?"},
+  {"id": "Q7",  "should_trigger": true,  "query": "Every time I tell my dispatched coding agent to also run a separate verification agent, the session just freezes. delivering in 20 min, need this working"},
+  {"id": "Q8",  "should_trigger": true,  "query": "designing a multi-agent workflow, want each task agent to be able to recurse and spawn helpers — what do I need to know about lifecycle and notifications?"},
+  {"id": "Q9",  "should_trigger": true,  "query": "My subagent finished but returned a giant blob of output and blew up my context. How do I keep dispatched agents' results lean?"},
+  {"id": "Q10", "should_trigger": false, "query": "How do I write a good prompt for a subagent so it returns structured JSON I can parse?"},
+  {"id": "Q11", "should_trigger": false, "query": "My pytest suite hangs and leaves zombie processes when I run it in CI but it passes locally."},
+  {"id": "Q12", "should_trigger": false, "query": "I want to run several shell commands in parallel and wait for all of them to finish before continuing."},
+  {"id": "Q13", "should_trigger": false, "query": "What's the difference between a subagent and a skill in Claude Code?"},
+  {"id": "Q14", "should_trigger": false, "query": "My background bash process died when the tool call ended. How do I keep it running across turns?"},
+  {"id": "Q15", "should_trigger": false, "query": "I need to review this PR and have a second model double-check my findings before I merge."},
+  {"id": "Q16", "should_trigger": false, "query": "How do I make my agent ask the user for permission before it deletes any files?"}
+]
