@@ -18,7 +18,7 @@ Ensure work happens in an isolated workspace. Prefer your platform's native work
 
 **Core principle:** Detect existing isolation first. Then use native tools. Then fall back to git. Never fight the harness.
 
-**Location convention (agents share a workspace).** A worktree's location depends on the agent: Claude Code uses `.claude/worktrees/` (via `EnterWorktree`); every other agent uses `<repo-root>/.worktrees/`. Prefer a native tool when you have one — it owns placement and cleanup — otherwise create `<repo-root>/.worktrees/<name>` manually. Know this convention so you can find and enter a worktree another agent created on the same project.
+**Location convention (agents share a workspace).** A worktree's location depends on the agent: Claude Code uses `<repo-root>/.claude/worktrees/` (via `EnterWorktree`); every other agent uses `<repo-root>/.worktrees/`. Prefer a native tool when you have one — it owns placement and cleanup — otherwise create `<repo-root>/.worktrees/<name>` manually. Know this convention so you can find and enter a worktree another agent created on the same project.
 
 **Announce at start:** "I'm using the using-git-worktrees skill to set up an isolated workspace."
 
