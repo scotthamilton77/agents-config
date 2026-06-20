@@ -116,7 +116,7 @@ Do NOT count: comments you saw in a previous conversation, comments you "know ab
 
 When in doubt, pass 0 -- better to block and verify than to merge over unseen feedback.
 
-**The script counts your own replies too.** `check-merge-eligibility.sh` derives `total_comments` from `gh api .../pulls/<n>/comments | length`, which returns *every* inline review comment -- including replies you posted (e.g. via `reply-and-resolve-pr-threads`). It does not filter by author or subtract resolved threads. So after a reply cycle, 2 Copilot comments + your 2 replies = 4. When you re-run the check post-reply having genuinely read everything, pass `--comments-seen 4` (the full count), not 2 -- otherwise the script reports `unseen_comments` and false-blocks. When in genuine doubt, still pass 0 and re-triage.
+**The script counts your own replies too.** `check-merge-eligibility.sh` derives `total_comments` from `gh api .../pulls/<n>/comments | length`, which returns *every* inline review comment -- including replies you posted (e.g. via `reply-and-resolve-pr-threads`). It does not filter by author or subtract resolved threads. So after a reply cycle, 2 Copilot comments + your 2 replies = 4. When you re-run the check post-reply having genuinely read everything, pass `--comments-seen 4` (the full count), not 2 -- otherwise the script reports `unseen_comments` and false-blocks. When in genuine doubt, still pass 0 and re-triage. (The script's underlying `gh api .../pulls/<n>/comments | length` reads only the first page of 100, so on a PR with more comments than that the count silently undercounts — distrust a borderline `eligible` verdict on a very high-comment PR.)
 
 ## Red Flags
 
@@ -128,3 +128,4 @@ When in doubt, pass 0 -- better to block and verify than to merge over unseen fe
 | "It's a tiny PR, review won't matter" | Small PRs still get useful feedback. Follow the process. |
 | "I'll check after merging" | After merge, review feedback is wasted. Check before. |
 | "The script errored, probably fine" | Exit 3 means unknown state. Do not merge. Report the error. |
+| "`gh pr merge` exited 0, so it merged" | `gh pr merge` can exit 0 while printing a rejection. Confirm with `gh pr view <n> --json state` (expect `MERGED`). |

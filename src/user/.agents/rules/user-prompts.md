@@ -1,6 +1,7 @@
 # User Prompts
 
-- **`AskUserQuestion` is capped at 4 options.** The tool's input schema enforces `options.maxItems = 4` (and `questions.maxItems = 4`). A call with 5+ options — or 5+ questions in one call — fails input validation at runtime. Audit any skill, command, or agent prompt that calls `AskUserQuestion` against this cap before shipping it.
-- **For 5+ options, use a prose letter-prompt fallback.** Print the options inline as a lettered list (A, B, C, D, E, ...), one per line, each with a one-line description. The letter is the user's reply token; do not embed the letter inside the option label.
-- **For 5+ questions, use a prose numbered-question fallback.** Print the questions inline as a numbered list (1, 2, 3, 4, 5, ...), one per line. Ask the user to answer each by number.
-- **Both prose fallbacks require an EXPLICIT wait-gate.** Unlike `AskUserQuestion` (which is structurally turn-ending), prose prompts are a soft convention — the model will keep going unless told to stop. After the lettered list or numbered questions, write a literal "STOP. Wait for the user's reply before continuing." Do NOT infer the user's choice from prior context. On the reply: for letter-prompts, parse the first letter case-insensitively; if ambiguous (no letter, multiple letters, or outside the offered range), ask once for clarification then halt rather than guessing.
+`AskUserQuestion` allows at most 4 options and 4 questions per call. For more, fall back to prose:
+
+- 5+ options → a lettered list (A, B, C…), one per line, each with a one-line description; the letter is the reply token.
+- 5+ questions → a numbered list, answered by number.
+- Prose prompts don't end the turn on their own — after the list, write "STOP. Wait for the user's reply before continuing," and don't infer the choice. Parse the reply's first letter case-insensitively; if ambiguous, ask once, then halt.

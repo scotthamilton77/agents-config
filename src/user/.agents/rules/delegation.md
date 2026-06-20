@@ -1,10 +1,9 @@
 # Delegation
 
-MANDATORY delegation for non-trivial work (skip for obvious one-liners, config changes, typos):
+Delegate non-trivial work (skip one-liners, config, typos):
 
-- Planning → `brainstorming` skill
-- Implementation (default) → `test-driven-development` first, then any applicable domain skills
-- NEVER invoke `ralf-implement` or `ralf-review` unless part of the defined scope, or the user explicitly requests one with a target, Definition of Done / review criteria, context, and optional max cycle count
-- Tests (writing OR designing/spec'ing — including a test plan in a brainstorm or design doc) → `writing-unit-tests` skill BEFORE drafting test names or assertions; + `test-driven-development` skill for the red-green-refactor cycle
-
-**Cross-tool delegation:** when handing review or coding work to Codex, route through the Codex plugin and pick the model per the Codex routing rule.
+- Planning → `brainstorming`
+- Implementation → `test-driven-development` first, then any domain skills
+- Tests (writing or spec'ing, including a test plan in a design doc) → `writing-unit-tests` before naming any test, then `test-driven-development` for the red-green-refactor cycle
+- `ralf-implement` / `ralf-review` only when explicitly scoped with a target and Definition of Done / review criteria — never by default
+- Handing review or code to Codex → route through the Codex plugin, picking the model per the Codex routing rule

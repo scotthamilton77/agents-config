@@ -142,6 +142,8 @@ EOF
 )"
 ```
 
+**Write the PR body as a reviewer brief.** A bot reviewer's only context is the description. Beyond Summary and Test Plan, state: scope (files in / out of scope), artifact nature (code vs. design doc, current- vs. desired-state), ground-truth files to check claims against, intentional gaps or placeholders so they aren't flagged as missing, and constraints to honor. When a reviewer flags a desired-state artifact for depicting not-yet-built components, that's the artifact working correctly — acknowledge in-thread and resolve; don't caveat the doc or trigger another review round.
+
 **Do NOT clean up worktree** — user needs it alive to iterate on PR feedback.
 
 #### Option 3: Keep As-Is
