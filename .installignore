@@ -1,0 +1,21 @@
+# .installignore — source files excluded from the install fileset.
+#
+# Consumed by BOTH installers (scripts/install.sh and packages/installer) at the
+# staging step, on the DIRECT CHILDREN of each staged namespace subdir, BEFORE
+# any .template suffix is stripped.
+#
+# Grammar (simple subset; identical in bash and Python): one entry per line;
+# '#' comment lines and blank lines are ignored; an exact basename matches a
+# FILE; a trailing-'/' name matches a DIRECTORY. No globs, no '**', no negation,
+# no anchoring.
+#
+# The real tool-root instruction files are *.md.template and are NOT matched by
+# these bare basenames. Live leaker today: rules/AGENTS.md. The other entries are
+# class coverage (defensive; see the design spec's audit table).
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+README.md
+SESSION-PRIMER-README.md
+# Source-only rationale directories (never installed):
+rules-readmes/
