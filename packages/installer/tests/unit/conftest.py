@@ -19,7 +19,21 @@ from __future__ import annotations
 
 import pytest
 
+from installer.core.installignore import InstallIgnore
+
 
 @pytest.fixture(autouse=True)
 def _neutralize_opencode_path_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("installer.tools.opencode.which", lambda _cmd: None)
+
+
+@pytest.fixture
+def ignore() -> InstallIgnore:
+    """The canonical .installignore content as an in-memory object, for staging
+    tests that must pass an exclusion set without touching a manifest file."""
+    return InstallIgnore(
+        basenames=frozenset(
+            {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "SESSION-PRIMER-README.md"}
+        ),
+        dirnames=frozenset({"rules-readmes"}),
+    )
