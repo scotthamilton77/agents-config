@@ -40,4 +40,23 @@ assert "bare slash line does not abort under set -e" "0" "$r"
 ( source "$LIB"; load_installignore "$work/nope" ) 2>/dev/null && r=0 || r=$?
 assert "missing manifest fail-fast (nonzero exit)" "1" "$r"
 
+# Cross-shell regression: install.sh re-execs into zsh (preferred) before sourcing
+# this lib, so the matcher MUST work under zsh too — not just the bash this test
+# runs under. A quoted store subscript (["$key"]) silently embeds the quotes in the
+# key under zsh while the lookup uses [$1], so every match misses and exclusions
+# vanish. Source + load + query under zsh and assert the verdicts when zsh exists.
+if command -v zsh >/dev/null 2>&1; then
+    zverdicts="$(zsh -c '
+        source "$1"
+        load_installignore "$2"
+        for q in "AGENTS.md:false" "AGENTS.md.template:false" "rules-readmes:true"; do
+            n="${q%:*}"; d="${q#*:}"
+            if is_installignored "$n" "$d"; then printf "drop "; else printf "keep "; fi
+        done
+    ' zsh_matcher_test "$LIB" "$manifest")"
+    assert "matcher works under zsh (drop/keep/drop)" "drop keep drop " "$zverdicts"
+else
+    echo "ok: zsh unavailable — cross-shell check skipped"
+fi
+
 exit "$fail"

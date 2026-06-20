@@ -5,8 +5,9 @@
 # and blank lines ignored; an exact basename matches a file; a trailing-'/' name
 # matches a directory. No globs, no '**', no negation, no anchoring.
 #
-# Requires bash 4+ associative arrays (install.sh already guards the version and
-# uses `declare -A`). Do NOT `set -e` here — this file only defines functions.
+# Requires a shell with associative arrays — zsh or bash 4+. install.sh re-execs
+# into zsh (preferred) or bash 4+ before sourcing this, and both support the
+# `declare -A` used here. Do NOT `set -e` here — this file only defines functions.
 
 declare -A _INSTALLIGNORE_BASENAMES
 declare -A _INSTALLIGNORE_DIRNAMES
@@ -27,9 +28,12 @@ load_installignore() {
         [[ -z "$line" || "$line" == \#* ]] && continue
         if [[ "$line" == */ ]]; then
             name="${line%/}"
-            [[ -n "$name" ]] && _INSTALLIGNORE_DIRNAMES["$name"]=1   # skip a bare "/" (parity with Python)
+            # Unquoted subscript: a quoted ["$name"] embeds literal quotes in the
+            # key under zsh (but not bash), breaking lookups when install.sh re-execs
+            # into zsh. The lookup side uses [$1] unquoted, so the store must too.
+            [[ -n "$name" ]] && _INSTALLIGNORE_DIRNAMES[$name]=1   # skip a bare "/" (parity with Python)
         else
-            _INSTALLIGNORE_BASENAMES["$line"]=1
+            _INSTALLIGNORE_BASENAMES[$line]=1
         fi
     done < "$file"
 }
