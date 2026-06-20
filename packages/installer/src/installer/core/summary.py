@@ -10,8 +10,8 @@ no terminal, so it is unit-testable through ``ScriptedIO``.
 
 Two shapes, branching on ``verbose`` exactly as bash does:
 
-- **verbose** (``scripts/install.sh:1815-1842``): a 'Summary' header, then one
-  '-- <target> --' block per report target listing the six fields in fixed bash
+- **verbose** (``scripts/install.sh:1815-1842``): a '-- Summary --' header, then
+  one '-- <target> --' block per report target listing the six fields in fixed bash
   order (Installed / Updated / Merged / Backed up / Pruned / Skipped), then a DIM
   '(not detected, skipped)' footer for every ALL_* target absent from the report
   set;
@@ -132,10 +132,22 @@ def _render_verbose(
     all_plugins: Sequence[str],
     io: IOPort,
 ) -> None:
-    """Per-target block form (``scripts/install.sh:1815-1842``)."""
-    io.header("Summary")
+    """Per-target block form (``scripts/install.sh:1815-1842``).
+
+    Every block header byte-matches bash ``header()``
+    (``scripts/install.sh:162``), which is ``printf "\\n-- %s --\\n"``: a leading
+    blank line, then the name wrapped in ``-- ... --``. The renderer reproduces
+    that here (a blank ``io.info("")`` then the wrapped name) rather than relying
+    on ``IOPort.header``, whose contract prints the message verbatim with no
+    wrapping and no leading newline (and is shared with non-Summary callers that
+    pass already-formed text). The trailing ``echo ""`` before ``Done.``
+    (``scripts/install.sh:1844``) is reproduced the same way.
+    """
+    io.info("")
+    io.header("-- Summary --")
     for target in targets:
         c = counters.get(target, Counters())
+        io.info("")
         io.header(f"-- {target} --")
         for label, attr in _FIELDS:
             value = getattr(c, attr)
@@ -144,7 +156,9 @@ def _render_verbose(
     reported = set(targets)
     for absent in [*all_tools, *all_plugins]:
         if absent not in reported:
+            io.info("")
             io.info(f"-- {absent} (not detected, skipped) --")
+    io.info("")
     io.ok("Done.")
 
 
@@ -164,6 +178,9 @@ def _render_quiet(
             f"{getattr(c, attr)} {suffix}" for attr, suffix in _QUIET_PARTS if getattr(c, attr)
         ]
         lines.append(f"{target}: {', '.join(parts)}")
+    # bash emits one blank line before the up-to-date / Done branch
+    # (``scripts/install.sh:1859``), regardless of which branch fires.
+    io.info("")
     if not lines:
         io.ok("All files up to date — no changes made.")
         return

@@ -20,10 +20,9 @@ Covered decisions (bash spec line refs in each test):
 
 from __future__ import annotations
 
-from installer.core.summary import render_summary
-
 from installer.core.io_port import ScriptedIO, TranscriptEntry
 from installer.core.model import Counters
+from installer.core.summary import render_summary
 
 
 def _messages(io: ScriptedIO) -> list[str]:
@@ -248,6 +247,104 @@ def test_quiet_reports_pruned_and_backed_up_parts() -> None:
 
     msgs = _messages(io)
     assert any("beads:" in m and "3 pruned" in m and "3 backed up" in m for m in msgs), msgs
+
+
+def test_verbose_summary_header_is_dash_wrapped_with_leading_blank() -> None:
+    """
+    Given any verbose run
+    When render_summary runs
+    Then the 'Summary' header byte-matches bash header() — wrapped '-- Summary --'
+    (NOT bare 'Summary') and preceded by a blank line (scripts/install.sh:162,1816).
+    A bare 'Summary' or a missing leading blank is a parity regression.
+    """
+    io = ScriptedIO()
+    render_summary(
+        {"claude": Counters(created=1)},
+        tools=["claude"],
+        plugins=[],
+        all_tools=["claude"],
+        all_plugins=[],
+        verbose=True,
+        io=io,
+    )
+
+    msgs = _messages(io)
+    assert "-- Summary --" in msgs, msgs
+    assert "Summary" not in msgs, msgs  # never the unwrapped form
+    summary_idx = msgs.index("-- Summary --")
+    assert summary_idx > 0 and msgs[summary_idx - 1] == "", msgs
+
+
+def test_verbose_block_and_footer_headers_are_dash_wrapped_with_leading_blank() -> None:
+    """
+    Given an active tool and an inactive ALL_* tool, under verbose
+    When render_summary runs
+    Then each per-tool block header and each '(not detected, skipped)' footer is
+    '-- ... --' wrapped and immediately preceded by a blank line, byte-matching
+    bash's leading-'\\n' printf (scripts/install.sh:1819,1833).
+    """
+    io = ScriptedIO()
+    render_summary(
+        {"claude": Counters(created=1)},
+        tools=["claude"],
+        plugins=[],
+        all_tools=["claude", "codex"],
+        all_plugins=[],
+        verbose=True,
+        io=io,
+    )
+
+    msgs = _messages(io)
+    block_idx = msgs.index("-- claude --")
+    assert msgs[block_idx - 1] == "", msgs
+    footer = "-- codex (not detected, skipped) --"
+    footer_idx = msgs.index(footer)
+    assert msgs[footer_idx - 1] == "", msgs
+
+
+def test_verbose_emits_blank_line_before_done() -> None:
+    """
+    Given any verbose run
+    When render_summary runs
+    Then the final 'Done.' is immediately preceded by a blank line, matching
+    bash's ``echo ""`` before ``ok "Done."`` (scripts/install.sh:1844-1845).
+    """
+    io = ScriptedIO()
+    render_summary(
+        {"claude": Counters(created=1)},
+        tools=["claude"],
+        plugins=[],
+        all_tools=["claude"],
+        all_plugins=[],
+        verbose=True,
+        io=io,
+    )
+
+    done_idx = next(i for i, e in enumerate(io.transcript) if e.channel == "ok")
+    assert io.transcript[done_idx].message == "Done."
+    assert io.transcript[done_idx - 1].message == "", _messages(io)
+
+
+def test_quiet_emits_blank_line_before_outcome() -> None:
+    """
+    Given a quiet run that changed nothing
+    When render_summary runs
+    Then a blank line precedes the 'up to date' line, matching bash's ``echo ""``
+    ahead of the quiet outcome branch (scripts/install.sh:1859).
+    """
+    io = ScriptedIO()
+    render_summary(
+        {"claude": Counters(skipped=2)},
+        tools=["claude"],
+        plugins=[],
+        all_tools=["claude"],
+        all_plugins=[],
+        verbose=False,
+        io=io,
+    )
+
+    outcome_idx = next(i for i, e in enumerate(io.transcript) if e.channel == "ok")
+    assert io.transcript[outcome_idx - 1].message == "", _messages(io)
 
 
 def test_entries_carry_a_transcript_record() -> None:
