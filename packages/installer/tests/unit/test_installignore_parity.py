@@ -16,8 +16,14 @@ from installer.core.installignore import load_installignore
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LIB = _REPO_ROOT / "scripts" / "lib" / "installignore.sh"
 # Resolve bash to a full path so the subprocess call carries no partial executable
-# path (S607). The golden-master suite already requires bash on PATH.
-_BASH = shutil.which("bash") or "bash"
+# path (S607). If bash is absent, skip the whole module rather than fall back to a
+# partial "bash" (which would defeat S607 and crash with FileNotFoundError); the
+# golden-master suite already requires bash, so this skip never fires in CI.
+_BASH = shutil.which("bash")
+
+pytestmark = pytest.mark.skipif(
+    _BASH is None, reason="bash not on PATH; matcher parity requires it"
+)
 
 # (name, is_dir, expected) — keep/drop verdicts the two matchers must share.
 _CASES = [
@@ -35,6 +41,7 @@ _CASES = [
 
 
 def _bash_verdict(manifest: Path, name: str, is_dir: bool) -> str:
+    assert _BASH is not None  # guarded by the module-level skipif
     flag = "true" if is_dir else "false"
     script = (
         f'source "{_LIB}"; load_installignore "{manifest}"; '
