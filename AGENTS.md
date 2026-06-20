@@ -65,7 +65,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
-  - `rules/` - Claude-specific workflow rules (`claude-sandbox.md`, `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`); general rules are sourced from `src/user/.agents/rules/`
+  - `rules/` - Claude-specific rules (rules that only apply to Claude contexts); general rules are sourced from `src/user/.agents/rules/`
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
   - `CLAUDE-EXTENSIONS.md.template` - Stub header (content moved to `rules/`)

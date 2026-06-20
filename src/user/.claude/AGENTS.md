@@ -26,10 +26,9 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
   collisions in `agents/`, `skills/`, or top-level templates span both trees.
   Check before adding.
 - `rules/` is the append-only extension point for Claude-specific workflow.
-  It now contains only Claude-specific files (`claude-sandbox.md`,
-  `headless-claude.md`, `orchestrating-subagents.md`, `worktree-safety.md`, and
-  any plugin append-merges); the 5 general rules (delegation, completion-gate,
-  delivery, subagents, worktrees) now source from `src/user/.agents/rules/` and
+  It now contains only Claude-specific rule files (stuff that would only apply in a claude context, and
+  any plugin append-merges); the general rules (delegation, completion-gate,
+  delivery, subagents, worktrees, etc.) source from `src/user/.agents/rules/` and
   are staged into `~/.claude/rules/` at install time. Keep files scoped and
   single-purpose.
 
