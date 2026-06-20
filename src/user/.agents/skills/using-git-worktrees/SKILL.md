@@ -18,6 +18,8 @@ Ensure work happens in an isolated workspace. Prefer your platform's native work
 
 **Core principle:** Detect existing isolation first. Then use native tools. Then fall back to git. Never fight the harness.
 
+**Location convention (agents share a workspace).** A worktree's location depends on the agent: Claude Code uses `.claude/worktrees/` (via `EnterWorktree`); every other agent uses `<repo-root>/.worktrees/`. Prefer a native tool when you have one — it owns placement and cleanup — otherwise create `<repo-root>/.worktrees/<name>` manually. Know this convention so you can find and enter a worktree another agent created on the same project.
+
 **Announce at start:** "I'm using the using-git-worktrees skill to set up an isolated workspace."
 
 ## Step 0: Detect Existing Isolation
@@ -69,25 +71,7 @@ Only proceed to Step 1b if you have no native worktree tool available.
 
 #### Directory Selection
 
-Follow this priority order. Explicit user preference always beats observed filesystem state.
-
-1. **Check your instructions for a declared worktree directory preference.** If the user has already specified one, use it without asking.
-
-2. **Check for an existing project-local worktree directory:**
-   ```bash
-   ls -d .worktrees 2>/dev/null     # Preferred (hidden)
-   ls -d worktrees 2>/dev/null      # Alternative
-   ```
-   If found, use it. If both exist, `.worktrees` wins.
-
-3. **Check for an existing global directory:**
-   ```bash
-   project=$(basename "$(git rev-parse --show-toplevel)")
-   ls -d ~/.config/superpowers/worktrees/$project 2>/dev/null
-   ```
-   If found, use it (backward compatibility with legacy global path).
-
-4. **If there is no other guidance available**, default to `.worktrees/` at the project root.
+Explicit user preference wins. Otherwise default to `<repo-root>/.worktrees/` (hidden, project-local). If a non-hidden `worktrees/` already exists, use it rather than creating a second directory.
 
 #### Safety Verification (project-local directories only)
 
@@ -101,19 +85,11 @@ git check-ignore -q .worktrees 2>/dev/null || git check-ignore -q worktrees 2>/d
 
 **Why critical:** Prevents accidentally committing worktree contents to repository.
 
-Global directories (`~/.config/superpowers/worktrees/`) need no verification.
-
 #### Create the Worktree
 
 ```bash
-project=$(basename "$(git rev-parse --show-toplevel)")
-
-# Determine path based on chosen location
-# For project-local: path="$LOCATION/$BRANCH_NAME"
-# For global: path="~/.config/superpowers/worktrees/$project/$BRANCH_NAME"
-
-git worktree add "$path" -b "$BRANCH_NAME"
-cd "$path"
+git worktree add ".worktrees/$BRANCH_NAME" -b "$BRANCH_NAME"
+cd ".worktrees/$BRANCH_NAME"
 ```
 
 **Sandbox fallback:** If `git worktree add` fails with a permission error (sandbox denial), tell the user the sandbox blocked worktree creation and you're working in the current directory instead. Then run setup and baseline tests in place.
@@ -169,8 +145,7 @@ Ready to implement <feature-name>
 | `.worktrees/` exists | Use it (verify ignored) |
 | `worktrees/` exists | Use it (verify ignored) |
 | Both exist | Use `.worktrees/` |
-| Neither exists | Check instruction file, then default `.worktrees/` |
-| Global path exists | Use it (backward compat) |
+| Neither exists | Default to `.worktrees/` |
 | Directory not ignored | Add to .gitignore + commit |
 | Permission error on create | Sandbox fallback, work in place |
 | Tests fail during baseline | Report failures + ask |
@@ -196,7 +171,7 @@ Ready to implement <feature-name>
 ### Assuming directory location
 
 - **Problem:** Creates inconsistency, violates project conventions
-- **Fix:** Follow priority: existing > global legacy > instruction file > default
+- **Fix:** Follow priority: instruction preference > existing `.worktrees/` > default `.worktrees/`
 
 ### Proceeding with failing tests
 
@@ -216,7 +191,7 @@ Ready to implement <feature-name>
 **Always:**
 - Run Step 0 detection first
 - Prefer native tools over git fallback
-- Follow directory priority: existing > global legacy > instruction file > default
+- Follow directory priority: instruction preference > existing `.worktrees/` > default `.worktrees/`
 - Verify directory is ignored for project-local
 - Auto-detect and run project setup
 - Verify clean test baseline

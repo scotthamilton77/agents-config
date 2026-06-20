@@ -1,9 +1,3 @@
-# Git Commits
+# Git Commits (sandbox)
 
-Sandbox mode: heredocs fail with "can't create temp file."
-
-1. Simple: `git commit -m "fix(scope): message"`
-2. Multi-line: `git commit -m "fix(scope): summary" -m "Co-Authored-By: ..."`
-3. Complex: use `dangerouslyDisableSandbox: true` (git is safe)
-
-**NEVER use heredoc syntax** (`<<EOF`, `<<'EOF'`) for commit messages.
+Heredocs fail in sandbox mode ("can't create temp file") — never use `<<EOF`/`<<'EOF'` for commit messages. Use `-m` (repeat for multi-line); for complex messages set `dangerouslyDisableSandbox: true` (git is safe).

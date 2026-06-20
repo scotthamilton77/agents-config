@@ -1,12 +1,7 @@
 # Worktrees
 
-All git worktrees **must** be created inside `<project-root>/.claude/worktrees/` — that is, the `.claude/` directory at the root of the repository, not nested inside any subdirectory.
+Create worktrees in your native worktree tool's preferred location, or — absent such a tool — in `<repo-root>/.worktrees/`. Never nest them deeper in a subdirectory.
 
-- **Preferred:** Use the active assistant's native worktree tool when available (e.g., Claude Code's `EnterWorktree`) — it places worktrees here automatically
-- **Manual:** `git worktree add .claude/worktrees/<name> -b <branch>` (run from the project root)
-
-**Override:** The `using-git-worktrees` skill defaults to `.worktrees/` at the project root. Disregard that default — `<project-root>/.claude/worktrees/` is the required location regardless of what any skill specifies.
-
-## Cleanup after merge
-
-Run from the main repo root, never inside the worktree being removed. After a squash-merge both git and `ExitWorktree` read the branch as unmerged — use `git branch -D` (not `-d`), and pass `ExitWorktree` its `discard_changes: true` option, after confirming the work landed on main.
+- No native tool: `git worktree add .worktrees/<name> -b <branch>` from the repo root.
+- Agents collaborate on one workspace, so know the per-agent convention to find and enter each other's worktrees: Claude Code uses `.claude/worktrees/` (via its native tool); every other agent uses `<repo-root>/.worktrees/`.
+- Post-merge cleanup: run from the main repo root, never inside the worktree. After a squash-merge git reads the branch as unmerged — use `git branch -D`, and remove the worktree only once the work is confirmed on main.

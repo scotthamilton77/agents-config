@@ -38,7 +38,7 @@ Locate verification workflow definitions from your memory. These describe the st
 
 **Check in order:**
 1. **Shared rules** — look for `<verification-checklist>` in instruction files (always loaded)
-2. **Tool extensions** — `<completion-gate>` and `<delivery>` for tool-specific implementation
+2. **Tool extensions** — the `<completion-gate>` rule and the delivery skills it hands off to, for tool-specific implementation
 3. **Project config** — project-level overrides or additions (AGENTS.md, CLAUDE.md, etc.)
 4. **Memory files** — any supplemental verification workflows
 

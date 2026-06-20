@@ -28,7 +28,7 @@ into `~/.claude/` (Claude is always an active tool; never auto-detected away).
 - `rules/` is the append-only extension point for Claude-specific workflow.
   It now contains only Claude-specific rule files (stuff that would only apply in a claude context, and
   any plugin append-merges); the general rules (delegation, completion-gate,
-  delivery, subagents, worktrees, etc.) source from `src/user/.agents/rules/` and
+  subagents, worktrees, etc.) source from `src/user/.agents/rules/` and
   are staged into `~/.claude/rules/` at install time. Keep files scoped and
   single-purpose.
 
