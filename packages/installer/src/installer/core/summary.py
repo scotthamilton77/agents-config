@@ -70,7 +70,7 @@ def _is_changed(counters: Counters) -> bool:
     A pure skip is not a change — only installed/updated/merged/pruned count
     (``scripts/install.sh:1848``). ``backed_up`` rides along a change but never
     constitutes one on its own (a backup only happens alongside an overwrite or a
-    prune), so it is intentionally absent from this test.
+    prune), so it is intentionally excluded from this predicate.
     """
     return bool(counters.created or counters.updated or counters.merged or counters.pruned)
 
