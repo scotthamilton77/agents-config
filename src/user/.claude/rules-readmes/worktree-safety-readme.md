@@ -19,10 +19,10 @@ git rev-parse --show-toplevel   # must contain .claude/worktrees/
 ```
 EnterWorktree(name: "worker-A")
 → spawn subagentA (no isolation arg)
-→ ExitWorktree(keep)
+→ ExitWorktree  # keep; do not remove worktree
 EnterWorktree(name: "worker-B")
 → spawn subagentB (no isolation arg)
-→ ExitWorktree(keep)
+→ ExitWorktree  # keep; do not remove worktree
 ```
 Subagents inherit orchestrator cwd at spawn — entering the worktree first means the subagent starts there.
 
@@ -32,4 +32,4 @@ Bug #33045: silently ignored for named/team agents; agents land at repo root on 
 
 ## Phantom-cwd
 
-Deleting a worktree while a subagent's shell holds the inode: `pwd` still reports the old path but writes become non-deterministic (some land in the stale inode, some fall through). Always `ExitWorktree(keep)` before removing; only remove after all occupying subagents complete.
+Deleting a worktree while a subagent's shell holds the inode: `pwd` still reports the old path but writes become non-deterministic (some land in the stale inode, some fall through). Always exit the worktree without removing it before proceeding; only remove after all occupying subagents complete.
