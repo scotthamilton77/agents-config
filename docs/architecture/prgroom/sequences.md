@@ -80,10 +80,10 @@ sequenceDiagram
         PG->>PG: _verify — run the strongest-tier gate command (whole-branch, via proc.CommandRunner) → GREEN (fall through to push)
         PG->>GH: _push — git push fix commits
         PG->>State: write — pr_review_retries_used=1, last_pushed_head_sha=new
-        PG->>GH: _rereview — remove + re-add Copilot reviewer (force re-review)
         PG->>GH: _reply — post replies (incl. CONTEXTUAL memory thread-replies) + PATCH the Decisions block in PR body (§8.3 — gh API edit, NOT a git commit)
         PG->>GH: _resolve — GraphQL resolveReviewThread for fixed / already_addressed items
         PG->>State: write — items.resolved=true for resolved threads
+        PG->>GH: _rereview — remove + re-add Copilot reviewer (force re-review; runs last so reply/resolve close out the round)
         Note over PG: End-of-cycle resolver: items dispositioned, push happened → phase=awaiting-review (priority 4)
         PG->>State: write — phase resolution
         PG->>GH: _wait — sleep, then re-poll
