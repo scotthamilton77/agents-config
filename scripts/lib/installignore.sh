@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Shared exclusion matcher for the install fileset — bash side of .installignore.
+# Sourced by scripts/install.sh and by installignore_test.sh. Grammar matches the
+# Python loader (installer.core.installignore): one entry per line; '#' comments
+# and blank lines ignored; an exact basename matches a file; a trailing-'/' name
+# matches a directory. No globs, no '**', no negation, no anchoring.
+#
+# Requires bash 4+ associative arrays (install.sh already guards the version and
+# uses `declare -A`). Do NOT `set -e` here — this file only defines functions.
+
+declare -A _INSTALLIGNORE_BASENAMES
+declare -A _INSTALLIGNORE_DIRNAMES
+
+# load_installignore <path>: populate the matcher from the manifest. A missing or
+# unreadable file is a HARD ERROR (fail-fast) — mirrors the Python loader.
+load_installignore() {
+    local file="$1" line
+    if [[ ! -r "$file" ]]; then
+        echo "Error: .installignore not found at $file; refusing to install with exclusions disabled" >&2
+        exit 1
+    fi
+    _INSTALLIGNORE_BASENAMES=()
+    _INSTALLIGNORE_DIRNAMES=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"   # ltrim
+        line="${line%"${line##*[![:space:]]}"}"    # rtrim
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        if [[ "$line" == */ ]]; then
+            _INSTALLIGNORE_DIRNAMES["${line%/}"]=1
+        else
+            _INSTALLIGNORE_BASENAMES["$line"]=1
+        fi
+    done < "$file"
+}
+
+# is_installignored <name> <is_dir:true|false>: succeed (0) if excluded.
+is_installignored() {
+    if [[ "$2" == true ]]; then
+        [[ -n "${_INSTALLIGNORE_DIRNAMES[$1]:-}" ]]
+    else
+        [[ -n "${_INSTALLIGNORE_BASENAMES[$1]:-}" ]]
+    fi
+}
