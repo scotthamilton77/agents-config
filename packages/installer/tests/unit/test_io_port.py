@@ -206,6 +206,18 @@ def test_terminal_io_info_writes_to_console() -> None:
     assert "hello" in out_buf.getvalue()
 
 
+def test_terminal_io_does_not_interpret_bracket_tokens_as_markup() -> None:
+    """A literal '[dir]' / '[file]' token (the prune list's type tag) must survive
+    verbatim. rich would otherwise parse '[dir]' as inline markup and silently strip
+    it. markup=False is set per print(), so the guarantee holds even here, where the
+    caller injects a markup-enabled Console (rich's default) — not only on the default
+    Console TerminalIO builds for itself."""
+    out_console, out_buf = _capture_console()  # injected Console; markup defaults to True
+    io = TerminalIO(stdout=out_console)
+    io.info("    [dir] /home/.claude/skills/condition-based-waiting")
+    assert "[dir]" in out_buf.getvalue()
+
+
 def test_terminal_io_verbose_suppressed_when_verbose_flag_false() -> None:
     """Pins the default-quiet contract: verbose=True messages do not
     render unless TerminalIO was constructed with verbose=True."""

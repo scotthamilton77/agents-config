@@ -129,31 +129,38 @@ class TerminalIO:
         self._verbose = verbose
 
     # -- output channels --
+    #
+    # Every print passes markup=False: the installer emits plain log lines, styled via
+    # the `style=` argument, never via rich's inline `[tag]` markup. Left on, rich parses
+    # a literal bracket token like the prune list's `[dir]`/`[file]` type tag as a
+    # (non-existent) markup tag and silently strips it. Setting markup=False per call —
+    # not only on the default Console — keeps the guarantee even when a caller injects
+    # its own Console (e.g. a test capturing output).
 
     def info(self, message: str, *, verbose: bool = False) -> None:
         if verbose and not self._verbose:
             return
-        self._out.print(message, style="cyan")
+        self._out.print(message, style="cyan", markup=False)
 
     def ok(self, message: str, *, verbose: bool = False) -> None:
         if verbose and not self._verbose:
             return
-        self._out.print(f"✓ {message}", style="green")
+        self._out.print(f"✓ {message}", style="green", markup=False)
 
     def warn(self, message: str, *, verbose: bool = False) -> None:
         if verbose and not self._verbose:
             return
-        self._out.print(f"⚠ {message}", style="yellow")
+        self._out.print(f"⚠ {message}", style="yellow", markup=False)
 
     def err(self, message: str, *, verbose: bool = False) -> None:
         if verbose and not self._verbose:
             return
-        self._err.print(f"✗ {message}", style="red")
+        self._err.print(f"✗ {message}", style="red", markup=False)
 
     def header(self, message: str, *, verbose: bool = False) -> None:
         if verbose and not self._verbose:
             return
-        self._out.print(message, style="bold")
+        self._out.print(message, style="bold", markup=False)
 
     # -- diff --
 
