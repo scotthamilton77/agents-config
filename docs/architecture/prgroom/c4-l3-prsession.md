@@ -60,7 +60,7 @@ The §8 PR-memory read path (§8.1) reads *through* this Store but adds **no** p
 
 ## Out of scope for this L3 (when drawn)
 
-- **`PRGroomingState` schema content** — the fields themselves (`phase`, `round`, `items`, `reviewers`, `quiescence`, etc.) live in [`data-view.md`](data-view.md). This L3 covers the *adapter / migration / atomicity machinery*, not the data shape.
+- **`PRGroomingState` schema content** — the fields themselves (`phase`, `pr_review_retries_used`, `items`, `reviewers`, `quiescence`, etc.) live in [`data-view.md`](data-view.md). This L3 covers the *adapter / migration / atomicity machinery*, not the data shape.
 - **Operator-facing state-file inspection tooling** — `prgroom status --json` is built by `src/prgroom/lifecycle` reading state through the `Store`; it's not a `prsession` component.
 - **Cross-PR enumeration semantics** — `list_refs() -> list[PRRef]` is on the Protocol; the `sweep` verb (`src/prgroom/lifecycle` or `cli.py`) consumes it. The adapter implementation is straightforward (file: read the state dir and parse filenames; bd: `bd list --label for-pr-*`).
 

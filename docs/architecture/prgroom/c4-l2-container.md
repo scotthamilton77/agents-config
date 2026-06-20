@@ -16,7 +16,7 @@
 | Cluster contract | The agent-dispatch contract for `cluster` — cheap grouping of unprocessed review items. Local-first provider chain: ollama+Gemma → claude haiku → codex-mini. Source spec §5. |
 | Fix contract | The agent-dispatch contract for `fix` — `opus[1m]` orchestrator that decides per-comment disposition AND implements the fix. Source spec §5. |
 | Fix commit | A commit produced by the fix contract agent inside the operator's working tree, then pushed to the PR branch by the `push` verb. |
-| Quiescence | A definite end-state where no further reviewer activity is expected; the `wait` verb returns on observing quiescence (or hard cap). Source spec §4. |
+| Quiescence | A definite end-state where no further reviewer activity is expected; the `wait` verb returns on observing quiescence (or PR-review-retry-budget exhaustion). Source spec §4. |
 
 ## Purpose
 
@@ -69,7 +69,7 @@ The whole CLI runs here. Every invocation is **terminal** — it runs to complet
 
 Internally — at L3 — this process is composed of:
 
-- `src/prgroom/cli.py` — typer root + per-verb command files; loads the `.prgroom.toml` config (per-contract provider chains, hard-cap, reviewer timeouts) and builds the deps surface passed into the lifecycle
+- `src/prgroom/cli.py` — typer root + per-verb command files; loads the `.prgroom.toml` config (per-contract provider chains, PR-review retry budget, reviewer timeouts) and builds the deps surface passed into the lifecycle
 - `src/prgroom/lifecycle/` — verb implementations (`_poll`, `_cluster`, `_fix`, `_push`, `_rereview`, `_reply`, `_resolve`, `_wait`), the `_run` aggregator, the `quiescence_predicate` (§4.1 pure function — lives here, not in a separate package), and the `EscalationSink` Protocol + stderr / file / (later) bd adapters
 - `src/prgroom/prsession/` — `Store` Protocol + `file` adapter + `memory` adapter (tests) + (v2) `bd` adapter
 - `src/prgroom/agent/` — cluster contract and fix contract dispatch with per-contract provider chains
@@ -80,7 +80,7 @@ These components are drawn out at L3 — `c4-l3-lifecycle.md` is the core view; 
 
 #### prsession state file — JSON on local FS
 
-A single per-PR JSON file at `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json` (fallback `~/.local/state/prgroom/`). Carries `PRGroomingState` (per the §2 schema): the round counter, per-reviewer state, per-comment disposition, last-poll SHA, last-pushed-head SHA, quiescence state, human-review-label flag, and the last error. Schema is versioned via `schema_version`; unknown versions surface as `STATE_SCHEMA_UNKNOWN`.
+A single per-PR JSON file at `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json` (fallback `~/.local/state/prgroom/`). Carries `PRGroomingState` (per the §2 schema): the pr_review_retries_used counter, per-reviewer state, per-comment disposition, last-poll SHA, last-pushed-head SHA, quiescence state, human-review-label flag, and the last error. Schema is versioned via `schema_version`; unknown versions surface as `STATE_SCHEMA_UNKNOWN`.
 
 Concurrency: `flock(2)` on the file for the verb's duration (the `run` verb holds it for the whole grooming cycle). Atomicity: `mktemp` + `rename(2)` on the same filesystem — readers always observe either the complete prior file or the complete new file; no partial / corrupt JSON from a race. The `status` verb is the **single exception** to the lock-acquire rule (it does an unlocked `read` to stay responsive under long-running `run --autonomous`).
 

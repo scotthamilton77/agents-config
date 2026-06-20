@@ -29,9 +29,9 @@ C4Context
 
     Person(operator, "Operator (human or wrapping agent)", "Invokes prgroom run / status; dispositions ESCALATE items via resolve-escalated; pushes the original PR commits; reviews the human-review-required label")
 
-    System(prgroom, "prgroom CLI", "Python console-script that drives a PR through poll → cluster → fix → push → re-review → reply → resolve → wait until quiescence or hard cap; one PR per run, per-PR lock, fresh agent context per dispatch")
+    System(prgroom, "prgroom CLI", "Python console-script that drives a PR through poll → cluster → fix → push → re-review → reply → resolve → wait until quiescence or PR-review retry budget; one PR per run, per-PR lock, fresh agent context per dispatch")
 
-    System_Ext(github, "GitHub", "Hosts the PR, its reviews + threads, CI verdicts, and the human-review-required label that prgroom raises on hard-cap or ESCALATE")
+    System_Ext(github, "GitHub", "Hosts the PR, its reviews + threads, CI verdicts, and the human-review-required label that prgroom raises on PR-review-retry-budget exhaustion or ESCALATE")
     System_Ext(agents, "AI agent CLIs", "Claude Code (claude -p), Codex CLI (codex exec), OpenCode (opencode run), local models (ollama). Subprocessed for the cluster contract and fix contract. Runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable. Each call is a fresh, isolated context.")
     System_Ext(scheduler, "Scheduler", "Whatever triggers autonomous runs: cron, systemd timer, GitHub Actions, prgroom sweep, or a /loop Claude Code session. Not strict; not required for interactive mode.")
     SystemDb_Ext(statefile, "Local state file", "$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json — the prsession.Store file-adapter's storage. flock(2) for concurrency; mktemp+rename for atomicity.")
@@ -58,13 +58,13 @@ C4Context
 - **Operator (human or wrapping agent)** — the actor at the wheel. Three load-bearing interactions:
   - **Original PR push** — the operator (or an upstream agent / skill) creates the PR being groomed. prgroom does NOT create PRs; that responsibility stays with `finishing-a-development-branch` and equivalents per the MVP scope decision in §1.
   - **`prgroom run` invocation** — the entry point for grooming a single PR through to quiescence. The same code path serves the interactive `--interactive` flag (operator-at-tty) and the autonomous `--autonomous` flag (scheduler-driven). The CLI is the entire user-facing surface; there is no daemon and no dashboard.
-  - **`resolve-escalated` disposition** — when the fix contract classifies a review comment as `escalated`, prgroom surfaces it via the `EscalationSink` and stops attempting to auto-disposition it. The operator picks a terminal disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix`) via `prgroom resolve-escalated <pr> <item-id> --as <disposition>` and the lifecycle continues. This is the primary feedback path from human back into prgroom's lifecycle; the other is raising `--max-rounds` to re-arm a hard-cap gate (§3.5).
+  - **`resolve-escalated` disposition** — when the fix contract classifies a review comment as `escalated`, prgroom surfaces it via the `EscalationSink` and stops attempting to auto-disposition it. The operator picks a terminal disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix`) via `prgroom resolve-escalated <pr> <item-id> --as <disposition>` and the lifecycle continues. This is the primary feedback path from human back into prgroom's lifecycle; the other is raising `--pr-review-retries` to re-arm a PR-review-retry-budget gate (§3.5).
 
   "Operator" includes a *wrapping AI agent* — a thin caller that invokes `prgroom run` and reads its exit code + JSON, exactly as a human at a terminal would. There is **no fix-now / reply-later split**: prgroom drives the full **fix → push → reply → resolve** loop inside a single locked cycle (§3.3 `_run`), so each review thread is answered and resolved in the *same* cycle that pushes its fix. Threads are never left dangling for a later pass. (During migration the legacy `reply-and-resolve-pr-threads` skill is **deleted** and `wait-for-pr-comments` is **replaced** by `monitor-pr` — a thin (~50-line) contract-aware supervisor that invokes `prgroom run` and interprets its exit code + JSON. The wrapping skill is a thin caller; the deterministic runtime lives entirely in `prgroom`. See §6.)
 
 ### External systems
 
-- **GitHub** — the canonical authority on the PR being groomed. prgroom never invents PR state; it polls reviews + threads + comments + CI verdicts via the `gh` subprocess, posts replies, resolves threads via GraphQL `resolveReviewThread`, pushes (via the `git` subprocess) the fix commits the fix contract agent produced, and raises a `human-review-required` label on hard-cap or `escalated` items. The PR itself stays where it is — prgroom never opens or merges PRs (those are out of MVP scope).
+- **GitHub** — the canonical authority on the PR being groomed. prgroom never invents PR state; it polls reviews + threads + comments + CI verdicts via the `gh` subprocess, posts replies, resolves threads via GraphQL `resolveReviewThread`, pushes (via the `git` subprocess) the fix commits the fix contract agent produced, and raises a `human-review-required` label on PR-review-retry-budget exhaustion or `escalated` items. The PR itself stays where it is — prgroom never opens or merges PRs (those are out of MVP scope).
 
 - **AI agent CLIs** — `claude -p`, `codex exec`, `opencode run`, and local `ollama`. prgroom shells out to these as subprocesses with a fresh context per call. Which runtime serves a given contract is TOML-configurable per §5 — the contract is the stable API, the runtime is swappable (opencode is an available runtime, not part of the default chain). Two contract types per §5:
   - **Cluster contract** (`cluster` verb): cheap grouping of unprocessed review items into fix-bundles. Local-first chain: ollama+Gemma → claude haiku → codex-mini. No per-item disposition decided here.
@@ -83,7 +83,7 @@ C4Context
 
 - Anything inside the prgroom boundary — those are containers (L2) and components (L3).
 - The internal mechanics of any external system (GitHub's API internals, the agent CLIs' model dispatch, `gh`'s auth flow).
-- Failure paths, retry behaviour, hard-cap escalation, quiescence sub-states. Those live in [`sequences.md`](sequences.md) and [`state-machine.md`](state-machine.md).
+- Failure paths, retry behaviour, PR-review-retry-budget escalation, quiescence sub-states. Those live in [`sequences.md`](sequences.md) and [`state-machine.md`](state-machine.md).
 - Deployment topology (host count, scheduler integration, filesystem layout). That lives in [`c4-deployment.md`](c4-deployment.md).
 - Data shapes — `PRGroomingState`, the §4.6 `status` output, the §5 escalation event JSON. Those live in [`data-view.md`](data-view.md).
 

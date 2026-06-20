@@ -111,7 +111,7 @@ There is **no compiled binary**, no prebuilt-binary pipeline, and no artifact-tr
 
 | Process | Lifetime |
 |---|---|
-| `prgroom run --autonomous` invocation | Long — minutes to hours; blocks until quiescence, hard cap, or signal-cancel. Holds the per-PR `flock(2)` for the duration. |
+| `prgroom run --autonomous` invocation | Long — minutes to hours; blocks until quiescence, PR-review-retry-budget exhaustion, or signal-cancel. Holds the per-PR `flock(2)` for the duration. |
 | `prgroom run --interactive` invocation | Same — blocks until terminal. |
 | `prgroom poll` / `cluster` / `fix` / `push` / `reply` / `resolve` / `rereview` / `resolve-escalated` invocation | Short — seconds. Acquires the lock, does one verb, releases. |
 | `prgroom status` invocation | Sub-second. Lock-free read by design (§3.3 carve-out). |

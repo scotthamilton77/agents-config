@@ -11,14 +11,15 @@
 | Term | Meaning |
 |---|---|
 | Phase | The single-field `PRPhase` value carried on `PRGroomingState` (§2 schema). One of: `idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`. |
-| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles. |
+| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → verify → cap-guard → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles. |
 | End-of-cycle resolver | The function `resolve_end_of_cycle_phase` (§3.2) that, after each cycle, picks the next phase from `fixes-pending` by evaluating six conditions in strict priority order. |
-| Round | The CLI-observed-push counter; bounded by `max_rounds` (default 3) per §3.5. |
-| Hard cap | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND round >= max_rounds` → refuse push, set `phase=human-gated`, set `last_error=LIFECYCLE_HARD_CAP_EXCEEDED`. |
+| Round | The CLI-observed-push counter; bounded by the **PR-review retry budget** `pr_review_retries` (default 5 — initial push + up to 5 fix-push retries) per §3.5. |
+| PR-review retry budget | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND pr_review_retries_used >= pr_review_retries` → refuse push, set `phase=human-gated`, set `last_error=LIFECYCLE_PR_REVIEW_EXHAUSTED`. Bounds review-eliciting pushes across cycles. |
+| `fix_verify_retries` | The inner fix↔verify retry budget (default 2 ⇒ max 3 fix spends/cycle) consumed by the convergence loop's whole-branch repair re-fixes; exhaustion (gate still red) sets `phase=human-gated`, `last_error=LIFECYCLE_FIX_VERIFY_EXHAUSTED`. See [`c4-l3-verify.md`](c4-l3-verify.md). |
 | Quiescence predicate | The §4.1 boolean: all four hard gates (`G_REVIEWERS`, `G_CI`, `G_DISPOSITIONS`, `G_NO_BLOCKERS`) pass AND `now() - last_activity_at >= idle_threshold`. |
-| Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator `resolve-escalated`, or — when the gate is the hard cap — a `run` with a raised `--max-rounds` (cap re-arm, §3.5). `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
+| Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator `resolve-escalated`, or — when the gate is a retry-budget exhaustion — a `run` with the relevant retry budget raised (`--pr-review-retries` for the outer cap, `--fix-verify-retries` for the inner cap; entry-probe re-arm, §3.5). `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
 | Graph-terminal | A phase with no outgoing edges. `merged` only. |
-| Blocking error codes | The closed set `{ LIFECYCLE_HARD_CAP_EXCEEDED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED }` that `resolve-escalated` cannot clear by itself; see §3.2. |
+| Blocking error codes | The closed set `{ LIFECYCLE_PR_REVIEW_EXHAUSTED, LIFECYCLE_FIX_VERIFY_EXHAUSTED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED, RUNTIME_GIT_TERMINAL }` that `resolve-escalated` cannot clear by itself; see §3.2. |
 
 ## Purpose
 
@@ -26,13 +27,14 @@ The complete phase graph for one PR's grooming lifecycle. Every transition the C
 
 - The forward happy-path edges (already visualised in [`sequences.md`](sequences.md))
 - The `awaiting-review ↔ fixes-pending ↔ awaiting-review` push-and-iterate loop
-- The §3.5 hard-cap exit (`fixes-pending → human-gated`)
+- The §3.5 PR-review-retry-budget exit (`fixes-pending → human-gated`, `LIFECYCLE_PR_REVIEW_EXHAUSTED`)
+- The §9 verify-exhaustion exit (`fixes-pending → human-gated`, `LIFECYCLE_FIX_VERIFY_EXHAUSTED`) — the `verify` step refusing the push when `fix_verify_retries` is spent and the gate is still red; see [`c4-l3-verify.md`](c4-l3-verify.md)
 - The §3.2-priority-2 / -3 routes to `human-gated` (failed items, escalated items, runtime-terminal errors)
 - The §4-quiescence trips into `quiesced` — from `fixes-pending` via end-of-cycle resolver priority 5, AND from `awaiting-review` via the `_wait` wake event (§4.2)
 - The §4.7 human-review label addition (a side-effect on the `→ human-gated` edges, not a phase itself)
-- The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity; or, for a cap-gated PR, a `run` with raised `--max-rounds`)
+- The re-entry edges from `quiesced` and `human-gated` back into the loop (`poll` observes new activity; or, for a retry-budget-gated PR, a `run` with the relevant retry budget raised)
 - The `→ merged` edges from every non-terminal phase
-- Resurrection paths (operator-driven `resolve-escalated`, or the `run --max-rounds` cap re-arm)
+- Resurrection paths (operator-driven `resolve-escalated`, or the `run` retry-budget re-arm)
 
 This is the visual companion to source spec §3.1 (the ASCII phase graph) plus §3.2 (the phase × verb transition matrix) plus §4 (the quiescence predicate).
 
@@ -56,28 +58,41 @@ stateDiagram-v2
     awaiting_review --> merged : poll<br/>(PR closed via merge)
     awaiting_review --> quiesced : _wait quiescence trip (§4.2)<br/>(reviewers terminal — approved / declined /<br/>timed-out — no open items, CI ok,<br/>idle_threshold elapsed)
 
-    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no cap trip, round++)
+    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no budget trip, pr_review_retries_used++)
     fixes_pending --> quiesced : end-of-cycle priority 5<br/>(zero commits pushed AND<br/>quiescence_predicate(state) == true)
     fixes_pending --> awaiting_review : end-of-cycle priority 6<br/>(zero commits pushed AND quiescence<br/>has not tripped — e.g. all items<br/>skipped / deferred — re-wait for<br/>reviewer activity)
-    fixes_pending --> human_gated : end-of-cycle priority 1<br/>(hard cap pre-push:<br/>has_queued_fix_commits AND<br/>round >= max_rounds)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
+    fixes_pending --> human_gated : verify step (§9)<br/>(fix_verify_retries exhausted,<br/>gate still red:<br/>LIFECYCLE_FIX_VERIFY_EXHAUSTED)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
+    fixes_pending --> human_gated : end-of-cycle priority 1<br/>(PR-review retry budget pre-push:<br/>has_queued_fix_commits AND<br/>pr_review_retries_used >= pr_review_retries:<br/>LIFECYCLE_PR_REVIEW_EXHAUSTED)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
     fixes_pending --> human_gated : end-of-cycle priority 2<br/>(any item.disposition.kind == failed)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
     fixes_pending --> human_gated : end-of-cycle priority 3<br/>(any item.disposition.kind == escalated)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.7)
     fixes_pending --> merged : poll<br/>(PR closed via merge mid-cycle)
 
     quiesced --> fixes_pending : poll<br/>(new reviewer item observed)
-    quiesced --> awaiting_review : poll<br/>(external push observed,<br/>round++)
+    quiesced --> awaiting_review : poll<br/>(external push observed,<br/>pr_review_retries_used++)
     quiesced --> merged : poll<br/>(PR closed via merge)
 
     human_gated --> fixes_pending : resolve-escalated<br/>(item gating cleared AND<br/>no failed items AND<br/>state.last_error ∉ BlockingErrorCodes)
     human_gated --> fixes_pending : poll<br/>(operator pushed fix manually)
-    human_gated --> fixes_pending : run --max-rounds raised<br/>(cap re-arm: last_error ==<br/>LIFECYCLE_HARD_CAP_EXCEEDED AND<br/>cap no longer trips — §3.3 entry probe)
+    human_gated --> fixes_pending : run --pr-review-retries raised<br/>(outer re-arm: last_error ==<br/>LIFECYCLE_PR_REVIEW_EXHAUSTED AND<br/>budget no longer trips — §3.3 entry probe)
+    human_gated --> fixes_pending : run --fix-verify-retries raised<br/>(inner re-arm: last_error ==<br/>LIFECYCLE_FIX_VERIFY_EXHAUSTED AND<br/>budget no longer trips — §3.3 entry probe)
     human_gated --> merged : poll<br/>(PR closed via merge)
 
     merged --> [*]
 
     note right of fixes_pending
-        End-of-cycle resolver evaluates
-        priorities 1-6 in order; first match wins.
+        The verify step (between fix and
+        cap-guard) can refuse the push BEFORE
+        the resolver runs: fix_verify_retries
+        exhausted with a red gate flips phase
+        to human-gated (LIFECYCLE_FIX_VERIFY_
+        EXHAUSTED) and the post-step terminal
+        check breaks the loop. The inner
+        convergence loop (repair re-fixes) is
+        internal to the cycle, not a transition.
+
+        Otherwise the end-of-cycle resolver
+        evaluates priorities 1-6 in order;
+        first match wins.
 
         Priorities 1-3 → human-gated
         (with EscalationSink + auto-label)
@@ -107,10 +122,13 @@ stateDiagram-v2
         Terminal-for-CLI, NOT graph-terminal.
         resolve-escalated only clears items;
         it does NOT clear last_error ∈
-        BlockingErrorCodes (incl. the hard
-        cap). The cap clears via run with a
-        raised --max-rounds (cap re-arm,
-        §3.3 entry probe). The
+        BlockingErrorCodes (incl. either
+        retry-budget exhaustion). The outer
+        budget clears via run with a raised
+        --pr-review-retries; the inner budget
+        via run with a raised
+        --fix-verify-retries (entry-probe
+        re-arm, §3.3). The
         human-review-required PR label is a
         merge constraint, NOT a lifecycle
         gate — operator does not remove it
@@ -156,10 +174,11 @@ Three classes of edge re-enter the lifecycle from non-active phases. None of the
 | From | To | Trigger | Notes |
 |---|---|---|---|
 | `quiesced` | `fixes_pending` | `poll` observes new reviewer item | Common: PR sat at quiesced, human reviewer left a final nit |
-| `quiesced` | `awaiting_review` | `poll` observes external push (SHA changed) | round++; `_push`'s ReviewerState flip semantics apply (§3.4) |
+| `quiesced` | `awaiting_review` | `poll` observes external push (SHA changed) | pr_review_retries_used++; `_push`'s ReviewerState flip semantics apply (§3.4) |
 | `human_gated` | `fixes_pending` | `resolve-escalated` flips item disposition AND no failed items AND `last_error ∉ BlockingErrorCodes` | Most common recovery path |
 | `human_gated` | `fixes_pending` | `poll` observes operator-pushed fix | Operator resolved out-of-band |
-| `human_gated` | `fixes_pending` | `run` entry probe: `last_error == LIFECYCLE_HARD_CAP_EXCEEDED` AND cap no longer trips (operator raised `--max-rounds`) | Cap re-arm; orthogonal to escalation clearance — clears the cap gate that `resolve-escalated` cannot |
+| `human_gated` | `fixes_pending` | `run` entry probe: `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` AND budget no longer trips (operator raised `--pr-review-retries`) | Outer re-arm; orthogonal to escalation clearance — clears the PR-review-retry-budget gate that `resolve-escalated` cannot |
+| `human_gated` | `fixes_pending` | `run` entry probe: `last_error == LIFECYCLE_FIX_VERIFY_EXHAUSTED` AND budget no longer trips (operator raised `--fix-verify-retries`) | Inner re-arm; clears the fix↔verify-budget gate — see [`c4-l3-verify.md`](c4-l3-verify.md) |
 
 ## Auto-label side-effect (§4.7)
 
@@ -185,9 +204,10 @@ The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (
 | `RUNTIME_CANCELLED` | unchanged | unchanged | signal-cancel; non-retryable |
 | `CONTRACT_AUDIT_FAILED` | → `human-gated` (via priority 2) | NOT set (per-item `disposition.rationale` is the source of truth) | the run loop continues through the cycle; resolver promotes |
 | `STATE_CORRUPT` | → `human-gated` | set | operator inspects state file |
-| `LIFECYCLE_CAP` | → `human-gated` | set | clears via `run` + raised `--max-rounds` (cap re-arm, §3.5/§3.3 entry probe); resolve escalations separately if the gate also carries them |
+| `LIFECYCLE_CAP` (`LIFECYCLE_PR_REVIEW_EXHAUSTED`) | → `human-gated` | set | outer review-retry budget spent; clears via `run` + raised `--pr-review-retries` (entry-probe re-arm, §3.5/§3.3); resolve escalations separately if the gate also carries them |
+| `LIFECYCLE_CAP` (`LIFECYCLE_FIX_VERIFY_EXHAUSTED`) | → `human-gated` | set | inner fix↔verify budget spent, gate still red; clears via `run` + raised `--fix-verify-retries` (entry-probe re-arm, §9); see [`c4-l3-verify.md`](c4-l3-verify.md) |
 
-`state.last_error` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. For a cap-gated PR that success path is reached by the §3.3 entry-probe cap re-arm (operator raised `--max-rounds`), which re-enters the cycle; for other gates, by `poll` observing external resolution. No `clear-error` verb is needed.
+`state.last_error` clears automatically on the next successful end-of-cycle resolution that writes any phase other than `human-gated`. For a retry-budget-gated PR that success path is reached by the §3.3 entry-probe re-arm (operator raised `--pr-review-retries` for the outer budget, `--fix-verify-retries` for the inner), which re-enters the cycle; for other gates, by `poll` observing external resolution. No `clear-error` verb is needed.
 
 ## What this diagram does NOT show
 
@@ -201,5 +221,6 @@ The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (
 
 - **Companion sequence**: [`sequences.md`](sequences.md) — runtime ordering of these transitions across four canonical flows
 - **Companion structure**: [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) — components inside the package that execute transitions
-- **Companion data**: [`data-view.md`](data-view.md) — where the phase, round counter, reviewer state, and quiescence state live in `PRGroomingState`
-- **Source spec**: [Section 3.1 Phase state graph](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.2 Phase × verb transition matrix](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.5 Hard-cap behavior](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4 Quiescence model](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Companion data**: [`data-view.md`](data-view.md) — where the phase, pr_review_retries_used counter, reviewer state, and quiescence state live in `PRGroomingState`
+- **Source spec**: [Section 3.1 Phase state graph](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.2 Phase × verb transition matrix](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.5 PR-review retry budget](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4 Quiescence model](../../plans/2026-05-12-prgroom-cli-design.md)
+- **fix↔verify subsystem**: [`2026-06-20-prgroom-fix-verify-subsystem.md`](../../specs/2026-06-20-prgroom-fix-verify-subsystem.md) — source-of-truth for the `verify` step, the trust-but-verify fix contract, and the PR-review-retry-budget reframe; [`c4-l3-verify.md`](c4-l3-verify.md) is the fix↔verify L3 component view
