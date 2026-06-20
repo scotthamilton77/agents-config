@@ -41,6 +41,14 @@ The root cause *is* "the same rule implemented (or not) twice." Re-encoding it a
 
 **Only `AGENTS.md` is a live leaker.** The other five are the rest of the *class*, listed so the next dev-doc dropped into a staged subdir cannot leak. The audit table is the spec's record of the bead's "audit README/rules-readmes reachability" requirement: real leaker folded in, non-leakers documented as already-excluded-by-namespace-scoping.
 
+### Loading & failure semantics (fail-closed)
+
+The manifest now encodes load-bearing exclusion policy, so a *missing* manifest must never silently mean "exclude nothing" — that would re-enable the exact leaks this work removes, **identically on both installers** (the shared-wrongness case the parity oracle cannot see).
+
+- **Absent or unreadable** `/.installignore` → **fail-fast**: both installers abort with a clear error (e.g. "`.installignore` not found at `<resolved repo root>`; refusing to install with exclusions disabled") rather than proceeding. This converts every "missing / wrong-root / absent-in-fixture" mode from a silent leak into a loud error.
+- **Present but empty** (no entries) → allowed; it is an explicit choice, and is backstopped by the Python invariant test (a known leaker slipping through turns that test red).
+- Both installers resolve the manifest relative to their own location-derived repo root (bash: `PROJECT_ROOT` from `$0`; Python: `repo_root` from `__file__`, or the test-injected `repo_root`) — the same root used to resolve `src/`, so the manifest travels with the source it governs.
+
 ## Application model — why bare basenames are safe
 
 The matcher is consulted **at the staging choke point, on the direct children of each staged subdir, before any `.template` suffix is stripped** — exactly where Python's `DEAD_MARKERS` runs today.
@@ -57,10 +65,12 @@ Because the matcher runs over **direct children only**:
 ### Python (`packages/installer/`)
 - Load the manifest **once** in `stage_and_transform` (`core/orchestrator.py`), thread it down into `stage_namespace` (`core/staging.py`).
 - **Replace** the hardcoded `DEAD_MARKERS` frozenset and its file-name check with manifest membership: skip a direct-child entry when it is a file whose basename is in the manifest's basename set, or a directory whose name is in the manifest's directory set.
+- **Fail-fast** if the manifest is absent or unreadable (see "Loading & failure semantics") — never default to an empty exclusion set.
 - This single point already fans out to both deploy (`install_pipeline`) and prune (`scan_orphans`) — no second integration needed.
 
 ### Bash (`scripts/install.sh`)
 - Consult the manifest inside `stage_content_from_dir` (the universal per-subdir staging helper): inside its `for item in "$src_dir"/*` loop, skip any direct child whose basename (for files) or name (for directories) is in the manifest.
+- **Fail-fast** if `$PROJECT_ROOT/.installignore` is absent or unreadable — abort before staging, never proceed with exclusions disabled.
 - This is **upstream of both leaks**: excluded files never enter staging, so the DYNAMIC-INCLUDE-ALL-RULES `find` over `$staging/.../rules` cannot inline them, and `sync_directory` cannot deploy them.
 - **Single-point sufficiency (verified):** plain `.md` files reach deploy *only* through staged subdirs (`sync_directory`). `sync_templates` handles `*.md.template` only and never touches plain `.md`. So filtering at `stage_content_from_dir` covers both the staging loop and the sync loop, because both operate on already-staged content. (Do **not** move the filter to the sync layer — the two bash subdir loops, staging and sync, are separate, and a sync-layer filter would have to patch both.)
 - Bash effort is **not** throwaway: `install.sh` retirement is **parity-gated** (it collapses to a thin `uv run` wrapper only once the golden-master suite goes green), with no version date. The RED tests are red *because* bash and Python disagree, so the manifest must land in both simultaneously to close them.
@@ -91,6 +101,14 @@ A fixture set of `(path, expect: keep | drop)` run through **both** the bash mat
 
 This guards the only duplicated logic (the two trivial parsers/matchers). It retires with bash at the parity gate.
 
+## Missing-manifest tests (fail-closed proof)
+
+Explicit tests in **both** installer paths assert that an absent (or unreadable) manifest causes a **hard abort**, not a silent empty-exclusion install:
+- **Python:** invoke the installer with a `repo_root` lacking `.installignore` → assert it exits non-zero / raises before staging, and that no namespace dead-doc is written.
+- **Bash:** run `install.sh` against a `PROJECT_ROOT` lacking `.installignore` → assert non-zero exit and that nothing was staged.
+
+No test-only "empty denylist" opt-out flag is introduced: the missing-manifest test asserts the abort directly, and the matcher-parity test supplies its own fixture manifest content rather than depending on the repo-root file.
+
 ## Outcome
 
 - `test_bare_install_codex`, `test_bare_install_gemini`, `test_bare_install_opencode` go **green** — bash stops inlining `rules/AGENTS.md`, matching Python's (correct) omission.
@@ -106,7 +124,7 @@ This guards the only duplicated logic (the two trivial parsers/matchers). It ret
 
 ## Risks / verification owed by the plan
 
-- **Manifest path resolution in both runtimes.** Confirm both installers resolve `/.installignore` relative to the project root in all invocation modes (direct, dry-run, prune-only) and degrade sanely (treat as empty) if the file is absent.
+- **Manifest path resolution & packaging.** Both installers resolve `/.installignore` from their own location-derived repo root (verified: bash `PROJECT_ROOT` from `$0`; Python `repo_root` from `__file__` / test-injected), so it is co-located with `src/` in all current modes (editable / `uv run`). Confirm fail-fast fires in all invocation modes (direct, dry-run, prune-only). **Caveat:** the manifest lives at repo-root, *outside* both `src/` and `packages/installer/`; if the Python installer is ever distributed as a *non-editable* wheel, repo-root `.installignore` would not be bundled. Fail-fast turns that into a loud error, not a silent leak — but if non-editable packaging is introduced, bundle the manifest as package data or relocate it inside the packaged tree.
 - **Bash single-point sufficiency.** Re-confirm at implementation time that no path other than `stage_content_from_dir` stages plain `.md` files into a deployable location (the audit says only `sync_directory` does, fed from staging; verify no regression path via plugin loops).
 - **Directory-exclusion semantics in bash.** `stage_content_from_dir` iterates `"$src_dir"/*`; ensure a directory entry (`rules-readmes/`) is matched by *name* and the whole subtree is skipped (it is staged via `stage_item` as a recursive copy today), not partially copied.
 - **Coverage of the deleted skip.** Confirm deleting `_is_namespace_dead_marker` does not silently drop coverage that some other test relied on; the matcher-parity test and the Python invariant test together must cover what the skip's removal exposes.
