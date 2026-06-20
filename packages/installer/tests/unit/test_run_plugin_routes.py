@@ -46,7 +46,7 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
     _seed_beads_source(src)
     beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
 
-    counters = install_plugin_routes([beads], home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+    per_plugin = install_plugin_routes([beads], home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
     formula = home / ".beads" / "formulas" / "f.toml"
     script = home / ".beads" / "scripts" / "s.sh"
@@ -54,7 +54,8 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
     assert script.read_bytes() == b"#!/bin/sh\n"
     assert script.stat().st_mode & 0o111  # scripts land executable
     assert formula.stat().st_mode & 0o111 == 0  # formulas do not
-    assert counters.created == 2
+    # Per-plugin bucket keyed by the plugin name (8.18 summary plumbing).
+    assert per_plugin["beads"].created == 2
 
 
 def test_generic_plugin_contributes_no_routes(tmp_path: Path) -> None:
@@ -69,7 +70,11 @@ def test_generic_plugin_contributes_no_routes(tmp_path: Path) -> None:
     home = tmp_path / "home"
     generic = GenericPluginAdapter(name="whatever", source_path=tmp_path / "src")
 
-    counters = install_plugin_routes([generic], home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
+    per_plugin = install_plugin_routes([generic], home=home, io=ScriptedIO(), timestamp=_FIXED_TS)
 
     assert not (home / ".whatever").exists()
-    assert (counters.created, counters.updated, counters.skipped) == (0, 0, 0)
+    # A routes-free plugin installs nothing, so it contributes an all-zero bucket
+    # (still keyed by name so a verbose summary can print its block).
+    assert per_plugin["whatever"].created == 0
+    assert per_plugin["whatever"].updated == 0
+    assert per_plugin["whatever"].skipped == 0

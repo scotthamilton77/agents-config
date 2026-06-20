@@ -895,3 +895,125 @@ def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     assert rc == 0
     assert (home / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
     assert not orphan.exists()
+
+
+# ── 8.18: install summary renderer wired into main ──
+
+
+def test_main_quiet_install_renders_summary_line_for_changed_tool(tmp_path: Path) -> None:
+    """
+    Given a hermetic repo (one shared template -> a claude create), under
+    --tools=claude --yes (quiet)
+    When main runs a real install
+    Then a quiet summary line names claude and its install count is emitted
+    through io — the per-tool counters from install_pipeline reach the renderer.
+
+    Pins: main binds install_pipeline's per-tool return and feeds it to
+    render_summary. Fails while main discards the counters and prints no summary.
+    """
+    repo = _hermetic_repo(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(["--tools=claude", "--yes"], home=tmp_path, io=io, repo_root=repo)
+
+    assert rc == 0
+    oks = [e.message for e in io.transcript if e.channel == "ok"]
+    infos = [e.message for e in io.transcript if e.channel == "info"]
+    assert any(m == "Done." for m in oks), oks
+    assert any("claude:" in m and "installed" in m for m in infos), infos
+
+
+def test_main_quiet_reinstall_renders_all_up_to_date(tmp_path: Path) -> None:
+    """
+    Given a home where the claude plan is already installed (a second run), under
+    --tools=claude --yes (quiet)
+    When main runs again
+    Then it emits exactly the em-dash 'All files up to date — no changes made.'
+    line — every item is a skip, so nothing changed (scripts/install.sh:1863).
+
+    Pins: the all-zero quiet branch reaches the renderer from a real re-install.
+    """
+    repo = _hermetic_repo(tmp_path)
+    first = ScriptedIO(interactive=False)
+    assert main(["--tools=claude", "--yes"], home=tmp_path, io=first, repo_root=repo) == 0
+
+    second = ScriptedIO(interactive=False)
+    rc = main(["--tools=claude", "--yes"], home=tmp_path, io=second, repo_root=repo)
+
+    assert rc == 0
+    oks = [e.message for e in second.transcript if e.channel == "ok"]
+    assert any(m == "All files up to date — no changes made." for m in oks), oks
+
+
+def test_main_verbose_install_renders_per_tool_block_and_skipped_footer(tmp_path: Path) -> None:
+    """
+    Given --tools=claude --yes --verbose against a hermetic repo
+    When main runs
+    Then the verbose summary emits a '-- claude --' block AND a
+    '(not detected, skipped)' footer for an inactive ALL_TOOLS tool (e.g. codex),
+    proving the active set and the ALL_* universe both reach the renderer.
+
+    Pins: main passes known_tools() as ALL_TOOLS and the active tool list to
+    render_summary under verbose.
+    """
+    repo = _hermetic_repo(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(["--tools=claude", "--yes", "--verbose"], home=tmp_path, io=io, repo_root=repo)
+
+    assert rc == 0
+    headers = [e.message for e in io.transcript if e.channel == "header"]
+    msgs = [e.message for e in io.transcript]
+    assert any("-- claude --" in h for h in headers), headers
+    assert any("not detected, skipped" in m for m in msgs), msgs
+
+
+def test_main_prune_summary_reports_pruned_counts(tmp_path: Path) -> None:
+    """
+    Given a hermetic repo retiring '*/skills/ralf-it' and a home holding that
+    orphan, under --prune --yes (quiet)
+    When main runs (install-then-prune)
+    Then the quiet summary's claude line reports the prune (and the orphan is
+    gone) — the prune_pipeline's per-tool counters reach the renderer merged with
+    the install counters.
+
+    Pins: main merges install + prune per-target counters before rendering, so a
+    --prune run's pruned tally surfaces in the summary.
+    """
+    repo = _hermetic_repo(tmp_path)
+    toml_dir = repo / "packages" / "installer"
+    toml_dir.mkdir(parents=True)
+    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
+    home = tmp_path / "home"
+    orphan = home / ".claude" / "skills" / "ralf-it"
+    orphan.mkdir(parents=True)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(["--prune", "--yes", "--tools=claude"], home=home, io=io, repo_root=repo)
+
+    assert rc == 0
+    assert not orphan.exists()
+    infos = [e.message for e in io.transcript if e.channel == "info"]
+    assert any("claude:" in m and "pruned" in m for m in infos), infos
+
+
+def test_main_dry_run_summary_reports_would_be_installs(tmp_path: Path) -> None:
+    """
+    Given --tools=claude --dry-run against a hermetic repo (a claude create)
+    When main runs in preview mode
+    Then the summary still reports the would-be install — bash tallies counters
+    on a dry-run too (e.g. scripts/install.sh:1154-1160 increments
+    tool_installed inside the DRY_RUN branch) and renders the Summary
+    unconditionally at the end. The quiet 'claude: N installed' line appears.
+
+    Pins: the summary renders on a dry-run with the previewed counts, matching
+    bash — it is NOT gated to real writes only.
+    """
+    repo = _hermetic_repo(tmp_path)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(["--tools=claude", "--dry-run"], home=tmp_path, io=io, repo_root=repo)
+
+    assert rc == 0
+    infos = [e.message for e in io.transcript if e.channel == "info"]
+    assert any("claude:" in m and "installed" in m for m in infos), infos

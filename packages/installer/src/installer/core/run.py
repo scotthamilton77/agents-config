@@ -45,12 +45,16 @@ def prune_pipeline(
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
-) -> Counters:
+) -> dict[str, Counters]:
     """Scan ``adapters`` for orphans against ``plans``, then run the prune flow.
 
     ``prune_only`` is threaded to the flow so its non-interactive guard
     distinguishes a hard-fail (prune-only without consent) from a warn+skip
-    (plain ``--prune``). Returns the flow's ``Counters`` (pruned / backed_up).
+    (plain ``--prune``). Returns the flow's per-target ``Counters`` (pruned /
+    backed_up) keyed by ``Orphan.tool`` — each tool or plugin namespace whose
+    orphans were pruned gets its own bucket so the install summary can report a
+    plugin pruned outside the active tool set (bash AC#19). An empty / no-op
+    prune yields an empty mapping.
     """
     orphans = scan_orphans(adapters, plans=plans, home=home, config=config)
     return run_prune(
@@ -72,14 +76,17 @@ def install_pipeline(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
-) -> Counters:
-    """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``; sum the totals.
+) -> dict[str, Counters]:
+    """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.
 
     The install-side analog of ``prune_pipeline``: ``cli.main`` (W3) calls this
     ahead of the prune step to perform the real install. Each adapter's plan is
     looked up by its tool (``Tool(adapter.name)``) and written under
-    ``adapter.dest_dir(home)``. Returns the aggregate `Counters`
-    (created / updated / merged / skipped / backed_up summed across tools).
+    ``adapter.dest_dir(home)``. Returns a per-tool mapping keyed by
+    ``adapter.name`` (each tool's own `Counters`) rather than one aggregate, so
+    the install summary can render a separate block per tool at bash parity
+    (``scripts/install.sh:1818-1826``). A summed total would throw the per-tool
+    distinction away.
 
     ``dry_run`` and ``auto_yes`` are forwarded verbatim into every ``sync_plan``
     call, so the W2 consent gate and the shared no-TTY guard apply uniformly
@@ -90,9 +97,8 @@ def install_pipeline(
     strictly — an adapter without a staged plan is an orchestrator bug (a loud
     `KeyError`), not a silent no-op.
     """
-    total = Counters()
-    for adapter in adapters:
-        result = sync_plan(
+    return {
+        adapter.name: sync_plan(
             adapter,
             plans[Tool(adapter.name)],
             home=home,
@@ -101,12 +107,8 @@ def install_pipeline(
             auto_yes=auto_yes,
             timestamp=timestamp,
         )
-        total.created += result.created
-        total.updated += result.updated
-        total.merged += result.merged
-        total.skipped += result.skipped
-        total.backed_up += result.backed_up
-    return total
+        for adapter in adapters
+    }
 
 
 def install_plugin_routes(
@@ -117,19 +119,30 @@ def install_plugin_routes(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
-) -> Counters:
+) -> dict[str, Counters]:
     """Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``).
 
-    The plugin-side analog of ``install_pipeline``: it flattens each plugin's
-    ``routes(home)`` and walks them through ``sync_routes``. Generic plugins
-    return no routes, so a routes-free or tool-only plugin set is a clean no-op.
-    ``cli.main`` (W3) calls this after ``install_pipeline`` (gated by
-    ``not --prune-only``), mirroring the bash installer, which runs
-    ``stage_and_install_beads`` after the tool sync (``scripts/install.sh:948``).
+    The plugin-side analog of ``install_pipeline``: it walks each plugin's
+    ``routes(home)`` through ``sync_routes`` and returns a per-plugin mapping
+    keyed by ``plugin.name`` (each plugin's own `Counters`). Per-plugin rather
+    than one aggregate so the install summary renders a block per plugin at bash
+    parity. A routes-free generic plugin still gets an all-zero bucket — present
+    so a verbose summary can print its (empty) block — so a tool-only plugin set
+    is a no-op on disk, not on the mapping. ``cli.main`` (W3) calls this after
+    ``install_pipeline`` (gated by ``not --prune-only``), mirroring the bash
+    installer, which runs ``stage_and_install_beads`` after the tool sync
+    (``scripts/install.sh:948``).
 
     ``dry_run`` and ``auto_yes`` thread into ``sync_routes`` so the consent gate
-    and no-TTY guard apply uniformly with the tool install. Returns the aggregate
-    `Counters` from the route walk.
+    and no-TTY guard apply uniformly with the tool install.
     """
-    routes = [route for plugin in plugins for route in plugin.routes(home)]
-    return sync_routes(routes, io=io, dry_run=dry_run, auto_yes=auto_yes, timestamp=timestamp)
+    return {
+        plugin.name: sync_routes(
+            plugin.routes(home),
+            io=io,
+            dry_run=dry_run,
+            auto_yes=auto_yes,
+            timestamp=timestamp,
+        )
+        for plugin in plugins
+    }

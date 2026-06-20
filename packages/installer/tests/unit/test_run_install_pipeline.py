@@ -42,13 +42,18 @@ def _settings_item(content: bytes, *, tool: str = "claude") -> StagedItem:
     )
 
 
-def test_install_pipeline_aggregates_counters_across_tools(tmp_path: Path) -> None:
+def test_install_pipeline_keeps_per_tool_counters_separate(tmp_path: Path) -> None:
     """
-    Given two adapters — one installing a new file, one whose dest file already
-    matches its plan (a skip)
+    Given two adapters — one installing a new file (claude), one whose dest file
+    already matches its plan (codex, a skip)
     When install_pipeline runs
-    Then each tool's dest tree reflects its plan and the returned Counters sum
-    the per-tool results (a create from one tool, a skip from the other).
+    Then each tool's dest tree reflects its plan and the returned mapping keeps
+    the per-tool results in SEPARATE buckets (claude.created==1, codex.skipped==1)
+    rather than summing them into one Counters.
+
+    Pins the 8.18 per-tool plumbing change: the summary renderer needs each
+    tool's own tally, so install_pipeline returns a name-keyed mapping, not an
+    aggregate. Fails while it sums every sync_plan result into one Counters.
     """
     home = tmp_path / "home"
     claude = get_adapter(Tool.CLAUDE)
@@ -65,12 +70,16 @@ def test_install_pipeline_aggregates_counters_across_tools(tmp_path: Path) -> No
         ),
     }
 
-    counters = install_pipeline(
+    per_tool = install_pipeline(
         [claude, codex], plans=plans, home=home, io=ScriptedIO(), timestamp=_FIXED_TS
     )
 
     assert (claude.dest_dir(home) / "a.md").read_bytes() == b"A\n"
-    assert (counters.created, counters.skipped) == (1, 1)
+    # The create landed in claude's bucket, the skip in codex's — not summed.
+    assert per_tool["claude"].created == 1
+    assert per_tool["claude"].skipped == 0
+    assert per_tool["codex"].created == 0
+    assert per_tool["codex"].skipped == 1
 
 
 def test_install_pipeline_forwards_auto_yes_to_each_sync_plan(tmp_path: Path) -> None:
@@ -91,12 +100,12 @@ def test_install_pipeline_forwards_auto_yes_to_each_sync_plan(tmp_path: Path) ->
         ),
     }
 
-    counters = install_pipeline(
+    per_tool = install_pipeline(
         [claude], plans=plans, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
     )
 
     assert (claude.dest_dir(home) / "a.md").read_bytes() == b"new\n"
-    assert (counters.updated, counters.backed_up) == (1, 1)
+    assert (per_tool["claude"].updated, per_tool["claude"].backed_up) == (1, 1)
 
 
 def test_install_pipeline_aggregates_merged_counter(tmp_path: Path) -> None:
@@ -122,9 +131,9 @@ def test_install_pipeline_aggregates_merged_counter(tmp_path: Path) -> None:
         ),
     }
 
-    counters = install_pipeline(
+    per_tool = install_pipeline(
         [claude], plans=plans, home=home, io=ScriptedIO(), auto_yes=True, timestamp=_FIXED_TS
     )
 
-    assert counters.merged == 1
-    assert counters.updated == 0
+    assert per_tool["claude"].merged == 1
+    assert per_tool["claude"].updated == 0

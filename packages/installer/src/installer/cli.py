@@ -10,14 +10,16 @@ from installer.config import Config, resolve_plugins, resolve_plugins_root, reso
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
+from installer.core.model import Counters
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.run import install_pipeline, install_plugin_routes, prune_pipeline
+from installer.core.summary import render_summary
 from installer.plugins.registry import discover
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan, Tool
@@ -190,26 +192,38 @@ def main(
     # install through stage_and_transform is also what makes adapter post-staging
     # transforms (e.g. the Gemini frontmatter transform) fire in real installs,
     # not just --dump-stage / --prune.
+    # Per-target tallies accumulate across the install and prune halves so the
+    # summary reports each tool/plugin's full activity merged (a tool that both
+    # installs files and has orphans pruned shows both). Keyed by target name,
+    # mirroring the bash per-tool counter arrays (scripts/install.sh:349-357).
+    counters: dict[str, Counters] = {}
+
     if not args.prune_only:
         try:
-            install_pipeline(
-                adapters,
-                plans=plans,
-                home=resolved_home,
-                io=io,
-                dry_run=args.dry_run,
-                auto_yes=config.auto_yes,
+            _merge_into(
+                counters,
+                install_pipeline(
+                    adapters,
+                    plans=plans,
+                    home=resolved_home,
+                    io=io,
+                    dry_run=args.dry_run,
+                    auto_yes=config.auto_yes,
+                ),
             )
             # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land outside
             # any tool tree, so they install in a dedicated pass after the tool
             # sync — mirroring the bash installer's stage_and_install_beads phase
             # (scripts/install.sh:948). Same consent gate; --prune-only skips it.
-            install_plugin_routes(
-                plugins,
-                home=resolved_home,
-                io=io,
-                dry_run=args.dry_run,
-                auto_yes=config.auto_yes,
+            _merge_into(
+                counters,
+                install_plugin_routes(
+                    plugins,
+                    home=resolved_home,
+                    io=io,
+                    dry_run=args.dry_run,
+                    auto_yes=config.auto_yes,
+                ),
             )
         except ConsentRequiredError:
             # A non-interactive run lacking --yes/--dry-run cannot answer the
@@ -219,7 +233,7 @@ def main(
             return 1
 
     if args.prune or args.prune_only:
-        return _run_prune(
+        rc = _run_prune(
             adapters,
             plans=plans,
             io=io,
@@ -228,9 +242,42 @@ def main(
             dry_run=args.dry_run,
             auto_yes=config.auto_yes,
             prune_only=args.prune_only,
+            counters=counters,
         )
+        if rc != 0:
+            return rc
 
+    # Render the install / prune summary once at the end, mirroring the bash
+    # installer's terminal Summary block (scripts/install.sh:1801-1869). ALL_TOOLS
+    # is the closed tool universe (known_tools); ALL_PLUGINS is the discovered
+    # plugin set — both feed the '(not detected, skipped)' verbose footers.
+    render_summary(
+        counters,
+        tools=[t.value for t in tools],
+        plugins=[p.name for p in plugins],
+        all_tools=[t.value for t in known_tools()],
+        all_plugins=list(discover(resolve_plugins_root(resolved_repo_root, os.environ))),
+        verbose=args.verbose,
+        io=io,
+    )
     return 0
+
+
+def _merge_into(target: dict[str, Counters], source: Mapping[str, Counters]) -> None:
+    """Field-wise accumulate ``source`` into ``target`` per target name.
+
+    A name may appear in more than one pipeline (e.g. a tool that installs files
+    AND has orphans pruned), so each field is summed into the existing bucket
+    rather than overwriting it — the merged tally is what the summary reports.
+    """
+    for name, c in source.items():
+        bucket = target.setdefault(name, Counters())
+        bucket.created += c.created
+        bucket.updated += c.updated
+        bucket.merged += c.merged
+        bucket.skipped += c.skipped
+        bucket.pruned += c.pruned
+        bucket.backed_up += c.backed_up
 
 
 def _warn_excluded_plugins(
@@ -277,6 +324,7 @@ def _run_prune(
     dry_run: bool,
     auto_yes: bool,
     prune_only: bool,
+    counters: dict[str, Counters],
 ) -> int:
     """Drive the prune pipeline behind --prune / --prune-only.
 
@@ -303,6 +351,10 @@ def _run_prune(
     with the resolved plugin set), so a plugin's overlaid files reach the orphan
     scan as known entries rather than retired ones.
 
+    The prune flow's per-tool ``Counters`` (pruned / backed_up, keyed by
+    ``Orphan.tool``) are merged into ``counters`` so the install summary reports
+    the prune activity alongside the install tally.
+
     Returns 0 on success, 1 when the prune-only flow aborts the run, 2 when
     ``installer.toml`` is malformed.
     """
@@ -319,15 +371,18 @@ def _run_prune(
         return 2
 
     try:
-        prune_pipeline(
-            adapters,
-            plans=plans,
-            home=home,
-            config=config,
-            io=io,
-            dry_run=dry_run,
-            auto_yes=auto_yes,
-            prune_only=prune_only,
+        _merge_into(
+            counters,
+            prune_pipeline(
+                adapters,
+                plans=plans,
+                home=home,
+                config=config,
+                io=io,
+                dry_run=dry_run,
+                auto_yes=auto_yes,
+                prune_only=prune_only,
+            ),
         )
     except PruneAbortedError:
         return 1
