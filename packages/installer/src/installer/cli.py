@@ -125,6 +125,16 @@ def main(
 
         io = TerminalIO(verbose=args.verbose)
 
+    # Run-mode notice, mirroring bash (scripts/install.sh:218-222): a dry-run
+    # announces itself up front; an auto-yes run notes that prompts and diffs are
+    # suppressed — but only when NOT verbose, since verbose already narrates every
+    # file. Emitted before tool/plugin resolution so it leads the transcript, as
+    # the excluded-plugin warning (below) trails it in the bash ordering.
+    if args.dry_run:
+        io.info("DRY RUN -- no changes will be made")
+    elif args.yes and not args.verbose:
+        io.info("Auto-yes mode -- prompts and diffs suppressed")
+
     try:
         tools = resolve_tools(home=resolved_home, override_csv=args.tools)
     except (UnknownToolError, ValueError) as exc:

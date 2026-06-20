@@ -194,11 +194,19 @@ def _back_up_and_delete(
 
 
 def _display(orphans: Sequence[Orphan], io: IOPort) -> None:
-    """Print the orphan list grouped by tool then namespace (bash ``_display_orphans``)."""
-    io.header(f"Orphans detected ({len(orphans)} total)")
+    """Print the orphan list grouped by tool then namespace (bash ``_display_orphans``).
+
+    Framing mirrors the bash function (``scripts/install.sh:1560-1584``): a blank
+    line then the ``-- … --`` header (bash ``header()`` prepends the newline and
+    wraps the text in dashes — ``io.header`` does neither, so both are explicit
+    here), a blank line before each tool block, and a trailing blank line.
+    """
+    io.info("")
+    io.header(f"-- Orphans detected ({len(orphans)} total) --")
     last_tool = last_ns = ""
     for orphan in orphans:
         if orphan.tool != last_tool:
+            io.info("")
             io.header(orphan.tool)
             last_tool = orphan.tool
             last_ns = ""
@@ -206,3 +214,4 @@ def _display(orphans: Sequence[Orphan], io: IOPort) -> None:
             io.info(f"  {orphan.namespace}/")
             last_ns = orphan.namespace
         io.info(f"    [{orphan.kind}] {orphan.path}")
+    io.info("")

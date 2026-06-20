@@ -124,8 +124,13 @@ class TerminalIO:
         stderr: Console | None = None,
         verbose: bool = False,
     ) -> None:
-        self._out = stdout if stdout is not None else Console()
-        self._err = stderr if stderr is not None else Console(stderr=True)
+        # markup=False: the installer emits plain log lines and styles them via the
+        # `style=` argument, never via rich's inline `[tag]` markup. Left on, rich
+        # would parse a literal bracket token like the prune list's `[dir]` / `[file]`
+        # type tag as a (non-existent) markup tag and silently strip it. Disabling
+        # markup keeps every message byte-literal.
+        self._out = stdout if stdout is not None else Console(markup=False)
+        self._err = stderr if stderr is not None else Console(stderr=True, markup=False)
         self._verbose = verbose
 
     # -- output channels --

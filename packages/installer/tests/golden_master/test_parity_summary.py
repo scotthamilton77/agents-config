@@ -5,20 +5,15 @@ diff()`` over the two HOME dirs); none of them looks at stdout. The install Summ
 block (``scripts/install.sh:1801-1869``) is terminal output, not a file, so without
 a stdout oracle the renderer's byte-parity with bash has no regression net — header
 wrapping, leading blank lines, and field padding could all drift while every
-tree-diff test stayed green. This module is that oracle: it captures BOTH installers'
-stdout, normalizes the *known-systemic* differences, and byte-compares the Summary
-region.
+tree-diff test stayed green. This module is that oracle for the VERBOSE Summary
+region; ``test_parity_stdout.py`` covers the default-mode and prune transcripts.
 
-Two systemic differences are normalized away (everything else must match byte-for-byte):
-
-- **The volatile install count.** ``Installed:  N`` differs by a small constant
-  (bash counts a prgroom-adjacent file the Python port does not yet stage). The
-  count is not what this test pins — the *shape* of the Summary is — so the numeric
-  value on the ``Installed:`` line is canonicalized.
-- **The ``ok()`` glyph.** bash prints ``+  Done.`` and the Python ``TerminalIO.ok``
-  prints ``✓ Done.``. That glyph divergence is a pre-existing ``IOPort`` property
-  (not introduced by the Summary renderer) tracked separately; it is canonicalized
-  on the ``Done.`` line so it does not mask a real Summary regression.
+The comparison is scoped to the ``-- Summary --`` region: in verbose mode the
+pre-Summary per-file install chatter legitimately differs line-for-line (an
+intended divergence of the rewrite). The shared normalizer (``_stdout.normalize``)
+canonicalizes the systemic differences — ANSI styling, the ``ok()`` glyph, and the
+volatile install count (bash counts a prgroom-adjacent file the Python port does
+not stage); see that module for the full, documented rule set.
 
 The beads fixture (``INSTALLER_PLUGINS_SRC`` -> a tree containing ``beads/``) is
 required: bash hardcodes ``ALL_PLUGINS=(beads)`` while the Python port *discovers*
@@ -29,12 +24,12 @@ skipped) --`` footer when beads is actually present in the plugin source tree (r
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
 from tests.golden_master._runner import run_parity
+from tests.golden_master._stdout import normalize, region_from
 
 pytestmark = pytest.mark.golden_master
 
@@ -47,51 +42,27 @@ _FIXTURE_BASIC = Path(__file__).parent / "fixtures" / "plugins" / "basic"
 # '(not detected, skipped)' footers for every other tool and for beads.
 _VERBOSE_ARGS = ["--tools=claude", "--plugins=", "--yes", "--verbose"]
 
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
-# The volatile install count on the 'Installed:' field line (verbose block).
-_INSTALLED_LINE = re.compile(r"^(\s*Installed:\s+)\d+$")
-# The ok() 'Done.' line, whichever glyph/spacing the IOPort used.
-_DONE_LINE = re.compile(r"^[+✓]\s+Done\.$")
-
-
-def _normalize_summary(stdout: str) -> list[str]:
-    """Reduce raw installer stdout to the Summary region, ANSI-stripped, with the
-    two systemic differences (install count, ok() glyph) canonicalized.
-
-    Returns the Summary lines from the ``-- Summary --`` header onward so the
-    pre-Summary install chatter (which legitimately differs line-for-line) is
-    excluded — this test pins the Summary block's shape, not the whole transcript.
-    """
-    lines = _ANSI.sub("", stdout).splitlines()
-    try:
-        start = lines.index("-- Summary --")
-    except ValueError:  # pragma: no cover - a missing header is an assertion failure below
-        return []
-    normalized: list[str] = []
-    for line in lines[start:]:
-        line = _INSTALLED_LINE.sub(r"\1<count>", line)
-        if _DONE_LINE.match(line):
-            line = "<ok> Done."
-        normalized.append(line)
-    return normalized
+# Pin the rich console wide enough that no line wraps against the captured pipe.
+_WIDE_ENV = {"COLUMNS": "1000"}
 
 
 def test_verbose_summary_stdout_is_byte_parity(tmp_path: Path) -> None:
     """The verbose Summary block printed by the Python renderer byte-matches the
-    bash installer's, once the install count and the pre-existing ok() glyph are
-    canonicalized. This is the load-bearing parity proof for the Summary renderer:
-    header wrapping ('-- Summary --', '-- claude --'), the leading blank line
-    before every block/footer, the six field labels + padding, the
-    '(not detected, skipped)' footers, and the blank line before Done. — any drift
-    in those fails here, where the tree-diff scenarios are blind.
+    bash installer's, once the shared systemic differences are normalized. This is
+    the load-bearing parity proof for the Summary renderer: header wrapping
+    ('-- Summary --', '-- claude --'), the leading blank line before every
+    block/footer, the six field labels + padding, the '(not detected, skipped)'
+    footers, and the blank line before Done. — any drift in those fails here, where
+    the tree-diff scenarios are blind.
     """
-    result = run_parity(tmp_path, args=_VERBOSE_ARGS, plugins_src=_FIXTURE_BASIC)
+    result = run_parity(tmp_path, args=_VERBOSE_ARGS, plugins_src=_FIXTURE_BASIC, env=_WIDE_ENV)
 
     assert result.bash_returncode == 0, result.bash_stderr
     assert result.python_returncode == 0, result.python_stderr
 
-    bash_summary = _normalize_summary(result.bash_stdout)
-    python_summary = _normalize_summary(result.python_stdout)
+    homes = (result.home_a, result.home_b)
+    bash_summary = region_from(normalize(result.bash_stdout, homes=homes), "-- Summary --")
+    python_summary = region_from(normalize(result.python_stdout, homes=homes), "-- Summary --")
 
     assert bash_summary, f"bash emitted no Summary block:\n{result.bash_stdout}"
     assert python_summary, f"python emitted no Summary block:\n{result.python_stdout}"
@@ -99,7 +70,7 @@ def test_verbose_summary_stdout_is_byte_parity(tmp_path: Path) -> None:
     # field rows are present to be compared) and the canonicalized footer/Done.
     assert "-- claude --" in bash_summary
     assert "-- beads (not detected, skipped) --" in bash_summary
-    assert bash_summary[-1] == "<ok> Done."
+    assert bash_summary[-1] == "Done."
     # The load-bearing assertion: the Summary regions match line-for-line.
     assert python_summary == bash_summary, (
         "Summary stdout diverged from bash oracle.\n"
