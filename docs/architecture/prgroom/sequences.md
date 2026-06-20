@@ -10,7 +10,7 @@
 
 | Term | Meaning |
 |---|---|
-| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → verify → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles until quiescence or the PR-review retry budget is exhausted. |
+| Cycle | One pass through the lifecycle pipeline steps (`poll → cluster → fix → verify → cap-guard → push → reply → resolve → [rereview]`; `rereview` runs last, guarded) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles until quiescence or the PR-review retry budget is exhausted. |
 | PR-review retries (`pr_review_retries_used`) | A 0-indexed counter of *review-eliciting fix-push retries* prgroom has performed or observed on the PR (the initial push is not a retry, so it anchors at `0`). Bumped by `_push` on a successful CLI fix-push and by `_poll` on detection of an external push (SHA transition). Bounded by the `pr_review_retries` retry budget (default 5, §3.5). |
 | `verify` step | The pre-push mechanical gate (between `fix` and `push`): runs the operator-configured tier command (whole-branch) and, on a red gate, drives the bounded fix↔verify convergence loop. See [`c4-l3-verify.md`](c4-l3-verify.md). |
 | Wake event | One of five conditions that exit `_wait` per §4.2: signal-cancel, poll-error, phase-moved, quiescence-trips, or (intentionally absent in MVP) a hard wait-timeout. |
@@ -156,7 +156,7 @@ sequenceDiagram
 ### Notes on the bot-silence path
 
 - **`declined` satisfies `G_REVIEWERS`.** A Required reviewer can reach `declined` three ways: human explicit pass, `review_start_timeout` (this diagram), or `review_finish_timeout` (engaged but never produced a terminal review). All three count as gate-satisfying. The `declined_reason` is preserved for operator inspection.
-- **No fix work happens.** With no items, the cycle skips cluster / fix / verify / push / rereview / reply / resolve entirely. The first wake event after timeout is the quiescence trip.
+- **No fix work happens.** With no items, the cycle skips cluster / fix / verify / cap-guard / push / reply / resolve / rereview entirely. The first wake event after timeout is the quiescence trip.
 - **Deadlines are derived, never stored.** `now() - last_request_at > review_start_timeout` is computed per-evaluation. This makes the path identical regardless of whether prgroom slept through the timeout in one process or across a crash gap (see Sequence 4).
 
 ---
@@ -181,13 +181,13 @@ sequenceDiagram
     PG->>State: lock then read — bootstrap
     PG->>PG: cycle (pr_review_retries_used→1) — _poll → _cluster → _fix → _verify → _push
     Note over PG: First fix round: gate GREEN, commits + pushes
-    PG->>GH: rereview, reply, resolve
+    PG->>GH: reply, resolve, rereview
     PG->>GH: _wait — reviewer activity
 
     GH-->>PG: Copilot returns with more FIX comments
     PG->>PG: cycle (pr_review_retries_used→2) — _poll → _cluster → _fix → _verify → _push
     Note over PG: Second fix round: gate GREEN, commits + pushes<br/>_push emits stderr warning:<br/>"this push reaches the pr_review_retries budget (2) —<br/>subsequent fix work will gate to human-gated"
-    PG->>GH: rereview, reply, resolve
+    PG->>GH: reply, resolve, rereview
     PG->>GH: _wait — reviewer activity
 
     GH-->>PG: Copilot returns AGAIN with more FIX comments

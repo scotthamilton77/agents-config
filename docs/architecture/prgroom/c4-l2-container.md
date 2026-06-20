@@ -33,7 +33,7 @@ C4Container
     Person(operator, "Operator (human or wrapping agent)")
 
     System_Boundary(prgroom, "prgroom CLI") {
-        Container(prgroom_proc, "prgroom process", "Python console-script (typer root)", "Single terminal process — runs to completion and exits (one run may take seconds, or many minutes under the autonomous wait/iteration loop): parses verb args, acquires per-PR lock via prsession.Store, runs the lifecycle (poll/cluster/fix/push/rereview/reply/resolve/wait or _run), shells out to the agent subprocess, exits. No daemon, no background threads, no shared memory between invocations.")
+        Container(prgroom_proc, "prgroom process", "Python console-script (typer root)", "Single terminal process — runs to completion and exits (one run may take seconds, or many minutes under the autonomous wait/iteration loop): parses verb args, acquires per-PR lock via prsession.Store, runs the lifecycle (poll/cluster/fix/verify/push/reply/resolve/rereview/wait or _run), shells out to the agent subprocess, exits. No daemon, no background threads, no shared memory between invocations.")
         ContainerDb(state, "prsession state file", "JSON on local FS", "$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json. Sole survivor of process exit. flock(2) for concurrency; mktemp+rename(2) for atomicity. Schema versioned (schema_version: 1). Hand-edit-safe but not hand-edit-encouraged.")
         Container(agent_proc, "Agent subprocess", "claude -p / codex exec / opencode run", "Short-lived; forked per cluster or fix call. Receives prompt on stdin + context env; emits structured output. Fresh agent context per invocation — no carryover between calls.")
         ContainerDb(worktree, "Operator's git worktree", "git working tree on local FS", "The repo + branch the operator launched prgroom against. The fix contract agent edits + commits here; the push verb pushes commits to origin. prgroom does NOT manage the worktree lifecycle — the operator (or upstream skill) owns create/cleanup.")
@@ -70,7 +70,7 @@ The whole CLI runs here. Every invocation is **terminal** — it runs to complet
 Internally — at L3 — this process is composed of:
 
 - `src/prgroom/cli.py` — typer root + per-verb command files; loads the `.prgroom.toml` config (per-contract provider chains, PR-review retry budget, reviewer timeouts) and builds the deps surface passed into the lifecycle
-- `src/prgroom/lifecycle/` — verb implementations (`_poll`, `_cluster`, `_fix`, `_push`, `_rereview`, `_reply`, `_resolve`, `_wait`), the `_run` aggregator, the `quiescence_predicate` (§4.1 pure function — lives here, not in a separate package), and the `EscalationSink` Protocol + stderr / file / (later) bd adapters
+- `src/prgroom/lifecycle/` — verb implementations (`_poll`, `_cluster`, `_fix`, `_verify`, `_push`, `_reply`, `_resolve`, `_rereview`, `_wait`), the `_run` aggregator, the `quiescence_predicate` (§4.1 pure function — lives here, not in a separate package), and the `EscalationSink` Protocol + stderr / file / (later) bd adapters
 - `src/prgroom/prsession/` — `Store` Protocol + `file` adapter + `memory` adapter (tests) + (v2) `bd` adapter
 - `src/prgroom/agent/` — cluster contract and fix contract dispatch with per-contract provider chains
 - `src/prgroom/gh/` — GitHub adapter (wraps the `gh` subprocess)

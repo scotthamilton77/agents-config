@@ -11,7 +11,7 @@
 | Term | Meaning |
 |---|---|
 | Phase | The single-field `PRPhase` value carried on `PRGroomingState` (§2 schema). One of: `idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`. |
-| Cycle | One pass through the lifecycle verbs (`poll → cluster → fix → verify → cap-guard → push → [rereview] → reply → resolve`) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles. |
+| Cycle | One pass through the lifecycle pipeline steps (`poll → cluster → fix → verify → cap-guard → push → reply → resolve → [rereview]`; `rereview` runs last, guarded) followed by either `wait` or terminal exit. `_run` (§3.3) iterates cycles. |
 | End-of-cycle resolver | The function `resolve_end_of_cycle_phase` (§3.2) that, after each cycle, picks the next phase from `fixes-pending` by evaluating six conditions in strict priority order. |
 | Round | The CLI-observed-push counter; bounded by the **PR-review retry budget** `pr_review_retries` (default 5 — initial push + up to 5 fix-push retries) per §3.5. |
 | PR-review retry budget | The pre-push guard at §3.5: `has_queued_fix_commits(state) AND pr_review_retries_used >= pr_review_retries` → refuse push, set `phase=human-gated`, set `last_error=LIFECYCLE_PR_REVIEW_EXHAUSTED`. Bounds review-eliciting pushes across cycles. |

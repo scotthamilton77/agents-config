@@ -29,7 +29,7 @@ C4Context
 
     Person(operator, "Operator (human or wrapping agent)", "Invokes prgroom run / status; dispositions ESCALATE items via resolve-escalated; pushes the original PR commits; reviews the human-review-required label")
 
-    System(prgroom, "prgroom CLI", "Python console-script that drives a PR through poll → cluster → fix → push → re-review → reply → resolve → wait until quiescence or PR-review retry budget; one PR per run, per-PR lock, fresh agent context per dispatch")
+    System(prgroom, "prgroom CLI", "Python console-script that drives a PR through poll → cluster → fix → verify → push → reply → resolve → re-review → wait until quiescence or PR-review retry budget; one PR per run, per-PR lock, fresh agent context per dispatch")
 
     System_Ext(github, "GitHub", "Hosts the PR, its reviews + threads, CI verdicts, and the human-review-required label that prgroom raises on PR-review-retry-budget exhaustion or ESCALATE")
     System_Ext(agents, "AI agent CLIs", "Claude Code (claude -p), Codex CLI (codex exec), OpenCode (opencode run), local models (ollama). Subprocessed for the cluster contract and fix contract. Runtime is chosen per-contract in TOML config — the contract is the API, the runtime is swappable. Each call is a fresh, isolated context.")
