@@ -210,6 +210,11 @@ SRC_PLUGINS="${INSTALLER_PLUGINS_SRC:-$PROJECT_ROOT/src/plugins}"
 # install.sh the sole owner of the `uv tool install` lifecycle.
 SRC_PRGROOM="${INSTALLER_PRGROOM_SRC:-$PROJECT_ROOT/packages/prgroom}"
 
+INSTALLIGNORE_FILE="$PROJECT_ROOT/.installignore"
+# shellcheck source=lib/installignore.sh
+source "$SCRIPT_DIR/lib/installignore.sh"
+load_installignore "$INSTALLIGNORE_FILE"
+
 if [[ ! -d "$SRC_SHARED" ]]; then
     err "Shared source directory not found: $SRC_SHARED"
     exit 1
@@ -622,10 +627,15 @@ stage_content_from_dir() {
 
     mkdir -p "$staging_dir"
 
-    local item_name file_type
+    local item_name file_type is_dir
     for item in "$src_dir"/*; do
         [[ -e "$item" ]] || continue
         item_name="$(basename "$item")"
+        if [[ -d "$item" ]]; then is_dir=true; else is_dir=false; fi
+        if is_installignored "$item_name" "$is_dir"; then
+            vinfo "  .installignore: skipping $dir_name/$item_name"
+            continue
+        fi
         file_type="$(classify_file "$item" "$dir_name")"
         stage_item "$item" "$staging_dir/$item_name" "$file_type"
     done
