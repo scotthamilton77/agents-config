@@ -83,6 +83,20 @@ Other notes:
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
 - **Exception — `packages/installer/` is a real Python package with a mandatory quality gate.** Before pushing any change under `packages/installer/`, run `make ci-installer` from the repo root (or `make ci` for the whole repo). It runs lint, format-check, typecheck, coverage, audit, and entry-verify — the same gate CI enforces. See `packages/installer/AGENTS.md` for the package-scoped workflow.
 
+**Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
+
+Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
+
+| ID                    | Status      | Milestone                                                                              |
+| --------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `agents-config-wgclw` | in_progress | **M0** — Discipline-layer rearchitecture: scripts own determinism, skills own judgment |
+| `agents-config-abn9`  | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators                      |
+| `agents-config-qn0g`  | open        | **M2** — Brainstorm-readiness gate                                                     |
+| `agents-config-vaac`  | in_progress | **M3** — Worker fleet through PR autonomy                                              |
+| `agents-config-t142`  | open        | **M4** — Overnight autonomy                                                            |
+
+All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.
