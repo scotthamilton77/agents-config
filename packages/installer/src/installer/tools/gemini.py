@@ -73,8 +73,7 @@ def transform_agent_frontmatter(content: bytes) -> bytes:
 
 
 class GeminiAdapter:
-    """Adapter for Google's Gemini CLI. Probes ~/.gemini/ as a directory —
-    mirrors the bash installer's [[ -d "$HOME/.gemini" ]] detection."""
+    """Adapter for Google's Gemini CLI. Detected when ~/.gemini/ exists."""
 
     name: str = "gemini"
 

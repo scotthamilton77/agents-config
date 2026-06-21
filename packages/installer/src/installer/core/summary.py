@@ -15,7 +15,7 @@ Two shapes, branching on ``verbose``:
   footer for every ALL_* target absent from the report set;
 - **quiet**: one line per target with non-zero *changes* (installed + updated +
   merged + pruned; a pure skip is not a change), or the single 'All files up to
-  date' line when nothing changed anywhere.
+  date — no changes made.' line when nothing changed anywhere.
 
 The report-target set: active tools, then active plugins, then any ALL_* plugin
 that pruned outside the active set (AC#19) — keyed off the report set so such a

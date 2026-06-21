@@ -119,8 +119,7 @@ def stage_namespace(
     """Stage one namespace subdir into StagedItems.
 
     Walks ``source_root/namespace/*`` in sorted order; each direct child whose
-    name is
-    excluded by ``ignore`` (a file basename or a directory name from
+    name is excluded by ``ignore`` (a file basename or a directory name from
     ``.installignore``) is skipped. Surviving entries are classified, suffix-
     stripped, and turned into ``StagedItem``s. A missing namespace dir yields
     ``[]``. Matching runs on direct children pre-``.template``-strip, so the real

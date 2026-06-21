@@ -103,8 +103,8 @@ def _place(
         plan.items[incoming.dest_relpath] = incoming
         return
     if carrier_eligible and _carrier_merge_allowed(existing, incoming):
-        # The carrier dir survives: with the
-        # plugin's disjoint files merged in. Record those added files' bytes in
+        # The carrier dir survives with the plugin's disjoint files merged in.
+        # Record those added files' bytes in
         # the dir_overrides side channel (the carrier DIR item has a single
         # source_path and so cannot itself express a second source tree), then
         # clear the flag so any further plugin collision on this dir is a true

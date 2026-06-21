@@ -151,8 +151,7 @@ def sync_plan(
 ) -> Counters:
     """Walk a ``StagingPlan`` and install every item under the adapter's dest root.
 
-    The plan-walking install sync (W1): the in-memory replacement for the bash
-    installer's temp-dir-to-home copy. For each item:
+    The plan-walking install sync (W1). For each item:
 
     - a FILE item (eager ``content``) is hash-compared against the dest; an
       unchanged dest is skipped, a differing dest is backed up *before* the
@@ -171,8 +170,8 @@ def sync_plan(
     a whole-plan precondition. Path containment is **lexical** — like
     ``sync``/``dump``, symlinked dest *parents* are not resolved, so the guard
     is not resolved-path safety. The walk is **non-transactional**: a failure on
-    item N leaves items 1..N-1 **already installed** (matching the bash streaming
-    installer; no rollback of earlier items). Returns aggregate `Counters`.
+    item N leaves items 1..N-1 **already installed** (no rollback of earlier
+    items). Returns aggregate `Counters`.
 
     The shared no-TTY guard (`require_consent`) runs once up front: a
     non-interactive run with neither ``auto_yes`` nor ``dry_run`` cannot answer a

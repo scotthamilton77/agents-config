@@ -9,8 +9,7 @@ if TYPE_CHECKING:
 
 
 class CodexAdapter:
-    """Adapter for OpenAI's Codex CLI. Probes ~/.codex/ as a directory —
-    mirrors the bash installer's [[ -d "$HOME/.codex" ]] detection."""
+    """Adapter for OpenAI's Codex CLI. Detected when ~/.codex/ exists."""
 
     name: str = "codex"
 

@@ -14,8 +14,7 @@ class OpenCodeAdapter:
     it installs under the XDG config dir (~/.config/opencode/, not ~/.opencode/),
     and it skips the shared agents/ namespace (frontmatter format differs;
     see OPENCODE-EXTENSIONS.md). Detected when opencode is on PATH OR the XDG
-    config dir exists — mirrors the bash
-    `command -v opencode || [[ -d ~/.config/opencode ]]`."""
+    config dir (~/.config/opencode) exists."""
 
     name: str = "opencode"
 
@@ -23,9 +22,8 @@ class OpenCodeAdapter:
         return repo_root / "src" / "user" / ".opencode"
 
     def dest_dir(self, home: Path) -> Path:
-        # XDG config dir, not a dot-dir — mirrors the bash tool_dest_dir()
-        # special-case for opencode. NOT $XDG_CONFIG_HOME-aware by design
-        # (the bash installer hardcodes ~/.config/opencode); keep parity.
+        # XDG config dir, not a dot-dir. NOT $XDG_CONFIG_HOME-aware by design
+        # (hardcoded to ~/.config/opencode to match the install destination).
         return home / ".config" / "opencode"
 
     def is_detected(self, home: Path) -> bool:

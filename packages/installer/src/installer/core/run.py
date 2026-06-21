@@ -53,7 +53,7 @@ def prune_pipeline(
     (plain ``--prune``). Returns the flow's per-target ``Counters`` (pruned /
     backed_up) keyed by ``Orphan.tool`` — each tool or plugin namespace whose
     orphans were pruned gets its own bucket so the install summary can report a
-    plugin pruned outside the active tool set (bash AC#19). An empty / no-op
+    plugin pruned outside the active tool set (AC#19). An empty / no-op
     prune yields an empty mapping.
     """
     orphans = scan_orphans(adapters, plans=plans, home=home, config=config)

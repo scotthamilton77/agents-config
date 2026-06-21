@@ -71,7 +71,7 @@ def _scan_namespace(
     staged: set[str],
     prune_globs: Sequence[str],
 ) -> list[Orphan]:
-    """Collect orphans in one dest namespace dir (bash ``_scan_namespace``).
+    """Collect orphans in one dest namespace dir.
 
     An entry is an orphan when it is not a legacy ``*.backup-*`` file, is not
     staged, and its ``tool/namespace/basename`` key matches a prune glob.

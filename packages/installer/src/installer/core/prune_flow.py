@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import Orphan
 
-# Three-way prompt answer tokens (bash ``[a]ll, [o]ne-by-one, [c]ancel``).
+# Three-way prompt answer tokens: ``[a]ll, [o]ne-by-one, [c]ancel``.
 _ALL = "a"
 _ONE_BY_ONE = "o"
 _CANCEL = "c"
@@ -56,11 +56,11 @@ def run_prune(
 
     The mapping is keyed by ``Orphan.tool`` — each tool or plugin namespace whose
     orphans were pruned gets its own bucket (pruned / backed_up), so the install
-    summary can report a plugin pruned outside the active tool set (bash AC#19).
+    summary can report a plugin pruned outside the active tool set (AC#19).
     Every no-deletion path (guard skip, empty list, dry-run, cancel) returns an
     empty mapping.
 
-    Guard order (bash ``prune_orphans``):
+    Guard order:
 
     1. **Non-interactive guard first.** When the session is non-interactive and
        neither ``dry_run`` nor ``auto_yes`` supplies consent: a ``prune_only``
@@ -170,8 +170,9 @@ def _back_up_and_delete(
     symlink (or a path that vanished mid-run) has nothing recoverable: ``exists()``
     follows the dead link to a missing target and returns False, so ``back_up``
     would fall through to ``copy2``/``copytree`` and raise, aborting the whole run.
-    Mirror the bash ``backup()`` ``[[ -e "$target" ]]`` no-op — skip the backup but
-    still remove the link below (``rm -rf`` deletes a broken link unconditionally).
+    Skip the backup for a broken symlink — ``exists()`` returns False on a dead
+    link so ``back_up`` would raise — but still remove the link below (``unlink``
+    deletes a broken link unconditionally).
     """
     counters = per_tool.setdefault(orphan.tool, Counters())
     if orphan.path.exists():
@@ -182,8 +183,7 @@ def _back_up_and_delete(
     # the link itself, never its target. ``rmtree`` is reserved for real
     # directories: ``Path.is_dir()`` follows symlinks, so a dir-symlink would
     # otherwise reach ``rmtree`` — which refuses a symlink and raises OSError.
-    # The bash original used ``rm -rf``, which handles symlinks fine; this keeps
-    # port parity.
+    # ``unlink`` removes the symlink itself; ``rmtree`` handles real directories.
     if orphan.path.is_symlink() or not orphan.path.is_dir():
         orphan.path.unlink()
     else:

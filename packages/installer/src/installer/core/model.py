@@ -91,12 +91,11 @@ every call site rather than silently passing through."""
 class StagedItem:
     """In-memory record of one entry destined for a tool's install root.
 
-    `content` is `None` when `kind == FileKind.DIR` (the bash installer
-    treats top-level skill / agent directories as single staged units;
-    their bytes are derived from `source_path` at sync time, not carried
-    in the data model). For every other `kind`, `content` is the file's
-    bytes (eager — read at staging time so the sync-phase hash-compare
-    has no extra I/O).
+    `content` is `None` when `kind == FileKind.DIR` — top-level skill /
+    agent directories are staged as single units; their bytes are derived
+    from `source_path` at sync time, not carried in the data model. For
+    every other `kind`, `content` is the file's bytes (eager — read at
+    staging time so the sync-phase hash-compare has no extra I/O).
 
     `executable` is a sync-phase write attribute (mode bit 0o755 vs 0o644),
     not a merge-dispatch concern — see design doc §3.6. Directories
