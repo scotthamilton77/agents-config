@@ -8,13 +8,13 @@
 
 This rewrite is also the **first Python subproject** in what is becoming a modular monorepo: the repo will host multiple Python projects (and some non-Python tool-config trees) over time, so the installer's layout is designed to be the template the next subproject follows.
 
-The rewrite ships **alongside** install.sh during the implementation phase. install.sh remains the parity reference until the golden-master suite goes green; once parity is established, install.sh collapses to a thin `uv run` wrapper. The golden-master suite is **transitional** — once parity is proven and the Python implementation has earned its miles, golden-master retires and divergence (including deliberately fixing install.sh bugs in the Python code) is welcome.
+The rewrite shipped **alongside** install.sh during the implementation phase. Parity was established at H.3, install.sh collapsed to a thin `uv run` wrapper at H.4, and the golden-master suite retired. Divergence (including deliberately fixing install.sh bugs in the Python code) is welcome.
 
 User-locked constraints:
 
 1. **Hybrid fidelity (initial)** — observable install output is byte-identical to install.sh at the parity gate; thereafter, deliberate divergence is allowed (and expected, e.g. when the Python code fixes a latent install.sh bug). Internal mechanics may refactor freely.
 2. **Interactive UX preserved but abstracted** — every prompt, diff, and confirmation matches install.sh user-side; all I/O routes through a single `IOPort` protocol so tests inject a scripted fake.
-3. **Side-by-side during rollout; install.sh becomes a uv wrapper at the parity gate** — install.sh is not deleted, but its 1788 lines collapse to `exec uv run ...`.
+3. **Side-by-side during rollout; install.sh becomes a uv wrapper at the parity gate** — install.sh is not deleted, but its 1788 lines collapsed to `exec uv run ...` (completed at H.4).
 4. **Tool-agnostic core + tool adapters** — the merge engine, staging engine, and sync engine are pure and tool-agnostic; tool-specific behaviour (OpenCode XDG path, OpenCode skips shared `agents/`, Gemini frontmatter transform, Codex placeholder extensions) lives in per-tool adapter modules behind a `ToolAdapter` protocol.
 5. **Merge strategies are separate classes** — append-merge, JSON union, last-wins-warn, fatal, etc., each in its own module under `core/merge/strategies/`, each testable in isolation, dispatched through a registry.
 
@@ -36,11 +36,11 @@ User-locked constraints:
 │       │   ├── config.py
 │       │   └── orchestrator.py
 │       └── tests/
-│           ├── unit/   integration/   golden_master/   fixtures/
+│           ├── unit/   integration/   fixtures/        (golden_master/ retired at H.4)
 ├── scripts/
-│   ├── install.sh                           (today: parity reference; at parity gate: 3-line uv wrapper)
-│   ├── install.py                           (new — tiny entry stub: `from installer.cli import main`)
-│   └── prune-list                           (legacy; deprecated when installer.toml ships)
+│   ├── install.sh                           (3-line uv exec stub — parity confirmed H.3, collapsed H.4)
+│   ├── install.py                           (tiny entry stub: `from installer.cli import main`)
+│   └── prune-list                           (retired at H.4; contents live in installer.toml)
 ├── src/                                     (unchanged — agent-config tree, non-Python)
 │   ├── user/   plugins/
 └── Makefile                                 (new — top-level dev targets; delegates to per-package targets)
@@ -196,26 +196,17 @@ Tests assert **end-state goals**, not how those goals were achieved:
 
 Test names describe the contract, e.g. `test_user_modified_settings_keys_are_preserved_after_install`. Implementation details (which phase touched what, which strategy fired) are not asserted; the strategy is tested at the unit level.
 
-### Golden-master (`tests/golden_master/`, 6–8 scenarios, ~30s) — **transitional**
+### Golden-master — **retired at H.4**
 
-The parity safety net for the side-by-side window only. Harness at `tests/golden_master/_runner.py`:
+The golden-master parity suite (`tests/golden_master/`) was the bash-vs-python diff harness used during the side-by-side window. It ran 6–8 scenarios comparing `bash scripts/install.sh` output against `python3 scripts/install.py` output with timestamp normalisation.
 
-1. Build `tmp_path/repo/` (synthetic or symlinked to real `src/`)
-2. Run `bash scripts/install.sh` with `HOME=tmp_path/home_a`
-3. Run `python3 scripts/install.py` with `HOME=tmp_path/home_b`
-4. Recursive diff with timestamp normalisation (backup filenames)
+Parity was confirmed at H.3 (full suite green; real-home smoke test clean; no blocker-severity divergences). The suite and its runner were removed at H.4 when install.sh collapsed to its uv-wrapper form.
 
-Scenarios: bare install; pre-existing settings; user-modified skill; `--prune --yes` with orphan; `--prune-only`; plugin overlay; single-tool single-no-plugin; Gemini frontmatter end-to-end.
+**Recorded parity exceptions (deliberate divergences accepted by the differ):**
 
-**Retirement plan:** once parity is confirmed — the full golden-master suite green, install.py run against the maintainer's real home with zero unexpected diffs, and no blocker-severity parity issues — and the maintainer signs off, golden-master moves to a `tests/golden_master/_retired/` directory (or is deleted outright), install.sh collapses to its uv-wrapper form, and the AGENTS.md note about the transitional nature is updated to reflect retirement.
-
-**AGENTS.md update (Milestone 1):** add a short section noting that `packages/installer/tests/golden_master/` is a transitional bash-vs-python parity suite expected to retire once parity is confirmed and the cutover lands. This keeps future contributors from treating it as a permanent fixture.
-
-**Parity exceptions (recorded deliberate divergences).** The golden master proves the rewrite does not *lose* ground; it does not force the Python installer to reproduce latent bash quirks. The differ accepts these by-design divergences:
-
-- **settings.json array order** — `json_union` unions arrays in first-seen order (preserving the authored `hooks.*` execution order); bash's jq `unique` sorts them. Same elements, different order. The differ compares settings JSON arrays order-insensitively, so it still catches an element added or dropped.
-- **settings.json file mode** — the Python installer writes `0o644`; bash `mv`s a `mktemp` file left at `0o600`. The differ compares the executable bit only.
-- **Namespace dead markers** — bash deploys per-namespace `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` source-dir docs; the Python installer correctly omits them (its `DEAD_MARKERS` rule). The differ drops them on both sides.
+- **settings.json array order** — `json_union` unions arrays in first-seen order; bash's jq `unique` sorts them. Same elements, different order; the differ compared order-insensitively.
+- **settings.json file mode** — Python writes `0o644`; bash `mv`d a `mktemp` at `0o600`. Differ compared executable bit only.
+- **Namespace dead markers** — bash deployed per-namespace `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` source-dir docs; Python correctly omitted them (`DEAD_MARKERS` rule). Differ dropped both sides.
 
 ### Fixture strategy
 
@@ -314,8 +305,8 @@ Stories ordered for monotonic dependency: shared content staging precedes ALL-RU
 - **H.1** Golden-master harness + first three scenarios (bare install, settings merge, user-modified file).
 - **H.2** Remaining golden-master scenarios (prune, prune-only, plugin overlay, single-tool single-no-plugin, Gemini frontmatter).
 - **H.3** Parity confirmation — full golden-master suite green; real-home smoke test against the actual repo home with zero unexpected diffs; no blocker-severity parity issues; maintainer sign-off recorded in the bead notes.
-- **H.4** `install.sh` collapse to `exec uv run --project packages/installer python -m installer "$@"`; `scripts/prune-list` retired (contents already live in `packages/installer/installer.toml` from G.2).
-- **H.5** Docs cleanup — AGENTS.md golden-master retirement note updated; README install instructions updated; `tests/golden_master/` moved to `_retired/` or deleted.
+- **H.4** ✓ `install.sh` collapse to `exec uv run --project packages/installer python -m installer "$@"`; `scripts/prune-list` retired; `tests/golden_master/` removed.
+- **H.5** ✓ Docs cleanup — AGENTS.md and README install instructions updated to reference uv-managed Python installer; golden-master retirement noted throughout.
 
 **Initial parity is the baseline, not a permanent constraint.** Once the Python implementation has miles, divergence is welcome — particularly when the Python fixes latent install.sh bugs. The parity gate proves "the rewrite doesn't lose ground"; it does not promise "Python will forever match bash byte-for-byte."
 
@@ -383,9 +374,7 @@ No beads are created until the user explicitly says so. The structure above exis
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/staging.py`
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/merge/registry.py` plus each strategy module
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/tools/base.py` + per-tool adapters
-- `/Users/scott/src/projects/agents-config/packages/installer/tests/golden_master/_runner.py`
-
-Bash behaviour is the initial spec. Key line ranges in `/Users/scott/src/projects/agents-config/scripts/install.sh` to consult during implementation: `106-141` (CLI flags); `268-292`, `296-324` (tool/plugin detection); `415-478` (collision matrix); `486-505` (file classification); `533-599` (carrier-merge); `624-751` (DYNAMIC-INCLUDE); `639-684` (Gemini frontmatter awk); `431-454`, `1306-1330` (JSON union jq); `352-388` (backup routing); `1443-1499` (prune-list); `1505-1543` (orphan scan); `1602-1687` (interactive prune flow).
+Bash line ranges consulted during porting (historical reference; install.sh is now a 6-line uv exec stub): `106-141` (CLI flags); `268-292`, `296-324` (tool/plugin detection); `415-478` (collision matrix); `486-505` (file classification); `533-599` (carrier-merge); `624-751` (DYNAMIC-INCLUDE); `639-684` (Gemini frontmatter awk); `431-454`, `1306-1330` (JSON union jq); `352-388` (backup routing); `1443-1499` (prune-list); `1505-1543` (orphan scan); `1602-1687` (interactive prune flow).
 
 ## Verification
 
@@ -394,8 +383,6 @@ At each milestone:
 1. **Unit suite:** `uv run pytest packages/installer/tests/unit -q` — green; coverage ≥90% on touched modules.
 2. **Integration suite:** `uv run pytest packages/installer/tests/integration -q` — green; assertions phrased as end-state contracts, not phase mechanics; scripted IOPort scripts fully consumed.
 3. **Lint + typecheck:** `uv run ruff check packages/installer && uv run mypy --strict packages/installer/src` — clean.
-4. **Golden-master (load-bearing, transitional):** `uv run pytest packages/installer/tests/golden_master -q` — every scenario zero post-normalisation diff.
-5. **Smoke test against real home** (parity-gate only): `python3 scripts/install.py --dry-run --verbose` vs `bash scripts/install.sh --dry-run --verbose` against the actual repo; spot-check the preview diffs.
-6. **`--dump-stage` sanity** (Milestone 7+): dump the plan; confirm contents match the post-Phase-6.9 expected tree by inspection.
+4. **`--dump-stage` sanity** (Milestone 7+): dump the plan; confirm contents match the post-Phase-6.9 expected tree by inspection.
 
-Work is complete for a given milestone when all six steps pass within that milestone's scope.
+Work is complete for a given milestone when all applicable steps pass within that milestone's scope. (Golden-master and parity smoke-test steps retired at H.4.)

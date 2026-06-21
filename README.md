@@ -157,7 +157,7 @@ Slash commands that can be invoked directly:
 ./scripts/install.sh --prune-only --yes        # execute
 ```
 
-The install script:
+The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed Python package (`packages/installer`). It:
 - Auto-detects installed tools (Claude Code, Codex CLI, Gemini CLI) or use `--tools=` to override
 - Copies shared content (`src/user/.agents/`) into all detected tools
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
@@ -167,7 +167,7 @@ The install script:
 - Creates timestamped backups before overwriting anything
 - Warns about items that aren't tracked in the project (or removes them with `--prune`)
 
-Requires bash or zsh, plus `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
+Requires `uv` (auto-installs Python 3.11 on first run). Use `--dry-run` to preview changes without writing.
 
 #### Flags
 

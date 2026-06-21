@@ -35,10 +35,8 @@ but the full gate must pass before push.
 ## Design principles for this package
 
 - **Python over Bash** — logic that needs testing lives in Python; shell stays a
-  thin wrapper. This package is the port of `scripts/install.sh`.
-- **`scripts/install.sh` is the behavioural spec.** Until the golden-master
-  parity suite is green, the bash installer's observable behaviour is the
-  contract a port must match — cite specific line ranges when porting.
+  thin wrapper. This package replaced `scripts/install.sh`, which is now a
+  3-line `uv run` exec stub. The golden-master parity suite is retired.
 - **Pure core, injected I/O.** Engine modules under `core/` are pure functions;
   all terminal interaction routes through the `IOPort` protocol (`TerminalIO`
   real, `ScriptedIO` test fake). No module calls `print`/`input` or imports

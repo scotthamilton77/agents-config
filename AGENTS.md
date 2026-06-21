@@ -44,14 +44,15 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 
 **Implications:**
 
-- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next `install.sh` run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
+- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next installer run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
 - **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
-- **NEVER run `install.sh` (or, when it is available, install.py) automatically** — only the user runs the installer, and only when they explicitly say so
+- **NEVER run `scripts/install.sh` or `scripts/install.py` automatically** — only the user runs the installer, and only when they explicitly say so
 
 ## Repository Structure (current, not target state)
 
 - `scripts/` - Installation and maintenance scripts
-  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=`/`--plugins=` overrides, and `--prune`/`--prune-only` for removing orphaned items not in the source
+  - `install.sh` - Thin exec stub; delegates to the uv-managed Python installer (`packages/installer`) via `uv run`
+  - `install.py` - Python entry point (`from installer.cli import main`); also invocable as `uv run python -m installer`
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications (point-in-time proposals; date-prefixed filenames; status varies from draft through implemented)
 - `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
