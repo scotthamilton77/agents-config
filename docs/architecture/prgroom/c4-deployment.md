@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [Data View](data-view.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md)
+> **Source design**: [design.md](design.md)
 
 ## Glossary
 
@@ -13,7 +13,7 @@
 | Scheduler | Whatever drives autonomous runs: cron, systemd timer, GitHub Actions, an outer `prgroom sweep` loop, or a `/loop` Claude Code session. prgroom does not care which. |
 | `$XDG_STATE_HOME` | The XDG-spec state directory; defaults to `~/.local/state` on Linux, `~/.local/state` (overridden by `$XDG_STATE_HOME` if set) on macOS. The `prsession.Store` file adapter writes here. |
 | Per-PR lock | The `flock(2)` advisory lock on the state file; one-at-a-time per PR. Auto-released on process death. |
-| Wrapping skill | The `monitor-pr` supervisor skill (§6) that calls `prgroom run` as a subprocess and reads its exit code + JSON. prgroom drives the full fix→push→reply→resolve loop itself — the wrapper adds no separate reply-later stage. From the deployment view, indistinguishable from a human operator shell. |
+| Wrapping skill | The `monitor-pr` supervisor skill (see [`cutover-runbook.md`](cutover-runbook.md)) that calls `prgroom run` as a subprocess and reads its exit code + JSON. prgroom drives the full fix→push→reply→resolve loop itself — the wrapper adds no separate reply-later stage. From the deployment view, indistinguishable from a human operator shell. |
 
 ## Purpose
 
@@ -111,7 +111,7 @@ There is **no compiled binary**, no prebuilt-binary pipeline, and no artifact-tr
 
 | Process | Lifetime |
 |---|---|
-| `prgroom run --autonomous` invocation | Long — minutes to hours; blocks until quiescence, hard cap, or signal-cancel. Holds the per-PR `flock(2)` for the duration. |
+| `prgroom run --autonomous` invocation | Long — minutes to hours; blocks until quiescence, PR-review-retry-budget exhaustion, or signal-cancel. Holds the per-PR `flock(2)` for the duration. |
 | `prgroom run --interactive` invocation | Same — blocks until terminal. |
 | `prgroom poll` / `cluster` / `fix` / `push` / `reply` / `resolve` / `rereview` / `resolve-escalated` invocation | Short — seconds. Acquires the lock, does one verb, releases. |
 | `prgroom status` invocation | Sub-second. Lock-free read by design (§3.3 carve-out). |
@@ -182,4 +182,4 @@ These shapes are explicitly out of scope for MVP and would require a deliberate 
 
 - **Previous**: [Data View](data-view.md)
 - **Related**: [C4 L1 — System Context](c4-l1-context.md), [C4 L2 — Container](c4-l2-container.md)
-- **Source spec**: [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 2 — `prsession.Store` interface](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md), [Section 7 — Build, distribution, versioning, CI](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source design**: [§1 Architecture overview](design.md), [§2 prsession.Store interface + state schema](design.md), [§5 Agent dispatch (named contracts)](design.md)
