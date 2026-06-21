@@ -1,3 +1,0 @@
-# Parity-harness fixture formula — never ships (tests/ only).
-name = "parity-fixture"
-description = "Synthetic formula exercising plugin-route install parity."

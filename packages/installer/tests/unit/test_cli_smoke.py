@@ -7,6 +7,8 @@ are absent — they test the stdlib, not coded decisions."""
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -1033,3 +1035,22 @@ def test_main_dry_run_summary_reports_would_be_installs(tmp_path: Path) -> None:
     assert rc == 0
     infos = [e.message for e in io.transcript if e.channel == "info"]
     assert any("claude:" in m and "installed" in m for m in infos), infos
+
+
+def test_module_entry_point_propagates_nonzero_exit() -> None:
+    """``python -m installer`` must propagate the CLI's non-zero exit code.
+
+    Guards ``__main__.py`` against calling ``main()`` without ``sys.exit()`` —
+    omitting it makes every installer error path silently report success (exit 0),
+    which breaks ``set -e`` callers and CI gates. A subprocess call through the
+    real entry point is the only way to verify the OS-level exit code.
+
+    Pins: ``python -m installer --tools=bogus`` must exit 2 (the CLI's
+    config-error convention, same as ``--tools=`` with an empty value or an
+    unknown plugin name).
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "installer", "--tools=bogus"],
+        capture_output=True,
+    )
+    assert result.returncode == 2

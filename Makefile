@@ -1,6 +1,6 @@
 .PHONY: ci ci-installer test-installer lint-installer format-check-installer \
-        typecheck-installer cov-installer golden-master-installer \
-        audit-installer lint-actions verify-entry-installer \
+        typecheck-installer cov-installer audit-installer lint-actions \
+        verify-entry-installer \
         ci-prgroom test-prgroom lint-prgroom format-check-prgroom \
         typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom
 
@@ -10,17 +10,10 @@ PRGROOM := packages/prgroom
 ci: ci-installer ci-prgroom lint-actions
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
-              cov-installer golden-master-installer audit-installer \
-              verify-entry-installer
+              cov-installer audit-installer verify-entry-installer
 
 test-installer:
-	cd $(INSTALLER) && uv run pytest -m "not golden_master" -q
-
-# Golden-master is the slow bash-vs-python parity suite: it spawns both
-# installers, contributes no src coverage (subprocess), and is excluded from the
-# fast unit/coverage gate. Run on every push via ci-installer.
-golden-master-installer:
-	cd $(INSTALLER) && uv run pytest -m golden_master -q
+	cd $(INSTALLER) && uv run pytest -q
 
 lint-installer:
 	cd $(INSTALLER) && uv run ruff check
@@ -32,7 +25,7 @@ typecheck-installer:
 	cd $(INSTALLER) && uv run mypy --strict src
 
 cov-installer:
-	cd $(INSTALLER) && uv run pytest -m "not golden_master" --cov --cov-report=term-missing
+	cd $(INSTALLER) && uv run pytest --cov --cov-report=term-missing
 
 audit-installer:
 	cd $(INSTALLER) && uv sync --frozen && uv run pip-audit
@@ -45,6 +38,7 @@ lint-actions:
 
 verify-entry-installer:
 	uv --project $(INSTALLER) run python scripts/install.py --help > /dev/null
+	uv --project $(INSTALLER) run python -m installer --help > /dev/null
 
 # ── prgroom (mirrors the ci-installer block one-for-one) ──
 
