@@ -21,9 +21,9 @@ The five load-bearing convictions behind this:
 4. **Evidence before assertion, always.** Mechanical gates (tests, build, lint, review) sit between "I think this works" and "this is done."
 5. **Persistent context survives compaction.** Beads, memories, formulas, and audit logs let work span sessions, agents, and overnight cranking without losing thread.
 
-### Current state -- NOTE THIS AND THE REST OF THE FILE ARE OUT OF DATE - TODO update once v2 architecture is solid in concept
+### Current state
 
-This is a work in progress. The architecture is in place; several keystone enablers toward the vision are filed but not yet shipped — tracked under the `vision-85-5-10` bead label. Notable current gaps:
+The core architecture is in place. Several keystone enablers toward the vision are filed but not yet shipped. Notable current gaps:
 
 - The "no, not ready" brainstorm-readiness gate is implicit, not enforced
 - Persona and orchestration guidance give subtly conflicting decide-vs-escalate direction
@@ -32,7 +32,7 @@ This is a work in progress. The architecture is in place; several keystone enabl
 - Auto-merge policy for low-risk PR classes is not defined — every PR waits on a human "ship it"
 - Autonomous work runs sequentially through external waits (CI, review polling); no pipelining yet
 
-If you are using this repo, treat the vision as direction and the rules-as-written as the current contract. Contributions toward the vision-tagged work are welcome.
+Treat the vision as direction and the rules-as-written as the current contract. Contributions are welcome.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ Without these plugins, the shared `<orchestration>` section in `src/user/.agents
 
 ```
 scripts/
-└── install.sh                      # Multi-tool installer with auto-detection
+└── install.sh                      # Thin exec stub → packages/installer (uv-managed Python)
 docs/
 ├── plans/                          # Design documents for features in development
 └── specs/                          # Design specifications for implemented features
@@ -157,7 +157,7 @@ Slash commands that can be invoked directly:
 ./scripts/install.sh --prune-only --yes        # execute
 ```
 
-The install script:
+The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed Python package (`packages/installer`). It:
 - Auto-detects installed tools (Claude Code, Codex CLI, Gemini CLI) or use `--tools=` to override
 - Copies shared content (`src/user/.agents/`) into all detected tools
 - Copies tool-specific content (e.g., `src/user/.claude/`) into the corresponding tool's config directory
@@ -167,7 +167,7 @@ The install script:
 - Creates timestamped backups before overwriting anything
 - Warns about items that aren't tracked in the project (or removes them with `--prune`)
 
-Requires bash or zsh, plus `jq` for JSON merging. Use `--dry-run` to preview changes without writing.
+Requires `uv` (auto-installs Python ≥3.11 on first run). Use `--dry-run` to preview changes without writing.
 
 #### Flags
 
@@ -263,16 +263,12 @@ Project-level settings override user-level. Use user-level for your personal wor
 
 ## Roadmap
 
-### Under Consideration
-
-- [x] **Gemini support** - Equivalent configurations for Google's Gemini
-- [x] **Codex support** - Equivalent configurations for OpenAI's Codex
-- [ ] **Templatized extensions** - Selectable "extensions" (task tracker, language preferences) that can be applied during installation
-- [ ] **Update mechanism** - Pull latest versions without clobbering customizations
-- [ ] **Selective install** - Choose which agents/skills to install
-- [ ] **Agent marketplace** - Community-contributed agents and skills
-- [ ] **Compatibility matrix** - Track which agents work with which AI assistants
-- [ ] **Testing framework** - Validate agent behavior with example prompts
+- [x] **Gemini support** — Equivalent configurations for Google's Gemini
+- [x] **Codex support** — Equivalent configurations for OpenAI's Codex
+- [ ] **Selectable extension bundles** — Task tracker, language preferences, etc. applied at install time
+- [ ] **Update mechanism** — Pull latest versions without clobbering customizations
+- [ ] **Selective install** — Choose which agents/skills to include
+- [ ] **Agent marketplace** — Community-contributed agents and skills
 
 ## Contributing
 

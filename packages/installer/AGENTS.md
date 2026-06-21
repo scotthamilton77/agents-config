@@ -34,11 +34,7 @@ but the full gate must pass before push.
 
 ## Design principles for this package
 
-- **Python over Bash** — logic that needs testing lives in Python; shell stays a
-  thin wrapper. This package is the port of `scripts/install.sh`.
-- **`scripts/install.sh` is the behavioural spec.** Until the golden-master
-  parity suite is green, the bash installer's observable behaviour is the
-  contract a port must match — cite specific line ranges when porting.
+- **Python over Bash** — logic that needs testing lives in Python; `scripts/install.sh` is a thin `exec uv run` stub that delegates here.
 - **Pure core, injected I/O.** Engine modules under `core/` are pure functions;
   all terminal interaction routes through the `IOPort` protocol (`TerminalIO`
   real, `ScriptedIO` test fake). No module calls `print`/`input` or imports
@@ -67,4 +63,4 @@ only the user runs the installer, and only when they explicitly ask. The gate's
 
 ## Reference
 
-Architecture and the Epic A→H story sequence: `docs/architecture/installer/installer-design.md`.
+Architecture: `docs/architecture/installer/installer-design.md`.

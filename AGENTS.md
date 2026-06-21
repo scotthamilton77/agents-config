@@ -20,23 +20,14 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 4. **Guardrail every completion claim with mechanical evidence** (completion gate, verify-checklist)
 5. **Persist context** (work tickets, memories, formulas) so work survives compaction, agent handoff, and overnight runs
 
-### Current state — FAILED work in progress
+### Design principles for this repo
 
-The architecture has run into a problematic ocean of complexity and inverted engineering where agents are doing the wrong things (things algorithms should be doing).  We're presently in a REDESIGN phase where much of the old and suspect architecture has been pushed under the `archive/` folder to serve as references until we don't need them anymore.  You should NOT peek in there unless/until you need to.  (Don't let its contents poison your understanding of current and future state).
-
-That means that the current code architecture is a work in progress that is being cleaned up with the following goals in mind:
-
-- **Code over Prose** - Anything code can do better than agents, we're moving out of prose and into code helpers
-- **Python/Go/Node over Bash** - Thin shell script wrappers are fine but any logic that needs good testing needs to be in Python, Go or Node
-- **Amalgams over Conflicts** - There are currently competing priorities in certain plugins that contribute to context rot - we'll be consolidating "best of breed" from plugins' skills and other assets such as superpowers, pollock, karpathy, and so on
-- **Work vs beads** - While we'll continue to use the beads infrastructure (and possibly plugin) we'll be taking a step back from making that a first class citizen of this project's architecture, placing a "work" abstraction in front of it - end state is that beads is quarantined behind our own CLI
-
-### Implications for agents working in *this* repo
-
-- You'll still use beads directly for the time being until we get our work abstraction in place
-- The current backlog of beads is meaningful in a historic sense, but we'll be cleaning that up substantially over time
-- I need YOUR help (talking to you, agent!) to point out confusion or ambiguity in your context and where it's coming from - job #1 is to clean that up and give you an environment that's useful, not confusing - TELL ME WHAT MAKES THINGS HARDER THAN THEY SHOULD BE
-- The goals of the architecture are still valid / remain, but right now we're prioritizing getting the house in order to make it possible to accrete work toward that 85/5/10 goal. So while I'll need you (the agent) to point out what's in the way of this now, I also want you to watchdog what I'm asking you to do and apply backpressure where it's not clear how what I'm asking for is aligned with cleaning house or paving the road to the vision.
+- **Code over Prose** — anything code can do better than agents, we move out of prose and into code helpers
+- **Python/Go/Node over Bash** — thin shell script wrappers are fine; any logic that needs testing goes in Python, Go, or Node
+- **Consolidate over conflict** — where plugins' assets overlap, merge the best-of-breed into the canonical source; avoid competing instructions
+- **Beads is the work tracker** — use the `bd` CLI for task tracking directly; a higher-level `work` abstraction is planned but not yet in place
+- **Flag confusing context** — if instructions, rules, or skills in this repo are conflicting or unclear, say so explicitly; cleaning up agent context is a first-class priority
+- **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", push back and ask how it fits before proceeding
 
 ## Project Architecture
 
@@ -44,14 +35,15 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 
 **Implications:**
 
-- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next `install.sh` run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
+- **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next installer run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
 - **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
-- **NEVER run `install.sh` (or, when it is available, install.py) automatically** — only the user runs the installer, and only when they explicitly say so
+- **NEVER run `scripts/install.sh` or `scripts/install.py` automatically** — only the user runs the installer, and only when they explicitly say so
 
 ## Repository Structure (current, not target state)
 
 - `scripts/` - Installation and maintenance scripts
-  - `install.sh` - Multi-tool installer with auto-detection, `--dry-run`, `--tools=`/`--plugins=` overrides, and `--prune`/`--prune-only` for removing orphaned items not in the source
+  - `install.sh` - Thin exec stub; delegates to the uv-managed Python installer (`packages/installer`) via `uv run`
+  - `install.py` - Python entry point (`from installer.cli import main`); also invocable as `uv run python -m installer`
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications (point-in-time proposals; date-prefixed filenames; status varies from draft through implemented)
 - `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
@@ -90,22 +82,6 @@ Other notes:
 
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
 - **Exception — `packages/installer/` is a real Python package with a mandatory quality gate.** Before pushing any change under `packages/installer/`, run `make ci-installer` from the repo root (or `make ci` for the whole repo). It runs lint, format-check, typecheck, coverage, audit, and entry-verify — the same gate CI enforces. See `packages/installer/AGENTS.md` for the package-scoped workflow.
-
-## Project Milestones (current, not target)
-
-**Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
-
-Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
-
-| ID | Status | Milestone |
-|----|--------|-----------|
-| `agents-config-wgclw` | open | **M0** — Discipline-layer rearchitecture: scripts own determinism, skills own judgment |
-| `agents-config-abn9` | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators |
-| `agents-config-qn0g` | open | **M2** — Brainstorm-readiness gate |
-| `agents-config-vaac` | in_progress | **M3** — Worker fleet through PR autonomy |
-| `agents-config-t142` | open | **M4** — Overnight autonomy |
-
-All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
 
 ## graphify
 
