@@ -38,7 +38,7 @@ User-locked constraints:
 │       └── tests/
 │           ├── unit/   integration/   fixtures/        (golden_master/ retired at H.4)
 ├── scripts/
-│   ├── install.sh                           (3-line uv exec stub — parity confirmed H.3, collapsed H.4)
+│   ├── install.sh                           (thin uv exec stub — parity confirmed H.3, collapsed H.4)
 │   ├── install.py                           (tiny entry stub: `from installer.cli import main`)
 │   └── prune-list                           (retired at H.4; contents live in installer.toml)
 ├── src/                                     (unchanged — agent-config tree, non-Python)
@@ -374,7 +374,7 @@ No beads are created until the user explicitly says so. The structure above exis
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/staging.py`
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/merge/registry.py` plus each strategy module
 - `/Users/scott/src/projects/agents-config/packages/installer/src/installer/tools/base.py` + per-tool adapters
-Bash line ranges consulted during porting (historical reference; install.sh is now a 6-line uv exec stub): `106-141` (CLI flags); `268-292`, `296-324` (tool/plugin detection); `415-478` (collision matrix); `486-505` (file classification); `533-599` (carrier-merge); `624-751` (DYNAMIC-INCLUDE); `639-684` (Gemini frontmatter awk); `431-454`, `1306-1330` (JSON union jq); `352-388` (backup routing); `1443-1499` (prune-list); `1505-1543` (orphan scan); `1602-1687` (interactive prune flow).
+Bash line ranges consulted during porting (historical reference; install.sh is now a thin `exec uv run --project packages/installer python -m installer` stub): `106-141` (CLI flags); `268-292`, `296-324` (tool/plugin detection); `415-478` (collision matrix); `486-505` (file classification); `533-599` (carrier-merge); `624-751` (DYNAMIC-INCLUDE); `639-684` (Gemini frontmatter awk); `431-454`, `1306-1330` (JSON union jq); `352-388` (backup routing); `1443-1499` (prune-list); `1505-1543` (orphan scan); `1602-1687` (interactive prune flow).
 
 ## Verification
 

@@ -36,7 +36,8 @@ but the full gate must pass before push.
 
 - **Python over Bash** — logic that needs testing lives in Python; shell stays a
   thin wrapper. This package replaced `scripts/install.sh`, which is now a
-  3-line `uv run` exec stub. The golden-master parity suite is retired.
+  thin `exec uv run --project packages/installer python -m installer` stub. The
+  golden-master parity suite is retired.
 - **Pure core, injected I/O.** Engine modules under `core/` are pure functions;
   all terminal interaction routes through the `IOPort` protocol (`TerminalIO`
   real, `ScriptedIO` test fake). No module calls `print`/`input` or imports
