@@ -21,3 +21,5 @@ SESSION-PRIMER-README.md
 # roots (siblings of rules/), which are never staged, so they need no entry —
 # this guards the hypothetical case of a namespace-level rules-readmes/ child.
 rules-readmes/
+# Test artifacts
+ruff-postedit_test.sh
