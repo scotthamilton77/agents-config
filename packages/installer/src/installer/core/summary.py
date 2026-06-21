@@ -44,8 +44,8 @@ _FIELDS: tuple[tuple[str, str], ...] = (
     ("Skipped", "skipped"),
 )
 
-# Column at which each field's value is printed, matching the bash printf padding
-# (e.g. ``"  Installed:  %s"``). Computed once so a label rename keeps alignment.
+# Column at which each field's value is printed; computed so a label rename
+# keeps alignment.
 _VALUE_COLUMN = max(len(label) for label, _ in _FIELDS) + len(":  ")
 
 # Quiet-line parts: (Counters attribute, suffix). A part is shown only when its

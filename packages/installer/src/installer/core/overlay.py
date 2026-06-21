@@ -4,7 +4,7 @@ After base staging (Phases 1-5, ``staging.build_plan``), each active plugin's
 ``.agents/`` (shared scope) and ``.<tool>/`` (tool scope) content is overlaid
 onto the tool's plan.
 
-Two invariants from the bash original:
+Two ordering invariants:
 
 - **Alphabetical plugin order.** Plugins are applied in ascending name order so
   that last-wins collisions (``OTHER`` / ``JSONC`` / ``TOML``) resolve
@@ -103,7 +103,7 @@ def _place(
         plan.items[incoming.dest_relpath] = incoming
         return
     if carrier_eligible and _carrier_merge_allowed(existing, incoming):
-        # Mirror bash `rm -f sentinel`: the carrier dir survives with the
+        # The carrier dir survives: with the
         # plugin's disjoint files merged in. Record those added files' bytes in
         # the dir_overrides side channel (the carrier DIR item has a single
         # source_path and so cannot itself express a second source tree), then
@@ -144,8 +144,7 @@ def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
 
 
 def _visible_names(directory: Path) -> set[str]:
-    """The dot-excluded child names of ``directory`` — the entries a bash
-    ``"$dir"/*`` glob would iterate (dotfiles are skipped without ``dotglob``)."""
+    """The dot-excluded child names of ``directory`` — entries a plain glob would iterate (dotfiles excluded)."""
     return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}
 
 
@@ -160,7 +159,7 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     ``subdir/file`` under the carrier DIR's destination.
 
     Only files are recorded; ``dir_overrides`` maps relpaths to bytes and so has
-    no representation for a directory entry. A *truly empty* subdir that bash
+    no representation for a directory entry. A *truly empty* subdir that
     ``cp -R`` would have created is therefore not carried — a deliberate gap, not
     an oversight: plugin source trees are git-tracked, and git cannot store an
     empty directory, so an empty subdir cannot reach this function in the first

@@ -56,7 +56,7 @@ def classify_file(path: Path, namespace: str | None) -> FileKind:
 
 
 def stage_templates(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
-    """Stage tool-root instruction templates (bash Phases 1 & 3).
+    """Stage tool-root instruction templates (Phases 1 & 3).
 
     Globs ``source_root/*.md.template`` (sorted), strips the ``.template``
     suffix, and stages each as a root-level ``FileKind.OTHER`` item with no
@@ -84,7 +84,7 @@ _SETTINGS_GLOBS = ("*.json.template", "*.jsonc.template", "*.toml.template")
 
 
 def stage_settings(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
-    """Stage tool-root settings templates (bash Phase 5).
+    """Stage tool-root settings templates (Phase 5).
 
     Globs the JSON/JSONC/TOML template forms (each glob sorted, in order),
     classifies via ``classify_file``, strips ``.template``, and stages each as a
@@ -145,10 +145,10 @@ def stage_namespace(
                 namespace=namespace,
                 provenance=provenance,
                 content=entry.read_bytes() if is_file else None,
-                # Preserve the source mode bit so hook scripts land +x (sync
-                # writes 0o755 vs 0o644 from this). Mirrors bash ``cp``, which
-                # carries the executable bit through staging. Any execute bit
-                # (owner/group/other) counts, matching POSIX ``test -x`` intent.
+                # Preserves the source mode bit so hook scripts land +x (sync
+                # writes 0o755 vs 0o644 from this), which carries the executable
+                # bit through staging. Any execute bit (owner/group/other) counts,
+                # matching POSIX ``test -x`` intent.
                 executable=is_file and bool(entry.stat().st_mode & 0o111),
             )
         )

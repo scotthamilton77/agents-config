@@ -34,7 +34,7 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 
 def new_timestamp() -> str:
-    """Current local wall-clock time as ``YYYYMMDD-HHMMSS`` (bash local-TZ ``date``)."""
+    """Current local wall-clock time as ``YYYYMMDD-HHMMSS``."""
     return datetime.now().astimezone().strftime(_TIMESTAMP_FORMAT)
 
 

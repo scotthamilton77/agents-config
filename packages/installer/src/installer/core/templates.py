@@ -73,9 +73,8 @@ def parse_directive(line: str) -> IncludeDirective | None:
     """Recognise a DYNAMIC-INCLUDE directive on a single line.
 
     The line must match a marker form exactly — no leading or trailing
-    whitespace — mirroring the anchored ``^...$`` patterns in the bash
-    installer. A file marker with an empty path, or a named-RULES marker with an
-    empty list, is rejected — matching the bash ``-n`` guards — so the line
+    whitespace. A file marker with an empty path, or a named-RULES marker with an
+    empty list, is rejected — matching the non-empty guards — so the line
     passes through as prose. Returns the matching directive dataclass, or None
     for any line that is not a directive.
     """
@@ -179,7 +178,7 @@ def _file_include_dests(text: str) -> set[Path]:
 def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, io: IOPort) -> str:
     """Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.
 
-    The bash installer reads ALL-RULES from the on-disk staging tree; the Python
+    The on-disk staging tree is the source for ALL-RULES in the original design; the Python
     installer stages in memory, so when (and only when) the template needs rules
     they are materialised to a temp dir for ``flatten_template`` to read —
     matching ``find $staging/rules -name '*.md' | sort``.
@@ -240,7 +239,7 @@ def _resolve_named_rules(names: str, *, base_dir: Path, io: IOPort) -> str:
 def _resolve_file_include(rel: Path, *, base_dir: Path, io: IOPort) -> str:
     """Read the verbatim text of an included file, or warn and return ''.
 
-    Mirrors the bash ``[[ -f ... ]]`` guard: a missing target *or* a directory
+    A missing target *or* a directory
     is non-fatal — it warns and resolves to the empty string.
 
     Raises ``ValueError`` for absolute paths or paths containing ``..`` —
