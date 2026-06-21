@@ -12,7 +12,8 @@ Tool-agnostic principles for all AI coding assistants.
 
 <constraints>
 - **Minimal edits**: Change only what's necessary—no over-engineering
-- **Informed edits**: Research the codebase before editing - never change code you haven't read
+- **Informed edits**: Research the codebase before editing - never change code you 
+  haven't read
 - **Spec, diagram and code agreement**: Specs and HLD diagrams state the
   **desired** intent; code states the **current** reality. They needn't match in
   *detail* (code outpaces the spec — expected), but must agree on any element both
@@ -37,7 +38,10 @@ Tool-agnostic principles for all AI coding assistants.
   threads — that's artifact-level structure, not in-body narration. Pre-existing
   review-ledger appendices in dated specs are grandfathered; this rule applies to
   new edits.
-- **Domain vocabulary**: If the project has a `CONTEXT.md` at the repo root (or a `CONTEXT-MAP.md` pointing to per-context glossaries in a multi-context repo), read it and use its terminology when discussing domain concepts. Soft convention — absence is not a blocker
+- **Domain vocabulary**: If the project has a `CONTEXT.md` at the repo root (or a 
+  `CONTEXT-MAP.md` pointing to per-context glossaries in a multi-context repo), read 
+  it and use its terminology when discussing domain concepts. Soft convention — absence 
+  is not a blocker
 - **Parallel ops**: Independent tool calls in single message
 - **Root causes**: Find root causes, no temporary fixes—principal engineer standards
 - **Lead with the outcome**: Your first sentence after finishing answers "what
@@ -57,7 +61,6 @@ Tool-agnostic principles for all AI coding assistants.
 - **Database safety**: Never copy Dolt or SQLite databases while WAL is locked; never run DB operations from worktree directories if the DB lives in the main tree
 - **Coordination**: Never `git restore` another agent's files—ask the user or owning agent first
 - **No tracker IDs in code or living docs**: Do not embed work-tracker IDs (bead IDs, ticket numbers) or opaque section codes (e.g. "CA-23") in source code or living technical documentation. Cite design docs by readable name and section ("foo-design.md, section 2"), not by tracker ID. The test: deleting the tracker should leave the code and docs unaffected. Exempt: commit messages, PR titles/bodies, and dated audit/spec/plan files.
-- **New-constraint self-sweep before push**: When a PR introduces a new constraint to these instructions or to AGENTS.md, grep the PR's own changed files against the constraint's key phrase before pushing — the most likely violator of a freshly stated rule is the diff that added it.
 </constraints>
 
 <decision-matrix>
