@@ -17,9 +17,8 @@ def transform_agent_frontmatter(content: bytes) -> bytes:
     memory) and rewrite a comma-separated ``tools:`` string into an inline YAML
     flow sequence.
 
-    Surgical line port of bash ``transform_gemini_agent_frontmatter``
-    (scripts/install.sh:643-688): a fence-counting state machine that edits only
-    the lines it must and emits every other line verbatim. That verbatim path is
+    A fence-counting state machine that edits only the lines it must and emits
+    every other line verbatim. That verbatim path is
     why a ``description: |-`` block scalar — and any quoting or spacing — survives
     byte-for-byte; a pyyaml round-trip would reflow it. The ``tools:`` value is
     wrapped whole (``tools: [Read, Grep]``), preserving its raw spacing, rather
@@ -74,8 +73,7 @@ def transform_agent_frontmatter(content: bytes) -> bytes:
 
 
 class GeminiAdapter:
-    """Adapter for Google's Gemini CLI. Probes ~/.gemini/ as a directory —
-    mirrors the bash installer's [[ -d "$HOME/.gemini" ]] detection."""
+    """Adapter for Google's Gemini CLI. Detected when ~/.gemini/ exists."""
 
     name: str = "gemini"
 
@@ -100,9 +98,9 @@ class GeminiAdapter:
 
     def post_staging_transforms(self, plan: StagingPlan, io: IOPort) -> StagingPlan:
         """Apply the Claude→Gemini agent frontmatter transform to every staged
-        ``agents/`` file. Mirrors bash Phase 6.6 (scripts/install.sh:892-897):
-        emits one verbose phase line when agent files are present, then rewrites
-        each in place. Non-agent items and directory entries are left untouched.
+        ``agents/`` file: emits one verbose phase line when agent files are
+        present, then rewrites each in place. Non-agent items and directory
+        entries are left untouched.
         """
         logged = False
         for relpath, item in list(plan.items.items()):

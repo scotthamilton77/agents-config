@@ -32,8 +32,6 @@ listed** (not lexicographic), each resolved as ``<name>.md`` from the fixed
 skipped; a missing rule warns and is skipped (the separator only advances on a
 successful inline). An empty list passes through as prose.
 
-The behavioural reference is the bash installer's ``flatten_agents_md``
-(``scripts/install.sh``).
 """
 
 from __future__ import annotations
@@ -61,14 +59,13 @@ _FILE_INCLUDE_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE: (.*) -->$")
 _ALL_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-ALL-RULES -->$")
 _NAMED_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-RULES: (.*) -->$")
 
-# Fixed source dir the named-RULES subset resolves from, relative to base_dir —
-# mirrors the bash ``$project_root/src/user/.claude/rules/$rule_name.md``
-# (install.sh:718). Distinct from ALL-RULES, which reads the staged rules tree.
+# Fixed source dir the named-RULES subset resolves from, relative to base_dir.
+# Distinct from ALL-RULES, which reads the staged rules tree.
 _NAMED_RULES_SOURCE_DIR = Path("src/user/.claude/rules")
 
-# Tool-root instruction files the bash installer flattens (install.sh:854):
-# ``AGENTS.md.template`` and ``GEMINI.md.template`` — here keyed by their
-# ``.template``-stripped dest, which is how the plan stores them.
+# Tool-root instruction files that are flattened: ``AGENTS.md.template`` and
+# ``GEMINI.md.template`` — keyed by their ``.template``-stripped dest, which is
+# how the plan stores them.
 _FLATTENABLE_DESTS: tuple[Path, ...] = (Path("AGENTS.md"), Path("GEMINI.md"))
 
 
@@ -76,9 +73,8 @@ def parse_directive(line: str) -> IncludeDirective | None:
     """Recognise a DYNAMIC-INCLUDE directive on a single line.
 
     The line must match a marker form exactly — no leading or trailing
-    whitespace — mirroring the anchored ``^...$`` patterns in the bash
-    installer. A file marker with an empty path, or a named-RULES marker with an
-    empty list, is rejected — matching the bash ``-n`` guards — so the line
+    whitespace. A file marker with an empty path, or a named-RULES marker with an
+    empty list, is rejected — matching the non-empty guards — so the line
     passes through as prose. Returns the matching directive dataclass, or None
     for any line that is not a directive.
     """
@@ -146,8 +142,7 @@ def flatten_plan_templates(plan: StagingPlan, *, repo_root: Path, io: IOPort) ->
     """Phase 6.5/6.75: flatten the plan's instruction templates, then drop the
     include-only templates they inline.
 
-    Mirrors the bash installer (``scripts/install.sh:849-890``): for each
-    flattenable instruction file present in the plan (``AGENTS.md`` /
+    For each flattenable instruction file present in the plan (``AGENTS.md`` /
     ``GEMINI.md``), replace its content with the DYNAMIC-INCLUDE-flattened text —
     file includes resolved from ``repo_root``, ALL-RULES from the plan's own
     staged rules — then remove the include-only templates from the plan so they
@@ -183,7 +178,7 @@ def _file_include_dests(text: str) -> set[Path]:
 def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, io: IOPort) -> str:
     """Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.
 
-    The bash installer reads ALL-RULES from the on-disk staging tree; the Python
+    The on-disk staging tree is the source for ALL-RULES in the original design; the Python
     installer stages in memory, so when (and only when) the template needs rules
     they are materialised to a temp dir for ``flatten_template`` to read —
     matching ``find $staging/rules -name '*.md' | sort``.
@@ -206,9 +201,8 @@ def _resolve_all_rules(*, rules_dir: Path | None, io: IOPort) -> str:
     files in ``rules_dir``, sorted lexicographically by filename, joined with
     ``\\n---\\n`` between adjacent rules.
 
-    Mirrors the bash installer's ALL-RULES handler (``scripts/install.sh:730-745``):
-    ``find ... | LC_ALL=C sort`` over rule files, cat each, ``printf '\\n---\\n'``
-    between them, warn if the collection is empty.
+    All ``*.md`` files in ``rules_dir``, sorted lexicographically, joined with
+    ``\\n---\\n`` between them; warns if the collection is empty.
     """
     rule_files: list[Path] = []
     if rules_dir is not None and rules_dir.is_dir():
@@ -222,10 +216,9 @@ def _resolve_all_rules(*, rules_dir: Path | None, io: IOPort) -> str:
 def _resolve_named_rules(names: str, *, base_dir: Path, io: IOPort) -> str:
     """Expand the named-RULES subset directive to the listed rules, in order.
 
-    Mirrors the bash installer's named-RULES handler (``scripts/install.sh:710-731``):
-    split the comma-list, trim each name, skip empties, resolve each as
-    ``<name>.md`` under ``base_dir/src/user/.claude/rules/``, ``cat`` the ones
-    that exist joined by ``\\n---\\n``, and ``warn`` + skip the ones that do not.
+    Split the comma-list, trim each name, skip empties, resolve each as
+    ``<name>.md`` under ``base_dir/src/user/.claude/rules/``, joining the ones
+    that exist with ``\\n---\\n``, and warning + skipping the ones that do not.
     The separator only sits between successful inlines, so a leading missing rule
     produces no leading separator. Unlike ALL-RULES there is no aggregate
     "nothing found" warning — each missing name warns individually.
@@ -246,7 +239,7 @@ def _resolve_named_rules(names: str, *, base_dir: Path, io: IOPort) -> str:
 def _resolve_file_include(rel: Path, *, base_dir: Path, io: IOPort) -> str:
     """Read the verbatim text of an included file, or warn and return ''.
 
-    Mirrors the bash ``[[ -f ... ]]`` guard: a missing target *or* a directory
+    A missing target *or* a directory
     is non-fatal — it warns and resolves to the empty string.
 
     Raises ``ValueError`` for absolute paths or paths containing ``..`` —

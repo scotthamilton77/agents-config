@@ -1,11 +1,9 @@
 """Path-aware timestamped backup placement (shared by sync and prune).
 
-Single home for the bash ``backup()`` routing decision
-(``scripts/install.sh:352-388``): a target whose immediate parent is one of the
-prune-managed namespaces is copied to a sibling ``<namespace>-backup/`` dir
-under the grandparent; any other target gets an in-place ``<name>.backup-<ts>``
-sibling. Handles both files (``shutil.copy2``) and directories
-(``shutil.copytree``), mirroring the bash ``cp`` / ``cp -R`` split.
+A target whose immediate parent is one of the prune-managed namespaces is
+copied to a sibling ``<namespace>-backup/`` dir under the grandparent; any
+other target gets an in-place ``<name>.backup-<ts>`` sibling. Handles both
+files (``shutil.copy2``) and directories (``shutil.copytree``).
 
 The ``timestamp`` is interpolated raw into the backup path, so callers MUST
 pass a value matching the ``YYYYMMDD-HHMMSS`` contract; ``new_timestamp``
@@ -22,10 +20,10 @@ from datetime import datetime
 from pathlib import Path
 
 # Namespaces whose backups route to a sibling ``<namespace>-backup/`` dir rather
-# than an in-place suffix (bash ``backup()`` case list, scripts/install.sh:369-379).
+# than an in-place suffix.
 _SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formulas"})
 
-# Backup timestamp format, matching ``date +%Y%m%d-%H%M%S`` (scripts/install.sh:365).
+# Backup timestamp format: YYYYMMDD-HHMMSS.
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 # A caller-supplied timestamp is interpolated raw into the backup filename, so it
@@ -36,7 +34,7 @@ _TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 
 def new_timestamp() -> str:
-    """Current local wall-clock time as ``YYYYMMDD-HHMMSS`` (bash local-TZ ``date``)."""
+    """Current local wall-clock time as ``YYYYMMDD-HHMMSS``."""
     return datetime.now().astimezone().strftime(_TIMESTAMP_FORMAT)
 
 
@@ -70,7 +68,7 @@ def back_up(target: Path, timestamp: str) -> Path:
     Routes via ``_backup_path_for`` (scoped namespace -> sibling
     ``<namespace>-backup/``; else in-place), creating the backup dir as needed.
     Directories are copied recursively (``shutil.copytree``), files via
-    ``shutil.copy2`` — mirroring the bash ``cp -R`` / ``cp`` split.
+    ``shutil.copy2``.
     """
     if not valid_timestamp(timestamp):
         raise ValueError(f"timestamp must be YYYYMMDD-HHMMSS: {timestamp!r}")  # noqa: TRY003  # single call-site

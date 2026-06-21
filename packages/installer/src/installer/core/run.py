@@ -53,7 +53,7 @@ def prune_pipeline(
     (plain ``--prune``). Returns the flow's per-target ``Counters`` (pruned /
     backed_up) keyed by ``Orphan.tool`` — each tool or plugin namespace whose
     orphans were pruned gets its own bucket so the install summary can report a
-    plugin pruned outside the active tool set (bash AC#19). An empty / no-op
+    plugin pruned outside the active tool set (AC#19). An empty / no-op
     prune yields an empty mapping.
     """
     orphans = scan_orphans(adapters, plans=plans, home=home, config=config)
@@ -84,9 +84,8 @@ def install_pipeline(
     looked up by its tool (``Tool(adapter.name)``) and written under
     ``adapter.dest_dir(home)``. Returns a per-tool mapping keyed by
     ``adapter.name`` (each tool's own `Counters`) rather than one aggregate, so
-    the install summary can render a separate block per tool at bash parity
-    (``scripts/install.sh:1818-1826``). A summed total would throw the per-tool
-    distinction away.
+    the install summary can render a separate block per tool. A summed total
+    would throw the per-tool distinction away.
 
     ``dry_run`` and ``auto_yes`` are forwarded verbatim into every ``sync_plan``
     call, so the W2 consent gate and the shared no-TTY guard apply uniformly
@@ -125,13 +124,11 @@ def install_plugin_routes(
     The plugin-side analog of ``install_pipeline``: it walks each plugin's
     ``routes(home)`` through ``sync_routes`` and returns a per-plugin mapping
     keyed by ``plugin.name`` (each plugin's own `Counters`). Per-plugin rather
-    than one aggregate so the install summary renders a block per plugin at bash
-    parity. A routes-free generic plugin still gets an all-zero bucket — present
-    so a verbose summary can print its (empty) block — so a tool-only plugin set
-    is a no-op on disk, not on the mapping. ``cli.main`` (W3) calls this after
-    ``install_pipeline`` (gated by ``not --prune-only``), mirroring the bash
-    installer, which runs ``stage_and_install_beads`` after the tool sync
-    (``scripts/install.sh:948``).
+    than one aggregate so the install summary renders a block per plugin. A
+    routes-free generic plugin still gets an all-zero bucket — present so a
+    verbose summary can print its (empty) block — so a tool-only plugin set is a
+    no-op on disk, not on the mapping. ``cli.main`` (W3) calls this after
+    ``install_pipeline`` (gated by ``not --prune-only``).
 
     ``dry_run`` and ``auto_yes`` thread into ``sync_routes`` so the consent gate
     and no-TTY guard apply uniformly with the tool install.

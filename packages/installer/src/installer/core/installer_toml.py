@@ -1,19 +1,14 @@
-"""Loader for ``installer.toml`` — the structured replacement for the legacy
-``scripts/prune-list`` text file.
+"""Loader for ``installer.toml`` — the prune-list configuration.
 
-Replaces the bash ``_load_prune_list`` (``scripts/install.sh:1471-1483``), which
-read one glob per non-comment line out of ``scripts/prune-list``. The Python
-installer instead reads a ``[prune] retired`` array from
-``packages/installer/installer.toml`` (schema in
-``docs/architecture/installer/installer-design.md`` §"Configuration —
-installer.toml"). An optional ``[tools]`` table carries per-tool dest-dir
+Reads a ``[prune] retired`` array from ``packages/installer/installer.toml``
+(schema in ``docs/architecture/installer/installer-design.md`` §"Configuration
+— installer.toml"). An optional ``[tools]`` table carries per-tool dest-dir
 overrides.
 
 Pure: takes a ``Path``, returns parsed data. A missing file is the no-op
-default (empty prune list, no overrides) — mirroring the bash
-``[[ -f "$list_file" ]] || return 0`` early-out — so callers never have to
-guard the absent-config case. Glob *matching* lives in ``core/prune.py``; this
-module only retains the patterns as strings.
+default (empty prune list, no overrides), so callers never have to guard the
+absent-config case. Glob *matching* lives in ``core/prune.py``; this module
+only retains the patterns as strings.
 """
 
 from __future__ import annotations

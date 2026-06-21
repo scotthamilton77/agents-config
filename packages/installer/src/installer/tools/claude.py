@@ -9,10 +9,8 @@ if TYPE_CHECKING:
 
 
 class ClaudeAdapter:
-    """Adapter for Anthropic's Claude Code. Always detected: install.sh treats
-    claude as its unconditional tool (`TOOLS=(claude)` — "claude always; others
-    if ~/.<tool>/ exists"), so auto-detect always selects it, even on a fresh
-    machine with no ~/.claude yet."""
+    """Adapter for Anthropic's Claude Code. Always detected: auto-detect always
+    selects it, even on a fresh machine with no ~/.claude yet."""
 
     name: str = "claude"
 

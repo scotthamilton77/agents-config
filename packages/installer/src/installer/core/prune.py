@@ -1,28 +1,24 @@
 """Orphan scan — identify retired dest entries to prune.
 
-Pure port of the bash orphan scan (``scripts/install.sh:1505-1543``). An orphan
-is a top-level entry directly inside a tool's scoped namespace dir
+An orphan is a top-level entry directly inside a tool's scoped namespace dir
 (``commands``/``skills``/``agents``/``rules``) or ``~/.beads/formulas`` that:
 
 1. is NOT present in this run's ``StagingPlan`` (nothing staged it), AND
 2. matches a prune-list glob keyed ``tool/namespace/basename``.
 
 Item granularity is the top-level entry — the scan does not recurse into nested
-skill directories (bash note at ``scripts/install.sh:1446-1448``). Legacy
-``*.backup-*`` entries (in-place backups from older ``backup()``
-implementations) are skipped so they are never treated as orphans
-(``scripts/install.sh:1512``). Sibling ``<namespace>-backup/`` dirs live at the
-grandparent level and are never visited by this scan.
+skill directories. Legacy ``*.backup-*`` entries (in-place backups from older
+``backup()`` implementations) are skipped so they are never treated as orphans.
+Sibling ``<namespace>-backup/`` dirs live at the grandparent level and are never
+visited by this scan.
 
 ``~/.beads/formulas`` is scanned whenever pruning runs, regardless of beads
 plugin detection: if beads is not an active plugin, no plan staged any formula,
-so every dest formula registers as an orphan — consistent with strict mode
-(``scripts/install.sh:1537-1541``).
+so every dest formula registers as an orphan (strict mode).
 
-Matching is ``fnmatch`` on the ``tool/namespace/basename`` key, mirroring the
-bash ``case "$key" in ($entry)`` glob match (``scripts/install.sh:1485-1499``).
-Pure: it reads the destination filesystem and the in-memory plans, and returns
-``list[Orphan]`` without mutating anything.
+Matching is ``fnmatch`` on the ``tool/namespace/basename`` key. Pure: it reads
+the destination filesystem and the in-memory plans, and returns ``list[Orphan]``
+without mutating anything.
 """
 
 from __future__ import annotations
@@ -40,14 +36,13 @@ if TYPE_CHECKING:
     from installer.core.model import StagingPlan
     from installer.tools.base import ToolAdapter
 
-# Tool-tree namespaces scanned for orphans (bash ``prune_subdirs``,
-# ``scripts/install.sh:1529``). Narrower than ``adapter.scoped_namespaces()``
-# only incidentally — kept explicit so the scan set is the bash set, not
-# whatever an adapter happens to expose.
+# Tool-tree namespaces scanned for orphans. Narrower than
+# ``adapter.scoped_namespaces()`` only incidentally — kept explicit so the scan
+# set is independent of adapter changes.
 _PRUNE_SUBDIRS = ("commands", "skills", "agents", "rules")
 
 # Beads' formulas live outside any tool tree; scanned unconditionally under a
-# fixed ``beads/formulas`` key (``scripts/install.sh:1541``).
+# fixed ``beads/formulas`` key.
 _BEADS_TOOL = "beads"
 _BEADS_NAMESPACE = "formulas"
 
@@ -76,7 +71,7 @@ def _scan_namespace(
     staged: set[str],
     prune_globs: Sequence[str],
 ) -> list[Orphan]:
-    """Collect orphans in one dest namespace dir (bash ``_scan_namespace``).
+    """Collect orphans in one dest namespace dir.
 
     An entry is an orphan when it is not a legacy ``*.backup-*`` file, is not
     staged, and its ``tool/namespace/basename`` key matches a prune glob.

@@ -2,10 +2,9 @@
 
 After base staging (Phases 1-5, ``staging.build_plan``), each active plugin's
 ``.agents/`` (shared scope) and ``.<tool>/`` (tool scope) content is overlaid
-onto the tool's plan. Port of the bash Phase 6 loop
-(``scripts/install.sh:813-847``).
+onto the tool's plan.
 
-Two invariants from the bash original:
+Two ordering invariants:
 
 - **Alphabetical plugin order.** Plugins are applied in ascending name order so
   that last-wins collisions (``OTHER`` / ``JSONC`` / ``TOML``) resolve
@@ -42,8 +41,8 @@ if TYPE_CHECKING:
     from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
 
-# Plugin namespace staging order, per scope (bash install.sh:820, 837). The tool
-# scope includes commands; the shared scope does not (no shared commands).
+# Plugin namespace staging order, per scope. The tool scope includes commands;
+# the shared scope does not (no shared commands).
 _TOOL_NAMESPACES = ("rules", "commands", "skills", "agents")
 _SHARED_NAMESPACES = ("rules", "skills", "agents")
 
@@ -104,8 +103,8 @@ def _place(
         plan.items[incoming.dest_relpath] = incoming
         return
     if carrier_eligible and _carrier_merge_allowed(existing, incoming):
-        # Mirror bash `rm -f sentinel`: the carrier dir survives with the
-        # plugin's disjoint files merged in. Record those added files' bytes in
+        # The carrier dir survives with the plugin's disjoint files merged in.
+        # Record those added files' bytes in
         # the dir_overrides side channel (the carrier DIR item has a single
         # source_path and so cannot itself express a second source tree), then
         # clear the flag so any further plugin collision on this dir is a true
@@ -132,11 +131,9 @@ def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
     The ``.agents/``-origin precondition is enforced by the caller via
     ``carrier_eligible`` — a tool-scope plugin DIR never reaches here.
 
-    Port of the bash carrier-merge guard (``scripts/install.sh:550-595``): the
-    disjoint-file-set check is the load-bearing precondition — overlapping names
-    fall through to the registry's fatal strategy. Dotfiles are excluded from the
-    comparison to mirror bash's ``"$dir"/*`` globs, which skip dot-prefixed
-    entries."""
+    The disjoint-file-set check is the load-bearing precondition — overlapping
+    names fall through to the registry's fatal strategy. Dotfiles are excluded
+    from the comparison (dot-prefixed entries are skipped)."""
     if not (
         existing.kind is FileKind.DIR and incoming.kind is FileKind.DIR and existing.shared_carrier
     ):
@@ -147,8 +144,10 @@ def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
 
 
 def _visible_names(directory: Path) -> set[str]:
-    """The dot-excluded child names of ``directory`` — the entries a bash
-    ``"$dir"/*`` glob would iterate (dotfiles are skipped without ``dotglob``)."""
+    """The dot-excluded child names of ``directory``.
+
+    Entries a plain glob would iterate (dotfiles excluded).
+    """
     return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}
 
 
@@ -156,15 +155,14 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     """The plugin DIR's disjoint files, keyed by their relpath under
     ``directory`` to their bytes — the file-carry payload of a carrier-merge.
 
-    Approximates the bash carrier-merge copy loop (``scripts/install.sh:585-592``):
-    ``for sfile in "$src"/*`` iterates the dot-excluded TOP-LEVEL entries, then
-    ``cp -R`` descends each subdir. So a top-level dotfile is dropped — matching
-    the same dotfile exclusion the disjoint check applies via ``_visible_names``
-    — while a dotfile nested under a carried subdir is kept. Keys are relpaths so
-    a nested file lands at ``subdir/file`` under the carrier DIR's destination.
+    Iterates dot-excluded TOP-LEVEL entries, recursing into subdirs. A top-level
+    dotfile is dropped — matching the same dotfile exclusion the disjoint check
+    applies via ``_visible_names`` — while a dotfile nested under a carried
+    subdir is kept. Keys are relpaths so a nested file lands at
+    ``subdir/file`` under the carrier DIR's destination.
 
     Only files are recorded; ``dir_overrides`` maps relpaths to bytes and so has
-    no representation for a directory entry. A *truly empty* subdir that bash
+    no representation for a directory entry. A *truly empty* subdir that
     ``cp -R`` would have created is therefore not carried — a deliberate gap, not
     an oversight: plugin source trees are git-tracked, and git cannot store an
     empty directory, so an empty subdir cannot reach this function in the first

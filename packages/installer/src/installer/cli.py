@@ -31,11 +31,10 @@ if TYPE_CHECKING:
 # ``src/plugins``. ``cli.py`` lives at ``<repo>/packages/installer/src/installer/
 # cli.py``, so the fourth parent is the repo root. ``uv`` installs this package
 # editable, so ``__file__`` stays inside the source tree and this resolution holds
-# at runtime; tests inject ``repo_root`` directly. Mirrors the bash installer's
-# ``PROJECT_ROOT="$SCRIPT_DIR/.."`` (scripts/install.sh:197-198). The bundled
-# installer.toml path and the plugin source root are derived per-run from the
-# injected repo_root (default: _REPO_ROOT), keeping repo_root fully authoritative
-# for staging, config, and plugin discovery alike.
+# at runtime; tests inject ``repo_root`` directly. The bundled installer.toml path
+# and the plugin source root are derived per-run from the injected repo_root
+# (default: _REPO_ROOT), keeping repo_root fully authoritative for staging,
+# config, and plugin discovery alike.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
@@ -126,11 +125,10 @@ def main(
 
         io = TerminalIO(verbose=args.verbose)
 
-    # Run-mode notice, mirroring bash (scripts/install.sh:218-222): a dry-run
-    # announces itself up front; an auto-yes run notes that prompts and diffs are
-    # suppressed — but only when NOT verbose, since verbose already narrates every
-    # file. Emitted before tool/plugin resolution so it leads the transcript, as
-    # the excluded-plugin warning (below) trails it in the bash ordering.
+    # Run-mode notice: a dry-run announces itself up front; an auto-yes run notes
+    # that prompts and diffs are suppressed — but only when NOT verbose, since
+    # verbose already narrates every file. Emitted before tool/plugin resolution
+    # so it leads the transcript.
     if args.dry_run:
         io.info("DRY RUN -- no changes will be made")
     elif args.yes and not args.verbose:
@@ -143,9 +141,7 @@ def main(
         return 2
 
     # Resolve plugins up front (after tools) so an invalid --plugins fails fast
-    # on every path — matching the bash installer, which validates --plugins
-    # before dispatching any mode (scripts/install.sh:298-307). The resolved set
-    # feeds both --dump-stage and --prune below.
+    # on every path. The resolved set feeds both --dump-stage and --prune below.
     try:
         plugins = resolve_plugins(
             home=resolved_home,
@@ -158,11 +154,10 @@ def main(
         sys.stderr.write(f"installer: {exc}\n")
         return 2
 
-    # Warn about plugins an EXPLICIT --plugins= override dropped (bash gates this on
-    # PLUGINS_FLAG_SET, scripts/install.sh:308 — auto-detect dropping an undetected
-    # plugin is normal, not warn-worthy). Routed through io.warn after resolution and
-    # before any mode dispatch so it fires on every path (plain / --dump-stage /
-    # --prune / --prune-only) the override reaches.
+    # Warn about plugins an EXPLICIT --plugins= override dropped (auto-detect
+    # dropping an undetected plugin is normal, not warn-worthy). Routed through
+    # io.warn after resolution and before any mode dispatch so it fires on every
+    # path (plain / --dump-stage / --prune / --prune-only) the override reaches.
     if args.plugins is not None:
         _warn_excluded_plugins(
             resolved=plugins,
@@ -171,12 +166,11 @@ def main(
             prune_active=args.prune or args.prune_only,
         )
 
-    # Load the shared exclusion manifest up front, mirroring the bash installer's
-    # early fail-fast. An absent, unreadable, or non-UTF-8 .installignore is a hard
-    # error (exit 2) rather than a silent empty-exclusion install — the manifest is
-    # load-bearing policy, and a missing one would re-leak dead-docs identically on
-    # both installers (shared wrongness the parity oracle cannot see). UnicodeDecodeError
-    # is a ValueError (not an OSError), so it is caught explicitly here.
+    # Load the shared exclusion manifest up front. An absent, unreadable, or
+    # non-UTF-8 .installignore is a hard error (exit 2) rather than a silent
+    # empty-exclusion install — the manifest is load-bearing policy, and a missing
+    # one would re-leak dead-docs silently. UnicodeDecodeError is a ValueError
+    # (not an OSError), so it is caught explicitly here.
     try:
         ignore = load_installignore(resolved_repo_root / ".installignore")
     except (OSError, UnicodeDecodeError) as exc:
@@ -213,16 +207,14 @@ def main(
 
     # Default install path (also the install half of --prune): walk each active
     # tool's StagingPlan to disk via install_pipeline. Skipped only for
-    # --prune-only, which removes retired paths without installing. Slots ahead
-    # of the prune branch so --prune is install-then-prune, mirroring the bash
-    # installer (scripts/install.sh copies before the retire sweep). Driving the
-    # install through stage_and_transform is also what makes adapter post-staging
+    # --prune-only, which removes retired paths without installing. Slots ahead of
+    # the prune branch so --prune is install-then-prune. Driving the install
+    # through stage_and_transform is also what makes adapter post-staging
     # transforms (e.g. the Gemini frontmatter transform) fire in real installs,
     # not just --dump-stage / --prune.
     # Per-target tallies accumulate across the install and prune halves so the
     # summary reports each tool/plugin's full activity merged (a tool that both
-    # installs files and has orphans pruned shows both). Keyed by target name,
-    # mirroring the bash per-tool counter arrays (scripts/install.sh:349-357).
+    # installs files and has orphans pruned shows both). Keyed by target name.
     counters: dict[str, Counters] = {}
 
     if not args.prune_only:
@@ -240,8 +232,7 @@ def main(
             )
             # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land outside
             # any tool tree, so they install in a dedicated pass after the tool
-            # sync — mirroring the bash installer's stage_and_install_beads phase
-            # (scripts/install.sh:948). Same consent gate; --prune-only skips it.
+            # sync. Same consent gate; --prune-only skips it.
             _merge_into(
                 counters,
                 install_plugin_routes(
@@ -274,10 +265,9 @@ def main(
         if rc != 0:
             return rc
 
-    # Render the install / prune summary once at the end, mirroring the bash
-    # installer's terminal Summary block (scripts/install.sh:1801-1869). ALL_TOOLS
-    # is the closed tool universe (known_tools); ALL_PLUGINS is the discovered
-    # plugin set — both feed the '(not detected, skipped)' verbose footers.
+    # Render the install / prune summary once at the end. ALL_TOOLS is the closed
+    # tool universe (known_tools); ALL_PLUGINS is the discovered plugin set — both
+    # feed the '(not detected, skipped)' verbose footers.
     render_summary(
         counters,
         tools=[t.value for t in tools],
@@ -316,12 +306,12 @@ def _warn_excluded_plugins(
 ) -> None:
     """Warn about each discovered plugin an explicit ``--plugins=`` override dropped.
 
-    Mirrors bash ``scripts/install.sh:317-328``: for every plugin in the discovered
-    set absent from the resolved selection, emit a warning naming it. The wording
-    branches on whether a prune phase is active — under ``--prune``/``--prune-only``
-    the excluded plugin's already-installed files become orphans that may be removed
-    (strict mode); otherwise they are left in place. Caller gates this on an explicit
-    override, so an auto-detected exclusion stays silent.
+    For every plugin in the discovered set absent from the resolved selection, emit
+    a warning naming it. The wording branches on whether a prune phase is active —
+    under ``--prune``/``--prune-only`` the excluded plugin's already-installed files
+    become orphans that may be removed (strict mode); otherwise they are left in
+    place. Caller gates this on an explicit override, so an auto-detected exclusion
+    stays silent.
     """
     resolved_names = {adapter.name for adapter in resolved}
     discovered = discover(resolve_plugins_root(repo_root, os.environ))
