@@ -144,7 +144,10 @@ def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
 
 
 def _visible_names(directory: Path) -> set[str]:
-    """The dot-excluded child names of ``directory`` — entries a plain glob would iterate (dotfiles excluded)."""
+    """The dot-excluded child names of ``directory``.
+
+    Entries a plain glob would iterate (dotfiles excluded).
+    """
     return {entry.name for entry in directory.iterdir() if not entry.name.startswith(".")}
 
 
