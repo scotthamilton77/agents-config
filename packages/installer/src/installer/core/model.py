@@ -26,8 +26,7 @@ class Tool(StrEnum):
 
 
 class FileKind(StrEnum):
-    """Merge-dispatch discriminator. Mirrors the bash `classify_file()` at
-    `scripts/install.sh:486-505`. Namespace context for `NAMESPACED_MD`
+    """Merge-dispatch discriminator. Namespace context for `NAMESPACED_MD`
     lives on `StagedItem.namespace`, not in the enum, so merge dispatch
     keys on (kind, namespace) cleanly."""
 
@@ -74,8 +73,8 @@ class NamedRulesInclude:
     from the fixed ``src/user/.claude/rules/`` source dir and preserves the
     author's ordering. ``names`` holds the verbatim sed capture (the raw
     comma-list text); splitting, trimming, and empty-entry skipping happen at
-    flatten time in `core/templates.py`, mirroring the bash ``tr ',' '\\n'`` +
-    per-name trim loop."""
+    flatten time in `core/templates.py` (split on comma, trim each name, skip
+    empties)."""
 
     names: str
 
@@ -104,15 +103,15 @@ class StagedItem:
     ignore `executable`; the sync engine preserves the source tree's
     mode bits for recursive copies.
 
-    `shared_carrier` is the in-memory replacement for the bash
-    `.carrier-from-user-shared` sentinel file (`scripts/install.sh:517-529`).
-    It is set `True` only on `skills/` and `agents/` `kind==DIR` items first
+    `shared_carrier` is the in-memory carrier flag (replaces the on-disk
+    `.carrier-from-user-shared` sentinel). It is set `True` only on `skills/`
+    and `agents/` `kind==DIR` items first
     staged from the shared carrier tree (`build_plan` Phase 2). The Phase 6
     plugin overlay reads it to allow a carrier-merge (a plugin overlaying a
     disjoint file set into a shared skill/agent dir) while keeping plugin-vs-
-    plugin directory collisions fatal. The overlay clears it after a merge —
-    mirroring the bash `rm -f sentinel` — so a second plugin colliding on the
-    same dir is a true plugin-plugin collision (fatal)."""
+    plugin directory collisions fatal. The overlay clears it after a merge so
+    a second plugin colliding on the same dir is a true plugin-plugin collision
+    (fatal)."""
 
     source_path: Path
     dest_relpath: Path
@@ -126,7 +125,7 @@ class StagedItem:
 
 @dataclass(slots=True)
 class StagingPlan:
-    """The in-memory replacement for the bash installer's temp-dir staging.
+    """The in-memory staging plan.
 
     Built incrementally during the staging phase; consumed by sync and
     prune. `items` is a plain `dict` and therefore **silently overwrites**
@@ -162,8 +161,7 @@ class StagingPlan:
 class Orphan:
     """One destination-side entry not present in this run's staging plan.
 
-    Replaces the four parallel arrays at `scripts/install.sh:1456-1467`
-    with a single record per orphan. `tool` is `str` rather than `Tool`
+    One record per orphan. `tool` is `str` rather than `Tool`
     because the orphan bucket includes plugin namespaces (e.g. ``beads``)
     that are not tools."""
 

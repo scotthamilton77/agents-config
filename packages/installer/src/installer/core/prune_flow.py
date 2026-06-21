@@ -1,19 +1,17 @@
 """Interactive prune flow — confirm and perform orphan deletion.
 
-Port of the bash ``prune_orphans`` (``scripts/install.sh:1602-1687``). Takes the
-orphan list from ``core/prune.py`` and an ``IOPort``, drives the three-way
-prompt (all / one-by-one / cancel) and the one-by-one per-item drill-down, and
-backs up then deletes every confirmed orphan. ALL prompts route through the
-``IOPort`` so the flow is unit-testable through ``ScriptedIO``.
+Takes the orphan list from ``core/prune.py`` and an ``IOPort``, drives the
+three-way prompt (all / one-by-one / cancel) and the one-by-one per-item
+drill-down, and backs up then deletes every confirmed orphan. ALL prompts route
+through the ``IOPort`` so the flow is unit-testable through ``ScriptedIO``.
 
 Deletion is always preceded by a path-aware backup (``core/backup.py``) so
-``--yes`` is never a data-loss path — the bash ``_delete_orphan`` likewise calls
-``backup`` before ``rm -rf`` (``scripts/install.sh:1580-1588``).
+``--yes`` is never a data-loss path.
 
-Guard ordering mirrors the bash function exactly: the non-interactive guard runs
-FIRST, before the empty-orphan fast path, so ``--prune-only`` without auth
-hard-fails regardless of orphan count (``scripts/install.sh:1602-1615``).
-``--dry-run`` and ``--yes`` are themselves the authorization, so they are exempt.
+Guard ordering: the non-interactive guard runs FIRST, before the empty-orphan
+fast path, so ``--prune-only`` without auth hard-fails regardless of orphan
+count. ``--dry-run`` and ``--yes`` are themselves the authorization, so they
+are exempt.
 """
 
 from __future__ import annotations
@@ -39,9 +37,9 @@ _CANCEL = "c"
 class PruneAbortedError(RuntimeError):
     """Raised when a non-interactive ``--prune-only`` run lacks authorization.
 
-    Mirrors the bash hard-fail (``scripts/install.sh:1608-1610``): the caller
-    asked for an action (prune-only) with no way to confirm it and no ``--yes``
-    / ``--dry-run`` standing in for consent, so the intent cannot be fulfilled.
+    The caller asked for an action (prune-only) with no way to confirm it and
+    no ``--yes`` / ``--dry-run`` standing in for consent, so the intent cannot
+    be fulfilled.
     """
 
 
@@ -113,7 +111,7 @@ def run_prune(
 def _prompt_and_delete(
     orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
 ) -> dict[str, Counters]:
-    """Three-way prompt then act (bash interactive branch, install.sh:1636-1686)."""
+    """Three-way prompt then act."""
     choice = io.confirm_three_way(
         "Action? [a]ll, [o]ne-by-one, [c]ancel",
         choices=(_ALL, _ONE_BY_ONE, _CANCEL),
@@ -130,7 +128,7 @@ def _prompt_and_delete(
 def _delete_one_by_one(
     orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
 ) -> dict[str, Counters]:
-    """Per-item drill-down (bash ``o|O`` branch, install.sh:1650-1676).
+    """Per-item drill-down.
 
     A per-item ``quit`` leaves every un-answered orphan in place; an orphan the
     user did not keep (decision ``True``) is deleted. Orphans the user never
@@ -150,7 +148,7 @@ def _delete_one_by_one(
 
 
 def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> dict[str, Counters]:
-    """Back up + delete every orphan (bash ``_delete_all_orphans``, install.sh:1592-1600)."""
+    """Back up + delete every orphan."""
     per_tool: dict[str, Counters] = {}
     for orphan in orphans:
         _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
@@ -162,7 +160,7 @@ def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> dic
 def _back_up_and_delete(
     orphan: Orphan, *, io: IOPort, timestamp: str, per_tool: dict[str, Counters]
 ) -> None:
-    """Back up an orphan, then remove it (bash ``_delete_orphan``, install.sh:1580-1588).
+    """Back up an orphan, then remove it.
 
     Tallies into the ``per_tool[orphan.tool]`` bucket (created on first sight) so
     pruned/backed_up land under the orphan's own tool or plugin namespace.
@@ -194,12 +192,11 @@ def _back_up_and_delete(
 
 
 def _display(orphans: Sequence[Orphan], io: IOPort) -> None:
-    """Print the orphan list grouped by tool then namespace (bash ``_display_orphans``).
+    """Print the orphan list grouped by tool then namespace.
 
-    Framing mirrors the bash function (``scripts/install.sh:1560-1584``): a blank
-    line then the ``-- … --`` header (bash ``header()`` prepends the newline and
-    wraps the text in dashes — ``io.header`` does neither, so both are explicit
-    here), a blank line before each tool block, and a trailing blank line.
+    A blank line then the ``-- … --`` header (``io.header`` does not prepend the
+    newline or wrap in dashes, so both are explicit here), a blank line before
+    each tool block, and a trailing blank line.
     """
     io.info("")
     io.header(f"-- Orphans detected ({len(orphans)} total) --")

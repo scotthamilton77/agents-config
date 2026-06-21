@@ -1,7 +1,6 @@
 """Staging-phase construction of a StagingPlan from source files.
 
-Pure builders mirroring the bash installer's Phase 1-5 staging
-(``scripts/install.sh``): ``classify_file`` assigns a ``FileKind``;
+Phase 1-5 pure builders: ``classify_file`` assigns a ``FileKind``;
 ``stage_namespace`` walks one namespace subdir (skills/agents/rules/commands);
 ``stage_templates`` and ``stage_settings`` collect tool-root instruction
 templates and settings; ``build_plan`` drives all five phases for one tool.
@@ -37,12 +36,10 @@ def strip_template_suffix(path: Path) -> Path:
 def classify_file(path: Path, namespace: str | None) -> FileKind:
     """Merge-dispatch classification of a source path.
 
-    Port of the bash ``classify_file`` (``scripts/install.sh:486-505``).
     ``namespace`` is the parent namespace dir name (``skills``/``rules``/…)
     or ``None`` for tool-root files; it promotes a ``*.md`` file to
-    ``NAMESPACED_MD`` exactly as the bash ``-n "$parent_dir"`` guard does.
-    The directory check is first, mirroring the bash ordering, so a
-    directory named ``foo.toml`` still classifies as ``DIR``.
+    ``NAMESPACED_MD``. The directory check is first, so a directory named
+    ``foo.toml`` still classifies as ``DIR``.
     """
     if path.is_dir():
         return FileKind.DIR
@@ -81,19 +78,18 @@ def stage_templates(source_root: Path, *, provenance: Provenance) -> list[Staged
     ]
 
 
-# Three explicit globs in bash Phase 5 order (install.sh:806) — keep them
-# separate; collapsing into one brace pattern would lose the staging order.
+# Three explicit globs — keep them separate; collapsing into one brace pattern
+# would lose the staging order (Phase 5: json, jsonc, toml).
 _SETTINGS_GLOBS = ("*.json.template", "*.jsonc.template", "*.toml.template")
 
 
 def stage_settings(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
     """Stage tool-root settings templates (bash Phase 5).
 
-    Globs the JSON/JSONC/TOML template forms (each glob sorted, in the bash
-    order), classifies via ``classify_file``, strips ``.template``, and stages
-    each as a root-level item with no namespace. Shared settings are
-    intentionally never staged (bash note at install.sh:791-792). A missing
-    ``source_root`` yields ``[]``.
+    Globs the JSON/JSONC/TOML template forms (each glob sorted, in order),
+    classifies via ``classify_file``, strips ``.template``, and stages each as a
+    root-level item with no namespace. Shared settings are intentionally never
+    staged. A missing ``source_root`` yields ``[]``.
     """
     if not source_root.is_dir():
         return []
@@ -122,8 +118,8 @@ def stage_namespace(
 ) -> list[StagedItem]:
     """Stage one namespace subdir into StagedItems.
 
-    Port of bash ``stage_content_from_dir`` (``scripts/install.sh``). Walks
-    ``source_root/namespace/*`` in sorted order; each direct child whose name is
+    Walks ``source_root/namespace/*`` in sorted order; each direct child whose
+    name is
     excluded by ``ignore`` (a file basename or a directory name from
     ``.installignore``) is skipped. Surviving entries are classified, suffix-
     stripped, and turned into ``StagedItem``s. A missing namespace dir yields
@@ -159,24 +155,22 @@ def stage_namespace(
     return items
 
 
-_SHARED_NAMESPACES = ("skills", "agents", "rules")  # bash Phase 2 (no commands shared)
+_SHARED_NAMESPACES = ("skills", "agents", "rules")  # no commands shared (Phase 2)
 
-# Shared namespaces whose DIR units are carrier dirs (bash install.sh:525) — a
-# plugin may carrier-merge disjoint files into one of these; rules/ holds files,
-# not dirs, so it is excluded.
+# Shared namespaces whose DIR units are carrier dirs — a plugin may
+# carrier-merge disjoint files into one of these; rules/ holds files, not dirs,
+# so it is excluded.
 _CARRIER_NAMESPACES = frozenset({"skills", "agents"})
 
 
 def _mark_carrier(item: StagedItem) -> StagedItem:
     """Stamp the shared-carrier flag on a shared skills/agents DIR item.
 
-    Port of the bash ``.carrier-from-user-shared`` sentinel drop
-    (``scripts/install.sh:517-529``). Only ``kind==DIR`` items in the carrier
-    namespaces are marked; every other item passes through unchanged so the
-    flag never spuriously appears on rules files, agent ``*.md`` files, or
-    templates. Mark only during shared (Phase 2) staging — plugin staging must
-    NOT self-mark, which is why this lives in ``build_plan`` and not in the
-    shared ``stage_namespace`` walker.
+    Only ``kind==DIR`` items in the carrier namespaces are marked; every other
+    item passes through unchanged so the flag never spuriously appears on rules
+    files, agent ``*.md`` files, or templates. Marked only during shared
+    (Phase 2) staging — plugin staging must NOT self-mark, which is why this
+    lives in ``build_plan`` and not in the shared ``stage_namespace`` walker.
     """
     if item.kind is FileKind.DIR and item.namespace in _CARRIER_NAMESPACES:
         return replace(item, shared_carrier=True)
@@ -198,10 +192,10 @@ def _add_item(plan: StagingPlan, item: StagedItem) -> None:
 
 
 def build_plan(adapter: ToolAdapter, *, repo_root: Path, ignore: InstallIgnore) -> StagingPlan:
-    """Build a StagingPlan for one tool (bash Phases 1-5).
+    """Build a StagingPlan for one tool (Phases 1-5).
 
-    Stages, in bash order: shared templates (1), shared skills/agents/rules
-    namespaces (2), tool-root templates (3), tool namespaces from
+    Stages: shared templates (1), shared skills/agents/rules namespaces (2),
+    tool-root templates (3), tool namespaces from
     ``adapter.scoped_namespaces()`` (4), and tool settings (5). Each namespace
     is gated by ``adapter.should_install_namespace(ns, source)`` so a tool can
     opt out (e.g. OpenCode skips shared agents). Plugin overlay (Phase 6) and

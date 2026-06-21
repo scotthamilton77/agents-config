@@ -5,12 +5,10 @@ confirm it: when stdin is not a TTY (no prompt can be answered) and neither
 ``--yes`` nor ``--dry-run`` waives confirmation, the run hard-fails up front with
 a clear error rather than silently overwriting files.
 
-This is design-forward relative to ``scripts/install.sh``, whose per-prompt
-``confirm()`` merely *skips* in non-interactive mode (``scripts/install.sh:177``)
-— the Python installer promotes that to a single explicit precondition so a
-scripted caller learns immediately that it must pass ``--yes``. ``--yes`` is the
-intended scripted-install path; ``--dry-run`` writes nothing, so both waive the
-guard.
+The non-interactive guard is an explicit up-front precondition: a scripted
+caller learns immediately that it must pass ``--yes`` rather than discovering
+it mid-run when a prompt cannot be answered. ``--yes`` is the intended
+scripted-install path; ``--dry-run`` writes nothing, so both waive the guard.
 """
 
 from __future__ import annotations

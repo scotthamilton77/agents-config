@@ -2,8 +2,7 @@
 
 After base staging (Phases 1-5, ``staging.build_plan``), each active plugin's
 ``.agents/`` (shared scope) and ``.<tool>/`` (tool scope) content is overlaid
-onto the tool's plan. Port of the bash Phase 6 loop
-(``scripts/install.sh:813-847``).
+onto the tool's plan.
 
 Two invariants from the bash original:
 
@@ -42,8 +41,8 @@ if TYPE_CHECKING:
     from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
 
-# Plugin namespace staging order, per scope (bash install.sh:820, 837). The tool
-# scope includes commands; the shared scope does not (no shared commands).
+# Plugin namespace staging order, per scope. The tool scope includes commands;
+# the shared scope does not (no shared commands).
 _TOOL_NAMESPACES = ("rules", "commands", "skills", "agents")
 _SHARED_NAMESPACES = ("rules", "skills", "agents")
 
@@ -132,11 +131,9 @@ def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:
     The ``.agents/``-origin precondition is enforced by the caller via
     ``carrier_eligible`` — a tool-scope plugin DIR never reaches here.
 
-    Port of the bash carrier-merge guard (``scripts/install.sh:550-595``): the
-    disjoint-file-set check is the load-bearing precondition — overlapping names
-    fall through to the registry's fatal strategy. Dotfiles are excluded from the
-    comparison to mirror bash's ``"$dir"/*`` globs, which skip dot-prefixed
-    entries."""
+    The disjoint-file-set check is the load-bearing precondition — overlapping
+    names fall through to the registry's fatal strategy. Dotfiles are excluded
+    from the comparison (dot-prefixed entries are skipped)."""
     if not (
         existing.kind is FileKind.DIR and incoming.kind is FileKind.DIR and existing.shared_carrier
     ):
@@ -156,12 +153,11 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     """The plugin DIR's disjoint files, keyed by their relpath under
     ``directory`` to their bytes — the file-carry payload of a carrier-merge.
 
-    Approximates the bash carrier-merge copy loop (``scripts/install.sh:585-592``):
-    ``for sfile in "$src"/*`` iterates the dot-excluded TOP-LEVEL entries, then
-    ``cp -R`` descends each subdir. So a top-level dotfile is dropped — matching
-    the same dotfile exclusion the disjoint check applies via ``_visible_names``
-    — while a dotfile nested under a carried subdir is kept. Keys are relpaths so
-    a nested file lands at ``subdir/file`` under the carrier DIR's destination.
+    Iterates dot-excluded TOP-LEVEL entries, recursing into subdirs. A top-level
+    dotfile is dropped — matching the same dotfile exclusion the disjoint check
+    applies via ``_visible_names`` — while a dotfile nested under a carried
+    subdir is kept. Keys are relpaths so a nested file lands at
+    ``subdir/file`` under the carrier DIR's destination.
 
     Only files are recorded; ``dir_overrides`` maps relpaths to bytes and so has
     no representation for a directory entry. A *truly empty* subdir that bash

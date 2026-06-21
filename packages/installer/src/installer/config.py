@@ -31,8 +31,8 @@ def resolve_tools(*, home: Path, override_csv: str | None) -> tuple[Tool, ...]:
 
     - `override_csv is None` -> auto-detect: walk known_tools(), keep
       those whose adapter reports `is_detected(home) is True`. claude's
-      adapter is always-on (install.sh's `TOOLS=(claude)` floor), so it is
-      always selected; known_tools() sorts it first, so it also leads.
+      adapter is always-on (always selected); known_tools() sorts it first,
+      so it also leads.
     - `override_csv == ""` (or whitespace-only) -> ValueError.
     - Otherwise -> split on commas, strip whitespace, validate each via
       `parse_tool_name`, dedupe preserving first occurrence, preserve
@@ -64,8 +64,6 @@ def resolve_plugins(
     - `override_csv == ""` (or whitespace-only) -> () (install no plugins).
       Deliberate asymmetry with `resolve_tools`, which raises on empty
       `--tools=`: "no plugins" is a valid choice, "no tools" is a no-op error.
-      Matches scripts/install.sh's plugin-detection block, where a set
-      `--plugins=` flag with an empty value yields no plugins.
     - Otherwise -> split on commas, strip whitespace, validate each via the
       discovered set, dedupe preserving first occurrence, preserve order.
     """
@@ -94,10 +92,9 @@ def resolve_plugins_root(repo_root: Path, env: Mapping[str, str]) -> Path:
 
     Defaults to ``repo_root/src/plugins``. The ``INSTALLER_PLUGINS_SRC`` env var
     overrides it — a default-inert seam used only by the golden-master parity
-    harness to point both installers at a fixture plugin tree. The bash
-    installer carries the symmetric ``${INSTALLER_PLUGINS_SRC:-...}`` override
-    (scripts/install.sh). An unset *or empty* value falls back to the default,
-    so an exported-but-empty var can never collapse the root to ``Path('')``.
+    harness to point both installers at a fixture plugin tree. An unset *or
+    empty* value falls back to the default, so an exported-but-empty var can
+    never collapse the root to ``Path('')``.
     """
     override = env.get("INSTALLER_PLUGINS_SRC")
     return Path(override) if override else repo_root / "src" / "plugins"

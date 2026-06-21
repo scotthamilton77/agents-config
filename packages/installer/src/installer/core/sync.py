@@ -5,11 +5,10 @@ Copies one source file to one destination, resolving both ends through a
 `docs/architecture/installer/installer-design.md`: later stories grow it
 to walk a `StagingPlan` and route conflicts through the merge registry.
 
-Path-aware backup (G.1) ports the bash installer's ``backup()``
-(`scripts/install.sh:352-388`): before overwriting an existing
-destination, the original is copied to a timestamped backup so a failed
-write leaves it recoverable. The routing decision and timestamp contract
-live in `core/backup.py`, shared with the prune flow (G.4).
+Path-aware backup (G.1): before overwriting an existing destination, the
+original is copied to a timestamped backup so a failed write leaves it
+recoverable. The routing decision and timestamp contract live in
+`core/backup.py`, shared with the prune flow (G.4).
 """
 
 from __future__ import annotations
@@ -39,10 +38,9 @@ def _effective_content(content: bytes, old: bytes | None, *, kind: FileKind) -> 
     """The bytes to actually write for one item.
 
     A ``settings.json`` over an existing user file is union-merged into that file
-    (bash ``sync_settings_file``) so user values survive; any other kind, or a
-    fresh install, writes the staged content unchanged. The caller guarantees an
-    existing settings file is valid JSON before this runs (an invalid one is
-    skipped with an error — bash ``scripts/install.sh:1299-1304``), so the union
+    so user values survive; any other kind, or a fresh install, writes the staged
+    content unchanged. The caller guarantees an existing settings file is valid
+    JSON before this runs (an invalid one is skipped with an error), so the union
     never has to reconcile unparseable bytes.
     """
     if kind is not FileKind.SETTINGS_JSON or old is None:
@@ -51,8 +49,8 @@ def _effective_content(content: bytes, old: bytes | None, *, kind: FileKind) -> 
 
 
 def _is_valid_json(data: bytes) -> bool:
-    """Whether ``data`` parses as JSON — the guard bash runs as ``jq empty`` before
-    union-merging an existing ``settings.json`` (``scripts/install.sh:1299``)."""
+    """Whether ``data`` parses as JSON — the guard before union-merging an existing
+    ``settings.json``."""
     try:
         json.loads(data)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -226,20 +224,17 @@ def sync_routes(
 ) -> Counters:
     """Install every plugin route's globbed files at its dest root.
 
-    The in-memory port of the bash installer's ``stage_and_install_beads``
-    (``scripts/install.sh:948-1124``): for each ``PluginRoute``, glob
-    ``source_dir`` for the route's pattern (sorted, files only) and install each
-    match at ``dest_dir/<name>`` with the route's exec bit, reusing the FILE
-    installer's skip / consent / backup contract. A route whose ``source_dir`` is
-    absent contributes nothing (bash ``[[ -d ... ]] || continue``,
-    ``scripts/install.sh:969,1056``). Unlike the tool-file path, a hash-equal skip
-    restores a lost exec bit (``scripts/install.sh:1096``) — route-scoped, since
-    bash carries no general executable reconcile.
+    For each ``PluginRoute``, glob ``source_dir`` for the route's pattern
+    (sorted, files only) and install each match at ``dest_dir/<name>`` with the
+    route's exec bit, reusing the FILE installer's skip / consent / backup
+    contract. A route whose ``source_dir`` is absent contributes nothing.
+    Unlike the tool-file path, a hash-equal skip restores a lost exec bit —
+    route-scoped, since exec-bit restore applies only to plugin routes.
 
-    The shared no-TTY guard (`require_consent`) runs once up front, mirroring
-    ``sync_plan``: a non-interactive run with neither ``auto_yes`` nor ``dry_run``
-    hard-fails before any write. ``dest_dir`` is created lazily on the first write
-    (the differ ignores empty dirs); ``timestamp`` is the backup suffix. Returns
+    The shared no-TTY guard (`require_consent`) runs once up front: a
+    non-interactive run with neither ``auto_yes`` nor ``dry_run`` hard-fails
+    before any write. ``dest_dir`` is created lazily on the first write (the
+    differ ignores empty dirs); ``timestamp`` is the backup suffix. Returns
     aggregate `Counters`.
     """
     require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
@@ -288,16 +283,15 @@ def _install_file(
     """Install one FILE item: skip an unchanged dest, back up a differing dest
     before the overwrite, and write the bytes with a deterministic mode bit
     (``0o755`` when ``executable`` else ``0o644``). Mutates ``counters``. An
-    unchanged-dest skip emits a verbose-gated "X is up to date" line (bash
-    ``vok``, scripts/install.sh:1166), silent without ``--verbose``.
+    unchanged-dest skip emits a verbose-gated "X is up to date" line, silent
+    without ``--verbose``.
 
     A ``SETTINGS_JSON`` item is union-merged into an existing user file rather
     than overwritten (``_effective_content``), so user values survive an install;
     the change check is then semantic (``_is_unchanged``), so a pure reformat is a
     skip, not a spurious backup-and-rewrite. An existing settings file that is not
     valid JSON is left untouched and reported as an error (it cannot be merged, and
-    a blind overwrite would destroy a recoverable hand-edit), counted as a skip —
-    bash's ``jq empty`` guard (``scripts/install.sh:1299-1304``).
+    a blind overwrite would destroy a recoverable hand-edit), counted as a skip.
 
     A *changed* dest (present, content differs) passes through the consent gate
     (`_consent_to_overwrite`) before any backup or write: an interactive decline
@@ -306,10 +300,9 @@ def _install_file(
     existing dest — a first install is not a destructive overwrite.
 
     ``restore_exec_on_skip`` (default ``False``) opts the *skip* path into
-    restoring a lost exec bit without a rewrite — the plugin-route behaviour at
-    ``scripts/install.sh:1096``. It is off for tool files because bash carries no
-    general executable reconcile (only beads scripts), so enabling it there would
-    diverge from the spec; ``sync_routes`` turns it on.
+    restoring a lost exec bit without a rewrite — route-scoped, since exec-bit
+    restore applies only to plugin routes (e.g. beads scripts). Off for tool files
+    by default; ``sync_routes`` turns it on.
 
     A dest already occupied by a non-file (a directory) is rejected with
     `ValueError` rather than crashing the walk with a raw ``IsADirectoryError`` —
@@ -321,7 +314,6 @@ def _install_file(
     if kind is FileKind.SETTINGS_JSON and old is not None and not _is_valid_json(old):
         # Refuse to touch an unparseable settings.json: union-merge is impossible
         # and a blind overwrite would destroy the user's (recoverable) hand-edit.
-        # bash skips with the same guidance (``scripts/install.sh:1299-1304``).
         io.err(f"{dest} contains invalid JSON. Fix it manually or remove it.")
         counters.skipped += 1
         return
@@ -347,10 +339,8 @@ def _install_file(
         dest.write_bytes(effective)
         dest.chmod(0o755 if executable else 0o644)
     # A changed settings.json union over an EXISTING dest is a merge, not a plain
-    # update — bash tallies ``tool_merged`` (not ``tool_updated``) on that branch
-    # (scripts/install.sh:1358 dry-run / 1366 applied). A fresh settings.json (no
-    # existing dest) is a plain create (scripts/install.sh:1303), so the merge tally
-    # is gated on ``dest_exists``.
+    # update. A fresh settings.json (no existing dest) is a plain create, so the
+    # merge tally is gated on ``dest_exists``.
     is_merge = kind is FileKind.SETTINGS_JSON and dest_exists
     _record_write(
         dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters, merged=is_merge
@@ -361,10 +351,7 @@ def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, by
     """Whether re-materialising ``dest`` from ``source_path`` + ``overrides`` would
     leave its contents byte-identical — the directory idempotency check.
 
-    Mirrors bash ``sync_directory``'s ``src_hash == dest_hash`` "up to date"
-    branch (`scripts/install.sh:1230`), whose directory hash folds every file's
-    relpath and bytes (`compute_hash`, `scripts/install.sh:402-403`). The
-    expected file map is the source tree with ``overrides`` overlaid (override
+    The expected file map is the source tree with ``overrides`` overlaid (override
     wins on a name collision — dump-time semantics), compared against the actual
     dest tree. Bytes are read through symlinks to match ``copytree``'s
     dereferencing; only files participate, so empty dirs are ignored — matching
@@ -394,9 +381,8 @@ def _install_dir(
 
     An existing dest whose contents already match (`_dir_is_unchanged`) is left
     untouched and counted as a skip — so a re-install is idempotent and produces
-    no spurious backups (bash ``sync_directory``'s "up to date" branch,
-    `scripts/install.sh:1230`); the skip emits a verbose-gated "X is up to date"
-    line (bash ``vok``, scripts/install.sh:1237), silent without ``--verbose``.
+    no spurious backups; the skip emits a verbose-gated "X is up to date" line,
+    silent without ``--verbose``.
     A changed existing dest passes through the consent gate before the
     backup/replace: an interactive decline keeps the existing tree and counts a
     skip; ``auto_yes`` accepts silently; ``dry_run`` previews without prompting.
@@ -484,16 +470,14 @@ def _record_write(
 ) -> None:
     """Preview the would-be write under ``dry_run`` and tally it as a create,
     update, or merge. On a real (non-``dry_run``) write, emit a verbose-gated
-    per-item line ("Installed X (new)" / "Updated X" / "Merged X") so ``--verbose``
-    yields bash ``vok`` per-file detail (scripts/install.sh:1158,1180,1365) while a
-    quiet run stays silent.
+    per-item line ("Installed X (new)" / "Updated X" / "Merged X"); a quiet run
+    stays silent.
 
     ``merged`` is True only for a changed settings.json union over an existing dest
-    (``_install_file``): bash tallies that as ``tool_merged`` rather than
-    ``tool_updated`` (scripts/install.sh:1358 dry-run / 1366 applied). It is
-    mutually exclusive with the create branch — a merge always overwrites an
-    existing dest — so ``merged`` is only ever set alongside ``dest_exists``. Shared
-    by the file and dir installers; mutates ``counters``."""
+    (``_install_file``): tallied as ``merged``, not ``updated``. Mutually exclusive
+    with the create branch — a merge always overwrites an existing dest — so
+    ``merged`` is only ever set alongside ``dest_exists``. Shared by the file and
+    dir installers; mutates ``counters``."""
     if dry_run:
         verb = "merge" if merged else "update" if dest_exists else "create"
         io.info(f"would {verb} {dest}")
@@ -540,15 +524,14 @@ def _ensure_parent_dir(target: Path, *, dry_run: bool) -> None:
 
 def _restore_exec_bit(dest: Path) -> bool:
     """Restore a lost exec bit on a hash-equal dest without a full rewrite.
-    Route-scoped port of ``scripts/install.sh:1096`` (``[[ -x ]] || chmod +x``):
-    fires only when no exec bit is set, and then *adds* the exec bits to the
-    existing mode (``mode | 0o111``) rather than forcing ``0o755`` — so a
-    user-tightened file (e.g. ``0o600``) gains exec without widening its
-    read/write bits, mirroring ``chmod +x``. The any-exec-bit gate matches the
-    differ's executability definition (``_diff.py::_is_executable``). Returns
-    ``True`` when the mode was changed (so the caller can announce the repair
-    under ``--verbose``, mirroring bash ``vinfo "Restored +x ..."``,
-    scripts/install.sh:1096), ``False`` when the exec bit was already set."""
+
+    Fires only when no exec bit is set, then *adds* the exec bits to the existing
+    mode (``mode | 0o111``) rather than forcing ``0o755`` — so a user-tightened
+    file (e.g. ``0o600``) gains exec without widening its read/write bits,
+    matching ``chmod +x`` semantics. The any-exec-bit gate matches the differ's
+    executability definition (``_diff.py::_is_executable``). Returns ``True`` when
+    the mode was changed (so the caller can announce the repair under
+    ``--verbose``), ``False`` when the exec bit was already set."""
     mode = dest.stat().st_mode
     if mode & 0o111:
         return False

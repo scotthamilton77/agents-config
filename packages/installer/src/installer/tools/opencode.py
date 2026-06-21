@@ -39,8 +39,7 @@ class OpenCodeAdapter:
 
     def should_install_namespace(self, namespace: str, source: str) -> bool:
         # Skip the shared agents/ namespace: OpenCode's agent frontmatter format
-        # differs from the shared format (see OPENCODE-EXTENSIONS.md). Mirrors the
-        # bash installer's Phase 2 `[[ "$tool" != "opencode" ]]` agents guard.
+        # differs from the shared format (see OPENCODE-EXTENSIONS.md).
         return not (namespace == "agents" and source == "shared")
 
     def post_staging_transforms(
@@ -50,10 +49,10 @@ class OpenCodeAdapter:
     ) -> StagingPlan:
         """Drop staged rules/ items before sync: OpenCode has no standalone rules/
         destination. The rules are inlined into the flat AGENTS.md by the
-        DYNAMIC-INCLUDE-ALL-RULES flatten — which runs earlier in stage_and_transform
-        and sources them from these same staged items — so dropping them here mirrors
-        install.sh Phase 7, which stages rules then skips writing the rules/ subdir
-        for opencode (scripts/install.sh:928-934)."""
+        DYNAMIC-INCLUDE-ALL-RULES flatten — which runs earlier in
+        stage_and_transform and sources them from these same staged items — so
+        dropping them here prevents a second standalone deploy of the same
+        content."""
         for relpath in [rp for rp, item in plan.items.items() if item.namespace == "rules"]:
             del plan.items[relpath]
         return plan
