@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from installer.core.installignore import InstallIgnore
+from installer.core.merge.base import CollisionError
 from installer.core.model import FileKind, StagingPlan, Tool
 from installer.core.staging import build_plan
 from installer.tools.claude import ClaudeAdapter
@@ -91,16 +92,46 @@ def test_build_plan_assigns_namespaces_and_kinds(tmp_path: Path, ignore: Install
     assert plan.items[Path("settings.json")].kind == FileKind.SETTINGS_JSON
 
 
-def test_build_plan_raises_on_collision(tmp_path: Path, ignore: InstallIgnore) -> None:
-    """Two sources mapping to the same dest_relpath must raise — merge
-    dispatch is deferred to Epic E, so a silent overwrite is unacceptable."""
+def test_build_plan_appends_colliding_rules(tmp_path: Path, ignore: InstallIgnore) -> None:
+    """A shared rules/ file (Phase 2) and a tool rules/ file (Phase 4) at the
+    same dest_relpath append-merge through the registry: (NAMESPACED_MD, "rules")
+    -> AppendRulesStrategy joins existing (shared) THEN incoming (tool) with the
+    canonical b"\\n---\\n" separator."""
     repo = _make_repo(tmp_path)
-    # Force a collision: a tool-side rules/ file with the SAME name as the shared
-    # rules/ file already in the fixture. rules is in both _SHARED_NAMESPACES
-    # (Phase 2) and ClaudeAdapter.scoped_namespaces() (Phase 4), so both stage to
-    # rules/delegation.md -> identical dest_relpath.
+    # rules is in both _SHARED_NAMESPACES (Phase 2) and scoped_namespaces (Phase 4),
+    # so both stage to rules/delegation.md -> identical dest_relpath.
     (repo / "src" / "user" / ".claude" / "rules").mkdir(parents=True)
-    (repo / "src" / "user" / ".claude" / "rules" / "delegation.md").write_bytes(b"dup")
+    (repo / "src" / "user" / ".claude" / "rules" / "delegation.md").write_bytes(b"tool extension")
 
-    with pytest.raises(ValueError, match="collision"):
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
+
+    assert plan.items[Path("rules/delegation.md")].content == b"shared rule\n---\ntool extension"
+
+
+def test_build_plan_dir_collision_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:
+    """A same-named skill DIR in shared (Phase 2) and tool (Phase 4) is an
+    irreconcilable collision: the registry routes (FileKind.DIR) to
+    FatalStrategy, which raises CollisionError. Proves the guard was relocated to
+    the registry, not dissolved."""
+    repo = _make_repo(tmp_path)
+    # shared has skills/shared-skill/ (a DIR); stage the same DIR name tool-side.
+    (repo / "src" / "user" / ".claude" / "skills" / "shared-skill").mkdir(parents=True)
+    (repo / "src" / "user" / ".claude" / "skills" / "shared-skill" / "SKILL.md").write_bytes(b"x")
+
+    with pytest.raises(CollisionError):
         build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
+
+
+def test_build_plan_other_collision_last_wins(tmp_path: Path, ignore: InstallIgnore) -> None:
+    """Two root templates mapping to the same dest (FileKind.OTHER) resolve via
+    LastWinsSilentStrategy: the incoming tool template (Phase 3) silently wins
+    over the shared one (Phase 1)."""
+    repo = _make_repo(tmp_path)
+    # shared INSTRUCTIONS.md.template (Phase 1) -> INSTRUCTIONS.md; add a tool-root
+    # template at the same dest (Phase 3).
+    tool_tmpl = repo / "src" / "user" / ".claude" / "INSTRUCTIONS.md.template"
+    tool_tmpl.write_bytes(b"# tool root tmpl")
+
+    plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
+
+    assert plan.items[Path("INSTRUCTIONS.md")].content == b"# tool root tmpl"

@@ -29,6 +29,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core.merge.place import place_resolved
 from installer.core.model import FileKind, Provenance
 from installer.core.staging import stage_namespace, stage_settings
 
@@ -99,10 +100,7 @@ def _place(
     already-merged (flag-cleared) carrier — routes through the registry, where
     ``FileKind.DIR`` is fatal."""
     existing = plan.items.get(incoming.dest_relpath)
-    if existing is None:
-        plan.items[incoming.dest_relpath] = incoming
-        return
-    if carrier_eligible and _carrier_merge_allowed(existing, incoming):
+    if existing is not None and carrier_eligible and _carrier_merge_allowed(existing, incoming):
         # The carrier dir survives with the plugin's disjoint files merged in.
         # Record those added files' bytes in
         # the dir_overrides side channel (the carrier DIR item has a single
@@ -119,9 +117,7 @@ def _place(
         )
         plan.items[incoming.dest_relpath] = replace(existing, shared_carrier=False)
         return
-    plan.items[incoming.dest_relpath] = registry.resolve(incoming.kind, incoming.namespace).merge(
-        existing, incoming
-    )
+    place_resolved(plan, incoming, existing, registry)
 
 
 def _carrier_merge_allowed(existing: StagedItem, incoming: StagedItem) -> bool:

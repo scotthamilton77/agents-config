@@ -59,7 +59,7 @@ def stage_and_transform(
     plans: dict[Tool, StagingPlan] = {}
     for tool in tools:
         adapter = get_adapter(tool)
-        plan = build_plan(adapter, repo_root=repo_root, ignore=ignore)
+        plan = build_plan(adapter, repo_root=repo_root, ignore=ignore, registry=registry)
         plan = overlay_plugins(plan, plugins, adapter=adapter, registry=registry, ignore=ignore)
         plan = apply_extensions(plan, plugins)
         flatten_plan_templates(plan, repo_root=repo_root, io=io)
