@@ -88,31 +88,17 @@ class TreeDiff:
         return "tree diff:\n" + "\n".join(lines)
 
 
-# Bash deploys AGENTS.md/CLAUDE.md/GEMINI.md found inside a namespace dir
-# (source-dir dev-docs); the Python installer correctly omits them via its
-# DEAD_MARKERS rule. They are never a real parity divergence, so the harness
-# drops them on both sides. The tool-root instruction file (parent is the tool
-# dir, not a namespace) is not matched and still compares.
-_DEAD_MARKER_NAMES = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md"})
-_NAMESPACE_DIRS = frozenset({"skills", "agents", "rules", "commands", "hooks"})
-
-
-def _is_namespace_dead_marker(relpath: str) -> bool:
-    parts = relpath.split("/")
-    return len(parts) >= 2 and parts[-1] in _DEAD_MARKER_NAMES and parts[-2] in _NAMESPACE_DIRS
-
-
 def _index_tree(root: Path) -> dict[str, Path]:
     """Map every file under ``root`` to its normalised POSIX relpath.
 
-    Namespace-level dead markers are skipped — see ``_is_namespace_dead_marker``.
+    No path is skipped: both installers now exclude .installignore dev-docs at
+    staging, so neither tree contains them and a plain tree comparison is exact.
+    A dead-doc reappearing on only one side is a real divergence and must surface.
     """
     index: dict[str, Path] = {}
     for path in root.rglob("*"):
         if path.is_file():
             rel = normalize_relpath(path.relative_to(root).as_posix())
-            if _is_namespace_dead_marker(rel):
-                continue
             if rel in index:
                 # Two real files collapsed to one key (e.g. two backups of the
                 # same name). Surfacing loudly beats silently dropping one and

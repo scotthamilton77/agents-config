@@ -141,18 +141,6 @@ def test_executable_bit_mismatch_is_detected(tmp_path: Path) -> None:
     assert "hooks/h.py" in result.mode_mismatch
 
 
-def test_namespace_dead_marker_only_in_a_is_exempt(tmp_path: Path) -> None:
-    # Class 2: bash deploys a namespace-level AGENTS.md (source-dir dev docs);
-    # the Python installer correctly omits it (DEAD_MARKERS). The harness must
-    # not flag bash's known-spurious surplus.
-    a, b = tmp_path / "a", tmp_path / "b"
-    _write(a / ".claude/skills/AGENTS.md", b"dev docs for the skills source dir")
-    _write(a / ".claude/skills/real-skill.md", b"x")
-    _write(b / ".claude/skills/real-skill.md", b"x")
-    result = diff_trees(a, b)
-    assert result.is_parity(), result.render()
-
-
 def test_tool_root_instruction_file_is_not_exempt(tmp_path: Path) -> None:
     # Guard against over-exempting: the real tool-root AGENTS.md still compares.
     a, b = tmp_path / "a", tmp_path / "b"

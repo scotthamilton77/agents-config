@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.installignore import InstallIgnore
 from installer.core.io_port import ScriptedIO
 from installer.core.model import StagingPlan, Tool
 from installer.core.staging import build_plan
@@ -37,7 +38,7 @@ def _make_opencode_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_opencode_build_plan_skips_shared_agents(tmp_path: Path) -> None:
+def test_opencode_build_plan_skips_shared_agents(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
     Given a repo with shared agents/ content
     When build_plan runs with OpenCodeAdapter
@@ -48,13 +49,15 @@ def test_opencode_build_plan_skips_shared_agents(tmp_path: Path) -> None:
     """
     repo = _make_opencode_repo(tmp_path)
 
-    plan = build_plan(OpenCodeAdapter(), repo_root=repo)
+    plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)
 
     assert not any(item.namespace == "agents" for item in plan.items.values())
     assert Path("agents/shared-agent.md") not in plan.items
 
 
-def test_opencode_build_plan_keeps_shared_skills_and_rules(tmp_path: Path) -> None:
+def test_opencode_build_plan_keeps_shared_skills_and_rules(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """
     Given a repo with shared skills/ and rules/ content
     When build_plan runs with OpenCodeAdapter
@@ -65,7 +68,7 @@ def test_opencode_build_plan_keeps_shared_skills_and_rules(tmp_path: Path) -> No
     """
     repo = _make_opencode_repo(tmp_path)
 
-    plan = build_plan(OpenCodeAdapter(), repo_root=repo)
+    plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)
 
     assert isinstance(plan, StagingPlan)
     assert plan.tool == Tool.OPENCODE
@@ -74,7 +77,7 @@ def test_opencode_build_plan_keeps_shared_skills_and_rules(tmp_path: Path) -> No
     assert Path("AGENTS.md") in plan.items  # tool template (Phase 3), suffix stripped
 
 
-def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path) -> None:
+def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
     Given src/user/.opencode/opencode.jsonc.template
     When build_plan runs with OpenCodeAdapter
@@ -86,12 +89,14 @@ def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path) -> None:
     """
     repo = _make_opencode_repo(tmp_path)
 
-    plan = build_plan(OpenCodeAdapter(), repo_root=repo)
+    plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)
 
     assert Path("opencode.jsonc") in plan.items
 
 
-def test_opencode_post_staging_transforms_drops_rules(tmp_path: Path) -> None:
+def test_opencode_post_staging_transforms_drops_rules(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """
     Given an OpenCode plan that still carries shared rules/ items (build_plan keeps
     them so the DYNAMIC-INCLUDE-ALL-RULES flatten can inline them)
@@ -105,7 +110,7 @@ def test_opencode_post_staging_transforms_drops_rules(tmp_path: Path) -> None:
     sees the rules but sync does not.
     """
     repo = _make_opencode_repo(tmp_path)
-    plan = build_plan(OpenCodeAdapter(), repo_root=repo)
+    plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)
     assert Path("rules/delegation.md") in plan.items  # precondition: staged for inlining
 
     result = OpenCodeAdapter().post_staging_transforms(plan, ScriptedIO())

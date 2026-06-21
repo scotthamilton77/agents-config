@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from installer.tools.base import ToolAdapter
 
+from installer.core.installignore import InstallIgnore
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 
 
@@ -55,13 +56,6 @@ def classify_file(path: Path, namespace: str | None) -> FileKind:
     if name.endswith(".md") and namespace:
         return FileKind.NAMESPACED_MD
     return FileKind.OTHER
-
-
-DEAD_MARKERS = frozenset({"AGENTS.md", "CLAUDE.md", "GEMINI.md"})
-"""In-repo host-instruction filenames. Hosts inject only the tree-root
-~/.<tool>/AGENTS.md as system context, never per-namespace copies, so these
-are dead files when found inside a namespace dir. Tool-root *.md.template
-files are NOT in this set (different name) and are staged via stage_templates."""
 
 
 def stage_templates(source_root: Path, *, provenance: Provenance) -> list[StagedItem]:
@@ -124,15 +118,17 @@ def stage_namespace(
     namespace: str,
     *,
     provenance: Provenance,
+    ignore: InstallIgnore,
 ) -> list[StagedItem]:
     """Stage one namespace subdir into StagedItems.
 
-    Port of bash ``stage_content_from_dir`` (``scripts/install.sh:603-622``).
-    Walks ``source_root/namespace/*`` in sorted order; each entry is
-    classified, dead-marker-filtered, and turned into a ``StagedItem`` whose
-    ``dest_relpath`` is ``namespace/<name>`` with any ``.template`` suffix
-    stripped. Directory entries (skills/agents) carry ``content=None``;
-    file entries carry eager bytes. A missing namespace dir yields ``[]``.
+    Port of bash ``stage_content_from_dir`` (``scripts/install.sh``). Walks
+    ``source_root/namespace/*`` in sorted order; each direct child whose name is
+    excluded by ``ignore`` (a file basename or a directory name from
+    ``.installignore``) is skipped. Surviving entries are classified, suffix-
+    stripped, and turned into ``StagedItem``s. A missing namespace dir yields
+    ``[]``. Matching runs on direct children pre-``.template``-strip, so the real
+    tool-root ``AGENTS.md.template`` is never matched by a bare ``AGENTS.md``.
     """
     src_dir = source_root / namespace
     if not src_dir.is_dir():
@@ -140,7 +136,7 @@ def stage_namespace(
 
     items: list[StagedItem] = []
     for entry in sorted(src_dir.iterdir()):
-        if entry.is_file() and entry.name in DEAD_MARKERS:
+        if ignore.excludes(entry.name, is_dir=entry.is_dir()):
             continue
         kind = classify_file(entry, namespace)
         dest_name = strip_template_suffix(Path(entry.name))
@@ -201,7 +197,7 @@ def _add_item(plan: StagingPlan, item: StagedItem) -> None:
     plan.items[item.dest_relpath] = item
 
 
-def build_plan(adapter: ToolAdapter, *, repo_root: Path) -> StagingPlan:
+def build_plan(adapter: ToolAdapter, *, repo_root: Path, ignore: InstallIgnore) -> StagingPlan:
     """Build a StagingPlan for one tool (bash Phases 1-5).
 
     Stages, in bash order: shared templates (1), shared skills/agents/rules
@@ -220,13 +216,13 @@ def build_plan(adapter: ToolAdapter, *, repo_root: Path) -> StagingPlan:
         _add_item(plan, item)
     for ns in _SHARED_NAMESPACES:  # Phase 2
         if adapter.should_install_namespace(ns, "shared"):
-            for item in stage_namespace(shared_root, ns, provenance=prov):
+            for item in stage_namespace(shared_root, ns, provenance=prov, ignore=ignore):
                 _add_item(plan, _mark_carrier(item))
     for item in stage_templates(tool_root, provenance=prov):  # Phase 3
         _add_item(plan, item)
     for ns in adapter.scoped_namespaces():  # Phase 4
         if adapter.should_install_namespace(ns, "tool"):
-            for item in stage_namespace(tool_root, ns, provenance=prov):
+            for item in stage_namespace(tool_root, ns, provenance=prov, ignore=ignore):
                 _add_item(plan, item)
     for item in stage_settings(tool_root, provenance=prov):  # Phase 5
         _add_item(plan, item)

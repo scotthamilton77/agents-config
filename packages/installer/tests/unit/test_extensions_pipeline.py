@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.installignore import InstallIgnore
 from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
 from installer.core.orchestrator import stage_and_transform
@@ -26,7 +27,9 @@ SKILL_BASE = "# Demo\n\n## Usage\nbase usage\n\n## Reference\nsee docs\n"
 CHEAT_BLOCK = "### Beads cheats\n- bd ready\n- bd show <id>"
 
 
-def test_extension_round_trip_injects_content_at_logical_position(tmp_path: Path) -> None:
+def test_extension_round_trip_injects_content_at_logical_position(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """Round-trip equivalence (AC #9 analog): the resolved SKILL.md bytes
     contain the injected block at the targeted position; every other byte of
     the base document is unchanged."""
@@ -43,7 +46,7 @@ def test_extension_round_trip_injects_content_at_logical_position(tmp_path: Path
     plugin = GenericPluginAdapter(name="demo-plugin", source_path=plugin_root)
 
     plans = stage_and_transform(
-        [Tool.CLAUDE, Tool.CODEX], repo_root=repo, io=ScriptedIO(), plugins=[plugin]
+        [Tool.CLAUDE, Tool.CODEX], repo_root=repo, io=ScriptedIO(), ignore=ignore, plugins=[plugin]
     )
 
     for tool in (Tool.CLAUDE, Tool.CODEX):  # shared scope reaches every tool
@@ -54,7 +57,9 @@ def test_extension_round_trip_injects_content_at_logical_position(tmp_path: Path
         assert patched == expected
 
 
-def test_extension_targets_a_carrier_merged_plugin_file(tmp_path: Path) -> None:
+def test_extension_targets_a_carrier_merged_plugin_file(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """Phase ordering pin: apply_extensions runs AFTER overlay_plugins, so an
     extension can patch a file the plugin itself carrier-merged into a shared
     skill dir in the same run."""
@@ -71,7 +76,9 @@ def test_extension_targets_a_carrier_merged_plugin_file(tmp_path: Path) -> None:
     )
     plugin = GenericPluginAdapter(name="demo-plugin", source_path=plugin_root)
 
-    plans = stage_and_transform([Tool.CLAUDE], repo_root=repo, io=ScriptedIO(), plugins=[plugin])
+    plans = stage_and_transform(
+        [Tool.CLAUDE], repo_root=repo, io=ScriptedIO(), ignore=ignore, plugins=[plugin]
+    )
 
     patched = plans[Tool.CLAUDE].dir_overrides[Path("skills/demo")][Path("cheats.md")]
     assert patched == b"## Cheats\nraw\nappended-after-merge\n"

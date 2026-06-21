@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core.installignore import InstallIgnore
 from installer.core.model import FileKind, Provenance
 from installer.core.staging import (
     stage_namespace,
@@ -84,14 +85,14 @@ def _prov() -> Provenance:
     return Provenance(kind="tool", name="claude")
 
 
-def test_stage_namespace_md_files_are_namespaced(tmp_path: Path) -> None:
+def test_stage_namespace_md_files_are_namespaced(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A .md file in a namespace dir becomes a NAMESPACED_MD item whose
     dest_relpath is <namespace>/<name> and whose bytes are read eagerly."""
     rules = tmp_path / "rules"
     rules.mkdir()
     (rules / "style.md").write_bytes(b"# style\n")
 
-    items = stage_namespace(tmp_path, "rules", provenance=_prov())
+    items = stage_namespace(tmp_path, "rules", provenance=_prov(), ignore=ignore)
 
     assert len(items) == 1
     item = items[0]
@@ -102,14 +103,16 @@ def test_stage_namespace_md_files_are_namespaced(tmp_path: Path) -> None:
     assert item.provenance == _prov()
 
 
-def test_stage_namespace_directory_is_dir_with_no_content(tmp_path: Path) -> None:
+def test_stage_namespace_directory_is_dir_with_no_content(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """A skill directory is staged as a single DIR unit; content is None
     (bytes derived from source_path at sync time)."""
     skills = tmp_path / "skills"
     (skills / "my-skill").mkdir(parents=True)
     (skills / "my-skill" / "SKILL.md").write_bytes(b"x")
 
-    items = stage_namespace(tmp_path, "skills", provenance=_prov())
+    items = stage_namespace(tmp_path, "skills", provenance=_prov(), ignore=ignore)
 
     assert len(items) == 1
     assert items[0].kind == FileKind.DIR
@@ -117,49 +120,68 @@ def test_stage_namespace_directory_is_dir_with_no_content(tmp_path: Path) -> Non
     assert items[0].dest_relpath == Path("skills/my-skill")
 
 
-def test_stage_namespace_filters_top_level_marker_files(tmp_path: Path) -> None:
-    """In-repo AGENTS.md/CLAUDE.md/GEMINI.md at the top of a namespace dir
-    are dead files with no host-runtime meaning and are dropped."""
+def test_stage_namespace_filters_top_level_marker_files(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """In-repo AGENTS.md/CLAUDE.md/GEMINI.md at the top of a namespace dir are
+    dead files; the .installignore matcher drops them while keeping real content."""
     skills = tmp_path / "skills"
     skills.mkdir()
     (skills / "AGENTS.md").write_bytes(b"dev doc")
     (skills / "real-skill").mkdir()
 
-    items = stage_namespace(tmp_path, "skills", provenance=_prov())
+    items = stage_namespace(tmp_path, "skills", provenance=_prov(), ignore=ignore)
 
     names = {i.dest_relpath.name for i in items}
     assert names == {"real-skill"}
 
 
-def test_stage_namespace_strips_template_suffix(tmp_path: Path) -> None:
+def test_stage_namespace_filters_excluded_directory(tmp_path: Path, ignore: InstallIgnore) -> None:
+    """A directory whose name is a .installignore directory entry (rules-readmes)
+    is dropped whole, not partially staged."""
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "rules-readmes").mkdir()
+    (rules / "rules-readmes" / "foo-readme.md").write_bytes(b"rationale")
+    (rules / "real-rule.md").write_bytes(b"rule")
+
+    items = stage_namespace(tmp_path, "rules", provenance=_prov(), ignore=ignore)
+
+    names = {i.dest_relpath.name for i in items}
+    assert names == {"real-rule.md"}
+
+
+def test_stage_namespace_strips_template_suffix(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A namespace .md.template entry lands with the suffix stripped."""
     cmds = tmp_path / "commands"
     cmds.mkdir()
     (cmds / "go.md.template").write_bytes(b"go")
 
-    items = stage_namespace(tmp_path, "commands", provenance=_prov())
+    items = stage_namespace(tmp_path, "commands", provenance=_prov(), ignore=ignore)
 
     assert items[0].dest_relpath == Path("commands/go.md")
 
 
-def test_stage_namespace_missing_dir_returns_empty(tmp_path: Path) -> None:
+def test_stage_namespace_missing_dir_returns_empty(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A namespace dir that does not exist yields no items (bash `return 0`)."""
-    assert stage_namespace(tmp_path, "agents", provenance=_prov()) == []
+    assert stage_namespace(tmp_path, "agents", provenance=_prov(), ignore=ignore) == []
 
 
-def test_stage_namespace_is_deterministically_ordered(tmp_path: Path) -> None:
+def test_stage_namespace_is_deterministically_ordered(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
     """Entries are returned sorted by name for reproducible plans."""
     rules = tmp_path / "rules"
     rules.mkdir()
     for n in ("c.md", "a.md", "b.md"):
         (rules / n).write_bytes(b"x")
 
-    items = stage_namespace(tmp_path, "rules", provenance=_prov())
+    items = stage_namespace(tmp_path, "rules", provenance=_prov(), ignore=ignore)
 
     assert [i.dest_relpath.name for i in items] == ["a.md", "b.md", "c.md"]
 
 
-def test_stage_namespace_preserves_executable_bit(tmp_path: Path) -> None:
+def test_stage_namespace_preserves_executable_bit(tmp_path: Path, ignore: InstallIgnore) -> None:
     """An executable source file (a hook script) stages with executable=True; a
     non-executable sibling stages with executable=False. The sync engine writes
     0o755 vs 0o644 from this bit, so hook scripts must land +x (8.7 parity)."""
@@ -172,7 +194,10 @@ def test_stage_namespace_preserves_executable_bit(tmp_path: Path) -> None:
     plain.write_bytes(b"x")
     plain.chmod(0o644)
 
-    items = {i.dest_relpath.name: i for i in stage_namespace(tmp_path, "hooks", provenance=_prov())}
+    items = {
+        i.dest_relpath.name: i
+        for i in stage_namespace(tmp_path, "hooks", provenance=_prov(), ignore=ignore)
+    }
 
     assert items["ruff-postedit.py"].executable is True
     assert items["notes.md"].executable is False
