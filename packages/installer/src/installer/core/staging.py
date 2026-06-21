@@ -15,9 +15,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from installer.core.merge.registry import MergeRegistry
     from installer.tools.base import ToolAdapter
 
 from installer.core.installignore import InstallIgnore
+from installer.core.merge.place import place_resolved
+from installer.core.merge.registry import default_registry
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 
 
@@ -176,21 +179,26 @@ def _mark_carrier(item: StagedItem) -> StagedItem:
     return item
 
 
-def _add_item(plan: StagingPlan, item: StagedItem) -> None:
-    """Insert one item, raising on a duplicate dest_relpath.
+def _add_item(plan: StagingPlan, item: StagedItem, registry: MergeRegistry) -> None:
+    """Insert one item, resolving a duplicate dest_relpath through the registry.
 
     The data model overwrites silently on a duplicate key (see StagingPlan
-    docstring); collision *resolution* (merge dispatch) is Epic E. Until then
-    a collision is a hard error so it can never silently drop content.
+    docstring), so base staging never relies on that: a collision routes through
+    the merge registry exactly as plugin overlay does — rules append, settings
+    json-union, OTHER last-wins, and DIR/commands/skills/agents fatal. Carrier-
+    merge is overlay-only and is not reached here.
     """
-    if item.dest_relpath in plan.items:
-        raise ValueError(  # noqa: TRY003  # single call-site; deferred-feature signal
-            f"staging collision at {item.dest_relpath}; merge dispatch lands in Epic E"
-        )
-    plan.items[item.dest_relpath] = item
+    existing = plan.items.get(item.dest_relpath)
+    place_resolved(plan, item, existing, registry)
 
 
-def build_plan(adapter: ToolAdapter, *, repo_root: Path, ignore: InstallIgnore) -> StagingPlan:
+def build_plan(
+    adapter: ToolAdapter,
+    *,
+    repo_root: Path,
+    ignore: InstallIgnore,
+    registry: MergeRegistry | None = None,
+) -> StagingPlan:
     """Build a StagingPlan for one tool (Phases 1-5).
 
     Stages: shared templates (1), shared skills/agents/rules namespaces (2),
@@ -199,24 +207,29 @@ def build_plan(adapter: ToolAdapter, *, repo_root: Path, ignore: InstallIgnore) 
     is gated by ``adapter.should_install_namespace(ns, source)`` so a tool can
     opt out (e.g. OpenCode skips shared agents). Plugin overlay (Phase 6) and
     DYNAMIC-INCLUDE flatten (Phase 6.5) are later stories.
+
+    A same-dest collision routes through ``registry`` (the orchestrator passes
+    the shared ``default_registry()`` it also hands to the overlay); when omitted
+    a fresh ``default_registry()`` is built, since it is a pure stateless factory.
     """
+    merge_registry = registry if registry is not None else default_registry()
     plan = StagingPlan(items={}, tool=Tool(adapter.name))
     prov = Provenance(kind="tool", name=adapter.name)
     shared_root = repo_root / "src" / "user" / ".agents"
     tool_root = adapter.source_dir(repo_root)
 
     for item in stage_templates(shared_root, provenance=prov):  # Phase 1
-        _add_item(plan, item)
+        _add_item(plan, item, merge_registry)
     for ns in _SHARED_NAMESPACES:  # Phase 2
         if adapter.should_install_namespace(ns, "shared"):
             for item in stage_namespace(shared_root, ns, provenance=prov, ignore=ignore):
-                _add_item(plan, _mark_carrier(item))
+                _add_item(plan, _mark_carrier(item), merge_registry)
     for item in stage_templates(tool_root, provenance=prov):  # Phase 3
-        _add_item(plan, item)
+        _add_item(plan, item, merge_registry)
     for ns in adapter.scoped_namespaces():  # Phase 4
         if adapter.should_install_namespace(ns, "tool"):
             for item in stage_namespace(tool_root, ns, provenance=prov, ignore=ignore):
-                _add_item(plan, item)
+                _add_item(plan, item, merge_registry)
     for item in stage_settings(tool_root, provenance=prov):  # Phase 5
-        _add_item(plan, item)
+        _add_item(plan, item, merge_registry)
     return plan
