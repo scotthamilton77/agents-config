@@ -13,4 +13,4 @@ make ci-installer    # full quality gate (tests, lint, format-check, typecheck, 
 make test-installer  # just pytest
 ```
 
-First-time setup: `uv` auto-installs Python 3.11 if missing (one-time slow run; subsequent runs are fast).
+First-time setup: `uv` auto-installs Python ≥3.11 if missing (one-time slow run; subsequent runs are fast).

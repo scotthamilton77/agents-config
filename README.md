@@ -167,7 +167,7 @@ The installer (`scripts/install.sh`) is a thin exec stub backed by a uv-managed 
 - Creates timestamped backups before overwriting anything
 - Warns about items that aren't tracked in the project (or removes them with `--prune`)
 
-Requires `uv` (auto-installs Python 3.11 on first run). Use `--dry-run` to preview changes without writing.
+Requires `uv` (auto-installs Python ≥3.11 on first run). Use `--dry-run` to preview changes without writing.
 
 #### Flags
 
