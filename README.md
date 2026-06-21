@@ -23,7 +23,16 @@ The five load-bearing convictions behind this:
 
 ### Current state
 
-The core architecture is in place. Several keystone enablers toward the 85/5/10 vision are filed but not yet shipped. Treat the vision as direction and the rules-as-written as the current contract.
+The core architecture is in place. Several keystone enablers toward the vision are filed but not yet shipped. Notable current gaps:
+
+- The "no, not ready" brainstorm-readiness gate is implicit, not enforced
+- Persona and orchestration guidance give subtly conflicting decide-vs-escalate direction
+- The 85/5/10 ratio is not yet instrumented — aspirational, not measured
+- No spec post-mortem feedback loop yet — failures don't automatically improve future brainstorming
+- Auto-merge policy for low-risk PR classes is not defined — every PR waits on a human "ship it"
+- Autonomous work runs sequentially through external waits (CI, review polling); no pipelining yet
+
+Treat the vision as direction and the rules-as-written as the current contract. Contributions are welcome.
 
 ## Prerequisites
 
@@ -251,6 +260,15 @@ Claude Code looks for configuration in multiple locations with the following pre
 | `.claude/` in project | Project | Project-specific agents, skills, and settings |
 
 Project-level settings override user-level. Use user-level for your personal workflow; use project-level for team-shared configurations.
+
+## Roadmap
+
+- [x] **Gemini support** — Equivalent configurations for Google's Gemini
+- [x] **Codex support** — Equivalent configurations for OpenAI's Codex
+- [ ] **Selectable extension bundles** — Task tracker, language preferences, etc. applied at install time
+- [ ] **Update mechanism** — Pull latest versions without clobbering customizations
+- [ ] **Selective install** — Choose which agents/skills to include
+- [ ] **Agent marketplace** — Community-contributed agents and skills
 
 ## Contributing
 

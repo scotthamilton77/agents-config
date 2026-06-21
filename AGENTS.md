@@ -25,7 +25,9 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 - **Code over Prose** — anything code can do better than agents, we move out of prose and into code helpers
 - **Python/Go/Node over Bash** — thin shell script wrappers are fine; any logic that needs testing goes in Python, Go, or Node
 - **Consolidate over conflict** — where plugins' assets overlap, merge the best-of-breed into the canonical source; avoid competing instructions
-- **Beads is the work tracker** — use the `bd` CLI for task tracking; report any context that is confusing or ambiguous so it can be cleaned up
+- **Beads is the work tracker** — use the `bd` CLI for task tracking directly; a higher-level `work` abstraction is planned but not yet in place
+- **Flag confusing context** — if instructions, rules, or skills in this repo are conflicting or unclear, say so explicitly; cleaning up agent context is a first-class priority
+- **Apply backpressure** — if a requested change doesn't clearly align with "cleaning house" or "advancing the vision", push back and ask how it fits before proceeding
 
 ## Project Architecture
 
