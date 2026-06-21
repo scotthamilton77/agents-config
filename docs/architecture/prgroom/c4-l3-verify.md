@@ -122,7 +122,7 @@ Two halves meet here:
 
 ### Precondition hard-stop
 
-`verify precondition` asserts at `run`/`fix` entry that the tier command(s) the cycle may need are configured (`[verify]` table in `.prgroom.toml`). Absence is `PRECONDITION_NO_VERIFY_CONFIG` (user-error, exit 2) with structured what/why/how — never a silent skip. Auto-detection of sensible defaults is deferred to `prgroom --doctor` (separate bead).
+`verify precondition` asserts at `run`/`fix` entry that **both** tier commands (`lite` and `full`) are configured (`[verify]` table in `.prgroom.toml`) — fail-fast, since the needed tier is unknown until `fix` selects it. Absence is `PRECONDITION_NO_VERIFY_CONFIG` (user-error, exit 2) with structured what/why/how — never a silent skip. Auto-detection of sensible defaults is deferred to `prgroom --doctor` (separate bead).
 
 ## Error codes
 

@@ -126,9 +126,12 @@ class PRGroomingState:
     schema_version: int = SCHEMA_VERSION
     last_poll_sha: str = ""
     last_pushed_head_sha: str = ""
+    last_rereviewed_sha: str = ""            # resumable-rereview markers (§3.3 rereview)
+    last_review_invalidated_sha: str = ""
     human_review_label_added: bool = False
     reviewers: dict[str, ReviewerState] = field(default_factory=dict)
     items: list[ReviewItem] = field(default_factory=list)
+    pending_memory: list[RoutedMemory] = field(default_factory=list)  # durable memory queue, drained by _reply (§7.3)
     verify: VerifyVerdict | None = None   # see §6 — the fix↔verify subsystem
     last_error: str | None = None
     lifecycle_escalation_filed: bool = False
@@ -141,6 +144,8 @@ class PRPhase(StrEnum):
     HUMAN_GATED = "human-gated"
     MERGED = "merged"
 ```
+
+`pending_memory` (the durable CONTEXTUAL-memory queue, §7.3) and the two resumable-rereview SHA markers are **additive, omit-when-empty** — old state files load empty defaults, so `schema_version` stays `1` (the same pattern as `verify`).
 
 `awaiting-initial-review` and `awaiting-rereview` collapse into one `awaiting-review`; `pr_review_retries_used` (0-indexed) disambiguates initial from re-review iterations (see §3.5 — The two retry caps). Any phase may transition to `human-gated` on an `escalated` disposition (interactive / no-autodefer), an exhausted PR-review retry budget (§3.5), or an irrecoverable fix-agent audit failure. `quiesced` is a terminal that does **not** require human action — it is auto-merge-eligible when policy (CI/coverage) is satisfied; `human-gated` is terminal-requiring-human. `human-gated` exits to `fixes-pending` or `merged`.
 
@@ -417,7 +422,7 @@ The status JSON also surfaces `human_review.candidates_seen` (each examined PR-a
 
 ### 4.6 Auto-request human review on lifecycle gating
 
-When `_run` reaches `human-gated` for a **review-content reason**, prgroom adds the `human-review-required` label, complementing the `EscalationSink` event with a GitHub-visible marker. Triggers (any one): `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` (PR-review retry budget exhausted — see §3.5), or any item disposition of `ESCALATED` or `FAILED`. Explicit non-triggers are infra/state failures (`RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_PUSH_REJECTED`, `RUNTIME_GH_TERMINAL`) — those are not review problems.
+When `_run` reaches `human-gated` for a reason that warrants human review, prgroom adds the `human-review-required` label, complementing the `EscalationSink` event with a GitHub-visible marker. Triggers (any one): `last_error == LIFECYCLE_PR_REVIEW_EXHAUSTED` (outer PR-review budget — §3.5) or `last_error == LIFECYCLE_FIX_VERIFY_EXHAUSTED` (inner fix↔verify budget — §3.4) — the two sibling caps gate identically, and §3.3 flushes the label on either `human-gated` break — or any item disposition of `ESCALATED` or `FAILED`. Explicit non-triggers are infra/state failures (`RUNTIME_TERMINAL_USER`, `STATE_CORRUPT`, `STATE_SCHEMA_UNKNOWN`, `RUNTIME_PUSH_REJECTED`, `RUNTIME_GH_TERMINAL`) — those are not review problems.
 
 The add is idempotent and best-effort: gated by `auto_request_human_review`, deduped by `human_review_label_added`, label-add failures log a stderr warning without tier-tagging, blocking, or propagating. The dedup flag resets on the same condition that clears `last_error` (successful end-of-cycle resolution to any phase but `human-gated`), so a recurring gate re-adds the label. An operator who manually removes the label while the flag is still set is respected — prgroom does not re-add until the reset path fires AND the gate recurs. When later satisfied via §4.4, the `human-review-required` label persists as historical record ("constraint raised AND satisfied") rather than being removed.
 
@@ -588,7 +593,7 @@ full               = "make ci"     # command (or list) run for the full tier
 fix_verify_retries = 2             # inner retry budget
 ```
 
-The verify **commands have no built-in default** — their absence for a needed tier is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how): the gate must be deliberately configured, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. This work wires `repo_config` — the repo-root `.prgroom.toml`, currently always passed `None` and never actually read.
+The verify **commands have no built-in default**. Because the needed tier is known only after `fix` selects the strongest `GateStrength`, the precondition is **fail-fast**: `run`/`fix` entry asserts that **both** the `lite` and `full` commands are configured, and the absence of either is a **hard stop** (`PRECONDITION_NO_VERIFY_CONFIG`, exit 2, structured what/why/how) — caught before the expensive fix run, never silently skipped. (Auto-detection is deferred to a `--doctor` bead.) `fix_verify_retries` defaults to `2`; `--fix-verify-retries` / `PRGROOM_FIX_VERIFY_RETRIES` override. This work wires `repo_config` — the repo-root `.prgroom.toml`, currently always passed `None` and never actually read.
 
 ---
 
@@ -648,6 +653,19 @@ The fix contract output gains a classified **`memory`** channel (§5), each entr
 
 1. **Thread reply** — a CONTEXTUAL note tied to a specific review thread rides out on that thread via the existing `reply` verb. No new mechanism.
 2. **`## Decisions` block** — a CONTEXTUAL note *not* tied to a single thread (a PR-wide decision) is recorded in a prgroom-maintained `## Decisions` section via a `gh` PATCH of the PR description (an API edit, not a git commit), at the same point as `reply`.
+
+**Durability — the `pending_memory` queue.** `_fix` does not route at fix time; it resolves the declared `memory` channel into persisted `RoutedMemory` records appended to `state.pending_memory` (written atomically with the dispositions they derive from). `_reply` drains and routes them, then clears the queue. The persisted queue is what makes routing crash-safe: a cycle that ends before `_reply` — a retry-cap trip, a transient `gh` failure on push — keeps its decision memo for the next cycle instead of losing it (in-memory routing would drop the memo on every such cycle).
+
+```python
+@dataclass(frozen=True, slots=True)
+class RoutedMemory:
+    classification: str          # taxonomy class; MVP routes CONTEXTUAL only
+    content: str = ""            # exactly one of content / path
+    path: str = ""
+    target_hint: str = ""        # optional thread node-id → thread reply; else → ## Decisions
+    retry: int = 0               # (retry, source_item) is the Decisions-block dedup key
+    source_item_gh_id: str = ""
+```
 
 prgroom owns the `## Decisions` block between sentinel markers and rewrites it wholesale each time (read-modify-write), making re-runs idempotent without a state flag. Each entry carries the retry it was decided on, a title, a one-line rationale, the deciding agent, and the source item; it is **keyed by `(retry, source-item)`** so a crash-and-re-run never double-appends. Entries accumulate across retries; prgroom never deletes a prior decision — the block is the cross-retry decision ledger any future reader sees in the §7.1 snapshot.
 

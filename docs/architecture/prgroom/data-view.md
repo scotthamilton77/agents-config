@@ -37,6 +37,7 @@ erDiagram
     PRGroomingState ||--o{ ReviewerState        : "has 0..N (keyed by identity)"
     PRGroomingState ||--o{ ReviewItem           : "has 0..N (ordered list)"
     PRGroomingState ||--o| VerifyVerdict         : "has 0..1 (batch-level; None until verify)"
+    PRGroomingState ||--o{ RoutedMemory          : "has 0..N (pending_memory queue; §7.3)"
     ReviewItem      ||--o| Disposition          : "has 0..1 (None until _fix)"
     ReviewItem      ||--|| Identity             : "has 1 (per-kind)"
 
@@ -46,6 +47,8 @@ erDiagram
         int     pr_review_retries_used   "0-indexed count of fix-push retries consumed; bounded by pr_review_retries (default 5)"
         str     last_poll_sha            "last HEAD observed by _poll"
         str     last_pushed_head_sha     "last HEAD pushed by THIS CLI"
+        str     last_rereviewed_sha      "resumable-rereview marker (§3.3 rereview)"
+        str     last_review_invalidated_sha "resumable-rereview marker"
         datetime last_polled_at          "UTC"
         datetime last_activity_at        "UTC; last_activity_at for §4.1 idle_threshold"
         bool    human_review_label_added "§4.6 dedup; reset on non-human-gated end-of-cycle"
@@ -106,6 +109,15 @@ erDiagram
         int          retries_used    "fix<->verify repair re-fix attempts consumed this cycle"
         str          gate_output_ref "path/excerpt of the last gate output (status + escalation)"
         datetime     decided_at      "UTC"
+    }
+
+    RoutedMemory {
+        str classification       "taxonomy class; MVP routes CONTEXTUAL only"
+        str content              "exactly one of content / path"
+        str path                 ""
+        str target_hint          "thread node-id => thread reply; else => ## Decisions"
+        int retry                "(retry, source_item) = Decisions-block dedup key"
+        str source_item_gh_id    ""
     }
 
     QuiescenceState {
@@ -321,7 +333,7 @@ Sinks MUST be dedup-aware on the receiving end — bd-adapter uses label-only em
 
 ## Boundary JSON contract #3 — Fix-contract memory & recurrence (§7)
 
-Two §7 PR-memory shapes cross the prgroom ↔ fix-agent boundary. **Neither is persisted** — `recurrence` is *computed* at snapshot-assembly from disposition history (§7.2); `memory` is *routed to the PR* then discarded (the PR is the durable store, §7.0). The §2 persistent-state ER above is therefore **unchanged** by §7. Routing mechanics live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (write path) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (contract + audit); this section fixes only the shapes.
+Two §7 PR-memory **boundary shapes** cross the prgroom ↔ fix-agent line, and neither is persisted: `recurrence` is *computed* at snapshot-assembly from disposition history (§7.2), and the fix output's `memory` *channel* declares routing intent, not state. The durable side is `state.pending_memory` (the `RoutedMemory` queue in the §2 ER above): `_fix` resolves the declared channel into `RoutedMemory` records and persists them there, then `_reply` drains and clears the queue (§7.3) — so the PR stays the durable store (§7.0) without losing a memo on a cycle that ends before `_reply`. Routing mechanics live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (write path) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (contract + audit); this section fixes only the boundary shapes.
 
 ### Snapshot input — per-item `recurrence` (prgroom → fix agent)
 
@@ -336,7 +348,7 @@ class Recurrence:
     attempt_count: int        # times this item has been dispositioned (1 = first pass)
     prior_disposition: str    # most recent prior DispositionKind value
     prior_commits: list[str]  # SHAs from the most recent prior disposition; omitted from JSON when empty
-    first_seen_round: int     # round the item was first observed
+    first_seen_retry: int     # retry the item was first observed
 ```
 
 ### Fix output — classified `memory` channel (fix agent → prgroom)

@@ -19,7 +19,7 @@
 | Quiescence predicate | The §4.1 boolean: all four hard gates (`G_REVIEWERS`, `G_CI`, `G_DISPOSITIONS`, `G_NO_BLOCKERS`) pass AND `now() - last_activity_at >= idle_threshold`. |
 | Terminal-for-CLI | A phase where the CLI takes no further autonomous action; re-entry requires an external trigger observed by `poll`, an operator `resolve-escalated`, or — when the gate is a retry-budget exhaustion — a `run` with the relevant retry budget raised (`--pr-review-retries` for the outer cap, `--fix-verify-retries` for the inner cap; entry-probe re-arm, §3.5). `quiesced` and `human-gated` are terminal-for-CLI but NOT graph-terminal — `poll` can advance them. |
 | Graph-terminal | A phase with no outgoing edges. `merged` only. |
-| Blocking error codes | The closed set `{ LIFECYCLE_PR_REVIEW_EXHAUSTED, LIFECYCLE_FIX_VERIFY_EXHAUSTED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED, RUNTIME_GIT_TERMINAL }` that `resolve-escalated` cannot clear by itself; see §3.2. |
+| Blocking error codes | The closed set `{ LIFECYCLE_PR_REVIEW_EXHAUSTED, LIFECYCLE_FIX_VERIFY_EXHAUSTED, STATE_CORRUPT, STATE_SCHEMA_UNKNOWN, RUNTIME_GH_TERMINAL, RUNTIME_PUSH_REJECTED }` that `resolve-escalated` cannot clear by itself; see §3.2. |
 
 ## Purpose
 
@@ -188,7 +188,7 @@ The label is a **merge constraint** consumed by future merge-gate components (`g
 
 ## PR-memory routing side-effect (§7.3)
 
-Parallel to the auto-label side-effect: at `reply` time the cycle routes CONTEXTUAL fix-agent memory to the PR — thread-tied notes as thread replies, thread-less PR-wide decisions merged into the sentinel-bounded `## Decisions` block via a `gh` PATCH of the PR body (an API edit, **not** a git commit, **not** a phase change). It is idempotent (keyed by `(round, source-item)`) and, like the auto-label, is an outward side-effect on the cycle, not a state-machine transition.
+Parallel to the auto-label side-effect: at `reply` time the cycle routes CONTEXTUAL fix-agent memory to the PR — thread-tied notes as thread replies, thread-less PR-wide decisions merged into the sentinel-bounded `## Decisions` block via a `gh` PATCH of the PR body (an API edit, **not** a git commit, **not** a phase change). It is idempotent (keyed by `(retry, source-item)`) and, like the auto-label, is an outward side-effect on the cycle, not a state-machine transition.
 
 ## Failure tiers and `state.last_error`
 
