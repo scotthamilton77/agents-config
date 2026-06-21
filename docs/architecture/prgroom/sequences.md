@@ -4,7 +4,7 @@
 > **Previous (reading order)**: [C4 L2 — Container](c4-l2-container.md)
 > **Next (reading order)**: [State Machine](state-machine.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) + [`docs/specs/2026-06-20-prgroom-fix-verify-subsystem.md`](../../specs/2026-06-20-prgroom-fix-verify-subsystem.md) (the `verify` step + the PR-review retry budget)
+> **Source design**: [design.md](design.md) — §3 (lifecycle + the run pipeline), §3.4–§3.5 (the verify loop + the two retry caps), §4 (quiescence model)
 
 ## Glossary
 
@@ -72,15 +72,15 @@ sequenceDiagram
         PG->>Cluster: cluster — bundle unprocessed items into fix-clusters
         Cluster-->>PG: clusters (JSON)
         PG->>State: write — clusters recorded
-        PG->>GH: _fix prework — fetch PR body / threads / labels for the complete-PR snapshot (§8.1)
-        PG->>Fix: fix — dispatch per cluster with the complete-PR snapshot (PR body incl. any Decisions block, plus per-item recurrence for repeat items — §8.1-8.2) (opus[1m])
+        PG->>GH: _fix prework — fetch PR body / threads / labels for the complete-PR snapshot (§7.1)
+        PG->>Fix: fix — dispatch per cluster with the complete-PR snapshot (PR body incl. any Decisions block, plus per-item recurrence for repeat items — §7.1-7.2) (opus[1m])
         Fix-->>Fix: edits files in operator's worktree + git commit per fixed item; runs its own completion gate
-        Fix-->>PG: per-item dispositions + commit SHAs + a required verify_checklist claim + classified memory[] channel (§8.3)
+        Fix-->>PG: per-item dispositions + commit SHAs + a required verify_checklist claim + classified memory[] channel (§7.3)
         PG->>State: write — per-item disposition recorded
         PG->>PG: _verify — run the strongest-tier gate command (whole-branch, via proc.CommandRunner) → GREEN (fall through to push)
         PG->>GH: _push — git push fix commits
         PG->>State: write — pr_review_retries_used=1, last_pushed_head_sha=new
-        PG->>GH: _reply — post replies (incl. CONTEXTUAL memory thread-replies) + PATCH the Decisions block in PR body (§8.3 — gh API edit, NOT a git commit)
+        PG->>GH: _reply — post replies (incl. CONTEXTUAL memory thread-replies) + PATCH the Decisions block in PR body (§7.3 — gh API edit, NOT a git commit)
         PG->>GH: _resolve — GraphQL resolveReviewThread for fixed / already_addressed items
         PG->>State: write — items.resolved=true for resolved threads
         PG->>GH: _rereview — remove + re-add Copilot reviewer (force re-review; runs last so reply/resolve close out the round)
@@ -111,7 +111,7 @@ sequenceDiagram
 - **`verify` gates the push.** Between `fix` and `push`, the `verify` step runs the operator-configured tier command (the strongest `GateStrength` across the clean `FIXED` items) whole-branch; the happy path is a first-try GREEN. A red gate drives the bounded fix↔verify convergence loop ([`c4-l3-verify.md`](c4-l3-verify.md)).
 - **Quiescence is the four hard gates plus the idle timer.** `G_REVIEWERS` (all Required reviewers terminal), `G_CI` (ci_state in {success, absent}), `G_DISPOSITIONS` (every item dispositioned), `G_NO_BLOCKERS` (no escalated / failed items). The idle timer (default 10m) is the soft "let it settle" buffer for slow human reviewers.
 - **The fix agent owns its commits.** The fix contract agent runs `git commit` itself inside the operator's worktree; prgroom does the subsequent `git push`. prgroom does not commit, and the fix contract does not push.
-- **PR memory rides on the PR, not in prgroom state (§8).** Before each fix dispatch prgroom assembles a complete-PR snapshot — PR body (incl. the prgroom-maintained `## Decisions` block), all threads with full reply-chains, prior-round dispositions, and a per-item `recurrence` signal — so the fresh-context fix agent remembers earlier rounds without calling `gh` (§8.1–8.2). The agent's output carries a classified `memory` channel; prgroom routes CONTEXTUAL entries to the PR at reply time — thread replies for thread-tied notes, and a sentinel-bounded `## Decisions` block (PATCHed into the PR body, **not** committed) for PR-wide decisions, idempotent by `(round, source-item)` (§8.3). Cycle 2 is the first fix round, so its snapshot's `## Decisions` block is still empty and no item carries `recurrence` yet; both fill in on later rounds (cf. the §8.7 worked example).
+- **PR memory rides on the PR, not in prgroom state (§7).** Before each fix dispatch prgroom assembles a complete-PR snapshot — PR body (incl. the prgroom-maintained `## Decisions` block), all threads with full reply-chains, prior-round dispositions, and a per-item `recurrence` signal — so the fresh-context fix agent remembers earlier rounds without calling `gh` (§7.1–7.2). The agent's output carries a classified `memory` channel; prgroom routes CONTEXTUAL entries to the PR at reply time — thread replies for thread-tied notes, and a sentinel-bounded `## Decisions` block (PATCHed into the PR body, **not** committed) for PR-wide decisions, idempotent by `(round, source-item)` (§7.3). Cycle 2 is the first fix round, so its snapshot's `## Decisions` block is still empty and no item carries `recurrence` yet; both fill in on later rounds (cf. the §7.6 worked example).
 
 ---
 
@@ -201,7 +201,7 @@ sequenceDiagram
 
     PG->>State: write — phase=human-gated<br/>last_error=LIFECYCLE_PR_REVIEW_EXHAUSTED
     PG->>Sink: emit one Escalation (kind=lifecycle-cap)
-    PG->>GH: §4.7 — request_human_review_if_needed(state) → POST add label human-review-required (because state.human_review_label_added was false)
+    PG->>GH: §4.6 — request_human_review_if_needed(state) → POST add label human-review-required (because state.human_review_label_added was false)
     PG->>State: write — human_review_label_added=true
     PG-->>State: Lock released
     PG-->>Op: exit 0 (graceful terminal — LIFECYCLE_CAP tier)
@@ -281,9 +281,9 @@ sequenceDiagram
 
 - **Phase transitions and the strike-vs-non-strike taxonomy.** The phase graph (`idle` ↔ `awaiting-review` ↔ `fixes-pending` ↔ `quiesced` / `human-gated` / `merged`) and the quiescence sub-states live in [`state-machine.md`](state-machine.md).
 - **The fix↔verify convergence loop internals.** The bounded repair re-fix loop inside the `verify` step, its `fix_verify_retries` budget, and the mechanical gate live in [`c4-l3-verify.md`](c4-l3-verify.md). These diagrams show only the GREEN-gate fall-through to `push`.
-- **The full failure-tier registry.** All seven tiers (`PRECONDITION_*`, `RUNTIME_*`, `CONTRACT_*`, `STATE_*`, `LIFECYCLE_*`) with their exit codes, escalation, and scheduler-retry semantics live in source spec §§3.6–3.7. Sequence 3 shows the `LIFECYCLE_CAP` graceful-terminal exit; the runtime tiers are not drawn here.
+- **The full failure-tier registry.** All seven tiers (`PRECONDITION_*`, `RUNTIME_*`, `CONTRACT_*`, `STATE_*`, `LIFECYCLE_*`) with their exit codes, escalation, and scheduler-retry semantics live in the design reference §3.6. Sequence 3 shows the `LIFECYCLE_CAP` graceful-terminal exit; the runtime tiers are not drawn here.
 - **CAS aborts and retries inside `prsession.Store`.** The MVP `file` adapter uses `flock(2)` + atomic rename, not CAS — concurrent verbs on the same PR exit with `PRECONDITION_LOCK_HELD` rather than abort-and-retry. (PDLC orchestrator's `WorkTracker` uses CAS; prgroom's `prsession.Store` does not. Different shape for different needs.)
-- **Per-item disposition mechanics inside the fix contract.** The disposition decisions (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) and their evidence requirements live in source spec §5 (fix contract audit rules).
+- **Per-item disposition mechanics inside the fix contract.** The disposition decisions (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) and their evidence requirements live in the design reference §5 (fix contract audit rules).
 - **Component-level mechanics inside the prgroom package.** See [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) for the components that execute these sequences.
 
 ## Cross-references
@@ -291,5 +291,5 @@ sequenceDiagram
 - **Companion structural views**: [`c4-l2-container.md`](c4-l2-container.md), [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md), [`c4-l3-verify.md`](c4-l3-verify.md)
 - **Companion state view**: [`state-machine.md`](state-machine.md)
 - **Companion data view**: [`data-view.md`](data-view.md)
-- **Source spec**: [Section 3.3 `run` aggregate verb algorithm](../../plans/2026-05-12-prgroom-cli-design.md), [Section 3.5 PR-review retry budget behavior](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4 Quiescence model](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4.7 Auto-request human review](../../plans/2026-05-12-prgroom-cli-design.md); the `verify` step + retry-cap reframe: [`docs/specs/2026-06-20-prgroom-fix-verify-subsystem.md`](../../specs/2026-06-20-prgroom-fix-verify-subsystem.md)
+- **Source design**: [§3.3 The run pipeline](design.md), [§3.5 The two retry caps](design.md), [§4 Quiescence model](design.md), [§4.6 Auto-request human review](design.md)
 ```

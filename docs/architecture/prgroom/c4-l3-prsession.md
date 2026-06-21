@@ -2,13 +2,13 @@
 
 > **Up**: [index](index.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (`prsession.Store` Protocol + state schema) + Section 8 (PR-memory read path)
+> **Source design**: [design.md](design.md) — §2 (prsession.Store interface + state schema) + §7 (PR memory read path)
 > **Container**: `src/prgroom/prsession/` inside the prgroom package (see [`c4-l2-container.md`](c4-l2-container.md))
 > **Status**: **STUB** — placeholder pending the `src/prgroom/prsession` implementation bead.
 
 ## Why this is a stub
 
-Section 2 of the source spec is ratified at the interface level (`Store` shape, three adapters, transactional model, schema versioning). The internal component breakdown of `src/prgroom/prsession/` is not yet pinned at the same implementation-readiness level as `src/prgroom/lifecycle/` because no `[Impl]` child bead has opened against `src/prgroom/prsession/` yet.
+Section 2 of the design reference is ratified at the interface level (`Store` shape, three adapters, transactional model, schema versioning). The internal component breakdown of `src/prgroom/prsession/` is not yet pinned at the same implementation-readiness level as `src/prgroom/lifecycle/` because no `[Impl]` child bead has opened against `src/prgroom/prsession/` yet.
 
 This stub establishes the file's home and the components the eventual drawing must cover. When the impl bead opens, this file gets re-drawn at the same fidelity as the lifecycle L3.
 
@@ -27,7 +27,7 @@ The diagram should cover these named units inside `src/prgroom/prsession/`:
 
 - **`file` adapter** (`FileStore`) — MVP default.
   - Path resolver: `$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`, fallback `~/.local/state/prgroom/`.
-  - `fcntl.flock(fd, LOCK_EX)` lock holder. OS-released on process death (§3.7) — no stale-lock detection code.
+  - `fcntl.flock(fd, LOCK_EX)` lock holder. OS-released on process death (§3.6) — no stale-lock detection code.
   - Uses `write_atomic`.
 - **`memory` adapter** (`InMemoryStore`) — tests only.
   - **Test-package-scoped** — lives under `tests/`, structurally satisfies the `Store` Protocol, and is never imported by production code (Python has no build tags; visibility is enforced by package layout, not a compile-time gate).
@@ -49,14 +49,14 @@ The diagram should cover these named units inside `src/prgroom/prsession/`:
 
 The transactional contract is at the verb level + the `run` aggregate level:
 
-- **Verb-level** — every public verb (the locking wrappers around the `_`-prefixed internal functions) atomically replaces the full state at the end of its work. Crashed processes leave the prior `write` intact; no partial state can exist on disk (per §2 + §3.7 `flock(2)` semantics).
+- **Verb-level** — every public verb (the locking wrappers around the `_`-prefixed internal functions) atomically replaces the full state at the end of its work. Crashed processes leave the prior `write` intact; no partial state can exist on disk (per §2 + §3.6 `flock(2)` semantics).
 - **Run-aggregate level** — `_run` (§3.3) holds the lock for an entire cycle; each `_`-prefixed invocation does its own atomic `write` before returning, so the state file is recoverable to the last completed verb even if the process dies mid-cycle.
 
 These commitments are realised by the `Store` Protocol itself — there are no explicit transaction begin/end methods. `lock` + atomic `write` + per-`_`-prefixed write discipline is the transaction.
 
-### §8 PR-memory — read-path source, no schema change
+### §7 PR-memory — read-path source, no schema change
 
-The §8 PR-memory read path (§8.1) reads *through* this Store but adds **no** persisted fields. Before each fix dispatch, `src/prgroom/lifecycle` assembles the complete-PR snapshot, sourcing **prior-round dispositions** (`kind` / `rationale` / `commits` / `decided_by`) from the `PRGroomingState` this Store already persists (§2). The per-item `recurrence` signal is **derived from that disposition history at snapshot-assembly time** (§8.2) — never read from or written to the Store. `schema_version` therefore **stays `1`**: no `memory`, no `recurrence`, no Decisions-block fields enter the persisted schema — the PR itself is the durable memory (§8.0).
+The §7 PR-memory read path (§7.1) reads *through* this Store but adds **no** persisted fields. Before each fix dispatch, `src/prgroom/lifecycle` assembles the complete-PR snapshot, sourcing **prior-round dispositions** (`kind` / `rationale` / `commits` / `decided_by`) from the `PRGroomingState` this Store already persists (§2). The per-item `recurrence` signal is **derived from that disposition history at snapshot-assembly time** (§7.2) — never read from or written to the Store. `schema_version` therefore **stays `1`**: no `memory`, no `recurrence`, no Decisions-block fields enter the persisted schema — the PR itself is the durable memory (§7.0).
 
 ## Out of scope for this L3 (when drawn)
 
@@ -69,4 +69,4 @@ The §8 PR-memory read path (§8.1) reads *through* this Store but adds **no** p
 - **Container view**: [`c4-l2-container.md`](c4-l2-container.md)
 - **Lifecycle that consumes the Store**: [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md)
 - **Data shape stored**: [`data-view.md`](data-view.md)
-- **Source spec**: [Section 2 — `prsession.Store` Protocol + state schema](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source design**: [§2 prsession.Store interface + state schema](design.md)

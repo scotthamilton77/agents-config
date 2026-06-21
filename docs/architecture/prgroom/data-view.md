@@ -4,7 +4,7 @@
 > **Previous (reading order)**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md)
 > **Next (reading order)**: [C4 Deployment](c4-deployment.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — Section 2 (state schema) + Section 4.6 (status output) + Section 5 (EscalationSink) + Section 8 (PR-memory channel + recurrence) + docs/specs/2026-06-20-prgroom-fix-verify-subsystem.md for the fix↔verify gate, VerifyVerdict, GateStrength, verify_checklist, and the retry-cap reframe
+> **Source design**: [design.md](design.md) — §2 (state schema) + §4.5 (auto-merge eligibility / status output) + §5 (EscalationSink) + §7 (PR-memory channel); the verify gate, VerifyVerdict, GateStrength, and verify_checklist live in §6
 
 ## Glossary
 
@@ -22,7 +22,7 @@ Two complementary data views in one file:
 
 1. **The persistent state schema** (`PRGroomingState` and its sub-entities) as an ER diagram. Shows the relationships, cardinalities, and key fields that drive the lifecycle. Source: §2.
 2. **The boundary JSON contracts** — the shapes that leave the console-script's process boundary and become other systems' inputs:
-   - `prgroom status --json` output (§4.6) — consumed by future merge-gate components (`gmxo`, `td39`) plus operator inspection
+   - `prgroom status --json` output (§4.5) — consumed by future merge-gate components (`gmxo`, `td39`) plus operator inspection
    - `Escalation` (§5) — consumed by `EscalationSink` adapters (stderr / file / bd)
 3. **The canonical-ownership boundaries** — which data lives where, and which system is authoritative when state inevitably drifts.
 
@@ -48,8 +48,8 @@ erDiagram
         str     last_pushed_head_sha     "last HEAD pushed by THIS CLI"
         datetime last_polled_at          "UTC"
         datetime last_activity_at        "UTC; last_activity_at for §4.1 idle_threshold"
-        bool    human_review_label_added "§4.7 dedup; reset on non-human-gated end-of-cycle"
-        str     last_error               "structured §3.7 code (str | None); clears on successful cycle completion"
+        bool    human_review_label_added "§4.6 dedup; reset on non-human-gated end-of-cycle"
+        str     last_error               "structured §3.6 code (str | None); clears on successful cycle completion"
         bool    lifecycle_escalation_filed "per-cycle dedup for lifecycle-tier EscalationSink emits"
         VerifyVerdict verify             "batch-level fix<->verify verdict (VerifyVerdict | None); additive, omit-when-None => schema_version stays 1"
     }
@@ -177,9 +177,9 @@ flowchart LR
 - prgroom does NOT own reviewer identity beyond the gh-login string. Whether `identity="copilot"` is actually GitHub Copilot or a custom bot or a typo is GitHub's problem.
 - prgroom does NOT own the `human-review-required` label semantics. It writes the label; it does not read or wait on it. Future merge-gate components (`gmxo`, `td39`) consume the label as their merge-block signal.
 
-## Boundary JSON contract #1 — `prgroom status --json` (§4.6)
+## Boundary JSON contract #1 — `prgroom status --json` (§4.5)
 
-The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingState` + a small live gh API enrichment (label state, PR-approval reviews). Stability commitment per §4.6: **adding fields is non-breaking; removing or renaming is breaking and requires a version-bumped envelope**.
+The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingState` + a small live gh API enrichment (label state, PR-approval reviews). Stability commitment per §4.5: **adding fields is non-breaking; removing or renaming is breaking and requires a version-bumped envelope**.
 
 ```json
 {
@@ -319,13 +319,13 @@ If `EscalationSink.emit(...)` raises (stderr write failure, bd-adapter API blip)
 
 Sinks MUST be dedup-aware on the receiving end — bd-adapter uses label-only emit or content-hash dedup on notes; stderr accepts duplicates as extra log lines.
 
-## Boundary JSON contract #3 — Fix-contract memory & recurrence (§8)
+## Boundary JSON contract #3 — Fix-contract memory & recurrence (§7)
 
-Two §8 PR-memory shapes cross the prgroom ↔ fix-agent boundary. **Neither is persisted** — `recurrence` is *computed* at snapshot-assembly from disposition history (§8.2); `memory` is *routed to the PR* then discarded (the PR is the durable store, §8.0). The §2 persistent-state ER above is therefore **unchanged** by §8. Routing mechanics live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (write path) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (contract + audit); this section fixes only the shapes.
+Two §7 PR-memory shapes cross the prgroom ↔ fix-agent boundary. **Neither is persisted** — `recurrence` is *computed* at snapshot-assembly from disposition history (§7.2); `memory` is *routed to the PR* then discarded (the PR is the durable store, §7.0). The §2 persistent-state ER above is therefore **unchanged** by §7. Routing mechanics live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (write path) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (contract + audit); this section fixes only the shapes.
 
 ### Snapshot input — per-item `recurrence` (prgroom → fix agent)
 
-prgroom computes a deterministic `recurrence` for every item carrying a prior disposition and includes it in the complete-PR snapshot fed to the fix agent (§8.1). prgroom **detects**; the fix agent **interprets**.
+prgroom computes a deterministic `recurrence` for every item carrying a prior disposition and includes it in the complete-PR snapshot fed to the fix agent (§7.1). prgroom **detects**; the fix agent **interprets**.
 
 ```python
 
@@ -341,7 +341,7 @@ class Recurrence:
 
 ### Fix output — classified `memory` channel (fix agent → prgroom)
 
-The fix output gains an optional `memory` channel (§5, §8.3). The agent *declares* memory; prgroom is the sole actuator of every PR write. MVP routes **`CONTEXTUAL` only, to the PR**; other classes are accepted-but-deferred (logged, not routed).
+The fix output gains an optional `memory` channel (§5, §7.3). The agent *declares* memory; prgroom is the sole actuator of every PR write. MVP routes **`CONTEXTUAL` only, to the PR**; other classes are accepted-but-deferred (logged, not routed).
 
 ```json
 "memory": [
@@ -381,11 +381,11 @@ Neither file is part of `prsession.Store` — they are output streams owned by `
 - **Schema migration plumbing.** Versions, migration registry, `STATE_SCHEMA_UNKNOWN` trip — see [`c4-l3-prsession.md`](c4-l3-prsession.md) (stub).
 - **The actual GitHub API field shapes prgroom polls.** `src/prgroom/gh` wraps the `gh` subprocess; the per-endpoint payload shapes are the `gh` CLI's documented surface, not prgroom's contract.
 - **Cross-PR enumeration data** — `prgroom sweep`'s output. Not designed at the data-contract level in MVP; `sweep` writes per-PR exit codes to its own stderr.
-- **The §3.7 error-code registry itself.** This file references `last_error` as a string; the full code list with what/why/how lives in source spec §3.7.
+- **The §3.6 error-code registry itself.** This file references `last_error` as a string; the full code list with what/why/how lives in the design reference §3.6.
 
 ## Cross-references
 
 - **Previous**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md) — the components that read / write this data
 - **Next (reading order)**: [C4 Deployment](c4-deployment.md) — where this data physically lives on disk
 - **Related stubs**: [`c4-l3-prsession.md`](c4-l3-prsession.md) (state store adapters), [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (token-usage emitter)
-- **Source spec**: [Section 2 — `prsession.Store` interface + state schema](../../plans/2026-05-12-prgroom-cli-design.md), [Section 4.6 Auto-merge eligibility contract](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md) (EscalationSink section), [Section 8 — PR memory management](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source design**: [§2 prsession.Store interface + state schema](design.md), [§4.5 Auto-merge eligibility contract](design.md), [§5 Agent dispatch (named contracts)](design.md), [§7 PR memory management](design.md)

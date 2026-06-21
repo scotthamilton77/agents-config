@@ -3,7 +3,7 @@
 Operational procedures for migrating PR grooming from the legacy skills
 (`wait-for-pr-comments` + `reply-and-resolve-pr-threads`) onto the `prgroom`
 CLI, and for rolling back if the loop misbehaves. The migration is staged; the
-full rationale lives in the companion spec
+full rationale lives in the dated design proposal
 [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md),
 Section 6 ("Migration & cutover"). This runbook is the operator-facing
 distillation of §6.4–6.6.

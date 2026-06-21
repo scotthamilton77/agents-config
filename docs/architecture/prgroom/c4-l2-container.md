@@ -4,7 +4,7 @@
 > **Previous**: [C4 L1 — System Context](c4-l1-context.md)
 > **Next (reading order)**: [Sequences](sequences.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md)
+> **Source design**: [design.md](design.md)
 
 ## Glossary
 
@@ -12,11 +12,11 @@
 |---|---|
 | Container (C4 sense) | A separately runnable process or persistent data store — not a Linux / Docker container. |
 | Component | A code module inside a container; appears at C4 L3, not L2. |
-| `_run` | The lifecycle aggregator inside the process that holds the per-PR lock for the duration of a full grooming cycle and chains the per-verb `_`-prefixed lifecycle steps. Defined in source spec §3.3. |
-| Cluster contract | The agent-dispatch contract for `cluster` — cheap grouping of unprocessed review items. Local-first provider chain: ollama+Gemma → claude haiku → codex-mini. Source spec §5. |
-| Fix contract | The agent-dispatch contract for `fix` — `opus[1m]` orchestrator that decides per-comment disposition AND implements the fix. Source spec §5. |
+| `_run` | The lifecycle aggregator inside the process that holds the per-PR lock for the duration of a full grooming cycle and chains the per-verb `_`-prefixed lifecycle steps. Defined in the design reference §3.3. |
+| Cluster contract | The agent-dispatch contract for `cluster` — cheap grouping of unprocessed review items. Local-first provider chain: ollama+Gemma → claude haiku → codex-mini. The design reference §5. |
+| Fix contract | The agent-dispatch contract for `fix` — `opus[1m]` orchestrator that decides per-comment disposition AND implements the fix. The design reference §5. |
 | Fix commit | A commit produced by the fix contract agent inside the operator's working tree, then pushed to the PR branch by the `push` verb. |
-| Quiescence | A definite end-state where no further reviewer activity is expected; the `wait` verb returns on observing quiescence (or PR-review-retry-budget exhaustion). Source spec §4. |
+| Quiescence | A definite end-state where no further reviewer activity is expected; the `wait` verb returns on observing quiescence (or PR-review-retry-budget exhaustion). The design reference §4. |
 
 ## Purpose
 
@@ -89,13 +89,13 @@ Concurrency: `flock(2)` on the file for the verb's duration (the `run` verb hold
 Forked per agent dispatch. Two contracts share the subprocess mechanism:
 
 - **Cluster contract** (`cluster` verb) — cheap. Local-first provider chain: ollama+Gemma, falling back to claude haiku, falling back to codex-mini. Bundles unprocessed review items into fix-clusters; no per-item disposition decided here.
-- **Fix contract** (`fix` verb) — strong. `opus[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`. Its input is a complete-PR snapshot (description incl. the `## Decisions` block, labels, every thread with full reply-chains, prior-round dispositions, per-item `recurrence`) that prgroom assembles immediately before dispatch (§8.1); its output adds a classified `memory` channel that prgroom routes to the PR (§8.3). The agent never calls `gh`.
+- **Fix contract** (`fix` verb) — strong. `opus[1m]` orchestrator that decides per-comment disposition (`fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`) AND implements the fix in the worktree. The agent does its own `git commit`; prgroom does the subsequent `git push`. Its input is a complete-PR snapshot (description incl. the `## Decisions` block, labels, every thread with full reply-chains, prior-round dispositions, per-item `recurrence`) that prgroom assembles immediately before dispatch (§7.1); its output adds a classified `memory` channel that prgroom routes to the PR (§7.3). The agent never calls `gh`.
 
 Each invocation is a **fresh context** — no conversation memory between calls. Per-call token-usage is logged to JSONL (`src/prgroom/agent` emits this) for later baseline analysis; MVP does no aggregation.
 
 #### Operator's git worktree
 
-The repo + branch the operator launched prgroom against. The fix contract agent edits + commits here; the `push` verb pushes commits to origin. **prgroom does NOT manage the worktree lifecycle** — the operator (or upstream skill like `finishing-a-development-branch`) owns create / cleanup. This is a deliberate scope decision per source spec §1 non-goals.
+The repo + branch the operator launched prgroom against. The fix contract agent edits + commits here; the `push` verb pushes commits to origin. **prgroom does NOT manage the worktree lifecycle** — the operator (or upstream skill like `finishing-a-development-branch`) owns create / cleanup. This is a deliberate scope decision per the design reference §1 non-goals.
 
 ### External systems (carried forward from L1)
 
@@ -117,7 +117,7 @@ The repo + branch the operator launched prgroom against. The fix contract agent 
 - Components inside the `prgroom` process — those live in [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md) (drawn), [`c4-l3-prsession.md`](c4-l3-prsession.md) (stub), and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) (stub).
 - Verb ordering or sequence — see [`sequences.md`](sequences.md) for the four canonical flows.
 - Phase transitions and the §4 quiescence sub-states — see [`state-machine.md`](state-machine.md).
-- Data schema (`PRGroomingState`, `ReviewItem`, etc.) and the §4.6 status output / §5 escalation event JSON contracts — see [`data-view.md`](data-view.md).
+- Data schema (`PRGroomingState`, `ReviewItem`, etc.) and the §4.5 status output / §5 escalation event JSON contracts — see [`data-view.md`](data-view.md).
 - Where these containers physically run + scheduler integration — see [`c4-deployment.md`](c4-deployment.md).
 
 ## Cross-references
@@ -125,4 +125,4 @@ The repo + branch the operator launched prgroom against. The fix contract agent 
 - **Previous**: [C4 L1 — System Context](c4-l1-context.md)
 - **Next (reading order)**: [Sequences](sequences.md) — the four canonical PR-grooming flows
 - **Related**: [C4 L3 — Lifecycle](c4-l3-lifecycle.md) — components inside the `prgroom` process
-- **Companion source**: source spec §§ [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 2 — `prsession.Store` interface + state schema](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Companion source**: design reference §§ [§1 Architecture overview](design.md), [§2 prsession.Store interface + state schema](design.md), [§5 Agent dispatch (named contracts)](design.md)

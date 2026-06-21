@@ -2,14 +2,14 @@
 
 > **Up**: [index](index.md)
 > **Source bead**: `agents-config-fca6.16`
-> **Source spec**: [`docs/specs/2026-06-20-prgroom-fix-verify-subsystem.md`](../../specs/2026-06-20-prgroom-fix-verify-subsystem.md) — the fix↔verify gate, the trust-but-verify contract, and the retry-cap reframe
+> **Source design**: [design.md](design.md) — §6 (the verify gate), §3.4 (the fix↔verify convergence loop), §3.5 (the two retry caps)
 > **Container**: `src/prgroom/lifecycle/` (the `verify` step + gate) reaching into `src/prgroom/agent/` (repair dispatch) and `src/prgroom/proc` (command runner)
 
 ## Glossary
 
 | Term | Meaning |
 |---|---|
-| `verify` step | The new pre-push `VerbStep` (§3 of the source spec) inserted between `fix` and `cap-guard`. Runs the mechanical gate, owns the bounded fix↔verify convergence loop, and refuses the push (flips `phase=human-gated`) when the inner retry budget is exhausted. |
+| `verify` step | The new pre-push `VerbStep` (§3 of the design reference) inserted between `fix` and `cap-guard`. Runs the mechanical gate, owns the bounded fix↔verify convergence loop, and refuses the push (flips `phase=human-gated`) when the inner retry budget is exhausted. |
 | Mechanical gate | A deterministic command run — the repo's tests/build/lint via `proc.CommandRunner` — that confirms the whole branch is sound. The **gate of record**: authoritative over the fix agent's own claim. |
 | Gate tier | `GateStrength` ∈ {`full`, `lite`}. The whole-branch tier is the **strongest** `Disposition.gate` across the clean `FIXED` items (any `full` ⇒ full, else `lite`). |
 | `verify_checklist` | The fix agent's own completion-gate result, emitted as a **required** artifact in `FixOutput` — the agent's *claim*. Evidence + forcing-function; not byte-compared against the mechanical gate. |
@@ -21,7 +21,7 @@
 
 Open the boundary of the **fix↔verify subsystem** and show its components. Answers: *what runs the mechanical gate? how does the bounded auto-re-fix loop converge or escalate? where does the fix agent's `verify_checklist` claim meet prgroom's authoritative gate? how does the `verify` step refuse a push?*
 
-This subsystem is the trust-but-verify seam between the **fix agent** (an armed implementation agent that edits code and may regress it) and the **push** (which elicits the next review round). It fills the architecture gap the source spec §1 describes.
+This subsystem is the trust-but-verify seam between the **fix agent** (an armed implementation agent that edits code and may regress it) and the **push** (which elicits the next review round). It fills the architecture gap the design reference §1 describes.
 
 The `verify` step sits in the lifecycle pipeline: `cluster → fix → verify → cap-guard → push → reply → resolve → rereview`.
 
@@ -126,7 +126,7 @@ Two halves meet here:
 
 ## Error codes
 
-The `verify` step surfaces three codes (source spec §7):
+The `verify` step surfaces three codes (the design reference §3.6):
 
 | Code | Tier (exit) | Phase | Blocking | Meaning |
 |---|---|---|---|---|
@@ -150,4 +150,4 @@ Every collaborator is behind a Protocol, so `verify` unit-tests against fakes: `
 - **State transitions**: [`state-machine.md`](state-machine.md) — the `fixes-pending → human-gated` verify-exhaustion edge
 - **Data shapes**: [`data-view.md`](data-view.md) — `GateStrength`, `VerifyVerdict`, `verify_checklist`, the `status` `verify` block
 - **Contracts**: [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md) — armed agent, `verify_checklist`, repair dispatch
-- **Source spec**: [`docs/specs/2026-06-20-prgroom-fix-verify-subsystem.md`](../../specs/2026-06-20-prgroom-fix-verify-subsystem.md)
+- **Source design**: [§6 The verify gate (trust-but-verify)](design.md)

@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Previous (reading order)**: [Data View](data-view.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md)
+> **Source design**: [design.md](design.md)
 
 ## Glossary
 
@@ -182,4 +182,4 @@ These shapes are explicitly out of scope for MVP and would require a deliberate 
 
 - **Previous**: [Data View](data-view.md)
 - **Related**: [C4 L1 — System Context](c4-l1-context.md), [C4 L2 — Container](c4-l2-container.md)
-- **Source spec**: [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 2 — `prsession.Store` interface](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md), [Section 7 — Build, distribution, versioning, CI](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Source design**: [§1 Architecture overview](design.md), [§2 prsession.Store interface + state schema](design.md), [§5 Agent dispatch (named contracts)](design.md)

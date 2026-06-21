@@ -2,7 +2,7 @@
 
 > **Source bead**: `agents-config-fca6.12`
 > **Subsystem**: prgroom — PR-grooming CLI (`agents-config-fca6` epic)
-> **Companion spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md) — the design these artifacts visualise
+> **Companion design**: [`design.md`](design.md) — the consolidated, evergreen design these artifacts visualise; the dated, point-in-time proposals that seeded it live under `docs/plans/` and `docs/specs/`
 > **Glossary**: per-artifact short glossaries appear at the top of each file
 > **Status**: under construction
 
@@ -21,10 +21,10 @@
 | `VerifyVerdict` | The batch-level verify result persisted on `PRGroomingState` (`verify: VerifyVerdict \| None`): `result` (`"passed"`/`"failed"`), `tier` (`GateStrength`), `retries_used`, `gate_output_ref`, `decided_at`. Additive, omit-when-`None`, so `schema_version` stays `1` (parallels `pending_memory`). |
 | `verify_checklist` | The required artifact the armed fix agent emits in `FixOutput` — what its own completion gate ran and the result (the agent's *claim*). On a batch with `FIXED` items, a missing/malformed `verify_checklist` is a `CONTRACT_FIX_AUDIT_FAILED` (the item flips to `FAILED`). It is a forcing function + evidence trail, NOT byte-compared against prgroom's authoritative mechanical gate (trust-but-verify). |
 | `fix_verify_retries` / `pr_review_retries` | The two retry caps. **Inner** `fix_verify_retries` (default `2`) bounds the fix↔verify convergence loop's repair re-fixes within one cycle; exhaustion ⇒ `LIFECYCLE_FIX_VERIFY_EXHAUSTED`. **Outer** `pr_review_retries` (default `5`; initial push + 5 fix-pushes = 6 pushes) bounds review-eliciting pushes across cycles; exhaustion ⇒ `LIFECYCLE_PR_REVIEW_EXHAUSTED`. Both escalate to `human-gated` (`LIFECYCLE_CAP` tier, exit 0) and re-arm by raising the relevant knob (entry-probe) or by `poll` observing an external fix. |
-| Disposition | The fix contract agent's per-comment classification: `fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`. Per Section 5 of the source spec. |
-| Quiescence | A definite end-state where no further bot or human reviewer activity is expected; prgroom may safely stop watching the PR. Defined in §4 of the source spec. |
+| Disposition | The fix contract agent's per-comment classification: `fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`. Per Section 5 of the design reference. |
+| Quiescence | A definite end-state where no further bot or human reviewer activity is expected; prgroom may safely stop watching the PR. Defined in §4 of the design reference. |
 | Cluster contract / Fix contract | The two agent-dispatch contracts defined in §5. **Cluster contract** = `cluster` (cheap grouping; local-first via ollama → claude haiku → codex-mini). **Fix contract** = `fix` (opus[1m] orchestrator that decides disposition AND implements). |
-| `prsession.Store` | The state-persistence Protocol defined in §2 of the source spec. MVP default is the `file` adapter (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`); a `memory` adapter exists for tests; the `bd` adapter is deferred to v2. **Naming-collision note:** this is a per-PR typed K/V store with locking — deliberately NOT named `WorkTracker` because PDLC orchestrator has a `WorkTracker` Protocol that abstracts a genuinely different concept (Objective registry with Discovery / CAS / fingerprinting). The two should not be conflated. |
+| `prsession.Store` | The state-persistence Protocol defined in §2 of the design reference. MVP default is the `file` adapter (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`); a `memory` adapter exists for tests; the `bd` adapter is deferred to v2. **Naming-collision note:** this is a per-PR typed K/V store with locking — deliberately NOT named `WorkTracker` because PDLC orchestrator has a `WorkTracker` Protocol that abstracts a genuinely different concept (Objective registry with Discovery / CAS / fingerprinting). The two should not be conflated. |
 | `EscalationSink` | The Protocol (Section 5) for surfacing items the fix orchestrator classified `ESCALATE`. Lifecycle-internal — the §1 layout gives escalation no dedicated module. Default is stderr; `bd` and `file` adapters available. |
 
 Each artifact file in this folder carries its **own short glossary** at the top, listing the terms used in that specific file with one-line definitions.
@@ -84,14 +84,14 @@ Newcomers should read in this order; deep contributors may navigate freely.
 | [`c4-l3-prsession.md`](c4-l3-prsession.md) | **stub** | **C4 Level 3** (`src/prgroom/prsession`) — placeholder; expected components: `prsession.Store` Protocol + adapter registry, file adapter (`$XDG_STATE_HOME/prgroom/...`), memory adapter (tests), transactional verb-level + run-aggregate commit model, schema-migration plumbing for `schema_version` |
 | [`c4-deployment.md`](c4-deployment.md) | drawn | **C4 Deployment** — single-host MVP topology: prgroom console-script on operator workstation, scheduler integration (cron / systemd timer / `prgroom sweep` loop), state file on local FS, gh CLI auth, agent-CLI bin presence. Explicit "multi-host POST-MVP" markers. |
 | [`sequences.md`](sequences.md) | drawn | **Four sequence diagrams** covering the canonical flows: (1) happy path — push → review → fix → push → quiesce; (2) bot silence — Copilot doesn't engage → `review_start_timeout` auto-decline → quiesce; (3) PR-review-retry exhaustion — `pr_review_retries` spent without quiescence → human-gated (`LIFECYCLE_PR_REVIEW_EXHAUSTED`) + auto-add human-review-required label; (4) resumability — process crash mid-`_wait` → next invocation re-evaluates timeouts from stored UTC timestamps |
-| [`state-machine.md`](state-machine.md) | drawn | **Phase graph + quiescence predicate**: the six §2 `PRPhase` values (`idle` / `awaiting-review` / `fixes-pending` / `quiesced` / `human-gated` / `merged`) with their §3.2-priority-cascade transition edges, the `Round` counter loop, the `pr_review_retries` exhaustion exit (`LIFECYCLE_PR_REVIEW_EXHAUSTED`, with `EscalationSink` emit + §4.7 auto-label side-effect), the parallel `fix_verify_retries` exhaustion exit out of `fixes-pending` (`LIFECYCLE_FIX_VERIFY_EXHAUSTED`) via the `verify` step, the resurrection edges from `quiesced` and `human-gated` back into the loop (including the `--pr-review-retries` retry-budget re-arm), and a companion `flowchart` for the §4.1 quiescence predicate's 4 hard gates + idle timer |
-| [`data-view.md`](data-view.md) | drawn | **State + contract data**: ER for `PRGroomingState` / `ReviewItem` / `Disposition` / `ReviewerState` / `QuiescenceState`; annotated JSON for the §4.6 `status` output, the Section 5 escalation events, and the §8 fix-contract `memory` channel + `recurrence` snapshot-input (non-persisted boundary shapes — the persisted ER is unchanged); canonical-ownership boundaries (state-file vs PR vs git) |
+| [`state-machine.md`](state-machine.md) | drawn | **Phase graph + quiescence predicate**: the six §2 `PRPhase` values (`idle` / `awaiting-review` / `fixes-pending` / `quiesced` / `human-gated` / `merged`) with their §3.2-priority-cascade transition edges, the `Round` counter loop, the `pr_review_retries` exhaustion exit (`LIFECYCLE_PR_REVIEW_EXHAUSTED`, with `EscalationSink` emit + §4.6 auto-label side-effect), the parallel `fix_verify_retries` exhaustion exit out of `fixes-pending` (`LIFECYCLE_FIX_VERIFY_EXHAUSTED`) via the `verify` step, the resurrection edges from `quiesced` and `human-gated` back into the loop (including the `--pr-review-retries` retry-budget re-arm), and a companion `flowchart` for the §4.1 quiescence predicate's 4 hard gates + idle timer |
+| [`data-view.md`](data-view.md) | drawn | **State + contract data**: ER for `PRGroomingState` / `ReviewItem` / `Disposition` / `ReviewerState` / `QuiescenceState`; annotated JSON for the §4.5 `status` output, the Section 5 escalation events, and the §7 fix-contract `memory` channel + `recurrence` snapshot-input (non-persisted boundary shapes — the persisted ER is unchanged); canonical-ownership boundaries (state-file vs PR vs git) |
 
 ## Operational runbooks
 
 Operator-facing procedures (not HLD diagrams) that live alongside this artifact set:
 
-- **[`cutover-runbook.md`](cutover-runbook.md)** — the staged legacy → prgroom migration: drain-before-cutover, the readiness gate for retiring the legacy tooling, and the git-revert rollback / straggler escape hatch. Distils companion-spec §6.4–6.6.
+- **[`cutover-runbook.md`](cutover-runbook.md)** — the staged legacy → prgroom migration: drain-before-cutover, the readiness gate for retiring the legacy tooling, and the git-revert rollback / straggler escape hatch. Distils the dated design proposal's migration plan (§6.4–6.6).
 
 ## Conventions
 
@@ -101,13 +101,13 @@ Operator-facing procedures (not HLD diagrams) that live alongside this artifact 
   - State machine uses `stateDiagram-v2`
   - Data view uses `erDiagram` for entity relationships, `flowchart` and markdown tables for canonical-ownership boundaries, fenced JSON for flat contract objects (`status` output, escalation events)
 
-- **PRPhase values** (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`) are the canonical lifecycle phase identifiers throughout the artifact set — used verbatim in the state machine and data-view ER. The canonical reference is [Section 3.1](../../plans/2026-05-12-prgroom-cli-design.md). Note: Mermaid `stateDiagram-v2` requires valid identifiers (no hyphens), so the state machine diagram uses underscored node IDs (e.g., `awaiting_review`) aliased to labels matching the canonical hyphenated values.
+- **PRPhase values** (`idle`, `awaiting-review`, `fixes-pending`, `quiesced`, `human-gated`, `merged`) are the canonical lifecycle phase identifiers throughout the artifact set — used verbatim in the state machine and data-view ER. The canonical reference is [§3.1](design.md). Note: Mermaid `stateDiagram-v2` requires valid identifiers (no hyphens), so the state machine diagram uses underscored node IDs (e.g., `awaiting_review`) aliased to labels matching the canonical hyphenated values.
 
 - **C4 L4 (code) is intentionally absent.** C4 itself recommends against drawing this level for systems where the code is reasonably self-documenting; we follow that guidance.
 
-## Source-spec coupling
+## Design-reference coupling
 
-Diagrams in this folder are **derived artifacts**. The source of truth is `docs/plans/2026-05-12-prgroom-cli-design.md` Sections 1–8. Diagrams should cite the spec section they visualise (each file does so in its header) and be amended in place when the spec changes.
+Diagrams in this folder are **derived artifacts**. The source of truth is [`design.md`](design.md) (the consolidated, evergreen design reference). Diagrams should cite the design section they visualise (each file does so in its header) and be amended in place when the design changes.
 
 ## How these artifacts should be used
 

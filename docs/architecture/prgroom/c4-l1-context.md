@@ -3,7 +3,7 @@
 > **Up**: [index](index.md)
 > **Next (reading order)**: [C4 L2 — Container](c4-l2-container.md)
 > **Source bead**: `agents-config-fca6.12`
-> **Source spec**: [`docs/plans/2026-05-12-prgroom-cli-design.md`](../../plans/2026-05-12-prgroom-cli-design.md)
+> **Source design**: [design.md](design.md)
 
 ## Glossary
 
@@ -14,7 +14,7 @@
 | `prsession.Store` (bd adapter, v2) | The deferred `bd`-backed adapter of the `prsession.Store` interface (§2): persists PRGroomingState in a linked bead's notes. MVP default is the `file` adapter on the local filesystem; the `bd` adapter ships in v2. |
 | Agent CLI | One of the AI agent command-line tools (`claude -p`, `codex exec`, `opencode run`, local `ollama`) that prgroom subprocesses for the cluster contract and fix contract. The contract — not the runtime — is the API; which runtime serves a contract is TOML-configurable (§5). Each invocation gets a fresh context. |
 | Scheduler | Whatever drives autonomous prgroom runs: cron, systemd timer, GitHub Actions, an outer `prgroom sweep` loop, or a `/loop` Claude Code session. prgroom does not care which. |
-| Quiescence | The condition under which prgroom may safely stop watching a PR — no further bot or human reviewer activity is expected. Defined in §4 of the source spec. |
+| Quiescence | The condition under which prgroom may safely stop watching a PR — no further bot or human reviewer activity is expected. Defined in §4 of the design reference. |
 | Disposition | The fix contract agent's per-comment classification: `fixed` / `already_addressed` / `skipped` / `deferred` / `wont_fix` / `escalated` / `failed`. |
 
 ## Purpose
@@ -85,10 +85,10 @@ C4Context
 - The internal mechanics of any external system (GitHub's API internals, the agent CLIs' model dispatch, `gh`'s auth flow).
 - Failure paths, retry behaviour, PR-review-retry-budget escalation, quiescence sub-states. Those live in [`sequences.md`](sequences.md) and [`state-machine.md`](state-machine.md).
 - Deployment topology (host count, scheduler integration, filesystem layout). That lives in [`c4-deployment.md`](c4-deployment.md).
-- Data shapes — `PRGroomingState`, the §4.6 `status` output, the §5 escalation event JSON. Those live in [`data-view.md`](data-view.md).
+- Data shapes — `PRGroomingState`, the §4.5 `status` output, the §5 escalation event JSON. Those live in [`data-view.md`](data-view.md).
 
 ## Cross-references
 
 - **Next**: [C4 L2 — Container](c4-l2-container.md) — opens the prgroom system boundary
-- **Companion source**: source spec §§ [Section 1 — Architecture overview](../../plans/2026-05-12-prgroom-cli-design.md), [Section 5 — Agent dispatch internals](../../plans/2026-05-12-prgroom-cli-design.md)
+- **Companion source**: design reference §§ [§1 Architecture overview](design.md), [§5 Agent dispatch (named contracts)](design.md)
 - **Glossary**: [index](index.md#glossary-subsystem-wide-terms-used-across-this-artifact-set)
