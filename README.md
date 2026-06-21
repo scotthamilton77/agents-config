@@ -21,18 +21,9 @@ The five load-bearing convictions behind this:
 4. **Evidence before assertion, always.** Mechanical gates (tests, build, lint, review) sit between "I think this works" and "this is done."
 5. **Persistent context survives compaction.** Beads, memories, formulas, and audit logs let work span sessions, agents, and overnight cranking without losing thread.
 
-### Current state -- NOTE THIS AND THE REST OF THE FILE ARE OUT OF DATE - TODO update once v2 architecture is solid in concept
+### Current state
 
-This is a work in progress. The architecture is in place; several keystone enablers toward the vision are filed but not yet shipped — tracked under the `vision-85-5-10` bead label. Notable current gaps:
-
-- The "no, not ready" brainstorm-readiness gate is implicit, not enforced
-- Persona and orchestration guidance give subtly conflicting decide-vs-escalate direction
-- The 85/5/10 ratio is not yet instrumented — aspirational, not measured
-- No spec post-mortem feedback loop yet — failures don't automatically improve future brainstorming
-- Auto-merge policy for low-risk PR classes is not defined — every PR waits on a human "ship it"
-- Autonomous work runs sequentially through external waits (CI, review polling); no pipelining yet
-
-If you are using this repo, treat the vision as direction and the rules-as-written as the current contract. Contributions toward the vision-tagged work are welcome.
+The core architecture is in place. Several keystone enablers toward the 85/5/10 vision are filed but not yet shipped. Treat the vision as direction and the rules-as-written as the current contract.
 
 ## Prerequisites
 
@@ -47,7 +38,7 @@ Without these plugins, the shared `<orchestration>` section in `src/user/.agents
 
 ```
 scripts/
-└── install.sh                      # Multi-tool installer with auto-detection
+└── install.sh                      # Thin exec stub → packages/installer (uv-managed Python)
 docs/
 ├── plans/                          # Design documents for features in development
 └── specs/                          # Design specifications for implemented features
@@ -260,19 +251,6 @@ Claude Code looks for configuration in multiple locations with the following pre
 | `.claude/` in project | Project | Project-specific agents, skills, and settings |
 
 Project-level settings override user-level. Use user-level for your personal workflow; use project-level for team-shared configurations.
-
-## Roadmap
-
-### Under Consideration
-
-- [x] **Gemini support** - Equivalent configurations for Google's Gemini
-- [x] **Codex support** - Equivalent configurations for OpenAI's Codex
-- [ ] **Templatized extensions** - Selectable "extensions" (task tracker, language preferences) that can be applied during installation
-- [ ] **Update mechanism** - Pull latest versions without clobbering customizations
-- [ ] **Selective install** - Choose which agents/skills to install
-- [ ] **Agent marketplace** - Community-contributed agents and skills
-- [ ] **Compatibility matrix** - Track which agents work with which AI assistants
-- [ ] **Testing framework** - Validate agent behavior with example prompts
 
 ## Contributing
 

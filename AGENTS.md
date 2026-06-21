@@ -20,23 +20,12 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 4. **Guardrail every completion claim with mechanical evidence** (completion gate, verify-checklist)
 5. **Persist context** (work tickets, memories, formulas) so work survives compaction, agent handoff, and overnight runs
 
-### Current state — FAILED work in progress
+### Design principles for this repo
 
-The architecture has run into a problematic ocean of complexity and inverted engineering where agents are doing the wrong things (things algorithms should be doing).  We're presently in a REDESIGN phase where much of the old and suspect architecture has been pushed under the `archive/` folder to serve as references until we don't need them anymore.  You should NOT peek in there unless/until you need to.  (Don't let its contents poison your understanding of current and future state).
-
-That means that the current code architecture is a work in progress that is being cleaned up with the following goals in mind:
-
-- **Code over Prose** - Anything code can do better than agents, we're moving out of prose and into code helpers
-- **Python/Go/Node over Bash** - Thin shell script wrappers are fine but any logic that needs good testing needs to be in Python, Go or Node
-- **Amalgams over Conflicts** - There are currently competing priorities in certain plugins that contribute to context rot - we'll be consolidating "best of breed" from plugins' skills and other assets such as superpowers, pollock, karpathy, and so on
-- **Work vs beads** - While we'll continue to use the beads infrastructure (and possibly plugin) we'll be taking a step back from making that a first class citizen of this project's architecture, placing a "work" abstraction in front of it - end state is that beads is quarantined behind our own CLI
-
-### Implications for agents working in *this* repo
-
-- You'll still use beads directly for the time being until we get our work abstraction in place
-- The current backlog of beads is meaningful in a historic sense, but we'll be cleaning that up substantially over time
-- I need YOUR help (talking to you, agent!) to point out confusion or ambiguity in your context and where it's coming from - job #1 is to clean that up and give you an environment that's useful, not confusing - TELL ME WHAT MAKES THINGS HARDER THAN THEY SHOULD BE
-- The goals of the architecture are still valid / remain, but right now we're prioritizing getting the house in order to make it possible to accrete work toward that 85/5/10 goal. So while I'll need you (the agent) to point out what's in the way of this now, I also want you to watchdog what I'm asking you to do and apply backpressure where it's not clear how what I'm asking for is aligned with cleaning house or paving the road to the vision.
+- **Code over Prose** — anything code can do better than agents, we move out of prose and into code helpers
+- **Python/Go/Node over Bash** — thin shell script wrappers are fine; any logic that needs testing goes in Python, Go, or Node
+- **Consolidate over conflict** — where plugins' assets overlap, merge the best-of-breed into the canonical source; avoid competing instructions
+- **Beads is the work tracker** — use the `bd` CLI for task tracking; report any context that is confusing or ambiguous so it can be cleaned up
 
 ## Project Architecture
 
@@ -91,22 +80,6 @@ Other notes:
 
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
 - **Exception — `packages/installer/` is a real Python package with a mandatory quality gate.** Before pushing any change under `packages/installer/`, run `make ci-installer` from the repo root (or `make ci` for the whole repo). It runs lint, format-check, typecheck, coverage, audit, and entry-verify — the same gate CI enforces. See `packages/installer/AGENTS.md` for the package-scoped workflow.
-
-## Project Milestones (current, not target)
-
-**Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
-
-Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4. Each milestone's `description` field is the canonical scope statement.
-
-| ID | Status | Milestone |
-|----|--------|-----------|
-| `agents-config-wgclw` | open | **M0** — Discipline-layer rearchitecture: scripts own determinism, skills own judgment |
-| `agents-config-abn9` | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators |
-| `agents-config-qn0g` | open | **M2** — Brainstorm-readiness gate |
-| `agents-config-vaac` | in_progress | **M3** — Worker fleet through PR autonomy |
-| `agents-config-t142` | open | **M4** — Overnight autonomy |
-
-All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
 
 ## graphify
 
