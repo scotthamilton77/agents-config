@@ -63,9 +63,11 @@ _NAMED_RULES_RE = re.compile(r"^<!-- DYNAMIC-INCLUDE-RULES: (.*) -->$")
 # Distinct from ALL-RULES, which reads the staged rules tree.
 _NAMED_RULES_SOURCE_DIR = Path("src/user/.claude/rules")
 
-# Tool-root instruction files that are flattened: ``AGENTS.md.template`` and
-# ``GEMINI.md.template`` — keyed by their ``.template``-stripped dest, which is
-# how the plan stores them.
+# Tool-root instruction files that are flattened, keyed by their
+# ``.template``-stripped dest (how the plan stores them). The dest is per-tool,
+# so ``AGENTS.md`` covers Claude, Codex, AND OpenCode (each installs an
+# ``AGENTS.md``); ``GEMINI.md`` covers Gemini. Only Codex/Gemini/OpenCode carry
+# the ALL-RULES marker — Claude's ``AGENTS.md`` does not, so its rules survive.
 _FLATTENABLE_DESTS: tuple[Path, ...] = (Path("AGENTS.md"), Path("GEMINI.md"))
 
 
@@ -140,25 +142,42 @@ def flatten_template(
 
 def flatten_plan_templates(plan: StagingPlan, *, repo_root: Path, io: IOPort) -> None:
     """Phase 6.5/6.75: flatten the plan's instruction templates, then drop the
-    include-only templates they inline.
+    standalone files they inline.
 
     For each flattenable instruction file present in the plan (``AGENTS.md`` /
     ``GEMINI.md``), replace its content with the DYNAMIC-INCLUDE-flattened text —
     file includes resolved from ``repo_root``, ALL-RULES from the plan's own
-    staged rules — then remove the include-only templates from the plan so they
-    are not also deployed standalone. Mutates ``plan`` in place.
+    staged rules — then remove from the plan whatever that flattening inlined so it
+    is not also deployed standalone: the include-only file templates always, and —
+    when the instruction file carried an ALL-RULES marker — the loose ``rules/``
+    items too. A tool whose instruction file has no ALL-RULES marker (Claude reads
+    a loose ``~/.claude/rules/`` tree natively) keeps its rules. Mutates ``plan``
+    in place.
     """
     include_only: set[Path] = set()
+    inlines_rules = False
     for dest in _FLATTENABLE_DESTS:
         item = plan.items.get(dest)
         if item is None or item.content is None:
             continue
         text = item.content.decode("utf-8")
         include_only |= _file_include_dests(text)
+        inlines_rules |= _text_inlines_rules(text)
         flattened = _flatten_with_plan_rules(text, plan=plan, repo_root=repo_root, io=io)
         plan.items[dest] = replace(item, content=flattened.encode("utf-8"))
     for dest in include_only:
         plan.items.pop(dest, None)
+    if inlines_rules:
+        # The instruction file inlined every rule via ALL-RULES, so the standalone
+        # rules/ files would be redundant copies the tool does not read (codex /
+        # gemini / opencode). Drop exactly what the flatten consumed — file items
+        # (content is not None), mirroring _flatten_with_plan_rules — so a rules/
+        # item that was NOT inlined is never silently discarded.
+        inlined = [
+            d for d, it in plan.items.items() if it.namespace == "rules" and it.content is not None
+        ]
+        for dest in inlined:
+            plan.items.pop(dest, None)
 
 
 def _file_include_dests(text: str) -> set[Path]:
@@ -175,6 +194,15 @@ def _file_include_dests(text: str) -> set[Path]:
     return dests
 
 
+def _text_inlines_rules(text: str) -> bool:
+    """True when ``text`` carries an ALL-RULES marker.
+
+    Flattening such a file inlines every staged rule into it, which makes the
+    standalone ``rules/`` files redundant for that tool.
+    """
+    return any(isinstance(parse_directive(line), AllRulesInclude) for line in text.splitlines())
+
+
 def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, io: IOPort) -> str:
     """Flatten ``text``, sourcing ALL-RULES from the plan's staged ``rules/``.
 
@@ -183,10 +211,7 @@ def _flatten_with_plan_rules(text: str, *, plan: StagingPlan, repo_root: Path, i
     they are materialised to a temp dir for ``flatten_template`` to read —
     matching ``find $staging/rules -name '*.md' | sort``.
     """
-    needs_rules = any(
-        isinstance(parse_directive(line), AllRulesInclude) for line in text.splitlines()
-    )
-    if not needs_rules:
+    if not _text_inlines_rules(text):
         return flatten_template(text, base_dir=repo_root, io=io, rules_dir=None)
     with tempfile.TemporaryDirectory() as tmp:
         rules_dir = Path(tmp)
