@@ -689,3 +689,33 @@ def test_backup_survives_a_failed_write(tmp_path: Path) -> None:
 
     backup = dest_root / "rules-backup" / f"f.md.backup-{_FIXED_TS}"
     assert backup.read_bytes() == b"old\n"
+
+
+def test_settings_json_source_is_rejected_before_any_write(tmp_path: Path) -> None:
+    """
+    Given a source that classifies as FileKind.SETTINGS_JSON
+    When sync runs
+    Then it raises ValueError before reading or writing — never clobbering a
+    settings.json.
+
+    sync is a raw byte-copy with no settings-merge branch; a settings.json
+    routed through it would byte-overwrite the user's file instead of the
+    union-merge the plan path (sync_plan) performs. The guard refuses the
+    operation so the merge-aware path cannot be bypassed by a future caller.
+    """
+    src_root = tmp_path / "repo"
+    dest_root = tmp_path / "home"
+    src_root.mkdir()
+    dest_root.mkdir()  # exists, so the no-write assertion is non-trivial
+    (src_root / "settings.json.template").write_bytes(b'{"a": 1}\n')
+
+    with pytest.raises(ValueError, match="settings"):
+        sync(
+            _IdentityAdapter(),
+            Path("settings.json.template"),
+            repo_root=src_root,
+            home=dest_root,
+            io=ScriptedIO(),
+        )
+
+    assert not (dest_root / "settings.json.template").exists()
