@@ -116,6 +116,25 @@ def main(
     io: IOPort | None = None,
     repo_root: Path | None = None,
 ) -> int:
+    """CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an
+    interactive abort (e.g. at an overwrite prompt) exits cleanly with code 130 and
+    a short ``Aborted.`` notice instead of dumping a ``KeyboardInterrupt`` traceback.
+    Every other exit — argparse's ``SystemExit``, the guarded config-error returns —
+    passes through unchanged."""
+    try:
+        return _run(argv, home=home, io=io, repo_root=repo_root)
+    except KeyboardInterrupt:
+        sys.stderr.write("\nAborted.\n")
+        return 130
+
+
+def _run(
+    argv: list[str] | None = None,
+    *,
+    home: Path | None = None,
+    io: IOPort | None = None,
+    repo_root: Path | None = None,
+) -> int:
     args = _build_parser().parse_args(argv)
     resolved_home = home if home is not None else Path.home()
     resolved_repo_root = repo_root if repo_root is not None else _REPO_ROOT
