@@ -1054,3 +1054,30 @@ def test_module_entry_point_propagates_nonzero_exit() -> None:
         capture_output=True,
     )
     assert result.returncode == 2
+
+
+def test_keyboard_interrupt_exits_130_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """Ctrl-C during a run aborts cleanly: exit 130, a short message, no traceback.
+
+    Pins the CLI boundary contract: a ``KeyboardInterrupt`` raised anywhere inside
+    ``main`` (in practice, at an interactive overwrite prompt) is caught at the entry
+    point and converted to a graceful ``Aborted.`` on stderr with exit code 130 —
+    not a raw ``KeyboardInterrupt`` traceback. ``resolve_tools`` stands in as the deep
+    collaborator that raises, exercising the outermost handler.
+    """
+
+    def _interrupt(**_kwargs: object) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("installer.cli.resolve_tools", _interrupt)
+
+    rc = main(["--dry-run"], home=tmp_path, repo_root=tmp_path)
+
+    assert rc == 130
+    captured = capsys.readouterr()
+    assert "Aborted." in captured.err
+    assert "Traceback" not in captured.err
