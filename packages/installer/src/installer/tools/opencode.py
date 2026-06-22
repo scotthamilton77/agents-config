@@ -43,14 +43,12 @@ class OpenCodeAdapter:
     def post_staging_transforms(
         self,
         plan: StagingPlan,
-        io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCode mutates only the plan
+        io: IOPort,  # noqa: ARG002  # protocol parameter; OpenCode has no transform
     ) -> StagingPlan:
-        """Drop staged rules/ items before sync: OpenCode has no standalone rules/
-        destination. The rules are inlined into the flat AGENTS.md by the
-        DYNAMIC-INCLUDE-ALL-RULES flatten — which runs earlier in
-        stage_and_transform and sources them from these same staged items — so
-        dropping them here prevents a second standalone deploy of the same
-        content."""
-        for relpath in [rp for rp, item in plan.items.items() if item.namespace == "rules"]:
-            del plan.items[relpath]
+        """No-op. OpenCode has no standalone rules/ destination, but the loose
+        rules/ drop is no longer OpenCode-specific: flatten_plan_templates drops
+        the inlined rules from EVERY plan whose instruction file carries the
+        DYNAMIC-INCLUDE-ALL-RULES marker (OpenCode's AGENTS.md does), and that runs
+        earlier in stage_and_transform. Kept as a no-op only to satisfy the
+        ToolAdapter protocol."""
         return plan

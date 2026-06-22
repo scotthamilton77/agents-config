@@ -23,6 +23,19 @@ def _item(relpath: Path, content: bytes, *, namespace: str | None = None) -> Sta
     )
 
 
+def _dir_item(relpath: Path, *, namespace: str) -> StagedItem:
+    """A directory StagedItem (``content is None``) — materialised from its source
+    tree at sync, never inlined."""
+    return StagedItem(
+        source_path=Path("/unused") / relpath,
+        dest_relpath=relpath,
+        kind=FileKind.DIR,
+        namespace=namespace,
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+
+
 def _plan(*items: StagedItem) -> StagingPlan:
     return StagingPlan(items={i.dest_relpath: i for i in items}, tool=Tool.CLAUDE)
 
@@ -90,3 +103,54 @@ def test_flatten_leaves_other_items_and_markerless_templates_untouched(tmp_path:
 
     assert plan.items[Path("AGENTS.md")].content == b"# no markers here\n"
     assert plan.items[Path("commands/go.md")].content == b"go"
+
+
+def test_all_rules_inline_drops_loose_rules_from_plan(tmp_path: Path) -> None:
+    """When the instruction file inlines every rule via ALL-RULES, the loose
+    rules/ items are dropped from the plan.
+
+    A tool whose instruction file carries the ALL-RULES marker
+    (codex/gemini/opencode) gets every rule inlined into AGENTS.md/GEMINI.md, so
+    deploying the rules/ files standalone would write redundant copies the tool
+    does not read. They are removed exactly like include-only file templates."""
+    gemini_md = _item(Path("GEMINI.md"), b"top\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n")
+    r1 = _item(Path("rules/a-first.md"), b"FIRST", namespace="rules")
+    r2 = _item(Path("rules/b-second.md"), b"SECOND", namespace="rules")
+    plan = _plan(gemini_md, r1, r2)
+
+    flatten_plan_templates(plan, repo_root=tmp_path, io=ScriptedIO())
+
+    assert plan.items[Path("GEMINI.md")].content == b"top\nFIRST\n---\nSECOND"
+    assert Path("rules/a-first.md") not in plan.items
+    assert Path("rules/b-second.md") not in plan.items
+
+
+def test_markerless_instruction_file_keeps_loose_rules(tmp_path: Path) -> None:
+    """When the instruction file does NOT inline ALL-RULES, the rules/ items stay
+    in the plan for standalone deploy.
+
+    Claude reads a loose ~/.claude/rules/ tree natively and its AGENTS.md carries
+    no ALL-RULES marker, so its rules must survive flattening as standalone files —
+    only the inlining tools drop them."""
+    agents_md = _item(Path("AGENTS.md"), b"# claude - no all-rules marker\n")
+    r1 = _item(Path("rules/a-first.md"), b"FIRST", namespace="rules")
+    plan = _plan(agents_md, r1)
+
+    flatten_plan_templates(plan, repo_root=tmp_path, io=ScriptedIO())
+
+    assert plan.items[Path("rules/a-first.md")].content == b"FIRST"
+
+
+def test_all_rules_inline_keeps_a_non_inlined_rules_dir_item(tmp_path: Path) -> None:
+    """The drop mirrors the inliner: only rule FILE items (content is not None) are
+    inlined, so only those are dropped. A rules/ directory item (content None) was
+    never inlined, so dropping it would lose content silently — it must survive."""
+    gemini_md = _item(Path("GEMINI.md"), b"top\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n")
+    rule_file = _item(Path("rules/a-first.md"), b"FIRST", namespace="rules")
+    rule_dir = _dir_item(Path("rules/subpack"), namespace="rules")
+    plan = _plan(gemini_md, rule_file, rule_dir)
+
+    flatten_plan_templates(plan, repo_root=tmp_path, io=ScriptedIO())
+
+    assert Path("rules/a-first.md") not in plan.items  # inlined file dropped
+    assert Path("rules/subpack") in plan.items  # non-inlined dir survives

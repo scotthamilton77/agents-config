@@ -16,6 +16,7 @@ from installer.core.installignore import InstallIgnore
 from installer.core.io_port import ScriptedIO
 from installer.core.model import StagingPlan, Tool
 from installer.core.staging import build_plan
+from installer.core.templates import flatten_plan_templates
 from installer.tools.opencode import OpenCodeAdapter
 
 
@@ -33,7 +34,11 @@ def _make_opencode_repo(tmp_path: Path) -> Path:
     (shared / "INSTRUCTIONS.md.template").write_bytes(b"# shared root tmpl")
     # opencode tool root — templates + settings, no namespace subdirs
     opencode.mkdir(parents=True)
-    (opencode / "AGENTS.md.template").write_bytes(b"# opencode root tmpl")
+    # Mirror the real OpenCode template: it carries the ALL-RULES marker, so
+    # flatten_plan_templates inlines the staged rules and drops the loose copies.
+    (opencode / "AGENTS.md.template").write_bytes(
+        b"# opencode root tmpl\n<!-- DYNAMIC-INCLUDE-ALL-RULES -->\n"
+    )
     (opencode / "opencode.jsonc.template").write_bytes(b"{}")
     return repo
 
@@ -94,27 +99,26 @@ def test_opencode_build_plan_stages_jsonc_settings(tmp_path: Path, ignore: Insta
     assert Path("opencode.jsonc") in plan.items
 
 
-def test_opencode_post_staging_transforms_drops_rules(
-    tmp_path: Path, ignore: InstallIgnore
-) -> None:
+def test_opencode_flatten_inlines_and_drops_rules(tmp_path: Path, ignore: InstallIgnore) -> None:
     """
     Given an OpenCode plan that still carries shared rules/ items (build_plan keeps
     them so the DYNAMIC-INCLUDE-ALL-RULES flatten can inline them)
-    When OpenCodeAdapter.post_staging_transforms runs
-    Then every rules/ item is dropped, while non-rules items (skills/, templates)
-    survive.
+    When flatten_plan_templates runs
+    Then the rule is inlined into AGENTS.md and every rules/ item is dropped, while
+    non-rules items (skills/, templates) survive.
 
     Pins: OpenCode writes no standalone rules/ namespace — rules live only inline in
-    AGENTS.md. The drop runs post-flatten (mirrors install.sh Phase 7, which stages
-    rules then skips writing the rules/ subdir for opencode), so the inliner still
-    sees the rules but sync does not.
+    AGENTS.md. The loose-rules drop is owned by flatten_plan_templates (keyed on the
+    ALL-RULES marker OpenCode's AGENTS.md carries), NOT a per-adapter transform, so
+    the inliner still sees the rules but sync does not.
     """
     repo = _make_opencode_repo(tmp_path)
     plan = build_plan(OpenCodeAdapter(), repo_root=repo, ignore=ignore)
     assert Path("rules/delegation.md") in plan.items  # precondition: staged for inlining
 
-    result = OpenCodeAdapter().post_staging_transforms(plan, ScriptedIO())
+    flatten_plan_templates(plan, repo_root=repo, io=ScriptedIO())
 
-    assert not any(item.namespace == "rules" for item in result.items.values())
-    assert Path("rules/delegation.md") not in result.items
-    assert Path("skills/shared-skill") in result.items
+    assert b"shared rule" in plan.items[Path("AGENTS.md")].content  # inlined
+    assert not any(item.namespace == "rules" for item in plan.items.values())
+    assert Path("rules/delegation.md") not in plan.items
+    assert Path("skills/shared-skill") in plan.items
