@@ -23,6 +23,7 @@ from installer.core.consent import require_consent
 from installer.core.merge.strategies.json_union import merge_settings_bytes
 from installer.core.model import Counters, FileKind
 from installer.core.paths import is_safe_relpath
+from installer.core.staging import classify_file
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -111,6 +112,18 @@ def sync(
     counters = Counters()
     source = adapter.source_dir(repo_root) / relpath
     dest = adapter.dest_dir(home) / relpath
+
+    # sync is a raw byte-copy with no settings-merge branch, so a SETTINGS_JSON
+    # source would clobber the user's settings.json instead of the union-merge
+    # the plan path performs. Refuse it before any read/write so the merge-aware
+    # path (sync_plan) cannot be bypassed by a future caller.
+    # namespace only affects NAMESPACED_MD promotion; the SETTINGS_JSON branch
+    # keys solely on the filename, so None is the correct argument here.
+    if classify_file(source, namespace=None) is FileKind.SETTINGS_JSON:
+        raise ValueError(  # noqa: TRY003  # single call-site; subclass not justified
+            f"sync cannot install a settings.json source ({relpath}); "
+            "route settings through sync_plan for merge-aware install"
+        )
 
     content = source.read_bytes()
     dest_exists = dest.is_file()
