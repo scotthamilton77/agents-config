@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 def prune_pipeline(
     adapters: Iterable[ToolAdapter],
     *,
+    plugins: Iterable[PluginAdapter] = (),
     plans: dict[Tool, StagingPlan],
     home: Path,
     config: InstallerToml,
@@ -48,15 +49,17 @@ def prune_pipeline(
 ) -> dict[str, Counters]:
     """Scan ``adapters`` for orphans against ``plans``, then run the prune flow.
 
-    ``prune_only`` is threaded to the flow so its non-interactive guard
-    distinguishes a hard-fail (prune-only without consent) from a warn+skip
-    (plain ``--prune``). Returns the flow's per-target ``Counters`` (pruned /
-    backed_up) keyed by ``Orphan.tool`` — each tool or plugin namespace whose
-    orphans were pruned gets its own bucket so the install summary can report a
-    plugin pruned outside the active tool set (AC#19). An empty / no-op
-    prune yields an empty mapping.
+    ``plugins`` is the active plugin set; it supplies the ``~/.beads/formulas``
+    staged baseline so a formula a still-active plugin ships is protected from
+    the glob (see ``scan_orphans``). ``prune_only`` is threaded to the flow so
+    its non-interactive guard distinguishes a hard-fail (prune-only without
+    consent) from a warn+skip (plain ``--prune``). Returns the flow's per-target
+    ``Counters`` (pruned / backed_up) keyed by ``Orphan.tool`` — each tool or
+    plugin namespace whose orphans were pruned gets its own bucket so the install
+    summary can report a plugin pruned outside the active tool set (AC#19). An
+    empty / no-op prune yields an empty mapping.
     """
-    orphans = scan_orphans(adapters, plans=plans, home=home, config=config)
+    orphans = scan_orphans(adapters, plugins=plugins, plans=plans, home=home, config=config)
     return run_prune(
         orphans,
         io=io,

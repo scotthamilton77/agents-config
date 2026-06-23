@@ -21,6 +21,7 @@ from installer.core.installer_toml import InstallerToml
 from installer.core.io_port import ScriptedIO
 from installer.core.model import StagingPlan, Tool
 from installer.core.run import prune_pipeline
+from installer.plugins.beads import BeadsPlugin
 from installer.tools.registry import get_adapter
 
 _TS = "20250101-120000"
@@ -122,6 +123,45 @@ def test_empty_plan_with_excluded_plugin_file_flags_it(tmp_path: Path) -> None:
     )
 
     assert not formula.exists()
+    assert per_tool["beads"].pruned == 1
+
+
+def test_active_plugin_formula_survives_prune(tmp_path: Path) -> None:
+    """
+    Given an active beads plugin still shipping current.toml, and a
+    ~/.beads/formulas dir holding current.toml + retired.toml, both glob-matched
+    When prune_pipeline runs with that plugin active under auto_yes
+    Then retired.toml is pruned but current.toml survives — prune_pipeline
+    forwards the active plugins so the scan protects a still-shipped formula.
+
+    Pins the wiring: without the plugins forwarding, strict mode would delete
+    current.toml alongside retired.toml.
+    """
+    home = _claude_home_with_settings(tmp_path)
+    src = tmp_path / "src" / "plugins" / "beads"
+    (src / ".beads" / "formulas").mkdir(parents=True)
+    (src / ".beads" / "formulas" / "current.toml").write_text("shipped")
+    formulas = home / ".beads" / "formulas"
+    formulas.mkdir(parents=True)
+    (formulas / "current.toml").write_text("shipped")
+    (formulas / "retired.toml").write_text("stale")
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+    config = InstallerToml(prune_globs=["beads/formulas/*"])
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+
+    per_tool = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=[beads],
+        plans=plans,
+        home=home,
+        config=config,
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert (formulas / "current.toml").exists()
+    assert not (formulas / "retired.toml").exists()
     assert per_tool["beads"].pruned == 1
 
 

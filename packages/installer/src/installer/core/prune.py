@@ -12,9 +12,12 @@ skill directories. Legacy ``*.backup-*`` entries (in-place backups from older
 Sibling ``<namespace>-backup/`` dirs live at the grandparent level and are never
 visited by this scan.
 
-``~/.beads/formulas`` is scanned whenever pruning runs, regardless of beads
-plugin detection: if beads is not an active plugin, no plan staged any formula,
-so every dest formula registers as an orphan (strict mode).
+``~/.beads/formulas`` is scanned whenever pruning runs. The active plugins'
+``routes()`` supply its staged baseline: a formula an active plugin still ships
+(its route would re-install it) is staged and so never an orphan, exactly as a
+plan-staged tool entry is protected. When beads is not in the active plugin set,
+nothing stages a formula, so every glob-matching dest formula is an orphan
+(strict mode).
 
 Matching is ``fnmatch`` on the ``tool/namespace/basename`` key. Pure: it reads
 the destination filesystem and the in-memory plans, and returns ``list[Orphan]``
@@ -34,6 +37,7 @@ if TYPE_CHECKING:
 
     from installer.core.installer_toml import InstallerToml
     from installer.core.model import StagingPlan
+    from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
 
 # Tool-tree namespaces scanned for orphans. Narrower than
@@ -61,6 +65,28 @@ def _staged_basenames(plan: StagingPlan | None, namespace: str) -> set[str]:
         for item in plan.items.values()
         if len(item.dest_relpath.parts) >= 2 and item.dest_relpath.parts[0] == namespace
     }
+
+
+def _routed_staged_basenames(
+    plugins: Iterable[PluginAdapter], *, home: Path, dest_dir: Path
+) -> set[str]:
+    """Basenames the active plugins would install at ``dest_dir`` via ``routes()``.
+
+    Mirrors ``sync_routes``: a route contributes the names of the files its
+    ``source_dir`` glob would place at ``dest_dir`` — exactly what a real install
+    stages there. A formula an active plugin still ships is therefore staged, so
+    the scan never treats it as an orphan, matching the plan-membership exclusion
+    that protects actively-staged tool entries. A plugin that does not route to
+    ``dest_dir`` — or is inactive, hence absent from ``plugins`` — contributes
+    nothing, so an empty plugin set preserves strict mode.
+    """
+    staged: set[str] = set()
+    for plugin in plugins:
+        for route in plugin.routes(home):
+            if route.dest_dir != dest_dir or not route.source_dir.is_dir():
+                continue
+            staged |= {src.name for src in route.source_dir.glob(route.glob) if src.is_file()}
+    return staged
 
 
 def _scan_namespace(
@@ -103,6 +129,7 @@ def _scan_namespace(
 def scan_orphans(
     adapters: Iterable[ToolAdapter],
     *,
+    plugins: Iterable[PluginAdapter] = (),
     plans: dict[Tool, StagingPlan],
     home: Path,
     config: InstallerToml,
@@ -111,11 +138,12 @@ def scan_orphans(
 
     For each adapter, walk the prune subdirs under its ``dest_dir(home)``,
     comparing each top-level entry against the tool's plan and the prune globs.
-    Then scan ``~/.beads/formulas`` once with a fixed ``beads`` tool bucket
-    (strict mode: nothing in the per-tool plans stages a beads formula, so an
-    unmatched-by-plan formula is an orphan when a glob matches). Returns all
-    orphans in tool-then-namespace iteration order; an empty prune list yields
-    no orphans.
+    Then scan ``~/.beads/formulas`` once with a fixed ``beads`` tool bucket,
+    using the active ``plugins``' routes as the staged baseline: a formula an
+    active plugin still ships is protected; with no beads plugin active the
+    baseline is empty, so a glob-matching formula is an orphan (strict mode).
+    Returns all orphans in tool-then-namespace iteration order; an empty prune
+    list yields no orphans.
     """
     prune_globs = config.prune_globs
     orphans: list[Orphan] = []
@@ -134,12 +162,13 @@ def scan_orphans(
                 )
             )
 
+    beads_formulas_dest = home / ".beads" / _BEADS_NAMESPACE
     orphans.extend(
         _scan_namespace(
             tool=_BEADS_TOOL,
             namespace=_BEADS_NAMESPACE,
-            dest=home / ".beads" / _BEADS_NAMESPACE,
-            staged=set(),
+            dest=beads_formulas_dest,
+            staged=_routed_staged_basenames(plugins, home=home, dest_dir=beads_formulas_dest),
             prune_globs=prune_globs,
         )
     )

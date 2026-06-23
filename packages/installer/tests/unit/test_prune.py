@@ -22,6 +22,7 @@ from pathlib import Path
 from installer.core.installer_toml import InstallerToml
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.prune import scan_orphans
+from installer.plugins.beads import BeadsPlugin
 
 
 class _ClaudeLikeAdapter:
@@ -243,4 +244,38 @@ def test_beads_formulas_scanned_with_no_beads_plan(tmp_path: Path) -> None:
 
     assert [(o.tool, o.namespace, o.path.name) for o in orphans] == [
         ("beads", "formulas", "stale.toml")
+    ]
+
+
+def test_active_plugin_shipped_formula_is_not_orphan(tmp_path: Path) -> None:
+    """
+    Given an active beads plugin still shipping current.toml, and a
+    ~/.beads/formulas dir holding current.toml AND retired.toml, both matching a
+    prune glob
+    When scan_orphans runs with that plugin in the active set
+    Then only retired.toml is an orphan — a formula the active plugin still ships
+    is staged (the route would re-install it), so it is protected from the glob
+    exactly as a plan-staged tool entry is. Without this, strict mode would
+    delete the live formula sitting next to the retired one.
+    """
+    src = tmp_path / "src" / "plugins" / "beads"
+    (src / ".beads" / "formulas").mkdir(parents=True)
+    (src / ".beads" / "formulas" / "current.toml").write_text("shipped")
+    dest_formulas = tmp_path / ".beads" / "formulas"
+    dest_formulas.mkdir(parents=True)
+    (dest_formulas / "current.toml").write_text("shipped")
+    (dest_formulas / "retired.toml").write_text("stale")
+    config = InstallerToml(prune_globs=["beads/formulas/*"])
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+
+    orphans = scan_orphans(
+        [_ClaudeLikeAdapter()],
+        plugins=[beads],
+        plans={Tool.CLAUDE: _empty_plan()},
+        home=tmp_path,
+        config=config,
+    )
+
+    assert [(o.tool, o.namespace, o.path.name) for o in orphans] == [
+        ("beads", "formulas", "retired.toml")
     ]

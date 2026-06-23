@@ -272,6 +272,7 @@ def _run(
     if args.prune or args.prune_only:
         rc = _run_prune(
             adapters,
+            plugins=plugins,
             plans=plans,
             io=io,
             home=resolved_home,
@@ -353,6 +354,7 @@ def _warn_excluded_plugins(
 def _run_prune(
     adapters: list[ToolAdapter],
     *,
+    plugins: Iterable[PluginAdapter],
     plans: dict[Tool, StagingPlan],
     io: IOPort,
     home: Path,
@@ -385,7 +387,10 @@ def _run_prune(
 
     The ``plans`` reflect the active ``--plugins`` selection (``main`` builds them
     with the resolved plugin set), so a plugin's overlaid files reach the orphan
-    scan as known entries rather than retired ones.
+    scan as known entries rather than retired ones. ``plugins`` is forwarded
+    likewise so a route-based plugin's bespoke dest (beads' ``~/.beads/formulas``)
+    gets its staged baseline from the active routes — a still-shipped formula is
+    protected, not pruned.
 
     The prune flow's per-tool ``Counters`` (pruned / backed_up, keyed by
     ``Orphan.tool``) are merged into ``counters`` so the install summary reports
@@ -411,6 +416,7 @@ def _run_prune(
             counters,
             prune_pipeline(
                 adapters,
+                plugins=plugins,
                 plans=plans,
                 home=home,
                 config=config,

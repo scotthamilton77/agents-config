@@ -248,6 +248,42 @@ def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Pa
     )
 
 
+def test_prune_only_keeps_active_plugin_shipped_formula(tmp_path: Path) -> None:
+    """
+    Given --plugins=beads --prune-only --yes, a repo whose beads plugin still
+    ships current.toml, and a home ~/.beads/formulas holding current.toml AND a
+    genuinely retired.toml, both matching a beads/formulas/* prune glob
+    When main runs (non-interactive io)
+    Then retired.toml is removed but current.toml survives — the CLI threads the
+    active plugin set into the prune scan, so a formula the active plugin still
+    ships is not an orphan.
+
+    Pins the end-to-end wiring (_run -> _run_prune -> prune_pipeline ->
+    scan_orphans). Without it, strict mode deletes the live formula next to the
+    retired one.
+    """
+    repo = _repo_with_installer_toml(tmp_path, retired=["beads/formulas/*"])
+    beads_src = repo / "src" / "plugins" / "beads" / ".beads" / "formulas"
+    beads_src.mkdir(parents=True)
+    (beads_src / "current.toml").write_text("shipped")
+    home = _home_with_claude_settings(tmp_path)
+    formulas = home / ".beads" / "formulas"
+    formulas.mkdir(parents=True)
+    (formulas / "current.toml").write_text("shipped")
+    (formulas / "retired.toml").write_text("stale")
+
+    rc = main(
+        ["--plugins=beads", "--prune-only", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (formulas / "current.toml").exists()
+    assert not (formulas / "retired.toml").exists()
+
+
 def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
     """
     Given a repo_root whose packages/installer/installer.toml does NOT exist,
