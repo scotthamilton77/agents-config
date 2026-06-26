@@ -11,6 +11,8 @@ from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installer_toml import load_installer_toml
 from installer.core.installignore import load_installignore
+from installer.core.merge.base import CollisionError
+from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
@@ -197,9 +199,18 @@ def _run(
         return 2
 
     if args.dump_stage is not None:
-        plans = stage_and_transform(
-            tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
-        )
+        try:
+            plans = stage_and_transform(
+                tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
+            )
+        except (UnknownMergeKeyError, CollisionError) as exc:
+            # A registry wiring miss (UnknownMergeKeyError) or an irreconcilable
+            # file collision (CollisionError) cannot be staged; surface it as an
+            # actionable fatal (exit 1, matching the ConsentRequiredError
+            # convention and bash's `err … exit 1`) rather than an uncaught
+            # traceback. Both carry a message naming the offending key / paths.
+            sys.stderr.write(f"installer: {exc}\n")
+            return 1
         try:
             dump_plan(plans, args.dump_stage, io=io)
         except ValueError as exc:
@@ -220,9 +231,15 @@ def _run(
     # handling — only a verbose adapter transform notice (e.g. Gemini) may now
     # precede a toml error, which is immaterial.
     adapters = [get_adapter(tool) for tool in tools]
-    plans = stage_and_transform(
-        tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
-    )
+    try:
+        plans = stage_and_transform(
+            tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
+        )
+    except (UnknownMergeKeyError, CollisionError) as exc:
+        # Same fatal-staging guard as the --dump-stage path above: surface a
+        # wiring miss or irreconcilable collision as exit 1, not a traceback.
+        sys.stderr.write(f"installer: {exc}\n")
+        return 1
 
     # Default install path (also the install half of --prune): walk each active
     # tool's StagingPlan to disk via install_pipeline. Skipped only for

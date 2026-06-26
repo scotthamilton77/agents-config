@@ -20,6 +20,7 @@ frontmatter transform at 6.95), so a transform sees flattened content.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from installer.core.merge.registry import default_registry
@@ -59,8 +60,21 @@ def stage_and_transform(
     plans: dict[Tool, StagingPlan] = {}
     for tool in tools:
         adapter = get_adapter(tool)
-        plan = build_plan(adapter, repo_root=repo_root, ignore=ignore, registry=registry)
-        plan = overlay_plugins(plan, plugins, adapter=adapter, registry=registry, ignore=ignore)
+        # The merge strategies (LastWinsWarnStrategy for JSONC/TOML) announce a
+        # last-wins overwrite via stdlib warnings.warn — their pure signature
+        # carries no IOPort. Capture those here, the consumer that holds the io,
+        # and re-route them through io.warn so the notice reaches the user.
+        # record=True + simplefilter("always") defeats any ambient -W filter that
+        # would otherwise silence it. Scoped to the two merge sites (build_plan,
+        # overlay_plugins); only UserWarning is re-emitted, so an unrelated
+        # library warning is not surfaced as installer output.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            plan = build_plan(adapter, repo_root=repo_root, ignore=ignore, registry=registry)
+            plan = overlay_plugins(plan, plugins, adapter=adapter, registry=registry, ignore=ignore)
+        for entry in caught:
+            if issubclass(entry.category, UserWarning):
+                io.warn(str(entry.message))
         plan = apply_extensions(plan, plugins)
         flatten_plan_templates(plan, repo_root=repo_root, io=io)
         plans[tool] = adapter.post_staging_transforms(plan, io)
