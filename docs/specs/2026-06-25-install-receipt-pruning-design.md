@@ -45,7 +45,7 @@ The superseded bead proposed making the glob scan data-driven over plugin routes
 }
 ```
 
-  - **`path`** is **home-relative** (the differ rejoins the caller's `home` at runtime). Portable across machines and home moves; testable under a fixture home.
+  - **`path`** is **home-relative** (the differ rejoins the caller's `home` at runtime). Portable across machines and home moves; testable under a fixture home. Because the receipt is now a **deletion-authority input**, every `path` is **validated before it can become an orphan** (see *Path trust boundary*): an entry that is absolute, contains a `..` component, or does not resolve under a destination root valid for its `owner` is treated as receipt corruption — skipped, never emitted as an `Orphan`.
   - **`owner`** is the tool name (`claude`/`codex`/`gemini`/`opencode`) or plugin name (`beads`). It is the diff-scope tag *and* the prune `Counters` bucket (`Orphan.tool` already carries a plugin name today).
   - **`kind`** is `file` or `dir` (top-level skill/agent dirs are recorded as one `dir` entry, matching how staging treats them).
   - **`sha256`** is the hex digest of a file's bytes (`sync._sha256` already computes it), `null` for `dir` entries. **v1 records it but does not branch on it** — see Deferred work.
@@ -96,16 +96,30 @@ A naive diff (`prior_receipt − current_plan`) is **actively dangerous**: `inst
 
 This is the same concern the superseded bead chased ("active vs discovered set"), expressed cleanly: scope by recorded `owner`, not by re-deriving routes — and, for plugins, never let a recorded owner silently drop out of scope. A generic plugin that overlaid into a tool tree is pruned through that **tool's** scope (its entries are owned by the tool); only bespoke route files carry a plugin owner and rely on the prior-receipt-owner rule.
 
+### Path trust boundary
+
+The receipt is the new **source of deletion targets** — an `Orphan.path` comes straight from a prior-receipt entry. A receipt that is valid JSON but malformed (hand-edited, partially written by an older tool, or corrupted) must never become a lever to delete files outside the install surface. So **every entry is validated before the diff**, reusing the installer's existing relpath guard:
+
+- The `path` must be **relative** (reject absolute paths) and contain **no `..`** component.
+- After rejoining `home`, it must **resolve under a destination root valid for its `owner`** — a tool owner under that tool's `dest_dir(home)`; a plugin owner under one of that plugin's known route-dest roots (or, for an owner no longer discoverable, under no root → invalid).
+- An entry failing any check is treated as **receipt corruption for that entry**: skipped, logged, **never emitted as an `Orphan`**. The deletion machinery only ever sees paths proven to sit inside an owner's own tree.
+
+This keeps the blast radius of a bad receipt at "prunes less than it could," never "deletes something it shouldn't."
+
 ## Receipt lifecycle
 
 - **Read** the prior receipt at the start of the prune step (tolerant — see fail-safe). Its entries, scoped as above, drive orphan detection.
 - **Write** the new receipt at the **end of a successful, non-dry-run run** (after install and any prune complete), atomically (temp file + `os.replace`). Written on **every** such run — not only under `--prune` — so the record never goes stale; *pruning* the diff stays gated behind `--prune`/`--prune-only`, but *recording* is unconditional.
 - **The receipt mirrors disk.** The new receipt is **not** a blind overwrite of staged items, nor an owner-scoped carve-out. It is the single invariant *an entry leaves the receipt only when it actually leaves the disk, and enters only when actually written to disk*:
   `new_receipt = (prior_receipt − entries actually pruned this run) ∪ installed_this_run`, unioned by `path` with the `installed_this_run` entry winning (refreshed `sha256`).
-- **`installed_this_run` is what was actually written, not what was planned.** It is the owned plan entries the install half **actually wrote or confirmed-present** this run (created + updated + skipped-identical). **When the install half does not run — `--prune-only` — `installed_this_run` is empty**, so the receipt is exactly `prior_receipt − pruned`. This is the critical distinction: the staging plan is built even under `--prune-only` (it drives orphan detection), but its entries were **not** placed on disk, so they must never be added to the receipt. Recording a planned-but-unwritten path would let a later source deletion classify a *user's* file at that path as our orphan and delete it. (On first adoption / empty receipt, `--prune-only` therefore prunes nothing and records nothing — a clean no-op.)
+- **`installed_this_run` is what the install layer actually wrote, not what was planned.** It is the **per-item install outcome** reported by the install layer: owned entries that were **created, updated, or skipped-identical** (already on disk as our bytes). It explicitly **excludes**:
+  - **consent-declined overwrites** — when a user declines to overwrite a changed dest, the installer leaves the *user's* file untouched (`sync._consent_to_overwrite` → keep existing) and tallies it as `skipped`. That path is the user's content, not ours; recording it would let a later source deletion delete the user's file. The receipt must therefore record from the install layer's *outcome*, **not** from the plan and **not** from the raw `skipped` tally (which conflates skipped-identical with consent-declined).
+  - **the entire install half when it does not run** — under `--prune-only`, `installed_this_run` is empty, so the receipt is exactly `prior_receipt − pruned`. The staging plan is still built (it drives orphan detection), but nothing was placed on disk, so nothing is recorded. (On first adoption / empty receipt, `--prune-only` therefore prunes nothing and records nothing — a clean no-op.)
   The invariant is correct for every mode with no further special-casing: a plain install prunes nothing, so nothing is dropped and written entries are refreshed; a `--prune` run drops exactly the entries it removed; a `--tools=claude` subset run never prunes codex/gemini/opencode entries, so they carry over untouched; and an orphan detected but **not** removed (no `--prune`, or consent declined) stays recorded *because it is still on disk*. Writing "intended" state instead would silently lose track of files left behind — the exact litter this work removes.
 - **`--dry-run` writes nothing** — no receipt write, no deletion. Preview only.
-- **Fail-safe on read.** A missing, unreadable, malformed, or unrecognized-`schema_version` receipt is treated as **empty**: the run prunes nothing and writes a fresh receipt. This *is* the agreed clean-break migration — pre-receipt litter that was never recorded is simply not seen; everything installed from adoption forward is covered. No migration code, no legacy glob sweep.
+- **Missing vs corrupt are different — and only missing bootstraps.** The receipt is now load-bearing state, so a file we *cannot read* must not be silently discarded:
+  - **Missing** (file absent) → **bootstrap empty**: prune nothing, write a fresh receipt from this run's installs. This is the agreed clean-break adoption — pre-receipt litter that was never recorded is simply not seen; everything installed from adoption forward is covered. No migration code, no legacy glob sweep.
+  - **Corrupt / unreadable / unknown `schema_version`** (file present but unusable) → **fail-closed**: **disable pruning for this run and do NOT overwrite the receipt**, emitting a clear diagnostic (e.g. "install receipt at `<path>` is unreadable; skipping prune and leaving it untouched — reset or migrate it to re-enable pruning"). Treating a corrupt receipt as empty and then rewriting it would, on a scoped run like `--tools=claude`, replace the whole central record with only this run's entries — silently erasing codex/gemini/opencode/plugin ownership and stranding those files as unprunable litter. The install half still runs; only prune and the receipt write are suppressed until the state file is sound.
 
 ## Components (each independently testable)
 
@@ -113,11 +127,11 @@ This is the same concern the superseded bead chased ("active vs discovered set")
 |---|---|---|
 | `ownership` classifier | `StagedItem → bool`: wholesale-owned & prune-eligible? | Pure; excludes merge-targets |
 | `Receipt` / `ReceiptEntry` model + JSON (de)serialize | Data + schema-versioned round-trip | New `core/receipt.py` |
-| receipt **store** | read (fail-safe → empty) · write (atomic temp+replace) | I/O isolated; pure core stays pure |
-| receipt **builder** | owned entries actually installed this run → in-scope `ReceiptEntry` set | Empty when the install half is skipped (`--prune-only`) |
-| orphan **differ** | prior receipt ∩ scope − `installed_this_run` → `list[Orphan]` | **Replaces** `scan_orphans`; `scope` reads prior-receipt plugin owners |
+| receipt **store** | read (missing → empty; corrupt → distinct "unreadable" signal) · write (atomic temp+replace) | I/O isolated; pure core stays pure |
+| receipt **builder** | per-item install outcomes → in-scope `ReceiptEntry` set | Created/updated/skipped-identical only; empty under `--prune-only` |
+| orphan **differ** | (prior receipt ∩ scope, path-validated) − `installed_this_run` → `list[Orphan]` | **Replaces** `scan_orphans`; `scope` reads prior-receipt plugin owners |
 
-The sync engine is **not** modified. On the success path the install half's owned plan entries equal what is on disk (`sync` aborts the whole run on failure), so `installed_this_run` is built from the **plan's owned items, gated on the install half having run** — no need to widen `sync()`'s `Counters` return to report written paths. Under `--prune-only` the install half does not run, so the builder contributes nothing (only `prior_receipt − pruned` is written).
+**The install layer must report per-item outcomes** — the raw `Counters` tally is insufficient, because its `skipped` bucket conflates *skipped-identical* (ours, record it) with *consent-declined* (the user's file, never record it). So `sync_plan` / `sync_routes` are extended to surface, per owned item, whether it was **created / updated / skipped-identical** (→ recorded) versus **consent-declined / errored** (→ not recorded). The receipt builder consumes that outcome set, gated on the install half having run. `sync()`'s core write logic is unchanged — only its *reporting* widens from counts to per-path outcomes.
 
 ## Deleted vs reused
 
@@ -129,7 +143,7 @@ The sync engine is **not** modified. On the success path the install half's owne
 **Reused:**
 - `core/prune_flow.py` `run_prune` and its backup/consent flow — the deletion executor, **lightly extended** to report which orphans it actually removed (the receipt write needs the removed-paths set, per *The receipt mirrors disk*).
 - The `Orphan` model — the differ emits it directly.
-- `core/sync.py` — untouched. `installed_this_run` is built from the install half's owned plan entries, so `sync()`'s `Counters` return is **not** widened.
+- `core/sync.py` `sync_plan` / `sync_routes` — **lightly extended** to report per-item install outcomes (created / updated / skipped-identical / declined / errored) so the receipt records only paths actually written as our bytes. The write logic itself is unchanged.
 
 ## Bugs subsumed
 
@@ -141,6 +155,9 @@ The sync engine is **not** modified. On the success path the install half's owne
 - **`.installignore` interaction.** `.installignore` excludes **source** files at the staging choke point, upstream of the plan. Excluded files are therefore never staged and never recorded. A file that *was* installed and later becomes excluded (or is dropped) is simply not in the new plan → it is an orphan → pruned. That is correct cleanup, not a regression; no special carve-out is needed. (`.installignore` is itself fail-closed: an absent manifest aborts the install before prune runs.)
 - **User-deleted file we recorded.** Still in the prior receipt; if still staged, it is reinstalled; if also dropped from source, it is an orphan whose deletion is a harmless no-op (already gone).
 - **User-created file we never installed.** Never in the receipt → never an orphan → never touched. The ownership-by-receipt model inherently protects genuine user files — a strict improvement over globs, which could match a user's like-named file.
+- **Consent-declined overwrite.** The user declines to overwrite a changed dest, so the installer keeps the *user's* bytes. The per-item outcome is `declined`, **not** recorded — so the path is never claimed as ours and never becomes an orphan, even though it was in the plan. (Recording it from the plan would later delete the user's file when the source is dropped.)
+- **Corrupt receipt mid-life.** A present-but-unreadable receipt (hand-edit, partial write, version we don't understand) → prune is **disabled** and the receipt is **left untouched** for that run, with a diagnostic. It is never silently replaced by this run's partial view, which would strand other owners' files. Distinct from a *missing* receipt, which legitimately bootstraps empty.
+- **Malformed receipt path.** An entry whose `path` is absolute, contains `..`, or resolves outside its owner's destination roots is rejected by the path trust boundary → skipped, never an orphan. A bad receipt prunes *less*, never deletes outside the install surface.
 - **Retired plugin (source removed).** A plugin previously installed and recorded, whose `src/plugins/` source is later removed or renamed, is no longer *discovered*. Because `scope` also includes **prior-receipt plugin owners**, its recorded route files (`owner=plugin`) are still in scope → orphaned → pruned; any content it overlaid into a tool tree is owned by that tool and pruned through the tool's scope. Without the prior-receipt-owner rule this whole plugin's files would be permanent litter — the precise failure this design exists to remove.
 - **`--prune-only` on an empty / fresh receipt.** The install half is skipped, so `installed_this_run` is empty and nothing is recorded; with no prior receipt there are no orphans. A clean no-op — and, crucially, it does **not** record the (unwritten) staging plan as installer-owned, which would mis-claim user files for later deletion.
 - **First run / fresh adoption.** No prior receipt → empty → prunes nothing, writes the first receipt from what this run installed. Pruning begins on the second run.
@@ -151,12 +168,15 @@ Unit (driven through `ScriptedIO`; 90% branch floor per package gate):
 
 - **Ownership classifier truth table** — skills/agents/commands/rules recorded; `settings.json` (`JsonUnionStrategy`) and append-merged instruction files **not** recorded.
 - **Differ scope matrix** — (a) untargeted tool's entries survive a `--tools=` subset run; (b) excluded plugin's entries are pruned; (c) cross-tree relocation (`zoom-out`) prunes the three non-Claude copies and keeps Claude's; (d) **retired plugin** — a recorded plugin no longer in the discovered set still has its route files orphaned (prior-receipt-owner scope), and its tool-tree overlay entries orphaned through the tool's scope.
-- **Receipt store** — round-trip; fail-safe on missing / malformed / unknown-`schema_version` → empty.
+- **Receipt store** — round-trip; **missing** → empty; **corrupt / malformed / unknown-`schema_version`** → distinct "unreadable" signal (not empty).
+- **Per-item outcome / consent-declined** — a changed dest the user declines to overwrite is tallied `skipped` by `Counters` but reported `declined` per-item, and is **not** recorded; a created/updated/skipped-identical path **is** recorded.
+- **Path trust boundary** — receipt entries with absolute paths, `..` components, or paths outside the owner's destination roots are skipped, never emitted as orphans.
+- **Corrupt receipt during a scoped run** — `--tools=claude` against a corrupt receipt prunes nothing **and** leaves the receipt file unchanged (codex/gemini/opencode/plugin ownership preserved).
 - **Receipt mirrors disk** — a `--tools=claude` run preserves codex entries (neither staged nor pruned); an orphan detected but left unpruned (no `--prune`) stays recorded.
 - **`--prune-only` records nothing it didn't write** — `--prune-only` over an **empty** receipt records no entries (the staging plan is built but never written), so a later source deletion at one of those paths does not classify a user file as an orphan.
 - **Atomic write** — temp + replace; `--dry-run` writes nothing.
 
-Integration (end-to-end through `ScriptedIO`): install → drop a source file → reinstall `--prune` → assert the dest copy is pruned and backed up; install `--tools=claude` over a full prior receipt → assert no codex/gemini/opencode entries are pruned; install a plugin → remove its `src/plugins/` source → reinstall `--prune` → assert both its route files and its tool-tree overlay entries are pruned.
+Integration (end-to-end through `ScriptedIO`): install → drop a source file → reinstall `--prune` → assert the dest copy is pruned and backed up; install `--tools=claude` over a full prior receipt → assert no codex/gemini/opencode entries are pruned; install a plugin → remove its `src/plugins/` source → reinstall `--prune` → assert both its route files and its tool-tree overlay entries are pruned; **adoption with a declined overwrite** → user declines overwriting a changed dest at first adoption, then the source is removed and `--prune` runs → assert the user's file is **not** pruned (never recorded).
 
 ## Deferred work (out of scope)
 
@@ -171,7 +191,8 @@ Integration (end-to-end through `ScriptedIO`): install → drop a source file �
 - `~/.beads/scripts` is covered (the `abn9.37.1.1` regression seed).
 - `_BEADS_TOOL` / `_BEADS_NAMESPACE` and the `[prune]` section are gone; removing them is the tell the scan is genuinely general.
 - The receipt is written on every successful, non-dry-run run; `--dry-run` writes nothing; pruning the diff is gated behind `--prune`/`--prune-only`.
-- The receipt mirrors disk: an entry leaves only when actually removed, and enters only when actually written. `--prune-only` (install half skipped) records no new entries — a planned-but-unwritten path is never claimed as installer-owned.
-- A missing/corrupt receipt is treated as empty (prunes nothing, writes fresh) — the clean-break migration, no legacy sweep.
-- Tests cover the ownership classifier, the differ scope matrix (untargeted tool, excluded plugin, cross-tree relocation, retired plugin), receipt-store fail-safe, receipt-mirrors-disk, `--prune-only`-records-nothing, and dry-run.
+- The receipt mirrors disk: an entry leaves only when actually removed, and enters only when actually written. The receipt records from **per-item install outcomes** (created/updated/skipped-identical), never from the plan — a **consent-declined** overwrite leaves the user's file and is **not** recorded; `--prune-only` records no new entries.
+- A **missing** receipt bootstraps empty (clean-break adoption, no legacy sweep). A **corrupt/unreadable/unknown-version** receipt fails closed: pruning is disabled and the receipt is left untouched (never overwritten with a partial scoped view), with a diagnostic.
+- The receipt is a validated deletion-authority input: an entry with an absolute path, a `..` component, or a path outside its owner's destination roots is rejected and never emitted as an orphan.
+- Tests cover the ownership classifier, the differ scope matrix (untargeted tool, excluded plugin, cross-tree relocation, retired plugin), receipt-store missing-vs-corrupt, per-item consent-declined, path trust boundary, corrupt-receipt-during-scoped-run, receipt-mirrors-disk, `--prune-only`-records-nothing, and dry-run.
 - `make ci-installer` green.
