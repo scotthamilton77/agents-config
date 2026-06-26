@@ -8,10 +8,10 @@ re-leak namespace dev-docs identically on both installers — the shared-wrongne
 case the golden-master parity oracle cannot see. Fail-fast turns every
 missing/wrong-root/absent-in-fixture mode into a loud error.
 
-Grammar (simple subset, identical to the bash matcher in
-``scripts/lib/installignore.sh``): one entry per line; ``#`` comment lines and
-blank lines ignored; an exact basename matches a file; a trailing-``/`` name
-matches a directory. No globs, no ``**``, no negation, no anchoring.
+Grammar (simple subset; see the ``.installignore`` header for the canonical
+spec): one entry per line; ``#`` comment lines and blank lines ignored; an exact
+basename matches a file; a trailing-``/`` name matches a directory. No globs, no
+``**``, no negation, no anchoring.
 """
 
 from __future__ import annotations

@@ -25,14 +25,17 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     return tmp_path
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
 def _write_installignore(repo: Path) -> None:
     """Mirror the real repo-root .installignore so cli.main's up-front fail-fast
     load finds it. main() refuses to run without one (exit 2), so every hermetic
-    repo a CLI smoke test points main() at must carry the manifest."""
+    repo a CLI smoke test points main() at must carry the manifest. The content
+    is copied from the REAL manifest (not retyped) so it cannot drift from it."""
     repo.mkdir(parents=True, exist_ok=True)
     (repo / ".installignore").write_text(
-        "AGENTS.md\nCLAUDE.md\nGEMINI.md\nREADME.md\nSESSION-PRIMER-README.md\nrules-readmes/\n",
-        encoding="utf-8",
+        (_REPO_ROOT / ".installignore").read_text(encoding="utf-8"), encoding="utf-8"
     )
 
 
