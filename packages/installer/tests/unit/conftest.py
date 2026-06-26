@@ -33,8 +33,9 @@ def _neutralize_opencode_path_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def ignore() -> InstallIgnore:
-    """The canonical .installignore content as an in-memory object, for staging
-    tests that must pass an exclusion set without touching a manifest file.
+    """The canonical .installignore content as an in-memory object, so a staging
+    test gets the real exclusion set without needing a manifest file inside its
+    temporary repo under test.
 
     Sourced from the REAL repo-root manifest via load_installignore rather than a
     hand-copied literal, so a new exclusion class added to .installignore cannot
