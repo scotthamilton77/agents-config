@@ -121,6 +121,35 @@ def test_stage_and_transform_overlays_active_plugins(tmp_path: Path, ignore: Ins
     assert plans[Tool.CLAUDE].items[Path("rules/plugin-rule.md")].content == b"from plugin"
 
 
+def test_stage_and_transform_toml_collision_surfaces_warning_via_ioport(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """A TOML last-wins collision during staging emits a stdlib UserWarning from
+    the merge strategy. The orchestrator — the consumer that holds the IOPort —
+    captures it and re-emits via io.warn so the notice reaches the user instead
+    of vanishing into the warnings system (where a -W filter could silence it)."""
+    repo = _make_repo(tmp_path)
+    # Base claude tool-root ships a TOML settings template (Phase 5)...
+    (repo / "src" / "user" / ".claude" / "config.toml.template").write_bytes(b"base = 1")
+    # ...and an active plugin ships a colliding one: TOML resolves last-wins+warn.
+    plugin_root = tmp_path / "plugins" / "test-plugin"
+    (plugin_root / ".claude").mkdir(parents=True)
+    (plugin_root / ".claude" / "config.toml.template").write_bytes(b"plugin = 2")
+    io = ScriptedIO()
+
+    stage_and_transform(
+        [Tool.CLAUDE],
+        repo_root=repo,
+        io=io,
+        ignore=ignore,
+        plugins=[_Plugin(name="test-plugin", source_path=plugin_root)],
+    )
+
+    warns = [e for e in io.transcript if e.channel == "warn"]
+    assert len(warns) == 1
+    assert "config.toml" in warns[0].message
+
+
 def test_stage_and_transform_overlay_runs_before_gemini_transform(
     tmp_path: Path, ignore: InstallIgnore
 ) -> None:

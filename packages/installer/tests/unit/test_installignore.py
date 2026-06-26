@@ -5,6 +5,7 @@ and blank-line skipping, and the fail-fast contract on a missing/unreadable file
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,26 @@ def test_excludes_matches_directories_against_dirnames() -> None:
 def test_missing_manifest_is_fail_fast(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match=r"\.installignore not found"):
         load_installignore(tmp_path / ".installignore")
+
+
+def test_present_but_unreadable_manifest_is_not_swallowed(tmp_path: Path) -> None:
+    """A present-but-unreadable manifest is NOT silently treated as
+    exclude-nothing: load_installignore lets the PermissionError (an OSError
+    subclass) from read_text propagate, preserving the module's fail-fast
+    contract. This is the regression guard against someone wrapping the read in a
+    try/except that would re-enable the dead-docs leak the manifest prevents.
+    Skipped when chmod cannot make the file unreadable (running as root, or a
+    filesystem that ignores mode bits)."""
+    manifest = tmp_path / ".installignore"
+    manifest.write_text("AGENTS.md\n", encoding="utf-8")
+    manifest.chmod(0o000)
+    try:
+        if os.access(manifest, os.R_OK):
+            pytest.skip("manifest still readable after chmod (root or mode-less fs)")
+        with pytest.raises(PermissionError):
+            load_installignore(manifest)
+    finally:
+        manifest.chmod(0o644)
 
 
 def test_bare_slash_line_is_skipped(tmp_path: Path) -> None:

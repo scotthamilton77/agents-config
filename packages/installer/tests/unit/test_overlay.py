@@ -458,6 +458,79 @@ def test_carrier_merge_carries_nested_subdirectory_files(
     }
 
 
+def test_carrier_merge_skips_top_level_symlinked_file(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """A top-level symlink in the plugin dir is NOT dereferenced. Bash `cp -R`
+    (macOS) copies a symlink as a link, not its target's bytes, and dir_overrides
+    has no representation for a link — so _carry_files skips it rather than
+    materialising the target's bytes under the link's name (carrier-merge
+    parity)."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    skill_dir = plugin.source_path / ".agents" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_bytes(b"real")
+    # A symlink whose target lives OUTSIDE the carried dir, with distinct bytes.
+    target = tmp_path / "outside.txt"
+    target.write_bytes(b"target-bytes")
+    (skill_dir / "link.md").symlink_to(target)
+
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"real"}
+
+
+def test_carrier_merge_does_not_descend_symlinked_subdir(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """A top-level symlink to a DIRECTORY is not descended. Bash `cp -R` copies
+    the link itself; the port must not walk through it and carry the linked
+    directory's files (which would both diverge from bash and risk pulling bytes
+    from outside the plugin tree)."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    skill_dir = plugin.source_path / ".agents" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_bytes(b"real")
+    outside_dir = tmp_path / "outside_dir"
+    outside_dir.mkdir()
+    (outside_dir / "leaked.py").write_bytes(b"leak")
+    (skill_dir / "linkdir").symlink_to(outside_dir, target_is_directory=True)
+
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"real"}
+
+
+def test_carrier_merge_skips_symlinked_file_nested_in_real_subdir(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """A symlink nested inside a REAL carried subdir is skipped too: the rglob
+    walk filters symlinked files, so `lib/link.py -> outside` does not read the
+    target's bytes into dir_overrides under `lib/link.py`. This pins the deeper
+    guard the two top-level symlink tests never reach — they short-circuit at the
+    top-level is_symlink check before the rglob ever runs."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    skill_dir = plugin.source_path / ".agents" / "skills" / "demo-skill"
+    (skill_dir / "lib").mkdir(parents=True)
+    (skill_dir / "lib" / "real.py").write_bytes(b"real")
+    target = tmp_path / "outside.txt"
+    target.write_bytes(b"leak")
+    (skill_dir / "lib" / "link.py").symlink_to(target)
+
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("lib/real.py"): b"real"}
+
+
 def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin skill dir overlaying a shared_carrier dir with an OVERLAPPING
     file name cannot carrier-merge — it is a real conflict and falls through to
