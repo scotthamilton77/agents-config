@@ -198,19 +198,27 @@ def _run(
         sys.stderr.write(f"installer: {exc}\n")
         return 2
 
+    # Stage once, up front, for EVERY path (--dump-stage, install, --prune): the
+    # same StagingPlan set feeds the dump, the install, and the prune orphan-scan,
+    # so --prune is install-then-prune over ONE plan. Staging is deterministic,
+    # writes nothing to disk, and does not read installer.toml, so producing the
+    # plan here changes neither the prune outcome nor its error handling — only a
+    # verbose adapter transform notice (e.g. Gemini) may now precede a toml error,
+    # which is immaterial. A fatal staging error — a registry wiring miss
+    # (UnknownMergeKeyError) or an irreconcilable file collision (CollisionError) —
+    # surfaces as an actionable exit 1 (matching the ConsentRequiredError
+    # convention and bash's `err … exit 1`), not an uncaught traceback; the
+    # exception message names the offending key / paths. This single guard covers
+    # both the --dump-stage and install paths.
+    try:
+        plans = stage_and_transform(
+            tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
+        )
+    except (UnknownMergeKeyError, CollisionError) as exc:
+        sys.stderr.write(f"installer: {exc}\n")
+        return 1
+
     if args.dump_stage is not None:
-        try:
-            plans = stage_and_transform(
-                tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
-            )
-        except (UnknownMergeKeyError, CollisionError) as exc:
-            # A registry wiring miss (UnknownMergeKeyError) or an irreconcilable
-            # file collision (CollisionError) cannot be staged; surface it as an
-            # actionable fatal (exit 1, matching the ConsentRequiredError
-            # convention and bash's `err … exit 1`) rather than an uncaught
-            # traceback. Both carry a message naming the offending key / paths.
-            sys.stderr.write(f"installer: {exc}\n")
-            return 1
         try:
             dump_plan(plans, args.dump_stage, io=io)
         except ValueError as exc:
@@ -222,24 +230,7 @@ def _run(
         return 0
 
     config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
-
-    # Stage once, up front: the same StagingPlan set feeds both the install and
-    # the prune orphan-scan, so --prune is install-then-prune over ONE plan, not
-    # two independent stagings. Staging is deterministic, writes nothing to disk,
-    # and does not read installer.toml, so producing the plan before the
-    # prune-only toml-load below changes neither the prune outcome nor its error
-    # handling — only a verbose adapter transform notice (e.g. Gemini) may now
-    # precede a toml error, which is immaterial.
     adapters = [get_adapter(tool) for tool in tools]
-    try:
-        plans = stage_and_transform(
-            tools, repo_root=resolved_repo_root, io=io, ignore=ignore, plugins=plugins
-        )
-    except (UnknownMergeKeyError, CollisionError) as exc:
-        # Same fatal-staging guard as the --dump-stage path above: surface a
-        # wiring miss or irreconcilable collision as exit 1, not a traceback.
-        sys.stderr.write(f"installer: {exc}\n")
-        return 1
 
     # Default install path (also the install half of --prune): walk each active
     # tool's StagingPlan to disk via install_pipeline. Skipped only for

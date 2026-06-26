@@ -507,6 +507,30 @@ def test_carrier_merge_does_not_descend_symlinked_subdir(
     assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("SKILL.md"): b"real"}
 
 
+def test_carrier_merge_skips_symlinked_file_nested_in_real_subdir(
+    tmp_path: Path, ignore: InstallIgnore
+) -> None:
+    """A symlink nested inside a REAL carried subdir is skipped too: the rglob
+    walk filters symlinked files, so `lib/link.py -> outside` does not read the
+    target's bytes into dir_overrides under `lib/link.py`. This pins the deeper
+    guard the two top-level symlink tests never reach — they short-circuit at the
+    top-level is_symlink check before the rglob ever runs."""
+    plan = _carrier_dir_plan(tmp_path, files=["_test.sh"])
+    plugin = _plugin(tmp_path, "test-plugin")
+    skill_dir = plugin.source_path / ".agents" / "skills" / "demo-skill"
+    (skill_dir / "lib").mkdir(parents=True)
+    (skill_dir / "lib" / "real.py").write_bytes(b"real")
+    target = tmp_path / "outside.txt"
+    target.write_bytes(b"leak")
+    (skill_dir / "lib" / "link.py").symlink_to(target)
+
+    overlay_plugins(
+        plan, [plugin], adapter=ClaudeAdapter(), registry=default_registry(), ignore=ignore
+    )
+
+    assert plan.dir_overrides[Path("skills/demo-skill")] == {Path("lib/real.py"): b"real"}
+
+
 def test_carrier_merge_overlapping_files_is_fatal(tmp_path: Path, ignore: InstallIgnore) -> None:
     """A plugin skill dir overlaying a shared_carrier dir with an OVERLAPPING
     file name cannot carrier-merge — it is a real conflict and falls through to

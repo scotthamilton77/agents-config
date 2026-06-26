@@ -181,8 +181,18 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
             # a top-level link-to-file (read-through under the link name) and a
             # link-to-dir (rglob descends from the link) would otherwise carry
             # bytes from outside the plugin tree, diverging from bash.
+            #
+            # Deliberate asymmetry with the disjoint precondition: _visible_names
+            # (feeding _carrier_merge_allowed) counts a symlink BY NAME, so a
+            # symlink whose name collides with a carrier file still fails loud
+            # (fatal), while a name-disjoint symlink reaches here and is dropped.
+            # Do NOT "fix" _visible_names to also skip symlinks — that would turn
+            # a real name collision into a silent drop.
             continue
         if entry.is_dir():
+            # rglob does not descend symlinked DIRECTORIES, so a nested link-to-dir
+            # is already excluded here; the per-file `not p.is_symlink()` guards
+            # the remaining case — a link-to-FILE nested in a real subdir.
             for nested in sorted(p for p in entry.rglob("*") if p.is_file() and not p.is_symlink()):
                 carried[nested.relative_to(directory)] = nested.read_bytes()
         else:

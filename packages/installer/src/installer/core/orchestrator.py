@@ -66,8 +66,12 @@ def stage_and_transform(
         # and re-route them through io.warn so the notice reaches the user.
         # record=True + simplefilter("always") defeats any ambient -W filter that
         # would otherwise silence it. Scoped to the two merge sites (build_plan,
-        # overlay_plugins); only UserWarning is re-emitted, so an unrelated
-        # library warning is not surfaced as installer output.
+        # overlay_plugins). Only UserWarning is re-emitted; any other category
+        # raised inside this scope is dropped — acceptable because staging is pure
+        # dict/path work that emits only the merge UserWarning today.
+        # catch_warnings mutates process-global filter state and is not
+        # thread-safe: safe only while tools stage sequentially (revisit if
+        # staging is ever parallelised).
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             plan = build_plan(adapter, repo_root=repo_root, ignore=ignore, registry=registry)
