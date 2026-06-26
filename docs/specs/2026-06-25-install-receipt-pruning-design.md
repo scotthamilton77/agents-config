@@ -67,33 +67,43 @@ This boundary coincides with the **existing prune scope**: the namespaced entrie
 
 **Ownership is decided by a single pure classifier** (`StagedItem → bool`): recorded iff the item is a wholesale file/dir write (not a merge-target). The classifier keys off the item's `FileKind`/namespace and its resolved merge strategy, so a future namespace inherits correct behavior without touching prune code.
 
+**Owner assignment.** A **tool-tree entry** — anything under a tool's `commands`/`skills`/`agents`/`rules`, *including content a generic plugin overlaid there* — is owned by the **dest tool**. A **bespoke route dest** outside any tool tree (beads' `~/.beads/...`) is owned by the **plugin**. This split is load-bearing for retiring a whole plugin (see *Diff scope*): an overlaid skill is reclaimed through its tool's scope, a route file through the plugin's. It matches today's `Orphan.tool` semantics (the `beads` bucket for formulas; the dest tool for namespaced entries).
+
 ## The prune differential
 
 ```
 orphans = { e ∈ prior_receipt :
-              e.owner ∈ (resolved_tools ∪ discovered_plugins)
-              AND e.path ∉ this_run_owned_plan }
+              e.owner ∈ scope
+              AND e.path ∉ installed_this_run }
+
+scope = resolved_tools
+      ∪ discovered_plugins
+      ∪ { plugin owners recorded in prior_receipt }     # so a *retired* plugin is still pruned
 ```
 
-Each orphan becomes the existing `Orphan` model and flows through the **existing** `run_prune` flow (backup + consent, unchanged). The receipt only *identifies* orphans; deletion machinery is reused verbatim.
+Each orphan becomes the existing `Orphan` model and flows through the **existing** `run_prune` flow (backup + consent, unchanged). The receipt only *identifies* orphans; deletion machinery is reused verbatim. (`installed_this_run` — not "the plan" — is what an entry is checked against; see *Receipt lifecycle*.)
 
 ### Diff scope — the correctness crux
 
-A naive diff (`prior_receipt − current_plan`) is **actively dangerous**: `install --tools=claude` stages only Claude items, so every codex/gemini/opencode entry would look "no longer staged" and be deleted. The diff is therefore **scoped to what the run actually addressed**:
+A naive diff (`prior_receipt − current_plan`) is **actively dangerous**: `install --tools=claude` stages only Claude items, so every codex/gemini/opencode entry would look "no longer staged" and be deleted. The diff is therefore **scoped to what the run actually addressed** — and tools and plugins have deliberately *different* scope semantics, because "not staged this run" means different things for each:
 
 - **Owner in `resolved_tools`** (a tool this run targeted) → in scope. An entry no longer staged is an orphan.
-- **Owner is an untargeted tool** (not in `resolved_tools`) → **out of scope, untouched.** A partial `--tools=` run never disturbs another tool's entries.
-- **Owner in `discovered_plugins`** → in scope, *including a plugin excluded via `--plugins=`*. An excluded plugin stages nothing, so its recorded entries are orphans → pruned (the strict-mode intent), and their paths are already in the receipt — no route rediscovery. (A genuinely *undetected* plugin has no installed footprint to record in the first place, so there is nothing to orphan.)
+- **Owner is an untargeted tool** (not in `resolved_tools`) → **out of scope, untouched.** A partial `--tools=` run never disturbs another tool's entries. For a tool, "not addressed" means *later, not now* — preserve. (Tools are a closed, known set; fully dropping a tool adapter is a rare, deliberate code change and is an accepted residual, not handled here.)
+- **Owner is a plugin** → in scope when the plugin is **either currently discovered OR recorded in the prior receipt**. This covers three cases with one rule:
+  - *active plugin* → its files are staged this run → not orphaned.
+  - *excluded via `--plugins=`* (still discovered) → stages nothing → recorded entries are orphans → pruned (strict-mode intent).
+  - *retired* — its `src/plugins/` source removed or renamed, so no longer discovered → it would fall out of scope under "discovered only" and its files would be litter forever. Including **prior-receipt plugin owners** keeps it in scope → its recorded entries are orphaned → pruned. The differ works purely off recorded paths, so a vanished plugin needs no source or route lookup.
 
-This is the same concern the superseded bead chased ("active vs discovered set"), expressed cleanly: scope by recorded `owner`, not by re-deriving routes.
+This is the same concern the superseded bead chased ("active vs discovered set"), expressed cleanly: scope by recorded `owner`, not by re-deriving routes — and, for plugins, never let a recorded owner silently drop out of scope. A generic plugin that overlaid into a tool tree is pruned through that **tool's** scope (its entries are owned by the tool); only bespoke route files carry a plugin owner and rely on the prior-receipt-owner rule.
 
 ## Receipt lifecycle
 
 - **Read** the prior receipt at the start of the prune step (tolerant — see fail-safe). Its entries, scoped as above, drive orphan detection.
 - **Write** the new receipt at the **end of a successful, non-dry-run run** (after install and any prune complete), atomically (temp file + `os.replace`). Written on **every** such run — not only under `--prune` — so the record never goes stale; *pruning* the diff stays gated behind `--prune`/`--prune-only`, but *recording* is unconditional.
-- **The receipt mirrors disk.** The new receipt is **not** a blind overwrite of staged items, nor an owner-scoped carve-out. It is the single invariant *an entry leaves the receipt only when it actually leaves the disk*:
-  `new_receipt = (prior_receipt − entries actually pruned this run) ∪ (this run's owned, staged entries)`, unioned by `path` with the staged entry winning (refreshed `sha256`).
-  This is correct for every mode with no special-casing: a plain install prunes nothing, so nothing is dropped and staged entries are refreshed; a `--prune` run drops exactly the entries it removed; a `--tools=claude` subset run never prunes codex/gemini/opencode entries, so they carry over untouched; and an orphan detected but **not** removed (no `--prune`, or consent declined) stays recorded *because it is still on disk*. Writing "intended" state instead would silently lose track of files left behind — the exact litter this work removes.
+- **The receipt mirrors disk.** The new receipt is **not** a blind overwrite of staged items, nor an owner-scoped carve-out. It is the single invariant *an entry leaves the receipt only when it actually leaves the disk, and enters only when actually written to disk*:
+  `new_receipt = (prior_receipt − entries actually pruned this run) ∪ installed_this_run`, unioned by `path` with the `installed_this_run` entry winning (refreshed `sha256`).
+- **`installed_this_run` is what was actually written, not what was planned.** It is the owned plan entries the install half **actually wrote or confirmed-present** this run (created + updated + skipped-identical). **When the install half does not run — `--prune-only` — `installed_this_run` is empty**, so the receipt is exactly `prior_receipt − pruned`. This is the critical distinction: the staging plan is built even under `--prune-only` (it drives orphan detection), but its entries were **not** placed on disk, so they must never be added to the receipt. Recording a planned-but-unwritten path would let a later source deletion classify a *user's* file at that path as our orphan and delete it. (On first adoption / empty receipt, `--prune-only` therefore prunes nothing and records nothing — a clean no-op.)
+  The invariant is correct for every mode with no further special-casing: a plain install prunes nothing, so nothing is dropped and written entries are refreshed; a `--prune` run drops exactly the entries it removed; a `--tools=claude` subset run never prunes codex/gemini/opencode entries, so they carry over untouched; and an orphan detected but **not** removed (no `--prune`, or consent declined) stays recorded *because it is still on disk*. Writing "intended" state instead would silently lose track of files left behind — the exact litter this work removes.
 - **`--dry-run` writes nothing** — no receipt write, no deletion. Preview only.
 - **Fail-safe on read.** A missing, unreadable, malformed, or unrecognized-`schema_version` receipt is treated as **empty**: the run prunes nothing and writes a fresh receipt. This *is* the agreed clean-break migration — pre-receipt litter that was never recorded is simply not seen; everything installed from adoption forward is covered. No migration code, no legacy glob sweep.
 
@@ -104,10 +114,10 @@ This is the same concern the superseded bead chased ("active vs discovered set")
 | `ownership` classifier | `StagedItem → bool`: wholesale-owned & prune-eligible? | Pure; excludes merge-targets |
 | `Receipt` / `ReceiptEntry` model + JSON (de)serialize | Data + schema-versioned round-trip | New `core/receipt.py` |
 | receipt **store** | read (fail-safe → empty) · write (atomic temp+replace) | I/O isolated; pure core stays pure |
-| receipt **builder** | owned, staged plan items → in-scope `ReceiptEntry` set | Derives from the plan, not from sync |
-| orphan **differ** | prior receipt ∩ scope − current plan → `list[Orphan]` | **Replaces** `scan_orphans` |
+| receipt **builder** | owned entries actually installed this run → in-scope `ReceiptEntry` set | Empty when the install half is skipped (`--prune-only`) |
+| orphan **differ** | prior receipt ∩ scope − `installed_this_run` → `list[Orphan]` | **Replaces** `scan_orphans`; `scope` reads prior-receipt plugin owners |
 
-The sync engine is **not** modified. On the success path the resolved plan equals what is on disk (`sync` aborts the whole run on failure), so the receipt is built from the **plan's owned items** — no need to widen `sync()`'s `Counters` return to report written paths.
+The sync engine is **not** modified. On the success path the install half's owned plan entries equal what is on disk (`sync` aborts the whole run on failure), so `installed_this_run` is built from the **plan's owned items, gated on the install half having run** — no need to widen `sync()`'s `Counters` return to report written paths. Under `--prune-only` the install half does not run, so the builder contributes nothing (only `prior_receipt − pruned` is written).
 
 ## Deleted vs reused
 
@@ -119,7 +129,7 @@ The sync engine is **not** modified. On the success path the resolved plan equal
 **Reused:**
 - `core/prune_flow.py` `run_prune` and its backup/consent flow — the deletion executor, **lightly extended** to report which orphans it actually removed (the receipt write needs the removed-paths set, per *The receipt mirrors disk*).
 - The `Orphan` model — the differ emits it directly.
-- `core/sync.py` — untouched. The receipt's staged half is built from the plan, so `sync()`'s `Counters` return is **not** widened.
+- `core/sync.py` — untouched. `installed_this_run` is built from the install half's owned plan entries, so `sync()`'s `Counters` return is **not** widened.
 
 ## Bugs subsumed
 
@@ -131,19 +141,22 @@ The sync engine is **not** modified. On the success path the resolved plan equal
 - **`.installignore` interaction.** `.installignore` excludes **source** files at the staging choke point, upstream of the plan. Excluded files are therefore never staged and never recorded. A file that *was* installed and later becomes excluded (or is dropped) is simply not in the new plan → it is an orphan → pruned. That is correct cleanup, not a regression; no special carve-out is needed. (`.installignore` is itself fail-closed: an absent manifest aborts the install before prune runs.)
 - **User-deleted file we recorded.** Still in the prior receipt; if still staged, it is reinstalled; if also dropped from source, it is an orphan whose deletion is a harmless no-op (already gone).
 - **User-created file we never installed.** Never in the receipt → never an orphan → never touched. The ownership-by-receipt model inherently protects genuine user files — a strict improvement over globs, which could match a user's like-named file.
-- **First run / fresh adoption.** No prior receipt → empty → prunes nothing, writes the first receipt. Pruning begins on the second run.
+- **Retired plugin (source removed).** A plugin previously installed and recorded, whose `src/plugins/` source is later removed or renamed, is no longer *discovered*. Because `scope` also includes **prior-receipt plugin owners**, its recorded route files (`owner=plugin`) are still in scope → orphaned → pruned; any content it overlaid into a tool tree is owned by that tool and pruned through the tool's scope. Without the prior-receipt-owner rule this whole plugin's files would be permanent litter — the precise failure this design exists to remove.
+- **`--prune-only` on an empty / fresh receipt.** The install half is skipped, so `installed_this_run` is empty and nothing is recorded; with no prior receipt there are no orphans. A clean no-op — and, crucially, it does **not** record the (unwritten) staging plan as installer-owned, which would mis-claim user files for later deletion.
+- **First run / fresh adoption.** No prior receipt → empty → prunes nothing, writes the first receipt from what this run installed. Pruning begins on the second run.
 
 ## Testing strategy
 
 Unit (driven through `ScriptedIO`; 90% branch floor per package gate):
 
 - **Ownership classifier truth table** — skills/agents/commands/rules recorded; `settings.json` (`JsonUnionStrategy`) and append-merged instruction files **not** recorded.
-- **Differ scope matrix** — (a) untargeted tool's entries survive a `--tools=` subset run; (b) excluded plugin's entries are pruned; (c) cross-tree relocation (`zoom-out`) prunes the three non-Claude copies and keeps Claude's.
+- **Differ scope matrix** — (a) untargeted tool's entries survive a `--tools=` subset run; (b) excluded plugin's entries are pruned; (c) cross-tree relocation (`zoom-out`) prunes the three non-Claude copies and keeps Claude's; (d) **retired plugin** — a recorded plugin no longer in the discovered set still has its route files orphaned (prior-receipt-owner scope), and its tool-tree overlay entries orphaned through the tool's scope.
 - **Receipt store** — round-trip; fail-safe on missing / malformed / unknown-`schema_version` → empty.
 - **Receipt mirrors disk** — a `--tools=claude` run preserves codex entries (neither staged nor pruned); an orphan detected but left unpruned (no `--prune`) stays recorded.
+- **`--prune-only` records nothing it didn't write** — `--prune-only` over an **empty** receipt records no entries (the staging plan is built but never written), so a later source deletion at one of those paths does not classify a user file as an orphan.
 - **Atomic write** — temp + replace; `--dry-run` writes nothing.
 
-Integration (one end-to-end through `ScriptedIO`): install → drop a source file → reinstall `--prune` → assert the dest copy is pruned and backed up; install `--tools=claude` over a full prior receipt → assert no codex/gemini/opencode entries are pruned.
+Integration (end-to-end through `ScriptedIO`): install → drop a source file → reinstall `--prune` → assert the dest copy is pruned and backed up; install `--tools=claude` over a full prior receipt → assert no codex/gemini/opencode entries are pruned; install a plugin → remove its `src/plugins/` source → reinstall `--prune` → assert both its route files and its tool-tree overlay entries are pruned.
 
 ## Deferred work (out of scope)
 
@@ -153,12 +166,12 @@ Integration (one end-to-end through `ScriptedIO`): install → drop a source fil
 ## Acceptance criteria
 
 - The install receipt records every wholesale-authored entry (namespaced `commands`/`skills`/`agents`/`rules` + plugin route dests) and **never** a merge-target (`settings.json`, assembled instruction files).
-- Pruning is driven by the receipt differential, scoped to `resolved_tools ∪ discovered_plugins`: an untargeted tool is untouched; an excluded plugin's recorded entries are pruned.
+- Pruning is driven by the receipt differential, scoped to `resolved_tools ∪ discovered_plugins ∪ prior-receipt plugin owners`: an untargeted tool is untouched; an excluded plugin's recorded entries are pruned; a **retired plugin** (source removed, no longer discovered) still has its recorded files pruned rather than carried forward as litter.
 - Cross-tree relocation (shared → single-tool; the `zoom-out`/`cr7bi` case) prunes the stale per-tool dest copies.
 - `~/.beads/scripts` is covered (the `abn9.37.1.1` regression seed).
 - `_BEADS_TOOL` / `_BEADS_NAMESPACE` and the `[prune]` section are gone; removing them is the tell the scan is genuinely general.
 - The receipt is written on every successful, non-dry-run run; `--dry-run` writes nothing; pruning the diff is gated behind `--prune`/`--prune-only`.
-- The receipt mirrors disk: an entry leaves only when actually removed (an orphan detected but left unpruned stays recorded).
+- The receipt mirrors disk: an entry leaves only when actually removed, and enters only when actually written. `--prune-only` (install half skipped) records no new entries — a planned-but-unwritten path is never claimed as installer-owned.
 - A missing/corrupt receipt is treated as empty (prunes nothing, writes fresh) — the clean-break migration, no legacy sweep.
-- Tests cover the ownership classifier, the differ scope matrix (untargeted tool, excluded plugin, cross-tree relocation), receipt-store fail-safe, scoped merge-on-write, and dry-run.
+- Tests cover the ownership classifier, the differ scope matrix (untargeted tool, excluded plugin, cross-tree relocation, retired plugin), receipt-store fail-safe, receipt-mirrors-disk, `--prune-only`-records-nothing, and dry-run.
 - `make ci-installer` green.
