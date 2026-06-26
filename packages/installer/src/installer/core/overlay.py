@@ -71,6 +71,12 @@ def overlay_plugins(
             if adapter.should_install_namespace(ns, "tool"):
                 for item in stage_namespace(tool_root, ns, provenance=prov, ignore=ignore):
                     _place(plan, item, registry=registry, carrier_eligible=False)
+        # stage_settings globs all settings forms (json/jsonc/toml). For plugins
+        # this is an intentional, currently-inert superset — no plugin ships
+        # jsonc/toml settings, so the staged set equals json-only today. Not
+        # narrowed: stage_settings is the SHARED Phase 5 builder (staging.py),
+        # where the multi-form glob is the contract; a plugin-only narrow would
+        # fork the builder for no live benefit.
         for item in stage_settings(tool_root, provenance=prov):
             _place(plan, item, registry=registry, carrier_eligible=False)
         for ns in _SHARED_NAMESPACES:
@@ -168,8 +174,16 @@ def _carry_files(directory: Path) -> dict[Path, bytes]:
     for entry in sorted(directory.iterdir()):
         if entry.name.startswith("."):
             continue
+        if entry.is_symlink():
+            # Bash `cp -R` (macOS) copies a symlink as a link, not its target's
+            # bytes; dir_overrides maps relpaths to bytes and has no
+            # representation for a link. Skip it rather than dereference — both
+            # a top-level link-to-file (read-through under the link name) and a
+            # link-to-dir (rglob descends from the link) would otherwise carry
+            # bytes from outside the plugin tree, diverging from bash.
+            continue
         if entry.is_dir():
-            for nested in sorted(p for p in entry.rglob("*") if p.is_file()):
+            for nested in sorted(p for p in entry.rglob("*") if p.is_file() and not p.is_symlink()):
                 carried[nested.relative_to(directory)] = nested.read_bytes()
         else:
             carried[Path(entry.name)] = entry.read_bytes()
