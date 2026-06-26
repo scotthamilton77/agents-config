@@ -411,6 +411,7 @@ def _run_prune(
         io.err(f"installer: {exc}")
         return 2
 
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
     try:
         _merge_into(
             counters,
@@ -420,6 +421,7 @@ def _run_prune(
                 plans=plans,
                 home=home,
                 config=config,
+                receipt_path=receipt_path,
                 io=io,
                 dry_run=dry_run,
                 auto_yes=auto_yes,

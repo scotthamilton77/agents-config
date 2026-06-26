@@ -16,7 +16,25 @@ import pytest
 from installer.cli import main
 from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
+from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt_store import write_receipt
 from installer.tools import registry
+
+
+def _seed_receipt_with_orphan(home: Path, relpath: str) -> Path:
+    """Write a prior install receipt recording ``relpath`` (home-relative) as a
+    claude-owned dir entry. The receipt is the sole prune authority, so an
+    on-disk dir only becomes an orphan when a prior receipt records it and the
+    current plan omits it — globs no longer drive pruning."""
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    write_receipt(
+        receipt_path,
+        Receipt(
+            roots=(Path(".claude"),),
+            entries=(ReceiptEntry(Path(relpath), "claude", Path(".claude"), "dir", None),),
+        ),
+    )
+    return receipt_path
 
 
 def _home_with_claude_settings(tmp_path: Path) -> Path:
@@ -212,76 +230,6 @@ def test_prune_and_prune_only_together_is_mutually_exclusive_error(
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
     assert "not allowed with" in captured.err
-
-
-def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Path) -> None:
-    """
-    Given a home with a claude skills/ entry matching the bundled prune list and
-    an empty source repo (nothing staged), under --prune-only --yes
-    When main runs (non-interactive io)
-    Then the unstaged, retired entry is removed.
-
-    Pins: --prune-only scans + prunes against the in-memory plan without an
-    install half, and --yes waives the non-interactive guard.
-    """
-    home = _home_with_claude_settings(tmp_path)
-    retired = home / ".claude" / "skills" / "ralf-it"
-    retired.mkdir(parents=True)
-    # Source repo is empty (nothing staged) but carries an installer.toml whose
-    # prune list matches the orphan, so _run_prune loads a non-empty list.
-    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=repo,
-    )
-
-    assert rc == 0
-    assert not retired.exists()
-    # Companion to the missing-config case: when installer.toml IS present, the
-    # missing-config warning is not emitted.
-    assert not any(
-        e.channel == "warn" and "installer.toml not found" in e.message for e in io.transcript
-    )
-
-
-def test_prune_only_keeps_active_plugin_shipped_formula(tmp_path: Path) -> None:
-    """
-    Given --plugins=beads --prune-only --yes, a repo whose beads plugin still
-    ships current.toml, and a home ~/.beads/formulas holding current.toml AND a
-    genuinely retired.toml, both matching a beads/formulas/* prune glob
-    When main runs (non-interactive io)
-    Then retired.toml is removed but current.toml survives — the CLI threads the
-    active plugin set into the prune scan, so a formula the active plugin still
-    ships is not an orphan.
-
-    Pins the end-to-end wiring (_run -> _run_prune -> prune_pipeline ->
-    scan_orphans). Without it, strict mode deletes the live formula next to the
-    retired one.
-    """
-    repo = _repo_with_installer_toml(tmp_path, retired=["beads/formulas/*"])
-    beads_src = repo / "src" / "plugins" / "beads" / ".beads" / "formulas"
-    beads_src.mkdir(parents=True)
-    (beads_src / "current.toml").write_text("shipped")
-    home = _home_with_claude_settings(tmp_path)
-    formulas = home / ".beads" / "formulas"
-    formulas.mkdir(parents=True)
-    (formulas / "current.toml").write_text("shipped")
-    (formulas / "retired.toml").write_text("stale")
-
-    rc = main(
-        ["--plugins=beads", "--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=ScriptedIO(interactive=False),
-        repo_root=repo,
-    )
-
-    assert rc == 0
-    assert (formulas / "current.toml").exists()
-    assert not (formulas / "retired.toml").exists()
 
 
 def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
@@ -918,26 +866,24 @@ def test_main_default_install_non_interactive_without_consent_returns_one(tmp_pa
 
 def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     """
-    Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home
-    holding that retired orphan, under --prune --yes
+    Given a hermetic repo, a home holding a prior receipt that records
+    ~/.claude/skills/ralf-it (absent from this run's plan), under --prune --yes
     When main runs (non-interactive io; --yes waives consent)
     Then the staged shared template is installed at ~/.claude/INSTRUCTIONS.md
-    (install half) AND the retired orphan ~/.claude/skills/ralf-it is removed
+    (install half) AND the recorded orphan ~/.claude/skills/ralf-it is removed
     (prune half), and main returns 0.
 
     Pins: --prune is install-then-prune over ONE shared staging plan — main
-    installs the plan, then _run_prune scans the same plan for orphans. Fails
-    while --prune skips the install half (the pre-W3 prune-only behaviour of the
-    default branch).
+    installs the plan, then _run_prune diffs the prior receipt against that plan
+    for orphans. Fails while --prune skips the install half (the pre-W3
+    prune-only behaviour of the default branch).
     """
     repo = _hermetic_repo(tmp_path)
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
 
     home = tmp_path / "home"
     orphan = home / ".claude" / "skills" / "ralf-it"
     orphan.mkdir(parents=True)
+    _seed_receipt_with_orphan(home, ".claude/skills/ralf-it")
 
     rc = main(
         ["--prune", "--yes", "--tools=claude"],
@@ -1024,8 +970,8 @@ def test_main_verbose_install_renders_per_tool_block_and_skipped_footer(tmp_path
 
 def test_main_prune_summary_reports_pruned_counts(tmp_path: Path) -> None:
     """
-    Given a hermetic repo retiring '*/skills/ralf-it' and a home holding that
-    orphan, under --prune --yes (quiet)
+    Given a hermetic repo and a home whose prior receipt records ~/.claude/
+    skills/ralf-it (absent from this run's plan), under --prune --yes (quiet)
     When main runs (install-then-prune)
     Then the quiet summary's claude line reports the prune (and the orphan is
     gone) — the prune_pipeline's per-tool counters reach the renderer merged with
@@ -1035,12 +981,10 @@ def test_main_prune_summary_reports_pruned_counts(tmp_path: Path) -> None:
     --prune run's pruned tally surfaces in the summary.
     """
     repo = _hermetic_repo(tmp_path)
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
     home = tmp_path / "home"
     orphan = home / ".claude" / "skills" / "ralf-it"
     orphan.mkdir(parents=True)
+    _seed_receipt_with_orphan(home, ".claude/skills/ralf-it")
     io = ScriptedIO(interactive=False)
 
     rc = main(["--prune", "--yes", "--tools=claude"], home=home, io=io, repo_root=repo)

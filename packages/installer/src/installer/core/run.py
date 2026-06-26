@@ -1,9 +1,10 @@
 """Run-level composition for the install and prune pipelines (W1 / G.5).
 
 ``install_pipeline`` walks each active tool's ``StagingPlan`` to disk via
-``sync_plan``; ``prune_pipeline`` scans each tool's destination tree against its
-in-memory ``StagingPlan`` for orphans (``core/prune.py``), then drives the
-interactive prune flow over the result (``core/prune_flow.py``).
+``sync_plan``; ``prune_pipeline`` diffs the prior install receipt against this
+run's desired staged keys for orphans (``core/receipt_diff.py``), drives the
+interactive prune flow over the result (``core/prune_flow.py``), then rewrites
+the receipt to mirror the staged plan.
 
 Both are kept separate from ``cli.py`` so the compositions are unit-testable
 without argparse, and separate from ``orchestrator.stage_and_transform`` so the
@@ -19,8 +20,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from installer.core.model import Counters, Tool
-from installer.core.prune import scan_orphans
 from installer.core.prune_flow import run_prune
+from installer.core.receipt import Receipt
+from installer.core.receipt_build import desired_staged_keys, entries_from_plans
+from installer.core.receipt_diff import diff_orphans
+from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 from installer.core.sync import sync_plan, sync_routes
 
 if TYPE_CHECKING:
@@ -40,27 +44,39 @@ def prune_pipeline(
     plugins: Iterable[PluginAdapter] = (),
     plans: dict[Tool, StagingPlan],
     home: Path,
-    config: InstallerToml,
+    config: InstallerToml,  # noqa: ARG001  # glob config retired during the receipt cutover
+    receipt_path: Path,
     io: IOPort,
     dry_run: bool = False,
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
 ) -> dict[str, Counters]:
-    """Scan ``adapters`` for orphans against ``plans``, then run the prune flow.
+    """Diff the prior receipt against the desired staged plan, then prune orphans.
 
-    ``plugins`` is the active plugin set; it supplies the ``~/.beads/formulas``
-    staged baseline so a formula a still-active plugin ships is protected from
-    the glob (see ``scan_orphans``). ``prune_only`` is threaded to the flow so
-    its non-interactive guard distinguishes a hard-fail (prune-only without
-    consent) from a warn+skip (plain ``--prune``). Returns the flow's per-target
-    ``Counters`` (pruned / backed_up) keyed by ``Orphan.tool`` — each tool or
-    plugin namespace whose orphans were pruned gets its own bucket so the install
-    summary can report a plugin pruned outside the active tool set (AC#19). An
-    empty / no-op prune yields an empty mapping.
+    Orphans are recorded receipt entries (owner in scope) absent from this run's
+    desired staged keys. ``scope_owners`` is the resolved tools plus the active
+    plugins. After pruning, the receipt is rewritten to mirror the staged plan
+    (the mirrors-disk subtraction of pruned/relinquished entries lands in a later
+    task; the tracer overwrites). A missing/corrupt prior receipt yields an empty
+    baseline, so nothing is treated as an orphan (fail-closed clean break).
     """
-    orphans = scan_orphans(adapters, plugins=plugins, plans=plans, home=home, config=config)
-    return run_prune(
+    str_plans = {adapter.name: plans[Tool(adapter.name)] for adapter in adapters}
+    dest_roots = {adapter.name: adapter.dest_dir(home) for adapter in adapters}
+    scope_owners = set(str_plans) | {plugin.name for plugin in plugins}
+
+    prior_read = read_receipt(receipt_path)
+    prior = (
+        prior_read.receipt
+        if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
+        else Receipt()
+    )
+
+    keys = desired_staged_keys(
+        str_plans, dest_roots=dest_roots, home=home, scope_owners=scope_owners
+    )
+    orphans = diff_orphans(prior, desired_keys=keys, scope_owners=scope_owners, home=home)
+    counters = run_prune(
         orphans,
         io=io,
         dry_run=dry_run,
@@ -68,6 +84,11 @@ def prune_pipeline(
         prune_only=prune_only,
         timestamp=timestamp,
     )
+    if not dry_run:
+        new_entries = entries_from_plans(str_plans, dest_roots=dest_roots, home=home)
+        roots = tuple(dest_roots[name].relative_to(home) for name in dest_roots)
+        write_receipt(receipt_path, Receipt(roots=roots, entries=tuple(new_entries)))
+    return counters
 
 
 def install_pipeline(
