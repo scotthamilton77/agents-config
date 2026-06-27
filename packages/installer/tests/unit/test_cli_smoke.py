@@ -55,27 +55,14 @@ def _write_installignore(repo: Path) -> None:
     )
 
 
-def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
-    """Create a repo_root whose packages/installer/installer.toml carries the
-    given prune list — mirroring where _run_prune now derives the config path
-    (off the injected repo_root, not __file__)."""
-    repo = tmp_path / "repo"
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    retired_lines = "\n".join(f'  "{glob}",' for glob in retired)
-    (toml_dir / "installer.toml").write_text(f"[prune]\nretired = [\n{retired_lines}\n]\n")
-    _write_installignore(repo)
-    return repo
+def _repo_with_installer_toml(tmp_path: Path) -> Path:
+    """Create a minimal repo_root carrying the required .installignore manifest.
 
-
-def _repo_with_malformed_installer_toml(tmp_path: Path) -> Path:
-    """Create a repo_root whose installer.toml is type-malformed: prune.retired
-    is a bare string, which load_installer_toml rejects with ValueError (it would
-    otherwise list()-shred into single-character globs)."""
+    Receipt-based pruning is the sole prune authority, so the prune flow reads no
+    installer.toml; this helper exists only to give a hermetic repo the manifest
+    main() refuses to run without."""
     repo = tmp_path / "repo"
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = "*/skills/ralf-it"\n')
+    repo.mkdir(parents=True)
     _write_installignore(repo)
     return repo
 
@@ -233,44 +220,6 @@ def test_prune_and_prune_only_together_is_mutually_exclusive_error(
     assert "not allowed with" in captured.err
 
 
-def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
-    """
-    Given a repo_root whose packages/installer/installer.toml does NOT exist,
-    under --prune-only --yes
-    When main runs (non-interactive io)
-    Then a warning naming the missing path is emitted through io and the run
-    still exits cleanly (0) — an absent prune list deletes nothing (fail-safe),
-    so the no-op is explained rather than silent.
-
-    Pins: _run_prune derives the config path from repo_root and warns on the
-    missing-file case (PR #151 comment 3408241642).
-    """
-    home = _home_with_claude_settings(tmp_path)
-    # An orphan that WOULD match the bundled prune list, to prove it is the
-    # empty list (not a non-match) that spares it from pruning.
-    retired = home / ".claude" / "skills" / "ralf-it"
-    retired.mkdir(parents=True)
-    empty_repo = tmp_path / "no-toml-repo"
-    empty_repo.mkdir()  # no packages/installer/installer.toml underneath
-    _write_installignore(empty_repo)  # but the exclusion manifest is required to run
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=empty_repo,
-    )
-
-    assert rc == 0
-    assert retired.exists()  # empty prune list => nothing pruned
-    warnings = [
-        e for e in io.transcript if e.channel == "warn" and "installer.toml not found" in e.message
-    ]
-    assert len(warnings) == 1
-    assert str(empty_repo / "packages" / "installer" / "installer.toml") in warnings[0].message
-
-
 def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     """
     Given --prune-only with a matching orphan, a non-interactive io, and no --yes
@@ -279,7 +228,7 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     """
     home = _home_with_claude_settings(tmp_path)
     (home / ".claude" / "skills" / "ralf-it").mkdir(parents=True)
-    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
+    repo = _repo_with_installer_toml(tmp_path)
 
     rc = main(
         ["--prune-only", "--tools=claude"],
@@ -289,41 +238,6 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     )
 
     assert rc != 0
-
-
-def test_prune_only_with_malformed_installer_toml_returns_2_and_errs_through_io(
-    tmp_path: Path,
-) -> None:
-    """
-    Given a repo_root whose packages/installer/installer.toml is type-malformed
-    (prune.retired is a string, not a list), under --prune-only --yes
-    When main runs (non-interactive io)
-    Then it returns 2 (the config-error exit convention)
-    And the malformed-config message is surfaced through io's err channel
-    And no uncaught traceback escapes.
-
-    Pins: _run_prune catches the ValueError that load_installer_toml raises on a
-    type-malformed installer.toml and fails cleanly via io.err + return 2 rather
-    than crashing the CLI (PR #151 comment 3408271848).
-    """
-    home = _home_with_claude_settings(tmp_path)
-    repo = _repo_with_malformed_installer_toml(tmp_path)
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=repo,
-    )
-
-    assert rc == 2
-    errs = [
-        e
-        for e in io.transcript
-        if e.channel == "err" and "retired must be a list of strings" in e.message
-    ]
-    assert len(errs) == 1
 
 
 def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> None:
@@ -348,7 +262,7 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
 
     # repo_root WITH a plugin under src/plugins/: discovery has something to find
     # there, and the run must not error reaching for the real repo's plugins.
-    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with", retired=[])
+    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with")
     (repo_with_plugins / "src" / "plugins" / "beads").mkdir(parents=True)
     rc_with = main(
         ["--prune-only", "--yes", "--tools=claude"],
@@ -362,7 +276,7 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
     # If discovery had ignored repo_root and used the real _REPO_ROOT/src/plugins,
     # this assertion could not distinguish the two — the injected empty root is
     # what makes "no plugins" observable.
-    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without", retired=[])
+    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without")
     assert not (repo_no_plugins / "src" / "plugins").exists()
     rc_without = main(
         ["--prune-only", "--yes", "--tools=claude"],
@@ -610,14 +524,9 @@ def test_explicit_plugins_override_with_prune_warns_orphan_wording(tmp_path: Pat
 
     Pins: the wording branches on whether a prune phase is active. Fails if the
     warning is unconditional (always the non-prune text) or absent under --prune.
-    --prune-only is used so the run needs no installer.toml-present install half.
+    --prune-only is used so the run needs no install half.
     """
     repo = _repo_with_widget_plugin(tmp_path)
-    # _run_prune reads installer.toml off repo_root; give it an (empty) prune list
-    # so the prune phase is a clean no-op rather than a missing-file warning.
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True, exist_ok=True)
-    (toml_dir / "installer.toml").write_text("[prune]\nretired = []\n")
     io = ScriptedIO(interactive=False)
 
     rc = main(
@@ -658,14 +567,14 @@ def test_autodetect_does_not_warn_about_excluded_plugins(tmp_path: Path) -> None
 def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     """
     Given a 'widget' plugin overlaying claude rules/widget-rule.md, a dest entry
-    ~/.claude/rules/widget-rule.md, an installer.toml retiring that key, and NO
-    ~/.widget footprint (so auto-detect alone would exclude widget)
+    ~/.claude/rules/widget-rule.md, and NO ~/.widget footprint (so auto-detect
+    alone would exclude widget)
     When --prune-only --yes runs with --plugins=widget
     Then the dest entry is spared — an active plugin stages that basename, so the
-    orphan scan treats it as known rather than retired;
+    orphan scan treats it as known rather than an orphan;
     And when the same dest is run again with an empty --plugins=
     Then the dest entry is pruned — excluded, nothing stages it, so it is an
-    orphan matching the retired glob.
+    orphan.
 
     Pins: the resolved plugin set builds the staging plans in main, and those
     plans are threaded into _run_prune — so the --plugins selection reaches the
@@ -673,7 +582,7 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     plugins resolved with override_csv=None): absent the footprint, widget would
     be unstaged even under --plugins=widget and the dest pruned.
     """
-    repo = _repo_with_installer_toml(tmp_path, retired=["claude/rules/widget-rule.md"])
+    repo = _repo_with_installer_toml(tmp_path)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
     rule.parent.mkdir(parents=True)
     rule.write_bytes(b"widget rule\n")

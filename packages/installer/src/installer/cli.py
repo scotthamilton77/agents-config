@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from installer.config import Config, resolve_plugins, resolve_plugins_root, resolve_tools
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
-from installer.core.installer_toml import load_installer_toml
 from installer.core.installignore import load_installignore
 from installer.core.model import Counters
 from installer.core.orchestrator import stage_and_transform
@@ -88,12 +87,12 @@ def _build_parser() -> argparse.ArgumentParser:
     mode_group.add_argument(
         "--prune",
         action="store_true",
-        help="After install, remove retired paths from installer.toml (with backup).",
+        help="After install, remove orphaned paths from the prior install (with backup).",
     )
     mode_group.add_argument(
         "--prune-only",
         action="store_true",
-        help="Skip install; scan + remove retired paths from installer.toml.",
+        help="Skip install; scan + remove orphaned paths from the prior install.",
     )
     mode_group.add_argument(
         "--dump-stage",
@@ -285,7 +284,6 @@ def _run(
                     plans=plans,
                     io=io,
                     home=resolved_home,
-                    repo_root=resolved_repo_root,
                     dry_run=args.dry_run,
                     auto_yes=config.auto_yes,
                     prune_only=args.prune_only,
@@ -371,7 +369,6 @@ def _run_prune(
     plans: dict[Tool, StagingPlan],
     io: IOPort,
     home: Path,
-    repo_root: Path,
     dry_run: bool,
     auto_yes: bool,
     prune_only: bool,
@@ -388,16 +385,9 @@ def _run_prune(
     prune step needs no separate consent gate; ``--prune-only`` skips install and
     relies on the prune flow's own non-interactive hard-fail.
 
-    The prune list is read from ``installer.toml`` under the passed ``repo_root``
-    (not off ``__file__``), so the config tracks the same root the plans were
-    staged from. When that file is absent — e.g. a wheel/install that bundles
-    only ``src/installer`` and omits ``installer.toml`` — the load yields an empty
-    prune list, so nothing would be pruned; a warning is emitted naming the
-    missing path so the no-op is explained rather than silent. A *present but
-    type-malformed* ``installer.toml`` makes ``load_installer_toml`` raise
-    ``ValueError``; that is caught here and surfaced through ``io`` as a clean
-    error with ``return 2`` (the CLI's config-error exit convention), never an
-    uncaught traceback.
+    The receipt is the sole prune authority: orphans come from diffing the prior
+    install receipt against the desired staged plan, so there is no installer.toml
+    glob list to load here.
 
     The ``plans`` reflect the active ``--plugins`` selection (``main`` builds them
     with the resolved plugin set), so a plugin's overlaid files reach the orphan
@@ -410,21 +400,8 @@ def _run_prune(
     ``Orphan.tool``) are merged into ``counters`` so the install summary reports
     the prune activity alongside the install tally.
 
-    Returns 0 on success, 1 when the prune-only flow aborts the run, 2 when
-    ``installer.toml`` is malformed.
+    Returns 0 on success, 1 when the prune-only flow aborts the run.
     """
-    installer_toml = repo_root / "packages" / "installer" / "installer.toml"
-    if not installer_toml.is_file():
-        io.warn(
-            f"installer.toml not found at {installer_toml}; the prune list is "
-            "empty, so nothing will be pruned."
-        )
-    try:
-        config = load_installer_toml(installer_toml)
-    except ValueError as exc:
-        io.err(f"installer: {exc}")
-        return 2
-
     try:
         _merge_into(
             counters,
@@ -433,7 +410,6 @@ def _run_prune(
                 plugins=plugins,
                 plans=plans,
                 home=home,
-                config=config,
                 receipt_path=receipt_path,
                 io=io,
                 dry_run=dry_run,

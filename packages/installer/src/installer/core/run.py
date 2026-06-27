@@ -36,7 +36,6 @@ from installer.core.sync import sync_plan, sync_routes
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from installer.core.installer_toml import InstallerToml
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
     from installer.plugins.base import PluginAdapter
@@ -49,7 +48,6 @@ def prune_pipeline(
     plugins: Iterable[PluginAdapter] = (),
     plans: dict[Tool, StagingPlan],
     home: Path,
-    config: InstallerToml,  # noqa: ARG001  # glob config retired during the receipt cutover
     receipt_path: Path,
     io: IOPort,
     dry_run: bool = False,
@@ -151,9 +149,9 @@ def install_pipeline(
     across tools (``auto_yes`` auto-accepts changed-item overwrites; ``dry_run``
     previews without prompting).
 
-    Unlike ``scan_orphans``'s tolerant ``.get``, the per-tool plan is indexed
-    strictly — an adapter without a staged plan is an orchestrator bug (a loud
-    `KeyError`), not a silent no-op.
+    The per-tool plan is indexed strictly (``plans[Tool(adapter.name)]``) — an
+    adapter without a staged plan is an orchestrator bug (a loud `KeyError`),
+    not a silent no-op.
     """
     return {
         adapter.name: sync_plan(

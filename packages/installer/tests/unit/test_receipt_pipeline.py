@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from installer.core.installer_toml import InstallerToml
 from installer.core.io_port import ScriptedIO
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.receipt import Receipt, ReceiptEntry
@@ -68,7 +67,6 @@ def test_dropped_entry_is_pruned_and_receipt_rewritten(tmp_path: Path) -> None:
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
-        config=InstallerToml(),
         receipt_path=rpath,
         io=ScriptedIO(interactive=False),
         auto_yes=True,
@@ -94,7 +92,6 @@ def test_missing_receipt_prunes_nothing(tmp_path: Path) -> None:
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
-        config=InstallerToml(),
         receipt_path=rpath,
         io=ScriptedIO(interactive=False),
         auto_yes=True,
@@ -122,7 +119,6 @@ def test_no_orphans_clean_noop(tmp_path: Path) -> None:
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
-        config=InstallerToml(),
         receipt_path=rpath,
         io=ScriptedIO(interactive=True),
         timestamp=_TS,
@@ -153,7 +149,6 @@ def test_targeted_run_preserves_untargeted_tool_entry(tmp_path: Path) -> None:
         [get_adapter(Tool.CLAUDE)],
         plans=plans,
         home=home,
-        config=InstallerToml(),
         receipt_path=rpath,
         io=ScriptedIO(interactive=False),
         auto_yes=True,
