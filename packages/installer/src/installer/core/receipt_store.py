@@ -29,13 +29,18 @@ class ReceiptRead:
 
 
 def _entry_to_json(e: ReceiptEntry) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "path": str(e.path),
         "owner": e.owner,
         "root": str(e.root),
         "kind": e.kind,
         "sha256": e.sha256,
     }
+    # Emitted only when present, so a legacy receipt (no digests) round-trips
+    # byte-for-byte and existing integrity digests keep validating.
+    if e.dir_digest is not None:
+        out["dir_digest"] = e.dir_digest
+    return out
 
 
 def _entry_from_json(d: object) -> ReceiptEntry:
@@ -55,6 +60,15 @@ def _entry_from_json(d: object) -> ReceiptEntry:
         raise ValueError("file entry requires string sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
     if kind == "dir" and sha is not None:
         raise ValueError("dir entry must have null sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
+    # dir_digest is the directory analogue of sha256: optional (absent only on
+    # legacy dir entries recorded before the field existed), str when present, and
+    # never on a file entry. A file carrying one, or a non-string digest, is
+    # schema-invalid on a file-deleting boundary -> CORRUPT (fail closed).
+    dir_digest = d.get("dir_digest")
+    if dir_digest is not None and not isinstance(dir_digest, str):
+        raise ValueError("dir_digest must be string or null")  # noqa: TRY003  # caught -> CORRUPT; single call-site
+    if kind == "file" and dir_digest is not None:
+        raise ValueError("file entry must not have dir_digest")  # noqa: TRY003  # caught -> CORRUPT; single call-site
     # Validate the string fields rather than ``str()``-coercing them: a JSON
     # number/list would otherwise coerce to a path/owner whose digest still
     # matches (the integrity is computed over the coerced form), silently
@@ -72,6 +86,7 @@ def _entry_from_json(d: object) -> ReceiptEntry:
         root=Path(root),
         kind=kind,
         sha256=sha,
+        dir_digest=dir_digest,
     )
 
 
