@@ -64,5 +64,6 @@
   "voice": {
     "enabled": true,
     "mode": "hold"
-  }
+  },
+  "wheelScrollAccelerationEnabled": false
 }
