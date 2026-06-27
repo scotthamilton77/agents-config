@@ -15,7 +15,7 @@
 #   exit codes:
 #     0 = success
 #     1 = inventory file missing / unreadable
-#     2 = bad flag usage or stdin parse failure
+#     2 = bad flag usage or JSON parse/processing failure (stdin or inventory)
 set -euo pipefail
 
 usage() {
