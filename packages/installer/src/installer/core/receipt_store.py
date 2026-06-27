@@ -2,17 +2,18 @@
 
 Read never raises on bad data: a missing file is ``MISSING`` (bootstrap empty),
 anything present-but-unusable is ``CORRUPT`` (fail closed). Write is atomic
-(temp file + ``os.replace``). The integrity digest is added in a later task.
+(temp file + ``os.replace``) and stamps the integrity digest; read verifies it,
+so a missing or mismatched digest reads as ``CORRUPT``.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
-from installer.core.receipt import SCHEMA_VERSION, Receipt, ReceiptEntry
+from installer.core.receipt import SCHEMA_VERSION, Receipt, ReceiptEntry, compute_integrity
 
 
 class ReadStatus(Enum):
@@ -90,11 +91,14 @@ def read_receipt(path: Path) -> ReceiptRead:
         receipt = _receipt_from_json(data)
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return ReceiptRead(ReadStatus.CORRUPT, None)
+    if receipt.integrity is None or receipt.integrity != compute_integrity(receipt):
+        return ReceiptRead(ReadStatus.CORRUPT, None)
     return ReceiptRead(ReadStatus.OK, receipt)
 
 
 def write_receipt(path: Path, receipt: Receipt) -> None:
+    stamped = replace(receipt, integrity=compute_integrity(receipt))
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(to_json_obj(receipt), indent=2, sort_keys=False), encoding="utf-8")
+    tmp.write_text(json.dumps(to_json_obj(stamped), indent=2, sort_keys=False), encoding="utf-8")
     tmp.replace(path)
