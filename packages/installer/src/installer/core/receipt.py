@@ -80,7 +80,10 @@ def dir_content_digest(path: Path) -> str:
     portable across separator families — fine for this POSIX-targeted installer)."""
     h = hashlib.sha256()
     for f in sorted(p for p in path.rglob("*") if p.is_file()):
-        h.update(str(f.relative_to(path)).encode("utf-8"))
+        # surrogateescape so a filename with undecodable bytes (POSIX allows them;
+        # the os layer fsdecodes them to lone surrogates) re-encodes losslessly
+        # instead of raising UnicodeEncodeError at the prune boundary.
+        h.update(str(f.relative_to(path)).encode("utf-8", "surrogateescape"))
         h.update(b"\0")
         h.update(hashlib.sha256(f.read_bytes()).digest())
         h.update(b"\0")

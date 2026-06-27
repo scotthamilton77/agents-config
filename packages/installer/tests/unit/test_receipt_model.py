@@ -45,3 +45,24 @@ def test_dir_content_digest_changes_when_file_added_or_removed(tmp_path: Path) -
     assert with_added != base
     (d / "b.txt").unlink()
     assert dir_content_digest(d) == base
+
+
+def test_dir_content_digest_survives_undecodable_filename(tmp_path: Path) -> None:
+    """A file whose name carries undecodable bytes (POSIX-legal; fsdecoded to lone
+    surrogates) must not crash the digest — it is re-encoded with surrogateescape.
+    Skipped on filesystems that reject such names (e.g. APFS on macOS)."""
+    import os
+
+    from installer.core.receipt import dir_content_digest
+
+    d = tmp_path / "d"
+    d.mkdir()
+    bad_name = os.fsdecode(b"bad\xff.txt")  # lone surrogate after fsdecode
+    try:
+        (d / bad_name).write_text("payload")
+    except (OSError, UnicodeError):
+        import pytest
+
+        pytest.skip("filesystem rejects undecodable filenames")
+    # Must return a digest, not raise UnicodeEncodeError.
+    assert dir_content_digest(d).startswith("sha256:")
