@@ -23,7 +23,7 @@ from installer.core.model import Counters, Tool
 from installer.core.prune_flow import run_prune
 from installer.core.receipt import Receipt
 from installer.core.receipt_build import desired_staged_keys, entries_from_plans
-from installer.core.receipt_diff import diff_orphans
+from installer.core.receipt_diff import diff_orphans, scope_owners
 from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 from installer.core.sync import sync_plan, sync_routes
 
@@ -63,7 +63,6 @@ def prune_pipeline(
     """
     str_plans = {adapter.name: plans[Tool(adapter.name)] for adapter in adapters}
     dest_roots = {adapter.name: adapter.dest_dir(home) for adapter in adapters}
-    scope_owners = set(str_plans) | {plugin.name for plugin in plugins}
 
     prior_read = read_receipt(receipt_path)
     prior = (
@@ -72,10 +71,9 @@ def prune_pipeline(
         else Receipt()
     )
 
-    keys = desired_staged_keys(
-        str_plans, dest_roots=dest_roots, home=home, scope_owners=scope_owners
-    )
-    orphans = diff_orphans(prior, desired_keys=keys, scope_owners=scope_owners, home=home)
+    owners = scope_owners(set(str_plans), {plugin.name for plugin in plugins}, prior)
+    keys = desired_staged_keys(str_plans, dest_roots=dest_roots, home=home, scope_owners=owners)
+    orphans = diff_orphans(prior, desired_keys=keys, scope_owners=owners, home=home)
     counters = run_prune(
         orphans,
         io=io,

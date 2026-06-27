@@ -40,3 +40,22 @@ def entry_for(item: StagedItem, *, tool: str, dest_root: Path, home: Path) -> Re
         kind=("dir" if item.kind == FileKind.DIR else "file"),
         sha256=None,
     )
+
+
+def route_entry_for(
+    dest_path: Path, *, plugin: str, dest_dir: Path, home: Path, sha256: str | None
+) -> ReceiptEntry:
+    """ReceiptEntry for one plugin-routed file (e.g. ``~/.beads/formulas/x.toml``).
+
+    Plugin routes land outside any tool tree; the receipt records them owned by
+    the plugin name with ``root`` = the first segment of the route's dest dir
+    relative to ``home`` (e.g. ``.beads``). Always ``kind="file"`` — routes copy
+    individual files, not directories.
+    """
+    return ReceiptEntry(
+        path=dest_path.relative_to(home),
+        owner=plugin,
+        root=Path(dest_dir.relative_to(home).parts[0]),
+        kind="file",
+        sha256=sha256,
+    )
