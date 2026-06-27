@@ -61,7 +61,7 @@ if ! RESULT="$(printf '%s' "$THREAD_IDS" | jq -c --slurpfile inv "$INVENTORY" '
   as $inv_threads
   | $unresolved
   | map(. as $tid
-      | ($inv_threads | map(select(.thread_id == $tid)) | first) as $match
+      | ($inv_threads | map(select(.thread_id == $tid)) | .[0] // null) as $match
       | if $match == null
         then .
         elif $match.classification == "SKIP" or $match.classification == "ESCALATE"

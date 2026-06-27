@@ -16,6 +16,7 @@
 #   6. review_summary / issue_comment items (no thread_id) → ignored
 #   7. Missing --inventory flag → exit 2
 #   8. Inventory file missing → exit 1
+#   9. Malformed inventory JSON → exit 2 with script-level error message
 
 set -u
 
