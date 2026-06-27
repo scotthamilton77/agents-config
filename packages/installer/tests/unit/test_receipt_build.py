@@ -70,6 +70,23 @@ def test_entries_from_outcomes_excludes_declined_and_non_prune_ns() -> None:
     assert by_path[Path(".claude/skills/foo")].kind == "dir"
 
 
+def test_entries_from_outcomes_excludes_settings_json_under_prune_ns() -> None:
+    # A settings.json merge-target that lands under a prune namespace
+    # (e.g. commands/settings.json) must NOT be recorded: it holds the user's
+    # merged bytes, so recording it would make it eligible for orphan pruning.
+    outcomes = [
+        InstallOutcome(Path("/home/u/.claude/commands/settings.json"), Outcome.WRITTEN, "cd"),
+        InstallOutcome(Path("/home/u/.claude/commands/foo.md"), Outcome.WRITTEN, "ab"),
+    ]
+    entries = entries_from_outcomes(
+        outcomes, tool="claude", dest_root=Path("/home/u/.claude"), home=Path("/home/u")
+    )
+    paths = {e.path for e in entries}
+    assert Path(".claude/commands/settings.json") not in paths
+    # The guard is narrow: a normal file under the same namespace is still recorded.
+    assert paths == {Path(".claude/commands/foo.md")}
+
+
 def test_entries_from_route_outcomes_builds_plugin_entries() -> None:
     outcomes = [
         InstallOutcome(Path("/home/u/.beads/formulas/a.toml"), Outcome.WRITTEN, "ab"),

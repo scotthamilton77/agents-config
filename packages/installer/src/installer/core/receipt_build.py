@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from installer.core.model import InstallOutcome, Outcome, StagingPlan
+from installer.core.model import FileKind, InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
 from installer.core.receipt import Receipt, ReceiptEntry
 
@@ -25,15 +25,20 @@ def entries_from_outcomes(
 ) -> list[ReceiptEntry]:
     """Receipt entries for a tool's wholesale-owned writes, with real sha256.
 
-    Excludes DECLINED outcomes (the user's bytes) and anything outside the prune
-    namespaces (settings.json, assembled instruction files). Directory writes
-    carry ``sha256=None``; the kind is inferred from sha256 presence."""
+    Excludes DECLINED outcomes (the user's bytes) and any write outside the prune
+    namespaces. A ``settings.json`` write is excluded even under a prune namespace:
+    it is a merge-target holding the user's bytes (mirroring ``is_prunable``'s
+    ``FileKind.SETTINGS_JSON`` guard), so recording it would make the user's merged
+    file eligible for orphan pruning. Directory writes carry ``sha256=None``; the
+    kind is inferred from sha256 presence."""
     out: list[ReceiptEntry] = []
     for o in outcomes:
         if o.outcome is Outcome.DECLINED:
             continue
         rel = o.dest.relative_to(dest_root)
         if not rel.parts or rel.parts[0] not in PRUNE_NAMESPACES:
+            continue
+        if rel.name == FileKind.SETTINGS_JSON.value:
             continue
         out.append(
             ReceiptEntry(
