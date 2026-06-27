@@ -141,6 +141,25 @@ def test_main_tools_claude_dry_run_returns_zero_and_writes_nothing(tmp_path: Pat
     assert not (tmp_path / ".claude").exists()
 
 
+def test_main_dry_run_creates_no_receipt_state(tmp_path: Path) -> None:
+    """A --dry-run run must leave NO installer state behind — not even the receipt
+    lockfile. The advisory lock is skipped on dry-run: acquiring it would create
+    ~/.config/agents-config/ and the install-receipt.lock (violating "--dry-run
+    writes nothing") and would fail on a readable-but-not-writable HOME.
+
+    Pins the dry-run immutability invariant down to the lock/receipt-dir level.
+    """
+    repo = _hermetic_repo(tmp_path)
+    rc = main(
+        ["--tools=claude", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+    assert not (tmp_path / ".config" / "agents-config").exists()
+
+
 def test_main_tools_unregistered_returns_2_and_writes_unknown_tool_to_stderr(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

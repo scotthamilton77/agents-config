@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -254,8 +255,17 @@ def _run(
     # read-then-write window, so the new receipt mirrors the disk state this run
     # actually saw. Early returns out of the `with` release the lock via the
     # context manager. The read-only summary below stays outside the lock.
+    #
+    # --dry-run skips the lock entirely: it writes nothing and records nothing, so it
+    # needs no mutation serialization — and acquiring the lock would itself CREATE
+    # ~/.config/agents-config/ + the .lock file (violating "--dry-run writes nothing")
+    # and would fail on a readable-but-not-writable HOME. Reading the prior receipt
+    # unlocked is safe for a preview: read_receipt never mutates.
+    lock_cm: AbstractContextManager[None] = (
+        nullcontext() if args.dry_run else receipt_lock(receipt_path.with_suffix(".lock"))
+    )
     try:
-        with receipt_lock(receipt_path.with_suffix(".lock")):
+        with lock_cm:
             prior_read = read_receipt(receipt_path)
             receipt_corrupt = prior_read.status is ReadStatus.CORRUPT
             if receipt_corrupt:
