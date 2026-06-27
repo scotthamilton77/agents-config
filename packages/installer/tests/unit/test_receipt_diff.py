@@ -89,6 +89,21 @@ def test_scope_includes_discovered_plugin() -> None:
     assert scope_owners({"claude"}, {"beads"}, Receipt()) == {"claude", "beads"}
 
 
+def test_scope_excludes_discovered_plugin_colliding_with_tool_name() -> None:
+    """A discovered plugin whose name collides with a tool (the repo ships both a
+    ``codex`` tool and a ``src/plugins/codex`` plugin) must not pull the codex TOOL's
+    recorded entries into scope on a run that did not target the codex tool. Tool
+    owners are scoped only by ``resolved_tools``; the generic plugin overlays into
+    the tool tree and owns nothing under that name itself, so dropping the collision
+    loses no prune target while keeping an untargeted tool's entries out of scope.
+    """
+    prior = Receipt(entries=(_entry(".codex/skills/x", "codex", ".codex", "dir"),))
+    # codex plugin discovered, codex tool NOT targeted (only claude resolved)
+    owners = scope_owners({"claude"}, {"codex"}, prior)
+    assert "claude" in owners
+    assert "codex" not in owners  # collision: codex tool entry stays out of scope -> preserved
+
+
 def test_retired_plugin_entry_is_orphaned_when_in_scope() -> None:
     prior = Receipt(entries=(_entry(".beads/formulas/old.toml", "beads", ".beads"),))
     owners = scope_owners(set(), {"beads"}, prior)

@@ -282,6 +282,41 @@ def test_active_plugin_missing_route_source_preserves_recorded_files(tmp_path: P
     assert outcome.pruned_paths == set()
 
 
+def test_plugin_named_like_tool_does_not_prune_untargeted_tool_entry(tmp_path: Path) -> None:
+    """Regression for the codex tool/plugin name collision: a Claude-only prune with
+    the codex plugin discovered (but the codex tool untargeted) must NOT delete a
+    recorded ``.codex/...`` tool entry.
+
+    The plain-string owner model unioned raw discovered plugin names into scope, so
+    the codex plugin's discovery pulled the codex *tool*'s entries into scope; with
+    ``.codex`` in the persisted roots allowlist, ``validate_entry`` then authorized
+    their deletion. Pins the scoped-run safety invariant against the name collision.
+    """
+    home = _claude_home(tmp_path)
+    cx = home / ".codex" / "skills" / "cx"
+    cx.mkdir(parents=True)
+    prior = Receipt(
+        roots=(Path(".claude"), Path(".codex")),  # .codex in allowlist (would validate)
+        entries=(ReceiptEntry(Path(".codex/skills/cx"), "codex", Path(".codex"), "dir", None),),
+    )
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=(),  # codex plugin excluded via --plugins=
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names={"codex"},  # ...but the codex plugin is still DISCOVERED
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert cx.exists()  # untargeted codex TOOL entry preserved despite the name collision
+    assert outcome.pruned_paths == set()
+
+
 def test_prune_pipeline_accepts_one_shot_adapters_iterator(tmp_path: Path) -> None:
     # The body iterates `adapters` several times; a one-shot generator must not be
     # exhausted after the first pass (that would silently disable pruning).

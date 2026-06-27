@@ -54,14 +54,23 @@ def scope_owners(
 ) -> set[str]:
     """Owners whose recorded entries are eligible for pruning this run.
 
-    Resolved tools and discovered plugins are in scope. Any prior-entry owner
-    that is NOT a tool name is a plugin owner (possibly retired) and is also in
-    scope, so a plugin we stopped shipping still gets pruned. Untargeted tools
-    (a tool name not in ``resolved_tools``) are deliberately excluded — another
-    run's scope must never prune a tool the user did not target.
+    Resolved tools are in scope. Discovered plugins are in scope EXCEPT where a
+    plugin name collides with a tool name (the repo ships both a ``codex`` tool and
+    a ``src/plugins/codex`` plugin): a tool owner is scoped ONLY by
+    ``resolved_tools``, never pulled into scope by a like-named discovered plugin —
+    otherwise a ``--tools=claude`` run with the codex plugin discovered would put
+    the codex *tool*'s recorded entries in scope and (their ``.codex`` root being in
+    the persisted allowlist) delete them. A generic plugin's content overlays into
+    the tool tree and is owned by the *tool*, so excluding the collision loses no
+    prune target; for a hypothetical tool-named routing plugin it fails closed
+    (preserve, not delete). Any prior-entry owner that is NOT a tool name is a
+    plugin owner (possibly retired) and is also in scope, so a plugin we stopped
+    shipping still gets pruned. Untargeted tools (a tool name not in
+    ``resolved_tools``) are deliberately excluded — another run's scope must never
+    prune a tool the user did not target.
     """
     retired_plugin_owners = {e.owner for e in prior.entries if e.owner not in _ALL_TOOL_NAMES}
-    return resolved_tools | discovered_plugins | retired_plugin_owners
+    return resolved_tools | (discovered_plugins - _ALL_TOOL_NAMES) | retired_plugin_owners
 
 
 def diff_orphans(
