@@ -30,7 +30,30 @@ def test_dropped_entry_becomes_orphan() -> None:
     )
     assert [o.path for o in orphans] == [Path("/home/u/.claude/skills/drop")]
     assert orphans[0].tool == "claude"
+    assert orphans[0].namespace == "skills"  # single-segment root: first seg after root
     assert isinstance(orphans[0], Orphan)
+
+
+def test_orphan_namespace_relative_to_multi_segment_root() -> None:
+    """An owner whose root has multiple path segments (OpenCode installs under
+    ``.config/opencode``) groups orphans under the real namespace (``skills``),
+    not the root's tail (``opencode``). Pins the namespace derivation relative
+    to the recorded root, not the fixed ``path.parts[1]`` index.
+    """
+    prior = Receipt(
+        roots=(Path(".config/opencode"),),
+        entries=(_entry(".config/opencode/skills/x", "opencode", ".config/opencode", "dir"),),
+    )
+    orphans = diff_orphans(
+        prior,
+        desired_keys=set(),
+        scope_owners={"opencode"},
+        home=Path("/home/u"),
+        live_roots_by_owner={"opencode": {Path(".config/opencode")}},
+        allowlist=set(),
+    )
+    assert [o.path for o in orphans] == [Path("/home/u/.config/opencode/skills/x")]
+    assert orphans[0].namespace == "skills"
 
 
 def test_untargeted_owner_is_untouched() -> None:

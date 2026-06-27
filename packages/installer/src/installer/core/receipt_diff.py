@@ -87,10 +87,19 @@ def diff_orphans(
             e, home=home, live_roots_by_owner=live_roots_by_owner, allowlist=allowlist
         ):
             continue
+        # Namespace is the first path segment AFTER the recorded root, so roots
+        # with multiple segments (e.g. OpenCode's ``.config/opencode``) group
+        # orphans under the real namespace (``skills/``), not the root tail.
+        # By construction ``path`` is lexically under ``root``; the ValueError
+        # fallback keeps the prune from crashing on a pathological entry.
+        try:
+            rel_parts = e.path.relative_to(e.root).parts
+        except ValueError:
+            rel_parts = ()
         orphans.append(
             Orphan(
                 tool=e.owner,
-                namespace=e.path.parts[1] if len(e.path.parts) >= 2 else "",
+                namespace=rel_parts[0] if rel_parts else "",
                 path=home / e.path,
                 kind=e.kind,
             )
