@@ -114,6 +114,44 @@ def test_revalidate_with_is_safe_to_prune_keeps_file_modified_after_scan(tmp_pat
     assert removed == set()  # not recorded as pruned -> self-heals (relinquished) next run
 
 
+def test_path_swapped_between_revalidate_and_delete_is_left_intact(tmp_path: Path) -> None:
+    """Residual prune-boundary TOCTOU: a path swapped AFTER ``revalidate`` blesses it
+    but BEFORE the delete is left in place — not deleted, not counted, not recorded in
+    ``removed``. The swap is injected from inside the ``revalidate`` callback (the only
+    code that runs between the ownership snapshot and the destructive op), so the guard
+    must compare filesystem identity captured before revalidate against identity at the
+    delete boundary — re-running ownership alone cannot catch a same-path replacement
+    that itself passes ownership.
+    """
+    o = _file_orphan(tmp_path, "claude", "skills", "victim", body="ours")
+
+    def swap_then_pass(_o: Orphan) -> bool:
+        # Adversary replaces our orphan with a user-owned file at the same path
+        # after the installer has committed to pruning it.
+        o.path.unlink()
+        o.path.write_text("user replacement")
+        return True
+
+    removed: set[Path] = set()
+    per_tool = run_prune(
+        [o],
+        io=ScriptedIO(),
+        timestamp=_TS,
+        auto_yes=True,
+        removed=removed,
+        revalidate=swap_then_pass,
+    )
+
+    assert o.path.read_text() == "user replacement"  # the swapped-in file survives
+    assert sum(c.pruned for c in per_tool.values()) == 0  # nothing counted as pruned
+    assert removed == set()  # receipt keeps the entry -> re-evaluated next run
+    # The swap landed before the backup, so the recheck (which sits after the
+    # backup, to keep the exposed window at the irreducible lstat->unlink gap)
+    # leaves the user's replacement harmlessly copied into the backup dir. Pin
+    # that deliberate consequence rather than leave it silently tolerated.
+    assert sum(c.backed_up for c in per_tool.values()) == 1
+
+
 def test_three_way_all_deletes_every_orphan(tmp_path: Path) -> None:
     """
     Given two orphans and an interactive answer of "all"
