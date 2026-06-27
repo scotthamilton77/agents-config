@@ -230,6 +230,58 @@ def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -
     assert outcome.pruned_paths == {Path(".beads/formulas/retired.toml")}
 
 
+def test_active_plugin_missing_route_source_preserves_recorded_files(tmp_path: Path) -> None:
+    """An ACTIVE plugin whose route source dir is missing must NOT have its
+    previously-installed files pruned: a missing source is a packaging/checkout
+    anomaly, not a retirement. ``desired_route_keys`` contributes no keys for the
+    missing route, so without the guard the prior entry would orphan and — bytes
+    still matching the recorded sha — be deleted under ``--yes``.
+
+    Pins the fail-closed guard: active plugin + missing route source => preserve the
+    recorded files. Distinct from a fully *retired* plugin (``plugins=()``), which IS
+    pruned via prior-receipt scope (test_retired_plugin_formula_pruned_via_receipt).
+    """
+    from installer.plugins.beads import BeadsPlugin
+
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    # Plugin is ACTIVE / discovered, but its source tree has no formulas dir at all
+    # (source_path exists; the .beads/formulas route source does not).
+    src = tmp_path / "src" / "plugins" / "beads"
+    src.mkdir(parents=True)
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    # On-disk dest still holds a file we installed on a prior run, with our bytes.
+    formulas = home / ".beads" / "formulas"
+    formulas.mkdir(parents=True)
+    installed = formulas / "current.toml"
+    installed.write_bytes(b"shipped\n")
+    sha = hashlib.sha256(b"shipped\n").hexdigest()
+    prior = Receipt(
+        roots=(Path(".beads"),),
+        entries=(
+            ReceiptEntry(
+                Path(".beads/formulas/current.toml"), "beads", Path(".beads"), "file", sha
+            ),
+        ),
+    )
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=[beads],
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names={"beads"},  # ACTIVE, not retired
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert installed.exists()  # preserved despite matching sha — source skew is not retirement
+    assert outcome.pruned_paths == set()
+
+
 def test_prune_pipeline_accepts_one_shot_adapters_iterator(tmp_path: Path) -> None:
     # The body iterates `adapters` several times; a one-shot generator must not be
     # exhausted after the first pass (that would silently disable pruning).

@@ -86,6 +86,10 @@ def prune_pipeline(
     # one-shot iterator/generator would be exhausted after the first pass and
     # silently disable pruning / produce empty dest_roots.
     adapters = tuple(adapters)
+    # Materialize: the body iterates ``plugins`` several times (live roots,
+    # desired route keys, the missing-source guard); a one-shot iterator would be
+    # exhausted after the first pass and silently disable the later guards.
+    plugins = tuple(plugins)
     str_plans = {adapter.name: plans[Tool(adapter.name)] for adapter in adapters}
     dest_roots = {adapter.name: adapter.dest_dir(home) for adapter in adapters}
 
@@ -103,6 +107,10 @@ def prune_pipeline(
     keys = desired_staged_keys(
         str_plans, dest_roots=dest_roots, home=home, scope_owners=owners
     ) | desired_route_keys(plugins, home=home)
+    # Fail closed on active-plugin route-source skew: a missing route source dir is a
+    # packaging/checkout anomaly, not a retirement, so preserve that plugin's prior
+    # entries instead of letting the empty desired set orphan (and delete) them.
+    keys |= _protect_missing_route_sources(plugins, prior=prior, home=home, io=io)
     orphans = diff_orphans(
         prior,
         desired_keys=keys,
@@ -130,6 +138,41 @@ def prune_pipeline(
     return PruneOutcome(
         counters=counters, pruned_paths=pruned_paths, relinquished_paths=relinquished
     )
+
+
+def _protect_missing_route_sources(
+    plugins: tuple[PluginAdapter, ...], *, prior: Receipt, home: Path, io: IOPort
+) -> set[tuple[str, Path]]:
+    """Desired keys to preserve when an ACTIVE plugin's route source dir is missing.
+
+    ``desired_route_keys`` skips a route whose ``source_dir`` is absent, contributing
+    no desired keys for it. Without this guard, an active (discovered) plugin with a
+    missing route source would have its previously-installed files seen as retired and
+    pruned — turning packaging/checkout skew into deletion authority instead of failing
+    closed. A genuinely *retired* plugin is not in ``plugins`` at all (it is pruned via
+    prior-receipt scope), so this guard fires only for active plugins. For each
+    missing-source route that has prior entries, re-add those entries' keys as desired
+    (preserve them) and warn; the user restores the source or removes the plugin to
+    retire those files."""
+    prior_by_owner: dict[str, list[ReceiptEntry]] = {}
+    for entry in prior.entries:
+        prior_by_owner.setdefault(entry.owner, []).append(entry)
+    protected: set[tuple[str, Path]] = set()
+    for plugin in plugins:
+        for route in plugin.routes(home):
+            if route.source_dir.is_dir():
+                continue
+            dest_rel = route.dest_dir.relative_to(home)
+            kept = [e for e in prior_by_owner.get(plugin.name, ()) if e.path.parent == dest_rel]
+            if not kept:
+                continue
+            io.warn(
+                f"plugin '{plugin.name}' route source is missing ({route.source_dir}); "
+                f"preserving {len(kept)} previously-installed file(s) under {dest_rel} "
+                "instead of pruning — restore the source or remove the plugin to retire them"
+            )
+            protected.update((plugin.name, e.path) for e in kept)
+    return protected
 
 
 def record_receipt(
