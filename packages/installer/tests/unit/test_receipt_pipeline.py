@@ -508,3 +508,76 @@ def test_targeted_run_preserves_untargeted_tool_entry(tmp_path: Path) -> None:
     paths = {e.path for e in after.entries}
     assert Path(".codex/skills/cx") in paths  # untargeted tool preserved (mass-delete trap fixed)
     assert Path(".claude/skills/keep") in paths
+
+
+def test_cross_tree_relocation_prunes_stale_fanout_copies(tmp_path: Path) -> None:
+    """A shared skill narrowed to Claude-only prunes its stale per-tool fan-out copies.
+
+    ``zoom-out`` first installs from shared ``.agents/`` content, fanning out to all
+    four tools — the prior receipt records one entry per tool owner. The source then
+    relocates to Claude-only ``.claude/`` content: this run stages ``zoom-out`` only
+    under ``claude``, and the codex/gemini/opencode plans no longer contain it. Each of
+    the three non-Claude copies is in scope (its tool is resolved), absent from its
+    owner's desired keys, and root-valid, so all three are pruned; Claude's copy matches
+    its desired key and is kept.
+
+    Pins the per-owner ``(owner, path)`` diff against a cross-tree relocation — the
+    receipt model's structural answer to the bash-era merged-source orphan gap (design
+    relocation scenario, case c). A regression here would mean a relocated-and-narrowed
+    skill leaves stale copies littering the tools it no longer ships to.
+    """
+    home = tmp_path
+    claude = home / ".claude" / "skills" / "zoom-out"
+    codex = home / ".codex" / "skills" / "zoom-out"
+    gemini = home / ".gemini" / "skills" / "zoom-out"
+    opencode = home / ".config" / "opencode" / "skills" / "zoom-out"
+    for d in (claude, codex, gemini, opencode):
+        d.mkdir(parents=True)
+
+    prior = Receipt(
+        roots=(Path(".claude"), Path(".codex"), Path(".gemini"), Path(".config/opencode")),
+        entries=(
+            _entry(".claude/skills/zoom-out"),
+            ReceiptEntry(Path(".codex/skills/zoom-out"), "codex", Path(".codex"), "dir", None),
+            ReceiptEntry(Path(".gemini/skills/zoom-out"), "gemini", Path(".gemini"), "dir", None),
+            ReceiptEntry(
+                Path(".config/opencode/skills/zoom-out"),
+                "opencode",
+                Path(".config/opencode"),
+                "dir",
+                None,
+            ),
+        ),
+    )
+    # Relocated to Claude-only: claude still stages it; the other three plans drop it.
+    plans = {
+        Tool.CLAUDE: StagingPlan(
+            items={Path("skills/zoom-out"): _skill_item("zoom-out")}, tool=Tool.CLAUDE
+        ),
+        Tool.CODEX: StagingPlan(items={}, tool=Tool.CODEX),
+        Tool.GEMINI: StagingPlan(items={}, tool=Tool.GEMINI),
+        Tool.OPENCODE: StagingPlan(items={}, tool=Tool.OPENCODE),
+    }
+    adapters = [get_adapter(t) for t in (Tool.CLAUDE, Tool.CODEX, Tool.GEMINI, Tool.OPENCODE)]
+
+    outcome = prune_pipeline(
+        adapters,
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names=set(),
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert claude.exists()  # still desired -> kept
+    assert not codex.exists()  # stale fan-out copy -> pruned
+    assert not gemini.exists()
+    assert not opencode.exists()
+    assert outcome.pruned_paths == {
+        Path(".codex/skills/zoom-out"),
+        Path(".gemini/skills/zoom-out"),
+        Path(".config/opencode/skills/zoom-out"),
+    }
+    assert "claude" not in outcome.counters  # nothing pruned for the still-desired owner
