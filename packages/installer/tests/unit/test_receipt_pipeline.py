@@ -15,7 +15,7 @@ from pathlib import Path
 from installer.core.io_port import ScriptedIO
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.receipt import Receipt, ReceiptEntry
-from installer.core.receipt_store import read_receipt
+from installer.core.receipt_store import read_receipt, write_receipt
 from installer.core.run import prune_pipeline, record_receipt
 from installer.tools.registry import get_adapter
 
@@ -173,6 +173,61 @@ def test_retired_plugin_formula_pruned_via_receipt(tmp_path: Path) -> None:
     assert not formula.exists()
     assert outcome.pruned_paths == {Path(".beads/formulas/old.toml")}
     assert outcome.relinquished_paths == set()
+
+
+def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -> None:
+    import hashlib
+
+    from installer.plugins.beads import BeadsPlugin
+
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    # plugin source ships ONLY current.toml
+    src = tmp_path / "src" / "plugins" / "beads"
+    (src / ".beads" / "formulas").mkdir(parents=True)
+    (src / ".beads" / "formulas" / "current.toml").write_bytes(b"shipped\n")
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    # on-disk dest holds current.toml AND a retired.toml
+    formulas = home / ".beads" / "formulas"
+    formulas.mkdir(parents=True)
+    (formulas / "current.toml").write_bytes(b"shipped\n")
+    (formulas / "retired.toml").write_bytes(b"stale\n")
+    cur_sha = hashlib.sha256(b"shipped\n").hexdigest()
+    ret_sha = hashlib.sha256(b"stale\n").hexdigest()
+    rpath = _receipt_path(home)
+    write_receipt(
+        rpath,
+        Receipt(
+            roots=(Path(".beads"),),
+            entries=(
+                ReceiptEntry(
+                    Path(".beads/formulas/current.toml"), "beads", Path(".beads"), "file", cur_sha
+                ),
+                ReceiptEntry(
+                    Path(".beads/formulas/retired.toml"), "beads", Path(".beads"), "file", ret_sha
+                ),
+            ),
+        ),
+    )
+    prior = read_receipt(rpath).receipt
+    assert prior is not None
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=[beads],
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names={"beads"},
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert (formulas / "current.toml").exists()  # active formula spared
+    assert not (formulas / "retired.toml").exists()  # no-longer-shipped formula pruned
+    assert outcome.pruned_paths == {Path(".beads/formulas/retired.toml")}
 
 
 def test_symlinked_root_escape_is_not_pruned(tmp_path: Path) -> None:

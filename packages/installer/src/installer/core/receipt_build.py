@@ -8,11 +8,16 @@ install-outcome-derived builder for write correctness.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from installer.core.model import InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
 from installer.core.receipt import Receipt, ReceiptEntry
+
+if TYPE_CHECKING:
+    from installer.plugins.base import PluginAdapter
 
 
 def entries_from_plans(
@@ -117,4 +122,22 @@ def desired_staged_keys(
             entry = entry_for(item, tool=tool, dest_root=dest_root, home=home)
             if entry is not None:
                 keys.add((tool, entry.path))
+    return keys
+
+
+def desired_route_keys(plugins: Iterable[PluginAdapter], *, home: Path) -> set[tuple[str, Path]]:
+    """Desired keys for the active plugins' currently-shipped route files.
+
+    A plugin's route installs each ``source_dir.glob(glob)`` file at
+    ``dest_dir/<name>``; those still-shipped files must count as desired so a
+    ``--prune`` run does not delete an active plugin's current formulas. A prior
+    file the plugin no longer ships is absent here, so it is still pruned."""
+    keys: set[tuple[str, Path]] = set()
+    for plugin in plugins:
+        for route in plugin.routes(home):
+            if not route.source_dir.is_dir():
+                continue
+            for src in sorted(route.source_dir.glob(route.glob)):
+                if src.is_file():
+                    keys.add((plugin.name, (route.dest_dir / src.name).relative_to(home)))
     return keys

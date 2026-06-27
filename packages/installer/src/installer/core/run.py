@@ -29,6 +29,7 @@ from installer.core.prune_flow import run_prune
 from installer.core.prune_hash import partition_file_orphans
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_build import (
+    desired_route_keys,
     desired_staged_keys,
     entries_from_outcomes,
     entries_from_route_outcomes,
@@ -95,7 +96,9 @@ def prune_pipeline(
         }
     allowlist = set(prior.roots)
 
-    keys = desired_staged_keys(str_plans, dest_roots=dest_roots, home=home, scope_owners=owners)
+    keys = desired_staged_keys(
+        str_plans, dest_roots=dest_roots, home=home, scope_owners=owners
+    ) | desired_route_keys(plugins, home=home)
     orphans = diff_orphans(
         prior,
         desired_keys=keys,

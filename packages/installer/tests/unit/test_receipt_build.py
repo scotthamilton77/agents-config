@@ -11,12 +11,14 @@ from installer.core.model import (
 )
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_build import (
+    desired_route_keys,
     desired_staged_keys,
     entries_from_outcomes,
     entries_from_plans,
     entries_from_route_outcomes,
     merge_receipt,
 )
+from installer.plugins.beads import BeadsPlugin
 
 
 def _plan(entries: list[tuple[str, FileKind]]) -> StagingPlan:
@@ -115,3 +117,14 @@ def test_merge_receipt_relinquished_path_is_dropped() -> None:
         live_roots=set(),
     )
     assert new.entries == ()
+
+
+def test_desired_route_keys_includes_shipped_route_files(tmp_path: Path) -> None:
+    src = tmp_path / "src" / "beads"
+    (src / ".beads" / "formulas").mkdir(parents=True)
+    (src / ".beads" / "formulas" / "a.toml").write_text("x")
+    home = tmp_path / "home"
+    home.mkdir()
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+    keys = desired_route_keys([beads], home=home)
+    assert ("beads", Path(".beads/formulas/a.toml")) in keys
