@@ -67,8 +67,8 @@ def diff_orphans(
     desired_keys: set[tuple[str, Path]],
     scope_owners: set[str],
     home: Path,
-    live_roots_by_owner: dict[str, set[Path]] | None = None,
-    allowlist: set[Path] | None = None,
+    live_roots_by_owner: dict[str, set[Path]],
+    allowlist: set[Path],
 ) -> list[Orphan]:
     orphans: list[Orphan] = []
     for e in prior.entries:
@@ -76,12 +76,12 @@ def diff_orphans(
             continue
         if (e.owner, e.path) in desired_keys:
             continue
-        if (
-            live_roots_by_owner is not None
-            and allowlist is not None
-            and not validate_entry(
-                e, home=home, live_roots_by_owner=live_roots_by_owner, allowlist=allowlist
-            )
+        # Trust-boundary validation is mandatory on this deletion path: an
+        # in-scope, non-desired entry is only emitted as an orphan once it passes
+        # validate_entry. Both inputs are required (no optional defaults) so the
+        # validation can never be silently skipped.
+        if not validate_entry(
+            e, home=home, live_roots_by_owner=live_roots_by_owner, allowlist=allowlist
         ):
             continue
         orphans.append(

@@ -880,17 +880,20 @@ def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
 
 
 def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
-    """Spec safety scenario 5 (cli level): a corrupt prior receipt prunes nothing.
+    """Spec safety scenario 5 (cli level): a corrupt prior receipt prunes nothing
+    and is left untouched.
 
     The receipt on disk is valid JSON and a valid schema but carries a stale
-    integrity digest, so read_receipt returns CORRUPT and the pipeline treats the
-    prior as empty (fail closed). The on-disk ~/.claude/skills/ralf-it WOULD be an
-    orphan if the receipt were trusted (the receipt records it, the plan omits it),
-    but with a corrupt prior nothing is an orphan -> it survives --prune --yes.
+    integrity digest, so read_receipt returns CORRUPT. CORRUPT fails closed:
+    prune is disabled AND the receipt is NOT overwritten (so other owners'
+    recorded entries are never erased). The on-disk ~/.claude/skills/ralf-it WOULD
+    be an orphan if the receipt were trusted (the receipt records it, the plan
+    omits it), but with a corrupt prior nothing is an orphan -> it survives
+    --prune --yes.
 
     Pins the destructive-feature safety contract end-to-end through main: a
-    tampered/garbled receipt can never authorize a delete. A real install
-    rewrites a fresh valid receipt, but the orphan dir is left intact.
+    tampered/garbled receipt can never authorize a delete, and the install half
+    leaves the corrupt receipt byte-for-byte unchanged on disk.
     """
     repo = _hermetic_repo(tmp_path)
     home = tmp_path / "home"
@@ -899,7 +902,8 @@ def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
     (home / ".claude" / "settings.json").write_text("{}")
 
     # A receipt that would orphan ralf-it IF trusted, but with a wrong integrity
-    # digest so read_receipt -> CORRUPT -> treated as empty (prunes nothing).
+    # digest so read_receipt -> CORRUPT -> prune disabled and the receipt left
+    # untouched (no overwrite).
     receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
     receipt_path.parent.mkdir(parents=True)
     receipt_path.write_text(
@@ -921,6 +925,7 @@ def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    before = receipt_path.read_bytes()
 
     rc = main(
         ["--prune", "--yes", "--tools=claude"],
@@ -931,6 +936,48 @@ def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
 
     assert rc == 0
     assert orphan.exists()  # corrupt receipt is never trusted to delete
+    assert receipt_path.read_bytes() == before  # corrupt receipt left UNTOUCHED
+
+
+def test_main_scoped_run_over_corrupt_receipt_preserves_other_owners(tmp_path: Path) -> None:
+    """A scoped run over a corrupt receipt leaves it untouched, preserving the
+    entries owned by tools NOT in this run's scope (spec line 218).
+
+    The receipt records both a claude entry AND a codex entry but carries a
+    forged digest -> read_receipt returns CORRUPT. A scoped --tools=claude run
+    must NOT rewrite the receipt with only its own (claude) installs, which would
+    erase the codex entry and turn codex's files into unprunable litter. The
+    install half still runs (rc 0); only prune + the receipt write are suppressed.
+    """
+    repo = _hermetic_repo_with_skill(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    # A VALID receipt recording a claude entry AND a codex entry, then corrupt the
+    # digest so it reads as CORRUPT.
+    write_receipt(
+        receipt_path,
+        Receipt(
+            roots=(Path(".claude"), Path(".codex")),
+            entries=(
+                ReceiptEntry(Path(".claude/skills/x"), "claude", Path(".claude"), "dir", None),
+                ReceiptEntry(Path(".codex/skills/y"), "codex", Path(".codex"), "dir", None),
+            ),
+        ),
+    )
+    raw = json.loads(receipt_path.read_text())
+    raw["integrity"] = "sha256:deadbeef"  # break the digest -> CORRUPT on read
+    receipt_path.write_text(json.dumps(raw))
+    before = receipt_path.read_bytes()
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0  # install half still succeeds
+    assert receipt_path.read_bytes() == before  # corrupt receipt left UNTOUCHED
 
 
 # ── 8.18: install summary renderer wired into main ──

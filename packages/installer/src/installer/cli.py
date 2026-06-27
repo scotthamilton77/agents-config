@@ -257,6 +257,12 @@ def _run(
     try:
         with receipt_lock(receipt_path.with_suffix(".lock")):
             prior_read = read_receipt(receipt_path)
+            receipt_corrupt = prior_read.status is ReadStatus.CORRUPT
+            if receipt_corrupt:
+                io.err(
+                    f"install receipt at {receipt_path} is unreadable; skipping prune "
+                    "and leaving it untouched — reset or migrate it to re-enable pruning"
+                )
             prior = (
                 prior_read.receipt
                 if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
@@ -297,7 +303,7 @@ def _run(
                     # uses the same convention) rather than an uncaught traceback.
                     return 1
 
-            if args.prune or args.prune_only:
+            if (args.prune or args.prune_only) and not receipt_corrupt:
                 try:
                     outcome = prune_pipeline(
                         adapters,
@@ -319,8 +325,10 @@ def _run(
 
             # Write the receipt on every non-dry-run install (not only --prune):
             # built from the real per-item outcomes so it mirrors disk. Inside the
-            # lock so a concurrent installer cannot interleave its own write.
-            if not args.dry_run:
+            # lock so a concurrent installer cannot interleave its own write. A
+            # CORRUPT prior is left untouched (fail closed) so a scoped run never
+            # erases another owner's recorded entries.
+            if not args.dry_run and not receipt_corrupt:
                 record_receipt(
                     receipt_path,
                     prior=prior,

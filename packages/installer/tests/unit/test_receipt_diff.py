@@ -23,6 +23,8 @@ def test_dropped_entry_becomes_orphan() -> None:
         desired_keys=desired,
         scope_owners={"claude"},
         home=Path("/home/u"),
+        live_roots_by_owner={"claude": {Path(".claude")}},
+        allowlist=set(),
     )
     assert [o.path for o in orphans] == [Path("/home/u/.claude/skills/drop")]
     assert orphans[0].tool == "claude"
@@ -34,7 +36,14 @@ def test_untargeted_owner_is_untouched() -> None:
         roots=(Path(".codex"),),
         entries=(_entry(".codex/skills/x", "codex", ".codex", "dir"),),
     )
-    orphans = diff_orphans(prior, desired_keys=set(), scope_owners={"claude"}, home=Path("/home/u"))
+    orphans = diff_orphans(
+        prior,
+        desired_keys=set(),
+        scope_owners={"claude"},
+        home=Path("/home/u"),
+        live_roots_by_owner={},
+        allowlist=set(),
+    )
     assert orphans == []
 
 
@@ -58,7 +67,14 @@ def test_scope_includes_discovered_plugin() -> None:
 def test_retired_plugin_entry_is_orphaned_when_in_scope() -> None:
     prior = Receipt(entries=(_entry(".beads/formulas/old.toml", "beads", ".beads"),))
     owners = scope_owners(set(), {"beads"}, prior)
-    orphans = diff_orphans(prior, desired_keys=set(), scope_owners=owners, home=Path("/home/u"))
+    orphans = diff_orphans(
+        prior,
+        desired_keys=set(),
+        scope_owners=owners,
+        home=Path("/home/u"),
+        live_roots_by_owner={},
+        allowlist={Path(".beads")},
+    )
     assert [o.path for o in orphans] == [Path("/home/u/.beads/formulas/old.toml")]
     assert orphans[0].tool == "beads"
 
