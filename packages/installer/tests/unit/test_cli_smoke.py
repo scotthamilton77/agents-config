@@ -17,6 +17,7 @@ from installer.cli import main
 from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
 from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt_lock import receipt_lock
 from installer.core.receipt_store import write_receipt
 from installer.tools import registry
 
@@ -1015,6 +1016,32 @@ def test_main_dry_run_summary_reports_would_be_installs(tmp_path: Path) -> None:
     assert rc == 0
     infos = [e.message for e in io.transcript if e.channel == "info"]
     assert any("claude:" in m and "installed" in m for m in infos), infos
+
+
+def test_main_returns_1_when_receipt_lock_held(tmp_path: Path) -> None:
+    """
+    Given a hermetic repo and a home whose install-receipt lock is already held
+    by a concurrent installer, under --tools=claude --yes
+    When main runs the mutation section
+    Then it returns 1 — the single-writer advisory lock over install -> prune ->
+    receipt-write makes the second run fail fast rather than interleave writes and
+    corrupt the receipt.
+
+    Pins: main wraps the whole mutation section in receipt_lock; a held lock
+    surfaces as ReceiptLockBusy -> io.err + exit 1 at the CLI boundary.
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+
+    with receipt_lock(receipt_path.with_suffix(".lock")):
+        rc = main(
+            ["--tools=claude", "--yes"],
+            home=home,
+            io=ScriptedIO(interactive=False),
+            repo_root=repo,
+        )
+    assert rc == 1
 
 
 def test_module_entry_point_propagates_nonzero_exit() -> None:

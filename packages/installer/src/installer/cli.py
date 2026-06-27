@@ -14,6 +14,7 @@ from installer.core.installignore import load_installignore
 from installer.core.model import Counters
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
+from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
 from installer.core.run import install_pipeline, install_plugin_routes, prune_pipeline
 from installer.core.summary import render_summary
 from installer.plugins.registry import discover
@@ -235,55 +236,67 @@ def _run(
     # summary reports each tool/plugin's full activity merged (a tool that both
     # installs files and has orphans pruned shows both). Keyed by target name.
     counters: dict[str, Counters] = {}
+    receipt_path = resolved_home / ".config" / "agents-config" / "install-receipt.json"
 
-    if not args.prune_only:
-        try:
-            _merge_into(
-                counters,
-                install_pipeline(
+    # Single-writer advisory lock over the whole mutation section (install ->
+    # prune -> receipt-write). A concurrent second installer fails fast rather
+    # than interleaving writes and corrupting the receipt; early returns out of
+    # the `with` release the lock via the context manager. The read-only summary
+    # below stays outside the lock.
+    try:
+        with receipt_lock(receipt_path.with_suffix(".lock")):
+            if not args.prune_only:
+                try:
+                    _merge_into(
+                        counters,
+                        install_pipeline(
+                            adapters,
+                            plans=plans,
+                            home=resolved_home,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=config.auto_yes,
+                        ),
+                    )
+                    # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land
+                    # outside any tool tree, so they install in a dedicated pass after
+                    # the tool sync. Same consent gate; --prune-only skips it.
+                    _merge_into(
+                        counters,
+                        install_plugin_routes(
+                            plugins,
+                            home=resolved_home,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=config.auto_yes,
+                        ),
+                    )
+                except ConsentRequiredError:
+                    # A non-interactive run lacking --yes/--dry-run cannot answer the
+                    # per-file overwrite prompt; sync_plan's up-front guard raises
+                    # before any write. Surface it as the CLI's exit 1 (the prune flow
+                    # uses the same convention) rather than an uncaught traceback.
+                    return 1
+
+            if args.prune or args.prune_only:
+                rc = _run_prune(
                     adapters,
+                    plugins=plugins,
                     plans=plans,
-                    home=resolved_home,
                     io=io,
+                    home=resolved_home,
+                    repo_root=resolved_repo_root,
                     dry_run=args.dry_run,
                     auto_yes=config.auto_yes,
-                ),
-            )
-            # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land outside
-            # any tool tree, so they install in a dedicated pass after the tool
-            # sync. Same consent gate; --prune-only skips it.
-            _merge_into(
-                counters,
-                install_plugin_routes(
-                    plugins,
-                    home=resolved_home,
-                    io=io,
-                    dry_run=args.dry_run,
-                    auto_yes=config.auto_yes,
-                ),
-            )
-        except ConsentRequiredError:
-            # A non-interactive run lacking --yes/--dry-run cannot answer the
-            # per-file overwrite prompt; sync_plan's up-front guard raises before
-            # any write. Surface it as the CLI's exit 1 (the prune flow uses the
-            # same convention) rather than an uncaught traceback.
-            return 1
-
-    if args.prune or args.prune_only:
-        rc = _run_prune(
-            adapters,
-            plugins=plugins,
-            plans=plans,
-            io=io,
-            home=resolved_home,
-            repo_root=resolved_repo_root,
-            dry_run=args.dry_run,
-            auto_yes=config.auto_yes,
-            prune_only=args.prune_only,
-            counters=counters,
-        )
-        if rc != 0:
-            return rc
+                    prune_only=args.prune_only,
+                    receipt_path=receipt_path,
+                    counters=counters,
+                )
+                if rc != 0:
+                    return rc
+    except ReceiptLockBusy:
+        io.err("another install is in progress; re-run when it finishes")
+        return 1
 
     # Render the install / prune summary once at the end. ALL_TOOLS is the closed
     # tool universe (known_tools); ALL_PLUGINS is the discovered plugin set — both
@@ -362,6 +375,7 @@ def _run_prune(
     dry_run: bool,
     auto_yes: bool,
     prune_only: bool,
+    receipt_path: Path,
     counters: dict[str, Counters],
 ) -> int:
     """Drive the prune pipeline behind --prune / --prune-only.
@@ -411,7 +425,6 @@ def _run_prune(
         io.err(f"installer: {exc}")
         return 2
 
-    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
     try:
         _merge_into(
             counters,
