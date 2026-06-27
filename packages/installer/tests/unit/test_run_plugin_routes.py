@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.io_port import ScriptedIO
+from installer.core.model import InstallOutcome
 from installer.core.run import install_plugin_routes
 from installer.plugins.beads import BeadsPlugin
 from installer.plugins.generic import GenericPluginAdapter
@@ -77,7 +78,7 @@ def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> N
     _seed_beads_source(src)
     beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
 
-    outcomes_by_plugin: dict[str, list] = {}  # type: ignore[type-arg]
+    outcomes_by_plugin: dict[str, list[InstallOutcome]] = {}
     install_plugin_routes(
         [beads],
         home=home,
