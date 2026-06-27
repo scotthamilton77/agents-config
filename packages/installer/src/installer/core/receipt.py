@@ -40,12 +40,13 @@ class Receipt:
 def canonical_bytes(receipt: Receipt) -> bytes:
     """Deterministic content bytes for the integrity digest — EXCLUDES ``integrity``.
 
-    Entries are sorted by path so receipt equality is order-independent; the digest
-    covers schema_version, roots, and entries only."""
+    Roots and entries are both sorted so the digest is order-independent for
+    semantically-equal receipts; the digest covers schema_version, roots, and
+    entries only."""
     entries = sorted(receipt.entries, key=lambda e: str(e.path))
     payload: dict[str, object] = {
         "schema_version": receipt.schema_version,
-        "roots": [str(r) for r in receipt.roots],
+        "roots": sorted(str(r) for r in receipt.roots),
         "entries": [[str(e.path), e.owner, str(e.root), e.kind, e.sha256] for e in entries],
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
