@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
 from installer.core.merge.strategies.json_union import merge_settings_bytes
-from installer.core.model import Counters, FileKind
+from installer.core.model import Counters, FileKind, InstallOutcome, Outcome
 from installer.core.paths import is_safe_relpath
 from installer.core.staging import classify_file
 
@@ -161,6 +161,7 @@ def sync_plan(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
+    outcomes: list[InstallOutcome] | None = None,
 ) -> Counters:
     """Walk a ``StagingPlan`` and install every item under the adapter's dest root.
 
@@ -210,6 +211,7 @@ def sync_plan(
                 auto_yes=auto_yes,
                 timestamp=timestamp,
                 counters=counters,
+                outcomes=outcomes,
             )
         else:
             _install_file(
@@ -222,6 +224,7 @@ def sync_plan(
                 auto_yes=auto_yes,
                 timestamp=timestamp,
                 counters=counters,
+                outcomes=outcomes,
             )
     return counters
 
@@ -233,6 +236,7 @@ def sync_routes(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
+    outcomes: list[InstallOutcome] | None = None,
 ) -> Counters:
     """Install every plugin route's globbed files at its dest root.
 
@@ -275,6 +279,7 @@ def sync_routes(
                 timestamp=timestamp,
                 counters=counters,
                 restore_exec_on_skip=True,
+                outcomes=outcomes,
             )
     return counters
 
@@ -291,6 +296,7 @@ def _install_file(
     timestamp: str | None,
     counters: Counters,
     restore_exec_on_skip: bool = False,
+    outcomes: list[InstallOutcome] | None = None,
 ) -> None:
     """Install one FILE item: skip an unchanged dest, back up a differing dest
     before the overwrite, and write the bytes with a deterministic mode bit
@@ -328,6 +334,8 @@ def _install_file(
         # and a blind overwrite would destroy the user's (recoverable) hand-edit.
         io.err(f"{dest} contains invalid JSON. Fix it manually or remove it.")
         counters.skipped += 1
+        if outcomes is not None:
+            outcomes.append(InstallOutcome(dest, Outcome.DECLINED, None))
         return
     effective = _effective_content(content, old, kind=kind)
     if old is not None and _is_unchanged(old, effective, kind=kind):
@@ -335,6 +343,12 @@ def _install_file(
             io.info(f"Restored +x on {dest}", verbose=True)
         io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
+        if outcomes is not None:
+            outcomes.append(
+                InstallOutcome(
+                    dest, Outcome.SKIPPED_IDENTICAL, hashlib.sha256(effective).hexdigest()
+                )
+            )
         return
     if (
         old is not None
@@ -343,6 +357,8 @@ def _install_file(
     ):
         io.warn(f"skipped {dest}")
         counters.skipped += 1
+        if outcomes is not None:
+            outcomes.append(InstallOutcome(dest, Outcome.DECLINED, None))
         return
     _ensure_parent_dir(dest, dry_run=dry_run)
     if not dry_run:
@@ -357,6 +373,10 @@ def _install_file(
     _record_write(
         dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters, merged=is_merge
     )
+    if outcomes is not None and not dry_run:
+        outcomes.append(
+            InstallOutcome(dest, Outcome.WRITTEN, hashlib.sha256(effective).hexdigest())
+        )
 
 
 def _dir_is_unchanged(dest: Path, source_path: Path, overrides: Mapping[Path, bytes]) -> bool:
@@ -386,6 +406,7 @@ def _install_dir(
     auto_yes: bool,
     timestamp: str | None,
     counters: Counters,
+    outcomes: list[InstallOutcome] | None = None,
 ) -> None:
     """Materialise one DIR item: back up then cleanly replace an existing dest,
     copy the ``source_path`` tree, then overlay ``overrides`` (override wins on
@@ -420,6 +441,8 @@ def _install_dir(
     if dest_exists and _dir_is_unchanged(dest, source_path, overrides):
         io.ok(f"{dest} is up to date", verbose=True)
         counters.skipped += 1
+        if outcomes is not None:
+            outcomes.append(InstallOutcome(dest, Outcome.SKIPPED_IDENTICAL, None))
         return
     if (
         dest_exists
@@ -428,6 +451,8 @@ def _install_dir(
     ):
         io.warn(f"skipped {dest}")
         counters.skipped += 1
+        if outcomes is not None:
+            outcomes.append(InstallOutcome(dest, Outcome.DECLINED, None))
         return
     _ensure_parent_dir(dest, dry_run=dry_run)
     if not dry_run:
@@ -440,6 +465,8 @@ def _install_dir(
             _ensure_parent_dir(inner_dest, dry_run=dry_run)
             inner_dest.write_bytes(inner_content)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
+    if outcomes is not None and not dry_run:
+        outcomes.append(InstallOutcome(dest, Outcome.WRITTEN, None))
 
 
 def _consent_to_overwrite(

@@ -38,6 +38,18 @@ class FileKind(StrEnum):
     OTHER = "other"
 
 
+class Outcome(StrEnum):
+    """What actually happened to one install item — finer than ``Counters``.
+
+    ``Counters.skipped`` conflates a hash-equal skip with a consent-declined
+    overwrite; the receipt must tell them apart (a declined file holds the user's
+    bytes and must never be recorded)."""
+
+    WRITTEN = "written"  # created, updated, or merged
+    SKIPPED_IDENTICAL = "skipped_identical"
+    DECLINED = "declined"  # consent declined / unmergeable -> user's bytes kept
+
+
 @dataclass(frozen=True, slots=True)
 class Provenance:
     """Tagged origin marker on every `StagedItem`. Tool and plugin
@@ -168,6 +180,17 @@ class Orphan:
     namespace: str
     path: Path
     kind: Literal["dir", "file"]
+
+
+@dataclass(frozen=True, slots=True)
+class InstallOutcome:
+    """One item's install result. ``dest`` is absolute; ``sha256`` is the hex
+    digest for a file (WRITTEN/SKIPPED_IDENTICAL), ``None`` for a directory or a
+    DECLINED item."""
+
+    dest: Path
+    outcome: Outcome
+    sha256: str | None
 
 
 @dataclass(slots=True)

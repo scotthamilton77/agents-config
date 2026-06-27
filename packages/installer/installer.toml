@@ -1,29 +1,7 @@
 # installer.toml — structured installer configuration for the Python installer.
 #
-# Replaces the legacy scripts/prune-list text file (read by install.sh during
-# the side-by-side window). See core/installer_toml.py for the loader and
-# core/prune.py for glob-matching semantics.
-
-[prune]
-# Retired paths this repo previously installed and has since removed.
-# Format: tool/namespace/basename  OR  */namespace/basename  (all tools).
-# Add an entry here when removing a skill/agent/command/rule from src/user/.
-retired = [
-  # superpowers audit — condition-based-waiting removed
-  "*/skills/condition-based-waiting",
-  # superpowers audit — testing-anti-patterns removed
-  "*/skills/testing-anti-patterns",
-  # bead-implementor mega-agent split into five role-named workers
-  "*/agents/bead-implementor.md",
-  # deprecated ralf-it skill
-  "*/skills/ralf-it",
-  # renamed to claude-sandbox.md
-  "claude/rules/git-commits.md",
-  # renamed to claude-to-codex-routing.md
-  "claude/rules/codex-routing.md",
-  # renamed big-picture -> where-does-this-fit
-  "*/skills/big-picture",
-]
+# See core/installer_toml.py for the loader. The only table is [tools], an
+# optional set of per-tool dest-dir overrides.
 
 [tools]
 # Optional per-tool dest-dir overrides — leave commented to use built-in adapters.

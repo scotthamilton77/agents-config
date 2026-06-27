@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from installer.core.io_port import ScriptedIO
-from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
+from installer.core.model import FileKind, InstallOutcome, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.run import install_pipeline
 from installer.tools.registry import get_adapter
 
@@ -137,3 +137,73 @@ def test_install_pipeline_aggregates_merged_counter(tmp_path: Path) -> None:
 
     assert per_tool["claude"].merged == 1
     assert per_tool["claude"].updated == 0
+
+
+def test_install_pipeline_dry_run_collects_no_outcomes(tmp_path: Path) -> None:
+    """
+    Given a tool with a file that a real install WOULD write
+    When install_pipeline runs with dry_run=True and an outcomes_by_tool dict
+    Then the tool's key maps to an EMPTY list — no phantom WRITTEN outcome.
+
+    The outcome channel feeds record_receipt, whose contract is "what happened on
+    disk". A dry run writes nothing, so it must contribute nothing to the channel
+    even though sync_file still reports the would-be outcome to direct callers.
+    Pins the receipt-feeding boundary: the key is present (callers see every
+    adapter) but the list is empty. Fails while a live collector is threaded into
+    sync_plan on a dry run, capturing a phantom WRITTEN for an unwritten file.
+    """
+    home = tmp_path / "home"
+    claude = get_adapter(Tool.CLAUDE)
+    plans = {
+        Tool.CLAUDE: StagingPlan(
+            items={Path("a.md"): _file_item(Path("a.md"), b"A\n")}, tool=Tool.CLAUDE
+        ),
+    }
+    outcomes_by_tool: dict[str, list[InstallOutcome]] = {}
+
+    install_pipeline(
+        [claude],
+        plans=plans,
+        home=home,
+        io=ScriptedIO(),
+        dry_run=True,
+        timestamp=_FIXED_TS,
+        outcomes_by_tool=outcomes_by_tool,
+    )
+
+    assert not (claude.dest_dir(home) / "a.md").exists()  # nothing hit disk
+    assert outcomes_by_tool == {"claude": []}  # key present, no phantom WRITTEN
+
+
+def test_install_pipeline_real_install_still_collects_outcomes(tmp_path: Path) -> None:
+    """
+    Given the same write-bound file
+    When install_pipeline runs with dry_run=False and an outcomes_by_tool dict
+    Then the tool's key holds the real WRITTEN outcome — the dry-run guard must
+    not suppress collection on a real install.
+
+    Regression guard for the dry-run-only fix: ``collect`` must be True when
+    not dry_run, so a real install still feeds record_receipt. Fails if the
+    guard over-broadly drops the live collector.
+    """
+    home = tmp_path / "home"
+    claude = get_adapter(Tool.CLAUDE)
+    plans = {
+        Tool.CLAUDE: StagingPlan(
+            items={Path("a.md"): _file_item(Path("a.md"), b"A\n")}, tool=Tool.CLAUDE
+        ),
+    }
+    outcomes_by_tool: dict[str, list[InstallOutcome]] = {}
+
+    install_pipeline(
+        [claude],
+        plans=plans,
+        home=home,
+        io=ScriptedIO(),
+        dry_run=False,
+        timestamp=_FIXED_TS,
+        outcomes_by_tool=outcomes_by_tool,
+    )
+
+    assert (claude.dest_dir(home) / "a.md").read_bytes() == b"A\n"
+    assert [o.dest.name for o in outcomes_by_tool["claude"]] == ["a.md"]

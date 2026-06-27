@@ -15,7 +15,8 @@
 | Collision | Two `StagedItem`s targeting the same destination `Path`. Resolved by the merge registry's `(FileKind, namespace)` dispatch. |
 | Hash-compare | `Sync`'s skip test: if the incoming content hashes equal to the existing destination file, the file is left untouched. |
 | Path-aware backup | Backup routing — namespaced files back up to a parent-level `<namespace>-backup/` sibling, top-level files back up in place — performed before any overwrite or prune. |
-| Orphan | A destination file present on disk, absent from the freshly-built plan, AND matching an `installer.toml` retired glob — a prune candidate. |
+| Orphan | A recorded install-receipt entry whose owner is in scope and whose `(owner, path)` is no longer in this run's desired staged plan, and that passes the path trust boundary — a prune candidate. |
+| Install receipt | `~/.config/agents-config/install-receipt.json` — the record of every wholesale-authored entry the installer wrote (namespaced commands/skills/agents/rules + plugin route dests), the sole prune authority. Carries an `integrity` digest and is held under a single-writer advisory lock across read → install → prune → write. |
 
 ## Purpose
 
@@ -24,7 +25,7 @@ Four sequence diagrams covering one install invocation and its three branching s
 1. **End-to-end install (happy path)** — detect → stage → overlay → merge → sync → exit.
 2. **Collision merge dispatch** — how two `StagedItem`s for one path resolve through the `(FileKind, namespace)` registry.
 3. **Sync per-item decision** — the hash-skip vs diff → confirm → backup → write branch, including `--dry-run`.
-4. **Prune flow** — orphan scan → interactive prune → backup + remove.
+4. **Prune flow** — read prior receipt → diff against the desired plan → partition by on-disk hash → interactive prune → write new receipt.
 
 Together they answer: *who calls whom, in what order, where does state live (in-memory plan vs disk), and where do the branches and confirmations sit?* Component structure lives in [`c4-l3-engine.md`](c4-l3-engine.md); data shapes in [`data-view.md`](data-view.md).
 
@@ -49,8 +50,8 @@ sequenceDiagram
 
     Op->>CLI: python3 scripts/install.py --tools=claude,gemini
     CLI->>Cfg: build Config
-    Cfg->>FS: probe tool config dirs + load installer.toml
-    FS-->>Cfg: detected tools, plugins, retired globs
+    Cfg->>FS: probe tool config dirs + load installer.toml ([tools] overrides)
+    FS-->>Cfg: detected tools, plugins
     Cfg-->>CLI: frozen Config
     CLI->>Orch: run(config, io)
 
@@ -102,7 +103,7 @@ sequenceDiagram
 - **The plan is in-memory for its whole life.** `Stage` returns a `dict[Path, StagedItem]`; overlay mutates it; only `Sync` writes to disk, one file at a time. There is no temp-dir staging tree (the deliberate departure from `install.sh`). `--dump-stage` is the sole path that materialises the plan, and it exits before any destination write.
 - **Tool order is the detection order; tools are independent.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Overlay is where collisions happen.** Within a single tool's plan, shared + per-tool content rarely collide on the same path; the common collision is plugin content landing on a base asset. That collision is resolved by the merge registry (Sequence 2), not by `Sync`.
-- **`Config` is frozen before the loop.** Detection, plugin discovery, and `installer.toml` load all happen once in `config.py`; nothing inside the loop re-detects.
+- **`Config` is frozen before the loop.** Detection, plugin discovery, and the `installer.toml` `[tools]`-override load all happen once in `config.py`; nothing inside the loop re-detects.
 
 ---
 
@@ -215,67 +216,71 @@ sequenceDiagram
 
 ## Sequence 4 — Prune flow
 
-Runs after the per-tool install loop when `--prune` (or standalone `--prune-only`) is requested. Finds destination files that the source no longer produces AND that match a retired glob, then removes them interactively (backing each up first).
+Runs after the install half when `--prune` (or standalone `--prune-only`) is requested. Pruning diffs the prior install receipt against this run's desired staged plan: a recorded entry no longer wanted, in scope, that passes the path trust boundary is an orphan. Orphans are partitioned by on-disk hash (a user-modified file is relinquished, not deleted), the survivors flow through the interactive prune flow (backup + consent + a TOCTOU re-check at the deletion boundary), and a fresh receipt is written to mirror disk. The whole read → install → prune → write section runs under a single-writer advisory lock (`receipt_lock`).
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Orch as orchestrator
-    participant Prune as prune
+    participant Orch as cli.main
+    participant Lock as receipt_lock
+    participant Store as receipt_store
+    participant Prune as prune_pipeline
+    participant Diff as receipt_diff
+    participant Hash as prune_hash
+    participant Flow as run_prune
     participant FS as filesystem (dest)
-    participant Cfg as installer.toml
     participant IO as IOPort
     participant Bak as backup
 
-    Orch->>Prune: scan(plan, config)
-    Prune->>FS: walk destination stores
-    Prune->>Cfg: retired globs
-    Prune->>Prune: orphan = in dest AND not in plan AND matches retired glob
-    Prune->>Prune: build Orphan list (tool, namespace, path, kind)
-
-    alt no orphans
-        Prune-->>Orch: nothing to prune
-    else orphans found
-        alt --yes (auto_yes)
-            loop per Orphan
-                Prune->>Bak: path-aware backup
-                Bak->>FS: copy orphan -> backup
-                Prune->>FS: remove orphan
-            end
-        else interactive
-            Prune->>IO: confirm_three_way("prune N orphans? [all / none / per-item]")
-            alt all
-                loop per Orphan
-                    Prune->>Bak: path-aware backup
-                    Bak->>FS: copy orphan -> backup
-                    Prune->>FS: remove orphan
-                end
-            else per-item
-                loop per Orphan
-                    Prune->>IO: confirm("remove FILE?")
-                    alt confirmed
-                        Prune->>Bak: backup
-                        Bak->>FS: copy orphan -> backup
-                        Prune->>FS: remove orphan
-                    else declined
-                        Note over Prune: keep orphan
-                    end
-                end
-            else none
-                Note over Prune: keep all orphans
-            end
-        end
-        Prune-->>Orch: prune Counters (pruned + backed_up)
+    Orch->>Lock: acquire single-writer lock (read -> install -> prune -> write)
+    Orch->>Store: read_receipt(path)
+    alt MISSING
+        Store-->>Orch: bootstrap empty receipt (clean-break adoption)
+    else CORRUPT / integrity mismatch / unknown schema_version
+        Store-->>Orch: fail closed — disable prune, leave receipt untouched
+    else OK
+        Store-->>Orch: prior receipt
     end
+
+    Orch->>Prune: prune_pipeline(prior, plans, plugins, home)
+    Prune->>Prune: desired_staged_keys (built even under --prune-only) + desired_route_keys
+    Prune->>Diff: scope_owners(resolved_tools, discovered_plugins, prior)
+    Diff->>Diff: diff_orphans — in scope AND not desired AND validate_entry (relative, no .., symlink-aware containment, root legitimacy)
+    Diff-->>Prune: list[Orphan]
+    Prune->>Hash: partition_file_orphans (is_safe_to_prune vs recorded sha256)
+    Hash-->>Prune: (to_prune, relinquished — user-modified files kept)
+
+    Prune->>Flow: run_prune(to_prune, revalidate=is_safe_to_prune)
+    alt no orphans / no consent (non-interactive, no --yes/--dry-run)
+        Flow-->>Prune: nothing pruned
+    else --yes or interactive consent (all / one-by-one / cancel)
+        loop per Orphan
+            Flow->>Flow: revalidate at deletion boundary (TOCTOU re-check) — skip if drifted
+            Flow->>Bak: path-aware backup (always, even under --yes)
+            Bak->>FS: copy orphan -> backup
+            Flow->>FS: remove orphan
+        end
+    end
+    Flow-->>Prune: PruneOutcome (counters, pruned_paths, relinquished_paths)
+
+    Prune-->>Orch: PruneOutcome
+    opt not --dry-run
+        Orch->>Store: record_receipt — merge_receipt((prior - pruned - relinquished) | installed), integrity recomputed, atomic temp+replace
+        Store->>FS: write new receipt (mirrors disk)
+    end
+    Orch->>Lock: release lock
+    Orch-->>Orch: install + prune summary, exit
 ```
 
 ### Notes on the prune flow
 
-- **Prune is conservative by construction.** A file is only an orphan if it is on disk, absent from the freshly-built plan, **and** matches an `installer.toml` retired glob. A file the source simply doesn't produce (but that isn't on the retired list) is left alone — the retired-glob gate prevents the installer from deleting user-authored files it doesn't recognise.
-- **`--yes` skips the three-way prompt entirely.** All orphans are removed unconditionally (with backup). Without `--yes`, the operator chooses bulk (`all` / `none`) or per-file confirmation — all via `IOPort`, so the whole flow is scripted in tests.
-- **Backup before remove, same as overwrite.** Every pruned file is recoverable from its path-aware backup; prune is reversible — including under `--yes`.
-- **`--prune-only` skips staging + sync entirely.** It runs just the scan + removal — mutually exclusive with `--dump-stage`. Non-interactive stdin without `--yes` hard-fails here: you cannot prune unattended without explicitly opting in.
-- **Non-interactive guard.** If `stdin` is not a TTY and neither `--dry-run` nor `--yes` is set, the installer exits with an error rather than silently skipping all prompts.
+- **The receipt is the sole prune authority.** An orphan is a *recorded* entry, in scope, no longer in the desired staged plan — there is no glob list. `scope_owners` = `resolved_tools ∪ (discovered_plugins − tool names) ∪ prior-receipt plugin owners`, so an untargeted tool is untouched, an excluded plugin's entries are pruned, and a *retired* plugin (source gone, no longer discovered) still gets its recorded route files pruned rather than left as litter. A like-named discovered plugin never pulls a tool's entries into scope.
+- **Every orphan is path-validated before deletion (`validate_entry`).** `path` and `root` must be relative with no `..`; containment is checked on fully-resolved paths (symlink-aware, so a symlinked install root prunes within its real target but a symlink-escape is rejected); the root must be legitimate for the owner — tool/discovered-plugin roots come from live code, retired-plugin roots from the persisted `roots` allowlist behind the `integrity` gate. A failing entry is skipped, never emitted as an orphan, so a damaged receipt prunes less, never wild.
+- **File pruning is hash-aware; directories are backup-and-delete.** A file orphan is pruned only while its on-disk bytes match the recorded `sha256` (or it is genuinely absent); a user-modified, unreadable, or now-a-directory file is **relinquished** — kept on disk, dropped from the receipt. A directory orphan still a real directory goes through backup-and-delete (recoverable from the path-aware backup); recursive directory **content-drift** protection is a deliberate v1 limitation, deferred. Cheap *type* drift (a recorded dir path that is now a file/symlink) is guarded — it relinquishes.
+- **Backup-before-delete always, and a TOCTOU re-check at the boundary.** Every removal is preceded by a path-aware backup, including under `--yes`. The ownership decision is **re-validated immediately before backup/delete** (`revalidate` → `is_safe_to_prune`), so a path that drifted between the up-front partition and the actual delete (the interactive-confirm window) is skipped and left in place.
+- **Missing bootstraps; corrupt fails closed.** A *missing* receipt bootstraps empty (clean-break adoption — no migration, no legacy sweep); a *corrupt* / integrity-mismatch / unknown-`schema_version` receipt disables pruning and is left untouched, so a scoped run never overwrites the central record with a partial view.
+- **Single-writer over the whole mutation section.** An advisory `flock` (`receipt_lock`) is held across read → install → prune → write; a second concurrent run fails fast (`ReceiptLockBusy`). Locking only the receipt I/O would let a concurrent install resurrect a stale entry the lock exists to prevent.
+- **`--dry-run` writes nothing.** No deletion and no receipt write — preview only. The receipt is otherwise written on **every** non-dry-run install (not only `--prune`), so the record never goes stale; pruning the diff stays gated behind `--prune`/`--prune-only`.
 
 ---
 

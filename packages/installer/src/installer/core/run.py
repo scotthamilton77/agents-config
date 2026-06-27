@@ -1,37 +1,61 @@
 """Run-level composition for the install and prune pipelines (W1 / G.5).
 
 ``install_pipeline`` walks each active tool's ``StagingPlan`` to disk via
-``sync_plan``; ``prune_pipeline`` scans each tool's destination tree against its
-in-memory ``StagingPlan`` for orphans (``core/prune.py``), then drives the
-interactive prune flow over the result (``core/prune_flow.py``).
+``sync_plan``; ``prune_pipeline`` diffs a prior install receipt against this
+run's desired staged keys for orphans (``core/receipt_diff.py``), drives the
+interactive prune flow over the result (``core/prune_flow.py``), and returns a
+``PruneOutcome``. It is **pure prune**: the caller reads the prior receipt and
+writes the new one via ``record_receipt``, so the receipt is updated on every
+non-dry-run install — not only on prune runs.
 
-Both are kept separate from ``cli.py`` so the compositions are unit-testable
+These are kept separate from ``cli.py`` so the compositions are unit-testable
 without argparse, and separate from ``orchestrator.stage_and_transform`` so the
 staging-plan production (which needs ``repo_root`` + plugin resolution) stays in
 the caller. ``cli.main`` (W3) stages once and feeds the shared plans to both:
 ``install_pipeline`` runs first (the install half of a plain install and of
 ``--prune``), then ``prune_pipeline`` runs the prune half against the same
-plans. ``--prune-only`` skips the install half.
+plans. ``--prune-only`` skips the install half. ``record_receipt`` then mirrors
+disk into the receipt from the real per-item install outcomes.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from installer.core.model import Counters, Tool
-from installer.core.prune import scan_orphans
+from installer.core.model import Counters, InstallOutcome, Outcome, Tool
 from installer.core.prune_flow import run_prune
+from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
+from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt_build import (
+    desired_route_keys,
+    desired_staged_keys,
+    entries_from_outcomes,
+    entries_from_route_outcomes,
+    merge_receipt,
+)
+from installer.core.receipt_diff import diff_orphans, scope_owners
+from installer.core.receipt_store import write_receipt
 from installer.core.sync import sync_plan, sync_routes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from pathlib import Path
 
-    from installer.core.installer_toml import InstallerToml
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
     from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
+
+
+@dataclass(frozen=True, slots=True)
+class PruneOutcome:
+    """What a prune pass did: per-target counters + the home-relative path sets the
+    caller needs to rewrite the receipt (mirrors-disk)."""
+
+    counters: dict[str, Counters]
+    pruned_paths: set[Path]
+    relinquished_paths: set[Path]
 
 
 def prune_pipeline(
@@ -39,35 +63,175 @@ def prune_pipeline(
     *,
     plugins: Iterable[PluginAdapter] = (),
     plans: dict[Tool, StagingPlan],
+    prior: Receipt,
     home: Path,
-    config: InstallerToml,
+    discovered_plugin_names: set[str],
     io: IOPort,
     dry_run: bool = False,
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
-) -> dict[str, Counters]:
-    """Scan ``adapters`` for orphans against ``plans``, then run the prune flow.
+) -> PruneOutcome:
+    """Diff ``prior`` against this run's desired staged keys and prune the orphans.
 
-    ``plugins`` is the active plugin set; it supplies the ``~/.beads/formulas``
-    staged baseline so a formula a still-active plugin ships is protected from
-    the glob (see ``scan_orphans``). ``prune_only`` is threaded to the flow so
-    its non-interactive guard distinguishes a hard-fail (prune-only without
-    consent) from a warn+skip (plain ``--prune``). Returns the flow's per-target
-    ``Counters`` (pruned / backed_up) keyed by ``Orphan.tool`` — each tool or
-    plugin namespace whose orphans were pruned gets its own bucket so the install
-    summary can report a plugin pruned outside the active tool set (AC#19). An
-    empty / no-op prune yields an empty mapping.
-    """
-    orphans = scan_orphans(adapters, plugins=plugins, plans=plans, home=home, config=config)
-    return run_prune(
-        orphans,
+    Pure prune: the caller reads ``prior`` and writes the receipt (via
+    ``record_receipt``) so the receipt is updated on every install, not only on
+    prune runs. Scope is the resolved tools plus the full discovered plugin set
+    plus any retired plugin owners recorded in ``prior``. Orphans are validated
+    (structural + symlink-aware containment + root legitimacy) and partitioned by
+    on-disk hash before deletion: a file whose bytes drifted from the recorded
+    sha256 is relinquished (kept), never deleted. Returns the per-target counters
+    and the home-relative pruned / relinquished path sets."""
+    # Materialize once: the body iterates ``adapters`` several times, so a
+    # one-shot iterator/generator would be exhausted after the first pass and
+    # silently disable pruning / produce empty dest_roots.
+    adapters = tuple(adapters)
+    # Materialize: the body iterates ``plugins`` several times (live roots,
+    # desired route keys, the missing-source guard); a one-shot iterator would be
+    # exhausted after the first pass and silently disable the later guards.
+    plugins = tuple(plugins)
+    str_plans = {adapter.name: plans[Tool(adapter.name)] for adapter in adapters}
+    dest_roots = {adapter.name: adapter.dest_dir(home) for adapter in adapters}
+
+    owners = scope_owners(set(str_plans), discovered_plugin_names, prior)
+
+    live_roots_by_owner: dict[str, set[Path]] = {
+        adapter.name: {adapter.dest_dir(home).relative_to(home)} for adapter in adapters
+    }
+    for plugin in plugins:
+        # MERGE, never overwrite: a plugin whose name collides with an active tool
+        # (the repo ships both a `codex` tool and a `codex` plugin) must not clobber
+        # the tool's live root. A generic plugin contributes no routes, so a bare
+        # assignment would replace the tool's `.codex` root with an empty set, and the
+        # codex tool's own entries would then fail validation — skipped, never pruned
+        # even when the codex tool IS targeted. The union is correct: owner X
+        # legitimately owns its tool root and any of its plugin route roots.
+        live_roots_by_owner.setdefault(plugin.name, set()).update(
+            Path(route.dest_dir.relative_to(home).parts[0]) for route in plugin.routes(home)
+        )
+    allowlist = set(prior.roots)
+
+    keys = desired_staged_keys(
+        str_plans, dest_roots=dest_roots, home=home, scope_owners=owners
+    ) | desired_route_keys(plugins, home=home)
+    # Fail closed on active-plugin route-source skew: a missing route source dir is a
+    # packaging/checkout anomaly, not a retirement, so preserve that plugin's prior
+    # entries instead of letting the empty desired set orphan (and delete) them.
+    keys |= _protect_missing_route_sources(plugins, prior=prior, home=home, io=io)
+    orphans = diff_orphans(
+        prior,
+        desired_keys=keys,
+        scope_owners=owners,
+        home=home,
+        live_roots_by_owner=live_roots_by_owner,
+        allowlist=allowlist,
+    )
+    recorded_sha_by_path = {e.path: e.sha256 for e in prior.entries}
+    to_prune, relinquished = partition_file_orphans(
+        orphans, home=home, recorded_sha_by_path=recorded_sha_by_path
+    )
+
+    removed: set[Path] = set()
+    counters = run_prune(
+        to_prune,
         io=io,
         dry_run=dry_run,
         auto_yes=auto_yes,
         prune_only=prune_only,
         timestamp=timestamp,
+        removed=removed,
+        # Re-check ownership at the destructive boundary (closes the TOCTOU window
+        # between this partition and the actual delete — see prune_hash.is_safe_to_prune).
+        revalidate=lambda o: is_safe_to_prune(
+            o, home=home, recorded_sha_by_path=recorded_sha_by_path
+        ),
     )
+    pruned_paths = {p.relative_to(home) for p in removed}
+    return PruneOutcome(
+        counters=counters, pruned_paths=pruned_paths, relinquished_paths=relinquished
+    )
+
+
+def _protect_missing_route_sources(
+    plugins: tuple[PluginAdapter, ...], *, prior: Receipt, home: Path, io: IOPort
+) -> set[tuple[str, Path]]:
+    """Desired keys to preserve when an ACTIVE plugin's route source dir is missing.
+
+    ``desired_route_keys`` skips a route whose ``source_dir`` is absent, contributing
+    no desired keys for it. Without this guard, an active (discovered) plugin with a
+    missing route source would have its previously-installed files seen as retired and
+    pruned — turning packaging/checkout skew into deletion authority instead of failing
+    closed. A genuinely *retired* plugin is not in ``plugins`` at all (it is pruned via
+    prior-receipt scope), so this guard fires only for active plugins. For each
+    missing-source route that has prior entries, re-add those entries' keys as desired
+    (preserve them) and warn; the user restores the source or removes the plugin to
+    retire those files."""
+    prior_by_owner: dict[str, list[ReceiptEntry]] = {}
+    for entry in prior.entries:
+        prior_by_owner.setdefault(entry.owner, []).append(entry)
+    protected: set[tuple[str, Path]] = set()
+    for plugin in plugins:
+        for route in plugin.routes(home):
+            if route.source_dir.is_dir():
+                continue
+            dest_rel = route.dest_dir.relative_to(home)
+            kept = [e for e in prior_by_owner.get(plugin.name, ()) if e.path.parent == dest_rel]
+            if not kept:
+                continue
+            io.warn(
+                f"plugin '{plugin.name}' route source is missing ({route.source_dir}); "
+                f"preserving {len(kept)} previously-installed file(s) under {dest_rel} "
+                "instead of pruning — restore the source or remove the plugin to retire them"
+            )
+            protected.update((plugin.name, e.path) for e in kept)
+    return protected
+
+
+def record_receipt(
+    receipt_path: Path,
+    *,
+    prior: Receipt,
+    dest_roots: dict[str, Path],
+    home: Path,
+    tool_outcomes: dict[str, list[InstallOutcome]],
+    plugin_outcomes: dict[str, list[InstallOutcome]],
+    pruned_paths: set[Path],
+    relinquished_paths: set[Path],
+) -> None:
+    """Write the receipt to mirror disk after an install+prune pass.
+
+    ``installed`` is built from the real per-item outcomes (DECLINED excluded,
+    real sha256). A declined overwrite of a previously-recorded path relinquishes
+    it (the user's bytes win). Roots accumulate (tool dest roots plus any plugin
+    route roots actually written)."""
+    installed: list[ReceiptEntry] = []
+    for tool, outs in tool_outcomes.items():
+        installed.extend(
+            entries_from_outcomes(outs, tool=tool, dest_root=dest_roots[tool], home=home)
+        )
+    for plugin, outs in plugin_outcomes.items():
+        installed.extend(entries_from_route_outcomes(outs, plugin=plugin, home=home))
+
+    declined: set[Path] = {
+        o.dest.relative_to(home)
+        for outs in (*tool_outcomes.values(), *plugin_outcomes.values())
+        for o in outs
+        if o.outcome is Outcome.DECLINED
+    }
+    prior_paths = {e.path for e in prior.entries}
+    all_relinquished = relinquished_paths | (declined & prior_paths)
+
+    live_roots = {dest_roots[name].relative_to(home) for name in dest_roots} | {
+        e.root for e in installed
+    }
+    new = merge_receipt(
+        prior,
+        installed=installed,
+        pruned_paths=pruned_paths,
+        relinquished_paths=all_relinquished,
+        live_roots=live_roots,
+    )
+    write_receipt(receipt_path, new)
 
 
 def install_pipeline(
@@ -79,6 +243,7 @@ def install_pipeline(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
+    outcomes_by_tool: dict[str, list[InstallOutcome]] | None = None,
 ) -> dict[str, Counters]:
     """Walk each adapter's ``StagingPlan`` to disk via ``sync_plan``, per tool.
 
@@ -95,12 +260,23 @@ def install_pipeline(
     across tools (``auto_yes`` auto-accepts changed-item overwrites; ``dry_run``
     previews without prompting).
 
-    Unlike ``scan_orphans``'s tolerant ``.get``, the per-tool plan is indexed
-    strictly — an adapter without a staged plan is an orchestrator bug (a loud
-    `KeyError`), not a silent no-op.
+    The per-tool plan is indexed strictly (``plans[Tool(adapter.name)]``) — an
+    adapter without a staged plan is an orchestrator bug (a loud `KeyError`),
+    not a silent no-op.
+
+    When ``outcomes_by_tool`` is provided, each tool's per-item ``InstallOutcome``
+    list is captured into it (keyed by ``adapter.name``) so the caller can build
+    the receipt from real install results (real sha256, DECLINED excluded).
+    Outcomes are collected only on a real (non-dry-run) install: the channel
+    feeds ``record_receipt``, whose contract is "what happened on disk", and a
+    dry run writes nothing. Each tool key is still populated — with an empty list
+    on a dry run — so callers see every adapter's key, never a phantom WRITTEN.
     """
-    return {
-        adapter.name: sync_plan(
+    collect = outcomes_by_tool is not None and not dry_run
+    result: dict[str, Counters] = {}
+    for adapter in adapters:
+        tool_outcomes: list[InstallOutcome] | None = [] if collect else None
+        result[adapter.name] = sync_plan(
             adapter,
             plans[Tool(adapter.name)],
             home=home,
@@ -108,9 +284,11 @@ def install_pipeline(
             dry_run=dry_run,
             auto_yes=auto_yes,
             timestamp=timestamp,
+            outcomes=tool_outcomes,
         )
-        for adapter in adapters
-    }
+        if outcomes_by_tool is not None:
+            outcomes_by_tool[adapter.name] = tool_outcomes if tool_outcomes is not None else []
+    return result
 
 
 def install_plugin_routes(
@@ -121,6 +299,7 @@ def install_plugin_routes(
     dry_run: bool = False,
     auto_yes: bool = False,
     timestamp: str | None = None,
+    outcomes_by_plugin: dict[str, list[InstallOutcome]] | None = None,
 ) -> dict[str, Counters]:
     """Install every active plugin's bespoke routes (e.g. beads' ``~/.beads/...``).
 
@@ -135,14 +314,27 @@ def install_plugin_routes(
 
     ``dry_run`` and ``auto_yes`` thread into ``sync_routes`` so the consent gate
     and no-TTY guard apply uniformly with the tool install.
+
+    When ``outcomes_by_plugin`` is provided, each plugin's per-item
+    ``InstallOutcome`` list is captured into it (keyed by ``plugin.name``) so the
+    caller can record routed-file entries from real install results. Outcomes are
+    collected only on a real (non-dry-run) install: the channel feeds
+    ``record_receipt``, whose contract is "what happened on disk", and a dry run
+    writes nothing. Each plugin key is still populated — with an empty list on a
+    dry run — so callers see every plugin's key, never a phantom WRITTEN.
     """
-    return {
-        plugin.name: sync_routes(
+    collect = outcomes_by_plugin is not None and not dry_run
+    result: dict[str, Counters] = {}
+    for plugin in plugins:
+        plugin_outcomes: list[InstallOutcome] | None = [] if collect else None
+        result[plugin.name] = sync_routes(
             plugin.routes(home),
             io=io,
             dry_run=dry_run,
             auto_yes=auto_yes,
             timestamp=timestamp,
+            outcomes=plugin_outcomes,
         )
-        for plugin in plugins
-    }
+        if outcomes_by_plugin is not None:
+            outcomes_by_plugin[plugin.name] = plugin_outcomes if plugin_outcomes is not None else []
+    return result

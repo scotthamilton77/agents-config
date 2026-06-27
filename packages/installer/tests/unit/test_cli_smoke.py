@@ -7,6 +7,8 @@ are absent — they test the stdlib, not coded decisions."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +18,26 @@ import pytest
 from installer.cli import main
 from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
+from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt_lock import receipt_lock
+from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 from installer.tools import registry
+
+
+def _seed_receipt_with_orphan(home: Path, relpath: str) -> Path:
+    """Write a prior install receipt recording ``relpath`` (home-relative) as a
+    claude-owned dir entry. The receipt is the sole prune authority, so an
+    on-disk dir only becomes an orphan when a prior receipt records it and the
+    current plan omits it — globs no longer drive pruning."""
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    write_receipt(
+        receipt_path,
+        Receipt(
+            roots=(Path(".claude"),),
+            entries=(ReceiptEntry(Path(relpath), "claude", Path(".claude"), "dir", None),),
+        ),
+    )
+    return receipt_path
 
 
 def _home_with_claude_settings(tmp_path: Path) -> Path:
@@ -39,27 +60,14 @@ def _write_installignore(repo: Path) -> None:
     )
 
 
-def _repo_with_installer_toml(tmp_path: Path, *, retired: list[str]) -> Path:
-    """Create a repo_root whose packages/installer/installer.toml carries the
-    given prune list — mirroring where _run_prune now derives the config path
-    (off the injected repo_root, not __file__)."""
-    repo = tmp_path / "repo"
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    retired_lines = "\n".join(f'  "{glob}",' for glob in retired)
-    (toml_dir / "installer.toml").write_text(f"[prune]\nretired = [\n{retired_lines}\n]\n")
-    _write_installignore(repo)
-    return repo
+def _repo_with_installer_toml(tmp_path: Path) -> Path:
+    """Create a minimal repo_root carrying the required .installignore manifest.
 
-
-def _repo_with_malformed_installer_toml(tmp_path: Path) -> Path:
-    """Create a repo_root whose installer.toml is type-malformed: prune.retired
-    is a bare string, which load_installer_toml rejects with ValueError (it would
-    otherwise list()-shred into single-character globs)."""
+    Receipt-based pruning is the sole prune authority, so the prune flow reads no
+    installer.toml; this helper exists only to give a hermetic repo the manifest
+    main() refuses to run without."""
     repo = tmp_path / "repo"
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = "*/skills/ralf-it"\n')
+    repo.mkdir(parents=True)
     _write_installignore(repo)
     return repo
 
@@ -134,6 +142,25 @@ def test_main_tools_claude_dry_run_returns_zero_and_writes_nothing(tmp_path: Pat
     )
     assert rc == 0
     assert not (tmp_path / ".claude").exists()
+
+
+def test_main_dry_run_creates_no_receipt_state(tmp_path: Path) -> None:
+    """A --dry-run run must leave NO installer state behind — not even the receipt
+    lockfile. The advisory lock is skipped on dry-run: acquiring it would create
+    ~/.config/agents-config/ and the install-receipt.lock (violating "--dry-run
+    writes nothing") and would fail on a readable-but-not-writable HOME.
+
+    Pins the dry-run immutability invariant down to the lock/receipt-dir level.
+    """
+    repo = _hermetic_repo(tmp_path)
+    rc = main(
+        ["--tools=claude", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+    assert not (tmp_path / ".config" / "agents-config").exists()
 
 
 def test_main_tools_unregistered_returns_2_and_writes_unknown_tool_to_stderr(
@@ -217,114 +244,6 @@ def test_prune_and_prune_only_together_is_mutually_exclusive_error(
     assert "not allowed with" in captured.err
 
 
-def test_prune_only_against_empty_source_prunes_unstaged_dest_entry(tmp_path: Path) -> None:
-    """
-    Given a home with a claude skills/ entry matching the bundled prune list and
-    an empty source repo (nothing staged), under --prune-only --yes
-    When main runs (non-interactive io)
-    Then the unstaged, retired entry is removed.
-
-    Pins: --prune-only scans + prunes against the in-memory plan without an
-    install half, and --yes waives the non-interactive guard.
-    """
-    home = _home_with_claude_settings(tmp_path)
-    retired = home / ".claude" / "skills" / "ralf-it"
-    retired.mkdir(parents=True)
-    # Source repo is empty (nothing staged) but carries an installer.toml whose
-    # prune list matches the orphan, so _run_prune loads a non-empty list.
-    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=repo,
-    )
-
-    assert rc == 0
-    assert not retired.exists()
-    # Companion to the missing-config case: when installer.toml IS present, the
-    # missing-config warning is not emitted.
-    assert not any(
-        e.channel == "warn" and "installer.toml not found" in e.message for e in io.transcript
-    )
-
-
-def test_prune_only_keeps_active_plugin_shipped_formula(tmp_path: Path) -> None:
-    """
-    Given --plugins=beads --prune-only --yes, a repo whose beads plugin still
-    ships current.toml, and a home ~/.beads/formulas holding current.toml AND a
-    genuinely retired.toml, both matching a beads/formulas/* prune glob
-    When main runs (non-interactive io)
-    Then retired.toml is removed but current.toml survives — the CLI threads the
-    active plugin set into the prune scan, so a formula the active plugin still
-    ships is not an orphan.
-
-    Pins the end-to-end wiring (_run -> _run_prune -> prune_pipeline ->
-    scan_orphans). Without it, strict mode deletes the live formula next to the
-    retired one.
-    """
-    repo = _repo_with_installer_toml(tmp_path, retired=["beads/formulas/*"])
-    beads_src = repo / "src" / "plugins" / "beads" / ".beads" / "formulas"
-    beads_src.mkdir(parents=True)
-    (beads_src / "current.toml").write_text("shipped")
-    home = _home_with_claude_settings(tmp_path)
-    formulas = home / ".beads" / "formulas"
-    formulas.mkdir(parents=True)
-    (formulas / "current.toml").write_text("shipped")
-    (formulas / "retired.toml").write_text("stale")
-
-    rc = main(
-        ["--plugins=beads", "--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=ScriptedIO(interactive=False),
-        repo_root=repo,
-    )
-
-    assert rc == 0
-    assert (formulas / "current.toml").exists()
-    assert not (formulas / "retired.toml").exists()
-
-
-def test_prune_only_warns_and_exits_clean_when_installer_toml_absent(tmp_path: Path) -> None:
-    """
-    Given a repo_root whose packages/installer/installer.toml does NOT exist,
-    under --prune-only --yes
-    When main runs (non-interactive io)
-    Then a warning naming the missing path is emitted through io and the run
-    still exits cleanly (0) — an absent prune list deletes nothing (fail-safe),
-    so the no-op is explained rather than silent.
-
-    Pins: _run_prune derives the config path from repo_root and warns on the
-    missing-file case (PR #151 comment 3408241642).
-    """
-    home = _home_with_claude_settings(tmp_path)
-    # An orphan that WOULD match the bundled prune list, to prove it is the
-    # empty list (not a non-match) that spares it from pruning.
-    retired = home / ".claude" / "skills" / "ralf-it"
-    retired.mkdir(parents=True)
-    empty_repo = tmp_path / "no-toml-repo"
-    empty_repo.mkdir()  # no packages/installer/installer.toml underneath
-    _write_installignore(empty_repo)  # but the exclusion manifest is required to run
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=empty_repo,
-    )
-
-    assert rc == 0
-    assert retired.exists()  # empty prune list => nothing pruned
-    warnings = [
-        e for e in io.transcript if e.channel == "warn" and "installer.toml not found" in e.message
-    ]
-    assert len(warnings) == 1
-    assert str(empty_repo / "packages" / "installer" / "installer.toml") in warnings[0].message
-
-
 def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     """
     Given --prune-only with a matching orphan, a non-interactive io, and no --yes
@@ -333,7 +252,7 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     """
     home = _home_with_claude_settings(tmp_path)
     (home / ".claude" / "skills" / "ralf-it").mkdir(parents=True)
-    repo = _repo_with_installer_toml(tmp_path, retired=["*/skills/ralf-it"])
+    repo = _repo_with_installer_toml(tmp_path)
 
     rc = main(
         ["--prune-only", "--tools=claude"],
@@ -343,41 +262,6 @@ def test_prune_only_non_interactive_without_yes_fails(tmp_path: Path) -> None:
     )
 
     assert rc != 0
-
-
-def test_prune_only_with_malformed_installer_toml_returns_2_and_errs_through_io(
-    tmp_path: Path,
-) -> None:
-    """
-    Given a repo_root whose packages/installer/installer.toml is type-malformed
-    (prune.retired is a string, not a list), under --prune-only --yes
-    When main runs (non-interactive io)
-    Then it returns 2 (the config-error exit convention)
-    And the malformed-config message is surfaced through io's err channel
-    And no uncaught traceback escapes.
-
-    Pins: _run_prune catches the ValueError that load_installer_toml raises on a
-    type-malformed installer.toml and fails cleanly via io.err + return 2 rather
-    than crashing the CLI (PR #151 comment 3408271848).
-    """
-    home = _home_with_claude_settings(tmp_path)
-    repo = _repo_with_malformed_installer_toml(tmp_path)
-    io = ScriptedIO(interactive=False)
-
-    rc = main(
-        ["--prune-only", "--yes", "--tools=claude"],
-        home=home,
-        io=io,
-        repo_root=repo,
-    )
-
-    assert rc == 2
-    errs = [
-        e
-        for e in io.transcript
-        if e.channel == "err" and "retired must be a list of strings" in e.message
-    ]
-    assert len(errs) == 1
 
 
 def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> None:
@@ -393,8 +277,9 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
 
     Pins: main resolves plugins against the injected repo_root
     (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, builds the
-    staging plans with them, and passes those plans to _run_prune — so repo_root
-    is fully authoritative for plugin discovery (PR #151 comment 3408271853).
+    staging plans with them, and passes those plans to prune_pipeline — so
+    repo_root is fully authoritative for plugin discovery (PR #151 comment
+    3408271853).
     With a repo_root lacking src/plugins, discover() returns {} — proving the
     real repo's plugins are not consulted.
     """
@@ -402,7 +287,7 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
 
     # repo_root WITH a plugin under src/plugins/: discovery has something to find
     # there, and the run must not error reaching for the real repo's plugins.
-    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with", retired=[])
+    repo_with_plugins = _repo_with_installer_toml(tmp_path / "with")
     (repo_with_plugins / "src" / "plugins" / "beads").mkdir(parents=True)
     rc_with = main(
         ["--prune-only", "--yes", "--tools=claude"],
@@ -416,7 +301,7 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
     # If discovery had ignored repo_root and used the real _REPO_ROOT/src/plugins,
     # this assertion could not distinguish the two — the injected empty root is
     # what makes "no plugins" observable.
-    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without", retired=[])
+    repo_no_plugins = _repo_with_installer_toml(tmp_path / "without")
     assert not (repo_no_plugins / "src" / "plugins").exists()
     rc_without = main(
         ["--prune-only", "--yes", "--tools=claude"],
@@ -664,14 +549,9 @@ def test_explicit_plugins_override_with_prune_warns_orphan_wording(tmp_path: Pat
 
     Pins: the wording branches on whether a prune phase is active. Fails if the
     warning is unconditional (always the non-prune text) or absent under --prune.
-    --prune-only is used so the run needs no installer.toml-present install half.
+    --prune-only is used so the run needs no install half.
     """
     repo = _repo_with_widget_plugin(tmp_path)
-    # _run_prune reads installer.toml off repo_root; give it an (empty) prune list
-    # so the prune phase is a clean no-op rather than a missing-file warning.
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True, exist_ok=True)
-    (toml_dir / "installer.toml").write_text("[prune]\nretired = []\n")
     io = ScriptedIO(interactive=False)
 
     rc = main(
@@ -712,22 +592,28 @@ def test_autodetect_does_not_warn_about_excluded_plugins(tmp_path: Path) -> None
 def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     """
     Given a 'widget' plugin overlaying claude rules/widget-rule.md, a dest entry
-    ~/.claude/rules/widget-rule.md, an installer.toml retiring that key, and NO
-    ~/.widget footprint (so auto-detect alone would exclude widget)
+    ~/.claude/rules/widget-rule.md, and NO ~/.widget footprint (so auto-detect
+    alone would exclude widget)
     When --prune-only --yes runs with --plugins=widget
     Then the dest entry is spared — an active plugin stages that basename, so the
-    orphan scan treats it as known rather than retired;
+    orphan scan treats it as known rather than an orphan;
     And when the same dest is run again with an empty --plugins=
     Then the dest entry is pruned — excluded, nothing stages it, so it is an
-    orphan matching the retired glob.
+    orphan.
 
     Pins: the resolved plugin set builds the staging plans in main, and those
-    plans are threaded into _run_prune — so the --plugins selection reaches the
-    orphan scan via the plans. Fails if the plans dropped the override (e.g.
+    plans are threaded into prune_pipeline — so the --plugins selection reaches
+    the orphan scan via the plans. Fails if the plans dropped the override (e.g.
     plugins resolved with override_csv=None): absent the footprint, widget would
     be unstaged even under --plugins=widget and the dest pruned.
+
+    The prior receipt records the widget rule under owner 'claude' (a plugin
+    overlay lands in the tool's tree, so the install outcome is a claude-tree
+    write) with a sha matching the dest bytes — the state a real prior install
+    leaves — so the orphan scan has a recorded baseline to diff against when
+    widget is excluded.
     """
-    repo = _repo_with_installer_toml(tmp_path, retired=["claude/rules/widget-rule.md"])
+    repo = _repo_with_installer_toml(tmp_path)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
     rule.parent.mkdir(parents=True)
     rule.write_bytes(b"widget rule\n")
@@ -735,7 +621,23 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     home = _home_with_claude_settings(tmp_path)
     dest_rule = home / ".claude" / "rules" / "widget-rule.md"
     dest_rule.parent.mkdir(parents=True)
-    dest_rule.write_bytes(b"installed widget rule\n")
+    dest_bytes = b"installed widget rule\n"
+    dest_rule.write_bytes(dest_bytes)
+    write_receipt(
+        home / ".config" / "agents-config" / "install-receipt.json",
+        Receipt(
+            roots=(Path(".claude"),),
+            entries=(
+                ReceiptEntry(
+                    Path(".claude/rules/widget-rule.md"),
+                    "claude",
+                    Path(".claude"),
+                    "file",
+                    hashlib.sha256(dest_bytes).hexdigest(),
+                ),
+            ),
+        ),
+    )
 
     # Active via explicit override (no footprint) -> staged -> spared.
     rc_active = main(
@@ -919,28 +821,73 @@ def test_main_default_install_non_interactive_without_consent_returns_one(tmp_pa
     assert not (tmp_path / ".claude" / "INSTRUCTIONS.md").exists()
 
 
+def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
+    """A hermetic repo whose shared tree also carries a skills/ dir.
+
+    The skill stages as a DIR item under ``.claude/skills/foo`` — a wholesale,
+    prune-namespace entry the receipt records, unlike the root-level
+    INSTRUCTIONS.md template (no prune namespace, not recorded). Lets a plain
+    install assert a real recorded receipt entry."""
+    repo = tmp_path / "repo"
+    shared = repo / "src" / "user" / ".agents"
+    shared.mkdir(parents=True)
+    (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
+    skill = shared / "skills" / "foo"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(b"a skill\n")
+    for tool in ("claude", "codex", "gemini", "opencode"):
+        (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    _write_installignore(repo)
+    return repo
+
+
+def test_plain_install_writes_receipt(tmp_path: Path) -> None:
+    """A plain install (NO --prune) now writes the receipt.
+
+    Pins the core new behaviour: the receipt write hoisted out of prune_pipeline
+    into record_receipt, run on every non-dry-run install. Before this change a
+    plain install recorded nothing. The hermetic repo stages a skills/foo dir, so
+    the receipt records that wholesale-owned entry with its real sha256.
+    """
+    repo = _hermetic_repo_with_skill(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    result = read_receipt(receipt_path)
+    assert result.status is ReadStatus.OK
+    assert result.receipt is not None
+    paths = {e.path for e in result.receipt.entries}
+    assert Path(".claude/skills/foo") in paths
+
+
 def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     """
-    Given a hermetic repo whose installer.toml retires '*/skills/ralf-it', a home
-    holding that retired orphan, under --prune --yes
+    Given a hermetic repo, a home holding a prior receipt that records
+    ~/.claude/skills/ralf-it (absent from this run's plan), under --prune --yes
     When main runs (non-interactive io; --yes waives consent)
     Then the staged shared template is installed at ~/.claude/INSTRUCTIONS.md
-    (install half) AND the retired orphan ~/.claude/skills/ralf-it is removed
+    (install half) AND the recorded orphan ~/.claude/skills/ralf-it is removed
     (prune half), and main returns 0.
 
     Pins: --prune is install-then-prune over ONE shared staging plan — main
-    installs the plan, then _run_prune scans the same plan for orphans. Fails
-    while --prune skips the install half (the pre-W3 prune-only behaviour of the
-    default branch).
+    installs the plan, then prune_pipeline diffs the prior receipt against that
+    plan for orphans. Fails while --prune skips the install half (the pre-W3
+    prune-only behaviour of the default branch).
     """
     repo = _hermetic_repo(tmp_path)
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
 
     home = tmp_path / "home"
     orphan = home / ".claude" / "skills" / "ralf-it"
     orphan.mkdir(parents=True)
+    _seed_receipt_with_orphan(home, ".claude/skills/ralf-it")
 
     rc = main(
         ["--prune", "--yes", "--tools=claude"],
@@ -952,6 +899,107 @@ def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     assert rc == 0
     assert (home / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
     assert not orphan.exists()
+
+
+def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
+    """Spec safety scenario 5 (cli level): a corrupt prior receipt prunes nothing
+    and is left untouched.
+
+    The receipt on disk is valid JSON and a valid schema but carries a stale
+    integrity digest, so read_receipt returns CORRUPT. CORRUPT fails closed:
+    prune is disabled AND the receipt is NOT overwritten (so other owners'
+    recorded entries are never erased). The on-disk ~/.claude/skills/ralf-it WOULD
+    be an orphan if the receipt were trusted (the receipt records it, the plan
+    omits it), but with a corrupt prior nothing is an orphan -> it survives
+    --prune --yes.
+
+    Pins the destructive-feature safety contract end-to-end through main: a
+    tampered/garbled receipt can never authorize a delete, and the install half
+    leaves the corrupt receipt byte-for-byte unchanged on disk.
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = tmp_path / "home"
+    orphan = home / ".claude" / "skills" / "ralf-it"
+    orphan.mkdir(parents=True)
+    (home / ".claude" / "settings.json").write_text("{}")
+
+    # A receipt that would orphan ralf-it IF trusted, but with a wrong integrity
+    # digest so read_receipt -> CORRUPT -> prune disabled and the receipt left
+    # untouched (no overwrite).
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "integrity": "sha256:deadbeef",  # stale/forged -> CORRUPT
+                "roots": [".claude"],
+                "entries": [
+                    {
+                        "path": ".claude/skills/ralf-it",
+                        "owner": "claude",
+                        "root": ".claude",
+                        "kind": "dir",
+                        "sha256": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = receipt_path.read_bytes()
+
+    rc = main(
+        ["--prune", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert orphan.exists()  # corrupt receipt is never trusted to delete
+    assert receipt_path.read_bytes() == before  # corrupt receipt left UNTOUCHED
+
+
+def test_main_scoped_run_over_corrupt_receipt_preserves_other_owners(tmp_path: Path) -> None:
+    """A scoped run over a corrupt receipt leaves it untouched, preserving the
+    entries owned by tools NOT in this run's scope (spec line 218).
+
+    The receipt records both a claude entry AND a codex entry but carries a
+    forged digest -> read_receipt returns CORRUPT. A scoped --tools=claude run
+    must NOT rewrite the receipt with only its own (claude) installs, which would
+    erase the codex entry and turn codex's files into unprunable litter. The
+    install half still runs (rc 0); only prune + the receipt write are suppressed.
+    """
+    repo = _hermetic_repo_with_skill(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    # A VALID receipt recording a claude entry AND a codex entry, then corrupt the
+    # digest so it reads as CORRUPT.
+    write_receipt(
+        receipt_path,
+        Receipt(
+            roots=(Path(".claude"), Path(".codex")),
+            entries=(
+                ReceiptEntry(Path(".claude/skills/x"), "claude", Path(".claude"), "dir", None),
+                ReceiptEntry(Path(".codex/skills/y"), "codex", Path(".codex"), "dir", None),
+            ),
+        ),
+    )
+    raw = json.loads(receipt_path.read_text())
+    raw["integrity"] = "sha256:deadbeef"  # break the digest -> CORRUPT on read
+    receipt_path.write_text(json.dumps(raw))
+    before = receipt_path.read_bytes()
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0  # install half still succeeds
+    assert receipt_path.read_bytes() == before  # corrupt receipt left UNTOUCHED
 
 
 # ── 8.18: install summary renderer wired into main ──
@@ -1027,8 +1075,8 @@ def test_main_verbose_install_renders_per_tool_block_and_skipped_footer(tmp_path
 
 def test_main_prune_summary_reports_pruned_counts(tmp_path: Path) -> None:
     """
-    Given a hermetic repo retiring '*/skills/ralf-it' and a home holding that
-    orphan, under --prune --yes (quiet)
+    Given a hermetic repo and a home whose prior receipt records ~/.claude/
+    skills/ralf-it (absent from this run's plan), under --prune --yes (quiet)
     When main runs (install-then-prune)
     Then the quiet summary's claude line reports the prune (and the orphan is
     gone) — the prune_pipeline's per-tool counters reach the renderer merged with
@@ -1038,12 +1086,10 @@ def test_main_prune_summary_reports_pruned_counts(tmp_path: Path) -> None:
     --prune run's pruned tally surfaces in the summary.
     """
     repo = _hermetic_repo(tmp_path)
-    toml_dir = repo / "packages" / "installer"
-    toml_dir.mkdir(parents=True)
-    (toml_dir / "installer.toml").write_text('[prune]\nretired = [\n  "*/skills/ralf-it",\n]\n')
     home = tmp_path / "home"
     orphan = home / ".claude" / "skills" / "ralf-it"
     orphan.mkdir(parents=True)
+    _seed_receipt_with_orphan(home, ".claude/skills/ralf-it")
     io = ScriptedIO(interactive=False)
 
     rc = main(["--prune", "--yes", "--tools=claude"], home=home, io=io, repo_root=repo)
@@ -1074,6 +1120,32 @@ def test_main_dry_run_summary_reports_would_be_installs(tmp_path: Path) -> None:
     assert rc == 0
     infos = [e.message for e in io.transcript if e.channel == "info"]
     assert any("claude:" in m and "installed" in m for m in infos), infos
+
+
+def test_main_returns_1_when_receipt_lock_held(tmp_path: Path) -> None:
+    """
+    Given a hermetic repo and a home whose install-receipt lock is already held
+    by a concurrent installer, under --tools=claude --yes
+    When main runs the mutation section
+    Then it returns 1 — the single-writer advisory lock over install -> prune ->
+    receipt-write makes the second run fail fast rather than interleave writes and
+    corrupt the receipt.
+
+    Pins: main wraps the whole mutation section in receipt_lock; a held lock
+    surfaces as ReceiptLockBusy -> io.err + exit 1 at the CLI boundary.
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+
+    with receipt_lock(receipt_path.with_suffix(".lock")):
+        rc = main(
+            ["--tools=claude", "--yes"],
+            home=home,
+            io=ScriptedIO(interactive=False),
+            repo_root=repo,
+        )
+    assert rc == 1
 
 
 def test_module_entry_point_propagates_nonzero_exit() -> None:

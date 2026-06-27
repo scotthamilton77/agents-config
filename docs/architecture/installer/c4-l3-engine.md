@@ -44,8 +44,13 @@ C4Component
             Component(ioport, "io_port.py", "Python", "IOPort protocol + TerminalIO (rich) + ScriptedIO (test). The only place stdin/stdout is touched.")
             Component(templates, "templates.py", "Python", "DYNAMIC-INCLUDE flattening: file form + ALL-RULES form (sorted, joined with --- separators).")
             Component(staging, "staging.py", "Python", "Source-walk -> StagingPlan, parameterised by a ToolAdapter. Strips .template suffix; scopes namespaces; calls adapter.post_staging_transforms.")
-            Component(sync, "sync.py", "Python", "Phase 7: hash-compare -> diff -> confirm -> path-aware backup -> write. Honours --dry-run.")
-            Component(prune, "prune.py", "Python", "Orphan scan (dest vs plan + installer.toml retired globs) + interactive prune flow.")
+            Component(sync, "sync.py", "Python", "Phase 7: hash-compare -> diff -> confirm -> path-aware backup -> write. Reports per-item InstallOutcome (WRITTEN / SKIPPED_IDENTICAL / DECLINED). Honours --dry-run.")
+            Component(run, "run.py", "Python", "Run-level composition: install_pipeline + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk).")
+            Component(receipt, "receipt.py + receipt_store.py + receipt_lock.py", "Python", "Receipt / ReceiptEntry model + canonical serialization + integrity digest; read (MISSING vs CORRUPT) / atomic write; single-writer advisory flock.")
+            Component(rdiff, "receipt_diff.py + receipt_build.py", "Python", "scope_owners + validate_entry + diff_orphans -> Orphan list; desired_staged_keys / desired_route_keys, entry builders, merge_receipt.")
+            Component(phash, "prune_hash.py", "Python", "is_prunable + partition_file_orphans: hash/type-aware prune-vs-relinquish, re-checked at the deletion boundary (TOCTOU guard).")
+            Component(pflow, "prune_flow.py", "Python", "run_prune — interactive backup + consent (all / one-by-one / cancel or --yes) + delete; revalidate callback at the destructive boundary.")
+            Component(ownership, "ownership.py", "Python", "Wholesale-vs-merge-target classifier: which staged items the receipt records.")
             Component(mreg, "merge/registry.py", "Python", "(FileKind, namespace) -> MergeStrategy dispatch. Single lookup table.")
             Component(mbase, "merge/base.py", "Python", "MergeStrategy protocol: merge(existing, incoming) -> StagedItem.")
             Component(strat, "merge/strategies/* (5 modules)", "Python", "append_rules, fatal, json_union, last_wins_warn, last_wins_silent. One class + one test file each.")
@@ -70,6 +75,7 @@ C4Component
 
     System_Ext(src_ext, "Source config tree", "src/user/ + src/plugins/ (read-only)")
     System_Ext(dest_ext, "Destination stores", "~/.claude, ~/.codex, ~/.gemini, ~/.config/opencode, ~/.beads")
+    System_Ext(state_ext, "Install receipt", "~/.config/agents-config/install-receipt.json (+ .lock) — persisted prune authority")
     System_Ext(term_ext, "Terminal", "stdin / stdout — diffs + confirmations")
 
     Rel(operator, cli, "python3 scripts/install.py ...")
@@ -83,7 +89,7 @@ C4Component
     Rel(orch, pext, "apply_extensions per tool plan")
     Rel(orch, mreg, "collision -> strategy")
     Rel(orch, sync, "flush plan to dest")
-    Rel(orch, prune, "optional: scan + prune")
+    Rel(orch, run, "install_pipeline + optional prune_pipeline + record_receipt")
 
     Rel(staging, src_ext, "walk + read source")
     Rel(staging, templates, "flatten DYNAMIC-INCLUDE")
@@ -98,8 +104,13 @@ C4Component
 
     Rel(sync, ioport, "show_diff / confirm")
     Rel(sync, dest_ext, "backup + write")
-    Rel(prune, ioport, "confirm prune (three-way / per-item)")
-    Rel(prune, dest_ext, "scan + remove")
+    Rel(run, rdiff, "diff prior receipt vs desired plan -> orphans")
+    Rel(run, phash, "partition orphans (hash/type-aware)")
+    Rel(run, pflow, "run_prune confirmed orphans")
+    Rel(run, receipt, "read prior / write new receipt (flock-guarded)")
+    Rel(pflow, ioport, "confirm prune (three-way / per-item)")
+    Rel(pflow, dest_ext, "backup + remove")
+    Rel(receipt, state_ext, "read / atomic write install-receipt.json")
     Rel(ioport, term_ext, "stdin/stdout")
 
     Rel(tclaude, tbase, "implements")
@@ -127,8 +138,15 @@ The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a
 - **`io_port.py`** is the I/O chokepoint. `sync` and `prune` reach the terminal only through the `IOPort` protocol; tests inject `ScriptedIO` to drive every prompt deterministically.
 - **`templates.py`** does DYNAMIC-INCLUDE flattening. The file form inlines one fragment; the ALL-RULES form expands the staged rules collection sorted + `\n---\n`-joined. (The Gemini frontmatter conversion is invoked here in tests but **lives in `tools/gemini.py`** — the engine stays tool-agnostic.)
 - **`staging.py`** walks the source, strips the `.template` suffix, scopes files into namespaces, builds `StagedItem`s into the `StagingPlan`, and calls the adapter's `post_staging_transforms`. It is parameterised by the `ToolAdapter`, never branching on a tool name itself.
-- **`sync.py`** is Phase 7: for each planned file, hash-compare against the destination; identical → skip; different → diff via `IOPort`, confirm, path-aware backup, write. `--dry-run` short-circuits before any write.
-- **`prune.py`** scans the destination for orphans (present in dest, absent from plan, matching `installer.toml` retired globs) and runs the interactive prune flow (three-way + per-item) through `IOPort`.
+- **`sync.py`** is Phase 7: for each planned file, hash-compare against the destination; identical → skip; different → diff via `IOPort`, confirm, path-aware backup, write. It reports a per-item `InstallOutcome` (`WRITTEN` / `SKIPPED_IDENTICAL` / `DECLINED`, with the real `sha256`) so the receipt records only what was actually written as our bytes. `--dry-run` short-circuits before any write.
+- **The receipt-based prune subsystem** replaces the old glob scan. It is several small, independently-testable engine modules composed in `run.py`:
+  - **`run.py`** is the run-level composition — `install_pipeline` (walk plans to disk), `prune_pipeline` (diff → partition → `run_prune`), and `record_receipt` (mirror disk into the new receipt). `cli.main` holds the single-writer lock across all of it.
+  - **`receipt.py` / `receipt_store.py` / `receipt_lock.py`** are the persisted-state layer: the `Receipt` / `ReceiptEntry` model with canonical serialization + `integrity` digest; the store that reads (distinguishing `MISSING` → bootstrap empty from `CORRUPT` → fail closed) and atomically writes; and the advisory `flock` that serializes the whole read → install → prune → write section.
+  - **`receipt_diff.py`** finds orphans: `scope_owners` (resolved tools ∪ discovered plugins − tool names ∪ prior-receipt plugin owners), `validate_entry` (structural + symlink-aware containment + root legitimacy — live code for tools/discovered plugins, the `roots` allowlist for retired plugins), and `diff_orphans` (in scope ∧ not desired ∧ valid → `Orphan`).
+  - **`receipt_build.py`** builds the plan-derived `desired_staged_keys` / `desired_route_keys` and the install-outcome-derived `ReceiptEntry` set, and `merge_receipt` produces the mirrors-disk `(prior − pruned − relinquished) | installed`.
+  - **`prune_hash.py`** (`is_prunable` / `partition_file_orphans`) decides prune-vs-relinquish by on-disk hash (files) or type (dirs), evaluated against the live FS at scan time AND re-checked at the deletion boundary (TOCTOU guard).
+  - **`prune_flow.py`** (`run_prune`) is the unchanged interactive executor: backup-before-delete always, three-way (all / one-by-one / cancel) or `--yes` consent, with a `revalidate` callback enforcing the boundary re-check.
+  - **`ownership.py`** is the wholesale-vs-merge-target classifier deciding which staged items the receipt records (never `settings.json` or the assembled instruction files).
 - **`merge/`** is the collision matrix: `registry.py` maps `(FileKind, namespace)` to a strategy; `base.py` is the `MergeStrategy` protocol; `strategies/` holds the five concrete classes, each in its own module with its own test.
 
 ### `tools/` — per-tool adapters

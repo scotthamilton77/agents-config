@@ -29,6 +29,8 @@ Covered decisions:
 
 from __future__ import annotations
 
+import hashlib
+import shutil
 from pathlib import Path
 
 import pytest
@@ -36,6 +38,7 @@ import pytest
 from installer.core.io_port import PerItemResult, ScriptedIO
 from installer.core.model import Orphan
 from installer.core.prune_flow import PruneAbortedError, run_prune
+from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
 
 _TS = "20250101-120000"
 
@@ -53,6 +56,62 @@ def _dir_orphan(home: Path, tool: str, namespace: str, name: str) -> Orphan:
     d.mkdir(parents=True, exist_ok=True)
     (d / "inner.md").write_text("inner")
     return Orphan(tool=tool, namespace=namespace, path=d, kind="dir")
+
+
+def test_revalidate_false_skips_delete_and_keeps_path(tmp_path: Path) -> None:
+    """A ``revalidate`` callback returning False at the destructive boundary leaves
+    the orphan in place: not deleted, not counted, and not added to ``removed`` (so
+    the receipt keeps it). Pins the TOCTOU guard mechanism in isolation.
+    """
+    o = _file_orphan(tmp_path, "claude", "skills", "a", body="ours")
+    removed: set[Path] = set()
+
+    per_tool = run_prune(
+        [o],
+        io=ScriptedIO(),
+        timestamp=_TS,
+        auto_yes=True,
+        removed=removed,
+        revalidate=lambda _o: False,
+    )
+
+    assert o.path.exists()  # not deleted
+    assert per_tool == {}  # nothing counted as pruned
+    assert removed == set()  # receipt keeps the entry
+
+
+def test_revalidate_with_is_safe_to_prune_keeps_file_modified_after_scan(tmp_path: Path) -> None:
+    """End-to-end TOCTOU guard with the real ``is_safe_to_prune`` closure: a file that
+    matched its recorded sha at partition time (queued to prune) but is modified
+    before deletion is preserved, never deleted, and not recorded as pruned.
+    """
+    f = tmp_path / ".beads" / "formulas" / "x.toml"
+    f.parent.mkdir(parents=True)
+    f.write_bytes(b"ours")
+    recorded = {Path(".beads/formulas/x.toml"): hashlib.sha256(b"ours").hexdigest()}
+    o = Orphan(tool="beads", namespace="formulas", path=f, kind="file")
+
+    to_prune, _relinquished = partition_file_orphans(
+        [o], home=tmp_path, recorded_sha_by_path=recorded
+    )
+    assert to_prune == [o]  # matched at scan time -> queued to prune
+
+    f.write_bytes(b"user edited between scan and delete")  # the TOCTOU mutation
+
+    removed: set[Path] = set()
+    run_prune(
+        to_prune,
+        io=ScriptedIO(),
+        timestamp=_TS,
+        auto_yes=True,
+        removed=removed,
+        revalidate=lambda orphan: is_safe_to_prune(
+            orphan, home=tmp_path, recorded_sha_by_path=recorded
+        ),
+    )
+
+    assert f.read_bytes() == b"user edited between scan and delete"  # preserved, not deleted
+    assert removed == set()  # not recorded as pruned -> self-heals (relinquished) next run
 
 
 def test_three_way_all_deletes_every_orphan(tmp_path: Path) -> None:
@@ -345,3 +404,73 @@ def test_broken_symlink_orphan_unlinked_without_backup(tmp_path: Path) -> None:
     assert not link.is_symlink()  # the dangling link is gone
     assert per_tool["claude"].backed_up == 0  # nothing to back up
     assert per_tool["claude"].pruned == 1
+
+
+def test_removed_collector_records_absolute_deleted_path(tmp_path: Path) -> None:
+    """
+    Given an orphan deleted under auto_yes and a ``removed`` collector set
+    When run_prune executes
+    Then the orphan is gone on disk AND the collector holds its absolute path.
+
+    Pins the additive ``removed`` reporting channel: ``_back_up_and_delete``
+    records each deleted orphan's ABSOLUTE ``Orphan.path`` into the caller-owned
+    set so the receipt-write step can subtract pruned paths.
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "a")
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert not o1.path.exists()
+    assert collector == {o1.path}
+
+
+def test_absent_file_orphan_pruned_as_noop(tmp_path: Path) -> None:
+    """
+    Given a file orphan whose path no longer exists on disk
+    When run_prune deletes it under auto_yes
+    Then the flow does not raise, the orphan is counted pruned, and its path is
+    recorded in the ``removed`` collector.
+
+    Pins the already-gone tolerance in ``_back_up_and_delete``: under
+    receipt-based pruning the user may have manually deleted an installed file
+    since the prior install. ``unlink(missing_ok=True)`` makes that a no-op
+    instead of a ``FileNotFoundError`` that aborts the whole prune — but the
+    entry is STILL counted/recorded so the receipt drops it (end state achieved).
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "gone")
+    o1.path.unlink()  # user manually deleted it since the prior install
+    assert not o1.path.exists()
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    per_tool = run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert per_tool["claude"].pruned == 1
+    assert per_tool["claude"].backed_up == 0  # nothing on disk to back up
+    assert collector == {o1.path}
+
+
+def test_absent_dir_orphan_pruned_as_noop(tmp_path: Path) -> None:
+    """
+    Given a directory orphan whose path no longer exists on disk
+    When run_prune deletes it under auto_yes
+    Then the flow does not raise, the orphan is counted pruned, and its path is
+    recorded in the ``removed`` collector.
+
+    Pins the directory side of the already-gone tolerance: the ``elif exists()``
+    guard skips ``shutil.rmtree`` for an absent dir (no-op) rather than letting
+    it raise, while still counting/recording the entry so the receipt drops it.
+    """
+    o1 = _dir_orphan(tmp_path, "claude", "skills", "gone-dir")
+    shutil.rmtree(o1.path)  # user manually removed it since the prior install
+    assert not o1.path.exists()
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    per_tool = run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert per_tool["claude"].pruned == 1
+    assert per_tool["claude"].backed_up == 0  # nothing on disk to back up
+    assert collector == {o1.path}

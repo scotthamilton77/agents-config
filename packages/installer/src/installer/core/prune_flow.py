@@ -23,7 +23,8 @@ from installer.core.backup import back_up, new_timestamp
 from installer.core.model import Counters
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
 
     from installer.core.io_port import IOPort
     from installer.core.model import Orphan
@@ -51,6 +52,8 @@ def run_prune(
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
+    removed: set[Path] | None = None,
+    revalidate: Callable[[Orphan], bool] | None = None,
 ) -> dict[str, Counters]:
     """Confirm and delete orphans; return per-target ``Counters`` of the work done.
 
@@ -79,6 +82,13 @@ def run_prune(
     resolved on paths that may delete, so a ``dry_run`` never computes one; on a
     deleting path a malformed value raises ``ValueError`` from ``back_up`` (the
     validation boundary) before any backup is written.
+
+    ``revalidate`` (optional) re-checks ownership at the destructive boundary: it
+    is called for each orphan immediately before backup/delete, and a ``False``
+    return skips that orphan (left in place, not counted, not added to ``removed``
+    so the receipt keeps it). This closes the TOCTOU window between the up-front
+    hash/type partition and the actual delete — a file edited or a path replaced
+    during the interactive confirm prompt is no longer deleted.
     """
     if not io.is_interactive() and not dry_run and not auto_yes:
         if prune_only:
@@ -103,13 +113,18 @@ def run_prune(
     ts = timestamp if timestamp is not None else new_timestamp()
 
     if auto_yes:
-        return _delete_all(orphans, io=io, timestamp=ts)
+        return _delete_all(orphans, io=io, timestamp=ts, removed=removed, revalidate=revalidate)
 
-    return _prompt_and_delete(orphans, io=io, timestamp=ts)
+    return _prompt_and_delete(orphans, io=io, timestamp=ts, removed=removed, revalidate=revalidate)
 
 
 def _prompt_and_delete(
-    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+    orphans: Sequence[Orphan],
+    *,
+    io: IOPort,
+    timestamp: str,
+    removed: set[Path] | None = None,
+    revalidate: Callable[[Orphan], bool] | None = None,
 ) -> dict[str, Counters]:
     """Three-way prompt then act."""
     choice = io.confirm_three_way(
@@ -118,15 +133,24 @@ def _prompt_and_delete(
         default=_CANCEL,
     )
     if choice == _ALL:
-        return _delete_all(orphans, io=io, timestamp=timestamp)
+        return _delete_all(
+            orphans, io=io, timestamp=timestamp, removed=removed, revalidate=revalidate
+        )
     if choice == _ONE_BY_ONE:
-        return _delete_one_by_one(orphans, io=io, timestamp=timestamp)
+        return _delete_one_by_one(
+            orphans, io=io, timestamp=timestamp, removed=removed, revalidate=revalidate
+        )
     io.info("Cancelled. No changes made.")
     return {}
 
 
 def _delete_one_by_one(
-    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+    orphans: Sequence[Orphan],
+    *,
+    io: IOPort,
+    timestamp: str,
+    removed: set[Path] | None = None,
+    revalidate: Callable[[Orphan], bool] | None = None,
 ) -> dict[str, Counters]:
     """Per-item drill-down.
 
@@ -141,26 +165,60 @@ def _delete_one_by_one(
     per_tool: dict[str, Counters] = {}
     for orphan in orphans:
         if result.decisions.get(str(orphan.path)):
-            _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
+            _back_up_and_delete(
+                orphan,
+                io=io,
+                timestamp=timestamp,
+                per_tool=per_tool,
+                removed=removed,
+                revalidate=revalidate,
+            )
     if result.quit:
         io.info("Quit per-item loop; remaining orphans left in place.")
     return per_tool
 
 
-def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> dict[str, Counters]:
+def _delete_all(
+    orphans: Sequence[Orphan],
+    *,
+    io: IOPort,
+    timestamp: str,
+    removed: set[Path] | None = None,
+    revalidate: Callable[[Orphan], bool] | None = None,
+) -> dict[str, Counters]:
     """Back up + delete every orphan."""
     per_tool: dict[str, Counters] = {}
     for orphan in orphans:
-        _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
+        _back_up_and_delete(
+            orphan,
+            io=io,
+            timestamp=timestamp,
+            per_tool=per_tool,
+            removed=removed,
+            revalidate=revalidate,
+        )
     pruned = sum(c.pruned for c in per_tool.values())
     io.ok(f"Pruned {pruned} orphan(s).")
     return per_tool
 
 
 def _back_up_and_delete(
-    orphan: Orphan, *, io: IOPort, timestamp: str, per_tool: dict[str, Counters]
+    orphan: Orphan,
+    *,
+    io: IOPort,
+    timestamp: str,
+    per_tool: dict[str, Counters],
+    removed: set[Path] | None = None,
+    revalidate: Callable[[Orphan], bool] | None = None,
 ) -> None:
     """Back up an orphan, then remove it.
+
+    ``revalidate`` (when supplied) re-checks ownership at this destructive boundary:
+    if it returns ``False`` the orphan drifted since the up-front scan (edited, or
+    replaced by a user-owned file/dir during the confirm prompt), so it is left in
+    place — not backed up, not deleted, not counted, and NOT added to ``removed``,
+    so the receipt keeps the entry and re-evaluates it next run. This is the TOCTOU
+    guard for the interactive confirm window.
 
     Tallies into the ``per_tool[orphan.tool]`` bucket (created on first sight) so
     pruned/backed_up land under the orphan's own tool or plugin namespace.
@@ -173,7 +231,22 @@ def _back_up_and_delete(
     Skip the backup for a broken symlink — ``exists()`` returns False on a dead
     link so ``back_up`` would raise — but still remove the link below (``unlink``
     deletes a broken link unconditionally).
+
+    Under receipt-based pruning an orphan can legitimately already be absent on
+    disk (the user manually deleted it since the prior install). Deletion is
+    tolerant of that: an already-gone path is a harmless no-op, still counted
+    ``pruned`` and recorded in ``removed`` so the receipt drops the entry — the
+    desired end state (the path is gone) is already achieved.
     """
+    if revalidate is not None and not revalidate(orphan):
+        # Drifted since the orphan scan (the TOCTOU window of the confirm prompt):
+        # leave it in place, do not back up / delete / count, and do not record it
+        # in ``removed`` — the receipt keeps it and re-checks next run.
+        io.info(
+            f"Skipped {orphan.path.name} — changed since the orphan scan; left in place",
+            verbose=True,
+        )
+        return
     counters = per_tool.setdefault(orphan.tool, Counters())
     if orphan.path.exists():
         dest = back_up(orphan.path, timestamp)
@@ -185,10 +258,17 @@ def _back_up_and_delete(
     # otherwise reach ``rmtree`` — which refuses a symlink and raises OSError.
     # ``unlink`` removes the symlink itself; ``rmtree`` handles real directories.
     if orphan.path.is_symlink() or not orphan.path.is_dir():
-        orphan.path.unlink()
-    else:
+        # ``missing_ok`` swallows only FileNotFoundError: an already-gone path is
+        # a no-op, real errors (e.g. permission) still raise.
+        orphan.path.unlink(missing_ok=True)
+    elif orphan.path.exists():
+        # ``is_dir()`` was True above, but guard the TOCTOU window: only rmtree a
+        # dir that is still present. An absent dir is a no-op (we do not silently
+        # swallow rmtree errors on a present dir — permission failures still raise).
         shutil.rmtree(orphan.path)
     counters.pruned += 1
+    if removed is not None:
+        removed.add(orphan.path)
 
 
 def _display(orphans: Sequence[Orphan], io: IOPort) -> None:
