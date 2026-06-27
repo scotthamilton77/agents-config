@@ -41,14 +41,6 @@ assert "script file exists" "[ -f '$SCRIPT' ]"
 assert "script is executable" "[ -x '$SCRIPT' ]"
 assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
 
-# --- Helper to build a count-unresolved-threads-style JSON payload ---
-make_threads_json() {
-  # $1 = space-separated thread IDs
-  local ids="$1"
-  jq -nc --argjson ids "$(printf '%s' "$ids" | jq -R 'split(" ") | map(select(length>0))')" \
-    '{count: ($ids | length), thread_ids: $ids}'
-}
-
 # --- Helper to build an inventory items array ---
 make_inventory() {
   # Each arg: "<thread_id>:<classification>"
