@@ -183,6 +183,37 @@ def test_validate_rejects_retired_root_not_in_allowlist() -> None:
     assert not validate_entry(e, home=Path("/home/u"), live_roots_by_owner={}, allowlist=set())
 
 
+def test_validate_active_plugin_retired_route_root_via_allowlist() -> None:
+    """An ACTIVE plugin (present in live_roots_by_owner) that has dropped/relocated a
+    route root still has its old recorded root validated via the integrity-gated
+    allowlist — so previously-routed files are pruned, not stranded. Pins the
+    plugin-owner allowlist fallback even when the owner HAS a live (non-None) root set
+    that no longer contains the retired root.
+    """
+    e = _entry(".beads/scripts/old.sh", "beads", ".beads", "file")
+    assert validate_entry(
+        e,
+        home=Path("/home/u"),
+        live_roots_by_owner={"beads": {Path(".beadsv2")}},  # active, but .beads route dropped
+        allowlist={Path(".beads")},  # prior recorded root persists
+    )
+
+
+def test_validate_tool_root_not_laundered_via_allowlist() -> None:
+    """A TOOL owner's root is NEVER validated against the allowlist: even if a forged
+    `.ssh` root sits in the (integrity-gated) allowlist, claude's live root is `.claude`,
+    so the entry is rejected. Pins the asymmetry with the plugin-owner fallback — the
+    tool security boundary (round-4) must not be weakened by the new fallback.
+    """
+    e = _entry(".ssh/x", "claude", ".ssh", "file")
+    assert not validate_entry(
+        e,
+        home=Path("/home/u"),
+        live_roots_by_owner={"claude": {Path(".claude")}},
+        allowlist={Path(".ssh")},  # present in allowlist, but tools ignore it
+    )
+
+
 def test_validate_rejects_symlink_escape(tmp_path: Path) -> None:
     # home/.claude/link -> outside; an entry under .claude/link escapes .claude once resolved
     home = tmp_path

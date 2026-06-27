@@ -27,9 +27,18 @@ def validate_entry(
     Rejects (returns False) a structurally unsafe path/root (absolute or with a
     ``..`` component), a path that escapes its root once symlinks are resolved
     (symlink-aware containment, unlike the lexical ``is_safe_relpath``), or an
-    illegitimate root for the owner: a tool/discovered-plugin owner must match one
-    of its live roots; a retired owner (absent from ``live_roots_by_owner``) must
-    match the persisted ``allowlist``."""
+    illegitimate root for the owner. Root legitimacy is owner-kind aware:
+
+    - **Tool owner** — the root must come from LIVE code (the owner's entry in
+      ``live_roots_by_owner``) and is NEVER validated against the persisted
+      allowlist, so a forged/corrupt tool root cannot be laundered through ``roots``.
+    - **Plugin owner** (active OR retired) — the root is legitimate if it is a current
+      live route root OR a previously-recorded root in the integrity-gated
+      ``allowlist``. A plugin's route roots can retire (a route dropped or relocated)
+      while old routed files remain to be pruned; the allowlist is the durable record
+      of where that plugin once legitimately installed. Without the fallback an ACTIVE
+      plugin that dropped a route root would strand its old files (its ``live_roots``
+      set is non-None but missing the retired root)."""
     if entry.path.is_absolute() or ".." in entry.path.parts:
         return False
     if entry.root.is_absolute() or ".." in entry.root.parts:
@@ -44,9 +53,11 @@ def validate_entry(
         # crashes the prune.
         return False
     legit = live_roots_by_owner.get(entry.owner)
-    if legit is not None:
-        return entry.root in legit
-    return entry.root in allowlist
+    if entry.owner in _ALL_TOOL_NAMES:
+        # Tool: live code is authoritative; the allowlist never overrides it.
+        return legit is not None and entry.root in legit
+    # Plugin (active or retired): a live route root, or a prior allowlist root.
+    return (legit is not None and entry.root in legit) or entry.root in allowlist
 
 
 def scope_owners(
