@@ -276,18 +276,25 @@ def _back_up_and_delete(
             verbose=True,
         )
         return
-    # Re-check identity before any backup or delete: a path whose identity moved since
-    # the snapshot was swapped during the revalidate window and is now the user's —
-    # leave it in place (not backed up, not deleted, not counted, not in ``removed``,
-    # so the receipt keeps the entry and re-evaluates it next run). An already-gone
-    # path is a stable ``None`` identity and falls through to the no-op delete below.
+    # Re-check identity before any backup or delete. Block ONLY when a *different,
+    # still-present* object now sits at the path (``identity_after`` is non-None and
+    # differs): that is a real replacement swapped in during the revalidate window, and
+    # is now the user's — leave it in place (not backed up, not deleted, not counted,
+    # not in ``removed``, so the receipt keeps the entry and re-evaluates it next run).
+    #
+    # A ``None`` ``identity_after`` means the path simply VANISHED (whether absent from
+    # the start, or removed mid-window) — there is no object to protect, so fall through
+    # to the no-op delete below and count it pruned. That keeps a vanished orphan
+    # consistent with an absent-from-start one (the desired end state — path gone — is
+    # achieved) instead of leaving the receipt to re-evaluate a path that is already gone.
     #
     # The recheck precedes the backup deliberately: it keeps ``backed_up`` from ever
     # incrementing without a following prune (preserving ``summary._is_changed``'s
     # invariant that a backup only rides along a real change) and avoids leaving a
     # phantom all-zero ``per_tool`` bucket. The residual backup->unlink window is the
     # irreducible cost of not having handle-relative (openat/unlinkat) ops.
-    if _lstat_identity(orphan.path) != identity_before:
+    identity_after = _lstat_identity(orphan.path)
+    if identity_after is not None and identity_after != identity_before:
         io.info(
             f"Skipped {orphan.path.name} — replaced since the orphan scan; left in place",
             verbose=True,

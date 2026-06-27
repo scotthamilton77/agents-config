@@ -151,6 +151,37 @@ def test_path_swapped_between_revalidate_and_delete_is_left_intact(tmp_path: Pat
     assert per_tool == {}
 
 
+def test_path_vanishing_in_window_is_counted_pruned_not_skipped(tmp_path: Path) -> None:
+    """A path PRESENT at the identity snapshot but GONE by the recheck (removed during
+    the revalidate window, not replaced) is treated as a completed prune — counted and
+    recorded in ``removed`` so the receipt drops it — NOT skipped as a replacement. The
+    identity guard blocks only a different still-present object; a ``None`` recheck means
+    the path simply vanished, so it falls through to the no-op delete. This keeps a
+    vanished orphan consistent with an absent-from-start one (which existing tests pin as
+    counted-pruned), rather than leaving the receipt to re-chase a path that is gone.
+    """
+    o = _file_orphan(tmp_path, "claude", "skills", "vanisher", body="ours")
+
+    def remove_then_pass(_o: Orphan) -> bool:
+        o.path.unlink()  # path vanishes mid-window (no replacement object left behind)
+        return True
+
+    removed: set[Path] = set()
+    per_tool = run_prune(
+        [o],
+        io=ScriptedIO(),
+        timestamp=_TS,
+        auto_yes=True,
+        removed=removed,
+        revalidate=remove_then_pass,
+    )
+
+    assert not o.path.exists()  # end state achieved: the orphan is gone
+    assert per_tool["claude"].pruned == 1  # counted, so the receipt drops the entry
+    assert per_tool["claude"].backed_up == 0  # nothing on disk to back up
+    assert removed == {o.path}
+
+
 def test_three_way_all_deletes_every_orphan(tmp_path: Path) -> None:
     """
     Given two orphans and an interactive answer of "all"
