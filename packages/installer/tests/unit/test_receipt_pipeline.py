@@ -317,6 +317,46 @@ def test_plugin_named_like_tool_does_not_prune_untargeted_tool_entry(tmp_path: P
     assert outcome.pruned_paths == set()
 
 
+def test_codex_tool_entry_pruned_with_codex_plugin_active(tmp_path: Path) -> None:
+    """The codex tool/plugin name collision must not DISABLE pruning of the codex
+    TOOL's own entries. With the codex tool targeted AND the generic (route-less)
+    codex plugin active, `live_roots_by_owner['codex']` must keep the tool's `.codex`
+    root rather than be clobbered to the plugin's empty route set — otherwise a
+    retired codex tool entry fails validation and survives as litter.
+
+    Companion to test_plugin_named_like_tool_does_not_prune_untargeted_tool_entry
+    (the *untargeted* half): there the collision must not over-prune; here it must
+    not under-prune.
+    """
+    from installer.plugins.generic import GenericPluginAdapter
+
+    home = tmp_path
+    (home / ".codex").mkdir()
+    old = home / ".codex" / "skills" / "old"
+    old.mkdir(parents=True)
+    prior = Receipt(
+        roots=(Path(".codex"),),
+        entries=(ReceiptEntry(Path(".codex/skills/old"), "codex", Path(".codex"), "dir", None),),
+    )
+    plans = {Tool.CODEX: StagingPlan(items={}, tool=Tool.CODEX)}  # 'old' is retired (not staged)
+    codex_plugin = GenericPluginAdapter(name="codex", source_path=tmp_path / "src")
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CODEX)],
+        plugins=[codex_plugin],  # codex PLUGIN active alongside the codex TOOL
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names={"codex"},
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert not old.exists()  # codex tool entry pruned despite the plugin name collision
+    assert outcome.pruned_paths == {Path(".codex/skills/old")}
+
+
 def test_prune_pipeline_accepts_one_shot_adapters_iterator(tmp_path: Path) -> None:
     # The body iterates `adapters` several times; a one-shot generator must not be
     # exhausted after the first pass (that would silently disable pruning).

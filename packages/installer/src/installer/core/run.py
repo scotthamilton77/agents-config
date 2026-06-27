@@ -99,9 +99,16 @@ def prune_pipeline(
         adapter.name: {adapter.dest_dir(home).relative_to(home)} for adapter in adapters
     }
     for plugin in plugins:
-        live_roots_by_owner[plugin.name] = {
+        # MERGE, never overwrite: a plugin whose name collides with an active tool
+        # (the repo ships both a `codex` tool and a `codex` plugin) must not clobber
+        # the tool's live root. A generic plugin contributes no routes, so a bare
+        # assignment would replace the tool's `.codex` root with an empty set, and the
+        # codex tool's own entries would then fail validation — skipped, never pruned
+        # even when the codex tool IS targeted. The union is correct: owner X
+        # legitimately owns its tool root and any of its plugin route roots.
+        live_roots_by_owner.setdefault(plugin.name, set()).update(
             Path(route.dest_dir.relative_to(home).parts[0]) for route in plugin.routes(home)
-        }
+        )
     allowlist = set(prior.roots)
 
     keys = desired_staged_keys(
