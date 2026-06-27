@@ -226,3 +226,94 @@ def test_well_formed_file_and_dir_entries_read_ok(tmp_path: Path) -> None:
         ),
     )
     assert read_receipt(path).status is ReadStatus.OK
+
+
+# ── string-type guards on path/owner/root and roots elements. Without the guard
+# a JSON number in one of these fields ``str()``-coerces to a value whose
+# canonical form equals the string the integrity was stamped over, so the digest
+# MATCHES and the receipt reads OK. Each test writes the integrity stamped over
+# that coerced form (``compute_integrity`` of the coerced ``Receipt``), so the
+# ONLY thing that can trip CORRUPT is the new isinstance guard — not a digest
+# mismatch. Without the guard these would read OK.
+
+
+def test_entry_with_non_string_path_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    coerced = Receipt(
+        roots=(Path(".claude"),),
+        entries=(ReceiptEntry(Path("123"), "claude", Path(".claude"), "file", "ab"),),
+    )
+    doc = {
+        "schema_version": 1,
+        "integrity": compute_integrity(coerced),
+        "roots": [".claude"],
+        "entries": [
+            {"path": 123, "owner": "claude", "root": ".claude", "kind": "file", "sha256": "ab"}
+        ],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    # The stamped integrity matches the coerced receipt, so CORRUPT can only come
+    # from the string-type guard, not a digest mismatch.
+    assert doc["integrity"] == compute_integrity(coerced)
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_entry_with_non_string_owner_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    coerced = Receipt(
+        roots=(Path(".claude"),),
+        entries=(ReceiptEntry(Path(".claude/rules/x.md"), "123", Path(".claude"), "file", "ab"),),
+    )
+    doc = {
+        "schema_version": 1,
+        "integrity": compute_integrity(coerced),
+        "roots": [".claude"],
+        "entries": [
+            {
+                "path": ".claude/rules/x.md",
+                "owner": 123,
+                "root": ".claude",
+                "kind": "file",
+                "sha256": "ab",
+            }
+        ],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_entry_with_non_string_root_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    coerced = Receipt(
+        roots=(Path(".claude"),),
+        entries=(ReceiptEntry(Path(".claude/rules/x.md"), "claude", Path("123"), "file", "ab"),),
+    )
+    doc = {
+        "schema_version": 1,
+        "integrity": compute_integrity(coerced),
+        "roots": [".claude"],
+        "entries": [
+            {
+                "path": ".claude/rules/x.md",
+                "owner": "claude",
+                "root": 123,
+                "kind": "file",
+                "sha256": "ab",
+            }
+        ],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_non_string_roots_element_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    coerced = Receipt(roots=(Path("123"),), entries=())
+    doc = {
+        "schema_version": 1,
+        "integrity": compute_integrity(coerced),
+        "roots": [123],
+        "entries": [],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert read_receipt(path).status is ReadStatus.CORRUPT

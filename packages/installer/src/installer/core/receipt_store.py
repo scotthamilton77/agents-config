@@ -55,10 +55,21 @@ def _entry_from_json(d: object) -> ReceiptEntry:
         raise ValueError("file entry requires string sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
     if kind == "dir" and sha is not None:
         raise ValueError("dir entry must have null sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
+    # Validate the string fields rather than ``str()``-coercing them: a JSON
+    # number/list would otherwise coerce to a path/owner whose digest still
+    # matches (the integrity is computed over the coerced form), silently
+    # admitting a schema-invalid receipt on a file-deleting boundary. Reject
+    # non-strings -> CORRUPT (fail closed). KeyError on a missing field is also
+    # caught upstream as CORRUPT.
+    path = d["path"]
+    owner = d["owner"]
+    root = d["root"]
+    if not (isinstance(path, str) and isinstance(owner, str) and isinstance(root, str)):
+        raise ValueError("path/owner/root must be strings")  # noqa: TRY003, TRY004  # caught -> CORRUPT; subclass not justified
     return ReceiptEntry(
-        path=Path(str(d["path"])),
-        owner=str(d["owner"]),
-        root=Path(str(d["root"])),
+        path=Path(path),
+        owner=owner,
+        root=Path(root),
         kind=kind,
         sha256=sha,
     )
@@ -83,9 +94,14 @@ def _receipt_from_json(data: object) -> Receipt:
     entries_raw = data.get("entries", [])
     if not isinstance(roots_raw, list) or not isinstance(entries_raw, list):
         raise ValueError("roots/entries must be lists")  # noqa: TRY003, TRY004  # caught -> CORRUPT; subclass not justified
+    # ``roots`` is the persisted allowlist that gates retired-plugin root
+    # legitimacy in the prune trust boundary; a non-string element would coerce
+    # to a path whose digest still matches. Validate the element type -> CORRUPT.
+    if not all(isinstance(r, str) for r in roots_raw):
+        raise ValueError("roots must be a list of strings")  # noqa: TRY003  # caught -> CORRUPT; subclass not justified
     return Receipt(
         schema_version=SCHEMA_VERSION,
-        roots=tuple(Path(str(r)) for r in roots_raw),
+        roots=tuple(Path(r) for r in roots_raw),
         entries=tuple(_entry_from_json(e) for e in entries_raw),
         integrity=(str(data["integrity"]) if data.get("integrity") is not None else None),
     )
