@@ -2,11 +2,13 @@
 
 A FILE orphan whose current bytes differ from the receipt's recorded sha256 was
 modified by the user after we installed it; it is relinquished (kept on disk,
-dropped from the receipt) rather than deleted. Directory orphans always prune
-(recursive content-hash drift protection is deferred). A file that genuinely
-vanished prunes (its delete is a harmless no-op); a recorded FILE path that is
-present but unreadable *as a regular file* — a directory now occupies it, or a
-permission/FS error — is relinquished, never deleted: we cannot confirm it is
+dropped from the receipt) rather than deleted. A directory orphan prunes when the
+path is still a real directory or already gone, but a recorded dir path that has
+type-drifted to a regular file or symlink is relinquished, not deleted — recursive
+CONTENT-drift protection for still-real directories remains deferred. A file that
+genuinely vanished prunes (its delete is a harmless no-op); a recorded FILE path
+that is present but unreadable *as a regular file* — a directory now occupies it,
+or a permission/FS error — is relinquished, never deleted: we cannot confirm it is
 still our bytes, and the downstream prune would ``rmtree``/``unlink`` content we
 no longer own (the delete would not be a no-op)."""
 
@@ -33,7 +35,17 @@ def partition_file_orphans(
     relinquished: set[Path] = set()
     for orphan in orphans:
         if orphan.kind == "dir":
-            to_prune.append(orphan)
+            # Cheap type-drift guard (recursive CONTENT-drift stays deferred): a
+            # recorded dir path that is now a regular file or symlink is no longer
+            # ours — the user replaced it. Relinquish (keep, drop from the receipt)
+            # rather than unlink their file/link. A still-real directory or an
+            # already-absent path prunes as before (backup makes a real dir
+            # recoverable). is_symlink is tested first so a dir-symlink never counts
+            # as a real directory.
+            if orphan.path.is_symlink() or (orphan.path.exists() and not orphan.path.is_dir()):
+                relinquished.add(orphan.path.relative_to(home))
+            else:
+                to_prune.append(orphan)
             continue
         rel = orphan.path.relative_to(home)
         recorded = recorded_sha_by_path.get(rel)

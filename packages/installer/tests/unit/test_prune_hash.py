@@ -92,10 +92,42 @@ def test_file_orphan_unreadable_oserror_is_relinquished(
     assert relinquished == {Path(".beads/formulas/x.toml")}
 
 
-def test_dir_orphan_always_pruned(tmp_path: Path) -> None:
+def test_dir_orphan_still_a_directory_is_pruned(tmp_path: Path) -> None:
     d = tmp_path / ".claude" / "skills" / "foo"
     d.mkdir(parents=True)
     o = Orphan(tool="claude", namespace="skills", path=d, kind="dir")
     to_prune, relinquished = partition_file_orphans([o], home=tmp_path, recorded_sha_by_path={})
     assert to_prune == [o]
     assert relinquished == set()
+
+
+def test_dir_orphan_now_a_file_is_relinquished(tmp_path: Path) -> None:
+    """A recorded DIR orphan whose on-disk path is now a regular FILE (the user
+    replaced our directory with their own file) is relinquished, not pruned — the
+    delete would unlink the user's file. Cheap type-drift guard; distinct from the
+    deferred recursive content-drift case (a path that is still a directory).
+    """
+    p = tmp_path / ".claude" / "skills" / "foo"
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"user replaced our dir with a file")
+    o = Orphan(tool="claude", namespace="skills", path=p, kind="dir")
+    to_prune, relinquished = partition_file_orphans([o], home=tmp_path, recorded_sha_by_path={})
+    assert to_prune == []
+    assert relinquished == {Path(".claude/skills/foo")}
+
+
+def test_dir_orphan_now_a_symlink_is_relinquished(tmp_path: Path) -> None:
+    """A recorded DIR orphan whose on-disk path is now a SYMLINK is relinquished:
+    the user pointed the path elsewhere; pruning would remove their link. is_symlink
+    is tested before is_dir so a dir-symlink never counts as a real directory to
+    rmtree.
+    """
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    p = tmp_path / ".claude" / "skills" / "foo"
+    p.parent.mkdir(parents=True)
+    p.symlink_to(target, target_is_directory=True)
+    o = Orphan(tool="claude", namespace="skills", path=p, kind="dir")
+    to_prune, relinquished = partition_file_orphans([o], home=tmp_path, recorded_sha_by_path={})
+    assert to_prune == []
+    assert relinquished == {Path(".claude/skills/foo")}
