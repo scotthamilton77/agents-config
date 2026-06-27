@@ -116,11 +116,11 @@ def test_revalidate_with_is_safe_to_prune_keeps_file_modified_after_scan(tmp_pat
 
 def test_path_swapped_between_revalidate_and_delete_is_left_intact(tmp_path: Path) -> None:
     """Residual prune-boundary TOCTOU: a path swapped AFTER ``revalidate`` blesses it
-    but BEFORE the delete is left in place — not deleted, not counted, not recorded in
-    ``removed``. The swap is injected from inside the ``revalidate`` callback (the only
-    code that runs between the ownership snapshot and the destructive op), so the guard
-    must compare filesystem identity captured before revalidate against identity at the
-    delete boundary — re-running ownership alone cannot catch a same-path replacement
+    but BEFORE the destructive section is left in place — not deleted, not counted, not
+    recorded in ``removed``. The swap is injected from inside the ``revalidate``
+    callback (the only code that runs between the ownership snapshot and the recheck),
+    so the guard must compare filesystem identity captured before revalidate against
+    identity after it — re-running ownership alone cannot catch a same-path replacement
     that itself passes ownership.
     """
     o = _file_orphan(tmp_path, "claude", "skills", "victim", body="ours")
@@ -143,13 +143,12 @@ def test_path_swapped_between_revalidate_and_delete_is_left_intact(tmp_path: Pat
     )
 
     assert o.path.read_text() == "user replacement"  # the swapped-in file survives
-    assert sum(c.pruned for c in per_tool.values()) == 0  # nothing counted as pruned
     assert removed == set()  # receipt keeps the entry -> re-evaluated next run
-    # The swap landed before the backup, so the recheck (which sits after the
-    # backup, to keep the exposed window at the irreducible lstat->unlink gap)
-    # leaves the user's replacement harmlessly copied into the backup dir. Pin
-    # that deliberate consequence rather than leave it silently tolerated.
-    assert sum(c.backed_up for c in per_tool.values()) == 1
+    # The recheck precedes the backup, so a detected swap touches nothing: no delete,
+    # no backup, and crucially no per_tool bucket at all. An empty mapping pins that
+    # the skip never increments ``backed_up`` without a prune (which would break
+    # summary._is_changed) and never leaks a phantom all-zero bucket.
+    assert per_tool == {}
 
 
 def test_three_way_all_deletes_every_orphan(tmp_path: Path) -> None:

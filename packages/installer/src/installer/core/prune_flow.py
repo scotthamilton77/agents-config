@@ -263,9 +263,9 @@ def _back_up_and_delete(
     desired end state (the path is gone) is already achieved.
     """
     # Snapshot the path's filesystem identity BEFORE revalidate inspects it, so the
-    # recheck below spans the whole revalidate->delete window (the residual TOCTOU
-    # codex flagged: a path swapped between a passing revalidate and the unlink/rmtree
-    # would otherwise be backed up then removed).
+    # recheck below spans the whole revalidate window (the residual TOCTOU codex
+    # flagged: a path swapped between a passing revalidate and the unlink/rmtree would
+    # otherwise be backed up then removed).
     identity_before = _lstat_identity(orphan.path)
     if revalidate is not None and not revalidate(orphan):
         # Drifted since the orphan scan (the TOCTOU window of the confirm prompt):
@@ -276,29 +276,28 @@ def _back_up_and_delete(
             verbose=True,
         )
         return
-    counters = per_tool.setdefault(orphan.tool, Counters())
-    if orphan.path.exists():
-        dest = back_up(orphan.path, timestamp)
-        counters.backed_up += 1
-        io.info(f"Backed up {orphan.path.name} -> {dest.parent.name}/{dest.name}", verbose=True)
-    # Re-check identity immediately before the destructive op: a path whose identity
-    # moved since the snapshot was swapped during the revalidate/backup window and is
-    # now the user's — leave it in place (not deleted, not counted, not in ``removed``,
+    # Re-check identity before any backup or delete: a path whose identity moved since
+    # the snapshot was swapped during the revalidate window and is now the user's —
+    # leave it in place (not backed up, not deleted, not counted, not in ``removed``,
     # so the receipt keeps the entry and re-evaluates it next run). An already-gone
     # path is a stable ``None`` identity and falls through to the no-op delete below.
     #
-    # This recheck sits AFTER the backup, not before it, so the remaining exposed
-    # window is the irreducible lstat->unlink gap rather than the backup itself —
-    # which for a directory orphan is a potentially-slow ``copytree``. The cost is
-    # that a swap landing before the backup leaves the user's replacement copied
-    # into the backup dir (harmless and additive: the original stays in place, the
-    # copy is recoverable), with a ``backed_up`` tally that has no matching prune.
+    # The recheck precedes the backup deliberately: it keeps ``backed_up`` from ever
+    # incrementing without a following prune (preserving ``summary._is_changed``'s
+    # invariant that a backup only rides along a real change) and avoids leaving a
+    # phantom all-zero ``per_tool`` bucket. The residual backup->unlink window is the
+    # irreducible cost of not having handle-relative (openat/unlinkat) ops.
     if _lstat_identity(orphan.path) != identity_before:
         io.info(
             f"Skipped {orphan.path.name} — replaced since the orphan scan; left in place",
             verbose=True,
         )
         return
+    counters = per_tool.setdefault(orphan.tool, Counters())
+    if orphan.path.exists():
+        dest = back_up(orphan.path, timestamp)
+        counters.backed_up += 1
+        io.info(f"Backed up {orphan.path.name} -> {dest.parent.name}/{dest.name}", verbose=True)
     # A symlink (to a dir OR a file) is removed with ``unlink``, which deletes
     # the link itself, never its target. ``rmtree`` is reserved for real
     # directories: ``Path.is_dir()`` follows symlinks, so a dir-symlink would
