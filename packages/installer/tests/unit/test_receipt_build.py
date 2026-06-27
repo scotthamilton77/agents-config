@@ -14,7 +14,6 @@ from installer.core.receipt_build import (
     desired_route_keys,
     desired_staged_keys,
     entries_from_outcomes,
-    entries_from_plans,
     entries_from_route_outcomes,
     merge_receipt,
 )
@@ -36,14 +35,12 @@ def _plan(entries: list[tuple[str, FileKind]]) -> StagingPlan:
     return StagingPlan(items=items, tool=Tool.CLAUDE)
 
 
-def test_entries_and_desired_keys_align() -> None:
+def test_desired_keys_include_in_scope_owner() -> None:
     plans = {"claude": _plan([("skills/foo", FileKind.DIR)])}
     dest_roots = {"claude": Path("/home/u/.claude")}
-    entries = entries_from_plans(plans, dest_roots=dest_roots, home=Path("/home/u"))
     keys = desired_staged_keys(
         plans, dest_roots=dest_roots, home=Path("/home/u"), scope_owners={"claude"}
     )
-    assert any(e.path == Path(".claude/skills/foo") for e in entries)
     assert ("claude", Path(".claude/skills/foo")) in keys
 
 

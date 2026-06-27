@@ -1,9 +1,9 @@
-"""Build receipt entries and desired-key sets from staging plans.
+"""Build receipt entries and desired-key sets from staging plans and install outcomes.
 
-desired_staged_keys is ALWAYS plan-derived (what we want installed now, built
-even under --prune-only) and drives orphan detection. entries_from_plans is the
-tracer source for the receipt write; a later task replaces it with an
-install-outcome-derived builder for write correctness.
+``desired_staged_keys`` is plan-derived (what we want installed now, built even
+under ``--prune-only``) and drives orphan detection; the entry builders
+(``entries_from_outcomes`` / ``entries_from_route_outcomes``) record installed
+state from per-item install outcomes.
 """
 
 from __future__ import annotations
@@ -18,19 +18,6 @@ from installer.core.receipt import Receipt, ReceiptEntry
 
 if TYPE_CHECKING:
     from installer.plugins.base import PluginAdapter
-
-
-def entries_from_plans(
-    plans: dict[str, StagingPlan], *, dest_roots: dict[str, Path], home: Path
-) -> list[ReceiptEntry]:
-    out: list[ReceiptEntry] = []
-    for tool, plan in plans.items():
-        dest_root = dest_roots[tool]
-        for item in plan.items.values():
-            entry = entry_for(item, tool=tool, dest_root=dest_root, home=home)
-            if entry is not None:
-                out.append(entry)
-    return out
 
 
 def entries_from_outcomes(
