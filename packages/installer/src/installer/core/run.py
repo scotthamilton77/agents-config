@@ -212,10 +212,15 @@ def install_pipeline(
     When ``outcomes_by_tool`` is provided, each tool's per-item ``InstallOutcome``
     list is captured into it (keyed by ``adapter.name``) so the caller can build
     the receipt from real install results (real sha256, DECLINED excluded).
+    Outcomes are collected only on a real (non-dry-run) install: the channel
+    feeds ``record_receipt``, whose contract is "what happened on disk", and a
+    dry run writes nothing. Each tool key is still populated — with an empty list
+    on a dry run — so callers see every adapter's key, never a phantom WRITTEN.
     """
+    collect = outcomes_by_tool is not None and not dry_run
     result: dict[str, Counters] = {}
     for adapter in adapters:
-        tool_outcomes: list[InstallOutcome] | None = [] if outcomes_by_tool is not None else None
+        tool_outcomes: list[InstallOutcome] | None = [] if collect else None
         result[adapter.name] = sync_plan(
             adapter,
             plans[Tool(adapter.name)],
@@ -226,8 +231,8 @@ def install_pipeline(
             timestamp=timestamp,
             outcomes=tool_outcomes,
         )
-        if outcomes_by_tool is not None and tool_outcomes is not None:
-            outcomes_by_tool[adapter.name] = tool_outcomes
+        if outcomes_by_tool is not None:
+            outcomes_by_tool[adapter.name] = tool_outcomes if tool_outcomes is not None else []
     return result
 
 
@@ -257,13 +262,16 @@ def install_plugin_routes(
 
     When ``outcomes_by_plugin`` is provided, each plugin's per-item
     ``InstallOutcome`` list is captured into it (keyed by ``plugin.name``) so the
-    caller can record routed-file entries from real install results.
+    caller can record routed-file entries from real install results. Outcomes are
+    collected only on a real (non-dry-run) install: the channel feeds
+    ``record_receipt``, whose contract is "what happened on disk", and a dry run
+    writes nothing. Each plugin key is still populated — with an empty list on a
+    dry run — so callers see every plugin's key, never a phantom WRITTEN.
     """
+    collect = outcomes_by_plugin is not None and not dry_run
     result: dict[str, Counters] = {}
     for plugin in plugins:
-        plugin_outcomes: list[InstallOutcome] | None = (
-            [] if outcomes_by_plugin is not None else None
-        )
+        plugin_outcomes: list[InstallOutcome] | None = [] if collect else None
         result[plugin.name] = sync_routes(
             plugin.routes(home),
             io=io,
@@ -272,6 +280,6 @@ def install_plugin_routes(
             timestamp=timestamp,
             outcomes=plugin_outcomes,
         )
-        if outcomes_by_plugin is not None and plugin_outcomes is not None:
-            outcomes_by_plugin[plugin.name] = plugin_outcomes
+        if outcomes_by_plugin is not None:
+            outcomes_by_plugin[plugin.name] = plugin_outcomes if plugin_outcomes is not None else []
     return result

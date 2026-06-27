@@ -93,6 +93,36 @@ def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> N
     assert all(o.sha256 is not None for o in outcomes_by_plugin["beads"])
 
 
+def test_install_plugin_routes_dry_run_collects_no_outcomes(tmp_path: Path) -> None:
+    """
+    Given a BeadsPlugin whose routes a real install WOULD write
+    When install_plugin_routes runs with dry_run=True and an outcomes_by_plugin dict
+    Then the plugin's key maps to an EMPTY list — no phantom WRITTEN outcomes.
+
+    Same receipt-feeding boundary as the tool side: the outcome channel feeds
+    record_receipt ("what happened on disk"); a dry run writes nothing, so it
+    contributes nothing — the key is present but the list is empty. Fails while a
+    live collector is threaded into sync_routes on a dry run.
+    """
+    home = tmp_path / "home"
+    src = tmp_path / "plugin-src"
+    _seed_beads_source(src)
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+
+    outcomes_by_plugin: dict[str, list[InstallOutcome]] = {}
+    install_plugin_routes(
+        [beads],
+        home=home,
+        io=ScriptedIO(),
+        dry_run=True,
+        timestamp=_FIXED_TS,
+        outcomes_by_plugin=outcomes_by_plugin,
+    )
+
+    assert not (home / ".beads" / "formulas" / "f.toml").exists()  # nothing hit disk
+    assert outcomes_by_plugin == {"beads": []}  # key present, no phantom WRITTEN
+
+
 def test_generic_plugin_contributes_no_routes(tmp_path: Path) -> None:
     """
     Given a generic plugin (routes() == ())
