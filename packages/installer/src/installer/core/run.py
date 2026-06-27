@@ -17,10 +17,12 @@ plans. ``--prune-only`` skips the install half.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from installer.core.model import Counters, Tool
 from installer.core.prune_flow import run_prune
+from installer.core.prune_hash import partition_file_orphans
 from installer.core.receipt import Receipt
 from installer.core.receipt_build import (
     desired_staged_keys,
@@ -33,7 +35,6 @@ from installer.core.sync import sync_plan, sync_routes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from pathlib import Path
 
     from installer.core.installer_toml import InstallerToml
     from installer.core.io_port import IOPort
@@ -76,11 +77,33 @@ def prune_pipeline(
     )
 
     owners = scope_owners(set(str_plans), {plugin.name for plugin in plugins}, prior)
+
+    live_roots_by_owner: dict[str, set[Path]] = {
+        adapter.name: {adapter.dest_dir(home).relative_to(home)} for adapter in adapters
+    }
+    for plugin in plugins:
+        live_roots_by_owner[plugin.name] = {
+            Path(route.dest_dir.relative_to(home).parts[0]) for route in plugin.routes(home)
+        }
+    allowlist = set(prior.roots)
+
     keys = desired_staged_keys(str_plans, dest_roots=dest_roots, home=home, scope_owners=owners)
-    orphans = diff_orphans(prior, desired_keys=keys, scope_owners=owners, home=home)
+    orphans = diff_orphans(
+        prior,
+        desired_keys=keys,
+        scope_owners=owners,
+        home=home,
+        live_roots_by_owner=live_roots_by_owner,
+        allowlist=allowlist,
+    )
+    recorded_sha_by_path = {e.path: e.sha256 for e in prior.entries}
+    to_prune, relinquished = partition_file_orphans(
+        orphans, home=home, recorded_sha_by_path=recorded_sha_by_path
+    )
+
     removed: set[Path] = set()
     counters = run_prune(
-        orphans,
+        to_prune,
         io=io,
         dry_run=dry_run,
         auto_yes=auto_yes,
@@ -96,7 +119,7 @@ def prune_pipeline(
             prior,
             installed=installed,
             pruned_paths=pruned_paths,
-            relinquished_paths=set(),
+            relinquished_paths=relinquished,
             live_roots=live_roots,
         )
         write_receipt(receipt_path, new)

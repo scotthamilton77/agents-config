@@ -2,7 +2,7 @@ from pathlib import Path
 
 from installer.core.model import Orphan
 from installer.core.receipt import Receipt, ReceiptEntry
-from installer.core.receipt_diff import diff_orphans, scope_owners
+from installer.core.receipt_diff import diff_orphans, scope_owners, validate_entry
 
 
 def _entry(path: str, owner: str, root: str, kind: str = "file") -> ReceiptEntry:
@@ -61,3 +61,49 @@ def test_retired_plugin_entry_is_orphaned_when_in_scope() -> None:
     orphans = diff_orphans(prior, desired_keys=set(), scope_owners=owners, home=Path("/home/u"))
     assert [o.path for o in orphans] == [Path("/home/u/.beads/formulas/old.toml")]
     assert orphans[0].tool == "beads"
+
+
+def test_validate_accepts_legit_tool_entry() -> None:
+    e = _entry(".claude/skills/x", "claude", ".claude", "dir")
+    assert validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
+
+
+def test_validate_rejects_dotdot_path() -> None:
+    e = _entry("../evil", "claude", ".claude", "file")
+    assert not validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
+
+
+def test_validate_rejects_forged_tool_root() -> None:
+    e = _entry(".codex/skills/x", "claude", ".codex", "dir")  # claude claiming codex's root
+    assert not validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
+
+
+def test_validate_accepts_retired_root_in_allowlist() -> None:
+    e = _entry(".beads/formulas/x", "beads", ".beads", "file")
+    assert validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={}, allowlist={Path(".beads")}
+    )
+
+
+def test_validate_rejects_retired_root_not_in_allowlist() -> None:
+    e = _entry(".beads/formulas/x", "beads", ".beads", "file")
+    assert not validate_entry(e, home=Path("/home/u"), live_roots_by_owner={}, allowlist=set())
+
+
+def test_validate_rejects_symlink_escape(tmp_path: Path) -> None:
+    # home/.claude/link -> outside; an entry under .claude/link escapes .claude once resolved
+    home = tmp_path
+    (home / ".claude").mkdir()
+    outside = tmp_path.parent / "outside_target"
+    outside.mkdir()
+    (home / ".claude" / "link").symlink_to(outside, target_is_directory=True)
+    e = _entry(".claude/link/x", "claude", ".claude", "file")
+    assert not validate_entry(
+        e, home=home, live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
