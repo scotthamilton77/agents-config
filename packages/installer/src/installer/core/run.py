@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING
 from installer.core.model import Counters, Tool
 from installer.core.prune_flow import run_prune
 from installer.core.receipt import Receipt
-from installer.core.receipt_build import desired_staged_keys, entries_from_plans
+from installer.core.receipt_build import (
+    desired_staged_keys,
+    entries_from_plans,
+    merge_receipt,
+)
 from installer.core.receipt_diff import diff_orphans, scope_owners
 from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 from installer.core.sync import sync_plan, sync_routes
@@ -74,6 +78,7 @@ def prune_pipeline(
     owners = scope_owners(set(str_plans), {plugin.name for plugin in plugins}, prior)
     keys = desired_staged_keys(str_plans, dest_roots=dest_roots, home=home, scope_owners=owners)
     orphans = diff_orphans(prior, desired_keys=keys, scope_owners=owners, home=home)
+    removed: set[Path] = set()
     counters = run_prune(
         orphans,
         io=io,
@@ -81,11 +86,20 @@ def prune_pipeline(
         auto_yes=auto_yes,
         prune_only=prune_only,
         timestamp=timestamp,
+        removed=removed,
     )
     if not dry_run:
-        new_entries = entries_from_plans(str_plans, dest_roots=dest_roots, home=home)
-        roots = tuple(dest_roots[name].relative_to(home) for name in dest_roots)
-        write_receipt(receipt_path, Receipt(roots=roots, entries=tuple(new_entries)))
+        pruned_paths = {p.relative_to(home) for p in removed}
+        installed = entries_from_plans(str_plans, dest_roots=dest_roots, home=home)
+        live_roots = {dest_roots[name].relative_to(home) for name in dest_roots}
+        new = merge_receipt(
+            prior,
+            installed=installed,
+            pruned_paths=pruned_paths,
+            relinquished_paths=set(),
+            live_roots=live_roots,
+        )
+        write_receipt(receipt_path, new)
     return counters
 
 

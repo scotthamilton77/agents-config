@@ -24,6 +24,7 @@ from installer.core.model import Counters
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from installer.core.io_port import IOPort
     from installer.core.model import Orphan
@@ -51,6 +52,7 @@ def run_prune(
     auto_yes: bool = False,
     prune_only: bool = False,
     timestamp: str | None = None,
+    removed: set[Path] | None = None,
 ) -> dict[str, Counters]:
     """Confirm and delete orphans; return per-target ``Counters`` of the work done.
 
@@ -103,13 +105,13 @@ def run_prune(
     ts = timestamp if timestamp is not None else new_timestamp()
 
     if auto_yes:
-        return _delete_all(orphans, io=io, timestamp=ts)
+        return _delete_all(orphans, io=io, timestamp=ts, removed=removed)
 
-    return _prompt_and_delete(orphans, io=io, timestamp=ts)
+    return _prompt_and_delete(orphans, io=io, timestamp=ts, removed=removed)
 
 
 def _prompt_and_delete(
-    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str, removed: set[Path] | None = None
 ) -> dict[str, Counters]:
     """Three-way prompt then act."""
     choice = io.confirm_three_way(
@@ -118,15 +120,15 @@ def _prompt_and_delete(
         default=_CANCEL,
     )
     if choice == _ALL:
-        return _delete_all(orphans, io=io, timestamp=timestamp)
+        return _delete_all(orphans, io=io, timestamp=timestamp, removed=removed)
     if choice == _ONE_BY_ONE:
-        return _delete_one_by_one(orphans, io=io, timestamp=timestamp)
+        return _delete_one_by_one(orphans, io=io, timestamp=timestamp, removed=removed)
     io.info("Cancelled. No changes made.")
     return {}
 
 
 def _delete_one_by_one(
-    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str
+    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str, removed: set[Path] | None = None
 ) -> dict[str, Counters]:
     """Per-item drill-down.
 
@@ -141,24 +143,33 @@ def _delete_one_by_one(
     per_tool: dict[str, Counters] = {}
     for orphan in orphans:
         if result.decisions.get(str(orphan.path)):
-            _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
+            _back_up_and_delete(
+                orphan, io=io, timestamp=timestamp, per_tool=per_tool, removed=removed
+            )
     if result.quit:
         io.info("Quit per-item loop; remaining orphans left in place.")
     return per_tool
 
 
-def _delete_all(orphans: Sequence[Orphan], *, io: IOPort, timestamp: str) -> dict[str, Counters]:
+def _delete_all(
+    orphans: Sequence[Orphan], *, io: IOPort, timestamp: str, removed: set[Path] | None = None
+) -> dict[str, Counters]:
     """Back up + delete every orphan."""
     per_tool: dict[str, Counters] = {}
     for orphan in orphans:
-        _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool)
+        _back_up_and_delete(orphan, io=io, timestamp=timestamp, per_tool=per_tool, removed=removed)
     pruned = sum(c.pruned for c in per_tool.values())
     io.ok(f"Pruned {pruned} orphan(s).")
     return per_tool
 
 
 def _back_up_and_delete(
-    orphan: Orphan, *, io: IOPort, timestamp: str, per_tool: dict[str, Counters]
+    orphan: Orphan,
+    *,
+    io: IOPort,
+    timestamp: str,
+    per_tool: dict[str, Counters],
+    removed: set[Path] | None = None,
 ) -> None:
     """Back up an orphan, then remove it.
 
@@ -189,6 +200,8 @@ def _back_up_and_delete(
     else:
         shutil.rmtree(orphan.path)
     counters.pruned += 1
+    if removed is not None:
+        removed.add(orphan.path)
 
 
 def _display(orphans: Sequence[Orphan], io: IOPort) -> None:

@@ -345,3 +345,23 @@ def test_broken_symlink_orphan_unlinked_without_backup(tmp_path: Path) -> None:
     assert not link.is_symlink()  # the dangling link is gone
     assert per_tool["claude"].backed_up == 0  # nothing to back up
     assert per_tool["claude"].pruned == 1
+
+
+def test_removed_collector_records_absolute_deleted_path(tmp_path: Path) -> None:
+    """
+    Given an orphan deleted under auto_yes and a ``removed`` collector set
+    When run_prune executes
+    Then the orphan is gone on disk AND the collector holds its absolute path.
+
+    Pins the additive ``removed`` reporting channel: ``_back_up_and_delete``
+    records each deleted orphan's ABSOLUTE ``Orphan.path`` into the caller-owned
+    set so the receipt-write step can subtract pruned paths.
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "a")
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert not o1.path.exists()
+    assert collector == {o1.path}

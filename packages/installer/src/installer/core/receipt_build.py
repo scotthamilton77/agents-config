@@ -12,7 +12,7 @@ from pathlib import Path
 
 from installer.core.model import InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
-from installer.core.receipt import ReceiptEntry
+from installer.core.receipt import Receipt, ReceiptEntry
 
 
 def entries_from_plans(
@@ -73,6 +73,32 @@ def entries_from_route_outcomes(
             )
         )
     return out
+
+
+def merge_receipt(
+    prior: Receipt,
+    *,
+    installed: list[ReceiptEntry],
+    pruned_paths: set[Path],
+    relinquished_paths: set[Path],
+    live_roots: set[Path],
+) -> Receipt:
+    """Mirrors-disk receipt: ``(prior - pruned - relinquished) | installed``.
+
+    Prior entries survive unless their path was pruned or relinquished, so a
+    partial run (e.g. ``--tools=claude``) never erases an untargeted tool's or a
+    still-present plugin's recorded entries. ``installed`` wins on a path clash
+    (it carries the freshly-computed sha256). ``roots`` accumulates the prior and
+    live install roots (the persisted allowlist only grows)."""
+    by_path: dict[Path, ReceiptEntry] = {
+        e.path: e
+        for e in prior.entries
+        if e.path not in pruned_paths and e.path not in relinquished_paths
+    }
+    for e in installed:
+        by_path[e.path] = e
+    roots = tuple(sorted(set(prior.roots) | live_roots, key=str))
+    return Receipt(roots=roots, entries=tuple(by_path.values()))
 
 
 def desired_staged_keys(

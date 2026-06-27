@@ -130,3 +130,37 @@ def test_no_orphans_clean_noop(tmp_path: Path) -> None:
 
     assert keep.exists()
     assert per_tool == {}
+
+
+def test_targeted_run_preserves_untargeted_tool_entry(tmp_path: Path) -> None:
+    home = _claude_home(tmp_path)
+    (home / ".claude" / "skills" / "keep").mkdir(parents=True)
+    rpath = _receipt_path(home)
+    write_receipt(
+        rpath,
+        Receipt(
+            roots=(Path(".claude"), Path(".codex")),
+            entries=(
+                _entry(".claude/skills/keep"),
+                ReceiptEntry(Path(".codex/skills/cx"), "codex", Path(".codex"), "dir", None),
+            ),
+        ),
+    )
+    plans = {
+        Tool.CLAUDE: StagingPlan(items={Path("skills/keep"): _skill_item("keep")}, tool=Tool.CLAUDE)
+    }
+    prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plans=plans,
+        home=home,
+        config=InstallerToml(),
+        receipt_path=rpath,
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+    after = read_receipt(rpath).receipt
+    assert after is not None
+    paths = {e.path for e in after.entries}
+    assert Path(".codex/skills/cx") in paths  # untargeted tool preserved (mass-delete trap fixed)
+    assert Path(".claude/skills/keep") in paths

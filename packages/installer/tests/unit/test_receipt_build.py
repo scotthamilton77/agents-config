@@ -9,11 +9,13 @@ from installer.core.model import (
     StagingPlan,
     Tool,
 )
+from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_build import (
     desired_staged_keys,
     entries_from_outcomes,
     entries_from_plans,
     entries_from_route_outcomes,
+    merge_receipt,
 )
 
 
@@ -79,3 +81,37 @@ def test_entries_from_route_outcomes_builds_plugin_entries() -> None:
     assert entries[0].owner == "beads"
     assert entries[0].root == Path(".beads")
     assert entries[0].sha256 == "ab"
+
+
+def test_merge_receipt_preserves_unpruned_swaps_installed_accumulates_roots() -> None:
+    prior = Receipt(
+        roots=(Path(".codex"),),
+        entries=(
+            ReceiptEntry(Path(".claude/skills/old"), "claude", Path(".claude"), "dir", None),
+            ReceiptEntry(Path(".codex/skills/keep"), "codex", Path(".codex"), "dir", None),
+        ),
+    )
+    installed = [ReceiptEntry(Path(".claude/skills/new"), "claude", Path(".claude"), "dir", "ab")]
+    new = merge_receipt(
+        prior,
+        installed=installed,
+        pruned_paths={Path(".claude/skills/old")},
+        relinquished_paths=set(),
+        live_roots={Path(".claude")},
+    )
+    assert {e.path for e in new.entries} == {Path(".codex/skills/keep"), Path(".claude/skills/new")}
+    assert set(new.roots) == {Path(".codex"), Path(".claude")}
+
+
+def test_merge_receipt_relinquished_path_is_dropped() -> None:
+    prior = Receipt(
+        entries=(ReceiptEntry(Path(".claude/rules/x.md"), "claude", Path(".claude"), "file", "ab"),)
+    )
+    new = merge_receipt(
+        prior,
+        installed=[],
+        pruned_paths=set(),
+        relinquished_paths={Path(".claude/rules/x.md")},
+        live_roots=set(),
+    )
+    assert new.entries == ()
