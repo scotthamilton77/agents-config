@@ -54,7 +54,7 @@ if ! THREAD_IDS="$(printf '%s' "$STDIN_JSON" | jq -c '.thread_ids // []' 2>"$ERR
   exit 2
 fi
 
-printf '%s' "$THREAD_IDS" | jq -c --slurpfile inv "$INVENTORY" '
+if ! RESULT="$(printf '%s' "$THREAD_IDS" | jq -c --slurpfile inv "$INVENTORY" '
   . as $unresolved
   | ($inv[0].items // [])
   | map(select(.thread_id != null) | {thread_id, classification})
@@ -69,4 +69,9 @@ printf '%s' "$THREAD_IDS" | jq -c --slurpfile inv "$INVENTORY" '
         else .
         end)
   | {count: length, thread_ids: .}
-'
+' 2>"$ERR_TMP")"; then
+  echo "error: failed to process inventory or thread IDs: $(cat "$ERR_TMP")" >&2
+  exit 2
+fi
+
+printf '%s\n' "$RESULT"

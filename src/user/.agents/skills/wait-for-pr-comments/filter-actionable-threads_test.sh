@@ -129,4 +129,12 @@ printf '%s' "$EMPTY_THREADS" | "$SCRIPT" --inventory "$TMP/nonexistent.json" > "
 rc8=$?
 assert "test 8: exits 1 on missing inventory file" "[ \$rc8 -eq 1 ]"
 
+# --- Test 9: malformed inventory JSON → exit 2 with helpful message ---
+MALFORMED_THREADS='{"count":1,"thread_ids":["t1"]}'
+echo '{not valid json' > "$TMP/inv9.json"
+printf '%s' "$MALFORMED_THREADS" | "$SCRIPT" --inventory "$TMP/inv9.json" > "$TMP/out9.json" 2>&1
+rc9=$?
+assert "test 9: exits 2 on malformed inventory JSON" "[ \$rc9 -eq 2 ]"
+assert "test 9: stderr has script-level error message" "grep -qE '^error:' '$TMP/out9.json'"
+
 exit $FAIL
