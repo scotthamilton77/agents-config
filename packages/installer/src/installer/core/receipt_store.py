@@ -85,7 +85,13 @@ def _receipt_from_json(data: object) -> Receipt:
 
 def read_receipt(path: Path) -> ReceiptRead:
     if not path.is_file():
-        return ReceiptRead(ReadStatus.MISSING, None)
+        # Truly absent (no path, no broken symlink) bootstraps empty -> MISSING.
+        # A present-but-wrong-type path (dir, broken symlink, device) is
+        # present-but-unusable -> CORRUPT, so the caller fails closed instead
+        # of crashing later when write_receipt() tries to replace() it.
+        if not path.exists() and not path.is_symlink():
+            return ReceiptRead(ReadStatus.MISSING, None)
+        return ReceiptRead(ReadStatus.CORRUPT, None)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         receipt = _receipt_from_json(data)

@@ -27,6 +27,26 @@ def test_missing_file_is_missing(tmp_path: Path) -> None:
     assert result.receipt is None
 
 
+def test_directory_at_receipt_path_is_corrupt(tmp_path: Path) -> None:
+    # Present-but-unusable: a directory sits where the receipt should be.
+    # Treating it as MISSING would later crash write_receipt()'s replace().
+    path = tmp_path / "install-receipt.json"
+    path.mkdir()
+    result = read_receipt(path)
+    assert result.status is ReadStatus.CORRUPT
+    assert result.receipt is None
+
+
+def test_broken_symlink_at_receipt_path_is_corrupt(tmp_path: Path) -> None:
+    # A dangling symlink exists (is_symlink True) but resolves to nothing
+    # (is_file/exists False) -> present-but-unusable -> CORRUPT, not MISSING.
+    path = tmp_path / "install-receipt.json"
+    path.symlink_to(tmp_path / "nonexistent-target.json")
+    result = read_receipt(path)
+    assert result.status is ReadStatus.CORRUPT
+    assert result.receipt is None
+
+
 def test_unparseable_is_corrupt(tmp_path: Path) -> None:
     path = tmp_path / "install-receipt.json"
     path.write_text("{ this is not json", encoding="utf-8")
