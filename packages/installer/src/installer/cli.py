@@ -10,11 +10,18 @@ from installer.config import Config, resolve_plugins, resolve_plugins_root, reso
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
-from installer.core.model import Counters
+from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
 from installer.core.prune_flow import PruneAbortedError
+from installer.core.receipt import Receipt
 from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
-from installer.core.run import install_pipeline, install_plugin_routes, prune_pipeline
+from installer.core.receipt_store import ReadStatus, read_receipt
+from installer.core.run import (
+    install_pipeline,
+    install_plugin_routes,
+    prune_pipeline,
+    record_receipt,
+)
 from installer.core.summary import render_summary
 from installer.plugins.registry import discover
 from installer.tools.registry import UnknownToolError, get_adapter, known_tools
@@ -23,9 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from installer.core.io_port import IOPort
-    from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
-    from installer.tools.base import ToolAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
 # ``src/plugins``. ``cli.py`` lives at ``<repo>/packages/installer/src/installer/
@@ -236,14 +241,27 @@ def _run(
     # installs files and has orphans pruned shows both). Keyed by target name.
     counters: dict[str, Counters] = {}
     receipt_path = resolved_home / ".config" / "agents-config" / "install-receipt.json"
+    dest_roots = {adapter.name: adapter.dest_dir(resolved_home) for adapter in adapters}
+    discovered_plugin_names = set(discover(resolve_plugins_root(resolved_repo_root, os.environ)))
+    tool_outcomes: dict[str, list[InstallOutcome]] = {}
+    plugin_outcomes: dict[str, list[InstallOutcome]] = {}
+    pruned_paths: set[Path] = set()
+    relinquished_paths: set[Path] = set()
 
-    # Single-writer advisory lock over the whole mutation section (install ->
-    # prune -> receipt-write). A concurrent second installer fails fast rather
-    # than interleaving writes and corrupting the receipt; early returns out of
-    # the `with` release the lock via the context manager. The read-only summary
-    # below stays outside the lock.
+    # Single-writer advisory lock over the whole mutation section (receipt-read ->
+    # install -> prune -> receipt-write). A concurrent second installer fails fast
+    # rather than interleaving writes; reading `prior` inside the lock closes the
+    # read-then-write window, so the new receipt mirrors the disk state this run
+    # actually saw. Early returns out of the `with` release the lock via the
+    # context manager. The read-only summary below stays outside the lock.
     try:
         with receipt_lock(receipt_path.with_suffix(".lock")):
+            prior_read = read_receipt(receipt_path)
+            prior = (
+                prior_read.receipt
+                if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
+                else Receipt()
+            )
             if not args.prune_only:
                 try:
                     _merge_into(
@@ -255,6 +273,7 @@ def _run(
                             io=io,
                             dry_run=args.dry_run,
                             auto_yes=config.auto_yes,
+                            outcomes_by_tool=tool_outcomes,
                         ),
                     )
                     # Plugin routes (e.g. beads' ~/.beads/formulas + scripts) land
@@ -268,6 +287,7 @@ def _run(
                             io=io,
                             dry_run=args.dry_run,
                             auto_yes=config.auto_yes,
+                            outcomes_by_plugin=plugin_outcomes,
                         ),
                     )
                 except ConsentRequiredError:
@@ -278,20 +298,39 @@ def _run(
                     return 1
 
             if args.prune or args.prune_only:
-                rc = _run_prune(
-                    adapters,
-                    plugins=plugins,
-                    plans=plans,
-                    io=io,
+                try:
+                    outcome = prune_pipeline(
+                        adapters,
+                        plugins=plugins,
+                        plans=plans,
+                        prior=prior,
+                        home=resolved_home,
+                        discovered_plugin_names=discovered_plugin_names,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=config.auto_yes,
+                        prune_only=args.prune_only,
+                    )
+                except PruneAbortedError:
+                    return 1
+                _merge_into(counters, outcome.counters)
+                pruned_paths = outcome.pruned_paths
+                relinquished_paths = outcome.relinquished_paths
+
+            # Write the receipt on every non-dry-run install (not only --prune):
+            # built from the real per-item outcomes so it mirrors disk. Inside the
+            # lock so a concurrent installer cannot interleave its own write.
+            if not args.dry_run:
+                record_receipt(
+                    receipt_path,
+                    prior=prior,
+                    dest_roots=dest_roots,
                     home=resolved_home,
-                    dry_run=args.dry_run,
-                    auto_yes=config.auto_yes,
-                    prune_only=args.prune_only,
-                    receipt_path=receipt_path,
-                    counters=counters,
+                    tool_outcomes=tool_outcomes,
+                    plugin_outcomes=plugin_outcomes,
+                    pruned_paths=pruned_paths,
+                    relinquished_paths=relinquished_paths,
                 )
-                if rc != 0:
-                    return rc
     except ReceiptLockBusy:
         io.err("another install is in progress; re-run when it finishes")
         return 1
@@ -360,63 +399,3 @@ def _warn_excluded_plugins(
                 "are not removed (use --prune or --prune-only to remove orphans "
                 "under strict mode)."
             )
-
-
-def _run_prune(
-    adapters: list[ToolAdapter],
-    *,
-    plugins: Iterable[PluginAdapter],
-    plans: dict[Tool, StagingPlan],
-    io: IOPort,
-    home: Path,
-    dry_run: bool,
-    auto_yes: bool,
-    prune_only: bool,
-    receipt_path: Path,
-    counters: dict[str, Counters],
-) -> int:
-    """Drive the prune pipeline behind --prune / --prune-only.
-
-    Scans each active tool's dest tree against its already-built ``StagingPlan``
-    (``plans``, produced once by ``main`` and shared with the install half), then
-    runs the scan + interactive flow. Consent for ``--prune`` is owned upstream:
-    ``main`` runs ``install_pipeline`` (whose ``sync_plan`` guard refuses a
-    non-interactive run lacking ``--yes``/``--dry-run``) before this call, so the
-    prune step needs no separate consent gate; ``--prune-only`` skips install and
-    relies on the prune flow's own non-interactive hard-fail.
-
-    The receipt is the sole prune authority: orphans come from diffing the prior
-    install receipt against the desired staged plan, so there is no installer.toml
-    glob list to load here.
-
-    The ``plans`` reflect the active ``--plugins`` selection (``main`` builds them
-    with the resolved plugin set), so a plugin's overlaid files reach the orphan
-    scan as known entries rather than retired ones. ``plugins`` is forwarded
-    likewise so a route-based plugin's bespoke dest (beads' ``~/.beads/formulas``)
-    gets its staged baseline from the active routes — a still-shipped formula is
-    protected, not pruned.
-
-    The prune flow's per-tool ``Counters`` (pruned / backed_up, keyed by
-    ``Orphan.tool``) are merged into ``counters`` so the install summary reports
-    the prune activity alongside the install tally.
-
-    Returns 0 on success, 1 when the prune-only flow aborts the run.
-    """
-    try:
-        _merge_into(
-            counters,
-            prune_pipeline(
-                adapters,
-                plugins=plugins,
-                plans=plans,
-                home=home,
-                receipt_path=receipt_path,
-                io=io,
-                dry_run=dry_run,
-                auto_yes=auto_yes,
-                prune_only=prune_only,
-            ),
-        )
-    except PruneAbortedError:
-        return 1
-    return 0

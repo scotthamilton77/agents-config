@@ -7,6 +7,7 @@ are absent — they test the stdlib, not coded decisions."""
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ from installer.core.io_port import ScriptedIO
 from installer.core.model import Tool
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_lock import receipt_lock
-from installer.core.receipt_store import write_receipt
+from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 from installer.tools import registry
 
 
@@ -253,8 +254,9 @@ def test_prune_plugin_discovery_honors_injected_repo_root(tmp_path: Path) -> Non
 
     Pins: main resolves plugins against the injected repo_root
     (repo_root / "src" / "plugins"), not the module-level _REPO_ROOT, builds the
-    staging plans with them, and passes those plans to _run_prune — so repo_root
-    is fully authoritative for plugin discovery (PR #151 comment 3408271853).
+    staging plans with them, and passes those plans to prune_pipeline — so
+    repo_root is fully authoritative for plugin discovery (PR #151 comment
+    3408271853).
     With a repo_root lacking src/plugins, discover() returns {} — proving the
     real repo's plugins are not consulted.
     """
@@ -577,10 +579,16 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     orphan.
 
     Pins: the resolved plugin set builds the staging plans in main, and those
-    plans are threaded into _run_prune — so the --plugins selection reaches the
-    orphan scan via the plans. Fails if the plans dropped the override (e.g.
+    plans are threaded into prune_pipeline — so the --plugins selection reaches
+    the orphan scan via the plans. Fails if the plans dropped the override (e.g.
     plugins resolved with override_csv=None): absent the footprint, widget would
     be unstaged even under --plugins=widget and the dest pruned.
+
+    The prior receipt records the widget rule under owner 'claude' (a plugin
+    overlay lands in the tool's tree, so the install outcome is a claude-tree
+    write) with a sha matching the dest bytes — the state a real prior install
+    leaves — so the orphan scan has a recorded baseline to diff against when
+    widget is excluded.
     """
     repo = _repo_with_installer_toml(tmp_path)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
@@ -590,7 +598,23 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     home = _home_with_claude_settings(tmp_path)
     dest_rule = home / ".claude" / "rules" / "widget-rule.md"
     dest_rule.parent.mkdir(parents=True)
-    dest_rule.write_bytes(b"installed widget rule\n")
+    dest_bytes = b"installed widget rule\n"
+    dest_rule.write_bytes(dest_bytes)
+    write_receipt(
+        home / ".config" / "agents-config" / "install-receipt.json",
+        Receipt(
+            roots=(Path(".claude"),),
+            entries=(
+                ReceiptEntry(
+                    Path(".claude/rules/widget-rule.md"),
+                    "claude",
+                    Path(".claude"),
+                    "file",
+                    hashlib.sha256(dest_bytes).hexdigest(),
+                ),
+            ),
+        ),
+    )
 
     # Active via explicit override (no footprint) -> staged -> spared.
     rc_active = main(
@@ -774,6 +798,53 @@ def test_main_default_install_non_interactive_without_consent_returns_one(tmp_pa
     assert not (tmp_path / ".claude" / "INSTRUCTIONS.md").exists()
 
 
+def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
+    """A hermetic repo whose shared tree also carries a skills/ dir.
+
+    The skill stages as a DIR item under ``.claude/skills/foo`` — a wholesale,
+    prune-namespace entry the receipt records, unlike the root-level
+    INSTRUCTIONS.md template (no prune namespace, not recorded). Lets a plain
+    install assert a real recorded receipt entry."""
+    repo = tmp_path / "repo"
+    shared = repo / "src" / "user" / ".agents"
+    shared.mkdir(parents=True)
+    (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
+    skill = shared / "skills" / "foo"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(b"a skill\n")
+    for tool in ("claude", "codex", "gemini", "opencode"):
+        (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    _write_installignore(repo)
+    return repo
+
+
+def test_plain_install_writes_receipt(tmp_path: Path) -> None:
+    """A plain install (NO --prune) now writes the receipt.
+
+    Pins the core new behaviour: the receipt write hoisted out of prune_pipeline
+    into record_receipt, run on every non-dry-run install. Before this change a
+    plain install recorded nothing. The hermetic repo stages a skills/foo dir, so
+    the receipt records that wholesale-owned entry with its real sha256.
+    """
+    repo = _hermetic_repo_with_skill(tmp_path)
+    home = _home_with_claude_settings(tmp_path)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    result = read_receipt(receipt_path)
+    assert result.status is ReadStatus.OK
+    assert result.receipt is not None
+    paths = {e.path for e in result.receipt.entries}
+    assert Path(".claude/skills/foo") in paths
+
+
 def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     """
     Given a hermetic repo, a home holding a prior receipt that records
@@ -784,8 +855,8 @@ def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     (prune half), and main returns 0.
 
     Pins: --prune is install-then-prune over ONE shared staging plan — main
-    installs the plan, then _run_prune diffs the prior receipt against that plan
-    for orphans. Fails while --prune skips the install half (the pre-W3
+    installs the plan, then prune_pipeline diffs the prior receipt against that
+    plan for orphans. Fails while --prune skips the install half (the pre-W3
     prune-only behaviour of the default branch).
     """
     repo = _hermetic_repo(tmp_path)

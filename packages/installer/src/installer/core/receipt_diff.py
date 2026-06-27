@@ -1,9 +1,8 @@
 """Diff a prior receipt against the desired staged plan to find orphans.
 
-Replaces core/prune.py::scan_orphans (wired in a later task). Scope and path
-validation are layered on later; this tracer covers the core differential. An
+Finds orphans by diffing the prior receipt against the desired staged plan. An
 orphan is a recorded entry whose owner is in scope and whose (owner, path) is
-not desired.
+not desired; scope and path validation gate which recorded entries are eligible.
 """
 
 from __future__ import annotations
