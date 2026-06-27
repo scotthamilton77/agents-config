@@ -38,7 +38,10 @@ def validate_entry(
         resolved_path = (home / entry.path).resolve()
         resolved_root = (home / entry.root).resolve()
         resolved_path.relative_to(resolved_root)
-    except ValueError:
+    except (ValueError, OSError):
+        # OSError covers symlink loops (ELOOP) and FS/permission errors during
+        # ``.resolve()``: an unresolvable entry fails closed (skipped), never
+        # crashes the prune.
         return False
     legit = live_roots_by_owner.get(entry.owner)
     if legit is not None:

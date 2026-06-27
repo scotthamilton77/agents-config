@@ -82,6 +82,10 @@ def prune_pipeline(
     on-disk hash before deletion: a file whose bytes drifted from the recorded
     sha256 is relinquished (kept), never deleted. Returns the per-target counters
     and the home-relative pruned / relinquished path sets."""
+    # Materialize once: the body iterates ``adapters`` several times, so a
+    # one-shot iterator/generator would be exhausted after the first pass and
+    # silently disable pruning / produce empty dest_roots.
+    adapters = tuple(adapters)
     str_plans = {adapter.name: plans[Tool(adapter.name)] for adapter in adapters}
     dest_roots = {adapter.name: adapter.dest_dir(home) for adapter in adapters}
 

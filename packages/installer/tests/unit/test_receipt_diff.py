@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from installer.core.model import Orphan
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_diff import diff_orphans, scope_owners, validate_entry
@@ -153,4 +155,19 @@ def test_validate_rejects_symlink_escape(tmp_path: Path) -> None:
     e = _entry(".claude/link/x", "claude", ".claude", "file")
     assert not validate_entry(
         e, home=home, live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
+
+
+def test_validate_entry_fails_closed_on_resolve_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # .resolve() can raise OSError (symlink loops / permission / transient FS
+    # errors). The entry must be skipped (return False), never crash the prune.
+    def boom(*_args: object, **_kwargs: object) -> Path:  # matches Path.resolve
+        raise OSError
+
+    monkeypatch.setattr(Path, "resolve", boom)
+    e = _entry(".claude/skills/x", "claude", ".claude", "dir")
+    assert not validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
     )

@@ -230,6 +230,36 @@ def test_active_plugin_shipped_formula_survives_retired_pruned(tmp_path: Path) -
     assert outcome.pruned_paths == {Path(".beads/formulas/retired.toml")}
 
 
+def test_prune_pipeline_accepts_one_shot_adapters_iterator(tmp_path: Path) -> None:
+    # The body iterates `adapters` several times; a one-shot generator must not be
+    # exhausted after the first pass (that would silently disable pruning).
+    home = _claude_home(tmp_path)
+    drop = home / ".claude" / "skills" / "drop"
+    drop.mkdir(parents=True)
+    rpath = _receipt_path(home)
+    write_receipt(
+        rpath, Receipt(roots=(Path(".claude"),), entries=(_entry(".claude/skills/drop"),))
+    )
+    prior = read_receipt(rpath).receipt
+    assert prior is not None
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+    adapters = (a for a in [get_adapter(Tool.CLAUDE)])  # one-shot generator
+
+    outcome = prune_pipeline(
+        adapters,
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names=set(),
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert not drop.exists()
+    assert outcome.pruned_paths == {Path(".claude/skills/drop")}
+
+
 def test_symlinked_root_escape_is_not_pruned(tmp_path: Path) -> None:
     """Spec safety scenario 3: a recorded entry that escapes its root via a
     symlinked parent survives the prune end-to-end.
