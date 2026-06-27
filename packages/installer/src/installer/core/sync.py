@@ -373,7 +373,7 @@ def _install_file(
     _record_write(
         dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters, merged=is_merge
     )
-    if outcomes is not None:
+    if outcomes is not None and not dry_run:
         outcomes.append(
             InstallOutcome(dest, Outcome.WRITTEN, hashlib.sha256(effective).hexdigest())
         )
@@ -465,7 +465,7 @@ def _install_dir(
             _ensure_parent_dir(inner_dest, dry_run=dry_run)
             inner_dest.write_bytes(inner_content)
     _record_write(dest, dest_exists=dest_exists, io=io, dry_run=dry_run, counters=counters)
-    if outcomes is not None:
+    if outcomes is not None and not dry_run:
         outcomes.append(InstallOutcome(dest, Outcome.WRITTEN, None))
 
 

@@ -86,6 +86,23 @@ def _one_file_plan(relpath: Path, content: bytes) -> StagingPlan:
     return StagingPlan(items={relpath: _file_item(relpath, content)}, tool=Tool.CLAUDE)
 
 
+def _dir_item(relpath: Path, source_path: Path) -> StagedItem:
+    """A DIR ``StagedItem`` (``content`` is None — the tree is materialised from
+    ``source_path`` on disk rather than carried as in-memory bytes)."""
+    return StagedItem(
+        source_path=source_path,
+        dest_relpath=relpath,
+        kind=FileKind.OTHER,
+        namespace=None,
+        provenance=Provenance(kind="tool", name="claude"),
+        content=None,
+    )
+
+
+def _one_dir_plan(relpath: Path, source_path: Path) -> StagingPlan:
+    return StagingPlan(items={relpath: _dir_item(relpath, source_path)}, tool=Tool.CLAUDE)
+
+
 def test_created_file_yields_written_outcome_with_sha256(tmp_path: Path) -> None:
     """
     Given a FILE item whose dest is absent (a first install)
@@ -170,6 +187,88 @@ def test_declined_overwrite_yields_declined_and_keeps_user_bytes(tmp_path: Path)
 
     assert outcomes == [InstallOutcome(home / "f.md", Outcome.DECLINED, None)]
     assert (home / "f.md").read_bytes() == b"user-edited\n"
+
+
+def test_dry_run_file_write_yields_no_written_outcome(tmp_path: Path) -> None:
+    """
+    Given a FILE item whose dest is absent (a would-be first install)
+    When sync_plan runs with dry_run=True and an outcomes collector
+    Then NO Outcome.WRITTEN is recorded — the outcomes channel reports what hit
+    disk, and a dry run writes nothing. Guards the public-API footgun where a
+    caller could build a receipt-like record from a preview.
+    """
+    home = tmp_path / "home"  # absent — would-be first install
+    plan = _one_file_plan(Path("rules/a.md"), b"alpha\n")
+    outcomes: list[InstallOutcome] = []
+
+    sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        dry_run=True,
+        timestamp=_FIXED_TS,
+        outcomes=outcomes,
+    )
+
+    assert not (home / "rules" / "a.md").exists()  # nothing written
+    assert outcomes == []  # no WRITTEN claim for a preview
+
+
+def test_dry_run_dir_write_yields_no_written_outcome(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose dest is absent (a would-be tree materialisation)
+    When sync_plan runs with dry_run=True and an outcomes collector
+    Then NO Outcome.WRITTEN is recorded — same disk-truth contract as the FILE
+    path, for the directory installer.
+    """
+    source = tmp_path / "src_tree"
+    source.mkdir()
+    (source / "inner.md").write_bytes(b"tree-content\n")
+    home = tmp_path / "home"  # absent — would-be materialisation
+    plan = _one_dir_plan(Path("bundle"), source)
+    outcomes: list[InstallOutcome] = []
+
+    sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        dry_run=True,
+        timestamp=_FIXED_TS,
+        outcomes=outcomes,
+    )
+
+    assert not (home / "bundle").exists()  # nothing written
+    assert outcomes == []  # no WRITTEN claim for a preview
+
+
+def test_real_run_dir_write_yields_written_outcome(tmp_path: Path) -> None:
+    """
+    Given a DIR item whose dest is absent
+    When sync_plan runs for real (dry_run=False) with an outcomes collector
+    Then exactly one Outcome.WRITTEN (sha256 None — DIR items carry no digest)
+    is recorded — the regression guard proving the dry-run gate did not suppress
+    a genuine directory write.
+    """
+    source = tmp_path / "src_tree"
+    source.mkdir()
+    (source / "inner.md").write_bytes(b"tree-content\n")
+    home = tmp_path / "home"
+    plan = _one_dir_plan(Path("bundle"), source)
+    outcomes: list[InstallOutcome] = []
+
+    sync_plan(
+        _IdentityAdapter(),
+        plan,
+        home=home,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+        outcomes=outcomes,
+    )
+
+    assert (home / "bundle" / "inner.md").read_bytes() == b"tree-content\n"
+    assert outcomes == [InstallOutcome(home / "bundle", Outcome.WRITTEN, None)]
 
 
 def test_counters_identical_with_outcomes_none_and_empty_list(tmp_path: Path) -> None:
