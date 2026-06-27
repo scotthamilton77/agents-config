@@ -29,6 +29,7 @@ Covered decisions:
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -364,4 +365,54 @@ def test_removed_collector_records_absolute_deleted_path(tmp_path: Path) -> None
     run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
 
     assert not o1.path.exists()
+    assert collector == {o1.path}
+
+
+def test_absent_file_orphan_pruned_as_noop(tmp_path: Path) -> None:
+    """
+    Given a file orphan whose path no longer exists on disk
+    When run_prune deletes it under auto_yes
+    Then the flow does not raise, the orphan is counted pruned, and its path is
+    recorded in the ``removed`` collector.
+
+    Pins the already-gone tolerance in ``_back_up_and_delete``: under
+    receipt-based pruning the user may have manually deleted an installed file
+    since the prior install. ``unlink(missing_ok=True)`` makes that a no-op
+    instead of a ``FileNotFoundError`` that aborts the whole prune — but the
+    entry is STILL counted/recorded so the receipt drops it (end state achieved).
+    """
+    o1 = _file_orphan(tmp_path, "claude", "skills", "gone")
+    o1.path.unlink()  # user manually deleted it since the prior install
+    assert not o1.path.exists()
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    per_tool = run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert per_tool["claude"].pruned == 1
+    assert per_tool["claude"].backed_up == 0  # nothing on disk to back up
+    assert collector == {o1.path}
+
+
+def test_absent_dir_orphan_pruned_as_noop(tmp_path: Path) -> None:
+    """
+    Given a directory orphan whose path no longer exists on disk
+    When run_prune deletes it under auto_yes
+    Then the flow does not raise, the orphan is counted pruned, and its path is
+    recorded in the ``removed`` collector.
+
+    Pins the directory side of the already-gone tolerance: the ``elif exists()``
+    guard skips ``shutil.rmtree`` for an absent dir (no-op) rather than letting
+    it raise, while still counting/recording the entry so the receipt drops it.
+    """
+    o1 = _dir_orphan(tmp_path, "claude", "skills", "gone-dir")
+    shutil.rmtree(o1.path)  # user manually removed it since the prior install
+    assert not o1.path.exists()
+    io = ScriptedIO(interactive=False)
+    collector: set[Path] = set()
+
+    per_tool = run_prune([o1], io=io, auto_yes=True, timestamp=_TS, removed=collector)
+
+    assert per_tool["claude"].pruned == 1
+    assert per_tool["claude"].backed_up == 0  # nothing on disk to back up
     assert collector == {o1.path}

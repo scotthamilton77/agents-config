@@ -184,6 +184,12 @@ def _back_up_and_delete(
     Skip the backup for a broken symlink — ``exists()`` returns False on a dead
     link so ``back_up`` would raise — but still remove the link below (``unlink``
     deletes a broken link unconditionally).
+
+    Under receipt-based pruning an orphan can legitimately already be absent on
+    disk (the user manually deleted it since the prior install). Deletion is
+    tolerant of that: an already-gone path is a harmless no-op, still counted
+    ``pruned`` and recorded in ``removed`` so the receipt drops the entry — the
+    desired end state (the path is gone) is already achieved.
     """
     counters = per_tool.setdefault(orphan.tool, Counters())
     if orphan.path.exists():
@@ -196,8 +202,13 @@ def _back_up_and_delete(
     # otherwise reach ``rmtree`` — which refuses a symlink and raises OSError.
     # ``unlink`` removes the symlink itself; ``rmtree`` handles real directories.
     if orphan.path.is_symlink() or not orphan.path.is_dir():
-        orphan.path.unlink()
-    else:
+        # ``missing_ok`` swallows only FileNotFoundError: an already-gone path is
+        # a no-op, real errors (e.g. permission) still raise.
+        orphan.path.unlink(missing_ok=True)
+    elif orphan.path.exists():
+        # ``is_dir()`` was True above, but guard the TOCTOU window: only rmtree a
+        # dir that is still present. An absent dir is a no-op (we do not silently
+        # swallow rmtree errors on a present dir — permission failures still raise).
         shutil.rmtree(orphan.path)
     counters.pruned += 1
     if removed is not None:
