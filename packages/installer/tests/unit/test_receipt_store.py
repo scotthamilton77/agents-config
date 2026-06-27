@@ -317,3 +317,96 @@ def test_non_string_roots_element_is_corrupt(tmp_path: Path) -> None:
     }
     path.write_text(json.dumps(doc), encoding="utf-8")
     assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_dir_entry_with_digest_round_trips(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    receipt = Receipt(
+        entries=(
+            ReceiptEntry(
+                Path(".claude/skills/foo"),
+                "claude",
+                Path(".claude"),
+                "dir",
+                None,
+                dir_digest="sha256:deadbeef",
+            ),
+        )
+    )
+    write_receipt(path, receipt)
+    result = read_receipt(path)
+    assert result.status is ReadStatus.OK
+    assert result.receipt is not None
+    assert result.receipt.entries[0].dir_digest == "sha256:deadbeef"
+
+
+def test_legacy_dir_entry_without_digest_still_validates(tmp_path: Path) -> None:
+    # A dir entry carrying no digest (what pre-feature installs wrote) must read OK:
+    # dir_digest is omitted from both the JSON and the canonical integrity bytes, so
+    # the persisted digest still matches — no SCHEMA_VERSION bump, no forced reinstall.
+    path = tmp_path / "install-receipt.json"
+    write_receipt(
+        path,
+        Receipt(
+            entries=(
+                ReceiptEntry(Path(".claude/skills/foo"), "claude", Path(".claude"), "dir", None),
+            )
+        ),
+    )
+    assert "dir_digest" not in path.read_text(encoding="utf-8")
+    result = read_receipt(path)
+    assert result.status is ReadStatus.OK
+    assert result.receipt is not None
+    assert result.receipt.entries[0].dir_digest is None
+
+
+def test_file_entry_carrying_dir_digest_is_corrupt(tmp_path: Path) -> None:
+    # dir_digest on a file entry is schema-invalid -> CORRUPT (fail closed). The
+    # entry validator rejects it before integrity is even checked.
+    path = tmp_path / "install-receipt.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "integrity": "sha256:whatever",
+                "roots": [],
+                "entries": [
+                    {
+                        "path": ".claude/rules/x.md",
+                        "owner": "claude",
+                        "root": ".claude",
+                        "kind": "file",
+                        "sha256": "ab",
+                        "dir_digest": "sha256:nope",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_non_string_dir_digest_is_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "install-receipt.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "integrity": "sha256:whatever",
+                "roots": [],
+                "entries": [
+                    {
+                        "path": ".claude/skills/foo",
+                        "owner": "claude",
+                        "root": ".claude",
+                        "kind": "dir",
+                        "sha256": None,
+                        "dir_digest": 123,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert read_receipt(path).status is ReadStatus.CORRUPT

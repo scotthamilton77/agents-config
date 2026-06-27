@@ -127,8 +127,12 @@ def prune_pipeline(
         allowlist=allowlist,
     )
     recorded_sha_by_path = {e.path: e.sha256 for e in prior.entries}
+    recorded_digest_by_path = {e.path: e.dir_digest for e in prior.entries}
     to_prune, relinquished = partition_file_orphans(
-        orphans, home=home, recorded_sha_by_path=recorded_sha_by_path
+        orphans,
+        home=home,
+        recorded_sha_by_path=recorded_sha_by_path,
+        recorded_digest_by_path=recorded_digest_by_path,
     )
 
     removed: set[Path] = set()
@@ -143,7 +147,10 @@ def prune_pipeline(
         # Re-check ownership at the destructive boundary (closes the TOCTOU window
         # between this partition and the actual delete — see prune_hash.is_safe_to_prune).
         revalidate=lambda o: is_safe_to_prune(
-            o, home=home, recorded_sha_by_path=recorded_sha_by_path
+            o,
+            home=home,
+            recorded_sha_by_path=recorded_sha_by_path,
+            recorded_digest_by_path=recorded_digest_by_path,
         ),
     )
     pruned_paths = {p.relative_to(home) for p in removed}

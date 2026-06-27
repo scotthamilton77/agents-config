@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from installer.core.model import FileKind, InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
-from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt import Receipt, ReceiptEntry, dir_content_digest
 
 if TYPE_CHECKING:
     from installer.plugins.base import PluginAdapter
@@ -29,8 +29,10 @@ def entries_from_outcomes(
     namespaces. A ``settings.json`` write is excluded even under a prune namespace:
     it is a merge-target holding the user's bytes (mirroring ``is_prunable``'s
     ``FileKind.SETTINGS_JSON`` guard), so recording it would make the user's merged
-    file eligible for orphan pruning. Directory writes carry ``sha256=None``; the
-    kind is inferred from sha256 presence."""
+    file eligible for orphan pruning. Directory writes carry ``sha256=None`` and a
+    recursive ``dir_digest`` of the just-installed tree (the owned state), so a
+    later prune can relinquish a directory whose contents drifted; the kind is
+    inferred from sha256 presence."""
     out: list[ReceiptEntry] = []
     for o in outcomes:
         if o.outcome is Outcome.DECLINED:
@@ -40,13 +42,21 @@ def entries_from_outcomes(
             continue
         if rel.name == FileKind.SETTINGS_JSON.value:
             continue
+        is_file = o.sha256 is not None
+        # dir_content_digest re-walks the just-installed tree. A transient unreadable
+        # inner file raises OSError and aborts receipt finalization (fail loud): a
+        # half-readable tree would record a digest that mis-classifies the directory
+        # at the next prune boundary, so refusing to stamp a wrong receipt is safer
+        # than recording one. (The prune path, by contrast, catches OSError and
+        # relinquishes — it must never delete on uncertainty.)
         out.append(
             ReceiptEntry(
                 path=o.dest.relative_to(home),
                 owner=tool,
                 root=dest_root.relative_to(home),
-                kind="file" if o.sha256 is not None else "dir",
+                kind="file" if is_file else "dir",
                 sha256=o.sha256,
+                dir_digest=None if is_file else dir_content_digest(o.dest),
             )
         )
     return out

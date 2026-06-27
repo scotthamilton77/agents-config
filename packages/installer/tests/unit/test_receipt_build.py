@@ -142,3 +142,20 @@ def test_desired_route_keys_includes_shipped_route_files(tmp_path: Path) -> None
     beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
     keys = desired_route_keys([beads], home=home)
     assert ("beads", Path(".beads/formulas/a.toml")) in keys
+
+
+def test_entries_from_outcomes_records_dir_digest_for_real_dir(tmp_path: Path) -> None:
+    # A dir outcome is recorded with a recursive digest of the installed tree, so a
+    # later prune can detect content drift. The digest equals dir_content_digest.
+    from installer.core.receipt import dir_content_digest
+
+    home = tmp_path
+    skill = home / ".claude" / "skills" / "foo"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("owned content")
+    outcomes = [InstallOutcome(skill, Outcome.WRITTEN, None)]
+    entries = entries_from_outcomes(outcomes, tool="claude", dest_root=home / ".claude", home=home)
+    entry = entries[0]
+    assert entry.kind == "dir"
+    assert entry.sha256 is None
+    assert entry.dir_digest == dir_content_digest(skill)

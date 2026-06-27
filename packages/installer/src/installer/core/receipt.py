@@ -25,6 +25,11 @@ class ReceiptEntry:
     root: Path
     kind: Literal["file", "dir"]
     sha256: str | None
+    dir_digest: str | None = None
+    """Recursive content fingerprint for a ``dir`` entry (``None`` for files and for
+    legacy dir entries recorded before this field existed). Lets the prune boundary
+    relinquish a directory whose contents drifted from the owned state — the
+    directory analogue of ``sha256`` for files."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,9 +52,39 @@ def canonical_bytes(receipt: Receipt) -> bytes:
     payload: dict[str, object] = {
         "schema_version": receipt.schema_version,
         "roots": sorted(str(r) for r in receipt.roots),
-        "entries": [[str(e.path), e.owner, str(e.root), e.kind, e.sha256] for e in entries],
+        "entries": [_entry_canonical(e) for e in entries],
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _entry_canonical(e: ReceiptEntry) -> list[object]:
+    """Canonical list form of an entry. ``dir_digest`` is appended ONLY when present,
+    so a receipt written before this field existed (no digest on any entry) hashes
+    byte-identically — its persisted integrity still validates, with no
+    ``SCHEMA_VERSION`` bump."""
+    base: list[object] = [str(e.path), e.owner, str(e.root), e.kind, e.sha256]
+    if e.dir_digest is not None:
+        base.append(e.dir_digest)
+    return base
+
+
+def dir_content_digest(path: Path) -> str:
+    """A recursive content fingerprint of a directory tree: ``sha256:<hex>`` over the
+    sorted ``(relpath, sha256(bytes))`` of every file under ``path``.
+
+    Mirrors ``sync._dir_is_unchanged``'s notion of owned content — files only
+    (empty dirs ignored), symlinks dereferenced (``rglob``/``read_bytes`` follow
+    them) — so a digest match means the same thing as "directory is unchanged" at
+    install time. Order-independent via the sort; stable across runs on the same
+    POSIX platform (relpaths are encoded with the OS separator, so the value is not
+    portable across separator families — fine for this POSIX-targeted installer)."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in path.rglob("*") if p.is_file()):
+        h.update(str(f.relative_to(path)).encode("utf-8"))
+        h.update(b"\0")
+        h.update(hashlib.sha256(f.read_bytes()).digest())
+        h.update(b"\0")
+    return "sha256:" + h.hexdigest()
 
 
 def compute_integrity(receipt: Receipt) -> str:
