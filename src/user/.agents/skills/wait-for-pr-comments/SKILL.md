@@ -416,13 +416,32 @@ manually (add `--mode autonomous --bead-id <id>` if applicable)."
 After Skill B completes, verify no review threads were missed before
 considering the await-review step done.
 
+**Why filter against the inventory.** SKIP and ESCALATE threads are
+intentionally never resolved (SKIP replies argue the reviewer's point;
+ESCALATE awaits human judgment). Without filtering, any SKIP/ESCALATE
+thread keeps the unresolved count > 0 forever and Phase 9 re-loops
+infinitely (3→4→5→6→7→8→9→3→…). The round cap does not save this path
+because the cap fires only when Phase 6 detects a new review, which it
+won't on a pure re-classification loop.
+
 1. **Query** for all unresolved, non-outdated review threads (pagination handled internally):
    ```bash
    ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
      --owner "$OWNER" --repo "$REPO" --pr "$PR"
    # stdout: {count: N, thread_ids: ["<graphql-thread-id>", ...]}
    ```
-2. **Count** threads where `isResolved == false` and `isOutdated == false`.
+2. **Filter** the result against the inventory to exclude threads the
+   current round classified SKIP or ESCALATE (intentionally unresolved).
+   Only genuinely actionable threads remain — unresolved FIX items whose
+   resolution didn't take, or threads not in the inventory at all (new
+   comments posted after Skill A's Phase 3 fetch):
+   ```bash
+   ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
+     --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+   | ${CLAUDE_SKILL_DIR}/filter-actionable-threads.sh \
+     --inventory "$INVENTORY_PATH"
+   # stdout: {count: N, thread_ids: [...]} — SKIP/ESCALATE excluded
+   ```
 3. **If count > 0**: treat as a new review round. Return to **Phase 3
    (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
    query's `comments` preview is for triage only; the canonical source for
@@ -763,6 +782,17 @@ ${CLAUDE_SKILL_DIR}/request-rereview.sh \
 ${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
   --owner "$OWNER" --repo "$REPO" --pr "$PR"
 # stdout: {count: <n>, thread_ids: [...]}
+```
+
+**Filter actionable threads** (Phase 9 — excludes SKIP/ESCALATE from the
+re-loop trigger):
+
+```bash
+${CLAUDE_SKILL_DIR}/count-unresolved-threads.sh \
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+| ${CLAUDE_SKILL_DIR}/filter-actionable-threads.sh \
+  --inventory "$INVENTORY_PATH"
+# stdout: {count: <n>, thread_ids: [...]} — SKIP/ESCALATE excluded
 ```
 
 **Validate inventory** — Skill B invokes this twice (Phase 0 with `--phase 0`
