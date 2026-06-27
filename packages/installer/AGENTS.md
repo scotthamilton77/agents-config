@@ -61,6 +61,26 @@ Never invoke `scripts/install.sh` or `scripts/install.py` to "try it out" —
 only the user runs the installer, and only when they explicitly ask. The gate's
 `install.py --help` entry-verify is the only sanctioned automatic invocation.
 
+## Install receipt & prune adoption (clean-break, by design)
+
+Pruning is driven by the **install receipt**
+(`~/.config/agents-config/install-receipt.json`) — a record of what the installer
+actually wrote — not a hand-maintained retired-glob list. Design:
+`docs/specs/2026-06-25-install-receipt-pruning-design.md`.
+
+**Cold-start is a deliberate clean break.** A *missing* receipt bootstraps empty:
+the first receipt-era run prunes nothing and records what it installs; pruning
+begins on the second run. There is intentionally **no migration** of pre-receipt
+installs and **no hand-maintained retired-path list** — the receipt is the only
+prune authority. A handful of paths retired before receipt adoption (removed
+skills, renamed rules) may therefore linger on installs that predate the receipt
+and never swept them under the old prune; that bounded, one-time, *cosmetic*
+litter is accepted, not a bug. Reintroducing a retired-list migration would revive
+the exact source→prune coupling the receipt exists to remove — don't, without
+revisiting the spec's trust/ownership model. (A *corrupt* receipt is different: it
+fails closed — prune disabled, file left untouched — so an unreadable state file
+never silently strands other owners' entries.)
+
 ## Reference
 
 Architecture: `docs/architecture/installer/installer-design.md`.
