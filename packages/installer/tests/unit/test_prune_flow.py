@@ -38,7 +38,7 @@ import pytest
 from installer.core.io_port import PerItemResult, ScriptedIO
 from installer.core.model import Orphan
 from installer.core.prune_flow import PruneAbortedError, run_prune
-from installer.core.prune_hash import is_prunable, partition_file_orphans
+from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
 
 _TS = "20250101-120000"
 
@@ -80,8 +80,8 @@ def test_revalidate_false_skips_delete_and_keeps_path(tmp_path: Path) -> None:
     assert removed == set()  # receipt keeps the entry
 
 
-def test_revalidate_with_is_prunable_keeps_file_modified_after_scan(tmp_path: Path) -> None:
-    """End-to-end TOCTOU guard with the real ``is_prunable`` closure: a file that
+def test_revalidate_with_is_safe_to_prune_keeps_file_modified_after_scan(tmp_path: Path) -> None:
+    """End-to-end TOCTOU guard with the real ``is_safe_to_prune`` closure: a file that
     matched its recorded sha at partition time (queued to prune) but is modified
     before deletion is preserved, never deleted, and not recorded as pruned.
     """
@@ -105,7 +105,9 @@ def test_revalidate_with_is_prunable_keeps_file_modified_after_scan(tmp_path: Pa
         timestamp=_TS,
         auto_yes=True,
         removed=removed,
-        revalidate=lambda orphan: is_prunable(orphan, home=tmp_path, recorded_sha_by_path=recorded),
+        revalidate=lambda orphan: is_safe_to_prune(
+            orphan, home=tmp_path, recorded_sha_by_path=recorded
+        ),
     )
 
     assert f.read_bytes() == b"user edited between scan and delete"  # preserved, not deleted

@@ -5,7 +5,7 @@ recorded sha256 (or the file is genuinely gone); a user-modified, type-drifted, 
 unreadable path is relinquished — kept on disk, dropped from the receipt. A DIR
 orphan is pruned only while the path is still a real directory (recursive
 content-drift protection is deferred); a dir path that drifted to a file or symlink
-is relinquished. The same per-orphan decision (``is_prunable``) is evaluated at scan
+is relinquished. The same per-orphan decision (``is_safe_to_prune``) is evaluated at scan
 time AND re-evaluated at the deletion boundary, so a path that changes between the
 two (the TOCTOU window of the interactive confirm prompt) is never deleted."""
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from installer.core.model import Orphan
 
 
-def is_prunable(
+def is_safe_to_prune(
     orphan: Orphan, *, home: Path, recorded_sha_by_path: dict[Path, str | None]
 ) -> bool:
     """Whether ``orphan`` is currently safe to prune (vs relinquish / keep).
@@ -63,12 +63,12 @@ def partition_file_orphans(
 ) -> tuple[list[Orphan], set[Path]]:
     """Split orphans into (to_prune, relinquished_home_relative_paths).
 
-    An orphan that is not currently prunable (see ``is_prunable``) is relinquished:
-    kept on disk and dropped from the receipt."""
+    An orphan that is not currently safe to prune (see ``is_safe_to_prune``) is
+    relinquished: kept on disk and dropped from the receipt."""
     to_prune: list[Orphan] = []
     relinquished: set[Path] = set()
     for orphan in orphans:
-        if is_prunable(orphan, home=home, recorded_sha_by_path=recorded_sha_by_path):
+        if is_safe_to_prune(orphan, home=home, recorded_sha_by_path=recorded_sha_by_path):
             to_prune.append(orphan)
         else:
             relinquished.add(orphan.path.relative_to(home))

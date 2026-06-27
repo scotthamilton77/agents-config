@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 from installer.core.model import Counters, InstallOutcome, Outcome, Tool
 from installer.core.prune_flow import run_prune
-from installer.core.prune_hash import is_prunable, partition_file_orphans
+from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
 from installer.core.receipt import Receipt, ReceiptEntry
 from installer.core.receipt_build import (
     desired_route_keys,
@@ -134,8 +134,10 @@ def prune_pipeline(
         timestamp=timestamp,
         removed=removed,
         # Re-check ownership at the destructive boundary (closes the TOCTOU window
-        # between this partition and the actual delete — see prune_hash.is_prunable).
-        revalidate=lambda o: is_prunable(o, home=home, recorded_sha_by_path=recorded_sha_by_path),
+        # between this partition and the actual delete — see prune_hash.is_safe_to_prune).
+        revalidate=lambda o: is_safe_to_prune(
+            o, home=home, recorded_sha_by_path=recorded_sha_by_path
+        ),
     )
     pruned_paths = {p.relative_to(home) for p in removed}
     return PruneOutcome(
