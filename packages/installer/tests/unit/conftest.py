@@ -17,9 +17,13 @@ stdlib module, so only OpenCode detection is affected and no unrelated
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from installer.core.installignore import InstallIgnore
+from installer.core.installignore import InstallIgnore, load_installignore
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture(autouse=True)
@@ -29,11 +33,11 @@ def _neutralize_opencode_path_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def ignore() -> InstallIgnore:
-    """The canonical .installignore content as an in-memory object, for staging
-    tests that must pass an exclusion set without touching a manifest file."""
-    return InstallIgnore(
-        basenames=frozenset(
-            {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "SESSION-PRIMER-README.md"}
-        ),
-        dirnames=frozenset({"rules-readmes"}),
-    )
+    """The canonical .installignore content as an in-memory object, so a staging
+    test gets the real exclusion set without needing a manifest file inside its
+    temporary repo under test.
+
+    Sourced from the REAL repo-root manifest via load_installignore rather than a
+    hand-copied literal, so a new exclusion class added to .installignore cannot
+    silently drift away from the set these staging tests exercise."""
+    return load_installignore(_REPO_ROOT / ".installignore")

@@ -3,21 +3,74 @@
   "model": "moonshotai/kimi-k2.6",
   "skills": {
     "paths": [
-      "~/.claude/skills/",
       "~/.agents/skills/"
     ]
   },
   "permission": {
-    "bash": "ask",
-    "read": "allow",
-    "edit": "ask",
+    "read": {
+      "*": "allow",
+      ".env": "deny",
+      "**/.env": "deny",
+      "~/.ssh/*": "deny",
+      "~/.secrets": "deny",
+      "~/.zshrc": "deny",
+      "~/.bashrc": "deny",
+      "~/.bash_profile": "deny",
+      "~/.profile": "deny",
+      "/etc/shadow": "deny",
+      "/etc/passwd": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      ".env": "deny",
+      "**/.env": "deny",
+      "~/.ssh/*": "deny",
+      "~/.secrets": "deny",
+      "~/.zshrc": "deny",
+      "~/.bashrc": "deny",
+      "~/.bash_profile": "deny",
+      "~/.profile": "deny",
+      "/etc/shadow": "deny",
+      "/etc/passwd": "deny",
+      "/etc/*": "deny",
+      "/bin/*": "deny",
+      "/usr/bin/*": "deny",
+      "/sbin/*": "deny",
+      "/usr/sbin/*": "deny"
+    },
+    "bash": {
+      "*": "allow",
+      "rm* /tmp*": "allow",
+      "rm -rf / *": "ask",
+      "rm -rf /*": "ask",
+      "ssh*rm *": "ask",
+      "*--hard*": "ask",
+      "*--force*": "ask",
+      "chmod *": "ask",
+      "chown *": "ask",
+      "chgrp *": "ask",
+      "git stash drop *": "ask",
+      "git stash clear*": "ask",
+      "git clean *": "ask",
+      "git restore *": "ask",
+      "git reset *": "ask",
+      "reboot*": "ask",
+      "shutdown*": "deny",
+      "poweroff*": "deny",
+      "dd *": "deny",
+      "mkfs*": "deny",
+      "fdisk *": "deny",
+      "parted *": "deny",
+      "wipefs *": "deny",
+      "*--no-preserve-root*": "deny"
+    },
     "glob": "allow",
     "grep": "allow",
     "list": "allow",
-    "task": "ask",
+    "task": "allow",
     "webfetch": "ask",
-    "websearch": "ask",
+    "websearch": "allow",
     "external_directory": "deny",
-    "doom_loop": "deny"
+    "doom_loop": "ask"
   }
 }

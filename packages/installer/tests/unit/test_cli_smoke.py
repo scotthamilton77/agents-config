@@ -46,14 +46,17 @@ def _home_with_claude_settings(tmp_path: Path) -> Path:
     return tmp_path
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
 def _write_installignore(repo: Path) -> None:
     """Mirror the real repo-root .installignore so cli.main's up-front fail-fast
     load finds it. main() refuses to run without one (exit 2), so every hermetic
-    repo a CLI smoke test points main() at must carry the manifest."""
+    repo a CLI smoke test points main() at must carry the manifest. The content
+    is copied from the REAL manifest (not retyped) so it cannot drift from it."""
     repo.mkdir(parents=True, exist_ok=True)
     (repo / ".installignore").write_text(
-        "AGENTS.md\nCLAUDE.md\nGEMINI.md\nREADME.md\nSESSION-PRIMER-README.md\nrules-readmes/\n",
-        encoding="utf-8",
+        (_REPO_ROOT / ".installignore").read_text(encoding="utf-8"), encoding="utf-8"
     )
 
 
@@ -1189,3 +1192,65 @@ def test_keyboard_interrupt_exits_130_without_traceback(
     captured = capsys.readouterr()
     assert "Aborted." in captured.err
     assert "Traceback" not in captured.err
+
+
+def _repo_with_agent_collision(tmp_path: Path) -> Path:
+    """A hermetic repo where a shared agent and a tool-root agent collide on the
+    same dest (agents/dup.md, NAMESPACED_MD/'agents'); the registry routes that
+    to the fatal strategy, so build_plan raises CollisionError during staging."""
+    repo = _hermetic_repo(tmp_path)
+    shared_agents = repo / "src" / "user" / ".agents" / "agents"
+    shared_agents.mkdir(parents=True)
+    (shared_agents / "dup.md").write_bytes(b"---\nname: dup\n---\nshared\n")
+    claude_agents = repo / "src" / "user" / ".claude" / "agents"
+    claude_agents.mkdir(parents=True)
+    (claude_agents / "dup.md").write_bytes(b"---\nname: dup\n---\ntool\n")
+    return repo
+
+
+def test_main_collision_error_exits_1_not_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An irreconcilable merge collision during staging is surfaced as an
+    actionable fatal install error (exit 1, 'installer:' on stderr), not an
+    uncaught traceback out of stage_and_transform at the CLI boundary."""
+    repo = _repo_with_agent_collision(tmp_path)
+
+    rc = main(
+        ["--tools=claude", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 1
+    assert "installer:" in capsys.readouterr().err
+
+
+def test_main_unknown_merge_key_exits_1_not_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An UnknownMergeKeyError — a registry wiring miss (no strategy for a
+    (kind, namespace)) — is surfaced as an actionable fatal (exit 1, 'installer:'
+    on stderr) rather than an uncaught traceback. Fault-injected at the staging
+    seam because the complete default_registry cannot produce this from real
+    inputs; mirrors the resolve_tools fault-injection test above."""
+    from installer.core.merge.registry import UnknownMergeKeyError
+    from installer.core.model import FileKind
+
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise UnknownMergeKeyError(FileKind.NAMESPACED_MD, "weird-ns")
+
+    monkeypatch.setattr("installer.cli.stage_and_transform", _raise)
+
+    rc = main(
+        ["--tools=claude", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=_hermetic_repo(tmp_path),
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "installer:" in err
+    assert "weird-ns" in err
