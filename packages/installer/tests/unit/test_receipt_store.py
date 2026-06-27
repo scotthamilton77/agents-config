@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from installer.core.receipt import Receipt, ReceiptEntry
-from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
+from installer.core.receipt import Receipt, ReceiptEntry, compute_integrity
+from installer.core.receipt_store import ReadStatus, read_receipt, to_json_obj, write_receipt
 
 
 def test_round_trip(tmp_path: Path) -> None:
@@ -172,3 +172,57 @@ def test_top_level_not_an_object_is_corrupt(tmp_path: Path) -> None:
     path = tmp_path / "install-receipt.json"
     path.write_text(json.dumps(["not", "a", "receipt"]), encoding="utf-8")
     assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+# ── kind<->sha256 coupling guard. These write the malformed entry with a
+# *matching* integrity digest (stamped over the malformed content via
+# compute_integrity), so the integrity check passes and the only thing that can
+# trip CORRUPT is the new kind/sha guard in _entry_from_json — not an integrity
+# mismatch. Without the guard these would read OK, so each test pins the guard.
+
+
+def _write_with_valid_integrity(path: Path, entry: ReceiptEntry) -> None:
+    receipt = Receipt(roots=(Path(".claude"),), entries=(entry,))
+    doc = to_json_obj(receipt)
+    doc["integrity"] = compute_integrity(receipt)
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_file_entry_with_null_sha256_is_corrupt(tmp_path: Path) -> None:
+    # A file entry whose sha256 is null defeats hash-aware relinquishment in
+    # prune_hash (the file is deleted instead of kept) -> fail closed.
+    path = tmp_path / "install-receipt.json"
+    entry = ReceiptEntry(Path(".claude/rules/x.md"), "claude", Path(".claude"), "file", None)
+    _write_with_valid_integrity(path, entry)
+    # Integrity matches the malformed content, so CORRUPT can only come from the
+    # kind/sha guard.
+    assert (
+        compute_integrity(Receipt(roots=(Path(".claude"),), entries=(entry,)))
+        == json.loads(path.read_text(encoding="utf-8"))["integrity"]
+    )
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_dir_entry_with_non_null_sha256_is_corrupt(tmp_path: Path) -> None:
+    # A dir entry carrying a digest contradicts the v1 schema (dirs are null).
+    path = tmp_path / "install-receipt.json"
+    entry = ReceiptEntry(Path(".claude/rules"), "claude", Path(".claude"), "dir", "ab")
+    _write_with_valid_integrity(path, entry)
+    assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def test_well_formed_file_and_dir_entries_read_ok(tmp_path: Path) -> None:
+    # Regression guard: the tightening is narrow — a file-with-sha and a
+    # dir-with-null entry together still read OK.
+    path = tmp_path / "install-receipt.json"
+    write_receipt(
+        path,
+        Receipt(
+            roots=(Path(".claude"),),
+            entries=(
+                ReceiptEntry(Path(".claude/rules/x.md"), "claude", Path(".claude"), "file", "ab"),
+                ReceiptEntry(Path(".claude/rules"), "claude", Path(".claude"), "dir", None),
+            ),
+        ),
+    )
+    assert read_receipt(path).status is ReadStatus.OK

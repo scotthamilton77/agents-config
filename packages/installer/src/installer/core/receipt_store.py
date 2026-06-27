@@ -47,6 +47,14 @@ def _entry_from_json(d: object) -> ReceiptEntry:
     sha = d["sha256"]
     if sha is not None and not isinstance(sha, str):
         raise ValueError("sha256 must be string or null")  # noqa: TRY003  # caught -> CORRUPT; subclass not justified
+    # kind<->sha256 coupling (mirrors write-time receipt_build): a file always
+    # carries a digest, a dir never does. A file with null sha256 would defeat
+    # hash-aware relinquishment (prune_hash deletes it instead of keeping a
+    # user-modified file); fail closed -> CORRUPT.
+    if kind == "file" and not isinstance(sha, str):
+        raise ValueError("file entry requires string sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
+    if kind == "dir" and sha is not None:
+        raise ValueError("dir entry must have null sha256")  # noqa: TRY003  # caught -> CORRUPT; single call-site
     return ReceiptEntry(
         path=Path(str(d["path"])),
         owner=str(d["owner"]),
