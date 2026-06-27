@@ -81,6 +81,21 @@ revisiting the spec's trust/ownership model. (A *corrupt* receipt is different: 
 fails closed — prune disabled, file left untouched — so an unreadable state file
 never silently strands other owners' entries.)
 
+## Hash-aware pruning is file-level only (dirs are backup-and-delete, by design)
+
+A **file** orphan is pruned only while its bytes still match the recorded
+``sha256`` (a user-modified, type-drifted, or unreadable file relinquishes); this
+check runs at scan time AND is re-checked at the deletion boundary (TOCTOU guard).
+A **directory** orphan carries ``sha256: null`` (no single digest in v1), so it is
+pruned whenever the path is still a real directory — there is intentionally **no
+recursive content-drift protection**: a user who adds or edits files *inside* a
+recorded skill/agent directory that later retires will have that tree removed (a
+path-aware **backup is always taken first**, so it is recoverable). Cheap *type*
+drift (a recorded dir path that is now a file or symlink) IS guarded — it
+relinquishes. Recursive directory content-drift protection (a per-file manifest or
+recursive digest) is deferred to `agents-config-fkewj` and is a schema change; do
+not bolt a partial version onto v1 without that bead.
+
 ## Reference
 
 Architecture: `docs/architecture/installer/installer-design.md`.

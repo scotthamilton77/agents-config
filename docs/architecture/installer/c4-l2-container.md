@@ -14,7 +14,8 @@
 | Source tree | The repo's `src/user/` (shared `.agents/` + per-tool `.claude/`, `.codex/`, `.gemini/`, `.opencode/`) and `src/plugins/<name>/`. The installer's **read-only** input. |
 | Destination store | A per-tool config directory the installer writes into (`~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.config/opencode/`, `~/.beads/`). |
 | `StagingPlan` | The installer's **in-memory** `dict[Path, StagedItem]`. It is process-internal state, NOT a container — it appears at L3 / [data-view](data-view.md), never on this diagram. `--dump-stage` materialises it to disk for debugging only. |
-| `installer.toml` | The installer's structured config (prune globs + tool-registry overrides). Replaces the legacy `scripts/prune-list` at the parity gate. |
+| `installer.toml` | The installer's structured config — a single `[tools]` table of optional per-tool dest-dir overrides. |
+| Install receipt | `~/.config/agents-config/install-receipt.json` — the installer's persisted record of every wholesale-authored entry it wrote, plus its sibling `install-receipt.lock`. The sole prune authority; read at prune start, rewritten (mirrors disk) at run end. |
 | Backup dir | A path-aware sibling directory where the installer copies a destination file before overwriting or pruning it. |
 
 ## Purpose
@@ -34,12 +35,16 @@ C4Container
     Person(operator, "Operator", "Developer running the installer from the agents-config repo")
 
     System_Boundary(installer_sys, "Python installer") {
-        Container(proc, "installer process", "Python 3.11 / uv", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon, no persistent state of its own — every invocation runs to completion and exits.")
+        Container(proc, "installer process", "Python 3.11 / uv", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon — every invocation runs to completion and exits. Its only persisted state is the install receipt (read at prune start, rewritten at run end).")
     }
 
     System_Boundary(repo, "agents-config repo (read-only inputs)") {
         ContainerDb(source, "Source config tree", "files on local FS", "src/user/.agents (shared) + src/user/.{claude,codex,gemini,opencode} (per-tool) + src/plugins/<name>/. The installer NEVER writes here — it is pure input.")
-        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — [prune].retired globs + [tools] registry overrides. Read once at Config build.")
+        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — a single [tools] table of optional per-tool dest-dir overrides. Read once at Config build.")
+    }
+
+    System_Boundary(state, "Installer state (persisted between runs)") {
+        ContainerDb(receipt, "install receipt", "JSON on local FS", "~/.config/agents-config/install-receipt.json (+ install-receipt.lock) — the record of every wholesale-authored entry the installer wrote. The sole prune authority: read at prune start, rewritten to mirror disk at run end, behind an integrity digest and a single-writer advisory lock. Outside every dest tree, so it is never itself installed or pruned.")
     }
 
     System_Boundary(home, "User home (destination stores — installer-written)") {
@@ -57,7 +62,8 @@ C4Container
     Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
 
     Rel(proc, source, "Walks + reads source files; flattens DYNAMIC-INCLUDE; strips .template suffix", "FS read")
-    Rel(proc, toml, "Reads prune globs + tool-registry overrides", "FS read")
+    Rel(proc, toml, "Reads [tools] dest-dir overrides", "FS read")
+    Rel(proc, receipt, "Reads prior receipt (prune diff); rewrites it to mirror disk at run end; flock-guarded", "FS read+write")
 
     Rel(proc, claude, "Hash-compare → diff → confirm → backup → write", "FS write")
     Rel(proc, codex, "Hash-compare → write", "FS write")
@@ -79,14 +85,14 @@ C4Container
 
 ### The installer process
 
-The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon, no background work, no cache between runs. Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, `prune`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
+The whole installer runs here. Every invocation is **terminal** — parse argv, build `Config`, build the `StagingPlan`(s), flush to disk, exit. There is no daemon and no background work; the one piece of state that *does* survive a run is the install receipt (read at prune start, rewritten at run end). Internally — at L3 — this process is composed of a tool-agnostic `core/` engine (`model`, `io_port`, `templates`, `staging`, `sync`, the receipt-based prune subsystem `run`/`receipt*`/`prune_hash`/`prune_flow`/`ownership`, `merge/*`), per-tool `tools/` adapters, per-plugin `plugins/` adapters, and a `cli`/`config`/`orchestrator` top layer. Those components are drawn in [`c4-l3-engine.md`](c4-l3-engine.md).
 
 The installer's entry points are `python3 scripts/install.py` (a thin stub: `from installer.cli import main`) and the module form `python -m installer` (requires `packages/installer/__main__.py`); both invoke the same `installer.cli.main`.
 
 ### Read-only inputs
 
 - **Source config tree** — `src/user/.agents/` (shared content installed to all tools), `src/user/.{claude,codex,gemini,opencode}/` (per-tool content), and `src/plugins/<name>/` (optional overlay content). The installer **never writes here**; this is the architectural guarantee that makes the source the single canonical authoring surface (the AGENTS.md "always edit source, never deployed artifacts" rule depends on it).
-- **`installer.toml`** — structured config read once at `Config` build: the `[prune].retired` glob list (retired paths to scan for and offer to remove) and optional `[tools]` registry overrides. This is the sole installer config; `scripts/prune-list` is the legacy predecessor it replaces.
+- **`installer.toml`** — structured config read once at `Config` build: a single `[tools]` table of optional per-tool dest-dir overrides. This is the sole installer config file; pruning is **not** configured here (it is driven by the install receipt, below).
 
 ### Destination stores (installer-written)
 
@@ -95,6 +101,10 @@ One store per tool (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.config/opencode`) 
 ### Backup dirs
 
 Not a single directory but a routing rule: a file inside a managed namespace (`commands` / `skills` / `agents` / `rules` / `formulas`) backs up to a parent-level `<namespace>-backup/` sibling — deliberately **outside** the namespace so the assistant's discovery walk does not pick the backup up as a real item — while a top-level file backs up in place. Backups are written before overwrite (`sync`) and before prune (`prune`).
+
+### Install receipt (installer-owned, persisted between runs)
+
+`~/.config/agents-config/install-receipt.json` is the installer's **one** piece of persisted state — a tool-neutral state dir deliberately outside every destination tree, so the receipt is never itself installed or pruned. It records every wholesale-authored entry the installer wrote (namespaced `commands`/`skills`/`agents`/`rules` + plugin route dests) and is the **sole prune authority**: a recorded entry no longer in this run's desired plan, in scope, is an orphan. The receipt is read at the start of the prune step, validated against its own `integrity` digest, and atomically rewritten to mirror disk at run end — the whole read → install → prune → write section held under a single-writer advisory lock (the sibling `install-receipt.lock`). It never records a merge-target (`settings.json`, the assembled instruction files), so it adds no new deletion surface.
 
 ### External consumers
 
@@ -105,7 +115,7 @@ The four AI coding assistants and the `bd` CLI are **external systems** that rea
 - **The source tree is read-only; the installer owns the writes to destinations.** There is exactly one writer of `~/.claude` et al. during install (the installer) and exactly one writer of `src/` (the human author, via the repo). The installer never crosses that line.
 - **The `StagingPlan` is in-memory and never appears here.** It is built, overlaid, and transformed in process memory; only `sync` touches disk, file-by-file. The one exception, `--dump-stage <path>`, materialises the plan to a throwaway directory for debugging and exits without writing any real destination — it is a diagnostic, not the operational path.
 - **Consumption is asynchronous.** The assistants read their stores whenever *they* run, not when the installer runs. The installer has no runtime coupling to any tool — only a path + content contract via the adapter.
-- **`installer.toml` is config, not state.** It is read, never written, by the install path. (`tomli-w` exists in the dep list for a future `--prune`-driven config-update feature, but the steady-state install reads it read-only.)
+- **`installer.toml` is config, not state.** It is read, never written, by the install path. The installer's persisted *state* lives separately in the **install receipt** (`~/.config/agents-config/install-receipt.json`) — read at prune start and rewritten at run end — not in `installer.toml`.
 - **Tool set and plugin set are resolved once, up front.** `Config` is frozen after auto-detection + argv + `installer.toml`; the destination stores written in a given run are fixed before any staging begins.
 
 ## What this diagram does NOT show

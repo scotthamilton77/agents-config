@@ -21,7 +21,7 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 ├── packages/
 │   └── installer/
 │       ├── pyproject.toml                   (uv-managed; targeted deps allowed)
-│       ├── installer.toml                   (installer config — prune list, tool registry overrides)
+│       ├── installer.toml                   (installer config — [tools] dest-dir overrides)
 │       ├── src/installer/
 │       │   ├── core/                        (pure, tool-agnostic engine)
 │       │   ├── tools/                       (per-tool adapters)
@@ -51,8 +51,16 @@ installer/
 │   ├── io_port.py               IOPort protocol + TerminalIO + ScriptedIO
 │   ├── templates.py             DYNAMIC-INCLUDE flattening (all three directive forms)
 │   ├── staging.py               Phases 1–6.9: source-walk → StagingPlan; parameterised by ToolAdapter
-│   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write
-│   ├── prune.py                 Orphan scan + interactive prune flow
+│   ├── sync.py                  Phase 7: hash-compare, diff, prompt, backup, write; reports per-item InstallOutcome
+│   ├── run.py                   Run composition: install_pipeline + prune_pipeline + record_receipt
+│   ├── ownership.py             Wholesale-vs-merge-target classifier (which items the receipt records)
+│   ├── receipt.py               Receipt / ReceiptEntry model + canonical serialization + integrity digest
+│   ├── receipt_store.py         Read (MISSING vs CORRUPT) / atomic write
+│   ├── receipt_lock.py          Single-writer advisory flock (read → install → prune → write)
+│   ├── receipt_diff.py          scope_owners + validate_entry + diff_orphans → Orphan list
+│   ├── receipt_build.py         desired_staged_keys / route keys + entry builders + merge_receipt
+│   ├── prune_hash.py            is_prunable + partition_file_orphans (hash/type-aware, TOCTOU re-check)
+│   ├── prune_flow.py            run_prune: interactive backup + consent + delete
 │   └── merge/
 │       ├── registry.py          (FileKind, namespace) → MergeStrategy dispatch
 │       ├── base.py              MergeStrategy protocol
@@ -118,20 +126,15 @@ The dependency list is deliberately tight, but we no longer refuse a library tha
 
 ### Configuration — `installer.toml`
 
-Structured TOML at `packages/installer/installer.toml` owns installer configuration:
+Structured TOML at `packages/installer/installer.toml` owns installer configuration. Its only table is `[tools]`:
 
 ```toml
-[prune]
-# Retired paths (one per glob pattern) — see installer/core/prune.py for matching semantics.
-retired = [
-  "*/skills/condition-based-waiting",
-  "claude/rules/git-commits.md",
-]
-
 [tools]
-# Optional overrides — leave commented to use built-in adapters.
+# Optional per-tool dest-dir overrides — leave commented to use built-in adapters.
 # claude.dest = "~/.claude"
 ```
+
+Pruning is **not** configured here. It is driven by the **install receipt** (`~/.config/agents-config/install-receipt.json`) — a record of every wholesale-authored entry the installer wrote, diffed against the desired staged plan to find orphans. See [`data-view.md`](data-view.md) §"Install receipt — the persisted prune authority" and [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow"; the authoritative design is `docs/specs/2026-06-25-install-receipt-pruning-design.md`.
 
 ### `--dump-stage` flag
 
@@ -152,8 +155,9 @@ Single injectable abstraction (`info`/`ok`/`warn`/`err`/`header`/verbose variant
 - `Tool` is an enum for exhaustive type-checking; `ToolAdapter` instances live in a registry keyed by `Tool` value. Plugins are **not** enumerated — they are discovered dynamically by scanning `src/plugins/<name>/` and registered by name string, so adding a plugin requires no code change to `model.py`. `PluginAdapter` instances live in a string-keyed registry. Per-`StagedItem` provenance is tracked via a `Provenance(kind: Literal["tool","plugin"], name: str)` dataclass so tool-vs-plugin origin survives the asymmetry.
 - `FileKind` enum keys `MergeStrategy` dispatch in `core/merge/registry.py` on **`(FileKind, namespace)`** because `NAMESPACED_MD` items need their parent-dir namespace to pick the right strategy (e.g. `(NAMESPACED_MD, "rules")` → append-merge; `(NAMESPACED_MD, "commands")` → fatal). For non-namespaced kinds (`SETTINGS_JSON`, `JSONC`, `TOML`, `OTHER`, `DIR`) the namespace component is unused and the lookup degenerates to a `FileKind`-only key.
 - `StagingPlan` is the in-memory staging structure — a `dict[Path, StagedItem]` plus provenance tracking.
-- `Orphan` dataclass carries tool, namespace, path, and kind for each item found in the destination but not in the current source.
-- `Config` is frozen, populated from argv + `installer.toml` + auto-detection probes (which themselves consult adapters).
+- `Orphan` dataclass carries tool (owner), namespace, path, and kind for each recorded receipt entry that is in scope but no longer in this run's desired staged plan (and passes the path trust boundary).
+- `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target.
+- `Config` is frozen, populated from argv + `installer.toml` + auto-detection probes (which themselves consult adapters). It carries no prune fields — pruning is driven by the `--prune` / `--prune-only` argparse flags and the install receipt.
 
 ## Test architecture
 
@@ -168,7 +172,7 @@ Pure-function tests against the core engine, exercised through a `FakeToolAdapte
 - `core/merge/strategies/json_union.py` — nested dict precedence; array union+dedupe (first-seen order); type mismatch; key only in incoming.
 - `core/merge/strategies/fatal.py` — raises with informative message including filenames.
 - `core/merge/registry.py` — `(FileKind, namespace)` dispatch correctness; unknown key raises.
-- `core/prune.py` — TOML prune-list load; glob matching (`*/skills/foo` vs exact match).
+- `core/receipt_diff.py` / `core/prune_hash.py` — `scope_owners` + `diff_orphans` against the desired staged plan; `validate_entry` trust boundary; `is_prunable` hash/type partition (prune vs relinquish).
 - `core/io_port.py` (`ScriptedIO`) — consumes scripts in order; raises on exhaustion; records transcript faithfully.
 - `tools/<name>.py` — each adapter's `is_detected`, `dest_dir`, `should_install_namespace` rules tested independently.
 
