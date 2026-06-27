@@ -35,6 +35,30 @@ _ONE_BY_ONE = "o"
 _CANCEL = "c"
 
 
+def _lstat_identity(path: Path) -> tuple[int, int, int, int, int] | None:
+    """Filesystem identity of ``path`` for the prune-boundary TOCTOU recheck.
+
+    Returns ``(st_dev, st_ino, st_mtime_ns, st_ctime_ns, st_size)`` — enough to
+    detect an unlink-then-recreate even when the OS recycles the freed inode
+    number (the times and size still move). ``st_ctime_ns`` (inode-change time)
+    is included specifically because it is NOT settable via ``os.utime``, so an
+    adversary who restores a forged ``st_mtime_ns`` on the swapped-in file still
+    cannot match the recreation's ctime. ``lstat`` does NOT follow symlinks,
+    matching how ``unlink``/``rmtree`` below act on the link itself, never its
+    target.
+
+    A genuinely-absent path (or one whose parent component is no longer a
+    directory) is ``None`` — the "expected gone" sentinel, distinct from any
+    real entry. Any other ``OSError`` (e.g. permission) propagates, consistent
+    with the destructive ops below not swallowing real errors.
+    """
+    try:
+        st = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size)
+
+
 class PruneAbortedError(RuntimeError):
     """Raised when a non-interactive ``--prune-only`` run lacks authorization.
 
@@ -238,12 +262,43 @@ def _back_up_and_delete(
     ``pruned`` and recorded in ``removed`` so the receipt drops the entry — the
     desired end state (the path is gone) is already achieved.
     """
+    # Snapshot the path's filesystem identity BEFORE revalidate inspects it, so the
+    # recheck below spans the whole revalidate window (the residual TOCTOU codex
+    # flagged: a path swapped between a passing revalidate and the unlink/rmtree would
+    # otherwise be backed up then removed).
+    identity_before = _lstat_identity(orphan.path)
     if revalidate is not None and not revalidate(orphan):
         # Drifted since the orphan scan (the TOCTOU window of the confirm prompt):
         # leave it in place, do not back up / delete / count, and do not record it
         # in ``removed`` — the receipt keeps it and re-checks next run.
         io.info(
             f"Skipped {orphan.path.name} — changed since the orphan scan; left in place",
+            verbose=True,
+        )
+        return
+    # Re-check identity before any backup or delete. Block whenever a still-present
+    # object's identity differs from the snapshot (``identity_after`` is non-None and
+    # differs) — the tuple carries mtime/ctime/size, so this catches both a wholesale
+    # replacement and an in-place modification/touch during the revalidate window. Either
+    # way the path is the user's now, so leave it in place (not backed up, not deleted,
+    # not counted, not in ``removed``, so the receipt keeps the entry and re-evaluates it
+    # next run).
+    #
+    # A ``None`` ``identity_after`` means the path simply VANISHED (whether absent from
+    # the start, or removed mid-window) — there is no object to protect, so fall through
+    # to the no-op delete below and count it pruned. That keeps a vanished orphan
+    # consistent with an absent-from-start one (the desired end state — path gone — is
+    # achieved) instead of leaving the receipt to re-evaluate a path that is already gone.
+    #
+    # The recheck precedes the backup deliberately: it keeps ``backed_up`` from ever
+    # incrementing without a following prune (preserving ``summary._is_changed``'s
+    # invariant that a backup only rides along a real change) and avoids leaving a
+    # phantom all-zero ``per_tool`` bucket. The residual backup->unlink window is the
+    # irreducible cost of not having handle-relative (openat/unlinkat) ops.
+    identity_after = _lstat_identity(orphan.path)
+    if identity_after is not None and identity_after != identity_before:
+        io.info(
+            f"Skipped {orphan.path.name} — changed at the prune boundary; left in place",
             verbose=True,
         )
         return
