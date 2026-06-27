@@ -1,16 +1,13 @@
-"""Partition file orphans by on-disk hash before deletion.
+"""Decide which orphans are safe to prune vs must be relinquished.
 
-A FILE orphan whose current bytes differ from the receipt's recorded sha256 was
-modified by the user after we installed it; it is relinquished (kept on disk,
-dropped from the receipt) rather than deleted. A directory orphan prunes when the
-path is still a real directory or already gone, but a recorded dir path that has
-type-drifted to a regular file or symlink is relinquished, not deleted — recursive
-CONTENT-drift protection for still-real directories remains deferred. A file that
-genuinely vanished prunes (its delete is a harmless no-op); a recorded FILE path
-that is present but unreadable *as a regular file* — a directory now occupies it,
-or a permission/FS error — is relinquished, never deleted: we cannot confirm it is
-still our bytes, and the downstream prune would ``rmtree``/``unlink`` content we
-no longer own (the delete would not be a no-op)."""
+A FILE orphan is pruned only while its on-disk bytes still match the receipt's
+recorded sha256 (or the file is genuinely gone); a user-modified, type-drifted, or
+unreadable path is relinquished — kept on disk, dropped from the receipt. A DIR
+orphan is pruned only while the path is still a real directory (recursive
+content-drift protection is deferred); a dir path that drifted to a file or symlink
+is relinquished. The same per-orphan decision (``is_prunable``) is evaluated at scan
+time AND re-evaluated at the deletion boundary, so a path that changes between the
+two (the TOCTOU window of the interactive confirm prompt) is never deleted."""
 
 from __future__ import annotations
 
@@ -24,47 +21,55 @@ if TYPE_CHECKING:
     from installer.core.model import Orphan
 
 
+def is_prunable(
+    orphan: Orphan, *, home: Path, recorded_sha_by_path: dict[Path, str | None]
+) -> bool:
+    """Whether ``orphan`` is currently safe to prune (vs relinquish / keep).
+
+    ``True`` — our pristine content, or the path is genuinely absent: safe to delete.
+    ``False`` — drifted, replaced, or unreadable: relinquish, leave the user's content.
+
+    Evaluated against the LIVE filesystem, so it is correct at both scan time
+    (``partition_file_orphans`` buckets prune vs relinquish) and again at the
+    deletion boundary (``run_prune`` re-checks just before backup/delete), closing
+    the TOCTOU window between the scan and the actual delete.
+
+    - dir: prunable only while still a real directory (or already gone); a path that
+      type-drifted to a file or symlink is the user's now (recursive CONTENT-drift
+      for still-real dirs stays deferred). ``is_symlink`` is tested first so a
+      dir-symlink never counts as a real directory.
+    - file: prunable when the bytes still match the recorded sha256, or the file
+      genuinely vanished (``FileNotFoundError`` — the delete is a no-op). A digest
+      mismatch (user-modified) or an unreadable path (a directory now occupies it,
+      or a permission/FS error) is NOT prunable — we cannot confirm the bytes are
+      ours and the delete would not be a no-op."""
+    if orphan.kind == "dir":
+        return not orphan.path.is_symlink() and (not orphan.path.exists() or orphan.path.is_dir())
+    try:
+        actual = hashlib.sha256(orphan.path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    recorded = recorded_sha_by_path.get(orphan.path.relative_to(home))
+    return recorded is None or actual == recorded
+
+
 def partition_file_orphans(
     orphans: Sequence[Orphan],
     *,
     home: Path,
     recorded_sha_by_path: dict[Path, str | None],
 ) -> tuple[list[Orphan], set[Path]]:
-    """Split orphans into (to_prune, relinquished_home_relative_paths)."""
+    """Split orphans into (to_prune, relinquished_home_relative_paths).
+
+    An orphan that is not currently prunable (see ``is_prunable``) is relinquished:
+    kept on disk and dropped from the receipt."""
     to_prune: list[Orphan] = []
     relinquished: set[Path] = set()
     for orphan in orphans:
-        if orphan.kind == "dir":
-            # Cheap type-drift guard (recursive CONTENT-drift stays deferred): a
-            # recorded dir path that is now a regular file or symlink is no longer
-            # ours — the user replaced it. Relinquish (keep, drop from the receipt)
-            # rather than unlink their file/link. A still-real directory or an
-            # already-absent path prunes as before (backup makes a real dir
-            # recoverable). is_symlink is tested first so a dir-symlink never counts
-            # as a real directory.
-            if orphan.path.is_symlink() or (orphan.path.exists() and not orphan.path.is_dir()):
-                relinquished.add(orphan.path.relative_to(home))
-            else:
-                to_prune.append(orphan)
-            continue
-        rel = orphan.path.relative_to(home)
-        recorded = recorded_sha_by_path.get(rel)
-        try:
-            actual = hashlib.sha256(orphan.path.read_bytes()).hexdigest()
-        except FileNotFoundError:
-            # Genuinely gone — the delete is a true no-op; prune drops the stale entry.
+        if is_prunable(orphan, home=home, recorded_sha_by_path=recorded_sha_by_path):
             to_prune.append(orphan)
-            continue
-        except OSError:
-            # Present but unreadable as a regular file: a directory now occupies the
-            # recorded FILE path, or a permission/FS error. We cannot confirm the
-            # bytes are still ours, and the downstream prune would rmtree the dir (or
-            # unlink content) we no longer own. Fail closed: relinquish (keep on
-            # disk, drop from the receipt) rather than delete blind.
-            relinquished.add(rel)
-            continue
-        if recorded is not None and actual != recorded:
-            relinquished.add(rel)
         else:
-            to_prune.append(orphan)
+            relinquished.add(orphan.path.relative_to(home))
     return to_prune, relinquished
