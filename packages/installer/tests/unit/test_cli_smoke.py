@@ -8,6 +8,7 @@ are absent — they test the stdlib, not coded decisions."""
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -876,6 +877,60 @@ def test_main_prune_installs_then_prunes(tmp_path: Path) -> None:
     assert rc == 0
     assert (home / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
     assert not orphan.exists()
+
+
+def test_main_prune_with_corrupt_receipt_prunes_nothing(tmp_path: Path) -> None:
+    """Spec safety scenario 5 (cli level): a corrupt prior receipt prunes nothing.
+
+    The receipt on disk is valid JSON and a valid schema but carries a stale
+    integrity digest, so read_receipt returns CORRUPT and the pipeline treats the
+    prior as empty (fail closed). The on-disk ~/.claude/skills/ralf-it WOULD be an
+    orphan if the receipt were trusted (the receipt records it, the plan omits it),
+    but with a corrupt prior nothing is an orphan -> it survives --prune --yes.
+
+    Pins the destructive-feature safety contract end-to-end through main: a
+    tampered/garbled receipt can never authorize a delete. A real install
+    rewrites a fresh valid receipt, but the orphan dir is left intact.
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = tmp_path / "home"
+    orphan = home / ".claude" / "skills" / "ralf-it"
+    orphan.mkdir(parents=True)
+    (home / ".claude" / "settings.json").write_text("{}")
+
+    # A receipt that would orphan ralf-it IF trusted, but with a wrong integrity
+    # digest so read_receipt -> CORRUPT -> treated as empty (prunes nothing).
+    receipt_path = home / ".config" / "agents-config" / "install-receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "integrity": "sha256:deadbeef",  # stale/forged -> CORRUPT
+                "roots": [".claude"],
+                "entries": [
+                    {
+                        "path": ".claude/skills/ralf-it",
+                        "owner": "claude",
+                        "root": ".claude",
+                        "kind": "dir",
+                        "sha256": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = main(
+        ["--prune", "--yes", "--tools=claude"],
+        home=home,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert orphan.exists()  # corrupt receipt is never trusted to delete
 
 
 # ── 8.18: install summary renderer wired into main ──

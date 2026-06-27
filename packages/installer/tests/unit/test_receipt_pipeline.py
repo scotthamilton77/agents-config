@@ -9,6 +9,7 @@ authority (no globs); the caller writes it via record_receipt.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from installer.core.io_port import ScriptedIO
@@ -121,6 +122,129 @@ def test_no_orphans_clean_noop(tmp_path: Path) -> None:
 
     assert keep.exists()
     assert outcome.counters == {}
+    assert outcome.pruned_paths == set()
+
+
+def test_retired_plugin_formula_pruned_via_receipt(tmp_path: Path) -> None:
+    """Spec safety scenario 1: a fully-retired plugin's recorded formula is pruned.
+
+    Beads was dropped from this run (``plugins=()``, ``discovered_plugin_names``
+    empty), but the prior receipt records ``.beads/formulas/old.toml`` owned by
+    ``beads`` with a sha matching the on-disk bytes. ``scope_owners`` pulls the
+    retired ``beads`` owner back into scope; the ``.beads`` root must be in
+    ``prior.roots`` so ``validate_entry``'s allowlist check passes for an owner with
+    no live root this run. The orphan's bytes match the recorded sha, so it is
+    deleted, not relinquished.
+
+    Pins: a plugin we stopped shipping still gets its routed files pruned via the
+    receipt — the persisted-roots allowlist is what authorizes the delete.
+    """
+    home = _claude_home(tmp_path)
+    formula = home / ".beads" / "formulas" / "old.toml"
+    formula.parent.mkdir(parents=True)
+    formula_bytes = b"old = 1\n"
+    formula.write_bytes(formula_bytes)
+    prior = Receipt(
+        roots=(Path(".claude"), Path(".beads")),
+        entries=(
+            ReceiptEntry(
+                Path(".beads/formulas/old.toml"),
+                "beads",
+                Path(".beads"),
+                "file",
+                hashlib.sha256(formula_bytes).hexdigest(),
+            ),
+        ),
+    )
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plugins=(),
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names=set(),  # fully retired
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert not formula.exists()
+    assert outcome.pruned_paths == {Path(".beads/formulas/old.toml")}
+    assert outcome.relinquished_paths == set()
+
+
+def test_symlinked_root_escape_is_not_pruned(tmp_path: Path) -> None:
+    """Spec safety scenario 3: a recorded entry that escapes its root via a
+    symlinked parent survives the prune end-to-end.
+
+    ``home/.claude/link`` symlinks outside home; a recorded entry under
+    ``.claude/link/x`` resolves outside ``.claude``. ``validate_entry``'s
+    symlink-aware containment rejects it, so ``diff_orphans`` skips it — it never
+    reaches the delete step. The real target file outside home is untouched.
+
+    Pins: the containment check is enforced in the full pipeline, not only the
+    ``validate_entry`` unit — a forged symlink cannot weaponize the pruner into
+    deleting outside the install roots.
+    """
+    home = _claude_home(tmp_path)
+    outside = tmp_path.parent / "outside_target"
+    outside.mkdir(exist_ok=True)
+    victim = outside / "x"
+    victim.write_bytes(b"not ours\n")
+    (home / ".claude" / "link").symlink_to(outside, target_is_directory=True)
+
+    prior = Receipt(
+        roots=(Path(".claude"),),
+        entries=(ReceiptEntry(Path(".claude/link/x"), "claude", Path(".claude"), "file", None),),
+    )
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plans=plans,
+        prior=prior,
+        home=home,
+        discovered_plugin_names=set(),
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert victim.exists()  # the escaping target is never deleted
+    assert outcome.pruned_paths == set()
+
+
+def test_corrupt_prior_modeled_as_empty_prunes_nothing(tmp_path: Path) -> None:
+    """Spec safety scenario 5 (pipeline level): a corrupt receipt prunes nothing.
+
+    A CORRUPT receipt read collapses to an empty ``Receipt`` before reaching
+    ``prune_pipeline`` (fail closed). With an empty prior, an on-disk dir that WOULD
+    be an orphan if a real receipt recorded it is left untouched — nothing is an
+    orphan without a recorded baseline.
+
+    Pins the fail-closed contract at the pipeline boundary: no recorded entries =>
+    no deletions, regardless of what is on disk. The cli-level corrupt-digest path
+    is pinned separately in test_cli_smoke.
+    """
+    home = _claude_home(tmp_path)
+    would_be_orphan = home / ".claude" / "skills" / "stray"
+    would_be_orphan.mkdir(parents=True)
+    plans = {Tool.CLAUDE: StagingPlan(items={}, tool=Tool.CLAUDE)}
+
+    outcome = prune_pipeline(
+        [get_adapter(Tool.CLAUDE)],
+        plans=plans,
+        prior=Receipt(),  # the CORRUPT -> empty fallback
+        home=home,
+        discovered_plugin_names=set(),
+        io=ScriptedIO(interactive=False),
+        auto_yes=True,
+        timestamp=_TS,
+    )
+
+    assert would_be_orphan.exists()
     assert outcome.pruned_paths == set()
 
 

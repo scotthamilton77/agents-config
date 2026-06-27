@@ -63,6 +63,27 @@ def test_retired_plugin_entry_is_orphaned_when_in_scope() -> None:
     assert orphans[0].tool == "beads"
 
 
+def test_diff_skips_invalid_entry_when_validation_supplied() -> None:
+    """A recorded entry that fails validate_entry (here: claude forging codex's
+    root) is skipped, not orphaned, when diff_orphans is given the validation
+    inputs. Pins the validate-gated continue: an unsafe recorded entry is never
+    handed to the prune step, even though it is in scope and not in desired_keys.
+    """
+    prior = Receipt(
+        roots=(Path(".claude"),),
+        entries=(_entry(".codex/skills/x", "claude", ".codex", "dir"),),  # forged root
+    )
+    orphans = diff_orphans(
+        prior,
+        desired_keys=set(),
+        scope_owners={"claude"},
+        home=Path("/home/u"),
+        live_roots_by_owner={"claude": {Path(".claude")}},
+        allowlist={Path(".claude")},
+    )
+    assert orphans == []
+
+
 def test_validate_accepts_legit_tool_entry() -> None:
     e = _entry(".claude/skills/x", "claude", ".claude", "dir")
     assert validate_entry(
@@ -72,6 +93,16 @@ def test_validate_accepts_legit_tool_entry() -> None:
 
 def test_validate_rejects_dotdot_path() -> None:
     e = _entry("../evil", "claude", ".claude", "file")
+    assert not validate_entry(
+        e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
+    )
+
+
+def test_validate_rejects_dotdot_root() -> None:
+    """A structurally unsafe ROOT (a ``..`` component) is rejected before any
+    filesystem resolution — the path can look fine while the root escapes home.
+    """
+    e = _entry(".claude/skills/x", "claude", "../.claude", "dir")
     assert not validate_entry(
         e, home=Path("/home/u"), live_roots_by_owner={"claude": {Path(".claude")}}, allowlist=set()
     )

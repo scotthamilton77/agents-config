@@ -58,6 +58,40 @@ def test_install_plugin_routes_dispatches_beads_formulas_and_scripts(tmp_path: P
     assert per_plugin["beads"].created == 2
 
 
+def test_install_plugin_routes_captures_per_plugin_outcomes(tmp_path: Path) -> None:
+    """
+    Given an ``outcomes_by_plugin`` accumulator and a BeadsPlugin with one formula
+    and one script
+    When install_plugin_routes runs
+    Then the accumulator is keyed by the plugin name and holds the real per-item
+    InstallOutcomes (a WRITTEN formula and a WRITTEN script, each with a sha256) —
+    the data record_receipt later turns into routed-file receipt entries.
+
+    Pins the capture branch: when the caller supplies the accumulator, each
+    plugin's per-item outcomes are recorded into it (keyed by plugin.name), not
+    discarded. Without this, the receipt could never carry routed-file entries
+    from a real install.
+    """
+    home = tmp_path / "home"
+    src = tmp_path / "plugin-src"
+    _seed_beads_source(src)
+    beads = BeadsPlugin(name="beads", source_path=src, which=lambda _c: None)
+
+    outcomes_by_plugin: dict[str, list] = {}  # type: ignore[type-arg]
+    install_plugin_routes(
+        [beads],
+        home=home,
+        io=ScriptedIO(),
+        timestamp=_FIXED_TS,
+        outcomes_by_plugin=outcomes_by_plugin,
+    )
+
+    assert set(outcomes_by_plugin) == {"beads"}
+    dests = {o.dest.name for o in outcomes_by_plugin["beads"]}
+    assert dests == {"f.toml", "s.sh"}
+    assert all(o.sha256 is not None for o in outcomes_by_plugin["beads"])
+
+
 def test_generic_plugin_contributes_no_routes(tmp_path: Path) -> None:
     """
     Given a generic plugin (routes() == ())

@@ -27,6 +27,15 @@ def test_settings_json_is_not_prunable() -> None:
     assert not is_prunable(_item("settings.json", FileKind.SETTINGS_JSON, None))
 
 
+def test_settings_json_under_prune_namespace_is_not_prunable() -> None:
+    """A SETTINGS_JSON item is never prunable even when its dest path lands under a
+    prune namespace — the kind guard, not just the namespace check, excludes it, so
+    a merge-target settings file under e.g. ``commands/`` is never receipt-recorded
+    and so never deletable.
+    """
+    assert not is_prunable(_item("commands/settings.json", FileKind.SETTINGS_JSON, "commands"))
+
+
 def test_entry_for_a_tool_item_owns_by_tool_with_home_relative_root() -> None:
     item = _item("skills/foo", FileKind.DIR, "skills")
     entry = entry_for(item, tool="claude", dest_root=Path("/home/u/.claude"), home=Path("/home/u"))

@@ -30,6 +30,24 @@ def test_file_orphan_mismatched_sha_is_relinquished(tmp_path: Path) -> None:
     assert relinquished == {Path(".beads/formulas/x.toml")}
 
 
+def test_file_orphan_absent_on_disk_falls_through_to_prune(tmp_path: Path) -> None:
+    """A recorded FILE orphan whose on-disk path was never created lands in
+    to_prune via the OSError fallthrough — read_bytes raises FileNotFoundError,
+    and a vanished file's delete is a harmless no-op, never a relinquish.
+
+    Pins: the hash-compare's read failure is treated as "prune", not "keep".
+    """
+    missing = tmp_path / ".beads" / "formulas" / "gone.toml"  # never created
+    o = Orphan(tool="beads", namespace="formulas", path=missing, kind="file")
+    to_prune, relinquished = partition_file_orphans(
+        [o],
+        home=tmp_path,
+        recorded_sha_by_path={Path(".beads/formulas/gone.toml"): "some-sha"},
+    )
+    assert to_prune == [o]
+    assert relinquished == set()
+
+
 def test_dir_orphan_always_pruned(tmp_path: Path) -> None:
     d = tmp_path / ".claude" / "skills" / "foo"
     d.mkdir(parents=True)
