@@ -96,6 +96,21 @@ relinquishes. Recursive directory content-drift protection (a per-file manifest 
 recursive digest) is deferred to `agents-config-fkewj` and is a schema change; do
 not bolt a partial version onto v1 without that bead.
 
+## Prune delete is re-validated, not atomic with the delete (accepted residual)
+
+The deletion boundary re-validates each orphan (`revalidate` in
+`_back_up_and_delete`) right before removing it, then backs up and unlinks/rmtrees.
+A narrow TOCTOU window remains between that re-check and the `unlink`/`rmtree`: a
+path swapped in by a *concurrent non-installer process* could be backed up and
+removed. This is an **accepted non-severe residual**, not data loss — the **backup
+is taken before the delete** (a raced-in replacement lands in `<namespace>-backup/`,
+recoverable), and the whole install→prune→write runs under the **single-writer
+advisory lock**, so no other installer run can race it. Closing the window fully
+(atomically move-to-quarantine → validate the moved object → finalize, so validate
+and delete act on the *same* filesystem object) is deferred to
+`agents-config-o4kov`; it restructures the delete path and must not be bolted on
+without that bead.
+
 ## Reference
 
 Architecture: `docs/architecture/installer/installer-design.md`.
