@@ -25,9 +25,29 @@ Surface the right work list for the current user intent. One skill, five modes.
 
 Lock in the mode now. Do not infer intent from prior conversation — the user's exact words are the only signal.
 
+## Step 0b: Detect a topic filter
+
+If the user scopes the request to a topic — "what's next **for the installer**", "anything ready **on the docs**", "implement-ready **CLI** work — derive a single canonical label and pass it as `--label`.
+
+**Reduce the qualifier to its canonical (stemmed/root) label.** Labels in this project use one consistent reduced form of a word-family, so map every surface variant to the root:
+
+| User says (any variant) | Canonical `--label` |
+|---|---|
+| installer, installation, installing, install | `install` |
+| docs, documentation, documenting | `docs` |
+| (general rule) | the shortest root the word-family shares |
+
+The filter is a case-insensitive exact match on each bead's own labels — it does not match ancestors or do substring matching, so pass the exact canonical label, not a phrase. If a filtered query returns nothing, say so plainly (don't silently widen to the unfiltered list) and offer to retry without the filter.
+
+No topic in the message → omit `--label` entirely.
+
+## Step 0c: Detect a "show everything" request
+
+The default presentation is the top 10 per section. If the user's message up front asks to see all of it — "show me **everything** that's next", "show **all**", "**full list**" — pass `--limit 0` from the start so nothing is hidden. A follow-up "show more" / "show all" / "show the rest" after a truncated render is the same signal: re-run with `--limit 0`. Otherwise keep the default.
+
 ## Step 1: Collect data
 
-Run the helper script with the chosen mode. Default limit is 10 per section. Pass `--limit 0` for all.  Examples below:
+Run the helper script with the chosen mode. Default limit is 10 per section. Pass `--limit 0` for the complete, untruncated list. `--label` (Step 0b) restricts every section to beads carrying that label. Examples below:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/collect.py"                   # all mode (default)
@@ -35,7 +55,8 @@ python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode brainstorm
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode implementation
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode planning
 python3 "${CLAUDE_SKILL_DIR}/collect.py" --mode human
-python3 "${CLAUDE_SKILL_DIR}/collect.py" --limit 0          # no truncation
+python3 "${CLAUDE_SKILL_DIR}/collect.py" --label install    # only install-labeled beads
+python3 "${CLAUDE_SKILL_DIR}/collect.py" --limit 0          # show everything, no truncation
 ```
 
 The script returns a JSON object whose top-level `mode` field carries the requested mode. Section keys vary per mode — **absent sections are absent from JSON, not empty arrays**:
@@ -132,7 +153,7 @@ Example:
 | 2 | abn9      |         |             | bf6     | task    | Externalize long bead specs to docs/beads/   |
 ```
 
-Close with a summary line. If the displayed count equals the total: `Ready: N beads`. If truncated: `Showing top 10 of 42 brainstorm, 3 of 3 planning. Pass --limit 0 to see all.` If every section is empty, the empty-state message is mode-specific so it does not falsely point a single-section caller at the human-attention queue:
+Close with a summary line driven by `totals` (which always carries the full, unfiltered-by-limit count per section). If the displayed count equals the total: `Ready: N beads`. If any section is truncated: name the gap and offer the affordance in plain words, e.g. `Showing top 10 of 42 brainstorm, 3 of 3 planning — say "show all" to see the rest.` When a `--label` filter is active, state it: `Scoped to label "install".` If every section is empty, the empty-state message is mode-specific so it does not falsely point a single-section caller at the human-attention queue:
 
 | `--mode`                | Empty-state line                                                                  |
 |-------------------------|-----------------------------------------------------------------------------------|

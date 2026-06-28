@@ -80,4 +80,36 @@ for mv in all brainstorm implementation planning human; do
 done
 pass "T4: SKILL.md references all 5 mode values (all, brainstorm, implementation, planning, human)"
 
+# ---------------------------------------------------------------------------
+# T5. Label filtering is documented: the skill must (a) reference the
+# `--label` flag, (b) instruct the agent to reduce a natural-language
+# qualifier to a canonical stemmed label, and (c) give the installer
+# example (installer/installation/installing -> install).
+# ---------------------------------------------------------------------------
+grep -qE '\-\-label' "$SKILL_MD" \
+    || fail "T5: SKILL.md does not document the --label flag"
+grep -qiE 'install(er|ation|ing)' "$SKILL_MD" \
+    || fail "T5: SKILL.md does not show the installer stemming example"
+grep -qiE 'stem|reduc|canonical|root' "$SKILL_MD" \
+    || fail "T5: SKILL.md does not instruct stemming the qualifier to a canonical label"
+pass "T5: SKILL.md documents --label filtering with the installer stemming example"
+
+# ---------------------------------------------------------------------------
+# T6. Show-all phrasing is bound to --limit 0: within a 6-line window there
+# must appear both a show-all/everything/more cue and `--limit 0`.
+# ---------------------------------------------------------------------------
+python3 - "$SKILL_MD" <<'PY' || fail "T6: SKILL.md does not bind show-all/everything/more phrasing to --limit 0 within a tight window"
+import sys, re
+lines = open(sys.argv[1]).readlines()
+window = 6
+cue = re.compile(r"show (all|everything|more)|everything", re.IGNORECASE)
+for i in range(len(lines)):
+    chunk = "".join(lines[i:i + window])
+    if cue.search(chunk) and "--limit 0" in chunk:
+        sys.exit(0)
+print("FAIL: no window binds show-all phrasing to --limit 0", file=sys.stderr)
+sys.exit(1)
+PY
+pass "T6: SKILL.md binds show-all/everything/more phrasing to --limit 0"
+
 echo "All whats-next SKILL.md red-phase tests reached."

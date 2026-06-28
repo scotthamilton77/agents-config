@@ -321,9 +321,22 @@ def main():
         default="all",
         help="Which section(s) to emit (all: human + planning_ready + brainstorm + implementation)",
     )
+    parser.add_argument(
+        "--label", default=None, metavar="LABEL",
+        help="Restrict every section to beads whose own labels include LABEL "
+             "(case-insensitive exact match). The caller is responsible for "
+             "reducing a natural-language qualifier to its canonical label "
+             "(e.g. installer/installation -> install).",
+    )
     args = parser.parse_args()
     limit = args.limit
     mode = args.mode
+    label_filter = args.label.lower() if args.label else None
+
+    def has_label(bead):
+        if label_filter is None:
+            return True
+        return label_filter in {str(x).lower() for x in (bead.get("labels") or [])}
 
     # Fetch full source sets.
     # NOTE: pass `--limit 0` on every `bd list` call so the unbounded
@@ -332,7 +345,10 @@ def main():
     # for any parent whose children fall past row 50, which then
     # misclassifies feature-with-children containers as childless leaves.
     human_raw = bd_json("list", "--label", "human", "--limit", "0", "--json")
-    ready_raw = bd_json("ready", "--json")
+    # `--limit 0` so the full ready set is returned. `bd ready` defaults to a
+    # 100-row page; without this, brainstorm/implementation sections (and their
+    # totals) silently drop any candidate past row 100.
+    ready_raw = bd_json("ready", "--limit", "0", "--json")
     all_active = bd_json("list", "--status", "open,in_progress", "--limit", "0", "--json")
 
     # Build the active-child-count index in one O(N) pass.
@@ -385,15 +401,15 @@ def main():
 
     # Filter and sort sections.
     human_sorted = sorted(
-        [b for b in human_raw if b.get("status") != "closed"],
+        [b for b in human_raw if b.get("status") != "closed" and has_label(b)],
         key=bead_sort_key,
     )
     brainstorm_sorted = sorted(
-        [b for b in ready_raw if is_brainstorm_candidate(b)],
+        [b for b in ready_raw if is_brainstorm_candidate(b) and has_label(b)],
         key=bead_sort_key,
     )
     impl_sorted = sorted(
-        [b for b in ready_raw if is_impl_candidate(b)],
+        [b for b in ready_raw if is_impl_candidate(b) and has_label(b)],
         key=bead_sort_key,
     )
 
@@ -416,7 +432,7 @@ def main():
         return True
 
     planning_sorted = sorted(
-        [b for b in planning_raw if in_planning(b)],
+        [b for b in planning_raw if in_planning(b) and has_label(b)],
         key=bead_sort_key,
     )
 

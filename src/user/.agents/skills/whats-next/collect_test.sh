@@ -170,7 +170,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     cat <<'JSON'
 [
   {"id":"proj-task1","issue_type":"task","status":"open","priority":1,"title":"Do a thing","labels":[],"parent":"proj-epic1","created_at":"2026-05-01"}
@@ -257,7 +257,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     cat <<'JSON'
 [
   {"id":"proj-impl1","issue_type":"task","status":"open","priority":1,"title":"Impl","labels":["implementation-ready"],"created_at":"2026-05-01"},
@@ -349,7 +349,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     cat <<'JSON'
 [
   {"id":"proj-leaffeat","issue_type":"feature","status":"open","priority":1,"title":"Leaf impl bead","labels":["implementation-ready"],"created_at":"2026-05-01"}
@@ -443,7 +443,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     # bd ready returns the Y feat (merge-gate / human children carry
     # gating labels of their own, but Y itself is dep-unblocked).
     cat <<'JSON'
@@ -527,7 +527,7 @@ case "\$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     cat <<'JSON'
 [
   {"id":"proj-b1","issue_type":"task","status":"open","priority":1,"title":"B","labels":[],"parent":"b1-parent","created_at":"2026-05-01"},
@@ -629,7 +629,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     # Feature is dep-unblocked (container HEP gates via parent-child shape,
     # not a blocks edge).
     cat <<'JSON'
@@ -714,7 +714,7 @@ case "$*" in
 ]
 JSON
     ;;
-  "ready --json")
+  "ready --limit 0 --json")
     # bd ready returns the paused feature (it has impl-ready label and no
     # blocking dep, since HEP for containers uses parent-child gating, not
     # a blocks edge).
@@ -758,5 +758,132 @@ assert "proj-pausedfeat" not in ids, (
 )
 PY
 pass "T12: HEP-paused feature (impl-ready + only human+hep-pause child) is excluded from --mode implementation"
+
+# -----------------------------------------------------------------------------
+# T13. --label filter: restricts every section to beads whose own `labels`
+# array contains the requested label (case-insensitive exact match). Beads
+# without the label are dropped from human / brainstorm / implementation /
+# planning_ready, and `totals` reflect the filtered counts.
+# -----------------------------------------------------------------------------
+TMP_T13=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"} "$TMP_T11" "$TMP_T12" "$TMP_T13"' EXIT
+
+cat > "$TMP_T13/bd" <<'SHIM'
+#!/usr/bin/env bash
+case "$*" in
+  "list --label human --limit 0 --json")
+    # Two human beads; only one carries `install`.
+    cat <<'JSON'
+[
+  {"id":"proj-h-inst","issue_type":"task","status":"open","priority":1,"title":"installer human","labels":["human","install"]},
+  {"id":"proj-h-other","issue_type":"task","status":"open","priority":1,"title":"other human","labels":["human"]}
+]
+JSON
+    ;;
+  "list --status open,in_progress --limit 0 --json")
+    # Mirror the ready set so the fail-closed active-child guard is satisfied.
+    cat <<'JSON'
+[
+  {"id":"proj-b-inst","issue_type":"task","status":"open","priority":1,"title":"installer brainstorm","labels":["install"]},
+  {"id":"proj-b-other","issue_type":"task","status":"open","priority":1,"title":"other brainstorm","labels":[]},
+  {"id":"proj-i-inst","issue_type":"task","status":"open","priority":1,"title":"installer impl","labels":["install","implementation-ready"]},
+  {"id":"proj-i-other","issue_type":"task","status":"open","priority":1,"title":"other impl","labels":["implementation-ready"]}
+]
+JSON
+    ;;
+  "ready --limit 0 --json")
+    # Brainstorm + impl candidates, mixed install / non-install.
+    cat <<'JSON'
+[
+  {"id":"proj-b-inst","issue_type":"task","status":"open","priority":1,"title":"installer brainstorm","labels":["install"],"created_at":"2026-05-01"},
+  {"id":"proj-b-other","issue_type":"task","status":"open","priority":1,"title":"other brainstorm","labels":[],"created_at":"2026-05-01"},
+  {"id":"proj-i-inst","issue_type":"task","status":"open","priority":1,"title":"installer impl","labels":["install","implementation-ready"],"created_at":"2026-05-01"},
+  {"id":"proj-i-other","issue_type":"task","status":"open","priority":1,"title":"other impl","labels":["implementation-ready"],"created_at":"2026-05-01"}
+]
+JSON
+    ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json")
+    # Childless planning-ready features, mixed install / non-install.
+    cat <<'JSON'
+[
+  {"id":"proj-p-inst","issue_type":"feature","status":"open","priority":1,"title":"installer feature","labels":["install"]},
+  {"id":"proj-p-other","issue_type":"feature","status":"open","priority":1,"title":"other feature","labels":[]}
+]
+JSON
+    ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T13/bd"
+
+# (a) --label install (lowercase exact)
+OUT_T13="$TMP_T13/all.json"
+PATH="$TMP_T13:$PATH" python3 "$COLLECT_PY" --label install >"$OUT_T13" 2>"$TMP_T13/err"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T13a: collect.py --label install exited $ec (stderr: $(cat "$TMP_T13/err"))"
+
+OUT_T13="$OUT_T13" python3 - <<'PY' || fail "T13a: --label install did not filter every section to install-labeled beads"
+import json, os
+out = json.load(open(os.environ["OUT_T13"]))
+def ids(k): return [b.get("id") for b in out.get(k, [])]
+assert ids("human") == ["proj-h-inst"], f"human: {ids('human')}"
+assert ids("brainstorm") == ["proj-b-inst"], f"brainstorm: {ids('brainstorm')}"
+assert ids("implementation") == ["proj-i-inst"], f"implementation: {ids('implementation')}"
+assert ids("planning_ready") == ["proj-p-inst"], f"planning_ready: {ids('planning_ready')}"
+t = out["totals"]
+assert t == {"human":1,"planning_ready":1,"brainstorm":1,"implementation":1}, f"totals: {t}"
+PY
+pass "T13a: --label install filters all sections to install-labeled beads; totals reflect filter"
+
+# (b) case-insensitive: --label INSTALL yields the same set.
+OUT_T13B="$TMP_T13/ci.json"
+PATH="$TMP_T13:$PATH" python3 "$COLLECT_PY" --label INSTALL --mode brainstorm >"$OUT_T13B" 2>"$TMP_T13/err.b"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T13b: collect.py --label INSTALL exited $ec (stderr: $(cat "$TMP_T13/err.b"))"
+OUT_T13B="$OUT_T13B" python3 - <<'PY' || fail "T13b: --label is not case-insensitive"
+import json, os
+out = json.load(open(os.environ["OUT_T13B"]))
+ids = [b.get("id") for b in out.get("brainstorm", [])]
+assert ids == ["proj-b-inst"], f"brainstorm (INSTALL): {ids}"
+PY
+pass "T13b: --label match is case-insensitive"
+
+# -----------------------------------------------------------------------------
+# T14. Completeness: `bd ready` MUST be invoked with `--limit 0` so the
+# brainstorm/implementation source set (and its totals) is not silently
+# capped at bd's default 100-row page. Regression for the hidden-results bug.
+# The shim logs every invocation's full arg list.
+# -----------------------------------------------------------------------------
+TMP_T14=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"} "$TMP_T11" "$TMP_T12" "$TMP_T13" "$TMP_T14"' EXIT
+CALL_LOG="$TMP_T14/calls.log"
+: > "$CALL_LOG"
+export CALL_LOG
+
+cat > "$TMP_T14/bd" <<SHIM
+#!/usr/bin/env bash
+echo "\$*" >> "$CALL_LOG"
+case "\$*" in
+  "list --label human --limit 0 --json") echo '[]' ;;
+  "list --status open,in_progress --limit 0 --json")
+    echo '[{"id":"proj-b1","issue_type":"task","status":"open","priority":1,"title":"B","labels":[]}]' ;;
+  "ready --limit 0 --json")
+    echo '[{"id":"proj-b1","issue_type":"task","status":"open","priority":1,"title":"B","labels":[],"created_at":"2026-05-01"}]' ;;
+  "list --type milestone --ready --limit 0 --json") echo '[]' ;;
+  "list --type epic --ready --limit 0 --json") echo '[]' ;;
+  "list --type feature --ready --limit 0 --json") echo '[]' ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T14/bd"
+
+PATH="$TMP_T14:$PATH" python3 "$COLLECT_PY" --mode brainstorm >/dev/null 2>"$TMP_T14/err"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T14: collect.py exited $ec (stderr: $(cat "$TMP_T14/err"))"
+grep -qE '^ready --limit 0 --json$' "$CALL_LOG" \
+    || fail "T14: bd ready must be called with '--limit 0' to avoid the 100-row cap (calls: $(cat "$CALL_LOG"))"
+pass "T14: bd ready is invoked with --limit 0 (no silent 100-row cap)"
 
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
