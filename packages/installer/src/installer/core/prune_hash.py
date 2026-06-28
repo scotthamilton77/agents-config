@@ -13,9 +13,9 @@ two (the TOCTOU window of the interactive confirm prompt) is never deleted."""
 
 from __future__ import annotations
 
-import hashlib
 from typing import TYPE_CHECKING
 
+from installer.core.hashing import sha256_file
 from installer.core.receipt import dir_content_digest
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ def is_safe_to_prune(
         except OSError:
             return False  # unreadable inner file: cannot confirm ownership — relinquish
     try:
-        actual = hashlib.sha256(orphan.path.read_bytes()).hexdigest()
+        actual = sha256_file(orphan.path).hex()
     except FileNotFoundError:
         return True
     except OSError:

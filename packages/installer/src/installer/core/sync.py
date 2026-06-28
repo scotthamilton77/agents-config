@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from installer.core.backup import back_up, new_timestamp, valid_timestamp
 from installer.core.consent import require_consent
+from installer.core.hashing import sha256_file
 from installer.core.merge.strategies.json_union import merge_settings_bytes
 from installer.core.model import Counters, FileKind, InstallOutcome, Outcome
 from installer.core.paths import is_safe_relpath
@@ -128,7 +129,7 @@ def sync(
     content = source.read_bytes()
     dest_exists = dest.is_file()
 
-    if dest_exists and _sha256(dest.read_bytes()) == _sha256(content):
+    if dest_exists and sha256_file(dest) == _sha256(content):
         counters.skipped += 1
         return counters
 
