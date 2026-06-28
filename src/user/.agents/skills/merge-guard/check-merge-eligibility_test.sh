@@ -70,4 +70,47 @@ assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
 rc_dangling=$?
 assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
 
+# ── Regression (nnqwg): reply comments must NOT count toward unseen ───────────
+# A gh stub returns canned JSON per endpoint so the comment-counting jq filter
+# runs end-to-end. Fixture: 2 top-level reviewer comments + 2 agent replies.
+# With both top-level comments triaged (--comments-seen 2), the buggy `length`
+# count yields 4 → unseen=2 → exit 2. The fix counts only top-level (2) → eligible.
+STUB_DIR="$TMP/bin"
+mkdir -p "$STUB_DIR"
+cat > "$STUB_DIR/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = "auth" ] && exit 0
+if [ "$1" = "api" ]; then
+  path="$2"; shift 2
+  filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
+  done
+  case "$path" in
+    */requested_reviewers) body='{"users":[],"teams":[]}' ;;
+    */issues/*/events)     body='[]' ;;
+    */pulls/*/reviews)     body='[]' ;;
+    */pulls/*/comments|*/pulls/*/comments\?*) body="$FIXTURE_COMMENTS" ;;
+    */pulls/*)             body='{"state":"open"}' ;;
+    *)                     body='{}' ;;
+  esac
+  if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$STUB_DIR/gh"
+
+export FIXTURE_COMMENTS='[
+  {"id":1,"in_reply_to_id":null,"user":{"login":"reviewer"}},
+  {"id":2,"in_reply_to_id":null,"user":{"login":"reviewer"}},
+  {"id":3,"in_reply_to_id":1,"user":{"login":"agent"}},
+  {"id":4,"in_reply_to_id":2,"user":{"login":"agent"}}
+]'
+
+reply_out=$(PATH="$STUB_DIR:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --comments-seen 2 2>/dev/null)
+rc_replies=$?
+assert "reply comments excluded → eligible (exit 0)" "[ \$rc_replies -eq 0 ]"
+assert "total_comments counts only top-level (==2)" "[ \"\$(printf '%s' \"\$reply_out\" | jq -r '.total_comments')\" = '2' ]"
+
 exit $FAIL

@@ -160,7 +160,13 @@ fi
 
 echo "Checking comment counts..." >&2
 
-total_comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments" --jq 'length') || {
+# Count only top-level review comments. Reply comments (in_reply_to_id set) —
+# including the agent's own thread replies — are not new reviewer feedback, so
+# counting them inflates the total and false-positive-blocks the merge.
+# Paginate (default page size ~30) so PRs with many comments aren't undercounted
+# and wrongly marked eligible: --paginate emits the per-page count, summed below.
+total_comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments?per_page=100" --paginate \
+    --jq '[.[] | select(.in_reply_to_id == null)] | length' | jq -s 'add // 0') || {
     echo "Error: failed to fetch comments" >&2; exit 3;
 }
 
