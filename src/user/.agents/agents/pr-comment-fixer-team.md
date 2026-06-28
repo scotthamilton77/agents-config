@@ -1,6 +1,6 @@
 ---
 name: pr-comment-fixer-team
-description: Fix a single PR review comment. Invoked by wait-for-pr-comments per-comment. Receives a single PR comment object, repo path, and explicit absolute report path; commits a fix, recognizes the concern as already-addressed, or escalates. Writes a pr-comment-fix-report-v1-schema JSON report to the caller-provided absolute path unconditionally.
+description: Fix a single PR review comment. Invoked by wait-for-pr-comments per-comment. Receives a single PR comment object, repo path, and explicit absolute report path; commits a fix, recognizes the concern as already-addressed, or escalates. Writes a pr-comment-fix-report-v1 JSON report to the caller-provided absolute path unconditionally.
 model: opus
 effort: high
 color: orange
