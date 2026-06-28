@@ -25,7 +25,7 @@ The caller (the `wait-for-pr-comments` skill) dispatches you with:
    before any work and validate it with
    `git -C <path> rev-parse --is-inside-work-tree`.
 3. An **absolute report path** — supplied by the caller. Write your
-   YAML report to that exact absolute path. Do not compute it yourself.
+   JSON report to that exact absolute path. Do not compute it yourself.
 4. An **absolute path to the pushback-discipline reference doc**
    (`handling-feedback.md`, shipped with the `wait-for-pr-comments`
    skill). You MUST read this file BEFORE classifying.
@@ -59,8 +59,9 @@ Classify the incoming comment into exactly one of:
 
 Based on the classification, take exactly one action and record it as the
 report's `fix_outcome`. The orchestrator's audit
-(`audit-subagent-report.sh`) accepts ONLY these enum values, so use them
-verbatim:
+(`audit-subagent-report.sh`) recognizes six enum values; a worker emits
+ONLY the four below (`deferred` and `abandoned` are orchestrator-only — see
+the note after the list). Use them verbatim:
 
 - **`committed`** — (FIX) you applied a code change targeting the comment,
   ran the local checks the surface warrants, and committed the result on
