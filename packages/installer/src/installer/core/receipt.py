@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from installer.core.hashing import sha256_file
+
 SCHEMA_VERSION = 1
 
 
@@ -73,8 +75,8 @@ def dir_content_digest(path: Path) -> str:
     sorted ``(relpath, sha256(bytes))`` of every file under ``path``.
 
     Mirrors ``sync._dir_is_unchanged``'s notion of owned content — files only
-    (empty dirs ignored), symlinks dereferenced (``rglob``/``read_bytes`` follow
-    them) — so a digest match means the same thing as "directory is unchanged" at
+    (empty dirs ignored), symlinks dereferenced (both ``rglob`` and the per-file
+    read follow them) — so a digest match means the same thing as "directory is unchanged" at
     install time. Order-independent via the sort; stable across runs on the same
     POSIX platform (relpaths are encoded with the OS separator, so the value is not
     portable across separator families — fine for this POSIX-targeted installer)."""
@@ -85,7 +87,7 @@ def dir_content_digest(path: Path) -> str:
         # instead of raising UnicodeEncodeError at the prune boundary.
         h.update(str(f.relative_to(path)).encode("utf-8", "surrogateescape"))
         h.update(b"\0")
-        h.update(hashlib.sha256(f.read_bytes()).digest())
+        h.update(sha256_file(f))
         h.update(b"\0")
     return "sha256:" + h.hexdigest()
 
