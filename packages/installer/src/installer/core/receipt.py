@@ -75,8 +75,8 @@ def dir_content_digest(path: Path) -> str:
     sorted ``(relpath, sha256(bytes))`` of every file under ``path``.
 
     Mirrors ``sync._dir_is_unchanged``'s notion of owned content — files only
-    (empty dirs ignored), symlinks dereferenced (``rglob`` and the per-file read
-    follow them) — so a digest match means the same thing as "directory is unchanged" at
+    (empty dirs ignored), symlinks dereferenced (both ``rglob`` and the per-file
+    read follow them) — so a digest match means the same thing as "directory is unchanged" at
     install time. Order-independent via the sort; stable across runs on the same
     POSIX platform (relpaths are encoded with the OS separator, so the value is not
     portable across separator families — fine for this POSIX-targeted installer)."""

@@ -14,7 +14,7 @@ def test_matches_in_memory_digest_for_multichunk_file(tmp_path: Path) -> None:
     Sized well past file_digest's internal read buffer so a single-read bug
     (truncated digest) would diverge from hashing the whole byte string.
     """
-    data = b"".join(bytes([i % 256]) for i in range(300_000))
+    data = bytes(i % 256 for i in range(300_000))
     target = tmp_path / "blob.bin"
     target.write_bytes(data)
 
