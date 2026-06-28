@@ -90,7 +90,7 @@ if [ "$1" = "api" ]; then
     */requested_reviewers) body='{"users":[],"teams":[]}' ;;
     */issues/*/events)     body='[]' ;;
     */pulls/*/reviews)     body='[]' ;;
-    */pulls/*/comments)    body="$FIXTURE_COMMENTS" ;;
+    */pulls/*/comments|*/pulls/*/comments\?*) body="$FIXTURE_COMMENTS" ;;
     */pulls/*)             body='{"state":"open"}' ;;
     *)                     body='{}' ;;
   esac
