@@ -221,9 +221,9 @@ re-merge any user reclassifications into the inventory before Phase 4.
    - Pass `<pre_subagent_sha>` to the subagent as input context.
    - **Construct an explicit absolute report path** for the subagent:
      - In a beads workflow (step-bead ID available):
-       `<repo-root>/.beads/worker-audit/<step-bead-id>/pr-comment-fixer-team.yaml`
+       `<repo-root>/.beads/worker-audit/<step-bead-id>/pr-comment-fixer-team.json`
      - Otherwise (standalone PR review, no beads context):
-       `${TMPDIR:-/tmp}/pr-comment-fixer-<comment-id>.yaml` (temporary; not guaranteed to persist across system cleanup or reboots)
+       `${TMPDIR:-/tmp}/pr-comment-fixer-<comment-id>.json` (temporary; not guaranteed to persist across system cleanup or reboots)
    - **Dispatch with an explicit `opus` model** (do NOT inherit orchestrator):
      ```
      Agent({
@@ -242,8 +242,8 @@ re-merge any user reclassifications into the inventory before Phase 4.
      **Do NOT pass a literal `${CLAUDE_SKILL_DIR}/...` string** — the
      subagent has no shell context to expand it. The worker reads the
      reference doc FIRST, then classifies (FIX/SKIP/ESCALATE), takes
-     action (COMMITTED_FIX/ALREADY_ADDRESSED/NO_ACTION), and writes a
-     `pr-comment-fix-report-v1` YAML to the absolute report path.
+     action (committed/already_addressed/failed/escalated), and writes a
+     `pr-comment-fix-report-v1` JSON report to the absolute report path.
 
      The orchestrator runs on `sonnet[1m]`; the FIX subagent MUST run on
      `opus` so fix correctness is not regressed by the orchestrator's lower
