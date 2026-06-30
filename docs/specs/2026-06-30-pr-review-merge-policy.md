@@ -114,18 +114,29 @@ blocker/terminal-error pair is prgroom-sourced when available. This design
 does not depend on agents-config-abn9.8.19 landing — the one known-degraded
 prgroom gate (`phase_is_quiesced`) is simply never relied upon.
 
-**Freshness invariant (binds every review-derived check to the current head):**
-Neither `check-merge-eligibility.sh` nor `poll-copilot-review.sh` tracks head
-SHA today — this is new surface, not reused tooling. Before evaluating the
-Copilot-completion or approver-count rows: fetch the PR's current
-`headRefOid`. A Copilot review counts only if its `commit_id` matches that
-head (or was submitted after the last push event); an approval counts only if
-its `commit_id` matches that head, or the login's latest review post-dates
-the last head-changing push. A review against a stale head does not satisfy
-its check — re-review is required after every push. Immediately before
-`merge-guard` actually invokes `gh pr merge`, it re-fetches `headRefOid` and
-aborts (re-evaluates eligibility) if it changed since the predicate was
-computed, closing the check-then-merge race.
+**Freshness invariant:** Neither `check-merge-eligibility.sh` nor
+`poll-copilot-review.sh` tracks head SHA today — this is new surface, not
+reused tooling. Two distinct freshness rules apply:
+
+1. **Review identity (Copilot-completion, approver count)**: fetch the PR's
+   current `headRefOid`. A Copilot review or human approval counts **only**
+   if its `commit_id` equals that head. The `submitted_at` timestamp is
+   **never** a substitute for `commit_id` — a review can be *submitted* after
+   a push while still carrying a *stale* `commit_id` (it was started against
+   the old diff), so a timestamp-only check would wrongly accept it.
+   `submitted_at` is usable only as a fallback for a review object that
+   genuinely lacks a `commit_id` field (none are known to today, but the rule
+   is specified for robustness). A review against a stale head does not
+   satisfy its check — re-review is required after every push.
+2. **All five atomic checks, recomputed live**: there is no separate
+   "compute eligibility now, merge later" phase. `merge-guard` evaluates the
+   full predicate (including blocker/thread state and the lifecycle-error
+   check, whether sourced from prgroom or the local fallback) **synchronously,
+   immediately before** invoking `gh pr merge` — never from an earlier
+   cached result. This closes the check-then-merge race for every component,
+   not only the two review-identity checks: a new unresolved thread or
+   blocking item that appears after an earlier "looks clean" read is caught
+   by the live re-evaluation, because there is no earlier read to go stale.
 
 ## Architecture
 
@@ -225,9 +236,10 @@ amended text).
    source of truth, never superseded by prgroom state); a direct,
    always-on distinct-current-approver count against `required_human_approvers`
    (dedup by login, latest review state wins — never prgroom's
-   `candidates_seen`); the head-SHA freshness invariant binding both of those
-   to the current `headRefOid` plus a re-check immediately before merge; a
-   prgroom-aware no-outstanding-blockers / no-terminal-error check (prgroom's
+   `candidates_seen`); the freshness invariant binding review identity to
+   `commit_id == headRefOid` (never `submitted_at` alone) and recomputing all
+   five atomic checks live, immediately before merge, with no earlier cached
+   result; a prgroom-aware no-outstanding-blockers / no-terminal-error check (prgroom's
    `no_blocker_items` / `last_error_clear` when present, else the local
    fallback); and the required-CI-green gate (always direct, new).
 4. **Live wiring** — `wait-for-pr-comments`, `merge-guard`,
@@ -258,10 +270,12 @@ amended text).
   `CHANGES_REQUESTED` from the same login does not count, bot logins are
   excluded; blocker/error checks (prgroom-present vs absent); and the
   CI-green gate (green / red / no-CI).
-- **Freshness invariant** — a Copilot review or approval against a stale
-  `commit_id` (predating the latest push) must not satisfy its check; a push
-  landing between eligibility computation and the merge call must abort the
-  merge rather than proceed on stale eligibility.
+- **Freshness invariant** — a Copilot review or approval with a stale
+  `commit_id` must not satisfy its check even when `submitted_at` is after
+  the latest push (the pending-review-on-old-diff case); a new unresolved
+  thread or blocking item appearing after an earlier "clean" read must be
+  caught because eligibility is recomputed live, not reused from that earlier
+  read.
 - **Auto-vs-handoff branch** — `copilot-required = false` with
   `human-approvers-required = 0` must proceed directly to `merge-guard`
   without ever emitting the human-handoff status.
@@ -272,6 +286,16 @@ amended text).
 
 - **Highest blast radius is the law amendment.** Wording must make auto-merge
   conditional and non-default; a careless edit reads as "agents merge freely."
+- **OPEN — overloaded policy fields enable no-review auto-merge by
+  side-effect.** `copilot-required = false` + `human-approvers-required = 0`
+  was chosen (brainstorm decision: reuse the two existing keys, not add a
+  third) to mean both "skip the unavailable reviewer" *and* "merge with no
+  review at all" via the same two settings. A reviewer flagged this as
+  conflating two distinct intents — disabling a wait vs. affirmatively
+  authorizing a no-review merge — and recommended a separate explicit
+  auto-merge-authorized setting. Revisiting the reuse-the-two-keys decision is
+  out of this spec's authority to resolve unilaterally; flagged for an
+  explicit call before implementation.
 - **agents-config self-auto-merges** under its chosen defaults. Acceptable and
   intended; called out so it is never mistaken for an accident.
 - The autonomous-pipeline `review-cycle` / `merge-or-handoff` stages remain
