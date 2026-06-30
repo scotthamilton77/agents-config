@@ -120,14 +120,13 @@ reused tooling. Two distinct freshness rules apply:
 
 1. **Review identity (Copilot-completion, approver count)**: fetch the PR's
    current `headRefOid`. A Copilot review or human approval counts **only**
-   if its `commit_id` equals that head. The `submitted_at` timestamp is
-   **never** a substitute for `commit_id` — a review can be *submitted* after
-   a push while still carrying a *stale* `commit_id` (it was started against
-   the old diff), so a timestamp-only check would wrongly accept it.
-   `submitted_at` is usable only as a fallback for a review object that
-   genuinely lacks a `commit_id` field (none are known to today, but the rule
-   is specified for robustness). A review against a stale head does not
-   satisfy its check — re-review is required after every push.
+   if its `commit_id` equals that head. There is **no timestamp fallback**: a
+   review can be *submitted* after a push while still carrying a *stale*
+   `commit_id` (it was started against the old diff), so `submitted_at` can
+   never distinguish that case from a genuine fresh review. If `commit_id` is
+   ever unavailable for a review object, treat it as indeterminate and **fail
+   closed** — that review does not count, and auto-merge does not proceed —
+   rather than accept it on timestamp alone.
 2. **All five atomic checks, recomputed live**: there is no separate
    "compute eligibility now, merge later" phase. `merge-guard` evaluates the
    full predicate (including blocker/thread state and the lifecycle-error
@@ -137,6 +136,14 @@ reused tooling. Two distinct freshness rules apply:
    not only the two review-identity checks: a new unresolved thread or
    blocking item that appears after an earlier "looks clean" read is caught
    by the live re-evaluation, because there is no earlier read to go stale.
+3. **The merge call itself is bound to the checked head**: re-evaluating the
+   predicate immediately before merging narrows the race window but does not
+   close it — a push can still land between the predicate's `headRefOid`
+   read and the `gh pr merge` call. `merge-guard` therefore invokes
+   `gh pr merge --match-head-commit <headRefOid>` (the same SHA the predicate
+   was just evaluated against); GitHub itself rejects the merge if the head
+   changed in that window, and `merge-guard` re-evaluates eligibility from
+   scratch on that rejection rather than retrying blindly.
 
 ## Architecture
 
@@ -236,10 +243,13 @@ amended text).
    source of truth, never superseded by prgroom state); a direct,
    always-on distinct-current-approver count against `required_human_approvers`
    (dedup by login, latest review state wins — never prgroom's
-   `candidates_seen`); the freshness invariant binding review identity to
-   `commit_id == headRefOid` (never `submitted_at` alone) and recomputing all
-   five atomic checks live, immediately before merge, with no earlier cached
-   result; a prgroom-aware no-outstanding-blockers / no-terminal-error check (prgroom's
+   `candidates_seen`, fail closed on unresolvable `commit_id`); the freshness
+   invariant binding review identity to `commit_id == headRefOid` (no
+   timestamp fallback) and recomputing all five atomic checks live,
+   immediately before merge, with no earlier cached result; the merge call
+   itself issued as `gh pr merge --match-head-commit <headRefOid>` so GitHub
+   rejects a last-instant race rather than merging an unreviewed head; a
+   prgroom-aware no-outstanding-blockers / no-terminal-error check (prgroom's
    `no_blocker_items` / `last_error_clear` when present, else the local
    fallback); and the required-CI-green gate (always direct, new).
 4. **Live wiring** — `wait-for-pr-comments`, `merge-guard`,
@@ -272,10 +282,13 @@ amended text).
   CI-green gate (green / red / no-CI).
 - **Freshness invariant** — a Copilot review or approval with a stale
   `commit_id` must not satisfy its check even when `submitted_at` is after
-  the latest push (the pending-review-on-old-diff case); a new unresolved
-  thread or blocking item appearing after an earlier "clean" read must be
-  caught because eligibility is recomputed live, not reused from that earlier
-  read.
+  the latest push (the pending-review-on-old-diff case); a review with no
+  resolvable `commit_id` must fail closed (does not count), never fall back
+  to timestamp; a new unresolved thread or blocking item appearing after an
+  earlier "clean" read must be caught because eligibility is recomputed live,
+  not reused from that earlier read; a push landing between the predicate's
+  head read and the merge call must cause `gh pr merge --match-head-commit`
+  to reject, triggering a fresh re-evaluation rather than a blind retry.
 - **Auto-vs-handoff branch** — `copilot-required = false` with
   `human-approvers-required = 0` must proceed directly to `merge-guard`
   without ever emitting the human-handoff status.
@@ -286,16 +299,20 @@ amended text).
 
 - **Highest blast radius is the law amendment.** Wording must make auto-merge
   conditional and non-default; a careless edit reads as "agents merge freely."
-- **OPEN — overloaded policy fields enable no-review auto-merge by
-  side-effect.** `copilot-required = false` + `human-approvers-required = 0`
-  was chosen (brainstorm decision: reuse the two existing keys, not add a
-  third) to mean both "skip the unavailable reviewer" *and* "merge with no
-  review at all" via the same two settings. A reviewer flagged this as
-  conflating two distinct intents — disabling a wait vs. affirmatively
-  authorizing a no-review merge — and recommended a separate explicit
-  auto-merge-authorized setting. Revisiting the reuse-the-two-keys decision is
-  out of this spec's authority to resolve unilaterally; flagged for an
-  explicit call before implementation.
+- **BLOCKING (escalated from OPEN) — overloaded policy fields enable
+  no-review auto-merge by side-effect.** `copilot-required = false` +
+  `human-approvers-required = 0` was chosen (brainstorm decision: reuse the
+  two existing keys, not add a third) to mean both "skip the unavailable
+  reviewer" *and* "merge with no review at all" via the same two settings.
+  Two independent adversarial review passes flagged this — the second rating
+  it **critical, no-ship** — as conflating two distinct intents: disabling a
+  wait vs. affirmatively authorizing a no-review merge. Recommended fix: a
+  separate explicit opt-in (e.g. `auto-merge-authorized = true`) so
+  `copilot-required = false` means only "do not wait for Copilot," never
+  "and also you may merge with zero review." Revisiting the reuse-the-two-keys
+  decision is out of this spec's authority to resolve unilaterally — this is
+  the one open item requiring an explicit decision before implementation
+  begins.
 - **agents-config self-auto-merges** under its chosen defaults. Acceptable and
   intended; called out so it is never mistaken for an accident.
 - The autonomous-pipeline `review-cycle` / `merge-or-handoff` stages remain
