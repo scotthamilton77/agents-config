@@ -102,15 +102,17 @@ Instead, `merge-guard`'s eligibility check composes the predicate from four
 | Atomic check | Source |
 |---|---|
 | Copilot review complete | **Always** a direct GitHub query (the existing `check-merge-eligibility.sh` Copilot-status check) — never read from prgroom's `phase_is_quiesced`, given the known seeding gap. Required iff `wait_for_copilot`. |
-| `N` non-bot approvals | When prgroom state exists: count entries in `prgroom status --json`'s `human_review.candidates_seen` (§4.5) not flagged as bot-filtered — reusing prgroom's existing bot-filter logic without re-implementing it. Without prgroom state: `merge-guard` queries PR reviews directly and applies the same bot-exclusion principle. Required count is `required_human_approvers`. |
+| `N` distinct current non-bot approvers | **Always** a direct query (`gh pr view --json reviews` or equivalent): reduce to one entry per non-bot login using that login's most recent review by submission order, count logins whose latest state is `APPROVED`, compare to `required_human_approvers`. **Not** sourced from prgroom's `human_review.candidates_seen` — that list is documented as one row per `APPROVED` review, not deduped by approver and not latest-state-aware, so a single reviewer re-approving repeatedly (or an approval superseded by a later `CHANGES_REQUESTED`) would overcount. |
 | No outstanding blockers | prgroom's `no_blocker_items` when state exists (no item disposition is `ESCALATED`/`FAILED` — unaffected by the reviewer-seeding gap); else a local FIX-class-items-outstanding / threads-resolved check. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when state exists; else not applicable (no-op) for the prgroom-less path. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's `auto_merge_eligible` contract at all. This is the gate this work **adds** to `check-merge-eligibility.sh`. |
 
 The predicate is the AND of all rows applicable under the resolved policy.
-Because Copilot-completion and CI-green are always verified directly, this
-design does not depend on agents-config-abn9.8.19 landing — the one
-known-degraded prgroom gate is simply never relied upon.
+Three of the five checks (Copilot-completion, approver count, CI-green) are
+always verified directly and never delegate to prgroom; only the
+blocker/terminal-error pair is prgroom-sourced when available. This design
+does not depend on agents-config-abn9.8.19 landing — the one known-degraded
+prgroom gate (`phase_is_quiesced`) is simply never relied upon.
 
 ## Architecture
 
@@ -202,10 +204,10 @@ amended text).
 2. **Policy-resolver helper** — code + unit tests (the typed resolver above).
 3. **Eligibility-check extension** — `check-merge-eligibility.sh` gains: a
    direct, always-on Copilot-completion check (already present — kept as the
-   source of truth, never superseded by prgroom state); a non-bot
-   approval-count check against `required_human_approvers` (sourced from
-   prgroom's `human_review.candidates_seen` when available, else a direct
-   GitHub query); a prgroom-aware no-outstanding-blockers /
+   source of truth, never superseded by prgroom state); a direct,
+   always-on distinct-current-approver count against `required_human_approvers`
+   (dedup by login, latest review state wins — never prgroom's
+   `candidates_seen`); a prgroom-aware no-outstanding-blockers /
    no-terminal-error check (prgroom's `no_blocker_items` /
    `last_error_clear` when present, else the local fallback); and the
    required-CI-green gate (always direct, new).
@@ -231,10 +233,12 @@ amended text).
   resolve to "do not merge."
 - **Eligibility-check** — test each atomic check independently: Copilot
   status is read directly even when prgroom reports `phase_is_quiesced = true`
-  (must not short-circuit on prgroom's value); approval counting against
-  `required_human_approvers > 1` (prgroom-sourced `candidates_seen` and the
-  direct-query fallback); blocker/error checks (prgroom-present vs absent);
-  and the CI-green gate (green / red / no-CI).
+  (must not short-circuit on prgroom's value); distinct-current-approver
+  counting against `required_human_approvers > 1` — same login approving
+  twice counts once, an `APPROVED` review superseded by a later
+  `CHANGES_REQUESTED` from the same login does not count, bot logins are
+  excluded; blocker/error checks (prgroom-present vs absent); and the
+  CI-green gate (green / red / no-CI).
 - **Skills** — kept thin enough to verify via the existing skill smoke-test
   suite.
 
@@ -247,12 +251,13 @@ amended text).
 - The autonomous-pipeline `review-cycle` / `merge-or-handoff` stages remain
   future work; this spec wires the **live** skills, but the resolver contract
   is shaped so those stages can reuse it unchanged.
-- **Never trust `auto_merge_eligible` as a single boolean.** Two of its four
-  components (`phase_is_quiesced`'s embedded Copilot-quiescence wait, and the
-  binary `human_review_satisfied`) are unsuitable for this policy — see
-  Clean-review predicate. Any future change that re-introduces a direct read
-  of the rolled-up boolean must re-verify both gaps are still covered
-  independently.
+- **Never trust `auto_merge_eligible` as a single boolean, and never naively
+  count `human_review.candidates_seen`.** Both are documented to embed the
+  known-broken Copilot-quiescence wait (`phase_is_quiesced`) and a per-review
+  (not per-distinct-approver, not latest-state-aware) record list,
+  respectively — see Clean-review predicate. Any future change reusing
+  prgroom's review data must re-derive distinct-current-approver state
+  itself; it must not sum or trust these fields directly.
 - **`auto_merge_eligible`'s Copilot-quiescence component is degraded today**
   (agents-config-abn9.8.19's seeding gap) but this design does not depend on
   it — Copilot-completion is always verified directly. Fixing abn9.8.19 is
