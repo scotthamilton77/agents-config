@@ -114,6 +114,19 @@ blocker/terminal-error pair is prgroom-sourced when available. This design
 does not depend on agents-config-abn9.8.19 landing — the one known-degraded
 prgroom gate (`phase_is_quiesced`) is simply never relied upon.
 
+**Freshness invariant (binds every review-derived check to the current head):**
+Neither `check-merge-eligibility.sh` nor `poll-copilot-review.sh` tracks head
+SHA today — this is new surface, not reused tooling. Before evaluating the
+Copilot-completion or approver-count rows: fetch the PR's current
+`headRefOid`. A Copilot review counts only if its `commit_id` matches that
+head (or was submitted after the last push event); an approval counts only if
+its `commit_id` matches that head, or the login's latest review post-dates
+the last head-changing push. A review against a stale head does not satisfy
+its check — re-review is required after every push. Immediately before
+`merge-guard` actually invokes `gh pr merge`, it re-fetches `headRefOid` and
+aborts (re-evaluates eligibility) if it changed since the predicate was
+computed, closing the check-then-merge race.
+
 ## Architecture
 
 ### Decision: a tested policy-resolver helper (not inline-per-skill)
@@ -167,9 +180,14 @@ repos that never set the section).
 ### Live consumer wiring
 
 1. **`wait-for-pr-comments`** — call the resolver at entry. When
-   `wait_for_copilot == false`, skip the Copilot poll and emit a terminal
-   "no automated reviewer configured — PR awaiting human review" status; do not
-   block. (Reply/resolve still runs if human threads already exist.)
+   `wait_for_copilot == false`, skip the Copilot poll, then branch on
+   `merge_mode`:
+   - `auto` (no automated reviewer, but policy permits auto-merge) — continue
+     directly into `merge-guard`'s eligibility check. Do **not** emit a
+     human-handoff status; there is no human to hand off to under this policy.
+   - `handoff` — emit a terminal "no automated reviewer configured — PR
+     awaiting human review" status and stop. (Reply/resolve still runs if
+     human threads already exist.)
 2. **`merge-guard`** — call the resolver in its eligibility step. Gate:
    - `merge_mode == "handoff"` → never auto-proceed without an explicit
      in-session human instruction to merge. Reaching `required_human_approvers`
@@ -207,10 +225,11 @@ amended text).
    source of truth, never superseded by prgroom state); a direct,
    always-on distinct-current-approver count against `required_human_approvers`
    (dedup by login, latest review state wins — never prgroom's
-   `candidates_seen`); a prgroom-aware no-outstanding-blockers /
-   no-terminal-error check (prgroom's `no_blocker_items` /
-   `last_error_clear` when present, else the local fallback); and the
-   required-CI-green gate (always direct, new).
+   `candidates_seen`); the head-SHA freshness invariant binding both of those
+   to the current `headRefOid` plus a re-check immediately before merge; a
+   prgroom-aware no-outstanding-blockers / no-terminal-error check (prgroom's
+   `no_blocker_items` / `last_error_clear` when present, else the local
+   fallback); and the required-CI-green gate (always direct, new).
 4. **Live wiring** — `wait-for-pr-comments`, `merge-guard`,
    `finishing-a-development-branch`.
 5. **Per-bead label parsing** — `review-exit-copilot-only`,
@@ -239,6 +258,13 @@ amended text).
   `CHANGES_REQUESTED` from the same login does not count, bot logins are
   excluded; blocker/error checks (prgroom-present vs absent); and the
   CI-green gate (green / red / no-CI).
+- **Freshness invariant** — a Copilot review or approval against a stale
+  `commit_id` (predating the latest push) must not satisfy its check; a push
+  landing between eligibility computation and the merge call must abort the
+  merge rather than proceed on stale eligibility.
+- **Auto-vs-handoff branch** — `copilot-required = false` with
+  `human-approvers-required = 0` must proceed directly to `merge-guard`
+  without ever emitting the human-handoff status.
 - **Skills** — kept thin enough to verify via the existing skill smoke-test
   suite.
 
