@@ -158,9 +158,10 @@ not to a blocker floor.
 
 | Blocker fact (all must be clear) | Source |
 |---|---|
+| No expected review still in flight | **Always** a live, timestamp-based check, independent of any session's polling state, mirroring Axis 1's own wait definition: if `bot-review-expected`, block unless a qualifying bot review has arrived at the current head **or** `bot-inactivity-timeout` has elapsed since the bot was requested/last active; if `human-approvers-required > 0`, block unless enough distinct current approvals have arrived **or** `human-review-timeout` has elapsed (unset timeout = block indefinitely — an interactive wait is exactly as long as the human takes). Vacuously clear when Axis 1 has nothing expected. Without this row, a review that simply hasn't happened *yet* is indistinguishable, to every other row below, from one that concluded with nothing to report — both read as "no blocker" purely because nothing has been reported, not because the window has closed. Same "don't race ahead of a pending signal" principle as CI-green's `Pending` treatment, applied to the review wait itself. |
 | No active requested-changes verdict | **Always** a live GitHub query, evaluated across **all** of a reviewer's reviews regardless of commit. For each reviewer (bot or human), a `CHANGES_REQUESTED` review is active and blocks **all** non-force merge paths until it is **dismissed** or **superseded by an `APPROVED` review from that same reviewer** — a later `COMMENTED` review does **not** clear it (GitHub does not treat a comment-only review as changing a reviewer's decision, so "most recent review wins" is the wrong reduction here). Deliberately **not** head-scoped: GitHub does not clear a requested-changes verdict on a new push either — only dismissal or a superseding approval does — so binding this to the current head (as the Freshness invariant does for *positive* facts) would let a stale negative verdict silently drop off the floor the moment the author pushes again. This is independent of thread resolution — a requested-changes verdict blocks even if no inline threads remain. |
 | No unresolved review threads (bot or human) | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced is absent from state yet unresolved on GitHub. |
-| No untriaged non-thread reviewer feedback (`review_summary` / `issue_comment`, bot or human, excluding the delivery agent's own reply comments) | **Always** a live query at merge time: fetch every `review_summary` and `issue_comment` item currently visible on the PR (the same reviewer-item fetch `wait-for-pr-comments` Phase 3 performs), excluding items authored by the delivery agent's own reply identity — a reply is not incoming feedback, and without this exclusion the agent's own reply would immediately re-trip the check it just cleared. Require each remaining item to already carry a terminal, non-blocking disposition (fixed / already-addressed / skipped / deferred / won't-fix) from a **durably recorded** completed triage pass, matched by the item's own stable identity and unioned across the PR's full push history, not looked up by current head (see Live consumer wiring for how `wait-for-pr-comments`' retained inventories support this) — or prgroom's persisted item disposition when prgroom covers the PR. Deliberately **not** head-scoped, for the same reason as the requested-changes row above: an `issue_comment` carries no commit reference at all, and a `review_summary`'s feedback does not become moot just because the author pushed again — only an actual triage decision clears it (an `already_addressed` disposition already covers the case where a later commit happens to resolve it). An item absent from every durable record, never triaged, or recorded `escalated`/`failed` is a blocker; an empty current set is vacuously clear. Threads and non-thread items are disjoint GitHub objects, so the thread check above does not cover this, and it must never be delegated to prgroom's `no_blocker_items` alone (next row) — an item prgroom has not yet polled carries no disposition and does not trip that field. |
+| No untriaged non-thread reviewer feedback (`review_summary` / `issue_comment`, bot or human, excluding the delivery agent's own recorded replies) | **Always** a live query at merge time: fetch every `review_summary` and `issue_comment` item currently visible on the PR (the same reviewer-item fetch `wait-for-pr-comments` Phase 3 performs), excluding items whose exact comment ID was **durably recorded, at post time, as one of the agent's own replies** — never excluded by author login. The delivery agent frequently posts through the same GitHub account as its human operator (no dedicated bot identity is assumed), so filtering by login would also hide a genuine manual comment from that same human; only a specifically recorded reply ID is safe to exclude. A reply is not incoming feedback, and without this exclusion the agent's own reply would immediately re-trip the check it just cleared. Require each remaining item to already carry a terminal, non-blocking disposition (fixed / already-addressed / skipped / deferred / won't-fix) from a **durably recorded** completed triage pass, matched by the item's own stable identity and unioned across the PR's full push history, not looked up by current head (see Live consumer wiring for how `wait-for-pr-comments`' retained inventories support this) — or prgroom's persisted item disposition when prgroom covers the PR. Deliberately **not** head-scoped, for the same reason as the requested-changes row above: an `issue_comment` carries no commit reference at all, and a `review_summary`'s feedback does not become moot just because the author pushed again — only an actual triage decision clears it (an `already_addressed` disposition already covers the case where a later commit happens to resolve it). An item absent from every durable record, never triaged, or recorded `escalated`/`failed` is a blocker; an empty current set is vacuously clear. Threads and non-thread items are disjoint GitHub objects, so the thread check above does not cover this, and it must never be delegated to prgroom's `no_blocker_items` alone (next row) — an item prgroom has not yet polled carries no disposition and does not trip that field. |
 | No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no item disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread or non-thread-feedback checks above. It proves only that nothing was actively escalated or failed; an item prgroom has not yet polled carries `disposition = None` and passes this check silently, so it can never stand in for the live non-thread-feedback check. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's contract. New gate added to `check-merge-eligibility.sh`. |
@@ -322,11 +323,14 @@ agents-config-7bk.12 — add a dependency edge):
 Built-in defaults (section/key absent):
 
 - `bot-review-expected = true` (most repos run Copilot). With the no-blocker
-  eligibility floor, this default never *deadlocks* a bot-less repo: an absent
-  bot leaves no blocker, so the PR stays eligible and an `explicit` merge
-  proceeds on instruction — the bot simply times out first. A bot-less repo
-  sets this `false` only to skip that (bounded) wait. (Auto-detecting bot
-  presence per-PR is a possible future refinement.)
+  eligibility floor, this default never *deadlocks* a bot-less repo: the
+  "no expected review still in flight" blocker clears once
+  `bot-inactivity-timeout` elapses (an absent bot never reviews, so the wait
+  always resolves by timing out), and only then can an `explicit` merge
+  proceed on instruction — a *bounded wait*, not immediate eligibility. A
+  bot-less repo sets this `false` to skip that wait entirely rather than let
+  it elapse. (Auto-detecting bot presence per-PR is a possible future
+  refinement.)
 - `human-approvers-required = 0`.
 - `merge-authorization = "explicit"` — the safe, backward-compatible default:
   identical to today's "merge only on explicit instruction" law.
@@ -357,6 +361,13 @@ Built-in defaults (section/key absent):
    permit exactly this one field; `issue_comment` already has one via
    `issue_comment_id`). Ordinary housekeeping (the existing >30-day pruning)
    is sufficient hygiene once the PR is merged or closed.
+   **`reply-and-resolve-pr-threads`** (Skill B, the actual poster) records
+   the exact comment ID `gh pr comment` returns for every reply it posts,
+   into the same retained inventory — never the posting account's login. No
+   dedicated bot identity is assumed: the agent commonly posts through its
+   human operator's own GitHub account, so a login-based filter would also
+   hide that same human's genuine manual comments. Only a specifically
+   recorded ID is safe for the eligibility check to exclude.
 2. **`merge-guard`** — the enforcement point. Compute the eligibility
    predicate (above), then apply Axis 2:
    - `never` → never merge; hand off. An in-session "merge it" is refused with
@@ -401,23 +412,29 @@ flattened at install time — no file-path citations in the amended text).
    vocabulary incl. the reserved `agent-ruling` slot). Evergreen. Replaces the
    stale `§5.1` toml reference.
 2. **Policy-resolver helper** — code + unit tests (the typed resolver).
-3. **Eligibility-check extension** — `check-merge-eligibility.sh` gains: the
-   always-direct bot-review check matched against the trusted `bot-reviewers`
-   allowlist by **exact** identity (replacing the current
-   `test("copilot"; "i")` substring filter); the distinct-current-approver
-   check (fail closed on unresolvable `commit_id`); a requested-changes check
-   that treats the verdict as sticky until dismissed or superseded by an
-   `APPROVED` review from the same reviewer (a later `COMMENTED` review does
-   not clear it); an always-live unresolved-review-threads check (never
-   delegated to prgroom state); an always-live untriaged-non-thread-feedback
-   check covering `review_summary` / `issue_comment` items — excluding the
-   delivery agent's own reply comments, sourced against a **durable** triage
-   record unioned across every retained inventory for the PR by stable item
-   identity (never a single current-head lookup, and never prgroom's
-   `no_blocker_items` alone, since an item prgroom has not yet polled carries
-   no disposition and would pass that field silently); a schema addition
-   giving `review_summary` items a stable `review_id` so they can be unioned
-   this way (`issue_comment` already has one); the freshness invariant +
+3. **Eligibility-check extension** — `check-merge-eligibility.sh` gains: a
+   review-still-in-flight check derived from Axis 1's own wait definition
+   (blocks until the expected bot/human review arrives or its timeout
+   elapses, never immediately eligible just because nothing has been
+   reported yet); the always-direct bot-review check matched against the
+   trusted `bot-reviewers` allowlist by **exact** identity (replacing the
+   current `test("copilot"; "i")` substring filter); the
+   distinct-current-approver check (fail closed on unresolvable `commit_id`);
+   a requested-changes check that treats the verdict as sticky until
+   dismissed or superseded by an `APPROVED` review from the same reviewer (a
+   later `COMMENTED` review does not clear it); an always-live
+   unresolved-review-threads check (never delegated to prgroom state); an
+   always-live untriaged-non-thread-feedback check covering `review_summary`
+   / `issue_comment` items — excluding only comment IDs `reply-and-resolve-
+   pr-threads` durably recorded as its own replies, never by author login
+   (the agent commonly shares its human operator's GitHub account) — sourced
+   against a **durable** triage record unioned across every retained
+   inventory for the PR by stable item identity (never a single current-head
+   lookup, and never prgroom's `no_blocker_items` alone, since an item
+   prgroom has not yet polled carries no disposition and would pass that
+   field silently); a schema addition giving `review_summary` items a stable
+   `review_id` so they can be unioned this way (`issue_comment` already has
+   one); the freshness invariant +
    `--match-head-commit` merge binding; prgroom-sourced internal blocker/error
    checks when available; and the required-CI-green gate, whose
    required-context set is fetched independently from branch protection
@@ -452,8 +469,18 @@ flattened at install time — no file-path citations in the amended text).
   even when instructed (fail-closed), and must merge only via the distinct
   named force-merge override; a PR under `never` must not merge even when
   instructed (force-merge unavailable); a bot-less repo
-  (`bot-review-expected=true`, no bot present) under `explicit` is **eligible**
-  and merges on instruction — not deadlocked.
+  (`bot-review-expected=true`, no bot present) under `explicit` becomes
+  **eligible once `bot-inactivity-timeout` elapses** and merges on
+  instruction — a bounded wait, not an immediate merge and not a deadlock.
+- **Review-still-in-flight atom** — an explicit "merge it" issued while
+  `bot-review-expected` and no qualifying bot review has arrived, before
+  `bot-inactivity-timeout` elapses, is blocked (only a named force-merge can
+  override it); the same shape for `human-approvers-required > 0` before
+  enough approvals arrive or `human-review-timeout` elapses; nothing expected
+  on Axis 1 is vacuously clear immediately; a `rule-based` / `bot-quiescence`
+  config that *also* expects human approvals on Axis 1 (or the mirror case)
+  stays blocked by this atom until **both** axes settle, even once the
+  selected rule's own single-axis positive fact is satisfied.
 - **Eligibility (no-blocker) atoms** — an active `CHANGES_REQUESTED` verdict
   blocks **every** non-force path (explicit, and rule-based even when other
   approvers satisfy the rule), independent of thread state and **surviving a
@@ -471,10 +498,14 @@ flattened at install time — no file-path citations in the amended text).
   head) — and even when prgroom's `no_blocker_items` reads clean, since an
   item prgroom has not yet polled carries no disposition and does not trip
   that field; a `review_summary` item is matched across separate inventory
-  files by its `review_id`; an item authored by the delivery agent's own
-  reply identity is excluded and never blocks; an item with no durable triage
-  record available in any retained inventory or prgroom coverage is treated
-  as untriaged and blocks (fail closed, not vacuously clear); an empty
+  files by its `review_id`; an item whose ID was durably recorded as one of
+  the agent's own replies is excluded and never blocks; a **manual comment
+  posted through that same account that is NOT a recorded reply ID still
+  blocks like any other untriaged item** — exclusion is by exact recorded ID,
+  never by author login, since the agent commonly shares its human operator's
+  GitHub account; an item with no durable triage record available in any
+  retained inventory or prgroom coverage is treated as untriaged and blocks
+  (fail closed, not vacuously clear); an empty
   non-thread-feedback set is vacuously clear; internal blocker/error checks
   prgroom-present vs absent.
 - **CI-green predicate** — the required set is sourced from branch protection
