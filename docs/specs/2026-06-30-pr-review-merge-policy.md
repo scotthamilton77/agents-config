@@ -37,9 +37,14 @@ governed by two independent axes:
 
 Between them sits one derived concept:
 
-- **Eligibility** — is the PR in a state where merging is safe? Computed one
-  way, from Axis 1's expectations plus CI / thread / freshness facts (see
-  Eligibility predicate). Eligibility is **not** authorization.
+- **Eligibility** — is the PR free of *blocking* conditions (unresolved
+  threads, red CI, stale head)? A no-blocker safety floor for **every** merge
+  path. Eligibility deliberately does **not** assert that any review positively
+  happened — that positive requirement belongs to the merge-rule (Axis 2).
+  This split is load-bearing: it lets an explicit human merge proceed on a repo
+  whose expected bot never showed (no blocker present), while still preventing
+  *autonomous* merge there (the bot-quiescence rule's positive requirement is
+  unmet). Eligibility is **not** authorization.
 
 **A merge happens iff the PR is `eligible` AND the action is `authorized`.**
 Axis 1 and the eligibility predicate decide the former; Axis 2 decides the
@@ -79,14 +84,15 @@ Once eligible, who may merge?
 
 ### Merge-rule vocabulary (used only when `merge-authorization = rule-based`)
 
-Every rule applies **on top of** the eligibility predicate (CI green, threads
-resolved, fresh head — see below). The rule names *what additionally
-authorizes the autonomous merge*:
+Every rule applies **on top of** the eligibility floor (no blockers — see
+Eligibility predicate). The eligibility floor asserts *nothing bad*; the rule
+asserts the *positive* thing that authorizes an autonomous merge. Each
+positive fact is bound to the current head (see Freshness invariant):
 
-| Rule | Authorizes merge when… |
+| Rule | Authorizes merge when… (all also require eligibility) |
 |---|---|
-| `bot-quiescence` | An expected bot **actually reviewed** and quiesced clean. A bot that merely timed out without reviewing does **not** satisfy this — the "real review" floor is structural to the rule, not a separate toggle. |
-| `human-approvals` | `human-approvers-required` distinct current non-bot approvals are present (see Eligibility predicate for the counting rules). |
+| `bot-quiescence` | A **trusted** bot (`bot-reviewers`, exact identity) **actually completed a clean review at the current head** (`commit_id == headRefOid`; fail closed if `commit_id` absent). A bot that timed out, never showed, or reviewed a stale head does **not** satisfy this — the "real review" floor is structural to the rule. |
+| `human-approvals` | **≥ `human-approvers-required` distinct current non-bot approvers** at the current head — reduce to one entry per non-bot login (latest review by submission order wins), count logins whose latest state is `APPROVED` with `commit_id == headRefOid`. `human-approvers-required` must be ≥ 1 for this rule (a zero-approval rule is vacuously true; the resolver rejects it). |
 | `agent-ruling` | An independent, cross-model agent evaluates the diff and renders a merge go/no-go verdict. **Design-reserved; implementation deferred** to a follow-up bead (the judge harness reuses the RALF / codex-review machinery). |
 
 `merge-rule` takes a single value for now. It is shaped as a scalar the config
@@ -135,25 +141,32 @@ construction.
 
 ## Eligibility predicate
 
-Eligibility is the AND of the applicable atomic facts below, each
-**independently sourced**. prgroom's rolled-up `auto_merge_eligible` boolean
-(`docs/architecture/prgroom/design.md` §4.5) is **never** consumed wholesale —
-two of its four components are unsuitable (`phase_is_quiesced` embeds the
-reviewer-quiescence wait that agents-config-abn9.8.19 documents as unseeded /
-vacuously true; `human_review_satisfied` is binary with no notion of `N > 1`).
+Eligibility is the **no-blocker safety floor**: the AND of the "nothing bad"
+facts below, each independently sourced and evaluated **live at merge time**.
+It asserts no unresolved feedback, no red CI, no stale head — **not** that any
+review positively occurred (that is the merge-rule's job, Axis 2). This floor
+applies to every merge path; the positive review facts (a bot reviewed clean,
+N humans approved) live in the rules that need them.
 
-| Atomic fact | Source |
+prgroom's rolled-up `auto_merge_eligible` boolean
+(`docs/architecture/prgroom/design.md` §4.5) is **never** consumed wholesale —
+two of its four components are unsuitable here: `phase_is_quiesced` embeds the
+reviewer-quiescence wait that agents-config-abn9.8.19 documents as unseeded /
+vacuously true, and `human_review_satisfied` is a *positive* authorization
+fact (binary, no notion of `N > 1`) that belongs to the human-approvals rule,
+not to a blocker floor.
+
+| Blocker fact (all must be clear) | Source |
 |---|---|
-| Expected bot reviewed & clean | **Always** a direct GitHub query (the existing `check-merge-eligibility.sh` Copilot-status check) — never prgroom's `phase_is_quiesced`. Applies iff `bot-review-expected`. |
-| `N` distinct current non-bot approvers | **Always** a direct query (`gh pr view --json reviews`): reduce to one entry per non-bot login (latest review by submission order wins), count logins whose latest state is `APPROVED`, compare to `human-approvers-required`. Never prgroom's `human_review.candidates_seen` (one row per review, not deduped, not latest-state-aware → overcounts). |
-| No unresolved review threads | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced would be absent from state yet unresolved on GitHub. Zero unresolved threads required. |
-| No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source layered on top of the live thread check, never a replacement for it. n/a without prgroom. |
+| No unresolved review threads (bot or human) | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced is absent from state yet unresolved on GitHub. |
+| No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread check. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's contract. New gate added to `check-merge-eligibility.sh`. |
+| Head unchanged since evaluation | Enforced via `--match-head-commit` at the merge call (see Freshness invariant). |
 
-Four of the six (bot-review, approver count, unresolved threads, CI) are
-always verified directly and never delegate to prgroom, so the design does not
-depend on agents-config-abn9.8.19 landing.
+Only the two internal facts are prgroom-sourced (and only when available); the
+rest are verified live/directly, so the design does not depend on
+agents-config-abn9.8.19 landing.
 
 ### Freshness invariant
 
@@ -204,6 +217,14 @@ ReviewMergePolicy = {
 
 - Outside-world inputs (config, labels) are arguments — no module globals.
 - Output is a typed value, not an untyped dict, at the boundary.
+- Value-domain validation (every field checked before use, all modes):
+  - `human_approvers_required` must be an integer `>= 0`. A negative value is
+    rejected outright — it is meaningless and, unchecked, could disable human
+    waiting or vacuously satisfy a count comparison. Override labels that don't
+    parse to a non-negative integer (`review-exit-human-approvers-<n>`) are
+    likewise rejected.
+  - `merge_authorization` must be one of the three enum values;
+    `merge_rule` (when present) one of the vocabulary values.
 - Invalid combinations fail loud (resolver error, never a silent fallback to
   merging or to a different rule):
   - `rule-based` without a `merge-rule`, or `merge-rule` set while not
@@ -232,8 +253,12 @@ agents-config-7bk.12 — add a dependency edge):
 
 Built-in defaults (section/key absent):
 
-- `bot-review-expected = true` (most repos run Copilot; a repo without it
-  times out via `bot-inactivity-timeout` and proceeds, or sets this false).
+- `bot-review-expected = true` (most repos run Copilot). With the no-blocker
+  eligibility floor, this default never *deadlocks* a bot-less repo: an absent
+  bot leaves no blocker, so the PR stays eligible and an `explicit` merge
+  proceeds on instruction — the bot simply times out first. A bot-less repo
+  sets this `false` only to skip that (bounded) wait. (Auto-detecting bot
+  presence per-PR is a possible future refinement.)
 - `human-approvers-required = 0`.
 - `merge-authorization = "explicit"` — the safe, backward-compatible default:
   identical to today's "merge only on explicit instruction" law.
@@ -314,25 +339,31 @@ flattened at install time — no file-path citations in the amended text).
 
 ## Testing
 
-- **Resolver** — the two-axis space, precedence (label > config > default),
-  invalid combinations (rule-based w/o rule; rule set while not rule-based;
-  both override labels; `agent-ruling` → not-implemented error;
-  `human-approvals` with required approvers omitted / 0 / negative → error;
-  `bot-quiescence` with empty `bot-reviewers` or `bot-review-expected=false`
-  → error).
+- **Resolver** — the two-axis space, precedence (label > config > default);
+  value-domain (negative `human_approvers_required` rejected in **every** mode;
+  non-integer override label rejected); invalid combinations (rule-based w/o
+  rule; rule set while not rule-based; both override labels;
+  `agent-ruling` → not-implemented error; `human-approvals` with required
+  approvers omitted / 0 → error; `bot-quiescence` with empty `bot-reviewers`
+  or `bot-review-expected=false` → error).
 - **Eligible-vs-authorized** — a PR eligible under `explicit` with no in-session
   instruction must not merge; an *ineligible* PR under `explicit` must not merge
   even when instructed (fail-closed), and must merge only via the distinct
   named force-merge override; a PR under `never` must not merge even when
-  instructed (force-merge unavailable).
-- **Eligibility atoms** — bot-review read directly even when prgroom reports
-  `phase_is_quiesced = true`, and only a trusted `bot-reviewers` identity
-  counts (exact match, not substring; an untrusted bot's review is ignored);
-  distinct-current-approver counting for `N > 1` (same login twice = one;
-  `APPROVED` superseded by later `CHANGES_REQUESTED` = zero; bots excluded);
-  unresolved review threads read live even when prgroom `no_blocker_items` is
-  clean (a post-quiescence thread must block); internal blocker/error checks
-  prgroom-present vs absent; CI-green (green / red / no-CI).
+  instructed (force-merge unavailable); a bot-less repo
+  (`bot-review-expected=true`, no bot present) under `explicit` is **eligible**
+  and merges on instruction — not deadlocked.
+- **Eligibility (no-blocker) atoms** — unresolved review threads read live even
+  when prgroom `no_blocker_items` is clean (a post-quiescence thread must
+  block); internal blocker/error checks prgroom-present vs absent; CI-green
+  (green / red / no-CI).
+- **Merge-rule positive facts** — `bot-quiescence`: only a trusted
+  `bot-reviewers` identity's clean review at the current head satisfies it
+  (exact match not substring; untrusted bot ignored; no-show/timeout /
+  stale-head does not satisfy). `human-approvals`: distinct-current-approver
+  counting for `N > 1` (same login twice = one; `APPROVED` superseded by later
+  `CHANGES_REQUESTED` = zero; bots excluded; stale-head approval does not
+  count).
 - **Freshness** — stale `commit_id` never satisfies even with a later
   `submitted_at`; missing `commit_id` fails closed; a push between predicate
   and merge triggers `--match-head-commit` rejection → fresh re-evaluation.
