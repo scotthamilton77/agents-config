@@ -160,7 +160,8 @@ not to a blocker floor.
 |---|---|
 | No active requested-changes verdict | **Always** a live GitHub query. For each reviewer (bot or human) with a review at the current head, reduce to their latest non-`DISMISSED` review; block **all** non-force merge paths while any latest state is `CHANGES_REQUESTED`. This is independent of thread resolution — a requested-changes verdict blocks even if no inline threads remain. |
 | No unresolved review threads (bot or human) | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced is absent from state yet unresolved on GitHub. |
-| No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread check. n/a without prgroom. |
+| No untriaged non-thread reviewer feedback (`review_summary` / `issue_comment`, bot or human) | **Always** a live query at merge time: fetch the PR's current `review_summary` and `issue_comment` items (the same reviewer-item fetch `wait-for-pr-comments` Phase 3 performs) and require each to already carry a terminal, non-blocking disposition (fixed / already-addressed / skipped / deferred / won't-fix) from the most recently completed triage pass **at the current head**. An item absent from that record, never triaged, or recorded `escalated`/`failed` is a blocker; an empty current set is vacuously clear. Threads and non-thread items are disjoint GitHub objects, so the thread check above does not cover this, and it must never be delegated to prgroom's `no_blocker_items` alone (next row) — an item prgroom has not yet polled carries no disposition and does not trip that field. |
+| No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no item disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread or non-thread-feedback checks above. It proves only that nothing was actively escalated or failed; an item prgroom has not yet polled carries `disposition = None` and passes this check silently, so it can never stand in for the live non-thread-feedback check. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's contract. New gate added to `check-merge-eligibility.sh`. |
 | Head unchanged since evaluation | Enforced via `--match-head-commit` at the merge call (see Freshness invariant). |
@@ -220,23 +221,20 @@ cannot pick unsafe defaults.
 - Consider reviews from a trusted `bot-reviewers` identity **at the current
   head** (`commit_id == headRefOid`), excluding `DISMISSED` reviews.
 - Take that identity's latest such review by `submitted_at`.
-- *Clean* iff:
-  - the latest review state is `APPROVED`; **or**
-  - it is `COMMENTED` **and** all feedback carried by that review — inline
-    comments *and* the review summary body — has been through the
-    wait-for-pr-comments resolution cycle with no FIX-class item outstanding.
-    A bare `COMMENTED` state is **not** sufficient on its own: Copilot delivers
-    substantive feedback in `COMMENTED` reviews, so state alone cannot mean
-    "clean."
-  - `CHANGES_REQUESTED` → not clean (and independently a blocker at the
-    eligibility floor).
-- **Fail closed**: if the bot's feedback cannot be programmatically confirmed
-  as fully triaged (e.g., free-text summary concerns not modeled as resolvable
-  threads), `bot-quiescence` is **not** satisfied — the PR falls to handoff
-  rather than autonomous merge. No qualifying current-head review → not
-  satisfied.
-- This predicate reuses the existing resolution-cycle triage; it does not add
-  a parallel comment-classification mechanism.
+- *Clean* iff the latest state is `APPROVED` or `COMMENTED`. Review state
+  alone certifies only that the bot reviewed and did not request changes — it
+  never certifies that the review's content was triaged. Whether the review's
+  summary body or any inline comments still carry outstanding feedback is a
+  PR-wide fact the eligibility floor's untriaged-feedback blockers already own
+  (see Eligibility predicate) and that every merge path, including this rule,
+  sits on top of; this predicate does not duplicate that check. An `APPROVED`
+  review is therefore no more automatically clean than a `COMMENTED` one — a
+  bot can attach substantive summary feedback to either state.
+  - `CHANGES_REQUESTED` → not clean (and independently a floor blocker for
+    every path, regardless of this rule).
+- No qualifying current-head review from a trusted identity → not satisfied.
+- This predicate relies on the eligibility floor's triage-completeness facts;
+  it does not add a parallel comment-classification mechanism.
 
 ## Architecture
 
@@ -368,9 +366,13 @@ flattened at install time — no file-path citations in the amended text).
    allowlist by **exact** identity (replacing the current
    `test("copilot"; "i")` substring filter); the distinct-current-approver
    check (fail closed on unresolvable `commit_id`); an always-live
-   unresolved-review-threads check (never delegated to prgroom state); the
-   freshness invariant + `--match-head-commit` merge binding; prgroom-sourced
-   internal blocker/error checks when available; and the required-CI-green gate.
+   unresolved-review-threads check (never delegated to prgroom state); an
+   always-live untriaged-non-thread-feedback check covering `review_summary` /
+   `issue_comment` items (never delegated to prgroom's `no_blocker_items`
+   alone, since an item prgroom has not yet polled carries no disposition and
+   would pass that field silently); the freshness invariant +
+   `--match-head-commit` merge binding; prgroom-sourced internal blocker/error
+   checks when available; and the required-CI-green gate.
 4. **Live wiring** — `wait-for-pr-comments`, `merge-guard`,
    `finishing-a-development-branch`.
 5. **Per-bead label parsing** — `review-exit-copilot-only`,
@@ -406,7 +408,12 @@ flattened at install time — no file-path citations in the amended text).
   the current head blocks **every** non-force path (explicit, and rule-based
   even when other approvers satisfy the rule), independent of thread state;
   unresolved review threads read live even when prgroom `no_blocker_items` is
-  clean (a post-quiescence thread must block); internal blocker/error checks
+  clean (a post-quiescence thread must block); an untriaged `review_summary`
+  or `issue_comment` blocks every path even when it is the only outstanding
+  item — including one attached to an `APPROVED` bot review — and even when
+  prgroom's `no_blocker_items` reads clean, since an item prgroom has not yet
+  polled carries no disposition and does not trip that field; an empty
+  non-thread-feedback set is vacuously clear; internal blocker/error checks
   prgroom-present vs absent.
 - **CI-green predicate** — all-`SUCCESS` = green; any
   `FAILURE`/`ERROR`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED` = blocked; a
@@ -415,12 +422,13 @@ flattened at install time — no file-path citations in the amended text).
   green (and autonomous merge still blocked unless the merge-rule's positive
   review holds).
 - **bot clean-review predicate** — latest trusted-bot review at current head:
-  `APPROVED` = clean; `COMMENTED` with all inline+summary feedback triaged (no
-  FIX-class outstanding) = clean; `COMMENTED` with untriaged / free-text
-  summary feedback = **not** clean (fail closed to handoff); state alone never
-  suffices; `CHANGES_REQUESTED` = blocked; only `DISMISSED`/stale-head reviews
-  present = not satisfied; untrusted-bot review ignored (exact identity, not
-  substring).
+  `APPROVED` or `COMMENTED` = the positive fact holds; `CHANGES_REQUESTED` =
+  blocked (and independently trips the floor); only `DISMISSED`/stale-head
+  reviews present = not satisfied; untrusted-bot review ignored (exact
+  identity, not substring). Triage completeness is deliberately **not**
+  re-tested here — an `APPROVED` review that shipped with an untriaged summary
+  or inline comment must be caught by the eligibility non-thread-feedback atom
+  above, not by this predicate.
 - **human-approvals positive fact** — distinct-current-approver counting for
   `N > 1` (same login twice = one; `APPROVED` superseded by later
   `CHANGES_REQUESTED` = zero; bots excluded; stale-head approval does not
@@ -446,9 +454,14 @@ flattened at install time — no file-path citations in the amended text).
 - **`merge-rule` is scalar-now, engine-later.** Keep the field shaped so a
   future rule engine (boolean combinations / expressions — TBD) can extend it
   without a breaking rename.
-- **Never trust prgroom's `auto_merge_eligible` boolean or naively count
-  `human_review.candidates_seen`** — see Eligibility predicate. Any future
-  reuse of prgroom review data must re-derive distinct-current-approver state.
+- **Never trust prgroom's `auto_merge_eligible` boolean, naively count
+  `human_review.candidates_seen`, or treat `no_blocker_items` as proof that no
+  new feedback exists** — see Eligibility predicate. `no_blocker_items` only
+  proves nothing was actively escalated or failed; an item prgroom has not yet
+  polled carries no disposition and passes it silently. Any future reuse of
+  prgroom review data must re-derive distinct-current-approver state and must
+  pair `no_blocker_items` with the live non-thread-feedback check, never rely
+  on it alone.
 
 ## Out of scope
 
