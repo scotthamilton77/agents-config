@@ -158,6 +158,7 @@ not to a blocker floor.
 
 | Blocker fact (all must be clear) | Source |
 |---|---|
+| No active requested-changes verdict | **Always** a live GitHub query. For each reviewer (bot or human) with a review at the current head, reduce to their latest non-`DISMISSED` review; block **all** non-force merge paths while any latest state is `CHANGES_REQUESTED`. This is independent of thread resolution — a requested-changes verdict blocks even if no inline threads remain. |
 | No unresolved review threads (bot or human) | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced is absent from state yet unresolved on GitHub. |
 | No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread check. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
@@ -219,13 +220,23 @@ cannot pick unsafe defaults.
 - Consider reviews from a trusted `bot-reviewers` identity **at the current
   head** (`commit_id == headRefOid`), excluding `DISMISSED` reviews.
 - Take that identity's latest such review by `submitted_at`.
-- *Clean* iff that latest review's state is `APPROVED` or `COMMENTED` (Copilot
-  typically posts `COMMENTED`, not `APPROVED`). `CHANGES_REQUESTED` → not
-  clean (blocker). No qualifying review (bot never reviewed the current head,
-  or its only reviews are stale/dismissed) → not satisfied.
-- Comment/thread *resolution* is **not** part of this predicate — it is
-  covered independently by the eligibility floor's live unresolved-threads
-  check. "Clean" here is strictly the bot's review verdict on the current head.
+- *Clean* iff:
+  - the latest review state is `APPROVED`; **or**
+  - it is `COMMENTED` **and** all feedback carried by that review — inline
+    comments *and* the review summary body — has been through the
+    wait-for-pr-comments resolution cycle with no FIX-class item outstanding.
+    A bare `COMMENTED` state is **not** sufficient on its own: Copilot delivers
+    substantive feedback in `COMMENTED` reviews, so state alone cannot mean
+    "clean."
+  - `CHANGES_REQUESTED` → not clean (and independently a blocker at the
+    eligibility floor).
+- **Fail closed**: if the bot's feedback cannot be programmatically confirmed
+  as fully triaged (e.g., free-text summary concerns not modeled as resolvable
+  threads), `bot-quiescence` is **not** satisfied — the PR falls to handoff
+  rather than autonomous merge. No qualifying current-head review → not
+  satisfied.
+- This predicate reuses the existing resolution-cycle triage; it does not add
+  a parallel comment-classification mechanism.
 
 ## Architecture
 
@@ -391,9 +402,12 @@ flattened at install time — no file-path citations in the amended text).
   instructed (force-merge unavailable); a bot-less repo
   (`bot-review-expected=true`, no bot present) under `explicit` is **eligible**
   and merges on instruction — not deadlocked.
-- **Eligibility (no-blocker) atoms** — unresolved review threads read live even
-  when prgroom `no_blocker_items` is clean (a post-quiescence thread must
-  block); internal blocker/error checks prgroom-present vs absent.
+- **Eligibility (no-blocker) atoms** — an active `CHANGES_REQUESTED` verdict at
+  the current head blocks **every** non-force path (explicit, and rule-based
+  even when other approvers satisfy the rule), independent of thread state;
+  unresolved review threads read live even when prgroom `no_blocker_items` is
+  clean (a post-quiescence thread must block); internal blocker/error checks
+  prgroom-present vs absent.
 - **CI-green predicate** — all-`SUCCESS` = green; any
   `FAILURE`/`ERROR`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED` = blocked; a
   required context still `PENDING`/`IN_PROGRESS`/unreported = not green (no
@@ -401,9 +415,12 @@ flattened at install time — no file-path citations in the amended text).
   green (and autonomous merge still blocked unless the merge-rule's positive
   review holds).
 - **bot clean-review predicate** — latest trusted-bot review at current head:
-  `APPROVED` or `COMMENTED` = clean; `CHANGES_REQUESTED` = blocked; only
-  `DISMISSED`/stale-head reviews present = not satisfied; untrusted-bot review
-  ignored (exact identity, not substring).
+  `APPROVED` = clean; `COMMENTED` with all inline+summary feedback triaged (no
+  FIX-class outstanding) = clean; `COMMENTED` with untriaged / free-text
+  summary feedback = **not** clean (fail closed to handoff); state alone never
+  suffices; `CHANGES_REQUESTED` = blocked; only `DISMISSED`/stale-head reviews
+  present = not satisfied; untrusted-bot review ignored (exact identity, not
+  substring).
 - **human-approvals positive fact** — distinct-current-approver counting for
   `N > 1` (same login twice = one; `APPROVED` superseded by later
   `CHANGES_REQUESTED` = zero; bots excluded; stale-head approval does not
