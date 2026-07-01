@@ -43,7 +43,11 @@ Between them sits one derived concept:
 
 **A merge happens iff the PR is `eligible` AND the action is `authorized`.**
 Axis 1 and the eligibility predicate decide the former; Axis 2 decides the
-latter. Keeping them separate is what removes the overloading.
+latter. Keeping them separate is what removes the overloading. This invariant
+is absolute for every automatic and instructed path. The **only** exception is
+an explicit, separately-named human **force-merge** override (see merge-guard
+wiring) — a deliberate, logged action that bypasses the eligibility gate; it is
+never the default behavior of any Axis-2 value.
 
 ## Axis 1 — Review expectation
 
@@ -52,7 +56,8 @@ Drives polling. The cycle is ON **iff** `bot-review-expected` **or**
 
 | Setting | Meaning |
 |---|---|
-| `bot-review-expected` (bool) | Expect a bot reviewer — Copilot, generalized to any bot review. Poll until the bot quiesces (reviewed, then inactive for the timeout). |
+| `bot-review-expected` (bool) | Expect a bot reviewer. Poll until the bot quiesces (reviewed, then inactive for the timeout). |
+| `bot-reviewers` (list) | The **trusted** bot identities whose review satisfies the bot-review fact — matched by **exact** login / app identity, not substring. Defaults to Copilot's identity. A review from a bot not on this list does not count. This is the trust boundary for `bot-quiescence` autonomous merge; a substring match (as the current script does with `test("copilot"; "i")`) is insufficient. |
 | `bot-inactivity-timeout` | Bot silence that counts as "bot is done" (reuses prgroom's review-finish-timeout concept). |
 | `human-approvers-required` (int) | How many human approvals to wait for. |
 | `human-review-timeout` | How long to wait for slow humans before giving up. Empty = wait indefinitely (interactive); autonomous runs park the molecule rather than block (see agents-config-ukzs). |
@@ -106,13 +111,17 @@ should not be the same model that wrote the code) lives with `agent-ruling`.
 The original design's critical flaw — a repo auto-merging with no review at all
 — is now **structurally impossible**, not merely discouraged. Autonomous merge
 requires `merge-authorization = rule-based` *and* a `merge-rule`, and every
-implemented rule requires a *real* review to have occurred (`bot-quiescence`
-needs an actual clean bot review; `human-approvals` needs actual approvals).
-A repo that expects no reviewers has **no satisfiable rule**, so it cannot
-auto-merge — it falls through to handoff. The only way to auto-merge a
-genuinely unreviewed diff would be a rule that authorizes on nothing, and no
-such rule exists in the vocabulary. (`agent-ruling`, when built, is itself a
-real review.) The zero-review merge path is closed by construction.
+implemented rule requires a *real* review to have occurred. The resolver's
+validation enforces this so a rule cannot be vacuously satisfied:
+`human-approvals` is rejected unless `human_approvers_required >= 1`
+(a zero-approval rule would be trivially true); `bot-quiescence` is rejected
+unless a trusted `bot-reviewers` identity is configured and
+`bot-review-expected` is true, and it counts only an *actual* clean review from
+that identity (a no-show/timeout never satisfies it). A repo that expects no
+reviewers therefore has **no satisfiable rule** and cannot auto-merge — it
+falls through to handoff. No rule authorizes on nothing. (`agent-ruling`, when
+built, is itself a real review.) The zero-review merge path is closed by
+construction.
 
 ### Worked examples
 
@@ -137,13 +146,14 @@ vacuously true; `human_review_satisfied` is binary with no notion of `N > 1`).
 |---|---|
 | Expected bot reviewed & clean | **Always** a direct GitHub query (the existing `check-merge-eligibility.sh` Copilot-status check) — never prgroom's `phase_is_quiesced`. Applies iff `bot-review-expected`. |
 | `N` distinct current non-bot approvers | **Always** a direct query (`gh pr view --json reviews`): reduce to one entry per non-bot login (latest review by submission order wins), count logins whose latest state is `APPROVED`, compare to `human-approvers-required`. Never prgroom's `human_review.candidates_seen` (one row per review, not deduped, not latest-state-aware → overcounts). |
-| No outstanding blockers | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED` — unaffected by the seeding gap); else a local FIX-class-items / threads-resolved check. |
+| No unresolved review threads | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced would be absent from state yet unresolved on GitHub. Zero unresolved threads required. |
+| No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source layered on top of the live thread check, never a replacement for it. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's contract. New gate added to `check-merge-eligibility.sh`. |
 
-Three of the five (bot-review, approver count, CI) are always verified
-directly and never delegate to prgroom, so the design does not depend on
-agents-config-abn9.8.19 landing.
+Four of the six (bot-review, approver count, unresolved threads, CI) are
+always verified directly and never delegate to prgroom, so the design does not
+depend on agents-config-abn9.8.19 landing.
 
 ### Freshness invariant
 
@@ -182,6 +192,7 @@ resolve_policy(
 ReviewMergePolicy = {
     # Axis 1
     bot_review_expected: bool,
+    bot_reviewers: list[str],          # trusted bot identities (exact match)
     bot_inactivity_timeout: Duration,
     human_approvers_required: int,
     human_review_timeout: Duration | None,
@@ -193,10 +204,17 @@ ReviewMergePolicy = {
 
 - Outside-world inputs (config, labels) are arguments — no module globals.
 - Output is a typed value, not an untyped dict, at the boundary.
-- Invalid combinations fail loud: `rule-based` without a `merge-rule`;
-  `merge-rule` set while not `rule-based`; `agent-ruling` selected before its
-  implementation lands → explicit "not yet implemented" error, never a silent
-  fallback to merging or to a different rule.
+- Invalid combinations fail loud (resolver error, never a silent fallback to
+  merging or to a different rule):
+  - `rule-based` without a `merge-rule`, or `merge-rule` set while not
+    `rule-based`.
+  - `merge-rule = human-approvals` with `human_approvers_required < 1` — a
+    zero-approval rule is vacuously true and would authorize an unreviewed
+    merge. The rule requires at least one required approver.
+  - `merge-rule = bot-quiescence` with no trusted bot in `bot-reviewers` (no
+    identity could satisfy the rule) or with `bot-review-expected = false`.
+  - `agent-ruling` selected before its implementation lands → explicit "not
+    yet implemented" error.
 
 ### Resolution precedence
 
@@ -232,9 +250,17 @@ Built-in defaults (section/key absent):
    - `never` → never merge; hand off. An in-session "merge it" is refused with
      an explanation (this repo's policy is human-manual merge).
    - `explicit` → merge iff eligible **and** the human gave an in-session
-     instruction (today's behavior; eligibility acts as a safety warning the
-     human may override, as merge-guard does today).
+     instruction. **Fail-closed on ineligibility**: an ineligible PR is not
+     merged even when instructed — merge-guard reports why it is ineligible and
+     stops.
    - `rule-based` → merge iff eligible **and** the selected `merge-rule` holds.
+   - **Force-merge (the one eligibility-bypass path)** → a distinct, explicitly
+     named human override ("force merge"), valid only in `explicit` mode, only
+     on a fresh in-session human instruction that names the ineligibility being
+     overridden. It is logged and never available to `never`, to `rule-based`,
+     or to any autonomous path. (This replaces today's merge-guard behavior
+     where any ineligible PR could be force-merged as an undifferentiated
+     "proceed anyway.")
    - All merges issued with `--match-head-commit`.
 3. **`finishing-a-development-branch`** — unchanged for PR creation; hands off
    to `merge-guard` for the gated merge decision.
@@ -264,10 +290,13 @@ flattened at install time — no file-path citations in the amended text).
    stale `§5.1` toml reference.
 2. **Policy-resolver helper** — code + unit tests (the typed resolver).
 3. **Eligibility-check extension** — `check-merge-eligibility.sh` gains: the
-   always-direct bot-review and distinct-current-approver checks (fail closed
-   on unresolvable `commit_id`); the freshness invariant + `--match-head-commit`
-   merge binding; prgroom-sourced blocker/error checks when available; and the
-   required-CI-green gate.
+   always-direct bot-review check matched against the trusted `bot-reviewers`
+   allowlist by **exact** identity (replacing the current
+   `test("copilot"; "i")` substring filter); the distinct-current-approver
+   check (fail closed on unresolvable `commit_id`); an always-live
+   unresolved-review-threads check (never delegated to prgroom state); the
+   freshness invariant + `--match-head-commit` merge binding; prgroom-sourced
+   internal blocker/error checks when available; and the required-CI-green gate.
 4. **Live wiring** — `wait-for-pr-comments`, `merge-guard`,
    `finishing-a-development-branch`.
 5. **Per-bead label parsing** — `review-exit-copilot-only`,
@@ -277,7 +306,9 @@ flattened at install time — no file-path citations in the amended text).
    `[review-expectations]` (Axis 1) and `[merge-policy]` (Axis 2); fix the
    stale `§5.1` reference (point at the new HLD). agents-config's own settings,
    expressed cleanly with no overloading:
-   `bot-review-expected = true`, `human-approvers-required = 0`,
+   `bot-review-expected = true`, `bot-reviewers = ["Copilot"]` (matched to
+   Copilot's exact reviewer app identity — the implementation resolves the
+   precise `login`), `human-approvers-required = 0`,
    `merge-authorization = "rule-based"`, `merge-rule = "bot-quiescence"` (this
    repo auto-merges on a clean Copilot review — a deliberate, named choice).
 
@@ -285,15 +316,23 @@ flattened at install time — no file-path citations in the amended text).
 
 - **Resolver** — the two-axis space, precedence (label > config > default),
   invalid combinations (rule-based w/o rule; rule set while not rule-based;
-  both override labels; `agent-ruling` → explicit not-implemented error).
+  both override labels; `agent-ruling` → not-implemented error;
+  `human-approvals` with required approvers omitted / 0 / negative → error;
+  `bot-quiescence` with empty `bot-reviewers` or `bot-review-expected=false`
+  → error).
 - **Eligible-vs-authorized** — a PR eligible under `explicit` with no in-session
-  instruction must not merge; a PR under `never` must not merge even when
-  instructed.
+  instruction must not merge; an *ineligible* PR under `explicit` must not merge
+  even when instructed (fail-closed), and must merge only via the distinct
+  named force-merge override; a PR under `never` must not merge even when
+  instructed (force-merge unavailable).
 - **Eligibility atoms** — bot-review read directly even when prgroom reports
-  `phase_is_quiesced = true`; distinct-current-approver counting for `N > 1`
-  (same login twice = one; `APPROVED` superseded by later `CHANGES_REQUESTED`
-  = zero; bots excluded); blocker/error checks prgroom-present vs absent;
-  CI-green (green / red / no-CI).
+  `phase_is_quiesced = true`, and only a trusted `bot-reviewers` identity
+  counts (exact match, not substring; an untrusted bot's review is ignored);
+  distinct-current-approver counting for `N > 1` (same login twice = one;
+  `APPROVED` superseded by later `CHANGES_REQUESTED` = zero; bots excluded);
+  unresolved review threads read live even when prgroom `no_blocker_items` is
+  clean (a post-quiescence thread must block); internal blocker/error checks
+  prgroom-present vs absent; CI-green (green / red / no-CI).
 - **Freshness** — stale `commit_id` never satisfies even with a later
   `submitted_at`; missing `commit_id` fails closed; a push between predicate
   and merge triggers `--match-head-commit` rejection → fresh re-evaluation.
