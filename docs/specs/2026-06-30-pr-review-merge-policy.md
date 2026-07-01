@@ -189,6 +189,44 @@ SHA today — this is new surface.
    final window; `merge-guard` re-evaluates from scratch on rejection rather
    than retrying blind.
 
+### Predicate definitions (machine-checkable)
+
+The two authorization-boundary predicates are defined exactly so implementers
+cannot pick unsafe defaults.
+
+**CI-green** (eligibility floor):
+
+- *Required set* = the branch-protection required status checks for the target
+  branch (GitHub `statusCheckRollup` filtered to required contexts). If branch
+  protection defines **no** required checks, the required set is empty.
+- *Green* iff every check in the required set has concluded `SUCCESS`.
+  `SKIPPED` and `NEUTRAL` count as passing (GitHub itself permits merge).
+  `FAILURE` / `ERROR` / `CANCELLED` / `TIMED_OUT` / `ACTION_REQUIRED` → not
+  green (blocker).
+- *Pending* — a required context that exists but has no concluded status yet
+  (`QUEUED` / `IN_PROGRESS` / `PENDING`, or a required context with no run
+  reported) → **not green**. This is what prevents an autonomous merge from
+  racing ahead of checks that haven't reported for the current head.
+- *Empty required set (no CI configured)* → vacuously green. Safety for the
+  autonomous path then rests entirely on the merge-rule's positive review
+  (bot/human/agent), which is always required regardless — so "no CI" never
+  *by itself* enables an unreviewed merge. Same treatment for `explicit` and
+  `rule-based`; the difference is only that `explicit` also needs the human
+  instruction.
+
+**bot clean-review** (the `bot-quiescence` positive fact):
+
+- Consider reviews from a trusted `bot-reviewers` identity **at the current
+  head** (`commit_id == headRefOid`), excluding `DISMISSED` reviews.
+- Take that identity's latest such review by `submitted_at`.
+- *Clean* iff that latest review's state is `APPROVED` or `COMMENTED` (Copilot
+  typically posts `COMMENTED`, not `APPROVED`). `CHANGES_REQUESTED` → not
+  clean (blocker). No qualifying review (bot never reviewed the current head,
+  or its only reviews are stale/dismissed) → not satisfied.
+- Comment/thread *resolution* is **not** part of this predicate — it is
+  covered independently by the eligibility floor's live unresolved-threads
+  check. "Clean" here is strictly the bot's review verdict on the current head.
+
 ## Architecture
 
 ### A tested policy-resolver helper (not inline-per-skill)
@@ -355,13 +393,19 @@ flattened at install time — no file-path citations in the amended text).
   and merges on instruction — not deadlocked.
 - **Eligibility (no-blocker) atoms** — unresolved review threads read live even
   when prgroom `no_blocker_items` is clean (a post-quiescence thread must
-  block); internal blocker/error checks prgroom-present vs absent; CI-green
-  (green / red / no-CI).
-- **Merge-rule positive facts** — `bot-quiescence`: only a trusted
-  `bot-reviewers` identity's clean review at the current head satisfies it
-  (exact match not substring; untrusted bot ignored; no-show/timeout /
-  stale-head does not satisfy). `human-approvals`: distinct-current-approver
-  counting for `N > 1` (same login twice = one; `APPROVED` superseded by later
+  block); internal blocker/error checks prgroom-present vs absent.
+- **CI-green predicate** — all-`SUCCESS` = green; any
+  `FAILURE`/`ERROR`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED` = blocked; a
+  required context still `PENDING`/`IN_PROGRESS`/unreported = not green (no
+  race-ahead); `SKIPPED`/`NEUTRAL` = passing; empty required set = vacuously
+  green (and autonomous merge still blocked unless the merge-rule's positive
+  review holds).
+- **bot clean-review predicate** — latest trusted-bot review at current head:
+  `APPROVED` or `COMMENTED` = clean; `CHANGES_REQUESTED` = blocked; only
+  `DISMISSED`/stale-head reviews present = not satisfied; untrusted-bot review
+  ignored (exact identity, not substring).
+- **human-approvals positive fact** — distinct-current-approver counting for
+  `N > 1` (same login twice = one; `APPROVED` superseded by later
   `CHANGES_REQUESTED` = zero; bots excluded; stale-head approval does not
   count).
 - **Freshness** — stale `commit_id` never satisfies even with a later
