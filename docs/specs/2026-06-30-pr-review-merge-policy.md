@@ -158,9 +158,9 @@ not to a blocker floor.
 
 | Blocker fact (all must be clear) | Source |
 |---|---|
-| No active requested-changes verdict | **Always** a live GitHub query. For each reviewer (bot or human) with a review at the current head, reduce to their latest non-`DISMISSED` review; block **all** non-force merge paths while any latest state is `CHANGES_REQUESTED`. This is independent of thread resolution — a requested-changes verdict blocks even if no inline threads remain. |
+| No active requested-changes verdict | **Always** a live GitHub query, evaluated across **all** of a reviewer's reviews regardless of commit — for each reviewer (bot or human), reduce to their latest non-`DISMISSED` review by `submitted_at` and block **all** non-force merge paths while that latest state is `CHANGES_REQUESTED`. Deliberately **not** head-scoped: GitHub does not clear a requested-changes verdict on a new push — only an explicit dismissal or a superseding review from the same reviewer does — so binding this to the current head (as the Freshness invariant does for *positive* facts) would let a stale negative verdict silently drop off the floor the moment the author pushes again. This is independent of thread resolution — a requested-changes verdict blocks even if no inline threads remain. |
 | No unresolved review threads (bot or human) | **Always** a live GitHub query at merge time. prgroom state is **never** a substitute — a thread opened after prgroom last quiesced is absent from state yet unresolved on GitHub. |
-| No untriaged non-thread reviewer feedback (`review_summary` / `issue_comment`, bot or human) | **Always** a live query at merge time: fetch the PR's current `review_summary` and `issue_comment` items (the same reviewer-item fetch `wait-for-pr-comments` Phase 3 performs) and require each to already carry a terminal, non-blocking disposition (fixed / already-addressed / skipped / deferred / won't-fix) from the most recently completed triage pass **at the current head**. An item absent from that record, never triaged, or recorded `escalated`/`failed` is a blocker; an empty current set is vacuously clear. Threads and non-thread items are disjoint GitHub objects, so the thread check above does not cover this, and it must never be delegated to prgroom's `no_blocker_items` alone (next row) — an item prgroom has not yet polled carries no disposition and does not trip that field. |
+| No untriaged non-thread reviewer feedback (`review_summary` / `issue_comment`, bot or human) | **Always** a live query at merge time: fetch every `review_summary` and `issue_comment` item currently visible on the PR (the same reviewer-item fetch `wait-for-pr-comments` Phase 3 performs) and require each to already carry a terminal, non-blocking disposition (fixed / already-addressed / skipped / deferred / won't-fix) from a completed triage pass. Deliberately **not** head-scoped, for the same reason as the requested-changes row above: an `issue_comment` carries no commit reference at all, and a `review_summary`'s feedback does not become moot just because the author pushed again — only an actual triage decision clears it (an `already_addressed` disposition already covers the case where a later commit happens to resolve it). An item absent from that record, never triaged, or recorded `escalated`/`failed` is a blocker; an empty current set is vacuously clear. Threads and non-thread items are disjoint GitHub objects, so the thread check above does not cover this, and it must never be delegated to prgroom's `no_blocker_items` alone (next row) — an item prgroom has not yet polled carries no disposition and does not trip that field. |
 | No internal blocker items | prgroom's `no_blocker_items` when prgroom state exists (no item disposition `ESCALATED`/`FAILED`) — an **additional** internal-blocker source, never a replacement for the live thread or non-thread-feedback checks above. It proves only that nothing was actively escalated or failed; an item prgroom has not yet polled carries `disposition = None` and passes this check silently, so it can never stand in for the live non-thread-feedback check. n/a without prgroom. |
 | No terminal lifecycle error | prgroom's `last_error_clear` when prgroom state exists; else n/a. |
 | Required CI checks green | **Always** a direct check — not part of prgroom's contract. New gate added to `check-merge-eligibility.sh`. |
@@ -180,7 +180,12 @@ SHA today — this is new surface.
    `commit_id` equals that head. There is **no timestamp fallback** — a review
    pending on an old diff can be *submitted* after a push while carrying a
    *stale* `commit_id`, so `submitted_at` cannot distinguish it. If a review's
-   `commit_id` is unavailable, **fail closed** (it does not count).
+   `commit_id` is unavailable, **fail closed** (it does not count). This
+   head-binding governs **positive** facts only (a review counting *for*
+   authorization). Negative/outstanding facts — an active `CHANGES_REQUESTED`
+   verdict, an untriaged `review_summary` or `issue_comment` — are evaluated
+   regardless of commit; see the eligibility floor rows for why staleness
+   cuts the opposite way for those.
 2. **Recompute live**: `merge-guard` evaluates the full predicate
    synchronously immediately before merging — never from a cached earlier
    read — so new unresolved threads / blockers that appear after an earlier
@@ -404,17 +409,20 @@ flattened at install time — no file-path citations in the amended text).
   instructed (force-merge unavailable); a bot-less repo
   (`bot-review-expected=true`, no bot present) under `explicit` is **eligible**
   and merges on instruction — not deadlocked.
-- **Eligibility (no-blocker) atoms** — an active `CHANGES_REQUESTED` verdict at
-  the current head blocks **every** non-force path (explicit, and rule-based
-  even when other approvers satisfy the rule), independent of thread state;
-  unresolved review threads read live even when prgroom `no_blocker_items` is
-  clean (a post-quiescence thread must block); an untriaged `review_summary`
-  or `issue_comment` blocks every path even when it is the only outstanding
-  item — including one attached to an `APPROVED` bot review — and even when
-  prgroom's `no_blocker_items` reads clean, since an item prgroom has not yet
-  polled carries no disposition and does not trip that field; an empty
-  non-thread-feedback set is vacuously clear; internal blocker/error checks
-  prgroom-present vs absent.
+- **Eligibility (no-blocker) atoms** — an active `CHANGES_REQUESTED` verdict
+  blocks **every** non-force path (explicit, and rule-based even when other
+  approvers satisfy the rule), independent of thread state and **surviving a
+  push to a new head** (only dismissal or a superseding review from the same
+  reviewer clears it — staleness cuts the opposite way for this fact than for
+  positive facts; see Freshness invariant); unresolved review threads read
+  live even when prgroom `no_blocker_items` is clean (a post-quiescence thread
+  must block); an untriaged `review_summary` or `issue_comment` blocks every
+  path even when it is the only outstanding item — including one attached to
+  an `APPROVED` bot review, and including one posted against an older commit
+  than the current head — and even when prgroom's `no_blocker_items` reads
+  clean, since an item prgroom has not yet polled carries no disposition and
+  does not trip that field; an empty non-thread-feedback set is vacuously
+  clear; internal blocker/error checks prgroom-present vs absent.
 - **CI-green predicate** — all-`SUCCESS` = green; any
   `FAILURE`/`ERROR`/`CANCELLED`/`TIMED_OUT`/`ACTION_REQUIRED` = blocked; a
   required context still `PENDING`/`IN_PROGRESS`/unreported = not green (no
