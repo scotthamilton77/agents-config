@@ -1,263 +1,131 @@
 #!/usr/bin/env bash
-# check-merge-eligibility.sh — Check whether a PR is safe to merge.
-# Verifies no pending automated reviews and no unseen review comments.
+# check-merge-eligibility.sh — compute the no-blocker eligibility floor and the
+# positive review facts for a PR, against a resolved review/merge policy.
 #
-# Usage: check-merge-eligibility.sh --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>
+# Contract: docs/architecture/review-merge-policy/design.md
+#   - eligibility = the no-blocker floor (blockers[] empty)
+#   - positive facts (bot clean review at head, distinct current approvers) are
+#     emitted for merge-rule evaluation in merge-guard SKILL.md — they are
+#     facts here, never blockers.
+#
+# Usage:
+#   check-merge-eligibility.sh --owner <o> --repo <r> --pr <n> --policy-json '<json>'
 #
 # Inputs:
-#   --owner          GitHub owner (e.g. "octocat")
-#   --repo           GitHub repository name (e.g. "hello-world")
-#   --pr             Pull request number
-#   --comments-seen  Number of review comments the agent has already triaged.
-#                    Pass 0 if the agent has not seen any comments.
+#   --policy-json   resolve_policy.py output (required — run the resolver first)
 #
 # Exit codes:
-#   0 — Eligible to merge (JSON on stdout)
-#   1 — Blocked: Copilot review in progress, not yet completed
-#   2 — Blocked: Unseen review comments exist
-#   3 — Error (auth failure, invalid args, network issue)
+#   0 — eligible (no blockers)
+#   1 — blocked (see .blockers[] in the JSON)
+#   3 — error (auth, invalid args, network, invalid policy)
 #
 # Stdout (JSON):
-#   { "status": "eligible|review_in_progress|unseen_comments",
-#     "copilot_requested": bool, "copilot_review_complete": bool,
-#     "copilot_work_started": bool,
-#     "total_comments": N, "comments_seen": N, "unseen_comments": N,
-#     "pending_reviewers": [...], "details": "..." }
+#   { "status": "eligible|blocked", "head_ref_oid": "<sha>",
+#     "blockers": [ {"code": "...", "details": "..."} ],
+#     "facts": { ... }, "merge_command_hint": "gh pr merge <n> --squash --match-head-commit <sha>" }
 
 set -euo pipefail
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
-
 usage() {
-    echo "Usage: $0 --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>" >&2
+    echo "Usage: $0 --owner <owner> --repo <repo> --pr <pr-number> --policy-json '<json>'" >&2
     exit 3
 }
 
-OWNER=""; REPO=""; PR=""; COMMENTS_SEEN=""
+OWNER=""; REPO=""; PR=""; POLICY_JSON=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --owner)         [[ $# -ge 2 ]] || usage; OWNER="${2:-}";         shift 2 ;;
-        --repo)          [[ $# -ge 2 ]] || usage; REPO="${2:-}";          shift 2 ;;
-        --pr)            [[ $# -ge 2 ]] || usage; PR="${2:-}";            shift 2 ;;
-        --comments-seen) [[ $# -ge 2 ]] || usage; COMMENTS_SEEN="${2:-}"; shift 2 ;;
+        --owner)       [[ $# -ge 2 ]] || usage; OWNER="${2:-}";       shift 2 ;;
+        --repo)        [[ $# -ge 2 ]] || usage; REPO="${2:-}";        shift 2 ;;
+        --pr)          [[ $# -ge 2 ]] || usage; PR="${2:-}";          shift 2 ;;
+        --policy-json) [[ $# -ge 2 ]] || usage; POLICY_JSON="${2:-}"; shift 2 ;;
         *) usage ;;
     esac
 done
+[[ -n "$OWNER" && -n "$REPO" && -n "$PR" && -n "$POLICY_JSON" ]] || usage
+[[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
 
-[[ -n "$OWNER"         ]] || usage
-[[ -n "$REPO"          ]] || usage
-[[ -n "$PR"            ]] || usage
-[[ -n "$COMMENTS_SEEN" ]] || usage
+# ── Policy parsing (fail loud on malformed/missing keys) ─────────────────────
+if ! jq -e . >/dev/null 2>&1 <<<"$POLICY_JSON"; then
+    echo "Error: --policy-json is not valid JSON" >&2; exit 3
+fi
+for key in bot_review_expected bot_reviewers bot_inactivity_timeout_seconds \
+           human_approvers_required human_review_timeout_seconds \
+           merge_authorization merge_rule; do
+    jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1 <<<"$POLICY_JSON" || {
+        echo "Error: policy JSON missing key: $key (run resolve_policy.py)" >&2; exit 3; }
+done
+BOT_EXPECTED=$(jq -r '.bot_review_expected' <<<"$POLICY_JSON")
+BOT_REVIEWERS=$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")
+BOT_TIMEOUT=$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")
+HUMANS_REQUIRED=$(jq -r '.human_approvers_required' <<<"$POLICY_JSON")
+HUMAN_TIMEOUT=$(jq -r '.human_review_timeout_seconds' <<<"$POLICY_JSON")   # "null" = indefinite
 
-[[ "$PR"            =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
-[[ "$COMMENTS_SEEN" =~ ^[0-9]+$ ]] || { echo "Error: --comments-seen must be a non-negative integer" >&2; exit 3; }
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-COPILOT_LOGIN_FILTER='test("copilot"; "i")'
-
-# ── Helper functions ──────────────────────────────────────────────────────────
-# NOTE: gh_api(), gh-auth check, and jq availability check duplicate logic in
-# the canonical wait-for-pr-comments/lib.sh. Keep this file in sync when
-# behavior changes there; consider promoting lib.sh to a shared location.
-
+# ── Helpers ──────────────────────────────────────────────────────────────────
 gh_api() {
     local result exit_code=0
     result=$(gh api "$@" 2>/dev/null) || exit_code=$?
     if [[ $exit_code -ne 0 ]]; then
-        echo "gh api failed (exit $exit_code)" >&2
+        echo "gh api failed (exit $exit_code): $*" >&2
         return 1
     fi
     printf '%s' "$result"
 }
 
-# ── Pre-flight checks ────────────────────────────────────────────────────────
+BLOCKERS='[]'
+add_blocker() {  # add_blocker <code> <details>
+    BLOCKERS=$(jq --arg c "$1" --arg d "$2" '. + [{code: $c, details: $d}]' <<<"$BLOCKERS")
+}
+FACTS='{}'
+set_fact() {     # set_fact <key> <json-value>
+    FACTS=$(jq --arg k "$1" --argjson v "$2" '.[$k] = $v' <<<"$FACTS")
+}
 
+# ── Pre-flight ───────────────────────────────────────────────────────────────
 if ! gh auth status &>/dev/null; then
-    echo "Error: gh auth failed — not authenticated" >&2
-    exit 3
+    echo "Error: gh auth failed — not authenticated" >&2; exit 3
 fi
+command -v jq &>/dev/null || { echo "Error: jq is required but not found" >&2; exit 3; }
 
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is required but not found" >&2
-    exit 3
-fi
+PR_JSON=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}") || {
+    echo "Error: failed to fetch PR #${PR}" >&2; exit 3; }
+pr_state=$(jq -r '.state' <<<"$PR_JSON")
+[[ "$pr_state" == "open" ]] || { echo "Error: PR #${PR} is ${pr_state}, not open" >&2; exit 3; }
 
-# Verify PR exists and is open
-pr_state=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.state') || {
-    echo "Error: failed to fetch PR #${PR}" >&2; exit 3;
-}
-if [[ "$pr_state" != "open" ]]; then
-    echo "Error: PR #${PR} is ${pr_state}, not open" >&2
-    exit 3
-fi
+# The head every positive fact binds to (Freshness invariant pt. 1) and the
+# SHA the merge must be issued against (pt. 3).
+HEAD_OID=$(jq -r '.head.sha' <<<"$PR_JSON")
+[[ -n "$HEAD_OID" && "$HEAD_OID" != "null" ]] || { echo "Error: no head SHA on PR" >&2; exit 3; }
+PR_CREATED=$(jq -r '.created_at' <<<"$PR_JSON")
+BASE_REF=$(jq -r '.base.ref' <<<"$PR_JSON")
 
-# ── Check 1: Pending reviewers ───────────────────────────────────────────────
+# Shared fetches (each gate filters this once-fetched data)
+ALL_REVIEWS=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/reviews?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch reviews" >&2; exit 3; }
 
-echo "Checking pending reviewers..." >&2
+# Informational: pending requested reviewers (never a blocker by itself)
+pending_json=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/requested_reviewers") || pending_json='{"users":[],"teams":[]}'
+set_fact pending_reviewers "$(jq '[(.users[].login), (.teams[].slug)]' <<<"$pending_json")"
 
-pending_json=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/requested_reviewers") || {
-    echo "Error: failed to fetch requested reviewers" >&2; exit 3;
-}
+# ── Gates (appended by later tasks) ──────────────────────────────────────────
+# GATE: bot-clean-review        (Task 8)
+# GATE: requested-changes       (Task 9)
+# GATE: distinct-approvers      (Task 10)
+# GATE: unresolved-threads      (Task 11)
+# GATE: ci-green                (Task 12)
+# GATE: review-in-flight        (Task 13)
+# GATE: non-thread-feedback     (Task 17)
+# GATE: prgroom-internal        (Task 18)
 
-pending_users=$(printf '%s' "$pending_json" | jq -r '[.users[].login] | join(", ")')
-pending_teams=$(printf '%s' "$pending_json" | jq -r '[.teams[].slug] | join(", ")')
+# ── Decision ─────────────────────────────────────────────────────────────────
+blocker_count=$(jq 'length' <<<"$BLOCKERS")
+status="eligible"; exit_code=0
+if [[ "$blocker_count" -gt 0 ]]; then status="blocked"; exit_code=1; fi
 
-# Build pending list for output
-pending_reviewers="[]"
-pending_reviewers=$(printf '%s' "$pending_json" | jq '[(.users[].login), (.teams[].slug)]')
-
-# ── Check 2: Copilot review status ───────────────────────────────────────────
-
-echo "Checking Copilot review status..." >&2
-
-# Was Copilot requested?
-copilot_requested=false
-request_count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
-    --jq "[.[] | select(
-        .event == \"review_requested\" and
-        .requested_reviewer.login and
-        (.requested_reviewer.login | ${COPILOT_LOGIN_FILTER})
-    )] | length") || {
-    echo "Warning: events API failed, assuming Copilot not requested" >&2
-    request_count=0
-}
-
-if [[ "$request_count" -gt 0 ]]; then
-    copilot_requested=true
-    echo "  Copilot was requested as reviewer" >&2
-fi
-
-# Did Copilot start working?
-copilot_work_started=false
-if [[ "$copilot_requested" == true ]]; then
-    work_count=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events" \
-        --jq '[.[] | select(.event == "copilot_work_started")] | length') || work_count=0
-
-    if [[ "$work_count" -gt 0 ]]; then
-        copilot_work_started=true
-        echo "  Copilot work started" >&2
-    fi
-fi
-
-# Did Copilot complete a review?
-copilot_review_complete=false
-if [[ "$copilot_requested" == true ]]; then
-    review_count=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/reviews" \
-        --jq "[.[] | select(
-            (.user.type == \"Bot\") and
-            (.user.login | ${COPILOT_LOGIN_FILTER}) and
-            .state == \"COMMENTED\"
-        )] | length") || review_count=0
-
-    if [[ "$review_count" -gt 0 ]]; then
-        copilot_review_complete=true
-        echo "  Copilot review complete" >&2
-    fi
-fi
-
-# ── Check 3: Comment count vs seen ───────────────────────────────────────────
-
-echo "Checking comment counts..." >&2
-
-# Count only top-level review comments. Reply comments (in_reply_to_id set) —
-# including the agent's own thread replies — are not new reviewer feedback, so
-# counting them inflates the total and false-positive-blocks the merge.
-# Paginate (default page size ~30) so PRs with many comments aren't undercounted
-# and wrongly marked eligible: --paginate emits the per-page count, summed below.
-total_comments=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/comments?per_page=100" --paginate \
-    --jq '[.[] | select(.in_reply_to_id == null)] | length' | jq -s 'add // 0') || {
-    echo "Error: failed to fetch comments" >&2; exit 3;
-}
-
-unseen_comments=$((total_comments - COMMENTS_SEEN))
-if [[ $unseen_comments -lt 0 ]]; then
-    unseen_comments=0
-fi
-
-echo "  Total: ${total_comments}, Seen: ${COMMENTS_SEEN}, Unseen: ${unseen_comments}" >&2
-
-# ── Decision ──────────────────────────────────────────────────────────────────
-
-if [[ "$copilot_requested" == true && "$copilot_review_complete" == false ]]; then
-    # Copilot review in progress -- block
-    details="Copilot was requested as reviewer but has not completed its review"
-    if [[ "$copilot_work_started" == true ]]; then
-        details="${details} (work started, awaiting results)"
-    else
-        details="${details} (review may still be queued)"
-    fi
-
-    jq -n \
-        --arg status "review_in_progress" \
-        --argjson copilot_requested "$copilot_requested" \
-        --argjson copilot_review_complete "$copilot_review_complete" \
-        --argjson copilot_work_started "$copilot_work_started" \
-        --argjson total_comments "$total_comments" \
-        --argjson comments_seen "$COMMENTS_SEEN" \
-        --argjson unseen_comments "$unseen_comments" \
-        --argjson pending_reviewers "$pending_reviewers" \
-        --arg details "$details" \
-        '{
-            status: $status,
-            copilot_requested: $copilot_requested,
-            copilot_review_complete: $copilot_review_complete,
-            copilot_work_started: $copilot_work_started,
-            total_comments: $total_comments,
-            comments_seen: $comments_seen,
-            unseen_comments: $unseen_comments,
-            pending_reviewers: $pending_reviewers,
-            details: $details
-        }'
-    exit 1
-
-elif [[ "$unseen_comments" -gt 0 ]]; then
-    # Unseen comments exist -- block
-    jq -n \
-        --arg status "unseen_comments" \
-        --argjson copilot_requested "$copilot_requested" \
-        --argjson copilot_review_complete "$copilot_review_complete" \
-        --argjson copilot_work_started "$copilot_work_started" \
-        --argjson total_comments "$total_comments" \
-        --argjson comments_seen "$COMMENTS_SEEN" \
-        --argjson unseen_comments "$unseen_comments" \
-        --argjson pending_reviewers "$pending_reviewers" \
-        --arg details "${unseen_comments} review comment(s) have not been triaged by the agent" \
-        '{
-            status: $status,
-            copilot_requested: $copilot_requested,
-            copilot_review_complete: $copilot_review_complete,
-            copilot_work_started: $copilot_work_started,
-            total_comments: $total_comments,
-            comments_seen: $comments_seen,
-            unseen_comments: $unseen_comments,
-            pending_reviewers: $pending_reviewers,
-            details: $details
-        }'
-    exit 2
-
-else
-    # All clear
-    jq -n \
-        --arg status "eligible" \
-        --argjson copilot_requested "$copilot_requested" \
-        --argjson copilot_review_complete "$copilot_review_complete" \
-        --argjson copilot_work_started "$copilot_work_started" \
-        --argjson total_comments "$total_comments" \
-        --argjson comments_seen "$COMMENTS_SEEN" \
-        --argjson unseen_comments 0 \
-        --argjson pending_reviewers "$pending_reviewers" \
-        --arg details "No pending automated reviews and all comments triaged" \
-        '{
-            status: $status,
-            copilot_requested: $copilot_requested,
-            copilot_review_complete: $copilot_review_complete,
-            copilot_work_started: $copilot_work_started,
-            total_comments: $total_comments,
-            comments_seen: $comments_seen,
-            unseen_comments: $unseen_comments,
-            pending_reviewers: $pending_reviewers,
-            details: $details
-        }'
-    exit 0
-fi
+jq -n \
+    --arg status "$status" \
+    --arg head "$HEAD_OID" \
+    --argjson blockers "$BLOCKERS" \
+    --argjson facts "$FACTS" \
+    --arg hint "gh pr merge ${PR} --squash --match-head-commit ${HEAD_OID}" \
+    '{status: $status, head_ref_oid: $head, blockers: $blockers, facts: $facts, merge_command_hint: $hint}'
+exit "$exit_code"

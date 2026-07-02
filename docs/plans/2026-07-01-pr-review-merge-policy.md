@@ -858,7 +858,7 @@ The old script's three checks are superseded; this task rewrites the skeleton so
 - Rewrite: `src/user/.agents/skills/merge-guard/check-merge-eligibility.sh`
 - Rewrite: `src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 
-- [ ] **Step 1: Rewrite the test file** — full replacement of `check-merge-eligibility_test.sh`:
+- [x] **Step 1: Rewrite the test file** — full replacement of `check-merge-eligibility_test.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -972,12 +972,12 @@ assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep 
 exit $FAIL
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bash src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 Expected: FAIL — old script still accepts `--comments-seen`, lacks `--policy-json`, emits the old JSON shape.
 
-- [ ] **Step 3: Rewrite the script skeleton** — full replacement of `check-merge-eligibility.sh`:
+- [x] **Step 3: Rewrite the script skeleton** — full replacement of `check-merge-eligibility.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -1113,12 +1113,12 @@ jq -n \
 exit "$exit_code"
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `bash src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 Expected: PASS (all asserts ok, exit 0).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

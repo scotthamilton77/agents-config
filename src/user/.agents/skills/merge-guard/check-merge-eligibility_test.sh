@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for check-merge-eligibility.sh
-
+# Smoke test for check-merge-eligibility.sh (policy-driven rewrite).
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -23,94 +22,88 @@ echo "[check-merge-eligibility_test]"
 assert "script file exists" "[ -f '$SCRIPT' ]"
 assert "script is executable" "[ -x '$SCRIPT' ]"
 assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
-assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'input|output|exit'"
-assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
-assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
-assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
-assert "accepts --comments-seen flag" "grep -q -- '--comments-seen' '$SCRIPT'"
-assert "no positional owner/repo parsing" "! grep -qE '^\s*REPO=\"\\\$1\"' '$SCRIPT'"
+assert "documents inputs/outputs in header" "head -40 '$SCRIPT' | grep -qiE 'input|output|exit'"
+assert "accepts --policy-json flag" "grep -q -- '--policy-json' '$SCRIPT'"
+assert "no --comments-seen flag (retired)" "! grep -q -- '--comments-seen' '$SCRIPT'"
+assert "no substring copilot matching" "! grep -q 'test(\"copilot\"' '$SCRIPT'"
 
-# Missing required flags — exit 3
-"$SCRIPT" 2>/dev/null
-rc_no_args=$?
-assert "exits 3 with no flags" "[ \$rc_no_args -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --pr 1 2>/dev/null
-rc_no_cs=$?
-assert "exits 3 when --comments-seen missing" "[ \$rc_no_cs -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --comments-seen 0 2>/dev/null
-rc_no_pr=$?
-assert "exits 3 when --pr missing" "[ \$rc_no_pr -eq 3 ]"
-
-"$SCRIPT" --owner o --pr 1 --comments-seen 0 2>/dev/null
-rc_no_repo=$?
-assert "exits 3 when --repo missing" "[ \$rc_no_repo -eq 3 ]"
-
-"$SCRIPT" --repo r --pr 1 --comments-seen 0 2>/dev/null
-rc_no_owner=$?
-assert "exits 3 when --owner missing" "[ \$rc_no_owner -eq 3 ]"
-
-# Bad numeric values
-"$SCRIPT" --owner o --repo r --pr notanumber --comments-seen 0 2>/dev/null
-rc_bad_pr=$?
-assert "exits 3 for non-integer --pr" "[ \$rc_bad_pr -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --pr 1 --comments-seen notanumber 2>/dev/null
-rc_bad_cs=$?
-assert "exits 3 for non-integer --comments-seen" "[ \$rc_bad_cs -eq 3 ]"
-
-# Unknown flag
-"$SCRIPT" --owner o --repo r --pr 1 --comments-seen 0 --bogus 2>/dev/null
-rc_bogus=$?
-assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
-
-# Trailing flag with no value — must exit 3 (not silent exit 1)
-"$SCRIPT" --owner 2>/dev/null
-rc_dangling=$?
-assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
-
-# ── Regression (nnqwg): reply comments must NOT count toward unseen ───────────
-# A gh stub returns canned JSON per endpoint so the comment-counting jq filter
-# runs end-to-end. Fixture: 2 top-level reviewer comments + 2 agent replies.
-# With both top-level comments triaged (--comments-seen 2), the buggy `length`
-# count yields 4 → unseen=2 → exit 2. The fix counts only top-level (2) → eligible.
+# ── gh + prgroom stubs ────────────────────────────────────────────────────────
 STUB_DIR="$TMP/bin"
 mkdir -p "$STUB_DIR"
 cat > "$STUB_DIR/gh" <<'STUB'
 #!/usr/bin/env bash
 [ "$1" = "auth" ] && exit 0
 if [ "$1" = "api" ]; then
-  path="$2"; shift 2
+  shift
+  if [ "$1" = "graphql" ]; then
+    printf '%s' "${FIXTURE_GRAPHQL_THREADS:-{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null},\"nodes\":[]}}}}}}"
+    exit 0
+  fi
+  path="$1"; shift
   filter=""
   while [ $# -gt 0 ]; do
     case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
   done
   case "$path" in
-    */requested_reviewers) body='{"users":[],"teams":[]}' ;;
-    */issues/*/events)     body='[]' ;;
-    */pulls/*/reviews)     body='[]' ;;
-    */pulls/*/comments|*/pulls/*/comments\?*) body="$FIXTURE_COMMENTS" ;;
-    */pulls/*)             body='{"state":"open"}' ;;
-    *)                     body='{}' ;;
+    */requested_reviewers)  body="${FIXTURE_REQUESTED_REVIEWERS:-'{\"users\":[],\"teams\":[]}'}" ;;
+    */issues/*/events*)     body="${FIXTURE_EVENTS:-[]}" ;;
+    */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
+    */protection/required_status_checks*)
+        if [ "${FIXTURE_PROTECTION_404:-1}" = 1 ]; then
+          echo "gh: Not Found (HTTP 404)" >&2; exit 1
+        fi
+        body="${FIXTURE_REQUIRED_CHECKS}" ;;
+    */check-runs*)          body="${FIXTURE_CHECK_RUNS:-'{\"check_runs\":[]}'}" ;;
+    */commits/*/status*)    body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
+    *)                      body='{}' ;;
   esac
+  body="${body#\'}"; body="${body%\'}"
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
   exit 0
 fi
 exit 0
 STUB
 chmod +x "$STUB_DIR/gh"
+# prgroom stub: emits FIXTURE_PRGROOM when set, else fails (= no prgroom state)
+cat > "$STUB_DIR/prgroom" <<'STUB'
+#!/usr/bin/env bash
+[ -n "${FIXTURE_PRGROOM:-}" ] && { printf '%s' "$FIXTURE_PRGROOM"; exit 0; }
+exit 1
+STUB
+chmod +x "$STUB_DIR/prgroom"
 
-export FIXTURE_COMMENTS='[
-  {"id":1,"in_reply_to_id":null,"user":{"login":"reviewer"}},
-  {"id":2,"in_reply_to_id":null,"user":{"login":"reviewer"}},
-  {"id":3,"in_reply_to_id":1,"user":{"login":"agent"}},
-  {"id":4,"in_reply_to_id":2,"user":{"login":"agent"}}
-]'
+# Isolated HOME so inventory globs never see the real ~/.claude/state
+FAKE_HOME="$TMP/home"
+mkdir -p "$FAKE_HOME/.claude/state/pr-inventory"
 
-reply_out=$(PATH="$STUB_DIR:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --comments-seen 2 2>/dev/null)
-rc_replies=$?
-assert "reply comments excluded → eligible (exit 0)" "[ \$rc_replies -eq 0 ]"
-assert "total_comments counts only top-level (==2)" "[ \"\$(printf '%s' \"\$reply_out\" | jq -r '.total_comments')\" = '2' ]"
+run_script() {  # run_script <policy-json> [env VAR=... pairs]
+  local policy="$1"; shift
+  env HOME="$FAKE_HOME" PATH="$STUB_DIR:$PATH" "$@" \
+    "$SCRIPT" --owner o --repo r --pr 1 --policy-json "$policy" 2>/dev/null
+}
+
+# Base policy: nothing expected on Axis 1 → in-flight atom vacuously clear
+BASE_POLICY='{"bot_review_expected":false,"bot_reviewers":["trusted-bot[bot]"],"bot_inactivity_timeout_seconds":1200,"human_approvers_required":0,"human_review_timeout_seconds":null,"merge_authorization":"explicit","merge_rule":null}'
+HEAD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# ── Arg validation (exit 3) ───────────────────────────────────────────────────
+"$SCRIPT" 2>/dev/null;                                       assert "exits 3 with no flags" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 2>/dev/null;             assert "exits 3 when --policy-json missing" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr x --policy-json "$BASE_POLICY" 2>/dev/null
+assert "exits 3 for non-integer --pr" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 --policy-json 'not-json' 2>/dev/null
+assert "exits 3 for unparseable policy" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 --policy-json '{}' 2>/dev/null
+assert "exits 3 for policy missing required keys" "[ \$? -eq 3 ]"
+
+# ── Skeleton behavior: empty fixtures + nothing expected → eligible ──────────
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "empty PR with nothing expected → exit 0" "[ \$rc -eq 0 ]"
+assert "status is eligible" "[ \"\$(jq -r '.status' <<<\"\$out\")\" = eligible ]"
+assert "head_ref_oid echoed" "[ \"\$(jq -r '.head_ref_oid' <<<\"\$out\")\" = \"$HEAD_SHA\" ]"
+assert "blockers array empty" "[ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 0 ]"
+assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep -q -- \"--match-head-commit $HEAD_SHA\""
 
 exit $FAIL
