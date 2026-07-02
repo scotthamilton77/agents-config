@@ -36,7 +36,8 @@ cat > "$STUB_DIR/gh" <<'STUB'
 if [ "$1" = "api" ]; then
   shift
   if [ "$1" = "graphql" ]; then
-    printf '%s' "${FIXTURE_GRAPHQL_THREADS:-{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null},\"nodes\":[]}}}}}}"
+    default_threads='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    printf '%s' "${FIXTURE_GRAPHQL_THREADS:-$default_threads}"
     exit 0
   fi
   path="$1"; shift
@@ -187,5 +188,18 @@ revs=$(jq -n \
   --argjson b "$(mk_review alice CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "approval superseded by CR counts 0" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
+
+# ── Task 11: unresolved threads ──────────────────────────────────────────────
+export_threads() {  # export_threads <resolved-bools...>  e.g. export_threads true false
+  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'fromjson? // . | {isResolved: (. == "true" or . == true)}' | jq -s .)
+  jq -n --argjson n "$nodes" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:$n}}}}}'
+}
+
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true false)"); rc=$?
+assert "unresolved thread blocks" "[ \$rc -eq 1 ]"
+assert "blocker code unresolved_threads" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true true)"); rc=$?
+assert "all threads resolved → eligible" "[ \$rc -eq 0 ]"
 
 exit $FAIL

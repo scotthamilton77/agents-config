@@ -1350,7 +1350,7 @@ Behavior: **any unresolved review thread blocks, read live from GraphQL at merge
 
 **Files:** same two.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 11: unresolved threads ──────────────────────────────────────────────
@@ -1367,9 +1367,9 @@ out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true t
 assert "all threads resolved → eligible" "[ \$rc -eq 0 ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (unresolved thread currently exits 0)
+- [x] **Step 2: Run to verify the new asserts fail** (unresolved thread currently exits 0)
 
-- [ ] **Step 3: Implement** — replace `# GATE: unresolved-threads      (Task 11)` with:
+- [x] **Step 3: Implement** — replace `# GATE: unresolved-threads      (Task 11)` with:
 
 ```bash
 # ── Blocker: unresolved review threads (always live; prgroom is never a
@@ -1400,9 +1400,9 @@ if [[ "$unresolved_threads" -gt 0 ]]; then
 fi
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

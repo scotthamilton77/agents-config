@@ -150,7 +150,32 @@ approvers=$(jq --arg head "$HEAD_OID" '
 set_fact distinct_current_approvers "$(jq 'length' <<<"$approvers")"
 set_fact approver_logins "$approvers"
 APPROVER_COUNT=$(jq 'length' <<<"$approvers")
-# GATE: unresolved-threads      (Task 11)
+# ── Blocker: unresolved review threads (always live; prgroom is never a
+#    substitute — a thread opened after prgroom quiesced is absent from state) ─
+fetch_threads_page() {  # fetch_threads_page [cursor]
+    if [[ $# -eq 0 ]]; then
+        gh api graphql \
+          -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}' \
+          -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" 2>/dev/null
+    else
+        gh api graphql \
+          -f query='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}' \
+          -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" -f cursor="$1" 2>/dev/null
+    fi
+}
+unresolved_threads=0
+page=$(fetch_threads_page) || { echo "Error: reviewThreads query failed" >&2; exit 3; }
+while :; do
+    count=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' <<<"$page")
+    unresolved_threads=$((unresolved_threads + count))
+    has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<<"$page")
+    [[ "$has_next" == "true" ]] || break
+    cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<<"$page")
+    page=$(fetch_threads_page "$cursor") || { echo "Error: reviewThreads pagination failed" >&2; exit 3; }
+done
+if [[ "$unresolved_threads" -gt 0 ]]; then
+    add_blocker unresolved_threads "${unresolved_threads} unresolved review thread(s) on the PR"
+fi
 # GATE: ci-green                (Task 12)
 # GATE: review-in-flight        (Task 13)
 # GATE: non-thread-feedback     (Task 17)
