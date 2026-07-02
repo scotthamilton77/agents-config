@@ -74,7 +74,7 @@ Dependency order: Task 1 (docs) → 2-5 (resolver) → 6 (toml) → 7-13 (eligib
 
 No code — evergreen reference distilled from the spec (undated filenames per `docs/architecture/` conventions). The spec remains the point-in-time rationale; design.md is the current-state contract that `project-config.toml` will cite instead of the quarantined `bead-pipeline-architecture.md §5.1`.
 
-- [ ] **Step 1: Write `index.md`**
+- [x] **Step 1: Write `index.md`**
 
 ```markdown
 # Review / Merge Policy — architecture
@@ -93,7 +93,7 @@ Consumers: `merge-guard` (enforcement point), `wait-for-pr-comments`
 (polling), `resolve_policy.py` (resolver, bundled in merge-guard).
 ```
 
-- [ ] **Step 2: Write `design.md`**
+- [x] **Step 2: Write `design.md`**
 
 Distill these spec sections, in this order, adapting prose to present tense (this is the current contract, not a proposal). Copy the tables verbatim from the spec; do not invent new fields:
 
@@ -107,7 +107,7 @@ Distill these spec sections, in this order, adapting prose to present tense (thi
 8. `## Config schema` — the `[review-expectations]` / `[merge-policy]` TOML keys with types and defaults (matching Task 6's file exactly), plus the two per-bead override labels.
 9. `## Consumers` — one paragraph each: merge-guard (Axis 2 enforcement), wait-for-pr-comments (Axis 1 polling + durable triage inventories), reply-and-resolve-pr-threads (posted-reply-ID recording).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/architecture/review-merge-policy/
