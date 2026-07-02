@@ -2396,7 +2396,7 @@ Five real locations (the spec's "delivery rule" has no source file — see devia
 - Modify: `src/user/.agents/skills/monitor-pr/SKILL.md:10-13` and `:99-101`
 - Modify: `src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md:28`
 
-- [ ] **Step 1: `INSTRUCTIONS.md.template:59`** — replace:
+- [x] **Step 1: `INSTRUCTIONS.md.template:59`** — replace:
 
 ```markdown
 - **No unauthorized merges**: Creating a PR is not authorization to merge. Merge only when the user explicitly says so ("go ahead and merge", "merge it", etc.). When in doubt, they have not authorized it.
@@ -2408,7 +2408,7 @@ with:
 - **Merge authorization policy**: The agent's merge authority for a repository is set by its merge-authorization policy: `never` (the agent never merges), `explicit` (default — merge only on an explicit in-session human instruction: "go ahead and merge", "merge it", etc.), or `rule-based` (autonomous merge only when the repo's configured merge-rule AND the eligibility predicate both hold — a deliberate, named opt-in enforced by merge-guard). Absent configuration, `explicit` applies unchanged: creating a PR is not authorization to merge, and when in doubt, the user has not authorized it.
 ```
 
-- [ ] **Step 2: `completion-gate.md:15`** — in the HARD STOP paragraph, replace the final sentence fragment:
+- [x] **Step 2: `completion-gate.md:15`** — in the HARD STOP paragraph, replace the final sentence fragment:
 
 ```markdown
 Pause only at the merge step: merging needs explicit authorization ("merge it" / "ship it" / "go ahead and merge"); everything up to and including PR creation is automatic.
@@ -2420,7 +2420,7 @@ with:
 Pause only at the merge step: merging follows the repo's merge-authorization policy via merge-guard — `explicit` (default) needs a human instruction ("merge it" / "ship it" / "go ahead and merge"); `rule-based` repos merge autonomously when the configured rule and eligibility both hold; `never` repos hand off to the human. Everything up to and including PR creation is automatic.
 ```
 
-- [ ] **Step 3: `monitor-pr/SKILL.md`** — two edits:
+- [x] **Step 3: `monitor-pr/SKILL.md`** — two edits:
 
 (a) Frontmatter description (lines 10-13), replace:
 
@@ -2454,7 +2454,7 @@ with:
   merge-guard skill (default: explicit human instruction).
 ```
 
-- [ ] **Step 4: `reply-and-resolve-pr-threads/SKILL.md:28`** — replace:
+- [x] **Step 4: `reply-and-resolve-pr-threads/SKILL.md:28`** — replace:
 
 ```markdown
 **MERGE PROHIBITION:** Resolving threads is NOT authorization to merge. The orchestrator never merges; the user does, on explicit say-so.
@@ -2466,12 +2466,12 @@ with:
 **MERGE PROHIBITION:** Resolving threads is NOT authorization to merge. This skill never merges; merge authority belongs to the merge-guard skill under the repo's merge-authorization policy (default: explicit human say-so).
 ```
 
-- [ ] **Step 5: Sweep for stragglers** (per the sweep-all-refs rule):
+- [x] **Step 5: Sweep for stragglers** (per the sweep-all-refs rule):
 
 Run: `grep -rn "authorization stays with the human\|Merge authorization is the human's\|No unauthorized merges" src/`
 Expected: no hits.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/user/.agents/INSTRUCTIONS.md.template src/user/.agents/rules/completion-gate.md src/user/.agents/skills/monitor-pr/SKILL.md src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md
