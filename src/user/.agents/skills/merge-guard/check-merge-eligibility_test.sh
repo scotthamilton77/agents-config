@@ -47,7 +47,11 @@ if [ "$1" = "api" ]; then
   done
   case "$path" in
     */requested_reviewers)  body="${FIXTURE_REQUESTED_REVIEWERS:-'{\"users\":[],\"teams\":[]}'}" ;;
-    */issues/*/events*)     body="${FIXTURE_EVENTS:-[]}" ;;
+    */issues/*/events*)
+        if [ "${FIXTURE_EVENTS_FAIL:-0}" = 1 ]; then
+          echo "gh: 502 Bad Gateway" >&2; exit 1
+        fi
+        body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
     */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
     */protection/required_status_checks*)
@@ -352,5 +356,10 @@ assert "auto_merge_eligible=true never overrides an atom" "[ \$rc -eq 1 ]"
 out=$(run_script "$BASE_POLICY"); rc=$?
 assert "no prgroom state → n/a, eligible" "[ \$rc -eq 0 ]"
 assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$out\")\" = false ]"
+
+# ── Fix: issue-events fetch failure fails closed (exit 3), not fail-open ────
+out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
+assert "events-fetch failure exits 3 (fail closed)" "[ \$rc -eq 3 ]"
+assert "events-fetch failure prints no verdict" "[ -z \"\$out\" ]"
 
 exit $FAIL

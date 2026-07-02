@@ -238,7 +238,8 @@ fi
 # that concluded clean — both read "no blocker" on every other row. Block
 # until the expected review arrives at the current head or its wait window
 # closes. Timing out ends the wait; it never satisfies the positive fact.
-EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || EVENTS='[]'
+EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue events" >&2; exit 3; }
 
 review_wait_bot="not_expected"
 if [[ "$BOT_EXPECTED" == "true" ]]; then
