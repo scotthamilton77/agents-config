@@ -405,4 +405,82 @@ out=$(run_script "$BASE_POLICY" FIXTURE_PR="$slash_pr" FIXTURE_PROTECTION_404=0 
 assert "base ref with a slash resolves protection via the url-encoded path" \
   "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
 
+# ── Spec: both Axis-1 expectations simultaneously ────────────────────────────
+BOTH_POLICY=$(jq -c '.bot_review_expected = true | .human_approvers_required = 1' <<<"$BASE_POLICY")
+recent_pr=$(jq -n --arg t "$TS_RECENT" --arg sha "$HEAD_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"main"}, created_at:$t}')
+
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: bot clean, human missing → blocked" "[ \$rc -eq 1 ]"
+assert "both-axis: bot satisfied while human waits" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+assert "both-axis: human waiting while bot satisfied" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = waiting ]"
+
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: human approved, bot missing → blocked" "[ \$rc -eq 1 ]"
+assert "both-axis: human satisfied while bot waits" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
+assert "both-axis: bot waiting while human satisfied" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+revs=$(jq -n \
+  --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: both settled → eligible" "[ \$rc -eq 0 ]"
+
+# ── Spec: prgroom present-and-clean combined with a live blocker ────────────
+PG_CLEAN='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":true,"human_review_satisfied":true},"auto_merge_eligible":true}'
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_CLEAN" FIXTURE_GRAPHQL_THREADS="$(export_threads false)"); rc=$?
+assert "prgroom clean + live unresolved thread → blocked" "[ \$rc -eq 1 ]"
+assert "blocker is unresolved_threads, not masked by prgroom" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_CLEAN" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "prgroom clean + untriaged feedback → blocked" "[ \$rc -eq 1 ]"
+assert "blocker is untriaged_feedback, not masked by prgroom" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# ── Spec: distinct-approver counting with N>=2 ───────────────────────────────
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review bob APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "two distinct current approvers count as 2" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 2 ]"
+
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "same user approving twice counts as 1" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
+
+# ── Spec: SKIPPED and NEUTRAL required checks both count as passing ─────────
+run_skipped() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"skipped",app:{id:15368}}]}'; }
+run_neutral() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"neutral",app:{id:15368}}]}'; }
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_skipped)"); rc=$?
+assert "SKIPPED required check counts as passing" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_neutral)"); rc=$?
+assert "NEUTRAL required check counts as passing" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# ── Spec: well-formed but wrong-typed policy values fail closed ─────────────
+# (run via run_script so a real, un-stubbed `gh` in the environment can't
+#  mask a missing type check by failing later for an unrelated reason)
+BAD_BOOL=$(jq -c '.bot_review_expected = "true"' <<<"$BASE_POLICY")
+run_script "$BAD_BOOL" >/dev/null; rc=$?
+assert "exits 3 for bot_review_expected as a string" "[ \$rc -eq 3 ]"
+
+BAD_TIMEOUT=$(jq -c '.bot_inactivity_timeout_seconds = "1200"' <<<"$BASE_POLICY")
+run_script "$BAD_TIMEOUT" >/dev/null; rc=$?
+assert "exits 3 for bot_inactivity_timeout_seconds as a string" "[ \$rc -eq 3 ]"
+
+BAD_HUMAN_TIMEOUT=$(jq -c '.human_review_timeout_seconds = "1200"' <<<"$BASE_POLICY")
+run_script "$BAD_HUMAN_TIMEOUT" >/dev/null; rc=$?
+assert "exits 3 for human_review_timeout_seconds as a string" "[ \$rc -eq 3 ]"
+
+BAD_ARRAY=$(jq -c '.bot_reviewers = "trusted-bot[bot]"' <<<"$BASE_POLICY")
+run_script "$BAD_ARRAY" >/dev/null; rc=$?
+assert "exits 3 for bot_reviewers as a non-array" "[ \$rc -eq 3 ]"
+
+GOOD_NULL_TIMEOUT=$(jq -c '.human_review_timeout_seconds = null' <<<"$BASE_POLICY")
+out=$(run_script "$GOOD_NULL_TIMEOUT"); rc=$?
+assert "null human_review_timeout_seconds is still valid" "[ \$rc -eq 0 ]"
+
 exit $FAIL

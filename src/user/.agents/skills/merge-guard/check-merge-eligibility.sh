@@ -54,6 +54,26 @@ for key in bot_review_expected bot_reviewers bot_inactivity_timeout_seconds \
     jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1 <<<"$POLICY_JSON" || {
         echo "Error: policy JSON missing key: $key (run resolve_policy.py)" >&2; exit 3; }
 done
+# Well-formed JSON with a wrong-typed value (e.g. a boolean/number encoded as
+# a string) must fail closed the same as a missing key — jq -r would silently
+# flatten the type difference away downstream.
+policy_type_ok() {  # policy_type_ok <key> <jq-type-predicate>
+    jq -e --arg k "$1" ".[\$k] | $2" >/dev/null 2>&1 <<<"$POLICY_JSON"
+}
+policy_type_ok bot_review_expected 'type == "boolean"' || {
+    echo "Error: policy JSON key bot_review_expected must be a boolean" >&2; exit 3; }
+policy_type_ok bot_reviewers 'type == "array"' || {
+    echo "Error: policy JSON key bot_reviewers must be an array" >&2; exit 3; }
+policy_type_ok bot_inactivity_timeout_seconds 'type == "number"' || {
+    echo "Error: policy JSON key bot_inactivity_timeout_seconds must be a number" >&2; exit 3; }
+policy_type_ok human_approvers_required 'type == "number"' || {
+    echo "Error: policy JSON key human_approvers_required must be a number" >&2; exit 3; }
+policy_type_ok human_review_timeout_seconds '(type == "null") or (type == "number")' || {
+    echo "Error: policy JSON key human_review_timeout_seconds must be a number or null" >&2; exit 3; }
+policy_type_ok merge_authorization 'type == "string"' || {
+    echo "Error: policy JSON key merge_authorization must be a string" >&2; exit 3; }
+policy_type_ok merge_rule '(type == "null") or (type == "string")' || {
+    echo "Error: policy JSON key merge_rule must be a string or null" >&2; exit 3; }
 BOT_EXPECTED=$(jq -r '.bot_review_expected' <<<"$POLICY_JSON")
 BOT_REVIEWERS=$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")
 BOT_TIMEOUT=$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")
