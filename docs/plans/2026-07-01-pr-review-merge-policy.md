@@ -1770,7 +1770,7 @@ Behavior: **guard 3 now requires `review_summary` items to carry `review_id` (th
 - Modify: `src/user/.agents/skills/wait-for-pr-comments/validate-inventory_test.sh` (append cases before final `exit $FAIL`, reusing its `assert` helper)
 - Modify: `src/user/.agents/skills/wait-for-pr-comments/SKILL.md` (schema: item-fields block ~667-685, `review_summary` note ~695-699, Phase-3 sourcing line ~202)
 
-- [ ] **Step 1: Append the failing tests** to `validate-inventory_test.sh` (self-contained fixtures; invocation per its usage: `validate-inventory.sh --inventory <path> --phase 0`):
+- [x] **Step 1: Append the failing tests** to `validate-inventory_test.sh` (self-contained fixtures; invocation per its usage: `validate-inventory.sh --inventory <path> --phase 0`):
 
 ```bash
 # ── review_id on review_summary (guard 3, wgclw.14) ──────────────────────────
@@ -1796,12 +1796,12 @@ assert "review_summary with issue_comment_id still fails guard 3" "[ \$? -eq 1 ]
 rm -rf "$T15"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail**
+- [x] **Step 2: Run to verify the new asserts fail**
 
 Run: `bash src/user/.agents/skills/wait-for-pr-comments/validate-inventory_test.sh`
 Expected: FAIL — "with review_id passes" fails today only if the guard rejects unknown fields (it does not — select-based guards pass extra fields), so the failing assert is "without review_id fails" (currently passes guard 3).
 
-- [ ] **Step 3: Update guard 3** in `validate-inventory.sh` — replace:
+- [x] **Step 3: Update guard 3** in `validate-inventory.sh` — replace:
 
 ```bash
 # Guard 3: review_summary items must have null thread_id, reply_to_comment_id, issue_comment_id
@@ -1819,12 +1819,12 @@ run_guard "review_summary-ids" \
     '[.items[] | select(.kind == "review_summary" and ((.thread_id != null) or (.reply_to_comment_id != null) or (.issue_comment_id != null) or (.review_id == null)))]' || FAIL=1
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
 Run: `bash src/user/.agents/skills/wait-for-pr-comments/validate-inventory_test.sh`
 Expected: PASS.
 
-- [ ] **Step 5: Update the SKILL.md schema docs** (three edits):
+- [x] **Step 5: Update the SKILL.md schema docs** (three edits):
 
 (a) In the per-item fields block (~lines 667-685), after the `"issue_comment_id"` line, add:
 
@@ -1844,7 +1844,7 @@ with:
 
 > `review_summary` items are built by the orchestrator from `poll-copilot-review.sh`'s `reviews[]` output (raw REST review objects): set `review_id` from the review's numeric `.id`, `author` from `.user.login`, `body_excerpt` from the first 200 chars of `.body`. One item per review with a non-empty body.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/user/.agents/skills/wait-for-pr-comments/validate-inventory.sh src/user/.agents/skills/wait-for-pr-comments/validate-inventory_test.sh src/user/.agents/skills/wait-for-pr-comments/SKILL.md

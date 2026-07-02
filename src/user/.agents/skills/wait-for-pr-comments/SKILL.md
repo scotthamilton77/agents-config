@@ -199,8 +199,14 @@ cross-references the primary.
 | `kind` | Source | Reply endpoint (Skill B) | Resolvable? |
 |---|---|---|---|
 | `review_thread` | GraphQL `reviewThreads.nodes` | REST `POST /repos/<o>/<r>/pulls/<n>/comments/<id>/replies` (numeric `databaseId` from `reply_to_comment_id`) | Yes — GraphQL `resolveReviewThread`, only when `classification = FIX` |
-| `review_summary` | GraphQL `reviews.nodes` | `gh pr comment` | No |
+| `review_summary` | `poll-copilot-review.sh`'s `reviews[]` (REST) | `gh pr comment` | No |
 | `issue_comment` | REST `/issues/<n>/comments` | `gh pr comment` with cross-reference | No |
+
+`review_summary` items are built by the orchestrator from
+`poll-copilot-review.sh`'s `reviews[]` output (raw REST review objects): set
+`review_id` from the review's numeric `.id`, `author` from `.user.login`,
+`body_excerpt` from the first 200 chars of `.body`. One item per review with
+a non-empty body.
 
 #### Phase 3.5 — ESCALATE branch (mode-aware)
 
@@ -673,6 +679,7 @@ POSIX-atomic) — handled by `write-inventory.sh`.
       "thread_id": "..." | null,
       "reply_to_comment_id": 12345 | null,
       "issue_comment_id": 67890 | null,
+      "review_id": 301 | null,                 // review_summary only: REST review .id — its stable cross-inventory identity
       "is_outdated": false,
       "author": "copilot" | "<github-login>",
       "body_excerpt": "first 200 chars of comment body",
@@ -695,11 +702,13 @@ POSIX-atomic) — handled by `write-inventory.sh`.
 
 **Notes:**
 
-- `review_summary` items have only `kind`, `body_excerpt`, `author`,
+- `review_summary` items have `kind`, `review_id`, `body_excerpt`, `author`,
   `classification`, `rationale`, `fix_outcome`, `fix_commit_sha`,
-  `fix_summary`, `fix_gate_variant`. **No** `thread_id`,
-  `reply_to_comment_id`, `issue_comment_id` (validation guard 3 enforces
-  this).
+  `fix_summary`, `fix_gate_variant`. `review_id` is **required** — it is the
+  REST review's numeric `.id`, the item's stable identity for the
+  cross-push triage union in `check-merge-eligibility.sh`. **No**
+  `thread_id`, `reply_to_comment_id`, `issue_comment_id` (validation guard 3
+  enforces both).
 - `polling.copilot_review_submitted_at` is dropped from v1 — re-add as
   `schema_version: 2` when `agents-config-58m` lands a real consumer.
 - `polling.copilot_status` is consumed by Skill B Phase 4 final report
