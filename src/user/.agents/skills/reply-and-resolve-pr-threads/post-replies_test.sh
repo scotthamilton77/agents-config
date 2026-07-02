@@ -642,7 +642,7 @@ else
   echo "  ok: rejects nonexistent inventory file"
 fi
 
-# ── posted_reply_id recording (wgclw.14) ─────────────────────────────────────
+# ── posted_reply_id recording ────────────────────────────────────────────────
 T16="$(mktemp -d)"
 cat > "$T16/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -668,8 +668,7 @@ assert "posted_reply_id recorded on the item" \
   "[ \"\$(jq -r '.items[0].posted_reply_id' \"$T16/inv.json\")\" = 777001 ]"
 rm -rf "$T16"
 
-# ── idempotent retry: cid must not shift when posted_reply_id gets recorded
-# (wgclw.14, P1 proven regression) ──────────────────────────────────────────
+# ── idempotent retry: cid must not shift when posted_reply_id gets recorded ──
 # review_summary's cid is sha1 of the item JSON. record_reply_id mutates the
 # posted item with posted_reply_id AFTER posting. If the cid hash includes
 # that field, a re-read of the item on retry hashes to a DIFFERENT cid, the
@@ -721,7 +720,7 @@ assert "run 2: posted_reply_id on the review_summary item is unchanged" \
 
 rm -rf "$T17"
 
-# ── posted_reply_id recording branch coverage (wgclw.14) ────────────────────
+# ── posted_reply_id recording branch coverage ────────────────────────────────
 # (a) review_summary branch: recorded onto the matching item by review_id.
 T18="$(mktemp -d)"
 cat > "$T18/gh" <<'STUB'

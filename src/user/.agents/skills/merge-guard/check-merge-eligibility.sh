@@ -60,20 +60,20 @@ done
 policy_type_ok() {  # policy_type_ok <key> <jq-type-predicate>
     jq -e --arg k "$1" ".[\$k] | $2" >/dev/null 2>&1 <<<"$POLICY_JSON"
 }
-policy_type_ok bot_review_expected 'type == "boolean"' || {
-    echo "Error: policy JSON key bot_review_expected must be a boolean" >&2; exit 3; }
-policy_type_ok bot_reviewers 'type == "array"' || {
-    echo "Error: policy JSON key bot_reviewers must be an array" >&2; exit 3; }
-policy_type_ok bot_inactivity_timeout_seconds 'type == "number"' || {
-    echo "Error: policy JSON key bot_inactivity_timeout_seconds must be a number" >&2; exit 3; }
-policy_type_ok human_approvers_required 'type == "number"' || {
-    echo "Error: policy JSON key human_approvers_required must be a number" >&2; exit 3; }
-policy_type_ok human_review_timeout_seconds '(type == "null") or (type == "number")' || {
-    echo "Error: policy JSON key human_review_timeout_seconds must be a number or null" >&2; exit 3; }
-policy_type_ok merge_authorization 'type == "string"' || {
-    echo "Error: policy JSON key merge_authorization must be a string" >&2; exit 3; }
-policy_type_ok merge_rule '(type == "null") or (type == "string")' || {
-    echo "Error: policy JSON key merge_rule must be a string or null" >&2; exit 3; }
+POLICY_TYPE_SPECS=(
+    'bot_review_expected|type == "boolean"|a boolean'
+    'bot_reviewers|type == "array"|an array'
+    'bot_inactivity_timeout_seconds|type == "number"|a number'
+    'human_approvers_required|type == "number"|a number'
+    'human_review_timeout_seconds|(type == "null") or (type == "number")|a number or null'
+    'merge_authorization|type == "string"|a string'
+    'merge_rule|(type == "null") or (type == "string")|a string or null'
+)
+for spec in "${POLICY_TYPE_SPECS[@]}"; do
+    IFS='|' read -r key predicate desc <<<"$spec"
+    policy_type_ok "$key" "$predicate" || {
+        echo "Error: policy JSON key $key must be $desc" >&2; exit 3; }
+done
 BOT_EXPECTED=$(jq -r '.bot_review_expected' <<<"$POLICY_JSON")
 BOT_REVIEWERS=$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")
 BOT_TIMEOUT=$(jq -r '.bot_inactivity_timeout_seconds' <<<"$POLICY_JSON")
@@ -81,6 +81,10 @@ HUMANS_REQUIRED=$(jq -r '.human_approvers_required' <<<"$POLICY_JSON")
 HUMAN_TIMEOUT=$(jq -r '.human_review_timeout_seconds' <<<"$POLICY_JSON")   # "null" = indefinite
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+# NOTE: gh_api(), the gh-auth check, and the jq availability check duplicate
+# logic in the canonical wait-for-pr-comments/lib.sh. merge-guard must stay
+# runnable standalone, so keep this copy in sync when behavior changes there;
+# consider promoting lib.sh to a shared location.
 gh_api() {
     local result exit_code=0
     result=$(gh api "$@" 2>/dev/null) || exit_code=$?
@@ -170,9 +174,9 @@ approvers=$(jq --arg head "$HEAD_OID" '
     | map(sort_by(.submitted_at) | last)
     | map(select(.state == "APPROVED" and (.commit_id // "") == $head))
     | map(.user.login)' <<<"$ALL_REVIEWS")
-set_fact distinct_current_approvers "$(jq 'length' <<<"$approvers")"
-set_fact approver_logins "$approvers"
 APPROVER_COUNT=$(jq 'length' <<<"$approvers")
+set_fact distinct_current_approvers "$APPROVER_COUNT"
+set_fact approver_logins "$approvers"
 # ── Blocker: unresolved review threads (always live; prgroom is never a
 #    substitute — a thread opened after prgroom quiesced is absent from state) ─
 fetch_threads_page() {  # fetch_threads_page [cursor]
@@ -221,11 +225,18 @@ rm -f "$prot_stderr"
 required_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
 [[ "$required_checks" == "null" ]] && required_checks='[]'
 
-check_runs=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/check-runs?per_page=100" --paginate \
-    | jq -s '[.[] | .check_runs[]? | {name, status, conclusion, app_id: (.app.id // null)}]') || {
-    echo "Error: failed to fetch check runs" >&2; exit 3; }
-legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status" \
-    | jq '[.statuses[]? | {context, state}]') || legacy_statuses='[]'
+# No required checks → vacuously green; skip the check-run/status fetches
+# whose results ci_eval would never consult.
+if [[ "$required_checks" == "[]" ]]; then
+    check_runs='[]'
+    legacy_statuses='[]'
+else
+    check_runs=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/check-runs?per_page=100" --paginate \
+        | jq -s '[.[] | .check_runs[]? | {name, status, conclusion, app_id: (.app.id // null)}]') || {
+        echo "Error: failed to fetch check runs" >&2; exit 3; }
+    legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status" \
+        | jq '[.statuses[]? | {context, state}]') || legacy_statuses='[]'
+fi
 
 ci_eval=$(jq -n --argjson req "$required_checks" --argjson runs "$check_runs" --argjson legacy "$legacy_statuses" '
     def red_conclusions: ["failure","cancelled","timed_out","action_required","startup_failure","stale"];
@@ -250,8 +261,8 @@ ci_eval=$(jq -n --argjson req "$required_checks" --argjson runs "$check_runs" --
                   else "pending" end),
           not_green: [ $per[] | select(.result != "green") | "\(.context) (\(.result))" ] }
     end')
-set_fact ci_state "$(jq '.state' <<<"$ci_eval")"
 ci_state=$(jq -r '.state' <<<"$ci_eval")
+set_fact ci_state "\"${ci_state}\""
 if [[ "$ci_state" != "green" && "$ci_state" != "none" ]]; then
     add_blocker ci_not_green \
         "required checks not green: $(jq -r '.not_green | join(", ")' <<<"$ci_eval") (pending/absent fails closed)"
@@ -261,9 +272,6 @@ fi
 # that concluded clean — both read "no blocker" on every other row. Block
 # until the expected review arrives at the current head or its wait window
 # closes. Timing out ends the wait; it never satisfies the positive fact.
-EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || {
-    echo "Error: failed to fetch issue events" >&2; exit 3; }
-
 review_wait_bot="not_expected"
 if [[ "$BOT_EXPECTED" == "true" ]]; then
     arrived=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
@@ -273,6 +281,13 @@ if [[ "$BOT_EXPECTED" == "true" ]]; then
     if [[ "$arrived" -gt 0 ]]; then
         review_wait_bot="satisfied"
     else
+        # Events feed only this wait computation — fetched here (not up top)
+        # so a repo that expects no bot review, or one whose review already
+        # arrived, never pays for or fails on this endpoint. Fetch failure
+        # fails closed: lost review_requested timestamps would otherwise
+        # fake a timeout and drop the review_in_flight blocker.
+        EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || {
+            echo "Error: failed to fetch issue events" >&2; exit 3; }
         latest_ref=$(jq -rn --argjson ev "$EVENTS" --argjson rv "$ALL_REVIEWS" \
             --argjson trusted "$BOT_REVIEWERS" --arg pr_created "$PR_CREATED" '
             ( [ $ev[] | select(.event == "review_requested"

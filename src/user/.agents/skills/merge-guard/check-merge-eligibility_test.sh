@@ -360,10 +360,19 @@ out=$(run_script "$BASE_POLICY"); rc=$?
 assert "no prgroom state → n/a, eligible" "[ \$rc -eq 0 ]"
 assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$out\")\" = false ]"
 
-# ── Fix: issue-events fetch failure fails closed (exit 3), not fail-open ────
-out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
-assert "events-fetch failure exits 3 (fail closed)" "[ \$rc -eq 3 ]"
+# ── Fix: issue-events fetch failure fails closed (exit 3) exactly when the
+#    bot-wait computation needs events; the endpoint is never consulted when
+#    no bot review is expected or the expected review already arrived ────────
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
+assert "events-fetch failure exits 3 while bot wait needs events (fail closed)" "[ \$rc -eq 3 ]"
 assert "events-fetch failure prints no verdict" "[ -z \"\$out\" ]"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
+assert "events failure irrelevant when no bot review expected" "[ \$rc -eq 0 ]"
+
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS_FAIL=1 FIXTURE_REVIEWS="$revs"); rc=$?
+assert "events failure irrelevant once expected review arrived at head" "[ \$rc -eq 0 ]"
 
 # ── Fix: terminal disposition union excludes partial-crash inventories, but
 #    the posted_reply_id exclusion union still reads them ──────────────────

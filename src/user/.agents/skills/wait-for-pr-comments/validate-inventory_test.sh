@@ -128,7 +128,7 @@ assert "--phase 0 rejects wrong schema_version" "[ \$rc_v_p0 -eq 1 ]"
 rc_v_p2=$?
 assert "--phase 2 rejects wrong schema_version" "[ \$rc_v_p2 -eq 1 ]"
 
-# ── review_id on review_summary (guard 3, wgclw.14) ──────────────────────────
+# ── review_id on review_summary (guard 3) ────────────────────────────────────
 T15="$(mktemp -d)"
 mk_inv() {  # mk_inv <items-json>
   jq -n --argjson items "$1" '{schema_version: 1, pr: {}, polling: {}, items: $items,

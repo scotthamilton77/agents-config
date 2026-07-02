@@ -61,7 +61,7 @@ assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
 rc_dangling=$?
 assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
 
-# ── --timeout-seconds (wgclw.14: plumbs Axis-1 bot_inactivity_timeout_seconds) ──
+# ── --timeout-seconds (plumbs Axis-1 bot_inactivity_timeout_seconds) ─────────
 
 assert "accepts --timeout-seconds flag" "grep -q -- '--timeout-seconds' '$SCRIPT'"
 
