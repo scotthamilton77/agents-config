@@ -2482,7 +2482,7 @@ git commit -m "feat(rules): merge-authorization law names its two opt-outs; expl
 
 ### Task 22: Full verification + housekeeping
 
-- [ ] **Step 1: Run the complete smoke suite** (the `[gates].test` command):
+- [x] **Step 1: Run the complete smoke suite** (the `[gates].test` command):
 
 ```bash
 find src/user/.agents/skills src/user/.claude/hooks -name '*_test.sh' -print0 | sort -z | xargs -0 -I{} sh -c 'echo "[TEST] $1"; bash "$1" || exit 1' _ {}
@@ -2490,18 +2490,18 @@ find src/user/.agents/skills src/user/.claude/hooks -name '*_test.sh' -print0 | 
 
 Expected: every suite passes, including the three new/extended ones. Any failure = fix before proceeding.
 
-- [ ] **Step 2: Resolver sanity against the live repo config**
+- [x] **Step 2: Resolver sanity against the live repo config**
 
 Run: `python3 src/user/.agents/skills/merge-guard/resolve_policy.py --project-config project-config.toml`
 Expected: exit 0, `merge_rule: "bot-quiescence"`.
 
-- [ ] **Step 3: Update the knowledge graph** (code files changed):
+- [x] **Step 3: Update the knowledge graph** (code files changed):
 
 ```bash
 graphify update .
 ```
 
-- [ ] **Step 4: Bead housekeeping**
+- [x] **Step 4: Bead housekeeping**
 
 ```bash
 # Label-authoring dependency named by the spec (7bk.12 authors the labels this resolver consumes)
@@ -2529,7 +2529,7 @@ bd create --title="poll-copilot-review.sh: consider bot-reviewers-driven filter"
 bd dep add <new-id> agents-config-wgclw.14 --type discovered-from
 ```
 
-- [ ] **Step 5: Update the bead and close out the plan**
+- [x] **Step 5: Update the bead and close out the plan**
 
 ```bash
 bd update agents-config-wgclw.14 --append-notes "Implementation plan executed: docs/plans/2026-07-01-pr-review-merge-policy.md. All 22 tasks complete; full smoke suite green."
