@@ -104,6 +104,37 @@ def _typed(section: dict, key: str, kind: type, default):
     return value
 
 
+MERGE_AUTHORIZATIONS = {"never", "explicit", "rule-based"}
+MERGE_RULES = {"bot-quiescence", "human-approvals", "agent-ruling"}
+
+
+def validate(policy: ReviewMergePolicy) -> None:
+    """Value-domain + combination validation. Raises PolicyError; never degrades."""
+    if policy.human_approvers_required < 0:
+        raise PolicyError(
+            f"human-approvers-required: must be >= 0, got {policy.human_approvers_required}")
+    if policy.merge_authorization not in MERGE_AUTHORIZATIONS:
+        raise PolicyError(
+            f"merge-authorization: {policy.merge_authorization!r} not in {sorted(MERGE_AUTHORIZATIONS)}")
+    if policy.merge_rule is not None and policy.merge_rule not in MERGE_RULES:
+        raise PolicyError(f"merge-rule: {policy.merge_rule!r} not in {sorted(MERGE_RULES)}")
+    if policy.merge_authorization == "rule-based" and policy.merge_rule is None:
+        raise PolicyError("merge-authorization=rule-based requires a merge-rule")
+    if policy.merge_authorization != "rule-based" and policy.merge_rule is not None:
+        raise PolicyError("merge-rule is only valid with merge-authorization=rule-based")
+    if policy.merge_rule == "human-approvals" and policy.human_approvers_required < 1:
+        raise PolicyError(
+            "merge-rule=human-approvals requires human-approvers-required >= 1 "
+            "(a zero-approval rule is vacuously true and would authorize an unreviewed merge)")
+    if policy.merge_rule == "bot-quiescence":
+        if not policy.bot_reviewers:
+            raise PolicyError("merge-rule=bot-quiescence requires a non-empty bot-reviewers allowlist")
+        if not policy.bot_review_expected:
+            raise PolicyError("merge-rule=bot-quiescence requires bot-review-expected = true")
+    if policy.merge_rule == "agent-ruling":
+        raise PolicyError("merge-rule=agent-ruling is design-reserved and not yet implemented")
+
+
 def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergePolicy:
     """Resolve config + labels into a validated policy. Raises PolicyError."""
     expect = project_config.get("review-expectations", {})
@@ -122,7 +153,7 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
                      if "human-review-timeout" in expect
                      else DEFAULTS.human_review_timeout_seconds)
 
-    return ReviewMergePolicy(
+    policy = ReviewMergePolicy(
         bot_review_expected=_typed(expect, "bot-review-expected", bool, DEFAULTS.bot_review_expected),
         bot_reviewers=_typed(expect, "bot-reviewers", list, DEFAULTS.bot_reviewers),
         bot_inactivity_timeout_seconds=bot_timeout,
@@ -131,6 +162,8 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
         merge_authorization=_typed(merge, "merge-authorization", str, DEFAULTS.merge_authorization),
         merge_rule=_typed(merge, "merge-rule", str, DEFAULTS.merge_rule),
     )
+    validate(policy)
+    return policy
 
 
 def main() -> int:

@@ -501,7 +501,7 @@ Behavior: **invalid values and invalid combinations are rejected with exit 1 —
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy.py`
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy_test.py`
 
-- [ ] **Step 1: Write the failing tests** (append)
+- [x] **Step 1: Write the failing tests** (append)
 
 ```python
 class TestValidation(unittest.TestCase):
@@ -570,12 +570,12 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
 ```
 
-- [ ] **Step 2: Run to verify the new tests fail**
+- [x] **Step 2: Run to verify the new tests fail**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: FAIL — every TestValidation case except `test_valid_rule_based_bot_quiescence_resolves` (no validation yet).
 
-- [ ] **Step 3: Implement validation** (add constants + `validate()`; call it at the end of `resolve_policy` before `return` — restructure so the constructed policy is validated then returned)
+- [x] **Step 3: Implement validation** (add constants + `validate()`; call it at the end of `resolve_policy` before `return` — restructure so the constructed policy is validated then returned)
 
 ```python
 MERGE_AUTHORIZATIONS = {"never", "explicit", "rule-based"}
@@ -619,12 +619,12 @@ In `resolve_policy`, change the tail to:
     return policy
 ```
 
-- [ ] **Step 4: Run to verify all tests pass**
+- [x] **Step 4: Run to verify all tests pass**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: PASS (17 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/resolve_policy.py src/user/.agents/skills/merge-guard/resolve_policy_test.py

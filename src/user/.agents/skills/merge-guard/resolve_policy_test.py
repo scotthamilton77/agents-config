@@ -97,5 +97,71 @@ class TestConfigParsing(unittest.TestCase):
         self.assertIn("unparseable", err)
 
 
+class TestValidation(unittest.TestCase):
+    def _resolve(self, toml_body: str):
+        return run_resolver("--project-config", write_toml(toml_body))
+
+    def test_negative_approvers_rejected_in_every_mode(self):
+        code, _, err = self._resolve('[review-expectations]\nhuman-approvers-required = -1\n')
+        self.assertEqual(code, 1)
+        self.assertIn("human-approvers-required", err)
+
+    def test_bad_merge_authorization_enum(self):
+        code, _, err = self._resolve('[merge-policy]\nmerge-authorization = "auto"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("merge-authorization", err)
+
+    def test_rule_based_without_rule(self):
+        code, _, err = self._resolve('[merge-policy]\nmerge-authorization = "rule-based"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("merge-rule", err)
+
+    def test_rule_set_while_not_rule_based(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "explicit"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 1)
+
+    def test_bad_rule_enum(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "vibes"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("merge-rule", err)
+
+    def test_human_approvals_rule_requires_at_least_one(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nhuman-approvers-required = 0\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "human-approvals"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("human-approvals", err)
+
+    def test_bot_quiescence_requires_trusted_bot(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nbot-reviewers = []\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("bot-reviewers", err)
+
+    def test_bot_quiescence_requires_bot_expected(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nbot-review-expected = false\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("bot-review-expected", err)
+
+    def test_agent_ruling_not_implemented(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("not yet implemented", err)
+
+    def test_valid_rule_based_bot_quiescence_resolves(self):
+        code, out, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 0, err)
+        policy = json.loads(out)
+        self.assertEqual(policy["merge_authorization"], "rule-based")
+        self.assertEqual(policy["merge_rule"], "bot-quiescence")
+
+
 if __name__ == "__main__":
     unittest.main()
