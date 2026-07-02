@@ -365,6 +365,37 @@ out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
 assert "events-fetch failure exits 3 (fail closed)" "[ \$rc -eq 3 ]"
 assert "events-fetch failure prints no verdict" "[ -z \"\$out\" ]"
 
+# ── Fix: terminal disposition union excludes partial-crash inventories, but
+#    the posted_reply_id exclusion union still reads them ──────────────────
+write_inv_partial() {  # write_inv_partial <filename> <items-json>
+  jq -n --argjson items "$2" '{schema_version: 1, pr: {}, polling: {}, items: $items,
+    crash_recovery: {skill_a_completed: false, last_completed_phase: "5a-verify-failed"}}' \
+    > "$INV_DIR/$1"
+}
+
+clean_invs
+write_inv_partial "o-r-1-partial0001.json" \
+  '[{"kind":"issue_comment","issue_comment_id":900,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "partial-crash inventory disposition does NOT clear untriaged feedback" "[ \$rc -eq 1 ]"
+clean_invs
+
+write_inv_partial "o-r-1-partial0002.json" \
+  '[{"kind":"issue_comment","issue_comment_id":444,"classification":"SKIP","rationale":"r","fix_outcome":null,"posted_reply_id":900}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "posted_reply_id recorded in a partial-crash inventory still excludes it" "[ \$rc -eq 0 ]"
+clean_invs
+
+# ── Fix: cross-inventory triage union across TWO retained inventory files ───
+IC3='[{"id": 950, "user": {"login": "reviewer"}, "body": "fix A"}, {"id": 951, "user": {"login": "reviewer"}, "body": "fix B"}]'
+write_inv "o-r-1-multi0001.json" \
+  '[{"kind":"issue_comment","issue_comment_id":950,"classification":"SKIP","rationale":"a","fix_outcome":null}]'
+write_inv "o-r-1-multi0002.json" \
+  '[{"kind":"issue_comment","issue_comment_id":951,"classification":"FIX","rationale":"b","fix_outcome":"committed"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC3"); rc=$?
+assert "dispositions split across two retained inventories both clear (union)" "[ \$rc -eq 0 ]"
+clean_invs
+
 # ── Fix: BASE_REF is URL-encoded before the branch-protection fetch ─────────
 slash_pr=$(jq -n --arg t "2026-01-01T00:00:00Z" --arg sha "$HEAD_SHA" \
   '{state:"open", head:{sha:$sha}, base:{ref:"release/1.0"}, created_at:$t}')

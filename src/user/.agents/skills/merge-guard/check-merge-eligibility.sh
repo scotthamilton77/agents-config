@@ -305,23 +305,35 @@ ISSUE_COMMENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=1
     echo "Error: failed to fetch issue comments" >&2; exit 3; }
 
 inventory_items='[]'
+completed_inventory_items='[]'
 while IFS= read -r -d '' inv_file; do
     file_items=$(jq '[.items[]?]' "$inv_file" 2>/dev/null) || continue
     inventory_items=$(jq -n --argjson a "$inventory_items" --argjson b "$file_items" '$a + $b')
+    # Terminal dispositions may only come from a COMPLETED triage pass — a
+    # partial/crash inventory's FIX/SKIP calls are not durable. The
+    # posted_reply_id exclusion union above deliberately reads ALL
+    # inventories (including partial): reply IDs are recorded at post time
+    # mid-run, so a partial crash file is exactly where a real posted
+    # reply's ID lives.
+    file_completed=$(jq -r '.crash_recovery.skill_a_completed // false' "$inv_file" 2>/dev/null) || file_completed=false
+    if [[ "$file_completed" == "true" ]]; then
+        completed_inventory_items=$(jq -n --argjson a "$completed_inventory_items" --argjson b "$file_items" '$a + $b')
+    fi
 done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
          -name "${OWNER}-${REPO}-${PR}-*.json" -print0 2>/dev/null)
 
 untriaged=$(jq -n \
     --argjson live_issue "$(jq '[.[] | {id, author: .user.login}]' <<<"$ISSUE_COMMENTS")" \
     --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login}]' <<<"$ALL_REVIEWS")" \
-    --argjson recorded "$inventory_items" '
+    --argjson recorded "$inventory_items" \
+    --argjson recorded_complete "$completed_inventory_items" '
     def terminal_ok:
         (.classification == "SKIP")
         or (.classification == "FIX"
             and (.fix_outcome == "committed" or .fix_outcome == "already_addressed"));
     ([ $recorded[] | .posted_reply_id // empty ] | unique) as $agent_replies
-    | ([ $recorded[] | select(.kind == "issue_comment" and terminal_ok) | .issue_comment_id ] | unique) as $done_issue
-    | ([ $recorded[] | select(.kind == "review_summary" and terminal_ok) | .review_id // empty ] | unique) as $done_review
+    | ([ $recorded_complete[] | select(.kind == "issue_comment" and terminal_ok) | .issue_comment_id ] | unique) as $done_issue
+    | ([ $recorded_complete[] | select(.kind == "review_summary" and terminal_ok) | .review_id // empty ] | unique) as $done_review
     | ([ $live_issue[]
          | select((.id as $i | $agent_replies | index($i)) == null)
          | select((.id as $i | $done_issue | index($i)) == null)
