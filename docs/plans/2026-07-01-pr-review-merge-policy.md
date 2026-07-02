@@ -1538,7 +1538,7 @@ Behavior: **when Axis 1 expects a review that has neither arrived at the current
 
 **Files:** same two.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 13: review still in flight ──────────────────────────────────────────
@@ -1583,9 +1583,9 @@ out=$(run_script "$H_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$
 assert "enough approvals → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (`.facts.review_wait` is `null`; pending cases exit 0)
+- [x] **Step 2: Run to verify the new asserts fail** (`.facts.review_wait` is `null`; pending cases exit 0)
 
-- [ ] **Step 3: Implement** — replace `# GATE: review-in-flight        (Task 13)` with:
+- [x] **Step 3: Implement** — replace `# GATE: review-in-flight        (Task 13)` with:
 
 ```bash
 # ── Blocker: expected review still in flight ─────────────────────────────────
@@ -1647,9 +1647,9 @@ set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_h
 
 Placement note: this block must sit AFTER the Task-10 block (it reads `APPROVER_COUNT`).
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

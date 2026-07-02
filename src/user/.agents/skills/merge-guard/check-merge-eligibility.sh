@@ -233,7 +233,62 @@ if [[ "$ci_state" != "green" && "$ci_state" != "none" ]]; then
     add_blocker ci_not_green \
         "required checks not green: $(jq -r '.not_green | join(", ")' <<<"$ci_eval") (pending/absent fails closed)"
 fi
-# GATE: review-in-flight        (Task 13)
+# ── Blocker: expected review still in flight ─────────────────────────────────
+# A review that hasn't happened YET is otherwise indistinguishable from one
+# that concluded clean — both read "no blocker" on every other row. Block
+# until the expected review arrives at the current head or its wait window
+# closes. Timing out ends the wait; it never satisfies the positive fact.
+EVENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/events?per_page=100" --paginate | jq -s 'add // []') || EVENTS='[]'
+
+review_wait_bot="not_expected"
+if [[ "$BOT_EXPECTED" == "true" ]]; then
+    arrived=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
+        [ .[] | select((.user.login as $l | ($trusted | index($l)) != null)
+                       and ((.commit_id // "") == $head)
+                       and .state != "DISMISSED") ] | length' <<<"$ALL_REVIEWS")
+    if [[ "$arrived" -gt 0 ]]; then
+        review_wait_bot="satisfied"
+    else
+        latest_ref=$(jq -rn --argjson ev "$EVENTS" --argjson rv "$ALL_REVIEWS" \
+            --argjson trusted "$BOT_REVIEWERS" --arg pr_created "$PR_CREATED" '
+            ( [ $ev[] | select(.event == "review_requested"
+                               and (((.requested_reviewer.login // "") as $l | ($trusted | index($l)) != null)))
+                      | .created_at ]
+            + [ $ev[] | select(.event == "copilot_work_started") | .created_at ]
+            + [ $rv[] | select((.user.login as $l | ($trusted | index($l)) != null)) | .submitted_at ]
+            + [ $pr_created ] ) | max')
+        bot_age=$(jq -rn --arg ts "$latest_ref" '(now - ($ts | fromdateiso8601)) | floor')
+        if [[ "$bot_age" -ge "$BOT_TIMEOUT" ]]; then
+            review_wait_bot="timed_out"
+        else
+            review_wait_bot="waiting"
+            add_blocker review_in_flight \
+                "bot review expected but not arrived at head; last activity ${bot_age}s ago < inactivity timeout ${BOT_TIMEOUT}s"
+        fi
+    fi
+fi
+
+review_wait_human="not_expected"
+if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
+    if [[ "$APPROVER_COUNT" -ge "$HUMANS_REQUIRED" ]]; then
+        review_wait_human="satisfied"
+    elif [[ "$HUMAN_TIMEOUT" == "null" ]]; then
+        review_wait_human="waiting"
+        add_blocker review_in_flight \
+            "waiting for ${HUMANS_REQUIRED} human approval(s), have ${APPROVER_COUNT}; no human-review-timeout — waits indefinitely"
+    else
+        human_age=$(jq -rn --arg ts "$PR_CREATED" '(now - ($ts | fromdateiso8601)) | floor')
+        if [[ "$human_age" -ge "$HUMAN_TIMEOUT" ]]; then
+            review_wait_human="timed_out"
+        else
+            review_wait_human="waiting"
+            add_blocker review_in_flight \
+                "waiting for ${HUMANS_REQUIRED} human approval(s), have ${APPROVER_COUNT}; ${human_age}s elapsed < timeout ${HUMAN_TIMEOUT}s"
+        fi
+    fi
+fi
+set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
+# GATE: non-thread-feedback     (Task 17)
 # GATE: non-thread-feedback     (Task 17)
 # GATE: prgroom-internal        (Task 18)
 

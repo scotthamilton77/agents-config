@@ -238,4 +238,45 @@ out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS
       FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
 assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
 
+# ── Task 13: review still in flight ──────────────────────────────────────────
+BOT_POLICY=$(jq -c '.bot_review_expected = true' <<<"$BASE_POLICY")
+TS_RECENT=$(jq -rn 'now - 60 | todate')      # 1 min ago  < 1200s timeout
+TS_OLD=$(jq -rn 'now - 7200 | todate')       # 2 h ago    > 1200s timeout
+
+# bot expected, requested recently, no review yet → blocked (in flight)
+ev=$(jq -n --arg t "$TS_RECENT" '[{event:"review_requested", requested_reviewer:{login:"trusted-bot[bot]"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS="$ev"); rc=$?
+assert "pending bot review blocks explicit merge" "[ \$rc -eq 1 ]"
+assert "blocker code review_in_flight" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q review_in_flight"
+assert "review_wait.bot is waiting" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+# bot expected, silence past timeout → wait over (timed_out), not blocked
+ev=$(jq -n --arg t "$TS_OLD" '[{event:"review_requested", requested_reviewer:{login:"trusted-bot[bot]"}, created_at:$t}]')
+old_pr=$(jq -n --arg t "$TS_OLD" '{state:"open", head:{sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, base:{ref:"main"}, created_at:$t}')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS="$ev" FIXTURE_PR="$old_pr"); rc=$?
+assert "bot silence past timeout → eligible (timed_out)" "[ \$rc -eq 0 ]"
+assert "review_wait.bot is timed_out" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = timed_out ]"
+assert "timeout does NOT satisfy the positive fact" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# bot review arrived at head → satisfied
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
+assert "arrived bot review → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+
+# humans required, none yet, no timeout → blocks indefinitely
+H_POLICY=$(jq -c '.human_approvers_required = 1' <<<"$BASE_POLICY")
+out=$(run_script "$H_POLICY" FIXTURE_PR="$old_pr"); rc=$?
+assert "missing human approval with null timeout blocks" "[ \$rc -eq 1 ]"
+assert "review_wait.human is waiting" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = waiting ]"
+
+# humans required, timeout elapsed → wait over
+H_TIMEOUT_POLICY=$(jq -c '.human_approvers_required = 1 | .human_review_timeout_seconds = 1200' <<<"$BASE_POLICY")
+out=$(run_script "$H_TIMEOUT_POLICY" FIXTURE_PR="$old_pr"); rc=$?
+assert "human timeout elapsed → eligible (timed_out)" "[ \$rc -eq 0 ]"
+
+# humans required and enough current approvals → satisfied
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$H_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
+assert "enough approvals → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
+
 exit $FAIL
