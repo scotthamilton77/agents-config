@@ -154,7 +154,13 @@ jq -c '.items[]?' "$INV" > "$TMP"
 # author login (the agent commonly posts through its human operator's own
 # GitHub account, so a login filter would hide that human's real comments).
 record_reply_id() {  # record_reply_id <item-key> <match-value> <reply-id>
-  local key="$1" val="$2" rid="$3" tmp_inv
+  local key="$1" val="$2" rid="$3" tmp_inv match_count
+  match_count="$(jq --arg k "$key" --arg v "$val" \
+      '[.items[] | select(((.[$k] // "") | tostring) == $v)] | length' "$INV" 2>/dev/null)" || match_count=0
+  if [ "${match_count:-0}" -eq 0 ]; then
+    echo "WARNING $val reply-id-not-recorded: reply $rid posted to GitHub but no inventory item has $key=$val; the eligibility check will treat it as incoming feedback until triaged" >&2
+    return
+  fi
   tmp_inv="$(mktemp)"
   if jq --arg k "$key" --arg v "$val" --argjson rid "$rid" \
        '.items |= map(if ((.[$k] // "") | tostring) == $v then . + {posted_reply_id: $rid} else . end)' \

@@ -721,4 +721,97 @@ assert "run 2: posted_reply_id on the review_summary item is unchanged" \
 
 rm -rf "$T17"
 
+# ── posted_reply_id recording branch coverage (wgclw.14) ────────────────────
+# (a) review_summary branch: recorded onto the matching item by review_id.
+T18="$(mktemp -d)"
+cat > "$T18/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800001}'
+exit 0
+STUB
+chmod +x "$T18/gh"
+INV18="$T18/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: "RS18", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Acknowledged."}
+]}' > "$INV18"
+out18=$(PATH="$T18:$PATH" "$HERE/post-replies.sh" --inventory "$INV18" --owner o --repo r --pr 1 2>&1)
+rc18=$?
+assert "(a) review_summary+review_id: run succeeds" "[ \$rc18 -eq 0 ]"
+assert "(a) review_summary+review_id: posted_reply_id recorded by review_id match" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV18\")\" = \"800001\" ]"
+rm -rf "$T18"
+
+# (b) review_thread branch: recorded by reply_to_comment_id match.
+T19="$(mktemp -d)"
+cat > "$T19/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800002}'
+exit 0
+STUB
+chmod +x "$T19/gh"
+INV19="$T19/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_19", reply_to_comment_id: 612345, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "fixed"}
+]}' > "$INV19"
+out19=$(PATH="$T19:$PATH" "$HERE/post-replies.sh" --inventory "$INV19" --owner o --repo r --pr 1 2>&1)
+rc19=$?
+assert "(b) review_thread: run succeeds" "[ \$rc19 -eq 0 ]"
+assert "(b) review_thread: posted_reply_id recorded by reply_to_comment_id match" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV19\")\" = \"800002\" ]"
+rm -rf "$T19"
+
+# (c) WARNING fallback: legacy review_summary item WITHOUT review_id ->
+# warning to stderr, no crash, no recording.
+T20A="$(mktemp -d)"
+cat > "$T20A/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800003}'
+exit 0
+STUB
+chmod +x "$T20A/gh"
+INV20A="$T20A/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Legacy item, no review_id."}
+]}' > "$INV20A"
+out20a=$(PATH="$T20A:$PATH" "$HERE/post-replies.sh" --inventory "$INV20A" --owner o --repo r --pr 1 2>&1)
+rc20a=$?
+assert "(c) legacy review_summary w/o review_id: run still succeeds (no crash)" "[ \$rc20a -eq 0 ]"
+assert "(c) legacy review_summary w/o review_id: WARNING names the missing review_id" \
+  "grep -qi 'lacks review_id' <<<\"\$out20a\""
+assert "(c) legacy review_summary w/o review_id: posted_reply_id NOT recorded" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id // \"null\"' \"$INV20A\")\" = \"null\" ]"
+rm -rf "$T20A"
+
+# (d) WARNING fallback: POST response id that matches NO inventory item ->
+# warning, no crash. Simulated via a fake gh that mutates the inventory's
+# match field out from under the run between POST and record (a stand-in for
+# any real-world skew between the id used to POST and the id later matched).
+T20B="$(mktemp -d)"
+INV20B="$T20B/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: "RS_GONE", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "y"}
+]}' > "$INV20B"
+export NOMATCH_INV="$INV20B"
+cat > "$T20B/gh" <<'STUB'
+#!/usr/bin/env bash
+tmp="$(mktemp)"
+jq '.items[0].review_id = "RS_CHANGED"' "$NOMATCH_INV" > "$tmp" && mv "$tmp" "$NOMATCH_INV"
+printf '{"id": 900099}'
+exit 0
+STUB
+chmod +x "$T20B/gh"
+out20b=$(PATH="$T20B:$PATH" "$HERE/post-replies.sh" --inventory "$INV20B" --owner o --repo r --pr 1 2>&1)
+rc20b=$?
+unset NOMATCH_INV
+assert "(d) no-match record: run still succeeds (no crash)" "[ \$rc20b -eq 0 ]"
+assert "(d) no-match record: WARNING emitted for the unmatched reply id" \
+  "grep -qi 'WARNING' <<<\"\$out20b\""
+assert "(d) no-match record: posted_reply_id NOT recorded anywhere" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id // \"null\"' \"$INV20B\")\" = \"null\" ]"
+rm -rf "$T20B"
+
 exit $FAIL
