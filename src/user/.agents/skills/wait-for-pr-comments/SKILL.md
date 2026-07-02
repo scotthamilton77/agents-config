@@ -231,14 +231,19 @@ cross-references the primary.
 | `kind` | Source | Reply endpoint (Skill B) | Resolvable? |
 |---|---|---|---|
 | `review_thread` | GraphQL `reviewThreads.nodes` | REST `POST /repos/<o>/<r>/pulls/<n>/comments/<id>/replies` (numeric `databaseId` from `reply_to_comment_id`) | Yes — GraphQL `resolveReviewThread`, only when `classification = FIX` |
-| `review_summary` | `poll-copilot-review.sh`'s `reviews[]` (REST) | `gh pr comment` | No |
+| `review_summary` | REST `/pulls/<n>/reviews`, unfiltered — bot or human | `gh pr comment` | No |
 | `issue_comment` | REST `/issues/<n>/comments` | `gh pr comment` with cross-reference | No |
 
-`review_summary` items are built by the orchestrator from
-`poll-copilot-review.sh`'s `reviews[]` output (raw REST review objects): set
-`review_id` from the review's numeric `.id`, `author` from `.user.login`,
-`body_excerpt` from the first 200 chars of `.body`. One item per review with
-a non-empty body.
+`review_summary` items are built by the orchestrator from a **fresh,
+unfiltered fetch of every review on the PR** —
+`gh api repos/<owner>/<repo>/pulls/<n>/reviews` — **not**
+`poll-copilot-review.sh`'s `reviews[]` output, which is filtered to
+Copilot's own bot reviews for polling purposes only and would silently drop
+human review bodies from the inventory. One item per review with a
+non-empty body, **bot or human**: set `review_id` from the review's numeric
+`.id`, `author` from `.user.login`, `body_excerpt` from the first 200 chars
+of `.body`. A human reviewer's summary flows through the same FIX/SKIP/ESCALATE
+triage as Copilot's.
 
 #### Phase 3.5 — ESCALATE branch (mode-aware)
 
