@@ -41,8 +41,19 @@ POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
 - Resolver exit 1 = invalid policy config. **Stop. Report the error verbatim.
   Do not merge, do not fall back to defaults** — a repo that misconfigured its
   merge policy must not get a silently different one.
-- python3 (>= 3.11) unavailable → treat as the built-in default policy
-  (`explicit`) and say so: that is exactly today's law, the safe floor.
+- python3 (>= 3.11) missing, or the resolver crashes/errors for any reason
+  other than a reported `PolicyError` → **never** silently substitute the
+  built-in default. Check whether `<repo-root>/project-config.toml` has a
+  `[merge-policy]` section (e.g. `grep -q '^\[merge-policy\]' project-config.toml`):
+  - **Section present** → the repo configured a real policy this step could
+    not resolve. **Refuse any agent-side merge and hand off to the human**,
+    naming the degradation verbatim (e.g. "python3 unavailable — could not
+    resolve this repo's configured `[merge-policy]`; merge by hand"). Falling
+    back to `explicit` here would silently re-enable agent merges a
+    configured `never` policy forbids.
+  - **Section absent** → no policy is configured at all; fall back to the
+    built-in default policy (`explicit`) and say so — that is exactly
+    today's law, the safe floor.
 
 ### Step 3: Run the eligibility check
 
