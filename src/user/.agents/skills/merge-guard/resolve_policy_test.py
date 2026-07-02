@@ -163,5 +163,50 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
 
 
+class TestLabelOverrides(unittest.TestCase):
+    def test_copilot_only_overrides_config(self):
+        path = write_toml(
+            '[review-expectations]\nbot-review-expected = false\nhuman-approvers-required = 3\n')
+        code, out, err = run_resolver("--project-config", path,
+                                      "--labels", "misc,review-exit-copilot-only")
+        self.assertEqual(code, 0, err)
+        policy = json.loads(out)
+        self.assertTrue(policy["bot_review_expected"])
+        self.assertEqual(policy["human_approvers_required"], 0)
+
+    def test_human_approvers_label_sets_count(self):
+        code, out, err = run_resolver("--project-config", "/nonexistent.toml",
+                                      "--labels", "review-exit-human-approvers-3")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["human_approvers_required"], 3)
+
+    def test_both_labels_conflict(self):
+        code, _, err = run_resolver("--project-config", "/nonexistent.toml",
+                                    "--labels", "review-exit-copilot-only,review-exit-human-approvers-2")
+        self.assertEqual(code, 1)
+        self.assertIn("mutually exclusive", err)
+
+    def test_malformed_count_label_rejected(self):
+        code, _, err = run_resolver("--project-config", "/nonexistent.toml",
+                                    "--labels", "review-exit-human-approvers-lots")
+        self.assertEqual(code, 1)
+
+    def test_unrelated_labels_ignored(self):
+        code, out, _ = run_resolver("--project-config", "/nonexistent.toml",
+                                    "--labels", "install,formula-implement-feature")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["human_approvers_required"], 0)
+
+    def test_label_override_still_validated(self):
+        # copilot-only forces humans=0 — combined with human-approvals rule that must fail
+        path = write_toml(
+            '[review-expectations]\nhuman-approvers-required = 1\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "human-approvals"\n')
+        code, _, err = run_resolver("--project-config", path,
+                                    "--labels", "review-exit-copilot-only")
+        self.assertEqual(code, 1)
+        self.assertIn("human-approvals", err)
+
+
 if __name__ == "__main__":
     unittest.main()

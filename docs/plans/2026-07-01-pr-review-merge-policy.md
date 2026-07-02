@@ -641,7 +641,7 @@ Behavior: **`review-exit-copilot-only` forces `bot_review_expected=true` + `huma
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy.py`
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy_test.py`
 
-- [ ] **Step 1: Write the failing tests** (append)
+- [x] **Step 1: Write the failing tests** (append)
 
 ```python
 class TestLabelOverrides(unittest.TestCase):
@@ -689,12 +689,12 @@ class TestLabelOverrides(unittest.TestCase):
         self.assertIn("human-approvals", err)
 ```
 
-- [ ] **Step 2: Run to verify the new tests fail**
+- [x] **Step 2: Run to verify the new tests fail**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: FAIL — all six TestLabelOverrides cases (labels currently unused).
 
-- [ ] **Step 3: Implement label handling** (add helper; apply between construction and `validate()` in `resolve_policy` — use `dataclasses.replace`)
+- [x] **Step 3: Implement label handling** (add helper; apply between construction and `validate()` in `resolve_policy` — use `dataclasses.replace`)
 
 ```python
 import re
@@ -739,12 +739,12 @@ In `resolve_policy`, the tail becomes:
     return policy
 ```
 
-- [ ] **Step 4: Run to verify all tests pass**
+- [x] **Step 4: Run to verify all tests pass**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: PASS (23 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/resolve_policy.py src/user/.agents/skills/merge-guard/resolve_policy_test.py

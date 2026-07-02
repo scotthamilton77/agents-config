@@ -28,8 +28,9 @@ if sys.version_info < (3, 11):  # tomllib is 3.11+; fail loud, never degrade
     sys.stderr.write("error: resolve_policy.py requires Python >= 3.11 (tomllib)\n")
     sys.exit(2)
 
+import re
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 
 class PolicyError(Exception):
@@ -107,6 +108,33 @@ def _typed(section: dict, key: str, kind: type, default):
 MERGE_AUTHORIZATIONS = {"never", "explicit", "rule-based"}
 MERGE_RULES = {"bot-quiescence", "human-approvals", "agent-ruling"}
 
+_HUMAN_LABEL = re.compile(r"^review-exit-human-approvers-(.+)$")
+_COPILOT_LABEL = "review-exit-copilot-only"
+
+
+def apply_labels(policy: ReviewMergePolicy, labels: list[str]) -> ReviewMergePolicy:
+    """Per-bead overrides: label > config. Unrelated labels are ignored."""
+    copilot_only = _COPILOT_LABEL in labels
+    counts = []
+    for label in labels:
+        match = _HUMAN_LABEL.match(label)
+        if match:
+            if not match.group(1).isdigit():
+                raise PolicyError(
+                    f"label {label!r}: <n> must be a non-negative integer")
+            counts.append(int(match.group(1)))
+    if copilot_only and counts:
+        raise PolicyError(
+            "labels review-exit-copilot-only and review-exit-human-approvers-<n> are mutually exclusive")
+    if len(counts) > 1:
+        raise PolicyError("multiple review-exit-human-approvers-<n> labels present")
+    if copilot_only:
+        # Purpose is to wait for the bot; must not degrade to no-review.
+        return replace(policy, bot_review_expected=True, human_approvers_required=0)
+    if counts:
+        return replace(policy, human_approvers_required=counts[0])
+    return policy
+
 
 def validate(policy: ReviewMergePolicy) -> None:
     """Value-domain + combination validation. Raises PolicyError; never degrades."""
@@ -162,6 +190,7 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
         merge_authorization=_typed(merge, "merge-authorization", str, DEFAULTS.merge_authorization),
         merge_rule=_typed(merge, "merge-rule", str, DEFAULTS.merge_rule),
     )
+    policy = apply_labels(policy, bead_labels)
     validate(policy)
     return policy
 
