@@ -86,6 +86,11 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
 - Eligible + no instruction → present the summary and wait:
   > "PR #N is eligible to merge — no blockers. `review_wait`: <facts>. Ready
   > when you are. Just say the word."
+  When the merge word arrives later, **re-run Step 3 before merging** — do
+  not merge off the earlier summary. `--match-head-commit` at Step 5 only
+  catches a moved head; a new `CHANGES_REQUESTED` verdict, thread, or
+  comment on the *same* head can land during the wait and would otherwise
+  slip through unnoticed.
 - Instructed + blocked → **fail closed.** Report every `blockers[]` entry and
   offer:
   > 1. **Wait** — invoke `wait-for-pr-comments` (poll, classify, fix, push,
