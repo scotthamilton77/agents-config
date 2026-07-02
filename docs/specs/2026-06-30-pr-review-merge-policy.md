@@ -2,7 +2,7 @@
 
 - **Date**: 2026-06-30
 - **Bead**: agents-config-wgclw.14 (M0)
-- **Status**: draft
+- **Status**: approved
 - **Related**: agents-config-7bk.12 (brainstorm-time review knobs authoring),
   agents-config-abn9.8.19 (prgroom reviewer seeding), agents-config-ukzs
   (overlap external waits), agents-config-7bk.17 (key-naming alignment)
