@@ -2163,7 +2163,7 @@ The script now owns every deterministic fact; the skill owns the authorization j
 **Files:**
 - Rewrite: `src/user/.agents/skills/merge-guard/SKILL.md`
 
-- [ ] **Step 1: Replace the file body** (keep the existing frontmatter's `model:`/`effort:` lines; update `description:`):
+- [x] **Step 1: Replace the file body** (keep the existing frontmatter's `model:`/`effort:` lines; update `description:`):
 
 ````markdown
 ---
@@ -2310,12 +2310,12 @@ gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
 | "`gh pr merge` exited 0, so it merged" | It can exit 0 on rejection. Confirm state == MERGED. |
 ````
 
-- [ ] **Step 2: Verify internal consistency**
+- [x] **Step 2: Verify internal consistency**
 
 Run: `grep -c "comments-seen\|Comments Seen" src/user/.agents/skills/merge-guard/SKILL.md`
 Expected: 0 (the retired heuristic is gone from the skill too).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/SKILL.md

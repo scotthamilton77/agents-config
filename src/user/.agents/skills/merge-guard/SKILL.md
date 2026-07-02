@@ -1,131 +1,142 @@
 ---
 name: merge-guard
 description: >
-  Pre-merge gate that prevents merging while automated reviews (especially
-  Copilot) are pending or review comments have not been triaged. Invoke
-  proactively before any `gh pr merge`, `git merge`, or merge action.
+  Pre-merge enforcement point for the repo's review/merge policy. Resolves the
+  policy (resolve_policy.py), computes the live eligibility floor + review
+  facts (check-merge-eligibility.sh), then applies the merge-authorization
+  axis: never / explicit (default) / rule-based. Invoke proactively before
+  any `gh pr merge`, `git merge`, or merge action.
 model: sonnet[1m]
 effort: low
 ---
 
 # Merge Guard
 
-Prevents merging a PR while automated reviews are in progress or review comments remain unseen. Acts as a pre-merge gate -- run the eligibility check, interpret the result, and either proceed or warn the user.
+Enforces the two-axis review/merge policy at the merge boundary. A merge
+happens **iff the PR is eligible (no blockers) AND the action is authorized
+(Axis 2)**. Contract: `docs/architecture/review-merge-policy/design.md`.
 
-## When to Use
+**Triggers:** any action that merges a PR — `gh pr merge`, merge buttons,
+`git merge` of a PR branch.
 
-```dot
-digraph merge_guard {
-    "About to merge a PR?" [shape=diamond];
-    "Run eligibility check" [shape=box];
-    "Eligible?" [shape=diamond];
-    "Proceed with merge" [shape=box];
-    "Warn user with options" [shape=box];
-    "Not merging" [shape=box];
-
-    "About to merge a PR?" -> "Run eligibility check" [label="yes"];
-    "About to merge a PR?" -> "Not merging" [label="no"];
-    "Run eligibility check" -> "Eligible?" ;
-    "Eligible?" -> "Proceed with merge" [label="exit 0"];
-    "Eligible?" -> "Warn user with options" [label="exit 1 or 2"];
-}
-```
-
-**Triggers:** Any action that merges a PR -- `gh pr merge`, merge buttons, `git merge` of a PR branch.
-
-**Don't use when:**
-- Merging local branches unrelated to a PR
-- PR has no automated reviewers configured
-- User has already explicitly said "force merge" in this conversation
+**Don't use when:** merging local branches unrelated to a PR.
 
 ## The Process
 
-### Step 1: Determine PR Context
+### Step 1: Determine PR context
 
-Identify `owner`, `repo`, and PR number from:
-1. Explicit argument or conversation context
-2. Current branch: `gh pr view --json number,url`
+Identify `owner`, `repo`, PR number (explicit argument, conversation context,
+or `gh pr view --json number,url`), and the repo root.
 
-Track how many review comments you have already seen and triaged in this conversation. If unsure, use 0.
-
-### Step 2: Run Eligibility Check
+### Step 2: Resolve the policy
 
 ```bash
-${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh --owner <owner> --repo <repo> --pr <pr-number> --comments-seen <n>
+POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
+  --project-config "<repo-root>/project-config.toml" \
+  --labels "<comma-separated bead labels, or empty>")
 ```
 
-The script checks three things:
-1. **Pending reviewers** -- anyone still in the requested reviewers list
-2. **Copilot review status** -- requested, work started, review completed
-3. **Comment count vs seen** -- total PR comments minus what the agent has triaged
+- Labels: when working a bead, `bd label list <bead-id> --json | jq -r 'join(",")'`;
+  otherwise pass `--labels ""`.
+- Resolver exit 1 = invalid policy config. **Stop. Report the error verbatim.
+  Do not merge, do not fall back to defaults** — a repo that misconfigured its
+  merge policy must not get a silently different one.
+- python3 (>= 3.11) unavailable → treat as the built-in default policy
+  (`explicit`) and say so: that is exactly today's law, the safe floor.
 
-### Step 3: Interpret Result
+### Step 3: Run the eligibility check
 
-| Exit Code | Status | Meaning |
-|-----------|--------|---------|
-| 0 | `eligible` | All clear -- no pending automated reviews, all comments triaged |
-| 1 | `review_in_progress` | Copilot was requested but hasn't completed its review |
-| 2 | `unseen_comments` | Review comments exist that the agent hasn't triaged |
-| 3 | (error) | Script failure -- report error, do not merge |
+```bash
+${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh \
+  --owner <owner> --repo <repo> --pr <n> --policy-json "$POLICY_JSON"
+```
 
-**On exit 0:** Do NOT merge automatically. Present a summary of the eligibility check result and wait for explicit user authorization:
+| Exit | Meaning |
+|------|---------|
+| 0 | Eligible — no blockers; facts populated |
+| 1 | Blocked — every reason in `.blockers[]` |
+| 3 | Error — unknown state. Report it. **Do not merge.** |
 
-> "PR #N is eligible to merge — all reviews complete, all comments triaged.
-> Ready when you are. Just say the word."
+The JSON carries: `head_ref_oid` (the SHA every fact was computed against),
+`blockers[]` (`{code, details}`), `facts` (`bot_clean_review_at_head`,
+`distinct_current_approvers`, `ci_state`, `review_wait`, ...), and
+`merge_command_hint`.
 
-Authorized phrases: "go ahead and merge", "merge it", "ship it", "yes merge". "ok" and "sure" are not sufficient — the user must indicate intent to merge. If `pending_reviewers` in the JSON is non-empty, mention the human reviewers but do not block.
+### Step 4: Apply Axis 2 (`merge_authorization` from the policy JSON)
 
-**On exit 1 or 2:** Block the merge and warn the user (see below).
+**`never`** — the agent never merges, not even on an in-session instruction.
+If the user says "merge it", refuse with: this repo's policy is human-manual
+merge; share the eligibility summary so they can merge in the GitHub UI.
+Force-merge is NOT available.
 
-### Step 4: When Blocked
+**`explicit`** (default) — merge iff **eligible AND the human gave an explicit
+in-session instruction**. Authorized phrases: "go ahead and merge", "merge
+it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
+- Eligible + no instruction → present the summary and wait:
+  > "PR #N is eligible to merge — no blockers. `review_wait`: <facts>. Ready
+  > when you are. Just say the word."
+- Instructed + blocked → **fail closed.** Report every `blockers[]` entry and
+  offer:
+  > 1. **Wait** — invoke `wait-for-pr-comments` (poll, classify, fix, push,
+  >    reply, resolve), then re-run this guard.
+  > 2. **Force merge** — see below.
+- **Force-merge (the ONE eligibility-bypass path):** valid only in `explicit`
+  mode, only on a fresh in-session instruction that (a) uses the words "force
+  merge" and (b) names the blocker being overridden (e.g. "force merge past
+  the pending Copilot review"). A bare "force merge" → ask which blocker they
+  are overriding, then proceed and log both the blockers bypassed and the
+  instruction into the merge commit context / PR comment. Never available to
+  `never`, `rule-based`, or any autonomous path.
 
-Do NOT silently refuse. Present the situation and options:
+**`rule-based`** — merge autonomously iff **eligible AND the configured
+`merge_rule` holds** (evaluated from `facts`):
 
-> "Hold on -- [reason from JSON `details` field]. Merging now would discard that feedback.
->
-> Options:
-> 1. **Wait** -- I'll invoke `wait-for-pr-comments` which will poll, classify, fix, push, and chain `reply-and-resolve-pr-threads` to reply and resolve every thread
-> 2. **Force merge** -- Merge anyway, skipping the pending review
->
-> What would you like to do?"
+| Rule | Holds when |
+|------|-----------|
+| `bot-quiescence` | `facts.bot_clean_review_at_head == true` (a trusted `bot-reviewers` identity actually reviewed the current head clean) |
+| `human-approvals` | `facts.distinct_current_approvers >= human_approvers_required` |
+| `agent-ruling` | Never (design-reserved) — the resolver already rejects it; if somehow reached, report "not implemented" and hand off |
 
-- **User chooses wait:** Invoke the `wait-for-pr-comments` skill (which by default chains internally to `reply-and-resolve-pr-threads`), then re-run eligibility check before merging
-- **User chooses force merge:** Proceed without further objection
+- Rule holds + eligible → merge now (Step 5). Announce what authorized it:
+  > "Merging PR #N under rule-based policy (`bot-quiescence`): Copilot
+  > reviewed head <sha> clean, no blockers."
+- Rule not (yet) satisfied or blocked → report status and stop. NO
+  force-merge in this mode. A timed-out bot (`review_wait.bot ==
+  "timed_out"`) never satisfies the rule — hand off to the human with the
+  facts.
 
-### Human Reviewers
+### Step 5: Merge, bound to the checked head
 
-If `pending_reviewers` contains non-Copilot names, mention them in the warning as informational -- do not hard-block for human reviewers. The user decides whether to wait for humans.
+```bash
+gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
+```
+
+- Use `merge_command_hint` from the JSON — it already carries the SHA.
+- GitHub rejects the merge if the head moved since evaluation → **re-run from
+  Step 3** against the new head. Never retry blind.
+- `gh pr merge` can exit 0 while printing a rejection. Confirm:
+  `gh pr view <n> --json state` (expect `MERGED`).
 
 ## Decision Matrix
 
-| Copilot Requested | Review Complete | Comments Seen | Action |
-|---|---|---|---|
-| No | N/A | N/A | Proceed |
-| Yes | No | N/A | **Block** -- review in progress |
-| Yes | Yes | All triaged | Proceed |
-| Yes | Yes | Unseen exist | **Block** -- triage first |
-
-## Agent Judgment on "Comments Seen"
-
-You are responsible for tracking how many review comments you've processed. Count comments you have:
-- Read and addressed (fixed or reported to user)
-- Read and explicitly deferred with user approval
-- Read as part of `wait-for-pr-comments` triage
-
-Do NOT count: comments you saw in a previous conversation, comments you "know about" but haven't read, or comments on a different PR.
-
-When in doubt, pass 0 -- better to block and verify than to merge over unseen feedback.
-
-**The script counts your own replies too.** `check-merge-eligibility.sh` derives `total_comments` from `gh api .../pulls/<n>/comments | length`, which returns *every* inline review comment -- including replies you posted (e.g. via `reply-and-resolve-pr-threads`). It does not filter by author or subtract resolved threads. So after a reply cycle, 2 Copilot comments + your 2 replies = 4. When you re-run the check post-reply having genuinely read everything, pass `--comments-seen 4` (the full count), not 2 -- otherwise the script reports `unseen_comments` and false-blocks. When in genuine doubt, still pass 0 and re-triage. (The script's underlying `gh api .../pulls/<n>/comments | length` reads only the first page of 100, so on a PR with more comments than that the count silently undercounts — distrust a borderline `eligible` verdict on a very high-comment PR.)
+| Axis 2 | Eligible | Rule holds | Human instructed | Action |
+|---|---|---|---|---|
+| never | any | n/a | any (even "merge it") | Refuse; human merges in UI |
+| explicit | yes | n/a | no | Summarize; wait for the word |
+| explicit | yes | n/a | yes | **Merge** |
+| explicit | no | n/a | yes | **Fail closed**; offer wait / named force-merge |
+| rule-based | yes | yes | n/a | **Merge autonomously** |
+| rule-based | yes | no | any | Report; wait or hand off (no force-merge) |
+| rule-based | no | any | any | Report blockers (no force-merge) |
 
 ## Red Flags
 
 | Thought | Reality |
 |---------|---------|
-| "Copilot is slow, just merge" | Copilot reviews arrive within minutes. Worth waiting. |
-| "I already saw some comments, close enough" | Partial triage isn't full triage. Run the check. |
-| "The user seems impatient" | Present options, let them choose. Don't assume. |
-| "It's a tiny PR, review won't matter" | Small PRs still get useful feedback. Follow the process. |
-| "I'll check after merging" | After merge, review feedback is wasted. Check before. |
-| "The script errored, probably fine" | Exit 3 means unknown state. Do not merge. Report the error. |
-| "`gh pr merge` exited 0, so it merged" | `gh pr merge` can exit 0 while printing a rejection. Confirm with `gh pr view <n> --json state` (expect `MERGED`). |
+| "Copilot is slow, just merge" | The in-flight blocker exists precisely for this. Wait or get a named force-merge. |
+| "The user said 'ok', close enough" | Not an authorized phrase. Ask plainly. |
+| "auto_merge_eligible was true" | prgroom's rollup is never consumed. Only this guard's own gates count. |
+| "The rule held five minutes ago" | Facts bind to `head_ref_oid`. Re-run Step 3; merge with `--match-head-commit`. |
+| "It's blocked but rule-based says merge" | Rule-based NEVER bypasses the floor. Eligible AND rule — both. |
+| "The script errored, probably fine" | Exit 3 = unknown state. Do not merge. Report. |
+| "`gh pr merge` exited 0, so it merged" | It can exit 0 on rejection. Confirm state == MERGED. |
