@@ -163,6 +163,24 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
 
 
+class TestAgentsConfigSettings(unittest.TestCase):
+    def test_agents_config_policy_resolves(self):
+        path = write_toml(
+            '[review-expectations]\n'
+            'bot-review-expected = true\n'
+            'bot-reviewers = ["Copilot", "copilot-pull-request-reviewer[bot]"]\n'
+            'human-approvers-required = 0\n'
+            '[merge-policy]\n'
+            'merge-authorization = "rule-based"\n'
+            'merge-rule = "bot-quiescence"\n'
+        )
+        code, out, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 0, err)
+        policy = json.loads(out)
+        self.assertEqual(policy["merge_rule"], "bot-quiescence")
+        self.assertEqual(policy["human_approvers_required"], 0)
+
+
 class TestLabelOverrides(unittest.TestCase):
     def test_copilot_only_overrides_config(self):
         path = write_toml(

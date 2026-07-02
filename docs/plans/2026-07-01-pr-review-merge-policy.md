@@ -761,7 +761,7 @@ Behavior: **agents-config's config expresses its intent with the new sections an
 - Modify: `project-config.toml` (lines 7 and 74-79)
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy_test.py`
 
-- [ ] **Step 1: Write the failing test** (append — a fixture mirroring the intended agents-config settings; tests the resolver against the real shape, not the live file)
+- [x] **Step 1: Write the failing test** (append — a fixture mirroring the intended agents-config settings; tests the resolver against the real shape, not the live file)
 
 ```python
 class TestAgentsConfigSettings(unittest.TestCase):
@@ -782,12 +782,12 @@ class TestAgentsConfigSettings(unittest.TestCase):
         self.assertEqual(policy["human_approvers_required"], 0)
 ```
 
-- [ ] **Step 2: Run — expect PASS already** (Tasks 3-4 built this behavior; this test pins the repo's own shape against regressions)
+- [x] **Step 2: Run — expect PASS already** (Tasks 3-4 built this behavior; this test pins the repo's own shape against regressions)
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: PASS (24 tests). If it fails, a Task 3-4 regression exists — fix before proceeding.
 
-- [ ] **Step 3: Replace `[review-requirements]` in `project-config.toml`**
+- [x] **Step 3: Replace `[review-requirements]` in `project-config.toml`**
 
 Replace lines 74-79:
 
@@ -821,7 +821,7 @@ merge-authorization = "rule-based"
 merge-rule          = "bot-quiescence"
 ```
 
-- [ ] **Step 4: Fix the stale schema reference at line 7**
+- [x] **Step 4: Fix the stale schema reference at line 7**
 
 Replace:
 
@@ -836,12 +836,12 @@ with:
 # (other sections' schema origin: archive/docs/specs/bead-pipeline-architecture.md)
 ```
 
-- [ ] **Step 5: Verify the live file resolves**
+- [x] **Step 5: Verify the live file resolves**
 
 Run: `python3 src/user/.agents/skills/merge-guard/resolve_policy.py --project-config project-config.toml`
 Expected: exit 0; JSON with `"merge_rule": "bot-quiescence"`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add project-config.toml src/user/.agents/skills/merge-guard/resolve_policy_test.py
