@@ -149,7 +149,11 @@ Background bash — zero Anthropic tokens during the wait.
     ```
 2. **Capture** `<polling_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
     This timestamp anchors the stale-cache guard for re-review rounds.
-3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"` in the background.
+3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"
+    --timeout-seconds <resolved_policy.bot_inactivity_timeout_seconds>` in the
+    background (the value resolved in Phase 1 step 5; default 1200 when the
+    resolver's built-in default applies). Omitting this flag silently falls
+    back to the script's own 600s default, so always pass it explicitly.
     Pass `--skip-request-check` if step 1 returned > 0.
     In re-review context (round ≥ 2), also pass
     `--since-timestamp <polling_since_timestamp>` so the script rejects

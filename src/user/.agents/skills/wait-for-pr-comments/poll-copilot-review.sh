@@ -3,11 +3,16 @@
 # Replaces the background agent polling in wait-for-pr-comments skill.
 # Zero Anthropic API tokens consumed — pure bash + gh CLI.
 #
-# Usage: poll-copilot-review.sh --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>]
+# Usage: poll-copilot-review.sh --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>]
+#
+# --timeout-seconds sets the give-up window for sub-phase C (the main
+# review-wait poll). Default 600 (~10 minutes, this script's historical
+# behavior). Callers should pass the resolved review policy's
+# bot_inactivity_timeout_seconds (see merge-guard/resolve_policy.py).
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
-#   1 — Timeout (no review after ~10 minutes)
+#   1 — Timeout (no review within --timeout-seconds, default ~10 minutes)
 #   2 — Copilot not requested (not added as reviewer within ~1 minute)
 #   3 — Error (auth failure, invalid args, network issue)
 #
@@ -27,7 +32,7 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>]" >&2
+    echo "Usage: $0 --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>]" >&2
     exit 3
 }
 
@@ -36,6 +41,7 @@ REPO=""
 PR=""
 SKIP_REQUEST=false
 SINCE=""
+TIMEOUT_SECONDS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,6 +57,11 @@ while [[ $# -gt 0 ]]; do
             SINCE="$2"
             shift 2
             ;;
+        --timeout-seconds)
+            [[ -n "${2:-}" ]] || { echo "Error: --timeout-seconds requires a value" >&2; exit 3; }
+            TIMEOUT_SECONDS="$2"
+            shift 2
+            ;;
         *)
             echo "Error: unknown argument: $1" >&2
             usage
@@ -64,6 +75,14 @@ done
 
 # Validate PR number is a positive integer
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "Error: --pr must be a positive integer" >&2; exit 3; }
+
+# Validate --timeout-seconds is a positive integer; default preserves this
+# script's historical ~10-minute give-up window.
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
+[[ "$TIMEOUT_SECONDS" =~ ^[0-9]+$ && "$TIMEOUT_SECONDS" -gt 0 ]] || {
+    echo "Error: --timeout-seconds must be a positive integer" >&2
+    exit 3
+}
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -140,14 +159,20 @@ done
 
 # Proceed to Sub-phase C regardless (event may have fired before script ran)
 
-# ── Sub-phase C: Review detection (30s × 20, max ~10 minutes) ────────────────
+# ── Sub-phase C: Review detection (poll every POLL_INTERVAL_SECONDS, up to
+#    TIMEOUT_SECONDS total — default 30s × 20 = ~10 minutes) ─────────────────
 
-echo "Sub-phase C: Polling for Copilot review..." >&2
+POLL_INTERVAL_SECONDS=30
+# Ceiling division so a --timeout-seconds shorter than one interval still
+# gets exactly one attempt instead of zero.
+MAX_ITERATIONS=$(( (TIMEOUT_SECONDS + POLL_INTERVAL_SECONDS - 1) / POLL_INTERVAL_SECONDS ))
+
+echo "Sub-phase C: Polling for Copilot review (timeout ${TIMEOUT_SECONDS}s, ${MAX_ITERATIONS} attempt(s))..." >&2
 if [[ -n "$SINCE" ]]; then
     echo "  Filtering for reviews submitted after ${SINCE} (stale-cache guard)" >&2
 fi
 
-for i in $(seq 1 20); do
+for i in $(seq 1 "$MAX_ITERATIONS"); do
     # Check PR state periodically (every 5th iteration)
     if [[ $((i % 5)) -eq 0 ]]; then
         if ! pr_is_open; then
@@ -168,7 +193,7 @@ for i in $(seq 1 20); do
         fresh_reviews=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at > $since)]')
         stale_count=$(printf '%s' "$reviews" | jq --arg since "$SINCE" '[.[] | select(.submitted_at <= $since)] | length')
         if [[ "$stale_count" -gt 0 ]]; then
-            echo "  Attempt ${i}/20: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2
+            echo "  Attempt ${i}/${MAX_ITERATIONS}: found ${stale_count} stale review(s) (submitted_at <= ${SINCE}), discarding" >&2
         fi
         reviews="$fresh_reviews"
     fi
@@ -199,10 +224,10 @@ for i in $(seq 1 20); do
         exit 0
     fi
 
-    echo "  Attempt ${i}/20: no review yet" >&2
-    [[ $i -lt 20 ]] && sleep 30
+    echo "  Attempt ${i}/${MAX_ITERATIONS}: no review yet" >&2
+    [[ $i -lt $MAX_ITERATIONS ]] && sleep "$POLL_INTERVAL_SECONDS"
 done
 
-echo "Copilot review not received after 10 minutes" >&2
+echo "Copilot review not received after ${TIMEOUT_SECONDS}s" >&2
 jq -n '{"status": "copilot_review_timeout"}'
 exit 1
