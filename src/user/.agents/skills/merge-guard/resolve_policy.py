@@ -13,7 +13,8 @@ Usage:
 Exit codes:
     0 — resolved; policy JSON on stdout
     1 — invalid config/labels (PolicyError; message on stderr)
-    2 — unexpected error
+    2 — unexpected/environment error (e.g. unreadable config path;
+        concise one-line message on stderr, never a raw traceback)
 
 Stdlib only (tomllib requires Python >= 3.11). No third-party deps — this
 file deploys into user space with the merge-guard skill.
@@ -108,7 +109,7 @@ def _typed(section: dict, key: str, kind: type, default):
 MERGE_AUTHORIZATIONS = {"never", "explicit", "rule-based"}
 MERGE_RULES = {"bot-quiescence", "human-approvals", "agent-ruling"}
 
-_HUMAN_LABEL = re.compile(r"^review-exit-human-approvers-(.+)$")
+_HUMAN_LABEL = re.compile(r"^review-exit-human-approvers-(.*)$")
 _COPILOT_LABEL = "review-exit-copilot-only"
 
 
@@ -119,7 +120,10 @@ def apply_labels(policy: ReviewMergePolicy, labels: list[str]) -> ReviewMergePol
     for label in labels:
         match = _HUMAN_LABEL.match(label)
         if match:
-            if not match.group(1).isdigit():
+            # isdecimal() (not isdigit()) rejects both empty <n> and unicode
+            # digits (e.g. superscript "²") that isdigit() accepts but
+            # int() cannot parse.
+            if not match.group(1).isdecimal():
                 raise PolicyError(
                     f"label {label!r}: <n> must be a non-negative integer")
             counts.append(int(match.group(1)))
@@ -221,6 +225,13 @@ def main() -> int:
     except PolicyError as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 1
+    except Exception as exc:  # noqa: BLE001 - deliberate boundary catch-all
+        # Unexpected/environment error (e.g. --project-config points at a
+        # directory, or a permissions/encoding failure) -> exit 2, one
+        # concise line, no raw traceback. PolicyError (exit 1) is handled
+        # above and never reaches here.
+        sys.stderr.write(f"error: unexpected {type(exc).__name__}: {exc}\n")
+        return 2
 
 
 if __name__ == "__main__":

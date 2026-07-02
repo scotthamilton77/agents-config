@@ -96,6 +96,17 @@ class TestConfigParsing(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("unparseable", err)
 
+    def test_unexpected_environment_error_exits_2_not_1(self):
+        # A directory is not openable as a config file -> OSError (IsADirectoryError),
+        # which is neither FileNotFoundError nor TOMLDecodeError. Must be exit 2,
+        # not conflated with PolicyError's exit 1, and no raw traceback on stderr.
+        directory = tempfile.mkdtemp()
+        code, out, err = run_resolver("--project-config", directory)
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertEqual(len(err.strip().splitlines()), 1, err)
+        self.assertNotIn("Traceback", err)
+
 
 class TestValidation(unittest.TestCase):
     def _resolve(self, toml_body: str):
@@ -208,6 +219,25 @@ class TestLabelOverrides(unittest.TestCase):
         code, _, err = run_resolver("--project-config", "/nonexistent.toml",
                                     "--labels", "review-exit-human-approvers-lots")
         self.assertEqual(code, 1)
+
+    def test_empty_count_label_rejected(self):
+        code, _, err = run_resolver("--project-config", "/nonexistent.toml",
+                                    "--labels", "review-exit-human-approvers-")
+        self.assertEqual(code, 1)
+        self.assertIn("review-exit-human-approvers-", err)
+
+    def test_unicode_digit_count_label_rejected_not_traceback(self):
+        code, _, err = run_resolver("--project-config", "/nonexistent.toml",
+                                    "--labels", "review-exit-human-approvers-²")
+        self.assertEqual(code, 1)
+        self.assertNotIn("Traceback", err)
+
+    def test_duplicate_count_labels_rejected(self):
+        code, _, err = run_resolver(
+            "--project-config", "/nonexistent.toml",
+            "--labels", "review-exit-human-approvers-1,review-exit-human-approvers-2")
+        self.assertEqual(code, 1)
+        self.assertIn("multiple", err)
 
     def test_unrelated_labels_ignored(self):
         code, out, _ = run_resolver("--project-config", "/nonexistent.toml",
