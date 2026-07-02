@@ -877,9 +877,10 @@ abort with no replies posted:
    so empty rationale = empty PR comment).
 3. **`escalation_filed` only on ESCALATE** — reject if any item has
    `classification != "ESCALATE"` and `escalation_filed == true`.
-4. **`review_summary` IDs null** — reject if any item has
-   `kind == "review_summary"` and any of `thread_id` /
-   `reply_to_comment_id` / `issue_comment_id` is non-null.
+4. **`review_summary` IDs** — reject if any item has
+   `kind == "review_summary"` and either any of `thread_id` /
+   `reply_to_comment_id` / `issue_comment_id` is non-null, or `review_id`
+   is null.
 5. **Non-FIX → null `fix_outcome`** — reject if any item has
    `classification != "FIX"` and `fix_outcome != null`.
 6. **FIX → valid `fix_outcome`** — reject if any item has
