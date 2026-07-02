@@ -55,6 +55,9 @@ if [ "$1" = "api" ]; then
     */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
     */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
     */protection/required_status_checks*)
+        if [ -n "${FIXTURE_BASE_REF_ENCODED:-}" ] && [[ "$path" != *"branches/${FIXTURE_BASE_REF_ENCODED}/protection"* ]]; then
+          echo "gh: Not Found (HTTP 404)" >&2; exit 1
+        fi
         if [ "${FIXTURE_PROTECTION_404:-1}" = 1 ]; then
           echo "gh: Not Found (HTTP 404)" >&2; exit 1
         fi
@@ -361,5 +364,14 @@ assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$ou
 out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
 assert "events-fetch failure exits 3 (fail closed)" "[ \$rc -eq 3 ]"
 assert "events-fetch failure prints no verdict" "[ -z \"\$out\" ]"
+
+# ── Fix: BASE_REF is URL-encoded before the branch-protection fetch ─────────
+slash_pr=$(jq -n --arg t "2026-01-01T00:00:00Z" --arg sha "$HEAD_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"release/1.0"}, created_at:$t}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$slash_pr" FIXTURE_PROTECTION_404=0 \
+      FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)" \
+      FIXTURE_BASE_REF_ENCODED="release%2F1.0"); rc=$?
+assert "base ref with a slash resolves protection via the url-encoded path" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
 
 exit $FAIL

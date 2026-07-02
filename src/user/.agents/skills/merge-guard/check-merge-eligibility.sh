@@ -97,6 +97,9 @@ HEAD_OID=$(jq -r '.head.sha' <<<"$PR_JSON")
 [[ -n "$HEAD_OID" && "$HEAD_OID" != "null" ]] || { echo "Error: no head SHA on PR" >&2; exit 3; }
 PR_CREATED=$(jq -r '.created_at' <<<"$PR_JSON")
 BASE_REF=$(jq -r '.base.ref' <<<"$PR_JSON")
+# A base branch like release/1.0 would otherwise mangle the branch-protection
+# URL (extra path segment) and 404 → vacuously-green fail-open.
+BASE_REF_ENC=$(jq -rn --arg s "$BASE_REF" '$s|@uri')
 
 # Shared fetches (each gate filters this once-fetched data)
 ALL_REVIEWS=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/reviews?per_page=100" --paginate | jq -s 'add // []') || {
@@ -184,7 +187,7 @@ fi
 # a run from that app — name alone is not a trust boundary.
 prot=""
 prot_stderr=$(mktemp)
-if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF}/protection/required_status_checks" 2>"$prot_stderr"); then
+if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF_ENC}/protection/required_status_checks" 2>"$prot_stderr"); then
     :
 else
     if grep -qiE 'HTTP 404|Not Found|Branch not protected' "$prot_stderr"; then
