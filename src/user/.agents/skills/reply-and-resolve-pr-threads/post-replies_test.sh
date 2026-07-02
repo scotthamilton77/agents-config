@@ -668,4 +668,57 @@ assert "posted_reply_id recorded on the item" \
   "[ \"\$(jq -r '.items[0].posted_reply_id' \"$T16/inv.json\")\" = 777001 ]"
 rm -rf "$T16"
 
+# ── idempotent retry: cid must not shift when posted_reply_id gets recorded
+# (wgclw.14, P1 proven regression) ──────────────────────────────────────────
+# review_summary's cid is sha1 of the item JSON. record_reply_id mutates the
+# posted item with posted_reply_id AFTER posting. If the cid hash includes
+# that field, a re-read of the item on retry hashes to a DIFFERENT cid, the
+# sidecar skip-set (built from the run-1 cid) misses it, and the summary gets
+# posted a second time.
+T17="$(mktemp -d)"
+cat > "$T17/gh" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *"/comments/555017/replies"*) echo "fail-on-555017" >&2; exit 1 ;;
+  esac
+done
+printf '{"id": 900001}'
+exit 0
+STUB
+chmod +x "$T17/gh"
+
+INV17="$T17/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: "RS17", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Acknowledged review summary; no per-thread action required."},
+  {kind: "review_thread", thread_id: "T_17", reply_to_comment_id: 555017, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "will fail first attempt"}
+]}' > "$INV17"
+
+out17a=$(PATH="$T17:$PATH" "$HERE/post-replies.sh" --inventory "$INV17" --owner o --repo r --pr 1 2>&1)
+rc17a=$?
+cid17="$(printf '%s' "$out17a" | grep -oE 'POSTED summary-[0-9a-f]+' | awk '{print $2}')"
+
+assert "run 1: partial failure (thread post fails) exits 1" "[ \$rc17a -eq 1 ]"
+assert "run 1: review_summary POSTED with a synthetic cid" "[ -n \"\$cid17\" ]"
+assert "run 1: sidecar records the summary cid" \
+  "[ -f \"${INV17}.posted\" ] && grep -qF \"\$cid17\" \"${INV17}.posted\""
+assert "run 1: posted_reply_id recorded on the review_summary item" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV17\")\" = \"900001\" ]"
+
+out17b=$(PATH="$T17:$PATH" "$HERE/post-replies.sh" --inventory "$INV17" --owner o --repo r --pr 1 2>&1)
+rc17b=$?
+assert "run 2: still partial failure (thread post keeps failing)" "[ \$rc17b -eq 1 ]"
+assert "run 2: review_summary is SKIPPED (same cid as run 1), not re-posted" \
+  "grep -qF \"SKIPPED \$cid17\" <<<\"\$out17b\""
+assert "run 2: review_summary is NOT posted again" \
+  "! grep -qE '^POSTED summary-' <<<\"\$out17b\""
+assert "run 2: exactly one POST total for the review_summary cid across both runs" \
+  "[ \$(printf '%s\n%s' \"\$out17a\" \"\$out17b\" | grep -cF \"POSTED \$cid17\") -eq 1 ]"
+assert "run 2: posted_reply_id on the review_summary item is unchanged" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV17\")\" = \"900001\" ]"
+
+rm -rf "$T17"
+
 exit $FAIL

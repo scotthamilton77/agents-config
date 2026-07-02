@@ -6,8 +6,10 @@
 #   issue_comment  → REST POST /repos/{o}/{r}/issues/{n}/comments
 #   review_summary → REST POST /repos/{o}/{r}/issues/{n}/comments
 #                    (review_summary has no per-item id; synthetic cid is
-#                     `summary-<12-char sha1 of the item JSON>` so retries
-#                     against the same content are idempotent.)
+#                     `summary-<12-char sha1 of the item JSON, minus any
+#                     posted_reply_id>` so retries against the same content
+#                     are idempotent — see IDEMPOTENCY note below on why
+#                     posted_reply_id must be excluded from the hash.)
 #
 # IDEMPOTENCY: this helper is self-recording. Each successful POST is
 # appended to a sidecar file <inventory>.posted (one cid per line). On
@@ -34,6 +36,14 @@
 #   on stderr naming the cid and the manual recovery action, sets the
 #   failure flag, and exits 1. Without this, the cid would be posted but
 #   not persisted, and the next retry would re-post a duplicate.
+# - review_summary's cid is a content hash of the item JSON, computed with
+#   posted_reply_id EXCLUDED. record_reply_id() mutates the item in-place
+#   with posted_reply_id after a successful POST, so on a partial-failure
+#   retry the re-read item would otherwise hash to a DIFFERENT cid than the
+#   one already written to the sidecar, miss the skip-set, and re-post a
+#   duplicate summary — the sidecar entry's whole purpose defeated by the
+#   very act of recording success. Excluding the field keeps the hash a
+#   function of content only, independent of prior-run bookkeeping.
 # - The sidecar's lifecycle is bounded by the inventory itself: inventory
 #   filenames are keyed by (owner, repo, pr, head_sha) so each new push
 #   gets a fresh inventory and a fresh sidecar.
@@ -174,7 +184,12 @@ while IFS= read -r item; do
       # pretty-print whitespace and indentation can shift across jq versions,
       # which would change the hash bytes and break idempotency across
       # environments. Compact form is deterministic.
-      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
+      # `del(.posted_reply_id)` is REQUIRED: that field is written onto the
+      # item by record_reply_id() AFTER a successful POST, so a retry's
+      # re-read of the item must hash identically to the pre-POST read or
+      # the cid drifts off the sidecar's recorded value — see IDEMPOTENCY
+      # note in the file header.
+      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys 'del(.posted_reply_id)' | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
       ;;
     *)              cid="$(echo "$item" | jq -r '.thread_id // .reply_to_comment_id // .issue_comment_id // empty')" ;;
   esac
