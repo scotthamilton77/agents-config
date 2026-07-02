@@ -289,7 +289,6 @@ if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
 fi
 set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
 # GATE: non-thread-feedback     (Task 17)
-# GATE: non-thread-feedback     (Task 17)
 # GATE: prgroom-internal        (Task 18)
 
 # ── Decision ─────────────────────────────────────────────────────────────────
