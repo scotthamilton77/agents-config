@@ -121,7 +121,23 @@ bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
       end' <<<"$ALL_REVIEWS")
 set_fact bot_clean_review_at_head "$(jq '.clean' <<<"$bot_fact")"
 set_fact bot_reviewed_by "$(jq '.by' <<<"$bot_fact")"
-# GATE: requested-changes       (Task 9)
+# ── Blocker: active requested-changes verdict (sticky; never head-scoped) ────
+# GitHub does not clear CHANGES_REQUESTED on push; only dismissal (state
+# becomes DISMISSED) or a later APPROVED from the same reviewer clears it.
+# COMMENTED is not a verdict change.
+cr_logins=$(jq '
+    group_by(.user.login)
+    | map({
+        login: .[0].user.login,
+        cr: ([ .[] | select(.state == "CHANGES_REQUESTED") ] | sort_by(.submitted_at) | last),
+        ok: ([ .[] | select(.state == "APPROVED") ] | sort_by(.submitted_at) | last)
+      })
+    | map(select(.cr != null and (.ok == null or .ok.submitted_at < .cr.submitted_at)))
+    | map(.login)' <<<"$ALL_REVIEWS")
+if [[ $(jq 'length' <<<"$cr_logins") -gt 0 ]]; then
+    add_blocker requested_changes_active \
+        "active CHANGES_REQUESTED from: $(jq -r 'join(", ")' <<<"$cr_logins") (cleared only by dismissal or a superseding APPROVED from the same reviewer)"
+fi
 # GATE: distinct-approvers      (Task 10)
 # GATE: unresolved-threads      (Task 11)
 # GATE: ci-green                (Task 12)

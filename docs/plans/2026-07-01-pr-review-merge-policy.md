@@ -1221,7 +1221,7 @@ Behavior: **an active `CHANGES_REQUESTED` verdict blocks every non-force path, a
 
 **Files:** same two as Task 8.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 9: requested-changes sticky blocker ─────────────────────────────────
@@ -1251,9 +1251,9 @@ out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "dismissed review does not block" "[ \$rc -eq 0 ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (CR cases currently exit 0)
+- [x] **Step 2: Run to verify the new asserts fail** (CR cases currently exit 0)
 
-- [ ] **Step 3: Implement** — replace `# GATE: requested-changes       (Task 9)` with:
+- [x] **Step 3: Implement** — replace `# GATE: requested-changes       (Task 9)` with:
 
 ```bash
 # ── Blocker: active requested-changes verdict (sticky; never head-scoped) ────
@@ -1275,9 +1275,9 @@ if [[ $(jq 'length' <<<"$cr_logins") -gt 0 ]]; then
 fi
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

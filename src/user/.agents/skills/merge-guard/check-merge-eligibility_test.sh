@@ -144,4 +144,30 @@ revs=$(jq -n \
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "latest CHANGES_REQUESTED → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
 
+# ── Task 9: requested-changes sticky blocker ─────────────────────────────────
+# CR on an OLD commit still blocks (not head-scoped)
+revs=$(jq -n --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "stale-commit CR still blocks" "[ \$rc -eq 1 ]"
+assert "blocker code requested_changes_active" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q requested_changes_active"
+
+# later COMMENTED from same reviewer does NOT clear it
+revs=$(jq -n \
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review reviewer1 COMMENTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "later COMMENTED does not clear CR" "[ \$rc -eq 1 ]"
+
+# later APPROVED from same reviewer DOES clear it
+revs=$(jq -n \
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review reviewer1 APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "superseding APPROVED clears CR" "[ \$rc -eq 0 ]"
+
+# dismissed CR (state=DISMISSED in API) does not block
+revs=$(jq -n --argjson a "$(mk_review reviewer1 DISMISSED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "dismissed review does not block" "[ \$rc -eq 0 ]"
+
 exit $FAIL
