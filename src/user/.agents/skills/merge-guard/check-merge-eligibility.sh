@@ -138,7 +138,18 @@ if [[ $(jq 'length' <<<"$cr_logins") -gt 0 ]]; then
     add_blocker requested_changes_active \
         "active CHANGES_REQUESTED from: $(jq -r 'join(", ")' <<<"$cr_logins") (cleared only by dismissal or a superseding APPROVED from the same reviewer)"
 fi
-# GATE: distinct-approvers      (Task 10)
+# ── Fact: distinct current approvers (human-approvals rule input) ────────────
+# One entry per non-bot login, latest review wins, APPROVED at current head
+# only. Missing commit_id fails closed (does not count).
+approvers=$(jq --arg head "$HEAD_OID" '
+    [ .[] | select(.user.type != "Bot") ]
+    | group_by(.user.login)
+    | map(sort_by(.submitted_at) | last)
+    | map(select(.state == "APPROVED" and (.commit_id // "") == $head))
+    | map(.user.login)' <<<"$ALL_REVIEWS")
+set_fact distinct_current_approvers "$(jq 'length' <<<"$approvers")"
+set_fact approver_logins "$approvers"
+APPROVER_COUNT=$(jq 'length' <<<"$approvers")
 # GATE: unresolved-threads      (Task 11)
 # GATE: ci-green                (Task 12)
 # GATE: review-in-flight        (Task 13)

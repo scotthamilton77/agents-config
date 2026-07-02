@@ -1292,7 +1292,7 @@ Behavior: **`facts.distinct_current_approvers` counts non-bot logins whose LATES
 
 **Files:** same two.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 10: distinct current approvers ──────────────────────────────────────
@@ -1314,9 +1314,9 @@ out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "approval superseded by CR counts 0" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (`.facts.distinct_current_approvers` is `null`)
+- [x] **Step 2: Run to verify the new asserts fail** (`.facts.distinct_current_approvers` is `null`)
 
-- [ ] **Step 3: Implement** — replace `# GATE: distinct-approvers      (Task 10)` with:
+- [x] **Step 3: Implement** — replace `# GATE: distinct-approvers      (Task 10)` with:
 
 ```bash
 # ── Fact: distinct current approvers (human-approvals rule input) ────────────
@@ -1333,9 +1333,9 @@ set_fact approver_logins "$approvers"
 APPROVER_COUNT=$(jq 'length' <<<"$approvers")
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

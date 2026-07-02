@@ -170,4 +170,22 @@ revs=$(jq -n --argjson a "$(mk_review reviewer1 DISMISSED "$HEAD_SHA" 2026-01-01
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "dismissed review does not block" "[ \$rc -eq 0 ]"
 
+# ── Task 10: distinct current approvers ──────────────────────────────────────
+# same login twice = 1; bot approval excluded; stale-head approval excluded
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" \
+  --argjson c "$(mk_review bot-x[bot] APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Bot)" \
+  --argjson d "$(mk_review carol APPROVED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" \
+  '[$a,$b,$c,$d]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "dedup by login, bots and stale heads excluded (==1)" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
+
+# APPROVED superseded by later CHANGES_REQUESTED = 0 approvers (and CR blocks)
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "approval superseded by CR counts 0" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
+
 exit $FAIL
