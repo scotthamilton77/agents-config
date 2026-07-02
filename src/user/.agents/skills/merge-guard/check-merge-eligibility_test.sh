@@ -202,4 +202,40 @@ assert "blocker code unresolved_threads" "jq -r '.blockers[].code' <<<\"\$out\" 
 out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true true)"); rc=$?
 assert "all threads resolved → eligible" "[ \$rc -eq 0 ]"
 
+# ── Task 12: CI-green ────────────────────────────────────────────────────────
+REQ_ONE='{"strict":false,"contexts":["ci/build"],"checks":[{"context":"ci/build","app_id":15368}]}'
+run_ok()   { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"success",app:{id:15368}}]}'; }
+run_wrong_app() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"success",app:{id:99999}}]}'; }
+run_pending()   { jq -n '{check_runs:[{name:"ci/build",status:"in_progress",conclusion:null,app:{id:15368}}]}'; }
+run_failed()    { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"failure",app:{id:15368}}]}'; }
+
+# no branch protection (stub default 404) → vacuously green
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "no protection → ci_state none, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = none ]"
+
+# required + success from the pinned app → green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)"); rc=$?
+assert "pinned success → green, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# same-named success from a DIFFERENT app → not green (spoofed integration)
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_wrong_app)"); rc=$?
+assert "wrong-app success → blocked" "[ \$rc -eq 1 ]"
+assert "blocker code ci_not_green (wrong app)" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q ci_not_green"
+
+# required check never started (absent from rollup) → not green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS='{"check_runs":[]}'); rc=$?
+assert "required check never started → blocked" "[ \$rc -eq 1 ]"
+
+# in-progress → not green; failure → not green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_pending)"); rc=$?
+assert "in-progress required check → blocked" "[ \$rc -eq 1 ]"
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_failed)"); rc=$?
+assert "failed required check → blocked" "[ \$rc -eq 1 ]"
+
+# unpinned requirement satisfied by legacy commit status
+REQ_UNPINNED='{"strict":false,"contexts":["legacy/lint"],"checks":[{"context":"legacy/lint","app_id":null}]}'
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_UNPINNED" \
+      FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
+assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
+
 exit $FAIL

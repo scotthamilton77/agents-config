@@ -176,7 +176,63 @@ done
 if [[ "$unresolved_threads" -gt 0 ]]; then
     add_blocker unresolved_threads "${unresolved_threads} unresolved review thread(s) on the PR"
 fi
-# GATE: ci-green                (Task 12)
+# ── Blocker: required CI checks not green ────────────────────────────────────
+# Required set from branch protection — NEVER derived from the rollup (the
+# rollup lists only contexts that already reported; filtering it would hide a
+# required check that never started). 404 / no protection = empty set =
+# vacuously green. A source-pinned (app_id) requirement is only satisfied by
+# a run from that app — name alone is not a trust boundary.
+prot=""
+prot_stderr=$(mktemp)
+if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF}/protection/required_status_checks" 2>"$prot_stderr"); then
+    :
+else
+    if grep -qiE 'HTTP 404|Not Found|Branch not protected' "$prot_stderr"; then
+        prot=""   # no protection → empty required set
+    else
+        echo "Error: failed to fetch branch protection: $(cat "$prot_stderr")" >&2
+        rm -f "$prot_stderr"; exit 3
+    fi
+fi
+rm -f "$prot_stderr"
+required_checks=$(jq -c '[.checks[]? | {context, app_id}]' <<<"${prot:-null}" 2>/dev/null || echo '[]')
+[[ "$required_checks" == "null" ]] && required_checks='[]'
+
+check_runs=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/check-runs?per_page=100" --paginate \
+    | jq -s '[.[] | .check_runs[]? | {name, status, conclusion, app_id: (.app.id // null)}]') || {
+    echo "Error: failed to fetch check runs" >&2; exit 3; }
+legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status" \
+    | jq '[.statuses[]? | {context, state}]') || legacy_statuses='[]'
+
+ci_eval=$(jq -n --argjson req "$required_checks" --argjson runs "$check_runs" --argjson legacy "$legacy_statuses" '
+    def red_conclusions: ["failure","cancelled","timed_out","action_required","startup_failure","stale"];
+    def eval_one($r):
+      ( [ $runs[] | select(.name == $r.context and ($r.app_id == null or .app_id == $r.app_id)) ]
+        + ( if $r.app_id == null
+            then [ $legacy[] | select(.context == $r.context)
+                   | { name: .context, status: "legacy",
+                       conclusion: (if .state == "success" then "success"
+                                    elif (.state == "failure" or .state == "error") then "failure"
+                                    else "pending" end) } ]
+            else [] end) ) as $cands
+      | if ($cands | length) == 0 then "pending"
+        elif any($cands[]; (.conclusion // "") as $c | red_conclusions | index($c)) then "red"
+        elif all($cands[]; ((.status == "completed") or (.status == "legacy"))
+                           and ((.conclusion // "") as $c | ["success","skipped","neutral"] | index($c))) then "green"
+        else "pending" end;
+    if ($req | length) == 0 then {state: "none", not_green: []}
+    else ([ $req[] | {context, result: eval_one(.)} ]) as $per
+      | { state: (if any($per[]; .result == "red") then "red"
+                  elif all($per[]; .result == "green") then "green"
+                  else "pending" end),
+          not_green: [ $per[] | select(.result != "green") | "\(.context) (\(.result))" ] }
+    end')
+set_fact ci_state "$(jq '.state' <<<"$ci_eval")"
+ci_state=$(jq -r '.state' <<<"$ci_eval")
+if [[ "$ci_state" != "green" && "$ci_state" != "none" ]]; then
+    add_blocker ci_not_green \
+        "required checks not green: $(jq -r '.not_green | join(", ")' <<<"$ci_eval") (pending/absent fails closed)"
+fi
 # GATE: review-in-flight        (Task 13)
 # GATE: non-thread-feedback     (Task 17)
 # GATE: prgroom-internal        (Task 18)

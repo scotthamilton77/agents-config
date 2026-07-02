@@ -1417,7 +1417,7 @@ Behavior per the spec's CI-green predicate: **required set fetched from branch p
 
 **Files:** same two.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 12: CI-green ────────────────────────────────────────────────────────
@@ -1457,9 +1457,9 @@ out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS
 assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (`.facts.ci_state` is `null`; nothing blocks)
+- [x] **Step 2: Run to verify the new asserts fail** (`.facts.ci_state` is `null`; nothing blocks)
 
-- [ ] **Step 3: Implement** — replace `# GATE: ci-green                (Task 12)` with:
+- [x] **Step 3: Implement** — replace `# GATE: ci-green                (Task 12)` with:
 
 ```bash
 # ── Blocker: required CI checks not green ────────────────────────────────────
@@ -1521,9 +1521,9 @@ if [[ "$ci_state" != "green" && "$ci_state" != "none" ]]; then
 fi
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh
