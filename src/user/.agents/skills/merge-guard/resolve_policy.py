@@ -60,9 +60,77 @@ DEFAULTS = ReviewMergePolicy(
 )
 
 
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
+
+REVIEW_EXPECTATION_KEYS = {
+    "bot-review-expected", "bot-reviewers", "bot-inactivity-timeout",
+    "human-approvers-required", "human-review-timeout",
+}
+MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule"}
+
+
+def parse_duration(value: object, key: str) -> int:
+    """'20m' / '48h' / '90s' / bare int (seconds) -> seconds. Raises PolicyError."""
+    if isinstance(value, bool):  # bool is an int subclass; reject explicitly
+        raise PolicyError(f"{key}: expected duration, got boolean")
+    if isinstance(value, int):
+        if value < 0:
+            raise PolicyError(f"{key}: negative duration {value}")
+        return value
+    if isinstance(value, str) and len(value) >= 2 and value[:-1].isdigit() \
+            and value[-1] in _DURATION_UNITS:
+        return int(value[:-1]) * _DURATION_UNITS[value[-1]]
+    raise PolicyError(f"{key}: invalid duration {value!r} (use e.g. \"20m\", \"48h\", or seconds as int)")
+
+
+def _check_keys(section: dict, allowed: set[str], name: str) -> None:
+    unknown = sorted(set(section) - allowed)
+    if unknown:
+        raise PolicyError(f"[{name}]: unknown key(s) {', '.join(unknown)} (allowed: {', '.join(sorted(allowed))})")
+
+
+def _typed(section: dict, key: str, kind: type, default):
+    if key not in section:
+        return default
+    value = section[key]
+    if kind is bool and not isinstance(value, bool):
+        raise PolicyError(f"{key}: expected boolean, got {type(value).__name__}")
+    if kind is int and (isinstance(value, bool) or not isinstance(value, int)):
+        raise PolicyError(f"{key}: expected integer, got {type(value).__name__}")
+    if kind is list and not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
+        raise PolicyError(f"{key}: expected list of strings")
+    if kind is str and not isinstance(value, str):
+        raise PolicyError(f"{key}: expected string, got {type(value).__name__}")
+    return value
+
+
 def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergePolicy:
     """Resolve config + labels into a validated policy. Raises PolicyError."""
-    return DEFAULTS
+    expect = project_config.get("review-expectations", {})
+    merge = project_config.get("merge-policy", {})
+    if not isinstance(expect, dict):
+        raise PolicyError("[review-expectations] must be a table")
+    if not isinstance(merge, dict):
+        raise PolicyError("[merge-policy] must be a table")
+    _check_keys(expect, REVIEW_EXPECTATION_KEYS, "review-expectations")
+    _check_keys(merge, MERGE_POLICY_KEYS, "merge-policy")
+
+    bot_timeout = (parse_duration(expect["bot-inactivity-timeout"], "bot-inactivity-timeout")
+                   if "bot-inactivity-timeout" in expect
+                   else DEFAULTS.bot_inactivity_timeout_seconds)
+    human_timeout = (parse_duration(expect["human-review-timeout"], "human-review-timeout")
+                     if "human-review-timeout" in expect
+                     else DEFAULTS.human_review_timeout_seconds)
+
+    return ReviewMergePolicy(
+        bot_review_expected=_typed(expect, "bot-review-expected", bool, DEFAULTS.bot_review_expected),
+        bot_reviewers=_typed(expect, "bot-reviewers", list, DEFAULTS.bot_reviewers),
+        bot_inactivity_timeout_seconds=bot_timeout,
+        human_approvers_required=_typed(expect, "human-approvers-required", int, DEFAULTS.human_approvers_required),
+        human_review_timeout_seconds=human_timeout,
+        merge_authorization=_typed(merge, "merge-authorization", str, DEFAULTS.merge_authorization),
+        merge_rule=_typed(merge, "merge-rule", str, DEFAULTS.merge_rule),
+    )
 
 
 def main() -> int:

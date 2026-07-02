@@ -335,7 +335,7 @@ Behavior: **`[review-expectations]` and `[merge-policy]` values override default
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy.py`
 - Modify: `src/user/.agents/skills/merge-guard/resolve_policy_test.py`
 
-- [ ] **Step 1: Write the failing tests** (append to `resolve_policy_test.py`; keep `run_resolver` helper)
+- [x] **Step 1: Write the failing tests** (append to `resolve_policy_test.py`; keep `run_resolver` helper)
 
 ```python
 def write_toml(content: str) -> str:
@@ -398,12 +398,12 @@ class TestConfigParsing(unittest.TestCase):
         self.assertIn("unparseable", err)
 ```
 
-- [ ] **Step 2: Run to verify the new tests fail**
+- [x] **Step 2: Run to verify the new tests fail**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: FAIL — override/unknown-key/duration tests fail (resolver still returns pure defaults / exits 0).
 
-- [ ] **Step 3: Implement parsing** (replace the stub `resolve_policy` body; add helpers above it)
+- [x] **Step 3: Implement parsing** (replace the stub `resolve_policy` body; add helpers above it)
 
 ```python
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
@@ -479,12 +479,12 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
     )
 ```
 
-- [ ] **Step 4: Run to verify all tests pass**
+- [x] **Step 4: Run to verify all tests pass**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: PASS (7 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/resolve_policy.py src/user/.agents/skills/merge-guard/resolve_policy_test.py
