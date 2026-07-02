@@ -9,8 +9,9 @@ description: >
   PR to human-gated, it surfaces each escalation and hands over the
   `prgroom resolve-escalated` recipe so a human can reclassify. Use when the
   user mentions a PR, review, Copilot, feedback, grooming, escalations, or the
-  merge gate. Do NOT use to merge a PR — merge authorization stays with the
-  human.
+  merge gate. Do NOT use to merge a PR — merge authorization is governed by
+  the repo's merge-authorization policy, enforced by the merge-guard skill
+  (default: explicit human instruction).
 model: sonnet[1m]
 effort: medium
 ---
@@ -96,9 +97,10 @@ and no `failed` items remain and `last_error` is clear, then finishes.
 
 ## Red flags
 
-- **Do not merge on `auto_merge_eligible: true`.** That flag is a handoff signal
-  for a future merge gate, not a license to merge. Merge authorization is the
-  human's.
+- **Do not merge on `auto_merge_eligible: true`.** That rollup is never
+  consumed — merge-guard recomputes its own atomic gates live. Merge
+  authorization is governed by the repo's merge-authorization policy via the
+  merge-guard skill (default: explicit human instruction).
 - **Do not re-invoke on exit 77 / 2 / 65 / 78.** Those are terminal faults (auth,
   bad ref, contract, corrupt state); retrying without fixing the cause just loops.
 - **Do not hand-parse the tracker or post replies yourself.** prgroom owns reply,

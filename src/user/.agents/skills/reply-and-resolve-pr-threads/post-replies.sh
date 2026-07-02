@@ -6,8 +6,10 @@
 #   issue_comment  → REST POST /repos/{o}/{r}/issues/{n}/comments
 #   review_summary → REST POST /repos/{o}/{r}/issues/{n}/comments
 #                    (review_summary has no per-item id; synthetic cid is
-#                     `summary-<12-char sha1 of the item JSON>` so retries
-#                     against the same content are idempotent.)
+#                     `summary-<12-char sha1 of the item JSON, minus any
+#                     posted_reply_id>` so retries against the same content
+#                     are idempotent — see IDEMPOTENCY note below on why
+#                     posted_reply_id must be excluded from the hash.)
 #
 # IDEMPOTENCY: this helper is self-recording. Each successful POST is
 # appended to a sidecar file <inventory>.posted (one cid per line). On
@@ -34,6 +36,14 @@
 #   on stderr naming the cid and the manual recovery action, sets the
 #   failure flag, and exits 1. Without this, the cid would be posted but
 #   not persisted, and the next retry would re-post a duplicate.
+# - review_summary's cid is a content hash of the item JSON, computed with
+#   posted_reply_id EXCLUDED. record_reply_id() mutates the item in-place
+#   with posted_reply_id after a successful POST, so on a partial-failure
+#   retry the re-read item would otherwise hash to a DIFFERENT cid than the
+#   one already written to the sidecar, miss the skip-set, and re-post a
+#   duplicate summary — the sidecar entry's whole purpose defeated by the
+#   very act of recording success. Excluding the field keeps the hash a
+#   function of content only, independent of prior-run bookkeeping.
 # - The sidecar's lifecycle is bounded by the inventory itself: inventory
 #   filenames are keyed by (owner, repo, pr, head_sha) so each new push
 #   gets a fresh inventory and a fresh sidecar.
@@ -139,6 +149,29 @@ ERR="$(mktemp)"
 trap 'rm -f "$TMP" "$ERR"' EXIT
 jq -c '.items[]?' "$INV" > "$TMP"
 
+# Record the CREATED reply's id on the matching inventory item — the
+# eligibility floor excludes agent replies by exact recorded id, never by
+# author login (the agent commonly posts through its human operator's own
+# GitHub account, so a login filter would hide that human's real comments).
+record_reply_id() {  # record_reply_id <item-key> <match-value> <reply-id>
+  local key="$1" val="$2" rid="$3" tmp_inv match_count
+  match_count="$(jq --arg k "$key" --arg v "$val" \
+      '[.items[] | select(((.[$k] // "") | tostring) == $v)] | length' "$INV" 2>/dev/null)" || match_count=0
+  if [ "${match_count:-0}" -eq 0 ]; then
+    echo "WARNING $val reply-id-not-recorded: reply $rid posted to GitHub but no inventory item has $key=$val; the eligibility check will treat it as incoming feedback until triaged" >&2
+    return
+  fi
+  tmp_inv="$(mktemp)"
+  if jq --arg k "$key" --arg v "$val" --argjson rid "$rid" \
+       '.items |= map(if ((.[$k] // "") | tostring) == $v then . + {posted_reply_id: $rid} else . end)' \
+       "$INV" > "$tmp_inv" && mv "$tmp_inv" "$INV"; then
+    :
+  else
+    rm -f "$tmp_inv"
+    echo "WARNING $val reply-id-record-failed: reply $rid posted to GitHub but not recorded in $INV; the eligibility check will treat it as incoming feedback until triaged" >&2
+  fi
+}
+
 while IFS= read -r item; do
   [ -n "$item" ] || continue
   kind="$(echo "$item" | jq -r '.kind // empty')"
@@ -157,7 +190,12 @@ while IFS= read -r item; do
       # pretty-print whitespace and indentation can shift across jq versions,
       # which would change the hash bytes and break idempotency across
       # environments. Compact form is deterministic.
-      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys . | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
+      # `del(.posted_reply_id)` is REQUIRED: that field is written onto the
+      # item by record_reply_id() AFTER a successful POST, so a retry's
+      # re-read of the item must hash identically to the pre-POST read or
+      # the cid drifts off the sidecar's recorded value — see IDEMPOTENCY
+      # note in the file header.
+      cid="summary-$(printf '%s' "$item" | jq -c --sort-keys 'del(.posted_reply_id)' | shasum -a 1 | cut -d' ' -f1 | cut -c1-12)"
       ;;
     *)              cid="$(echo "$item" | jq -r '.thread_id // .reply_to_comment_id // .issue_comment_id // empty')" ;;
   esac
@@ -219,8 +257,8 @@ while IFS= read -r item; do
   # the FAILED line so script-internal vs API-rejection failures are
   # distinguishable.
   : > "$ERR"
-  if printf '%s' "$body" | gh api "$post_url" \
-      --method POST --field body=@- >/dev/null 2>"$ERR"; then
+  if resp="$(printf '%s' "$body" | gh api "$post_url" \
+      --method POST --field body=@- 2>"$ERR")"; then
     echo "POSTED $cid"
     # Sidecar recording is part of the idempotency contract. The append CANNOT
     # be expressed as `&& printf ... >> $POSTED_SIDECAR`: under `set -e`, a
@@ -235,6 +273,23 @@ while IFS= read -r item; do
         echo "WARNING $cid sidecar-append-failed: posted to GitHub but $POSTED_SIDECAR write failed; manually append $cid to that file before retrying or the next run will re-post a duplicate" >&2
         any_failed=1
       fi
+    fi
+    reply_id="$(printf '%s' "$resp" | jq -r '.id // empty' 2>/dev/null)"
+    if [ -n "$reply_id" ]; then
+      case "$kind" in
+        issue_comment)  record_reply_id issue_comment_id "$cid" "$reply_id" ;;
+        review_summary)
+          rsid="$(echo "$item" | jq -r '.review_id // empty')"
+          if [ -n "$rsid" ]; then
+            record_reply_id review_id "$rsid" "$reply_id"
+          else
+            echo "WARNING $cid reply-id-not-recorded: legacy review_summary item lacks review_id" >&2
+          fi
+          ;;
+        *)              record_reply_id reply_to_comment_id "$reply_to" "$reply_id" ;;
+      esac
+    else
+      echo "WARNING $cid reply-id-not-recorded: API response carried no .id" >&2
     fi
   else
     err_msg="$(tr '\n' ' ' <"$ERR" | sed 's/  */ /g; s/^ //; s/ $//')"

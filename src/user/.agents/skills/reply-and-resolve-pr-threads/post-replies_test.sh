@@ -642,4 +642,175 @@ else
   echo "  ok: rejects nonexistent inventory file"
 fi
 
+# ── posted_reply_id recording ────────────────────────────────────────────────
+T16="$(mktemp -d)"
+cat > "$T16/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  # POST returns the created comment object, like the real API
+  printf '{"id": 777001, "html_url": "https://example.invalid/c/777001"}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$T16/gh"
+jq -n '{schema_version: 1, pr: {}, polling: {}, items: [
+  {kind: "issue_comment", issue_comment_id: 4242, thread_id: null, reply_to_comment_id: null,
+   author: "reviewer", body_excerpt: "x", classification: "SKIP", rationale: "noise",
+   fix_outcome: null, reply_body: "Acknowledged — skipping as cosmetic."}
+], crash_recovery: {skill_a_completed: true, last_completed_phase: "7-write-inventory"}}' > "$T16/inv.json"
+
+out16=$(PATH="$T16:$PATH" "$HERE/post-replies.sh" --inventory "$T16/inv.json" --owner o --repo r --pr 1 2>&1)
+rc16=$?
+assert "post succeeds against stub" "[ \$rc16 -eq 0 ]"
+assert "POSTED line emitted" "grep -q 'POSTED 4242' <<<\"\$out16\""
+assert "posted_reply_id recorded on the item" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$T16/inv.json\")\" = 777001 ]"
+rm -rf "$T16"
+
+# ── idempotent retry: cid must not shift when posted_reply_id gets recorded ──
+# review_summary's cid is sha1 of the item JSON. record_reply_id mutates the
+# posted item with posted_reply_id AFTER posting. If the cid hash includes
+# that field, a re-read of the item on retry hashes to a DIFFERENT cid, the
+# sidecar skip-set (built from the run-1 cid) misses it, and the summary gets
+# posted a second time.
+T17="$(mktemp -d)"
+cat > "$T17/gh" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *"/comments/555017/replies"*) echo "fail-on-555017" >&2; exit 1 ;;
+  esac
+done
+printf '{"id": 900001}'
+exit 0
+STUB
+chmod +x "$T17/gh"
+
+INV17="$T17/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: 17001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Acknowledged review summary; no per-thread action required."},
+  {kind: "review_thread", thread_id: "T_17", reply_to_comment_id: 555017, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "will fail first attempt"}
+]}' > "$INV17"
+
+out17a=$(PATH="$T17:$PATH" "$HERE/post-replies.sh" --inventory "$INV17" --owner o --repo r --pr 1 2>&1)
+rc17a=$?
+cid17="$(printf '%s' "$out17a" | grep -oE 'POSTED summary-[0-9a-f]+' | awk '{print $2}')"
+
+assert "run 1: partial failure (thread post fails) exits 1" "[ \$rc17a -eq 1 ]"
+assert "run 1: review_summary POSTED with a synthetic cid" "[ -n \"\$cid17\" ]"
+assert "run 1: sidecar records the summary cid" \
+  "[ -f \"${INV17}.posted\" ] && grep -qF \"\$cid17\" \"${INV17}.posted\""
+assert "run 1: posted_reply_id recorded on the review_summary item" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV17\")\" = \"900001\" ]"
+
+out17b=$(PATH="$T17:$PATH" "$HERE/post-replies.sh" --inventory "$INV17" --owner o --repo r --pr 1 2>&1)
+rc17b=$?
+assert "run 2: still partial failure (thread post keeps failing)" "[ \$rc17b -eq 1 ]"
+assert "run 2: review_summary is SKIPPED (same cid as run 1), not re-posted" \
+  "grep -qF \"SKIPPED \$cid17\" <<<\"\$out17b\""
+assert "run 2: review_summary is NOT posted again" \
+  "! grep -qE '^POSTED summary-' <<<\"\$out17b\""
+assert "run 2: exactly one POST total for the review_summary cid across both runs" \
+  "[ \$(printf '%s\n%s' \"\$out17a\" \"\$out17b\" | grep -cF \"POSTED \$cid17\") -eq 1 ]"
+assert "run 2: posted_reply_id on the review_summary item is unchanged" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV17\")\" = \"900001\" ]"
+
+rm -rf "$T17"
+
+# ── posted_reply_id recording branch coverage ────────────────────────────────
+# (a) review_summary branch: recorded onto the matching item by review_id.
+T18="$(mktemp -d)"
+cat > "$T18/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800001}'
+exit 0
+STUB
+chmod +x "$T18/gh"
+INV18="$T18/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: 18001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Acknowledged."}
+]}' > "$INV18"
+out18=$(PATH="$T18:$PATH" "$HERE/post-replies.sh" --inventory "$INV18" --owner o --repo r --pr 1 2>&1)
+rc18=$?
+assert "(a) review_summary+review_id: run succeeds" "[ \$rc18 -eq 0 ]"
+assert "(a) review_summary+review_id: posted_reply_id recorded by review_id match" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV18\")\" = \"800001\" ]"
+rm -rf "$T18"
+
+# (b) review_thread branch: recorded by reply_to_comment_id match.
+T19="$(mktemp -d)"
+cat > "$T19/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800002}'
+exit 0
+STUB
+chmod +x "$T19/gh"
+INV19="$T19/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_19", reply_to_comment_id: 612345, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "fixed"}
+]}' > "$INV19"
+out19=$(PATH="$T19:$PATH" "$HERE/post-replies.sh" --inventory "$INV19" --owner o --repo r --pr 1 2>&1)
+rc19=$?
+assert "(b) review_thread: run succeeds" "[ \$rc19 -eq 0 ]"
+assert "(b) review_thread: posted_reply_id recorded by reply_to_comment_id match" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$INV19\")\" = \"800002\" ]"
+rm -rf "$T19"
+
+# (c) WARNING fallback: legacy review_summary item WITHOUT review_id ->
+# warning to stderr, no crash, no recording.
+T20A="$(mktemp -d)"
+cat > "$T20A/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '{"id": 800003}'
+exit 0
+STUB
+chmod +x "$T20A/gh"
+INV20A="$T20A/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "Legacy item, no review_id."}
+]}' > "$INV20A"
+out20a=$(PATH="$T20A:$PATH" "$HERE/post-replies.sh" --inventory "$INV20A" --owner o --repo r --pr 1 2>&1)
+rc20a=$?
+assert "(c) legacy review_summary w/o review_id: run still succeeds (no crash)" "[ \$rc20a -eq 0 ]"
+assert "(c) legacy review_summary w/o review_id: WARNING names the missing review_id" \
+  "grep -qi 'lacks review_id' <<<\"\$out20a\""
+assert "(c) legacy review_summary w/o review_id: posted_reply_id NOT recorded" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id // \"null\"' \"$INV20A\")\" = \"null\" ]"
+rm -rf "$T20A"
+
+# (d) WARNING fallback: POST response id that matches NO inventory item ->
+# warning, no crash. Simulated via a fake gh that mutates the inventory's
+# match field out from under the run between POST and record (a stand-in for
+# any real-world skew between the id used to POST and the id later matched).
+T20B="$(mktemp -d)"
+INV20B="$T20B/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_summary", review_id: 20001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+   classification: "SKIP", reply_body: "y"}
+]}' > "$INV20B"
+export NOMATCH_INV="$INV20B"
+cat > "$T20B/gh" <<'STUB'
+#!/usr/bin/env bash
+tmp="$(mktemp)"
+jq '.items[0].review_id = 20002' "$NOMATCH_INV" > "$tmp" && mv "$tmp" "$NOMATCH_INV"
+printf '{"id": 900099}'
+exit 0
+STUB
+chmod +x "$T20B/gh"
+out20b=$(PATH="$T20B:$PATH" "$HERE/post-replies.sh" --inventory "$INV20B" --owner o --repo r --pr 1 2>&1)
+rc20b=$?
+unset NOMATCH_INV
+assert "(d) no-match record: run still succeeds (no crash)" "[ \$rc20b -eq 0 ]"
+assert "(d) no-match record: WARNING emitted for the unmatched reply id" \
+  "grep -qi 'WARNING' <<<\"\$out20b\""
+assert "(d) no-match record: posted_reply_id NOT recorded anywhere" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id // \"null\"' \"$INV20B\")\" = \"null\" ]"
+rm -rf "$T20B"
+
 exit $FAIL

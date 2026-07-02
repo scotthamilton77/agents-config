@@ -25,7 +25,7 @@ Reply to every PR review thread (FIX, SKIP, ESCALATE-with-`escalation_filed=true
 
 **This skill does NOT fix code.** It reads a Hand-off Contract inventory written by `wait-for-pr-comments`, posts replies per pinned templates, and resolves only the threads that were actually FIXED. No `quality-reviewer`, no `simplify` skill, no `verify-checklist`, no `git commit`, no `git push`. The only allowed git invocations are `git fetch` and `git merge-base --is-ancestor` in Phase 1.5 recovery triage.
 
-**MERGE PROHIBITION:** Resolving threads is NOT authorization to merge. The orchestrator never merges; the user does, on explicit say-so.
+**MERGE PROHIBITION:** Resolving threads is NOT authorization to merge. This skill never merges; merge authority belongs to the merge-guard skill under the repo's merge-authorization policy (default: explicit human say-so).
 
 ## Skill B: arg protocol
 

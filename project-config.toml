@@ -4,7 +4,8 @@
 # Lives at the repository root. Read by per-stage orchestrators to configure
 # quality gates, coverage thresholds, foreign-CLI model selection, and more.
 #
-# Schema defined in: docs/specs/bead-pipeline-architecture.md §5.1
+# Review/merge policy schema: docs/architecture/review-merge-policy/design.md
+# (other sections' schema origin: archive/docs/specs/bead-pipeline-architecture.md)
 #
 # All sections are optional. Absent sections use per-stage defaults.
 # Stage role names (not numbers) are the authority in all section names.
@@ -71,12 +72,20 @@ command = ""   # no lint auto-fix for this project
 # commands = ["playwright test"]   # example; uncomment when needed
 
 # ---------------------------------------------------------------------------
-# [review-requirements] — PR review defaults
-# Read by: review-cycle
+# [review-expectations] — Axis 1: what reviews do we expect (drives polling)
+# [merge-policy]        — Axis 2: who is authorized to merge
+# Read by: resolve_policy.py (merge-guard skill), consumed by merge-guard and
+# wait-for-pr-comments. Schema: docs/architecture/review-merge-policy/design.md
 # ---------------------------------------------------------------------------
-[review-requirements]
-copilot-required         = true
-human-approvers-required = 0     # copilot-only by default; override per bead
+[review-expectations]
+bot-review-expected      = true
+bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]"]  # exact identities, never substrings
+human-approvers-required = 0     # override per bead: review-exit-human-approvers-<n>
+
+[merge-policy]
+# This repo auto-merges on a clean Copilot review — a deliberate, named choice.
+merge-authorization = "rule-based"
+merge-rule          = "bot-quiescence"
 
 # ---------------------------------------------------------------------------
 # [foreign-cli] — foreign-CLI binary paths and model selections

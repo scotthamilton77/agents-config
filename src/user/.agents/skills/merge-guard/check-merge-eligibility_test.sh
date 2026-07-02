@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for check-merge-eligibility.sh
-
+# Smoke test for check-merge-eligibility.sh (policy-driven rewrite).
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -23,94 +22,474 @@ echo "[check-merge-eligibility_test]"
 assert "script file exists" "[ -f '$SCRIPT' ]"
 assert "script is executable" "[ -x '$SCRIPT' ]"
 assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
-assert "documents inputs/outputs in header" "head -30 '$SCRIPT' | grep -qiE 'input|output|exit'"
-assert "accepts --owner flag" "grep -q -- '--owner' '$SCRIPT'"
-assert "accepts --repo flag" "grep -q -- '--repo' '$SCRIPT'"
-assert "accepts --pr flag" "grep -q -- '--pr' '$SCRIPT'"
-assert "accepts --comments-seen flag" "grep -q -- '--comments-seen' '$SCRIPT'"
-assert "no positional owner/repo parsing" "! grep -qE '^\s*REPO=\"\\\$1\"' '$SCRIPT'"
+assert "documents inputs/outputs in header" "head -40 '$SCRIPT' | grep -qiE 'input|output|exit'"
+assert "accepts --policy-json flag" "grep -q -- '--policy-json' '$SCRIPT'"
+assert "no --comments-seen flag (retired)" "! grep -q -- '--comments-seen' '$SCRIPT'"
+assert "no substring copilot matching" "! grep -q 'test(\"copilot\"' '$SCRIPT'"
 
-# Missing required flags — exit 3
-"$SCRIPT" 2>/dev/null
-rc_no_args=$?
-assert "exits 3 with no flags" "[ \$rc_no_args -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --pr 1 2>/dev/null
-rc_no_cs=$?
-assert "exits 3 when --comments-seen missing" "[ \$rc_no_cs -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --comments-seen 0 2>/dev/null
-rc_no_pr=$?
-assert "exits 3 when --pr missing" "[ \$rc_no_pr -eq 3 ]"
-
-"$SCRIPT" --owner o --pr 1 --comments-seen 0 2>/dev/null
-rc_no_repo=$?
-assert "exits 3 when --repo missing" "[ \$rc_no_repo -eq 3 ]"
-
-"$SCRIPT" --repo r --pr 1 --comments-seen 0 2>/dev/null
-rc_no_owner=$?
-assert "exits 3 when --owner missing" "[ \$rc_no_owner -eq 3 ]"
-
-# Bad numeric values
-"$SCRIPT" --owner o --repo r --pr notanumber --comments-seen 0 2>/dev/null
-rc_bad_pr=$?
-assert "exits 3 for non-integer --pr" "[ \$rc_bad_pr -eq 3 ]"
-
-"$SCRIPT" --owner o --repo r --pr 1 --comments-seen notanumber 2>/dev/null
-rc_bad_cs=$?
-assert "exits 3 for non-integer --comments-seen" "[ \$rc_bad_cs -eq 3 ]"
-
-# Unknown flag
-"$SCRIPT" --owner o --repo r --pr 1 --comments-seen 0 --bogus 2>/dev/null
-rc_bogus=$?
-assert "exits 3 for unknown flag" "[ \$rc_bogus -eq 3 ]"
-
-# Trailing flag with no value — must exit 3 (not silent exit 1)
-"$SCRIPT" --owner 2>/dev/null
-rc_dangling=$?
-assert "exits 3 for flag with no value (not silent exit 1)" "[ \$rc_dangling -eq 3 ]"
-
-# ── Regression (nnqwg): reply comments must NOT count toward unseen ───────────
-# A gh stub returns canned JSON per endpoint so the comment-counting jq filter
-# runs end-to-end. Fixture: 2 top-level reviewer comments + 2 agent replies.
-# With both top-level comments triaged (--comments-seen 2), the buggy `length`
-# count yields 4 → unseen=2 → exit 2. The fix counts only top-level (2) → eligible.
+# ── gh + prgroom stubs ────────────────────────────────────────────────────────
 STUB_DIR="$TMP/bin"
 mkdir -p "$STUB_DIR"
 cat > "$STUB_DIR/gh" <<'STUB'
 #!/usr/bin/env bash
 [ "$1" = "auth" ] && exit 0
 if [ "$1" = "api" ]; then
-  path="$2"; shift 2
+  shift
+  if [ "$1" = "graphql" ]; then
+    default_threads='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    printf '%s' "${FIXTURE_GRAPHQL_THREADS:-$default_threads}"
+    exit 0
+  fi
+  path="$1"; shift
   filter=""
   while [ $# -gt 0 ]; do
     case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
   done
   case "$path" in
-    */requested_reviewers) body='{"users":[],"teams":[]}' ;;
-    */issues/*/events)     body='[]' ;;
-    */pulls/*/reviews)     body='[]' ;;
-    */pulls/*/comments|*/pulls/*/comments\?*) body="$FIXTURE_COMMENTS" ;;
-    */pulls/*)             body='{"state":"open"}' ;;
-    *)                     body='{}' ;;
+    */requested_reviewers)  body="${FIXTURE_REQUESTED_REVIEWERS:-'{\"users\":[],\"teams\":[]}'}" ;;
+    */issues/*/events*)
+        if [ "${FIXTURE_EVENTS_FAIL:-0}" = 1 ]; then
+          echo "gh: 502 Bad Gateway" >&2; exit 1
+        fi
+        body="${FIXTURE_EVENTS:-[]}" ;;
+    */issues/*/comments*)   body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */pulls/*/reviews*)     body="${FIXTURE_REVIEWS:-[]}" ;;
+    */protection/required_status_checks*)
+        if [ -n "${FIXTURE_BASE_REF_ENCODED:-}" ] && [[ "$path" != *"branches/${FIXTURE_BASE_REF_ENCODED}/protection"* ]]; then
+          echo "gh: Not Found (HTTP 404)" >&2; exit 1
+        fi
+        if [ "${FIXTURE_PROTECTION_404:-1}" = 1 ]; then
+          echo "gh: Not Found (HTTP 404)" >&2; exit 1
+        fi
+        body="${FIXTURE_REQUIRED_CHECKS}" ;;
+    */check-runs*)          body="${FIXTURE_CHECK_RUNS:-'{\"check_runs\":[]}'}" ;;
+    */commits/*/status*)    body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
+    *)                      body='{}' ;;
   esac
+  body="${body#\'}"; body="${body%\'}"
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
   exit 0
 fi
 exit 0
 STUB
 chmod +x "$STUB_DIR/gh"
+# prgroom stub: emits FIXTURE_PRGROOM when set, else fails (= no prgroom state)
+cat > "$STUB_DIR/prgroom" <<'STUB'
+#!/usr/bin/env bash
+[ -n "${FIXTURE_PRGROOM:-}" ] && { printf '%s' "$FIXTURE_PRGROOM"; exit 0; }
+exit 1
+STUB
+chmod +x "$STUB_DIR/prgroom"
 
-export FIXTURE_COMMENTS='[
-  {"id":1,"in_reply_to_id":null,"user":{"login":"reviewer"}},
-  {"id":2,"in_reply_to_id":null,"user":{"login":"reviewer"}},
-  {"id":3,"in_reply_to_id":1,"user":{"login":"agent"}},
-  {"id":4,"in_reply_to_id":2,"user":{"login":"agent"}}
-]'
+# Isolated HOME so inventory globs never see the real ~/.claude/state
+FAKE_HOME="$TMP/home"
+mkdir -p "$FAKE_HOME/.claude/state/pr-inventory"
 
-reply_out=$(PATH="$STUB_DIR:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --comments-seen 2 2>/dev/null)
-rc_replies=$?
-assert "reply comments excluded → eligible (exit 0)" "[ \$rc_replies -eq 0 ]"
-assert "total_comments counts only top-level (==2)" "[ \"\$(printf '%s' \"\$reply_out\" | jq -r '.total_comments')\" = '2' ]"
+run_script() {  # run_script <policy-json> [env VAR=... pairs]
+  local policy="$1"; shift
+  env HOME="$FAKE_HOME" PATH="$STUB_DIR:$PATH" "$@" \
+    "$SCRIPT" --owner o --repo r --pr 1 --policy-json "$policy" 2>/dev/null
+}
+
+# Base policy: nothing expected on Axis 1 → in-flight atom vacuously clear
+BASE_POLICY='{"bot_review_expected":false,"bot_reviewers":["trusted-bot[bot]"],"bot_inactivity_timeout_seconds":1200,"human_approvers_required":0,"human_review_timeout_seconds":null,"merge_authorization":"explicit","merge_rule":null}'
+HEAD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# ── Arg validation (exit 3) ───────────────────────────────────────────────────
+"$SCRIPT" 2>/dev/null;                                       assert "exits 3 with no flags" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 2>/dev/null;             assert "exits 3 when --policy-json missing" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr x --policy-json "$BASE_POLICY" 2>/dev/null
+assert "exits 3 for non-integer --pr" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 --policy-json 'not-json' 2>/dev/null
+assert "exits 3 for unparseable policy" "[ \$? -eq 3 ]"
+"$SCRIPT" --owner o --repo r --pr 1 --policy-json '{}' 2>/dev/null
+assert "exits 3 for policy missing required keys" "[ \$? -eq 3 ]"
+
+# ── Skeleton behavior: empty fixtures + nothing expected → eligible ──────────
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "empty PR with nothing expected → exit 0" "[ \$rc -eq 0 ]"
+assert "status is eligible" "[ \"\$(jq -r '.status' <<<\"\$out\")\" = eligible ]"
+assert "head_ref_oid echoed" "[ \"\$(jq -r '.head_ref_oid' <<<\"\$out\")\" = \"$HEAD_SHA\" ]"
+assert "blockers array empty" "[ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 0 ]"
+assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep -q -- \"--match-head-commit $HEAD_SHA\""
+
+# ── Task 8: trusted-bot clean review fact ─────────────────────────────────────
+mk_review() {  # mk_review <login> <state> <commit> <ts> [type]
+  jq -n --arg l "$1" --arg s "$2" --arg c "$3" --arg t "$4" --arg ty "${5:-Bot}" \
+    '{user: {login: $l, type: $ty}, state: $s, commit_id: $c, submitted_at: $t, body: ""}'
+}
+
+# clean: trusted bot, APPROVED at head
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "trusted APPROVED at head → fact true" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+
+# COMMENTED at head is also clean (triage completeness is the floor's job)
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "trusted COMMENTED at head → fact true" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = true ]"
+
+# stale head → not satisfied
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "stale-head review → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# missing commit_id → fail closed
+revs='[{"user":{"login":"trusted-bot[bot]","type":"Bot"},"state":"APPROVED","submitted_at":"2026-01-01T01:00:00Z","body":""}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "missing commit_id → fact false (fail closed)" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# untrusted bot (would match a substring filter) → ignored
+revs=$(jq -n --argjson a "$(mk_review 'evil-copilot-clone[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "untrusted bot ignored (exact identity)" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# latest wins: APPROVED then CHANGES_REQUESTED at head → not clean
+revs=$(jq -n \
+  --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" \
+  --argjson b "$(mk_review 'trusted-bot[bot]' CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "latest CHANGES_REQUESTED → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# ── Task 9: requested-changes sticky blocker ─────────────────────────────────
+# CR on an OLD commit still blocks (not head-scoped)
+revs=$(jq -n --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "stale-commit CR still blocks" "[ \$rc -eq 1 ]"
+assert "blocker code requested_changes_active" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q requested_changes_active"
+
+# later COMMENTED from same reviewer does NOT clear it
+revs=$(jq -n \
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review reviewer1 COMMENTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "later COMMENTED does not clear CR" "[ \$rc -eq 1 ]"
+
+# later APPROVED from same reviewer DOES clear it
+revs=$(jq -n \
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review reviewer1 APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "superseding APPROVED clears CR" "[ \$rc -eq 0 ]"
+
+# dismissed CR (state=DISMISSED in API) does not block
+revs=$(jq -n --argjson a "$(mk_review reviewer1 DISMISSED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "dismissed review does not block" "[ \$rc -eq 0 ]"
+
+# ── Task 10: distinct current approvers ──────────────────────────────────────
+# same login twice = 1; bot approval excluded; stale-head approval excluded
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" \
+  --argjson c "$(mk_review bot-x[bot] APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Bot)" \
+  --argjson d "$(mk_review carol APPROVED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" \
+  '[$a,$b,$c,$d]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "dedup by login, bots and stale heads excluded (==1)" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
+
+# APPROVED superseded by later CHANGES_REQUESTED = 0 approvers (and CR blocks)
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "approval superseded by CR counts 0" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
+
+# ── Task 11: unresolved threads ──────────────────────────────────────────────
+export_threads() {  # export_threads <resolved-bools...>  e.g. export_threads true false
+  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'fromjson? // . | {isResolved: (. == "true" or . == true)}' | jq -s .)
+  jq -n --argjson n "$nodes" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:$n}}}}}'
+}
+
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true false)"); rc=$?
+assert "unresolved thread blocks" "[ \$rc -eq 1 ]"
+assert "blocker code unresolved_threads" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true true)"); rc=$?
+assert "all threads resolved → eligible" "[ \$rc -eq 0 ]"
+
+# ── Task 12: CI-green ────────────────────────────────────────────────────────
+REQ_ONE='{"strict":false,"contexts":["ci/build"],"checks":[{"context":"ci/build","app_id":15368}]}'
+run_ok()   { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"success",app:{id:15368}}]}'; }
+run_wrong_app() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"success",app:{id:99999}}]}'; }
+run_pending()   { jq -n '{check_runs:[{name:"ci/build",status:"in_progress",conclusion:null,app:{id:15368}}]}'; }
+run_failed()    { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"failure",app:{id:15368}}]}'; }
+
+# no branch protection (stub default 404) → vacuously green
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "no protection → ci_state none, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = none ]"
+
+# required + success from the pinned app → green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)"); rc=$?
+assert "pinned success → green, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# same-named success from a DIFFERENT app → not green (spoofed integration)
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_wrong_app)"); rc=$?
+assert "wrong-app success → blocked" "[ \$rc -eq 1 ]"
+assert "blocker code ci_not_green (wrong app)" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q ci_not_green"
+
+# required check never started (absent from rollup) → not green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS='{"check_runs":[]}'); rc=$?
+assert "required check never started → blocked" "[ \$rc -eq 1 ]"
+
+# in-progress → not green; failure → not green
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_pending)"); rc=$?
+assert "in-progress required check → blocked" "[ \$rc -eq 1 ]"
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_failed)"); rc=$?
+assert "failed required check → blocked" "[ \$rc -eq 1 ]"
+
+# unpinned requirement satisfied by legacy commit status
+REQ_UNPINNED='{"strict":false,"contexts":["legacy/lint"],"checks":[{"context":"legacy/lint","app_id":null}]}'
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_UNPINNED" \
+      FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
+assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
+
+# ── Task 13: review still in flight ──────────────────────────────────────────
+BOT_POLICY=$(jq -c '.bot_review_expected = true' <<<"$BASE_POLICY")
+TS_RECENT=$(jq -rn 'now - 60 | todate')      # 1 min ago  < 1200s timeout
+TS_OLD=$(jq -rn 'now - 7200 | todate')       # 2 h ago    > 1200s timeout
+
+# bot expected, requested recently, no review yet → blocked (in flight)
+ev=$(jq -n --arg t "$TS_RECENT" '[{event:"review_requested", requested_reviewer:{login:"trusted-bot[bot]"}, created_at:$t}]')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS="$ev"); rc=$?
+assert "pending bot review blocks explicit merge" "[ \$rc -eq 1 ]"
+assert "blocker code review_in_flight" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q review_in_flight"
+assert "review_wait.bot is waiting" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+# bot expected, silence past timeout → wait over (timed_out), not blocked
+ev=$(jq -n --arg t "$TS_OLD" '[{event:"review_requested", requested_reviewer:{login:"trusted-bot[bot]"}, created_at:$t}]')
+old_pr=$(jq -n --arg t "$TS_OLD" '{state:"open", head:{sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, base:{ref:"main"}, created_at:$t}')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS="$ev" FIXTURE_PR="$old_pr"); rc=$?
+assert "bot silence past timeout → eligible (timed_out)" "[ \$rc -eq 0 ]"
+assert "review_wait.bot is timed_out" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = timed_out ]"
+assert "timeout does NOT satisfy the positive fact" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
+# bot review arrived at head → satisfied
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOT_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
+assert "arrived bot review → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+
+# humans required, none yet, no timeout → blocks indefinitely
+H_POLICY=$(jq -c '.human_approvers_required = 1' <<<"$BASE_POLICY")
+out=$(run_script "$H_POLICY" FIXTURE_PR="$old_pr"); rc=$?
+assert "missing human approval with null timeout blocks" "[ \$rc -eq 1 ]"
+assert "review_wait.human is waiting" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = waiting ]"
+
+# humans required, timeout elapsed → wait over
+H_TIMEOUT_POLICY=$(jq -c '.human_approvers_required = 1 | .human_review_timeout_seconds = 1200' <<<"$BASE_POLICY")
+out=$(run_script "$H_TIMEOUT_POLICY" FIXTURE_PR="$old_pr"); rc=$?
+assert "human timeout elapsed → eligible (timed_out)" "[ \$rc -eq 0 ]"
+
+# humans required and enough current approvals → satisfied
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$H_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
+assert "enough approvals → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
+
+# ── Task 17: untriaged non-thread feedback ───────────────────────────────────
+INV_DIR="$FAKE_HOME/.claude/state/pr-inventory"
+write_inv() {  # write_inv <filename> <items-json>
+  jq -n --argjson items "$2" '{schema_version: 1, pr: {}, polling: {}, items: $items,
+    crash_recovery: {skill_a_completed: true, last_completed_phase: "9-final-check-done"}}' \
+    > "$INV_DIR/$1"
+}
+clean_invs() { rm -f "$INV_DIR"/*.json; }
+
+IC='[{"id": 900, "user": {"login": "reviewer"}, "body": "please fix the naming"}]'
+
+# untriaged issue comment blocks
+clean_invs
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "untriaged issue comment blocks" "[ \$rc -eq 1 ]"
+assert "blocker code untriaged_feedback" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# terminal triage in a retained inventory clears it — recorded against a
+# DIFFERENT head SHA than current (union across pushes, never head-scoped)
+write_inv "o-r-1-oldsha0001.json" '[{"kind":"issue_comment","issue_comment_id":900,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "triage from an older-head inventory still clears (union)" "[ \$rc -eq 0 ]"
+
+# ESCALATE triage still blocks
+clean_invs
+write_inv "o-r-1-oldsha0001.json" '[{"kind":"issue_comment","issue_comment_id":900,"classification":"ESCALATE","escalation_filed":true,"rationale":"needs human","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "ESCALATE disposition still blocks" "[ \$rc -eq 1 ]"
+
+# a recorded agent reply is excluded by exact ID…
+clean_invs
+write_inv "o-r-1-oldsha0002.json" '[{"kind":"issue_comment","issue_comment_id":444,"classification":"SKIP","rationale":"r","fix_outcome":null,"posted_reply_id":900}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "recorded posted_reply_id excluded → eligible" "[ \$rc -eq 0 ]"
+
+# …but a manual comment from the same account with a DIFFERENT id still blocks
+IC2='[{"id": 900, "user": {"login": "operator"}, "body": "agent reply"}, {"id": 901, "user": {"login": "operator"}, "body": "actually, one more thing"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC2"); rc=$?
+assert "same-account manual comment (unrecorded id) blocks" "[ \$rc -eq 1 ]"
+
+# an APPROVED bot review with a non-empty body needs triage too
+clean_invs
+revs=$(jq -n '[{user: {login: "trusted-bot[bot]", type: "Bot"}, state: "APPROVED",
+  commit_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", submitted_at: "2026-01-01T01:00:00Z",
+  id: 301, body: "LGTM but consider renaming this module"}]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "APPROVED review with body blocks until triaged" "[ \$rc -eq 1 ]"
+
+# triaged by review_id in a retained inventory → clears
+write_inv "o-r-1-oldsha0003.json" '[{"kind":"review_summary","review_id":301,"classification":"FIX","rationale":"renamed","fix_outcome":"already_addressed","fix_commit_sha":"abc"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
+clean_invs
+
+# ── Task 18: prgroom internal atoms ──────────────────────────────────────────
+PG_BLOCKED='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":false,"human_review_satisfied":true},"auto_merge_eligible":false}'
+PG_ERROR='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":false,"no_blocker_items":true,"human_review_satisfied":true},"auto_merge_eligible":false}'
+# rollup says GO but an atom says NO — proves the rollup is never consumed
+PG_ROLLUP_LIES='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":false,"human_review_satisfied":true},"auto_merge_eligible":true}'
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_BLOCKED"); rc=$?
+assert "prgroom no_blocker_items=false blocks" "[ \$rc -eq 1 ]"
+assert "blocker code prgroom_blocker" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q prgroom_blocker"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_ERROR"); rc=$?
+assert "prgroom last_error_clear=false blocks" "[ \$rc -eq 1 ]"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_ROLLUP_LIES"); rc=$?
+assert "auto_merge_eligible=true never overrides an atom" "[ \$rc -eq 1 ]"
+
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "no prgroom state → n/a, eligible" "[ \$rc -eq 0 ]"
+assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$out\")\" = false ]"
+
+# ── Fix: issue-events fetch failure fails closed (exit 3) exactly when the
+#    bot-wait computation needs events; the endpoint is never consulted when
+#    no bot review is expected or the expected review already arrived ────────
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
+assert "events-fetch failure exits 3 while bot wait needs events (fail closed)" "[ \$rc -eq 3 ]"
+assert "events-fetch failure prints no verdict" "[ -z \"\$out\" ]"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_EVENTS_FAIL=1); rc=$?
+assert "events failure irrelevant when no bot review expected" "[ \$rc -eq 0 ]"
+
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS_FAIL=1 FIXTURE_REVIEWS="$revs"); rc=$?
+assert "events failure irrelevant once expected review arrived at head" "[ \$rc -eq 0 ]"
+
+# ── Fix: terminal disposition union excludes partial-crash inventories, but
+#    the posted_reply_id exclusion union still reads them ──────────────────
+write_inv_partial() {  # write_inv_partial <filename> <items-json>
+  jq -n --argjson items "$2" '{schema_version: 1, pr: {}, polling: {}, items: $items,
+    crash_recovery: {skill_a_completed: false, last_completed_phase: "5a-verify-failed"}}' \
+    > "$INV_DIR/$1"
+}
+
+clean_invs
+write_inv_partial "o-r-1-partial0001.json" \
+  '[{"kind":"issue_comment","issue_comment_id":900,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "partial-crash inventory disposition does NOT clear untriaged feedback" "[ \$rc -eq 1 ]"
+clean_invs
+
+write_inv_partial "o-r-1-partial0002.json" \
+  '[{"kind":"issue_comment","issue_comment_id":444,"classification":"SKIP","rationale":"r","fix_outcome":null,"posted_reply_id":900}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "posted_reply_id recorded in a partial-crash inventory still excludes it" "[ \$rc -eq 0 ]"
+clean_invs
+
+# ── Fix: cross-inventory triage union across TWO retained inventory files ───
+IC3='[{"id": 950, "user": {"login": "reviewer"}, "body": "fix A"}, {"id": 951, "user": {"login": "reviewer"}, "body": "fix B"}]'
+write_inv "o-r-1-multi0001.json" \
+  '[{"kind":"issue_comment","issue_comment_id":950,"classification":"SKIP","rationale":"a","fix_outcome":null}]'
+write_inv "o-r-1-multi0002.json" \
+  '[{"kind":"issue_comment","issue_comment_id":951,"classification":"FIX","rationale":"b","fix_outcome":"committed"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC3"); rc=$?
+assert "dispositions split across two retained inventories both clear (union)" "[ \$rc -eq 0 ]"
+clean_invs
+
+# ── Fix: BASE_REF is URL-encoded before the branch-protection fetch ─────────
+slash_pr=$(jq -n --arg t "2026-01-01T00:00:00Z" --arg sha "$HEAD_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"release/1.0"}, created_at:$t}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$slash_pr" FIXTURE_PROTECTION_404=0 \
+      FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)" \
+      FIXTURE_BASE_REF_ENCODED="release%2F1.0"); rc=$?
+assert "base ref with a slash resolves protection via the url-encoded path" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# ── Spec: both Axis-1 expectations simultaneously ────────────────────────────
+BOTH_POLICY=$(jq -c '.bot_review_expected = true | .human_approvers_required = 1' <<<"$BASE_POLICY")
+recent_pr=$(jq -n --arg t "$TS_RECENT" --arg sha "$HEAD_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"main"}, created_at:$t}')
+
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: bot clean, human missing → blocked" "[ \$rc -eq 1 ]"
+assert "both-axis: bot satisfied while human waits" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
+assert "both-axis: human waiting while bot satisfied" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = waiting ]"
+
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: human approved, bot missing → blocked" "[ \$rc -eq 1 ]"
+assert "both-axis: human satisfied while bot waits" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
+assert "both-axis: bot waiting while human satisfied" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = waiting ]"
+
+revs=$(jq -n \
+  --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "both-axis: both settled → eligible" "[ \$rc -eq 0 ]"
+
+# ── Spec: prgroom present-and-clean combined with a live blocker ────────────
+PG_CLEAN='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":true,"human_review_satisfied":true},"auto_merge_eligible":true}'
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_CLEAN" FIXTURE_GRAPHQL_THREADS="$(export_threads false)"); rc=$?
+assert "prgroom clean + live unresolved thread → blocked" "[ \$rc -eq 1 ]"
+assert "blocker is unresolved_threads, not masked by prgroom" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_CLEAN" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "prgroom clean + untriaged feedback → blocked" "[ \$rc -eq 1 ]"
+assert "blocker is untriaged_feedback, not masked by prgroom" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# ── Spec: distinct-approver counting with N>=2 ───────────────────────────────
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review bob APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "two distinct current approvers count as 2" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 2 ]"
+
+revs=$(jq -n \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "same user approving twice counts as 1" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
+
+# ── Spec: SKIPPED and NEUTRAL required checks both count as passing ─────────
+run_skipped() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"skipped",app:{id:15368}}]}'; }
+run_neutral() { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclusion:"neutral",app:{id:15368}}]}'; }
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_skipped)"); rc=$?
+assert "SKIPPED required check counts as passing" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_neutral)"); rc=$?
+assert "NEUTRAL required check counts as passing" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
+
+# ── Spec: well-formed but wrong-typed policy values fail closed ─────────────
+# (run via run_script so a real, un-stubbed `gh` in the environment can't
+#  mask a missing type check by failing later for an unrelated reason)
+BAD_BOOL=$(jq -c '.bot_review_expected = "true"' <<<"$BASE_POLICY")
+run_script "$BAD_BOOL" >/dev/null; rc=$?
+assert "exits 3 for bot_review_expected as a string" "[ \$rc -eq 3 ]"
+
+BAD_TIMEOUT=$(jq -c '.bot_inactivity_timeout_seconds = "1200"' <<<"$BASE_POLICY")
+run_script "$BAD_TIMEOUT" >/dev/null; rc=$?
+assert "exits 3 for bot_inactivity_timeout_seconds as a string" "[ \$rc -eq 3 ]"
+
+BAD_HUMAN_TIMEOUT=$(jq -c '.human_review_timeout_seconds = "1200"' <<<"$BASE_POLICY")
+run_script "$BAD_HUMAN_TIMEOUT" >/dev/null; rc=$?
+assert "exits 3 for human_review_timeout_seconds as a string" "[ \$rc -eq 3 ]"
+
+BAD_ARRAY=$(jq -c '.bot_reviewers = "trusted-bot[bot]"' <<<"$BASE_POLICY")
+run_script "$BAD_ARRAY" >/dev/null; rc=$?
+assert "exits 3 for bot_reviewers as a non-array" "[ \$rc -eq 3 ]"
+
+GOOD_NULL_TIMEOUT=$(jq -c '.human_review_timeout_seconds = null' <<<"$BASE_POLICY")
+out=$(run_script "$GOOD_NULL_TIMEOUT"); rc=$?
+assert "null human_review_timeout_seconds is still valid" "[ \$rc -eq 0 ]"
 
 exit $FAIL

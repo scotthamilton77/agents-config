@@ -105,6 +105,34 @@ failure).
    - If found, read `crash_recovery` and apply the **Concurrency recovery
      branch table** (below).
    - If none found, proceed.
+5. **Resolve the review policy** (Axis 1 decides whether and what to poll):
+   ```bash
+   POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/../merge-guard/resolve_policy.py" \
+     --project-config "<repo-root>/project-config.toml" \
+     --labels "<comma-separated bead labels, or empty>")
+   ```
+   (`--labels`: in `--mode autonomous`, `bd label list <bead-id> --json | jq -r 'join(",")'`;
+   interactive without a bead → `""`.)
+   - Resolver exit 1 → fatal startup error; report the resolver's stderr
+     verbatim. A repo with an invalid review policy must not silently poll
+     under a different one.
+   - python3 (>= 3.11) or the resolver missing → proceed with the built-in
+     default policy (bot expected / explicit merge) and say so — identical to
+     this skill's historical behavior.
+   - **`bot_review_expected == false` and `human_approvers_required == 0`**:
+     nothing is expected — SKIP Phase 2 entirely (no polling) and proceed
+     directly to Phase 3 to inventory any already-present feedback. Do NOT
+     emit a human-handoff status: nothing human is expected; whether a merge
+     may proceed is merge-guard's question, not this skill's.
+   - **`bot_review_expected == false` but `human_approvers_required > 0`**:
+     skip Copilot polling (Phase 2); inventory + triage existing feedback
+     (Phases 3-8); at Phase 9, end with the terminal status
+     "awaiting human review (<n> approval(s) required)" — parked, not
+     blocking, not an error.
+   - **`bot_review_expected == true`**: run Phase 2 as written. On
+     `copilot_review_timeout`, the timeout ends the wait — it never counts as
+     a review having happened (merge-guard's in-flight gate makes the same
+     call independently at merge time).
 
 ### Phase 2 — Poll Copilot (background script)
 
@@ -121,7 +149,11 @@ Background bash — zero Anthropic tokens during the wait.
     ```
 2. **Capture** `<polling_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
     This timestamp anchors the stale-cache guard for re-review rounds.
-3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"` in the background.
+3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"
+    --timeout-seconds <resolved_policy.bot_inactivity_timeout_seconds>` in the
+    background (the value resolved in Phase 1 step 5; default 1200 when the
+    resolver's built-in default applies). Omitting this flag silently falls
+    back to the script's own 600s default, so always pass it explicitly.
     Pass `--skip-request-check` if step 1 returned > 0.
     In re-review context (round ≥ 2), also pass
     `--since-timestamp <polling_since_timestamp>` so the script rejects
@@ -199,8 +231,19 @@ cross-references the primary.
 | `kind` | Source | Reply endpoint (Skill B) | Resolvable? |
 |---|---|---|---|
 | `review_thread` | GraphQL `reviewThreads.nodes` | REST `POST /repos/<o>/<r>/pulls/<n>/comments/<id>/replies` (numeric `databaseId` from `reply_to_comment_id`) | Yes — GraphQL `resolveReviewThread`, only when `classification = FIX` |
-| `review_summary` | GraphQL `reviews.nodes` | `gh pr comment` | No |
+| `review_summary` | REST `/pulls/<n>/reviews`, unfiltered — bot or human | `gh pr comment` | No |
 | `issue_comment` | REST `/issues/<n>/comments` | `gh pr comment` with cross-reference | No |
+
+`review_summary` items are built by the orchestrator from a **fresh,
+unfiltered fetch of every review on the PR** —
+`gh api repos/<owner>/<repo>/pulls/<n>/reviews` — **not**
+`poll-copilot-review.sh`'s `reviews[]` output, which is filtered to
+Copilot's own bot reviews for polling purposes only and would silently drop
+human review bodies from the inventory. One item per review with a
+non-empty body, **bot or human**: set `review_id` from the review's numeric
+`.id`, `author` from `.user.login`, `body_excerpt` from the first 200 chars
+of `.body`. A human reviewer's summary flows through the same FIX/SKIP/ESCALATE
+triage as Copilot's.
 
 #### Phase 3.5 — ESCALATE branch (mode-aware)
 
@@ -446,17 +489,25 @@ won't on a pure re-classification loop.
    (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
    query's `comments` preview is for triage only; the canonical source for
    inventory construction remains the same Phase 3 fetch paths used in round 1).
-4. **If count == 0**: write final completion state and clean up:
+4. **If count == 0**: write final completion state and RETAIN the file:
    ```bash
    ${CLAUDE_SKILL_DIR}/write-inventory.sh \
      --state complete \
      --phase 9-final-check-done \
      --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
      < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
-
-   rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
    ```
-   Skill A is the file's lifecycle owner — Skill B never unlinks.
+   Do NOT delete the inventory. Completed inventories are the durable triage
+   record the merge-eligibility floor's untriaged-non-thread-feedback check
+   unions across pushes (`check-merge-eligibility.sh` globs
+   `<owner>-<repo>-<n>-*.json`) — possibly in a later session. The >30-day
+   pruning in `write-inventory.sh` is the only deletion. Skill A remains the
+   file's lifecycle owner — Skill B never unlinks.
+5. **Terminal status:** if the resolved policy has `human_approvers_required > 0`
+   and that many distinct current approvals have not arrived, report
+   "awaiting human review (<n> required)" as the terminal status. Otherwise
+   report the normal completion summary. Never report a human-handoff status
+   when nothing human is expected.
 
 ---
 
@@ -670,6 +721,7 @@ POSIX-atomic) — handled by `write-inventory.sh`.
       "thread_id": "..." | null,
       "reply_to_comment_id": 12345 | null,
       "issue_comment_id": 67890 | null,
+      "review_id": 301 | null,                 // review_summary only: REST review .id — its stable cross-inventory identity
       "is_outdated": false,
       "author": "copilot" | "<github-login>",
       "body_excerpt": "first 200 chars of comment body",
@@ -680,7 +732,8 @@ POSIX-atomic) — handled by `write-inventory.sh`.
       "fix_commit_sha": "def456..." | null,  // FIX only; new commit (committed) or referenced existing commit (already_addressed)
       "fix_summary": "..." | null,           // FIX only
       "fix_gate_variant": "full" | "lite" | null,  // FIX/committed only
-      "duplicate_of": "<thread_id|issue_comment_id>" | null
+      "duplicate_of": "<thread_id|issue_comment_id>" | null,
+      "posted_reply_id": 777001 | null       // written by Skill B's post-replies.sh at post time; read by check-merge-eligibility.sh to exclude the agent's own replies from the untriaged-feedback check
     }
   ],
   "crash_recovery": {
@@ -692,11 +745,13 @@ POSIX-atomic) — handled by `write-inventory.sh`.
 
 **Notes:**
 
-- `review_summary` items have only `kind`, `body_excerpt`, `author`,
+- `review_summary` items have `kind`, `review_id`, `body_excerpt`, `author`,
   `classification`, `rationale`, `fix_outcome`, `fix_commit_sha`,
-  `fix_summary`, `fix_gate_variant`. **No** `thread_id`,
-  `reply_to_comment_id`, `issue_comment_id` (validation guard 3 enforces
-  this).
+  `fix_summary`, `fix_gate_variant`. `review_id` is **required** — it is the
+  REST review's numeric `.id`, the item's stable identity for the
+  cross-push triage union in `check-merge-eligibility.sh`. **No**
+  `thread_id`, `reply_to_comment_id`, `issue_comment_id` (validation guard 3
+  enforces both).
 - `polling.copilot_review_submitted_at` is dropped from v1 — re-add as
   `schema_version: 2` when `agents-config-58m` lands a real consumer.
 - `polling.copilot_status` is consumed by Skill B Phase 4 final report
@@ -822,9 +877,10 @@ abort with no replies posted:
    so empty rationale = empty PR comment).
 3. **`escalation_filed` only on ESCALATE** — reject if any item has
    `classification != "ESCALATE"` and `escalation_filed == true`.
-4. **`review_summary` IDs null** — reject if any item has
-   `kind == "review_summary"` and any of `thread_id` /
-   `reply_to_comment_id` / `issue_comment_id` is non-null.
+4. **`review_summary` IDs** — reject if any item has
+   `kind == "review_summary"` and either any of `thread_id` /
+   `reply_to_comment_id` / `issue_comment_id` is non-null, or `review_id`
+   is null.
 5. **Non-FIX → null `fix_outcome`** — reject if any item has
    `classification != "FIX"` and `fix_outcome != null`.
 6. **FIX → valid `fix_outcome`** — reject if any item has
@@ -864,7 +920,7 @@ PR, consult the inventory's `crash_recovery` block:
 |---|---|---|
 | `false` | `5a-verify-failed`, `5b-commit-verify-failed`, `5c-push-failed` | Refuse with **Message #1** (RESUME or DISCARD) |
 | `true` | `7-write-inventory` | Refuse with **Message #2** (FROM-INVENTORY only) |
-| `true` | `8-skill-b-done`, `9-final-check-done` | **Silent unlink** (orphan from prior crash); proceed normally |
+| `true` | `8-skill-b-done`, `9-final-check-done` | **Retained triage record** (completed run) — do NOT unlink; proceed normally. The eligibility floor reads these files. |
 
 **Message #1** (partial inventory; Skill A interrupted):
 
@@ -895,10 +951,15 @@ Refused to start: an inventory exists for PR #<n> where Skill A completed but Sk
 - At Skill A startup: housekeeping ONLY (delete files >30 days, handled
   inline by `write-inventory.sh`). Never touch the inventory currently
   being recovered.
-- At Phase 9 success (after final unresolved-threads check passes): Skill A updates
-  `last_completed_phase="9-final-check-done"` then `unlink`s.
+- At Phase 9 success (after final unresolved-threads check passes): Skill A
+  updates `last_completed_phase="9-final-check-done"` and **retains the
+  file** — completed inventories are the durable triage record consumed by
+  `check-merge-eligibility.sh`'s non-thread-feedback check, unioned across
+  the PR's full push history.
 - Never at Phase 1 (the concurrency check refuses before any cleanup of the
-  current PR's files).
+  current PR's files; completed files found there are retained records, not
+  orphans).
+- The only deletion anywhere is the >30-day pruning.
 
 ---
 
@@ -955,7 +1016,7 @@ process.
 | "I'll classify already-addressed items as their own bucket" | Already-addressed is NOT a classification. Classify FIX; the per-comment subagent returns `fix_outcome="already_addressed"` with the existing commit SHA. |
 | "Round 7 of re-review is fine, Copilot's just being thorough" | Hard cap fires when round >= 6 AND a new review arrives. Mark FIX-classified round-N+1 items as `ESCALATE` with rationale `"exceeded re-review round cap"`. |
 | "I'll inline `--mode autonomous` from the hook text" | The hook does not pass `--mode`. Autonomous mode is set ONLY by formulas (which also pass `--bead-id`). If you're invoking from chat, leave it interactive. |
-| "Skill B failed but I'll unlink the inventory anyway" | No. On Skill B failure, leave the inventory in place. Skill A only unlinks after Phase 9 final check passes and `write-inventory.sh --state complete --phase 9-final-check-done --output <path>` succeeds. |
+| "Skill B failed but I'll unlink the inventory anyway" | No. Never unlink the inventory — on Skill B failure OR success. Completed inventories are the durable triage record the merge-eligibility floor unions across pushes; the >30-day pruning in `write-inventory.sh` is the only deletion. |
 | "I'll keep the squashed commits clean — combine all subagent fixes into one" | Each subagent's commit stands alone. **No squashing.** Commit message format pinned: `fix(<scope>): <summary> (PR #<n> comment <comment_id>)`. |
 | "I'll let the per-comment fix subagent inherit the orchestrator's model" | Wrong. The orchestrator runs `sonnet[1m]` (this skill's frontmatter). Inheriting means the fix subagent ALSO runs on `sonnet[1m]`, which regresses fix correctness — `wait-for-pr-comments` is the cheap triage tier; **fix work needs `opus`**. The Phase 4 `Agent({...})` dispatch MUST set `model: "opus"` explicitly. |
 
