@@ -689,7 +689,7 @@ chmod +x "$T17/gh"
 
 INV17="$T17/inv.json"
 jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
-  {kind: "review_summary", review_id: "RS17", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+  {kind: "review_summary", review_id: 17001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
    classification: "SKIP", reply_body: "Acknowledged review summary; no per-thread action required."},
   {kind: "review_thread", thread_id: "T_17", reply_to_comment_id: 555017, issue_comment_id: null,
    classification: "FIX", fix_outcome: "committed", reply_body: "will fail first attempt"}
@@ -731,7 +731,7 @@ STUB
 chmod +x "$T18/gh"
 INV18="$T18/inv.json"
 jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
-  {kind: "review_summary", review_id: "RS18", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+  {kind: "review_summary", review_id: 18001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
    classification: "SKIP", reply_body: "Acknowledged."}
 ]}' > "$INV18"
 out18=$(PATH="$T18:$PATH" "$HERE/post-replies.sh" --inventory "$INV18" --owner o --repo r --pr 1 2>&1)
@@ -791,14 +791,14 @@ rm -rf "$T20A"
 T20B="$(mktemp -d)"
 INV20B="$T20B/inv.json"
 jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
-  {kind: "review_summary", review_id: "RS_GONE", thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
+  {kind: "review_summary", review_id: 20001, thread_id: null, reply_to_comment_id: null, issue_comment_id: null,
    classification: "SKIP", reply_body: "y"}
 ]}' > "$INV20B"
 export NOMATCH_INV="$INV20B"
 cat > "$T20B/gh" <<'STUB'
 #!/usr/bin/env bash
 tmp="$(mktemp)"
-jq '.items[0].review_id = "RS_CHANGED"' "$NOMATCH_INV" > "$tmp" && mv "$tmp" "$NOMATCH_INV"
+jq '.items[0].review_id = 20002' "$NOMATCH_INV" > "$tmp" && mv "$tmp" "$NOMATCH_INV"
 printf '{"id": 900099}'
 exit 0
 STUB
