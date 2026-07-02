@@ -8,6 +8,7 @@ Skills brought in from Jesse Vincent's (obra) superpowers repo. These are the up
 
 - **Repo**: https://github.com/obra/superpowers
 - **Commit**: `f2cbfbefebbfef77321e4c9abc9e949826bea9d7` (v5.1.0)
+- **License**: MIT (see `LICENSE` in this directory, copied from upstream at the pinned commit)
 - **Last refreshed**: 2026-05-17
 - **Source path**: `skills/`
 

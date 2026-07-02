@@ -12,6 +12,7 @@ Scope was set in cx6.7.5: all non-Skip skills from the 4vn5.2 audit **except** t
 - **Commit**: `e74f0061bb67222181640effa98c675bdb2fdaa7`
 - **Last refreshed**: 2026-05-23
 - **Source paths**: `skills/engineering/`, `skills/in-progress/`, `skills/misc/`, `skills/productivity/`
+- **License**: MIT (see `LICENSE` in this directory, copied from upstream at the pinned commit)
 
 ## Skills
 
