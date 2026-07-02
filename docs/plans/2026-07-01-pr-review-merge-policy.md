@@ -1861,7 +1861,7 @@ Behavior: **when `post-replies.sh` successfully posts a reply, it captures the c
 - Modify: `src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies.sh`
 - Modify: `src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies_test.sh` (append before final `exit $FAIL`, reusing its `assert` helper and stub conventions)
 
-- [ ] **Step 1: Append the failing test**
+- [x] **Step 1: Append the failing test**
 
 ```bash
 # ── posted_reply_id recording (wgclw.14) ─────────────────────────────────────
@@ -1891,12 +1891,12 @@ assert "posted_reply_id recorded on the item" \
 rm -rf "$T16"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail**
+- [x] **Step 2: Run to verify the new asserts fail**
 
 Run: `bash src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies_test.sh`
 Expected: FAIL — `posted_reply_id` assert (the script discards the API response today).
 
-- [ ] **Step 3: Implement.** Two edits to `post-replies.sh`:
+- [x] **Step 3: Implement.** Two edits to `post-replies.sh`:
 
 (a) Insert this helper directly after the `jq -c '.items[]?' "$INV" > "$TMP"` line (line ~140):
 
@@ -1949,12 +1949,12 @@ record_reply_id() {  # record_reply_id <item-key> <match-value> <reply-id>
 
 (The `else` branch and everything after it are unchanged.) Note the `review_thread`/fallback arm records too — harmless and consistent; the floor's exclusion set only consults it for non-thread kinds.
 
-- [ ] **Step 4: Run both suites to verify**
+- [x] **Step 4: Run both suites to verify**
 
 Run: `bash src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies_test.sh`
 Expected: PASS (new asserts and all pre-existing ones — the capture change must not break the pipe-isolation behavior the header comments describe).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies.sh src/user/.agents/skills/reply-and-resolve-pr-threads/post-replies_test.sh

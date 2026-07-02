@@ -642,4 +642,30 @@ else
   echo "  ok: rejects nonexistent inventory file"
 fi
 
+# ── posted_reply_id recording (wgclw.14) ─────────────────────────────────────
+T16="$(mktemp -d)"
+cat > "$T16/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  # POST returns the created comment object, like the real API
+  printf '{"id": 777001, "html_url": "https://example.invalid/c/777001"}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$T16/gh"
+jq -n '{schema_version: 1, pr: {}, polling: {}, items: [
+  {kind: "issue_comment", issue_comment_id: 4242, thread_id: null, reply_to_comment_id: null,
+   author: "reviewer", body_excerpt: "x", classification: "SKIP", rationale: "noise",
+   fix_outcome: null, reply_body: "Acknowledged — skipping as cosmetic."}
+], crash_recovery: {skill_a_completed: true, last_completed_phase: "7-write-inventory"}}' > "$T16/inv.json"
+
+out16=$(PATH="$T16:$PATH" "$HERE/post-replies.sh" --inventory "$T16/inv.json" --owner o --repo r --pr 1 2>&1)
+rc16=$?
+assert "post succeeds against stub" "[ \$rc16 -eq 0 ]"
+assert "POSTED line emitted" "grep -q 'POSTED 4242' <<<\"\$out16\""
+assert "posted_reply_id recorded on the item" \
+  "[ \"\$(jq -r '.items[0].posted_reply_id' \"$T16/inv.json\")\" = 777001 ]"
+rm -rf "$T16"
+
 exit $FAIL

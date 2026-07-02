@@ -139,6 +139,23 @@ ERR="$(mktemp)"
 trap 'rm -f "$TMP" "$ERR"' EXIT
 jq -c '.items[]?' "$INV" > "$TMP"
 
+# Record the CREATED reply's id on the matching inventory item — the
+# eligibility floor excludes agent replies by exact recorded id, never by
+# author login (the agent commonly posts through its human operator's own
+# GitHub account, so a login filter would hide that human's real comments).
+record_reply_id() {  # record_reply_id <item-key> <match-value> <reply-id>
+  local key="$1" val="$2" rid="$3" tmp_inv
+  tmp_inv="$(mktemp)"
+  if jq --arg k "$key" --arg v "$val" --argjson rid "$rid" \
+       '.items |= map(if ((.[$k] // "") | tostring) == $v then . + {posted_reply_id: $rid} else . end)' \
+       "$INV" > "$tmp_inv" && mv "$tmp_inv" "$INV"; then
+    :
+  else
+    rm -f "$tmp_inv"
+    echo "WARNING $val reply-id-record-failed: reply $rid posted to GitHub but not recorded in $INV; the eligibility check will treat it as incoming feedback until triaged" >&2
+  fi
+}
+
 while IFS= read -r item; do
   [ -n "$item" ] || continue
   kind="$(echo "$item" | jq -r '.kind // empty')"
@@ -219,8 +236,8 @@ while IFS= read -r item; do
   # the FAILED line so script-internal vs API-rejection failures are
   # distinguishable.
   : > "$ERR"
-  if printf '%s' "$body" | gh api "$post_url" \
-      --method POST --field body=@- >/dev/null 2>"$ERR"; then
+  if resp="$(printf '%s' "$body" | gh api "$post_url" \
+      --method POST --field body=@- 2>"$ERR")"; then
     echo "POSTED $cid"
     # Sidecar recording is part of the idempotency contract. The append CANNOT
     # be expressed as `&& printf ... >> $POSTED_SIDECAR`: under `set -e`, a
@@ -235,6 +252,23 @@ while IFS= read -r item; do
         echo "WARNING $cid sidecar-append-failed: posted to GitHub but $POSTED_SIDECAR write failed; manually append $cid to that file before retrying or the next run will re-post a duplicate" >&2
         any_failed=1
       fi
+    fi
+    reply_id="$(printf '%s' "$resp" | jq -r '.id // empty' 2>/dev/null)"
+    if [ -n "$reply_id" ]; then
+      case "$kind" in
+        issue_comment)  record_reply_id issue_comment_id "$cid" "$reply_id" ;;
+        review_summary)
+          rsid="$(echo "$item" | jq -r '.review_id // empty')"
+          if [ -n "$rsid" ]; then
+            record_reply_id review_id "$rsid" "$reply_id"
+          else
+            echo "WARNING $cid reply-id-not-recorded: legacy review_summary item lacks review_id" >&2
+          fi
+          ;;
+        *)              record_reply_id reply_to_comment_id "$reply_to" "$reply_id" ;;
+      esac
+    else
+      echo "WARNING $cid reply-id-not-recorded: API response carried no .id" >&2
     fi
   else
     err_msg="$(tr '\n' ' ' <"$ERR" | sed 's/  */ /g; s/^ //; s/ $//')"
