@@ -1135,7 +1135,7 @@ Behavior: **`facts.bot_clean_review_at_head` is true iff the latest non-DISMISSE
 - Modify: `src/user/.agents/skills/merge-guard/check-merge-eligibility.sh` (replace the `# GATE: bot-clean-review` line)
 - Modify: `src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh` (append before `exit $FAIL`)
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 8: trusted-bot clean review fact ─────────────────────────────────────
@@ -1177,12 +1177,12 @@ out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "latest CHANGES_REQUESTED → fact false" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail**
+- [x] **Step 2: Run to verify the new asserts fail**
 
 Run: `bash src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 Expected: FAIL — `.facts.bot_clean_review_at_head` is `null` (gate not implemented).
 
-- [ ] **Step 3: Implement** — replace the line `# GATE: bot-clean-review        (Task 8)` with:
+- [x] **Step 3: Implement** — replace the line `# GATE: bot-clean-review        (Task 8)` with:
 
 ```bash
 # ── Fact: trusted-bot clean review at current head (bot-quiescence input) ────
@@ -1201,12 +1201,12 @@ set_fact bot_clean_review_at_head "$(jq '.clean' <<<"$bot_fact")"
 set_fact bot_reviewed_by "$(jq '.by' <<<"$bot_fact")"
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass**
+- [x] **Step 4: Run to verify all asserts pass**
 
 Run: `bash src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh

@@ -107,7 +107,20 @@ pending_json=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}/requested_reviewers") 
 set_fact pending_reviewers "$(jq '[(.users[].login), (.teams[].slug)]' <<<"$pending_json")"
 
 # ── Gates (appended by later tasks) ──────────────────────────────────────────
-# GATE: bot-clean-review        (Task 8)
+# ── Fact: trusted-bot clean review at current head (bot-quiescence input) ────
+# Exact-identity allowlist — never substring. Missing commit_id fails closed.
+bot_fact=$(jq --argjson trusted "$BOT_REVIEWERS" --arg head "$HEAD_OID" '
+    [ .[]
+      | select(.user.login as $l | ($trusted | index($l)) != null)
+      | select(.state != "DISMISSED")
+      | select((.commit_id // "") == $head) ]
+    | sort_by(.submitted_at) | last
+    | if . == null then {clean: false, by: null}
+      elif (.state == "APPROVED" or .state == "COMMENTED") then {clean: true, by: .user.login}
+      else {clean: false, by: .user.login}
+      end' <<<"$ALL_REVIEWS")
+set_fact bot_clean_review_at_head "$(jq '.clean' <<<"$bot_fact")"
+set_fact bot_reviewed_by "$(jq '.by' <<<"$bot_fact")"
 # GATE: requested-changes       (Task 9)
 # GATE: distinct-approvers      (Task 10)
 # GATE: unresolved-threads      (Task 11)
