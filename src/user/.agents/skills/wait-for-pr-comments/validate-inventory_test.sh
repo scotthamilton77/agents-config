@@ -137,10 +137,12 @@ mk_inv() {  # mk_inv <items-json>
 good_summary='[{"kind":"review_summary","review_id":301,"thread_id":null,"reply_to_comment_id":null,"issue_comment_id":null,"author":"copilot","body_excerpt":"x","classification":"SKIP","rationale":"noise","fix_outcome":null}]'
 no_id_summary='[{"kind":"review_summary","thread_id":null,"reply_to_comment_id":null,"issue_comment_id":null,"author":"copilot","body_excerpt":"x","classification":"SKIP","rationale":"noise","fix_outcome":null}]'
 wrong_id_summary='[{"kind":"review_summary","review_id":301,"thread_id":null,"reply_to_comment_id":null,"issue_comment_id":88,"author":"copilot","body_excerpt":"x","classification":"SKIP","rationale":"noise","fix_outcome":null}]'
+string_id_summary='[{"kind":"review_summary","review_id":"301","thread_id":null,"reply_to_comment_id":null,"issue_comment_id":null,"author":"copilot","body_excerpt":"x","classification":"SKIP","rationale":"noise","fix_outcome":null}]'
 
 mk_inv "$good_summary" > "$T15/good.json"
 mk_inv "$no_id_summary" > "$T15/noid.json"
 mk_inv "$wrong_id_summary" > "$T15/wrongid.json"
+mk_inv "$string_id_summary" > "$T15/stringid.json"
 
 "$HERE/validate-inventory.sh" --inventory "$T15/good.json" --phase 0 >/dev/null 2>&1
 assert "review_summary with review_id passes guard 3" "[ \$? -eq 0 ]"
@@ -148,6 +150,8 @@ assert "review_summary with review_id passes guard 3" "[ \$? -eq 0 ]"
 assert "review_summary without review_id fails guard 3" "[ \$? -eq 1 ]"
 "$HERE/validate-inventory.sh" --inventory "$T15/wrongid.json" --phase 0 >/dev/null 2>&1
 assert "review_summary with issue_comment_id still fails guard 3" "[ \$? -eq 1 ]"
+"$HERE/validate-inventory.sh" --inventory "$T15/stringid.json" --phase 0 >/dev/null 2>&1
+assert "review_summary with string review_id fails guard 3" "[ \$? -eq 1 ]"
 rm -rf "$T15"
 
 exit $FAIL

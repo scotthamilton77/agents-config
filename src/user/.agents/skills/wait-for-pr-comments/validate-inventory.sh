@@ -105,9 +105,11 @@ run_guard "escalation_filed-only-on-ESCALATE" \
 
 # Guard 3: review_summary items carry review_id (their stable identity for the
 # cross-push triage union in check-merge-eligibility.sh) and none of the other
-# three IDs. review_id is the REST review's numeric .id.
+# three IDs. review_id must be the REST review's numeric .id — a string-typed
+# value (e.g. "301") would never match the numeric live .id via jq index() in
+# check-merge-eligibility.sh, silently re-blocking already-triaged summaries.
 run_guard "review_summary-ids" \
-    '[.items[] | select(.kind == "review_summary" and ((.thread_id != null) or (.reply_to_comment_id != null) or (.issue_comment_id != null) or (.review_id == null)))]' || FAIL=1
+    '[.items[] | select(.kind == "review_summary" and ((.thread_id != null) or (.reply_to_comment_id != null) or (.issue_comment_id != null) or ((.review_id | type) != "number")))]' || FAIL=1
 
 # Guard 4: non-FIX items must have null fix_outcome
 run_guard "non-FIX-null-fix_outcome" \
