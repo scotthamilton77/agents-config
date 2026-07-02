@@ -1667,7 +1667,7 @@ The non-thread-feedback gate (Task 17) reads completed inventories as its durabl
 
 Prose-only edits (the deletion is instructed in SKILL.md code blocks, not in a script), so no failing-test step — verification is by grep.
 
-- [ ] **Step 1: Rewrite Phase 9 step 4** — replace:
+- [x] **Step 1: Rewrite Phase 9 step 4** — replace:
 
 ```markdown
 4. **If count == 0**: write final completion state and clean up:
@@ -1702,7 +1702,7 @@ with:
    file's lifecycle owner — Skill B never unlinks.
 ```
 
-- [ ] **Step 2: Rewrite the branch-table row** — replace:
+- [x] **Step 2: Rewrite the branch-table row** — replace:
 
 ```markdown
 | `true` | `8-skill-b-done`, `9-final-check-done` | **Silent unlink** (orphan from prior crash); proceed normally |
@@ -1714,7 +1714,7 @@ with:
 | `true` | `8-skill-b-done`, `9-final-check-done` | **Retained triage record** (completed run) — do NOT unlink; proceed normally. The eligibility floor reads these files. |
 ```
 
-- [ ] **Step 3: Rewrite the cleanup-timing note** — replace:
+- [x] **Step 3: Rewrite the cleanup-timing note** — replace:
 
 ```markdown
 **Inventory cleanup timing:**
@@ -1747,12 +1747,12 @@ with:
 - The only deletion anywhere is the >30-day pruning.
 ```
 
-- [ ] **Step 4: Verify by grep**
+- [x] **Step 4: Verify by grep**
 
 Run: `grep -n "rm -f ~/.claude/state/pr-inventory" src/user/.agents/skills/wait-for-pr-comments/SKILL.md; grep -cn "Silent unlink" src/user/.agents/skills/wait-for-pr-comments/SKILL.md`
 Expected: no `rm -f` hit; 0 `Silent unlink` hits.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/wait-for-pr-comments/SKILL.md

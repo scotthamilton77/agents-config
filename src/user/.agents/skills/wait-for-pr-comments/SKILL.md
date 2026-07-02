@@ -446,17 +446,20 @@ won't on a pure re-classification loop.
    (round +1)**. Phase 3 must **re-fetch full thread details** (the Phase 9
    query's `comments` preview is for triage only; the canonical source for
    inventory construction remains the same Phase 3 fetch paths used in round 1).
-4. **If count == 0**: write final completion state and clean up:
+4. **If count == 0**: write final completion state and RETAIN the file:
    ```bash
    ${CLAUDE_SKILL_DIR}/write-inventory.sh \
      --state complete \
      --phase 9-final-check-done \
      --output ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json \
      < ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
-
-   rm -f ~/.claude/state/pr-inventory/<owner>-<repo>-<n>-<sha>.json
    ```
-   Skill A is the file's lifecycle owner — Skill B never unlinks.
+   Do NOT delete the inventory. Completed inventories are the durable triage
+   record the merge-eligibility floor's untriaged-non-thread-feedback check
+   unions across pushes (`check-merge-eligibility.sh` globs
+   `<owner>-<repo>-<n>-*.json`) — possibly in a later session. The >30-day
+   pruning in `write-inventory.sh` is the only deletion. Skill A remains the
+   file's lifecycle owner — Skill B never unlinks.
 
 ---
 
@@ -864,7 +867,7 @@ PR, consult the inventory's `crash_recovery` block:
 |---|---|---|
 | `false` | `5a-verify-failed`, `5b-commit-verify-failed`, `5c-push-failed` | Refuse with **Message #1** (RESUME or DISCARD) |
 | `true` | `7-write-inventory` | Refuse with **Message #2** (FROM-INVENTORY only) |
-| `true` | `8-skill-b-done`, `9-final-check-done` | **Silent unlink** (orphan from prior crash); proceed normally |
+| `true` | `8-skill-b-done`, `9-final-check-done` | **Retained triage record** (completed run) — do NOT unlink; proceed normally. The eligibility floor reads these files. |
 
 **Message #1** (partial inventory; Skill A interrupted):
 
@@ -895,10 +898,15 @@ Refused to start: an inventory exists for PR #<n> where Skill A completed but Sk
 - At Skill A startup: housekeeping ONLY (delete files >30 days, handled
   inline by `write-inventory.sh`). Never touch the inventory currently
   being recovered.
-- At Phase 9 success (after final unresolved-threads check passes): Skill A updates
-  `last_completed_phase="9-final-check-done"` then `unlink`s.
+- At Phase 9 success (after final unresolved-threads check passes): Skill A
+  updates `last_completed_phase="9-final-check-done"` and **retains the
+  file** — completed inventories are the durable triage record consumed by
+  `check-merge-eligibility.sh`'s non-thread-feedback check, unioned across
+  the PR's full push history.
 - Never at Phase 1 (the concurrency check refuses before any cleanup of the
-  current PR's files).
+  current PR's files; completed files found there are retained records, not
+  orphans).
+- The only deletion anywhere is the >30-day pruning.
 
 ---
 
