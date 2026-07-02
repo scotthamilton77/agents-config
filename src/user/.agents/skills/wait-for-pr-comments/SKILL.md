@@ -732,7 +732,8 @@ POSIX-atomic) — handled by `write-inventory.sh`.
       "fix_commit_sha": "def456..." | null,  // FIX only; new commit (committed) or referenced existing commit (already_addressed)
       "fix_summary": "..." | null,           // FIX only
       "fix_gate_variant": "full" | "lite" | null,  // FIX/committed only
-      "duplicate_of": "<thread_id|issue_comment_id>" | null
+      "duplicate_of": "<thread_id|issue_comment_id>" | null,
+      "posted_reply_id": 777001 | null       // written by Skill B's post-replies.sh at post time; read by check-merge-eligibility.sh to exclude the agent's own replies from the untriaged-feedback check
     }
   ],
   "crash_recovery": {
