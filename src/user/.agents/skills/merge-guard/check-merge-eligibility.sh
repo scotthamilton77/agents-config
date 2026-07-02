@@ -331,7 +331,21 @@ if [[ "$untriaged_count" -gt 0 ]]; then
     add_blocker untriaged_feedback \
         "untriaged non-thread feedback (no terminal disposition in any retained inventory): $(jq -r 'join("; ")' <<<"$untriaged")"
 fi
-# GATE: prgroom-internal        (Task 18)
+# ── Blockers: prgroom internal state (ADDITIONAL sources, never substitutes
+#    for the live thread / non-thread checks; the rolled-up auto_merge_eligible
+#    is never consumed — two of its four gates are unsuitable here) ───────────
+prgroom_available=false
+if command -v prgroom >/dev/null 2>&1; then
+    if pg_status=$(prgroom status --json 2>/dev/null) && [[ -n "$pg_status" ]] \
+       && jq -e '.merge_gates' >/dev/null 2>&1 <<<"$pg_status"; then
+        prgroom_available=true
+        [[ "$(jq -r '.merge_gates.no_blocker_items' <<<"$pg_status")" == "false" ]] \
+            && add_blocker prgroom_blocker "prgroom reports escalated/failed item(s) (merge_gates.no_blocker_items=false)"
+        [[ "$(jq -r '.merge_gates.last_error_clear' <<<"$pg_status")" == "false" ]] \
+            && add_blocker prgroom_error "prgroom reports a terminal lifecycle error (merge_gates.last_error_clear=false)"
+    fi
+fi
+set_fact prgroom_available "$prgroom_available"
 
 # ── Decision ─────────────────────────────────────────────────────────────────
 blocker_count=$(jq 'length' <<<"$BLOCKERS")

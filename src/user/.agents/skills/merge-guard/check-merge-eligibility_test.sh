@@ -333,4 +333,24 @@ out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
 clean_invs
 
+# ── Task 18: prgroom internal atoms ──────────────────────────────────────────
+PG_BLOCKED='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":false,"human_review_satisfied":true},"auto_merge_eligible":false}'
+PG_ERROR='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":false,"no_blocker_items":true,"human_review_satisfied":true},"auto_merge_eligible":false}'
+# rollup says GO but an atom says NO — proves the rollup is never consumed
+PG_ROLLUP_LIES='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":false,"human_review_satisfied":true},"auto_merge_eligible":true}'
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_BLOCKED"); rc=$?
+assert "prgroom no_blocker_items=false blocks" "[ \$rc -eq 1 ]"
+assert "blocker code prgroom_blocker" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q prgroom_blocker"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_ERROR"); rc=$?
+assert "prgroom last_error_clear=false blocks" "[ \$rc -eq 1 ]"
+
+out=$(run_script "$BASE_POLICY" FIXTURE_PRGROOM="$PG_ROLLUP_LIES"); rc=$?
+assert "auto_merge_eligible=true never overrides an atom" "[ \$rc -eq 1 ]"
+
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "no prgroom state → n/a, eligible" "[ \$rc -eq 0 ]"
+assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$out\")\" = false ]"
+
 exit $FAIL

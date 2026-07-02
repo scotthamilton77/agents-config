@@ -2096,7 +2096,7 @@ Behavior: **when prgroom state exists, `merge_gates.no_blocker_items == false` o
 
 **Files:** same two as Task 17.
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 18: prgroom internal atoms ──────────────────────────────────────────
@@ -2120,9 +2120,9 @@ assert "no prgroom state → n/a, eligible" "[ \$rc -eq 0 ]"
 assert "prgroom_available false" "[ \"\$(jq '.facts.prgroom_available' <<<\"\$out\")\" = false ]"
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (prgroom fixtures currently ignored)
+- [x] **Step 2: Run to verify the new asserts fail** (prgroom fixtures currently ignored)
 
-- [ ] **Step 3: Implement** — replace `# GATE: prgroom-internal        (Task 18)` with:
+- [x] **Step 3: Implement** — replace `# GATE: prgroom-internal        (Task 18)` with:
 
 ```bash
 # ── Blockers: prgroom internal state (ADDITIONAL sources, never substitutes
@@ -2142,12 +2142,12 @@ fi
 set_fact prgroom_available "$prgroom_available"
 ```
 
-- [ ] **Step 4: Run the FULL suite to verify everything passes together**
+- [x] **Step 4: Run the FULL suite to verify everything passes together**
 
 Run: `bash src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh`
 Expected: PASS — every assert from Tasks 7-18.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh
