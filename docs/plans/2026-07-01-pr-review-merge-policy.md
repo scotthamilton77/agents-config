@@ -2329,7 +2329,7 @@ git commit -m "feat(merge-guard): SKILL.md enforces Axis 2 — never/explicit/ru
 **Files:**
 - Modify: `src/user/.agents/skills/wait-for-pr-comments/SKILL.md` (Phase 1, after the concurrency-check step ~line 107)
 
-- [ ] **Step 1: Insert a new Phase-1 step 5** immediately after the concurrency-check step (step 4, ending "If none found, proceed."):
+- [x] **Step 1: Insert a new Phase-1 step 5** immediately after the concurrency-check step (step 4, ending "If none found, proceed."):
 
 ```markdown
 5. **Resolve the review policy** (Axis 1 decides whether and what to poll):
@@ -2362,7 +2362,7 @@ git commit -m "feat(merge-guard): SKILL.md enforces Axis 2 — never/explicit/ru
      call independently at merge time).
 ```
 
-- [ ] **Step 2: Update the Phase-9 completion messaging.** In Phase 9, after the (Task-14-rewritten) step 4, add:
+- [x] **Step 2: Update the Phase-9 completion messaging.** In Phase 9, after the (Task-14-rewritten) step 4, add:
 
 ```markdown
 5. **Terminal status:** if the resolved policy has `human_approvers_required > 0`
@@ -2372,12 +2372,12 @@ git commit -m "feat(merge-guard): SKILL.md enforces Axis 2 — never/explicit/ru
    when nothing human is expected.
 ```
 
-- [ ] **Step 3: Verify by grep**
+- [x] **Step 3: Verify by grep**
 
 Run: `grep -n "resolve_policy.py" src/user/.agents/skills/wait-for-pr-comments/SKILL.md`
 Expected: the Phase-1 insertion (one hit, `../merge-guard/` path).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/user/.agents/skills/wait-for-pr-comments/SKILL.md

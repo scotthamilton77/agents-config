@@ -105,6 +105,34 @@ failure).
    - If found, read `crash_recovery` and apply the **Concurrency recovery
      branch table** (below).
    - If none found, proceed.
+5. **Resolve the review policy** (Axis 1 decides whether and what to poll):
+   ```bash
+   POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/../merge-guard/resolve_policy.py" \
+     --project-config "<repo-root>/project-config.toml" \
+     --labels "<comma-separated bead labels, or empty>")
+   ```
+   (`--labels`: in `--mode autonomous`, `bd label list <bead-id> --json | jq -r 'join(",")'`;
+   interactive without a bead → `""`.)
+   - Resolver exit 1 → fatal startup error; report the resolver's stderr
+     verbatim. A repo with an invalid review policy must not silently poll
+     under a different one.
+   - python3 (>= 3.11) or the resolver missing → proceed with the built-in
+     default policy (bot expected / explicit merge) and say so — identical to
+     this skill's historical behavior.
+   - **`bot_review_expected == false` and `human_approvers_required == 0`**:
+     nothing is expected — SKIP Phase 2 entirely (no polling) and proceed
+     directly to Phase 3 to inventory any already-present feedback. Do NOT
+     emit a human-handoff status: nothing human is expected; whether a merge
+     may proceed is merge-guard's question, not this skill's.
+   - **`bot_review_expected == false` but `human_approvers_required > 0`**:
+     skip Copilot polling (Phase 2); inventory + triage existing feedback
+     (Phases 3-8); at Phase 9, end with the terminal status
+     "awaiting human review (<n> approval(s) required)" — parked, not
+     blocking, not an error.
+   - **`bot_review_expected == true`**: run Phase 2 as written. On
+     `copilot_review_timeout`, the timeout ends the wait — it never counts as
+     a review having happened (merge-guard's in-flight gate makes the same
+     call independently at merge time).
 
 ### Phase 2 — Poll Copilot (background script)
 
@@ -466,6 +494,11 @@ won't on a pure re-classification loop.
    `<owner>-<repo>-<n>-*.json`) — possibly in a later session. The >30-day
    pruning in `write-inventory.sh` is the only deletion. Skill A remains the
    file's lifecycle owner — Skill B never unlinks.
+5. **Terminal status:** if the resolved policy has `human_approvers_required > 0`
+   and that many distinct current approvals have not arrived, report
+   "awaiting human review (<n> required)" as the terminal status. Otherwise
+   report the normal completion summary. Never report a human-handoff status
+   when nothing human is expected.
 
 ---
 
