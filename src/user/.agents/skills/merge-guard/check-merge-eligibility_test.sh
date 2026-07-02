@@ -279,4 +279,58 @@ revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:0
 out=$(run_script "$H_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
 assert "enough approvals → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
 
+# ── Task 17: untriaged non-thread feedback ───────────────────────────────────
+INV_DIR="$FAKE_HOME/.claude/state/pr-inventory"
+write_inv() {  # write_inv <filename> <items-json>
+  jq -n --argjson items "$2" '{schema_version: 1, pr: {}, polling: {}, items: $items,
+    crash_recovery: {skill_a_completed: true, last_completed_phase: "9-final-check-done"}}' \
+    > "$INV_DIR/$1"
+}
+clean_invs() { rm -f "$INV_DIR"/*.json; }
+
+IC='[{"id": 900, "user": {"login": "reviewer"}, "body": "please fix the naming"}]'
+
+# untriaged issue comment blocks
+clean_invs
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "untriaged issue comment blocks" "[ \$rc -eq 1 ]"
+assert "blocker code untriaged_feedback" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q untriaged_feedback"
+
+# terminal triage in a retained inventory clears it — recorded against a
+# DIFFERENT head SHA than current (union across pushes, never head-scoped)
+write_inv "o-r-1-oldsha0001.json" '[{"kind":"issue_comment","issue_comment_id":900,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "triage from an older-head inventory still clears (union)" "[ \$rc -eq 0 ]"
+
+# ESCALATE triage still blocks
+clean_invs
+write_inv "o-r-1-oldsha0001.json" '[{"kind":"issue_comment","issue_comment_id":900,"classification":"ESCALATE","escalation_filed":true,"rationale":"needs human","fix_outcome":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "ESCALATE disposition still blocks" "[ \$rc -eq 1 ]"
+
+# a recorded agent reply is excluded by exact ID…
+clean_invs
+write_inv "o-r-1-oldsha0002.json" '[{"kind":"issue_comment","issue_comment_id":444,"classification":"SKIP","rationale":"r","fix_outcome":null,"posted_reply_id":900}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "recorded posted_reply_id excluded → eligible" "[ \$rc -eq 0 ]"
+
+# …but a manual comment from the same account with a DIFFERENT id still blocks
+IC2='[{"id": 900, "user": {"login": "operator"}, "body": "agent reply"}, {"id": 901, "user": {"login": "operator"}, "body": "actually, one more thing"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC2"); rc=$?
+assert "same-account manual comment (unrecorded id) blocks" "[ \$rc -eq 1 ]"
+
+# an APPROVED bot review with a non-empty body needs triage too
+clean_invs
+revs=$(jq -n '[{user: {login: "trusted-bot[bot]", type: "Bot"}, state: "APPROVED",
+  commit_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", submitted_at: "2026-01-01T01:00:00Z",
+  id: 301, body: "LGTM but consider renaming this module"}]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "APPROVED review with body blocks until triaged" "[ \$rc -eq 1 ]"
+
+# triaged by review_id in a retained inventory → clears
+write_inv "o-r-1-oldsha0003.json" '[{"kind":"review_summary","review_id":301,"classification":"FIX","rationale":"renamed","fix_outcome":"already_addressed","fix_commit_sha":"abc"}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
+assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
+clean_invs
+
 exit $FAIL

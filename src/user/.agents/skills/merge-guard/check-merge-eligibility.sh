@@ -288,7 +288,49 @@ if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
     fi
 fi
 set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
-# GATE: non-thread-feedback     (Task 17)
+# ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
+# review_summary / issue_comment items are disjoint GitHub objects from review
+# threads — the thread check does not cover them, and prgroom's
+# no_blocker_items must never stand in (an item prgroom has not polled has no
+# disposition). Deliberately NOT head-scoped: an issue_comment carries no
+# commit reference and a summary's feedback does not become moot on push —
+# only an actual triage decision clears it. Exclusion is by exact recorded
+# reply ID, never author login. No durable record anywhere = blocker (fail
+# closed). Empty current set = vacuously clear.
+ISSUE_COMMENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate | jq -s 'add // []') || {
+    echo "Error: failed to fetch issue comments" >&2; exit 3; }
+
+inventory_items='[]'
+while IFS= read -r -d '' inv_file; do
+    file_items=$(jq '[.items[]?]' "$inv_file" 2>/dev/null) || continue
+    inventory_items=$(jq -n --argjson a "$inventory_items" --argjson b "$file_items" '$a + $b')
+done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
+         -name "${OWNER}-${REPO}-${PR}-*.json" -print0 2>/dev/null)
+
+untriaged=$(jq -n \
+    --argjson live_issue "$(jq '[.[] | {id, author: .user.login}]' <<<"$ISSUE_COMMENTS")" \
+    --argjson live_summaries "$(jq '[.[] | select((.body // "") != "") | {review_id: .id, author: .user.login}]' <<<"$ALL_REVIEWS")" \
+    --argjson recorded "$inventory_items" '
+    def terminal_ok:
+        (.classification == "SKIP")
+        or (.classification == "FIX"
+            and (.fix_outcome == "committed" or .fix_outcome == "already_addressed"));
+    ([ $recorded[] | .posted_reply_id // empty ] | unique) as $agent_replies
+    | ([ $recorded[] | select(.kind == "issue_comment" and terminal_ok) | .issue_comment_id ] | unique) as $done_issue
+    | ([ $recorded[] | select(.kind == "review_summary" and terminal_ok) | .review_id // empty ] | unique) as $done_review
+    | ([ $live_issue[]
+         | select((.id as $i | $agent_replies | index($i)) == null)
+         | select((.id as $i | $done_issue | index($i)) == null)
+         | "issue_comment #\(.id) by \(.author)" ])
+    + ([ $live_summaries[]
+         | select((.review_id as $i | $done_review | index($i)) == null)
+         | "review_summary #\(.review_id) by \(.author)" ])')
+untriaged_count=$(jq 'length' <<<"$untriaged")
+set_fact untriaged_feedback_count "$untriaged_count"
+if [[ "$untriaged_count" -gt 0 ]]; then
+    add_blocker untriaged_feedback \
+        "untriaged non-thread feedback (no terminal disposition in any retained inventory): $(jq -r 'join("; ")' <<<"$untriaged")"
+fi
 # GATE: prgroom-internal        (Task 18)
 
 # ── Decision ─────────────────────────────────────────────────────────────────

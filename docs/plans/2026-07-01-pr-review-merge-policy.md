@@ -1971,7 +1971,7 @@ Behavior: **every `issue_comment` and non-empty-body review (`review_summary`) c
 - Modify: `src/user/.agents/skills/merge-guard/check-merge-eligibility.sh` (replace `# GATE: non-thread-feedback     (Task 17)`)
 - Modify: `src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh` (append)
 
-- [ ] **Step 1: Append the failing tests**
+- [x] **Step 1: Append the failing tests**
 
 ```bash
 # ── Task 17: untriaged non-thread feedback ───────────────────────────────────
@@ -2029,9 +2029,9 @@ assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
 clean_invs
 ```
 
-- [ ] **Step 2: Run to verify the new asserts fail** (untriaged cases currently exit 0)
+- [x] **Step 2: Run to verify the new asserts fail** (untriaged cases currently exit 0)
 
-- [ ] **Step 3: Implement** — replace `# GATE: non-thread-feedback     (Task 17)` with:
+- [x] **Step 3: Implement** — replace `# GATE: non-thread-feedback     (Task 17)` with:
 
 ```bash
 # ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
@@ -2079,9 +2079,9 @@ if [[ "$untriaged_count" -gt 0 ]]; then
 fi
 ```
 
-- [ ] **Step 4: Run to verify all asserts pass** — including re-running the FULL file: earlier tasks' fixtures (e.g. Task 8/13's `mk_review` bodies) use `body: ""`, so they do not trip this gate.
+- [x] **Step 4: Run to verify all asserts pass** — including re-running the FULL file: earlier tasks' fixtures (e.g. Task 8/13's `mk_review` bodies) use `body: ""`, so they do not trip this gate.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/check-merge-eligibility.sh src/user/.agents/skills/merge-guard/check-merge-eligibility_test.sh
