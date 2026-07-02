@@ -125,7 +125,7 @@ git commit -m "docs(architecture): review-merge-policy HLD — two-axis model, e
 
 Behavior under test: **with no config file and no labels, the resolver emits the built-in default policy as JSON on stdout, exit 0.**
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `resolve_policy_test.py`:
 
@@ -200,12 +200,12 @@ python3 "$HERE/resolve_policy_test.py" -v
 chmod +x src/user/.agents/skills/merge-guard/resolve_policy_test.sh
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: FAIL — `resolve_policy.py` does not exist (subprocess exits nonzero / FileNotFoundError).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `resolve_policy.py`:
 
@@ -313,12 +313,12 @@ if __name__ == "__main__":
 chmod +x src/user/.agents/skills/merge-guard/resolve_policy.py
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash src/user/.agents/skills/merge-guard/resolve_policy_test.sh`
 Expected: PASS (`test_no_config_file_yields_builtin_defaults ... ok`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/.agents/skills/merge-guard/resolve_policy.py src/user/.agents/skills/merge-guard/resolve_policy_test.py src/user/.agents/skills/merge-guard/resolve_policy_test.sh
