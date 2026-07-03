@@ -64,18 +64,12 @@ class TriageConfig:     # defaults; overridable via project-config.toml [complet
     trivial_max_loc: int = 3   # SKIP eligibility ceiling; see §4.3; hard-capped at 20 on load
 
 def load_config(repo_root: Path) -> TriageConfig
-    # boundary: reads project-config.toml [completion-gate]. Config is a trust boundary —
-    # it decides whether review runs at all — so it is validated, not merely parsed:
-    # - every field must be a positive integer; a non-integer or negative value raises,
-    #   caught by the caller and treated as "section absent" (defaults apply), not a crash
-    # - trivial_max_loc is clamped to [1, 20] regardless of the configured value — a config
-    #   cannot raise SKIP eligibility high enough to functionally disable the gate
-    # - heavy_min_loc/heavy_min_files/heavy_min_subsystems have no upper clamp (a repo may
-    #   legitimately want a higher HEAVY bar) but a value below trivial_max_loc is rejected
-    #   (nonsensical: HEAVY would trigger below SKIP's own ceiling)
-    # - unknown keys in [completion-gate] are ignored, not an error (forward-compatible)
-    # - absent section, absent file, or any validation failure → TriageConfig() defaults;
-    #   gate-triage never fails open to "no gate" on a config problem
+    # boundary: reads project-config.toml [completion-gate]. Config decides whether review
+    # runs, so it is validated, not merely parsed: fields must be positive integers;
+    # trivial_max_loc is clamped to [1, 20]; heavy_min_loc below trivial_max_loc is
+    # rejected; unknown keys are ignored; ANY validation failure, absent section, or
+    # absent file → TriageConfig() defaults. Never fails open to "no gate".
+    # (Per-case behaviors enumerated in the test plan, §9.)
 
 DEPENDENCY_FILES = frozenset({
     "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
@@ -108,7 +102,7 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 
 - Exactly 1 changed file AND `loc_changed` ≤ `trivial_max_loc` AND no critical hit → `SKIP` floor. File type is irrelevant — a 2-line code fix and a 2-line doc fix are equally trivial; a 2-line change to a critical-path file is not (next bullet wins).
 - Any of: subsystems ≥ `heavy_min_subsystems`, files ≥ `heavy_min_files`, LOC ≥ `heavy_min_loc`, `new_deps` → `HEAVY` floor.
-- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too. `project-config.toml` (repo root) is always a hit, hardcoded, independent of any `.critical-paths` file (§5) — its own contents are never consulted to evaluate a change to itself.
+- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too. The gate's own policy inputs — `project-config.toml` (repo root) and every `.critical-paths` file — are always hits, hardcoded (§5): a diff touching gate policy is never evaluated under the policy that diff itself carries.
 - Otherwise → `SERIAL`.
 
 `new_deps` = `Path(changed.path).name in DEPENDENCY_FILES` for any `changed` in `files`, regardless of status — matched by **basename**, not full path, so nested manifests (`packages/installer/pyproject.toml`, `packages/prgroom/uv.lock`, etc.) trigger it exactly like a root-level one. Touching a dependency manifest or lockfile at all is the signal, not just adding one. Detecting *which* dependency changed inside the file is out of scope; the file-level signal is deliberately coarse and cheap.
@@ -133,13 +127,20 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 
 **Required seeding (implementation deliverable, not a dogfood nicety):** markers have exactly one job — force `HEAVY` on anything touching a load-bearing path, at any size; they do not gate `SKIP` eligibility (§3, §4.3). An unmarked path falls through to the quant floor and risk-class list like everything else; the maximum exposure is a `SKIP`-eligible diff, which is capped at 1 file / `trivial_max_loc` lines everywhere, marked or not — so an incomplete seeding list is a coverage gap, not a safety hole.
 
-Coverage is defined at the **source-root** level, not the namespace level: one `.critical-paths` file at the root of every deployable source directory, matching its full subtree recursively (`.critical-paths` patterns already apply to their folder's whole subtree, §5 above — a root-level marker therefore covers that directory's namespace subdirectories, e.g. `skills/`, `rules/`, AND its own loose tool-root files, e.g. `AGENTS.md.template`, `settings.json.template`, uniformly, with no separate case for either). Deriving coverage from each tool adapter's `scoped_namespaces()` tuple was tried and found incomplete (Round 6): namespace directories are only part of what a tool adapter stages — `stage_templates`/`stage_settings` (`packages/installer/src/installer/core/staging.py`) deploy tool-root files like `AGENTS.md.template` through a separate path that a namespace-only derivation never reaches. Seeding at the source root sidesteps the distinction entirely.
+This repo seeds **one marker file, at the repo root**, naming the load-bearing surface in a single auditable place:
 
-Required roots: every tool adapter's `source_dir(repo_root)` (`src/user/.claude/`, `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/`), plus `src/user/.agents/` (shared skills/agents/rules), `src/plugins/`, and `packages/installer/` (the installer's own source — not staged anywhere, but load-bearing in its own right). This ships in the same change as gate-triage, with an acceptance test (§9) asserting every required root's marker produces a `critical_path_hits` entry for both a namespace-nested file and a root-level loose file — so a new tool, namespace, or tool-root file added later is covered by construction, not by remembering to re-enumerate.
+```gitignore
+# .critical-paths (repo root)
+src/**                  # all deployable tool, shared, and plugin source
+packages/**             # installer + sibling CLI packages (prgroom, pdlc, …)
+scripts/**              # installer entry stubs
+.github/**              # CI definitions
+Makefile                # CI gate driver
+```
 
-**Self-protection.** A `.critical-paths` file living inside a required root is itself matched by that root's own recursive pattern — editing or deleting an existing marker is, by construction, a change under that marker's own subtree, so it forces `HEAVY` on itself. No separate rule is needed for markers.
+A single curated list is drift-resistant where distributed per-root markers are not: a new tool directory under `src/`, a new namespace, or a new tool-root template is covered by `src/**` automatically, instead of depending on someone remembering to seed the new root. The residual failure mode — adding a load-bearing *top-level* path outside the list — is narrower, visible in one file, and still backstopped by the risk-class judgment list (§6). `docs/**` is deliberately unmarked: dated specs and plans are point-in-time artifacts, and the `SKIP` size bound already caps their unreviewed exposure at one file / `trivial_max_loc` lines. Nested per-subtree markers remain fully supported by the mechanism (a repo may prefer markers living next to what they protect); this repo just doesn't carry the enumeration burden.
 
-`project-config.toml` at the repo root is the one file this coverage model cannot reach — it sits outside every required subtree root, and `load_config` (§4.1) reads it *from the same candidate diff being evaluated*: a change that loosens `[completion-gate]` (e.g. raises `trivial_max_loc`) could otherwise use its own loosened value to qualify for `SKIP`. Rather than defend against this by comparing base-branch config against candidate config, gate-triage **hardcodes `project-config.toml` as always-critical**, independent of any `.critical-paths` file: any change to it, at any size, floors at `HEAVY` before its own contents are even consulted. This closes the self-modification path completely — a diff touching the gate's own policy can never use that diff's policy to evaluate itself.
+**Gate policy inputs are hardcoded-critical.** `project-config.toml` (repo root) and every `.critical-paths` file are forced `HEAVY` by gate-triage itself, independent of any marker pattern. `load_config` (§4.1) reads `[completion-gate]` *from the same candidate diff being evaluated*, so a change loosening the config — or weakening a marker — could otherwise use its own loosened policy to qualify for `SKIP`. Hardcoding closes the self-modification path before the changed policy is ever consulted, and self-protects the root marker without requiring it to match itself.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -163,6 +164,8 @@ Ships as a saved named workflow (source: `src/user/.claude/workflows/`), invoked
 - Hardening baked in: bounded StructuredOutput report fields (retry-cap choke: work lands, report dies), one-repair-attempt-then-abort chains, model/effort tiering (cheap finders, expensive synthesis), `resumeFromRunId` recovery documented in the workflow header comment.
 
 Scale mapping (initial, tunable): `scale_hint` buckets small/medium/large from the same quant facts → (finder_dimensions, refuters, synthesis_effort) of roughly (3,2,high) / (4,2,high) / (6,3,xhigh). Full scale = the large bucket regardless of diff, triggered only by ultracode or explicit ask.
+
+**Open question — loop convergence criteria (separate brainstorm in progress):** the finder→refute→fix rounds above inherit "loop-until-dry" termination from the wgclw.14 lore. Two pieces of field evidence say that is not a sound stop signal for adversarial QA: this spec's own review campaign ran 8 adversarial rounds without ever reaching a clean report (the reviewer emits its best-N findings per round rather than draining a finite pool — see Review feedback), and wgclw.14's refuter panels showed the mirror failure — zero refutations across all votes, i.e. no discrimination. Termination and acceptance criteria (architectural-delta measures, capped rounds with severity triage, cross-round recurrence dedup, calibration probes) are being brainstormed separately; until that lands, the workflow ships with a hard round cap plus the dedup-vs-seen guard as placeholders, and this section will be amended with the outcome.
 
 ### 7.1 Installer deployment requirement (blocking)
 
@@ -209,7 +212,7 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 6. A `DEPENDENCY_FILES` entry present with any status (A/M/D, tracked or untracked) → `HEAVY`, even with otherwise-trivial LOC. Matched by basename at a nested path (e.g. `packages/installer/pyproject.toml`), not just repo root.
 7. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
 8. A single-line change to `project-config.toml` at the repo root → `HEAVY`, unconditionally, with no `.critical-paths` file present anywhere and regardless of what the changed config values are.
-9. A `.critical-paths` file inside a required root, itself edited (weakened or deleted) → `HEAVY`, because it falls under its own root's recursive pattern (self-protection, §5).
+9. A `.critical-paths` file itself edited, weakened, or deleted — any marker, any location — → `HEAVY`, hardcoded policy-input protection (§5), no pattern matching involved.
 
 **Classification behaviors (`classify_file`):**
 10. Representative extensions map to DOCS / CONFIG / CODE per the chosen table; unknown extensions default to CODE (fail toward scrutiny).
@@ -242,7 +245,7 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 29. A one-line change to `project-config.toml` (repo root) produces a `critical_path_hits`-equivalent `HEAVY` result end-to-end through `triage()`, with no `.critical-paths` file present anywhere in the test fixture.
 
 **Repo-level acceptance check (this repo, not the gate-triage package):**
-30. For every required source root (§5), assert **effective coverage, not file existence**: seed each root's `.critical-paths` with a `**` pattern by default (narrower only when a root deliberately excludes a known-safe subpath), then assert BOTH a representative namespace-nested file (e.g. `skills/some-skill/SKILL.md`) AND a representative tool-root loose file (e.g. `AGENTS.md.template`) under that root actually produce a `critical_path_hits` entry when run through `critical_hits`. An empty or mis-anchored marker file fails this test even though the file exists; a marker that only covers namespaces (missing the root-level case Round 6 found) fails too.
+30. Assert **effective coverage of the repo-root marker, not its existence**: representative files across the marked surface — a skill file (`src/user/.agents/skills/.../SKILL.md`), a tool-root template (`src/user/.claude/AGENTS.md.template`), an installer source file, `scripts/install.sh`, a `.github/workflows/` file, and `Makefile` — each produce a `critical_path_hits` entry through `critical_hits` with the shipped root `.critical-paths`. An empty, mis-anchored, or stale-pattern marker fails even though the file exists.
 31. Installer test: renaming or removing the source `quality-gate` workflow prunes (or explicitly reports) the stale `~/.claude/workflows/quality-gate` on the next install.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
@@ -254,7 +257,7 @@ Coverage target per the shared constraints (80% line / 70% branch on changed cod
 - Non-Claude tools keep a coherent contract with graceful degradation and zero new obligations.
 - Auto-`HEAVY` spend is bounded by scale_hint; the ~2.7M full-scale run remains opt-in.
 - New maintenance surface: threshold defaults and scale buckets will need tuning from real sessions.
-- **Blocking prerequisites, not follow-ups:** the installer must gain a `workflows` namespace (§7.1) before `HEAVY` can invoke anything, and this repo's `.critical-paths` markers (§5) must ship in the same change so discipline-layer edits floor at `HEAVY` from day one. `SKIP` does not depend on seeding — it is size-bound (§3, §4.3) — so an unseeded repo carries no `SKIP`-related exposure beyond the bound itself.
+- **Blocking prerequisites, not follow-ups:** the installer must gain a `workflows` namespace (§7.1) before `HEAVY` can invoke anything, and this repo's repo-root `.critical-paths` (§5) must ship in the same change so discipline-layer edits floor at `HEAVY` from day one. `SKIP` does not depend on seeding — it is size-bound (§3, §4.3) — so an unseeded repo carries no `SKIP`-related exposure beyond the bound itself.
 
 ## 11. Options considered
 
@@ -305,3 +308,8 @@ Extension authorized by user, up to 3 more rounds after the original cap.
 - `load_config` reads `[completion-gate]` from the *same candidate diff being evaluated*, and `project-config.toml` sat outside every required marker root (§5) — a change that loosened its own settings (e.g. raised `trivial_max_loc`) could use that loosened value to qualify itself for `SKIP`, a self-modification bypass of the gate's own policy. → rather than compare base-branch config against candidate config, `project-config.toml` is now hardcoded as always-critical, independent of any `.critical-paths` file: any change to it floors at `HEAVY` before its contents are consulted, closing the self-modification path outright. Also made explicit as a design property (not a new rule): a `.critical-paths` file inside a required root is self-protecting, since it falls under its own root's recursive pattern.
 
 **Extension cap reached.** 8 rounds total (5 original + 3 extension), findings count per round: 2, 2, 2, 2, 2, 1, 2, 1 — trending down and, since Round 3, consistently more structural than the round before it. No round reached zero critical/high findings; Round 8's fix is unverified by a Round 9 that was not authorized. Treated as sufficient to proceed to an implementation plan on the strength of that trend, not on a clean report.
+
+**Post-campaign reflection (2026-07-03, user-directed):**
+- Class analysis across all 16 findings: ~7 were coverage-enumeration gaps ("your list of protected things missed a member"), appearing in 7 of 8 rounds — each fix produced a better enumeration without removing the class. A predicted-round-9 check confirmed the class was still open: `scripts/install.sh`, `Makefile`, and `.github/workflows/` were `SKIP`-eligible under the source-root model. → seeding collapsed to a single repo-root `.critical-paths` with a curated pattern list (§5); gate policy inputs (`project-config.toml`, all `.critical-paths` files) hardcoded always-critical, replacing the per-file exception.
+- Process finding: the loop's stop condition ("zero high findings") proved unreachable — highs per round ran 2,2,2,2,2,1,1,1 with every verdict "No-ship"; consistent with a reviewer emitting best-N per round, not draining a pool. All findings were verified real before acting, but severity inflated in later rounds. Convergence criteria for adversarial QA loops (the §7 workflow, ralf-* skills, PR-comment loops) handed off to a separate brainstorm; §7 carries the open question.
+- Spec-bloat pass: `load_config` validation compressed to contract level (per-case behavior lives in the test plan); no other review-added constraint demoted — dedupe semantics and installer touch-point lists are behavior contracts and verified facts respectively, cheap to keep and expensive to rediscover.
