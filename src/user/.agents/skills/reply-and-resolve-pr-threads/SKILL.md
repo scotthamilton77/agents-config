@@ -239,6 +239,8 @@ inventory so every replyable item already has `.reply_body`):
 ${CLAUDE_SKILL_DIR}/post-replies.sh \
   --inventory "$RENDERED" \
   --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  --reply-id-sidecar "${INVENTORY_FILE}.replyids" \
+  --posted-sidecar "${INVENTORY_FILE}.posted" \
   [--skip-comment-ids "<csv>"]
 # per item, one of:
 #   POSTED <comment_id>
@@ -260,10 +262,15 @@ reason label (e.g., `FAILED 12345 gh-rest-reply-failed — HTTP 422:
 Validation Failed`).
 
 **Self-recording idempotency** — each successful POST appends its
-`<comment_id>` to a sidecar `<inventory>.posted`. On startup the
-sidecar is unioned with `--skip-comment-ids` to form the effective
-skip-set, so crash-recovery re-runs against the same inventory SKIP
-previously-posted items automatically.
+`<comment_id>` to a sidecar `${INVENTORY_FILE}.posted`, keyed to the
+canonical inventory path so it durably survives past the run (not to the
+discarded `$RENDERED` temp copy). On startup the sidecar is unioned with
+`--skip-comment-ids` to form the effective skip-set, so crash-recovery
+re-runs against the same inventory SKIP previously-posted items
+automatically. A companion `${INVENTORY_FILE}.replyids` sidecar durably
+records each posted reply's own GitHub comment id; `merge-guard/check-merge-eligibility.sh`
+reads it to exclude the agent's own replies from the untriaged-feedback
+blocker.
 
 Sidecar cleanup:
 - **100%-success run, no `--skip-comment-ids` supplied** → sidecar is deleted.

@@ -813,4 +813,235 @@ assert "(d) no-match record: posted_reply_id NOT recorded anywhere" \
   "[ \"\$(jq -r '.items[0].posted_reply_id // \"null\"' \"$INV20B\")\" = \"null\" ]"
 rm -rf "$T20B"
 
+# ── --reply-id-sidecar / --posted-sidecar flags (durable reply-id + posted state) ──
+
+# Behavior test (A): --reply-id-sidecar appends one JSONL record per POST,
+# {"k":<match_key>,"v":<match_val>,"rid":<reply_id>}, for both issue_comment
+# and review_thread kinds.
+TA="$(mktemp -d)"
+cat > "$TA/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  printf '{"id": 700001}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$TA/gh"
+INV_A="$TA/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "issue_comment", issue_comment_id: 93333, thread_id: null, reply_to_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"},
+  {kind: "review_thread", thread_id: "T_A", reply_to_comment_id: 94444, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"}
+]}' > "$INV_A"
+RID_SIDECAR_A="$TA/reply-ids.jsonl"
+out_a=$(PATH="$TA:$PATH" "$HERE/post-replies.sh" --inventory "$INV_A" --owner o --repo r --pr 1 \
+  --reply-id-sidecar "$RID_SIDECAR_A" 2>&1)
+rc_a=$?
+if [ "$rc_a" = "0" ] && [ -f "$RID_SIDECAR_A" ]; then
+  echo "  ok: --reply-id-sidecar run succeeds and creates the sidecar file"
+else
+  echo "  FAIL: --reply-id-sidecar run should exit 0 and create the file; rc=$rc_a out=$out_a"
+  FAIL=1
+fi
+if jq -c . "$RID_SIDECAR_A" >/dev/null 2>&1; then
+  echo "  ok: every reply-id-sidecar line parses as JSON"
+else
+  echo "  FAIL: reply-id-sidecar contains a line that doesn't parse as JSON: $(cat "$RID_SIDECAR_A" 2>&1)"
+  FAIL=1
+fi
+ic_line="$(jq -c 'select(.k=="issue_comment_id")' "$RID_SIDECAR_A" 2>/dev/null)"
+if [ "$(jq -r '.v' <<<"$ic_line" 2>/dev/null)" = "93333" ] && [ "$(jq -r '.rid' <<<"$ic_line" 2>/dev/null)" = "700001" ]; then
+  echo "  ok: reply-id-sidecar record for issue_comment has k=issue_comment_id v=93333 rid=700001"
+else
+  echo "  FAIL: issue_comment reply-id-sidecar record wrong; got: $ic_line"
+  FAIL=1
+fi
+rt_line="$(jq -c 'select(.k=="reply_to_comment_id")' "$RID_SIDECAR_A" 2>/dev/null)"
+if [ "$(jq -r '.v' <<<"$rt_line" 2>/dev/null)" = "94444" ] && [ "$(jq -r '.rid' <<<"$rt_line" 2>/dev/null)" = "700001" ]; then
+  echo "  ok: reply-id-sidecar record for review_thread has k=reply_to_comment_id v=94444 rid=700001"
+else
+  echo "  FAIL: review_thread reply-id-sidecar record wrong; got: $rt_line"
+  FAIL=1
+fi
+rm -rf "$TA"
+
+# Behavior test (B1): --reply-id-sidecar append failure is fatal (mirrors the
+# existing .posted append-failure test at "sidecar append failure causes exit
+# 1" above): point --reply-id-sidecar at a directory so `>>` fails; must
+# WARNING to stderr and exit 1.
+TB1="$(mktemp -d)"
+cat > "$TB1/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  printf '{"id": 700002}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$TB1/gh"
+INV_B1="$TB1/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_B1", reply_to_comment_id: 95555, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"}
+]}' > "$INV_B1"
+RID_SIDECAR_B1="$TB1/reply-ids-dir"
+mkdir -p "$RID_SIDECAR_B1"
+out_b1=$(PATH="$TB1:$PATH" "$HERE/post-replies.sh" --inventory "$INV_B1" --owner o --repo r --pr 1 \
+  --reply-id-sidecar "$RID_SIDECAR_B1" 2>&1)
+rc_b1=$?
+if [ "$rc_b1" = "1" ]; then
+  echo "  ok: --reply-id-sidecar append failure (directory path) causes exit 1"
+else
+  echo "  FAIL: --reply-id-sidecar append failure should exit 1; got $rc_b1"
+  FAIL=1
+fi
+if grep -qi 'reply-id-sidecar-append-failed' <<<"$out_b1"; then
+  echo "  ok: --reply-id-sidecar append failure emits WARNING naming the reply id and sidecar path"
+else
+  echo "  FAIL: expected WARNING with 'reply-id-sidecar-append-failed'; got: $out_b1"
+  FAIL=1
+fi
+rmdir "$RID_SIDECAR_B1" 2>/dev/null || rm -rf "$RID_SIDECAR_B1"
+rm -rf "$TB1"
+
+# Behavior test (B2): --posted-sidecar append failure is fatal, and the flag
+# REPLACES the default <inventory>.posted derivation (the default path must
+# stay untouched — proving the flag, not the legacy path, is what's live).
+TB2="$(mktemp -d)"
+cat > "$TB2/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  printf '{"id": 700003}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$TB2/gh"
+INV_B2="$TB2/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_B2", reply_to_comment_id: 96666, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"}
+]}' > "$INV_B2"
+POSTED_SIDECAR_B2="$TB2/posted-dir"
+mkdir -p "$POSTED_SIDECAR_B2"
+out_b2=$(PATH="$TB2:$PATH" "$HERE/post-replies.sh" --inventory "$INV_B2" --owner o --repo r --pr 1 \
+  --posted-sidecar "$POSTED_SIDECAR_B2" 2>&1)
+rc_b2=$?
+if [ "$rc_b2" = "1" ]; then
+  echo "  ok: --posted-sidecar append failure (directory path) causes exit 1"
+else
+  echo "  FAIL: --posted-sidecar append failure should exit 1; got $rc_b2"
+  FAIL=1
+fi
+if grep -qi 'sidecar-append-failed' <<<"$out_b2"; then
+  echo "  ok: --posted-sidecar append failure emits WARNING"
+else
+  echo "  FAIL: expected WARNING with 'sidecar-append-failed'; got: $out_b2"
+  FAIL=1
+fi
+if [ -f "${INV_B2}.posted" ]; then
+  echo "  FAIL: --posted-sidecar should replace the default <inventory>.posted derivation, but the default path was written"
+  FAIL=1
+else
+  echo "  ok: --posted-sidecar replaces the default <inventory>.posted derivation (default path untouched)"
+fi
+rmdir "$POSTED_SIDECAR_B2" 2>/dev/null || rm -rf "$POSTED_SIDECAR_B2"
+rm -rf "$TB2"
+
+# Behavior test (C): --resume does not double-post. A durable, non-temp
+# --posted-sidecar path reused across two SEPARATE invocations of the script
+# must dedup across the runs. Regression guard for the bug where the
+# production caller passes a fresh mktemp --inventory on every resume,
+# orphaning the prior run's <inventory>.posted and re-posting every item.
+TC="$(mktemp -d)"
+cat > "$TC/gh" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    *"/comments/97778/replies"*) echo "fail-on-97778" >&2; exit 1 ;;
+  esac
+done
+printf '{"id": 700004}'
+exit 0
+STUB
+chmod +x "$TC/gh"
+INV_C="$TC/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_Cx", reply_to_comment_id: 97777, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"},
+  {kind: "review_thread", thread_id: "T_Cy", reply_to_comment_id: 97778, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "will keep failing"}
+]}' > "$INV_C"
+POSTED_SIDECAR_C="$TC/durable.posted"
+out_c1=$(PATH="$TC:$PATH" "$HERE/post-replies.sh" --inventory "$INV_C" --owner o --repo r --pr 1 \
+  --posted-sidecar "$POSTED_SIDECAR_C" 2>&1)
+rc_c1=$?
+if [ "$rc_c1" = "1" ] && grep -qE '^POSTED 97777$' <<<"$out_c1"; then
+  echo "  ok: run 1 (partial failure) POSTs 97777 and exits 1"
+else
+  echo "  FAIL: run 1 should POST 97777 and exit 1 (97778 fails); rc=$rc_c1 out=$out_c1"
+  FAIL=1
+fi
+if [ -f "$POSTED_SIDECAR_C" ] && grep -qE '^97777$' "$POSTED_SIDECAR_C"; then
+  echo "  ok: run 1 preserves durable --posted-sidecar with 97777 recorded"
+else
+  echo "  FAIL: durable --posted-sidecar should contain 97777 after partial run; got: $(cat "$POSTED_SIDECAR_C" 2>&1 || echo missing)"
+  FAIL=1
+fi
+# Simulate resume: SAME durable --posted-sidecar path reused across a second,
+# separate invocation (this is what the production caller's fresh --inventory
+# mktemp broke: the old derivation ${INV}.posted would differ on resume).
+out_c2=$(PATH="$TC:$PATH" "$HERE/post-replies.sh" --inventory "$INV_C" --owner o --repo r --pr 1 \
+  --posted-sidecar "$POSTED_SIDECAR_C" 2>&1)
+if grep -qE '^SKIPPED 97777$' <<<"$out_c2" && ! grep -qE '^POSTED 97777$' <<<"$out_c2"; then
+  echo "  ok: run 2 (same durable --posted-sidecar) SKIPs 97777 — no duplicate GitHub post"
+else
+  echo "  FAIL: run 2 should SKIP 97777 without re-posting; out=$out_c2"
+  FAIL=1
+fi
+rm -rf "$TC"
+
+# Behavior test (D): backward compat — no --reply-id-sidecar / --posted-sidecar
+# supplied must behave exactly as before: no new sidecar file materializes,
+# and the legacy <inventory>.posted derivation still governs idempotency.
+TD="$(mktemp -d)"
+cat > "$TD/gh" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "api" ]; then
+  printf '{"id": 700005}'
+  exit 0
+fi
+exit 0
+STUB
+chmod +x "$TD/gh"
+INV_D="$TD/inv.json"
+jq -n '{schema_version: 1, pr: {number: 1, owner: "o", repo: "r"}, items: [
+  {kind: "review_thread", thread_id: "T_D", reply_to_comment_id: 98888, issue_comment_id: null,
+   classification: "FIX", fix_outcome: "committed", reply_body: "ok"}
+]}' > "$INV_D"
+out_d=$(PATH="$TD:$PATH" "$HERE/post-replies.sh" --inventory "$INV_D" --owner o --repo r --pr 1 2>&1)
+rc_d=$?
+if [ "$rc_d" = "0" ] && grep -qE '^POSTED 98888$' <<<"$out_d"; then
+  echo "  ok: (D) no new flags: run succeeds and POSTs as before"
+else
+  echo "  FAIL: (D) expected POSTED 98888 exit 0; rc=$rc_d out=$out_d"
+  FAIL=1
+fi
+if [ -f "${INV_D}.posted" ]; then
+  echo "  FAIL: (D) 100%-success run without new flags should still delete <inventory>.posted (legacy behavior); it is still present"
+  FAIL=1
+else
+  echo "  ok: (D) legacy <inventory>.posted behavior unchanged (deleted on 100% success)"
+fi
+no_extra_files="$(find "$TD" -maxdepth 1 -type f ! -name 'gh' ! -name 'inv.json' | wc -l | tr -d ' ')"
+if [ "$no_extra_files" = "0" ]; then
+  echo "  ok: (D) no new sidecar file materializes when flags are omitted"
+else
+  echo "  FAIL: (D) unexpected extra file(s) created without new flags: $(find "$TD" -maxdepth 1 -type f)"
+  FAIL=1
+fi
+rm -rf "$TD"
+
 exit $FAIL
