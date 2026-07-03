@@ -485,7 +485,7 @@ def classify_file(path: str) -> FileClass:
 
 ```python
 def _marker(folder: str, *patterns: str) -> gt.CriticalMarker:
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+    spec = pathspec.PathSpec.from_lines("gitignore", patterns)
     return gt.CriticalMarker(folder=folder, spec=spec)
 
 
@@ -736,7 +736,7 @@ def test_collect_diff_untracked_file(tmp_path):  # §9.25
 (Write the remaining §9.23–29 cases following this fixture idiom — each is one crafted git state + one assertion. Do not stub git; these are real-subprocess integration tests, few in number, per spec §9.)
 
 - [ ] **Step 2: Run, verify fail.**
-- [ ] **Step 3: Implement `collect_diff`** — shell `git merge-base`, `git diff --numstat <base>...HEAD`, `git diff --numstat` (unstaged) + `--cached` (staged), and `git status --porcelain=v1 --untracked-files=all`; parse into `ChangedFile`s; union + evidence-preserving dedupe by path (working-tree `loc_changed`/`status` win, but retain `old_path` if either committed or working-tree source reports a rename — spec §4.3); set `new_deps` = any `Path(f.path).name in DEPENDENCY_FILES`. **Implement `load_markers`** — walk for `.critical-paths` files, build `CriticalMarker(folder=<rel posix dir>, spec=PathSpec.from_lines("gitwildmatch", lines))`.
+- [ ] **Step 3: Implement `collect_diff`** — shell `git merge-base`, `git diff --numstat <base>...HEAD`, `git diff --numstat` (unstaged) + `--cached` (staged), and `git status --porcelain=v1 --untracked-files=all`; parse into `ChangedFile`s; union + evidence-preserving dedupe by path (working-tree `loc_changed`/`status` win, but retain `old_path` if either committed or working-tree source reports a rename — spec §4.3); set `new_deps` = any `Path(f.path).name in DEPENDENCY_FILES`. **Implement `load_markers`** — walk for `.critical-paths` files, build `CriticalMarker(folder=<rel posix dir>, spec=PathSpec.from_lines("gitignore", lines))`.
 - [ ] **Step 4: Run, pass. Full shim run:** `./…/gate_triage_test.sh` → all green. **Commit** `git commit -am "feat(gate-triage): git + marker boundary collection"`
 
 ### Task 12: `SKILL.md` invocation contract
