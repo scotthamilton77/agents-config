@@ -239,3 +239,72 @@ def compute_scale_hint(facts: DiffFacts) -> ScaleHint:
     if crossed == 1:
         return _SCALE_BUCKETS["medium"]
     return _SCALE_BUCKETS["small"]
+
+
+def triage(facts: DiffFacts, markers: tuple[CriticalMarker, ...],
+           config: TriageConfig) -> TriageResult:
+    """Pure composition: critical_hits → compute_tier → compute_scale_hint → assemble."""
+    hits = critical_hits(facts.files, markers)
+    tier = compute_tier(facts, hits, config)
+    scale = compute_scale_hint(facts)
+    hit_strings = tuple(f"{h.path} ← {h.marker}:{h.pattern}" for h in hits)
+    file_classes = tuple(sorted({classify_file(f.path).value for f in facts.files}))
+    return TriageResult(
+        tier_floor=tier,
+        files=len(facts.files),
+        loc_changed=sum(f.loc_changed for f in facts.files),
+        subsystems=_subsystems(facts.files),
+        new_deps=facts.new_deps,
+        file_classes=file_classes,
+        critical_path_hits=hit_strings,
+        scale_hint=scale,
+    )
+
+
+def _result_to_json(result: TriageResult) -> str:
+    """Serialize a TriageResult to the spec §4.2 JSON payload."""
+    payload = {
+        "tier_floor": result.tier_floor.value,
+        "files": result.files,
+        "loc_changed": result.loc_changed,
+        "subsystems": result.subsystems,
+        "new_deps": result.new_deps,
+        "file_classes": list(result.file_classes),
+        "critical_path_hits": list(result.critical_path_hits),
+        "scale_hint": {
+            "finder_dimensions": result.scale_hint.finder_dimensions,
+            "refuters": result.scale_hint.refuters,
+            "synthesis_effort": result.scale_hint.synthesis_effort,
+        },
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _default_base_ref(repo_root: Path) -> str:
+    """Boundary: the repo's default branch (origin/HEAD target), or 'main' on failure."""
+    try:
+        out = subprocess.run(
+            ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            cwd=repo_root, capture_output=True, text=True, check=True)
+        return out.stdout.strip().removeprefix("origin/") or "main"
+    except (subprocess.CalledProcessError, OSError):
+        return "main"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Compute the completion-gate tier floor.")
+    parser.add_argument("--repo-root", default=".", help="repo root (default: cwd)")
+    parser.add_argument("--base-ref", default=None,
+                        help="base ref for the diff (default: repo default branch)")
+    args = parser.parse_args(argv)
+    repo_root = Path(args.repo_root).resolve()
+    base_ref = args.base_ref or _default_base_ref(repo_root)
+    config = load_config(repo_root)
+    facts = collect_diff(repo_root, base_ref)
+    markers = load_markers(repo_root)
+    print(_result_to_json(triage(facts, markers, config)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

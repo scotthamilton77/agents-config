@@ -1,4 +1,5 @@
 # src/user/.agents/skills/gate-triage/gate_triage_test.py
+import json
 import sys
 from pathlib import Path
 
@@ -190,3 +191,27 @@ def test_scale_hint_monotone_under_strict_growth():  # §9.17 monotonicity
 def test_scale_hint_new_deps_forces_large():  # §9.17 (new_deps escalation)
     hint = gt.compute_scale_hint(_facts(_cf("uv.lock", loc=1), new_deps=True))
     assert (hint.finder_dimensions, hint.refuters, hint.synthesis_effort) == (6, 3, "xhigh")
+
+
+# --- Task 10: triage composition + JSON (spec §4.2) ---
+
+
+def test_triage_composes_and_serializes():
+    facts = _facts(_cf("src/auth/token.py", loc=1))
+    m = _marker("src/auth", "*.py")
+    result = gt.triage(facts, (m,), CFG)
+    assert result.tier_floor == gt.Tier.HEAVY
+    payload = json.loads(gt._result_to_json(result))
+    assert payload["tier_floor"] == "HEAVY"
+    assert payload["critical_path_hits"] == ["src/auth/token.py ← src/auth/.critical-paths:*.py"]
+    assert set(payload["scale_hint"]) == {"finder_dimensions", "refuters", "synthesis_effort"}
+
+
+def test_triage_serial_default_shape():
+    # a plain multi-file diff under all thresholds → SERIAL, no hits, full JSON shape
+    facts = _facts(_cf("a.md", loc=5), _cf("b.py", loc=5))
+    payload = json.loads(gt._result_to_json(gt.triage(facts, (), CFG)))
+    assert payload["tier_floor"] == "SERIAL"
+    assert payload["files"] == 2 and payload["loc_changed"] == 10
+    assert payload["critical_path_hits"] == []
+    assert payload["file_classes"] == ["code", "docs"]  # sorted, deduped
