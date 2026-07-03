@@ -886,11 +886,15 @@ This phase flips routing on. Land it last.
 **Files:** Modify `src/user/.agents/rules/completion-gate.md`
 
 - [ ] **Step 1:** Insert the 4-step routing preamble between the "run in order" preamble sentence and step `1.` (spec §8):
-  1. Run gate-triage → tier floor + scale_hint.
-  2. Apply the risk-class list (escalate-only): security/auth, concurrency/locking, public API/contract, data migration/schema, cross-subsystem architecture (spec §6).
+  1. Run gate-triage (`uv run <gate-triage skill dir>/gate_triage.py --repo-root . --base-ref <default branch>`) and **capture its JSON payload** — tier floor, `scale_hint`, and `critical_path_hits`. Later steps refer to this as "the triage JSON."
+  2. Apply the risk-class list (escalate-only): security/auth, concurrency/locking, public API/contract, data migration/schema, cross-subsystem architecture (spec §6). A hit raises the floor to `HEAVY`; it can never lower it.
   3. Announce one line (tier, driving facts, estimated `HEAVY` cost). Do not wait for approval.
-  4. Route per the tier table. `HEAVY` unavailable (no Workflow harness) → `SERIAL`.
-  Leave the existing serial steps 1–5, subagent-dispatch rules, HARD STOP delivery sequence, and merge-authorization language **unchanged** (spec §8).
+  4. Route per the resolved tier, **passing the triage JSON through**:
+     - `SKIP` → run **step 5 only** (verify-checklist mechanical evidence where tests/build apply); skip steps 1–4.
+     - `SERIAL` → run the existing steps 1–5 **unchanged**.
+     - `HEAVY` (Claude only) → invoke `Workflow({name: "quality-gate", args: <the triage JSON from step 1>})` **in place of steps 1–4**, then run step 5 after. Passing the triage JSON as `args` is **required, not optional**: the workflow sizes its fleet from `scale_hint` inside it — invoke it without `args` and it launches at default scale, silently defeating scale-to-the-diff. Step 5 (verify-checklist) still runs and is **non-substitutable**.
+     - `HEAVY` **unavailable** (no Workflow harness — Codex/Gemini/OpenCode) → fall back to `SERIAL`.
+  Leave the existing serial steps 1–5, subagent-dispatch rules, HARD STOP delivery sequence, and merge-authorization language **unchanged** (spec §8). The preamble only routes into them.
 - [ ] **Step 2:** Verify the risk-class list and gate-triage invocation reference the skill by concept/name, not a project-internal file path (survives flatten). **Commit** `git commit -am "feat(gate): add routing preamble to completion-gate rule"`
 
 ---
