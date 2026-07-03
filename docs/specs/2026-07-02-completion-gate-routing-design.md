@@ -45,13 +45,14 @@ Pure core over a value type; git interaction confined to a thin boundary:
 ```python
 @dataclass(frozen=True)
 class ChangedFile:
-    path: str            # repo-relative, POSIX separators
-    loc_changed: int     # added + deleted lines
-    status: str          # A/M/D/R
+    path: str             # repo-relative POSIX path; new path for R, the path itself for A/M/D
+    old_path: str | None  # repo-relative POSIX pre-rename path; set only when status == "R"
+    loc_changed: int      # added + deleted lines
+    status: str           # A/M/D/R
 
 @dataclass(frozen=True)
 class DiffFacts:
-    files: tuple[ChangedFile, ...]
+    files: tuple[ChangedFile, ...]  # merge-base..HEAD unioned with staged + unstaged changes, deduped by path
     new_deps: bool       # lockfile/manifest additions detected
     base_ref: str
 
@@ -61,10 +62,10 @@ class TriageConfig:     # defaults; overridable via project-config.toml [complet
     heavy_min_loc: int = 400
     heavy_min_subsystems: int = 3
 
-def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts      # boundary: shells to git
+def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts      # boundary: shells to git (committed diff + `git status --porcelain=v1`)
 def load_markers(repo_root: Path) -> tuple[CriticalMarker, ...]    # boundary: reads .critical-paths files
 def classify_file(path: str) -> FileClass                          # DOCS | CONFIG | CODE
-def critical_hits(files, markers) -> tuple[CriticalHit, ...]       # pure
+def critical_hits(files, markers) -> tuple[CriticalHit, ...]       # pure; checks path AND old_path per file
 def compute_tier(facts, hits, config) -> Tier                      # pure: SKIP | SERIAL | HEAVY
 def compute_scale_hint(facts) -> ScaleHint                         # pure
 def triage(facts, markers, config) -> TriageResult                 # pure composition → JSON payload
@@ -93,7 +94,9 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 
 File classification: `DOCS` = `.md`, `.rst`, `.txt`, `.adoc`; `CONFIG` = `.json`, `.jsonc`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, plus dotfiles with no extension; `CODE` = everything else. Unknown or missing extensions default to `CODE` — fail toward scrutiny.
 
-Diff scope: merge-base of the current branch against the repo's default branch (matching how code-review scopes a working diff).
+Diff scope: merge-base of the current branch against the repo's default branch, **unioned with staged and unstaged working-tree changes** (deduped by path, working-tree status wins on conflict). The gate tier must describe the actual candidate at gate time, not the last commit — a triage run against committed history alone would let uncommitted high-risk edits route on stale facts while step 5 verifies a different tree.
+
+Rename handling: for `status == "R"`, `critical_hits` evaluates both `old_path` and `path` against every marker — a critical file renamed out of a marked subtree, or a file renamed into one, both count as a hit. `status == "D"` evaluates `path` (the file being removed) the same way.
 
 ## 5. `.critical-paths` marker file
 
@@ -105,7 +108,9 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 - A modified file matching any marker forces `HEAVY` on Claude. Non-Claude tools: no effect — the serial gate stands.
 - Evaluated entirely by gate-triage; no agent judgment involved.
 
-**Fail-closed default (required, not a dogfood nicety):** the `SKIP` tier's docs-only floor (§4.3) is gated on at least one `.critical-paths` file existing anywhere in the repo. If gate-triage finds zero marker files repo-wide, docs-only diffs floor at `SERIAL`, not `SKIP` — an unseeded repo gets the old behavior, never a silent gate weakening. This makes marker seeding a required implementation deliverable, not optional follow-up: this repo ships `.critical-paths` under `src/user/.agents/rules/` and `packages/installer/` in the same change that enables docs-only `SKIP`, so discipline-layer edits — `.md` files that would otherwise classify as `DOCS` — route `HEAVY` instead.
+**Fail-closed default (required, not a dogfood nicety):** the `SKIP` tier's docs-only floor (§4.3) is gated on at least one `.critical-paths` file existing anywhere in the repo. If gate-triage finds zero marker files repo-wide, docs-only diffs floor at `SERIAL`, not `SKIP` — an unseeded repo gets the old behavior, never a silent gate weakening.
+
+Because a single marker anywhere flips the `SKIP` floor on **repo-wide**, seeding must cover every deployable discipline-layer root before `SKIP` ships, not just the two paths mentioned in earlier drafts of this design — this repo's instruction/config surface spans `src/user/.agents/{agents,skills,rules}/`, `src/user/.claude/{commands,rules,skills}/`, `src/plugins/**`, and `packages/installer/`. All of these ship `.critical-paths` in the same change that enables docs-only `SKIP`; any one of them left unmarked is a `.md` change that silently skips review.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -172,16 +177,19 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 10. Nested marker and ancestor marker both match different files → both hits reported (union, no shadowing).
 11. Negation within one marker file exempts a matched file per gitignore semantics.
 12. Hit report carries file ← marker:pattern provenance (the announce line's evidence).
+13. A file with `status == "R"` renamed OUT of a marked subtree → hit on `old_path`. Renamed INTO a marked subtree → hit on `path`. Renamed WITHIN the same marked subtree → one hit, not two.
+14. A file with `status == "D"` deleted from a marked subtree → hit on `path`.
 
 **Scale-hint behaviors (`compute_scale_hint`):**
-13. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
+15. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
 
 **Config behaviors:**
-14. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
+16. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
 
 **Boundary (integration, temp git repo):**
-15. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling against the merge-base.
-16. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+17. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
+18. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
+19. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
