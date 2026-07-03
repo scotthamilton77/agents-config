@@ -7,7 +7,7 @@
 Pure core over value types; git + filesystem confined to boundary functions
 (collect_diff, load_markers, load_config). Invoked by the completion-gate rule:
   uv run gate_triage.py --repo-root <root> --base-ref <default-branch>
-Emits a JSON triage payload on stdout (spec §4.2)."""
+Emits a JSON triage payload on stdout."""
 from __future__ import annotations
 
 import argparse
@@ -27,7 +27,7 @@ DEPENDENCY_FILES = frozenset({
     "go.mod", "go.sum", "Cargo.toml", "Cargo.lock", "Gemfile", "Gemfile.lock",
 })
 
-# Gate policy inputs — always HEAVY, independent of any marker pattern (spec §5).
+# Gate policy inputs — always HEAVY, independent of any marker pattern.
 # A change to the gate's own policy is never evaluated under the policy it carries.
 POLICY_INPUT_BASENAMES = frozenset({"project-config.toml", ".critical-paths"})
 
@@ -107,7 +107,7 @@ def load_config(repo_root: Path) -> TriageConfig:
     path = repo_root / "project-config.toml"
     try:
         data = tomllib.loads(path.read_text())
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return default
     section = data.get("completion-gate")
     if not isinstance(section, dict):
@@ -170,7 +170,7 @@ def critical_hits(files: tuple[ChangedFile, ...],
     for f in files:
         candidates = [f.path] + ([f.old_path] if f.status == "R" and f.old_path else [])
         for cand in candidates:
-            if Path(cand).name in POLICY_INPUT_BASENAMES:  # §5 hardcoded policy inputs
+            if Path(cand).name in POLICY_INPUT_BASENAMES:  # hardcoded policy inputs
                 hits.append(CriticalHit(path=cand, marker=Path(cand).name, pattern="<policy-input>"))
                 break
             found = _match_markers(cand, markers)
@@ -221,7 +221,7 @@ def compute_scale_hint(facts: DiffFacts) -> ScaleHint:
         exactly 1 crossed      → medium → (4, 2, "high")
         2+ crossed OR new_deps → large  → (6, 3, "xhigh")
 
-    Monotone by construction (spec §9.17): each threshold is a ≥ step function, so
+    Monotone by construction: each threshold is a ≥ step function, so
     growing any dimension can only cross MORE thresholds, never fewer, and new_deps
     only ever escalates; the bucket→fleet map is non-decreasing field-by-field
     (small ≤ medium ≤ large). Hence a strictly larger diff never yields a smaller
@@ -262,7 +262,7 @@ def triage(facts: DiffFacts, markers: tuple[CriticalMarker, ...],
 
 
 def _result_to_json(result: TriageResult) -> str:
-    """Serialize a TriageResult to the spec §4.2 JSON payload."""
+    """Serialize a TriageResult to the JSON payload."""
     payload = {
         "tier_floor": result.tier_floor.value,
         "files": result.files,
@@ -290,7 +290,7 @@ def _default_base_ref(repo_root: Path) -> str:
     """Boundary: the repo's default branch (origin/HEAD target), or 'main' on failure."""
     try:
         ref = _run_git(repo_root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").strip()
-        return ref.removeprefix("origin/") or "main"
+        return ref or "main"
     except (subprocess.CalledProcessError, OSError):
         return "main"
 
@@ -348,7 +348,7 @@ def _parse_numstat_z(text: str) -> dict[str, int]:
 
 def _line_count(path: Path) -> int:
     try:
-        return len(path.read_text().splitlines())
+        return len(path.read_bytes().splitlines())  # bytes: never decodes, binary-safe
     except OSError:
         return 0
 
@@ -370,7 +370,7 @@ def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts:
     unstaged), plus untracked files. A single `git diff <merge-base>` yields the
     net state deduped by path with rename provenance computed across the whole
     span, so a committed rename followed by an unstaged edit keeps its old_path
-    without manual evidence-merging (spec §4.3)."""
+    without manual evidence-merging."""
     merge_base = _merge_base(repo_root, base_ref)
     statuses = _parse_name_status_z(
         _run_git(repo_root, "diff", "-M", "--name-status", "-z", merge_base))
@@ -396,7 +396,7 @@ def load_markers(repo_root: Path) -> tuple[CriticalMarker, ...]:
             continue
         rel_dir = path.parent.relative_to(repo_root).as_posix()
         folder = "" if rel_dir == "." else rel_dir
-        spec = pathspec.PathSpec.from_lines("gitignore", path.read_text().splitlines())
+        spec = pathspec.PathSpec.from_lines("gitignore", path.read_text(errors="replace").splitlines())
         markers.append(CriticalMarker(folder=folder, spec=spec))
     return tuple(markers)
 

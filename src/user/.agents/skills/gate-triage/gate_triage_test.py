@@ -1,4 +1,3 @@
-# src/user/.agents/skills/gate-triage/gate_triage_test.py
 import json
 import subprocess
 import sys
@@ -11,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import gate_triage as gt  # noqa: E402
 
 
-# --- Task 5: load_config (spec §9 items 18-22) ---
+# --- config loading ---
 
 
 def _write_cfg(tmp_path, body: str) -> Path:
@@ -19,41 +18,46 @@ def _write_cfg(tmp_path, body: str) -> Path:
     return tmp_path
 
 
-def test_config_overrides_replace_defaults(tmp_path):  # §9.18
+def test_config_overrides_replace_defaults(tmp_path):
     root = _write_cfg(tmp_path, "[completion-gate]\nheavy_min_files = 5\n")
     assert gt.load_config(root).heavy_min_files == 5
 
 
-def test_absent_section_yields_defaults(tmp_path):  # §9.18
+def test_absent_section_yields_defaults(tmp_path):
     root = _write_cfg(tmp_path, "[project]\nname = 'x'\n")
     assert gt.load_config(root) == gt.TriageConfig()
 
 
-def test_trivial_max_loc_clamped_to_20(tmp_path):  # §9.19
+def test_trivial_max_loc_clamped_to_20(tmp_path):
     root = _write_cfg(tmp_path, "[completion-gate]\ntrivial_max_loc = 999\n")
     assert gt.load_config(root).trivial_max_loc == 20
 
 
-def test_heavy_min_loc_below_trivial_max_rejected(tmp_path):  # §9.20
+def test_heavy_min_loc_below_trivial_max_rejected(tmp_path):
     root = _write_cfg(tmp_path, "[completion-gate]\nheavy_min_loc = 2\ntrivial_max_loc = 3\n")
     assert gt.load_config(root) == gt.TriageConfig()  # nonsensical ordering → defaults
 
 
-def test_bad_types_fall_back_to_defaults(tmp_path):  # §9.21
+def test_bad_types_fall_back_to_defaults(tmp_path):
     root = _write_cfg(tmp_path, "[completion-gate]\nheavy_min_files = -4\n")
     assert gt.load_config(root) == gt.TriageConfig()
 
 
-def test_unknown_key_ignored_known_kept(tmp_path):  # §9.22
+def test_unknown_key_ignored_known_kept(tmp_path):
     root = _write_cfg(tmp_path, "[completion-gate]\nheavy_min_files = 6\nbogus = 1\n")
     assert gt.load_config(root).heavy_min_files == 6
 
 
-def test_absent_file_yields_defaults(tmp_path):  # §9.18
+def test_absent_file_yields_defaults(tmp_path):
     assert gt.load_config(tmp_path) == gt.TriageConfig()
 
 
-# --- Task 6: classify_file (spec §9 item 10) ---
+def test_load_config_non_utf8_falls_back(tmp_path):
+    (tmp_path / "project-config.toml").write_bytes(b"\xff\xfe[completion-gate]\n")
+    assert gt.load_config(tmp_path) == gt.TriageConfig()
+
+
+# --- file classification ---
 
 
 @pytest.mark.parametrize("path,expected", [
@@ -63,11 +67,11 @@ def test_absent_file_yields_defaults(tmp_path):  # §9.18
     ("main.py", gt.FileClass.CODE), ("run.sh", gt.FileClass.CODE),
     ("Makefile", gt.FileClass.CODE),  # unknown/no ext → CODE (fail toward scrutiny)
 ])
-def test_classify_file(path, expected):  # §9.10
+def test_classify_file(path, expected):
     assert gt.classify_file(path) == expected
 
 
-# --- Task 7: critical_hits (spec §9 items 11-16, §9.8-9.9) ---
+# --- critical-path matching ---
 
 
 def _marker(folder: str, *patterns: str) -> gt.CriticalMarker:
@@ -79,34 +83,33 @@ def _cf(path, status="M", old_path=None, loc=1):
     return gt.ChangedFile(path=path, old_path=old_path, loc_changed=loc, status=status)
 
 
-def test_subtree_scoping_and_anchoring():  # §9.11
+def test_subtree_scoping_and_anchoring():
     m = _marker("src/auth", "*.py")
     hits = gt.critical_hits((_cf("src/auth/token.py"), _cf("src/auth/sub/x.py"),
                              _cf("src/other/token.py")), (m,))
-    hit_paths = {h.path for h in hits}
-    assert hit_paths == {"src/auth/token.py", "src/auth/sub/x.py"}
+    assert {h.path for h in hits} == {"src/auth/token.py", "src/auth/sub/x.py"}
 
 
-def test_nested_and_ancestor_markers_union():  # §9.12
+def test_nested_and_ancestor_markers_union():
     root = _marker("", "src/**")
     nested = _marker("src/auth", "*.py")
     hits = gt.critical_hits((_cf("docs/x.md"), _cf("src/auth/a.py")), (root, nested))
-    assert {h.path for h in hits} == {"src/auth/a.py"}  # a.py hit; both markers union, no shadow
+    assert {h.path for h in hits} == {"src/auth/a.py"}  # a.py hit; markers union, no shadow
 
 
-def test_negation_within_a_marker():  # §9.13
+def test_negation_within_a_marker():
     m = _marker("src", "**/*.py", "!**/generated.py")
     hits = gt.critical_hits((_cf("src/a.py"), _cf("src/generated.py")), (m,))
     assert {h.path for h in hits} == {"src/a.py"}
 
 
-def test_hit_carries_provenance():  # §9.14
+def test_hit_carries_provenance():
     m = _marker("src/auth", "*.py")
     (hit,) = gt.critical_hits((_cf("src/auth/token.py"),), (m,))
     assert hit.marker == "src/auth/.critical-paths" and hit.pattern  # non-empty
 
 
-def test_rename_out_and_into_marked_subtree():  # §9.15
+def test_rename_out_and_into_marked_subtree():
     m = _marker("src/auth", "*.py")
     out = _cf("src/other/token.py", status="R", old_path="src/auth/token.py")
     into = _cf("src/auth/new.py", status="R", old_path="src/other/new.py")
@@ -116,18 +119,18 @@ def test_rename_out_and_into_marked_subtree():  # §9.15
     assert sum(1 for h in hits if h.path == "src/auth/b.py") == 1
 
 
-def test_delete_from_marked_subtree():  # §9.16
+def test_delete_from_marked_subtree():
     m = _marker("src/auth", "*.py")
     (hit,) = gt.critical_hits((_cf("src/auth/gone.py", status="D"),), (m,))
     assert hit.path == "src/auth/gone.py"
 
 
-def test_policy_input_is_always_a_hit_without_markers():  # §9.8, §9.9
+def test_policy_input_is_always_a_hit_without_markers():
     hits = gt.critical_hits((_cf("project-config.toml"), _cf("src/x/.critical-paths")), ())
     assert {h.path for h in hits} == {"project-config.toml", "src/x/.critical-paths"}
 
 
-# --- Task 8: compute_tier (spec §9 items 1-9) ---
+# --- tier floor ---
 
 
 def _facts(*files, new_deps=False):
@@ -137,25 +140,25 @@ def _facts(*files, new_deps=False):
 CFG = gt.TriageConfig()  # files=8, loc=400, subsystems=3, trivial=3
 
 
-def test_single_trivial_file_is_skip():  # §9.1
+def test_single_trivial_file_is_skip():
     assert gt.compute_tier(_facts(_cf("a.py", loc=3)), (), CFG) == gt.Tier.SKIP
     assert gt.compute_tier(_facts(_cf("a.py", loc=4)), (), CFG) == gt.Tier.SERIAL
 
 
-def test_critical_hit_beats_skip():  # §9.2, §9.7
+def test_critical_hit_beats_skip():
     hit = (gt.CriticalHit("a.py", "src/.critical-paths", "*.py"),)
     assert gt.compute_tier(_facts(_cf("a.py", loc=1)), hit, CFG) == gt.Tier.HEAVY
 
 
-def test_two_trivial_files_not_skip():  # §9.3
+def test_two_trivial_files_not_skip():
     assert gt.compute_tier(_facts(_cf("a.py", loc=1), _cf("b.py", loc=1)), (), CFG) == gt.Tier.SERIAL
 
 
-def test_mixed_small_multifile_is_serial():  # §9.4
+def test_mixed_small_multifile_is_serial():
     assert gt.compute_tier(_facts(_cf("a.md", loc=5), _cf("b.py", loc=5)), (), CFG) == gt.Tier.SERIAL
 
 
-def test_each_quant_threshold_trips_heavy_at_boundary():  # §9.5
+def test_each_quant_threshold_trips_heavy_at_boundary():
     files_min = tuple(_cf(f"d{i}/f.py", loc=1) for i in range(8))  # 8 files, 8 subsystems
     assert gt.compute_tier(_facts(*files_min), (), CFG) == gt.Tier.HEAVY
     loc_min = (_cf("a.py", loc=400),)
@@ -164,14 +167,14 @@ def test_each_quant_threshold_trips_heavy_at_boundary():  # §9.5
     assert gt.compute_tier(_facts(*subs_min), (), CFG) == gt.Tier.HEAVY
 
 
-def test_new_deps_trips_heavy():  # §9.6
+def test_new_deps_trips_heavy():
     assert gt.compute_tier(_facts(_cf("pyproject.toml", loc=1), new_deps=True), (), CFG) == gt.Tier.HEAVY
 
 
-# --- Task 9: compute_scale_hint (spec §9 item 17) ---
+# --- scale-hint bucketing ---
 
 
-def test_scale_hint_buckets():  # §9.17
+def test_scale_hint_buckets():
     small = gt.compute_scale_hint(_facts(_cf("a.py", loc=10)))  # 0 thresholds crossed
     medium = gt.compute_scale_hint(_facts(_cf("a.py", loc=400)))  # exactly 1 (loc)
     large = gt.compute_scale_hint(_facts(*[_cf(f"d{i}/f.py", loc=100) for i in range(9)]))  # 3
@@ -180,7 +183,7 @@ def test_scale_hint_buckets():  # §9.17
     assert (large.finder_dimensions, large.refuters, large.synthesis_effort) == (6, 3, "xhigh")
 
 
-def test_scale_hint_monotone_under_strict_growth():  # §9.17 monotonicity
+def test_scale_hint_monotone_under_strict_growth():
     small = _facts(_cf("a.py", loc=10))
     # a strict superset: keeps a.py, adds 8 files across new subsystems
     larger = _facts(_cf("a.py", loc=10), *[_cf(f"d{i}/f.py", loc=100) for i in range(8)])
@@ -189,12 +192,12 @@ def test_scale_hint_monotone_under_strict_growth():  # §9.17 monotonicity
     assert l.refuters >= s.refuters
 
 
-def test_scale_hint_new_deps_forces_large():  # §9.17 (new_deps escalation)
+def test_scale_hint_new_deps_forces_large():
     hint = gt.compute_scale_hint(_facts(_cf("uv.lock", loc=1), new_deps=True))
     assert (hint.finder_dimensions, hint.refuters, hint.synthesis_effort) == (6, 3, "xhigh")
 
 
-# --- Task 10: triage composition + JSON (spec §4.2) ---
+# --- triage composition + JSON ---
 
 
 def test_triage_composes_and_serializes():
@@ -218,7 +221,7 @@ def test_triage_serial_default_shape():
     assert payload["file_classes"] == ["code", "docs"]  # sorted, deduped
 
 
-# --- Task 11: collect_diff + load_markers (integration, temp git repo; spec §9.23-29) ---
+# --- boundary collection (integration, temp git repo) ---
 
 
 def _git(repo, *args):
@@ -237,7 +240,7 @@ def _init_repo(tmp_path):
     return repo
 
 
-def test_collect_diff_committed_with_rename(tmp_path):  # §9.23
+def test_collect_diff_committed_with_rename(tmp_path):
     repo = _init_repo(tmp_path)
     _git(repo, "checkout", "-b", "feat")
     (repo / "added.py").write_text("x = 1\ny = 2\n")  # new file, 2 lines
@@ -250,7 +253,7 @@ def test_collect_diff_committed_with_rename(tmp_path):  # §9.23
     assert r.status == "R" and r.old_path == "seed.txt"
 
 
-def test_collect_diff_staged_unstaged_committed_dedupe(tmp_path):  # §9.24
+def test_collect_diff_staged_unstaged_committed_dedupe(tmp_path):
     repo = _init_repo(tmp_path)
     _git(repo, "checkout", "-b", "feat")
     (repo / "work.py").write_text("a\n")  # committed on the branch
@@ -267,7 +270,7 @@ def test_collect_diff_staged_unstaged_committed_dedupe(tmp_path):  # §9.24
     assert "staged.py" in by_path
 
 
-def test_collect_diff_untracked_file(tmp_path):  # §9.25
+def test_collect_diff_untracked_file(tmp_path):
     repo = _init_repo(tmp_path)
     _git(repo, "checkout", "-b", "feat")
     (repo / "new.py").write_text("a\nb\nc\n")  # untracked, 3 lines
@@ -276,7 +279,16 @@ def test_collect_diff_untracked_file(tmp_path):  # §9.25
     assert nf.status == "A" and nf.loc_changed == 3
 
 
-def test_collect_diff_new_deps_untracked_nested(tmp_path):  # §9.26
+def test_collect_diff_survives_untracked_binary(tmp_path):
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe")  # untracked, non-UTF-8
+    facts = gt.collect_diff(repo, "main")  # must not raise decoding the binary
+    png = next(f for f in facts.files if f.path == "logo.png")
+    assert png.status == "A"
+
+
+def test_collect_diff_new_deps_untracked_nested(tmp_path):
     repo = _init_repo(tmp_path)
     _git(repo, "checkout", "-b", "feat")
     nested = repo / "packages" / "prgroom"
@@ -287,7 +299,7 @@ def test_collect_diff_new_deps_untracked_nested(tmp_path):  # §9.26
     assert any(f.path == "packages/prgroom/uv.lock" for f in facts.files)
 
 
-def test_load_markers_nested_discovery_and_anchoring(tmp_path):  # §9.27
+def test_load_markers_nested_discovery_and_anchoring(tmp_path):
     repo = _init_repo(tmp_path)
     (repo / ".critical-paths").write_text("scripts/**\n")
     auth = repo / "src" / "auth"
@@ -300,7 +312,7 @@ def test_load_markers_nested_discovery_and_anchoring(tmp_path):  # §9.27
     assert {h.path for h in hits} == {"src/auth/token.py", "scripts/x.sh"}
 
 
-def test_collect_diff_committed_rename_then_unstaged_edit(tmp_path):  # §9.28
+def test_collect_diff_committed_rename_then_unstaged_edit(tmp_path):
     repo = _init_repo(tmp_path)
     auth = repo / "src" / "auth"
     auth.mkdir(parents=True)
@@ -320,7 +332,7 @@ def test_collect_diff_committed_rename_then_unstaged_edit(tmp_path):  # §9.28
     assert hit.path == "src/other/token.py"  # hit via old_path in the marked subtree
 
 
-def test_project_config_change_is_heavy_end_to_end(tmp_path):  # §9.29
+def test_project_config_change_is_heavy_end_to_end(tmp_path):
     repo = _init_repo(tmp_path)
     (repo / "project-config.toml").write_text("[x]\ny = 1\n")
     _git(repo, "add", ".")
@@ -332,3 +344,14 @@ def test_project_config_change_is_heavy_end_to_end(tmp_path):  # §9.29
     result = gt.triage(facts, markers, gt.load_config(repo))
     assert markers == ()  # no .critical-paths anywhere
     assert result.tier_floor == gt.Tier.HEAVY  # policy-input hardcoded critical
+
+
+def test_main_emits_valid_json(tmp_path, capsys):
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "change.py").write_text("x = 1\n")
+    rc = gt.main(["--repo-root", str(repo), "--base-ref", "main"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tier_floor"] in {"SKIP", "SERIAL", "HEAVY"}
+    assert set(payload["scale_hint"]) == {"finder_dimensions", "refuters", "synthesis_effort"}
