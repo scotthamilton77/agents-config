@@ -108,7 +108,7 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 
 - Exactly 1 changed file AND `loc_changed` ≤ `trivial_max_loc` AND no critical hit → `SKIP` floor. File type is irrelevant — a 2-line code fix and a 2-line doc fix are equally trivial; a 2-line change to a critical-path file is not (next bullet wins).
 - Any of: subsystems ≥ `heavy_min_subsystems`, files ≥ `heavy_min_files`, LOC ≥ `heavy_min_loc`, `new_deps` → `HEAVY` floor.
-- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too.
+- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too. `project-config.toml` (repo root) is always a hit, hardcoded, independent of any `.critical-paths` file (§5) — its own contents are never consulted to evaluate a change to itself.
 - Otherwise → `SERIAL`.
 
 `new_deps` = `Path(changed.path).name in DEPENDENCY_FILES` for any `changed` in `files`, regardless of status — matched by **basename**, not full path, so nested manifests (`packages/installer/pyproject.toml`, `packages/prgroom/uv.lock`, etc.) trigger it exactly like a root-level one. Touching a dependency manifest or lockfile at all is the signal, not just adding one. Detecting *which* dependency changed inside the file is out of scope; the file-level signal is deliberately coarse and cheap.
@@ -136,6 +136,10 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 Coverage is defined at the **source-root** level, not the namespace level: one `.critical-paths` file at the root of every deployable source directory, matching its full subtree recursively (`.critical-paths` patterns already apply to their folder's whole subtree, §5 above — a root-level marker therefore covers that directory's namespace subdirectories, e.g. `skills/`, `rules/`, AND its own loose tool-root files, e.g. `AGENTS.md.template`, `settings.json.template`, uniformly, with no separate case for either). Deriving coverage from each tool adapter's `scoped_namespaces()` tuple was tried and found incomplete (Round 6): namespace directories are only part of what a tool adapter stages — `stage_templates`/`stage_settings` (`packages/installer/src/installer/core/staging.py`) deploy tool-root files like `AGENTS.md.template` through a separate path that a namespace-only derivation never reaches. Seeding at the source root sidesteps the distinction entirely.
 
 Required roots: every tool adapter's `source_dir(repo_root)` (`src/user/.claude/`, `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/`), plus `src/user/.agents/` (shared skills/agents/rules), `src/plugins/`, and `packages/installer/` (the installer's own source — not staged anywhere, but load-bearing in its own right). This ships in the same change as gate-triage, with an acceptance test (§9) asserting every required root's marker produces a `critical_path_hits` entry for both a namespace-nested file and a root-level loose file — so a new tool, namespace, or tool-root file added later is covered by construction, not by remembering to re-enumerate.
+
+**Self-protection.** A `.critical-paths` file living inside a required root is itself matched by that root's own recursive pattern — editing or deleting an existing marker is, by construction, a change under that marker's own subtree, so it forces `HEAVY` on itself. No separate rule is needed for markers.
+
+`project-config.toml` at the repo root is the one file this coverage model cannot reach — it sits outside every required subtree root, and `load_config` (§4.1) reads it *from the same candidate diff being evaluated*: a change that loosens `[completion-gate]` (e.g. raises `trivial_max_loc`) could otherwise use its own loosened value to qualify for `SKIP`. Rather than defend against this by comparing base-branch config against candidate config, gate-triage **hardcodes `project-config.toml` as always-critical**, independent of any `.critical-paths` file: any change to it, at any size, floors at `HEAVY` before its own contents are even consulted. This closes the self-modification path completely — a diff touching the gate's own policy can never use that diff's policy to evaluate itself.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -204,39 +208,42 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 5. Each quant threshold trips `HEAVY` independently at its boundary value (files = min, LOC = min, subsystems = min); one below each → not `HEAVY`.
 6. A `DEPENDENCY_FILES` entry present with any status (A/M/D, tracked or untracked) → `HEAVY`, even with otherwise-trivial LOC. Matched by basename at a nested path (e.g. `packages/installer/pyproject.toml`), not just repo root.
 7. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
+8. A single-line change to `project-config.toml` at the repo root → `HEAVY`, unconditionally, with no `.critical-paths` file present anywhere and regardless of what the changed config values are.
+9. A `.critical-paths` file inside a required root, itself edited (weakened or deleted) → `HEAVY`, because it falls under its own root's recursive pattern (self-protection, §5).
 
 **Classification behaviors (`classify_file`):**
-8. Representative extensions map to DOCS / CONFIG / CODE per the chosen table; unknown extensions default to CODE (fail toward scrutiny).
+10. Representative extensions map to DOCS / CONFIG / CODE per the chosen table; unknown extensions default to CODE (fail toward scrutiny).
 
 **Critical-paths behaviors (`critical_hits`, pure over constructed markers):**
-9. Pattern in `src/auth/.critical-paths` matches `src/auth/token.py` and `src/auth/sub/x.py`; does NOT match `src/other/token.py` (subtree scoping + relative anchoring).
-10. Nested marker and ancestor marker both match different files → both hits reported (union, no shadowing).
-11. Negation within one marker file exempts a matched file per gitignore semantics.
-12. Hit report carries file ← marker:pattern provenance (the announce line's evidence).
-13. A file with `status == "R"` renamed OUT of a marked subtree → hit on `old_path`. Renamed INTO a marked subtree → hit on `path`. Renamed WITHIN the same marked subtree → one hit, not two.
-14. A file with `status == "D"` deleted from a marked subtree → hit on `path`.
+11. Pattern in `src/auth/.critical-paths` matches `src/auth/token.py` and `src/auth/sub/x.py`; does NOT match `src/other/token.py` (subtree scoping + relative anchoring).
+12. Nested marker and ancestor marker both match different files → both hits reported (union, no shadowing).
+13. Negation within one marker file exempts a matched file per gitignore semantics.
+14. Hit report carries file ← marker:pattern provenance (the announce line's evidence).
+15. A file with `status == "R"` renamed OUT of a marked subtree → hit on `old_path`. Renamed INTO a marked subtree → hit on `path`. Renamed WITHIN the same marked subtree → one hit, not two.
+16. A file with `status == "D"` deleted from a marked subtree → hit on `path`.
 
 **Scale-hint behaviors (`compute_scale_hint`):**
-15. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
+17. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
 
 **Config behaviors:**
-16. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
-17. `trivial_max_loc: 999` in config → clamped to 20, not accepted as-is; a config cannot raise the `SKIP` ceiling high enough to functionally disable the gate.
-18. `heavy_min_loc` configured below `trivial_max_loc` → rejected, falls back to defaults (nonsensical ordering).
-19. A non-integer or negative value for any field → falls back to defaults, does not raise past `load_config`'s boundary.
-20. An unknown key in `[completion-gate]` → ignored, remaining known keys still applied.
+18. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
+19. `trivial_max_loc: 999` in config → clamped to 20, not accepted as-is; a config cannot raise the `SKIP` ceiling high enough to functionally disable the gate.
+20. `heavy_min_loc` configured below `trivial_max_loc` → rejected, falls back to defaults (nonsensical ordering).
+21. A non-integer or negative value for any field → falls back to defaults, does not raise past `load_config`'s boundary.
+22. An unknown key in `[completion-gate]` → ignored, remaining known keys still applied.
 
 **Boundary (integration, temp git repo):**
-21. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
-22. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
-23. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
-24. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`, including at a nested path (`packages/prgroom/uv.lock`).
-25. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
-26. A file committed as a rename OUT of a marked subtree (`status == "R"`, `old_path` in the marked subtree), then further edited unstaged at its new path, still carries `old_path` in the deduped `DiffFacts` and still produces a `critical_hits` entry.
+23. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
+24. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
+25. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
+26. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`, including at a nested path (`packages/prgroom/uv.lock`).
+27. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+28. A file committed as a rename OUT of a marked subtree (`status == "R"`, `old_path` in the marked subtree), then further edited unstaged at its new path, still carries `old_path` in the deduped `DiffFacts` and still produces a `critical_hits` entry.
+29. A one-line change to `project-config.toml` (repo root) produces a `critical_path_hits`-equivalent `HEAVY` result end-to-end through `triage()`, with no `.critical-paths` file present anywhere in the test fixture.
 
 **Repo-level acceptance check (this repo, not the gate-triage package):**
-27. For every required source root (§5), assert **effective coverage, not file existence**: seed each root's `.critical-paths` with a `**` pattern by default (narrower only when a root deliberately excludes a known-safe subpath), then assert BOTH a representative namespace-nested file (e.g. `skills/some-skill/SKILL.md`) AND a representative tool-root loose file (e.g. `AGENTS.md.template`) under that root actually produce a `critical_path_hits` entry when run through `critical_hits`. An empty or mis-anchored marker file fails this test even though the file exists; a marker that only covers namespaces (missing the root-level case Round 6 found) fails too.
-28. Installer test: renaming or removing the source `quality-gate` workflow prunes (or explicitly reports) the stale `~/.claude/workflows/quality-gate` on the next install.
+30. For every required source root (§5), assert **effective coverage, not file existence**: seed each root's `.critical-paths` with a `**` pattern by default (narrower only when a root deliberately excludes a known-safe subpath), then assert BOTH a representative namespace-nested file (e.g. `skills/some-skill/SKILL.md`) AND a representative tool-root loose file (e.g. `AGENTS.md.template`) under that root actually produce a `critical_path_hits` entry when run through `critical_hits`. An empty or mis-anchored marker file fails this test even though the file exists; a marker that only covers namespaces (missing the root-level case Round 6 found) fails too.
+31. Installer test: renaming or removing the source `quality-gate` workflow prunes (or explicitly reports) the stale `~/.claude/workflows/quality-gate` on the next install.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
@@ -291,3 +298,10 @@ Original 5-round cap reached at Round 5; extended by up to 3 more rounds on user
 **Round 7** (1 high, 1 medium) — resolved:
 - §7.1's installer deliverable named only staging/sync as touch points, but namespace awareness in the installer is **four independently hardcoded lists**, verified by inspection: `claude.py::scoped_namespaces()`, `install.sh`'s two loops, `ownership.py::PRUNE_NAMESPACES`, and `backup.py::_SCOPED_NAMESPACES`. Missing `workflows` from `PRUNE_NAMESPACES` specifically means a renamed/removed `quality-gate` source leaves a stale, still-invocable copy in `~/.claude/workflows/` — `HEAVY` calls it by stable name and would keep running outdated gate logic silently. → all four lists named explicitly as required touch points; added an installer test asserting rename/removal prunes the stale destination (§9 item 28). Flagged, not fixed here: the installer's namespace-list duplication across four files is itself a latent maintenance risk, out of scope for this spec.
 - (medium) `[completion-gate]` config had no validation — a malformed or adversarial config could set `trivial_max_loc` high enough to functionally disable `SKIP`'s safety bound, or crash triage on bad types. → added `load_config` with bounds (`trivial_max_loc` hard-capped at 20, ordering checked against `heavy_min_loc`), fail-closed-to-defaults on any invalid value, unknown keys ignored.
+
+Extension authorized by user, up to 3 more rounds after the original cap.
+
+**Round 8** (1 high, 0 medium/critical) — resolved, extension's 3-round limit reached:
+- `load_config` reads `[completion-gate]` from the *same candidate diff being evaluated*, and `project-config.toml` sat outside every required marker root (§5) — a change that loosened its own settings (e.g. raised `trivial_max_loc`) could use that loosened value to qualify itself for `SKIP`, a self-modification bypass of the gate's own policy. → rather than compare base-branch config against candidate config, `project-config.toml` is now hardcoded as always-critical, independent of any `.critical-paths` file: any change to it floors at `HEAVY` before its contents are consulted, closing the self-modification path outright. Also made explicit as a design property (not a new rule): a `.critical-paths` file inside a required root is self-protecting, since it falls under its own root's recursive pattern.
+
+**Extension cap reached.** 8 rounds total (5 original + 3 extension), findings count per round: 2, 2, 2, 2, 2, 1, 2, 1 — trending down and, since Round 3, consistently more structural than the round before it. No round reached zero critical/high findings; Round 8's fix is unverified by a Round 9 that was not authorized. Treated as sufficient to proceed to an implementation plan on the strength of that trend, not on a clean report.
