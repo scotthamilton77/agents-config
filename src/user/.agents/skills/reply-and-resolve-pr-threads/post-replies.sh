@@ -12,14 +12,17 @@
 #                     posted_reply_id must be excluded from the hash.)
 #
 # IDEMPOTENCY: this helper is self-recording. Each successful POST is
-# appended to a sidecar file <inventory>.posted (one cid per line), or to
-# --posted-sidecar when supplied. On startup the sidecar is read and unioned
-# with --skip-comment-ids to form the effective skip-set, so crash-recovery
-# re-runs against the same inventory will SKIP previously-posted items
-# automatically. --posted-sidecar decouples this file from --inventory: pass
-# a durable, fixed path when --inventory is itself a mktemp scratch copy that
-# changes on every resume, so the skip-set survives across resumes instead of
-# being orphaned by a fresh mktemp path each run.
+# appended to the --posted-sidecar file (one cid per line). On startup the
+# sidecar is read and unioned with --skip-comment-ids to form the effective
+# skip-set, so crash-recovery re-runs against the same inventory will SKIP
+# previously-posted items automatically. --posted-sidecar and
+# --reply-id-sidecar are both REQUIRED (not defaulted off --inventory):
+# --inventory is routinely a mktemp scratch copy (Skill B renders reply
+# bodies into a temp file before posting), and a caller that forgot to pass
+# an explicit durable path would silently lose the sidecar/reply-id record
+# the moment that temp file is discarded — exactly the bug this pair of
+# flags exists to prevent. A missing flag is a caller bug; fail the run
+# loudly (exit 2) rather than degrade to a silently-incomplete record.
 # - On a 100%-success run (any_failed=0) AND when --skip-comment-ids was
 #   NOT supplied, the sidecar is deleted: the script can prove the sidecar
 #   is a complete record of what this inventory needed.
@@ -57,15 +60,14 @@
 #   --owner            <o>     repository owner
 #   --repo             <r>     repository name
 #   --pr               <n>     PR number
-#   --skip-comment-ids <csv>   (optional) csv of comment_ids to skip
-#   --posted-sidecar   <file>  (optional) durable path for the posted-cid
-#                              sidecar; replaces the default <inventory>.posted
-#                              derivation so it survives a fresh --inventory
-#                              mktemp path on resume
-#   --reply-id-sidecar <file>  (optional) JSONL file to append one
+#   --posted-sidecar   <file>  REQUIRED. Durable path for the posted-cid
+#                              sidecar — must survive a fresh --inventory
+#                              mktemp path on resume.
+#   --reply-id-sidecar <file>  REQUIRED. JSONL file to append one
 #                              {"k":...,"v":...,"rid":...} record per
 #                              successful POST, so the created reply id
-#                              survives outside the (possibly scratch) --inventory
+#                              survives outside the (possibly scratch) --inventory.
+#   --skip-comment-ids <csv>   (optional) csv of comment_ids to skip
 #
 # Outputs:
 #   stdout: per item, one of:
@@ -91,19 +93,21 @@ set -euo pipefail
 usage() {
   cat <<EOF
 Usage: $(basename "$0") --inventory <file> --owner <o> --repo <r> --pr <n>
+                        --posted-sidecar <file> --reply-id-sidecar <file>
                         [--skip-comment-ids <csv>]
-                        [--posted-sidecar <file>] [--reply-id-sidecar <file>]
 
 Posts replies to each inventory item. Self-recording: each POSTED cid is
-appended to <inventory>.posted (or --posted-sidecar, when supplied);
-subsequent runs against the same sidecar automatically SKIP previously-
-posted items. A 100%-success run deletes the sidecar UNLESS
---skip-comment-ids was supplied (in which case the operator has externally
-asserted some items are already done and the script can't prove the
-sidecar is complete, so it is preserved); partial-failure runs preserve
-the sidecar for retry. --reply-id-sidecar, when supplied, additionally
-appends one JSONL {k,v,rid} record per successful POST so the created
-reply id survives outside --inventory.
+appended to --posted-sidecar; subsequent runs against the same sidecar
+automatically SKIP previously-posted items. A 100%-success run deletes the
+sidecar UNLESS --skip-comment-ids was supplied (in which case the operator
+has externally asserted some items are already done and the script can't
+prove the sidecar is complete, so it is preserved); partial-failure runs
+preserve the sidecar for retry. --reply-id-sidecar additionally appends one
+JSONL {k,v,rid} record per successful POST so the created reply id survives
+outside --inventory. Both sidecar flags are REQUIRED: --inventory is
+routinely a mktemp scratch copy, and defaulting either sidecar path off of
+it would silently drop the durable record the moment that copy is
+discarded.
 EOF
   exit 2
 }
@@ -137,9 +141,17 @@ done
 [ -n "$REPO" ]  || { echo "error: --repo is required" >&2; exit 2; }
 [ -n "$PR" ]    || { echo "error: --pr is required" >&2; exit 2; }
 [ -f "$INV" ]   || { echo "error: inventory file not found: $INV" >&2; exit 2; }
+[ -n "$POSTED_SIDECAR_FLAG" ] || {
+  echo "error: --posted-sidecar is required — pass a durable path (never let it default off --inventory, which may be a scratch mktemp copy)" >&2
+  exit 2
+}
+[ -n "$REPLY_ID_SIDECAR_FLAG" ] || {
+  echo "error: --reply-id-sidecar is required — without it, posted replies get no durable record and merge-eligibility will treat them as untriaged forever" >&2
+  exit 2
+}
 
-POSTED_SIDECAR="${POSTED_SIDECAR_FLAG:-${INV}.posted}"
-REPLY_ID_SIDECAR="${REPLY_ID_SIDECAR_FLAG:-}"
+POSTED_SIDECAR="$POSTED_SIDECAR_FLAG"
+REPLY_ID_SIDECAR="$REPLY_ID_SIDECAR_FLAG"
 
 # Normalize --skip-comment-ids: strip ALL whitespace so operators or tooling
 # passing "11111, 22222" (with spaces/newlines) still match the *,<cid>,*
@@ -151,7 +163,7 @@ skipset=","
 if [ -n "$SKIP_CSV" ]; then
   skipset="${skipset}${SKIP_CSV},"
 fi
-# Union any prior <inventory>.posted entries into the skipset.
+# Union any prior --posted-sidecar entries into the skipset.
 # Defensively strip whitespace per line — we control the writer, but the
 # normalization is cheap and symmetric with the CSV handling above.
 if [ -f "$POSTED_SIDECAR" ]; then
@@ -193,20 +205,20 @@ record_reply_id() {  # record_reply_id <item-key> <match-value> <reply-id>
   fi
 
   # Durable sidecar copy of the reply id, decoupled from $INV (which may be a
-  # scratch mktemp copy the caller discards). Fatal on failure — mirrors the
-  # .posted append's fatal pattern below: under `set -e`, a failing RHS of
-  # `&&` is silently swallowed, so this must be its own `if ! cmd` guard, not
-  # `cmdA && cmdB`. The record is built into a variable FIRST, with its own
-  # `|| record_json=""` guard, so a jq construction failure is caught
-  # explicitly too — a bare `printf '%s\n' "$(jq ...)"` would swallow a
-  # failing inner command substitution (its exit status doesn't propagate
-  # through printf) and silently append a blank line while still returning 0.
-  if [ -n "$REPLY_ID_SIDECAR" ]; then
-    record_json="$(jq -nc --arg k "$key" --arg v "$val" --argjson rid "$rid" '{k:$k,v:$v,rid:$rid}')" || record_json=""
-    if [ -z "$record_json" ] || ! printf '%s\n' "$record_json" >> "$REPLY_ID_SIDECAR"; then
-      echo "WARNING $val reply-id-sidecar-append-failed: reply $rid posted to GitHub and recorded on $INV but the durable sidecar write to $REPLY_ID_SIDECAR failed; the merge-eligibility check may not exclude this reply until the sidecar is manually repaired" >&2
-      any_failed=1
-    fi
+  # scratch mktemp copy the caller discards). REPLY_ID_SIDECAR is guaranteed
+  # non-empty here — the flag is required at startup. Fatal on failure —
+  # mirrors the .posted append's fatal pattern below: under `set -e`, a
+  # failing RHS of `&&` is silently swallowed, so this must be its own
+  # `if ! cmd` guard, not `cmdA && cmdB`. The record is built into a variable
+  # FIRST, with its own `|| record_json=""` guard, so a jq construction
+  # failure is caught explicitly too — a bare `printf '%s\n' "$(jq ...)"`
+  # would swallow a failing inner command substitution (its exit status
+  # doesn't propagate through printf) and silently append a blank line while
+  # still returning 0.
+  record_json="$(jq -nc --arg k "$key" --arg v "$val" --argjson rid "$rid" '{k:$k,v:$v,rid:$rid}')" || record_json=""
+  if [ -z "$record_json" ] || ! printf '%s\n' "$record_json" >> "$REPLY_ID_SIDECAR"; then
+    echo "WARNING $val reply-id-sidecar-append-failed: reply $rid posted to GitHub and recorded on $INV but the durable sidecar write to $REPLY_ID_SIDECAR failed; the merge-eligibility check may not exclude this reply until the sidecar is manually repaired" >&2
+    any_failed=1
   fi
 }
 
