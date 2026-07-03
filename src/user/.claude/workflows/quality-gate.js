@@ -56,16 +56,23 @@ function clampInt(v, lo, hi, dflt) {
 // JSON *text* on stdout — so tolerate a raw string too, parsing at this boundary.
 // Silently defaulting on a string would launch the fleet at medium scale and
 // defeat scale-to-the-diff with no signal (the exact failure the rule warns of).
+const asFactsObject = v =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v : null // arrays are not payloads
 function coerceFacts(a) {
   if (typeof a === 'string') {
+    let parsed = null
     try {
-      const parsed = JSON.parse(a)
-      return parsed && typeof parsed === 'object' ? parsed : {}
+      parsed = asFactsObject(JSON.parse(a))
     } catch {
-      return {}
+      parsed = null
     }
+    if (parsed) return parsed
+    // A string that does not parse to a JSON object is mis-wiring — surface it
+    // rather than silently defaulting the fleet (the failure this fix guards).
+    log('quality-gate: `args` was a string but did not parse to a JSON object — running at default scale; check the gate-triage → Workflow wiring.')
+    return {}
   }
-  return a && typeof a === 'object' ? a : {}
+  return asFactsObject(a) || {} // object (not array) → use it; absent/array → default
 }
 const facts = coerceFacts(args)
 const hint = facts.scale_hint && typeof facts.scale_hint === 'object' ? facts.scale_hint : {}
