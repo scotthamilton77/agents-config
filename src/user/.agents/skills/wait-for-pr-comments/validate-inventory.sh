@@ -11,7 +11,7 @@
 #
 # --phase controls which guards run:
 #   --phase 2 (default) — runs all ten guards (the full post-render contract)
-#   --phase 0           — runs guards 1–9 only, skipping guard 10
+#   --phase 0           — runs guards 0–8 only, skipping guard 10
 #                         (replyable-has-reply_body). Phase 0 is invoked on
 #                         the RAW inventory before `render-reply-bodies.sh`
 #                         populates `reply_body`, so guard 10 cannot yet

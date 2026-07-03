@@ -2,7 +2,7 @@
 # Smoke test for validate-inventory.sh
 #
 # Verifies the --phase flag honors the pipeline contract:
-#   --phase 0 runs guards 1-9 only (raw inventory; reply_body not yet populated)
+#   --phase 0 runs guards 0-8 only (raw inventory; reply_body not yet populated)
 #   --phase 2 (default) runs all ten guards
 
 set -u
@@ -50,7 +50,7 @@ rc_missing=$?
 assert "missing file exits 66" "[ \$rc_missing -eq 66 ]"
 
 # --- Raw inventory: a FIX-committed item lacks reply_body (typical Phase 0 input) ---
-# Guard 10 would reject this; guards 1-9 should pass.
+# Guard 10 would reject this; guards 0-8 should pass.
 RAW="$TMP/raw.json"
 cat >"$RAW" <<'JSON'
 {

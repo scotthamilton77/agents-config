@@ -122,4 +122,37 @@ assert "tiny --timeout-seconds exits 1 (timeout)" "[ \$rc_tiny_timeout -eq 1 ]"
 assert "tiny --timeout-seconds reports copilot_review_timeout" "printf '%s' '$out' | grep -q copilot_review_timeout"
 assert "tiny --timeout-seconds does not wait for the default ~10-minute window" "[ \$elapsed -lt 15 ]"
 
+# ── --bot-reviewers (generalizes the poll to non-Copilot policy bots) ────────
+
+assert "accepts --bot-reviewers flag" "grep -q -- '--bot-reviewers' '$SCRIPT'"
+
+# Malformed values must be rejected up front (exit 3), not silently ignored.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers 'not-json' 2>/dev/null
+rc_bad_bots=$?
+assert "exits 3 for non-array --bot-reviewers" "[ \$rc_bad_bots -eq 3 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '[]' 2>/dev/null
+rc_empty_bots=$?
+assert "exits 3 for empty --bot-reviewers array" "[ \$rc_empty_bots -eq 3 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["ok", 3]' 2>/dev/null
+rc_mixed_bots=$?
+assert "exits 3 for --bot-reviewers array with a non-string" "[ \$rc_mixed_bots -eq 3 ]"
+
+# A non-Copilot bot review is found ONLY when its identity is in --bot-reviewers,
+# proving the poll matches by policy allowlist, not the hardcoded Copilot substring.
+FIXTURE_REVIEWS_OTHERBOT='[{"user":{"login":"My-Bot[bot]","type":"Bot"},"state":"COMMENTED","submitted_at":"2026-01-01T00:00:00Z"}]'
+
+out_bot=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 5 --bot-reviewers '["my-bot[bot]"]' 2>/dev/null)
+rc_bot=$?
+assert "non-Copilot bot in --bot-reviewers yields a found review (exit 0)" "[ \$rc_bot -eq 0 ]"
+assert "matched review reports copilot_review_found" "printf '%s' \"\$out_bot\" | grep -q copilot_review_found"
+
+# Control: the same bot is invisible to the default Copilot filter → timeout.
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS="$FIXTURE_REVIEWS_OTHERBOT" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 >/dev/null 2>&1
+rc_default=$?
+assert "default Copilot filter does NOT match the non-Copilot bot (timeout, exit 1)" "[ \$rc_default -eq 1 ]"
+
 exit $FAIL
