@@ -355,3 +355,28 @@ def test_main_emits_valid_json(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["tier_floor"] in {"SKIP", "SERIAL", "HEAVY"}
     assert set(payload["scale_hint"]) == {"finder_dimensions", "refuters", "synthesis_effort"}
+
+
+def _agents_config_root() -> Path | None:
+    """The agents-config source root (dir holding packages/installer AND
+    scripts/install.sh), found by walking up from this file. None when the skill
+    runs as a deployed copy outside its source repo — this test file ships with
+    the skill, so the repo-acceptance assertion skips there rather than failing."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "packages" / "installer").is_dir() and (parent / "scripts" / "install.sh").is_file():
+            return parent
+    return None
+
+
+def test_repo_root_marker_covers_load_bearing_surface():
+    repo_root = _agents_config_root()
+    if repo_root is None:
+        pytest.skip("repo-acceptance check; only meaningful in the agents-config source tree")
+    markers = gt.load_markers(repo_root)
+    reps = ["src/user/.agents/skills/gate-triage/SKILL.md",
+            "src/user/.claude/AGENTS.md.template",
+            "packages/installer/src/installer/cli.py",
+            "scripts/install.sh", ".github/workflows/ci.yml", "Makefile"]
+    for rel in reps:
+        hits = gt.critical_hits((_cf(rel),), markers)
+        assert hits, f"{rel} not covered by shipped root .critical-paths"
