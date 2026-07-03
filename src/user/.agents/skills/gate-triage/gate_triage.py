@@ -124,3 +124,19 @@ def load_config(repo_root: Path) -> TriageConfig:
     if fields["heavy_min_loc"] < fields["trivial_max_loc"]:
         return default  # nonsensical ordering → fail closed
     return TriageConfig(**fields)
+
+
+_DOCS_EXT = {".md", ".rst", ".txt", ".adoc"}
+_CONFIG_EXT = {".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg"}
+
+
+def classify_file(path: str) -> FileClass:
+    name = Path(path).name
+    suffix = Path(path).suffix.lower()
+    if suffix in _DOCS_EXT:
+        return FileClass.DOCS
+    if suffix in _CONFIG_EXT:
+        return FileClass.CONFIG
+    if suffix == "" and name.startswith("."):
+        return FileClass.CONFIG  # extensionless dotfile
+    return FileClass.CODE  # unknown/missing ext → CODE

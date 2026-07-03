@@ -2,6 +2,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent))
 import gate_triage as gt  # noqa: E402
 
@@ -46,3 +48,17 @@ def test_unknown_key_ignored_known_kept(tmp_path):  # §9.22
 
 def test_absent_file_yields_defaults(tmp_path):  # §9.18
     assert gt.load_config(tmp_path) == gt.TriageConfig()
+
+
+# --- Task 6: classify_file (spec §9 item 10) ---
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("README.md", gt.FileClass.DOCS), ("a.rst", gt.FileClass.DOCS),
+    ("cfg.toml", gt.FileClass.CONFIG), ("s.yaml", gt.FileClass.CONFIG),
+    (".gitignore", gt.FileClass.CONFIG),  # extensionless dotfile
+    ("main.py", gt.FileClass.CODE), ("run.sh", gt.FileClass.CODE),
+    ("Makefile", gt.FileClass.CODE),  # unknown/no ext → CODE (fail toward scrutiny)
+])
+def test_classify_file(path, expected):  # §9.10
+    assert gt.classify_file(path) == expected
