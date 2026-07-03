@@ -756,11 +756,24 @@ def test_collect_diff_untracked_file(tmp_path):  # §9.25
 - Create: `.critical-paths` (repo root)
 - Test: `gate_triage_test.py` (spec §9 item 30 — repo acceptance)
 
-- [ ] **Step 1: Write the failing repo-acceptance test** (§9.30 — effective coverage of the *shipped* root marker, not its existence)
+- [ ] **Step 1: Write the failing repo-acceptance test** (effective coverage of the *shipped* root marker, not its existence). This test file **ships with the skill** into other projects, so it must not hardcode a fragile `parents[N]` index (the file sits 5 dirs deep — the repo root is `parents[5]`, not `parents[4]`) nor fail when the agents-config paths are absent. Derive the root by walking up to an agents-config sentinel and **skip** when run outside the source tree.
 
 ```python
-def test_repo_root_marker_covers_load_bearing_surface(tmp_path):  # §9.30
-    repo_root = Path(__file__).resolve().parents[4]  # worktree root
+def _agents_config_root() -> Path | None:
+    """The agents-config source root (dir holding packages/installer AND
+    scripts/install.sh), found by walking up from this file. None when the skill
+    runs as a deployed copy outside its source repo — this test file ships with
+    the skill, so the repo-acceptance assertion skips there rather than failing."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "packages" / "installer").is_dir() and (parent / "scripts" / "install.sh").is_file():
+            return parent
+    return None
+
+
+def test_repo_root_marker_covers_load_bearing_surface():
+    repo_root = _agents_config_root()
+    if repo_root is None:
+        pytest.skip("repo-acceptance check; only meaningful in the agents-config source tree")
     markers = gt.load_markers(repo_root)
     reps = ["src/user/.agents/skills/gate-triage/SKILL.md",
             "src/user/.claude/AGENTS.md.template",
@@ -771,7 +784,7 @@ def test_repo_root_marker_covers_load_bearing_surface(tmp_path):  # §9.30
         assert hits, f"{rel} not covered by shipped root .critical-paths"
 ```
 
-- [ ] **Step 2: Run, verify fail** (no `.critical-paths` yet → empty markers → no hits).
+- [ ] **Step 2: Run, verify fail** (in the source tree the guard does not skip; no `.critical-paths` yet → empty markers → no hits → assertion fails).
 - [ ] **Step 3: Create `.critical-paths`** at repo root (spec §5 curated list):
 
 ```gitignore
