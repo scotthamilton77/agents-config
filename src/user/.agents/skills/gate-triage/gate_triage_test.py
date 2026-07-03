@@ -1,5 +1,6 @@
 # src/user/.agents/skills/gate-triage/gate_triage_test.py
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -215,3 +216,119 @@ def test_triage_serial_default_shape():
     assert payload["files"] == 2 and payload["loc_changed"] == 10
     assert payload["critical_path_hits"] == []
     assert payload["file_classes"] == ["code", "docs"]  # sorted, deduped
+
+
+# --- Task 11: collect_diff + load_markers (integration, temp git repo; spec §9.23-29) ---
+
+
+def _git(repo, *args):
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _init_repo(tmp_path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "seed.txt").write_text("seed\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "seed")
+    return repo
+
+
+def test_collect_diff_committed_with_rename(tmp_path):  # §9.23
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "added.py").write_text("x = 1\ny = 2\n")  # new file, 2 lines
+    _git(repo, "mv", "seed.txt", "renamed.txt")  # pure rename
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "work")
+    by_path = {f.path: f for f in gt.collect_diff(repo, "main").files}
+    assert by_path["added.py"].status == "A" and by_path["added.py"].loc_changed == 2
+    r = by_path["renamed.txt"]
+    assert r.status == "R" and r.old_path == "seed.txt"
+
+
+def test_collect_diff_staged_unstaged_committed_dedupe(tmp_path):  # §9.24
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "work.py").write_text("a\n")  # committed on the branch
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "c")
+    (repo / "work.py").write_text("a\nb\nc\n")  # re-touched unstaged
+    (repo / "staged.py").write_text("s\n")  # staged-new
+    _git(repo, "add", "staged.py")
+    facts = gt.collect_diff(repo, "main")
+    paths = [f.path for f in facts.files]
+    assert paths.count("work.py") == 1  # deduped to one entry
+    by_path = {f.path: f for f in facts.files}
+    assert by_path["work.py"].loc_changed == 3  # net vs merge-base
+    assert "staged.py" in by_path
+
+
+def test_collect_diff_untracked_file(tmp_path):  # §9.25
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "new.py").write_text("a\nb\nc\n")  # untracked, 3 lines
+    facts = gt.collect_diff(repo, "main")
+    nf = next(f for f in facts.files if f.path == "new.py")
+    assert nf.status == "A" and nf.loc_changed == 3
+
+
+def test_collect_diff_new_deps_untracked_nested(tmp_path):  # §9.26
+    repo = _init_repo(tmp_path)
+    _git(repo, "checkout", "-b", "feat")
+    nested = repo / "packages" / "prgroom"
+    nested.mkdir(parents=True)
+    (nested / "uv.lock").write_text("version = 1\n")  # untracked nested lockfile
+    facts = gt.collect_diff(repo, "main")
+    assert facts.new_deps is True
+    assert any(f.path == "packages/prgroom/uv.lock" for f in facts.files)
+
+
+def test_load_markers_nested_discovery_and_anchoring(tmp_path):  # §9.27
+    repo = _init_repo(tmp_path)
+    (repo / ".critical-paths").write_text("scripts/**\n")
+    auth = repo / "src" / "auth"
+    auth.mkdir(parents=True)
+    (auth / ".critical-paths").write_text("*.py\n")
+    markers = gt.load_markers(repo)
+    assert {m.folder for m in markers} == {"", "src/auth"}
+    hits = gt.critical_hits((_cf("src/auth/token.py"), _cf("scripts/x.sh"),
+                             _cf("docs/readme.md")), markers)
+    assert {h.path for h in hits} == {"src/auth/token.py", "scripts/x.sh"}
+
+
+def test_collect_diff_committed_rename_then_unstaged_edit(tmp_path):  # §9.28
+    repo = _init_repo(tmp_path)
+    auth = repo / "src" / "auth"
+    auth.mkdir(parents=True)
+    (auth / "token.py").write_text("l1\nl2\nl3\nl4\nl5\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add token")
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "src" / "other").mkdir(parents=True)
+    _git(repo, "mv", "src/auth/token.py", "src/other/token.py")  # committed rename OUT
+    _git(repo, "commit", "-m", "rename out")
+    (repo / "src" / "other" / "token.py").write_text("l1\nl2\nl3\nl4\nl5\nl6\n")  # unstaged edit
+    facts = gt.collect_diff(repo, "main")
+    f = next(x for x in facts.files if x.path == "src/other/token.py")
+    assert f.old_path == "src/auth/token.py"  # provenance survives the later edit
+    m = _marker("src/auth", "*.py")
+    (hit,) = gt.critical_hits((f,), (m,))
+    assert hit.path == "src/other/token.py"  # hit via old_path in the marked subtree
+
+
+def test_project_config_change_is_heavy_end_to_end(tmp_path):  # §9.29
+    repo = _init_repo(tmp_path)
+    (repo / "project-config.toml").write_text("[x]\ny = 1\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add cfg")
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "project-config.toml").write_text("[x]\ny = 2\n")  # one-line edit, no marker
+    facts = gt.collect_diff(repo, "main")
+    markers = gt.load_markers(repo)
+    result = gt.triage(facts, markers, gt.load_config(repo))
+    assert markers == ()  # no .critical-paths anywhere
+    assert result.tier_floor == gt.Tier.HEAVY  # policy-input hardcoded critical

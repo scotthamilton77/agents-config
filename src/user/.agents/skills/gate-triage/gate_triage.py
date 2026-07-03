@@ -277,18 +277,128 @@ def _result_to_json(result: TriageResult) -> str:
             "synthesis_effort": result.scale_hint.synthesis_effort,
         },
     }
-    return json.dumps(payload, indent=2)
+    return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def _run_git(repo_root: Path, *args: str) -> str:
+    """Boundary: run a git command in repo_root and return stdout (raises on error)."""
+    return subprocess.run(["git", *args], cwd=repo_root,
+                          capture_output=True, text=True, check=True).stdout
 
 
 def _default_base_ref(repo_root: Path) -> str:
     """Boundary: the repo's default branch (origin/HEAD target), or 'main' on failure."""
     try:
-        out = subprocess.run(
-            ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-            cwd=repo_root, capture_output=True, text=True, check=True)
-        return out.stdout.strip().removeprefix("origin/") or "main"
+        ref = _run_git(repo_root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").strip()
+        return ref.removeprefix("origin/") or "main"
     except (subprocess.CalledProcessError, OSError):
         return "main"
+
+
+def _merge_base(repo_root: Path, base_ref: str) -> str:
+    """merge-base of base_ref and HEAD; falls back to base_ref if there is none."""
+    try:
+        return _run_git(repo_root, "merge-base", base_ref, "HEAD").strip()
+    except subprocess.CalledProcessError:
+        return base_ref
+
+
+def _parse_name_status_z(text: str) -> dict[str, tuple[str, str | None]]:
+    """Parse `git diff --name-status -z` → {new_path: (status_letter, old_path)}.
+    Layout: 'M\\0path\\0' for A/M/D; 'R066\\0old\\0new\\0' for R/C (rename/copy)."""
+    tokens = text.split("\0")
+    out: dict[str, tuple[str, str | None]] = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "":
+            i += 1
+            continue
+        letter = tok[0]
+        if letter in ("R", "C"):
+            out[tokens[i + 2]] = (letter, tokens[i + 1])
+            i += 3
+        else:
+            out[tokens[i + 1]] = (letter, None)
+            i += 2
+    return out
+
+
+def _parse_numstat_z(text: str) -> dict[str, int]:
+    """Parse `git diff --numstat -z` → {new_path: added + deleted}. Binary '-' → 0.
+    Layout: '1\\t0\\tpath\\0'; renames: '1\\t0\\t\\0old\\0new\\0'."""
+    tokens = text.split("\0")
+    out: dict[str, int] = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "":
+            i += 1
+            continue
+        added_s, deleted_s, rest = tok.split("\t", 2)
+        loc = (0 if added_s == "-" else int(added_s)) + (0 if deleted_s == "-" else int(deleted_s))
+        if rest == "":  # rename: next two tokens are old, new
+            out[tokens[i + 2]] = loc
+            i += 3
+        else:
+            out[rest] = loc
+            i += 1
+    return out
+
+
+def _line_count(path: Path) -> int:
+    try:
+        return len(path.read_text().splitlines())
+    except OSError:
+        return 0
+
+
+def _untracked_files(repo_root: Path) -> list[tuple[str, int]]:
+    """(path, full line count) for every untracked file (git status '?? ' entries)."""
+    out = _run_git(repo_root, "status", "--porcelain=v1", "--untracked-files=all", "-z")
+    result: list[tuple[str, int]] = []
+    for record in out.split("\0"):
+        if record.startswith("?? "):
+            path = record[3:]
+            result.append((path, _line_count(repo_root / path)))
+    return result
+
+
+def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts:
+    """Boundary: the candidate change at gate time — the net diff from the
+    merge-base of base_ref..HEAD to the working tree (committed + staged +
+    unstaged), plus untracked files. A single `git diff <merge-base>` yields the
+    net state deduped by path with rename provenance computed across the whole
+    span, so a committed rename followed by an unstaged edit keeps its old_path
+    without manual evidence-merging (spec §4.3)."""
+    merge_base = _merge_base(repo_root, base_ref)
+    statuses = _parse_name_status_z(
+        _run_git(repo_root, "diff", "-M", "--name-status", "-z", merge_base))
+    locs = _parse_numstat_z(
+        _run_git(repo_root, "diff", "-M", "--numstat", "-z", merge_base))
+    files: list[ChangedFile] = [
+        ChangedFile(path=path, old_path=old_path, loc_changed=locs.get(path, 0), status=letter)
+        for path, (letter, old_path) in statuses.items()
+    ]
+    for path, loc in _untracked_files(repo_root):
+        if path not in statuses:  # untracked can't overlap tracked; guard anyway
+            files.append(ChangedFile(path=path, old_path=None, loc_changed=loc, status="A"))
+    new_deps = any(Path(f.path).name in DEPENDENCY_FILES for f in files)
+    return DiffFacts(files=tuple(files), new_deps=new_deps, base_ref=base_ref)
+
+
+def load_markers(repo_root: Path) -> tuple[CriticalMarker, ...]:
+    """Boundary: discover every .critical-paths file; anchor its patterns to its
+    own folder (repo-root marker → folder "")."""
+    markers: list[CriticalMarker] = []
+    for path in sorted(repo_root.rglob(".critical-paths")):
+        if ".git" in path.parts:
+            continue
+        rel_dir = path.parent.relative_to(repo_root).as_posix()
+        folder = "" if rel_dir == "." else rel_dir
+        spec = pathspec.PathSpec.from_lines("gitignore", path.read_text().splitlines())
+        markers.append(CriticalMarker(folder=folder, spec=spec))
+    return tuple(markers)
 
 
 def main(argv: list[str] | None = None) -> int:
