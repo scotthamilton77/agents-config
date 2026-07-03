@@ -140,6 +140,18 @@ def test_policy_input_is_always_a_hit_without_markers():
     assert {h.path for h in hits} == {"project-config.toml", "src/x/.critical-paths"}
 
 
+def test_policy_input_hit_via_old_path_records_current_path():
+    # A policy input renamed to a non-policy name is still a hit (via old_path),
+    # but the recorded path must be the actionable current path, not the vanished
+    # old one; provenance of the matched policy name stays in `marker`.
+    renamed = _cf("settings.toml", status="R", old_path="project-config.toml")
+    hits = gt.critical_hits((renamed,), ())
+    assert len(hits) == 1
+    assert hits[0].path == "settings.toml"  # current path, actionable
+    assert hits[0].marker == "project-config.toml"  # provenance of the matched policy input
+    assert hits[0].pattern == "<policy-input>"
+
+
 # --- tier floor ---
 
 

@@ -174,7 +174,11 @@ def critical_hits(files: tuple[ChangedFile, ...],
         candidates = [f.path] + ([f.old_path] if f.status in ("R", "C") and f.old_path else [])
         for cand in candidates:
             if Path(cand).name in POLICY_INPUT_BASENAMES:  # hardcoded policy inputs
-                hits.append(CriticalHit(path=cand, marker=Path(cand).name, pattern="<policy-input>"))
+                # Record the current path (f.path), consistent with the marker
+                # branch — when matched via old_path (rename/copy) that old path
+                # may no longer exist. The matched policy-input name stays in
+                # `marker` for provenance.
+                hits.append(CriticalHit(path=f.path, marker=Path(cand).name, pattern="<policy-input>"))
                 break
             found = _match_markers(cand, markers)
             if found:
