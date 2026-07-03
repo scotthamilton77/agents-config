@@ -414,13 +414,18 @@ def main(argv: list[str] | None = None) -> int:
         facts = collect_diff(repo_root, base_ref)
         markers = load_markers(repo_root)
         print(_result_to_json(triage(facts, markers, config)))
-    except (subprocess.CalledProcessError, OSError) as exc:
-        # Fail closed at the git boundary: an unresolvable --base-ref (or a
-        # missing git binary) exits non-zero with a one-line diagnostic, never a
-        # traceback. A non-zero exit routes the caller to SERIAL — never SKIP
-        # (see the exit-code table in this skill's SKILL.md).
+    except Exception as exc:
+        # Fail closed on ANY unexpected error, not just the git boundary: an
+        # unresolvable --base-ref or missing git (CalledProcessError/OSError),
+        # malformed git output (ValueError/IndexError from the -z parsers), or a
+        # bad marker pattern (pathspec error). The documented contract is a
+        # non-zero exit with a one-line diagnostic, never a traceback; a non-zero
+        # exit routes the caller to SERIAL — never SKIP (see this skill's
+        # SKILL.md exit-code table). KeyboardInterrupt/SystemExit are
+        # BaseException and still propagate, so argparse's bad-arg exit is
+        # unaffected.
         detail = getattr(exc, "stderr", None) or str(exc)
-        print(f"gate-triage: git boundary failed (base-ref {base_ref!r}?): "
+        print(f"gate-triage: failed to compute tier floor (base-ref {base_ref!r}): "
               f"{detail.strip()}", file=sys.stderr)
         return 1
     return 0

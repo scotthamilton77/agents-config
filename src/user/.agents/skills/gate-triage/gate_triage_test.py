@@ -369,6 +369,24 @@ def test_main_unresolvable_base_ref_exits_nonzero_without_traceback(tmp_path, ca
     assert "gate-triage:" in captured.err  # controlled diagnostic, not a stack trace
 
 
+def test_main_unexpected_error_fails_closed(tmp_path, capsys, monkeypatch):
+    # The fail-closed contract covers ANY unexpected error, not just git/OS —
+    # e.g. a malformed-git-output parse error (ValueError) surfacing from the
+    # diff pipeline. It must still exit non-zero with a diagnostic, not a
+    # traceback.
+    repo = _init_repo(tmp_path)
+
+    def _boom(*_a, **_k):
+        raise ValueError("malformed numstat token")
+
+    monkeypatch.setattr(gt, "collect_diff", _boom)
+    rc = gt.main(["--repo-root", str(repo), "--base-ref", "main"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "gate-triage:" in captured.err
+
+
 def _agents_config_root() -> Path | None:
     """The agents-config source root (dir holding packages/installer AND
     scripts/install.sh), found by walking up from this file. None when the skill
