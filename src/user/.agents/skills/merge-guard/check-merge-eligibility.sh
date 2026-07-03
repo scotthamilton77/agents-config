@@ -7,6 +7,11 @@
 #   - positive facts (bot clean review at head, distinct current approvers) are
 #     emitted for merge-rule evaluation in merge-guard SKILL.md — they are
 #     facts here, never blockers.
+#   - facts.admin_bypass reports whether the authenticated identity already
+#     holds a standing GitHub ruleset bypass grant on a required-approving-
+#     review rule for this branch — never a blocker; merge-guard SKILL.md
+#     consults it only to decide whether a review-count merge rejection may
+#     be retried with `--admin`.
 #
 # Usage:
 #   check-merge-eligibility.sh --owner <o> --repo <r> --pr <n> --policy-json '<json>'
@@ -267,6 +272,57 @@ if [[ "$ci_state" != "green" && "$ci_state" != "none" ]]; then
     add_blocker ci_not_green \
         "required checks not green: $(jq -r '.not_green | join(", ")' <<<"$ci_eval") (pending/absent fails closed)"
 fi
+# ── Fact: admin-bypass availability for a required-approving-review rule ────
+# GitHub's own required-approving-review rule (enforced via a repository
+# ruleset) is a SEPARATE gate from this policy's own Axis 1
+# human-approvers-required — it stays in place for every contributor without
+# a bypass grant. This fact only reports whether the CURRENTLY AUTHENTICATED
+# identity already holds a standing bypass GitHub itself issued
+# (current_user_can_bypass), so merge-guard can retry a review-count
+# rejection with --admin for a merge this policy has already authorized —
+# never to invent a new override. Never a blocker: it does not gate
+# eligibility, only how Step 5 in merge-guard SKILL.md issues the merge.
+rules_stderr=$(mktemp)
+if rules_json=$(gh api "repos/${OWNER}/${REPO}/rules/branches/${BASE_REF_ENC}" 2>"$rules_stderr"); then
+    :
+else
+    if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
+        rules_json='[]'   # no rulesets target this branch
+    else
+        # admin_bypass never gates a blocker, so a transient fetch failure on
+        # it must not deny a merge that may not even need --admin. Degrade to
+        # the inert "no rulesets" state and warn rather than abort eligibility.
+        echo "Warning: failed to fetch branch rules (admin_bypass degraded to inert): $(cat "$rules_stderr")" >&2
+        rules_json='[]'
+    fi
+fi
+rm -f "$rules_stderr"
+
+review_rulesets=$(jq -c '[ .[]? | select(.type == "pull_request") ]' <<<"$rules_json")
+required_approving_review_count=$(jq '[ .[].parameters.required_approving_review_count? // 0 ] | (max // 0)' <<<"$review_rulesets")
+review_rule_active=false
+current_actor_can_bypass=null
+if [[ "$required_approving_review_count" -gt 0 ]]; then
+    review_rule_active=true
+    current_actor_can_bypass=true
+    ruleset_ids=$(jq -r '[ .[].ruleset_id ] | unique | .[]' <<<"$review_rulesets")
+    while IFS= read -r rid; do
+        [[ -n "$rid" ]] || continue
+        bypass=$(gh_api "repos/${OWNER}/${REPO}/rulesets/${rid}" --jq '.current_user_can_bypass') || {
+            # An unreadable ruleset fails closed for the narrow --admin decision
+            # (treat as non-bypassable) and continues — never aborts eligibility
+            # over an informational fact.
+            echo "Warning: failed to fetch ruleset ${rid} bypass status (treating as non-bypassable)" >&2
+            current_actor_can_bypass=false
+            continue; }
+        [[ "$bypass" == "always" || "$bypass" == "pull_requests_only" ]] || current_actor_can_bypass=false
+    done <<<"$ruleset_ids"
+fi
+set_fact admin_bypass "$(jq -n \
+    --argjson active "$review_rule_active" \
+    --argjson count "$required_approving_review_count" \
+    --argjson canpass "$current_actor_can_bypass" \
+    '{review_rule_active: $active, required_approving_review_count: $count, current_actor_can_bypass: $canpass}')"
 # ── Blocker: expected review still in flight ─────────────────────────────────
 # A review that hasn't happened YET is otherwise indistinguishable from one
 # that concluded clean — both read "no blocker" on every other row. Block
