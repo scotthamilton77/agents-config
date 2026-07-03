@@ -140,3 +140,41 @@ def classify_file(path: str) -> FileClass:
     if suffix == "" and name.startswith("."):
         return FileClass.CONFIG  # extensionless dotfile
     return FileClass.CODE  # unknown/missing ext → CODE
+
+
+def _rel_to_marker(marker_folder: str, path: str) -> str | None:
+    """Path relative to the marker's folder, or None if outside its subtree."""
+    if marker_folder == "":
+        return path
+    prefix = marker_folder + "/"
+    return path[len(prefix):] if path.startswith(prefix) else None
+
+
+def _match_markers(candidate: str, markers: tuple[CriticalMarker, ...]) -> tuple[str, str] | None:
+    """Return (marker_label, matched_pattern) for the first matching marker, else None."""
+    for m in markers:
+        rel = _rel_to_marker(m.folder, candidate)
+        if rel is None:
+            continue
+        if m.spec.match_file(rel):
+            label = (m.folder + "/.critical-paths").lstrip("/") or ".critical-paths"
+            matched = next((p.pattern for p in m.spec.patterns
+                            if p.include and p.match_file(rel)), "*")
+            return (label, matched)
+    return None
+
+
+def critical_hits(files: tuple[ChangedFile, ...],
+                  markers: tuple[CriticalMarker, ...]) -> tuple[CriticalHit, ...]:
+    hits: list[CriticalHit] = []
+    for f in files:
+        candidates = [f.path] + ([f.old_path] if f.status == "R" and f.old_path else [])
+        for cand in candidates:
+            if Path(cand).name in POLICY_INPUT_BASENAMES:  # §5 hardcoded policy inputs
+                hits.append(CriticalHit(path=cand, marker=Path(cand).name, pattern="<policy-input>"))
+                break
+            found = _match_markers(cand, markers)
+            if found:
+                hits.append(CriticalHit(path=f.path, marker=found[0], pattern=found[1]))
+                break
+    return tuple(hits)
