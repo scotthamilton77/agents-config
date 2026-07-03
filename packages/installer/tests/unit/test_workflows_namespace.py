@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from installer.core.io_port import ScriptedIO
+from installer.core.model import InstallOutcome, Outcome
+from installer.core.receipt_build import entries_from_outcomes
 from installer.core.staging import build_plan
 from installer.core.sync import sync
 from installer.tools.claude import ClaudeAdapter
@@ -39,3 +41,17 @@ def test_workflows_namespace_is_deployed(tmp_path):
         b"export const meta = { name: 'quality-gate' }\n"
     )
     assert counters.created == 1
+
+
+def test_workflow_write_is_receipt_tracked():
+    """A written workflows/ file must be receipt-recorded so a later source
+    rename/removal can prune it — without this, entries_from_outcomes drops it
+    (namespace not in PRUNE_NAMESPACES) and a stale ~/.claude/workflows/*.js
+    survives forever with no receipt entry to trigger its deletion."""
+    outcomes = [
+        InstallOutcome(Path("/home/u/.claude/workflows/quality-gate.js"), Outcome.WRITTEN, "ab")
+    ]
+    entries = entries_from_outcomes(
+        outcomes, tool="claude", dest_root=Path("/home/u/.claude"), home=Path("/home/u")
+    )
+    assert {e.path for e in entries} == {Path(".claude/workflows/quality-gate.js")}
