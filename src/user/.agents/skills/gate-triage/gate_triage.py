@@ -403,7 +403,13 @@ def load_markers(repo_root: Path) -> tuple[CriticalMarker, ...]:
             continue
         rel_dir = path.parent.relative_to(repo_root).as_posix()
         folder = "" if rel_dir == "." else rel_dir
-        spec = pathspec.PathSpec.from_lines("gitignore", path.read_text(errors="replace").splitlines())
+        # Strict decode (no errors="replace"): a marker is the escalation signal,
+        # so silently corrupting its patterns would fail OPEN (under-escalate). A
+        # UnicodeDecodeError propagates to main's catch-all → non-zero exit → the
+        # caller falls back to SERIAL. Deliberate asymmetry with load_config,
+        # which defaults on a decode error because thresholds have safe built-in
+        # defaults; markers do not.
+        spec = pathspec.PathSpec.from_lines("gitignore", path.read_text().splitlines())
         markers.append(CriticalMarker(folder=folder, spec=spec))
     return tuple(markers)
 
@@ -431,9 +437,10 @@ def main(argv: list[str] | None = None) -> int:
         # SKILL.md exit-code table). KeyboardInterrupt/SystemExit are
         # BaseException and still propagate, so argparse's bad-arg exit is
         # unaffected.
-        detail = getattr(exc, "stderr", None) or str(exc)
-        print(f"gate-triage: failed to compute tier floor (base-ref {base_ref!r}): "
-              f"{detail.strip()}", file=sys.stderr)
+        detail = (getattr(exc, "stderr", None) or str(exc)).strip()
+        one_line = next((ln.strip() for ln in detail.splitlines() if ln.strip()), repr(exc))
+        print(f"gate-triage: failed to compute tier floor (base-ref {base_ref!r}): {one_line}",
+              file=sys.stderr)
         return 1
     return 0
 

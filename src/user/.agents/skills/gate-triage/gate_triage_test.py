@@ -409,6 +409,35 @@ def test_main_unexpected_error_fails_closed(tmp_path, capsys, monkeypatch):
     assert "gate-triage:" in captured.err
 
 
+def test_main_diagnostic_is_single_line(tmp_path, capsys, monkeypatch):
+    # The fail-closed diagnostic must be ONE line even when the underlying error
+    # carries embedded newlines (e.g. multi-line git stderr).
+    repo = _init_repo(tmp_path)
+
+    def _multiline(*_a, **_k):
+        raise RuntimeError("line one\nline two\nline three")
+
+    monkeypatch.setattr(gt, "collect_diff", _multiline)
+    rc = gt.main(["--repo-root", str(repo), "--base-ref", "main"])
+    assert rc == 1
+    err = capsys.readouterr().err.rstrip("\n")
+    assert err.count("\n") == 0  # exactly one line
+    assert "line one" in err  # first non-empty line kept
+    assert "line two" not in err  # trailing lines dropped
+
+
+def test_main_non_utf8_marker_fails_closed(tmp_path, capsys):
+    # A marker is the escalation signal — an undecodable .critical-paths must
+    # fail closed (non-zero → SERIAL), not silently corrupt its patterns.
+    repo = _init_repo(tmp_path)
+    (repo / ".critical-paths").write_bytes(b"\xff\xfe*.py\n")
+    rc = gt.main(["--repo-root", str(repo), "--base-ref", "main"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "gate-triage:" in captured.err
+
+
 def _agents_config_root() -> Path | None:
     """The agents-config source root (dir holding packages/installer AND
     scripts/install.sh), found by walking up from this file. None when the skill
