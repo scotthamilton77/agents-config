@@ -229,6 +229,50 @@ cannot pick unsafe defaults.
 - This predicate relies on the eligibility floor's triage-completeness facts;
   it does not add a parallel comment-classification mechanism.
 
+**admin-bypass availability** (never a blocker — informs *how* Step 5 issues
+an already-authorized merge, not *whether* one is eligible):
+
+- A repo's own GitHub branch protection is enforced through a **ruleset**
+  (`GET /repos/{owner}/{repo}/rules/branches/{branch}`), independent of this
+  policy's Axis 1 `human-approvers-required`. When that endpoint returns a
+  `pull_request` rule with `required_approving_review_count > 0` for the
+  target branch, GitHub itself will refuse a plain merge unless a qualifying
+  approval exists — and neither a bot review (Copilot's state is never
+  `APPROVED`) nor the PR author's own approval (self-approval is not
+  possible) can satisfy it. This rule is **left in place** — it is exactly
+  what protects the branch from every contributor who is not the repo owner
+  (or an equivalently trusted identity) acting through this agent.
+- Each matching rule carries a `ruleset_id`. `GET
+  /repos/{owner}/{repo}/rulesets/{ruleset_id}` returns
+  `current_user_can_bypass` (`always` | `pull_requests_only` | `none`) —
+  GitHub's own, pre-computed answer to "can the identity that authenticated
+  this `gh` call bypass this specific ruleset," never re-derived from
+  `bypass_actors` locally (role-to-actor-id mapping is GitHub's to resolve,
+  not this script's).
+- *Bypassable* iff **every** `pull_request` rule covering the branch resolves
+  `current_user_can_bypass` to `always` or `pull_requests_only` — one
+  non-bypassable ruleset among several fails the whole predicate closed.
+  Either value is sufficient for a PR merge (a "pull request only" bypass
+  grant already covers merging a PR); `always` additionally covers direct
+  pushes, irrelevant here.
+- *Not applicable* (`review_rule_active = false`) when no `pull_request` rule
+  with a positive required-approving-review count targets the branch — the
+  fact carries no opinion, since there is nothing for `--admin` to bypass.
+- A fetch failure other than "no rules for this branch" (a genuine 404) fails
+  closed: exit 3, never a silent "assume bypassable" or "assume blocked."
+- This predicate certifies only that the `pull_request` rule(s) are
+  bypassable — `current_user_can_bypass` is reported **per ruleset**, and a
+  ruleset commonly bundles unrelated rule types (this repo's own ruleset also
+  carries `deletion`, `non_fast_forward`, `required_linear_history`,
+  `copilot_code_review` alongside `pull_request`, all sharing one bypass
+  grant). `gh pr merge --admin` is a **blanket** bypass of every rule in that
+  ruleset the identity is entitled to bypass, not a scalpel on the review
+  rule alone — see Consumers for why that scope must be named explicitly
+  before it is exercised.
+- This predicate never authorizes anything by itself. It only tells
+  merge-guard whether a GitHub-side rejection *of an already-authorized
+  merge* may be resolved with `--admin` — see Consumers.
+
 ## Resolver contract
 
 ```
@@ -349,6 +393,35 @@ holds. The one eligibility-bypass path is an explicit, separately-named human
 in-session instruction naming the ineligibility being overridden — logged,
 and never available to `never`, `rule-based`, or any autonomous path. Every
 merge is issued with `--match-head-commit`.
+
+A GitHub repository ruleset requiring an approving review (the mechanism that
+protects a public repo's `main` from every contributor) is a **separate**
+gate this policy does not own and does not weaken — it stays configured
+exactly as the repo owner set it. Neither a bot review nor the PR author's
+own approval can satisfy it, so an already-authorized merge (eligible **and**
+Axis 2 satisfied) can still be refused by GitHub itself. When that happens,
+merge-guard consults `facts.admin_bypass`: if the authenticated identity
+already holds a standing GitHub bypass grant on that rule
+(`current_user_can_bypass` of `always` or `pull_requests_only`), it may
+retry once with `--admin`, announcing that it did so and why; otherwise it
+fails closed and hands off. This is **not** a third eligibility-bypass path
+alongside force-merge — it never overrides anything this policy's own
+eligibility floor asserts, and it only ever fires after Axis 2 has already
+authorized the merge on its own terms. It exists because GitHub's merge
+endpoint requires a bypass to be exercised explicitly per merge even for an
+identity permanently entitled to it; `--admin` is that explicit exercise, not
+a new privilege the agent invents.
+
+`--admin` is **not** a scalpel on the review rule alone — it is GitHub's
+blanket bypass of every rule in the covering ruleset the identity is entitled
+to bypass, since `current_user_can_bypass` is computed per ruleset, not per
+rule. `facts.admin_bypass` only certifies the `pull_request` rule(s) are
+bypassable; it says nothing about any other rule type sharing that ruleset
+(or a different one) that GitHub's rejection message did not name. This is
+why merge-guard must read and quote GitHub's actual rejection text and
+confirm it names the approving-review requirement specifically before
+retrying — an inferred reason is not enough grounds to invoke a blanket
+bypass.
 
 **wait-for-pr-comments** — calls the resolver at entry and runs the
 poll/resolve cycle per Axis 1; skips polling when nothing is expected; on

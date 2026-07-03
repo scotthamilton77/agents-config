@@ -70,8 +70,13 @@ ${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh \
 
 The JSON carries: `head_ref_oid` (the SHA every fact was computed against),
 `blockers[]` (`{code, details}`), `facts` (`bot_clean_review_at_head`,
-`distinct_current_approvers`, `ci_state`, `review_wait`, ...), and
-`merge_command_hint`.
+`distinct_current_approvers`, `ci_state`, `review_wait`, `admin_bypass`, ...),
+and `merge_command_hint`.
+
+`facts.admin_bypass` (`{review_rule_active, required_approving_review_count,
+current_actor_can_bypass}`) is never a blocker — it never affects eligibility.
+It exists solely for Step 5, to decide whether a GitHub-side review-count
+rejection may be retried with `--admin`.
 
 ### Step 4: Apply Axis 2 (`merge_authorization` from the policy JSON)
 
@@ -133,6 +138,40 @@ gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
 - `gh pr merge` can exit 0 while printing a rejection. Confirm:
   `gh pr view <n> --json state` (expect `MERGED`).
 
+**If GitHub itself rejects the merge**, capture and read its actual rejection
+text first — never infer the reason from context. Only proceed down this
+path if that text specifically names the approving-review requirement (a
+"review required" / base-branch-policy refusal naming reviews — not a
+stale-head rejection, not a CI failure, not some other rule). If the text
+names anything else, or you're not sure, treat it as an unknown rejection:
+re-run Step 3, do not consult `admin_bypass`, do not use `--admin`.
+
+Once the rejection is confirmed to be the approving-review requirement,
+consult `facts.admin_bypass`:
+
+| `facts.admin_bypass` | Action |
+|---|---|
+| `review_rule_active == false` | This wasn't a review-count rejection — something else is wrong. Re-run Step 3 from scratch; never retry blind. |
+| `current_actor_can_bypass == true` | GitHub already grants the authenticated identity a standing bypass on this rule (the ruleset's `current_user_can_bypass` is `always` or `pull_requests_only`). Retry once: `gh pr merge <n> --squash --admin --match-head-commit "<head_ref_oid>"`. Announce plainly that `--admin` was used, quote the rejection text that justified it, and note why — the identity holds a pre-existing GitHub bypass grant, and eligibility + authorization were already confirmed independently of it. This is a deliberate, logged exercise of a grant a human configured, never a new override. |
+| `current_actor_can_bypass == false` | The identity has no bypass grant. **Fail closed** — do not retry with `--admin`. Report the rejection and hand off to a human who either holds the bypass grant or can adjust the ruleset. |
+
+This `--admin` retry is **not** the force-merge override above — force-merge
+bypasses *this policy's own* eligibility floor on explicit human instruction;
+this retry bypasses nothing this guard controls, and every blocker this
+guard's own eligibility floor asserts still fully applies. But `--admin`
+itself is **not scoped to the review rule** — GitHub computes
+`current_user_can_bypass` per *ruleset*, not per rule, so `--admin` blanket-
+bypasses every rule in that ruleset the identity is entitled to bypass (this
+repo's own ruleset, for example, bundles `deletion`, `non_fast_forward`,
+`required_linear_history`, and `copilot_code_review` alongside
+`pull_request` under one bypass grant). `facts.admin_bypass` certifies only
+that the `pull_request` rule(s) are bypassable — it says nothing about any
+other rule sharing that ruleset. That is exactly why the rejection text must
+be read and confirmed first: `--admin` should only ever be reached to answer
+a rejection it was actually confirmed to address. It is unreachable in
+`never` mode (Step 5 never runs there) and available, once normal
+authorization already succeeded, in both `explicit` and `rule-based` modes.
+
 ## Decision Matrix
 
 | Axis 2 | Eligible | Rule holds | Human instructed | Action |
@@ -156,3 +195,5 @@ gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
 | "It's blocked but rule-based says merge" | Rule-based NEVER bypasses the floor. Eligible AND rule — both. |
 | "The script errored, probably fine" | Exit 3 = unknown state. Do not merge. Report. |
 | "`gh pr merge` exited 0, so it merged" | It can exit 0 on rejection. Confirm state == MERGED. |
+| "GitHub's review rule blocked it, just add `--admin`" | Only if `facts.admin_bypass.current_actor_can_bypass == true` **and** you've read the rejection text and confirmed it names the review requirement. If false, or you didn't check the text, hand off — don't force it. |
+| "`--admin` only bypasses the review rule" | It's a blanket ruleset bypass. `facts.admin_bypass` only certifies the `pull_request` rule(s) are bypassable, not every rule in the ruleset. |

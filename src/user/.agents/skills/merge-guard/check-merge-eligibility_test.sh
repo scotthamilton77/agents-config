@@ -64,6 +64,27 @@ if [ "$1" = "api" ]; then
         body="${FIXTURE_REQUIRED_CHECKS}" ;;
     */check-runs*)          body="${FIXTURE_CHECK_RUNS:-'{\"check_runs\":[]}'}" ;;
     */commits/*/status*)    body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */rules/branches/*)
+        if [ "${FIXTURE_RULES_FAIL:-0}" = 1 ]; then
+          echo "gh: 500 Internal Server Error" >&2; exit 1
+        fi
+        if [ "${FIXTURE_RULES_404:-1}" = 1 ]; then
+          echo "gh: Not Found (HTTP 404)" >&2; exit 1
+        fi
+        body="${FIXTURE_BRANCH_RULES:-[]}" ;;
+    */rulesets/*)
+        if [ "${FIXTURE_RULESET_FAIL:-0}" = 1 ]; then
+          echo "gh: 500 Internal Server Error" >&2; exit 1
+        fi
+        case "$path" in
+          # a null ruleset_id renders as the literal path segment "null" —
+          # real GitHub 404s that; the stub mirrors it unconditionally so a
+          # null id can't silently resolve to a fake bypass grant
+          */rulesets/null) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+          */rulesets/111)  body="${FIXTURE_RULESET_111:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
+          */rulesets/222)  body="${FIXTURE_RULESET_222:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
+          *)               body="${FIXTURE_RULESET_BYPASS:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
+        esac ;;
     */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
     *)                      body='{}' ;;
   esac
@@ -244,6 +265,64 @@ REQ_UNPINNED='{"strict":false,"contexts":["legacy/lint"],"checks":[{"context":"l
 out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_UNPINNED" \
       FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
 assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
+
+# ── admin-bypass fact: authenticated identity's standing bypass grant on a
+#    GitHub ruleset's required-approving-review rule (separate from Axis 1) ──
+# no rules apply to this branch (default 404) → inert, not required
+out=$(run_script "$BASE_POLICY"); rc=$?
+assert "no branch rules → admin_bypass inert, still eligible" "[ \$rc -eq 0 ]"
+assert "review_rule_active false" "[ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ]"
+assert "required_approving_review_count 0" "[ \"\$(jq '.facts.admin_bypass.required_approving_review_count' <<<\"\$out\")\" = 0 ]"
+assert "current_actor_can_bypass null when inactive" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = null ]"
+
+RULES_ONE='[{"type":"pull_request","ruleset_id":111,"parameters":{"required_approving_review_count":1}}]'
+
+# ruleset active, current identity holds an "always" bypass grant
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_111='{"current_user_can_bypass":"always"}'); rc=$?
+assert "always-bypass identity → current_actor_can_bypass true" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = true ]"
+assert "review_rule_active true when count > 0" "[ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = true ]"
+assert "required_approving_review_count echoed" "[ \"\$(jq '.facts.admin_bypass.required_approving_review_count' <<<\"\$out\")\" = 1 ]"
+
+# pull_requests_only bypass mode also counts as bypassable
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_111='{"current_user_can_bypass":"pull_requests_only"}'); rc=$?
+assert "pull_requests_only bypass → true" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = true ]"
+
+# identity NOT on the bypass list (GitHub's real negative enum is "none") →
+# fail closed, false
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_111='{"current_user_can_bypass":"none"}'); rc=$?
+assert "none-bypass identity → current_actor_can_bypass false" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
+
+# an unrecognized value is never treated as bypassable — the allow-list
+# rejects anything that isn't exactly "always" or "pull_requests_only"
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_111='{"current_user_can_bypass":"garbage"}'); rc=$?
+assert "unrecognized bypass value → current_actor_can_bypass false" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
+
+# two rulesets covering the branch: one bypassable, one not → AND is false
+RULES_TWO='[{"type":"pull_request","ruleset_id":111,"parameters":{"required_approving_review_count":1}},{"type":"pull_request","ruleset_id":222,"parameters":{"required_approving_review_count":2}}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_TWO" \
+      FIXTURE_RULESET_111='{"current_user_can_bypass":"always"}' FIXTURE_RULESET_222='{"current_user_can_bypass":"none"}'); rc=$?
+assert "mixed bypass across rulesets → false (fail closed)" "[ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
+assert "required_approving_review_count is the max across rulesets" "[ \"\$(jq '.facts.admin_bypass.required_approving_review_count' <<<\"\$out\")\" = 2 ]"
+
+# a pull_request rule with count 0 (e.g. code-owner-review only) doesn't activate this fact
+RULES_ZERO='[{"type":"pull_request","ruleset_id":111,"parameters":{"required_approving_review_count":0,"require_code_owner_review":true}}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ZERO"); rc=$?
+assert "zero-count pull_request rule → review_rule_active false" "[ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ]"
+
+# a rule with count > 0 but a null ruleset_id → jq renders it as the literal
+# path segment "null", GitHub 404s that, so this fails closed to exit 3
+# rather than silently skipping the per-ruleset bypass check
+RULES_NULL_ID='[{"type":"pull_request","ruleset_id":null,"parameters":{"required_approving_review_count":1}}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_NULL_ID"); rc=$?
+assert "null ruleset_id with active count exits 3 (fail closed)" "[ \$rc -eq 3 ]"
+
+# rules/branches fetch fails for a reason other than 404 → fail closed (exit 3)
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_FAIL=1); rc=$?
+assert "branch-rules fetch hard failure exits 3" "[ \$rc -eq 3 ]"
+
+# a ruleset's own detail fetch fails after being listed → fail closed (exit 3)
+out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_FAIL=1); rc=$?
+assert "ruleset detail fetch hard failure exits 3" "[ \$rc -eq 3 ]"
 
 # ── Task 13: review still in flight ──────────────────────────────────────────
 BOT_POLICY=$(jq -c '.bot_review_expected = true' <<<"$BASE_POLICY")
