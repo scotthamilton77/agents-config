@@ -12,31 +12,30 @@
 
 ---
 
-## Spec reconciliation (READ FIRST — supersedes spec §7.1)
+## Installer touch-points
 
-Implementation-planning reconnaissance read the actual installer code and found spec §7.1's installer touch-points **stale and incomplete**. This plan is authoritative over §7.1; Task 18 corrects the spec to match.
+Namespace awareness lives in four independently hardcoded Python lists (verified against the current installer; agrees with spec §7.1). Each must learn about `workflows`:
 
-| Spec §7.1 claim | Ground truth (verified) | This plan |
+| Touch-point | Role | Task |
 |---|---|---|
-| `claude.py::scoped_namespaces()` | ✅ `("commands","skills","agents","rules","hooks")` at `claude.py:29-30` | Task 1 adds `"workflows"` |
-| `install.sh`'s two loops | ❌ **STALE** — `scripts/install.sh` is a 6-line `exec uv run` stub, zero loops | **No change to `install.sh`** |
-| `ownership.py::PRUNE_NAMESPACES` | ✅ `("commands","skills","agents","rules")` at `ownership.py:15` | Task 2 adds `"workflows"` |
-| `backup.py::_SCOPED_NAMESPACES` | ✅ `{"commands","skills","agents","rules","formulas"}` at `backup.py:24` | Task 3 adds `"workflows"` |
-| *(not in spec)* | ⚠️ `merge/registry.py::default_registry()` — `NAMESPACED_MD` dispatches by namespace; an un-wired namespace raises `UnknownMergeKeyError` on collision | Task 4 registers `(NAMESPACED_MD, "workflows") → FatalStrategy` |
-| *(not in spec)* | ℹ️ `overlay.py::_TOOL_NAMESPACES` (plugin overlay) — only matters if a **plugin** ships workflows; none do | Out of scope; noted in Task 18 |
+| `claude.py::scoped_namespaces()` (`claude.py:29-30`) | staging + deploy source | Task 1 |
+| `ownership.py::PRUNE_NAMESPACES` (`ownership.py:15`) | receipt tracking + prune eligibility | Task 2 |
+| `backup.py::_SCOPED_NAMESPACES` (`backup.py:24`) | sibling-dir backup routing (consistency) | Task 3 |
+| `merge/registry.py::default_registry()` | collision strategy by namespace; un-wired → `UnknownMergeKeyError` on collision | Task 4 |
 
-Net installer change: **4 code edits + 1 test-constant fix + 3 new tests. `install.sh` untouched.**
+`scripts/install.sh` is untouched — a 6-line `exec uv run` stub with no namespace logic. `overlay.py::_TOOL_NAMESPACES` (plugin overlay) is out of scope: it matters only if a plugin ships workflows, and none do.
+
+Net installer change: **4 code edits + 1 test-constant fix + 3 new tests.**
 
 ## Scope and PR phasing
 
-One feature, six phases. Each phase is a coherent, independently-testable chunk; Phases 1–5 can land as one PR or split at phase boundaries. Hard ordering constraint from spec §7.1/§10: **`HEAVY` routing (Phases 4–5) must not merge ahead of its deployment path (Phase 1).** Recommended: Phases 1–4 in one PR (namespace + helper + marker + workflow all wired together), Phase 5 (rule/template flip that turns routing on) last, Phase 6 (spec fix) folded into the PR description + the spec edit.
+One feature, five phases. Each phase is a coherent, independently-testable chunk; they can land as one PR or split at phase boundaries. Hard ordering constraint from spec §7.1/§10: **`HEAVY` routing (Phases 4–5) must not merge ahead of its deployment path (Phase 1).** Recommended: Phases 1–4 in one PR (namespace + helper + marker + workflow all wired together), Phase 5 (rule/template flip that turns routing on) last.
 
 - **Phase 1 — Installer `workflows` namespace** (blocking prereq; own gate `make ci-installer`)
 - **Phase 2 — `gate-triage` helper** (pure core + boundary; its own pytest suite)
 - **Phase 3 — Config section + `.critical-paths` marker**
 - **Phase 4 — `quality-gate` saved workflow**
 - **Phase 5 — Rule preamble + shared tier wording** (the switch that activates routing)
-- **Phase 6 — Spec reconciliation**
 
 ## File structure
 
@@ -58,7 +57,6 @@ One feature, six phases. Each phase is a coherent, independently-testable chunk;
 - `src/user/.agents/rules/completion-gate.md` — routing preamble
 - `src/user/.agents/INSTRUCTIONS.md.template:123` — three-tier wording in `<verification-checklist>`
 - `project-config.toml` — new `[completion-gate]` section
-- `docs/specs/2026-07-02-completion-gate-routing-design.md` — §7.1 reconciliation
 
 ---
 
@@ -218,7 +216,7 @@ def test_workflows_namespace_has_a_merge_strategy():
 - [ ] **Step 2: Run it, verify it fails**
 
 Run: `cd packages/installer && uv run pytest tests/unit/test_workflows_namespace.py -k merge_strategy -v`
-Expected: FAIL — `UnknownMergeKeyError` (namespace un-wired). This is the latent installer crash agent-2 recon flagged: a `.md` workflow collision would raise, not merge.
+Expected: FAIL — `UnknownMergeKeyError` (namespace un-wired). A `.md` workflow collision would raise rather than merge — the latent installer crash this registration closes.
 
 - [ ] **Step 3: Register the strategy**
 
@@ -897,22 +895,10 @@ This phase flips routing on. Land it last.
 
 ---
 
-## Phase 6 — Spec reconciliation ✅ DONE (this session)
-
-### Task 18: Correct spec §7.1 to match installer reality — COMPLETED
-
-Already applied while writing this plan (the recon that produced the "Spec reconciliation" table above also fixed the spec). No implementation action required; retained for traceability.
-
-- [x] **Step 1:** §7.1's installer touch-point list rewritten to the verified set (`claude.py`, `ownership.py`, `backup.py`, `merge/registry.py`); stale `install.sh` "two loops" removed; merge-registry entry added; `overlay.py` noted out-of-scope.
-- [x] **Step 2:** Dated "Installer touch-point correction" note appended to the spec's "Review feedback" ledger.
-- [x] **Step 3:** §9/§10 checked — they describe behavior, not `install.sh` mechanics; no change needed.
-
----
-
 ## Self-review
 
 **Spec coverage** — every spec section maps to a task:
-- §2 tier table → Tasks 9, 16 (wording), 17 (routing). §3 tier contract → Task 16. §4 gate-triage contract → Tasks 5–12. §4.2 output → Task 11. §4.3 tier/dedupe/rename logic → Tasks 8, 9, 12. §5 `.critical-paths` + policy-input hardcoding → Tasks 8, 14. §6 risk-class list → Task 17. §7 workflow → Task 15. §7.1 installer → Phase 1 (corrected via Task 18). §8 rule changes → Task 17. §9 test plan (items 1–31) → Tasks 6–14 (mapped inline). §10 consequences (blocking prereqs) → phase ordering. §11 options → n/a (decision record).
+- §2 tier table → Tasks 9, 16 (wording), 17 (routing). §3 tier contract → Task 16. §4 gate-triage contract → Tasks 5–12. §4.2 output → Task 11. §4.3 tier/dedupe/rename logic → Tasks 8, 9, 12. §5 `.critical-paths` + policy-input hardcoding → Tasks 8, 14. §6 risk-class list → Task 17. §7 workflow → Task 15. §7.1 installer → Phase 1. §8 rule changes → Task 17. §9 test plan (items 1–31) → Tasks 6–14 (mapped inline). §10 consequences (blocking prereqs) → phase ordering. §11 options → n/a (decision record).
 - Test items 1–30 → Tasks 6 (18–22), 7 (10), 8 (11–16), 9 (1–9), 10 (17), 11, 12 (23–29), 14 (30). Item 31 (installer prune) → Task 2. **All 31 covered.**
 
 **Placeholder scan** — Task 10 (scale-hint bucket predicate) and Task 15 (workflow authoring + format confirmation) are the two intentional judgment points; both carry concrete constraints (bucket tuples, monotonicity; the spec §7 checklist) rather than "TBD." Task 15 Step 1 is a genuine external-unknown verification, not a deferred decision. No "TODO/implement later" left.
