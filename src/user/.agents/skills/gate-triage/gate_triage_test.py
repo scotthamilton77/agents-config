@@ -357,6 +357,18 @@ def test_main_emits_valid_json(tmp_path, capsys):
     assert set(payload["scale_hint"]) == {"finder_dimensions", "refuters", "synthesis_effort"}
 
 
+def test_main_unresolvable_base_ref_exits_nonzero_without_traceback(tmp_path, capsys):
+    # A git-boundary failure must fail closed: non-zero exit + one-line stderr,
+    # never an uncaught traceback (which would strand the caller with no routing
+    # signal). The caller routes a non-zero exit to SERIAL.
+    repo = _init_repo(tmp_path)
+    rc = gt.main(["--repo-root", str(repo), "--base-ref", "no-such-ref-xyz"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""  # no partial JSON on stdout
+    assert "gate-triage:" in captured.err  # controlled diagnostic, not a stack trace
+
+
 def _agents_config_root() -> Path | None:
     """The agents-config source root (dir holding packages/installer AND
     scripts/install.sh), found by walking up from this file. None when the skill

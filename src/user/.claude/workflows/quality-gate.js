@@ -52,7 +52,22 @@ function clampInt(v, lo, hi, dflt) {
   return Math.max(lo, Math.min(hi, n))
 }
 
-const facts = args && typeof args === 'object' ? args : {}
+// The harness idiom is a parsed object, but gate_triage.py emits its payload as
+// JSON *text* on stdout — so tolerate a raw string too, parsing at this boundary.
+// Silently defaulting on a string would launch the fleet at medium scale and
+// defeat scale-to-the-diff with no signal (the exact failure the rule warns of).
+function coerceFacts(a) {
+  if (typeof a === 'string') {
+    try {
+      const parsed = JSON.parse(a)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return a && typeof a === 'object' ? a : {}
+}
+const facts = coerceFacts(args)
 const hint = facts.scale_hint && typeof facts.scale_hint === 'object' ? facts.scale_hint : {}
 
 // scale_hint → fleet size. Buckets (spec §7): small (3,2,high) / medium (4,2,high)
@@ -67,8 +82,11 @@ const SYNTH_EFFORT = VALID_EFFORTS.has(hint.synthesis_effort) ? hint.synthesis_e
 const FINDER_EFFORT = 'low'
 const VERIFY_EFFORT = 'medium'
 
-// Interim convergence: hard round cap (default 3, max 5) + dedup-vs-seen.
-const ROUND_CAP = clampInt(hint.round_cap, 1, 5, 3)
+// Interim convergence: fixed hard round cap + dedup-vs-seen. The triage
+// scale_hint carries no per-diff round cap today (a per-diff cap is deferred to
+// the full convergence discipline), so this is intentionally a constant, not a
+// hint read — do not resurrect a `hint.round_cap` lookup that triage never sets.
+const ROUND_CAP = 3
 
 // Severity model + acceptance floor. At/above `major` blocks an acceptance exit;
 // `minor` findings never block it. Finder-assigned severity is used as-is here;
@@ -331,7 +349,10 @@ async function verifyFindings(fresh, round) {
     const vs = votes[fi]
     const refutes = vs.filter(v => v.refuted).length
     if (vs.length > 0 && refutes > vs.length / 2) return // majority refuted → drop
-    // Kept: adopt a severity correction only if the panel majority kept it.
+    // Finding kept (majority did not refute). Adopt a severity correction from
+    // the first non-refuted voter that offered one — not a panel-wide consensus;
+    // consensus de-inflation is part of the deferred full discipline, so this
+    // interim pass leans toward the finder's severity rather than lowering it.
     const adj = vs.find(v => !v.refuted && v.adjustedSeverity)
     confirmed.push(adj ? { ...f, severity: adj.adjustedSeverity, severityNote: adj.reason } : f)
   })

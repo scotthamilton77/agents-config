@@ -409,10 +409,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
     base_ref = args.base_ref or _default_base_ref(repo_root)
-    config = load_config(repo_root)
-    facts = collect_diff(repo_root, base_ref)
-    markers = load_markers(repo_root)
-    print(_result_to_json(triage(facts, markers, config)))
+    try:
+        config = load_config(repo_root)
+        facts = collect_diff(repo_root, base_ref)
+        markers = load_markers(repo_root)
+        print(_result_to_json(triage(facts, markers, config)))
+    except (subprocess.CalledProcessError, OSError) as exc:
+        # Fail closed at the git boundary: an unresolvable --base-ref (or a
+        # missing git binary) exits non-zero with a one-line diagnostic, never a
+        # traceback. A non-zero exit routes the caller to SERIAL — never SKIP
+        # (see the exit-code table in this skill's SKILL.md).
+        detail = getattr(exc, "stderr", None) or str(exc)
+        print(f"gate-triage: git boundary failed (base-ref {base_ref!r}?): "
+              f"{detail.strip()}", file=sys.stderr)
+        return 1
     return 0
 
 
