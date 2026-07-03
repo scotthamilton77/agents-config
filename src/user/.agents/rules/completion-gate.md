@@ -1,6 +1,19 @@
 # Completion Gate
 
-Implements `<verification-checklist>` steps 1–5 with concrete tools. Mandatory for non-trivial work (skip one-liners, config, typos); run in order, each step feeding the next:
+Implements `<verification-checklist>` steps 1–5 with concrete tools, routed to one of three depths — `SKIP` / `SERIAL` / `HEAVY` — one contract, chosen at gate time. Mandatory for non-trivial work (skip one-liners, config, typos).
+
+**Route first — pick the depth, then run it:**
+
+- **Triage.** Run the `gate-triage` skill's `gate_triage.py` (`uv run <the skill's gate_triage.py> --repo-root . --base-ref <default branch>`) and capture its JSON payload — the tier floor, `scale_hint`, and `critical_path_hits`. The steps below call this "the triage JSON."
+- **Escalate on risk class.** If the change touches security/auth, concurrency/locking, a public API/contract, a data migration/schema, or cross-subsystem architecture, raise the floor to `HEAVY`. Risk classes escalate only — never lower the tier.
+- **Announce** one line: the tier, the driving facts, and the estimated `HEAVY` cost if applicable. Do not wait for approval.
+- **Route** on the resolved tier:
+    - `SKIP` → run **step 5 only** (mechanical evidence, where tests/build apply); skip steps 1–4.
+    - `SERIAL` → run steps 1–5 below, **unchanged**.
+    - `HEAVY` (Claude only) → invoke `Workflow({name: "quality-gate", args: <the triage JSON>})` **in place of steps 1–4**, then run step 5. Passing the triage JSON as `args` is **required, not optional** — the workflow sizes its fleet from `scale_hint`; omit it and it launches at default scale, silently defeating scale-to-the-diff. Step 5 (`verify-checklist`) still runs and is **non-substitutable**.
+    - `HEAVY` **unavailable** (no Workflow harness — Codex/Gemini/OpenCode) → fall back to `SERIAL`.
+
+`SERIAL` — run in order, each step feeding the next:
 
 1. `quality-reviewer` agent — review against plan and standards
 2. Address its findings
