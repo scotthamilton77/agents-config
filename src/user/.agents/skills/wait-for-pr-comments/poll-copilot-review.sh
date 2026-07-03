@@ -101,9 +101,11 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
 
 # Validate --bot-reviewers (when provided) as a non-empty JSON array of strings,
 # then canonicalize via jq so only clean, re-serialized JSON is interpolated
-# into the jq filters below (no raw user string reaches a jq program).
+# into the jq filters below (no raw user string reaches a jq program). The
+# non-string check is select-based (not all/2) to match the guard idiom in
+# validate-inventory.sh and stay unambiguously jq-1.5-safe.
 if [[ -n "$BOT_REVIEWERS" ]]; then
-    BOT_REVIEWERS=$(jq -ce 'if (type == "array" and length > 0 and all(.[]; type == "string")) then . else error("bad") end' <<<"$BOT_REVIEWERS" 2>/dev/null) || {
+    BOT_REVIEWERS=$(jq -ce 'if (type == "array" and length > 0 and ([.[] | select(type != "string")] | length) == 0) then . else error("bad") end' <<<"$BOT_REVIEWERS" 2>/dev/null) || {
         echo "Error: --bot-reviewers must be a non-empty JSON array of strings" >&2
         exit 3
     }
