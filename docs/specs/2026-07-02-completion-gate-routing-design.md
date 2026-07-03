@@ -171,20 +171,22 @@ Scale mapping (initial, tunable): `scale_hint` buckets small/medium/large from t
 
 The Claude installer's namespace list (`packages/installer/src/installer/tools/claude.py:30`) currently stages only `("commands", "skills", "agents", "rules", "hooks")` — no `workflows`. A workflow placed at `src/user/.claude/workflows/` as written above would never reach `~/.claude/` and `HEAVY` routing would silently fail or no-op at invocation time. This is a required implementation deliverable, not an implementation detail to discover later.
 
-Namespace awareness is **not centralized** in the installer — it is four independently hardcoded lists, verified by inspection, each of which must add `workflows` or the feature is broken in a different way than "doesn't deploy":
+Namespace awareness is **not centralized** in the installer — it is spread across independently hardcoded lists (verified against the current Python installer), each of which must learn about `workflows` or the feature breaks in a different way than "doesn't deploy":
 
-- `claude.py::scoped_namespaces()` — staging source (what gets copied in).
-- `install.sh`'s staging and sync loops (two separate loops per the two-subdir-namespace-loop gotcha — both need patching).
+- `claude.py::scoped_namespaces()` — staging source (what gets copied in and deployed). This is the only edit needed for `workflows/` to reach `~/.claude/`.
 - `ownership.py::PRUNE_NAMESPACES` — which namespaces the receipt tracks as wholesale-owned/prune-eligible. Omitting `workflows` here means a renamed or removed `quality-gate` source leaves a stale `~/.claude/workflows/quality-gate` behind, uncleaned — and since `HEAVY` invokes the workflow by stable name, a stale deployed copy keeps running silently after the source is gone.
-- `backup.py::_SCOPED_NAMESPACES` — which namespaces route backups to a sibling `<namespace>-backup/` dir on conflict, rather than in-place.
+- `backup.py::_SCOPED_NAMESPACES` — which namespaces route backups to a sibling `<namespace>-backup/` dir on conflict, rather than in-place (consistency, not correctness).
+- `merge/registry.py::default_registry()` — collision resolution is dispatched by namespace for `NAMESPACED_MD` files; an un-wired namespace raises `UnknownMergeKeyError` on collision. `workflows` must register a strategy (fatal, like `commands`/`skills`/`agents`).
+
+`scripts/install.sh` is **not** a touch point — it is a thin `exec uv run` stub with no namespace logic (that moved into the Python installer). `overlay.py::_TOOL_NAMESPACES` (plugin-overlay staging) is out of scope: it matters only if a plugin ships workflows, and none do.
 
 Deliverables:
-- Add `workflows` to all four lists above.
+- Add `workflows` to the four code lists above (`claude.py`, `ownership.py`, `backup.py`, `merge/registry.py`); update the one test that pins `PRUNE_NAMESPACES` exactly.
 - An installer test asserting a file under `src/user/.claude/workflows/` lands at `~/.claude/workflows/` after install (staging/sync).
 - An installer test asserting that renaming or removing a source workflow prunes (or explicitly reports) the stale destination on the next install, rather than leaving it callable.
 - This ships in the same change as the `quality-gate` workflow itself — `HEAVY` routing must not merge ahead of its own deployment path.
 
-*Aside, out of scope for this design:* four independently hardcoded namespace lists is itself a latent maintenance risk in the installer — each addition since `hooks` has had to be threaded through by hand, and `backup.py` already carries a `formulas` namespace absent from the other three. Worth a follow-up outside this spec; not fixed here.
+*Aside, out of scope for this design:* namespace awareness spread across several independently hardcoded lists is itself a latent maintenance risk in the installer — each has been threaded through by hand, and the lists already diverge (`backup.py` carries a `formulas` namespace the others lack; `ownership.py` lacks `hooks`). Worth a follow-up outside this spec; not fixed here.
 
 ## 8. Rule-text changes
 
@@ -315,3 +317,5 @@ Extension authorized by user, up to 3 more rounds after the original cap.
 - Spec-bloat pass: `load_config` validation compressed to contract level (per-case behavior lives in the test plan); no other review-added constraint demoted — dedupe semantics and installer touch-point lists are behavior contracts and verified facts respectively, cheap to keep and expensive to rediscover.
 
 **Convergence brainstorm resolved (2026-07-03):** the separate brainstorm returned a full convergence discipline (dual-signal stop; delta-scoped rounds + final certification; evidence-based judge layer replacing refuter panels). Placement decision: abn9.38 stays narrow — §7 now states the decision and points to `2026-07-03-adversarial-loop-convergence-decision.md` as authoritative, rather than absorbing the milestone-sized design. The discipline earns its own bead lineage (design-effort epic under M3, `discovered-from` this bead) and its own brainstorm → spec → plan cycle. One critique carried into that effort: tier-gate the convergence loop itself (a small change should not convene the full five-role bench). This resolves the §7 open question this campaign flagged.
+
+**Installer touch-point correction (2026-07-03, implementation-planning recon):** writing the implementation plan required reading the actual installer code, which found the Round-7 "four hardcoded lists including `install.sh`'s two loops" claim **stale**. `scripts/install.sh` is a 6-line `exec uv run` stub with zero namespace logic — the bash loops were removed in the Python migration; codex's "verified by inspection" had read stale test-docstring line numbers. The real touch-point set is `claude.py`, `ownership.py`, `backup.py`, and `merge/registry.py` (the last missed entirely by the campaign — an un-wired namespace raises `UnknownMergeKeyError` on collision). §7.1 corrected accordingly. Noted as a data point for the convergence effort: an adversarial finding asserted a "verified" fact that was false; real ground-truth reconnaissance before acting is what caught it.
