@@ -85,7 +85,10 @@ if [ "$1" = "api" ]; then
           # the multi-page assembly the fix must handle.)
           s1="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}"; s1="${s1#\'}"; s1="${s1%\'}"
           s2="${FIXTURE_COMMIT_STATUS_PAGE2#\'}"; s2="${s2%\'}"
-          printf '%s%s' "$s1" "$s2"; exit 0
+          # newline-separate the pages: jq's slurp (-s) reads whitespace-separated
+          # JSON values, and real `gh --paginate` streams page bodies rather than
+          # butting them together — a delimiter keeps older jq (1.5) happy too.
+          printf '%s\n%s\n' "$s1" "$s2"; exit 0
         fi
         body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
     */rules/branches/*)
