@@ -138,7 +138,10 @@ failure).
 
 Background bash — zero Anthropic tokens during the wait.
 
-1. **Quick check** whether Copilot is already a requested reviewer:
+1. **Quick check** whether Copilot is already a requested reviewer (a
+    Copilot-specific convenience glance to decide `--skip-request-check`; the
+    launched script in step 3 does the authoritative policy-allowlist matching,
+    so this substring probe need not generalize to non-Copilot bots):
     ```
     gh api repos/<owner>/<repo>/issues/<n>/events \
       --jq '[.[] | select(
@@ -150,10 +153,15 @@ Background bash — zero Anthropic tokens during the wait.
 2. **Capture** `<polling_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
     This timestamp anchors the stale-cache guard for re-review rounds.
 3. **Launch** `poll-copilot-review.sh --owner "$OWNER" --repo "$REPO" --pr "$PR"
-    --timeout-seconds <resolved_policy.bot_inactivity_timeout_seconds>` in the
-    background (the value resolved in Phase 1 step 5; default 1200 when the
-    resolver's built-in default applies). Omitting this flag silently falls
-    back to the script's own 600s default, so always pass it explicitly.
+    --timeout-seconds <resolved_policy.bot_inactivity_timeout_seconds>
+    --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` in the
+    background (both values come from the policy resolved in Phase 1 step 5;
+    timeout defaults to 1200 when the resolver's built-in default applies).
+    Omitting `--timeout-seconds` silently falls back to the script's own 600s
+    default, so always pass it explicitly. `--bot-reviewers` aligns polling to
+    the exact bot identities the merge gate trusts, generalizing detection
+    beyond Copilot; omit it only when running the script standalone, where it
+    falls back to a Copilot-substring match.
     Pass `--skip-request-check` if step 1 returned > 0.
     In re-review context (round ≥ 2), also pass
     `--since-timestamp <polling_since_timestamp>` so the script rejects
@@ -382,10 +390,12 @@ Abort.
 
 4. **If** `copilot_work_started` detected, launch `poll-copilot-review.sh
    --owner "$OWNER" --repo "$REPO" --pr "$PR"
-   --skip-request-check --since-timestamp <rereview_since_timestamp>`
+   --skip-request-check --since-timestamp <rereview_since_timestamp>
+   --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"`
    to await the actual review. The `--since-timestamp` guard prevents the
    stale-cache bug where the script returns the prior round's review instead
-   of the new one.
+   of the new one; `--bot-reviewers` keeps re-review detection aligned to the
+   same policy allowlist used in Phase 2.
 
 5. **If** a new review arrives, return to **Phase 3 (round +1)**.
 
@@ -866,46 +876,48 @@ Returns 0 if valid, non-zero with the violating item logged to stderr.
 
 ## Schema validation guards
 
-`validate-inventory.sh` runs these ten guards. Skill B invokes it twice —
-`--phase 0` before `render-reply-bodies.sh` runs (guards 1–9), then the default
-`--phase 2` after render (all ten, adding guard 10). Corrupt inventory → hard
-abort with no replies posted:
+`validate-inventory.sh` runs these ten guards, numbered to match the
+`# Guard N:` comments in the script. Skill B invokes it twice — `--phase 0`
+before `render-reply-bodies.sh` runs (guards 0–8), then the default `--phase 2`
+after render (all ten, adding guard 10). The numbering skips 9 — an earlier
+schema-sanity guard now absorbed into guard 0. Corrupt inventory → hard abort
+with no replies posted:
 
-1. **Schema parse + version** — JSON parses and `schema_version == 1`.
-2. **Rationale non-empty** — every item has a non-empty `rationale`
-   (regardless of classification — SKIP rationale becomes the public reply,
-   so empty rationale = empty PR comment).
-3. **`escalation_filed` only on ESCALATE** — reject if any item has
-   `classification != "ESCALATE"` and `escalation_filed == true`.
-4. **`review_summary` IDs** — reject if any item has
-   `kind == "review_summary"` and either any of `thread_id` /
-   `reply_to_comment_id` / `issue_comment_id` is non-null, or `review_id`
-   is null.
-5. **Non-FIX → null `fix_outcome`** — reject if any item has
-   `classification != "FIX"` and `fix_outcome != null`.
-6. **FIX → valid `fix_outcome`** — reject if any item has
-   `classification == "FIX"` and `fix_outcome` is not one of
-   `committed | already_addressed | failed` (Phase 7 writes only after
-   Phase 4 completes — every FIX item must have a non-null outcome).
-7. **`committed` requires all fields** — reject if any item has
-   `fix_outcome == "committed"` and any of `fix_commit_sha` / `fix_summary`
-   / `fix_gate_variant` is null.
-8. **`already_addressed` requires SHA** — reject if any item has
-   `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
-9. **ESCALATE must be filed** — reject if any item has
-   `classification == "ESCALATE"` and `escalation_filed != true`.
-   Interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before
-   write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled
-   ESCALATE at write time means a Skill A bug — Skill B would otherwise
-   silently skip it without a reply.
-10. **Replyable has `reply_body`** (`--phase 2` only) — reject if any FIX,
-   SKIP, or filed-ESCALATE item has a null/empty `reply_body`. This guard runs
-   only after `render-reply-bodies.sh` (Skill B's helper, in
-   `reply-and-resolve-pr-threads/`) populates the field, so `--phase 0`
-   (pre-render, on the raw inventory) skips it. **Skill A never populates
-   `reply_body` — rendering is Skill B's job.** If the render helper looks
-   "missing" from `wait-for-pr-comments/`, it isn't broken; it lives in Skill
-   B's directory. Stop and check the boundary before working around it.
+- **Guard 0 — schema parse + version** — JSON parses and `schema_version == 1`.
+- **Guard 1 — rationale non-empty** — every item has a non-empty `rationale`
+  (regardless of classification — SKIP rationale becomes the public reply,
+  so empty rationale = empty PR comment).
+- **Guard 2 — `escalation_filed` only on ESCALATE** — reject if any item has
+  `classification != "ESCALATE"` and `escalation_filed == true`.
+- **Guard 3 — `review_summary` IDs** — reject if any item has
+  `kind == "review_summary"` and either any of `thread_id` /
+  `reply_to_comment_id` / `issue_comment_id` is non-null, or `review_id`
+  is null.
+- **Guard 4 — non-FIX → null `fix_outcome`** — reject if any item has
+  `classification != "FIX"` and `fix_outcome != null`.
+- **Guard 5 — FIX → valid `fix_outcome`** — reject if any item has
+  `classification == "FIX"` and `fix_outcome` is not one of
+  `committed | already_addressed | failed` (Phase 7 writes only after
+  Phase 4 completes — every FIX item must have a non-null outcome).
+- **Guard 6 — `committed` requires all fields** — reject if any item has
+  `fix_outcome == "committed"` and any of `fix_commit_sha` / `fix_summary`
+  / `fix_gate_variant` is null.
+- **Guard 7 — `already_addressed` requires SHA** — reject if any item has
+  `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
+- **Guard 8 — ESCALATE must be filed** — reject if any item has
+  `classification == "ESCALATE"` and `escalation_filed != true`.
+  Interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before
+  write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled
+  ESCALATE at write time means a Skill A bug — Skill B would otherwise
+  silently skip it without a reply.
+- **Guard 10 — replyable has `reply_body`** (`--phase 2` only) — reject if any
+  FIX, SKIP, or filed-ESCALATE item has a null/empty `reply_body`. This guard
+  runs only after `render-reply-bodies.sh` (Skill B's helper, in
+  `reply-and-resolve-pr-threads/`) populates the field, so `--phase 0`
+  (pre-render, on the raw inventory) skips it. **Skill A never populates
+  `reply_body` — rendering is Skill B's job.** If the render helper looks
+  "missing" from `wait-for-pr-comments/`, it isn't broken; it lives in Skill
+  B's directory. Stop and check the boundary before working around it.
 
 On reject: log violating item to stderr; abort with no replies posted.
 

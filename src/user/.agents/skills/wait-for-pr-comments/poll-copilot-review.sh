@@ -3,12 +3,21 @@
 # Replaces the background agent polling in wait-for-pr-comments skill.
 # Zero Anthropic API tokens consumed — pure bash + gh CLI.
 #
-# Usage: poll-copilot-review.sh --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>]
+# Usage: poll-copilot-review.sh --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>] [--bot-reviewers <json-array>]
 #
 # --timeout-seconds sets the give-up window for sub-phase C (the main
 # review-wait poll). Default 600 (~10 minutes, this script's historical
 # behavior). Callers should pass the resolved review policy's
 # bot_inactivity_timeout_seconds (see merge-guard/resolve_policy.py).
+#
+# --bot-reviewers is a JSON array of the exact reviewer identities to poll for
+# (e.g. '["Copilot", "copilot-pull-request-reviewer[bot]"]'). When supplied,
+# review/comment matching is an EXACT (case-insensitive) login match against
+# that list instead of the default Copilot substring — generalizing the poll to
+# any bot the merge policy trusts. Callers should pass the resolved review
+# policy's bot_reviewers list (see merge-guard/resolve_policy.py); the same
+# exact-identity allowlist the merge gate enforces. Omit it to keep the
+# standalone Copilot-substring default.
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
@@ -32,7 +41,7 @@ source "$(dirname "$0")/lib.sh"
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 usage() {
-    echo "Usage: $0 --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>]" >&2
+    echo "Usage: $0 --owner <o> --repo <r> --pr <n> [--skip-request-check] [--since-timestamp <ISO-8601>] [--timeout-seconds <n>] [--bot-reviewers <json-array>]" >&2
     exit 3
 }
 
@@ -42,6 +51,7 @@ PR=""
 SKIP_REQUEST=false
 SINCE=""
 TIMEOUT_SECONDS=""
+BOT_REVIEWERS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -60,6 +70,11 @@ while [[ $# -gt 0 ]]; do
         --timeout-seconds)
             [[ -n "${2:-}" ]] || { echo "Error: --timeout-seconds requires a value" >&2; exit 3; }
             TIMEOUT_SECONDS="$2"
+            shift 2
+            ;;
+        --bot-reviewers)
+            [[ -n "${2:-}" ]] || { echo "Error: --bot-reviewers requires a value" >&2; exit 3; }
+            BOT_REVIEWERS="$2"
             shift 2
             ;;
         *)
@@ -84,12 +99,34 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
     exit 3
 }
 
+# Validate --bot-reviewers (when provided) as a non-empty JSON array of strings,
+# then canonicalize via jq so only clean, re-serialized JSON is interpolated
+# into the jq filters below (no raw user string reaches a jq program).
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    BOT_REVIEWERS=$(jq -ce 'if (type == "array" and length > 0 and all(.[]; type == "string")) then . else error("bad") end' <<<"$BOT_REVIEWERS" 2>/dev/null) || {
+        echo "Error: --bot-reviewers must be a non-empty JSON array of strings" >&2
+        exit 3
+    }
+fi
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# Copilot identity varies by endpoint — case-insensitive match covers both
-# Events API: login "Copilot" (type "Bot")
-# Reviews/Comments API: login "copilot-pull-request-reviewer[bot]" (type "Bot")
-COPILOT_LOGIN_FILTER='test("copilot"; "i")'
+# Login-matching filter, applied via `<login> | ${COPILOT_LOGIN_FILTER}`.
+#
+# Default (no --bot-reviewers): Copilot identity varies by endpoint, so a
+# case-insensitive substring match covers both —
+#   Events API:           login "Copilot"                            (type "Bot")
+#   Reviews/Comments API: login "copilot-pull-request-reviewer[bot]" (type "Bot")
+#
+# With --bot-reviewers: match logins EXACTLY (case-insensitively) against the
+# policy's allowlist instead, generalizing the poll to any trusted bot. The
+# array is pre-validated + jq-canonicalized above, so embedding it in the jq
+# program is safe.
+if [[ -n "$BOT_REVIEWERS" ]]; then
+    COPILOT_LOGIN_FILTER="ascii_downcase as \$l | (${BOT_REVIEWERS} | map(ascii_downcase) | index(\$l)) != null"
+else
+    COPILOT_LOGIN_FILTER='test("copilot"; "i")'
+fi
 COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGIN_FILTER})"
 
 # ── Helper functions ──────────────────────────────────────────────────────────

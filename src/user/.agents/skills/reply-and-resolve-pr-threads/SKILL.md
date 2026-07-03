@@ -76,7 +76,7 @@ Apply the six Phase 0 precedence rules above. After mode is resolved, run schema
   || { echo "schema validation failed"; exit 1; }
 ```
 
-`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). `--phase 0` runs guards 1–9; `--phase 2` (the default) runs all ten. Guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field — Phase 0 invocations would always fail it on a raw inventory.
+`validate-inventory.sh` exits 0 if valid, non-zero with the violating item logged to stderr otherwise. On non-zero: abort with no replies posted. The validator enforces ten guards (all documented in §"Schema validation guards" below). `--phase 0` runs guards 0–8; `--phase 2` (the default) runs all ten. Guard 10 (replyable items have `reply_body`) is deferred to Phase 2 because `render-reply-bodies.sh` is what populates the field — Phase 0 invocations would always fail it on a raw inventory.
 
 ### Phase 1 — Read inventory + verify head SHA
 
@@ -317,18 +317,18 @@ PR-public text. **No internal jargon** (`bd`, bead IDs, `ESCALATE`, `inventory`,
 
 ## Schema validation guards
 
-`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces ten guards. Skill B Phase 0 invokes the validator before Phase 1 (pre-render); Phase 2 invokes it again after `render-reply-bodies.sh` (post-render, to catch guard 10). Skill B aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
+`validate-inventory.sh` (shipped with `wait-for-pr-comments`) enforces ten guards, numbered to match the `# Guard N:` comments in the script. Skill B Phase 0 invokes the validator before Phase 1 (pre-render); Phase 2 invokes it again after `render-reply-bodies.sh` (post-render, to catch guard 10). The numbering skips 9 — an earlier schema-sanity guard now absorbed into guard 0. Skill B aborts on any failure. The guards exist so Phase 2/3 can trust the inventory shape:
 
-1. **Non-empty rationale** — reject if any item has `rationale == "" or null`. Rationale is user-facing for SKIP replies; an empty rationale would post an empty PR comment.
-2. **`escalation_filed` only on ESCALATE** — reject if any item has `classification != "ESCALATE"` and `escalation_filed == true`.
-3. **`review_summary` has no thread/comment IDs** — reject if any item has `kind == "review_summary"` and any of `thread_id`/`reply_to_comment_id`/`issue_comment_id` is non-null.
-4. **Non-FIX items have null `fix_outcome`** — reject if any item has `classification != "FIX"` and `fix_outcome != null`.
-5. **FIX items have a valid `fix_outcome`** — reject if any item has `classification == "FIX"` and `fix_outcome` is not one of `committed | already_addressed | failed`. (Skill A only writes the inventory after Phase 4 completes; every FIX item must have a non-null outcome.)
-6. **`committed` outcome carries SHA + summary + gate variant** — reject if any item has `fix_outcome == "committed"` and any of `fix_commit_sha`/`fix_summary`/`fix_gate_variant` is null.
-7. **`already_addressed` outcome carries SHA** — reject if any item has `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
-8. **ESCALATE must be filed** — reject if any item has `classification == "ESCALATE"` and `escalation_filed != true`. Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled ESCALATE at write time means a Skill A bug — without this guard, Skill B would silently skip the item without a reply.
-9. **Schema sanity** — reject if JSON parse fails or `schema_version != 1`.
-10. **Replyable items have `reply_body`** — reject if any replyable item (FIX, SKIP, or ESCALATE-with-`escalation_filed=true`) has a null or empty `reply_body`. This guard runs on the rendered inventory (after `render-reply-bodies.sh`) to confirm rendering succeeded. Guard 10 is NOT checked on the raw inventory at Phase 0 — `render-reply-bodies.sh` is what populates the field.
+- **Guard 0 — schema sanity** — reject if JSON parse fails or `schema_version != 1`.
+- **Guard 1 — non-empty rationale** — reject if any item has `rationale == "" or null`. Rationale is user-facing for SKIP replies; an empty rationale would post an empty PR comment.
+- **Guard 2 — `escalation_filed` only on ESCALATE** — reject if any item has `classification != "ESCALATE"` and `escalation_filed == true`.
+- **Guard 3 — `review_summary` has no thread/comment IDs** — reject if any item has `kind == "review_summary"` and any of `thread_id`/`reply_to_comment_id`/`issue_comment_id` is non-null.
+- **Guard 4 — non-FIX items have null `fix_outcome`** — reject if any item has `classification != "FIX"` and `fix_outcome != null`.
+- **Guard 5 — FIX items have a valid `fix_outcome`** — reject if any item has `classification == "FIX"` and `fix_outcome` is not one of `committed | already_addressed | failed`. (Skill A only writes the inventory after Phase 4 completes; every FIX item must have a non-null outcome.)
+- **Guard 6 — `committed` outcome carries SHA + summary + gate variant** — reject if any item has `fix_outcome == "committed"` and any of `fix_commit_sha`/`fix_summary`/`fix_gate_variant` is null.
+- **Guard 7 — `already_addressed` outcome carries SHA** — reject if any item has `fix_outcome == "already_addressed"` and `fix_commit_sha` is null.
+- **Guard 8 — ESCALATE must be filed** — reject if any item has `classification == "ESCALATE"` and `escalation_filed != true`. Skill A's interactive Phase 3.5 reclassifies ESCALATEs to FIX/SKIP/DEFER before write; autonomous Phase 3.5 sets `escalation_filed=true`. An unfiled ESCALATE at write time means a Skill A bug — without this guard, Skill B would silently skip the item without a reply.
+- **Guard 10 — replyable items have `reply_body`** — reject if any replyable item (FIX, SKIP, or ESCALATE-with-`escalation_filed=true`) has a null or empty `reply_body`. This guard runs on the rendered inventory (after `render-reply-bodies.sh`) to confirm rendering succeeded. Guard 10 is NOT checked on the raw inventory at Phase 0 — `render-reply-bodies.sh` is what populates the field.
 
 On reject: validator logs the violating item to stderr; Skill B aborts with no replies posted.
 
