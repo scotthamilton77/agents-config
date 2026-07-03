@@ -14,18 +14,17 @@
 
 ## Installer touch-points
 
-Namespace awareness lives in four independently hardcoded Python lists (verified against the current installer; agrees with spec §7.1). Each must learn about `workflows`:
+Namespace awareness lives in three independently hardcoded Python lists (verified against the current installer; agrees with spec §7.1). Each must learn about `workflows`:
 
 | Touch-point | Role | Task |
 |---|---|---|
 | `claude.py::scoped_namespaces()` (`claude.py:29-30`) | staging + deploy source | Task 1 |
 | `ownership.py::PRUNE_NAMESPACES` (`ownership.py:15`) | receipt tracking + prune eligibility | Task 2 |
 | `backup.py::_SCOPED_NAMESPACES` (`backup.py:24`) | sibling-dir backup routing (consistency) | Task 3 |
-| `merge/registry.py::default_registry()` | collision strategy by namespace; un-wired → `UnknownMergeKeyError` on collision | Task 4 |
 
-`scripts/install.sh` is untouched — a 6-line `exec uv run` stub with no namespace logic. `overlay.py::_TOOL_NAMESPACES` (plugin overlay) is out of scope: it matters only if a plugin ships workflows, and none do.
+`scripts/install.sh` is untouched (a 6-line `exec uv run` stub with no namespace logic). `merge/registry.py` is **not** a touch point: a saved workflow is a bare `.js` script, which `classify_file` (staging.py:56) tags `FileKind.OTHER` — only a `.md` file under a namespace becomes `NAMESPACED_MD`. `resolve` normalizes `OTHER`'s namespace to `None` (registry.py:44), so `(OTHER, "workflows")` hits the already-registered `LastWinsSilent` and can never raise `UnknownMergeKeyError`; that error is reachable only for a `.md` namespace, which `workflows` is not. `overlay.py::_TOOL_NAMESPACES` (plugin overlay) is out of scope: it matters only if a plugin ships workflows, and none do.
 
-Net installer change: **4 code edits + 1 test-constant fix + 3 new tests.**
+Net installer change: **3 code edits + 1 test-constant fix + 2 new tests.**
 
 ## Scope and PR phasing
 
@@ -44,7 +43,7 @@ One feature, five phases. Each phase is a coherent, independently-testable chunk
 - `src/user/.agents/skills/gate-triage/gate_triage.py` — the helper (PEP 723 + `pathspec`)
 - `src/user/.agents/skills/gate-triage/gate_triage_test.py` — pytest suite (spec §9 behaviors)
 - `src/user/.agents/skills/gate-triage/gate_triage_test.sh` — `*_test.sh` shim (repo gate glob discovers only `*_test.sh`)
-- `src/user/.claude/workflows/quality-gate.md` — the saved workflow (see Task 15 for format confirmation)
+- `src/user/.claude/workflows/quality-gate.js` — the saved workflow (bare `.js`; body opens with `export const meta = {...}`; `meta.name` = `"quality-gate"`)
 - `.critical-paths` — repo-root marker (curated pattern list)
 - `packages/installer/tests/unit/test_workflows_namespace.py` — staging + deploy + prune tests
 
@@ -52,7 +51,6 @@ One feature, five phases. Each phase is a coherent, independently-testable chunk
 - `packages/installer/src/installer/tools/claude.py:30` — add `"workflows"`
 - `packages/installer/src/installer/core/ownership.py:15` — add `"workflows"`
 - `packages/installer/src/installer/core/backup.py:24` — add `"workflows"`
-- `packages/installer/src/installer/core/merge/registry.py:106` — register workflows fatal
 - `packages/installer/tests/unit/test_ownership.py:49` — update pinned tuple
 - `src/user/.agents/rules/completion-gate.md` — routing preamble
 - `src/user/.agents/INSTRUCTIONS.md.template:123` — three-tier wording in `<verification-checklist>`
@@ -86,20 +84,20 @@ def _make_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     wf = repo / "src" / "user" / ".claude" / "workflows"
     wf.mkdir(parents=True)
-    (wf / "quality-gate.md").write_text("# quality-gate workflow\n")
+    (wf / "quality-gate.js").write_text("export const meta = { name: 'quality-gate' }\n")
     return repo
 
 
 def test_workflows_namespace_is_staged(tmp_path, ignore):
     repo = _make_repo(tmp_path)
     plan = build_plan(ClaudeAdapter(), repo_root=repo, ignore=ignore)
-    assert Path("workflows/quality-gate.md") in plan.items
+    assert Path("workflows/quality-gate.js") in plan.items
 ```
 
 - [ ] **Step 2: Run it, verify it fails**
 
 Run: `make test-installer` (or `cd packages/installer && uv run pytest tests/unit/test_workflows_namespace.py::test_workflows_namespace_is_staged -v`)
-Expected: FAIL — `Path("workflows/quality-gate.md")` not in `plan.items` (namespace not staged).
+Expected: FAIL — `Path("workflows/quality-gate.js")` not in `plan.items` (namespace not staged).
 
 - [ ] **Step 3: Add `workflows` to the staging tuple**
 
@@ -115,7 +113,7 @@ Run: same as Step 2. Expected: PASS. `stage_namespace` is generic (walks `source
 
 - [ ] **Step 5: Add the deploy-to-disk test**
 
-Model on `tests/unit/test_sync_claude.py:21` (`sync(ClaudeAdapter(), ..., home=, io=ScriptedIO())` then assert a file under `home/.claude/`). Assert `quality-gate.md` lands at `home/.claude/workflows/quality-gate.md`. (Follow that file's exact `sync(...)` signature and `ScriptedIO()` construction — mirror it, don't invent args.)
+Model on `tests/unit/test_sync_claude.py:21` (`sync(ClaudeAdapter(), ..., home=, io=ScriptedIO())` then assert a file under `home/.claude/`). Assert `quality-gate.js` lands at `home/.claude/workflows/quality-gate.js`. (Follow that file's exact `sync(...)` signature and `ScriptedIO()` construction — mirror it, don't invent args.)
 
 - [ ] **Step 6: Run + commit**
 
@@ -134,12 +132,12 @@ git commit -m "feat(installer): stage and deploy the claude workflows namespace"
 
 - [ ] **Step 1: Write the failing prune test**
 
-Model exactly on `tests/unit/test_receipt_pipeline.py::test_dropped_entry_is_pruned_and_outcome_names_it` (lines 51-79): build a `prior` `Receipt` with a workflow entry, a `plans` dict whose `StagingPlan` drops it, call `prune_pipeline([get_adapter(Tool.CLAUDE)], plans=, prior=, home=, discovered_plugin_names=set(), io=ScriptedIO(interactive=False), auto_yes=True, timestamp=_TS)`, then assert the file is gone and `outcome.pruned_paths == {Path(".claude/workflows/quality-gate.md")}`. Use the `ReceiptEntry(Path(".claude/workflows/quality-gate.md"), "claude", Path(".claude"), "file", sha)` helper shape from that test. Copy its imports/fixtures verbatim.
+Model exactly on `tests/unit/test_receipt_pipeline.py::test_dropped_entry_is_pruned_and_outcome_names_it` (lines 51-79): build a `prior` `Receipt` with a workflow entry, a `plans` dict whose `StagingPlan` drops it, call `prune_pipeline([get_adapter(Tool.CLAUDE)], plans=, prior=, home=, discovered_plugin_names=set(), io=ScriptedIO(interactive=False), auto_yes=True, timestamp=_TS)`, then assert the file is gone and `outcome.pruned_paths == {Path(".claude/workflows/quality-gate.js")}`. Use the `ReceiptEntry(Path(".claude/workflows/quality-gate.js"), "claude", Path(".claude"), "file", sha)` helper shape from that test. Copy its imports/fixtures verbatim.
 
 - [ ] **Step 2: Run it, verify it fails**
 
 Run: `cd packages/installer && uv run pytest tests/unit/test_workflows_namespace.py -k prune -v`
-Expected: FAIL — the dropped workflow is neither receipt-tracked nor pruned, so `pruned_paths` is empty (a stale `~/.claude/workflows/quality-gate.md` would survive a source rename/removal — the exact silent-stale-workflow hazard spec §7.1 calls out).
+Expected: FAIL — the dropped workflow is neither receipt-tracked nor pruned, so `pruned_paths` is empty (a stale `~/.claude/workflows/quality-gate.js` would survive a source rename/removal — the exact silent-stale-workflow hazard spec §7.1 calls out).
 
 - [ ] **Step 3: Add `workflows` to `PRUNE_NAMESPACES`**
 
@@ -175,7 +173,7 @@ git commit -m "feat(installer): prune stale workflows on source rename/removal"
 
 - [ ] **Step 1: Add `workflows` to `_SCOPED_NAMESPACES`**
 
-Cosmetic-but-consistent: without it a conflicting workflow backs up in-place (`quality-gate.md.backup-<ts>`) instead of to a sibling `workflows-backup/` dir like other namespaces. `backup.py:24`:
+Cosmetic-but-consistent: without it a conflicting workflow backs up in-place (`quality-gate.js.backup-<ts>`) instead of to a sibling `workflows-backup/` dir like other namespaces. `backup.py:24`:
 ```python
 _SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formulas", "workflows"})
 ```
@@ -185,58 +183,19 @@ _SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formul
 The parametrized backup tests (`tests/unit/test_sync.py:382`, `tests/unit/test_backup.py:43`) don't assert the full set, so they stay green. Add `workflows` to their parametrize lists only if you want positive coverage of the sibling-dir routing (optional).
 Run: `cd packages/installer && uv run pytest tests/unit/test_backup.py tests/unit/test_sync.py -v` → PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Run the full installer gate**
+
+Phase 1's closing gate — the namespace change must pass the canonical installer CI before any push.
+Run (repo root): `make ci-installer`
+Expected: all stages green (lint, format, mypy --strict, pytest --cov ≥90% branch, pip-audit, entry-verify).
+
+> **No merge-registry task.** A saved workflow is a bare `.js` file → `classify_file` returns `FileKind.OTHER`, and `default_registry` already binds `(OTHER, None) → LastWinsSilent` (with `resolve` normalizing the namespace to `None`). `resolve(OTHER, "workflows")` therefore cannot raise `UnknownMergeKeyError`. Registering `(NAMESPACED_MD, "workflows")` would key an unreachable state (no `.js` file is ever `NAMESPACED_MD`), so the installer needs no registry change — verified against `staging.py::classify_file` and `registry.py::_normalize`.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add packages/installer/src/installer/core/backup.py
 git commit -m "feat(installer): route workflows namespace backups to a sibling dir"
-```
-
-### Task 4: Register a merge strategy for the `workflows` namespace
-
-**Files:**
-- Modify: `packages/installer/src/installer/core/merge/registry.py:106`
-- Test: `packages/installer/tests/unit/test_workflows_namespace.py` (extend)
-
-- [ ] **Step 1: Write the failing merge-resolution test**
-
-A `.md` workflow classifies as `NAMESPACED_MD`; `default_registry().resolve(NAMESPACED_MD, "workflows")` must return a strategy, not raise. Model the assertion on how `test_merge_registry` (search `tests/unit/` for the registry test) checks `commands`/`skills`.
-
-```python
-from installer.core.merge.registry import default_registry
-from installer.core.merge.strategies.fatal import FatalStrategy
-from installer.core.model import FileKind
-
-
-def test_workflows_namespace_has_a_merge_strategy():
-    strategy = default_registry().resolve(FileKind.NAMESPACED_MD, "workflows")
-    assert isinstance(strategy, FatalStrategy)
-```
-
-- [ ] **Step 2: Run it, verify it fails**
-
-Run: `cd packages/installer && uv run pytest tests/unit/test_workflows_namespace.py -k merge_strategy -v`
-Expected: FAIL — `UnknownMergeKeyError` (namespace un-wired). A `.md` workflow collision would raise rather than merge — the latent installer crash this registration closes.
-
-- [ ] **Step 3: Register the strategy**
-
-`packages/installer/src/installer/core/merge/registry.py`, after line 106 (the `agents` fatal registration):
-```python
-    registry.register(FileKind.NAMESPACED_MD, "workflows", FatalStrategy())
-```
-Rationale: workflows are single-source (Claude tool root only) and irreconcilable on collision — identical treatment to `commands`/`skills`/`agents`. If Task 15 confirms workflows are a **non-`.md`** format (→ `FileKind.OTHER`, already registered under `None` as `LastWinsSilent`), this registration is inert but harmless; keep it as defense.
-
-- [ ] **Step 4: Run it, verify it passes**
-
-Run: same as Step 2. Expected: PASS.
-
-- [ ] **Step 5: Run the full installer gate + commit**
-
-Run (repo root): `make ci-installer`
-Expected: all stages green (lint, format, mypy --strict, pytest --cov ≥90% branch, pip-audit, entry-verify).
-```bash
-git add packages/installer/src/installer/core/merge/registry.py packages/installer/tests/unit/test_workflows_namespace.py
-git commit -m "feat(installer): register fatal merge strategy for the workflows namespace"
 ```
 
 ---
@@ -245,7 +204,7 @@ git commit -m "feat(installer): register fatal merge strategy for the workflows 
 
 A self-contained script (merge-guard-shaped: skill dir + `.py` + `*_test.py` + `*_test.sh` shim), but the repo's **first** `uv run` + PEP 723 + `pathspec` asset. Pure core over value types; git and filesystem confined to boundary functions. Tests are pytest run via `uv run --with pytest --with pathspec`. Behaviors are spec §9 items 1–30.
 
-### Task 5: Module skeleton, value types, and the test shim
+### Task 4: Module skeleton, value types, and the test shim
 
 **Files:**
 - Create: `src/user/.agents/skills/gate-triage/gate_triage.py`
@@ -392,7 +351,7 @@ git add src/user/.agents/skills/gate-triage/
 git commit -m "feat(gate-triage): module skeleton, value types, and test shim"
 ```
 
-### Task 6: `load_config` (boundary — validate, fail-closed to defaults)
+### Task 5: `load_config` (boundary — validate, fail-closed to defaults)
 
 **Files:**
 - Modify: `gate_triage.py` (add `load_config`)
@@ -476,7 +435,7 @@ def load_config(repo_root: Path) -> TriageConfig:
 
 - [ ] **Step 4: Run, verify pass.** Then **commit**: `git commit -am "feat(gate-triage): validated fail-closed config loading"`
 
-### Task 7: `classify_file` (diagnostic classification)
+### Task 6: `classify_file` (diagnostic classification)
 
 **Files:** `gate_triage.py` (+`classify_file`), `gate_triage_test.py` (spec §9 item 10)
 
@@ -518,7 +477,7 @@ def classify_file(path: str) -> FileClass:
 
 - [ ] **Step 4: Run, pass. Commit** `git commit -am "feat(gate-triage): diagnostic file classification"`
 
-### Task 8: `critical_hits` (subtree-scoped marker matching + policy inputs)
+### Task 7: `critical_hits` (subtree-scoped marker matching + policy inputs)
 
 **Files:** `gate_triage.py` (+`critical_hits`, +`_hit_for`), `gate_triage_test.py` (spec §9 items 11–16)
 
@@ -631,7 +590,7 @@ def critical_hits(files: tuple[ChangedFile, ...],
 
 - [ ] **Step 4: Run, pass. Commit** `git commit -am "feat(gate-triage): subtree-scoped critical-path matching with policy inputs"`
 
-### Task 9: `compute_tier` (the tier floor logic)
+### Task 8: `compute_tier` (the tier floor logic)
 
 **Files:** `gate_triage.py` (+`_subsystems`, +`compute_tier`), `gate_triage_test.py` (spec §9 items 1–9)
 
@@ -702,11 +661,11 @@ def compute_tier(facts: DiffFacts, hits: tuple[CriticalHit, ...], config: Triage
         return Tier.SKIP
     return Tier.SERIAL
 ```
-(§9.8/§9.9 — policy-input files as HEAVY — are covered end-to-end because `critical_hits` produces a hit for them, and `compute_tier` returns HEAVY on any hit. Task 12 asserts the full path through `triage()`.)
+(§9.8/§9.9 — policy-input files as HEAVY — are covered end-to-end because `critical_hits` produces a hit for them, and `compute_tier` returns HEAVY on any hit. Task 11 asserts the full path through `triage()`.)
 
 - [ ] **Step 4: Run, pass. Commit** `git commit -am "feat(gate-triage): tier floor logic"`
 
-### Task 10: `compute_scale_hint`
+### Task 9: `compute_scale_hint`
 
 **Files:** `gate_triage.py` (+`compute_scale_hint`), `gate_triage_test.py` (spec §9 item 17)
 
@@ -725,7 +684,7 @@ def test_scale_hint_buckets():  # §9.17
 - [ ] **Step 3: Implement** — map a size score (files/loc/subsystems) to the three buckets. Small = below all heavy thresholds; medium = one heavy threshold; large = two+ heavy thresholds or new_deps. Keep it a pure function of `DiffFacts` + default thresholds. (Choose the exact bucket predicate to satisfy monotonicity; document the mapping in a docstring.)
 - [ ] **Step 4: Run, pass. Commit** `git commit -am "feat(gate-triage): scale-hint bucketing"`
 
-### Task 11: `triage` composition + CLI/JSON output
+### Task 10: `triage` composition + CLI/JSON output
 
 **Files:** `gate_triage.py` (+`triage`, +`_result_to_json`, +`main`), `gate_triage_test.py`
 
@@ -747,7 +706,7 @@ def test_triage_composes_and_serializes():
 - [ ] **Step 3: Implement** `triage` (pure: `critical_hits` → `compute_tier` → `compute_scale_hint` → assemble `TriageResult`), `_result_to_json` (hit strings as `"<path> ← <marker>:<pattern>"`), and `main` (argparse `--repo-root`, `--base-ref`; calls the boundary functions then `triage`; prints JSON). Default `--base-ref` resolves the repo default branch.
 - [ ] **Step 4: Run, pass. Commit** `git commit -am "feat(gate-triage): triage composition and JSON CLI"`
 
-### Task 12: Boundary functions — `collect_diff` + `load_markers` (integration)
+### Task 11: Boundary functions — `collect_diff` + `load_markers` (integration)
 
 **Files:** `gate_triage.py` (+`collect_diff`, +`load_markers`), `gate_triage_test.py` (spec §9 items 23–29, against a temp git repo)
 
@@ -780,7 +739,7 @@ def test_collect_diff_untracked_file(tmp_path):  # §9.25
 - [ ] **Step 3: Implement `collect_diff`** — shell `git merge-base`, `git diff --numstat <base>...HEAD`, `git diff --numstat` (unstaged) + `--cached` (staged), and `git status --porcelain=v1 --untracked-files=all`; parse into `ChangedFile`s; union + evidence-preserving dedupe by path (working-tree `loc_changed`/`status` win, but retain `old_path` if either committed or working-tree source reports a rename — spec §4.3); set `new_deps` = any `Path(f.path).name in DEPENDENCY_FILES`. **Implement `load_markers`** — walk for `.critical-paths` files, build `CriticalMarker(folder=<rel posix dir>, spec=PathSpec.from_lines("gitwildmatch", lines))`.
 - [ ] **Step 4: Run, pass. Full shim run:** `./…/gate_triage_test.sh` → all green. **Commit** `git commit -am "feat(gate-triage): git + marker boundary collection"`
 
-### Task 13: `SKILL.md` invocation contract
+### Task 12: `SKILL.md` invocation contract
 
 **Files:** Create `src/user/.agents/skills/gate-triage/SKILL.md`
 
@@ -790,7 +749,7 @@ def test_collect_diff_untracked_file(tmp_path):  # §9.25
 
 ## Phase 3 — Config section + `.critical-paths` marker
 
-### Task 14: Add `[completion-gate]` to `project-config.toml` and seed the root marker
+### Task 13: Add `[completion-gate]` to `project-config.toml` and seed the root marker
 
 **Files:**
 - Modify: `project-config.toml`
@@ -847,11 +806,11 @@ git commit -m "feat(gate): seed repo-root .critical-paths and [completion-gate] 
 
 ## Phase 4 — `quality-gate` saved workflow
 
-### Task 15: Author the `quality-gate` workflow (interim capped-round loop)
+### Task 14: Author the `quality-gate` workflow (interim capped-round loop)
 
-**Files:** Create `src/user/.claude/workflows/quality-gate.md`
+**Files:** Create `src/user/.claude/workflows/quality-gate.js`
 
-- [ ] **Step 1: Confirm the saved-workflow on-disk format.** No in-repo example exists. Verify against Claude Code's workflow loader whether `~/.claude/workflows/` entries are `.md` (frontmatter + JS script) or a bare script file, and the required filename↔`meta.name` relationship. Use the claude-code-guide agent or Claude Code docs. **If the format is not `.md`,** change the file extension here and in Task 1's fixtures, and note that Task 4's `NAMESPACED_MD` registration becomes inert (file classifies as `OTHER`) — harmless, keep it.
+- [ ] **Step 1: Author against the confirmed on-disk format.** The saved-workflow format is a **bare `.js` script** whose body opens with `export const meta = {...}` — confirmed against shipped plugin workflows (`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/code-modernization/workflows/*.js`) and persisted session scripts; `.md` was the plan's earlier unverified guess, now retired. The file is `quality-gate.js`; set `meta.name = "quality-gate"` **explicitly** — that is the identifier `Workflow({name: "quality-gate"})` resolves, and plugin workflows decouple filename from `meta.name` (e.g. `harden-scan.js` declares `meta.name: "modernize-harden-scan"`), so do not rely on the filename. There is no `.md` frontmatter: the entire file is the JS script.
 
 - [ ] **Step 2: Author the workflow script** implementing spec §7, interim convergence per the decision record (`2026-07-03-adversarial-loop-convergence-decision.md`):
   - `export const meta = {...}` — `name: "quality-gate"`, phases: Find, Verify, Synthesize.
@@ -864,7 +823,7 @@ git commit -m "feat(gate): seed repo-root .critical-paths and [completion-gate] 
 
 - [ ] **Step 3: Static-validate the script** — confirm it parses as the workflow format (JS syntax; `meta` is a pure literal; phase titles match `meta.phases`). Do NOT execute it against real changes here (that's live-gate territory). **Commit**
 ```bash
-git add src/user/.claude/workflows/quality-gate.md
+git add src/user/.claude/workflows/quality-gate.js
 git commit -m "feat(quality-gate): interim capped-round HEAVY workflow"
 ```
 
@@ -874,14 +833,14 @@ git commit -m "feat(quality-gate): interim capped-round HEAVY workflow"
 
 This phase flips routing on. Land it last.
 
-### Task 16: Add the three-tier wording to the shared verification-checklist
+### Task 15: Add the three-tier wording to the shared verification-checklist
 
 **Files:** Modify `src/user/.agents/INSTRUCTIONS.md.template` (block at lines 121-143)
 
 - [ ] **Step 1:** Insert the tier contract into the `<verification-checklist>` block, attached to the MANDATORY sentence (line 123). Add SKIP/SERIAL/HEAVY tier wording per spec §3 (one contract, three tiers, routed at gate time; `SKIP` is a size bound not a file-type bound; step 5 non-substitutable under every tier; `HEAVY` is Claude-only and degrades to `SERIAL` elsewhere). This block flattens verbatim into all four tools via DYNAMIC-INCLUDE — edit once, here. Keep tool-agnostic (no "Workflow" specifics — those live in the Claude rule).
 - [ ] **Step 2:** Sanity-check no file-path citations leak into the shared block (they'd break on flatten). **Commit** `git commit -am "feat(gate): add three-tier routing to shared verification-checklist"`
 
-### Task 17: Add the routing preamble to the completion-gate rule
+### Task 16: Add the routing preamble to the completion-gate rule
 
 **Files:** Modify `src/user/.agents/rules/completion-gate.md`
 
@@ -902,11 +861,11 @@ This phase flips routing on. Land it last.
 ## Self-review
 
 **Spec coverage** — every spec section maps to a task:
-- §2 tier table → Tasks 9, 16 (wording), 17 (routing). §3 tier contract → Task 16. §4 gate-triage contract → Tasks 5–12. §4.2 output → Task 11. §4.3 tier/dedupe/rename logic → Tasks 8, 9, 12. §5 `.critical-paths` + policy-input hardcoding → Tasks 8, 14. §6 risk-class list → Task 17. §7 workflow → Task 15. §7.1 installer → Phase 1. §8 rule changes → Task 17. §9 test plan (items 1–31) → Tasks 6–14 (mapped inline). §10 consequences (blocking prereqs) → phase ordering. §11 options → n/a (decision record).
-- Test items 1–30 → Tasks 6 (18–22), 7 (10), 8 (11–16), 9 (1–9), 10 (17), 11, 12 (23–29), 14 (30). Item 31 (installer prune) → Task 2. **All 31 covered.**
+- §2 tier table → Tasks 8, 15 (wording), 16 (routing). §3 tier contract → Task 15. §4 gate-triage contract → Tasks 4–11. §4.2 output → Task 10. §4.3 tier/dedupe/rename logic → Tasks 7, 8, 11. §5 `.critical-paths` + policy-input hardcoding → Tasks 7, 13. §6 risk-class list → Task 16. §7 workflow → Task 14. §7.1 installer → Phase 1. §8 rule changes → Task 16. §9 test plan (items 1–31) → Tasks 5–13 (mapped inline). §10 consequences (blocking prereqs) → phase ordering. §11 options → n/a (decision record).
+- Test items 1–30 → Tasks 5 (18–22), 6 (10), 7 (11–16), 8 (1–9), 9 (17), 10, 11 (23–29), 13 (30). Item 31 (installer prune) → Task 2. **All 31 covered.**
 
-**Placeholder scan** — Task 10 (scale-hint bucket predicate) and Task 15 (workflow authoring + format confirmation) are the two intentional judgment points; both carry concrete constraints (bucket tuples, monotonicity; the spec §7 checklist) rather than "TBD." Task 15 Step 1 is a genuine external-unknown verification, not a deferred decision. No "TODO/implement later" left.
+**Placeholder scan** — Task 9 (scale-hint bucket predicate) and Task 14 (workflow authoring) are the two intentional judgment points; both carry concrete constraints (bucket tuples, monotonicity; the spec §7 checklist) rather than "TBD." The saved-workflow on-disk format — the plan's one prior external unknown — is now resolved to a bare `.js` script (Task 14 Step 1). No "TODO/implement later" left.
 
-**Type consistency** — `ChangedFile`/`DiffFacts`/`TriageConfig`/`Tier`/`FileClass`/`CriticalMarker`/`CriticalHit`/`ScaleHint`/`TriageResult` defined in Task 5 and used consistently (`compute_tier(facts, hits, config)`, `critical_hits(files, markers)`, `triage(facts, markers, config)`, `compute_scale_hint(facts)`) across Tasks 6–12. Installer touch-points cite verified line numbers.
+**Type consistency** — `ChangedFile`/`DiffFacts`/`TriageConfig`/`Tier`/`FileClass`/`CriticalMarker`/`CriticalHit`/`ScaleHint`/`TriageResult` defined in Task 4 and used consistently (`compute_tier(facts, hits, config)`, `critical_hits(files, markers)`, `triage(facts, markers, config)`, `compute_scale_hint(facts)`) across Tasks 5–11. Installer touch-points cite verified line numbers.
 
-**Ordering** — Phase 1 (deployment) precedes Phases 4–5 (routing activation), honoring spec §7.1/§10's "HEAVY must not merge ahead of its deployment path." The `[completion-gate]` config (Task 14) lands before the rule reads it (Task 17).
+**Ordering** — Phase 1 (deployment) precedes Phases 4–5 (routing activation), honoring spec §7.1/§10's "HEAVY must not merge ahead of its deployment path." The `[completion-gate]` config (Task 13) lands before the rule reads it (Task 16).
