@@ -416,11 +416,13 @@ done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
 # Durable, canonical-path-keyed sidecar written by post-replies.sh — one JSONL
 # line per successful reply POST, shape {"k","v","rid"}. An ADDITIONAL, more
 # crash-robust source of posted-reply exclusions than inventory
-# posted_reply_id fields: it is written at POST time, before any inventory
-# bookkeeping, so it still reflects a reply even if the run crashed before an
-# inventory could record it. Tolerant of a truncated final line (a hard-killed
-# process mid-append) — a strict slurp would abort the whole script on one bad
-# line, so parse per-line and drop anything unparseable instead.
+# posted_reply_id fields: record_reply_id() appends to this sidecar right
+# after attempting the inventory-side write, independent of whether that
+# inventory write succeeds or targets a discarded scratch copy — so it still
+# reflects a reply even if the inventory-side record is lost or never reaches
+# a durable path. Tolerant of a truncated final line (a hard-killed process
+# mid-append) — a strict slurp would abort the whole script on one bad line,
+# so parse per-line and drop anything unparseable instead.
 sidecar_reply_ids='[]'
 while IFS= read -r -d '' sc_file; do
     file_rids=$(jq -R 'fromjson? // empty' "$sc_file" 2>/dev/null | jq -s '[.[].rid] | map(select(. != null))') || file_rids='[]'

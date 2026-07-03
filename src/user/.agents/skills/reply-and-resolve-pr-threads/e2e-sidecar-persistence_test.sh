@@ -89,7 +89,7 @@ assert "(a) canonical inventory has one FIX/SKIP issue_comment item" \
 # ── (b) simulate the real Phase 2 sequence ───────────────────────────────────
 # RENDERED = a mktemp scratch copy with .reply_body hand-populated (faithful
 # stand-in for render-reply-bodies.sh's output, per the task's own allowance).
-RENDERED="$(mktemp)"
+RENDERED="$(mktemp "$TMP/rendered.XXXXXX")"
 jq '.items[0].reply_body = "Acknowledged — skipping as cosmetic."' "$INVENTORY_FILE" > "$RENDERED"
 
 # Fake gh: POST returns a synthetic reply id, mirroring the shim pattern
