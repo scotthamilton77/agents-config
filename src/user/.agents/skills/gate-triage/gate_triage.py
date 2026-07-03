@@ -178,3 +178,27 @@ def critical_hits(files: tuple[ChangedFile, ...],
                 hits.append(CriticalHit(path=f.path, marker=found[0], pattern=found[1]))
                 break
     return tuple(hits)
+
+
+def _subsystems(files: tuple[ChangedFile, ...]) -> int:
+    """Distinct top-level dir touched; repo-root files and dotfile dirs each count once."""
+    tops = set()
+    for f in files:
+        parts = Path(f.path).parts
+        tops.add(parts[0] if len(parts) > 1 else "<root>")
+    return len(tops)
+
+
+def compute_tier(facts: DiffFacts, hits: tuple[CriticalHit, ...], config: TriageConfig) -> Tier:
+    if hits:
+        return Tier.HEAVY  # critical hit — unconditional, overrides SKIP
+    files = facts.files
+    loc = sum(f.loc_changed for f in files)
+    if (len(files) >= config.heavy_min_files
+            or loc >= config.heavy_min_loc
+            or _subsystems(files) >= config.heavy_min_subsystems
+            or facts.new_deps):
+        return Tier.HEAVY
+    if len(files) == 1 and loc <= config.trivial_max_loc:
+        return Tier.SKIP
+    return Tier.SERIAL
