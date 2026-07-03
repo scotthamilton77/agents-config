@@ -202,3 +202,40 @@ def compute_tier(facts: DiffFacts, hits: tuple[CriticalHit, ...], config: Triage
     if len(files) == 1 and loc <= config.trivial_max_loc:
         return Tier.SKIP
     return Tier.SERIAL
+
+
+_SCALE_BUCKETS = {
+    "small": ScaleHint(finder_dimensions=3, refuters=2, synthesis_effort="high"),
+    "medium": ScaleHint(finder_dimensions=4, refuters=2, synthesis_effort="high"),
+    "large": ScaleHint(finder_dimensions=6, refuters=3, synthesis_effort="xhigh"),
+}
+
+
+def compute_scale_hint(facts: DiffFacts) -> ScaleHint:
+    """Size the HEAVY fleet from the diff. Bucket = count of HEAVY quant thresholds
+    crossed — {files ≥ heavy_min_files, loc ≥ heavy_min_loc,
+    subsystems ≥ heavy_min_subsystems} — evaluated against default thresholds, with
+    new_deps forcing 'large':
+
+        0 crossed              → small  → (3, 2, "high")
+        exactly 1 crossed      → medium → (4, 2, "high")
+        2+ crossed OR new_deps → large  → (6, 3, "xhigh")
+
+    Monotone by construction (spec §9.17): each threshold is a ≥ step function, so
+    growing any dimension can only cross MORE thresholds, never fewer, and new_deps
+    only ever escalates; the bucket→fleet map is non-decreasing field-by-field
+    (small ≤ medium ≤ large). Hence a strictly larger diff never yields a smaller
+    fleet. Uses default thresholds, not loaded config — scale is a coarse advisory
+    for the workflow, deliberately independent of per-repo tier tuning."""
+    config = TriageConfig()
+    loc = sum(f.loc_changed for f in facts.files)
+    crossed = sum((
+        len(facts.files) >= config.heavy_min_files,
+        loc >= config.heavy_min_loc,
+        _subsystems(facts.files) >= config.heavy_min_subsystems,
+    ))
+    if facts.new_deps or crossed >= 2:
+        return _SCALE_BUCKETS["large"]
+    if crossed == 1:
+        return _SCALE_BUCKETS["medium"]
+    return _SCALE_BUCKETS["small"]

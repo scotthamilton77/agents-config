@@ -164,3 +164,29 @@ def test_each_quant_threshold_trips_heavy_at_boundary():  # §9.5
 
 def test_new_deps_trips_heavy():  # §9.6
     assert gt.compute_tier(_facts(_cf("pyproject.toml", loc=1), new_deps=True), (), CFG) == gt.Tier.HEAVY
+
+
+# --- Task 9: compute_scale_hint (spec §9 item 17) ---
+
+
+def test_scale_hint_buckets():  # §9.17
+    small = gt.compute_scale_hint(_facts(_cf("a.py", loc=10)))  # 0 thresholds crossed
+    medium = gt.compute_scale_hint(_facts(_cf("a.py", loc=400)))  # exactly 1 (loc)
+    large = gt.compute_scale_hint(_facts(*[_cf(f"d{i}/f.py", loc=100) for i in range(9)]))  # 3
+    assert (small.finder_dimensions, small.refuters, small.synthesis_effort) == (3, 2, "high")
+    assert (medium.finder_dimensions, medium.refuters, medium.synthesis_effort) == (4, 2, "high")
+    assert (large.finder_dimensions, large.refuters, large.synthesis_effort) == (6, 3, "xhigh")
+
+
+def test_scale_hint_monotone_under_strict_growth():  # §9.17 monotonicity
+    small = _facts(_cf("a.py", loc=10))
+    # a strict superset: keeps a.py, adds 8 files across new subsystems
+    larger = _facts(_cf("a.py", loc=10), *[_cf(f"d{i}/f.py", loc=100) for i in range(8)])
+    s, l = gt.compute_scale_hint(small), gt.compute_scale_hint(larger)
+    assert l.finder_dimensions >= s.finder_dimensions
+    assert l.refuters >= s.refuters
+
+
+def test_scale_hint_new_deps_forces_large():  # §9.17 (new_deps escalation)
+    hint = gt.compute_scale_hint(_facts(_cf("uv.lock", loc=1), new_deps=True))
+    assert (hint.finder_dimensions, hint.refuters, hint.synthesis_effort) == (6, 3, "xhigh")
