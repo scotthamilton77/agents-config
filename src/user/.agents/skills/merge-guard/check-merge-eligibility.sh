@@ -289,8 +289,11 @@ else
     if grep -qiE 'HTTP 404|Not Found' "$rules_stderr"; then
         rules_json='[]'   # no rulesets target this branch
     else
-        echo "Error: failed to fetch branch rules: $(cat "$rules_stderr")" >&2
-        rm -f "$rules_stderr"; exit 3
+        # admin_bypass never gates a blocker, so a transient fetch failure on
+        # it must not deny a merge that may not even need --admin. Degrade to
+        # the inert "no rulesets" state and warn rather than abort eligibility.
+        echo "Warning: failed to fetch branch rules (admin_bypass degraded to inert): $(cat "$rules_stderr")" >&2
+        rules_json='[]'
     fi
 fi
 rm -f "$rules_stderr"
@@ -306,7 +309,12 @@ if [[ "$required_approving_review_count" -gt 0 ]]; then
     while IFS= read -r rid; do
         [[ -n "$rid" ]] || continue
         bypass=$(gh_api "repos/${OWNER}/${REPO}/rulesets/${rid}" --jq '.current_user_can_bypass') || {
-            echo "Error: failed to fetch ruleset ${rid} bypass status" >&2; exit 3; }
+            # An unreadable ruleset fails closed for the narrow --admin decision
+            # (treat as non-bypassable) and continues — never aborts eligibility
+            # over an informational fact.
+            echo "Warning: failed to fetch ruleset ${rid} bypass status (treating as non-bypassable)" >&2
+            current_actor_can_bypass=false
+            continue; }
         [[ "$bypass" == "always" || "$bypass" == "pull_requests_only" ]] || current_actor_can_bypass=false
     done <<<"$ruleset_ids"
 fi

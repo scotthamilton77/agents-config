@@ -258,8 +258,14 @@ an already-authorized merge, not *whether* one is eligible):
 - *Not applicable* (`review_rule_active = false`) when no `pull_request` rule
   with a positive required-approving-review count targets the branch — the
   fact carries no opinion, since there is nothing for `--admin` to bypass.
-- A fetch failure other than "no rules for this branch" (a genuine 404) fails
-  closed: exit 3, never a silent "assume bypassable" or "assume blocked."
+- A fetch failure on this fact never aborts eligibility. Because
+  `admin_bypass` gates no entry in `blockers[]`, denying a merge that may not
+  even need `--admin` over a transient GitHub/API error would be wrong. The
+  branch-rules list fetch (a non-404 failure) degrades to the inert "no
+  rulesets" state (`review_rule_active = false`); an individual ruleset detail
+  fetch failure degrades to non-bypassable (`current_actor_can_bypass = false`,
+  the fail-closed default for the `--admin` decision) and continues. Both warn
+  on stderr; neither silently assumes "bypassable."
 - This predicate certifies only that the `pull_request` rule(s) are
   bypassable — `current_user_can_bypass` is reported **per ruleset**, and a
   ruleset commonly bundles unrelated rule types (this repo's own ruleset also

@@ -310,19 +310,26 @@ out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES
 assert "zero-count pull_request rule → review_rule_active false" "[ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ]"
 
 # a rule with count > 0 but a null ruleset_id → jq renders it as the literal
-# path segment "null", GitHub 404s that, so this fails closed to exit 3
-# rather than silently skipping the per-ruleset bypass check
+# path segment "null", GitHub 404s that detail fetch. admin_bypass never gates
+# a blocker, so the unreadable ruleset degrades to non-bypassable (fail closed
+# for --admin) and eligibility continues rather than aborting.
 RULES_NULL_ID='[{"type":"pull_request","ruleset_id":null,"parameters":{"required_approving_review_count":1}}]'
 out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_NULL_ID"); rc=$?
-assert "null ruleset_id with active count exits 3 (fail closed)" "[ \$rc -eq 3 ]"
+assert "null ruleset_id with active count → eligible, current_actor_can_bypass false (fail closed for --admin)" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
 
-# rules/branches fetch fails for a reason other than 404 → fail closed (exit 3)
+# rules/branches fetch fails for a reason other than 404 → admin_bypass degrades
+# to the inert "no rulesets" state (never aborts eligibility over an
+# informational fact)
 out=$(run_script "$BASE_POLICY" FIXTURE_RULES_FAIL=1); rc=$?
-assert "branch-rules fetch hard failure exits 3" "[ \$rc -eq 3 ]"
+assert "branch-rules fetch hard failure → eligible, admin_bypass inert (review_rule_active false, current_actor_can_bypass null)" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.review_rule_active' <<<\"\$out\")\" = false ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = null ]"
 
-# a ruleset's own detail fetch fails after being listed → fail closed (exit 3)
+# a ruleset's own detail fetch fails after being listed → degrade to
+# non-bypassable (fail closed for --admin) and continue rather than abort
 out=$(run_script "$BASE_POLICY" FIXTURE_RULES_404=0 FIXTURE_BRANCH_RULES="$RULES_ONE" FIXTURE_RULESET_FAIL=1); rc=$?
-assert "ruleset detail fetch hard failure exits 3" "[ \$rc -eq 3 ]"
+assert "ruleset detail fetch hard failure → eligible, current_actor_can_bypass false (fail closed for --admin)" \
+    "[ \$rc -eq 0 ] && [ \"\$(jq '.facts.admin_bypass.current_actor_can_bypass' <<<\"\$out\")\" = false ]"
 
 # ── Task 13: review still in flight ──────────────────────────────────────────
 BOT_POLICY=$(jq -c '.bot_review_expected = true' <<<"$BASE_POLICY")
