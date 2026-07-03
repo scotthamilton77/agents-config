@@ -1,0 +1,8 @@
+# .critical-paths — force the HEAVY completion gate on load-bearing changes.
+# gitignore syntax, anchored to this repo root. Read by the gate-triage skill;
+# HEAVY routing is Claude-only, so other tools fall back to the serial gate.
+src/**
+packages/**
+scripts/**
+.github/**
+Makefile

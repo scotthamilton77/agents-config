@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Namespaces whose backups route to a sibling ``<namespace>-backup/`` dir rather
 # than an in-place suffix.
-_SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formulas"})
+_SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formulas", "workflows"})
 
 # Backup timestamp format: YYYYMMDD-HHMMSS.
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"

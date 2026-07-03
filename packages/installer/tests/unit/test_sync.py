@@ -379,7 +379,9 @@ def test_write_to_read_only_destination_surfaces_permission_error(tmp_path: Path
 _FIXED_TS = "20260613-120000"
 
 
-@pytest.mark.parametrize("namespace", ["commands", "skills", "agents", "rules", "formulas"])
+@pytest.mark.parametrize(
+    "namespace", ["commands", "skills", "agents", "rules", "formulas", "workflows"]
+)
 def test_overwrite_in_scoped_namespace_backs_up_to_sibling_dir(
     tmp_path: Path, namespace: str
 ) -> None:

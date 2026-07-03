@@ -88,6 +88,17 @@ merge-authorization = "rule-based"
 merge-rule          = "bot-quiescence"
 
 # ---------------------------------------------------------------------------
+# [completion-gate] — tier-routing thresholds for the SKIP/SERIAL/HEAVY gate
+# Read by: gate_triage.py (gate-triage skill), consumed by the completion-gate rule.
+# All keys optional; omitted or invalid values fail closed to the defaults shown.
+# ---------------------------------------------------------------------------
+[completion-gate]
+heavy_min_files      = 8
+heavy_min_loc        = 400
+heavy_min_subsystems = 3
+trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
+
+# ---------------------------------------------------------------------------
 # [foreign-cli] — foreign-CLI binary paths and model selections
 # Read by: red-tests (Codex adversarial test review),
 #          green-loop (RALF-IT foreign-eyes iterations),

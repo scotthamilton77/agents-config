@@ -27,7 +27,7 @@ class ClaudeAdapter:
         return True
 
     def scoped_namespaces(self) -> tuple[str, ...]:
-        return ("commands", "skills", "agents", "rules", "hooks")
+        return ("commands", "skills", "agents", "rules", "hooks", "workflows")
 
     def should_install_namespace(
         self,
