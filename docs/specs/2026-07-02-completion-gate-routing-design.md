@@ -17,7 +17,7 @@ One verification contract, three tiers, routed automatically at gate time:
 
 | Tier | Trigger | What runs |
 |---|---|---|
-| `SKIP` | Trivial/doc-only change, no overrides hit | Step 5 evidence only (tests/build where applicable; otherwise nothing) |
+| `SKIP` | Trivial diff (≤1 file, ≤`trivial_max_loc`), no critical-path hit | Step 5 evidence only (tests/build where applicable; otherwise nothing) |
 | `SERIAL` | Default | Existing steps 1–5 |
 | `HEAVY` | Quant floor exceeded, risk-class hit, or `.critical-paths` match | Saved `quality-gate` workflow replaces steps 1–4; step 5 runs after, non-substitutable |
 
@@ -30,7 +30,7 @@ Routing decisions settled during design:
 
 ## 3. Tier contract (shared, tool-agnostic)
 
-The `<verification-checklist>` block in the shared template gains the three-tier wording. The `SKIP` tier expands "one-liners, config changes, typos" to explicitly include docs-only changes (subject to overrides — see §5 dogfood note).
+The `<verification-checklist>` block in the shared template gains the three-tier wording. The `SKIP` tier formalizes the existing "one-liners, config changes, typos" provision as a **size bound**, not a file-type bound (§4.3): file type is irrelevant to `SKIP` eligibility, so the mechanism has no dependency on marker seeding or docs-root enumeration to stay safe.
 
 `HEAVY` is Claude-only. On tools without a Workflow harness (Codex, Gemini, OpenCode), `HEAVY` resolves to `SERIAL`; the existing optional codex adversarial-pass prose is unchanged. The tier contract lives in the shared template so every tool shares the same vocabulary; only the heavy implementation is per-tool.
 
@@ -47,13 +47,13 @@ Pure core over a value type; git interaction confined to a thin boundary:
 class ChangedFile:
     path: str             # repo-relative POSIX path; new path for R, the path itself for A/M/D
     old_path: str | None  # repo-relative POSIX pre-rename path; set only when status == "R"
-    loc_changed: int      # added + deleted lines
-    status: str           # A/M/D/R
+    loc_changed: int      # added + deleted lines; for untracked files, total line count
+    status: str           # A/M/D/R — untracked working-tree files (`??`) map to "A"
 
 @dataclass(frozen=True)
 class DiffFacts:
-    files: tuple[ChangedFile, ...]  # merge-base..HEAD unioned with staged + unstaged changes, deduped by path
-    new_deps: bool       # lockfile/manifest additions detected
+    files: tuple[ChangedFile, ...]  # merge-base..HEAD unioned with staged, unstaged, AND untracked changes, deduped by path
+    new_deps: bool       # any recognized dependency manifest/lockfile appears in `files`, any status
     base_ref: str
 
 @dataclass(frozen=True)
@@ -61,10 +61,17 @@ class TriageConfig:     # defaults; overridable via project-config.toml [complet
     heavy_min_files: int = 8
     heavy_min_loc: int = 400
     heavy_min_subsystems: int = 3
+    trivial_max_loc: int = 3   # SKIP eligibility ceiling; see §4.3
 
-def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts      # boundary: shells to git (committed diff + `git status --porcelain=v1`)
+DEPENDENCY_FILES = frozenset({
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "pyproject.toml", "uv.lock", "requirements.txt", "poetry.lock",
+    "go.mod", "go.sum", "Cargo.toml", "Cargo.lock", "Gemfile", "Gemfile.lock",
+})
+
+def collect_diff(repo_root: Path, base_ref: str) -> DiffFacts      # boundary: shells to git (committed diff + `git status --porcelain=v1 --untracked-files=all`)
 def load_markers(repo_root: Path) -> tuple[CriticalMarker, ...]    # boundary: reads .critical-paths files
-def classify_file(path: str) -> FileClass                          # DOCS | CONFIG | CODE
+def classify_file(path: str) -> FileClass                          # DOCS | CONFIG | CODE — diagnostic only, not tier-determining
 def critical_hits(files, markers) -> tuple[CriticalHit, ...]       # pure; checks path AND old_path per file
 def compute_tier(facts, hits, config) -> Tier                      # pure: SKIP | SERIAL | HEAVY
 def compute_scale_hint(facts) -> ScaleHint                         # pure
@@ -85,16 +92,18 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 
 ### 4.3 Tier floor logic
 
-- All changed files classify as `DOCS` (and no critical hit) AND at least one `.critical-paths` file exists anywhere in the repo → `SKIP` floor. Zero marker files repo-wide → `SERIAL` floor instead (fail-closed default, §5).
+- Exactly 1 changed file AND `loc_changed` ≤ `trivial_max_loc` AND no critical hit → `SKIP` floor. File type is irrelevant — a 2-line code fix and a 2-line doc fix are equally trivial; a 2-line change to a critical-path file is not (next bullet wins).
 - Any of: subsystems ≥ `heavy_min_subsystems`, files ≥ `heavy_min_files`, LOC ≥ `heavy_min_loc`, `new_deps` → `HEAVY` floor.
-- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math.
+- Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too.
 - Otherwise → `SERIAL`.
+
+`new_deps` = any file in `DEPENDENCY_FILES` (§4.1) appears in `files`, regardless of status — touching a dependency manifest or lockfile at all is the signal, not just adding one. Detecting *which* dependency changed inside the file is out of scope; the file-level signal is deliberately coarse and cheap.
 
 "Subsystem" = distinct top-level directory of the repo touched by the diff (dotfile directories and the repo root itself count as one subsystem each).
 
 File classification: `DOCS` = `.md`, `.rst`, `.txt`, `.adoc`; `CONFIG` = `.json`, `.jsonc`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, plus dotfiles with no extension; `CODE` = everything else. Unknown or missing extensions default to `CODE` — fail toward scrutiny.
 
-Diff scope: merge-base of the current branch against the repo's default branch, **unioned with staged and unstaged working-tree changes** (deduped by path, working-tree status wins on conflict). The gate tier must describe the actual candidate at gate time, not the last commit — a triage run against committed history alone would let uncommitted high-risk edits route on stale facts while step 5 verifies a different tree.
+Diff scope: merge-base of the current branch against the repo's default branch, **unioned with staged, unstaged, and untracked working-tree changes** (deduped by path, working-tree status wins on conflict). The gate tier must describe the actual candidate at gate time, not the last commit — a triage run against committed history alone would let uncommitted high-risk edits route on stale facts while step 5 verifies a different tree. Untracked files (`git status --porcelain` `??`) are real candidate files too — a new script sitting unadded at gate time must count toward `files`/`loc_changed` and be checked against `.critical-paths` exactly like a tracked addition.
 
 Rename handling: for `status == "R"`, `critical_hits` evaluates both `old_path` and `path` against every marker — a critical file renamed out of a marked subtree, or a file renamed into one, both count as a hit. `status == "D"` evaluates `path` (the file being removed) the same way.
 
@@ -108,9 +117,7 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 - A modified file matching any marker forces `HEAVY` on Claude. Non-Claude tools: no effect — the serial gate stands.
 - Evaluated entirely by gate-triage; no agent judgment involved.
 
-**Fail-closed default (required, not a dogfood nicety):** the `SKIP` tier's docs-only floor (§4.3) is gated on at least one `.critical-paths` file existing anywhere in the repo. If gate-triage finds zero marker files repo-wide, docs-only diffs floor at `SERIAL`, not `SKIP` — an unseeded repo gets the old behavior, never a silent gate weakening.
-
-Because a single marker anywhere flips the `SKIP` floor on **repo-wide**, seeding must cover every deployable discipline-layer root before `SKIP` ships, not just the two paths mentioned in earlier drafts of this design — this repo's instruction/config surface spans `src/user/.agents/{agents,skills,rules}/`, `src/user/.claude/{commands,rules,skills}/`, `src/plugins/**`, and `packages/installer/`. All of these ship `.critical-paths` in the same change that enables docs-only `SKIP`; any one of them left unmarked is a `.md` change that silently skips review.
+**Required seeding (implementation deliverable, not a dogfood nicety):** markers have exactly one job — force `HEAVY` on anything touching a load-bearing path, at any size; they do not gate `SKIP` eligibility (§3, §4.3). This repo ships `.critical-paths` covering its full deployable discipline-layer surface in the same change that ships gate-triage — `src/user/.agents/{agents,skills,rules}/`, `src/user/.claude/{commands,rules,skills}/`, `src/plugins/**`, and `packages/installer/` — so a multi-file edit to any of them floors at `HEAVY` regardless of the quant thresholds. An unmarked path falls through to the quant floor and risk-class list like everything else; the maximum exposure is a `SKIP`-eligible diff, which is capped at 1 file / `trivial_max_loc` lines everywhere, marked or not.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -161,12 +168,12 @@ Discipline per the writing-unit-tests skill: behaviors, not implementation; pure
 Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library behavior). Tests target **our composition semantics** — anchoring to the marker's folder, subtree scoping, union across nested markers.
 
 **Tier floor behaviors (pure, `compute_tier`):**
-1. Docs-only diff, no hits, ≥1 marker file present repo-wide → `SKIP`.
-2. Docs-only diff, no hits, zero marker files repo-wide → `SERIAL`, not `SKIP` (fail-closed default, §5).
-3. Docs-only diff WITH a critical hit → `HEAVY` (override beats skip).
-4. Mixed docs+code under all thresholds → `SERIAL`.
+1. Single file, `loc_changed` at `trivial_max_loc` exactly, no critical hit → `SKIP`. One line over → not `SKIP`.
+2. Single trivial-size file WITH a critical hit → `HEAVY` (override beats skip, regardless of file type).
+3. Two files, each individually trivial → not `SKIP` (file-count bound, not just LOC).
+4. Mixed docs+code under all thresholds, more than 1 file → `SERIAL`.
 5. Each quant threshold trips `HEAVY` independently at its boundary value (files = min, LOC = min, subsystems = min); one below each → not `HEAVY`.
-6. `new_deps: true` alone → `HEAVY`.
+6. A `DEPENDENCY_FILES` entry present with any status (A/M/D, tracked or untracked) → `HEAVY`, even with otherwise-trivial LOC.
 7. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
 
 **Classification behaviors (`classify_file`):**
@@ -189,7 +196,9 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 **Boundary (integration, temp git repo):**
 17. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
 18. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
-19. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+19. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
+20. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`.
+21. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
@@ -200,7 +209,7 @@ Coverage target per the shared constraints (80% line / 70% branch on changed cod
 - Non-Claude tools keep a coherent contract with graceful degradation and zero new obligations.
 - Auto-`HEAVY` spend is bounded by scale_hint; the ~2.7M full-scale run remains opt-in.
 - New maintenance surface: threshold defaults and scale buckets will need tuning from real sessions.
-- **Blocking prerequisites, not follow-ups:** the installer must gain a `workflows` namespace (§7.1) before `HEAVY` can invoke anything, and this repo's `.critical-paths` markers (§5) must ship in the same change that enables docs-only `SKIP` — an unseeded repo fails closed to `SERIAL` rather than silently skipping review.
+- **Blocking prerequisites, not follow-ups:** the installer must gain a `workflows` namespace (§7.1) before `HEAVY` can invoke anything, and this repo's `.critical-paths` markers (§5) must ship in the same change so discipline-layer edits floor at `HEAVY` from day one. `SKIP` does not depend on seeding — it is size-bound (§3, §4.3) — so an unseeded repo carries no `SKIP`-related exposure beyond the bound itself.
 
 ## 11. Options considered
 
@@ -209,3 +218,23 @@ Coverage target per the shared constraints (80% line / 70% branch on changed cod
 - **C:** primer-only documentation — captures knowledge, resolves nothing.
 - **Self-triaging workflow** (routing as workflow phase 0): rejected — Claude-only to the bone, taxes every gated change with a triage hop, puts the routing call in the least-context agent, and cannot implement `SKIP` (workflow startup already paid).
 - **Prose-only rubric:** rejected — concentrates the whole mechanism in per-session judgment; violates code-over-prose for facts a script measures trivially.
+
+## Review feedback
+
+Bounded record of adversarial-review rounds (`codex adversarial-review --wait --base main --scope branch`) run against this spec before implementation. The body above reflects only the resolved state; this section is the audit trail.
+
+**Round 1** (2 high, 0 medium/critical) — resolved:
+- `HEAVY`'s saved workflow targeted `src/user/.claude/workflows/`, a namespace the installer does not stage (verified against `claude.py:30`). → promoted to a blocking deliverable, §7.1.
+- Docs-only `SKIP` could ship before any `.critical-paths` markers existed. → added a fail-closed default (later superseded in Round 3, see below).
+
+**Round 2** (2 high, 1 medium) — resolved:
+- Diff scope was committed-history-only; uncommitted high-risk edits could route on stale facts. → `collect_diff` unions staged + unstaged changes, §4.3.
+- `ChangedFile.path` was underspecified for renames (`status == "R"` has two paths in git, one field in the contract). → added `old_path`; `critical_hits` checks both sides.
+- (medium) Required marker seeding covered only 2 of the repo's deployable discipline-layer roots. → expanded to the full surface, §5.
+
+**Round 3** (2 high, 1 medium) — resolved:
+- The Round-1 fail-closed default only gated `SKIP` on marker *existence*, not marker *coverage* — a single marker anywhere still enabled repo-wide `SKIP` for every unmarked `.md` file, including this spec's own class of document. → root-caused rather than patched again: `SKIP` redefined as a size bound (≤1 file, ≤`trivial_max_loc` LOC), independent of file type or marker state. This removes marker seeding as a `SKIP`-safety dependency entirely (§3, §4.3, §5).
+- Untracked (`??`) working-tree files were outside the triage contract — a new file could sit at gate time without contributing to any threshold. → `collect_diff` now includes untracked files, mapped to status `"A"`.
+- (medium) `new_deps` only covered whole-manifest additions, missing version bumps or edits inside existing manifests/lockfiles. → redefined as file-presence in `DEPENDENCY_FILES`, any status — coarser but complete.
+
+Loop continues while a round reports any `critical` or `high` finding, capped at 5 rounds.
