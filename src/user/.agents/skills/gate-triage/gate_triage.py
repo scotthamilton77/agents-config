@@ -49,7 +49,7 @@ class ChangedFile:
     path: str
     old_path: str | None
     loc_changed: int
-    status: str  # A/M/D/R; untracked (??) → "A"
+    status: str  # A/M/D/R/C (copy); untracked (??) → "A"
 
 
 @dataclass(frozen=True)
@@ -158,8 +158,15 @@ def _match_markers(candidate: str, markers: tuple[CriticalMarker, ...]) -> tuple
             continue
         if m.spec.match_file(rel):
             label = (m.folder + "/.critical-paths").lstrip("/") or ".critical-paths"
-            matched = next((p.pattern for p in m.spec.patterns
-                            if p.include and p.match_file(rel)), "*")
+            # Provenance only — which pattern produced the hit, for the label.
+            # match_file() already confirmed the hit; never let introspecting
+            # pathspec internals (which a future version could change) downgrade a
+            # confirmed HEAVY hit — fall back to "*" on any error.
+            try:
+                matched = next((p.pattern for p in m.spec.patterns
+                                if p.include and p.match_file(rel)), "*")
+            except Exception:
+                matched = "*"
             return (label, matched)
     return None
 
