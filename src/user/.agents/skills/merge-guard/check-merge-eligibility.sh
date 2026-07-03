@@ -239,8 +239,11 @@ else
     check_runs=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/check-runs?per_page=100" --paginate \
         | jq -s '[.[] | .check_runs[]? | {name, status, conclusion, app_id: (.app.id // null)}]') || {
         echo "Error: failed to fetch check runs" >&2; exit 3; }
-    legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status" \
-        | jq '[.statuses[]? | {context, state}]') || legacy_statuses='[]'
+    # Paginate the combined-status endpoint (default page size 30) the same way
+    # check-runs above does — a required unpinned context whose status sits past
+    # page 1 must not read as absent (→ pending → false block).
+    legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status?per_page=100" --paginate \
+        | jq -s '[.[].statuses[]? | {context, state}]') || legacy_statuses='[]'
 fi
 
 ci_eval=$(jq -n --argjson req "$required_checks" --argjson runs "$check_runs" --argjson legacy "$legacy_statuses" '
@@ -436,6 +439,14 @@ untriaged=$(jq -n \
     --argjson recorded "$inventory_items" \
     --argjson recorded_complete "$completed_inventory_items" \
     --argjson sidecar_replies "$sidecar_reply_ids" '
+    # Clears an item iff it holds a terminal, non-blocking disposition. The
+    # durable inventory (validate-inventory.sh) admits only classification
+    # FIX / SKIP / ESCALATE; the clean-terminal shapes are SKIP and FIX with
+    # committed/already_addressed. ESCALATE and FIX/failed are terminal but NOT
+    # clean — still blockers. design.md frames the clearing set as prose
+    # (fixed/already-addressed/skipped/deferred/wont-fix); a deferred or
+    # wont-fix decision clears here only insofar as the producer records it as
+    # SKIP (ABANDON does; DEFER has no pinned durable classification yet).
     def terminal_ok:
         (.classification == "SKIP")
         or (.classification == "FIX"

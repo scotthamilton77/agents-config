@@ -174,22 +174,26 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
 
 
-class TestAgentsConfigSettings(unittest.TestCase):
-    def test_agents_config_policy_resolves(self):
-        path = write_toml(
-            '[review-expectations]\n'
-            'bot-review-expected = true\n'
-            'bot-reviewers = ["Copilot", "copilot-pull-request-reviewer[bot]"]\n'
-            'human-approvers-required = 0\n'
-            '[merge-policy]\n'
-            'merge-authorization = "rule-based"\n'
-            'merge-rule = "bot-quiescence"\n'
-        )
-        code, out, err = run_resolver("--project-config", path)
+class TestRepoOwnPolicy(unittest.TestCase):
+    """Resolve THIS repo's real project-config.toml — not a hand-copy — so the
+    repo's own merge policy can't drift out from under the resolver unnoticed.
+    Skips (never fails) when the file is absent, e.g. once the skill is deployed
+    into user space away from its source repo."""
+
+    def test_repo_project_config_resolves(self):
+        # HERE = <repo>/src/user/.agents/skills/merge-guard → repo root is 5 up.
+        repo_config = os.path.abspath(
+            os.path.join(HERE, *([os.pardir] * 5), "project-config.toml"))
+        if not os.path.isfile(repo_config):
+            self.skipTest(
+                f"project-config.toml not found at {repo_config} "
+                "(skill deployed outside its source repo)")
+        code, out, err = run_resolver("--project-config", repo_config)
         self.assertEqual(code, 0, err)
         policy = json.loads(out)
+        # The repo's deliberate, named Axis-2 choice (see project-config.toml).
+        self.assertEqual(policy["merge_authorization"], "rule-based")
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
-        self.assertEqual(policy["human_approvers_required"], 0)
 
 
 class TestLabelOverrides(unittest.TestCase):

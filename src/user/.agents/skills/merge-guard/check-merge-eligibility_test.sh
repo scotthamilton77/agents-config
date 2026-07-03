@@ -19,13 +19,12 @@ assert() {
 
 echo "[check-merge-eligibility_test]"
 
-assert "script file exists" "[ -f '$SCRIPT' ]"
+# Structural precondition: the skill invokes this script directly, so a lost
+# exec bit fails every case below with an opaque 126 — assert it once for a
+# clear diagnostic. Behavioral properties (flag handling, exact-identity bot
+# matching, set -e fail-closed exits) are pinned by the run tests below, never
+# by grepping the script's own source text.
 assert "script is executable" "[ -x '$SCRIPT' ]"
-assert "uses set -euo pipefail" "grep -qE 'set -euo pipefail' '$SCRIPT'"
-assert "documents inputs/outputs in header" "head -40 '$SCRIPT' | grep -qiE 'input|output|exit'"
-assert "accepts --policy-json flag" "grep -q -- '--policy-json' '$SCRIPT'"
-assert "no --comments-seen flag (retired)" "! grep -q -- '--comments-seen' '$SCRIPT'"
-assert "no substring copilot matching" "! grep -q 'test(\"copilot\"' '$SCRIPT'"
 
 # ── gh + prgroom stubs ────────────────────────────────────────────────────────
 STUB_DIR="$TMP/bin"
@@ -37,7 +36,21 @@ if [ "$1" = "api" ]; then
   shift
   if [ "$1" = "graphql" ]; then
     default_threads='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
-    printf '%s' "${FIXTURE_GRAPHQL_THREADS:-$default_threads}"
+    # cursor-keyed pagination: the script threads a page's endCursor into the
+    # follow-up query as `-f cursor=<val>`. Serve page 2 ONLY for the expected
+    # cursor, so a dropped/mis-threaded cursor resolves to the empty terminal
+    # page (never an accidental page-2 hit, never an infinite re-serve of page 1).
+    cursor=""
+    for a in "$@"; do case "$a" in cursor=*) cursor="${a#cursor=}" ;; esac; done
+    if [ -n "$cursor" ]; then
+      if [ "$cursor" = "${FIXTURE_THREADS_PAGE2_CURSOR:-CURSOR1}" ]; then
+        printf '%s' "${FIXTURE_GRAPHQL_THREADS_PAGE2:-$default_threads}"
+      else
+        printf '%s' "$default_threads"
+      fi
+    else
+      printf '%s' "${FIXTURE_GRAPHQL_THREADS:-$default_threads}"
+    fi
     exit 0
   fi
   path="$1"; shift
@@ -63,7 +76,18 @@ if [ "$1" = "api" ]; then
         fi
         body="${FIXTURE_REQUIRED_CHECKS}" ;;
     */check-runs*)          body="${FIXTURE_CHECK_RUNS:-'{\"check_runs\":[]}'}" ;;
-    */commits/*/status*)    body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
+    */commits/*/status*)
+        if [ -n "${FIXTURE_COMMIT_STATUS_PAGE2:-}" ]; then
+          # emulate `gh api --paginate` on an object-returning endpoint: each
+          # page's JSON object is concatenated (arrays are NOT merged) — exactly
+          # what the combined-status endpoint streams page-by-page. (A stub can't
+          # reproduce real gh's server-side 30-item truncation; this exercises
+          # the multi-page assembly the fix must handle.)
+          s1="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}"; s1="${s1#\'}"; s1="${s1%\'}"
+          s2="${FIXTURE_COMMIT_STATUS_PAGE2#\'}"; s2="${s2%\'}"
+          printf '%s%s' "$s1" "$s2"; exit 0
+        fi
+        body="${FIXTURE_COMMIT_STATUS:-'{\"statuses\":[]}'}" ;;
     */rules/branches/*)
         if [ "${FIXTURE_RULES_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
@@ -126,6 +150,10 @@ assert "exits 3 for non-integer --pr" "[ \$? -eq 3 ]"
 assert "exits 3 for unparseable policy" "[ \$? -eq 3 ]"
 "$SCRIPT" --owner o --repo r --pr 1 --policy-json '{}' 2>/dev/null
 assert "exits 3 for policy missing required keys" "[ \$? -eq 3 ]"
+# Unknown-flag rejection (also the regression guard for the retired
+# --comments-seen flag — it must never be silently accepted again).
+"$SCRIPT" --owner o --repo r --pr 1 --policy-json "$BASE_POLICY" --comments-seen 2>/dev/null
+assert "exits 3 for an unknown flag (retired --comments-seen)" "[ \$? -eq 3 ]"
 
 # ── Skeleton behavior: empty fixtures + nothing expected → eligible ──────────
 out=$(run_script "$BASE_POLICY"); rc=$?
@@ -134,6 +162,28 @@ assert "status is eligible" "[ \"\$(jq -r '.status' <<<\"\$out\")\" = eligible ]
 assert "head_ref_oid echoed" "[ \"\$(jq -r '.head_ref_oid' <<<\"\$out\")\" = \"$HEAD_SHA\" ]"
 assert "blockers array empty" "[ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 0 ]"
 assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep -q -- \"--match-head-commit $HEAD_SHA\""
+
+# ── Fail-closed on non-open PR / absent head SHA (exit 3) ────────────────────
+# The script refuses any non-open PR state, and any absent/null head SHA, before
+# computing a single fact — an unknown/closed PR must never yield a verdict, and
+# every positive fact binds to a real head. Both paths must exit 3 with no JSON.
+closed_pr=$(jq -n --arg sha "$HEAD_SHA" '{state:"closed", head:{sha:$sha}, base:{ref:"main"}, created_at:"2026-01-01T00:00:00Z"}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$closed_pr"); rc=$?
+assert "closed PR → exit 3 (fail closed)" "[ \$rc -eq 3 ]"
+assert "closed PR prints no verdict" "[ -z \"\$out\" ]"
+
+merged_pr=$(jq -n --arg sha "$HEAD_SHA" '{state:"merged", head:{sha:$sha}, base:{ref:"main"}, created_at:"2026-01-01T00:00:00Z"}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$merged_pr"); rc=$?
+assert "merged PR → exit 3 (fail closed)" "[ \$rc -eq 3 ]"
+
+null_head_pr=$(jq -n '{state:"open", head:{sha:null}, base:{ref:"main"}, created_at:"2026-01-01T00:00:00Z"}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$null_head_pr"); rc=$?
+assert "open PR with null head SHA → exit 3 (fail closed)" "[ \$rc -eq 3 ]"
+assert "null head SHA prints no verdict" "[ -z \"\$out\" ]"
+
+missing_head_pr=$(jq -n '{state:"open", head:{}, base:{ref:"main"}, created_at:"2026-01-01T00:00:00Z"}')
+out=$(run_script "$BASE_POLICY" FIXTURE_PR="$missing_head_pr"); rc=$?
+assert "open PR with missing head.sha key → exit 3 (fail closed)" "[ \$rc -eq 3 ]"
 
 # ── Task 8: trusted-bot clean review fact ─────────────────────────────────────
 mk_review() {  # mk_review <login> <state> <commit> <ts> [type]
@@ -166,6 +216,14 @@ revs=$(jq -n --argjson a "$(mk_review 'evil-copilot-clone[bot]' APPROVED "$HEAD_
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "untrusted bot ignored (exact identity)" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
 
+# superstring impersonation: a login that CONTAINS a trusted allowlist entry is
+# still not that identity. Pins exact array-membership against a substring
+# refactor of the trust boundary — evil-copilot-clone above is unrelated to the
+# trusted name and would survive such a refactor, but this login would not.
+revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]-evil' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "superstring-of-trusted login ignored (exact identity, not substring)" "[ \"\$(jq '.facts.bot_clean_review_at_head' <<<\"\$out\")\" = false ]"
+
 # latest wins: APPROVED then CHANGES_REQUESTED at head → not clean
 revs=$(jq -n \
   --argjson a "$(mk_review 'trusted-bot[bot]' APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z)" \
@@ -175,47 +233,55 @@ assert "latest CHANGES_REQUESTED → fact false" "[ \"\$(jq '.facts.bot_clean_re
 
 # ── Task 9: requested-changes sticky blocker ─────────────────────────────────
 # CR on an OLD commit still blocks (not head-scoped)
-revs=$(jq -n --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" '[$a]')
+revs=$(jq -n --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z User)" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "stale-commit CR still blocks" "[ \$rc -eq 1 ]"
 assert "blocker code requested_changes_active" "jq -r '.blockers[].code' <<<\"\$out\" | grep -q requested_changes_active"
 
 # later COMMENTED from same reviewer does NOT clear it
 revs=$(jq -n \
-  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review reviewer1 COMMENTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review reviewer1 COMMENTED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "later COMMENTED does not clear CR" "[ \$rc -eq 1 ]"
 
 # later APPROVED from same reviewer DOES clear it
 revs=$(jq -n \
-  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review reviewer1 APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+  --argjson a "$(mk_review reviewer1 CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review reviewer1 APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "superseding APPROVED clears CR" "[ \$rc -eq 0 ]"
 
 # dismissed CR (state=DISMISSED in API) does not block
-revs=$(jq -n --argjson a "$(mk_review reviewer1 DISMISSED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+revs=$(jq -n --argjson a "$(mk_review reviewer1 DISMISSED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" '[$a]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "dismissed review does not block" "[ \$rc -eq 0 ]"
 
 # ── Task 10: distinct current approvers ──────────────────────────────────────
 # same login twice = 1; bot approval excluded; stale-head approval excluded
 revs=$(jq -n \
-  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" \
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" \
   --argjson c "$(mk_review bot-x[bot] APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Bot)" \
-  --argjson d "$(mk_review carol APPROVED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z Human)" \
+  --argjson d "$(mk_review carol APPROVED bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2026-01-01T01:00:00Z User)" \
   '[$a,$b,$c,$d]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "dedup by login, bots and stale heads excluded (==1)" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
 
 # APPROVED superseded by later CHANGES_REQUESTED = 0 approvers (and CR blocks)
 revs=$(jq -n \
-  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review alice CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review alice CHANGES_REQUESTED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "approval superseded by CR counts 0" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
+
+# commit_id key wholly ABSENT on an APPROVED human review → not counted. The
+# carol fixture above covers a stale/mismatched head; this pins the other arm
+# of (.commit_id // "") — a missing key must fail closed exactly like a stale
+# one. Raw literal (not mk_review, which always emits commit_id).
+revs='[{"user":{"login":"dave","type":"User"},"state":"APPROVED","submitted_at":"2026-01-01T01:00:00Z","body":""}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
+assert "APPROVED human review with no commit_id key → not counted (0 approvers)" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 0 ]"
 
 # ── Task 11: unresolved threads ──────────────────────────────────────────────
 export_threads() {  # export_threads <resolved-bools...>  e.g. export_threads true false
@@ -229,6 +295,32 @@ assert "blocker code unresolved_threads" "jq -r '.blockers[].code' <<<\"\$out\" 
 
 out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads true true)"); rc=$?
 assert "all threads resolved → eligible" "[ \$rc -eq 0 ]"
+
+# multi-page: the reviewThreads cursor loop must visit every page, threading
+# each page's endCursor into the next query. Page 1 (hasNextPage=true,
+# endCursor=CURSOR1) carries 1 unresolved; page 2 is served ONLY for CURSOR1
+# and carries 1 more. A total of 2 proves BOTH cross-page accumulation and
+# correct cursor threading — a dropped cursor would miss page 2 and count 1.
+export_threads_page() {  # export_threads_page <hasNextPage-bool> <endCursor|""> <resolved-bools...>
+  local has="$1" cur="$2"; shift 2
+  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'fromjson? // . | {isResolved: (. == "true" or . == true)}' | jq -s .)
+  local cur_json=null; [ -n "$cur" ] && cur_json=$(jq -n --arg c "$cur" '$c')
+  jq -n --argjson n "$nodes" --argjson h "$has" --argjson c "$cur_json" \
+    '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:$h,endCursor:$c},nodes:$n}}}}}'
+}
+
+p1=$(export_threads_page true CURSOR1 false true)   # 1 unresolved on page 1
+p2=$(export_threads_page false "" false true)        # 1 unresolved on page 2
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$p1" FIXTURE_GRAPHQL_THREADS_PAGE2="$p2"); rc=$?
+assert "unresolved threads across two pages block" "[ \$rc -eq 1 ]"
+assert "unresolved count accumulates across BOTH pages (2)" \
+  "jq -r '.blockers[].details' <<<\"\$out\" | grep -q '^2 unresolved'"
+
+# every page resolved → eligible (the loop still advances to and past page 2)
+p1r=$(export_threads_page true CURSOR1 true)
+p2r=$(export_threads_page false "" true true)
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$p1r" FIXTURE_GRAPHQL_THREADS_PAGE2="$p2r"); rc=$?
+assert "all threads resolved across two pages → eligible" "[ \$rc -eq 0 ]"
 
 # ── Task 12: CI-green ────────────────────────────────────────────────────────
 REQ_ONE='{"strict":false,"contexts":["ci/build"],"checks":[{"context":"ci/build","app_id":15368}]}'
@@ -265,6 +357,16 @@ REQ_UNPINNED='{"strict":false,"contexts":["legacy/lint"],"checks":[{"context":"l
 out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_UNPINNED" \
       FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
 assert "unpinned req satisfied by legacy status → eligible" "[ \$rc -eq 0 ]"
+
+# multi-page: a required unpinned context whose combined-status lands on a later
+# page must still be seen. Page 1 carries an unrelated status; legacy/lint's
+# success is on page 2. The pre-fix single-object `jq` mishandles the
+# concatenated multi-page stream; the fix slurps it with `--paginate | jq -s`.
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_UNPINNED" \
+      FIXTURE_COMMIT_STATUS='{"statuses":[{"context":"legacy/other","state":"success"}]}' \
+      FIXTURE_COMMIT_STATUS_PAGE2='{"statuses":[{"context":"legacy/lint","state":"success"}]}'); rc=$?
+assert "required legacy context on a later status page is seen → eligible, green" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = green ]"
 
 # ── admin-bypass fact: authenticated identity's standing bypass grant on a
 #    GitHub ruleset's required-approving-review rule (separate from Axis 1) ──
@@ -368,7 +470,7 @@ out=$(run_script "$H_TIMEOUT_POLICY" FIXTURE_PR="$old_pr"); rc=$?
 assert "human timeout elapsed → eligible (timed_out)" "[ \$rc -eq 0 ]"
 
 # humans required and enough current approvals → satisfied
-revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" '[$a]')
 out=$(run_script "$H_POLICY" FIXTURE_REVIEWS="$revs" FIXTURE_PR="$old_pr"); rc=$?
 assert "enough approvals → satisfied, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
 
@@ -424,6 +526,15 @@ assert "APPROVED review with body blocks until triaged" "[ \$rc -eq 1 ]"
 write_inv "o-r-1-oldsha0003.json" '[{"kind":"review_summary","review_id":301,"classification":"FIX","rationale":"renamed","fix_outcome":"already_addressed","fix_commit_sha":"abc"}]'
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
+clean_invs
+
+# a FIX item that FAILED to land is terminal but NOT clean → still blocks.
+# terminal_ok clears FIX only for committed/already_addressed; Guard 5 in
+# validate-inventory.sh permits fix_outcome=failed on a FIX item, so this is a
+# real inventory shape the checker must never treat as resolved.
+write_inv "o-r-1-failsha0001.json" '[{"kind":"issue_comment","issue_comment_id":900,"classification":"FIX","fix_outcome":"failed","rationale":"fix attempt failed","fix_commit_sha":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC"); rc=$?
+assert "FIX/failed disposition is terminal but not clean → still blocks" "[ \$rc -eq 1 ]"
 clean_invs
 
 # ── Durable reply-id sidecar (<owner>-<repo>-<pr>-<sha>.json.replyids) is
@@ -564,7 +675,7 @@ assert "both-axis: bot clean, human missing → blocked" "[ \$rc -eq 1 ]"
 assert "both-axis: bot satisfied while human waits" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = satisfied ]"
 assert "both-axis: human waiting while bot satisfied" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = waiting ]"
 
-revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a]')
+revs=$(jq -n --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" '[$a]')
 out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "both-axis: human approved, bot missing → blocked" "[ \$rc -eq 1 ]"
 assert "both-axis: human satisfied while bot waits" "[ \"\$(jq -r '.facts.review_wait.human' <<<\"\$out\")\" = satisfied ]"
@@ -572,7 +683,7 @@ assert "both-axis: bot waiting while human satisfied" "[ \"\$(jq -r '.facts.revi
 
 revs=$(jq -n \
   --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" \
-  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "both-axis: both settled → eligible" "[ \$rc -eq 0 ]"
 
@@ -589,14 +700,14 @@ assert "blocker is untriaged_feedback, not masked by prgroom" "jq -r '.blockers[
 
 # ── Spec: distinct-approver counting with N>=2 ───────────────────────────────
 revs=$(jq -n \
-  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review bob APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" '[$a,$b]')
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review bob APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "two distinct current approvers count as 2" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 2 ]"
 
 revs=$(jq -n \
-  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z Human)" \
-  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z Human)" '[$a,$b]')
+  --argjson a "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T01:00:00Z User)" \
+  --argjson b "$(mk_review alice APPROVED "$HEAD_SHA" 2026-01-01T02:00:00Z User)" '[$a,$b]')
 out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs")
 assert "same user approving twice counts as 1" "[ \"\$(jq '.facts.distinct_current_approvers' <<<\"\$out\")\" = 1 ]"
 
