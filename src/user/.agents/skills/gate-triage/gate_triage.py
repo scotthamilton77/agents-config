@@ -168,7 +168,10 @@ def critical_hits(files: tuple[ChangedFile, ...],
                   markers: tuple[CriticalMarker, ...]) -> tuple[CriticalHit, ...]:
     hits: list[CriticalHit] = []
     for f in files:
-        candidates = [f.path] + ([f.old_path] if f.status == "R" and f.old_path else [])
+        # Rename (R) and copy (C) both carry an old_path; evaluate both endpoints
+        # so a critical-path source is never missed. Adding old_path only ever
+        # adds hits (more HEAVY) — the fail-closed-safe direction.
+        candidates = [f.path] + ([f.old_path] if f.status in ("R", "C") and f.old_path else [])
         for cand in candidates:
             if Path(cand).name in POLICY_INPUT_BASENAMES:  # hardcoded policy inputs
                 hits.append(CriticalHit(path=cand, marker=Path(cand).name, pattern="<policy-input>"))

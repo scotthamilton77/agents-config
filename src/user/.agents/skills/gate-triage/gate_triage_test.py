@@ -119,6 +119,16 @@ def test_rename_out_and_into_marked_subtree():
     assert sum(1 for h in hits if h.path == "src/auth/b.py") == 1
 
 
+def test_copy_out_of_marked_subtree_hits_via_old_path():
+    # git -C emits status "C" (copy) with an old_path; critical_hits must treat
+    # it like a rename so a copy sourced from a marked subtree still forces HEAVY.
+    m = _marker("src/auth", "*.py")
+    copy_out = _cf("docs/example.py", status="C", old_path="src/auth/token.py")
+    hits = gt.critical_hits((copy_out,), (m,))
+    assert len(hits) == 1  # matched via old_path, not missed
+    assert hits[0].path == "docs/example.py"  # CriticalHit.path is the new path
+
+
 def test_delete_from_marked_subtree():
     m = _marker("src/auth", "*.py")
     (hit,) = gt.critical_hits((_cf("src/auth/gone.py", status="D"),), (m,))
