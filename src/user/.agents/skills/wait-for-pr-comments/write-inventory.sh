@@ -18,7 +18,8 @@
 #   4. Writes to <path>.tmp.<pid>, then `mv` to final path (POSIX-atomic on
 #      the same filesystem).
 #   5. Runs retention housekeeping: delete files older than 30 days in the
-#      inventory directory. Never touches files newer than 30 days.
+#      inventory directory (covers the canonical *.json inventories and their
+#      *.replyids / *.posted sidecars). Never touches files newer than 30 days.
 #
 # Exit codes:
 #   0  — write succeeded
@@ -80,5 +81,5 @@ mv "$TMP" "$PATH_OUT"
 # deletion of unrelated JSON files.
 EXPECTED_DIR="${HOME}/.claude/state/pr-inventory"
 if [ "$DIR_OUT" = "$EXPECTED_DIR" ]; then
-    find "$EXPECTED_DIR" -type f -name '*.json' -mtime +30 -delete 2>/dev/null || true
+    find "$EXPECTED_DIR" -type f \( -name '*.json' -o -name '*.replyids' -o -name '*.posted' \) -mtime +30 -delete 2>/dev/null || true
 fi

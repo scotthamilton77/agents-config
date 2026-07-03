@@ -426,6 +426,59 @@ out=$(run_script "$BASE_POLICY" FIXTURE_REVIEWS="$revs"); rc=$?
 assert "review_summary triaged by review_id clears" "[ \$rc -eq 0 ]"
 clean_invs
 
+# ── Durable reply-id sidecar (<owner>-<repo>-<pr>-<sha>.json.replyids) is
+#    unioned into the posted-reply exclusion set as an ADDITIONAL, more
+#    crash-robust source than inventory posted_reply_id fields ─────────────
+write_replyids() {  # write_replyids <filename> <jsonl-line>...
+  local file="$1"; shift
+  printf '%s\n' "$@" > "$INV_DIR/$file"
+}
+clean_sidecars() { rm -f "$INV_DIR"/*.replyids; }
+
+# A. sidecar-only exclusion: rid appears ONLY in a .replyids sidecar (no
+#    inventory posted_reply_id anywhere) → still excluded, eligible
+clean_invs; clean_sidecars
+IC_SC='[{"id": 900, "user": {"login": "reviewer"}, "body": "please fix the naming"}]'
+write_replyids "o-r-1-sidecarsha1.json.replyids" '{"k":"issue_comment_id","v":"900","rid":900}'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_SC"); rc=$?
+assert "sidecar-only rid excludes matching live comment (no inventory posted_reply_id)" "[ \$rc -eq 0 ]"
+clean_sidecars
+
+# B. truncated final line tolerated: one valid line + one malformed
+#    (hard-killed mid-append) final line → no crash, valid line still excludes
+write_replyids "o-r-1-truncsha1.json.replyids" \
+  '{"k":"issue_comment_id","v":"900","rid":900}' \
+  '{"k":"issue_comment_id","v":"901","rid":901'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_SC"); rc=$?
+assert "truncated final sidecar line does not crash the script" "[ -n \"\$out\" ] && [ \$rc -ne 3 ]"
+assert "valid line ahead of a truncated one still excludes its rid" "[ \$rc -eq 0 ]"
+clean_sidecars
+
+# C. cross-sha union: two sidecar files for the same PR at different head
+#    shas → rids from BOTH are excluded
+IC_CROSS='[{"id": 970, "user": {"login": "reviewer"}, "body": "fix X"}, {"id": 971, "user": {"login": "reviewer"}, "body": "fix Y"}]'
+write_replyids "o-r-1-crossshaA.json.replyids" '{"k":"issue_comment_id","v":"970","rid":970}'
+write_replyids "o-r-1-crossshaB.json.replyids" '{"k":"issue_comment_id","v":"971","rid":971}'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_CROSS"); rc=$?
+assert "rids from two different-sha sidecars both excluded (union)" "[ \$rc -eq 0 ]"
+clean_sidecars
+
+# D. duplicate rid across (and within) sidecars doesn't break the union+unique
+IC_DUP='[{"id": 980, "user": {"login": "reviewer"}, "body": "dup across files"}]'
+write_replyids "o-r-1-dupshaA.json.replyids" '{"k":"issue_comment_id","v":"980","rid":980}'
+write_replyids "o-r-1-dupshaB.json.replyids" '{"k":"issue_comment_id","v":"980","rid":980}'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_DUP"); rc=$?
+assert "duplicate rid across two sidecars still excludes without jq error" "[ \$rc -eq 0 ]"
+clean_sidecars
+
+IC_DUP2='[{"id": 981, "user": {"login": "reviewer"}, "body": "dup within one file"}]'
+write_replyids "o-r-1-dupsame.json.replyids" \
+  '{"k":"issue_comment_id","v":"981","rid":981}' \
+  '{"k":"issue_comment_id","v":"981","rid":981}'
+out=$(run_script "$BASE_POLICY" FIXTURE_ISSUE_COMMENTS="$IC_DUP2"); rc=$?
+assert "duplicate rid twice within one sidecar still excludes without jq error" "[ \$rc -eq 0 ]"
+clean_sidecars
+
 # ── Task 18: prgroom internal atoms ──────────────────────────────────────────
 PG_BLOCKED='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":true,"no_blocker_items":false,"human_review_satisfied":true},"auto_merge_eligible":false}'
 PG_ERROR='{"merge_gates":{"phase_is_quiesced":true,"last_error_clear":false,"no_blocker_items":true,"human_review_satisfied":true},"auto_merge_eligible":false}'
