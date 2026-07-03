@@ -97,3 +97,30 @@ class TriageResult:
     file_classes: tuple[str, ...]
     critical_path_hits: tuple[str, ...]
     scale_hint: ScaleHint
+
+
+def load_config(repo_root: Path) -> TriageConfig:
+    """Boundary: read [completion-gate] from project-config.toml. Config decides
+    whether review runs, so it is validated, not merely parsed. ANY failure,
+    absent section, or absent file → defaults. Never fails open to 'no gate'."""
+    default = TriageConfig()
+    path = repo_root / "project-config.toml"
+    try:
+        data = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return default
+    section = data.get("completion-gate")
+    if not isinstance(section, dict):
+        return default
+    fields = {f: getattr(default, f) for f in
+              ("heavy_min_files", "heavy_min_loc", "heavy_min_subsystems", "trivial_max_loc")}
+    for key, val in section.items():
+        if key not in fields:
+            continue  # unknown keys ignored
+        if not isinstance(val, int) or isinstance(val, bool) or val < 1:
+            return default  # bad type/negative → fail closed
+        fields[key] = val
+    fields["trivial_max_loc"] = min(fields["trivial_max_loc"], 20)  # hard cap
+    if fields["heavy_min_loc"] < fields["trivial_max_loc"]:
+        return default  # nonsensical ordering → fail closed
+    return TriageConfig(**fields)
