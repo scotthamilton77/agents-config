@@ -120,7 +120,7 @@ domain and are not affected by this change.
 
 <verification-checklist>
 <!-- PRESERVE: completion audit steps — tool extensions define HOW -->
-MANDATORY for non-trivial work (skip for obvious one-liners, config changes, typos):
+MANDATORY for non-trivial work:
 
 **One contract, three depths — routed at gate time.** The Quality-gate steps below run at one of three tiers: **`SKIP`** (change below the size threshold — run step 5 only), **`SERIAL`** (the default — steps 1–5 in order), or **`HEAVY`** (large, critical, or risk-class change — steps 1–4 run as a deeper multi-agent adversarial pass, then step 5). `SKIP` is a **size bound, not a file-type bound** — a one-line change to a load-bearing or gate-policy file is never `SKIP`. Step 5 (verify with evidence) is **non-substitutable under every tier**. `HEAVY`'s multi-agent pass needs harness support not every tool has; tools without it degrade `HEAVY` to `SERIAL`. The Delivery and Housekeeping steps are not tiered — they always run.
 
