@@ -309,7 +309,7 @@ const fingerprint = f => `${f.file || '?'}:${f.line ?? '?'}:${norm(f.gist)}`
 async function verifyFindings(fresh, round) {
   if (fresh.length === 0) return []
   const jobs = []
-  fresh.forEach((f, fi) => {
+  fresh.forEach((_f, fi) => {
     for (let w = 0; w < REFUTERS; w++) jobs.push({ fi, w, stance: REFUTER_STANCES[w % REFUTER_STANCES.length] })
   })
   const verdicts = await parallel(

@@ -834,7 +834,7 @@ git commit -m "feat(gate): seed repo-root .critical-paths and [completion-gate] 
   - Hardening (spec §7): bounded StructuredOutput report fields, one-repair-attempt-then-abort chains, model/effort tiering, `resumeFromRunId` recovery documented in the header comment.
   - Apply-vs-flag bright line preserved in the fix wave.
 
-- [ ] **Step 3: Static-validate the script** — confirm it parses as the workflow format (JS syntax; `meta` is a pure literal; phase titles match `meta.phases`). Do NOT execute it against real changes here (that's live-gate territory). **Commit**
+- [ ] **Step 3: Static-validate the script** (do NOT execute it against real changes — that's live-gate territory). A **bare `node --check` / `node --input-type=module --check` is a FALSE-NEGATIVE** for this format: workflow scripts use top-level `return`/`await`, which the harness legalizes by wrapping the body in an async function but a plain script/module rejects with "Illegal return statement" (it fails identically on the shipped `harden-scan.js` — proof it's the checker, not the script). Validate by compiling the body inside an async-function wrap *without executing it* — strip the leading `export ` and `new (async () => {}).constructor(<file text>)`; a parse error throws, a clean parse returns. Then structurally confirm `meta` is a pure literal, `meta.name === "quality-gate"`, and every `opts.phase` / `phase()` string ∈ `meta.phases[].title`. **Commit**
 ```bash
 git add src/user/.claude/workflows/quality-gate.js
 git commit -m "feat(quality-gate): interim capped-round HEAVY workflow"
