@@ -84,7 +84,7 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 
 ### 4.3 Tier floor logic
 
-- All changed files classify as `DOCS` (and no critical hit) → `SKIP` floor.
+- All changed files classify as `DOCS` (and no critical hit) AND at least one `.critical-paths` file exists anywhere in the repo → `SKIP` floor. Zero marker files repo-wide → `SERIAL` floor instead (fail-closed default, §5).
 - Any of: subsystems ≥ `heavy_min_subsystems`, files ≥ `heavy_min_files`, LOC ≥ `heavy_min_loc`, `new_deps` → `HEAVY` floor.
 - Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math.
 - Otherwise → `SERIAL`.
@@ -105,7 +105,7 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 - A modified file matching any marker forces `HEAVY` on Claude. Non-Claude tools: no effect — the serial gate stands.
 - Evaluated entirely by gate-triage; no agent judgment involved.
 
-Dogfood note: this repo should mark `src/user/.agents/rules/` (and the installer package) critical, so discipline-layer edits — which are `.md` files that would otherwise classify as docs — route `HEAVY` instead of `SKIP`. The marker file is what makes a docs-only `SKIP` floor safe to adopt.
+**Fail-closed default (required, not a dogfood nicety):** the `SKIP` tier's docs-only floor (§4.3) is gated on at least one `.critical-paths` file existing anywhere in the repo. If gate-triage finds zero marker files repo-wide, docs-only diffs floor at `SERIAL`, not `SKIP` — an unseeded repo gets the old behavior, never a silent gate weakening. This makes marker seeding a required implementation deliverable, not optional follow-up: this repo ships `.critical-paths` under `src/user/.agents/rules/` and `packages/installer/` in the same change that enables docs-only `SKIP`, so discipline-layer edits — `.md` files that would otherwise classify as `DOCS` — route `HEAVY` instead.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -130,6 +130,14 @@ Ships as a saved named workflow (source: `src/user/.claude/workflows/`), invoked
 
 Scale mapping (initial, tunable): `scale_hint` buckets small/medium/large from the same quant facts → (finder_dimensions, refuters, synthesis_effort) of roughly (3,2,high) / (4,2,high) / (6,3,xhigh). Full scale = the large bucket regardless of diff, triggered only by ultracode or explicit ask.
 
+### 7.1 Installer deployment requirement (blocking)
+
+The Claude installer's namespace list (`packages/installer/src/installer/tools/claude.py:30`) currently stages only `("commands", "skills", "agents", "rules", "hooks")` — no `workflows`. A workflow placed at `src/user/.claude/workflows/` as written above would never reach `~/.claude/` and `HEAVY` routing would silently fail or no-op at invocation time. This is a required implementation deliverable, not an implementation detail to discover later:
+
+- Add `workflows` to the Claude adapter's namespace tuple and to the staging/sync logic (both loops per the two-subdir-namespace-loop gotcha in `install.sh` — staging and sync must both be patched).
+- Cover the new namespace with an installer test asserting a file under `src/user/.claude/workflows/` lands at `~/.claude/workflows/` after install, mirroring existing per-namespace staging tests.
+- This ships in the same change as the `quality-gate` workflow itself — `HEAVY` routing must not merge ahead of its own deployment path.
+
 ## 8. Rule-text changes
 
 `src/user/.agents/rules/completion-gate.md` gains a routing preamble ahead of the numbered steps:
@@ -148,31 +156,32 @@ Discipline per the writing-unit-tests skill: behaviors, not implementation; pure
 Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library behavior). Tests target **our composition semantics** — anchoring to the marker's folder, subtree scoping, union across nested markers.
 
 **Tier floor behaviors (pure, `compute_tier`):**
-1. Docs-only diff, no hits → `SKIP`.
-2. Docs-only diff WITH a critical hit → `HEAVY` (override beats skip).
-3. Mixed docs+code under all thresholds → `SERIAL`.
-4. Each quant threshold trips `HEAVY` independently at its boundary value (files = min, LOC = min, subsystems = min); one below each → not `HEAVY`.
-5. `new_deps: true` alone → `HEAVY`.
-6. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
+1. Docs-only diff, no hits, ≥1 marker file present repo-wide → `SKIP`.
+2. Docs-only diff, no hits, zero marker files repo-wide → `SERIAL`, not `SKIP` (fail-closed default, §5).
+3. Docs-only diff WITH a critical hit → `HEAVY` (override beats skip).
+4. Mixed docs+code under all thresholds → `SERIAL`.
+5. Each quant threshold trips `HEAVY` independently at its boundary value (files = min, LOC = min, subsystems = min); one below each → not `HEAVY`.
+6. `new_deps: true` alone → `HEAVY`.
+7. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
 
 **Classification behaviors (`classify_file`):**
-7. Representative extensions map to DOCS / CONFIG / CODE per the chosen table; unknown extensions default to CODE (fail toward scrutiny).
+8. Representative extensions map to DOCS / CONFIG / CODE per the chosen table; unknown extensions default to CODE (fail toward scrutiny).
 
 **Critical-paths behaviors (`critical_hits`, pure over constructed markers):**
-8. Pattern in `src/auth/.critical-paths` matches `src/auth/token.py` and `src/auth/sub/x.py`; does NOT match `src/other/token.py` (subtree scoping + relative anchoring).
-9. Nested marker and ancestor marker both match different files → both hits reported (union, no shadowing).
-10. Negation within one marker file exempts a matched file per gitignore semantics.
-11. Hit report carries file ← marker:pattern provenance (the announce line's evidence).
+9. Pattern in `src/auth/.critical-paths` matches `src/auth/token.py` and `src/auth/sub/x.py`; does NOT match `src/other/token.py` (subtree scoping + relative anchoring).
+10. Nested marker and ancestor marker both match different files → both hits reported (union, no shadowing).
+11. Negation within one marker file exempts a matched file per gitignore semantics.
+12. Hit report carries file ← marker:pattern provenance (the announce line's evidence).
 
 **Scale-hint behaviors (`compute_scale_hint`):**
-12. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
+13. Small/medium/large bucket boundaries produce the mapped (dimensions, refuters, effort) tuples; monotonic — a strictly larger diff never gets a smaller fleet.
 
 **Config behaviors:**
-13. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
+14. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
 
 **Boundary (integration, temp git repo):**
-14. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling against the merge-base.
-15. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+15. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling against the merge-base.
+16. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
@@ -182,7 +191,8 @@ Coverage target per the shared constraints (80% line / 70% branch on changed cod
 - The gate becomes reproducible: same diff, same markers, same config → same tier floor; the only judgment surface is the escalate-only risk list.
 - Non-Claude tools keep a coherent contract with graceful degradation and zero new obligations.
 - Auto-`HEAVY` spend is bounded by scale_hint; the ~2.7M full-scale run remains opt-in.
-- New maintenance surface: threshold defaults and scale buckets will need tuning from real sessions; `.critical-paths` files must be seeded in repos that want the protection (this repo first).
+- New maintenance surface: threshold defaults and scale buckets will need tuning from real sessions.
+- **Blocking prerequisites, not follow-ups:** the installer must gain a `workflows` namespace (§7.1) before `HEAVY` can invoke anything, and this repo's `.critical-paths` markers (§5) must ship in the same change that enables docs-only `SKIP` — an unseeded repo fails closed to `SERIAL` rather than silently skipping review.
 
 ## 11. Options considered
 
