@@ -97,7 +97,7 @@ def triage(facts, markers, config) -> TriageResult                 # pure compos
 - Any `critical_path_hits` entry → `HEAVY` floor, unconditionally — no threshold math, overrides `SKIP` eligibility too.
 - Otherwise → `SERIAL`.
 
-`new_deps` = any file in `DEPENDENCY_FILES` (§4.1) appears in `files`, regardless of status — touching a dependency manifest or lockfile at all is the signal, not just adding one. Detecting *which* dependency changed inside the file is out of scope; the file-level signal is deliberately coarse and cheap.
+`new_deps` = `Path(changed.path).name in DEPENDENCY_FILES` for any `changed` in `files`, regardless of status — matched by **basename**, not full path, so nested manifests (`packages/installer/pyproject.toml`, `packages/prgroom/uv.lock`, etc.) trigger it exactly like a root-level one. Touching a dependency manifest or lockfile at all is the signal, not just adding one. Detecting *which* dependency changed inside the file is out of scope; the file-level signal is deliberately coarse and cheap.
 
 "Subsystem" = distinct top-level directory of the repo touched by the diff (dotfile directories and the repo root itself count as one subsystem each).
 
@@ -117,7 +117,9 @@ Declarative, code-evaluated escalation — the load-bearing complement to the ju
 - A modified file matching any marker forces `HEAVY` on Claude. Non-Claude tools: no effect — the serial gate stands.
 - Evaluated entirely by gate-triage; no agent judgment involved.
 
-**Required seeding (implementation deliverable, not a dogfood nicety):** markers have exactly one job — force `HEAVY` on anything touching a load-bearing path, at any size; they do not gate `SKIP` eligibility (§3, §4.3). This repo ships `.critical-paths` covering its full deployable discipline-layer surface in the same change that ships gate-triage — `src/user/.agents/{agents,skills,rules}/`, `src/user/.claude/{commands,rules,skills}/`, `src/plugins/**`, and `packages/installer/` — so a multi-file edit to any of them floors at `HEAVY` regardless of the quant thresholds. An unmarked path falls through to the quant floor and risk-class list like everything else; the maximum exposure is a `SKIP`-eligible diff, which is capped at 1 file / `trivial_max_loc` lines everywhere, marked or not.
+**Required seeding (implementation deliverable, not a dogfood nicety):** markers have exactly one job — force `HEAVY` on anything touching a load-bearing path, at any size; they do not gate `SKIP` eligibility (§3, §4.3). An unmarked path falls through to the quant floor and risk-class list like everything else; the maximum exposure is a `SKIP`-eligible diff, which is capped at 1 file / `trivial_max_loc` lines everywhere, marked or not — so an incomplete seeding list is a coverage gap, not a safety hole.
+
+Coverage is defined generically, not by hand-enumerated path list: **every namespace directory any supported tool adapter stages** (each adapter declares its own namespace tuple — `claude.py`'s `("commands", "skills", "agents", "rules", "hooks", "workflows")` and the equivalent for `codex.py`/`gemini.py`/`opencode.py`), **plus** the shared `src/user/.agents/{agents,skills,rules}/` roots, `src/plugins/**`, and `packages/installer/` (the installer's own source — not staged anywhere, but load-bearing in its own right). A hand-enumerated list drifts as tools and namespaces are added; deriving the requirement from each adapter's own namespace declaration cannot. This ships in the same change as gate-triage, with an acceptance test asserting every declared namespace root across every tool adapter has a `.critical-paths` file — so a new tool or namespace added later fails that test until seeded, instead of silently reopening this gap.
 
 ## 6. Risk-class override (the bounded judgment)
 
@@ -173,7 +175,7 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 3. Two files, each individually trivial → not `SKIP` (file-count bound, not just LOC).
 4. Mixed docs+code under all thresholds, more than 1 file → `SERIAL`.
 5. Each quant threshold trips `HEAVY` independently at its boundary value (files = min, LOC = min, subsystems = min); one below each → not `HEAVY`.
-6. A `DEPENDENCY_FILES` entry present with any status (A/M/D, tracked or untracked) → `HEAVY`, even with otherwise-trivial LOC.
+6. A `DEPENDENCY_FILES` entry present with any status (A/M/D, tracked or untracked) → `HEAVY`, even with otherwise-trivial LOC. Matched by basename at a nested path (e.g. `packages/installer/pyproject.toml`), not just repo root.
 7. Critical hit with an otherwise-trivial one-line diff → `HEAVY` (no threshold math).
 
 **Classification behaviors (`classify_file`):**
@@ -197,8 +199,11 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 17. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
 18. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
 19. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
-20. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`.
+20. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`, including at a nested path (`packages/prgroom/uv.lock`).
 21. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+
+**Repo-level acceptance check (this repo, not the gate-triage package):**
+22. For every tool adapter's declared namespace tuple plus the shared/plugin/installer roots (§5), assert a `.critical-paths` file exists at that root. Fails if a namespace is added to any adapter without a corresponding marker.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
@@ -236,5 +241,9 @@ Bounded record of adversarial-review rounds (`codex adversarial-review --wait --
 - The Round-1 fail-closed default only gated `SKIP` on marker *existence*, not marker *coverage* — a single marker anywhere still enabled repo-wide `SKIP` for every unmarked `.md` file, including this spec's own class of document. → root-caused rather than patched again: `SKIP` redefined as a size bound (≤1 file, ≤`trivial_max_loc` LOC), independent of file type or marker state. This removes marker seeding as a `SKIP`-safety dependency entirely (§3, §4.3, §5).
 - Untracked (`??`) working-tree files were outside the triage contract — a new file could sit at gate time without contributing to any threshold. → `collect_diff` now includes untracked files, mapped to status `"A"`.
 - (medium) `new_deps` only covered whole-manifest additions, missing version bumps or edits inside existing manifests/lockfiles. → redefined as file-presence in `DEPENDENCY_FILES`, any status — coarser but complete.
+
+**Round 4** (2 high, 0 medium/critical) — resolved:
+- The required-seeding list (still hand-enumerated after Round 2's expansion) omitted `src/user/.codex/`, `src/user/.gemini/`, `src/user/.opencode/`, and `src/user/.claude/hooks/` — all verified as real deployable content, including a hook script already known to be load-bearing. → root-caused rather than expanded a third time: coverage is now defined generically as every namespace root any tool adapter declares, plus the fixed shared/plugin/installer roots, with an acceptance test (§9 item 22) that fails on drift instead of a prose list that can silently miss the next one.
+- `DEPENDENCY_FILES` matched bare filenames against full repo-relative paths, so nested manifests (`packages/*/pyproject.toml`, `packages/*/uv.lock` — verified, 4 packages) would never match. → matching redefined as basename comparison, §4.3.
 
 Loop continues while a round reports any `critical` or `high` finding, capped at 5 rounds.
