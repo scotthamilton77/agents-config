@@ -61,7 +61,21 @@ class TriageConfig:     # defaults; overridable via project-config.toml [complet
     heavy_min_files: int = 8
     heavy_min_loc: int = 400
     heavy_min_subsystems: int = 3
-    trivial_max_loc: int = 3   # SKIP eligibility ceiling; see §4.3
+    trivial_max_loc: int = 3   # SKIP eligibility ceiling; see §4.3; hard-capped at 20 on load
+
+def load_config(repo_root: Path) -> TriageConfig
+    # boundary: reads project-config.toml [completion-gate]. Config is a trust boundary —
+    # it decides whether review runs at all — so it is validated, not merely parsed:
+    # - every field must be a positive integer; a non-integer or negative value raises,
+    #   caught by the caller and treated as "section absent" (defaults apply), not a crash
+    # - trivial_max_loc is clamped to [1, 20] regardless of the configured value — a config
+    #   cannot raise SKIP eligibility high enough to functionally disable the gate
+    # - heavy_min_loc/heavy_min_files/heavy_min_subsystems have no upper clamp (a repo may
+    #   legitimately want a higher HEAVY bar) but a value below trivial_max_loc is rejected
+    #   (nonsensical: HEAVY would trigger below SKIP's own ceiling)
+    # - unknown keys in [completion-gate] are ignored, not an error (forward-compatible)
+    # - absent section, absent file, or any validation failure → TriageConfig() defaults;
+    #   gate-triage never fails open to "no gate" on a config problem
 
 DEPENDENCY_FILES = frozenset({
     "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
@@ -148,11 +162,22 @@ Scale mapping (initial, tunable): `scale_hint` buckets small/medium/large from t
 
 ### 7.1 Installer deployment requirement (blocking)
 
-The Claude installer's namespace list (`packages/installer/src/installer/tools/claude.py:30`) currently stages only `("commands", "skills", "agents", "rules", "hooks")` — no `workflows`. A workflow placed at `src/user/.claude/workflows/` as written above would never reach `~/.claude/` and `HEAVY` routing would silently fail or no-op at invocation time. This is a required implementation deliverable, not an implementation detail to discover later:
+The Claude installer's namespace list (`packages/installer/src/installer/tools/claude.py:30`) currently stages only `("commands", "skills", "agents", "rules", "hooks")` — no `workflows`. A workflow placed at `src/user/.claude/workflows/` as written above would never reach `~/.claude/` and `HEAVY` routing would silently fail or no-op at invocation time. This is a required implementation deliverable, not an implementation detail to discover later.
 
-- Add `workflows` to the Claude adapter's namespace tuple and to the staging/sync logic (both loops per the two-subdir-namespace-loop gotcha in `install.sh` — staging and sync must both be patched).
-- Cover the new namespace with an installer test asserting a file under `src/user/.claude/workflows/` lands at `~/.claude/workflows/` after install, mirroring existing per-namespace staging tests.
+Namespace awareness is **not centralized** in the installer — it is four independently hardcoded lists, verified by inspection, each of which must add `workflows` or the feature is broken in a different way than "doesn't deploy":
+
+- `claude.py::scoped_namespaces()` — staging source (what gets copied in).
+- `install.sh`'s staging and sync loops (two separate loops per the two-subdir-namespace-loop gotcha — both need patching).
+- `ownership.py::PRUNE_NAMESPACES` — which namespaces the receipt tracks as wholesale-owned/prune-eligible. Omitting `workflows` here means a renamed or removed `quality-gate` source leaves a stale `~/.claude/workflows/quality-gate` behind, uncleaned — and since `HEAVY` invokes the workflow by stable name, a stale deployed copy keeps running silently after the source is gone.
+- `backup.py::_SCOPED_NAMESPACES` — which namespaces route backups to a sibling `<namespace>-backup/` dir on conflict, rather than in-place.
+
+Deliverables:
+- Add `workflows` to all four lists above.
+- An installer test asserting a file under `src/user/.claude/workflows/` lands at `~/.claude/workflows/` after install (staging/sync).
+- An installer test asserting that renaming or removing a source workflow prunes (or explicitly reports) the stale destination on the next install, rather than leaving it callable.
 - This ships in the same change as the `quality-gate` workflow itself — `HEAVY` routing must not merge ahead of its own deployment path.
+
+*Aside, out of scope for this design:* four independently hardcoded namespace lists is itself a latent maintenance risk in the installer — each addition since `hooks` has had to be threaded through by hand, and `backup.py` already carries a `formulas` namespace absent from the other three. Worth a follow-up outside this spec; not fixed here.
 
 ## 8. Rule-text changes
 
@@ -196,17 +221,22 @@ Tautology filter applied: no tests of `pathspec`'s raw pattern matching (library
 
 **Config behaviors:**
 16. `project-config.toml` `[completion-gate]` overrides replace defaults; absent section → defaults (mirrors merge-guard's policy-resolution behavior).
+17. `trivial_max_loc: 999` in config → clamped to 20, not accepted as-is; a config cannot raise the `SKIP` ceiling high enough to functionally disable the gate.
+18. `heavy_min_loc` configured below `trivial_max_loc` → rejected, falls back to defaults (nonsensical ordering).
+19. A non-integer or negative value for any field → falls back to defaults, does not raise past `load_config`'s boundary.
+20. An unknown key in `[completion-gate]` → ignored, remaining known keys still applied.
 
 **Boundary (integration, temp git repo):**
-17. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
-18. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
-19. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
-20. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`, including at a nested path (`packages/prgroom/uv.lock`).
-21. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
-22. A file committed as a rename OUT of a marked subtree (`status == "R"`, `old_path` in the marked subtree), then further edited unstaged at its new path, still carries `old_path` in the deduped `DiffFacts` and still produces a `critical_hits` entry.
+21. `collect_diff` on a crafted branch reports correct file set, LOC, and rename handling (`old_path`/`path`) against the merge-base.
+22. `collect_diff` includes an unstaged edit and a staged-new file alongside committed branch changes, deduped against a file that appears both committed and re-touched in the working tree.
+23. `collect_diff` includes a wholly untracked (`??`) file — status maps to "A", `loc_changed` is the file's full line count, and it participates in `files`/critical-path matching like any other addition.
+24. `collect_diff` detects a `DEPENDENCY_FILES` entry present only as an untracked or unstaged change (not yet committed) and sets `new_deps: true`, including at a nested path (`packages/prgroom/uv.lock`).
+25. `load_markers` discovers nested `.critical-paths` files and anchors patterns correctly end-to-end.
+26. A file committed as a rename OUT of a marked subtree (`status == "R"`, `old_path` in the marked subtree), then further edited unstaged at its new path, still carries `old_path` in the deduped `DiffFacts` and still produces a `critical_hits` entry.
 
 **Repo-level acceptance check (this repo, not the gate-triage package):**
-23. For every required source root (§5), assert **effective coverage, not file existence**: seed each root's `.critical-paths` with a `**` pattern by default (narrower only when a root deliberately excludes a known-safe subpath), then assert BOTH a representative namespace-nested file (e.g. `skills/some-skill/SKILL.md`) AND a representative tool-root loose file (e.g. `AGENTS.md.template`) under that root actually produce a `critical_path_hits` entry when run through `critical_hits`. An empty or mis-anchored marker file fails this test even though the file exists; a marker that only covers namespaces (missing the root-level case Round 6 found) fails too.
+27. For every required source root (§5), assert **effective coverage, not file existence**: seed each root's `.critical-paths` with a `**` pattern by default (narrower only when a root deliberately excludes a known-safe subpath), then assert BOTH a representative namespace-nested file (e.g. `skills/some-skill/SKILL.md`) AND a representative tool-root loose file (e.g. `AGENTS.md.template`) under that root actually produce a `critical_path_hits` entry when run through `critical_hits`. An empty or mis-anchored marker file fails this test even though the file exists; a marker that only covers namespaces (missing the root-level case Round 6 found) fails too.
+28. Installer test: renaming or removing the source `quality-gate` workflow prunes (or explicitly reports) the stale `~/.claude/workflows/quality-gate` on the next install.
 
 Coverage target per the shared constraints (80% line / 70% branch on changed code) is expected to fall out of the behavior list naturally; no coverage-theater tests to close gaps.
 
@@ -257,3 +287,7 @@ Original 5-round cap reached at Round 5; extended by up to 3 more rounds on user
 
 **Round 6** (1 high, 0 medium/critical) — resolved:
 - Coverage was derived from each tool adapter's `scoped_namespaces()` tuple only, but `stage_templates`/`stage_settings` (verified in `packages/installer/src/installer/core/staging.py`) deploy tool-root loose files — `AGENTS.md.template`, `settings.json.template` — through a separate staging path a namespace-only derivation never reaches. A one-line edit to the assembled instruction template for an entire tool could satisfy `SKIP`'s size bound with no marker coverage. → root-caused again: coverage moved from namespace-level to **source-root level** — one recursive marker per tool/shared/plugin/installer root covers namespaces and root-level loose files uniformly, since subtree matching is already recursive. Acceptance test (§9 item 23) now asserts both a namespace-nested and a root-level representative file per root.
+
+**Round 7** (1 high, 1 medium) — resolved:
+- §7.1's installer deliverable named only staging/sync as touch points, but namespace awareness in the installer is **four independently hardcoded lists**, verified by inspection: `claude.py::scoped_namespaces()`, `install.sh`'s two loops, `ownership.py::PRUNE_NAMESPACES`, and `backup.py::_SCOPED_NAMESPACES`. Missing `workflows` from `PRUNE_NAMESPACES` specifically means a renamed/removed `quality-gate` source leaves a stale, still-invocable copy in `~/.claude/workflows/` — `HEAVY` calls it by stable name and would keep running outdated gate logic silently. → all four lists named explicitly as required touch points; added an installer test asserting rename/removal prunes the stale destination (§9 item 28). Flagged, not fixed here: the installer's namespace-list duplication across four files is itself a latent maintenance risk, out of scope for this spec.
+- (medium) `[completion-gate]` config had no validation — a malformed or adversarial config could set `trivial_max_loc` high enough to functionally disable `SKIP`'s safety bound, or crash triage on bad types. → added `load_config` with bounds (`trivial_max_loc` hard-capped at 20, ordering checked against `heavy_min_loc`), fail-closed-to-defaults on any invalid value, unknown keys ignored.
