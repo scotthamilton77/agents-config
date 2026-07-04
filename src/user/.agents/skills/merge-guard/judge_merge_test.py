@@ -131,5 +131,36 @@ class TestProvenanceGate(unittest.TestCase):
         self.assertEqual(reason, "unattested-commit")
 
 
+class TestDiffAssembly(unittest.TestCase):
+    def test_assembles_and_hashes(self):
+        diff_text = "diff --git a/x b/x\n+hello\n"
+        got = jm.assemble_diff("base", "head", git_runner=lambda a: diff_text)
+        self.assertEqual(got.text, diff_text)
+        self.assertEqual(len(got.diff_sha), 64)  # sha256 hex
+        # same diff -> same sha (deterministic)
+        self.assertEqual(got.diff_sha, jm.assemble_diff("base", "head", git_runner=lambda a: diff_text).diff_sha)
+
+    def test_empty_diff_flagged(self):
+        got = jm.assemble_diff("base", "head", git_runner=lambda a: "")
+        self.assertTrue(got.is_empty)
+
+    def test_oversized_flagged(self):
+        big = "x\n" * 10
+        got = jm.assemble_diff("base", "head", git_runner=lambda a: big, max_bytes=5)
+        self.assertTrue(got.is_oversized)
+
+
+class TestCurrency(unittest.TestCase):
+    def test_head_and_base_current(self):
+        def fake_gh(args):
+            return '{"headRefOid":"h","baseRefOid":"b"}'
+        self.assertTrue(jm.refs_current("o", "r", "5", "h", "b", gh_runner=fake_gh))
+
+    def test_moved_head_not_current(self):
+        def fake_gh(args):
+            return '{"headRefOid":"h2","baseRefOid":"b"}'
+        self.assertFalse(jm.refs_current("o", "r", "5", "h", "b", gh_runner=fake_gh))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -147,3 +147,41 @@ def provenance_gate(state: str, owner: str, repo: str, pr: str, base: str, head:
     if judge_family is not None and judge_family in fams:
         return (False, "same-family", ai_fams)
     return (True, None, ai_fams)
+
+
+import hashlib  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+
+MAX_DIFF_BYTES = 400_000  # oversized diffs abstain (MVP: no chunking)
+
+
+@dataclass(frozen=True)
+class Diff:
+    text: str
+    diff_sha: str
+    is_empty: bool
+    is_oversized: bool
+
+
+def assemble_diff(base: str, head: str, git_runner=_real_git, max_bytes: int = MAX_DIFF_BYTES) -> Diff:
+    text = git_runner(["diff", f"{base}...{head}"])
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return Diff(text=text, diff_sha=sha,
+                is_empty=(text.strip() == ""),
+                is_oversized=(len(text.encode("utf-8")) > max_bytes))
+
+
+def _real_gh(args: list[str]) -> str:
+    return subprocess.run(["gh", *args], capture_output=True, text=True,
+                          check=True, timeout=60).stdout
+
+
+def refs_current(owner: str, repo: str, pr: str, head: str, base: str, gh_runner=_real_gh) -> bool:
+    """Live-fetch the PR's head+base OIDs; True iff BOTH still match."""
+    out = gh_runner(["pr", "view", pr, "--repo", f"{owner}/{repo}",
+                     "--json", "headRefOid,baseRefOid"])
+    try:
+        live = json.loads(out)
+    except ValueError:
+        return False
+    return live.get("headRefOid") == head and live.get("baseRefOid") == base
