@@ -392,6 +392,33 @@ class TestFinalMessageText(unittest.TestCase):
             jm._final_message_text(json.dumps({"status": 0, "rawOutput": 42}))
 
 
+class TestIdentifierValidation(unittest.TestCase):
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.5",
+                       "judge_effort": "high", "judge_timeout_seconds": 900,
+                       "judge_max_attempts": 2}
+
+    def test_safe_component_rejects_traversal_and_separators(self):
+        for bad in ["../x", "a/b", "a\\b", "a~b", "", "a\x00b"]:
+            with self.assertRaises(ValueError):
+                jm._safe_component(bad, "c")
+
+    def test_safe_component_accepts_clean(self):
+        self.assertEqual(jm._safe_component("owner-1", "c"), "owner-1")
+
+    def test_traversal_identifier_abstains_before_any_path_write(self):
+        # A component that could escape the state dir must fail closed at the
+        # boundary — before budget/cache/attempts compose a filesystem path.
+        env = jm.run_judge(owner="../../etc", repo="r", pr="5", head="h", base="b",
+                           base_ref="main", policy=self.policy, state=self.state,
+                           nonce_fn=lambda: "n", git_runner=lambda a: "",
+                           gh_runner=lambda a: "{}", backend_runner=lambda *a: "")
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "invalid-identifier")
+        self.assertEqual(os.listdir(self.state), [])  # nothing written
+
+
 class TestMainEndToEnd(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()

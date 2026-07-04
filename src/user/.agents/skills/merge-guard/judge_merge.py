@@ -62,6 +62,18 @@ def state_home() -> str:
         os.path.expanduser("~"), ".claude", "state")
 
 
+def _safe_component(value: str, name: str) -> str:
+    """Reject path-traversal / separator chars in a filename component (fail closed).
+
+    owner/repo/pr/head/base become `~`-delimited filesystem-path components (the
+    attempts counter, no-go cache, provenance sidecar). Mirrors
+    record_provenance.py's _safe_component — keep the two in sync.
+    """
+    if not value or any(c in value for c in ("/", "\\", "\x00")) or ".." in value or "~" in value:
+        raise ValueError(f"{name} contains illegal path characters: {value!r}")
+    return value
+
+
 def _attempts_path(state: str, owner: str, repo: str, pr: str, base: str) -> str:
     return os.path.join(state, "merge-judge", f"{owner}~{repo}~{pr}~{base}.attempts.json")
 
@@ -364,6 +376,17 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
               nonce_fn=mint_nonce, git_runner=_real_git, gh_runner=_real_gh,
               backend_runner=None) -> dict:
     """Full harness: pre-judge gates -> backend -> collapse -> cache. Returns the envelope."""
+    # Boundary validation: owner/repo/pr/head/base become filesystem-path
+    # components below (attempts counter, no-go cache, provenance sidecar). Reject
+    # any that could traverse BEFORE composing a path, so a malformed identifier
+    # fails closed here rather than reading/writing outside the state dir.
+    try:
+        for _name, _val in (("owner", owner), ("repo", repo), ("pr", pr),
+                            ("head", head), ("base", base)):
+            _safe_component(_val, _name)
+    except ValueError:
+        return _abstain(head, base, "", "invalid-identifier", policy, [])
+
     judge_family = family_of(policy["judge_model"])
     max_attempts = int(policy["judge_max_attempts"])
 
