@@ -221,6 +221,14 @@ if prot=$(gh api "repos/${OWNER}/${REPO}/branches/${BASE_REF_ENC}/protection/req
 else
     if grep -qiE 'HTTP 404|Not Found|Branch not protected' "$prot_stderr"; then
         prot=""   # no protection → empty required set
+    elif grep -qi 'upgrade to github pro or make this repository public' "$prot_stderr" \
+         && grep -qi '(HTTP 403)' "$prot_stderr"; then
+        # Private repo without GitHub Pro/Team: GitHub blocks reading branch-
+        # protection config with this exact 403 instead of 404ing. Narrow
+        # text+status match only — a differently-worded 403 (missing token
+        # scope, app permission, etc.) is a real authNZ failure and must
+        # still fail closed below, not be swallowed by this branch.
+        prot=""
     else
         echo "Error: failed to fetch branch protection: $(cat "$prot_stderr")" >&2
         rm -f "$prot_stderr"; exit 3
