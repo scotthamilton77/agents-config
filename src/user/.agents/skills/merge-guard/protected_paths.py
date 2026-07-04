@@ -30,14 +30,19 @@ _GLOBS = (
 )
 
 # Directory classes: a changed path is protected if any of these appears as a
-# path segment substring (depth-independent, layout-independent).
+# substring of "/" + path. Each class is written as "/segment/" so it matches
+# the segment at any depth AND at repo root (the leading "/" is supplied by the
+# "/" + path normalization in scan_protected). Writing them slash-delimited is
+# deliberate: a bare "rules/" would also match a suffix of a longer segment
+# (e.g. "business_rules/", "webhooks/"), causing false-positive abstains on
+# unrelated paths.
 _DIR_CLASSES = (
-    "/merge-guard/", "merge-guard/",
-    "/finishing-a-development-branch/", "finishing-a-development-branch/",
-    "/.github/workflows/", ".github/workflows/",
-    "/hooks/", "hooks/",
-    "/packages/installer/", "packages/installer/",
-    "/rules/", "rules/",
+    "/merge-guard/",
+    "/finishing-a-development-branch/",
+    "/.github/workflows/",
+    "/hooks/",
+    "/packages/installer/",
+    "/rules/",
 )
 
 # Exact-ish filename classes (settings + routing + the judge prompt/rubric).

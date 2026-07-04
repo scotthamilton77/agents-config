@@ -49,6 +49,18 @@ class TestScanProtected(unittest.TestCase):
     def test_ordinary_code_not_protected(self):
         self.assertIsNone(self._hit("src/app/widget.py"))
 
+    def test_dir_class_not_matched_as_segment_suffix(self):
+        # A protected dir class must match a whole path segment, not a suffix
+        # of a longer one. "rules/" and "hooks/" must NOT fire on these.
+        self.assertIsNone(self._hit("src/app/business_rules/foo.py"))
+        self.assertIsNone(self._hit("src/webhooks/handler.py"))
+
+    def test_dir_class_matches_at_repo_root(self):
+        # Leading-slash classes still match a protected segment at repo root,
+        # via the "/" + path normalization in scan_protected.
+        self.assertIsNotNone(self._hit("rules/delegation.md"))
+        self.assertIsNotNone(self._hit("merge-guard/SKILL.md"))
+
     def test_returns_first_matching_path(self):
         hit = scan_protected(["src/app/widget.py", ".github/workflows/ci.yml"])
         self.assertEqual(hit, ".github/workflows/ci.yml")
