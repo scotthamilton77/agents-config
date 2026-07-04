@@ -44,10 +44,21 @@ Read `project-config.toml` from the **base** ref fetched at Step 1, never the
 working tree or head — reading from head would let a PR that edits
 `[merge-policy]` define the rule that merges it. Base-resolution closes that
 hole (and is double-locked by the protected-path gate at Step 4, which
-independently abstains on any diff touching `project-config.toml`).
+independently abstains on any diff touching `project-config.toml`). A base ref
+with no `project-config.toml` file resolves to the built-in defaults (the
+`explicit` floor); a base ref that cannot be resolved at all fails closed
+instead of guessing at a policy.
 
 ```bash
-git show <base_ref_oid>:project-config.toml > "$TMP_BASE_CFG"
+TMP_BASE_CFG=$(mktemp)
+if git show "<base_ref_oid>:project-config.toml" > "$TMP_BASE_CFG" 2>/dev/null; then
+  :                                       # captured the base config
+elif git cat-file -e "<base_ref_oid>^{commit}" 2>/dev/null; then
+  : > "$TMP_BASE_CFG"                      # base commit valid, no project-config.toml → resolver emits defaults
+else
+  echo "cannot resolve base ref <base_ref_oid> — merge by hand" >&2
+  exit 3                                   # base ref unresolvable → fail closed, hand off
+fi
 POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
   --project-config "$TMP_BASE_CFG" \
   --labels "<comma-separated bead labels, or empty>")
