@@ -46,6 +46,17 @@ assert "output has pr object" "jq -e '(.pr | type) == \"object\"' '$TMP/out.json
 assert "output has polling object" "jq -e '(.polling | type) == \"object\"' '$TMP/out.json' >/dev/null 2>&1"
 assert "output has items array" "jq -e '(.items | type) == \"array\"' '$TMP/out.json' >/dev/null 2>&1"
 
+# new bot-quiescence polling fields pass through verbatim at schema v1
+POLLING2="$TMP/polling2.json"
+ITEMS2="$TMP/items2.json"; PR2="$TMP/pr2.json"
+echo '[]' >"$ITEMS2"
+echo '{"number":1,"owner":"o","repo":"r","head_sha":"abc"}' >"$PR2"
+echo '{"copilot_status":"timeout","rereview_round_count":1,"bot_review_cap_exhausted":true}' >"$POLLING2"
+"$SCRIPT" --items "$ITEMS2" --pr "$PR2" --polling "$POLLING2" > "$TMP/out2.json" 2>&1
+assert "rereview_round_count passes through" "jq -e '.polling.rereview_round_count == 1' '$TMP/out2.json' >/dev/null 2>&1"
+assert "bot_review_cap_exhausted passes through" "jq -e '.polling.bot_review_cap_exhausted == true' '$TMP/out2.json' >/dev/null 2>&1"
+assert "schema_version still 1" "jq -e '.schema_version == 1' '$TMP/out2.json' >/dev/null 2>&1"
+
 # Failure path: missing --items must error
 if "$SCRIPT" --pr "$PR" --polling "$POLLING" 2>/dev/null; then
   echo "  FAIL: accepted invocation missing --items"

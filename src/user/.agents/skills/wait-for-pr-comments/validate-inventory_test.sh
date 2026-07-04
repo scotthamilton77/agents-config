@@ -154,4 +154,12 @@ assert "review_summary with issue_comment_id still fails guard 3" "[ \$? -eq 1 ]
 assert "review_summary with string review_id fails guard 3" "[ \$? -eq 1 ]"
 rm -rf "$T15"
 
+# inventory carrying the new polling fields still validates at v1
+NEWPOLL="$TMP/newpoll-inv.json"
+jq -n '{schema_version:1, pr:{number:1,owner:"o",repo:"r"},
+        polling:{copilot_status:"timeout",rereview_round_count:1,bot_review_cap_exhausted:true},
+        items:[]}' > "$NEWPOLL"
+"$SCRIPT" --phase 0 --inventory "$NEWPOLL" 2>/dev/null
+assert "phase 0 accepts new polling fields (exit 0)" "[ \$? -eq 0 ]"
+
 exit $FAIL
