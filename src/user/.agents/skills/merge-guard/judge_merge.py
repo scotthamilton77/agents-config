@@ -126,12 +126,30 @@ def _base_head_commits(base: str, head: str, git_runner) -> list[str]:
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
 
+PROVENANCE_FAMILIES = {"anthropic", "openai", "google", "human"}  # model_family vocabulary + the "human" author value
+
+
+def _valid_author_families(entry: dict) -> bool:
+    """Schema-valid iff author_families is a non-empty list of known family strings.
+
+    Fail-closed: a malformed sidecar (string instead of list, missing key, empty
+    list, unknown family, or non-string element) must never be silently consumed
+    by `fams.update(...)` — that would let a same-family or unattested commit
+    slip the cross-model guard.
+    """
+    fams = entry.get("author_families")
+    if not isinstance(fams, list) or len(fams) == 0:
+        return False
+    return all(isinstance(f, str) and f in PROVENANCE_FAMILIES for f in fams)
+
+
 def provenance_gate(state: str, owner: str, repo: str, pr: str, base: str, head: str,
                     *, judge_family: str | None, git_runner=_real_git):
     """(ok, abstain_reason|None, author_families).
 
     Authorizes only when: a record exists for `head`; every commit in base..head
-    is first-hand attested in it; and judge_family is in NO commit's families.
+    is first-hand attested in it with a schema-valid author_families; and
+    judge_family is in NO commit's families.
     """
     record = _read_provenance(state, owner, repo, pr, head)
     if record is None or record.get("head_sha") != head:
@@ -142,7 +160,9 @@ def provenance_gate(state: str, owner: str, repo: str, pr: str, base: str, head:
         entry = by_sha.get(sha)
         if entry is None or entry.get("attestation") != "first-hand":
             return (False, "unattested-commit", [])
-        fams.update(entry.get("author_families", []))
+        if not _valid_author_families(entry):
+            return (False, "invalid-provenance", [])
+        fams.update(entry["author_families"])
     ai_fams = sorted(fams - {"human"})
     if judge_family is not None and judge_family in fams:
         return (False, "same-family", ai_fams)
@@ -326,7 +346,10 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
     if judge_family is None:
         return _abstain(head, base, "", "underivable-judge-family", policy, [])
 
-    # Gate 0: attempt budget (checked FIRST — never pay for a run past budget)
+    # Gate 0: attempt budget — the first gate that precedes/gates an actual
+    # judge backend run (the underivable-judge-family check above is a validity
+    # precondition, not a numbered gate: it rejects a policy that can never be
+    # enforced, before any gate gets a chance to run).
     if budget_exhausted(state, owner, repo, pr, base, max_attempts=max_attempts):
         return _abstain(head, base, "", "attempt-budget-exhausted", policy, [])
 
@@ -386,7 +409,14 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
     if verdict == VERDICT_NO_GO:
         _cache_no_go(state, owner, repo, pr, head, base, diff.diff_sha, policy, envelope)
         bump_attempts(state, owner, repo, pr, base)
-    # a `go` is NEVER cached — always freshly computed
+        return envelope
+    # a `go` is NEVER cached — always freshly computed. But a concurrent run on
+    # this same (head,base,diff,config) key may have recorded a terminal no-go
+    # while our backend call was in flight; that no-go must win. Residual
+    # micro-window: another no-go could still land between this recheck and our
+    # return — full per-key file-locking is a deferred follow-up.
+    if no_go_cached(state, owner, repo, pr, head, base, diff.diff_sha, policy):
+        return _abstain(head, base, diff.diff_sha, "concurrent-no-go", policy, families)
     return envelope
 
 

@@ -132,6 +132,48 @@ class TestProvenanceGate(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "unattested-commit")
 
+    def test_author_families_string_not_list_abstains(self):
+        # A malformed sidecar with author_families as the bare string "openai"
+        # would fail-open by iterating into single characters if unvalidated.
+        self._write("h", [{"sha": "c1", "author_families": "openai", "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+        self.assertEqual(fams, [])
+
+    def test_author_families_missing_key_abstains(self):
+        self._write("h", [{"sha": "c1", "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+        self.assertEqual(fams, [])
+
+    def test_author_families_empty_list_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": [], "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+        self.assertEqual(fams, [])
+
+    def test_author_families_unknown_family_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": ["meta"], "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+        self.assertEqual(fams, [])
+
+    def test_author_families_non_string_element_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": [123], "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+        self.assertEqual(fams, [])
+
 
 class TestDiffAssembly(unittest.TestCase):
     def test_assembles_and_hashes(self):
@@ -321,6 +363,30 @@ class TestMainEndToEnd(unittest.TestCase):
         self.assertTrue(jm.no_go_cached(self.state, "o", "r", "5", "h", "b",
                                         jm.assemble_diff("b", "h", git_runner=lambda a: "diff body\n").diff_sha,
                                         self.policy))
+
+    def test_concurrent_no_go_wins_over_go(self):
+        # A concurrent run on the same (head,base,diff,config) key records a
+        # terminal no-go WHILE our backend call is in flight. Our backend then
+        # returns a valid go-shaped block (zero findings) -- the post-backend
+        # recheck must see the concurrent no-go and abstain, never authorize.
+        diff_body = "diff body\n"
+        diff_sha = jm.assemble_diff("b", "h", git_runner=lambda a: diff_body).diff_sha
+
+        def concurrent_backend(prompt, model, effort, timeout):
+            concurrent_envelope = jm.build_envelope(
+                head="h", base="b", diff_sha=diff_sha, verdict="no-go",
+                abstain_reason=None, judge_model=self.policy["judge_model"],
+                judge_effort=self.policy["judge_effort"], author_families=["anthropic"],
+                summary="concurrent no-go", merge_blocking_findings=[{"category": "x"}])
+            jm._cache_no_go(self.state, "o", "r", "5", "h", "b", diff_sha, self.policy, concurrent_envelope)
+            body = json.dumps({"merge_blocking_findings": [], "summary": "looks clean"})
+            return f"<<<JUDGE:NONCE123>>>{body}<<<END:NONCE123>>>"
+
+        env = self._run(findings=[], backend=concurrent_backend, diff_body=diff_body)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "concurrent-no-go")
+        # the recheck path must not bump attempts -- it isn't our own fresh no-go
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
 
     def test_underivable_judge_family_abstains(self):
         # A judge model whose family cannot be derived cannot enforce cross-model
