@@ -23,7 +23,7 @@ import fnmatch
 # Glob patterns matched against each changed path (fnmatch, full-path).
 _GLOBS = (
     "*project-config.toml",
-    "*.env", "*.env.*", "*.env",
+    "*.env", "*.env.*",
     "*credentials*", "*secret*", "*token*",
     "*.md.template",
     "*AGENTS.md", "*CLAUDE.md", "*GEMINI.md",

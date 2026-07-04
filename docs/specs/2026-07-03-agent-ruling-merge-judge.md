@@ -161,7 +161,7 @@ JudgeVerdict = {
   abstain_reason: str | null,  # protected-path | no-provenance | same-family | stale-head | base-moved | attempt-budget-exhausted | judge-error | ...
   judge_backend: str,          # "codex"
   judge_model: str,            # e.g. "gpt-5.5"
-  judge_model_family: str,     # derived from judge_model
+  judge_model_family: str | null,  # derived from judge_model; null on the harness-error abstain (no model resolved)
   judge_effort: str,           # e.g. "high"
   author_families: [str],      # from the trusted provenance record (audit)
   summary: str,
