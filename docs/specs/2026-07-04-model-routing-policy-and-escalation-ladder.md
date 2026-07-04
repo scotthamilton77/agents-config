@@ -94,7 +94,8 @@ different user-config root, this file follows it; only the path moves.
 
 ```toml
 [providers.anthropic]
-billing = "subscription"        # subscription | metered
+billing = "subscription"        # subscription | metered | free
+overage_provider = "anthropic-api"  # metered sibling billed once the subscription is exhausted
 # metered overage is a separate provider entry so the ceiling can see it:
 [providers.anthropic-api]
 billing = "metered"
@@ -102,33 +103,66 @@ billing = "metered"
 cost_per_mtok_in = 15.0         # user-maintained; no billing-API dependency
 cost_per_mtok_out = 75.0
 
+[providers.openai]
+billing = "metered"
+[providers.openai.models."gpt-5.5"]
+cost_per_mtok_in = 10.0
+cost_per_mtok_out = 40.0
+
 [providers.openrouter]
 billing = "metered"
 [providers.openrouter.models."glm-5.2"]
 cost_per_mtok_in = 0.6
 cost_per_mtok_out = 2.2
 
+[providers.local]
+billing = "free"                # ollama/local rungs never count against the ceiling
+
 [budget]
 monthly_ceiling_usd = 100       # counts metered spend only (locked decision 1)
 
 [archetype.implementer]
-preferred = { cli = "claude", model = "sonnet", effort = "medium", write = true }
+preferred = { cli = "claude", model = "sonnet", effort = "medium", write = true, provider = "anthropic" }
 fallback  = [
-  { cli = "claude", model = "opus", effort = "high", write = true },
-  { cli = "codex",  model = "gpt-5.5", write = true },
+  { cli = "claude", model = "opus", effort = "high", write = true, provider = "anthropic" },
+  { cli = "codex",  model = "gpt-5.5", write = true, provider = "openai" },
 ]
 
 [archetype.classifier]
-preferred = { cli = "ollama", model = "gemma4" }
+preferred = { cli = "ollama", model = "gemma4", provider = "local" }
 fallback  = [
-  { cli = "claude", model = "haiku", effort = "high" },
-  { cli = "codex",  model = "gpt-5.4-mini" },
+  { cli = "claude", model = "haiku", effort = "high", provider = "anthropic" },
+  { cli = "codex",  model = "gpt-5.4-mini", provider = "openai" },
 ]
 # ... one section per archetype in §3
 ```
 
 Chain entries reuse prgroom's `AgentSpec` vocabulary (`cli`, `model`, optional `effort`,
-`write`, `timeout`) so prgroom chains and routing chains stay one dialect.
+`write`, `timeout`) plus one routing-only key, `provider` (mapping rules below), so prgroom
+chains and routing chains stay one dialect.
+
+**Chain-entry → provider resolution.** Every chain entry resolves to exactly one
+`[providers.*]` table, which supplies its `billing` mode and (for metered rungs) its
+per-model rates. Resolution is deterministic: the entry's explicit `provider` key if
+present; otherwise a built-in default map keyed by `cli` — `claude → anthropic`,
+`codex → openai`, `gemini → google`, `ollama → local` — with any OpenRouter rung setting
+`provider = "openrouter"` explicitly (its `cli` is the OpenRouter client, not a family
+name). A per-entry `provider` always overrides the default, so a single `cli` can be
+pointed at either the subscription table or its metered sibling. The named table must
+exist or the resolver fails config validation (fail-loud; it never silently defaults a
+chain link to a metered table).
+
+**Subscription vs. metered overage (Anthropic).** A `subscription` provider table names
+its metered sibling via `overage_provider`. A rung resolving to `anthropic` bills as
+subscription (cost 0, never against the ceiling) until the harness signals subscription
+exhaustion; from that signal the dispatcher attributes the dispatch to the
+`overage_provider` table (`anthropic-api`, metered) and computes `cost_usd` from its rates.
+The ledger record's `provider`/`billing` fields (§7) record which mode actually applied, so
+the ceiling sees exactly the beyond-subscription spend locked decision 1 defines.
+`ASSUMPTION:` subscription-until-signalled is the v1 overage trigger (rather than a
+user-declared quota threshold in config); if the harness exposes no exhaustion signal, the
+dispatcher treats Anthropic as subscription-only and the metered sibling stays unreachable
+until a signal source lands.
 
 ### 4.2 Per-repo override
 
@@ -205,11 +239,15 @@ because the same record carries the A/B outcome data vaac.3 requires:
 ```json
 {"ts": "2026-07-04T21:14:03Z", "session": "a1b2c3d4", "repo": "agents-config",
  "archetype": "implementer", "context": "background",
- "cli": "claude", "model": "sonnet", "rung": 0,
+ "cli": "claude", "model": "sonnet", "provider": "anthropic", "rung": 0,
  "tokens_in": 41000, "tokens_out": 9000, "cost_usd": 0.0, "billing": "subscription",
  "outcome": "gate-pass", "retries": 0, "escalated_to": null}
 ```
 
+- `provider` is the `[providers.*]` table the rung resolved to (§4.1 chain-entry → provider
+  resolution); `billing` is that table's mode at dispatch time (for an Anthropic rung
+  pushed into overage, `provider` becomes the `overage_provider` and `billing` becomes
+  `metered`). The pair makes each record self-describing for the ceiling sum.
 - `cost_usd` is computed from the user-configured rates (locked decision 2) — an estimate,
   not an invoice. The ceiling gates on the sum of current-calendar-month `cost_usd` where
   `billing == "metered"`.
@@ -284,6 +322,8 @@ as literal temp files, no provider calls anywhere):
   shipped cluster chain).
 - `ASSUMPTION:` §4.1 `~/.agents/` as the user-config root, pending the user-owned-overlay
   design.
+- `ASSUMPTION:` §4.1 subscription-until-signalled is the v1 Anthropic overage trigger; no
+  harness exhaustion signal means Anthropic is treated as subscription-only.
 - `ASSUMPTION:` §5 corrupt ledger lines are skip-and-count, not fail-hard.
 - `ASSUMPTION:` §7 single-line JSONL appends need no lock file in v1.
 - `ASSUMPTION:` §7 dispatcher-appends (prose duty + prgroom), no hook auto-capture in v1.
