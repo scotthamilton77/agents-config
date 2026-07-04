@@ -60,9 +60,11 @@ POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
   merge policy must not get a silently different one.
 - python3 (>= 3.11) missing, or the resolver crashes/errors for any reason
   other than a reported `PolicyError` → **never** silently substitute the
-  built-in default. Check whether `<repo-root>/project-config.toml` has a
-  `[merge-policy]` section (e.g. `grep -q '^\[merge-policy\]' project-config.toml`):
-  - **Section present** → the repo configured a real policy this step could
+  built-in default. Check whether the **base** copy fetched above
+  (`$TMP_BASE_CFG`) has a `[merge-policy]` section (e.g.
+  `grep -q '^\[merge-policy\]' "$TMP_BASE_CFG"`) — grep the base, never the
+  working tree, so a PR cannot flip this branch by editing its own config:
+  - **Section present** → the base configured a real policy this step could
     not resolve. **Refuse any agent-side merge and hand off to the human**,
     naming the degradation verbatim (e.g. "python3 unavailable — could not
     resolve this repo's configured `[merge-policy]`; merge by hand"). Falling
