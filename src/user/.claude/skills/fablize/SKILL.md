@@ -35,8 +35,10 @@ defeated the point.
    convention — detect the actual location, or ask, if this project differs)
    to learn the local spec-output pattern. Skip anything already carrying a
    merged spec — those items are usually already in progress.
-2. **Collect the backlog.** Invoke the whats-next skill in `all` mode with no
-   truncation, and pull the full open/deferred backlog from the work tracker.
+2. **Collect the backlog.** Invoke the whats-next skill in `all` mode with its
+   "show everything" signal — the affordance it documents as `--limit 0` for the
+   complete, untruncated list — so candidates aren't selected from a truncated
+   backlog, and pull the full open/deferred backlog from the work tracker.
 3. **Measure spec coverage.** For each plausible candidate, pull its full
    record and gauge how much description, design rationale, and acceptance
    criteria it already carries. Classify each as **already-spec'd**
