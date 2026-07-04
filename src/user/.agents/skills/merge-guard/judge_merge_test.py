@@ -65,5 +65,18 @@ class TestAttemptBudget(unittest.TestCase):
         self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base2", max_attempts=2))
 
 
+class TestProtectedGate(unittest.TestCase):
+    def test_protected_path_hit(self):
+        def fake_git(args):
+            return "project-config.toml\nsrc/app/x.py\n"
+        hit = jm.protected_diff_path("base", "head", git_runner=fake_git)
+        self.assertEqual(hit, "project-config.toml")
+
+    def test_clean_diff_no_hit(self):
+        def fake_git(args):
+            return "src/app/x.py\nsrc/app/y.py\n"
+        self.assertIsNone(jm.protected_diff_path("base", "head", git_runner=fake_git))
+
+
 if __name__ == "__main__":
     unittest.main()

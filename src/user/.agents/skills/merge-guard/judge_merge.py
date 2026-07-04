@@ -90,3 +90,23 @@ def bump_attempts(state: str, owner: str, repo: str, pr: str, base: str) -> int:
         json.dump({"count": count}, fh)
     os.replace(tmp, path)
     return count
+
+
+import subprocess  # noqa: E402
+from protected_paths import scan_protected  # noqa: E402
+
+
+def _real_git(args: list[str]) -> str:
+    """Run a git command, return stdout. Raises CalledProcessError on failure."""
+    return subprocess.run(["git", *args], capture_output=True, text=True,
+                          check=True, timeout=60).stdout
+
+
+def changed_paths(base: str, head: str, git_runner=_real_git) -> list[str]:
+    out = git_runner(["diff", "--name-only", f"{base}...{head}"])
+    return [ln for ln in out.splitlines() if ln.strip()]
+
+
+def protected_diff_path(base: str, head: str, git_runner=_real_git) -> str | None:
+    """First protected path the diff touches, else None (structural abstain)."""
+    return scan_protected(changed_paths(base, head, git_runner))
