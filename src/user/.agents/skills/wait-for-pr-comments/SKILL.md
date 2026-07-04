@@ -350,6 +350,25 @@ Report to caller; abort.
 
 Run `git push`.
 
+**On success (agent-ruling repos only):** the pushed fix commits moved the PR
+head, so the head-keyed merge-judge provenance sidecar no longer matches. If the
+resolved policy is `rule-based`/`agent-ruling`, re-record provenance for the new
+head — enumerating every `base..head` commit — so agent-ruling can still
+authorize after this iteration. Best-effort and out of band: a failure here must
+NOT block the chain; its absence simply forces a later `abstain` (fail-closed).
+```bash
+if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
+  NEW_HEAD=$(git rev-parse HEAD)
+  BASE_REF=$(gh pr view "$PR" --repo "$OWNER/$REPO" --json baseRefName --jq .baseRefName)
+  # one --commit per commit in origin/$BASE_REF..$NEW_HEAD; attest FIRST-HAND the
+  # model family(ies) this session's fix subagents produced, trailer-derived otherwise.
+  python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
+    --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
+    --commit "<sha>:<family[+family]>:first-hand" \
+    --recorded-by "wait-for-pr-comments" || true
+fi
+```
+
 **On failure:** keep local commits. Build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
 (no remote update happened), then:
 ```bash

@@ -133,7 +133,7 @@ out=$(run_script "$BASE_POLICY"); rc=$?
 assert "empty PR with nothing expected → exit 0" "[ \$rc -eq 0 ]"
 assert "status is eligible" "[ \"\$(jq -r '.status' <<<\"\$out\")\" = eligible ]"
 assert "head_ref_oid echoed" "[ \"\$(jq -r '.head_ref_oid' <<<\"\$out\")\" = \"$HEAD_SHA\" ]"
-assert "emits base_ref_oid field" "grep -q 'base_ref_oid' '$SCRIPT'"
+assert "base_ref_oid echoed" "[ \"\$(jq -r '.base_ref_oid' <<<\"\$out\")\" = \"$BASE_SHA\" ]"
 assert "blockers array empty" "[ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 0 ]"
 assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep -q -- \"--match-head-commit $HEAD_SHA\""
 
