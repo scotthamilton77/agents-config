@@ -22,13 +22,17 @@ cannot exercise an OpenRouter rung.
 
 ### 2.1 opencode provider block
 
-Extend `src/user/.opencode/opencode.jsonc.template` with a custom provider (OpenRouter is
-OpenAI-compatible; opencode addresses models as `providerID/modelID`):
+Add a custom provider block to the existing `src/user/.opencode/opencode.jsonc.template`
+(OpenRouter is OpenAI-compatible; opencode addresses models as `providerID/modelID`). The
+template already carries `$schema`, `model`, `skills`, and a `permission` block; the snippet
+below is **additive** — the only new key is `"provider"`, and every other existing key stays
+as-is. Do not treat it as a full-file replacement:
 
 ```jsonc
 {
-  "model": "moonshotai/kimi-k2.6",          // unchanged default
-  "provider": {
+  // ...existing keys unchanged: "$schema", "skills", and the "permission" block...
+  "model": "moonshotai/kimi-k2.6",          // existing key, unchanged default
+  "provider": {                             // NEW — the only added key
     "openrouter": {
       "name": "OpenRouter",
       "options": { "apiKey": "{env:OPENROUTER_API_KEY}" },
