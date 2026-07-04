@@ -228,7 +228,7 @@ include = ["project/beads/**"]        # project-scope assets (PRIME.md kit)
   destinations (e.g. the beads kit → `<project>/.beads/PRIME.md`); the staging
   pipeline runs with the project directory as the destination root.
 - **Receipt:** each project install writes its own receipt in the project
-  (`ASSUMPTION:` at `<project>/.agents-config/receipt.json`), giving project
+  (`ASSUMPTION:` at `<project>/.agents-config/install-receipt.json`), giving project
   scope the same prune/uninstall mechanics as user scope and keeping the user
   receipt untouched.
 - **Collision model:** `ASSUMPTION:` project scope reuses the Epic-E merge
@@ -319,6 +319,6 @@ slice keeps `make ci-installer` green on its own.
 - `ASSUMPTION:` §7 project-scope assets source home at `src/project/`.
 - `ASSUMPTION:` §7 project installs require an explicit profile set (no
   implicit `full`).
-- `ASSUMPTION:` §7 project receipt at `<project>/.agents-config/receipt.json`.
+- `ASSUMPTION:` §7 project receipt at `<project>/.agents-config/install-receipt.json`.
 - `ASSUMPTION:` §7 collision model — Epic-E registry unchanged for project
   scope (no blanket project-wins).
