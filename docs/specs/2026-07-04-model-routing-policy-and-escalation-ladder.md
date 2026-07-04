@@ -218,6 +218,15 @@ Two-speed policy (locked decision 4):
 | `interactive` | One retry at the preferred rung, then jump directly to the chain's top rung. Wall-clock matters; minutes beat pennies. |
 | `background` | Climb stepwise through every rung. Wall-clock is free overnight; tokens are not. |
 
+**Ownership of the retry.** The two-speed policy splits across two components. The
+**resolver** encodes only the *rung list*: for `interactive` it emits the compressed
+`[preferred, top rung]` chain (pure data — no retry count, no retry semantics). The
+**one retry at the preferred rung** is **dispatcher** behavior: the dispatcher runs the
+current rung, retries it once on a transient/availability or gate failure, then advances to
+the next rung the resolver emitted. The resolver never encodes retries — so the §11
+resolver contract asserts the compressed chain shape only, and the retry is verified by
+dispatcher-side tests, not the resolver.
+
 Bounds (the vaac.3 "ladder bounded" criterion):
 
 - Chain length is capped at 4 rungs (prgroom's `primary` + 3 fallbacks precedent); the
@@ -301,6 +310,8 @@ as literal temp files, no provider calls anywhere):
 
 1. Known archetype + `background` → full ordered chain from config, verbatim.
 2. Known archetype + `interactive` → compressed chain: `[preferred, top rung]` (two-speed).
+   The resolver emits the rung list only; the one-retry-at-the-preferred-rung is dispatcher
+   behavior (see §6 "Ownership of the retry") and is out of this contract's scope.
 3. Unknown archetype → non-zero exit; error names the known archetypes.
 4. Month-to-date metered spend ≥ ceiling → metered rungs filtered, subscription rungs
    survive, `ceiling.exhausted == true`.
