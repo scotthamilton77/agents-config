@@ -198,7 +198,7 @@ include = ["project/beads/**"]        # project-scope assets (PRIME.md kit)
 
 ### 6.3 Persistence
 
-- User scope: the chosen profile set is recorded in `~/.agents/install.toml`
+- User scope: the chosen profile set is recorded in `~/.agents/agents-config.toml`
   (`ASSUMPTION:` file name/location; lives beside the other user-config
   surfaces) and reused on a bare re-run; `--profiles` overrides and
   re-persists.
@@ -313,7 +313,7 @@ slice keeps `make ci-installer` green on its own.
   heuristics without a recorded baseline.
 - `ASSUMPTION:` §6.1 starter profile set and contents (`full`, `minimal-user`,
   `sdlc`, `project-beads`).
-- `ASSUMPTION:` §6.3 persistence homes — `~/.agents/install.toml` (user) and
+- `ASSUMPTION:` §6.3 persistence homes — `~/.agents/agents-config.toml` (user) and
   `project-config.toml [install]` (project).
 - `ASSUMPTION:` §7 flag spellings `--profiles` / `--project`.
 - `ASSUMPTION:` §7 project-scope assets source home at `src/project/`.
