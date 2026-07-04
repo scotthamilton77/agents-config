@@ -40,6 +40,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - **Always edit source, never deployed artifacts** — when the user asks to change a skill, agent, command, rule, or any other configuration artifact, edit the source file under `src/` (e.g., `src/user/.agents/skills/`, `src/user/.claude/rules/`). Files under `~/.claude/`, `~/.codex/`, `~/.gemini/`, etc. are deploy outputs and will be overwritten on the next installer run. If you catch yourself editing a path outside `src/`, stop and find the source equivalent.
 - **No file-path citations in specs or prose** — Remember that the files that get written into the user space get used in OTHER projects.  Thus our assets CANNOT reference project-internal resources.  `INSTRUCTIONS.md.template` and all shared templates are flattened into per-tool assembled files at install time via `DYNAMIC-INCLUDE`. File-path citations (`INSTRUCTIONS.md > <section>`) are dead-ends after assembly. Always reference shared content by concept or block name (e.g., "the canonical decision matrix", "the `<decision-matrix>` block") so cross-references survive flattening.
 - **NEVER run `scripts/install.sh` or `scripts/install.py` automatically** — only the user runs the installer, and only when they explicitly say so
+- **Placement by capability-dependency, not asset type** — a new skill/agent/rule goes in the shared tree `src/user/.agents/` only if it works on every supported tool; anything that depends on tool-specific capabilities (e.g. Claude subagent orchestration, the Skill tool, AskUserQuestion, hooks) goes in that tool's tree (e.g. `src/user/.claude/skills/`)
 
 ## Repository Structure (current, not target state)
 
@@ -60,6 +61,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `USER-PERSONA.md.template` - User persona template
 - `src/user/.claude/` - **Claude-specific** content (copies to `~/.claude/`)
   - `commands/` - Slash command definitions (`.md`)
+  - `skills/` - Claude-only skills (skills that depend on Claude-specific capabilities); cross-tool skills are sourced from `src/user/.agents/skills/`
   - `rules/` - Claude-specific rules (rules that only apply to Claude contexts); general rules are sourced from `src/user/.agents/rules/`
   - `AGENTS.md.template` - Claude instruction file (refs shared + Claude extensions)
   - `CLAUDE.md.template` - Points to AGENTS.md
