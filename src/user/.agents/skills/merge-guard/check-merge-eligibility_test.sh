@@ -745,4 +745,50 @@ GOOD_NULL_TIMEOUT=$(jq -c '.human_review_timeout_seconds = null' <<<"$BASE_POLIC
 out=$(run_script "$GOOD_NULL_TIMEOUT"); rc=$?
 assert "null human_review_timeout_seconds is still valid" "[ \$rc -eq 0 ]"
 
+# ── bot_review_cap_exhausted: head-exact, fail-closed ────────────────────────
+# write_inv's schema hardcodes polling: {} (Task 17), so it can't express
+# polling.bot_review_cap_exhausted — write these inventories directly instead.
+write_cap_inv() {  # write_cap_inv <filename> <polling-json>
+  jq -n --argjson polling "$2" '{schema_version: 1, pr: {}, polling: $polling, items: []}' \
+    > "$INV_DIR/$1"
+}
+
+# present-true on the current head
+write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "cap exhausted true on current head → fact true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+
+# present-false
+write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":false}'
+out=$(run_script "$BASE_POLICY")
+assert "cap exhausted false → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+
+# field absent → false
+write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"copilot_status":"timeout"}'
+out=$(run_script "$BASE_POLICY")
+assert "field absent → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+
+# inventory absent → false
+out=$(run_script "$BASE_POLICY")
+assert "inventory absent → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+
+# malformed current-head inventory → false (fail-closed); write raw non-JSON
+# content directly since write_cap_inv always emits valid JSON
+printf 'not json' > "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+out=$(run_script "$BASE_POLICY")
+assert "malformed current-head inventory → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+
+# STALE-HEAD GUARD: a prior-head inventory with exhausted=true must NOT leak
+# onto the current head when the current-head inventory is absent. This is
+# the regression guard for the "bot timeout ≈ implicit approval" fail-open
+# bug this feature exists to prevent.
+write_cap_inv "o-r-1-deadbeefstalehead.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "stale prior-head exhausted does NOT leak → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+rm -f "$INV_DIR/o-r-1-deadbeefstalehead.json"
+
 exit $FAIL
