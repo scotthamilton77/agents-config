@@ -51,6 +51,15 @@ class TestAttemptBudget(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()
 
+    def test_state_key_delimiter_disambiguates_hyphenated_owner_repo(self):
+        # owner/repo names may themselves contain hyphens. A "-" delimiter lets
+        # owner="a-b",repo="c" collide with owner="a",repo="b-c" on the same
+        # (pr, base). "~" can never appear in a GitHub owner/repo/pr/SHA, so it
+        # is injective.
+        p1 = jm._attempts_path(self.state, "a-b", "c", "5", "b")
+        p2 = jm._attempts_path(self.state, "a", "b-c", "5", "b")
+        self.assertNotEqual(p1, p2)
+
     def test_fresh_budget_not_exhausted(self):
         self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
 
@@ -85,7 +94,7 @@ class TestProvenanceGate(unittest.TestCase):
         os.makedirs(os.path.join(self.state, "pr-provenance"))
 
     def _write(self, head, commits):
-        path = os.path.join(self.state, "pr-provenance", f"o-r-5-{head}.provenance.json")
+        path = os.path.join(self.state, "pr-provenance", f"o~r~5~{head}.provenance.json")
         with open(path, "w") as fh:
             json.dump({"head_sha": head, "commits": commits, "recorded_by": "s"}, fh)
 
@@ -124,6 +133,21 @@ class TestProvenanceGate(unittest.TestCase):
         ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
                                            judge_family="openai", git_runner=self._rev_list(["c1"]))
         self.assertTrue(ok, reason)
+
+    def test_record_provenance_filename_matches_judge_lookup(self):
+        # LOCKSTEP: record_provenance.py and judge_merge._read_provenance must
+        # agree byte-for-byte on the provenance filename format, or the judge
+        # never finds what the recorder wrote.
+        script = os.path.join(HERE, "record_provenance.py")
+        env = dict(os.environ, MERGE_JUDGE_STATE_HOME=self.state)
+        proc = subprocess.run(
+            [sys.executable, script, "--owner", "a-b", "--repo", "c-d", "--pr", "5",
+             "--head-sha", "h1", "--commit", "h1:anthropic:first-hand", "--recorded-by", "s"],
+            capture_output=True, text=True, timeout=30, env=env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        record = jm._read_provenance(self.state, "a-b", "c-d", "5", "h1")
+        self.assertIsNotNone(record)
+        self.assertEqual(record["head_sha"], "h1")
 
     def test_commit_missing_from_record_abstains(self):
         self._write("h", [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}])
@@ -276,7 +300,7 @@ class TestMainEndToEnd(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()
         os.makedirs(os.path.join(self.state, "pr-provenance"))
-        with open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json"), "w") as fh:
+        with open(os.path.join(self.state, "pr-provenance", "o~r~5~h.provenance.json"), "w") as fh:
             json.dump({"head_sha": "h",
                        "commits": [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}],
                        "recorded_by": "s"}, fh)
@@ -429,6 +453,62 @@ class TestMainEndToEnd(unittest.TestCase):
         env = self._run(findings=[], diff_body="x\n" * 200001)  # > 400 KB
         self.assertEqual(env["verdict"], "abstain")
         self.assertEqual(env["abstain_reason"], "oversized-diff")
+
+    def test_stale_refs_after_backend_abstains(self):
+        # Gate 3 (pre-backend) sees CURRENT refs; the up-to-900s backend call
+        # can outlast that check. The post-backend recheck must see the MOVED
+        # head on its second call and refuse to authorize a go bound to a
+        # head/base pair that no longer exists.
+        calls = {"n": 0}
+
+        def fake_gh(args):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return '{"headRefOid":"h","baseRefOid":"b"}'
+            return '{"headRefOid":"h-moved","baseRefOid":"b"}'
+
+        def fake_git(args):
+            if args[:2] == ["diff", "--name-only"]:
+                return "src/app/x.py\n"
+            if args[0] == "rev-list":
+                return "c1\n"
+            if args[0] == "diff":
+                return "diff body\n"
+            raise AssertionError(args)
+
+        def fake_nonce():
+            return "NONCE123"
+
+        def fake_backend(prompt, model, effort, timeout):
+            body = json.dumps({"merge_blocking_findings": [], "summary": "clean"})
+            return f"<<<JUDGE:NONCE123>>>{body}<<<END:NONCE123>>>"
+
+        env = jm.run_judge(
+            owner="o", repo="r", pr="5", head="h", base="b", base_ref="main",
+            policy=self.policy, state=self.state, nonce_fn=fake_nonce,
+            git_runner=fake_git, gh_runner=fake_gh, backend_runner=fake_backend)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "base-or-head-moved")
+        self.assertEqual(calls["n"], 2)  # Gate 3 + the post-backend recheck
+
+
+class TestMainErrorEnvelope(unittest.TestCase):
+    def test_invalid_policy_json_emits_abstain_envelope_and_exits_2(self):
+        # A bad --policy-json makes json.loads raise before any gate runs, so
+        # main()'s except path fires with no parsed policy available. The
+        # "verdict envelope on stdout" contract must still hold.
+        proc = subprocess.run(
+            [sys.executable, os.path.join(HERE, "judge_merge.py"),
+             "--owner", "o", "--repo", "r", "--pr", "5",
+             "--head-ref-oid", "h", "--base-ref-oid", "b", "--base-ref", "main",
+             "--policy-json", "not json"],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        env = json.loads(proc.stdout)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "harness-error")
+        self.assertEqual(env["head_ref_oid"], "h")
+        self.assertEqual(env["base_ref_oid"], "b")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ class TestRecordProvenance(unittest.TestCase):
             "--commit", "def456:human:first-hand",
             "--recorded-by", "session-xyz")
         self.assertEqual(code, 0, err)
-        path = os.path.join(self.state, "pr-provenance", "o-r-5-abc123.provenance.json")
+        path = os.path.join(self.state, "pr-provenance", "o~r~5~abc123.provenance.json")
         self.assertTrue(os.path.exists(path))
         with open(path) as fh:
             rec = json.load(fh)
@@ -46,7 +46,7 @@ class TestRecordProvenance(unittest.TestCase):
             "--head-sha", "h", "--commit", "h:openai+anthropic:first-hand",
             "--recorded-by", "s")
         self.assertEqual(code, 0, err)
-        with open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json")) as fh:
+        with open(os.path.join(self.state, "pr-provenance", "o~r~5~h.provenance.json")) as fh:
             rec = json.load(fh)
         self.assertEqual(rec["commits"][0]["author_families"], ["openai", "anthropic"])
 
@@ -60,6 +60,33 @@ class TestRecordProvenance(unittest.TestCase):
     def test_missing_required_flag_errors(self):
         code, _, err = run(self.state, "--owner", "o", "--repo", "r")
         self.assertNotEqual(code, 0)
+
+    def test_owner_path_traversal_rejected(self):
+        code, _, err = run(
+            self.state, "--owner", "../../etc", "--repo", "r", "--pr", "5",
+            "--head-sha", "h", "--commit", "h:openai:first-hand", "--recorded-by", "s")
+        self.assertNotEqual(code, 0)
+        self.assertIn("illegal path characters", err)
+        out_dir = os.path.join(self.state, "pr-provenance")
+        self.assertEqual(os.listdir(out_dir) if os.path.isdir(out_dir) else [], [])
+
+    def test_repo_with_slash_rejected(self):
+        code, _, err = run(
+            self.state, "--owner", "o", "--repo", "a/b", "--pr", "5",
+            "--head-sha", "h", "--commit", "h:openai:first-hand", "--recorded-by", "s")
+        self.assertNotEqual(code, 0)
+        self.assertIn("illegal path characters", err)
+        out_dir = os.path.join(self.state, "pr-provenance")
+        self.assertEqual(os.listdir(out_dir) if os.path.isdir(out_dir) else [], [])
+
+    def test_head_sha_dotdot_rejected(self):
+        code, _, err = run(
+            self.state, "--owner", "o", "--repo", "r", "--pr", "5",
+            "--head-sha", "..)", "--commit", "h:openai:first-hand", "--recorded-by", "s")
+        self.assertNotEqual(code, 0)
+        self.assertIn("illegal path characters", err)
+        out_dir = os.path.join(self.state, "pr-provenance")
+        self.assertEqual(os.listdir(out_dir) if os.path.isdir(out_dir) else [], [])
 
 
 if __name__ == "__main__":

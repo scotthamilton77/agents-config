@@ -3,7 +3,7 @@
 
 Invoked by the delivery workflow (finishing-a-development-branch) right after
 push, once owner/repo/PR/head-SHA are known. Writes
-  <state>/pr-provenance/<owner>-<repo>-<pr>-<head_sha>.provenance.json
+  <state>/pr-provenance/<owner>~<repo>~<pr>~<head_sha>.provenance.json
 where <state> = $MERGE_JUDGE_STATE_HOME (tests) or ~/.claude/state (prod).
 
 The delivery session attests FIRST-HAND the families it knows it produced this
@@ -24,6 +24,13 @@ import sys
 
 _FAMILIES = {"anthropic", "openai", "google", "human"}
 _ATTESTATIONS = {"first-hand", "trailer-derived"}
+
+
+def _safe_component(value: str, name: str) -> str:
+    """Reject path-traversal / separator chars in a filename component (fail closed)."""
+    if not value or any(c in value for c in ("/", "\\", "\x00")) or ".." in value or "~" in value:
+        raise ValueError(f"--{name} contains illegal path characters: {value!r}")
+    return value
 
 
 def _state_dir() -> str:
@@ -64,7 +71,11 @@ def main() -> int:
         record = {"head_sha": args.head_sha, "commits": commits, "recorded_by": args.recorded_by}
         out_dir = _state_dir()
         os.makedirs(out_dir, exist_ok=True)
-        path = os.path.join(out_dir, f"{args.owner}-{args.repo}-{args.pr}-{args.head_sha}.provenance.json")
+        for _name, _val in (("owner", args.owner), ("repo", args.repo),
+                            ("pr", args.pr), ("head-sha", args.head_sha)):
+            _safe_component(_val, _name)
+        # provenance filename format is shared with judge_merge.py's _read_provenance; keep in sync
+        path = os.path.join(out_dir, f"{args.owner}~{args.repo}~{args.pr}~{args.head_sha}.provenance.json")
         tmp = path + ".tmp"
         with open(tmp, "w") as fh:
             json.dump(record, fh, indent=2)

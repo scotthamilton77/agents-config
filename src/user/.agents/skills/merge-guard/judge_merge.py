@@ -63,7 +63,7 @@ def state_home() -> str:
 
 
 def _attempts_path(state: str, owner: str, repo: str, pr: str, base: str) -> str:
-    return os.path.join(state, "merge-judge", f"{owner}-{repo}-{pr}-{base}.attempts.json")
+    return os.path.join(state, "merge-judge", f"{owner}~{repo}~{pr}~{base}.attempts.json")
 
 
 def _read_attempts(path: str) -> int:
@@ -113,7 +113,8 @@ def protected_diff_path(base: str, head: str, git_runner=_real_git) -> str | Non
 
 
 def _read_provenance(state: str, owner: str, repo: str, pr: str, head: str) -> dict | None:
-    path = os.path.join(state, "pr-provenance", f"{owner}-{repo}-{pr}-{head}.provenance.json")
+    # provenance filename format is shared with record_provenance.py; keep in sync
+    path = os.path.join(state, "pr-provenance", f"{owner}~{repo}~{pr}~{head}.provenance.json")
     try:
         with open(path) as fh:
             return json.load(fh)
@@ -302,7 +303,7 @@ def _config_hash(policy: dict) -> str:
 
 
 def _cache_path(state, owner, repo, pr, head, base, diff_sha, policy):
-    key = f"{owner}-{repo}-{pr}-{head}-{base}-{diff_sha}-{_config_hash(policy)}.judge.json"
+    key = f"{owner}~{repo}~{pr}~{head}~{base}~{diff_sha}~{_config_hash(policy)}.judge.json"
     return os.path.join(state, "merge-judge", key)
 
 
@@ -417,6 +418,11 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
     # return — full per-key file-locking is a deferred follow-up.
     if no_go_cached(state, owner, repo, pr, head, base, diff.diff_sha, policy):
         return _abstain(head, base, diff.diff_sha, "concurrent-no-go", policy, families)
+    # A go must bind to the CURRENT head+base. Refs can move during the (up to
+    # 900s) backend call; Gate 3's pre-backend check is stale by now. Recheck
+    # live before authorizing — symmetric with the concurrent-no-go recheck.
+    if not refs_current(owner, repo, pr, head, base, gh_runner):
+        return _abstain(head, base, diff.diff_sha, "base-or-head-moved", policy, families)
     return envelope
 
 
@@ -438,6 +444,16 @@ def main() -> int:
         sys.stdout.write("\n")
         return _EXIT[env["verdict"]]
     except Exception as exc:  # noqa: BLE001 - never crash into a merge; abstain
+        # Contract: ALWAYS emit a verdict envelope on stdout, even on unexpected
+        # error. Policy may be unparsed here (bad --policy-json), so emit a
+        # minimal abstain with empty judge fields. Exit 2 == abstain.
+        env = build_envelope(head=args.head_ref_oid, base=args.base_ref_oid,
+                             diff_sha="", verdict=VERDICT_ABSTAIN,
+                             abstain_reason="harness-error", judge_model="",
+                             judge_effort="", author_families=[], summary="",
+                             merge_blocking_findings=[])
+        json.dump(env, sys.stdout, indent=2)
+        sys.stdout.write("\n")
         sys.stderr.write(f"error: unexpected {type(exc).__name__}: {exc}\n")
         return 2
 
