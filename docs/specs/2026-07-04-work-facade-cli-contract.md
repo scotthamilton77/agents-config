@@ -90,7 +90,8 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   is every existing `bd … --json` call site.
 - Typed error codes (initial set): `E_NOT_FOUND`, `E_TYPE_WALL`, `E_DEP_CYCLE`,
   `E_FIELD_CLOBBER_GUARD`, `E_LOCK_CONTENTION`, `E_SYNC_BEHIND`, `E_BACKEND_DRIFT`
-  (bd output failed the facade's own parser — the drift alarm), `E_USAGE`.
+  (bd output failed the facade's own parser — the drift alarm),
+  `E_UNSUPPORTED_CAPABILITY` (semantics defined in §6), `E_USAGE`.
 - Lock-contention retry: bounded backoff inside the facade; only after
   exhaustion does `E_LOCK_CONTENTION` surface (quirk-shim inventory, last rows).
 
