@@ -45,9 +45,10 @@ as-is. Do not treat it as a full-file replacement:
 }
 ```
 
-- Auth: `{env:OPENROUTER_API_KEY}` — config stays secret-free; the env var is documented
-  in `docs/guide/configuration.md`. No key → provider unusable → dispatcher availability
-  fallback moves to the next rung (fail-lateral, never fail-open).
+- Auth: `{env:OPENROUTER_API_KEY}` — config stays secret-free; the env var gets documented
+  in `docs/guide/configuration.md` as part of this bead's implementation (see §8). No key →
+  provider unusable → dispatcher availability fallback moves to the next rung (fail-lateral,
+  never fail-open).
 - "Profiles" (the bead's word) = **named models under one provider block**, selected
   per-dispatch via `--model openrouter/<id>` — not multiple jsonc files. opencode's
   invoker already passes `spec.model` verbatim (`subprocess_runner.py:256-257`), so no
