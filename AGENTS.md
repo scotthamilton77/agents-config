@@ -12,6 +12,8 @@ This is a versioned collection of agents, skills, commands, and templates for AI
 
 **Target operating ratio (aspirational, not yet measured)** — roughly **85% / 5% / 10%** of human time on brainstorming / troubleshooting escalations / validation testing, with a noticeably shorter idea-to-shippable cycle time than naked-LLM use.
 
+**Prime directive** — *Get the human out of the agent-babysitting job.* When prioritizing work or resolving trade-offs in this repo, the tiebreaker question is: does this reduce human interventions per merged PR? Prefer the option that moves human time upstream (specs, judgment) or into thin verification gates; reject work that adds polish without reducing interventions.
+
 **Mission** — Ship a portable discipline layer (agents, skills, commands, formulas, plugins) that makes that operating ratio achievable on any major AI coding assistant. The mechanism rests on five load-bearing commitments:
 
 1. **Frontload human creativity & judgment** via rigorous brainstorming and a spec-readiness gate
@@ -91,18 +93,19 @@ Other notes:
 
 **Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
 
-Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4 → M5. Each milestone's `description` field is the canonical scope statement.
+Milestones form a sequential `blocks` chain: M0 → M1 → M2 → M3 → M4 → M5. PORT runs in parallel (no chain edge). Each milestone's `description` field is the canonical scope statement.
 
-| ID                    | Status      | Milestone                                                                              |
-| --------------------- | ----------- | -------------------------------------------------------------------------------------- |
-| `agents-config-wgclw` | in_progress | **M0** — Discipline-layer rearchitecture: scripts own determinism, skills own judgment |
-| `agents-config-abn9`  | in_progress | **M1** — Stabilize, finish in-flight, ship immediate accelerators                      |
-| `agents-config-qn0g`  | open        | **M2** — Brainstorm-readiness gate                                                     |
-| `agents-config-vaac`  | in_progress | **M3** — Worker fleet through PR autonomy                                              |
-| `agents-config-t142`  | open        | **M4** — Overnight autonomy                                                            |
-| `agents-config-yf2ov` | open        | **M5** — Post-MVP capabilities                                                         |
+| ID                     | Status      | Milestone                                                                              |
+| ---------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `agents-config-wgclw`  | in_progress | **M0** — Discipline-layer rearchitecture (narrowed: land the in-flight epic-hygiene hardening, then close; PDLC-orchestrator design deferred) |
+| `agents-config-abn9`   | in_progress | **M1** — Post-Fable operations: run the pipeline on Opus/Sonnet/cheap-model economics  |
+| `agents-config-uxns2`  | open        | **PORT** — Portable discipline layer: home + work machine (parallel track)             |
+| `agents-config-qn0g`   | open        | **M2** — Brainstorm-readiness gate                                                     |
+| `agents-config-vaac`   | in_progress | **M3** — Worker fleet through PR autonomy, on cheap models with escalation ladders     |
+| `agents-config-t142`   | open        | **M4** — Overnight autonomy: two-shift operating model + review feedback loop          |
+| `agents-config-yf2ov`  | open        | **M5** — Post-MVP capabilities (frozen)                                                |
 
-All milestones are P1. Work that maps to a milestone is a child of that milestone bead.
+All milestones are P1. Work that maps to a milestone is a child of that milestone bead. A large share of the backlog carries status `deferred`: those beads were parked deliberately and are revivable with one command — do not treat a deferred bead as missing work or a stale queue.
 
 ## graphify
 
