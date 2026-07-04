@@ -64,13 +64,11 @@ def _deep_merge(existing: Any, incoming: Any) -> Any:
         return existing
 
     merged: dict[str, Any] = {}
-    for key in (*existing, *incoming):
-        if key in merged:
-            continue
-        in_existing = key in existing
-        in_incoming = key in incoming
-        if in_existing and in_incoming:
-            ev, iv = existing[key], incoming[key]
+    # Existing's keys first, in existing's order; a key shared with incoming
+    # merges by type, anything else keeps existing.
+    for key, ev in existing.items():
+        if key in incoming:
+            iv = incoming[key]
             if isinstance(ev, list) and isinstance(iv, list):
                 merged[key] = _union_arrays(ev, iv)
             elif isinstance(ev, dict) and isinstance(iv, dict):
@@ -78,10 +76,12 @@ def _deep_merge(existing: Any, incoming: Any) -> Any:
             else:
                 # scalar conflict OR type mismatch -> keep existing.
                 merged[key] = ev
-        elif in_existing:
-            merged[key] = existing[key]
         else:
-            merged[key] = incoming[key]
+            merged[key] = ev
+    # Then keys found only in incoming, appended in incoming's order.
+    for key, iv in incoming.items():
+        if key not in merged:
+            merged[key] = iv
 
     return merged
 
