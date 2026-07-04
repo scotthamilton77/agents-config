@@ -44,6 +44,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `scripts/` - Installation and maintenance scripts
   - `install.sh` - Thin exec stub; delegates to the uv-managed Python installer (`packages/installer`) via `uv run`
   - `install.py` - Python entry point (`from installer.cli import main`); also invocable as `uv run python -m installer`
+- `docs/guide/` - **User guide** for people *using* the deployed assets: how to install, configure a project, and run the opinionated agentic SDLC (`index`, `getting-started`, `configuration`, `sdlc-workflow`, `reference`)
 - `docs/plans/` - Design documents for features in development
 - `docs/specs/` - Design specifications (point-in-time proposals; date-prefixed filenames; status varies from draft through implemented)
 - `docs/primers/` - Knowledge base of specific subjects to augment what you already know, or can get through your tools, about key primitives in this architecture (skills, agents, rules, commands, bead formulas, etc.)
@@ -72,16 +73,21 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `AGENTS.md.template` - Flat instruction skeleton with dynamic-include markers
   - `OPENCODE-EXTENSIONS.md.template` - OpenCode-specific notes and conventions
   - `opencode.jsonc.template` - Settings (model, permissions, skills paths)
-- `src/plugins/` - **Optional plugin content** (installed only when detected; a plugin's rules deploy only when its tool is detected)
-  - `beads/` - beads plugin: skills, Claude rules, formulas, plus the beads CLI + discovered-work rules
-  - `graphify/` - graphify plugin: the graphify discipline rule (installer detection wiring pending)
-  - `codex/` - codex plugin: the Codex routing rule (installer detection wiring pending)
+- `src/plugins/` - **Optional plugin content** (auto-detected and installed by the Python installer via a directory scan of `src/plugins/`; a plugin's rules deploy only when its tool is detected)
+  - `beads/` - beads plugin: ships two rules — `beads.md` (bd CLI gotchas) and `discovered-work.md` (sibling-test placement). Gets a specialized adapter that also routes `~/.beads/`
+  - `graphify/` - graphify plugin: the graphify discipline rule (shared)
+  - `codex/` - codex plugin: the Codex routing rule (Claude-only)
+- `packages/` - **Real Python packages** (standalone uv projects, each with its own `pyproject.toml`; not part of the installed config surface)
+  - `installer/` - the installer engine that `scripts/install.sh` execs; CI-gated (`make ci-installer`)
+  - `prgroom/` - deterministic PR-grooming CLI that supersedes the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills; CI-gated (`make ci-prgroom`). Driven by the `monitor-pr` skill. **Not yet installed by the installer** — run via `uv tool install`/`uv run` from `packages/prgroom/`
+  - `pdlc/` - PDLC Orchestrator: the deterministic FSM engine intended to drive Objectives through the lifecycle. Early — happy-path tracer bullet only; not yet CI-gated
+  - `holding-place/` - Idea pipeline + the Promote contract into the PDLC Orchestrator. Early; not yet CI-gated
 - `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.
 
 Other notes:
 
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
-- **Exception — `packages/installer/` is a real Python package with a mandatory quality gate.** Before pushing any change under `packages/installer/`, run `make ci-installer` from the repo root (or `make ci` for the whole repo). It runs lint, format-check, typecheck, coverage, audit, and entry-verify — the same gate CI enforces. See `packages/installer/AGENTS.md` for the package-scoped workflow.
+- **Exception — the packages under `packages/` are real Python code with mandatory quality gates.** `make ci` (the whole-repo gate CI enforces) runs `ci-installer` + `ci-prgroom` + `lint-actions`. Before pushing a change under `packages/installer/` run `make ci-installer`; under `packages/prgroom/` run `make ci-prgroom`. Each gate runs lint, format-check, typecheck, coverage, audit, and entry-verify. See the package's own `AGENTS.md` for its scoped workflow. (`packages/pdlc/` and `packages/holding-place/` are early and not yet wired into `make ci`.)
 
 **Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
 

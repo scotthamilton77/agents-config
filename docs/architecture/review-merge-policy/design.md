@@ -46,7 +46,7 @@ Drives polling. The cycle is ON **iff** `bot-review-expected` **or**
 | `bot-reviewers` (list) | The **trusted** bot identities whose review satisfies the bot-review fact — matched by **exact** login / app identity, not substring. Defaults to Copilot's identity. A review from a bot not on this list does not count. This is the trust boundary for `bot-quiescence` autonomous merge; a substring match (as the legacy script does with `test("copilot"; "i")`) is insufficient. |
 | `bot-inactivity-timeout` | Bot silence that counts as "bot is done" (reuses prgroom's review-finish-timeout concept). |
 | `human-approvers-required` (int) | How many human approvals to wait for. |
-| `human-review-timeout` | How long to wait for slow humans before giving up. Empty = wait indefinitely (interactive); autonomous runs park the molecule rather than block (see agents-config-ukzs). |
+| `human-review-timeout` | How long to wait for slow humans before giving up. Empty = wait indefinitely (interactive); autonomous runs park the molecule rather than block on it — pending a future pipelining capability that would let other work advance in the meantime. |
 
 A timeout means "stop waiting," not "treat the review as satisfied." A bot
 that never reviewed, or humans who never approved, do **not** become
@@ -122,8 +122,9 @@ N humans approved) live in the rules that need them.
 prgroom's rolled-up `auto_merge_eligible` boolean
 (`docs/architecture/prgroom/design.md` §4.5) is **never** consumed wholesale —
 two of its four components are unsuitable here: `phase_is_quiesced` embeds the
-reviewer-quiescence wait that agents-config-abn9.8.19 documents as unseeded /
-vacuously true, and `human_review_satisfied` is a *positive* authorization
+reviewer-quiescence wait, which is currently unseeded — prgroom never
+populates `state.reviewers`, so the gate evaluates vacuously true — and
+`human_review_satisfied` is a *positive* authorization
 fact (binary, no notion of `N > 1`) that belongs to the human-approvals rule,
 not to a blocker floor.
 
@@ -139,8 +140,8 @@ not to a blocker floor.
 | Head unchanged since evaluation | Enforced via `--match-head-commit` at the merge call (see Freshness invariant). |
 
 Only the two internal facts are prgroom-sourced (and only when available); the
-rest are verified live/directly, so the design does not depend on
-agents-config-abn9.8.19 landing.
+rest are verified live/directly, so the design does not depend on that
+reviewer-state seeding gap being closed.
 
 ## Freshness invariant
 
@@ -163,10 +164,11 @@ SHA — this is surface this policy introduces.
    read — so new unresolved threads / blockers that appear after an earlier
    "looks clean" read are caught.
 3. **Bind the merge to the checked head**: the merge is issued as
-   `gh pr merge --match-head-commit <headRefOid>` (the SHA the predicate was
-   evaluated against). GitHub rejects the merge if the head changed in the
-   final window; `merge-guard` re-evaluates from scratch on rejection rather
-   than retrying blind.
+   `gh pr merge --squash --match-head-commit <headRefOid>` (the SHA the
+   predicate was evaluated against) — `merge-guard` always squash-merges.
+   GitHub rejects the merge if the head changed in the final window;
+   `merge-guard` re-evaluates from scratch on rejection rather than retrying
+   blind.
 
 ## Machine-checkable predicates
 
@@ -375,8 +377,8 @@ ReviewMergePolicy = {
 
 `per-bead label` > project config > built-in default.
 
-Per-bead override labels (consumed here; *authored* at brainstorm time by
-agents-config-7bk.12):
+Per-bead override labels (consumed here; *authored* at brainstorm time by the
+brainstorm-bead workflow's policy-knob step):
 
 - `review-exit-copilot-only` → `bot_review_expected = true` **regardless** of
   project config (its purpose is to wait for the bot; it must not degrade to
@@ -413,9 +415,9 @@ Built-in defaults (section/key absent):
 |---|---|---|
 | `bot-review-expected` | bool | `true` |
 | `bot-reviewers` | list[str] | `["Copilot", "copilot-pull-request-reviewer[bot]"]` |
-| `bot-inactivity-timeout` | duration string | `"20m"` |
+| `bot-inactivity-timeout` | duration string (`"20m"`) \| int (seconds) | `"20m"` |
 | `human-approvers-required` | int | `0` |
-| `human-review-timeout` | duration string \| unset | unset (wait indefinitely) |
+| `human-review-timeout` | duration string (`"20m"`) \| int (seconds) \| unset | unset (wait indefinitely) |
 
 `[merge-policy]` (Axis 2):
 
@@ -423,6 +425,9 @@ Built-in defaults (section/key absent):
 |---|---|---|
 | `merge-authorization` | `"never"` \| `"explicit"` \| `"rule-based"` | `"explicit"` |
 | `merge-rule` | `"bot-quiescence"` \| `"human-approvals"` \| `"agent-ruling"` \| unset | unset (required iff `merge-authorization = "rule-based"`) |
+
+An unrecognized key in either section is a resolver error (exit 1) — the
+resolver never silently ignores a typo'd or stale key.
 
 Per-bead override labels (consumed by the resolver; independent of the TOML
 keys above):

@@ -6,6 +6,8 @@
 > **Source bead**: `agents-config-fca6.12`
 > **Source design**: [design.md](design.md) — §2 (state schema) + §4.5 (auto-merge eligibility / status output) + §5 (EscalationSink) + §7 (PR-memory channel); the verify gate, VerifyVerdict, GateStrength, and verify_checklist live in §6
 
+> **Status**: **`VerifyVerdict`, `GateStrength`, and the `verify` field/step are DESIGNED, not built.** `packages/prgroom/src/prgroom/prsession/state.py::PRGroomingState` has no `verify` field, and neither type exists anywhere in the package. The retry counter field is `round` (not `pr_review_retries_used`), and the built cap-trip error code is `LIFECYCLE_HARD_CAP_EXCEEDED` (not `LIFECYCLE_PR_REVIEW_EXHAUSTED` / `LIFECYCLE_FIX_VERIFY_EXHAUSTED`). This page documents the target schema — see [`c4-l3-verify.md`](c4-l3-verify.md).
+
 ## Glossary
 
 | Term | Meaning |
@@ -29,6 +31,8 @@ Two complementary data views in one file:
 The data view answers: *what shapes does prgroom read, write, and emit; which of those are its own truth vs mirrored from external truth?*
 
 ## Persistent state ER diagram
+
+> **Diagram note**: The `VerifyVerdict` entity, the `PRGroomingState.verify` field, `Disposition.gate: GateStrength`, and the `pr_review_retries_used` field name are target-state (see Status above). The built `PRGroomingState` field is `round`, and there is no `verify` field or `GateStrength` type.
 
 ```mermaid
 erDiagram
@@ -190,6 +194,8 @@ flowchart LR
 - prgroom does NOT own the `human-review-required` label semantics. It writes the label; it does not read or wait on it. Future merge-gate components (`gmxo`, `td39`) consume the label as their merge-block signal.
 
 ## Boundary JSON contract #1 — `prgroom status --json` (§4.5)
+
+> **Contract note**: The `pr_review_retries_used` field name and the `verify` block in the example below are target-state (see Status above); the built state field is `round`.
 
 The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingState` + a small live gh API enrichment (label state, PR-approval reviews). Stability commitment per §4.5: **adding fields is non-breaking; removing or renaming is breaking and requires a version-bumped envelope**.
 

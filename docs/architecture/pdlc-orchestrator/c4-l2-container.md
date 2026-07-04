@@ -72,11 +72,13 @@ C4Container
 
 #### `pdlc` process — Python CLI
 
+> **Build status: CLI not yet built.** No `pdlc` CLI exists today — no argparse/click/typer entry point, no `__main__.py`, and no `[project.scripts]` binary in `pyproject.toml`. `Orchestrator.tick()` (`packages/pdlc/src/pdlc/orchestrator.py`) is invoked directly, currently only from tests. `pdlc tick / health / objectives / reconcile / unfreeze` describe the target CLI surface, not a shipped one.
+
 The whole orchestrator runs here. Every invocation is short-lived: parse args, do the work, exit. There is no daemon, no background thread pool, no in-memory cache between invocations. State that must survive an invocation lives in **OrchestratorStateRepo** (orchestrator-owned) or **bd** (tracker-owned).
 
 Internally — at L3 — this process is composed of:
 
-- CLI dispatcher (subcommand routing)
+- CLI dispatcher (subcommand routing) — **not yet built**; see build-status note above
 - Tick loop (DISCOVER / RECONCILE / REAP / DISPATCH / PERSIST)
 - WorkTracker adapter (bd-bound implementation of the protocol)
 - JobSupervisor (process supervisor for Worker subprocesses)
@@ -89,6 +91,8 @@ Internally — at L3 — this process is composed of:
 Those components are drawn out in [`c4-l3-tick-loop.md`](c4-l3-tick-loop.md) for the tick loop; the other components carry **TODO stubs** in that file pending their own implementation children.
 
 #### OrchestratorStateRepo — Dolt sidecar
+
+> **Build status: in-memory, not Dolt.** The current `OrchestratorStateRepo` (`packages/pdlc/src/pdlc/state_repo.py:33-89`) is a plain in-memory Python `dict` keyed by `objective_id` — no Dolt, no persistence across process exit, no branching, no CAS. Its own docstring calls it "the tracer's reference" implementation. Everything below describes the intended Dolt-backed sidecar.
 
 A SQL store distinct from the tracker's store, holding everything the Orchestrator is canonical for:
 

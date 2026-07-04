@@ -25,6 +25,8 @@ Show what data lives where, who owns it canonically, how mid-flight edits are de
 
 ## Ownership boundaries
 
+> **Build status: OrchestratorStateRepo is in-memory, not Dolt.** The "Orchestrator domain" store below is Dolt-backed in the intended design; the current implementation (`packages/pdlc/src/pdlc/state_repo.py:33-89`) is a plain in-memory `dict`, dropped on process exit — no branching, no CAS, no cross-process persistence. Treat the Dolt sidecar as the target, not shipped state.
+
 ```mermaid
 flowchart LR
     subgraph Tracker [Tracker domain — canonical: bd / Dolt]
