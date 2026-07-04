@@ -380,6 +380,17 @@ class TestFinalMessageText(unittest.TestCase):
         with self.assertRaises(Exception):
             jm._final_message_text("not json at all")
 
+    def test_null_raw_output_raises(self):
+        # A present-but-null rawOutput must raise here so run_backend's caller
+        # maps it to a judge-error abstain — not return None and later TypeError
+        # in extract_verdict_block, which escapes to the harness-error catch-all.
+        with self.assertRaises(Exception):
+            jm._final_message_text(json.dumps({"status": 0, "rawOutput": None}))
+
+    def test_non_string_raw_output_raises(self):
+        with self.assertRaises(Exception):
+            jm._final_message_text(json.dumps({"status": 0, "rawOutput": 42}))
+
 
 class TestMainEndToEnd(unittest.TestCase):
     def setUp(self):

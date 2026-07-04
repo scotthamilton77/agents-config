@@ -310,7 +310,13 @@ def _final_message_text(raw_stdout: str) -> str:
     payload = json.loads(raw_stdout)          # non-JSON => raises => abstain
     if payload.get("status") != 0:
         raise RuntimeError(f"codex task status {payload.get('status')!r}")
-    return payload.get("rawOutput", "")
+    raw_output = payload.get("rawOutput", "")
+    # A present-but-null (or otherwise non-string) rawOutput must raise here so
+    # the caller maps it to a judge-error abstain; returning it verbatim would
+    # TypeError downstream in extract_verdict_block and escape to harness-error.
+    if not isinstance(raw_output, str):
+        raise RuntimeError(f"codex task rawOutput not a string: {type(raw_output).__name__}")
+    return raw_output
 
 
 import argparse  # noqa: E402
