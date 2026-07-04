@@ -100,10 +100,15 @@ Two regimes, split by what the installer can know:
 ### 5.1 Baseline going forward: instruction-file hashes in the receipt
 
 Receipts today record only wholesale-owned prunable items. This design extends
-the receipt with a small `instruction_hashes` map — dest-relative path →
-sha256 of the assembled bytes as written. `ASSUMPTION:` recorded as a new
-receipt field with a schema-version bump (receipt `SCHEMA_VERSION` 1 → 2),
-older receipts remaining readable with an empty map.
+the receipt with a small `instruction_hashes` map — path → sha256 of the
+assembled bytes as written. Keys follow the receipt's existing entry-path
+convention (home-relative, matching `ReceiptEntry.path`), e.g.
+`.claude/AGENTS.md`. `ASSUMPTION:` recorded as a new receipt field with a
+schema-version bump (receipt `SCHEMA_VERSION` 1 → 2), older receipts remaining
+readable with an empty map. The receipt's integrity digest enumerates the fields
+it covers (`schema_version`, `roots`, `entries`) rather than hashing the whole
+document, so v2 MUST add `instruction_hashes` to that digest input — otherwise
+integrity would not protect this new prune/overwrite decision input.
 
 On a later install, for each instruction destination:
 
