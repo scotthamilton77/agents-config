@@ -101,7 +101,9 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
 
 - Every envelope carries `protocol` (semver `MAJOR.MINOR`). Additive fields bump
   MINOR; any breaking change to envelope or `data` shapes bumps MAJOR.
-- `work --protocol-version` prints the version and exits 0 — the consumer
+- `work --protocol-version` returns a standard success envelope on stdout
+  (`ok: true`, `data: {"protocol": "1.0"}`, exit 0) — no exception to the
+  "stdout is always a JSON envelope" invariant (§4). It is the consumer
   handshake at adapter init (prgroom/PDLC pin a major and refuse a mismatch at
   startup rather than mis-parsing mid-run).
 
@@ -183,8 +185,9 @@ scripted-bd fake, no live Dolt in unit tests).
    times → `E_LOCK_CONTENTION`.
 8. `sync` ordering: commit before push; `--pull` with dirty state → `E_SYNC_BEHIND`.
 9. Drift alarm: fake emits an unrecognized `show` shape → `E_BACKEND_DRIFT`.
-10. Protocol handshake: `--protocol-version` output stable; envelope `protocol`
-    matches.
+10. Protocol handshake: `--protocol-version` emits a standard success envelope
+    (`ok: true`, `data.protocol` set); its `data.protocol` matches the
+    `protocol` other verbs' envelopes carry.
 
 ## 12. Out of scope
 
