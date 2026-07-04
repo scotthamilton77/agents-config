@@ -382,6 +382,8 @@ prior=$(jq -c '{c:(.polling.rereview_round_count // 0), e:(.polling.bot_review_c
 `$prior` (`{c, e}`) is the baseline both hooks below pass as
 `--prior-count`/`--prior-exhausted` to `compute-rereview-polling.sh`, and `e`
 is the "before" value for each hook's false → true `PushNotification` check.
+Neither hook passes `--silent-cap` — the silent re-request cap is locked at
+the helper's default (1) per spec decision, not a per-repo config knob.
 
 1. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
@@ -428,8 +430,15 @@ result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
   --prior-count "$(jq -r '.c' <<<"$prior")" \
   --prior-exhausted "$(jq -r '.e' <<<"$prior")" \
   --event chatty-cap)
-POLLING_FILE=$(jq -c --argjson r "$result" '. + $r' <<<"$POLLING_FILE")
+jq -c --argjson r "$result" '. + $r' "$POLLING_FILE" > "${POLLING_FILE}.tmp" \
+  && mv "${POLLING_FILE}.tmp" "$POLLING_FILE"
 ```
+`$POLLING_FILE` stays a **path** throughout — read its current content, merge
+`$result` in, write back to the same path (atomically, via temp + `mv`).
+Never reassign `POLLING_FILE` itself to hold JSON text; every downstream call
+(Phase 5a, Phase 7) passes it to `build-inventory-body.sh --polling`, which
+requires a real file (`-f` check).
+
 If this is the trigger that flips `bot_review_cap_exhausted` from `false`
 (`$prior`'s `e`) to `true` (`$result`'s value), fire exactly one
 `PushNotification` telling the human the retry window closed for this
@@ -443,9 +452,11 @@ result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
   --prior-count "$(jq -r '.c' <<<"$prior")" \
   --prior-exhausted "$(jq -r '.e' <<<"$prior")" \
   --event silent)
-POLLING_FILE=$(jq -c --argjson r "$result" '. + $r' <<<"$POLLING_FILE")
+jq -c --argjson r "$result" '. + $r' "$POLLING_FILE" > "${POLLING_FILE}.tmp" \
+  && mv "${POLLING_FILE}.tmp" "$POLLING_FILE"
 ```
-Same false → true transition check as the chatty-cap hook above: if this
+Same path-preserving merge-and-write-back as the chatty-cap hook above — never
+reassign `POLLING_FILE` to hold JSON text. Same false → true transition check: if this
 silent exit is what flips `bot_review_cap_exhausted` from `false`
 (`$prior`'s `e`) to `true` (`$result`'s value), fire exactly one
 `PushNotification`. Both fields are persisted via the normal Phase 7 write
