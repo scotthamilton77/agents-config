@@ -185,3 +185,87 @@ def refs_current(owner: str, repo: str, pr: str, head: str, base: str, gh_runner
     except ValueError:
         return False
     return live.get("headRefOid") == head and live.get("baseRefOid") == base
+
+
+import re  # noqa: E402
+
+
+def nonce_collides(nonce: str, diff_text: str) -> bool:
+    """True if the run nonce already appears in the diff (must then abstain)."""
+    return nonce in diff_text
+
+
+def extract_verdict_block(raw_output: str, nonce: str) -> dict | None:
+    """Honor ONLY the current run's nonce sentinels.
+
+    Requires exactly one <<<JUDGE:nonce>>>...<<<END:nonce>>> block as the final
+    non-whitespace content, a valid JSON object of the judge shape. Any
+    deviation (zero, multiple, trailing content, bad schema) -> None (abstain).
+    A static/guessed sentinel echoed from the diff carries the wrong nonce and
+    is ignored.
+    """
+    start = re.escape(f"<<<JUDGE:{nonce}>>>")
+    end = re.escape(f"<<<END:{nonce}>>>")
+    matches = list(re.finditer(f"{start}(.*?){end}", raw_output, re.DOTALL))
+    if len(matches) != 1:
+        return None
+    m = matches[0]
+    if raw_output[m.end():].strip() != "":  # must be the final content
+        return None
+    try:
+        obj = json.loads(m.group(1))
+    except ValueError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if not isinstance(obj.get("merge_blocking_findings"), list):
+        return None
+    if not isinstance(obj.get("summary"), str):
+        return None
+    return obj
+
+
+def collapse(merge_blocking_findings: list) -> str:
+    """go iff zero blocking findings; else no-go. Never trusts a model verdict string."""
+    return VERDICT_GO if len(merge_blocking_findings) == 0 else VERDICT_NO_GO
+
+
+def _codex_home() -> str:
+    return os.environ.get("CLAUDE_PLUGIN_ROOT") or os.path.join(
+        os.path.expanduser("~"),
+        ".claude/plugins/marketplaces/openai-codex/plugins/codex")
+
+
+def run_backend(prompt: str, model: str, effort: str, timeout_seconds: int,
+                runner=None) -> str:
+    """Blocking read-only codex `task` subprocess; returns the model's final
+    message text (the `rawOutput` field of the `task --json` payload).
+
+    No --write => read-only sandbox. A non-zero exit / timeout / missing CLI
+    raises; the caller maps that to abstain.
+    """
+    if runner is not None:
+        return runner(prompt, model, effort, timeout_seconds)
+    companion = os.path.join(_codex_home(), "scripts", "codex-companion.mjs")
+    proc = subprocess.run(
+        ["node", companion, "task", "--json", "-m", model, "--effort", effort],
+        input=prompt, capture_output=True, text=True,
+        check=True, timeout=timeout_seconds)
+    return _final_message_text(proc.stdout)
+
+
+def _final_message_text(raw_stdout: str) -> str:
+    """Unwrap the model's final message from `task --json` output.
+
+    Verified against the installed runtime (`codex-companion.mjs`
+    `executeTaskRun`, codex-cli 0.136.0): `task --json` emits
+    `JSON.stringify({status, threadId, rawOutput, touchedFiles, reasoningSummary})`.
+    The model's final message (carrying the nonce-delimited verdict block) is the
+    `rawOutput` string; the nonce block is NOT scannable in the raw envelope
+    because the inner object's braces/quotes are JSON-escaped there. Parse the
+    envelope, require status 0, return rawOutput for nonce extraction.
+    """
+    payload = json.loads(raw_stdout)          # non-JSON => raises => abstain
+    if payload.get("status") != 0:
+        raise RuntimeError(f"codex task status {payload.get('status')!r}")
+    return payload.get("rawOutput", "")
