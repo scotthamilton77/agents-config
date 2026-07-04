@@ -360,11 +360,16 @@ NOT block the chain; its absence simply forces a later `abstain` (fail-closed).
 if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
   NEW_HEAD=$(git rev-parse HEAD)
   BASE_REF=$(gh pr view "$PR" --repo "$OWNER/$REPO" --json baseRefName --jq .baseRefName)
-  # one --commit per commit in origin/$BASE_REF..$NEW_HEAD; attest FIRST-HAND the
-  # model family(ies) this session's fix subagents produced, trailer-derived otherwise.
+  # ONE --commit per commit in origin/$BASE_REF..$NEW_HEAD — the gate needs an
+  # entry for EVERY commit, not just the tip. Attest FIRST-HAND the family(ies)
+  # this session's fix subagents produced; trailer-derived for any it did not.
+  COMMIT_ARGS=()
+  while read -r sha; do
+    COMMIT_ARGS+=(--commit "${sha}:<family[+family]>:first-hand")
+  done < <(git rev-list "origin/${BASE_REF}..${NEW_HEAD}")
   python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
     --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
-    --commit "<sha>:<family[+family]>:first-hand" \
+    "${COMMIT_ARGS[@]}" \
     --recorded-by "wait-for-pr-comments" || true
 fi
 ```

@@ -113,7 +113,11 @@ def protected_diff_path(base: str, head: str, git_runner=_real_git) -> str | Non
 
 
 def _read_provenance(state: str, owner: str, repo: str, pr: str, head: str) -> dict | None:
-    # provenance filename format is shared with record_provenance.py; keep in sync
+    # provenance filename format is shared with record_provenance.py; keep in sync.
+    # Read-side components (owner/repo from gh, head/base as OIDs) are trusted:
+    # they cannot contain path separators, and a traversal read would still have
+    # to satisfy the full provenance_gate to authorize — a miss just returns None
+    # (fail closed). The write side (record_provenance.py) validates regardless.
     path = os.path.join(state, "pr-provenance", f"{owner}~{repo}~{pr}~{head}.provenance.json")
     try:
         with open(path) as fh:
