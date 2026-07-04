@@ -84,8 +84,10 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   returns an object (never a single-element array); dep edges are lean
   (`{id, type, status}`, never full embedded beads); labels are always
   `string[]`; multi-line fields are proper JSON strings.
-- Human-readable output is opt-in (`--format human`), for direct human use only;
-  consumers MUST parse the envelope. Rationale: both known consumers are
+- Human-readable output is opt-in (`--format human`), for direct human use only:
+  it renders the human view to **stderr** while stdout still carries the JSON
+  envelope, so the "stdout, always" invariant above holds and consumers MUST
+  parse the envelope. Rationale: both known consumers are
   programs shelling out (prgroom Python↔Go boundary, PDLC adapters); evidence
   is every existing `bd … --json` call site.
 - Typed error codes (initial set): `E_NOT_FOUND`, `E_TYPE_WALL`, `E_DEP_CYCLE`,
