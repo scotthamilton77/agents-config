@@ -633,6 +633,18 @@ class TestMainErrorEnvelope(unittest.TestCase):
         self.assertEqual(env["head_ref_oid"], "h")
         self.assertEqual(env["base_ref_oid"], "b")
 
+    def test_missing_required_flag_still_emits_abstain_envelope(self):
+        # argparse raises SystemExit on a missing required flag BEFORE the
+        # try/except. The "always emit a verdict envelope on stdout" contract
+        # must still hold — a minimal abstain, exit 2, not empty stdout.
+        proc = subprocess.run(
+            [sys.executable, os.path.join(HERE, "judge_merge.py"), "--owner", "o"],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        env = json.loads(proc.stdout)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "harness-error")
+
 
 if __name__ == "__main__":
     unittest.main()

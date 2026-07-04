@@ -479,12 +479,34 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
 _EXIT = {VERDICT_GO: 0, VERDICT_NO_GO: 1, VERDICT_ABSTAIN: 2}
 
 
+def _emit_harness_abstain(head: str, base: str) -> None:
+    """Write the minimal fail-closed abstain envelope to stdout (empty judge
+    fields). Honors the always-emit-an-envelope contract when the run cannot
+    reach a real verdict (bad args, unparsed policy, unexpected error)."""
+    env = build_envelope(head=head, base=base, diff_sha="", verdict=VERDICT_ABSTAIN,
+                         abstain_reason="harness-error", judge_model="",
+                         judge_effort="", author_families=[], summary="",
+                         merge_blocking_findings=[])
+    json.dump(env, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     for flag in ("--owner", "--repo", "--pr", "--head-ref-oid", "--base-ref-oid",
                  "--base-ref", "--policy-json"):
         ap.add_argument(flag, required=True)
-    args = ap.parse_args()
+    try:
+        args = ap.parse_args()
+    except SystemExit as exc:
+        # argparse prints usage and exits on a missing/invalid flag — BEFORE the
+        # try below, so the always-emit-an-envelope contract would otherwise be
+        # broken (empty stdout the caller could misread). Emit a minimal abstain
+        # on a parse ERROR; let a clean exit (--help, code 0/None) pass through.
+        if exc.code in (0, None):
+            raise
+        _emit_harness_abstain(head="", base="")
+        return 2
     try:
         policy = json.loads(args.policy_json)
         env = run_judge(owner=args.owner, repo=args.repo, pr=args.pr,
@@ -495,15 +517,9 @@ def main() -> int:
         return _EXIT[env["verdict"]]
     except Exception as exc:  # noqa: BLE001 - never crash into a merge; abstain
         # Contract: ALWAYS emit a verdict envelope on stdout, even on unexpected
-        # error. Policy may be unparsed here (bad --policy-json), so emit a
-        # minimal abstain with empty judge fields. Exit 2 == abstain.
-        env = build_envelope(head=args.head_ref_oid, base=args.base_ref_oid,
-                             diff_sha="", verdict=VERDICT_ABSTAIN,
-                             abstain_reason="harness-error", judge_model="",
-                             judge_effort="", author_families=[], summary="",
-                             merge_blocking_findings=[])
-        json.dump(env, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        # error. Policy may be unparsed here (bad --policy-json); emit a minimal
+        # abstain with empty judge fields. Exit 2 == abstain.
+        _emit_harness_abstain(head=args.head_ref_oid, base=args.base_ref_oid)
         sys.stderr.write(f"error: unexpected {type(exc).__name__}: {exc}\n")
         return 2
 
