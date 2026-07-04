@@ -106,8 +106,18 @@ def _real_git(args: list[str]) -> str:
 
 
 def changed_paths(base: str, head: str, git_runner=_real_git) -> list[str]:
-    out = git_runner(["diff", "--name-only", f"{base}...{head}"])
-    return [ln for ln in out.splitlines() if ln.strip()]
+    # SECURITY BOUNDARY (untrusted git output → the fail-closed protected-path
+    # gate). Read the diff's paths with quoting disabled and NUL-delimited:
+    #   - core.quotePath=false: git's default wraps a path containing a non-ASCII,
+    #     backslash, quote, or control byte in double-quotes, prepending a '"' that
+    #     defeats the leading-slash protected-dir classifier for a repo-root path
+    #     like `.github/workflows/x".yml` (fail-open on the CI-protection class).
+    #   - -z: NUL-terminate so an embedded newline can't smuggle a second path.
+    # Both flags are load-bearing for the gate; do not remove. Parse/validate once
+    # here, then the classifier can trust clean POSIX paths inward.
+    out = git_runner(["-c", "core.quotePath=false", "diff", "--name-only", "-z",
+                      f"{base}...{head}"])
+    return [p for p in out.split("\0") if p.strip()]
 
 
 def protected_diff_path(base: str, head: str, git_runner=_real_git) -> str | None:

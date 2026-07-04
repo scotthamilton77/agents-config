@@ -87,14 +87,66 @@ class TestAttemptBudget(unittest.TestCase):
 class TestProtectedGate(unittest.TestCase):
     def test_protected_path_hit(self):
         def fake_git(args):
-            return "project-config.toml\nsrc/app/x.py\n"
+            return "project-config.toml\0src/app/x.py\0"
         hit = jm.protected_diff_path("base", "head", git_runner=fake_git)
         self.assertEqual(hit, "project-config.toml")
 
     def test_clean_diff_no_hit(self):
         def fake_git(args):
-            return "src/app/x.py\nsrc/app/y.py\n"
+            return "src/app/x.py\0src/app/y.py\0"
         self.assertIsNone(jm.protected_diff_path("base", "head", git_runner=fake_git))
+
+    def test_changed_paths_disables_quoting_and_nul_delimits(self):
+        # Contract: the untrusted git boundary must disable core.quotePath (no
+        # leading-" wrapping) and NUL-delimit (no newline smuggling), then split
+        # on NUL. Locks the fix so a later edit dropping either flag fails here.
+        seen = {}
+
+        def capture(args):
+            seen["args"] = args
+            return ".github/workflows/a.yml\0src/app/x.py\0"
+
+        paths = jm.changed_paths("b", "h", git_runner=capture)
+        self.assertIn("-z", seen["args"])
+        self.assertIn("core.quotePath=false", seen["args"])
+        self.assertEqual(paths, [".github/workflows/a.yml", "src/app/x.py"])
+
+    def test_repo_root_quoted_workflow_is_protected_real_git(self):
+        # Regression (fail-open): git's default core.quotePath wraps a repo-root
+        # path containing a quote/backslash/non-ASCII byte in double-quotes,
+        # prepending a '"' that defeats the leading-slash `/.github/workflows/`
+        # class. The CI-protection class is always the repo-root first segment,
+        # so this must still trip the structural gate. End-to-end vs real git.
+        import subprocess
+        import tempfile
+
+        repo = tempfile.mkdtemp()
+
+        def g(*a):
+            subprocess.run(["git", "-C", repo, *a], check=True,
+                           capture_output=True, text=True)
+
+        def rev(ref):
+            return subprocess.run(["git", "-C", repo, "rev-parse", ref],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+
+        g("init", "-q")
+        g("config", "user.email", "t@t")
+        g("config", "user.name", "t")
+        g("commit", "-q", "--allow-empty", "-m", "base")
+        base = rev("HEAD")
+        os.makedirs(os.path.join(repo, ".github", "workflows"))
+        with open(os.path.join(repo, ".github", "workflows", 'ev"il.yml'), "w") as fh:
+            fh.write("x")  # embedded quote → POSIX-legal, triggers git path-quoting
+        g("add", "-A")
+        g("commit", "-q", "-m", "add workflow")
+        head = rev("HEAD")
+
+        def real_git(args):
+            return subprocess.run(["git", "-C", repo, *args],
+                                  check=True, capture_output=True, text=True).stdout
+
+        self.assertIsNotNone(jm.protected_diff_path(base, head, git_runner=real_git))
 
 
 class TestProvenanceGate(unittest.TestCase):
@@ -350,8 +402,8 @@ class TestMainEndToEnd(unittest.TestCase):
             return "NONCE123"
 
         def fake_git(args):
-            if args[:2] == ["diff", "--name-only"]:
-                return changed + "\n"
+            if "--name-only" in args:
+                return (changed.replace("\n", "\0") + "\0") if changed else ""
             if args[0] == "rev-list":
                 return "c1\n"
             if args[0] == "diff":
@@ -501,8 +553,8 @@ class TestMainEndToEnd(unittest.TestCase):
             return '{"headRefOid":"h-moved","baseRefOid":"b"}'
 
         def fake_git(args):
-            if args[:2] == ["diff", "--name-only"]:
-                return "src/app/x.py\n"
+            if "--name-only" in args:
+                return "src/app/x.py\0"
             if args[0] == "rev-list":
                 return "c1\n"
             if args[0] == "diff":
