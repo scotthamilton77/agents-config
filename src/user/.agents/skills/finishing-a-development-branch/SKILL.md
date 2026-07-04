@@ -140,7 +140,19 @@ gh pr create --title "<title>" --body "$(cat <<'EOF'
 - [ ] <verification steps>
 EOF
 )"
+
+# Record out-of-band authorship provenance for the merge-judge (agent-ruling).
+# Attest FIRST-HAND the model family(ies) this delivery session actually
+# produced; mark any commit you did not produce this session trailer-derived.
+PR=$(gh pr view --json number --jq .number)
+HEAD_SHA=$(git rev-parse HEAD)
+python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
+  --owner <owner> --repo <repo> --pr "$PR" --head-sha "$HEAD_SHA" \
+  --commit "<sha>:<family[+family]>:first-hand" \
+  --recorded-by "<this delivery session's identity>"
 ```
+
+This step is best-effort and out of band — its absence at judge time simply forces an `abstain` (fail-closed), never a merge. Only a repo configured `rule-based`/`agent-ruling` consumes it; it is harmless elsewhere.
 
 **Write the PR body as a reviewer brief.** A bot reviewer's only context is the description. Beyond Summary and Test Plan, state: scope (files in / out of scope), artifact nature (code vs. design doc, current- vs. desired-state), ground-truth files to check claims against, intentional gaps or placeholders so they aren't flagged as missing, and constraints to honor. When a reviewer flags a desired-state artifact for depicting not-yet-built components, that's the artifact working correctly — acknowledge in-thread and resolve; don't caveat the doc or trigger another review round.
 
