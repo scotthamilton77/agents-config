@@ -110,3 +110,40 @@ def changed_paths(base: str, head: str, git_runner=_real_git) -> list[str]:
 def protected_diff_path(base: str, head: str, git_runner=_real_git) -> str | None:
     """First protected path the diff touches, else None (structural abstain)."""
     return scan_protected(changed_paths(base, head, git_runner))
+
+
+def _read_provenance(state: str, owner: str, repo: str, pr: str, head: str) -> dict | None:
+    path = os.path.join(state, "pr-provenance", f"{owner}-{repo}-{pr}-{head}.provenance.json")
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _base_head_commits(base: str, head: str, git_runner) -> list[str]:
+    out = git_runner(["rev-list", f"{base}..{head}"])
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+
+def provenance_gate(state: str, owner: str, repo: str, pr: str, base: str, head: str,
+                    *, judge_family: str | None, git_runner=_real_git):
+    """(ok, abstain_reason|None, author_families).
+
+    Authorizes only when: a record exists for `head`; every commit in base..head
+    is first-hand attested in it; and judge_family is in NO commit's families.
+    """
+    record = _read_provenance(state, owner, repo, pr, head)
+    if record is None or record.get("head_sha") != head:
+        return (False, "no-provenance", [])
+    by_sha = {c.get("sha"): c for c in record.get("commits", [])}
+    fams: set[str] = set()
+    for sha in _base_head_commits(base, head, git_runner):
+        entry = by_sha.get(sha)
+        if entry is None or entry.get("attestation") != "first-hand":
+            return (False, "unattested-commit", [])
+        fams.update(entry.get("author_families", []))
+    ai_fams = sorted(fams - {"human"})
+    if judge_family is not None and judge_family in fams:
+        return (False, "same-family", ai_fams)
+    return (True, None, ai_fams)

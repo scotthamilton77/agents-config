@@ -78,5 +78,58 @@ class TestProtectedGate(unittest.TestCase):
         self.assertIsNone(jm.protected_diff_path("base", "head", git_runner=fake_git))
 
 
+class TestProvenanceGate(unittest.TestCase):
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.state, "pr-provenance"))
+
+    def _write(self, head, commits):
+        path = os.path.join(self.state, "pr-provenance", f"o-r-5-{head}.provenance.json")
+        json.dump({"head_sha": head, "commits": commits, "recorded_by": "s"}, open(path, "w"))
+
+    def _rev_list(self, shas):
+        return lambda args: "\n".join(shas) + "\n"
+
+    def test_all_first_hand_cross_model_passes(self):
+        self._write("h", [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}])
+        ok, reason, fams = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                              judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertTrue(ok, reason)
+        self.assertEqual(fams, ["anthropic"])
+
+    def test_no_record_abstains(self):
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "no-provenance")
+
+    def test_trailer_derived_commit_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": ["anthropic"], "attestation": "trailer-derived"}])
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "unattested-commit")
+
+    def test_judge_family_in_set_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": ["openai"], "attestation": "first-hand"}])
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "same-family")
+
+    def test_human_only_never_disqualifies(self):
+        self._write("h", [{"sha": "c1", "author_families": ["human"], "attestation": "first-hand"}])
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertTrue(ok, reason)
+
+    def test_commit_missing_from_record_abstains(self):
+        self._write("h", [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}])
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1", "c2"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "unattested-commit")
+
+
 if __name__ == "__main__":
     unittest.main()
