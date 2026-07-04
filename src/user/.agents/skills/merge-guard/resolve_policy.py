@@ -51,7 +51,10 @@ class ReviewMergePolicy:
     # Axis 2 — merge authorization
     merge_authorization: str  # "never" | "explicit" | "rule-based"
     merge_rule: str | None    # "bot-quiescence" | "human-approvals" | "agent-ruling"
-    # Axis 2 — agent-ruling judge config (defaults inert unless merge_rule = agent-ruling)
+    allow_force_after_bot_timeout: bool  # opt-in escape hatch, bot-quiescence only
+    # Axis 2 — agent-ruling judge config (defaults inert unless merge_rule = agent-ruling).
+    # These carry dataclass defaults, so they MUST stay after the no-default
+    # allow_force_after_bot_timeout field above.
     judge_backend: str = "codex"
     judge_model: str = "gpt-5.5"
     judge_effort: str = "high"
@@ -67,6 +70,7 @@ DEFAULTS = ReviewMergePolicy(
     human_review_timeout_seconds=None,    # wait indefinitely
     merge_authorization="explicit",       # today's law, unchanged
     merge_rule=None,
+    allow_force_after_bot_timeout=False,
 )
 
 
@@ -76,7 +80,7 @@ REVIEW_EXPECTATION_KEYS = {
     "bot-review-expected", "bot-reviewers", "bot-inactivity-timeout",
     "human-approvers-required", "human-review-timeout",
 }
-MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule",
+MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule", "allow-force-after-bot-timeout",
                      "judge-backend", "judge-model", "judge-effort",
                      "judge-timeout", "judge-max-attempts"}
 
@@ -190,6 +194,9 @@ def validate(policy: ReviewMergePolicy) -> None:
         if policy.judge_max_attempts < 1:
             raise PolicyError(
                 f"judge-max-attempts: must be >= 1, got {policy.judge_max_attempts}")
+    if policy.allow_force_after_bot_timeout and policy.merge_rule != "bot-quiescence":
+        raise PolicyError(
+            "allow-force-after-bot-timeout is only valid with merge-rule=bot-quiescence")
 
 
 def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergePolicy:
@@ -218,6 +225,9 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
         human_review_timeout_seconds=human_timeout,
         merge_authorization=_typed(merge, "merge-authorization", str, DEFAULTS.merge_authorization),
         merge_rule=_typed(merge, "merge-rule", str, DEFAULTS.merge_rule),
+        allow_force_after_bot_timeout=_typed(
+            merge, "allow-force-after-bot-timeout", bool,
+            DEFAULTS.allow_force_after_bot_timeout),
     )
     judge_timeout = (parse_duration(merge["judge-timeout"], "judge-timeout")
                      if "judge-timeout" in merge else DEFAULTS.judge_timeout_seconds)

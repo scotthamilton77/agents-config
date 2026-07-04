@@ -34,6 +34,8 @@ The complete lifecycle-stage graph for one Objective. Every transition the Orche
 - The non-cognition failure routes (no strike charged)
 - The `needs_reconcile` annotation surface (NOT a state — a flag)
 
+> **Build status: only the happy-path edges are built.** `Orchestrator.tick()` (`packages/pdlc/src/pdlc/orchestrator.py`) currently drives only the forward happy-path traversal — `HAPPY_PATH_NEXT` (`packages/pdlc/src/pdlc/lifecycle.py:55-65`) encodes exactly the 9 happy-path stages below (`CANDIDATE_UOW` → ... → `MERGED`) and nothing else. `OrchestratorStateRepo.record_strike` (`packages/pdlc/src/pdlc/state_repo.py:69-73`) exists but is never called anywhere in the codebase and carries a `# pragma: no cover` marking it unexercised. Everything else in this diagram — the retry/strike loops, the 3-strike → `AUTOPSY` route, `AUTOPSY`'s route taxonomy, `PR_HUMAN_HOLD`, the `CONTAINER_DECOMPOSED` divergence, the `KILLED`/`PARKED` terminals, `needs_reconcile`, and resurrection — is the intended design, not yet implemented.
+
 ## Diagram
 
 ```mermaid

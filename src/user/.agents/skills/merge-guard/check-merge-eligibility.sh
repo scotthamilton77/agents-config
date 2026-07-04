@@ -243,8 +243,11 @@ else
     check_runs=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/check-runs?per_page=100" --paginate \
         | jq -s '[.[] | .check_runs[]? | {name, status, conclusion, app_id: (.app.id // null)}]') || {
         echo "Error: failed to fetch check runs" >&2; exit 3; }
-    legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status" \
-        | jq '[.statuses[]? | {context, state}]') || legacy_statuses='[]'
+    # Paginate the combined-status endpoint (default page size 30) the same way
+    # check-runs above does — a required unpinned context whose status sits past
+    # page 1 must not read as absent (→ pending → false block).
+    legacy_statuses=$(gh_api "repos/${OWNER}/${REPO}/commits/${HEAD_OID}/status?per_page=100" --paginate \
+        | jq -s '[.[].statuses[]? | {context, state}]') || legacy_statuses='[]'
 fi
 
 ci_eval=$(jq -n --argjson req "$required_checks" --argjson runs "$check_runs" --argjson legacy "$legacy_statuses" '
@@ -387,6 +390,22 @@ if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
     fi
 fi
 set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
+# ── Fact: bot_review_cap_exhausted (head-exact, fail-closed) ─────────────────
+# Read ONLY the inventory for the CURRENT head (filename embeds HEAD_OID).
+# Never the glob-all used by the untriaged scan below — a stale
+# exhausted=true from a superseded head must not leak onto a fresh head.
+# Absent/malformed/missing-field all resolve to false (force-merge stays
+# locked unless the one-ask budget is provably spent for THIS head).
+cap_inv="${HOME}/.claude/state/pr-inventory/${OWNER}-${REPO}-${PR}-${HEAD_OID}.json"
+# Type-strict: jq -r prints both boolean true and string "true" as the bare
+# word `true`, so a bash string compare fails-OPEN on a string value. Use
+# jq's own typed equality (-e exit status) — a string never equals boolean
+# true, and absent/malformed also exit non-zero, so the fact stays false.
+bot_cap_exhausted=false
+if [[ -f "$cap_inv" ]] && jq -e '(.polling.bot_review_cap_exhausted // false) == true' "$cap_inv" >/dev/null 2>&1; then
+    bot_cap_exhausted=true
+fi
+set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 # ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
 # review_summary / issue_comment items are disjoint GitHub objects from review
 # threads — the thread check does not cover them, and prgroom's
@@ -440,6 +459,14 @@ untriaged=$(jq -n \
     --argjson recorded "$inventory_items" \
     --argjson recorded_complete "$completed_inventory_items" \
     --argjson sidecar_replies "$sidecar_reply_ids" '
+    # Clears an item iff it holds a terminal, non-blocking disposition. The
+    # durable inventory (validate-inventory.sh) admits only classification
+    # FIX / SKIP / ESCALATE; the clean-terminal shapes are SKIP and FIX with
+    # committed/already_addressed. ESCALATE and FIX/failed are terminal but NOT
+    # clean — still blockers. design.md frames the clearing set as prose
+    # (fixed/already-addressed/skipped/deferred/wont-fix); a deferred or
+    # wont-fix decision clears here only insofar as the producer records it as
+    # SKIP (ABANDON does; DEFER has no pinned durable classification yet).
     def terminal_ok:
         (.classification == "SKIP")
         or (.classification == "FIX"

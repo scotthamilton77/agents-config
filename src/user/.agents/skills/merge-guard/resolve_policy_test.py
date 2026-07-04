@@ -34,6 +34,7 @@ class TestDefaults(unittest.TestCase):
             "human_review_timeout_seconds": None,
             "merge_authorization": "explicit",
             "merge_rule": None,
+            "allow_force_after_bot_timeout": False,
             "judge_backend": "codex",
             "judge_model": "gpt-5.5",
             "judge_effort": "high",
@@ -230,23 +231,65 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_authorization"], "rule-based")
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
 
+    def test_allow_force_after_bot_timeout_ok_with_bot_quiescence(self):
+        code, out, _ = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["allow_force_after_bot_timeout"])
 
-class TestAgentsConfigSettings(unittest.TestCase):
-    def test_agents_config_policy_resolves(self):
-        path = write_toml(
-            '[review-expectations]\n'
-            'bot-review-expected = true\n'
-            'bot-reviewers = ["Copilot", "copilot-pull-request-reviewer[bot]"]\n'
-            'human-approvers-required = 0\n'
-            '[merge-policy]\n'
-            'merge-authorization = "rule-based"\n'
-            'merge-rule = "bot-quiescence"\n'
-        )
-        code, out, err = run_resolver("--project-config", path)
+    def test_allow_force_after_bot_timeout_default_false(self):
+        code, out, _ = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(out)["allow_force_after_bot_timeout"])
+
+    def test_allow_force_after_bot_timeout_rejected_with_human_approvals(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nhuman-approvers-required = 1\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "human-approvals"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 1)
+        self.assertIn("allow-force-after-bot-timeout", err)
+
+    def test_allow_force_after_bot_timeout_rejected_under_explicit(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "explicit"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 1)
+        self.assertIn("allow-force-after-bot-timeout", err)
+
+    def test_allow_force_after_bot_timeout_type_mismatch(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n'
+            'allow-force-after-bot-timeout = "yes"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("boolean", err)
+
+
+class TestRepoOwnPolicy(unittest.TestCase):
+    """Resolve THIS repo's real project-config.toml — not a hand-copy — so the
+    repo's own merge policy can't drift out from under the resolver unnoticed.
+    Skips (never fails) when the file is absent, e.g. once the skill is deployed
+    into user space away from its source repo."""
+
+    def test_repo_project_config_resolves(self):
+        # HERE = <repo>/src/user/.agents/skills/merge-guard → repo root is 5 up.
+        repo_config = os.path.abspath(
+            os.path.join(HERE, *([os.pardir] * 5), "project-config.toml"))
+        if not os.path.isfile(repo_config):
+            self.skipTest(
+                f"project-config.toml not found at {repo_config} "
+                "(skill deployed outside its source repo)")
+        code, out, err = run_resolver("--project-config", repo_config)
         self.assertEqual(code, 0, err)
         policy = json.loads(out)
+        # The repo's deliberate, named Axis-2 choice (see project-config.toml).
+        self.assertEqual(policy["merge_authorization"], "rule-based")
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
-        self.assertEqual(policy["human_approvers_required"], 0)
 
 
 class TestLabelOverrides(unittest.TestCase):

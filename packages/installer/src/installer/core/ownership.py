@@ -12,7 +12,7 @@ from pathlib import Path
 from installer.core.model import FileKind, StagedItem
 from installer.core.receipt import ReceiptEntry
 
-PRUNE_NAMESPACES: tuple[str, ...] = ("commands", "skills", "agents", "rules")
+PRUNE_NAMESPACES: tuple[str, ...] = ("commands", "skills", "agents", "rules", "workflows")
 
 
 def is_prunable(item: StagedItem) -> bool:

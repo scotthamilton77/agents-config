@@ -33,7 +33,7 @@ Together they answer: *who calls whom, in what order, where does state live (in-
 
 ## Sequence 1 — End-to-end install (happy path)
 
-One invocation: `python3 scripts/install.py --tools=claude,gemini`, with the beads plugin active. `Config` is resolved once; then the orchestrator loops per detected tool, building each tool's in-memory plan, overlaying plugins, and flushing to disk. The plan never touches disk except through `Sync`.
+One invocation: `python3 scripts/install.py --tools=claude,gemini`, with the beads plugin active. `cli.py` — not `orchestrator.py` — is the actual top-level driver: it resolves tools/plugins, then runs **two separate whole-fleet passes** over the detected tools — first build every tool's plan (staging + plugin overlay, via `orchestrator.stage_and_transform`), then sync every tool's finished plan to disk — rather than interleaving stage/overlay/sync per tool. The plan never touches disk except through `Sync`.
 
 ```mermaid
 sequenceDiagram
@@ -41,43 +41,45 @@ sequenceDiagram
     participant Op as Operator
     participant CLI as cli.py
     participant Cfg as config.py
-    participant Orch as orchestrator
+    participant Orch as orchestrator.py
     participant Stage as staging
     participant Plug as plugin overlay
     participant Merge as merge registry
-    participant Sync as sync
+    participant Sync as sync (via run.py)
     participant FS as filesystem
 
     Op->>CLI: python3 scripts/install.py --tools=claude,gemini
-    CLI->>Cfg: build Config
-    Cfg->>FS: probe tool config dirs + load installer.toml ([tools] overrides)
+    CLI->>Cfg: resolve_tools + resolve_plugins (auto-detect / --tools / --plugins)
+    Cfg->>FS: probe tool config dirs
     FS-->>Cfg: detected tools, plugins
-    Cfg-->>CLI: frozen Config
-    CLI->>Orch: run(config, io)
+    Cfg-->>CLI: resolved tools + plugins
+    CLI->>FS: load .installignore (hard error if missing/unreadable/non-UTF-8)
 
-    loop per detected tool (claude, then gemini)
-        rect rgb(245, 245, 255)
-            Note over Orch,Stage: Build the in-memory StagingPlan for this tool
-            Orch->>Stage: build StagingPlan(adapter)
+    rect rgb(245, 245, 255)
+        Note over CLI,Merge: Phase 1 — build + overlay EVERY tool's plan (whole-fleet), before any sync
+        CLI->>Orch: stage_and_transform(tools, plugins)
+        loop per detected tool (claude, then gemini)
+            Orch->>Stage: build_plan(adapter)
             Stage->>FS: walk + read source (shared .agents/ + per-tool)
             FS-->>Stage: source bytes
-            Stage->>Stage: strip .template suffix, scope namespaces
-            Stage->>Stage: flatten DYNAMIC-INCLUDE (file form + ALL-RULES)
-            Stage->>Stage: adapter.post_staging_transforms (gemini: frontmatter)
-            Stage-->>Orch: StagingPlan = dict[Path, StagedItem]
-        end
-
-        rect rgb(255, 245, 245)
-            Note over Orch,Merge: Plugin overlay — beads content + YAML extensions
-            Orch->>Plug: overlay beads + apply_extensions(plan)
-            Plug->>Merge: on collision: dispatch (FileKind, namespace)
+            Stage->>Stage: strip .template suffix, scope namespaces, consult .installignore
+            Stage->>Merge: on collision (base staging): dispatch (FileKind, namespace)
+            Stage-->>Orch: base StagingPlan
+            Orch->>Plug: overlay_plugins(plan, plugins)
+            Plug->>Merge: on collision (plugin overlay): dispatch (FileKind, namespace)
             Merge-->>Plug: merged StagedItem (see Sequence 2)
-            Plug-->>Orch: updated StagingPlan
+            Plug-->>Orch: overlaid StagingPlan
+            Orch->>Orch: apply_extensions, flatten DYNAMIC-INCLUDE, adapter.post_staging_transforms (gemini: frontmatter)
         end
+        Orch-->>CLI: dict[Tool, StagingPlan] — every tool's finished plan
+    end
 
-        rect rgb(245, 255, 245)
-            Note over Orch,FS: Flush the plan to disk, file-by-file
-            Orch->>Sync: flush(plan) to destination
+    CLI->>CLI: build frozen Config (home, tools, auto_yes); resolve adapters
+
+    rect rgb(245, 255, 245)
+        Note over CLI,FS: Phase 2 — sync EVERY tool's plan to disk (separate whole-fleet pass, via run.install_pipeline)
+        loop per detected tool (claude, then gemini)
+            CLI->>Sync: flush(plan) to destination
             loop per StagedItem in plan
                 Sync->>FS: hash-compare vs destination (see Sequence 3)
                 alt unchanged
@@ -87,23 +89,27 @@ sequenceDiagram
                     Note over Sync: Counters.created++ or updated++ (+ backed_up++ on overwrite)
                 end
             end
-            Sync-->>Orch: Counters
+            Sync-->>CLI: Counters
         end
+        Note over CLI,Sync: Plugin routes (e.g. beads' ~/.beads/formulas + scripts) sync next, via run.install_plugin_routes
+        CLI->>Sync: flush plugin routes to destination
+        Sync-->>CLI: Counters
     end
 
     opt --prune requested
-        Orch->>Orch: prune flow (see Sequence 4)
+        CLI->>CLI: prune flow (see Sequence 4)
     end
 
-    Orch-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
+    CLI-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
 ```
 
 ### Notes on the happy path
 
-- **The plan is in-memory for its whole life.** `Stage` returns a `dict[Path, StagedItem]`; overlay mutates it; only `Sync` writes to disk, one file at a time. There is no temp-dir staging tree (the deliberate departure from `install.sh`). `--dump-stage` is the sole path that materialises the plan, and it exits before any destination write.
-- **Tool order is the detection order; tools are independent.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
-- **Overlay is where collisions happen.** Within a single tool's plan, shared + per-tool content rarely collide on the same path; the common collision is plugin content landing on a base asset. That collision is resolved by the merge registry (Sequence 2), not by `Sync`.
-- **`Config` is frozen before the loop.** Detection, plugin discovery, and the `installer.toml` `[tools]`-override load all happen once in `config.py`; nothing inside the loop re-detects.
+- **The plan is in-memory for its whole life.** `Stage` returns a `dict[Path, StagedItem]`; overlay mutates it; only `Sync` writes to disk, one file at a time. There is no temp-dir staging tree (the deliberate departure from `install.sh`). `--dump-stage` is the sole path that materialises the plan, and it exits before any destination write (and before `Config` is even built).
+- **Staging and sync are two separate whole-fleet passes, not one interleaved per-tool loop.** `orchestrator.stage_and_transform` builds and overlays every tool's plan first, returning the full `dict[Tool, StagingPlan]`; only after that does `cli.py` drive `run.install_pipeline` to sync every tool's plan. `orchestrator.py` never touches `sync.py` — it is staging only.
+- **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
+- **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
+- **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after staging finishes and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
 
 ---
 

@@ -6,6 +6,8 @@
 > **Source bead**: `agents-config-fca6.12`
 > **Source design**: [design.md](design.md) — §3 (phase machine + pipeline), §4 (quiescence predicate), §7 (PR-memory routing side-effect)
 
+> **Status**: **The `verify` step and the `pr_review_retries` / `fix_verify_retries` naming below are DESIGNED, not built.** `packages/prgroom/src/prgroom/lifecycle/run.py::_build_pipeline` is `cluster → fix → cap-guard → push → reply → resolve → rereview` — no `verify` step exists. The only built outer cap is `cap_guard` (`round >= max_rounds` → `phase=human-gated`, `last_error=LIFECYCLE_HARD_CAP_EXCEEDED`); the counter field on `PRGroomingState` is `round`, and the CLI flag is `--max-rounds` — not `pr_review_retries_used` / `--pr-review-retries`. There is no `fix_verify_retries`, `--fix-verify-retries`, `LIFECYCLE_FIX_VERIFY_EXHAUSTED`, or `LIFECYCLE_PR_REVIEW_EXHAUSTED` in the codebase today. This page documents the target reframe an implementation bead will build against — see [`c4-l3-verify.md`](c4-l3-verify.md).
+
 ## Glossary
 
 | Term | Meaning |
@@ -39,6 +41,8 @@ The complete phase graph for one PR's grooming lifecycle. Every transition the C
 This is the visual companion to the design reference §3.1 (the ASCII phase graph) plus §3.2 (the phase × verb transition matrix) plus §4 (the quiescence predicate).
 
 ## Diagram
+
+> **Diagram note**: The `verify`-triggered edge and the `pr_review_retries` / `fix_verify_retries` labels below are target-state (see Status above). The edge that exists today is the cap-guard trip: `fixes_pending --> human_gated` when `round >= max_rounds`, setting `last_error=LIFECYCLE_HARD_CAP_EXCEEDED`.
 
 ```mermaid
 stateDiagram-v2
@@ -193,6 +197,8 @@ Parallel to the auto-label side-effect: at `reply` time the cycle routes CONTEXT
 ## Failure tiers and `state.last_error`
 
 The state machine intentionally collapses the rich §3.6 failure-tier taxonomy (`PRECONDITION_*` / `RUNTIME_*` / `CONTRACT_*` / `STATE_*` / `LIFECYCLE_*`) into a single observation: *did the failure put us in `human-gated`?*
+
+> **Table note**: The two `LIFECYCLE_CAP` rows below use target-state names (`LIFECYCLE_PR_REVIEW_EXHAUSTED`, `LIFECYCLE_FIX_VERIFY_EXHAUSTED`). The only `LIFECYCLE_CAP` code built today is `LIFECYCLE_HARD_CAP_EXCEEDED`, raised by `cap_guard` when `round >= max_rounds` (see Status above).
 
 | Tier | Phase outcome | `state.last_error` | Note |
 |---|---|---|---|

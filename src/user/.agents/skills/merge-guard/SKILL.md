@@ -169,10 +169,47 @@ The rule holds iff the emitted `verdict == "go"`.
 - Rule holds + eligible → merge now (Step 5). Announce what authorized it:
   > "Merging PR #N under rule-based policy (`bot-quiescence`): Copilot
   > reviewed head <sha> clean, no blockers."
-- Rule not (yet) satisfied or blocked → report status and stop. NO
-  force-merge in this mode. A timed-out bot (`review_wait.bot ==
-  "timed_out"`) never satisfies the rule — hand off to the human with the
-  facts.
+- Rule not (yet) satisfied → branch on concrete machine signals, never prose
+  judgment. All predicates below are exact facts:
+  - **floor-clean** ⟺ `check-merge-eligibility.sh` returned exit 0 with
+    `blockers == []`.
+  - **rule-unmet** ⟺ `facts.bot_clean_review_at_head == false`.
+  - **ask-spent** ⟺ `facts.bot_review_cap_exhausted == true`.
+
+  Branches:
+  - **Not floor-clean** (any blocker beyond the unmet bot-quiescence rule):
+    report blockers and stop. Fail closed; no retry, no force-merge.
+  - **floor-clean AND rule-unmet AND NOT ask-spent**: issue ONE re-review ask
+    on the current head by calling `request-rereview.sh` + the re-review poll
+    helpers directly (never a bare reply+resolve; **not** the full
+    `wait-for-pr-comments` skill, whose Phase 2 timeout-exit path jumps
+    straight to inventory-write with empty items on a no-feedback head,
+    skipping its Phase 6 re-request entirely). Increment +
+    persist the silent counter. Re-run Step 3 against the unchanged head
+    exactly once. A clean re-review now satisfies the rule → merge (Step 5).
+    Otherwise (bot silent → ask now spent, or the flag failed to persist): do
+    NOT ask again — fall through to hand-off. merge-guard issues at most one
+    re-review ask per invocation.
+  - **floor-clean AND rule-unmet AND ask-spent AND force-merge available**:
+    reachable ONLY when ALL of — floor-clean, rule-unmet, ask-spent,
+    `policy.allow_force_after_bot_timeout == true`, and a FRESH in-session
+    human instruction using the words "force merge" AND naming the
+    bot-quiescence blocker (identical gating to explicit-mode force-merge —
+    never a standing grant, never inferred). Merge (Step 5), logging the
+    bypassed blocker + the instruction text into the merge commit context / PR
+    comment (same directive as the explicit-mode force-merge log).
+    **This scoped force-merge uses its own terminal merge and does NOT enter
+    Step 5's `--admin` rejection ladder.** It merges with
+    `gh pr merge <n> --squash --match-head-commit <head_ref_oid>` and treats
+    ANY GitHub rejection as hand-off — it never consults `admin_bypass`, never
+    retries with `--admin`. The force-merge instruction authorized bypassing
+    *this policy's* bot-quiescence gate, not GitHub's (blanket, per-ruleset)
+    `--admin` bypass. (The Step 5 guard below gates the `--admin` ladder to
+    normal-authorization entries, so this cannot slip through even as prose.)
+  - **floor-clean AND rule-unmet AND ask-spent AND force-merge NOT available**
+    (repo hasn't set `allow-force-after-bot-timeout`, or no fresh named
+    instruction): report status and hand off. NO autonomous force-merge. A bot
+    that never reviewed is never treated as approval.
 
 ### Step 5: Merge, bound to the checked head
 
@@ -212,6 +249,15 @@ consult `facts.admin_bypass`:
 | `current_actor_can_bypass == true` | GitHub already grants the authenticated identity a standing bypass on this rule (the ruleset's `current_user_can_bypass` is `always` or `pull_requests_only`). Retry once: `gh pr merge <n> --squash --admin --match-head-commit "<head_ref_oid>"`. Announce plainly that `--admin` was used, quote the rejection text that justified it, and note why — the identity holds a pre-existing GitHub bypass grant, and eligibility + authorization were already confirmed independently of it. This is a deliberate, logged exercise of a grant a human configured, never a new override. |
 | `current_actor_can_bypass == false` | The identity has no bypass grant. **Fail closed** — do not retry with `--admin`. Report the rejection and hand off to a human who either holds the bypass grant or can adjust the ruleset. |
 
+**Precondition — reachable only via normal authorization.** This `--admin`
+ladder is reachable ONLY for merges authorized through normal eligibility:
+`explicit`-mode named force-merge, or a `rule-based` rule that actually held.
+A merge entered via the Step 4 scoped bot-timeout force-merge sub-branch does
+**not** enter this ladder — it performs its own terminal merge and stops
+there, success or failure, with no `--admin` retry. Co-located here,
+deliberately, so this guard can't be missed or accidentally wired to the
+other path.
+
 This `--admin` retry is **not** the force-merge override above — force-merge
 bypasses *this policy's own* eligibility floor on explicit human instruction;
 this retry bypasses nothing this guard controls, and every blocker this
@@ -237,10 +283,24 @@ authorization already succeeded, in both `explicit` and `rule-based` modes.
 | explicit | yes | n/a | no | Summarize; wait for the word |
 | explicit | yes | n/a | yes | **Merge** |
 | explicit | no | n/a | yes | **Fail closed**; offer wait / named force-merge |
-| rule-based | yes | yes | n/a | **Merge autonomously** |
-| rule-based (`agent-ruling`) | yes | judge `verdict == "go"` | n/a | **Merge autonomously** — only after Step 5's full-floor re-clear |
-| rule-based | yes | no | any | Report; wait or hand off (no force-merge) |
-| rule-based | no | any | any | Report blockers (no force-merge) |
+
+`rule-based` carries two extra axes (ask spent, force opted-in) that don't
+apply to `never`/`explicit`, so it gets its own sub-table. The force-merge
+axes are bot-quiescence-only: `agent-ruling` cannot opt into force (the
+resolver rejects `allow-force-after-bot-timeout` outside `bot-quiescence`),
+so those rows never apply to it — its non-`go` outcomes fail closed.
+
+### `rule-based` sub-table
+
+| Axis 2 | Floor clean (eligible) | Rule holds | Ask spent | Force opted-in + fresh named instruction | Action |
+|---|---|---|---|---|---|
+| rule-based | yes | yes | n/a | n/a | **Merge autonomously** |
+| rule-based (`agent-ruling`) | yes | judge `verdict == "go"` | n/a | n/a | **Merge autonomously** — only after Step 5's full-floor re-clear |
+| rule-based (`agent-ruling`) | yes | judge ≠ `"go"` (no-go / abstain) | n/a | n/a | Fail closed; hand off (no force-merge) |
+| rule-based | yes | no | no | n/a | Issue one re-review ask (`request-rereview.sh` + poll), re-check |
+| rule-based | yes | no | yes | yes | **Force-merge** (logged; no `--admin` chaining) |
+| rule-based | yes | no | yes | no | Report; hand off (no force-merge) |
+| rule-based | no | any | any | any | Report blockers (no force-merge, no retry) |
 
 ## Red Flags
 
@@ -256,3 +316,7 @@ authorization already succeeded, in both `explicit` and `rule-based` modes.
 | "GitHub's review rule blocked it, just add `--admin`" | Only if `facts.admin_bypass.current_actor_can_bypass == true` **and** you've read the rejection text and confirmed it names the review requirement. If false, or you didn't check the text, hand off — don't force it. |
 | "`--admin` only bypasses the review rule" | It's a blanket ruleset bypass. `facts.admin_bypass` only certifies the `pull_request` rule(s) are bypassable, not every rule in the ruleset. |
 | "The judge said no-go, just run it again" | A `no-go` is terminal for that (head, base, diff); re-running to shop a pass is verdict-shopping. Hand off. |
+| "I'll just reply to the bot's comment and resolve the thread" (bot-quiescence repo) | A hand-rolled reply+resolve leaves the head **unreviewed** and defeats the retry loop — the #213 bug. Route every fix-commit push through Phase 6 / `request-rereview.sh` so the bot is actually re-requested. |
+| "The bot timed out, just force it" | Force-merge in rule-based needs ALL of: `allow-force-after-bot-timeout = true`, ask spent (`bot_review_cap_exhausted`), the floor clean so bot-quiescence is the *sole* remaining blocker, and a fresh in-session instruction naming it. Not implicit, not a standing grant. |
+| "Bot never reviewed — good enough, that's basically approval" | No. Silence is not attestation. The rule is fail-closed; the only exits are a clean re-review or a human-authorized scoped force-merge. |
+| "Force-merge got rejected by GitHub, just add `--admin`" | A scoped bot-quiescence force-merge does **not** auto-escalate to `--admin` — that is a blanket per-ruleset bypass the human did not authorize. Hand off; `--admin` is reachable only via its own separate gate. |

@@ -14,7 +14,7 @@
 | Source tree | The repo's `src/user/` (shared `.agents/` + per-tool `.claude/`, `.codex/`, `.gemini/`, `.opencode/`) and `src/plugins/<name>/`. The installer's **read-only** input. |
 | Destination store | A per-tool config directory the installer writes into (`~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.config/opencode/`, `~/.beads/`). |
 | `StagingPlan` | The installer's **in-memory** `dict[Path, StagedItem]`. It is process-internal state, NOT a container — it appears at L3 / [data-view](data-view.md), never on this diagram. `--dump-stage` materialises it to disk for debugging only. |
-| `installer.toml` | The installer's structured config — a single `[tools]` table of optional per-tool dest-dir overrides. |
+| `installer.toml` | The installer's structured config file — a single `[tools]` table of optional per-tool dest-dir overrides, parsed by `core/installer_toml.py`. **Designed, parsed, not yet wired**: nothing in the live install path calls the loader, so a declared override has no runtime effect — dest resolution always goes through `adapter.dest_dir(home)`. |
 | Install receipt | `~/.config/agents-config/install-receipt.json` — the installer's persisted record of every wholesale-authored entry it wrote, plus its sibling `install-receipt.lock`. The sole prune authority; read at prune start, rewritten (mirrors disk) at run end. |
 | Backup dir | A path-aware sibling directory where the installer copies a destination file before overwriting or pruning it. |
 
@@ -35,12 +35,12 @@ C4Container
     Person(operator, "Operator", "Developer running the installer from the agents-config repo")
 
     System_Boundary(installer_sys, "Python installer") {
-        Container(proc, "installer process", "Python 3.11 / uv", "Short-lived CLI. Parses argv, builds a frozen Config (tool/plugin auto-detection + installer.toml), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon — every invocation runs to completion and exits. Its only persisted state is the install receipt (read at prune start, rewritten at run end).")
+        Container(proc, "installer process", "Python 3.11 / uv", "Short-lived CLI. Parses argv, resolves tools/plugins (auto-detection or --tools/--plugins), builds an IN-MEMORY StagingPlan per tool, applies plugin overlay + per-tool transforms, then flushes the plan file-by-file to destinations via hash-compare sync. No daemon — every invocation runs to completion and exits. Its only persisted state is the install receipt (read at prune start, rewritten at run end).")
     }
 
     System_Boundary(repo, "agents-config repo (read-only inputs)") {
         ContainerDb(source, "Source config tree", "files on local FS", "src/user/.agents (shared) + src/user/.{claude,codex,gemini,opencode} (per-tool) + src/plugins/<name>/. The installer NEVER writes here — it is pure input.")
-        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — a single [tools] table of optional per-tool dest-dir overrides. Read once at Config build.")
+        ContainerDb(toml, "installer.toml", "TOML on local FS", "packages/installer/installer.toml — a single [tools] table of optional per-tool dest-dir overrides. Parsed by core/installer_toml.py; NOT yet read by the live install path — designed, not wired.")
     }
 
     System_Boundary(state, "Installer state (persisted between runs)") {
@@ -62,7 +62,7 @@ C4Container
     Rel(operator, proc, "python3 scripts/install.py or python -m installer [--tools=] [--plugins=] [--prune] [--dry-run] [--dump-stage]", "CLI invocation")
 
     Rel(proc, source, "Walks + reads source files; flattens DYNAMIC-INCLUDE; strips .template suffix", "FS read")
-    Rel(proc, toml, "Reads [tools] dest-dir overrides", "FS read")
+    Rel(proc, toml, "Parser exists (core/installer_toml.py) but has no caller in the live path", "FS read (unused)")
     Rel(proc, receipt, "Reads prior receipt (prune diff); rewrites it to mirror disk at run end; flock-guarded", "FS read+write")
 
     Rel(proc, claude, "Hash-compare → diff → confirm → backup → write", "FS write")
@@ -92,7 +92,7 @@ The installer's entry points are `python3 scripts/install.py` (a thin stub: `fro
 ### Read-only inputs
 
 - **Source config tree** — `src/user/.agents/` (shared content installed to all tools), `src/user/.{claude,codex,gemini,opencode}/` (per-tool content), and `src/plugins/<name>/` (optional overlay content). The installer **never writes here**; this is the architectural guarantee that makes the source the single canonical authoring surface (the AGENTS.md "always edit source, never deployed artifacts" rule depends on it).
-- **`installer.toml`** — structured config read once at `Config` build: a single `[tools]` table of optional per-tool dest-dir overrides. This is the sole installer config file; pruning is **not** configured here (it is driven by the install receipt, below).
+- **`installer.toml`** — a single `[tools]` table of optional per-tool dest-dir overrides, parsed by `core/installer_toml.py`. **Designed, parsed, but not yet wired**: nothing in the live install path calls the loader, so a declared override has no runtime effect today — dest resolution goes through `adapter.dest_dir(home)` everywhere (including the prune scan). This is the sole installer config file; pruning is **not** configured here (it is driven by the install receipt, below).
 
 ### Destination stores (installer-written)
 
@@ -115,8 +115,8 @@ The four AI coding assistants and the `bd` CLI are **external systems** that rea
 - **The source tree is read-only; the installer owns the writes to destinations.** There is exactly one writer of `~/.claude` et al. during install (the installer) and exactly one writer of `src/` (the human author, via the repo). The installer never crosses that line.
 - **The `StagingPlan` is in-memory and never appears here.** It is built, overlaid, and transformed in process memory; only `sync` touches disk, file-by-file. The one exception, `--dump-stage <path>`, materialises the plan to a throwaway directory for debugging and exits without writing any real destination — it is a diagnostic, not the operational path.
 - **Consumption is asynchronous.** The assistants read their stores whenever *they* run, not when the installer runs. The installer has no runtime coupling to any tool — only a path + content contract via the adapter.
-- **`installer.toml` is config, not state.** It is read, never written, by the install path. The installer's persisted *state* lives separately in the **install receipt** (`~/.config/agents-config/install-receipt.json`) — read at prune start and rewritten at run end — not in `installer.toml`.
-- **Tool set and plugin set are resolved once, up front.** `Config` is frozen after auto-detection + argv + `installer.toml`; the destination stores written in a given run are fixed before any staging begins.
+- **`installer.toml` is config, not state — and not yet wired.** Its loader (`core/installer_toml.py`) has no caller in the live install path today; a declared `[tools]` override has no effect until a future story threads it into dest resolution. Once wired, it will be read, never written, by the install path. The installer's persisted *state* lives separately in the **install receipt** (`~/.config/agents-config/install-receipt.json`) — read at prune start and rewritten at run end — not in `installer.toml`.
+- **Tool set and plugin set are resolved once, up front.** `resolve_tools`/`resolve_plugins` (auto-detection + argv) fix the tool/plugin set before staging begins; `installer.toml` plays no part in this today — its loader is unwired.
 
 ## What this diagram does NOT show
 

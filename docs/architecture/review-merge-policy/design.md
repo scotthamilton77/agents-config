@@ -46,7 +46,7 @@ Drives polling. The cycle is ON **iff** `bot-review-expected` **or**
 | `bot-reviewers` (list) | The **trusted** bot identities whose review satisfies the bot-review fact — matched by **exact** login / app identity, not substring. Defaults to Copilot's identity. A review from a bot not on this list does not count. This is the trust boundary for `bot-quiescence` autonomous merge; a substring match (as the legacy script does with `test("copilot"; "i")`) is insufficient. |
 | `bot-inactivity-timeout` | Bot silence that counts as "bot is done" (reuses prgroom's review-finish-timeout concept). |
 | `human-approvers-required` (int) | How many human approvals to wait for. |
-| `human-review-timeout` | How long to wait for slow humans before giving up. Empty = wait indefinitely (interactive); autonomous runs park the molecule rather than block (see agents-config-ukzs). |
+| `human-review-timeout` | How long to wait for slow humans before giving up. Empty = wait indefinitely (interactive); autonomous runs park the molecule rather than block on it — pending a future pipelining capability that would let other work advance in the meantime. |
 
 A timeout means "stop waiting," not "treat the review as satisfied." A bot
 that never reviewed, or humans who never approved, do **not** become
@@ -129,8 +129,9 @@ N humans approved) live in the rules that need them.
 prgroom's rolled-up `auto_merge_eligible` boolean
 (`docs/architecture/prgroom/design.md` §4.5) is **never** consumed wholesale —
 two of its four components are unsuitable here: `phase_is_quiesced` embeds the
-reviewer-quiescence wait that agents-config-abn9.8.19 documents as unseeded /
-vacuously true, and `human_review_satisfied` is a *positive* authorization
+reviewer-quiescence wait, which is currently unseeded — prgroom never
+populates `state.reviewers`, so the gate evaluates vacuously true — and
+`human_review_satisfied` is a *positive* authorization
 fact (binary, no notion of `N > 1`) that belongs to the human-approvals rule,
 not to a blocker floor.
 
@@ -146,8 +147,8 @@ not to a blocker floor.
 | Head unchanged since evaluation | Enforced via `--match-head-commit` at the merge call (see Freshness invariant). |
 
 Only the two internal facts are prgroom-sourced (and only when available); the
-rest are verified live/directly, so the design does not depend on
-agents-config-abn9.8.19 landing.
+rest are verified live/directly, so the design does not depend on that
+reviewer-state seeding gap being closed.
 
 ## Freshness invariant
 
@@ -170,10 +171,11 @@ SHA — this is surface this policy introduces.
    read — so new unresolved threads / blockers that appear after an earlier
    "looks clean" read are caught.
 3. **Bind the merge to the checked head**: the merge is issued as
-   `gh pr merge --match-head-commit <headRefOid>` (the SHA the predicate was
-   evaluated against). GitHub rejects the merge if the head changed in the
-   final window; `merge-guard` re-evaluates from scratch on rejection rather
-   than retrying blind.
+   `gh pr merge --squash --match-head-commit <headRefOid>` (the SHA the
+   predicate was evaluated against) — `merge-guard` always squash-merges.
+   GitHub rejects the merge if the head changed in the final window;
+   `merge-guard` re-evaluates from scratch on rejection rather than retrying
+   blind.
 
 ## Machine-checkable predicates
 
@@ -235,6 +237,49 @@ cannot pick unsafe defaults.
 - No qualifying current-head review from a trusted identity → not satisfied.
 - This predicate relies on the eligibility floor's triage-completeness facts;
   it does not add a parallel comment-classification mechanism.
+
+**bot-quiescence retry and escape hatch** (behavior once the positive fact
+above is not yet satisfied — never a blocker itself, and distinct from the
+eligibility-bypass override in Consumers):
+
+- A bot that has not yet produced a qualifying clean review at the current
+  head gets **at most one** re-review ask per head: merge-guard calls
+  `request-rereview.sh` plus the re-review poll helpers directly, never by
+  re-invoking the full `wait-for-pr-comments` skill — that skill skips its own
+  re-request phase when there is no untriaged feedback to process, so it
+  would silently no-op on exactly this residual. merge-guard then re-evaluates
+  the predicate above against the unchanged head; a clean re-review now
+  satisfies the rule and merges.
+- Two facts govern the ask: `polling.rereview_round_count`, a persisted count
+  of *silent* re-review asks on the current head only (rounds where the bot
+  actually responded are not counted), and `facts.bot_review_cap_exhausted`, a
+  boolean that gates every decision below. `bot_review_cap_exhausted` is set
+  true by either of two independent triggers — a chatty bot that keeps
+  re-reviewing past its existing `round >= 6` cap, or a silent bot that
+  reaches the one-ask `rereview_round_count` cap — with no unified count
+  across the two.
+- `check-merge-eligibility.sh` reads `bot_review_cap_exhausted` from the
+  single inventory file whose name embeds the PR's *current* head SHA, never
+  by globbing across a PR's retained inventories. A stale `exhausted = true`
+  recorded against a superseded head can therefore never leak onto a fresh
+  one — a genuinely new fix commit gets a fresh inventory and the count
+  restarts at zero. Absent, unreadable, or field-missing inventory data all
+  resolve to `false`: this fact is fail-closed in every failure mode.
+- Once the ask is spent and the bot has stayed silent, an opt-in
+  `allow-force-after-bot-timeout` key (default `false`, valid only when
+  `merge-rule = bot-quiescence`) unlocks a scoped force-merge. It is reachable
+  only when eligibility is clean, the rule is still unmet, the ask is spent,
+  the config key is set, and a fresh in-session human instruction names the
+  bot-quiescence blocker — all five simultaneously, never a standing grant.
+  Because eligibility already holds when this fires, it bypasses only the
+  unmet rule, not the eligibility floor; it is not a second instance of the
+  eligibility-bypass override described in Consumers.
+- This scoped force-merge performs its own terminal merge and never enters
+  the `--admin` bypass ladder described in Consumers: that ladder remains
+  reserved for merges authorized through the rule and explicit-instruction
+  paths above, not for a merge reached via this bypass. A GitHub rejection of
+  the scoped force-merge ends in hand-off, never an escalation to a bypass
+  the human did not authorize for it.
 
 **admin-bypass availability** (never a blocker — informs *how* Step 5 issues
 an already-authorized merge, not *whether* one is eligible):
@@ -347,8 +392,8 @@ ReviewMergePolicy = {
 
 `per-bead label` > project config > built-in default.
 
-Per-bead override labels (consumed here; *authored* at brainstorm time by
-agents-config-7bk.12):
+Per-bead override labels (consumed here; *authored* at brainstorm time by the
+brainstorm-bead workflow's policy-knob step):
 
 - `review-exit-copilot-only` → `bot_review_expected = true` **regardless** of
   project config (its purpose is to wait for the bot; it must not degrade to
@@ -385,9 +430,9 @@ Built-in defaults (section/key absent):
 |---|---|---|
 | `bot-review-expected` | bool | `true` |
 | `bot-reviewers` | list[str] | `["Copilot", "copilot-pull-request-reviewer[bot]"]` |
-| `bot-inactivity-timeout` | duration string | `"20m"` |
+| `bot-inactivity-timeout` | duration string (`"20m"`) \| int (seconds) | `"20m"` |
 | `human-approvers-required` | int | `0` |
-| `human-review-timeout` | duration string \| unset | unset (wait indefinitely) |
+| `human-review-timeout` | duration string (`"20m"`) \| int (seconds) \| unset | unset (wait indefinitely) |
 
 `[merge-policy]` (Axis 2):
 
@@ -400,6 +445,9 @@ Built-in defaults (section/key absent):
 | `judge-effort` | `"none"` \| `"minimal"` \| `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | `"high"` |
 | `judge-timeout` | duration string | `"15m"` |
 | `judge-max-attempts` | int | `2` |
+
+An unrecognized key in either section is a resolver error (exit 1) — the
+resolver never silently ignores a typo'd or stale key.
 
 Per-bead override labels (consumed by the resolver; independent of the TOML
 keys above):

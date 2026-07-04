@@ -21,7 +21,7 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 ├── packages/
 │   └── installer/
 │       ├── pyproject.toml                   (uv-managed; targeted deps allowed)
-│       ├── installer.toml                   (installer config — [tools] dest-dir overrides)
+│       ├── installer.toml                   (installer config — [tools] dest-dir overrides; parsed by core/installer_toml.py, not yet wired)
 │       ├── src/installer/
 │       │   ├── core/                        (pure, tool-agnostic engine)
 │       │   ├── tools/                       (per-tool adapters)
@@ -44,7 +44,7 @@ A `uv`-managed Python package (`packages/installer`) that installs agent configu
 ```
 installer/
 ├── cli.py                       Parse argv, build Config, wire IOPort, invoke orchestrator
-├── config.py                    Config dataclass; tool/plugin auto-detection; loads installer.toml
+├── config.py                    Config dataclass (home, tools, auto_yes); resolve_tools/resolve_plugins for auto-detection
 ├── orchestrator.py              Top-level controller; composes core engines + adapters
 ├── core/                        ── pure, tool-agnostic, fully unit-testable
 │   ├── model.py                 FileKind, StagedItem, StagingPlan, Orphan, IncludeDirective, Counters
@@ -126,13 +126,15 @@ The dependency list is deliberately tight, but we no longer refuse a library tha
 
 ### Configuration — `installer.toml`
 
-Structured TOML at `packages/installer/installer.toml` owns installer configuration. Its only table is `[tools]`:
+Structured TOML at `packages/installer/installer.toml`, parsed by `core/installer_toml.py`'s `load_installer_toml`. Its only table is `[tools]`:
 
 ```toml
 [tools]
 # Optional per-tool dest-dir overrides — leave commented to use built-in adapters.
 # claude.dest = "~/.claude"
 ```
+
+**Designed, parsed, but not yet wired.** `load_installer_toml` has no caller in the live install path — there is no `Config.tool_overrides` field, and dest resolution goes through `adapter.dest_dir(home)` everywhere (including the prune scan), so a declared override has no runtime effect today. Threading the parsed overrides into dest resolution is a deliberate later story; the schema ships now so the loader is forward-compatible.
 
 Pruning is **not** configured here. It is driven by the **install receipt** (`~/.config/agents-config/install-receipt.json`) — a record of every wholesale-authored entry the installer wrote, diffed against the desired staged plan to find orphans. See [`data-view.md`](data-view.md) §"Install receipt — the persisted prune authority" and [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow"; the authoritative design is `docs/specs/2026-06-25-install-receipt-pruning-design.md`.
 
@@ -157,7 +159,7 @@ Single injectable abstraction (`info`/`ok`/`warn`/`err`/`header`/verbose variant
 - `StagingPlan` is the in-memory staging structure — a `dict[Path, StagedItem]` plus provenance tracking.
 - `Orphan` dataclass carries tool (owner), namespace, path, and kind for each recorded receipt entry that is in scope but no longer in this run's desired staged plan (and passes the path trust boundary).
 - `Receipt` / `ReceiptEntry` are the installer's only persisted-between-runs state: a record of every wholesale-authored dest entry (`path`, `owner`, `root`, `kind`, `sha256`), behind an `integrity` digest, serving as the sole prune authority. Never records a merge-target.
-- `Config` is frozen, populated from argv + `installer.toml` + auto-detection probes (which themselves consult adapters). It carries no prune fields — pruning is driven by the `--prune` / `--prune-only` argparse flags and the install receipt.
+- `Config` is frozen; today it carries only `home`, `tools`, and `auto_yes`, populated from argv + auto-detection probes (which themselves consult adapters). `plugins`, `dry_run`, and `dump_stage` are resolved separately in `cli.py` and threaded directly into pipeline calls rather than through `Config`. `installer.toml` is parsed but not yet wired into `Config` or any consumer (see §"Configuration — installer.toml"). `Config` carries no prune fields — pruning is driven by the `--prune` / `--prune-only` argparse flags and the install receipt.
 
 ## Test architecture
 

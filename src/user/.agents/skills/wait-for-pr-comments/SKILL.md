@@ -403,6 +403,20 @@ Abort.
 
 ### Phase 6 — Re-poll for Copilot re-review
 
+**On entry**, seed the working silent-ask counter/exhausted flag from the
+head-exact prior inventory (same head — a genuinely new fix commit gets a
+fresh file and starts at 0; a merge-guard-driven re-invocation on an
+unchanged head reuses this file and accumulates):
+```bash
+prior=$(jq -c '{c:(.polling.rereview_round_count // 0), e:(.polling.bot_review_cap_exhausted // false)}' \
+  "$HOME/.claude/state/pr-inventory/<owner>-<repo>-<n>-<head_sha_after_push>.json" 2>/dev/null || echo '{"c":0,"e":false}')
+```
+`$prior` (`{c, e}`) is the baseline both hooks below pass as
+`--prior-count`/`--prior-exhausted` to `compute-rereview-polling.sh`, and `e`
+is the "before" value for each hook's false → true `PushNotification` check.
+Neither hook passes `--silent-cap` — the silent re-request cap is locked at
+the helper's default (1) per spec decision, not a per-repo config knob.
+
 1. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
@@ -440,8 +454,45 @@ SKIP/praise items keep their natural classification and get normal SKIP
 replies — this avoids posting the cap-exceeded template on harmless "LGTM"
 acks.
 
-If Phase 6 detects no new review (`no_rereview_started` exit), exit Phase 6
-normally and proceed to Phase 7.
+This chatty-bot cap also sets the persisted `bot_review_cap_exhausted` fact
+(it reads the existing in-memory `round`; it does **not** touch
+`rereview_round_count` — a review arrived, so this is not a silent ask):
+```bash
+result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
+  --prior-count "$(jq -r '.c' <<<"$prior")" \
+  --prior-exhausted "$(jq -r '.e' <<<"$prior")" \
+  --event chatty-cap)
+jq -c --argjson r "$result" '. + $r' "$POLLING_FILE" > "${POLLING_FILE}.tmp" \
+  && mv "${POLLING_FILE}.tmp" "$POLLING_FILE"
+```
+`$POLLING_FILE` stays a **path** throughout — read its current content, merge
+`$result` in, write back to the same path (atomically, via temp + `mv`).
+Never reassign `POLLING_FILE` itself to hold JSON text; every downstream call
+(Phase 5a, Phase 7) passes it to `build-inventory-body.sh --polling`, which
+requires a real file (`-f` check).
+
+If this is the trigger that flips `bot_review_cap_exhausted` from `false`
+(`$prior`'s `e`) to `true` (`$result`'s value), fire exactly one
+`PushNotification` telling the human the retry window closed for this
+PR/head — do not fire again on later invocations once it is already `true`.
+
+If Phase 6 detects no new review (`no_rereview_started` exit), compute the
+updated silent-ask counter and merge it into `POLLING_FILE` before exiting
+Phase 6 normally and proceeding to Phase 7:
+```bash
+result=$(${CLAUDE_SKILL_DIR}/compute-rereview-polling.sh \
+  --prior-count "$(jq -r '.c' <<<"$prior")" \
+  --prior-exhausted "$(jq -r '.e' <<<"$prior")" \
+  --event silent)
+jq -c --argjson r "$result" '. + $r' "$POLLING_FILE" > "${POLLING_FILE}.tmp" \
+  && mv "${POLLING_FILE}.tmp" "$POLLING_FILE"
+```
+Same path-preserving merge-and-write-back as the chatty-cap hook above — never
+reassign `POLLING_FILE` to hold JSON text. Same false → true transition check: if this
+silent exit is what flips `bot_review_cap_exhausted` from `false`
+(`$prior`'s `e`) to `true` (`$result`'s value), fire exactly one
+`PushNotification`. Both fields are persisted via the normal Phase 7 write
+(`POLLING_FILE` flows into `build-inventory-body.sh --polling`).
 
 ### Phase 7 — Write inventory
 
@@ -755,7 +806,9 @@ POSIX-atomic) — handled by `write-inventory.sh`.
     "head_sha_after_push": "def456..."     // == at_inventory if no fixes; updated to actual head after Phase 5c push success
   },
   "polling": {
-    "copilot_status": "review_found" | "timeout" | "not_requested"  // consumed by Skill B Phase 4 final report only
+    "copilot_status": "review_found" | "timeout" | "not_requested",  // consumed by Skill B Phase 4 final report only
+    "rereview_round_count": 0,           // silent-ask count on current head, default 0
+    "bot_review_cap_exhausted": false    // default false
   },
   "items": [
     {
@@ -796,6 +849,10 @@ POSIX-atomic) — handled by `write-inventory.sh`.
   enforces both).
 - `polling.copilot_review_submitted_at` is dropped from v1 — re-add as
   `schema_version: 2` when `agents-config-58m` lands a real consumer.
+- `polling.rereview_round_count` / `polling.bot_review_cap_exhausted` are
+  additive at v1 (actively consumed by `check-merge-eligibility.sh`); when
+  `agents-config-58m` bumps to `schema_version: 2`, they fold into the v2
+  doc alongside `copilot_review_submitted_at`.
 - `polling.copilot_status` is consumed by Skill B Phase 4 final report
   ("Polling outcome: <copilot_status>"); kept for that purpose.
 

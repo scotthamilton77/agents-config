@@ -19,8 +19,9 @@
 | `request_human_review_if_needed` | Cross-cutting hook (§4.6) called at the same two `_run` exit sites as `escalate_if_needed`. POSTs the `human-review-required` label via the gh adapter when `phase=human-gated` AND `state.human_review_label_added == False`; sets the flag. Dedup-safe. |
 | Cluster contract | Cluster-bundling agent dispatch (§5). Cheap; local-first chain ollama → claude haiku → codex-mini. |
 | Fix contract | Per-cluster fix agent dispatch (§5). `opus[1m]` orchestrator that decides per-comment disposition AND implements; emits a required `verify_checklist` claim (trust-but-verify). |
-| `_verify` | The pre-push mechanical gate (between `_fix` and `_push`). Runs the operator-configured tier command (`proc.CommandRunner`, whole-branch, strongest `GateStrength`) and owns the bounded fix↔verify convergence loop; refuses the push on `fix_verify_retries` exhaustion via `phase=HUMAN_GATED` + `LIFECYCLE_FIX_VERIFY_EXHAUSTED`. Full component view: [`c4-l3-verify.md`](c4-l3-verify.md). |
-| Inner / outer retry caps | Two sibling retry budgets. **Inner** = `fix_verify_retries` (default 2) bounds the fix↔verify convergence loop → `LIFECYCLE_FIX_VERIFY_EXHAUSTED`. **Outer** = `pr_review_retries` (default 5) bounds review-eliciting pushes → `LIFECYCLE_PR_REVIEW_EXHAUSTED`. Both escalate to `human-gated`, are `LIFECYCLE_CAP` tier / exit 0, and re-arm by raising the budget (entry-probe) or `poll` observing an external fix. |
+| `cap_guard` | The pre-push hard-cap guard (between `_fix` and `_push`), built today via `_cap_guard_step` in `_build_pipeline`. No-ops unless commits are queued AND `round >= max_rounds`; then sets `phase=HUMAN_GATED` + `LIFECYCLE_HARD_CAP_EXCEEDED`, refusing the push. |
+| `_verify` | **DESIGNED, NOT YET IMPLEMENTED** — see [`c4-l3-verify.md`](c4-l3-verify.md). The designed pre-push mechanical gate (between `_fix` and `cap_guard`) that would run the operator-configured tier command (`proc.CommandRunner`, whole-branch, strongest `GateStrength`) and own a bounded fix↔verify convergence loop; would refuse the push on `fix_verify_retries` exhaustion via `phase=HUMAN_GATED` + `LIFECYCLE_FIX_VERIFY_EXHAUSTED`. None of `verify`, `GateStrength`, `VerifyVerdict`, or these two error codes exist in `packages/prgroom/src/` today. |
+| Retry caps | **Built today**: a single hard cap, `max_rounds` (default per `.prgroom.toml` / `--max-rounds`) bounds queued-commit pushes across cycles → `LIFECYCLE_HARD_CAP_EXCEEDED`. **Designed, not yet implemented**: splitting this into an inner `fix_verify_retries` (fix↔verify convergence loop → `LIFECYCLE_FIX_VERIFY_EXHAUSTED`) and an outer `pr_review_retries` (review-eliciting pushes → `LIFECYCLE_PR_REVIEW_EXHAUSTED`) — see [`c4-l3-verify.md`](c4-l3-verify.md). All are `LIFECYCLE_CAP` tier / exit 0, and re-arm by raising the relevant budget (entry-probe) or `poll` observing an external fix. |
 
 ## Purpose
 
@@ -43,7 +44,7 @@ C4Component
             Component(poll, "_poll", "Python function", "Queries gh for comments/reviews/CI/head-SHA; appends new items to state; flips reviewer status on observed engagement; calls evaluate_reviewer_timeouts; updates quiescence.ci_state + last_activity_at.")
             Component(cluster, "_cluster", "Python function", "Dispatches the cluster contract to bundle unprocessed items into fix-clusters. Sets cluster_id on items. Idempotent on already-clustered items.")
             Component(fix, "_fix", "Python function", "Per cluster: assembles the complete-PR snapshot (PR body incl. Decisions block, labels, all threads w/ full reply-chains, prior-round dispositions + computed per-item recurrence; §7.1) immediately before dispatch; dispatches the fix contract; receives per-item disposition + commit SHAs + optional classified memory channel (§7.3) + a required verify_checklist claim; runs §5 contract-audit (orphan check, schema, shas-on-branch, memory classification + memory_dir containment §7.6, verify_checklist presence on FIXED items, typed Disposition.gate); flips affected items to disposition.kind=failed on audit failure.")
-            Component(verify, "_verify", "Python function", "Pre-push mechanical gate. No-ops when not has_queued. Runs the operator-configured tier command (proc.CommandRunner, whole-branch, strongest GateStrength across clean FIXED items); on RED, owns the bounded fix↔verify convergence loop (writes gate output to a temp file → dispatches a whole-branch REPAIR fix fed verify_failure_path → re-audits → re-gates; bounded by fix_verify_retries). Persists VerifyVerdict. On GREEN falls through to cap-guard/push; on exhaustion sets phase=HUMAN_GATED + LIFECYCLE_FIX_VERIFY_EXHAUSTED (refuses the push by the same mechanism as cap-guard). Full component view in c4-l3-verify.md.")
+            Component(cap_guard, "cap_guard", "Python function (VerbStep closure)", "Pre-push hard-cap guard (§3.5), built in _build_pipeline. No-op unless commits are queued AND round >= max_rounds; then sets phase=HUMAN_GATED + LIFECYCLE_HARD_CAP_EXCEEDED (clears lifecycle_escalation_filed for one Sink flush) so the push is never reached. DESIGNED, NOT YET IMPLEMENTED: a verify mechanical-gate step is planned to slot between fix and cap_guard — see c4-l3-verify.md.")
             Component(push, "_push", "Python function", "git push queued commits to PR branch. pr_review_retries_used++ on successful push. Emits cap-warning stderr when push would reach the pr_review_retries budget. Pre-push PR-review-retry cap guard at §3.5.")
             Component(rereview, "_rereview", "Python function", "Remove + re-add required bot reviewers (the gh quirk dance). Idempotent. Runs LAST in the cycle (after _reply/_resolve close out the round); guarded by push_awaiting_rereview (last_review_invalidated_sha != last_rereviewed_sha) AND has_required_reviewers_to_refresh, and stamps last_rereviewed_sha = last_review_invalidated_sha on success so the trigger is resumable across a failed reply/resolve and fires for external pushes too (last_review_invalidated_sha is stamped by both _push and _poll).")
             Component(reply, "_reply", "Python function", "Renders canonical per-disposition template replies (template-only; the agent's long-form `response_path` prose is deferred); posts via gh REST. Also routes the fix output's CONTEXTUAL memory (§7.3): thread-tied entries as thread replies, thread-less PR-wide decisions PATCHed into the sentinel-bounded Decisions block in the PR body (gh API edit, NOT a git commit). Marks replied=True per item. Drains+clears the persisted state.pending_memory (durability across cap-trip / transient failure). Decisions-block ROUTING dedup stays flagless — keyed by (retry, source-item), rewritten wholesale; the persisted pending_memory guarantees no entry is LOST, not POST idempotency.")
@@ -58,7 +59,7 @@ C4Component
             Component(escalate_hook, "escalate_if_needed", "Python function", "Cross-cutting hook called by _run at its two exit sites — the loop-top terminal check and immediately before each Propagate re-raise (§3.3). Emits one EscalationSink event per item with disposition.kind ∈ {escalated, failed} AND escalation_filed == False, plus the lifecycle retry-cap emit (PR-review / fix↔verify exhaustion, gated by lifecycle_escalation_filed). Dedup-safe; sets the per-item escalation_filed flag.")
             Component(humanreq_hook, "request_human_review_if_needed", "Python function", "§4.6 cross-cutting hook called by _run at the same two exit sites as escalate_if_needed. POSTs the human-review-required label to GitHub via the gh adapter when phase=human-gated AND state.human_review_label_added == False; sets human_review_label_added=True. Dedup-safe.")
 
-            Component(sink_iface, "EscalationSink", "Python Protocol", "Per §5: stderr (default) / file / bd adapters. Emits structured Escalation JSON. Lifecycle-internal — the §1 layout gives escalation no dedicated module and escalate_if_needed is its sole emitter.")
+            Component(sink_iface, "EscalationSink", "Python Protocol", "Per §5: StderrSink is the wired production default (cli.py::_build_sink); FileSink (JSONL) is implemented in escalation.py but not yet exposed via a CLI flag; a bd adapter is deferred to v2 and does not exist in code. Emits structured Escalation JSON. Lifecycle-internal — the §1 layout gives escalation no dedicated module and escalate_if_needed is its sole emitter.")
         }
 
         Container_Boundary(prsession_pkg, "src/prgroom/prsession") {
@@ -79,7 +80,7 @@ C4Component
         }
 
         Container_Boundary(proc_pkg, "src/prgroom/proc") {
-            Component(cmd_runner, "proc.CommandRunner", "Python subprocess wrapper", "Runs the operator-configured verify tier command (lite/full) whole-branch in the worktree; returns stdout/stderr/exit code for _verify's gate decision.")
+            Component(cmd_runner, "proc.CommandRunner", "Python subprocess wrapper", "The command-runner Protocol injected into gh_adapter's and git_adapter's subprocess wrappers today (SubprocessRunner in prod). DESIGNED, NOT YET IMPLEMENTED: a future verify mechanical-gate step is planned to run operator-configured tier commands (lite/full) whole-branch through this Protocol — see c4-l3-verify.md.")
         }
     }
 
@@ -91,8 +92,8 @@ C4Component
     Rel(run, poll, "Each cycle, first step")
     Rel(run, cluster, "After poll, if items unclustered")
     Rel(run, fix, "After cluster, if clusters exist")
-    Rel(run, verify, "After fix, if commits queued (mechanical gate; refuses push on exhaustion)")
-    Rel(run, push, "After verify, if commits queued (PR-review-retry cap-gated)")
+    Rel(run, cap_guard, "After fix, if commits queued (pre-push hard-cap guard)")
+    Rel(run, push, "After cap-guard, if commits queued (refused when round >= max_rounds)")
     Rel(run, reply, "After push: per-item replies + drain pending_memory")
     Rel(run, resolve, "After reply: resolve FIXED threads")
     Rel(run, rereview, "Last: if push_awaiting_rereview AND required reviewers stale")
@@ -108,8 +109,6 @@ C4Component
 
     Rel(cluster, contract_a, "Subprocess agent CLI per cluster invocation")
     Rel(fix, contract_b, "Subprocess agent CLI per cluster invocation")
-    Rel(verify, cmd_runner, "Run tier command whole-branch (gate of record)")
-    Rel(verify, contract_b, "Whole-branch REPAIR dispatch on RED (fed verify_failure_path)")
 
     Rel(poll, gh_adapter, "list comments / reviews / CI / head SHA")
     Rel(push, git_adapter, "git push fix commits")
@@ -125,7 +124,7 @@ C4Component
     Rel(poll, store_iface, "read / write")
     Rel(cluster, store_iface, "write — cluster_id assignment")
     Rel(fix, store_iface, "read prior dispositions for snapshot (§7.1); write per-item disposition")
-    Rel(verify, store_iface, "write — VerifyVerdict; phase=human-gated on LIFECYCLE_FIX_VERIFY_EXHAUSTED")
+    Rel(cap_guard, store_iface, "write — phase=human-gated + last_error=LIFECYCLE_HARD_CAP_EXCEEDED on round >= max_rounds")
     Rel(push, store_iface, "write — last_pushed_head_sha, pr_review_retries_used++")
     Rel(reply, store_iface, "write — replied=True")
     Rel(resolve, store_iface, "write — resolved=True")
@@ -169,19 +168,22 @@ def _run(pr, mode) -> PRGroomingState:     # caller holds the per-PR lock
         # ⚠ ILLUSTRATIVE ONLY — this linearises the spec's §3.2 phase-dispatch (which
         # branches on state.phase, and elides the entry-time external-transition probe —
         # which also performs the retry-cap re-arm: from human-gated, a raised
-        # --pr-review-retries clears LIFECYCLE_PR_REVIEW_EXHAUSTED, and a raised
-        # --fix-verify-retries clears LIFECYCLE_FIX_VERIFY_EXHAUSTED, re-entering the cycle)
+        # --max-rounds clears LIFECYCLE_HARD_CAP_EXCEEDED, re-entering the cycle. The
+        # design also calls for a split --pr-review-retries / --fix-verify-retries
+        # re-arm (DESIGNED, NOT YET IMPLEMENTED — see c4-l3-verify.md); only the single
+        # built --max-rounds cap exists today)
         # AND repeats the (call → handle_verb_error → maybe-Propagate) guard per verb,
         # both purely for readability. Do NOT copy either shape into the implementation:
         # the guard belongs in ONE place via a verb-step pipeline, and the dispatch
         # belongs on state.phase. See "Implementation guidance" after this block.
         #
-        # _verify sits between _fix and _push: it no-ops when not has_queued, runs the
-        # mechanical gate + bounded fix↔verify convergence loop, and — like the §3.5
-        # cap-guard — refuses the push on exhaustion by setting phase=HUMAN_GATED
-        # (LIFECYCLE_FIX_VERIFY_EXHAUSTED), which the loop-top terminal check then breaks on
-        # before _push/_reply/_resolve run.
-        for verb in (_poll, _cluster, _fix, _verify, _push, _reply, _resolve):
+        # cap_guard sits between _fix and _push: it no-ops unless commits are queued AND
+        # round >= max_rounds, in which case it refuses the push by setting phase=HUMAN_GATED
+        # (LIFECYCLE_HARD_CAP_EXCEEDED), which the loop-top terminal check then breaks on
+        # before _push/_reply/_resolve run. DESIGNED, NOT YET IMPLEMENTED: a verify
+        # mechanical-gate step is planned to slot between _fix and cap_guard — see
+        # c4-l3-verify.md; it does not exist in _build_pipeline today.
+        for verb in (_poll, _cluster, _fix, cap_guard, _push, _reply, _resolve):
             try:
                 state = verb(pr, state)
             except TaggedError as err:
@@ -240,9 +242,11 @@ Two §7 PR-memory responsibilities attach to existing verbs — no new verb. The
 - **Snapshot assembly (read path) — inside `_fix`, immediately before dispatch (§7.1).** `_fix` builds the complete-PR snapshot the fix contract reads via `pr_detail_path`: PR body (including the prgroom-maintained `## Decisions` block), labels, every review thread with its full reply-chain, and prior-round dispositions sourced from `prsession`. It also computes the per-item **`recurrence`** signal (§7.2) — derived from disposition history at assembly time, never stored. Capture is deferred to just-before-dispatch (not top-of-cycle `_poll`) to minimise the staleness window. The fix agent never calls `gh`.
 - **CONTEXTUAL→PR routing (write path) — inside `_reply`, at reply time (§7.3).** `_fix` resolves the fix output's classified `memory` channel into `RoutedMemory` records appended to the persisted `state.pending_memory`; `_reply` drains and routes them (the agent only *declares*): a CONTEXTUAL entry with a `target_hint` rides out as a **thread reply** on that thread; a thread-less CONTEXTUAL entry is merged into the **`## Decisions` block** in the PR body via a `gh` **PATCH of the description** — an API edit, **not** a git commit and **not** a phase change, then `pending_memory` is cleared. **Two distinct idempotency mechanisms:** the `pending_memory` field provides *durability* (a memo is never LOST — it survives until a clean `_reply` clears it); the Decisions-block *routing dedup* needs **no extra flag** — prgroom owns the block between sentinel markers, keys entries by `(retry, source-item)`, and rewrites wholesale, so a same-retry re-run is byte-identical (contrast the auto-label's `human_review_label_added` flag). Thread-reply memory shares the per-reply non-idempotent-POST window that per-item replies do. Non-CONTEXTUAL classes are accepted-but-deferred (logged, not routed).
 
-### The `_verify` mechanical gate
+### The `_verify` mechanical gate (DESIGNED, NOT YET IMPLEMENTED)
 
-`_verify` is the pre-push gate of record, inserted between `_fix` and `_push`. It **no-ops when `not has_queued`** (no fix commits to verify — mirrors `_push`'s degenerate no-op). When commits are queued it:
+> **Status**: This subsystem is design-ratified but **0% implemented** — no `verify` step exists in `_build_pipeline` (`lifecycle/run.py`), no `verify` field on `PRGroomingState`, no `[verify]` config table. The only pre-push guard built today is `cap_guard` (§3.5 hard round cap — see the diagram above and its glossary row). The content below documents the target design; see [`c4-l3-verify.md`](c4-l3-verify.md) for the full component view.
+
+`_verify` is the pre-push gate of record, designed to insert between `_fix` and `_push`. It **no-ops when `not has_queued`** (no fix commits to verify — mirrors `_push`'s degenerate no-op). When commits are queued it:
 
 1. **Selects the tier** — the strongest `GateStrength` across the clean `FIXED` items (any `full` ⇒ `full`, else `lite`); `Disposition.gate` is typed/validated, so an absent or invalid gate on a `FIXED` item is a `CONTRACT_FIX_AUDIT_FAILED` (this makes `recommended_gate` load-bearing).
 2. **Runs the mechanical gate** — the operator-configured tier command via `proc.CommandRunner`, whole-branch in the worktree. This run is **authoritative** — it is *not* byte-compared against the fix agent's `verify_checklist` claim; on divergence (agent claimed green, gate is red) the mechanical result wins and drives the convergence loop.
@@ -270,12 +274,12 @@ Two §7 PR-memory responsibilities attach to existing verbs — no new verb. The
 | Sibling package | Protocol | What lifecycle uses it for |
 |---|---|---|
 | `src/prgroom/prsession` | `Store` | Per-PR state read / write / lock |
-| `src/prgroom/agent` | `ClusterContract` + `FixContract` | Cluster / fix / repair subprocess dispatch (`_verify` reuses `FixContract` for whole-branch repair) |
+| `src/prgroom/agent` | `ClusterContract` + `FixContract` | Cluster / fix subprocess dispatch. Designed, not yet implemented: `_verify` reusing `FixContract` for whole-branch repair (see [`c4-l3-verify.md`](c4-l3-verify.md)) |
 | `src/prgroom/gh` | `GitHub` (adapter) | All GitHub REST + GraphQL + label I/O |
 | `src/prgroom/git` | `Git` (adapter) | Worktree-aware git ops — push to the PR branch (`_push`); commit-reachability reads for the §5 fix audit (`_fix`) |
-| `src/prgroom/proc` | `CommandRunner` | Run the verify tier command whole-branch in the worktree (`_verify`) |
+| `src/prgroom/proc` | `CommandRunner` | Injected into the `gh` / `git` adapters' subprocess wrappers today. Designed, not yet implemented: running a verify tier command whole-branch in the worktree (`_verify`) |
 
-`EscalationSink` is **not** a sibling package — it is defined within `src/prgroom/lifecycle` (the §1 layout gives escalation no dedicated module, and `escalate_if_needed` is its sole emitter), with stderr (default) / file / bd adapters per §5.
+`EscalationSink` is **not** a sibling package — it is defined within `src/prgroom/lifecycle` (the §1 layout gives escalation no dedicated module, and `escalate_if_needed` is its sole emitter). Per §5: `StderrSink` is wired as the production default; `FileSink` is implemented but not yet exposed via a CLI flag; a `bd` adapter is deferred to v2 and does not exist in code.
 
 Lifecycle does NOT depend on `src/prgroom/cli` directly — config is loaded once by `cli.py` and passed in via the deps struct; `cli.py` is upstream of `_run` (it's the typer entry that builds the deps surface and calls `run()`).
 
@@ -291,7 +295,7 @@ class Deps:
     git: git.Git                    # worktree-aware git-subprocess wrapper
     cluster: agent.ClusterContract
     fix: agent.FixContract
-    sink: EscalationSink            # lifecycle-internal; stderr / file / bd adapters (§5)
+    sink: EscalationSink            # lifecycle-internal; StderrSink wired today, FileSink implemented-not-wired, bd deferred to v2 (§5)
     clock: Callable[[], datetime]   # injected for §4 deadline derivation in tests
     # (no randomness used in MVP)
 ```

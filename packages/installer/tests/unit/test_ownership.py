@@ -47,7 +47,7 @@ def test_entry_for_a_tool_item_owns_by_tool_with_home_relative_root() -> None:
 
 
 def test_prune_namespaces_constant() -> None:
-    assert PRUNE_NAMESPACES == ("commands", "skills", "agents", "rules")
+    assert PRUNE_NAMESPACES == ("commands", "skills", "agents", "rules", "workflows")
 
 
 def test_route_entry_for_beads_formula() -> None:

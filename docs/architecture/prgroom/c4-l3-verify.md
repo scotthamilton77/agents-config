@@ -4,6 +4,7 @@
 > **Source bead**: `agents-config-fca6.16`
 > **Source design**: [design.md](design.md) — §6 (the verify gate), §3.4 (the fix↔verify convergence loop), §3.5 (the two retry caps)
 > **Container**: `src/prgroom/lifecycle/` (the `verify` step + gate) reaching into `src/prgroom/agent/` (repair dispatch) and `src/prgroom/proc` (command runner)
+> **Status**: **DESIGNED — 0% IMPLEMENTED.** Every component on this page is design-ratified target state, not current behavior. `packages/prgroom/src/prgroom/` has no `verify` step in `_build_pipeline` (`lifecycle/run.py`), no `GateStrength` / `VerifyVerdict` types, no `verify` field on `PRGroomingState`, no `[verify]` config table, and no `LIFECYCLE_FIX_VERIFY_EXHAUSTED` / `PRECONDITION_NO_VERIFY_CONFIG` error codes. The only pre-push guard built today is `cap_guard` (§3.5 hard round cap, `max_rounds` / `LIFECYCLE_HARD_CAP_EXCEEDED`) — see [`c4-l3-lifecycle.md`](c4-l3-lifecycle.md). This page documents the design an implementation bead will build against.
 
 ## Glossary
 
