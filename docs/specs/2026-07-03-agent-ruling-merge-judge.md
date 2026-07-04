@@ -126,7 +126,7 @@ any protected path, `agent-ruling` **abstains → hand off**. The broad set:
 | Class | Examples |
 |---|---|
 | Merge/review policy | `project-config.toml` `[merge-policy]`/`[review-expectations]`, the merge-authorization law text |
-| The gate & judge itself | `merge-guard/` (SKILL, `check-merge-eligibility.sh`, `resolve_policy.py`, `judge_merge.py`, `record_provenance.py`), **the protected-paths manifest itself**, and **the judge prompt / rubric files** |
+| The gate & judge itself | `merge-guard/` (SKILL, `check-merge-eligibility.sh`, `resolve_policy.py`, `judge_merge.py`, `record_provenance.py`), **`protected_paths.py`** (the guard globs), and **the judge prompt / rubric files** |
 | Delivery & provenance workflow | `finishing-a-development-branch/` and any skill/script that emits the provenance record or drives push/merge |
 | Cross-model routing | `codex-routing.md` and any judge-backend wiring |
 | CI / automation & hooks | `.github/workflows/`, CI config, pre-commit / hook config, `settings.json*` (hook + permission wiring), `hooks/` |
@@ -134,14 +134,19 @@ any protected path, `agent-ruling` **abstains → hand off**. The broad set:
 | Auth & secrets | credential files, `.env*`, secret manifests, token config |
 | Agent instructions | `AGENTS.md`, `CLAUDE.md`, `*.md.template` instruction files, `rules/` |
 
-The set is defined as an explicit, reviewable path/globs manifest — a
-**conservative superset** of these classes, not merely the examples above —
-that the harness **reads from `base_ref_oid`** (never the head/worktree copy),
-and the manifest, judge prompt, and rubric are themselves protected entries.
-Reading from base and self-including the manifest close the bootstrap hole where
-a PR shrinks its own guard surface in the same diff that would exploit the
-smaller set. A protected-path hit is a **structural** abstain — it never reaches
-the judge, so no rubric judgment or injection can override it.
+The set is a **conservative superset** of these classes — not merely the
+examples above — defined as **built-in globs in the judge's own install**
+(`protected_paths.py`, shipped with the merge-guard skill), **not** a file in
+the target repo. A target PR's diff lives in the target repo and therefore
+**cannot reach the guard list at all** — strictly stronger than reading a
+repo-resident manifest from base, and it can never fail open on first adoption.
+The globs are path *patterns* (`**/merge-guard/**`,
+`**/finishing-a-development-branch/**`, `project-config.toml`, `.github/**`,
+`settings.json*`, the judge prompt/rubric, …) that match any repo, so a
+*dogfooding* PR editing this repo's own gate machinery still trips the scan.
+Per-repo *extension* (a union with repo-declared extra paths) is deferred. A
+protected-path hit is a **structural** abstain — it never reaches the judge, so
+no rubric judgment or injection can override it.
 
 ### The verdict envelope
 
@@ -424,15 +429,15 @@ dependency explicit and repo-visible rather than an unstated assumption.
 2. **Provenance emitter** — `record_provenance.py` + delivery-workflow wiring
    (`finishing-a-development-branch`) to write the head-keyed sidecar at push.
 3. **Judge harness** — `judge_merge.py`: pre-judge gates (protected-path scan
-   over the base-read manifest, provenance/cross-model, base+head currency, diff
+   against the built-in guard, provenance/cross-model, base+head currency, diff
    size), diff assembly + `diff_sha`, codex-`task` backend, **per-run-nonce**
    defensive extraction, collapse, `no-go`-only cache, **per-PR/base attempt
    budget**. + tests.
-4. **Protected-paths manifest** — an explicit, auditable globs manifest the
-   harness reads **from `base_ref_oid`**; a conservative superset covering the
-   gate/judge, delivery/provenance workflow, routing, CI/hooks, installer,
-   secrets, and instructions, and **self-including** the manifest, judge prompt,
-   and rubric.
+4. **Protected-paths guard** — `protected_paths.py`, a conservative built-in
+   superset of globs in the judge's own install (unreachable by any target
+   diff), covering the gate/judge, delivery/provenance workflow, routing,
+   CI/hooks, installer, secrets, instructions, and the judge prompt/rubric.
+   Per-repo extension deferred.
 5. **Base-resolved policy + merge-boundary re-clear** — merge-guard fetches
    head/base SHA+ref live at Step 1, reads `project-config.toml` from
    `base_ref_oid`, `check-merge-eligibility.sh` emits `base_ref_oid`, and Step 5
@@ -467,9 +472,9 @@ configure a rule the gate cannot safely execute.
 - **Protected paths** — a diff touching `[merge-policy]`, `merge-guard/`,
   `codex-routing.md`, `.github/workflows/`, `settings.json*`, a `hooks/` file,
   `finishing-a-development-branch/`, `packages/installer/`, a secret file, or an
-  instruction `*.md.template` → abstain (structural, never reaches the judge). A
-  PR that **edits the protected-paths manifest itself** → abstain, and because
-  the manifest is read from `base_ref_oid` the head-side shrink has no effect on
+  instruction `*.md.template` → abstain (structural, never reaches the judge).
+  The guard globs live in the judge's own install, so a target diff cannot
+  shrink them; a dogfooding PR editing this repo's gate machinery still trips
   the scan.
 - **Base-resolved policy + ordering** — a PR that edits `[merge-policy]` in its
   own head does **not** change the rule used to judge it (policy read from
@@ -581,8 +586,8 @@ re-grade.
 |---|---|---|---|---|
 | 1 | blocking | blocking | Eligibility can go stale during the minutes-long judge window (Step 5 only re-checked head/base) | Step 5 re-runs the **full eligibility floor** before merge; same-head reviewer blocker → hand off |
 | 6 | critical | major | Static, published sentinel lets a forged in-diff block pass extraction under injection | **Per-run random nonce** sentinels minted after reading the diff; abstain if the nonce appears in the diff |
-| 3 | major | blocking | Protected-path manifest ref/self-protection unspecified (naive head-read self-weakens) | Manifest read from `base_ref_oid`; manifest + prompt + rubric are themselves protected |
-| 4 | major | major | Governance surface wider than the six example classes | Manifest is a conservative superset incl. delivery/provenance workflow, settings/hooks, installer |
+| 3 | major | blocking | Protected-path manifest ref/self-protection unspecified (naive head-read self-weakens) | Guard is a built-in glob superset in the judge's own install (`protected_paths.py`), unreachable by any target diff — stronger than base-read; per-repo extension deferred |
+| 4 | major | major | Governance surface wider than the six example classes | Built-in guard is a conservative superset incl. delivery/provenance workflow, settings/hooks, installer |
 | 5 | major | major | no-go cache doesn't stop verdict-shopping by micro-edit | Per-`(owner,repo,pr,base)` attempt budget (`judge-max-attempts`, default 2) → abstain + human reset |
 | 7 | major | moderate | Base-resolved-policy ordering internally contradictory; eligibility script emits no `base_ref_oid` | Fetch head/base SHA+ref live at Step 1; eligibility emits `base_ref_oid`; corrected step sequence |
 | — | **dropped** | blocking | (#2) Provenance sidecar "durable, not cryptographically trusted" | Codex's forge attack requires operator-host write access → **outside the stated diff-controlled threat model** and already the documented residual; the crypto/OIDC fix is out of scope for this threat model. Kept only a one-line honesty tweak (storage location earns diff-unforgeability, not authenticity). |
