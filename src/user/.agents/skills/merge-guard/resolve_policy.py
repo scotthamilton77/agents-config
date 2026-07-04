@@ -33,6 +33,8 @@ import re
 import tomllib
 from dataclasses import asdict, dataclass, replace
 
+from model_family import family_of
+
 
 class PolicyError(Exception):
     """Invalid configuration or labels. Never silently defaulted."""
@@ -50,6 +52,14 @@ class ReviewMergePolicy:
     merge_authorization: str  # "never" | "explicit" | "rule-based"
     merge_rule: str | None    # "bot-quiescence" | "human-approvals" | "agent-ruling"
     allow_force_after_bot_timeout: bool  # opt-in escape hatch, bot-quiescence only
+    # Axis 2 — agent-ruling judge config (defaults inert unless merge_rule = agent-ruling).
+    # These carry dataclass defaults, so they MUST stay after the no-default
+    # allow_force_after_bot_timeout field above.
+    judge_backend: str = "codex"
+    judge_model: str = "gpt-5.5"
+    judge_effort: str = "high"
+    judge_timeout_seconds: int = 900
+    judge_max_attempts: int = 2
 
 
 DEFAULTS = ReviewMergePolicy(
@@ -70,7 +80,9 @@ REVIEW_EXPECTATION_KEYS = {
     "bot-review-expected", "bot-reviewers", "bot-inactivity-timeout",
     "human-approvers-required", "human-review-timeout",
 }
-MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule", "allow-force-after-bot-timeout"}
+MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule", "allow-force-after-bot-timeout",
+                     "judge-backend", "judge-model", "judge-effort",
+                     "judge-timeout", "judge-max-attempts"}
 
 
 def parse_duration(value: object, key: str) -> int:
@@ -110,6 +122,10 @@ def _typed(section: dict, key: str, kind: type, default):
 
 MERGE_AUTHORIZATIONS = {"never", "explicit", "rule-based"}
 MERGE_RULES = {"bot-quiescence", "human-approvals", "agent-ruling"}
+
+JUDGE_BACKENDS = {"codex"}
+JUDGE_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
+JUDGE_KEYS = {"judge-backend", "judge-model", "judge-effort", "judge-timeout", "judge-max-attempts"}
 
 _HUMAN_LABEL = re.compile(r"^review-exit-human-approvers-(.*)$")
 _COPILOT_LABEL = "review-exit-copilot-only"
@@ -166,7 +182,18 @@ def validate(policy: ReviewMergePolicy) -> None:
         if not policy.bot_review_expected:
             raise PolicyError("merge-rule=bot-quiescence requires bot-review-expected = true")
     if policy.merge_rule == "agent-ruling":
-        raise PolicyError("merge-rule=agent-ruling is design-reserved and not yet implemented")
+        if policy.judge_backend not in JUDGE_BACKENDS:
+            raise PolicyError(
+                f"judge-backend: {policy.judge_backend!r} not implemented (only {sorted(JUDGE_BACKENDS)})")
+        if family_of(policy.judge_model) is None:
+            raise PolicyError(
+                f"judge-model: cannot derive a model family from {policy.judge_model!r}")
+        if policy.judge_effort not in JUDGE_EFFORTS:
+            raise PolicyError(
+                f"judge-effort: {policy.judge_effort!r} not in {sorted(JUDGE_EFFORTS)}")
+        if policy.judge_max_attempts < 1:
+            raise PolicyError(
+                f"judge-max-attempts: must be >= 1, got {policy.judge_max_attempts}")
     if policy.allow_force_after_bot_timeout and policy.merge_rule != "bot-quiescence":
         raise PolicyError(
             "allow-force-after-bot-timeout is only valid with merge-rule=bot-quiescence")
@@ -202,6 +229,20 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
             merge, "allow-force-after-bot-timeout", bool,
             DEFAULTS.allow_force_after_bot_timeout),
     )
+    judge_timeout = (parse_duration(merge["judge-timeout"], "judge-timeout")
+                     if "judge-timeout" in merge else DEFAULTS.judge_timeout_seconds)
+    policy = replace(
+        policy,
+        judge_backend=_typed(merge, "judge-backend", str, DEFAULTS.judge_backend),
+        judge_model=_typed(merge, "judge-model", str, DEFAULTS.judge_model),
+        judge_effort=_typed(merge, "judge-effort", str, DEFAULTS.judge_effort),
+        judge_timeout_seconds=judge_timeout,
+        judge_max_attempts=_typed(merge, "judge-max-attempts", int, DEFAULTS.judge_max_attempts),
+    )
+    # judge-* keys only make sense under agent-ruling; checked here (not in
+    # validate()) because only resolve_policy() has the raw present-keys set.
+    if any(key in merge for key in JUDGE_KEYS) and policy.merge_rule != "agent-ruling":
+        raise PolicyError("judge-* keys are only valid with merge-rule = agent-ruling")
     policy = apply_labels(policy, bead_labels)
     validate(policy)
     return policy

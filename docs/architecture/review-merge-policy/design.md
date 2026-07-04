@@ -74,7 +74,7 @@ positive fact is bound to the current head (see Freshness invariant):
 |---|---|
 | `bot-quiescence` | A **trusted** bot (`bot-reviewers`, exact identity) **actually completed a clean review at the current head** (`commit_id == headRefOid`; fail closed if `commit_id` absent). A bot that timed out, never showed, or reviewed a stale head does **not** satisfy this — the "real review" floor is structural to the rule. |
 | `human-approvals` | **≥ `human-approvers-required` distinct current non-bot approvers** at the current head — reduce to one entry per non-bot login (latest review by submission order wins), count logins whose latest state is `APPROVED` with `commit_id == headRefOid`. `human-approvers-required` must be ≥ 1 for this rule (a zero-approval rule is vacuously true; the resolver rejects it). |
-| `agent-ruling` | An independent, cross-model agent evaluates the diff and renders a merge go/no-go verdict. **Design-reserved; implementation deferred** to a follow-up bead (the judge harness reuses the RALF / codex-review machinery). |
+| `agent-ruling` | An independent, cross-model AI judge (`merge-guard/judge_merge.py`) renders a merge go/no-go verdict over `base..head`, gated by trusted out-of-band provenance and a structural protected-path scan. Merge authorizes **iff** `verdict == "go"`; every other outcome fails closed. Non-vacuity is a **gate** invariant (a real review always runs), not a resolver check. |
 
 `merge-rule` takes a single value for now. It is shaped as a scalar the config
 parser treats as one selection, so a future rule engine (boolean combinations
@@ -98,17 +98,24 @@ should not be the same model that wrote the code) lives with `agent-ruling`.
 The zero-review auto-merge failure mode — a repo auto-merging with no review at
 all — is **structurally impossible**, not merely discouraged. Autonomous merge
 requires `merge-authorization = rule-based` *and* a `merge-rule`, and every
-implemented rule requires a *real* review to have occurred. The resolver's
-validation enforces this so a rule cannot be vacuously satisfied:
-`human-approvals` is rejected unless `human_approvers_required >= 1`
-(a zero-approval rule would be trivially true); `bot-quiescence` is rejected
-unless a trusted `bot-reviewers` identity is configured and
-`bot-review-expected` is true, and it counts only an *actual* clean review from
-that identity (a no-show/timeout never satisfies it). A repo that expects no
+implemented rule requires a *real* review to have occurred. For
+`human-approvals` and `bot-quiescence`, the resolver's validation enforces this
+so a rule cannot be vacuously satisfied: `human-approvals` is rejected unless
+`human_approvers_required >= 1` (a zero-approval rule would be trivially true);
+`bot-quiescence` is rejected unless a trusted `bot-reviewers` identity is
+configured and `bot-review-expected` is true, and it counts only an *actual*
+clean review from that identity (a no-show/timeout never satisfies it). For
+`agent-ruling`, non-vacuity is enforced at the **gate**, not the resolver: the
+harness (`merge-guard/judge_merge.py`) always performs a real, cross-model,
+provenance-verified review bound to the current head and base, and merge
+authorizes **iff** the verdict is an affirmative `go` — `no-go`, `abstain`, and
+every error path fail closed. The resolver validates only the judge's *config*
+(backend, model family, effort, attempt budget); it is the gate, together with
+provenance and the protected-path scan, that enforces a real independent
+review happened against the exact code that will land. A repo that expects no
 reviewers therefore has **no satisfiable rule** and cannot auto-merge — it
-falls through to handoff. No rule authorizes on nothing. (`agent-ruling`, when
-built, is itself a real review.) The zero-review merge path is closed by
-construction.
+falls through to handoff. No rule authorizes on nothing. The zero-review merge
+path is closed by construction.
 
 ## Eligibility predicate
 
@@ -342,6 +349,12 @@ ReviewMergePolicy = {
     # Axis 2
     merge_authorization: "never" | "explicit" | "rule-based",
     merge_rule: "bot-quiescence" | "human-approvals" | "agent-ruling" | None,  # required iff rule-based
+    # Axis 2 — agent-ruling judge config (inert unless merge_rule = agent-ruling)
+    judge_backend: str,                # "codex" (only implemented backend)
+    judge_model: str,                  # e.g. "gpt-5.5"; family must be derivable
+    judge_effort: str,                 # none|minimal|low|medium|high|xhigh
+    judge_timeout_seconds: int,
+    judge_max_attempts: int,           # >= 1
 }
 ```
 
@@ -370,8 +383,10 @@ ReviewMergePolicy = {
     merge. The rule requires at least one required approver.
   - `merge-rule = bot-quiescence` with no trusted bot in `bot-reviewers` (no
     identity could satisfy the rule) or with `bot-review-expected = false`.
-  - `agent-ruling` selected before its implementation lands → explicit "not
-    yet implemented" error.
+  - `merge-rule = agent-ruling` with `judge-backend` not in the implemented
+    set (`codex` only), a `judge-model` whose family cannot be derived, an
+    invalid `judge-effort` enum value, or `judge-max-attempts < 1`.
+  - Any `judge-*` key present while `merge-rule` is not `agent-ruling`.
 
 ### Resolution precedence
 
@@ -425,6 +440,11 @@ Built-in defaults (section/key absent):
 |---|---|---|
 | `merge-authorization` | `"never"` \| `"explicit"` \| `"rule-based"` | `"explicit"` |
 | `merge-rule` | `"bot-quiescence"` \| `"human-approvals"` \| `"agent-ruling"` \| unset | unset (required iff `merge-authorization = "rule-based"`) |
+| `judge-backend` | `"codex"` | `"codex"` |
+| `judge-model` | str | `"gpt-5.5"` |
+| `judge-effort` | `"none"` \| `"minimal"` \| `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | `"high"` |
+| `judge-timeout` | duration string | `"15m"` |
+| `judge-max-attempts` | int | `2` |
 
 An unrecognized key in either section is a resolver error (exit 1) — the
 resolver never silently ignores a typo'd or stale key.

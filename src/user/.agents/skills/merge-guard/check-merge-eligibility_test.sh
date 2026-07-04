@@ -118,7 +118,7 @@ if [ "$1" = "api" ]; then
           */rulesets/222)  body="${FIXTURE_RULESET_222:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
           *)               body="${FIXTURE_RULESET_BYPASS:-'{\"current_user_can_bypass\":\"none\"}'}" ;;
         esac ;;
-    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
+    */pulls/*)              body="${FIXTURE_PR:-'{\"state\":\"open\",\"head\":{\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"base\":{\"ref\":\"main\",\"sha\":\"cccccccccccccccccccccccccccccccccccccccc\"},\"created_at\":\"2026-01-01T00:00:00Z\"}'}" ;;
     *)                      body='{}' ;;
   esac
   body="${body#\'}"; body="${body%\'}"
@@ -149,6 +149,7 @@ run_script() {  # run_script <policy-json> [env VAR=... pairs]
 # Base policy: nothing expected on Axis 1 → in-flight atom vacuously clear
 BASE_POLICY='{"bot_review_expected":false,"bot_reviewers":["trusted-bot[bot]"],"bot_inactivity_timeout_seconds":1200,"human_approvers_required":0,"human_review_timeout_seconds":null,"merge_authorization":"explicit","merge_rule":null}'
 HEAD_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+BASE_SHA="cccccccccccccccccccccccccccccccccccccccc"
 
 # ── Arg validation (exit 3) ───────────────────────────────────────────────────
 "$SCRIPT" 2>/dev/null;                                       assert "exits 3 with no flags" "[ \$? -eq 3 ]"
@@ -169,6 +170,7 @@ out=$(run_script "$BASE_POLICY"); rc=$?
 assert "empty PR with nothing expected → exit 0" "[ \$rc -eq 0 ]"
 assert "status is eligible" "[ \"\$(jq -r '.status' <<<\"\$out\")\" = eligible ]"
 assert "head_ref_oid echoed" "[ \"\$(jq -r '.head_ref_oid' <<<\"\$out\")\" = \"$HEAD_SHA\" ]"
+assert "base_ref_oid echoed" "[ \"\$(jq -r '.base_ref_oid' <<<\"\$out\")\" = \"$BASE_SHA\" ]"
 assert "blockers array empty" "[ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 0 ]"
 assert "merge hint binds head" "jq -r '.merge_command_hint' <<<\"\$out\" | grep -q -- \"--match-head-commit $HEAD_SHA\""
 
@@ -471,7 +473,7 @@ assert "review_wait.bot is waiting" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"
 
 # bot expected, silence past timeout → wait over (timed_out), not blocked
 ev=$(jq -n --arg t "$TS_OLD" '[{event:"review_requested", requested_reviewer:{login:"trusted-bot[bot]"}, created_at:$t}]')
-old_pr=$(jq -n --arg t "$TS_OLD" '{state:"open", head:{sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, base:{ref:"main"}, created_at:$t}')
+old_pr=$(jq -n --arg t "$TS_OLD" --arg base "$BASE_SHA" '{state:"open", head:{sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, base:{ref:"main", sha:$base}, created_at:$t}')
 out=$(run_script "$BOT_POLICY" FIXTURE_EVENTS="$ev" FIXTURE_PR="$old_pr"); rc=$?
 assert "bot silence past timeout → eligible (timed_out)" "[ \$rc -eq 0 ]"
 assert "review_wait.bot is timed_out" "[ \"\$(jq -r '.facts.review_wait.bot' <<<\"\$out\")\" = timed_out ]"
@@ -680,8 +682,8 @@ assert "dispositions split across two retained inventories both clear (union)" "
 clean_invs
 
 # ── Fix: BASE_REF is URL-encoded before the branch-protection fetch ─────────
-slash_pr=$(jq -n --arg t "2026-01-01T00:00:00Z" --arg sha "$HEAD_SHA" \
-  '{state:"open", head:{sha:$sha}, base:{ref:"release/1.0"}, created_at:$t}')
+slash_pr=$(jq -n --arg t "2026-01-01T00:00:00Z" --arg sha "$HEAD_SHA" --arg base "$BASE_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"release/1.0", sha:$base}, created_at:$t}')
 out=$(run_script "$BASE_POLICY" FIXTURE_PR="$slash_pr" FIXTURE_PROTECTION_404=0 \
       FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)" \
       FIXTURE_BASE_REF_ENCODED="release%2F1.0"); rc=$?
@@ -690,8 +692,8 @@ assert "base ref with a slash resolves protection via the url-encoded path" \
 
 # ── Spec: both Axis-1 expectations simultaneously ────────────────────────────
 BOTH_POLICY=$(jq -c '.bot_review_expected = true | .human_approvers_required = 1' <<<"$BASE_POLICY")
-recent_pr=$(jq -n --arg t "$TS_RECENT" --arg sha "$HEAD_SHA" \
-  '{state:"open", head:{sha:$sha}, base:{ref:"main"}, created_at:$t}')
+recent_pr=$(jq -n --arg t "$TS_RECENT" --arg sha "$HEAD_SHA" --arg base "$BASE_SHA" \
+  '{state:"open", head:{sha:$sha}, base:{ref:"main", sha:$base}, created_at:$t}')
 
 revs=$(jq -n --argjson a "$(mk_review 'trusted-bot[bot]' COMMENTED "$HEAD_SHA" 2026-01-01T01:00:00Z)" '[$a]')
 out=$(run_script "$BOTH_POLICY" FIXTURE_PR="$recent_pr" FIXTURE_REVIEWS="$revs"); rc=$?

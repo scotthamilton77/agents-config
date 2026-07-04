@@ -350,6 +350,53 @@ Report to caller; abort.
 
 Run `git push`.
 
+**On success (agent-ruling repos only):** the pushed fix commits moved the PR
+head, so the head-keyed merge-judge provenance sidecar no longer matches. If the
+resolved policy is `rule-based`/`agent-ruling`, re-record provenance for the new
+head — enumerating every `base..head` commit — so agent-ruling can still
+authorize after this iteration. Best-effort and out of band: a failure here must
+NOT block the chain; its absence simply forces a later `abstain` (fail-closed).
+```bash
+if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
+  NEW_HEAD=$(git rev-parse HEAD)
+  BASE_REF=$(gh pr view "$PR" --repo "$OWNER/$REPO" --json baseRefName --jq .baseRefName)
+  # The base tip must be present locally to enumerate base..head (a minimal
+  # checkout may lack origin/$BASE_REF). Only proceed on a SUCCESSFUL fetch — a
+  # failed fetch would leave FETCH_HEAD stale/absent and enumerate the wrong
+  # commit set. On fetch failure, skip the record (fail-closed: no sidecar → the
+  # judge later abstains).
+  if git fetch --quiet origin "$BASE_REF"; then
+    # ONE --commit per commit in FETCH_HEAD(base)..$NEW_HEAD — the gate needs an
+    # entry for EVERY commit, not just the tip. PRECONDITION: run this blanket
+    # first-hand record ONLY when THIS session authored every base..head commit
+    # (its own branch plus its own fix commits). Set SESSION_FAMILY to the
+    # running agent's family. If the branch carries commits from another family
+    # (merged-in work, a different model's commits), do NOT run this block —
+    # first-hand-attesting a commit you did not author mis-attests it and can
+    # defeat the cross-model guard. Correctly re-attesting a mixed-authorship
+    # branch (derive each commit's family from its trailers, carry prior
+    # attestations across the moved head) needs a dedicated helper (planned);
+    # until then a mixed branch is left unrecorded and the judge abstains.
+    SESSION_FAMILY=""  # REQUIRED — set to the running agent's own family, one of:
+                       # anthropic openai google human. Left empty, the record
+                       # below is skipped and the judge abstains (fail closed).
+    COMMIT_ARGS=()
+    while read -r sha; do
+      COMMIT_ARGS+=(--commit "${sha}:${SESSION_FAMILY}:first-hand")
+    done < <(git rev-list "FETCH_HEAD..${NEW_HEAD}")
+    # Record only when the family is set AND commits were enumerated. An unset
+    # family or an empty list skips the record (fail-closed: no sidecar → the
+    # judge later abstains) rather than writing an invalid or empty attestation.
+    if [ -n "$SESSION_FAMILY" ] && [ "${#COMMIT_ARGS[@]}" -gt 0 ]; then
+      python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
+        --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
+        "${COMMIT_ARGS[@]}" \
+        --recorded-by "wait-for-pr-comments" || true
+    fi
+  fi
+fi
+```
+
 **On failure:** keep local commits. Build the inventory body (same `build-inventory-body.sh` invocation as Phase 5a) **with `pr.head_sha_after_push = head_sha_at_inventory`**
 (no remote update happened), then:
 ```bash
