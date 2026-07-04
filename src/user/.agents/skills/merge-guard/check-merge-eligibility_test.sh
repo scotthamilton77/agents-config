@@ -71,6 +71,12 @@ if [ "$1" = "api" ]; then
         if [ -n "${FIXTURE_BASE_REF_ENCODED:-}" ] && [[ "$path" != *"branches/${FIXTURE_BASE_REF_ENCODED}/protection"* ]]; then
           echo "gh: Not Found (HTTP 404)" >&2; exit 1
         fi
+        if [ "${FIXTURE_PROTECTION_PRO_PAYWALL:-0}" = 1 ]; then
+          echo "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)" >&2; exit 1
+        fi
+        if [ "${FIXTURE_PROTECTION_FAIL:-0}" = 1 ]; then
+          echo "gh: Resource not accessible by integration (HTTP 403)" >&2; exit 1
+        fi
         if [ "${FIXTURE_PROTECTION_404:-1}" = 1 ]; then
           echo "gh: Not Found (HTTP 404)" >&2; exit 1
         fi
@@ -335,6 +341,21 @@ run_failed()    { jq -n '{check_runs:[{name:"ci/build",status:"completed",conclu
 # no branch protection (stub default 404) → vacuously green
 out=$(run_script "$BASE_POLICY"); rc=$?
 assert "no protection → ci_state none, eligible" "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = none ]"
+
+# GitHub's plan-paywall 403 for private repos without GitHub Pro/Team blocks
+# reading branch-protection config outright (never 404s). Narrow text+status
+# match only — vacuously green here reflects a verified ground truth (this
+# script's real target repo has no branch protection configured), not a guess.
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_PRO_PAYWALL=1); rc=$?
+assert "GitHub-Pro-paywall 403 on branch protection → vacuously green, eligible" \
+  "[ \$rc -eq 0 ] && [ \"\$(jq -r '.facts.ci_state' <<<\"\$out\")\" = none ]"
+
+# a differently-worded 403 (missing token scope, app permission, etc.) must
+# NOT be swallowed by the narrow paywall match — a real authNZ failure still
+# fails closed exactly as before.
+out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_FAIL=1); rc=$?
+assert "non-paywall 403 on branch protection still fails closed (exit 3)" "[ \$rc -eq 3 ]"
+assert "non-paywall 403 prints no verdict" "[ -z \"\$out\" ]"
 
 # required + success from the pinned app → green
 out=$(run_script "$BASE_POLICY" FIXTURE_PROTECTION_404=0 FIXTURE_REQUIRED_CHECKS="$REQ_ONE" FIXTURE_CHECK_RUNS="$(run_ok)"); rc=$?
