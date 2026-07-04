@@ -765,6 +765,15 @@ out=$(run_script "$BASE_POLICY")
 assert "cap exhausted false → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
 rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
 
+# type-strict: a JSON STRING "true" must NOT satisfy the boolean gate.
+# jq -r prints both boolean true and string "true" as the bare word `true`,
+# so a bash string compare would fail-OPEN on a string. This authorization
+# escape hatch must only unlock on a real JSON boolean true.
+write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":"true"}'
+out=$(run_script "$BASE_POLICY")
+assert "cap exhausted string \"true\" → fact false (type-strict)" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
+rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+
 # field absent → false
 write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"copilot_status":"timeout"}'
 out=$(run_script "$BASE_POLICY")

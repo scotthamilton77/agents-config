@@ -393,10 +393,13 @@ set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_h
 # Absent/malformed/missing-field all resolve to false (force-merge stays
 # locked unless the one-ask budget is provably spent for THIS head).
 cap_inv="${HOME}/.claude/state/pr-inventory/${OWNER}-${REPO}-${PR}-${HEAD_OID}.json"
+# Type-strict: jq -r prints both boolean true and string "true" as the bare
+# word `true`, so a bash string compare fails-OPEN on a string value. Use
+# jq's own typed equality (-e exit status) — a string never equals boolean
+# true, and absent/malformed also exit non-zero, so the fact stays false.
 bot_cap_exhausted=false
-if [[ -f "$cap_inv" ]]; then
-    bot_cap_exhausted=$(jq -r '.polling.bot_review_cap_exhausted // false' "$cap_inv" 2>/dev/null) || bot_cap_exhausted=false
-    [[ "$bot_cap_exhausted" == "true" ]] || bot_cap_exhausted=false
+if [[ -f "$cap_inv" ]] && jq -e '(.polling.bot_review_cap_exhausted // false) == true' "$cap_inv" >/dev/null 2>&1; then
+    bot_cap_exhausted=true
 fi
 set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 # ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
