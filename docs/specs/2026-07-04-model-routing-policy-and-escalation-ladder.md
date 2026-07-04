@@ -67,6 +67,12 @@ owner review may merge, split, or re-route rows.
 | `spec-writer` | Judgment-dense authoring (specs, design docs) | yes | opus(high) | gpt-5.5 |
 | `interactive` | The main session loop | yes | user's `/model` choice | outside the ladder (§6) |
 
+The `finder` row governs **solo** finder dispatches. Inside a review panel (e.g. the HEAVY
+gate), lens assignment follows the panel's cross-model round-robin defined in the
+cross-model HEAVY gate panel spec (`2026-07-04-cross-model-heavy-gate-panel.md`), which
+deliberately overrides the finder row's preferred rung: diversity is a panel property, not
+an archetype property.
+
 Two structural facts the table encodes:
 
 - **Preferred rung is the cheapest model that usually passes the archetype's gate**, not
@@ -225,7 +231,7 @@ because the same record carries the A/B outcome data vaac.3 requires:
 |---|---|
 | **subagents rule** (`src/user/.agents/rules/subagents.md`) | The right-sizing bullet becomes: consult the routing table (resolver or §3 defaults) and pass the resolved model+effort explicitly on every dispatch. The three-bucket heuristic survives as the summary of the table, not a separate authority. |
 | **New shared rule** `model-routing.md` (`src/user/.agents/rules/`) | The policy itself: archetype vocabulary, two-speed ladder, ceiling behavior, ledger append duty. Deploys to all tools (Claude rules dir; flattened into Codex/Gemini/OpenCode assembled files by the installer). |
-| **completion-gate / quality-gate workflow** | Finder/refuter/synthesis map to `finder`/`refuter`/`judge` archetypes. The workflow keeps effort tiers; model comes from the table when the harness supports per-agent model override. |
+| **completion-gate / quality-gate workflow** | Finder/refuter/synthesis map to `finder`/`refuter`/`judge` archetypes. The workflow keeps effort tiers; model comes from the table when the harness supports per-agent model override — except panel lens assignment, which follows the cross-model round-robin in the cross-model HEAVY gate panel spec (diversity is a panel property; see §3). |
 | **prgroom** | Already chain-native. Alignment: its shipped default chains become the `classifier` and `implementer` rows of §3; `.prgroom.toml [agents.*]` remains the per-repo override. `ASSUMPTION:` teaching prgroom to *read* `model-routing.toml` directly is a follow-up bead, not this spec — one dialect first, one loader later. |
 | **Escalation-ladder dispatch** (vaac.3) | Session dispatchers (Track-B-style worker briefs, wait-for-pr-comments fixers) resolve the chain before dispatch and encode rung + escalation policy in the worker brief. The archived bead-formula pipeline (implement-bead) is out of scope; its successor consumes the same resolver. |
 
@@ -273,6 +279,9 @@ as literal temp files, no provider calls anywhere):
 ## 12. Assumption ledger (scan here, Scott)
 
 - `ASSUMPTION:` §3 archetype list + default routes (author-derived from dispatch sites).
+  Note in particular: the `classifier` row introduces a **local free rung (ollama gemma4)**
+  — a provider family NOT among the owner interview's four (it comes from prgroom's
+  shipped cluster chain).
 - `ASSUMPTION:` §4.1 `~/.agents/` as the user-config root, pending the user-owned-overlay
   design.
 - `ASSUMPTION:` §5 corrupt ledger lines are skip-and-count, not fail-hard.
