@@ -52,3 +52,41 @@ def build_envelope(*, head: str, base: str, diff_sha: str, verdict: str,
         "summary": summary,
         "merge_blocking_findings": merge_blocking_findings,
     }
+
+
+import json  # noqa: E402
+
+
+def state_home() -> str:
+    return os.environ.get("MERGE_JUDGE_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".claude", "state")
+
+
+def _attempts_path(state: str, owner: str, repo: str, pr: str, base: str) -> str:
+    return os.path.join(state, "merge-judge", f"{owner}-{repo}-{pr}-{base}.attempts.json")
+
+
+def _read_attempts(path: str) -> int:
+    try:
+        with open(path) as fh:
+            return int(json.load(fh).get("count", 0))
+    except (OSError, ValueError):
+        return 0
+
+
+def budget_exhausted(state: str, owner: str, repo: str, pr: str, base: str,
+                     *, max_attempts: int) -> bool:
+    """True once >= max_attempts no-go's have been recorded for this PR+base."""
+    return _read_attempts(_attempts_path(state, owner, repo, pr, base)) >= max_attempts
+
+
+def bump_attempts(state: str, owner: str, repo: str, pr: str, base: str) -> int:
+    """Increment (and persist) the no-go counter for this PR+base; return new value."""
+    path = _attempts_path(state, owner, repo, pr, base)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    count = _read_attempts(path) + 1
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump({"count": count}, fh)
+    os.replace(tmp, path)
+    return count

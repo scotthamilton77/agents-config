@@ -46,5 +46,24 @@ class TestNonce(unittest.TestCase):
         int(a, 16)  # raises if not hex
 
 
+class TestAttemptBudget(unittest.TestCase):
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+
+    def test_fresh_budget_not_exhausted(self):
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
+
+    def test_bump_then_exhausted_at_max(self):
+        jm.bump_attempts(self.state, "o", "r", "5", "base1")
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
+        jm.bump_attempts(self.state, "o", "r", "5", "base1")
+        self.assertTrue(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
+
+    def test_new_base_resets(self):
+        jm.bump_attempts(self.state, "o", "r", "5", "base1")
+        jm.bump_attempts(self.state, "o", "r", "5", "base1")
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base2", max_attempts=2))
+
+
 if __name__ == "__main__":
     unittest.main()
