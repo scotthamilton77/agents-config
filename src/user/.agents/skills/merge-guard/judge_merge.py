@@ -344,9 +344,10 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
     if diff.is_oversized:
         return _abstain(head, base, diff.diff_sha, "oversized-diff", policy, families)
 
-    # No-go cache: an identical (head,base,diff) no-go is terminal
+    # No-go cache: an identical (head,base,diff) no-go is terminal. A cache hit
+    # re-pays no judge run and is not a re-roll, so it does NOT bump the attempt
+    # budget — the budget bounds fresh judge invocations (see gate below).
     if no_go_cached(state, owner, repo, pr, head, base, diff.diff_sha, policy):
-        bump_attempts(state, owner, repo, pr, base)
         return _abstain(head, base, diff.diff_sha, "prior-no-go", policy, families)
 
     # Nonce mint (AFTER reading the diff) + collision guard

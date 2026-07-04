@@ -240,7 +240,7 @@ class TestMainEndToEnd(unittest.TestCase):
                        "judge_effort": "high", "judge_timeout_seconds": 900,
                        "judge_max_attempts": 2}
 
-    def _run(self, findings, changed="src/app/x.py"):
+    def _run(self, findings, changed="src/app/x.py", diff_body="diff body\n"):
         nonce_box = {}
 
         def fake_nonce():
@@ -253,7 +253,7 @@ class TestMainEndToEnd(unittest.TestCase):
             if args[0] == "rev-list":
                 return "c1\n"
             if args[0] == "diff":
-                return "diff body\n"
+                return diff_body
             raise AssertionError(args)
 
         def fake_gh(args):
@@ -278,10 +278,25 @@ class TestMainEndToEnd(unittest.TestCase):
                                    "detail": "d", "why_blocking": "w"}])
         self.assertEqual(env["verdict"], "no-go")
         self.assertTrue(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2) is False)
-        # second no-go exhausts
+        # A second, DISTINCT diff is a fresh judge run (cache miss) that also
+        # no-go's — that is the second re-roll, and it exhausts the budget. An
+        # identical re-submit would only hit the cache and must NOT count.
         self._run(findings=[{"category": "security", "title": "t", "file": "f",
-                             "detail": "d", "why_blocking": "w"}])
+                             "detail": "d", "why_blocking": "w"}],
+                  diff_body="a different diff body\n")
         self.assertTrue(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
+
+    def test_identical_resubmit_hits_cache_without_bumping_budget(self):
+        finding = [{"category": "security", "title": "t", "file": "f",
+                    "detail": "d", "why_blocking": "w"}]
+        # First fresh no-go caches the verdict and bumps the budget (count -> 1).
+        self._run(findings=finding)
+        # An identical re-submit hits the no-go cache: terminal abstain, and it
+        # must NOT bump the budget again — a cache hit re-pays no judge run.
+        env = self._run(findings=finding)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "prior-no-go")
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
 
     def test_protected_path_abstains_before_backend(self):
         env = self._run(findings=[], changed="project-config.toml")
