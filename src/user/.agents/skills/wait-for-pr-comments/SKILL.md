@@ -364,11 +364,20 @@ if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
   # origin/$BASE_REF); FETCH_HEAD is then the base tip.
   git fetch --quiet origin "$BASE_REF" || true
   # ONE --commit per commit in base..$NEW_HEAD — the gate needs an entry for
-  # EVERY commit, not just the tip. Attest FIRST-HAND the family(ies) this
-  # session's fix subagents produced; trailer-derived for any it did not.
+  # EVERY commit, not just the tip. PRECONDITION: run this blanket first-hand
+  # record ONLY when THIS session authored every base..head commit (its own
+  # branch plus its own fix commits). Set SESSION_FAMILY to the running agent's
+  # family. If the branch carries commits from another family (merged-in work, a
+  # different model's commits), do NOT run this block — first-hand-attesting a
+  # commit you did not author mis-attests it and can defeat the cross-model
+  # guard. Correctly re-attesting a mixed-authorship branch (derive each commit's
+  # family from its trailers, carry prior attestations across the moved head)
+  # needs a dedicated helper (planned); until then a mixed branch is left
+  # unrecorded and the judge abstains — fail closed.
+  SESSION_FAMILY=<anthropic|openai|google|human>  # the running agent's own family
   COMMIT_ARGS=()
   while read -r sha; do
-    COMMIT_ARGS+=(--commit "${sha}:<family[+family]>:first-hand")
+    COMMIT_ARGS+=(--commit "${sha}:${SESSION_FAMILY}:first-hand")
   done < <(git rev-list "FETCH_HEAD..${NEW_HEAD}" 2>/dev/null)
   # Only record if we actually enumerated commits — an empty list would make
   # record_provenance error on its required --commit (fail-closed: no sidecar

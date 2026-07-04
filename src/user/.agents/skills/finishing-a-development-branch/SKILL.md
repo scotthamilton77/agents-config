@@ -142,17 +142,19 @@ EOF
 )"
 
 # Record out-of-band authorship provenance for the merge-judge (agent-ruling).
-# The judge requires a first-hand (or trailer-derived) entry for EVERY commit
-# in base..head, not just the tip: enumerate them with
-#   git rev-list <base>..HEAD
-# and pass one --commit <sha>:<family[+family]>:first-hand per commit this
-# session produced (trailer-derived for any commit it did not).
+# The judge requires an entry for EVERY commit in base..head, not just the tip:
+# enumerate them with `git rev-list <base>..HEAD`. Mark a commit `first-hand`
+# ONLY if this session authored it; mark a commit authored by another family
+# `trailer-derived` (NOT trusted for authorization — the judge abstains on it).
+# Never first-hand-attest a commit you did not author: that mis-attests its
+# authorship and can defeat the cross-model guard. <family> is one of
+# anthropic|openai|google|human.
 PR=$(gh pr view --json number --jq .number)
 HEAD_SHA=$(git rev-parse HEAD)
 python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
   --owner <owner> --repo <repo> --pr "$PR" --head-sha "$HEAD_SHA" \
-  --commit "<sha-1>:<family[+family]>:first-hand" \
-  --commit "<sha-2>:<family[+family]>:first-hand" \
+  --commit "<sha-this-session-authored>:<family>:first-hand" \
+  --commit "<sha-from-another-family>:<family>:trailer-derived" \
   --recorded-by "<this delivery session's identity>"
 ```
 

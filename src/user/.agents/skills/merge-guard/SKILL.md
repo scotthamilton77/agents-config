@@ -152,7 +152,7 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
 |------|-----------|
 | `bot-quiescence` | `facts.bot_clean_review_at_head == true` (a trusted `bot-reviewers` identity actually reviewed the current head clean) |
 | `human-approvals` | `facts.distinct_current_approvers >= human_approvers_required` |
-| `agent-ruling` | `judge_merge.py` returns `verdict == "go"` (bound to `head_ref_oid` + `base_ref_oid`). `no-go`/`abstain`/error → report `abstain_reason` and hand off. NO retry, NO re-run to shop a pass — a `no-go` is recorded terminal for that (head, base, diff), and the per-PR/base attempt budget caps re-rolls. |
+| `agent-ruling` | `judge_merge.py` returns `verdict == "go"` (bound to `head_ref_oid` + `base_ref_oid`). Hand off on any non-`go`: a `no-go` surfaces `summary` + `merge_blocking_findings` (its `abstain_reason` is null), while `abstain`/error surface `abstain_reason` (their `summary`/`merge_blocking_findings` are empty). NO retry, NO re-run to shop a pass — a `no-go` is recorded terminal for that (head, base, diff), and the per-PR/base attempt budget caps re-rolls. |
 
 Unlike `bot-quiescence`/`human-approvals` (read straight from Step 3's
 `facts`), `agent-ruling` requires actually invoking the judge:
