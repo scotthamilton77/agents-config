@@ -134,8 +134,9 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
   - **floor-clean AND rule-unmet AND NOT ask-spent**: issue ONE re-review ask
     on the current head by calling `request-rereview.sh` + the re-review poll
     helpers directly (never a bare reply+resolve; **not** the full
-    `wait-for-pr-comments` skill, which skips its re-request phase on a
-    no-feedback head — `wait-for-pr-comments/SKILL.md:177-178`). Increment +
+    `wait-for-pr-comments` skill, whose Phase 2 timeout-exit path jumps
+    straight to inventory-write with empty items on a no-feedback head,
+    skipping its Phase 6 re-request entirely). Increment +
     persist the silent counter. Re-run Step 3 against the unchanged head
     exactly once. A clean re-review now satisfies the rule → merge (Step 5).
     Otherwise (bot silent → ask now spent, or the flag failed to persist): do
