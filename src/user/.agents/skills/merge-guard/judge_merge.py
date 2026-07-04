@@ -319,6 +319,13 @@ def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
     judge_family = family_of(policy["judge_model"])
     max_attempts = int(policy["judge_max_attempts"])
 
+    # A judge whose model family cannot be derived cannot enforce the cross-model
+    # provenance guard (provenance_gate only disqualifies a KNOWN judge family).
+    # Fail closed rather than authorize blind — this harness is the last line of
+    # defense and must not trust the resolver to have screened the model.
+    if judge_family is None:
+        return _abstain(head, base, "", "underivable-judge-family", policy, [])
+
     # Gate 0: attempt budget (checked FIRST — never pay for a run past budget)
     if budget_exhausted(state, owner, repo, pr, base, max_attempts=max_attempts):
         return _abstain(head, base, "", "attempt-budget-exhausted", policy, [])

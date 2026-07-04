@@ -6,6 +6,7 @@ the codex subprocess and git are injected as fakes — no network, no codex CLI.
 """
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -240,7 +241,8 @@ class TestMainEndToEnd(unittest.TestCase):
                        "judge_effort": "high", "judge_timeout_seconds": 900,
                        "judge_max_attempts": 2}
 
-    def _run(self, findings, changed="src/app/x.py", diff_body="diff body\n"):
+    def _run(self, findings, changed="src/app/x.py", diff_body="diff body\n",
+             backend=None, policy_override=None):
         nonce_box = {}
 
         def fake_nonce():
@@ -265,8 +267,9 @@ class TestMainEndToEnd(unittest.TestCase):
 
         return jm.run_judge(
             owner="o", repo="r", pr="5", head="h", base="b", base_ref="main",
-            policy=self.policy, state=self.state,
-            nonce_fn=fake_nonce, git_runner=fake_git, gh_runner=fake_gh, backend_runner=fake_backend)
+            policy=(policy_override or self.policy), state=self.state,
+            nonce_fn=fake_nonce, git_runner=fake_git, gh_runner=fake_gh,
+            backend_runner=(backend or fake_backend))
 
     def test_clean_diff_goes(self):
         env = self._run(findings=[])
@@ -317,6 +320,46 @@ class TestMainEndToEnd(unittest.TestCase):
         self.assertTrue(jm.no_go_cached(self.state, "o", "r", "5", "h", "b",
                                         jm.assemble_diff("b", "h", git_runner=lambda a: "diff body\n").diff_sha,
                                         self.policy))
+
+    def test_underivable_judge_family_abstains(self):
+        # A judge model whose family cannot be derived cannot enforce cross-model
+        # provenance — the harness must fail closed rather than authorize blind.
+        policy = dict(self.policy, judge_model="llama-3")  # family_of -> None
+        env = self._run(findings=[], policy_override=policy)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "underivable-judge-family")
+
+    def test_backend_error_abstains(self):
+        def boom(prompt, model, effort, timeout):
+            raise RuntimeError("backend blew up")
+        env = self._run(findings=[], backend=boom)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "judge-error")
+
+    def test_backend_timeout_abstains(self):
+        def slow(prompt, model, effort, timeout):
+            raise subprocess.TimeoutExpired("codex", 1)
+        env = self._run(findings=[], backend=slow)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "judge-timeout")
+
+    def test_unextractable_output_abstains(self):
+        def garbage(prompt, model, effort, timeout):
+            return "I will not use your sentinels."
+        env = self._run(findings=[], backend=garbage)
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "extraction-failed")
+
+    def test_nonce_collision_in_diff_abstains(self):
+        # The minted nonce (NONCE123) already appears in the hostile diff.
+        env = self._run(findings=[], diff_body="leaked NONCE123 in the diff\n")
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "nonce-collision")
+
+    def test_oversized_diff_abstains(self):
+        env = self._run(findings=[], diff_body="x\n" * 200001)  # > 400 KB
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "oversized-diff")
 
 
 if __name__ == "__main__":
