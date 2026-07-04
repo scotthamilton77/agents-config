@@ -374,15 +374,17 @@ if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
   # family from its trailers, carry prior attestations across the moved head)
   # needs a dedicated helper (planned); until then a mixed branch is left
   # unrecorded and the judge abstains — fail closed.
-  SESSION_FAMILY=<anthropic|openai|google|human>  # the running agent's own family
+  SESSION_FAMILY=""  # REQUIRED — set to the running agent's own family, one of:
+                     # anthropic openai google human. Left empty, the record
+                     # below is skipped and the judge abstains (fail closed).
   COMMIT_ARGS=()
   while read -r sha; do
     COMMIT_ARGS+=(--commit "${sha}:${SESSION_FAMILY}:first-hand")
   done < <(git rev-list "FETCH_HEAD..${NEW_HEAD}" 2>/dev/null)
-  # Only record if we actually enumerated commits — an empty list would make
-  # record_provenance error on its required --commit (fail-closed: no sidecar
-  # → the judge later abstains) and mask why.
-  if [ "${#COMMIT_ARGS[@]}" -gt 0 ]; then
+  # Record only when the family is set AND commits were enumerated. An unset
+  # family or an empty list skips the record (fail-closed: no sidecar → the judge
+  # later abstains) rather than writing an invalid or empty attestation.
+  if [ -n "$SESSION_FAMILY" ] && [ "${#COMMIT_ARGS[@]}" -gt 0 ]; then
     python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
       --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
       "${COMMIT_ARGS[@]}" \
