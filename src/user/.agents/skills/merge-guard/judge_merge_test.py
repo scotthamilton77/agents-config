@@ -86,7 +86,8 @@ class TestProvenanceGate(unittest.TestCase):
 
     def _write(self, head, commits):
         path = os.path.join(self.state, "pr-provenance", f"o-r-5-{head}.provenance.json")
-        json.dump({"head_sha": head, "commits": commits, "recorded_by": "s"}, open(path, "w"))
+        with open(path, "w") as fh:
+            json.dump({"head_sha": head, "commits": commits, "recorded_by": "s"}, fh)
 
     def _rev_list(self, shas):
         return lambda args: "\n".join(shas) + "\n"
@@ -233,10 +234,10 @@ class TestMainEndToEnd(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()
         os.makedirs(os.path.join(self.state, "pr-provenance"))
-        json.dump({"head_sha": "h",
-                   "commits": [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}],
-                   "recorded_by": "s"},
-                  open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json"), "w"))
+        with open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json"), "w") as fh:
+            json.dump({"head_sha": "h",
+                       "commits": [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}],
+                       "recorded_by": "s"}, fh)
         self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.5",
                        "judge_effort": "high", "judge_timeout_seconds": 900,
                        "judge_max_attempts": 2}

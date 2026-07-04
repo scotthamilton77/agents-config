@@ -32,7 +32,8 @@ class TestRecordProvenance(unittest.TestCase):
         self.assertEqual(code, 0, err)
         path = os.path.join(self.state, "pr-provenance", "o-r-5-abc123.provenance.json")
         self.assertTrue(os.path.exists(path))
-        rec = json.load(open(path))
+        with open(path) as fh:
+            rec = json.load(fh)
         self.assertEqual(rec["head_sha"], "abc123")
         self.assertEqual(rec["recorded_by"], "session-xyz")
         self.assertEqual(len(rec["commits"]), 2)
@@ -45,7 +46,8 @@ class TestRecordProvenance(unittest.TestCase):
             "--head-sha", "h", "--commit", "h:openai+anthropic:first-hand",
             "--recorded-by", "s")
         self.assertEqual(code, 0, err)
-        rec = json.load(open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json")))
+        with open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json")) as fh:
+            rec = json.load(fh)
         self.assertEqual(rec["commits"][0]["author_families"], ["openai", "anthropic"])
 
     def test_bad_attestation_rejected(self):
