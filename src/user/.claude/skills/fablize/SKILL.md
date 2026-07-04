@@ -12,18 +12,19 @@ a limited window — before it becomes unavailable or cost-prohibitive — spend
 that window closing spec gaps on backlog work, not implementing it. The
 output is design specs and implementation-ready backlog items that a cheaper
 or lesser model can execute correctly later. The name is a legacy of one such
-window; the mechanic is model-agnostic — run this whenever the strongest
-available frontier model is at the helm, regardless of what it's called.
+window; the mechanic is model-agnostic.
 
 Fablize does not implement anything. It turns "I have frontier capacity for
 N days" into a prioritized, batched, human-approved spec-writing pipeline.
+
+Mind the token budget throughout — the whole premise is a scarce, expensive
+resource; a phase that burns it on process rather than spec quality has
+defeated the point.
 
 ## When to Use
 
 - A temporary capability or budget window is closing and thin-spec backlog
   sits behind it.
-- The user asks to "fablize," run a "specfest," "spec out beads," "close spec
-  gaps," or "get X ready for a cheaper model."
 - The user wants a batch of backlog items made implementation-ready without
   doing the implementation now.
 
@@ -89,9 +90,6 @@ N days" into a prioritized, batched, human-approved spec-writing pipeline.
    already ships everything else — through its normal completion-gate,
    worktree, and PR discipline; fablize doesn't restate that machinery, only
    feeds it.
-10. **Mind the token budget throughout** — the whole premise is a scarce,
-    expensive resource; a phase that burns it on process rather than spec
-    quality has defeated the point.
 
 ## Red Flags
 
