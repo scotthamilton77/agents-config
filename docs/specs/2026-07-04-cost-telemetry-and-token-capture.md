@@ -59,13 +59,26 @@ They are facts, not assumptions.
 Change `_invocation_for_claude` (`subprocess_runner.py:227-239`) to append
 `--output-format json`, and post-process in the runner (claude-only):
 
-1. Parse stdout as the envelope. On success: expose `envelope["result"]` as the
+1. Parse stdout as the envelope. On parse success: expose `envelope["result"]` as the
    effective stdout the dispatcher sees, and populate a new
-   `AgentRunResult.usage: UsageFigures | None` from `usage.input_tokens`,
-   `usage.output_tokens`, and `total_cost_usd` (authoritative-estimate from the CLI —
-   preferred over rate math whenever present).
-2. On parse failure (older CLI, plain text): fall back to current behavior — raw stdout
-   through, `usage=None`. Never fail a dispatch over telemetry.
+   `AgentRunResult.usage: UsageFigures | None` with
+   `tokens_in = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens`
+   (**all input-side tokens** — the envelope's bare `input_tokens` is only the uncached
+   slice; the §3.1 sample shows 10 uncached vs ~36k cached, so summing is the difference
+   between volume truth and a 3-orders-of-magnitude undercount), `tokens_out =
+   usage.output_tokens`, and `reported_cost_usd = total_cost_usd` (authoritative-estimate
+   from the CLI — preferred over rate math whenever present; cache pricing tiers are
+   already folded into it, which is why cost never re-derives from the summed tokens).
+2. Unwrap and usage capture happen **regardless of `is_error`/`subtype`**. The dispatch
+   outcome stays owned by the existing classification rules: a non-zero exit is a link
+   `error` before the envelope is ever consulted; exit 0 with `is_error: true` and no
+   parseable contract inside `result` classifies `malformed` and falls through the chain.
+   The envelope's error flag never short-circuits classification on its own.
+3. On envelope parse failure (plain-text stdout): fall back to current behavior — raw
+   stdout through, `usage=None`. Never fail a dispatch over telemetry. Note the bound on
+   this fallback: a CLI old enough to *reject* the flag exits non-zero before stdout
+   matters, which surfaces as an ordinary link failure and the chain moves on — the
+   fallback covers envelope anomalies, not flag rejection.
 
 **Interaction trap (do not skip):** today `_loads_lenient` (`dispatcher.py:392-422`)
 takes the **last top-level JSON object** in stdout. With the envelope flag, that object
@@ -83,8 +96,9 @@ tokens used
 21,631
 ```
 
-Parse the last non-empty stderr lines for `tokens used` followed by a
-comma-grouped integer → `tokens_total`. codex provides **no in/out split** in this mode;
+Parse the last non-empty stderr lines for `tokens used` followed by an
+integer with optional comma grouping (`\d{1,3}(,\d{3})*|\d+` — counts under
+1,000 carry no comma) → `tokens_total`. codex provides **no in/out split** in this mode;
 `input_tokens`/`output_tokens` stay `None`. (A `--json` mode may carry richer usage; the
 one verified codex JSON envelope in-repo — the merge-judge's `task --json` — has **no**
 usage field, so this spec builds only on the verified stderr trailer.)
@@ -99,8 +113,12 @@ ceiling regardless).
 
 ## 4. Ledger bridge — prgroom → `spend.jsonl` (bead agents-config-abn9.40.1)
 
-One spend record per **completed dispatch** (success or terminal failure), appended at
-the `cli.py` layer where the dispatcher returns — not inside `_run_chain`. Mapping to the
+One spend record per **completed dispatch** (success or terminal failure), emitted via a
+new dispatcher-level `spend_hook` — a completion callback invoked exactly once per
+dispatch after the chain resolves (never per attempt, never inside `_run_chain`'s link
+loop), passed at dispatcher construction in `_build_cluster_dispatcher` /
+`_build_fix_dispatcher` (`cli.py:134-167`) — the same construction seam
+agents-config-abn9.8.26 uses for the per-attempt `usage_hook`. Mapping to the
 routing-spec §7 record:
 
 | spend field | source |
@@ -111,7 +129,7 @@ routing-spec §7 record:
 | `provider`, `billing` | routing-spec §4.1 default `cli→provider` map (explicit `provider` key when the chain entry carries one); billing from `model-routing.toml [providers.*]` when present |
 | `rung` | index of the winning link in the chain |
 | `tokens_in`/`tokens_out` | `AgentRunResult.usage` (§3); null when uncaptured |
-| `cost_usd` | claude: `reported_cost_usd` verbatim. codex: `tokens_total × cost_per_mtok_out` from configured rates, ceiling-conservative. others: `null` |
+| `cost_usd` | claude: `reported_cost_usd` verbatim. codex: `tokens_total / 1_000_000 × cost_per_mtok_out` from configured rates, ceiling-conservative. others: `null` |
 | `estimated` | **new boolean field** (heavy-gate-run precedent): `false` for claude's reported cost, `true` for codex rate-math, absent/`null` when `cost_usd` is null |
 | `outcome`, `retries`, `escalated_to` | from the dispatch result (`gate-pass`/`provider-fail`/`timeout`/`parse-fail` vocabulary per routing spec §7) |
 
@@ -159,11 +177,13 @@ an unread scheduled report is noise. Revisit after two manual cycles.
 
 Fixtures are the captured probe outputs, embedded as literal strings — no live CLI calls:
 
-1. claude envelope → unwrapped `result` reaches the dispatcher; `usage` populated;
+1. claude envelope → unwrapped `result` reaches the dispatcher; `usage` populated with
+   the summed `tokens_in` (uncached + cache-creation + cache-read, per §3.1 rule 1);
    contract JSON inside `result` parses via the existing lenient path.
 2. claude plain-text stdout (no envelope) → passthrough, `usage=None`, dispatch succeeds.
-3. Envelope with `is_error: true` → dispatch outcome follows the error; usage still
-   captured when present.
+3. Envelope with `is_error: true`, exit 0, no contract in `result` → unwrap and usage
+   capture still happen; dispatch classifies `malformed` and falls through the chain
+   (§3.1 rule 2 — the flag never short-circuits classification).
 4. codex stderr with trailer → `tokens_total` parsed (comma-grouped); stderr without
    trailer → `None`, no error.
 5. Bridge: completed fix dispatch (fake result, temp ledger dir) → exactly one
@@ -200,6 +220,9 @@ model is answerable from the rollup output, and per session via its ccusage sect
   rows in `spend.jsonl` for unified queries, that's a v2 record kind.
 - `ASSUMPTION:` `--output-format json` is safe for all prgroom claude dispatches (the
   envelope's `result` field faithfully carries the final text; verified on one probe).
-  The plain-text fallback bounds the blast radius if an environment ships an older CLI.
+  A CLI that emits plain text despite the flag is covered by the fallback; a CLI old
+  enough to *reject* the flag fails the link outright and the chain falls back laterally
+  — accepted, since pinning a CLI-version probe for a hypothetical museum piece is
+  machinery without a consumer.
 - `ASSUMPTION:` manual weekly ritual beats cron in v1 (§5). Flip to `schedule`/cron only
   after the manual loop proves the report gets read.

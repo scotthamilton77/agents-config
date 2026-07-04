@@ -102,8 +102,11 @@ archetype override row (same shape as the user table), not a bespoke key.
 
 1. `project-config.toml [foreign-cli]` contains only binary-path keys and the rewritten
    comment; the four model keys and two concurrency keys are gone.
-2. `grep -rn "codex_red_tests_model\|codex_green_loop_iter1_model\|codex_adversarial_review_model\|gemini_green_loop_iter2_model\|codex_max_concurrent\|gemini_max_concurrent" --include="*" .`
-   over the live tree (excluding `archive/` and `docs/specs/`) returns zero hits.
+2. `grep -rn "codex_red_tests_model\|codex_green_loop_iter1_model\|codex_adversarial_review_model\|gemini_green_loop_iter2_model\|codex_max_concurrent\|gemini_max_concurrent" --exclude-dir=.git --exclude-dir=.beads --exclude-dir=graphify-out --exclude=issues.backup.jsonl . | grep -v -E '^(\./)?(archive|docs/specs)/'`
+   over the live tree returns zero hits (excluded: `archive/`, `docs/specs/` — including
+   this spec — git objects, beads tracker data, and the generated graph). The `archive/`
+   and `docs/specs/` exclusions are path-scoped by the trailing filter, so a same-named
+   directory elsewhere in the tree (e.g. a future `packages/*/specs/`) is still scanned.
 3. `docs/guide/reference.md` and `docs/guide/configuration.md` describe `[foreign-cli]`
    as binaries-only and point model selection at the routing table.
 4. The forward-mapping table (§4) is present in this spec and cited from the

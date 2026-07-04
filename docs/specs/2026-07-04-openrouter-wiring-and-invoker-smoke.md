@@ -125,7 +125,10 @@ test skips without `OPENROUTER_API_KEY`):
 Common shape: a trivial contract prompt ("Return exactly this JSON object: {...}")
 dispatched through `SubprocessAgentRunner` (the real spawn path, not fakes), generous
 per-test timeout (120s), cheapest model per family. The suite exists to falsify argv and
-stdout-discipline assumptions at the OS boundary — not to test model quality.
+stdout-discipline assumptions at the OS boundary. The parseability assertion deliberately
+includes one sliver of model behavior: a rung whose model cannot round-trip a trivial
+JSON contract is unusable to prgroom regardless of argv correctness, and the smoke should
+go red on it — that is rung fitness, not model-quality benchmarking.
 
 ### 3.3 Cost posture
 
