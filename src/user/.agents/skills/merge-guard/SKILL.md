@@ -46,18 +46,23 @@ working tree or head — reading from head would let a PR that edits
 hole (and is double-locked by the protected-path gate at Step 4, which
 independently abstains on any diff touching `project-config.toml`). A base ref
 with no `project-config.toml` file resolves to the built-in defaults (the
-`explicit` floor); a base ref that cannot be resolved at all fails closed
-instead of guessing at a policy.
+`explicit` floor); a base ref that cannot be resolved — or whose config blob is
+present but unreadable — fails closed instead of guessing at a policy, so a
+transient read failure never silently downgrades a stricter configured policy.
 
 ```bash
 TMP_BASE_CFG=$(mktemp)
+trap 'rm -f "$TMP_BASE_CFG"' EXIT
 if git show "<base_ref_oid>:project-config.toml" > "$TMP_BASE_CFG" 2>/dev/null; then
   :                                       # captured the base config
-elif git cat-file -e "<base_ref_oid>^{commit}" 2>/dev/null; then
-  : > "$TMP_BASE_CFG"                      # base commit valid, no project-config.toml → resolver emits defaults
-else
+elif ! git cat-file -e "<base_ref_oid>^{commit}" 2>/dev/null; then
   echo "cannot resolve base ref <base_ref_oid> — merge by hand" >&2
   exit 3                                   # base ref unresolvable → fail closed, hand off
+elif ! git cat-file -e "<base_ref_oid>:project-config.toml" 2>/dev/null; then
+  : > "$TMP_BASE_CFG"                      # commit valid, project-config.toml truly absent → resolver emits defaults
+else
+  echo "base project-config.toml present but unreadable — merge by hand" >&2
+  exit 3                                   # present-but-unreadable → fail closed, never downgrade a stricter policy
 fi
 POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
   --project-config "$TMP_BASE_CFG" \

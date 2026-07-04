@@ -385,8 +385,10 @@ class TestMainEndToEnd(unittest.TestCase):
         env = self._run(findings=[], backend=concurrent_backend, diff_body=diff_body)
         self.assertEqual(env["verdict"], "abstain")
         self.assertEqual(env["abstain_reason"], "concurrent-no-go")
-        # the recheck path must not bump attempts -- it isn't our own fresh no-go
-        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
+        # the recheck path must not bump attempts -- it isn't our own fresh no-go.
+        # Assert the exact count (not budget_exhausted, which a stray 0->1 bump
+        # would still satisfy under max_attempts=2).
+        self.assertEqual(jm._read_attempts(jm._attempts_path(self.state, "o", "r", "5", "b")), 0)
 
     def test_underivable_judge_family_abstains(self):
         # A judge model whose family cannot be derived cannot enforce cross-model
