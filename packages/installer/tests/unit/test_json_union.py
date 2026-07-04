@@ -12,8 +12,9 @@ Each test pins a coded decision in the semantic deep-union-merge contract for
 - key only in incoming -> ADD it; key only in existing -> keep it;
 - top-level non-object operand -> the result is ``existing`` whole;
 - two empty objects merge to ``{}`` (not null);
-- output bytes are canonical JSON: 2-space indent, keys sorted, single
-  trailing newline;
+- output bytes are 2-space indent, single trailing newline, and PRESERVE
+  the existing side's key order — keys only in incoming are appended after,
+  in incoming order — recursively at every nested dict level;
 - the synthesised item takes provenance + source_path from incoming and
   preserves the shared key fields.
 
@@ -29,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from installer.core.merge.base import CollisionError
-from installer.core.merge.strategies.json_union import JsonUnionStrategy
+from installer.core.merge.strategies.json_union import JsonUnionStrategy, merge_settings_bytes
 from installer.core.model import FileKind, Provenance, StagedItem
 
 
@@ -245,74 +246,75 @@ def test_top_level_existing_array_incoming_object_keeps_existing_array() -> None
     assert json.loads(merged.content) == [1, 2, 3]
 
 
-# --- output formatting (canonical sorted JSON bytes) ----------------------
+# --- output formatting (order-preserving JSON bytes) -----------------------
 
 
-def test_output_is_two_space_indented_with_sorted_keys_and_trailing_newline() -> None:
-    """Merged bytes are canonical JSON: 2-space indent, keys sorted
-    (``sort_keys=True``), exactly one trailing newline."""
+def test_output_is_two_space_indented_with_trailing_newline() -> None:
+    """Merged bytes are 2-space indent, exactly one trailing newline."""
     merged = JsonUnionStrategy().merge(_item({"b": 1, "a": 2}), _item({"c": 3}))
-    assert merged.content == b'{\n  "a": 2,\n  "b": 1,\n  "c": 3\n}\n'
+    assert merged.content == b'{\n  "b": 1,\n  "a": 2,\n  "c": 3\n}\n'
 
 
-def test_output_keys_sorted_codepoint_order_digits_upper_lower() -> None:
-    """``sort_keys=True`` orders keys by Unicode codepoint: digits < uppercase
-    < lowercase."""
+def test_output_preserves_existing_key_order_incoming_only_keys_appended_in_incoming_order() -> (
+    None
+):
+    """Existing key order is preserved as-is; keys present only in incoming are
+    appended after, in incoming's own order — no sorting of either group."""
     merged = JsonUnionStrategy().merge(_item({"B": 1, "a": 2, "10": 3, "2": 4}), _item({"A": 5}))
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    assert list(json.loads(text).keys()) == ["10", "2", "A", "B", "a"]
-    # Bytes must reflect that order, not insertion order.
+    assert list(json.loads(text).keys()) == ["B", "a", "10", "2", "A"]
+    assert text.index('"B"') < text.index('"a"') < text.index('"10"')
     assert text.index('"10"') < text.index('"2"') < text.index('"A"')
-    assert text.index('"A"') < text.index('"B"') < text.index('"a"')
 
 
-# --- output key order (all objects serialised sorted) ---------------------
+# --- output key order (existing side's order preserved recursively) --------
 #
-# The semantic merge serialises with ``sort_keys=True``, so EVERY object —
-# whether constructed by the deep-merge or carried through from one side —
-# comes out with keys sorted. There is no insertion-order passthrough special
-# case.
+# The merge preserves the EXISTING side's key order at every level — whether
+# the object is constructed by the deep-merge or carried through unchanged
+# from one side. Keys only in incoming append after, in incoming order.
 
 
-def test_one_side_only_nested_object_is_sorted() -> None:
-    """A nested object present on only ONE side is serialised with sorted keys
-    like every other object — there is no passthrough/insertion-order special
-    case. ``env`` keys come out ``A, M, Z``."""
+def test_one_side_only_nested_object_preserves_its_own_order() -> None:
+    """A nested object present on only ONE side is serialised in its own
+    original key order — no sorting, no reordering."""
     merged = JsonUnionStrategy().merge(
         _item({"env": {"Z": 1, "A": 2, "M": 3}}),
         _item({"other": 1}),
     )
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    assert text.index('"A"') < text.index('"M"') < text.index('"Z"')
+    assert text.index('"Z"') < text.index('"A"') < text.index('"M"')
 
 
-def test_object_inside_array_is_sorted() -> None:
-    """An object nested inside an array is serialised with sorted keys too —
-    ``sort_keys=True`` applies recursively, so ``{z, a}`` comes out ``{a, z}``."""
+def test_object_inside_array_preserves_its_own_order() -> None:
+    """An object nested inside an array keeps its own key order — arrays are
+    carried through by identity (not reconstructed key-by-key), so there is no
+    sorting opportunity either way."""
     merged = JsonUnionStrategy().merge(
         _item({"arr": [{"z": 1, "a": 2}]}),
         _item({"other": 1}),
     )
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    assert text.index('"a"') < text.index('"z"')
+    assert text.index('"z"') < text.index('"a"')
 
 
-def test_deep_merge_keys_stay_sorted_at_every_level() -> None:
-    """``sort_keys=True`` applies at every recursion level: a nested object
-    merged on BOTH sides comes out sorted, as do the top-level keys."""
+def test_deep_merge_preserves_existing_order_at_every_level() -> None:
+    """Existing key order is preserved at every recursion level: a nested
+    object merged on BOTH sides keeps existing's order with incoming-only keys
+    appended after, and so do the top-level keys."""
     merged = JsonUnionStrategy().merge(
         _item({"n": {"z": 1, "a": 2}, "shared": 1}),
-        _item({"n": {"m": 3, "b": 4}, "extra": 2}),
+        _item({"n": {"m": 3, "a": 99, "b": 4}, "extra": 2}),
     )
     assert merged.content is not None
     text = merged.content.decode("utf-8")
-    # top-level constructed keys sorted: extra, n, shared
-    assert text.index('"extra"') < text.index('"n"') < text.index('"shared"')
-    # nested object recursed on both sides -> constructed -> keys sorted
-    assert text.index('"a"') < text.index('"b"') < text.index('"m"') < text.index('"z"')
+    # top-level: existing order (n, shared) then incoming-only (extra) appended.
+    assert text.index('"n"') < text.index('"shared"') < text.index('"extra"')
+    # nested: existing order (z, a) then incoming-only (m, b) appended in
+    # incoming's order.
+    assert text.index('"z"') < text.index('"a"') < text.index('"m"') < text.index('"b"')
 
 
 # --- synthesis contract (provenance / source_path / shared key fields) ----
@@ -357,6 +359,44 @@ def test_none_content_raises_collision_error() -> None:
 
     assert excinfo.value.existing == Path("/src/a/settings.json")
     assert excinfo.value.incoming == Path("/src/b/settings.json")
+
+
+# --- merge_settings_bytes key-order contract (existing-wins semantics unchanged) --
+
+
+def test_merge_settings_bytes_round_trips_existing_key_order() -> None:
+    """The user's existing settings.json key order round-trips unchanged
+    through merge_settings_bytes when incoming adds no new top-level keys."""
+    existing = json.dumps({"zeta": 1, "alpha": 2, "mid": 3}).encode("utf-8")
+    incoming = json.dumps({"alpha": 99, "mid": 4}).encode("utf-8")
+
+    merged = merge_settings_bytes(existing=existing, incoming=incoming)
+
+    assert list(json.loads(merged).keys()) == ["zeta", "alpha", "mid"]
+    # existing-wins conflict semantics are unchanged by the ordering fix.
+    assert json.loads(merged) == {"zeta": 1, "alpha": 2, "mid": 3}
+
+
+def test_merge_settings_bytes_appends_incoming_only_keys_in_incoming_order() -> None:
+    """Keys present only in incoming are appended after the existing side's
+    keys, in incoming's own order — not sorted, not prepended."""
+    existing = json.dumps({"b": 1, "a": 2}).encode("utf-8")
+    incoming = json.dumps({"z": 3, "a": 99, "y": 4}).encode("utf-8")
+
+    merged = merge_settings_bytes(existing=existing, incoming=incoming)
+
+    assert list(json.loads(merged).keys()) == ["b", "a", "z", "y"]
+
+
+def test_merge_settings_bytes_preserves_order_in_nested_dicts() -> None:
+    """Order preservation recurses into nested dicts the same way as the
+    top level: existing order first, incoming-only keys appended after."""
+    existing = json.dumps({"outer": {"z": 1, "a": 2}}).encode("utf-8")
+    incoming = json.dumps({"outer": {"a": 99, "m": 3}}).encode("utf-8")
+
+    merged = merge_settings_bytes(existing=existing, incoming=incoming)
+
+    assert list(json.loads(merged)["outer"].keys()) == ["z", "a", "m"]
 
 
 def test_malformed_json_raises_collision_error() -> None:
