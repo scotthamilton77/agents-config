@@ -123,6 +123,9 @@ routing-spec §7 record:
 
 | spend field | source |
 |---|---|
+| `ts` | ISO-8601 UTC captured at spend-record append time from the injected clock (`prgroom.deps.Clock`) |
+| `session` | `null` — prgroom runs headless; there is no interactive session id to record |
+| `repo` | the PR's `owner/repo` from the dispatch `PRRef` |
 | `archetype` | contract: `cluster` → `classifier`, `fix` → `implementer` |
 | `context` | `"background"` (prgroom is never interactive) |
 | `cli`, `model` | the winning chain link's `AgentSpec` |
@@ -130,8 +133,11 @@ routing-spec §7 record:
 | `rung` | index of the winning link in the chain |
 | `tokens_in`/`tokens_out` | `AgentRunResult.usage` (§3); null when uncaptured |
 | `cost_usd` | claude: `reported_cost_usd` verbatim. codex: `tokens_total / 1_000_000 × cost_per_mtok_out` from configured rates, ceiling-conservative. others: `null` |
-| `estimated` | **new boolean field** (heavy-gate-run precedent): `false` for claude's reported cost, `true` for codex rate-math, absent/`null` when `cost_usd` is null |
+| `estimated` | **additive field beyond the §7 record** (heavy-gate-run precedent), tolerated-absent by readers per the §3.3 JSONL-evolution rule — the routing spec's §7 schema stays canonical: `false` for claude's reported cost, `true` for codex rate-math, absent/`null` when `cost_usd` is null |
 | `outcome`, `retries`, `escalated_to` | from the dispatch result (`gate-pass`/`provider-fail`/`timeout`/`parse-fail` vocabulary per routing spec §7) |
+
+This table covers every field of the routing-spec §7 record; `estimated` is the single
+additive extension this spec introduces beyond that canonical shape.
 
 Config read (`model-routing.toml` rates) is parse-only and optional: absent file or
 missing rate → `cost_usd: null`, never a crash, never a blocked dispatch.
