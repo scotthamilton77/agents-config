@@ -14,10 +14,12 @@ semantic deep-merge:
 - a top-level operand that is not an object -> the result is ``existing`` whole;
 - two empty objects merge to ``{}``, never ``null``.
 
-Output is canonical JSON: 2-space indent, keys sorted, a single trailing
-newline. Key order and whitespace are not a behavioural contract — every
-consumer parses the file — so the merge optimises for a deterministic, readable
-form rather than reproducing any particular tool's byte layout.
+Output is 2-space indent and a single trailing newline. Key order PRESERVES
+the existing side: a key carried through or recursed from existing keeps its
+original position; a key present only in incoming is appended after, in
+incoming's own order. This applies recursively at every nested dict level, so
+a user's before/after settings.json diff stays readable rather than being
+reshuffled into sorted order.
 
 Irreconcilable input (a ``None`` side, or bytes that are not valid JSON) raises
 :class:`CollisionError` naming both source paths, rather than silently
@@ -54,12 +56,17 @@ def _deep_merge(existing: Any, incoming: Any) -> Any:
     other top-level shape returns ``existing`` whole. At a shared key two dicts
     recurse, two lists union, and anything else (scalar conflict or type
     mismatch) keeps ``existing``; keys present on only one side are carried
-    through. In-memory key order is irrelevant — :func:`_to_bytes` sorts."""
+    through. Key order PRESERVES existing's order first, then appends keys
+    found only in incoming, in incoming's own order — iterating ``existing``
+    then ``incoming`` (skipping keys already placed) achieves this without a
+    separate sort step."""
     if not (isinstance(existing, dict) and isinstance(incoming, dict)):
         return existing
 
     merged: dict[str, Any] = {}
-    for key in set(existing) | set(incoming):
+    for key in (*existing, *incoming):
+        if key in merged:
+            continue
         in_existing = key in existing
         in_incoming = key in incoming
         if in_existing and in_incoming:
@@ -92,24 +99,25 @@ def _parse(content: bytes | None) -> Any:
 
 
 def _to_bytes(value: Any) -> bytes:
-    """Serialise to canonical JSON: 2-space indent, keys sorted
-    (``sort_keys=True``), single trailing newline. Key order and whitespace are
-    not a behavioural contract — every consumer parses the file — so the merge
-    emits a deterministic, readable form rather than any one tool's byte
-    layout."""
-    text = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)
+    """Serialise to JSON: 2-space indent, single trailing newline. Key order is
+    whatever ``value``'s dict order already is — :func:`_deep_merge` is
+    responsible for that order being existing-first, incoming-only-appended;
+    this function does not sort or otherwise reorder it."""
+    text = json.dumps(value, indent=2, ensure_ascii=False)
     return (text + "\n").encode("utf-8")
 
 
 def merge_settings_bytes(existing: bytes, incoming: bytes) -> bytes:
-    """Deep union-merge two settings.json byte payloads to canonical bytes.
+    """Deep union-merge two settings.json byte payloads, preserving existing's
+    key order.
 
     The reusable core of the union: parse both, deep-merge (``existing`` wins on a
-    scalar conflict, arrays union, keys present on only one side carried through),
-    and serialise canonically. The sync engine uses it to union a staged
-    settings.json into the user's existing dest file so user values survive an
-    install. Raises ``ValueError`` if either side is not valid JSON — the caller
-    decides how to recover.
+    scalar conflict, arrays union, keys present on only one side carried through,
+    existing's key order preserved with incoming-only keys appended after), and
+    serialise. The sync engine uses it to union a staged settings.json into the
+    user's existing dest file so user values — and their order, for a readable
+    diff — survive an install. Raises ``ValueError`` if either side is not valid
+    JSON — the caller decides how to recover.
     """
     return _to_bytes(_deep_merge(json.loads(existing), json.loads(incoming)))
 
@@ -120,8 +128,8 @@ class JsonUnionStrategy:
     Honours the ``MergeStrategy`` protocol structurally. The synthesised item
     preserves the shared key fields (``dest_relpath``, ``kind``, ``namespace``
     — identical on both by definition of the collision), sets ``content`` to
-    the canonical merged bytes, and takes ``provenance`` and ``source_path``
-    from ``incoming``.
+    the merged bytes, and takes ``provenance`` and ``source_path`` from
+    ``incoming``.
     """
 
     def merge(self, existing: StagedItem, incoming: StagedItem) -> StagedItem:
