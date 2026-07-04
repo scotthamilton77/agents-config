@@ -59,6 +59,8 @@ Foreign CLIs cannot be spawned directly by the Workflow harness — they have no
 
 The adapter preserves every existing harness property: bounded StructuredOutput (the "work lands, report dies" guard), `parallel()` scheduling, resume-from-run-id, budget visibility for the native half, and the untrusted-content fence — foreign stdout is data, fenced exactly like finder output is today before it reaches refuter/fixer prompts.
 
+`ASSUMPTION (UNVERIFIED — Gemini CLI viability):` the Gemini CLI is still usable for this seat at all. Google has deprecated it, so it may no longer be a viable panel participant, and headless invocations may bill against API pay-per-use rather than the subscription. This MUST be settled by the Gemini CLI viability investigation (see Implementation shape) **before** the gemini seat is wired; if it fails either check, the seat is dropped — the probe (§3) reports gemini unavailable and the roster runs codex+native per §4.
+
 `ASSUMPTION:` Gemini's headless flags (`-p "" --approval-mode plan -o text`) and the Codex companion contract remain as documented in the ralf foreign-review template and Codex routing rule. The adapter treats a non-zero exit, empty stdout, or unparseable output as **provider failure** (see §4), never as "no findings."
 
 ### 3. Availability probe
@@ -127,6 +129,7 @@ The convergence decision restructures the *loop* (delta-scoped rounds, judge lay
 
 ## Implementation shape (for the planning pass, not binding)
 
+- **Precondition — Gemini CLI viability investigation (first task; gates the gemini seat):** confirm the Gemini CLI is not deprecated out of usability by Google, and that headless invocations bill against the subscription rather than API pay-per-use. Resolve this **before** wiring the gemini finder seat. If either check fails, drop the gemini provider — the availability probe (§3) reports it unavailable and the roster runs codex+native, the declared degradation path (§4); no seat is wired on unverified billing.
 - `quality-gate.js`: probe call, lens→provider assignment, adapter prompt builder, cost-record assembly, `model:` overrides on synthesis (`opus`/`high`) and native finders (`haiku`/`low`).
 - New probe + rubric-parse helpers as small tested scripts alongside the gate assets (Python/Node over inline bash, per repo principle).
 - Reuse, don't fork, the ralf foreign-review prompt template — one severity rubric across both consumers.
