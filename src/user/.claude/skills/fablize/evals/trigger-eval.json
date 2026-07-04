@@ -1,0 +1,20 @@
+[
+  {"query": "fablize the backlog before our frontier session runs out today", "should_trigger": true},
+  {"query": "we've got frontier model access for like 3 more days, let's use it to spec out the thin backlog items so a cheaper model can pick them up later", "should_trigger": true},
+  {"query": "can you run a specfest on the worker-fleet epic, I want specs ready before we lose the premium budget", "should_trigger": true},
+  {"query": "close the spec gaps on these tickets while we still have premium model time this week", "should_trigger": true},
+  {"query": "get the issues in the auth area ready for a lesser model to implement -- need proper design specs first, not code", "should_trigger": true},
+  {"query": "spec out a batch of beads, we have frontier capacity right now and I don't want to waste it implementing when a cheap model could do that later", "should_trigger": true},
+  {"query": "prep the backlog for whoever's running sonnet next week -- pick some good candidates and write specs for them", "should_trigger": true},
+  {"query": "do a specfest pass, pick like 5 items that need the most design thinking and spec those out", "should_trigger": true},
+  {"query": "our frontier window closes tonight, spec out whatever's thin so it's shovel-ready for a cheaper model tomorrow", "should_trigger": true},
+  {"query": "implement bead 42, it already has a full design spec attached", "should_trigger": false},
+  {"query": "can you write a design spec for this one feature I'm describing to you right now", "should_trigger": false},
+  {"query": "what's next on the backlog, what's ready to work on", "should_trigger": false},
+  {"query": "review this PR for code quality and correctness issues before I merge it", "should_trigger": false},
+  {"query": "can you merge this PR now that the specs on it are approved", "should_trigger": false},
+  {"query": "the model seems really slow today, is there an outage or something", "should_trigger": false},
+  {"query": "brainstorm this one idea with me from scratch, I don't have a ticket for it yet", "should_trigger": false},
+  {"query": "run a security review on the auth changes before we ship", "should_trigger": false},
+  {"query": "we need to update the AGENTS.md conventions doc for the new install labels", "should_trigger": false}
+]
