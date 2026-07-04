@@ -237,8 +237,9 @@ arbitrary markdown, not by per-surface adapters.
 - `ASSUMPTION:` duplicate-title guard is exact-match only (fuzzy dedup is
   human judgment, out of scope).
 - `ASSUMPTION:` spec filename slug derivation and `-2` collision suffix.
-- `ASSUMPTION:` the brainstorming skill integration is a documented handoff in
-  its terminal phase (invoke-the-glue guidance), not a fork of the vendored
-  skill — the vendored copy's drift policy (accept-periodic-resync) makes
-  in-body edits churn-prone; a thin wrapper note in the skill's project
-  overlay is preferred. If the resync policy changes, revisit.
+- `DECIDED (owner, 2026-07-04):` the brainstorming skill this project owns
+  (`src/user/.agents/skills/brainstorming/SKILL.md`) is modified directly — its
+  terminal phase invokes this glue in-body, not via a wrapper overlay. Resync
+  policy: on an upstream resync, diff the project's version against the captured
+  `oss-snapshots/superpowers/brainstorming/` baseline to identify the local
+  edits to port onto the newer upstream.
