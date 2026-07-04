@@ -269,3 +269,140 @@ def _final_message_text(raw_stdout: str) -> str:
     if payload.get("status") != 0:
         raise RuntimeError(f"codex task status {payload.get('status')!r}")
     return payload.get("rawOutput", "")
+
+
+import argparse  # noqa: E402
+
+
+def _config_hash(policy: dict) -> str:
+    material = "|".join(str(policy.get(k)) for k in (
+        "judge_backend", "judge_model", "judge_effort",
+        "judge_timeout_seconds", "judge_max_attempts")) + "|" + PROMPT_VERSION
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _cache_path(state, owner, repo, pr, head, base, diff_sha, policy):
+    key = f"{owner}-{repo}-{pr}-{head}-{base}-{diff_sha}-{_config_hash(policy)}.judge.json"
+    return os.path.join(state, "merge-judge", key)
+
+
+def no_go_cached(state, owner, repo, pr, head, base, diff_sha, policy) -> bool:
+    return os.path.exists(_cache_path(state, owner, repo, pr, head, base, diff_sha, policy))
+
+
+def _cache_no_go(state, owner, repo, pr, head, base, diff_sha, policy, envelope):
+    path = _cache_path(state, owner, repo, pr, head, base, diff_sha, policy)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(envelope, fh)
+    os.replace(tmp, path)
+
+
+def _load_prompt() -> str:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "merge_judge_prompt.md")) as fh:
+        return fh.read()
+
+
+def _abstain(head, base, diff_sha, reason, policy, families):
+    return build_envelope(head=head, base=base, diff_sha=diff_sha, verdict=VERDICT_ABSTAIN,
+                          abstain_reason=reason, judge_model=policy["judge_model"],
+                          judge_effort=policy["judge_effort"], author_families=families,
+                          summary="", merge_blocking_findings=[])
+
+
+def run_judge(*, owner, repo, pr, head, base, base_ref, policy, state,
+              nonce_fn=mint_nonce, git_runner=_real_git, gh_runner=_real_gh,
+              backend_runner=None) -> dict:
+    """Full harness: pre-judge gates -> backend -> collapse -> cache. Returns the envelope."""
+    judge_family = family_of(policy["judge_model"])
+    max_attempts = int(policy["judge_max_attempts"])
+
+    # Gate 0: attempt budget (checked FIRST — never pay for a run past budget)
+    if budget_exhausted(state, owner, repo, pr, base, max_attempts=max_attempts):
+        return _abstain(head, base, "", "attempt-budget-exhausted", policy, [])
+
+    # Gate 1: protected-path scan
+    if protected_diff_path(base, head, git_runner) is not None:
+        return _abstain(head, base, "", "protected-path", policy, [])
+
+    # Gate 2: cross-model provenance
+    ok, reason, families = provenance_gate(state, owner, repo, pr, base, head,
+                                           judge_family=judge_family, git_runner=git_runner)
+    if not ok:
+        return _abstain(head, base, "", reason, policy, families)
+
+    # Gate 3: head+base currency
+    if not refs_current(owner, repo, pr, head, base, gh_runner):
+        return _abstain(head, base, "", "base-or-head-moved", policy, families)
+
+    # Gate 4: diff assembly + size
+    diff = assemble_diff(base, head, git_runner)
+    if diff.is_empty:
+        return _abstain(head, base, diff.diff_sha, "empty-diff", policy, families)
+    if diff.is_oversized:
+        return _abstain(head, base, diff.diff_sha, "oversized-diff", policy, families)
+
+    # No-go cache: an identical (head,base,diff) no-go is terminal
+    if no_go_cached(state, owner, repo, pr, head, base, diff.diff_sha, policy):
+        bump_attempts(state, owner, repo, pr, base)
+        return _abstain(head, base, diff.diff_sha, "prior-no-go", policy, families)
+
+    # Nonce mint (AFTER reading the diff) + collision guard
+    nonce = nonce_fn()
+    if nonce_collides(nonce, diff.text):
+        return _abstain(head, base, diff.diff_sha, "nonce-collision", policy, families)
+
+    prompt = _load_prompt().replace("{nonce}", nonce).replace(
+        "{base}", base).replace("{head}", head).replace("{diff}", diff.text)
+
+    try:
+        raw = run_backend(prompt, policy["judge_model"], policy["judge_effort"],
+                          int(policy["judge_timeout_seconds"]), runner=backend_runner)
+    except subprocess.TimeoutExpired:
+        return _abstain(head, base, diff.diff_sha, "judge-timeout", policy, families)
+    except Exception:  # noqa: BLE001 - any backend failure fails closed
+        return _abstain(head, base, diff.diff_sha, "judge-error", policy, families)
+
+    obj = extract_verdict_block(raw, nonce)
+    if obj is None:
+        return _abstain(head, base, diff.diff_sha, "extraction-failed", policy, families)
+
+    findings = obj["merge_blocking_findings"]
+    verdict = collapse(findings)
+    envelope = build_envelope(head=head, base=base, diff_sha=diff.diff_sha, verdict=verdict,
+                              abstain_reason=None, judge_model=policy["judge_model"],
+                              judge_effort=policy["judge_effort"], author_families=families,
+                              summary=obj.get("summary", ""), merge_blocking_findings=findings)
+    if verdict == VERDICT_NO_GO:
+        _cache_no_go(state, owner, repo, pr, head, base, diff.diff_sha, policy, envelope)
+        bump_attempts(state, owner, repo, pr, base)
+    # a `go` is NEVER cached — always freshly computed
+    return envelope
+
+
+_EXIT = {VERDICT_GO: 0, VERDICT_NO_GO: 1, VERDICT_ABSTAIN: 2}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    for flag in ("--owner", "--repo", "--pr", "--head-ref-oid", "--base-ref-oid",
+                 "--base-ref", "--policy-json"):
+        ap.add_argument(flag, required=True)
+    args = ap.parse_args()
+    try:
+        policy = json.loads(args.policy_json)
+        env = run_judge(owner=args.owner, repo=args.repo, pr=args.pr,
+                        head=args.head_ref_oid, base=args.base_ref_oid,
+                        base_ref=args.base_ref, policy=policy, state=state_home())
+        json.dump(env, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return _EXIT[env["verdict"]]
+    except Exception as exc:  # noqa: BLE001 - never crash into a merge; abstain
+        sys.stderr.write(f"error: unexpected {type(exc).__name__}: {exc}\n")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

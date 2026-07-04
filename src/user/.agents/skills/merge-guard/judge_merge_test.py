@@ -228,5 +228,81 @@ class TestFinalMessageText(unittest.TestCase):
             jm._final_message_text("not json at all")
 
 
+class TestMainEndToEnd(unittest.TestCase):
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.state, "pr-provenance"))
+        json.dump({"head_sha": "h",
+                   "commits": [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}],
+                   "recorded_by": "s"},
+                  open(os.path.join(self.state, "pr-provenance", "o-r-5-h.provenance.json"), "w"))
+        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.5",
+                       "judge_effort": "high", "judge_timeout_seconds": 900,
+                       "judge_max_attempts": 2}
+
+    def _run(self, findings, changed="src/app/x.py"):
+        nonce_box = {}
+
+        def fake_nonce():
+            nonce_box["n"] = "NONCE123"
+            return "NONCE123"
+
+        def fake_git(args):
+            if args[:2] == ["diff", "--name-only"]:
+                return changed + "\n"
+            if args[0] == "rev-list":
+                return "c1\n"
+            if args[0] == "diff":
+                return "diff body\n"
+            raise AssertionError(args)
+
+        def fake_gh(args):
+            return '{"headRefOid":"h","baseRefOid":"b"}'
+
+        def fake_backend(prompt, model, effort, timeout):
+            body = json.dumps({"merge_blocking_findings": findings, "summary": "s"})
+            return f"<<<JUDGE:{nonce_box['n']}>>>{body}<<<END:{nonce_box['n']}>>>"
+
+        return jm.run_judge(
+            owner="o", repo="r", pr="5", head="h", base="b", base_ref="main",
+            policy=self.policy, state=self.state,
+            nonce_fn=fake_nonce, git_runner=fake_git, gh_runner=fake_gh, backend_runner=fake_backend)
+
+    def test_clean_diff_goes(self):
+        env = self._run(findings=[])
+        self.assertEqual(env["verdict"], "go")
+        self.assertEqual(env["author_families"], ["anthropic"])
+
+    def test_finding_no_go_and_bumps_budget(self):
+        env = self._run(findings=[{"category": "security", "title": "t", "file": "f",
+                                   "detail": "d", "why_blocking": "w"}])
+        self.assertEqual(env["verdict"], "no-go")
+        self.assertTrue(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2) is False)
+        # second no-go exhausts
+        self._run(findings=[{"category": "security", "title": "t", "file": "f",
+                             "detail": "d", "why_blocking": "w"}])
+        self.assertTrue(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
+
+    def test_protected_path_abstains_before_backend(self):
+        env = self._run(findings=[], changed="project-config.toml")
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "protected-path")
+
+    def test_exhausted_budget_abstains(self):
+        jm.bump_attempts(self.state, "o", "r", "5", "b")
+        jm.bump_attempts(self.state, "o", "r", "5", "b")
+        env = self._run(findings=[])
+        self.assertEqual(env["verdict"], "abstain")
+        self.assertEqual(env["abstain_reason"], "attempt-budget-exhausted")
+
+    def test_go_not_cached_but_no_go_is(self):
+        self._run(findings=[{"category": "x", "title": "t", "file": "f",
+                             "detail": "d", "why_blocking": "w"}])
+        # a no-go for identical (head,base,diff) is now terminal in the cache
+        self.assertTrue(jm.no_go_cached(self.state, "o", "r", "5", "h", "b",
+                                        jm.assemble_diff("b", "h", git_runner=lambda a: "diff body\n").diff_sha,
+                                        self.policy))
+
+
 if __name__ == "__main__":
     unittest.main()
