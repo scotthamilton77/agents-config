@@ -25,7 +25,7 @@
 #   3 — error (auth, invalid args, network, invalid policy)
 #
 # Stdout (JSON):
-#   { "status": "eligible|blocked", "head_ref_oid": "<sha>",
+#   { "status": "eligible|blocked", "head_ref_oid": "<sha>", "base_ref_oid": "<sha>",
 #     "blockers": [ {"code": "...", "details": "..."} ],
 #     "facts": { ... }, "merge_command_hint": "gh pr merge <n> --squash --match-head-commit <sha>" }
 
@@ -124,6 +124,10 @@ pr_state=$(jq -r '.state' <<<"$PR_JSON")
 # SHA the merge must be issued against (pt. 3).
 HEAD_OID=$(jq -r '.head.sha' <<<"$PR_JSON")
 [[ -n "$HEAD_OID" && "$HEAD_OID" != "null" ]] || { echo "Error: no head SHA on PR" >&2; exit 3; }
+# The base SHA the head is judged against and the merge must re-confirm
+# (Step 5). Fetched here so the whole floor binds to one live PR read.
+BASE_OID=$(jq -r '.base.sha' <<<"$PR_JSON")
+[[ -n "$BASE_OID" && "$BASE_OID" != "null" ]] || { echo "Error: no base SHA on PR" >&2; exit 3; }
 PR_CREATED=$(jq -r '.created_at' <<<"$PR_JSON")
 BASE_REF=$(jq -r '.base.ref' <<<"$PR_JSON")
 # A base branch like release/1.0 would otherwise mangle the branch-protection
@@ -480,8 +484,9 @@ if [[ "$blocker_count" -gt 0 ]]; then status="blocked"; exit_code=1; fi
 jq -n \
     --arg status "$status" \
     --arg head "$HEAD_OID" \
+    --arg base "$BASE_OID" \
     --argjson blockers "$BLOCKERS" \
     --argjson facts "$FACTS" \
     --arg hint "gh pr merge ${PR} --squash --match-head-commit ${HEAD_OID}" \
-    '{status: $status, head_ref_oid: $head, blockers: $blockers, facts: $facts, merge_command_hint: $hint}'
+    '{status: $status, head_ref_oid: $head, base_ref_oid: $base, blockers: $blockers, facts: $facts, merge_command_hint: $hint}'
 exit "$exit_code"
