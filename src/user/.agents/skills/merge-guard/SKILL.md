@@ -28,11 +28,28 @@ happens **iff the PR is eligible (no blockers) AND the action is authorized
 Identify `owner`, `repo`, PR number (explicit argument, conversation context,
 or `gh pr view --json number,url`), and the repo root.
 
-### Step 2: Resolve the policy
+Fetch and retain the live SHAs every later step binds to:
 
 ```bash
+gh pr view <n> --repo <owner>/<repo> --json headRefOid,baseRefOid,baseRefName
+```
+
+`head_ref_oid`, `base_ref_oid`, and `base_ref` from this call are the trusted
+values — never a bare `HEAD` that a stale local checkout could resolve
+differently.
+
+### Step 2: Resolve the policy
+
+Read `project-config.toml` from the **base** ref fetched at Step 1, never the
+working tree or head — reading from head would let a PR that edits
+`[merge-policy]` define the rule that merges it. Base-resolution closes that
+hole (and is double-locked by the protected-path gate at Step 4, which
+independently abstains on any diff touching `project-config.toml`).
+
+```bash
+git show <base_ref_oid>:project-config.toml > "$TMP_BASE_CFG"
 POLICY_JSON=$(python3 "${CLAUDE_SKILL_DIR}/resolve_policy.py" \
-  --project-config "<repo-root>/project-config.toml" \
+  --project-config "$TMP_BASE_CFG" \
   --labels "<comma-separated bead labels, or empty>")
 ```
 
@@ -68,8 +85,9 @@ ${CLAUDE_SKILL_DIR}/check-merge-eligibility.sh \
 | 1 | Blocked — every reason in `.blockers[]` |
 | 3 | Error — unknown state. Report it. **Do not merge.** |
 
-The JSON carries: `head_ref_oid` (the SHA every fact was computed against),
-`blockers[]` (`{code, details}`), `facts` (`bot_clean_review_at_head`,
+The JSON carries: `head_ref_oid` and `base_ref_oid` (the SHAs every fact was
+computed against — Step 5 re-confirms both are still current), `blockers[]`
+(`{code, details}`), `facts` (`bot_clean_review_at_head`,
 `distinct_current_approvers`, `ci_state`, `review_wait`, `admin_bypass`, ...),
 and `merge_command_hint`.
 
@@ -116,7 +134,19 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
 |------|-----------|
 | `bot-quiescence` | `facts.bot_clean_review_at_head == true` (a trusted `bot-reviewers` identity actually reviewed the current head clean) |
 | `human-approvals` | `facts.distinct_current_approvers >= human_approvers_required` |
-| `agent-ruling` | Never (design-reserved) — the resolver already rejects it; if somehow reached, report "not implemented" and hand off |
+| `agent-ruling` | `judge_merge.py` returns `verdict == "go"` (bound to `head_ref_oid` + `base_ref_oid`). `no-go`/`abstain`/error → report `abstain_reason` and hand off. NO retry, NO re-run to shop a pass — a `no-go` is recorded terminal for that (head, base, diff), and the per-PR/base attempt budget caps re-rolls. |
+
+Unlike `bot-quiescence`/`human-approvals` (read straight from Step 3's
+`facts`), `agent-ruling` requires actually invoking the judge:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/judge_merge.py" \
+  --owner <owner> --repo <repo> --pr <n> \
+  --head-ref-oid <head_ref_oid> --base-ref-oid <base_ref_oid> --base-ref <base_ref> \
+  --policy-json "$POLICY_JSON"
+```
+
+The rule holds iff the emitted `verdict == "go"`.
 
 - Rule holds + eligible → merge now (Step 5). Announce what authorized it:
   > "Merging PR #N under rule-based policy (`bot-quiescence`): Copilot
@@ -127,6 +157,15 @@ it", "ship it", "yes merge". "ok"/"sure" are not sufficient.
   facts.
 
 ### Step 5: Merge, bound to the checked head
+
+Immediately before merging, re-run the **full Step 3 eligibility floor** — not
+merely a head/base currency check. Require exit 0, `head_ref_oid` **and**
+`base_ref_oid` unchanged since Step 1, and zero blockers. Any new same-head
+blocker (a fresh `CHANGES_REQUESTED`, thread, or comment that landed during a
+wait or the judge's run) → terminal hand-off, never a blind retry. This is the
+same discipline `explicit` mode already applies after a wait (Step 4), carried
+through to every path — most importantly `agent-ruling`'s minutes-long judge
+window, where review state has the most time to shift underneath it.
 
 ```bash
 gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
@@ -181,6 +220,7 @@ authorization already succeeded, in both `explicit` and `rule-based` modes.
 | explicit | yes | n/a | yes | **Merge** |
 | explicit | no | n/a | yes | **Fail closed**; offer wait / named force-merge |
 | rule-based | yes | yes | n/a | **Merge autonomously** |
+| rule-based (`agent-ruling`) | yes | judge `verdict == "go"` | n/a | **Merge autonomously** — only after Step 5's full-floor re-clear |
 | rule-based | yes | no | any | Report; wait or hand off (no force-merge) |
 | rule-based | no | any | any | Report blockers (no force-merge) |
 
@@ -197,3 +237,4 @@ authorization already succeeded, in both `explicit` and `rule-based` modes.
 | "`gh pr merge` exited 0, so it merged" | It can exit 0 on rejection. Confirm state == MERGED. |
 | "GitHub's review rule blocked it, just add `--admin`" | Only if `facts.admin_bypass.current_actor_can_bypass == true` **and** you've read the rejection text and confirmed it names the review requirement. If false, or you didn't check the text, hand off — don't force it. |
 | "`--admin` only bypasses the review rule" | It's a blanket ruleset bypass. `facts.admin_bypass` only certifies the `pull_request` rule(s) are bypassable, not every rule in the ruleset. |
+| "The judge said no-go, just run it again" | A `no-go` is terminal for that (head, base, diff); re-running to shop a pass is verdict-shopping. Hand off. |
