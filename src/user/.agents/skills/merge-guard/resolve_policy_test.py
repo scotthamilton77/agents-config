@@ -34,6 +34,11 @@ class TestDefaults(unittest.TestCase):
             "human_review_timeout_seconds": None,
             "merge_authorization": "explicit",
             "merge_rule": None,
+            "judge_backend": "codex",
+            "judge_model": "gpt-5.5",
+            "judge_effort": "high",
+            "judge_timeout_seconds": 900,
+            "judge_max_attempts": 2,
         })
 
 
@@ -159,11 +164,63 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("bot-review-expected", err)
 
-    def test_agent_ruling_not_implemented(self):
-        code, _, err = self._resolve(
+    def test_agent_ruling_resolves(self):
+        code, out, err = self._resolve(
             '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n')
+        self.assertEqual(code, 0, err)
+        policy = json.loads(out)
+        self.assertEqual(policy["merge_rule"], "agent-ruling")
+        self.assertEqual(policy["merge_authorization"], "rule-based")
+        # judge defaults present
+        self.assertEqual(policy["judge_backend"], "codex")
+        self.assertEqual(policy["judge_model"], "gpt-5.5")
+        self.assertEqual(policy["judge_effort"], "high")
+        self.assertEqual(policy["judge_timeout_seconds"], 900)
+        self.assertEqual(policy["judge_max_attempts"], 2)
+
+    def test_agent_ruling_resolves_bot_false_humans_zero(self):
+        code, out, err = self._resolve(
+            '[review-expectations]\nbot-review-expected = false\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n')
+        self.assertEqual(code, 0, err)
+        policy = json.loads(out)
+        self.assertFalse(policy["bot_review_expected"])
+        self.assertEqual(policy["human_approvers_required"], 0)
+
+    def test_bad_judge_effort_rejected(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n'
+            'judge-effort = "extreme"\n')
         self.assertEqual(code, 1)
-        self.assertIn("not yet implemented", err)
+        self.assertIn("judge-effort", err)
+
+    def test_bad_judge_backend_rejected(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n'
+            'judge-backend = "ollama"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("judge-backend", err)
+
+    def test_underivable_judge_model_family_rejected(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n'
+            'judge-model = "llama-3"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("judge-model", err)
+
+    def test_non_int_judge_max_attempts_rejected(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "agent-ruling"\n'
+            'judge-max-attempts = "lots"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("judge-max-attempts", err)
+
+    def test_judge_keys_without_agent_ruling_rejected(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n'
+            'judge-model = "gpt-5.5"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("judge", err)
 
     def test_valid_rule_based_bot_quiescence_resolves(self):
         code, out, err = self._resolve(
