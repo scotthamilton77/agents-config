@@ -63,6 +63,15 @@ class TestAttemptBudget(unittest.TestCase):
     def test_fresh_budget_not_exhausted(self):
         self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
 
+    def test_corrupt_attempts_file_reads_zero(self):
+        # A non-dict (but valid JSON) counter file must not raise; treat as 0 (== absent).
+        path = jm._attempts_path(self.state, "o", "r", "5", "b")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(["not", "a", "dict"], fh)
+        self.assertEqual(jm._read_attempts(path), 0)
+        self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "b", max_attempts=2))
+
     def test_bump_then_exhausted_at_max(self):
         jm.bump_attempts(self.state, "o", "r", "5", "base1")
         self.assertFalse(jm.budget_exhausted(self.state, "o", "r", "5", "base1", max_attempts=2))
@@ -155,6 +164,30 @@ class TestProvenanceGate(unittest.TestCase):
                                            judge_family="openai", git_runner=self._rev_list(["c1", "c2"]))
         self.assertFalse(ok)
         self.assertEqual(reason, "unattested-commit")
+
+    def test_commits_not_a_list_abstains(self):
+        self._write("h", "not-a-list")  # commits must be a list
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+
+    def test_commit_entry_not_dict_abstains(self):
+        self._write("h", ["c1"])  # a list, but the entry is a bare string, not a dict
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "invalid-provenance")
+
+    def test_non_dict_provenance_record_abstains(self):
+        # a top-level non-dict JSON provenance file must not raise -> treated as no record
+        path = os.path.join(self.state, "pr-provenance", "o~r~5~h.provenance.json")
+        with open(path, "w") as fh:
+            json.dump(["not", "a", "dict"], fh)
+        ok, reason, _ = jm.provenance_gate(self.state, "o", "r", "5", "b", "h",
+                                           judge_family="openai", git_runner=self._rev_list(["c1"]))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "no-provenance")
 
     def test_author_families_string_not_list_abstains(self):
         # A malformed sidecar with author_families as the bare string "openai"

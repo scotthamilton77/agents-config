@@ -67,10 +67,13 @@ def _attempts_path(state: str, owner: str, repo: str, pr: str, base: str) -> str
 
 
 def _read_attempts(path: str) -> int:
+    # A corrupt/malformed counter reads as 0 (same as absent) — a re-roll bound,
+    # not an authorization; a non-dict/bad-shape file must not raise.
     try:
         with open(path) as fh:
-            return int(json.load(fh).get("count", 0))
-    except (OSError, ValueError):
+            data = json.load(fh)
+        return int(data["count"]) if isinstance(data, dict) else 0
+    except (OSError, ValueError, KeyError, TypeError):
         return 0
 
 
@@ -121,9 +124,10 @@ def _read_provenance(state: str, owner: str, repo: str, pr: str, head: str) -> d
     path = os.path.join(state, "pr-provenance", f"{owner}~{repo}~{pr}~{head}.provenance.json")
     try:
         with open(path) as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None  # non-dict JSON -> treat as no record
 
 
 def _base_head_commits(base: str, head: str, git_runner) -> list[str]:
@@ -159,7 +163,10 @@ def provenance_gate(state: str, owner: str, repo: str, pr: str, base: str, head:
     record = _read_provenance(state, owner, repo, pr, head)
     if record is None or record.get("head_sha") != head:
         return (False, "no-provenance", [])
-    by_sha = {c.get("sha"): c for c in record.get("commits", [])}
+    commits = record.get("commits")
+    if not isinstance(commits, list) or not all(isinstance(c, dict) for c in commits):
+        return (False, "invalid-provenance", [])
+    by_sha = {c.get("sha"): c for c in commits}
     fams: set[str] = set()
     for sha in _base_head_commits(base, head, git_runner):
         entry = by_sha.get(sha)
