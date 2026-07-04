@@ -360,17 +360,25 @@ NOT block the chain; its absence simply forces a later `abstain` (fail-closed).
 if [ "$(jq -r '.merge_rule' <<<"$POLICY_JSON")" = "agent-ruling" ]; then
   NEW_HEAD=$(git rev-parse HEAD)
   BASE_REF=$(gh pr view "$PR" --repo "$OWNER/$REPO" --json baseRefName --jq .baseRefName)
-  # ONE --commit per commit in origin/$BASE_REF..$NEW_HEAD — the gate needs an
-  # entry for EVERY commit, not just the tip. Attest FIRST-HAND the family(ies)
-  # this session's fix subagents produced; trailer-derived for any it did not.
+  # Ensure the base ref is present locally (a minimal checkout may lack
+  # origin/$BASE_REF); FETCH_HEAD is then the base tip.
+  git fetch --quiet origin "$BASE_REF" || true
+  # ONE --commit per commit in base..$NEW_HEAD — the gate needs an entry for
+  # EVERY commit, not just the tip. Attest FIRST-HAND the family(ies) this
+  # session's fix subagents produced; trailer-derived for any it did not.
   COMMIT_ARGS=()
   while read -r sha; do
     COMMIT_ARGS+=(--commit "${sha}:<family[+family]>:first-hand")
-  done < <(git rev-list "origin/${BASE_REF}..${NEW_HEAD}")
-  python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
-    --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
-    "${COMMIT_ARGS[@]}" \
-    --recorded-by "wait-for-pr-comments" || true
+  done < <(git rev-list "FETCH_HEAD..${NEW_HEAD}" 2>/dev/null)
+  # Only record if we actually enumerated commits — an empty list would make
+  # record_provenance error on its required --commit (fail-closed: no sidecar
+  # → the judge later abstains) and mask why.
+  if [ "${#COMMIT_ARGS[@]}" -gt 0 ]; then
+    python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" \
+      --owner "$OWNER" --repo "$REPO" --pr "$PR" --head-sha "$NEW_HEAD" \
+      "${COMMIT_ARGS[@]}" \
+      --recorded-by "wait-for-pr-comments" || true
+  fi
 fi
 ```
 
