@@ -386,6 +386,22 @@ if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
     fi
 fi
 set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
+# ── Fact: bot_review_cap_exhausted (head-exact, fail-closed) ─────────────────
+# Read ONLY the inventory for the CURRENT head (filename embeds HEAD_OID).
+# Never the glob-all used by the untriaged scan below — a stale
+# exhausted=true from a superseded head must not leak onto a fresh head.
+# Absent/malformed/missing-field all resolve to false (force-merge stays
+# locked unless the one-ask budget is provably spent for THIS head).
+cap_inv="${HOME}/.claude/state/pr-inventory/${OWNER}-${REPO}-${PR}-${HEAD_OID}.json"
+# Type-strict: jq -r prints both boolean true and string "true" as the bare
+# word `true`, so a bash string compare fails-OPEN on a string value. Use
+# jq's own typed equality (-e exit status) — a string never equals boolean
+# true, and absent/malformed also exit non-zero, so the fact stays false.
+bot_cap_exhausted=false
+if [[ -f "$cap_inv" ]] && jq -e '(.polling.bot_review_cap_exhausted // false) == true' "$cap_inv" >/dev/null 2>&1; then
+    bot_cap_exhausted=true
+fi
+set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 # ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
 # review_summary / issue_comment items are disjoint GitHub objects from review
 # threads — the thread check does not cover them, and prgroom's

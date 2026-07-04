@@ -34,6 +34,7 @@ class TestDefaults(unittest.TestCase):
             "human_review_timeout_seconds": None,
             "merge_authorization": "explicit",
             "merge_rule": None,
+            "allow_force_after_bot_timeout": False,
         })
 
 
@@ -172,6 +173,44 @@ class TestValidation(unittest.TestCase):
         policy = json.loads(out)
         self.assertEqual(policy["merge_authorization"], "rule-based")
         self.assertEqual(policy["merge_rule"], "bot-quiescence")
+
+    def test_allow_force_after_bot_timeout_ok_with_bot_quiescence(self):
+        code, out, _ = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["allow_force_after_bot_timeout"])
+
+    def test_allow_force_after_bot_timeout_default_false(self):
+        code, out, _ = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n')
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(out)["allow_force_after_bot_timeout"])
+
+    def test_allow_force_after_bot_timeout_rejected_with_human_approvals(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nhuman-approvers-required = 1\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "human-approvals"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 1)
+        self.assertIn("allow-force-after-bot-timeout", err)
+
+    def test_allow_force_after_bot_timeout_rejected_under_explicit(self):
+        code, _, err = self._resolve(
+            '[merge-policy]\nmerge-authorization = "explicit"\n'
+            'allow-force-after-bot-timeout = true\n')
+        self.assertEqual(code, 1)
+        self.assertIn("allow-force-after-bot-timeout", err)
+
+    def test_allow_force_after_bot_timeout_type_mismatch(self):
+        code, _, err = self._resolve(
+            '[review-expectations]\nbot-review-expected = true\nbot-reviewers = ["Copilot"]\n'
+            '[merge-policy]\nmerge-authorization = "rule-based"\nmerge-rule = "bot-quiescence"\n'
+            'allow-force-after-bot-timeout = "yes"\n')
+        self.assertEqual(code, 1)
+        self.assertIn("boolean", err)
 
 
 class TestRepoOwnPolicy(unittest.TestCase):

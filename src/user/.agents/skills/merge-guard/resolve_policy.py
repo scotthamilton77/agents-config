@@ -49,6 +49,7 @@ class ReviewMergePolicy:
     # Axis 2 — merge authorization
     merge_authorization: str  # "never" | "explicit" | "rule-based"
     merge_rule: str | None    # "bot-quiescence" | "human-approvals" | "agent-ruling"
+    allow_force_after_bot_timeout: bool  # opt-in escape hatch, bot-quiescence only
 
 
 DEFAULTS = ReviewMergePolicy(
@@ -59,6 +60,7 @@ DEFAULTS = ReviewMergePolicy(
     human_review_timeout_seconds=None,    # wait indefinitely
     merge_authorization="explicit",       # today's law, unchanged
     merge_rule=None,
+    allow_force_after_bot_timeout=False,
 )
 
 
@@ -68,7 +70,7 @@ REVIEW_EXPECTATION_KEYS = {
     "bot-review-expected", "bot-reviewers", "bot-inactivity-timeout",
     "human-approvers-required", "human-review-timeout",
 }
-MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule"}
+MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule", "allow-force-after-bot-timeout"}
 
 
 def parse_duration(value: object, key: str) -> int:
@@ -165,6 +167,9 @@ def validate(policy: ReviewMergePolicy) -> None:
             raise PolicyError("merge-rule=bot-quiescence requires bot-review-expected = true")
     if policy.merge_rule == "agent-ruling":
         raise PolicyError("merge-rule=agent-ruling is design-reserved and not yet implemented")
+    if policy.allow_force_after_bot_timeout and policy.merge_rule != "bot-quiescence":
+        raise PolicyError(
+            "allow-force-after-bot-timeout is only valid with merge-rule=bot-quiescence")
 
 
 def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergePolicy:
@@ -193,6 +198,9 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
         human_review_timeout_seconds=human_timeout,
         merge_authorization=_typed(merge, "merge-authorization", str, DEFAULTS.merge_authorization),
         merge_rule=_typed(merge, "merge-rule", str, DEFAULTS.merge_rule),
+        allow_force_after_bot_timeout=_typed(
+            merge, "allow-force-after-bot-timeout", bool,
+            DEFAULTS.allow_force_after_bot_timeout),
     )
     policy = apply_labels(policy, bead_labels)
     validate(policy)

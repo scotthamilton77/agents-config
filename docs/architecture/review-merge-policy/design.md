@@ -229,6 +229,49 @@ cannot pick unsafe defaults.
 - This predicate relies on the eligibility floor's triage-completeness facts;
   it does not add a parallel comment-classification mechanism.
 
+**bot-quiescence retry and escape hatch** (behavior once the positive fact
+above is not yet satisfied — never a blocker itself, and distinct from the
+eligibility-bypass override in Consumers):
+
+- A bot that has not yet produced a qualifying clean review at the current
+  head gets **at most one** re-review ask per head: merge-guard calls
+  `request-rereview.sh` plus the re-review poll helpers directly, never by
+  re-invoking the full `wait-for-pr-comments` skill — that skill skips its own
+  re-request phase when there is no untriaged feedback to process, so it
+  would silently no-op on exactly this residual. merge-guard then re-evaluates
+  the predicate above against the unchanged head; a clean re-review now
+  satisfies the rule and merges.
+- Two facts govern the ask: `polling.rereview_round_count`, a persisted count
+  of *silent* re-review asks on the current head only (rounds where the bot
+  actually responded are not counted), and `facts.bot_review_cap_exhausted`, a
+  boolean that gates every decision below. `bot_review_cap_exhausted` is set
+  true by either of two independent triggers — a chatty bot that keeps
+  re-reviewing past its existing `round >= 6` cap, or a silent bot that
+  reaches the one-ask `rereview_round_count` cap — with no unified count
+  across the two.
+- `check-merge-eligibility.sh` reads `bot_review_cap_exhausted` from the
+  single inventory file whose name embeds the PR's *current* head SHA, never
+  by globbing across a PR's retained inventories. A stale `exhausted = true`
+  recorded against a superseded head can therefore never leak onto a fresh
+  one — a genuinely new fix commit gets a fresh inventory and the count
+  restarts at zero. Absent, unreadable, or field-missing inventory data all
+  resolve to `false`: this fact is fail-closed in every failure mode.
+- Once the ask is spent and the bot has stayed silent, an opt-in
+  `allow-force-after-bot-timeout` key (default `false`, valid only when
+  `merge-rule = bot-quiescence`) unlocks a scoped force-merge. It is reachable
+  only when eligibility is clean, the rule is still unmet, the ask is spent,
+  the config key is set, and a fresh in-session human instruction names the
+  bot-quiescence blocker — all five simultaneously, never a standing grant.
+  Because eligibility already holds when this fires, it bypasses only the
+  unmet rule, not the eligibility floor; it is not a second instance of the
+  eligibility-bypass override described in Consumers.
+- This scoped force-merge performs its own terminal merge and never enters
+  the `--admin` bypass ladder described in Consumers: that ladder remains
+  reserved for merges authorized through the rule and explicit-instruction
+  paths above, not for a merge reached via this bypass. A GitHub rejection of
+  the scoped force-merge ends in hand-off, never an escalation to a bypass
+  the human did not authorize for it.
+
 **admin-bypass availability** (never a blocker — informs *how* Step 5 issues
 an already-authorized merge, not *whether* one is eligible):
 
