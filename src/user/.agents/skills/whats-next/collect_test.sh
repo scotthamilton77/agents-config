@@ -898,4 +898,36 @@ grep -qE '^ready --limit 0 --json$' "$CALL_LOG" \
     || fail "T14: bd ready must be called with '--limit 0' to avoid the 100-row cap (calls: $(cat "$CALL_LOG"))"
 pass "T14: bd ready is invoked with --limit 0 (no silent 100-row cap)"
 
+# -----------------------------------------------------------------------------
+# T15. parse_bd_timestamp always returns a timezone-aware datetime (or None).
+# Regression for PR #231 comment 3525472321: an offsetless ISO string parsed
+# to a NAIVE datetime, which raised TypeError in claim_age_days() (subtracting
+# from an aware datetime.now) and in build_in_flight's sort key (comparing
+# against an aware datetime.max). Non-string input must return None, not raise.
+# -----------------------------------------------------------------------------
+python3 - "$COLLECT_PY" <<'PY' || fail "T15: parse_bd_timestamp naive/non-string handling incorrect"
+import importlib.util, sys
+from datetime import datetime, timezone
+spec = importlib.util.spec_from_file_location("collect_mod", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+# Offsetless (naive) ISO string → aware datetime coerced to UTC.
+aware = mod.parse_bd_timestamp("2026-07-04T17:58:57")
+assert aware is not None, "offsetless timestamp must parse, not return None"
+assert aware.tzinfo is not None, "offsetless parse must be coerced to an aware datetime"
+assert aware.utcoffset() == timezone.utc.utcoffset(None), "naive parse must be coerced to UTC"
+# Aware arithmetic against now(utc) must not raise (the reported TypeError).
+_ = datetime.now(timezone.utc) - aware
+
+# Z-suffixed timestamp stays aware.
+zaware = mod.parse_bd_timestamp("2026-07-04T17:58:57Z")
+assert zaware is not None and zaware.tzinfo is not None, "Z-suffixed parse must be aware"
+
+# Non-string / missing input → None, never raising.
+for bad in (None, 12345, [], {}, ""):
+    assert mod.parse_bd_timestamp(bad) is None, f"non-string/empty input {bad!r} must return None"
+PY
+pass "T15: parse_bd_timestamp returns aware datetimes and None for non-string/missing input"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."

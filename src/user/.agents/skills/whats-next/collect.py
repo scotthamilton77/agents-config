@@ -306,16 +306,25 @@ PR_URL_RE = re.compile(r"https://github\.com/\S+/pull/\d+")
 
 
 def parse_bd_timestamp(ts):
-    """Parse a bd ISO-8601 UTC timestamp (e.g. '2026-07-04T17:58:57Z') to an
-    aware datetime. Returns None on missing/unparseable input so callers
-    degrade gracefully instead of raising.
+    """Parse a bd ISO-8601 UTC timestamp (e.g. '2026-07-04T17:58:57Z') to a
+    timezone-aware datetime. Returns None on missing/non-string/unparseable
+    input so callers degrade gracefully instead of raising.
+
+    An offsetless ISO string (no trailing 'Z' or explicit offset) parses to a
+    naive datetime; it is coerced to UTC so every non-None return is aware.
+    This keeps downstream arithmetic against `datetime.now(timezone.utc)`
+    (claim_age_days) and comparison against an aware `datetime.max`
+    (build_in_flight's sort key) from raising TypeError on naive/aware mixes.
     """
-    if not ts:
+    if not isinstance(ts, str) or not ts:
         return None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except ValueError:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def claim_age_days(started_at):
