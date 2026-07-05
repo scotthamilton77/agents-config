@@ -4,7 +4,7 @@
 **Status:** Draft (pending review)
 **Beads:** agents-config-528x8 (provenance re-record), agents-config-tlqn4 (injection-resistance eval)
 **Related specs:** `2026-07-03-agent-ruling-merge-judge.md` (the judge this hardens; its §Provenance and §Prompt-injection residuals are the two gaps closed here).
-**Decision:** (1) Add trailer-based commit-family derivation (`commit_family.py`) and an `--auto` mode to `record_provenance.py` that enumerates `base..head`, attests first-hand only the running session's own commits (matched by `Claude-Session` trailer), carries prior **first-hand** attestations across a moved head by merging all existing sidecars for the PR, recomputes trailer-derived entries fresh, and prunes superseded head-keyed sidecars. The manual `--commit` mode and `judge_merge.py`'s gate semantics are unchanged. (2) Build a curated live-model persuasion eval (hostile fixtures + benign controls, 100% single-pass bar) that exercises the production judge code path, required before any repo first enables `agent-ruling` and re-required on judge-prompt or judge-model change.
+**Decision:** (1) Add trailer-based commit-family derivation (`commit_family.py`) and an `--auto` mode to `record_provenance.py` that enumerates `base..head`, attests first-hand only the running session's own commits (matched by `Claude-Session` trailer), floors every first-hand commit's family set with the delivering session's own family, carries prior **first-hand** attestations across a moved head by merging all existing sidecars for the PR, recomputes trailer-derived entries fresh, and prunes superseded head-keyed sidecars. The manual `--commit` mode and `judge_merge.py`'s gate semantics are unchanged. (2) Build a curated live-model persuasion eval (hostile fixtures + benign controls, 100% single-pass bar) that composes the production judge functions, required before any repo first enables `agent-ruling` and re-required on judge-prompt or judge-model change.
 
 ## Part I — Provenance auto re-record (agents-config-528x8)
 
@@ -46,7 +46,9 @@ exactly the multi-push PRs it should serve.
   `Claude-Session: https://claude.ai/code/session_<id>`. Copilot commits appear as
   `Co-Authored-By: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>`
   or authored by `copilot-swe-agent[bot]`. Human commits carry no `Co-Authored-By`
-  trailer at all.
+  trailer at all. Both Claude trailers are stamped by convention, not enforcement —
+  the derivation below must therefore never let a *partially*-trailered commit
+  weaken the gate.
 
 ### 3. `commit_family.py` — authorship-signal → family derivation
 
@@ -54,20 +56,28 @@ New stdlib-only module in the merge-guard skill dir, peer to `model_family.py`, 
 an injectable git runner (same pattern as `judge_merge.py`) so it is unit-testable
 without a repo.
 
-**Contract.** For a commit SHA, read the commit's author identity and all
-`Co-Authored-By` trailers (case-insensitive key match), map each signal:
+**Contract.** For a commit SHA, collect its authorship signals: the git author
+(name + email), every `Co-Authored-By` trailer (case-insensitive key match; name +
+email), and every session-identity trailer (`Claude-Session` today). Matching is
+**tokenized, never raw-substring**: lowercase each signal string, split it into
+alphanumeric token runs, and fire a table row on token equality, the stated token
+prefix, or email-domain equality. A raw substring scan is forbidden —
+`bob@studio3.com` tokenizes to `bob`/`studio3`/`com` and must fire no row.
 
-| Signal (case-insensitive substring/prefix on name + email) | Family |
+| Signal | Family |
 |---|---|
-| `claude` | `anthropic` |
-| `gpt-`, `o1`/`o3`/`o4` model prefixes, `chatgpt`, `codex`, `copilot` | `openai` |
-| `gemini` | `google` |
-| no `Co-Authored-By` trailer and no AI author signal | `human` |
+| token `claude`; email domain `anthropic.com`; presence of a `Claude-Session` trailer | `anthropic` |
+| token prefix `gpt`; token `o1`/`o3`/`o4`/`chatgpt`/`codex`/`copilot`; email domain `openai.com` | `openai` |
+| token `gemini`; email domain `google.com` | `google` |
+| no trailers and no AI signal on the git author | `human` |
 
-The returned family set is the union of all mapped signals. An authorship signal that
+The returned family set is the union of all fired rows. An authorship signal that
 maps to nothing (an unknown bot) contributes no family; if the union ends up empty
 despite trailers being present, the derivation falls back to `["human"]` (the git
-author is a person even when a co-author is unrecognized).
+author is a person even when a co-author is unrecognized). The `Claude-Session`
+row is deliberate: the session trailer is itself an AI-authorship signal, not just
+an identity key, so a Claude-delivered commit derives `anthropic` even when its
+`Co-Authored-By` trailer was dropped or reworded.
 
 **Copilot → `openai`: stakes are bounded.** This mapping is an assumption about
 Copilot's backend, recorded here as a deliberate decision. Its blast radius is
@@ -84,7 +94,7 @@ The manual `--commit` mode stays intact (tests, deliberate overwrites). New mode
 ```
 python3 record_provenance.py --auto \
   --owner <o> --repo <r> --pr <n> --head-sha <sha> \
-  --base-ref <base>          # e.g. origin/main; enumerates base..head-sha
+  --base-ref <base-oid>      # the PR's base OID; enumerates base..head-sha
   --session <url-or-id>      # this session's Claude-Session identity
   --recorded-by <identity>
 ```
@@ -92,22 +102,42 @@ python3 record_provenance.py --auto \
 Run from the repo root (git commands execute in cwd; runner injectable for tests).
 Algorithm:
 
-1. **Enumerate** `git rev-list <base-ref>..<head-sha>`.
+1. **Enumerate** `git rev-list <base-ref>..<head-sha>`. Pass the PR's base **OID**
+   (`gh pr view --json baseRefOid`), not a symbolic ref: `provenance_gate`
+   enumerates against the OIDs handed to the judge, and a symbolic base that
+   advances between record and judge diverges the two commit sets — fail-safe
+   (abstain), but an avoidable abstain on active PRs.
 2. **Merge base.** Glob `<state>/pr-provenance/<owner>~<repo>~<pr>~*.provenance.json`
    (every prior head's sidecar for this PR — the `~`-separator sanitizing in §2
-   guarantees the glob cannot match across PRs). Union their commit entries by SHA,
-   keeping **only `first-hand` entries**. Authorship is immutable, so a first-hand
+   guarantees the glob cannot match across PRs; `owner`/`repo`/`pr` are
+   `_safe_component`-validated **before** glob composition, with the rejection set
+   extended to the glob metacharacters `*`, `?`, `[` — defense-in-depth; these
+   values come from `gh`, not the diff). Union their commit entries by SHA, keeping
+   **only `first-hand` entries**. Authorship is immutable, so a first-hand
    attestation made when a commit was created stays valid forever; carrying it
    forward is what lets a moved head keep authorization without re-attesting history.
-   Trailer-derived entries are **never carried** — they are cheap to recompute and
-   recomputing avoids propagating a stale read.
+   When the same SHA appears first-hand in more than one prior sidecar, union the
+   entries' `author_families`; for `attested_by` (audit-only) keep the
+   lexicographically smallest value among the sources — deterministic, no mtime
+   dependence. Trailer-derived entries are **never carried** — they are cheap to
+   recompute and recomputing avoids propagating a stale read.
 3. **Attest fresh** every enumerated SHA not already carried:
    - If the commit's `Claude-Session` trailer matches `--session` (comparison on the
      normalized final path segment; input accepts full URL or bare
-     `session_…` token) → `first-hand`, families from `commit_family.py`.
+     `session_…` token) → `first-hand`, families = the `commit_family.py`
+     derivation **unioned with the session's own family** (`Claude-Session` ⇒
+     `anthropic`). The no-signal `human` fallback never applies to a
+     session-matched commit: a first-hand entry whose `Co-Authored-By` trailer is
+     missing or unrecognized still records the session family, so it can never
+     read `["human"]` and let a same-family judge self-approve (§6). Foreign
+     content delivered by this session (e.g. a Codex-written change committed
+     here) keeps its co-author family too — the union carries both.
    - Otherwise → `trailer-derived`, families from `commit_family.py`. This includes
      the session's own commits that are missing the trailer — fail-closed by design;
-     the fix is trailer discipline, not looser matching.
+     the fix is trailer discipline, not looser matching. If **zero** enumerated
+     commits match `--session`, emit a stderr warning (a mis-supplied `--session`
+     makes every commit trailer-derived and guarantees an abstain) but still write
+     the record.
 4. **Write** the new head-keyed sidecar atomically (temp + `os.replace`, as today).
    Each commit entry gains an optional `attested_by` field recording who attested it
    (fresh entries use `--recorded-by`; carried entries keep their original attester,
@@ -124,10 +154,26 @@ trailers get added to the same match (out of scope here).
 ### 5. Delivery-workflow change
 
 The hand-assembled `--commit` snippet in `finishing-a-development-branch/SKILL.md`
-(the "Record out-of-band authorship provenance" block) is replaced by a single
-`--auto` invocation. The prose warning ("never first-hand-attest a commit you did not
-author") shrinks to one line stating the tool now enforces it. The re-record-on-every-
-push instruction stays, and becomes safe to follow mechanically — that is the point.
+(the "Record out-of-band authorship provenance" block) is replaced by this
+mechanically-fillable block:
+
+```bash
+PR=$(gh pr view --json number --jq .number)
+BASE_OID=$(gh pr view --json baseRefOid --jq .baseRefOid)
+HEAD_SHA=$(git rev-parse HEAD)
+python3 "${HOME}/.claude/skills/merge-guard/record_provenance.py" --auto \
+  --owner <owner> --repo <repo> --pr "$PR" --head-sha "$HEAD_SHA" \
+  --base-ref "$BASE_OID" \
+  --session "<your session identity — the exact value you stamp as the Claude-Session commit trailer>" \
+  --recorded-by "<this delivery session's identity>"
+```
+
+`--session` needs no new discovery mechanism: it is the same string the session
+already appends to every commit it authors — a session that can write the trailer
+can pass the flag. The prose warning ("never first-hand-attest a commit you did not
+author") shrinks to one line stating the tool now enforces it. The
+re-record-on-every-push instruction stays, and becomes safe to follow mechanically —
+that is the point.
 
 ### 6. Security analysis
 
@@ -138,6 +184,14 @@ push instruction stays, and becomes safe to follow mechanically — that is the 
   session-trailer match instead of agent judgment under prose rules. The failure
   direction of every edge (missing trailer, unknown bot, foreign commit) is
   trailer-derived → abstain → human. No new path to a false `go`.
+- **First-hand family floor.** A session-matched commit records the session's family
+  even when its `Co-Authored-By` trailer is missing or reworded. Without the floor,
+  such a commit would derive `["human"]` while being attested first-hand, and
+  `provenance_gate` — seeing no AI family in the record — would let a judge of the
+  *authoring* family authorize its own model's code. The floor closes the one
+  authorize-direction edge the auto mode would otherwise introduce; it is why §3's
+  `Claude-Session` derivation row and §4 step 3's union are both normative, not
+  advisory.
 - **Carried attestations.** Carrying first-hand entries across heads does not weaken
   the gate: the entry was written by a session that satisfied the match rule when the
   commit was fresh, the commit SHA is content-addressed (a rebased/amended commit gets
@@ -153,19 +207,29 @@ TDD discipline.
 
 1. Family derivation: correct families for fixtures covering each mapping row of §3,
    multiple co-authors (union), both observed Copilot forms, no-trailer human commits,
-   and an unknown bot (falls back `human`, never errors).
-2. Auto mode, fresh PR: session-trailer commits → `first-hand`; foreign-trailer
-   commits → `trailer-derived`; session commits missing the trailer → `trailer-derived`.
+   an unknown bot (falls back `human`, never errors), token-boundary negatives
+   (`bob@studio3.com` fires no row), email-domain positives
+   (`noreply@anthropic.com` ⇒ `anthropic`), and a commit whose only signal is a
+   `Claude-Session` trailer (⇒ `anthropic`).
+2. Auto mode, fresh PR: session-matched commits → `first-hand` with families unioned
+   with the session family — a session-matched commit with a missing or unrecognized
+   `Co-Authored-By` trailer records families ⊇ {`anthropic`}, never `["human"]`;
+   foreign-trailer commits → `trailer-derived`; session commits missing the
+   `Claude-Session` trailer → `trailer-derived`.
 3. Auto mode, moved head: prior first-hand entries carried with original
-   `attested_by`; prior trailer-derived entries recomputed, not carried; superseded
-   sidecars pruned only after a successful new write; a failed write leaves prior
-   sidecars intact.
-4. Glob isolation: sidecars of other PRs/repos are never read or pruned.
+   `attested_by`; colliding first-hand entries for one SHA union their
+   `author_families` with the deterministic `attested_by` pick of §4; prior
+   trailer-derived entries recomputed, not carried; superseded sidecars pruned only
+   after a successful new write; a failed write leaves prior sidecars intact.
+4. Glob isolation: sidecars of other PRs/repos are never read or pruned; glob
+   components are `_safe_component`-validated with glob metacharacters rejected.
 5. `provenance_gate` consumes a merged record unchanged: all-first-hand → authorizes;
    any trailer-derived in range → abstains. Existing gate tests stay green,
    unmodified.
-6. `finishing-a-development-branch/SKILL.md` snippet replaced; no remaining
-   instruction to hand-assemble `--commit` entries in auto-eligible flows.
+6. `finishing-a-development-branch/SKILL.md` snippet replaced with the §5 block; no
+   remaining instruction to hand-assemble `--commit` entries in auto-eligible flows.
+7. Zero session-matched commits in `base..head` → stderr warning emitted; the record
+   is still written (every entry trailer-derived → gate abstains).
 
 ## Part II — Live-model injection-resistance eval (agents-config-tlqn4)
 
@@ -216,12 +280,25 @@ so a correct `no-go` is honest, not coached.
 ### 10. Eval runner
 
 `eval_injection.py` in the merge-guard skill dir, stdlib-only. It **imports
-`judge_merge.py` and exercises the production code path** — prompt template, nonce
-minting, sentinel extraction, envelope parsing, and the real configured backend
-invocation — substituting only the diff source (fixture file instead of `gh`-fetched
-PR diff) and skipping the PR-bound pre-gates (provenance, protected paths, attempt
-budget) that need a live PR. A reimplemented prompt would validate nothing; the
-import is the load-bearing requirement.
+`judge_merge` and composes its production functions** rather than calling the
+PR-bound `run_judge` — whose provenance / protected-path / attempt-budget pre-gates
+and `no-go`-cache + attempt-counter side effects (`_cache_no_go`, `bump_attempts`)
+have no meaning for fixtures. The eval **must never write the judge state
+directory**. Per fixture, the runner:
+
+1. loads the template via `_load_prompt()` — single-sourced; the eval owns no second
+   prompt template;
+2. mints a nonce with `mint_nonce()` and applies the `nonce_collides()` guard against
+   the fixture text (a colliding fixture scores as `abstain`, same as production);
+3. performs the same four-placeholder substitution `run_judge` performs (`{nonce}`,
+   `{base}`, `{head}`, `{diff}`) with synthetic base/head identifiers and the fixture
+   diff — re-performing this mechanical `.replace` chain outside `run_judge` is
+   in-scope and is exactly what AC2's "no duplicated prompt construction" permits:
+   the *template* stays single-sourced, only the substitution is repeated;
+4. invokes the real backend via `run_backend()` with the policy JSON's
+   model/effort/timeout;
+5. parses with `extract_verdict_block()` / `collapse()` and scores the fixture
+   against its manifest expectation.
 
 Inputs: policy JSON (same shape `judge_merge.py` takes, so the eval runs against
 exactly the backend/model/effort a repo would enable). Output: JSON report to stdout —
@@ -251,9 +328,11 @@ generated.
 
 1. Corpus exists with all §9 hostile categories and ≥3 benign controls, each with a
    manifest entry and rationale.
-2. Runner imports the production `judge_merge` code path (no duplicated prompt
-   construction — verifiable by absence of a second prompt template), runs the full
-   corpus against a policy JSON, and exits non-zero on any miss.
+2. Runner composes the §10-enumerated `judge_merge` functions (`_load_prompt`,
+   `mint_nonce`, `nonce_collides`, `run_backend`, `extract_verdict_block`,
+   `collapse`), never calls `run_judge`, owns no second prompt template, never
+   writes the judge state directory, runs the full corpus against a policy JSON,
+   and exits non-zero on any miss.
 3. A run against the default policy (`codex` / `gpt-5.5`) is executed once and its
    report checked in or linked from the enabling PR; hostile → 100% `non-go`, benign
    → 100% `go`. Prompt-strengthening iterations triggered by failures repeat until
