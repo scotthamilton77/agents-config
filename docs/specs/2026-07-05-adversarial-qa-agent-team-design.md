@@ -51,7 +51,7 @@ The three contracts are what make every other part composable (D15). All are JSO
 |---|---|
 | `use_case` | `UC1` \| `UC2` |
 | `artifact_class` | e.g. `code-change`, `design-spec`, `plan` — selects rubric + fail-closed defaults |
-| `lens_roster` | Phase-1a lenses, Phase-1b lenses, invited completeness specialists (each specialist self-gates: "is my expertise needed and missing?") |
+| `lens_roster` | Phase-1a and Phase-1b lenses (D4 defines both per use case; UC1's lean binding runs 1a+1b as a single pass), invited completeness specialists (each self-gates: "is my expertise needed and missing?") |
 | `scale` | `finder_dimensions` (Phase-1 lens fan-out width; `lens_roster` is sized from it), `verifier_width` (evidence-verifier parallelism), `bench_votes` (1; 3 only at the largest scale, median-rank merge), `synthesis_effort` |
 | `round_cap` | 3–5, scale-derived (§7) |
 | `severity_floor` | default `major` — at/above blocks acceptance |
@@ -82,13 +82,25 @@ The three contracts are what make every other part composable (D15). All are JSO
 
 ### 3.3 Verdict object (every exit, both signals, all phases)
 
-`signal` (`acceptance` | `termination`), `reason` (`clean-at-floor` | `round-cap` | `stall` | `budget` | `certification-second-failure`), `phases_run`, `rounds`, `phase3_bounces`, `ledger_snapshot`, `residuals` (open entries with bench severities), `rejected_alternatives` (adjudicated-away findings with decision-record refs), `metrics` (per-round records, §8), `plan` (the review plan it ran under), `run_id`, `persist_to` (the metrics file path, §8). This formalizes what `quality-gate.js`'s `residualRisk` report already approximates. A termination verdict is a receipt for work stopped, never a quality claim.
+| Field | Content |
+|---|---|
+| `signal` | `acceptance` \| `termination` |
+| `reason` | `clean-at-floor` \| `round-cap` \| `stall` \| `budget` \| `certification-second-failure` |
+| `phases_run`, `rounds`, `phase3_bounces` | lifecycle accounting; `phase3_bounces` mechanically enforces the bounce-once rule (§6) |
+| `ledger_snapshot` | final ledger state |
+| `residuals` | open entries, bench severities only |
+| `rejected_alternatives` | adjudicated-away findings with decision-record refs |
+| `metrics` | the per-round records (§8) |
+| `plan` | the review plan the run executed under |
+| `run_id`, `persist_to` | run identity + the metrics file path (§8) |
+
+This formalizes what `quality-gate.js`'s `residualRisk` report already approximates. A termination verdict is a receipt for work stopped, never a quality claim.
 
 ## 4. Phase 0 — Assessor
 
 **UC2:** the Assessor consumes `gate-triage`'s existing facts JSON directly (files, LOC, subsystems, critical-path hits, `scale_hint`) — one measurement, two consumers, no duplicate sizing logic. Phase 0 for UC2 *is* the routing-tier machinery plus plan derivation in `assessor.py`.
 
-**UC1:** no mechanical size anchor exists for prose (D3). The Assessor's readiness bounce is judgment-shaped: target readable, review criteria present, artifact-class expectations met (e.g. a spec class expects decision records once the child bead for artifact templates lands). Bounce output is structured "not reviewable yet — here's what's missing", not a review of an unreviewable artifact. Fail-closed defaults per artifact class guard against self-serving under-review.
+**UC1:** no mechanical size anchor exists for prose (D3). The Assessor's readiness bounce is judgment-shaped: target readable, review criteria present, artifact-class expectations met (e.g. the `design-spec` artifact class expects decision records once the child bead for artifact templates lands). Bounce output is structured "not reviewable yet — here's what's missing", not a review of an unreviewable artifact. Fail-closed defaults per artifact class guard against self-serving under-review.
 
 **Cross-bead note (unresolved by design):** the UC1 readiness bounce overlaps with `agents-config-owqa` (M2 brainstorm-readiness gate). Whether the Assessor calls owqa's check as a sub-step or the two reconcile another way is decided when M2 lands; this spec only requires that the Assessor's bounce interface (structured missing-items list) be compatible with that future reconciliation.
 
@@ -101,6 +113,8 @@ Five roles per round, in order, always present as logical steps. Width scales co
 3. **Evidence verifiers** — per-finding, evidence-shaped: quote the contradicting lines, show the repro. Never a vote. `verifier_width` sets parallelism (one batch verifier at lean width; N-parallel at large).
 4. **Triage bench** — one provenance-blind batch judge per round applying the plan's written consequence-anchored rubric. **Ranks before scoring:** first a relative ordering of the round's fresh verified findings, then rank positions map onto the rubric's absolute severity buckets via worked anchor examples. The ordering-then-anchoring sequence is the debiasing mechanism — the campaign's inflation came from scoring findings independently. The bench also rules scope, confirms dedup beyond the mechanical fingerprint pre-pass (semantic duplicates), checks findings against existing decision records (adjudicated-away findings die here), and recommends dispositions. At `bench_votes: 3`, votes merge by median rank position before anchoring.
 5. **Fix wave** — applies dispositions. `apply-mechanical` entries are fixed sequentially (concurrent writes clobber); `adjudicate-alternative` entries route to decision-matrix adjudication and a decision record — never silent "fixing"; `flag-human` entries park as residuals. `out-of-scope` and `duplicate-of` entries close at disposition time with no fix-wave action (a duplicate records the surviving entry's fingerprint).
+
+**Phase boundary.** Phase 1 closes with the round tail applied to its own full-surface findings — evidence verification, triage bench, and the first fix wave (roles 3–5; roles 1–2 have no meaning before a fix exists). Every Phase-2 round is then uniformly delta-scoped: the closure verifier audits the preceding fix wave (Phase 1's, for round 1) and the delta discoverer reads that fix diff + blast radius. No Phase-2 round reads the full surface; the only full-surface passes are Phase 1 and Phase 3.
 
 **Routing facts are mechanical.** A deterministic pre-classifier supplies diff-surface facts (sections/files touched, size, structural markers — no LLM): `preclassify.py` on serial paths, structured-output relay on the Workflow path (§9.3). The closure verifier supplies fix-classes; the plan holds the rules; the orchestrator applies rule(fact). It routes and counts. It never judges.
 
@@ -133,11 +147,11 @@ One dry round suffices: delta-scoping makes dryness geometric evidence (the shri
 
 Termination triggers (any one):
 
-- **Round cap** — plan-declared; derived from scale: 3 (lean) / 4 (medium) / 5 (large). An economic backstop, not a quality claim.
+- **Round cap** — plan-declared; UC2 derives it from scale: 3 (lean) / 4 (medium) / 5 (large); UC1's lean binding maps its caller-facing cycle cap instead (§10.1). An economic backstop, not a quality claim.
 - **Stall** — a round that closes nothing and discovers nothing novel while the ledger is non-empty: fixes aren't landing. (`quality-gate.js` already implements exactly this test.)
 - **Budget exhaustion** — with `budget_reserve` held back for certification + reporting.
 
-At-cap routing follows the plan's declared `at_cap_policy`: low-stakes artifact classes may `proceed-with-documented-residuals`; everything else parks for a human. Overnight runs park to the morning queue with the verdict object attached. Never block silently; never self-approve. Escalation shape follows the canonical decision matrix.
+At-cap routing follows the plan's declared `at_cap_policy` (D10): low-stakes artifact classes may `proceed-with-documented-residuals`; everything else is `park-for-human` — overnight runs park to the morning queue with the verdict object attached, never blocking silently, never self-approving; escalation shape per the canonical decision matrix.
 
 ## 8. Metrics contract and storage
 
@@ -168,8 +182,8 @@ Rejected: single append-only `metrics.jsonl` (merge-conflict magnet — two PRs 
 | Current | Becomes |
 |---|---|
 | gate-triage + routing tiers | Phase 0 (already exists per D4); `assessor.py` derives the plan from triage facts |
-| Round-1 full-surface finder fan-out | Phase 1: 1a (plan-fidelity, placement, approach reassessment) + 1b (soundness + invited specialists) — lens definitions come from D4; the current six lens briefs are superseded (usable as raw material for 1b briefs, not a 1:1 regroup — "plan-fidelity" has no current-code antecedent) |
-| Full-surface finder re-runs every round | **Delta discoverer**: rounds 2+ read fix-diff + blast radius only, lens set from `routing_table` × fix-classes |
+| Round-1 full-surface finder fan-out | Phase 1: 1a (plan-fidelity, placement, approach reassessment) + 1b (soundness + invited completeness specialists) — lens definitions come from D4; the current six lens briefs are superseded (usable as raw material for 1b briefs, not a 1:1 regroup — "plan-fidelity" has no current-code antecedent) |
+| Full-surface finder re-runs every round | **Delta discoverer**: every Phase-2 round reads fix-diff + blast radius only, lens set from `routing_table` × fix-classes |
 | Fixer's `applied:true` as closure evidence | **Closure verifier** (new): memoryful; reruns mechanical checks, verifies residue, assigns `fix_class` |
 | Majority-vote refuter panels | **Evidence verifiers**: per-finding citation-or-repro; `REFUTER_STANCES` and `verifyFindings` majority logic deleted (0/24 at 3× cost) |
 | First-non-refuted-voter severity adjustment | **Triage bench** (new): rank-then-anchor onto `rubric/code.md`; bench severity replaces finder severity everywhere downstream; fingerprint dedup stays as mechanical pre-pass |
@@ -188,11 +202,20 @@ Rejected: single append-only `metrics.jsonl` (merge-conflict magnet — two PRs 
 
 ### 9.4 Carried forward unchanged
 
-Untrusted-content fencing (`fence`, the UNTRUSTED block), bounded StructuredOutput schemas, `withRepair`, resume-from-run-id, budget-tail reserve, injection-suspect reporting, sequential mechanical fixes, and the dual-signal exit semantics already shipped. The `interim: true` flag and deferred-discipline comments come out; the workflow name stays `quality-gate`.
+- Untrusted-content fencing (`fence`, the UNTRUSTED block)
+- Bounded StructuredOutput schemas (every array/string capped)
+- `withRepair` (one-repair-attempt-then-abort on critical single-agent chains)
+- Resume-from-run-id
+- Budget-tail reserve
+- Injection-suspect reporting
+- Sequential mechanical fixes (concurrent tree writes clobber)
+- Dual-signal exit semantics already shipped
+
+The `interim: true` flag and deferred-discipline comments come out; the workflow name stays `quality-gate`.
 
 ### 9.5 Acceptance criteria (UC2 binding)
 
-1. Rounds 2+ prompt discoverers with fix-diff + blast radius only; no full-surface re-read after Phase 1.
+1. Every Phase-2 round prompts discoverers with fix-diff + blast radius only; the only full-surface reads are Phase 1 and Phase 3.
 2. No majority-vote refutation code remains; every surviving finding carries `evidence`.
 3. The ledger's authoritative `severity` is bench-assigned; `severity_claimed` never reaches the predicate; both are recorded per finding (the inflation measure).
 4. Closure requires the closure verifier's verdict, not the fixer's `applied:true`; mechanical `acceptance_bindings` run before agent verification.
@@ -209,7 +232,7 @@ Station unchanged: inner-methodology only; caller owns fixes and delivery; same 
 ### 10.1 Changes
 
 - **Phase 0** grows out of the existing fail-fast validation: a lean readiness bounce (target readable, criteria present, artifact-class expectations met) returning a structured missing-items list instead of a doomed review.
-- **Cycle 1 = Phase 1** full read: consistency, soundness, scope — and alternatives run here **once**, route to decision-matrix adjudication with a decision record, and are dead thereafter absent new evidence (D5: the never-draining lens stays out of the loop).
+- **Cycle 1 = Phase 1** full read (1a+1b as a single pass at width 1): consistency, soundness, scope — and alternatives run here **once**, route to decision-matrix adjudication with a decision record, and are dead thereafter absent new evidence (D5: the never-draining lens stays out of the loop).
 - **Cycles 2+ = lean Phase-2 rounds, all five roles at width 1:**
   - A memoryful **closure check** against the prior ledger opens the cycle — currently absent entirely (today's fresh reviewer may or may not re-find an unfixed issue, which is no closure signal at all).
   - The fresh-eyes reviewer becomes the **delta discoverer**, scoped to changes-since-last-cycle plus prose blast radius. Independence re-scopes to discovery-only (D12 — an already-decided amendment): the closure check is deliberately contaminated; the discoverer stays fresh.
@@ -218,7 +241,7 @@ Station unchanged: inner-methodology only; caller owns fixes and delivery; same 
   - The **fix wave is the caller's turn**, recorded as dispositions in the ledger.
 - **The predicate replaces the judgment-stop.** "Findings are non-significant ⇒ converge" is exactly the soft call D9 exists to kill; `predicate.py` evaluates the ledger instead. Acceptance triggers a lean Phase 3 (full-fresh certification read — cheap on a single document; bounce-once applies).
 - **Score labels survive as a compat view**, mapped mechanically from the verdict object: acceptance → `PASS`; termination with zero open blocking/critical AND the final round's open-major count strictly below the prior round's (computed from the verdict's per-round metrics; runs with fewer than two rounds never qualify) → `PASS_WITH_RESERVATIONS`; all other terminations → `FAIL`. No trend judgment, no vibes — every clause is a field comparison. The verdict object rides alongside as the authoritative record.
-- **Cycle cap default 2 → 3** (the old cap priced full-surface re-reads; delta rounds are cheaper; 3 is the record's lean floor). Caller override `1..20` retained.
+- **Cycle cap default 2 → 3**, with the cycle↔round mapping stated once: cycle 1 = Phase 1; cycle N (N≥2) = Phase-2 round N−1; the caller's cycle cap C writes the plan's `round_cap` = C−1 (default 3 → `round_cap` 2 — a single document's delta rounds converge faster than the UC2 band, and the plan-declared value is authoritative per D9). The old cap priced full-surface re-reads; delta rounds are cheaper. Caller override `1..20` retained.
 - **Role-tiered model/effort** replaces the flat `opus[1m]/xhigh` single reviewer: discoverer and evidence-verifier run cheaper; the bench keeps the high-judgment tier.
 - **Metrics:** `metrics.py` writes the per-review file directly — the serial path has a filesystem.
 
