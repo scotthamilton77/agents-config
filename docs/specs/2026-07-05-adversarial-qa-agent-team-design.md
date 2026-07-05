@@ -52,7 +52,7 @@ The three contracts are what make every other part composable (D15). All are JSO
 | `use_case` | `UC1` \| `UC2` |
 | `artifact_class` | e.g. `code-change`, `design-spec`, `plan` — selects rubric + fail-closed defaults |
 | `lens_roster` | Phase-1a lenses, Phase-1b lenses, invited completeness specialists (each specialist self-gates: "is my expertise needed and missing?") |
-| `scale` | `verifier_width` (evidence-verifier parallelism), `bench_votes` (1; 3 only at the largest scale, median-rank merge), `synthesis_effort` |
+| `scale` | `finder_dimensions` (Phase-1 lens fan-out width; `lens_roster` is sized from it), `verifier_width` (evidence-verifier parallelism), `bench_votes` (1; 3 only at the largest scale, median-rank merge), `synthesis_effort` |
 | `round_cap` | 3–5, scale-derived (§7) |
 | `severity_floor` | default `major` — at/above blocks acceptance |
 | `rubric_ref` | which `rubric/` file the bench anchors against |
@@ -100,7 +100,7 @@ Five roles per round, in order, always present as logical steps. Width scales co
 2. **Delta discoverer** — *memoryless by design*: fresh eyes on the fix diff + blast radius only (prose blast radius: referencing sections, moved term definitions). Never sees the ledger. Its lens set is not fixed: the orchestrator applies the plan's `routing_table` to the closure verifier's fix-classes — a round of mechanical edits does not re-summon the soundness lens.
 3. **Evidence verifiers** — per-finding, evidence-shaped: quote the contradicting lines, show the repro. Never a vote. `verifier_width` sets parallelism (one batch verifier at lean width; N-parallel at large).
 4. **Triage bench** — one provenance-blind batch judge per round applying the plan's written consequence-anchored rubric. **Ranks before scoring:** first a relative ordering of the round's fresh verified findings, then rank positions map onto the rubric's absolute severity buckets via worked anchor examples. The ordering-then-anchoring sequence is the debiasing mechanism — the campaign's inflation came from scoring findings independently. The bench also rules scope, confirms dedup beyond the mechanical fingerprint pre-pass (semantic duplicates), checks findings against existing decision records (adjudicated-away findings die here), and recommends dispositions. At `bench_votes: 3`, votes merge by median rank position before anchoring.
-5. **Fix wave** — applies dispositions. `apply-mechanical` entries are fixed sequentially (concurrent writes clobber); `adjudicate-alternative` entries route to decision-matrix adjudication and a decision record — never silent "fixing"; `flag-human` entries park as residuals.
+5. **Fix wave** — applies dispositions. `apply-mechanical` entries are fixed sequentially (concurrent writes clobber); `adjudicate-alternative` entries route to decision-matrix adjudication and a decision record — never silent "fixing"; `flag-human` entries park as residuals. `out-of-scope` and `duplicate-of` entries close at disposition time with no fix-wave action (a duplicate records the surviving entry's fingerprint).
 
 **Routing facts are mechanical.** A deterministic pre-classifier supplies diff-surface facts (sections/files touched, size, structural markers — no LLM): `preclassify.py` on serial paths, structured-output relay on the Workflow path (§9.3). The closure verifier supplies fix-classes; the plan holds the rules; the orchestrator applies rule(fact). It routes and counts. It never judges.
 
@@ -168,7 +168,7 @@ Rejected: single append-only `metrics.jsonl` (merge-conflict magnet — two PRs 
 | Current | Becomes |
 |---|---|
 | gate-triage + routing tiers | Phase 0 (already exists per D4); `assessor.py` derives the plan from triage facts |
-| Round-1 full-surface finder fan-out | Phase 1: 1a (plan-fidelity, placement, approach reassessment) + 1b (soundness + invited specialists) — current lens briefs survive, regrouped |
+| Round-1 full-surface finder fan-out | Phase 1: 1a (plan-fidelity, placement, approach reassessment) + 1b (soundness + invited specialists) — lens definitions come from D4; the current six lens briefs are superseded (usable as raw material for 1b briefs, not a 1:1 regroup — "plan-fidelity" has no current-code antecedent) |
 | Full-surface finder re-runs every round | **Delta discoverer**: rounds 2+ read fix-diff + blast radius only, lens set from `routing_table` × fix-classes |
 | Fixer's `applied:true` as closure evidence | **Closure verifier** (new): memoryful; reruns mechanical checks, verifies residue, assigns `fix_class` |
 | Majority-vote refuter panels | **Evidence verifiers**: per-finding citation-or-repro; `REFUTER_STANCES` and `verifyFindings` majority logic deleted (0/24 at 3× cost) |
@@ -217,7 +217,7 @@ Station unchanged: inner-methodology only; caller owns fixes and delivery; same 
   - A **single-pass bench** ranks-then-anchors onto `rubric/document.md`; reviewer severity demotes to `severity_claimed`.
   - The **fix wave is the caller's turn**, recorded as dispositions in the ledger.
 - **The predicate replaces the judgment-stop.** "Findings are non-significant ⇒ converge" is exactly the soft call D9 exists to kill; `predicate.py` evaluates the ledger instead. Acceptance triggers a lean Phase 3 (full-fresh certification read — cheap on a single document; bounce-once applies).
-- **Score labels survive as a compat view**, mapped from the verdict object: acceptance → `PASS`; termination with no blocking/critical open and majors trending down → `PASS_WITH_RESERVATIONS`; other terminations → `FAIL`. The verdict object rides alongside as the authoritative record.
+- **Score labels survive as a compat view**, mapped mechanically from the verdict object: acceptance → `PASS`; termination with zero open blocking/critical AND the final round's open-major count strictly below the prior round's (computed from the verdict's per-round metrics; runs with fewer than two rounds never qualify) → `PASS_WITH_RESERVATIONS`; all other terminations → `FAIL`. No trend judgment, no vibes — every clause is a field comparison. The verdict object rides alongside as the authoritative record.
 - **Cycle cap default 2 → 3** (the old cap priced full-surface re-reads; delta rounds are cheaper; 3 is the record's lean floor). Caller override `1..20` retained.
 - **Role-tiered model/effort** replaces the flat `opus[1m]/xhigh` single reviewer: discoverer and evidence-verifier run cheaper; the bench keeps the high-judgment tier.
 - **Metrics:** `metrics.py` writes the per-review file directly — the serial path has a filesystem.
