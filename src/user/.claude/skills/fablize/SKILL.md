@@ -28,6 +28,26 @@ defeated the point.
 - The user wants a batch of backlog items made implementation-ready without
   doing the implementation now.
 
+## Phase 0 — Model Check (fail fast)
+
+Before Phase 1, confirm the window's premise still holds — fablize only pays
+off when frontier capacity is actually running the session, not a lesser
+model's.
+
+- **Identify the executing model.** Check your own system context (e.g. "You
+  are powered by the model named X") — this is self-knowledge; no shell
+  command can answer it.
+- **Compare against the declared frontier-window model.** Currently:
+  **Fable**, model ID `claude-fable-5`. This is the only line that changes
+  when the window moves to a new model; the rest of this skill stays
+  model-agnostic.
+- **On mismatch: STOP.** Do not proceed to Phase 1 — don't run the survey,
+  don't pull the backlog. Tell the user which model is running and which is
+  expected, and that they should switch (e.g. `/model fable`) and re-invoke
+  fablize. Proceeding on a lesser model is permitted only as an explicit
+  user override given after they've been told about the mismatch.
+- **On match**, proceed to Phase 1.
+
 ## Phase 1 — Survey (autonomous, no approval needed)
 
 1. **Learn what's already spec'd.** Check recent merged history for spec
@@ -102,6 +122,7 @@ defeated the point.
 | "I'll skip the STOP and start spec'ing — the batch is obviously right" | Never. Phase 2 always ends in a stop; approval is not optional. |
 | "One strong model can just implement this directly, why spec it" | That defeats the window argument: spec now while frontier capacity is available, implement later on whatever's cheap then. |
 | "Mixed-domain batch is fine, they're all just backlog items" | Domain-mixing is the context-switch tax fablize exists to avoid; keep one domain per batch. |
+| "The survey phase is mechanical — any model can start it and we can switch later" | Fail fast at entry — batch selection and spec judgment are the point of the window; a mid-flow model switch re-derives context on the expensive model, wasting the budget. |
 
 ## NOT For
 
