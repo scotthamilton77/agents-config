@@ -68,9 +68,9 @@ Rejected alternatives:
 |---|---|---|
 | `kind` | `ReviewItem.kind` | `review_thread` \| `review_summary` \| `issue_comment` |
 | `gh_id` | `Identity.gh_id` | **Uniform natural key**: the GitHub object's own `id` for every kind — issue-comment ID for `issue_comment`, review ID for `review_summary`, inline-comment ID for `review_thread`. `(kind, gh_id)` is the item's natural key, and it matches the keys merge-guard's live queries already use (`.id` on issue comments, `.id` on reviews). No key translation layer. |
-| `thread_id` | `Identity.thread_id` | GraphQL `PRRT_*` node id; non-empty only for `review_thread` items. |
+| `thread_id` | `Identity.thread_id` | GraphQL `PRRT_*` node id; non-empty only for `review_thread` items. The identity projection is `gh_id` + `thread_id` only: `Identity.reply_to_comment_id` (thread-reply plumbing consumed internally by the reply step) and `Identity.issue_comment_id` (vestigial — never populated by item construction today) are omitted. |
 | `author` | `ReviewItem.author` | GitHub login of the item's author. Informational — consumers MUST NOT use it for exclusion (policy: exclusion by exact recorded reply ID, never author login). |
-| `disposition` | `ReviewItem.disposition` | `null` when the item has not been processed (== untriaged). Otherwise `{kind, decided_at, decided_by}`. `rationale`/`commits` are deliberately omitted from the projection. |
+| `disposition` | `ReviewItem.disposition` | `null` when the item has not been processed (== untriaged). Otherwise **exactly** `{kind, decided_at, decided_by}`. The persisted `Disposition`'s remaining fields are deliberately omitted from the projection: `rationale` and `commits` (bulky, no external consumer), `response_path` (a local filesystem path that must not leave the store), `gate` (consumed in-process by the fix-verify subsystem; if its sibling `verify` block ever needs per-item gate data, that is an additive change per §3.4), and `escalation_filed` (escalations surface through the `human-gated` phase flow, not per-item). |
 | `disposition.kind` | `DispositionKind` | One of `fixed`, `already_addressed`, `skipped`, `deferred`, `wont_fix`, `escalated`, `failed`. |
 | `disposition.decided_by` | `Disposition.decided_by` | **The agent that actually produced the decision.** See §3.3 — this semantic is load-bearing and currently mis-stamped on fallback. |
 | `replied` / `resolved` | `ReviewItem` booleans | Reply posted / thread resolved, as already persisted. |
@@ -84,11 +84,11 @@ The dispatcher currently stamps `decided_by` from the **configured** primary of 
 
 ### 3.4 Envelope evolution discipline
 
-The `items` key is **additive**: every existing envelope key (`phase`, `last_error`, `items_summary`, `merge_gates`, `human_review`, `auto_merge_eligible`) is byte-for-byte unaffected. The fix-verify subsystem spec (§6.3) proposes a sibling additive `verify` block; both extensions compose without coordination beyond "additive only, never mutate existing keys." Two naming collisions are noted for doc hygiene, not resolved here: the model-routing ladder's `escalated_to` (next model rung) and the review-feedback loop's own `disposition` vocabulary are unrelated axes that happen to share words with `disposition.kind = escalated`.
+The `items` key is **additive**: all twelve existing top-level envelope keys (`pr`, `phase`, `round`, `last_error`, `reviewers`, `ci_state`, `last_activity_at`, `quiesced_at`, `items_summary`, `human_review`, `merge_gates`, `auto_merge_eligible`) are byte-for-byte unaffected. The fix-verify subsystem spec (§6.3) proposes a sibling additive `verify` block; both extensions compose without coordination beyond "additive only, never mutate existing keys." Two naming collisions are noted for doc hygiene, not resolved here: the model-routing ladder's `escalated_to` (next model rung) and the review-feedback loop's own `disposition` vocabulary are unrelated axes that happen to share words with `disposition.kind = escalated`.
 
 ## 4. merge-guard consumption
 
-All changes land in `check-merge-eligibility.sh`'s untriaged block and its prgroom section; the output schema (`status`, `blockers[]`, `facts`, `base_ref_oid`) is untouched — the agent-ruling path's Step-5 full-floor re-run consumes that schema and inherits this blocker's correctness unchanged.
+All changes land in `check-merge-eligibility.sh`'s untriaged block and its prgroom section; the decision JSON's full key set (`status`, `blockers[]`, `facts`, `base_ref_oid`, `head_ref_oid`, `merge_command_hint`) is untouched — the agent-ruling path's Step-5 full-floor re-run consumes that schema and inherits this blocker's correctness unchanged.
 
 ### 4.1 Repair the seam
 
@@ -166,7 +166,7 @@ Behaviors:
 
 AC: behaviors 1–5 covered; `make ci-prgroom` green (repo coverage floor applies); the §4.6 envelope docs in the prgroom design doc gain the `items` key.
 
-### 9.2 Consumption bead (agents-config-abn9.8.13.1) — `check-merge-eligibility_test.sh` (extends the existing 134-assertion suite, stub/fixture pattern; prgroom stubbed as a fake binary emitting canned envelopes)
+### 9.2 Consumption bead (agents-config-abn9.8.13.1) — `check-merge-eligibility_test.sh` (extends the existing suite, stub/fixture pattern; prgroom stubbed as a fake binary emitting canned envelopes)
 
 Behaviors:
 
@@ -180,4 +180,4 @@ Behaviors:
 8. The decision JSON's schema (`status`, `blockers[]`, `facts`, `base_ref_oid`) is unchanged across all above cases.
 9. The script passes the PR ref to `status` (seam repair) — asserted via the stub recording its argv.
 
-AC: behaviors 1–9 as new assertions in the existing suite, all 134 existing assertions still green; the eligibility-predicate row in `docs/architecture/review-merge-policy/design.md` is amended in place from "design-reserved, not yet implemented" to documenting the live prgroom clearance source (that design doc is evergreen; the dated 2026-07-01 plan is a historical artifact and is not edited).
+AC: behaviors 1–9 as new assertions in the existing suite, every pre-existing assertion still green; the eligibility-predicate row in `docs/architecture/review-merge-policy/design.md` is amended in place from "design-reserved, not yet implemented" to documenting the live prgroom clearance source (that design doc is evergreen; the dated 2026-07-01 plan is a historical artifact and is not edited).
