@@ -79,13 +79,39 @@ brainstorm ends (in-session design approved)      external artifact dropped in
 Judgment lives in the skill (distillation, checklist); every mechanical,
 repeatable step lives in the script (code over prose).
 
+A fourth event closes the loop outside this diagram, at spec-PR merge —
+`capture_spec.py` runs the interim delivery protocol
+(docs/specs/2026-07-05-work-lifecycle-and-facade.md §9) directly until the
+`work` facade ships its lifecycle verbs: it decomposes the merged spec's
+`## Continuations` manifest under the still-open bead, then releases the
+claim — mint-before-anything-closes. See §7 for the script's full
+delivery-time contract.
+
 ## 4. Origins and placement
+
+Capture is one bead, pre-facade: the captured bead is the objective, and the
+work lifecycle design's lazy path
+(docs/specs/2026-07-05-work-lifecycle-and-facade.md §6) governs how
+implementation work materializes. The commitment lives in the spec's
+`## Continuations` manifest — made binding by the manifest lens (§5) — and
+at spec-PR merge delivery decomposes it under the still-open bead: a single
+unit mints one typed child, multiple units mint N, and `- none` means the
+spec is the deliverable and the bead closes at merge. The dependency-blocked
+`[Impl]` placeholder belongs to the facade's `spec` shape: once
+`packages/workcli` ships noun-templated creation, idea-origin captures that
+expect implementation instantiate that full shape (`work create spec`:
+container + design child + blocked placeholder) instead of a bare leaf, and
+the script's delivery step becomes placeholder reconciliation per the
+lifecycle design's §6. Interruption is self-reporting either way: a merged
+spec with no children yet leaves the bead open + `spec-ready` + childless —
+planning-queue membership, not silence. This is a distinct mechanism from
+the readiness gaps in §6 below, which stay notes-only.
 
 - **Bead-origin** (brainstorm started from an existing bead): the script
   stamps `brainstormed` on the bead, appends the spec path + a one-line
   decision summary to the bead's notes, and leaves the dependency hierarchy
-  untouched. The spec header carries the bead id (dated specs are exempt from
-  the no-tracker-IDs rule).
+  untouched. The spec header carries the bead id (dated specs are exempt
+  from the no-tracker-IDs rule).
 - **Idea-origin**: the skill asks exactly one placement question at capture —
   a parent (milestone or epic id) or explicit orphan. The script then creates
   the bead (`--parent` when given; orphan otherwise), stamps `brainstormed`,
@@ -105,9 +131,14 @@ Explicitly **not** a review loop.
 - **Single pass, draining lenses only** (per D5): placeholder scan (TBD/TODO/
   empty sections), internal contradictions, ambiguity (a requirement readable
   two ways), scope (single implementation plan vs needs decomposition),
-  testable acceptance criteria. The alternatives/optimality lens is
-  **excluded by design** — that work happened during the brainstorm, and it is
-  the lens that never drains (the codex-treadmill generator).
+  testable acceptance criteria, and — per the work lifecycle design's
+  manifest requirement
+  (docs/specs/2026-07-05-work-lifecycle-and-facade.md §6) — manifest present
+  and parseable: a `## Continuations` section with one
+  `- <noun>: <title> — AC: …` bullet per item, or the literal `- none`. The
+  alternatives/optimality lens is **excluded by design** — that work happened
+  during the brainstorm, and it is the lens that never drains (the
+  codex-treadmill generator).
 - **Evidence-shaped gaps** (per D8): every gap must quote the offending line
   or name the missing section. A gap that cannot cite its evidence does not
   ship.
@@ -136,7 +167,10 @@ Explicitly **not** a review loop.
   `ASSUMPTION:` gaps live in the bead's notes, not as child beads — child
   beads would pollute the hierarchy the placement question just got right,
   and close-walk semantics make disposable question-children hazardous. If
-  gap volume proves notes-unwieldy, a follow-up can revisit.
+  gap volume proves notes-unwieldy, a follow-up can revisit. This is
+  unrelated to the implementation children delivery mints per §4 — those are
+  real planned work under the still-open bead, not disposable
+  question-children.
 - Re-entry bookkeeping: the script stamps `spec-reassessed` alongside the
   swap on the single allowed re-entry, making "second not-ready → park" a
   mechanical check, not a memory. `ASSUMPTION:` label name.
@@ -156,16 +190,24 @@ Explicitly **not** a review loop.
   as a skill asset, the gate-triage/resolve-policy pattern): deterministic
   operations only — dated-filename computation and collision handling
   (`-2` suffix on same-day same-topic), spec file write, bead create/link,
-  label stamping in a fixed order (link notes → labels → gaps), gaps
-  append (bd `--append-notes`, never the clobbering replace flags), verdict
-  recording, and a `--json` result envelope (paths, bead id, verdict, gap
-  count) so callers — including a future PDLC orchestrator binding — can
-  consume it mechanically. Exit non-zero with a specific error on any bd
-  failure; no silent fallbacks.
+  label stamping in a fixed order (link notes → labels → gaps), gaps append
+  (bd `--append-notes`, never the clobbering replace flags), verdict
+  recording, delivery decomposition (§4), and a `--json` result envelope
+  (paths, bead id, verdict, gap count, minted child ids at delivery) so
+  callers — including a future PDLC orchestrator binding — can consume it
+  mechanically. Exit non-zero with a specific error on any bd failure; no
+  silent fallbacks.
 - The skill never shells raw `bd` for these operations; the script is the
-  single place bd quirks live (aligned with the work-facade CLI direction —
-  when the `work` facade ships, the script swaps its bd calls for facade
-  calls behind its own boundary).
+  single place bd quirks live. `capture_spec.py` is a client of the `work`
+  facade, not a competing implementation of it: until `packages/workcli`
+  ships its lifecycle verbs, the script implements the interim protocol
+  (docs/specs/2026-07-05-work-lifecycle-and-facade.md §9) directly at
+  spec-PR merge — it decomposes the merged spec's manifest under the
+  still-open bead (§4), minting the typed children there, releases the
+  claim, and stamps labels, mint-before-anything-closes ordering, always.
+  Once the facade ships, the
+  script delegates these same mutations to `work` verbs instead of raw `bd`
+  calls, behind its own boundary.
 
 ## 8. External-artifact intake
 
@@ -224,6 +266,12 @@ arbitrary markdown, not by per-surface adapters.
 9. bd failure mid-sequence (fake fails on label step): non-zero exit, error
    names the failed step, prior steps' effects reported (no silent partial
    success).
+10. Delivery decomposition: a merged spec whose manifest names two units
+    mints exactly two typed children under the still-open bead and releases
+    the claim; a re-run is a no-op (idempotent); a `- none` manifest closes
+    the bead at merge; an interrupted run (fake fails after child 1 of 2)
+    leaves the bead open and claimed-released with one child — the re-run
+    mints only the missing child.
 
 ## 12. Assumption ledger (scan here, Scott)
 
@@ -232,7 +280,7 @@ arbitrary markdown, not by per-surface adapters.
 - `ASSUMPTION:` label names `spec-ready` / `spec-gaps` / `spec-reassessed`.
 - `ASSUMPTION:` gaps auto-file into bead **notes** (numbered answer-me block),
   not child beads.
-- `ASSUMPTION:` checklist wording of the five draining lenses (§5) — the lens
+- `ASSUMPTION:` checklist wording of the six draining lenses (§5) — the lens
   *set* is locked; the prompt text is the skill author's.
 - `ASSUMPTION:` duplicate-title guard is exact-match only (fuzzy dedup is
   human judgment, out of scope).

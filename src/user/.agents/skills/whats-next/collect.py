@@ -19,6 +19,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +286,94 @@ def extract_typed_ancestors(bead_id, ancestry_map, known, shorten):
 
 
 # ---------------------------------------------------------------------------
+# In-flight (claimed) beads
+# ---------------------------------------------------------------------------
+#
+# `bd ready` (the source for every section above) only ever returns
+# `status: open` beads, so a bead left `in_progress` by a dead or abandoned
+# session is invisible to every list above it. This section surfaces every
+# in_progress bead directly, oldest claim first, so a stale claim gets
+# caught instead of silently blocking whoever would otherwise pick up the
+# work it's still holding.
+#
+# Authoritative rationale for the section's independence: in_flight is a
+# cross-cutting audit list, not a mode-selected work queue — it is never
+# gated by --mode, never truncated by --limit, and never filtered by
+# --label. The whole point is to surface EVERY stale claim, not a top-N
+# or per-queue sample of them.
+
+PR_URL_RE = re.compile(r"https://github\.com/\S+/pull/\d+")
+
+
+def parse_bd_timestamp(ts):
+    """Parse a bd ISO-8601 UTC timestamp (e.g. '2026-07-04T17:58:57Z') to an
+    aware datetime. Returns None on missing/unparseable input so callers
+    degrade gracefully instead of raising.
+    """
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def claim_age_days(started_at):
+    """Whole days elapsed since a bead's `started_at` timestamp.
+
+    `started_at` is the field used here, not `updated_at`: bd stamps
+    `started_at` once, at the moment a bead's status transitions to
+    in_progress, and it does not move on later edits. `updated_at` does
+    move on any field edit (e.g. a notes update), so a bead claimed weeks
+    ago with a recent notes edit would understate its claim age under
+    `updated_at`.
+
+    Returns None when unparseable, so the caller can render a dash rather
+    than a bogus age.
+    """
+    ts = parse_bd_timestamp(started_at)
+    if ts is None:
+        return None
+    return max(0, (datetime.now(timezone.utc) - ts).days)
+
+
+def build_in_flight(all_active, shorten):
+    """Build the 'In flight (claimed)' section: every bead with status
+    in_progress, sorted oldest claim first.
+
+    Flags beads whose notes carry a GitHub PR URL (recorded per interim
+    protocol 9.3) as candidates for retroactive delivery — the work may
+    already be done and merged, with the claim simply never closed out.
+
+    `all_active` (bd list --status open,in_progress) already carries
+    `notes` — bd list --json includes it by default, no --long needed —
+    so no extra `bd show` calls are required here.
+    """
+    in_flight = [b for b in all_active if b.get("status") == "in_progress"]
+
+    def sort_key(bead):
+        # Unparseable/missing timestamps can't be placed by age — push
+        # them to the end rather than guessing they're the oldest.
+        return parse_bd_timestamp(bead.get("started_at")) or datetime.max.replace(
+            tzinfo=timezone.utc
+        )
+
+    in_flight.sort(key=sort_key)
+
+    result = []
+    for b in in_flight:
+        result.append({
+            "id": b["id"],
+            "short_id": shorten(b["id"]),
+            "title": b.get("title", ""),
+            "assignee": b.get("assignee") or "",
+            "claim_age_days": claim_age_days(b.get("started_at")),
+            "pr_flagged": bool(PR_URL_RE.search(b.get("notes") or "")),
+        })
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -323,10 +412,13 @@ def main():
     )
     parser.add_argument(
         "--label", default=None, metavar="LABEL",
-        help="Restrict every section to beads whose own labels include LABEL "
-             "(case-insensitive exact match). The caller is responsible for "
-             "reducing a natural-language qualifier to its canonical label "
-             "(e.g. installer/installation -> install).",
+        help="Restrict every mode-selected queue (human/planning/brainstorm/"
+             "implementation) to beads whose own labels include LABEL "
+             "(case-insensitive exact match). Does NOT filter `in_flight` — "
+             "that section is an unscoped stale-claim audit and always shows "
+             "every in_progress bead regardless of --label. The caller is "
+             "responsible for reducing a natural-language qualifier to its "
+             "canonical label (e.g. installer/installation -> install).",
     )
     args = parser.parse_args()
     limit = args.limit
@@ -503,6 +595,11 @@ def main():
     if not human_raw and not ready_raw and not all_active and not planning_raw:
         sys.exit(1)
 
+    # Never gated by --mode/--limit/--label — see the "In-flight (claimed)
+    # beads" section comment above build_in_flight for the rationale.
+    in_flight_beads = build_in_flight(all_active, shorten)
+    totals["in_flight"] = len(in_flight_beads)
+
     output = {
         "mode": mode,
         "project_prefix": prefix,
@@ -525,6 +622,9 @@ def main():
         output["planning_ready"] = enrich(planning_beads)
     elif mode == "human":
         output["human"] = enrich(human_beads)
+
+    # Mode-independent, like `totals` (see the in-flight section comment).
+    output["in_flight"] = in_flight_beads
 
     print(json.dumps(output, indent=2))
 
