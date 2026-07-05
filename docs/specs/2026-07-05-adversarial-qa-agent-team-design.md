@@ -53,7 +53,7 @@ The three contracts are what make every other part composable (D15). All are JSO
 | `artifact_class` | e.g. `code-change`, `design-spec`, `plan` — selects rubric + fail-closed defaults |
 | `lens_roster` | Phase-1a and Phase-1b lenses (D4 defines both per use case; UC1's lean binding runs 1a+1b as a single pass), invited completeness specialists (each self-gates: "is my expertise needed and missing?") |
 | `scale` | `finder_dimensions` (Phase-1 lens fan-out width; `lens_roster` is sized from it), `verifier_width` (evidence-verifier parallelism), `bench_votes` (1; 3 only at the largest scale, median-rank merge), `synthesis_effort` |
-| `round_cap` | 3–5, scale-derived (§7) |
+| `round_cap` | plan-declared economic backstop (§7): UC2 derives 3–5 from scale; UC1's lean binding writes the caller's cycle cap − 1, default 2 (§10.1) |
 | `severity_floor` | default `major` — at/above blocks acceptance |
 | `rubric_ref` | which `rubric/` file the bench anchors against |
 | `acceptance_bindings` | UC2: the mechanical checks that must pass for closure (tests, lint, build) |
