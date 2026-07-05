@@ -608,7 +608,8 @@ def main():
     }
 
     # Per spec §"--mode contract": absent sections are ABSENT from JSON,
-    # not empty arrays.
+    # not empty arrays. Exception: `in_flight` (and `totals.in_flight`) is
+    # mode-independent and ALWAYS present — see the in-flight section comment.
     if mode == "all":
         output["human"] = enrich(human_beads)
         output["planning_ready"] = enrich(planning_beads)
