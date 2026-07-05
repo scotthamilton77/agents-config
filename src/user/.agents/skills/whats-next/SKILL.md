@@ -80,12 +80,14 @@ Top-level shape:
     "human":          0,
     "planning_ready": 3,
     "brainstorm":     42,
-    "implementation": 6
+    "implementation": 6,
+    "in_flight":      19
   },
   "human":          [ ...beads ],
   "planning_ready": [ ...beads ],
   "brainstorm":     [ ...beads ],
-  "implementation": [ ...beads ]
+  "implementation": [ ...beads ],
+  "in_flight":      [ ...in-flight beads ]
 }
 ```
 
@@ -114,9 +116,36 @@ Each bead entry (already prefix-stripped and typed-ancestor split):
 
 All sections are pre-sorted: **priority ascending (P0 first), then `created_at` ascending**.
 
+`in_flight` is a different kind of section: a cross-cutting audit of every
+`in_progress` bead, not one of the four work-queue lists above. It is
+**mode-independent** — present in every `--mode` value's output, never gated
+or truncated by `--mode` or `--limit` (unlike the four queues, its whole
+point is showing every stale claim, not a top-N sample) — matching the
+always-present `totals` field. Each entry:
+
+```json
+{
+  "id":              "agents-config-wgclw.15",
+  "short_id":        "wgclw.15",
+  "title":           "...",
+  "assignee":        "Scott Hamilton",
+  "claim_age_days":  1,
+  "pr_flagged":      true
+}
+```
+
+- `assignee` — `""` if unassigned
+- `claim_age_days` — whole days since the bead's status transitioned to
+  `in_progress`; `null` if bd returned no usable timestamp
+- `pr_flagged` — `true` when the bead's notes contain a GitHub PR URL,
+  meaning the work may already be merged and the claim just wasn't closed
+  out
+
+Sorted **oldest claim first** (largest `claim_age_days` first).
+
 ## Step 2: Render sections
 
-Skip any section whose list is empty.
+Skip any empty queue section (`in_flight` is exempt — it always renders its summary line; see Step 3).
 
 | Section key | Heading |
 |---|---|
@@ -124,8 +153,9 @@ Skip any section whose list is empty.
 | `planning_ready` | **Planning-ready** |
 | `brainstorm` | **Ready to brainstorm** |
 | `implementation` | **Ready to implement** |
+| `in_flight` | **In flight (claimed)** |
 
-`all` mode renders attention + planning-ready + brainstorm + implementation queue in that order.
+`all` mode renders attention + planning-ready + brainstorm + implementation queue in that order. `in_flight` renders **last, in every mode** — it's a cross-cutting audit, not one of the mode-selected queues, so it always appears after whatever queue(s) the requested mode surfaced.
 
 ## Step 3: Present
 
@@ -152,6 +182,30 @@ Example:
 | 1 |           |         |             | abn9    | milestone | Milestone M1 — Stabilize and ship          |
 | 2 | abn9      |         |             | bf6     | task    | Externalize long bead specs to docs/beads/   |
 ```
+
+`in_flight` uses its own 5-column table (it carries different fields — no
+priority/milestone/type). The `Flag` column holds `⚠ PR` when `pr_flagged`
+is `true`, empty otherwise; never interleave annotation lines between table
+rows (a bare line inside a markdown table breaks its rendering):
+
+| Bead ID | Title | Assignee | Claim Age (days) | Flag |
+|---|---|---|---|---|
+
+When any row is flagged, add one legend line after the table:
+`⚠ PR = a PR URL is recorded on the bead — verify the claim is live; candidate for retroactive delivery.`
+
+Example:
+
+```
+| Bead ID   | Title                                          | Assignee        | Claim Age (days) | Flag |
+|-----------|------------------------------------------------|------------------|-------------------|------|
+| 7bk       | Specialized agent fleet (M3 worker fleet)       |                  | 69                |      |
+| wgclw.15  | Installer settings.json merge reorders keys     | Scott Hamilton   | 1                 | ⚠ PR |
+
+⚠ PR = a PR URL is recorded on the bead — verify the claim is live; candidate for retroactive delivery.
+```
+
+`in_flight` is never subject to `--label` — see the argparse help for why. It is also never subject to `--limit`; every in_progress bead renders, always. This section is an audit, not a work-selection queue, so it renders its own summary line, not the truncation/empty-state lines below: if `totals.in_flight` is `0`, say `No in-progress claims.`; otherwise `N bead(s) currently claimed (in_progress).`
 
 Close with a summary line driven by `totals` (which always carries the full, unfiltered-by-limit count per section). If the displayed count equals the total: `Ready: N beads`. If any section is truncated: name the gap and offer the affordance in plain words, e.g. `Showing top 10 of 42 brainstorm, 3 of 3 planning — say "show all" to see the rest.` When a `--label` filter is active, state it: `Scoped to label "install".` If every section is empty, the empty-state message is mode-specific so it does not falsely point a single-section caller at the human-attention queue:
 

@@ -87,7 +87,7 @@ model's.
    |---|---|
    | Q1 | Batch composition — confirm the set, or adjust it |
    | Q2 | Spec grouping — one dated spec per item, or grouped specs covering related items |
-   | Q3 | End-state per item — spec merged + description/AC updated + a readiness label stamped, or leave labeling to a separate readiness gate |
+   | Q3 | Readiness labeling per item — stamp a readiness label at spec merge, or leave labeling to a separate readiness gate (either way, continuation items get minted and the claim gets released at merge — that end-state is not optional; see step 9) |
    | Q4 | Involvement split — which items need interactive brainstorming with the human, and which can be spec'd autonomously |
 
 6. **STOP.** Wait for the human's answers. Do not dispatch anything —
@@ -106,12 +106,19 @@ model's.
    further, that's nested dispatch — follow the orchestrating-subagents
    skill rather than letting the worker spawn a child it can't await.
 9. **Deliver.** Per item (or per approved group): a dated design spec in the
-   project's specs directory, following the local pattern; the item's
-   description/acceptance criteria updated to point at the spec; a readiness
-   label applied per the Q3 answer. Ship specs the same way the environment
-   already ships everything else — through its normal completion-gate,
-   worktree, and PR discipline; fablize doesn't restate that machinery, only
-   feeds it.
+   project's specs directory, following the local pattern, ending with a
+   `## Continuations` section that names each follow-on work item to create
+   (`- <noun>: <title> — AC: …`) or the literal `- none — this spec is the
+   deliverable`. Ship it the same way the environment already ships
+   everything else — through its normal completion-gate, worktree, and PR
+   discipline; fablize doesn't restate that machinery, only feeds it. At
+   spec-PR merge, the delivering session: mints the continuation items in the
+   work tracker as children under the still-open objective per the manifest,
+   releases the claim on the item (status back to open/unclaimed), and stamps
+   phase labels (a readiness label per the Q3 answer).
+   Mint-before-anything-closes, always — successors are created before
+   anything closes or releases. A work item left claimed behind a merged spec is a defect; a
+   readiness label stamped on a still-claimed item is not a deliverable.
 
 ## Red Flags
 
@@ -123,6 +130,7 @@ model's.
 | "One strong model can just implement this directly, why spec it" | That defeats the window argument: spec now while frontier capacity is available, implement later on whatever's cheap then. |
 | "Mixed-domain batch is fine, they're all just backlog items" | Domain-mixing is the context-switch tax fablize exists to avoid; keep one domain per batch. |
 | "The survey phase is mechanical — any model can start it and we can switch later" | Fail fast at entry — batch selection and spec judgment are the point of the window; a mid-flow model switch re-derives context on the expensive model, wasting the budget. |
+| "I'll leave the item claimed — implementation comes next anyway" | No. The claim releases at spec merge regardless of what happens next; mint the continuations, release the claim, stamp the labels, in that order. A still-claimed item behind a merged spec is a defect, not a shortcut. |
 
 ## NOT For
 

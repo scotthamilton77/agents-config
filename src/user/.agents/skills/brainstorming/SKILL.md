@@ -142,6 +142,18 @@ Wait for the user's response. If they request changes, make them and re-run the 
 - Invoke the writing-plans skill to create a detailed implementation plan
 - Do NOT invoke any other skill. writing-plans is the next step.
 
+**Tracked work handoff (if the project uses a work tracker):**
+
+- End the design doc with a `## Continuations` section naming each follow-on
+  work item to create (noun/title/acceptance criteria), or the literal
+  `- none — this spec is the deliverable`.
+- When the design doc's PR merges: mint those continuation items in the
+  tracker as children under the still-open tracked objective per that
+  section, then release the claim on the objective (status back to
+  open/unclaimed). Mint-before-anything-closes — successors exist before
+  anything closes or releases. Never leave the tracked objective claimed
+  behind a merged design doc.
+
 ## Key Principles
 
 - **One question at a time** - Don't overwhelm with multiple questions

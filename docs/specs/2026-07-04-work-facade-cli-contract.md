@@ -219,3 +219,12 @@ scripted-bd fake, no live Dolt in unit tests).
 - `ASSUMPTION:` §2/§7 GH Issues implementation deferred until contract-test
   review still doubts the seam; v1 is bd-only.
 - `ASSUMPTION:` §4 envelope field names and initial error-code set.
+
+## Continuations
+
+- feat: transport layer in `packages/workcli` — the twelve contract verbs,
+  JSON envelope + protocol handshake, `Backend` adapter seam, bd adapter
+  behind a subprocess boundary port — AC: test plan items 1–10 pass under a
+  CI gate matching the installer/prgroom discipline. (The lifecycle layer's
+  continuation is tracked in the work lifecycle and facade design's own
+  manifest, docs/specs/2026-07-05-work-lifecycle-and-facade.md.)

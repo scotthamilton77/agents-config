@@ -238,6 +238,8 @@ pass "T5: typed-ancestor extraction emits exact milestone/feature/parent_epic/ty
 # T6. Mode key matrix: exact top-level section-key sets per mode.
 # Per spec §"--mode contract": absent sections are ABSENT from JSON,
 # not empty arrays. Top-level 'mode' field carries the mode value.
+# `in_flight` is mode-independent (like `totals`/`mode`/`project_prefix`/
+# `limit`) and is ALWAYS present regardless of mode — asserted below.
 # -----------------------------------------------------------------------------
 TMP_T6=$(mktemp -d)
 trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6"' EXIT
@@ -310,6 +312,14 @@ if present != expect:
 mode_val = os.environ["MODE_VALUE"]
 if out.get("mode") != mode_val:
     raise SystemExit(f"top-level 'mode' field expected {mode_val!r}, got {out.get('mode')!r}")
+# `in_flight` is mode-independent: it must appear in EVERY mode's output
+# (the new always-present contract). This shim has no in_progress beads,
+# so the value is an empty list.
+if "in_flight" not in out:
+    raise SystemExit(f"'in_flight' must be present in every mode; keys: {sorted(out.keys())}")
+if out.get("totals", {}).get("in_flight") != len(out["in_flight"]):
+    raise SystemExit(f"totals.in_flight must match len(in_flight); "
+                     f"totals={out.get('totals')}, in_flight={out['in_flight']}")
 PY
 }
 
@@ -319,7 +329,7 @@ assert_mode_keys brainstorm      "$expect_brainstorm" brainstorm
 assert_mode_keys implementation  "$expect_impl"       implementation
 assert_mode_keys planning        "$expect_planning"   planning
 assert_mode_keys human           "$expect_human"      human
-pass "T6: --mode emits exact section-key set per spec §--mode contract (all | brainstorm | implementation | planning | human)"
+pass "T6: --mode emits exact section-key set per spec §--mode contract (all | brainstorm | implementation | planning | human); in_flight always present"
 
 # -----------------------------------------------------------------------------
 # T8. is_impl_candidate handles `feature` leaf-impl beads (regression for
@@ -832,8 +842,10 @@ assert ids("human") == ["proj-h-inst"], f"human: {ids('human')}"
 assert ids("brainstorm") == ["proj-b-inst"], f"brainstorm: {ids('brainstorm')}"
 assert ids("implementation") == ["proj-i-inst"], f"implementation: {ids('implementation')}"
 assert ids("planning_ready") == ["proj-p-inst"], f"planning_ready: {ids('planning_ready')}"
+# `in_flight` is mode-independent and always present in totals (no in_progress
+# beads in this fixture → count 0), exempt from --label filtering.
 t = out["totals"]
-assert t == {"human":1,"planning_ready":1,"brainstorm":1,"implementation":1}, f"totals: {t}"
+assert t == {"human":1,"planning_ready":1,"brainstorm":1,"implementation":1,"in_flight":0}, f"totals: {t}"
 PY
 pass "T13a: --label install filters all sections to install-labeled beads; totals reflect filter"
 
@@ -885,5 +897,37 @@ ec=$?
 grep -qE '^ready --limit 0 --json$' "$CALL_LOG" \
     || fail "T14: bd ready must be called with '--limit 0' to avoid the 100-row cap (calls: $(cat "$CALL_LOG"))"
 pass "T14: bd ready is invoked with --limit 0 (no silent 100-row cap)"
+
+# -----------------------------------------------------------------------------
+# T15. parse_bd_timestamp always returns a timezone-aware datetime (or None).
+# Regression for PR #231 comment 3525472321: an offsetless ISO string parsed
+# to a NAIVE datetime, which raised TypeError in claim_age_days() (subtracting
+# from an aware datetime.now) and in build_in_flight's sort key (comparing
+# against an aware datetime.max). Non-string input must return None, not raise.
+# -----------------------------------------------------------------------------
+python3 - "$COLLECT_PY" <<'PY' || fail "T15: parse_bd_timestamp naive/non-string handling incorrect"
+import importlib.util, sys
+from datetime import datetime, timezone
+spec = importlib.util.spec_from_file_location("collect_mod", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+# Offsetless (naive) ISO string → aware datetime coerced to UTC.
+aware = mod.parse_bd_timestamp("2026-07-04T17:58:57")
+assert aware is not None, "offsetless timestamp must parse, not return None"
+assert aware.tzinfo is not None, "offsetless parse must be coerced to an aware datetime"
+assert aware.utcoffset() == timezone.utc.utcoffset(None), "naive parse must be coerced to UTC"
+# Aware arithmetic against now(utc) must not raise (the reported TypeError).
+_ = datetime.now(timezone.utc) - aware
+
+# Z-suffixed timestamp stays aware.
+zaware = mod.parse_bd_timestamp("2026-07-04T17:58:57Z")
+assert zaware is not None and zaware.tzinfo is not None, "Z-suffixed parse must be aware"
+
+# Non-string / missing input → None, never raising.
+for bad in (None, 12345, [], {}, ""):
+    assert mod.parse_bd_timestamp(bad) is None, f"non-string/empty input {bad!r} must return None"
+PY
+pass "T15: parse_bd_timestamp returns aware datetimes and None for non-string/missing input"
 
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
