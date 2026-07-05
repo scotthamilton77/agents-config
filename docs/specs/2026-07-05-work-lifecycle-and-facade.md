@@ -9,9 +9,9 @@
 
 The 2026-07-04 fablize specfest left six beads (`abn9.40.2`, `abn9.40.4`,
 `qn0g.1.1`, `uxns2.1`, `vaac.3`, `wgclw.9`) at `status: in_progress` after
-their design specs merged. Because `bd ready` returns only `status: open` beads, all five —
-correctly labeled `implementation-ready` — were invisible to every dispatch
-queue. Three defects compounded:
+their design specs merged. Because `bd ready` returns only `status: open` beads, all six were
+invisible to every dispatch queue; five of them were correctly labeled `implementation-ready`.
+Three defects compounded:
 
 - **No status-transition rule exists.** The archived formula-driven lifecycle
   (brainstorm-bead finalize: close the spec'd bead X, mint implementation bead
