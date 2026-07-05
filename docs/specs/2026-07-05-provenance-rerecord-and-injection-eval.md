@@ -115,11 +115,13 @@ Algorithm:
    (abstain), but an avoidable abstain on active PRs.
 2. **Merge base.** Glob `<state>/pr-provenance/<owner>~<repo>~<pr>~*.provenance.json`
    (every prior head's sidecar for this PR — the `~`-separator sanitizing in §2
-   guarantees the glob cannot match across PRs; `owner`/`repo`/`pr` are
-   `_safe_component`-validated **before** glob composition, with the rejection set
-   extended to the glob metacharacters `*`, `?`, `[` in **both** mirrors of the
-   sanitizer — `record_provenance.py` and `judge_merge.py` carry twin copies with
-   keep-in-sync comments; extend both and update the comments — defense-in-depth;
+   guarantees the glob cannot match across PRs; `owner`/`repo`/`pr` are validated
+   **before** glob composition by a new shared `path_safety.py` module — peer of
+   `model_family.py` — that **replaces** the twin `_safe_component` copies in
+   `record_provenance.py` and `judge_merge.py` along with their keep-in-sync
+   comments. The shared validator is an **allowlist**
+   (`^[A-Za-z0-9][A-Za-z0-9._-]*$`), which subsumes the old denylist and rejects
+   the glob metacharacters `*`, `?`, `[` by construction — defense-in-depth;
    these values come from `gh`, not the diff). Union their commit entries by SHA, keeping
    **only `first-hand` entries**. Authorship is immutable, so a first-hand
    attestation made when a commit was created stays valid forever; carrying it
@@ -130,7 +132,7 @@ Algorithm:
    dependence. Trailer-derived entries are **never carried** — they are cheap to
    recompute and recomputing avoids propagating a stale read.
 3. **Attest fresh** every enumerated SHA not already carried. A commit is
-   `first-hand` only when **all three** hold:
+   `first-hand` only when **all four** hold:
    - **(a) Positional:** it lies inside `--first-hand-range <oid>..<head-sha>` —
      the span this session just pushed. Positional knowledge is what makes
      first-hand *first-hand* (the same pre-push-baseline rule the interim snippet
@@ -146,6 +148,11 @@ Algorithm:
    - **(c) Fully-derived:** its derivation raised no `unmapped_signal` (§3) — an
      unrecognized co-author brand cannot have its family attested, and a silent
      subset could hide the judge's own family from the gate.
+   - **(d) Identity-consistent:** its git author **and** committer emails equal
+     the recording session's own git identity (`git config user.email` at record
+     time). The session's own commits always satisfy this; a cherry-picked
+     foreign commit keeps its original author and fails it even when its message
+     carries a copied session trailer.
 
    First-hand families = the `commit_family.py` derivation **unioned with the
    session's own family** (`Claude-Session` ⇒ `anthropic`); the no-signal `human`
@@ -166,8 +173,14 @@ Algorithm:
    or omit the field when the source sidecar predates it).
    Additive only — `provenance_gate` reads `sha`/`attestation`/`author_families` and
    ignores unknown keys, so no consumer change and no schema version bump.
-5. **Prune** all *other* `<owner>~<repo>~<pr>~*.provenance.json` files for this PR,
-   only after the new write succeeded. State stays bounded at one sidecar per open PR.
+5. **Prune — compare-and-delete only.** After the new write succeeds, delete only
+   the sidecar files captured in step 2's glob snapshot, never a fresh
+   "everything else" glob. Two concurrent `--auto` runs for the same PR (parallel
+   sessions, a retried delivery) can otherwise interleave glob→write→prune and
+   silently delete a sibling's just-written record; with compare-and-delete the
+   race's loser survives as an extra file that the next run merges and prunes
+   normally. Fail-safe either way (a lost record ⇒ abstain, never a false `go`),
+   and state stays bounded at one sidecar per open PR in the steady state.
 
 Only `Claude-Session` trailers are recognized as a session-identity signal for now;
 when Codex/Gemini delivery sessions start recording provenance, their equivalent
@@ -234,7 +247,13 @@ that is the point.
   a new SHA and needs fresh attestation), and `attested_by` preserves the audit trail.
 - **Residual (inherited, documented in the judge spec):** a compromised delivery agent
   could still mis-attest — it could also merge directly, so the gate is moot in that
-  world. Tool-emitted write-time provenance remains the future closure.
+  world. Tool-emitted write-time provenance remains the future closure. A narrower
+  cousin: a session that cherry-picks an untrusted commit **verbatim** imports
+  attacker-controlled metadata — a copied session trailer plus a forged author
+  identity would pass §4 step 3 (a)–(d), since no metadata check survives verbatim
+  import of an attacker-crafted commit. The defense is procedural (a delivery
+  branch must not import unreviewed foreign commits) and the residual is accepted
+  here by name.
 
 ### 7. Acceptance criteria (528x8)
 
@@ -248,21 +267,27 @@ TDD discipline.
    (`noreply@anthropic.com` ⇒ `anthropic`), a commit whose only signal is a
    `Claude-Session` trailer (⇒ `anthropic`), and an unrecognized co-author raising
    `unmapped_signal`.
-2. Auto mode, fresh PR: commits meeting all of §4 step 3's (a)/(b)/(c) →
+2. Auto mode, fresh PR: commits meeting all of §4 step 3's (a)–(d) →
    `first-hand` with families unioned with the session family — a qualifying commit
    with a missing `Co-Authored-By` trailer records families ⊇ {`anthropic`}, never
    `["human"]`; foreign-trailer commits → `trailer-derived`; session commits
    missing the `Claude-Session` trailer → `trailer-derived`; a commit whose trailer
    matches `--session` but sits **outside** `--first-hand-range` (forged/copied
    trailer) → `trailer-derived`; a session-matched in-range commit with an
-   unrecognized co-author (`unmapped_signal`) → `trailer-derived`.
+   unrecognized co-author (`unmapped_signal`) → `trailer-derived`; an in-range
+   session-matched commit whose author email differs from the session's git
+   identity (cherry-picked foreign commit with a copied trailer) →
+   `trailer-derived`.
 3. Auto mode, moved head: prior first-hand entries carried with original
    `attested_by`; colliding first-hand entries for one SHA union their
    `author_families` with the deterministic `attested_by` pick of §4; prior
    trailer-derived entries recomputed, not carried; superseded sidecars pruned only
    after a successful new write; a failed write leaves prior sidecars intact.
 4. Glob isolation: sidecars of other PRs/repos are never read or pruned; glob
-   components are `_safe_component`-validated with glob metacharacters rejected.
+   components pass the shared `path_safety.py` allowlist, consumed by both
+   `record_provenance.py` and `judge_merge.py` (twin `_safe_component` copies
+   deleted); prune deletes only the step-2 snapshot (compare-and-delete),
+   covered by a concurrent-writer fixture.
 5. `provenance_gate` consumes a merged record unchanged: all-first-hand → authorizes;
    any trailer-derived in range → abstains. Existing gate tests stay green,
    unmodified.
