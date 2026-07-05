@@ -40,6 +40,17 @@ Locked owner decisions (interview 2026-07-04):
    confidence — testable in this repo. v1 ships bd-only; the GH adapter is a
    follow-up bead gated on seam doubts surviving contract-test review.
 
+**Layering.** This contract is the facade's **transport layer**. The lifecycle
+protocol layer — noun-templated creation, `claim`/`release`/`deliver`/`plan`/
+`promote`/`reconcile`, and the lifecycle invariants — is defined in the work
+lifecycle and facade design (2026-07-05) and ships in the same package, built
+over this contract's `Backend` seam, envelope, and protocol versioning. Two
+surface consequences for the verb set (§3): the thin `create` is the adapter
+primitive `work create --raw` (public creation is noun-templated by the
+lifecycle layer), and `update` does not move status — claiming belongs to the
+lifecycle `claim`/`release` verbs, and status transitions happen only through
+lifecycle verbs plus `close`/`reopen` herein.
+
 ## 3. Verb set (derived from observed usage)
 
 Derivation evidence: grep of `bd` invocations across `src/user/.agents/skills/`
@@ -53,8 +64,8 @@ create/status/audit-note). Usage counts: `show` 11, `ready` 5, `label add` 5,
 | Verb | Covers (bd today) | Notes |
 |---|---|---|
 | `work show <id>...` | `bd show` (+ batch = PDLC `bulk_get`) | one JSON shape: item + typed dep edges + children |
-| `work create` | `bd create` incl. `--parent` | auto-edge quirk absorbed: facade never lets a caller double-add the parent edge |
-| `work update <id>` | `bd update` status/claim/title/priority | field semantics explicit: `--set-X` replaces |
+| `work create --raw` | `bd create` incl. `--parent` | adapter primitive (§2 Layering); public creation is the lifecycle layer's `work create <noun>`. Auto-edge quirk absorbed: facade never lets a caller double-add the parent edge |
+| `work update <id>` | `bd update` title/priority (status via lifecycle verbs) | field semantics explicit: `--set-X` replaces; no `--claim` here (§2 Layering) |
 | `work note <id> <text>` | `bd update --append-notes` | append-only by contract (PDLC `append_audit_note`); no clobber verb for notes |
 | `work close <id>... [--disposition <text>]` | `bd close` (+ note) | batch; disposition lands as an appended note |
 | `work reopen <id>` | `bd reopen` | |
@@ -176,7 +187,7 @@ scripted-bd fake, no live Dolt in unit tests).
 1. Envelope invariants: every verb, success and failure, emits a parseable
    envelope with `protocol`, and exit code mirrors `ok`.
 2. `show` normalization: single id → object; deps lean-shaped; labels `string[]`.
-3. `create --parent` never double-adds the parent edge (fake records calls).
+3. `create --raw --parent` never double-adds the parent edge (fake records calls).
 4. Type-wall pre-check: epic→task `dep add blocks` → `E_TYPE_WALL`, bd never invoked.
 5. `list`/`ready` default unbounded: fake returns >50 rows, all surface.
 6. Notes are append-only: two `note` calls concatenate; no verb path reaches
