@@ -2,14 +2,14 @@
 
 **Date:** 2026-07-05
 **Status:** Draft (pending review)
-**Bead:** filed by the adoption sweep (§12) as the first native citizen of this design's own taxonomy
-**Decision:** Work-item state is declared, never inferred: status is a claim lease, labels carry phase, and the tracker's own dependency engine gates phase transitions. Objectives are containers that never close before their planned work exists as trackable children; implementation children are created as dependency-blocked placeholders at capture when implementation is expected. A `work` facade CLI (`packages/work`) owns every lifecycle mutation; skills and the future PDLC orchestrator are its clients. Beads remains the storage engine.
+**Bead:** `agents-config-wgclw.9` for the CLI scope (this spec defines the lifecycle layer; the transport layer is the work-facade CLI contract spec, 2026-07-04). Non-CLI continuations attach to their own homes at the sweep (§12).
+**Decision:** Work-item state is declared, never inferred: status is a claim lease, labels carry phase, and the tracker's own dependency engine gates phase transitions. Objectives are containers that never close before their planned work exists as trackable children; implementation children are created as dependency-blocked placeholders at capture when implementation is expected. The `work` facade CLI (`packages/workcli`) owns every lifecycle mutation — this spec's lifecycle layer over the CLI contract spec's transport layer; skills and the future PDLC orchestrator are its clients. Beads remains the storage engine.
 
 ## 1. Problem
 
-The 2026-07-04 fablize specfest left five beads (`abn9.40.2`, `abn9.40.4`,
-`qn0g.1.1`, `uxns2.1`, `vaac.3`) at `status: in_progress` after their design
-specs merged. Because `bd ready` returns only `status: open` beads, all five —
+The 2026-07-04 fablize specfest left six beads (`abn9.40.2`, `abn9.40.4`,
+`qn0g.1.1`, `uxns2.1`, `vaac.3`, `wgclw.9`) at `status: in_progress` after
+their design specs merged. Because `bd ready` returns only `status: open` beads, all five —
 correctly labeled `implementation-ready` — were invisible to every dispatch
 queue. Three defects compounded:
 
@@ -153,11 +153,21 @@ open + `spec-ready` + childless → planning queue. Self-reporting (invariant 2)
 
 ## 7. The `work` facade
 
-`packages/work` — a real, CI-gated Python package following the installer /
-prgroom pattern. Beads is the storage engine; the facade owns every lifecycle
-mutation and is the single place bd quirks live. Skills call it today; the
-PDLC orchestrator (`packages/pdlc`) drives the same verbs later;
-`holding-place`'s Promote contract resolves to `work create <noun>`.
+The facade is **one CLI, two layers**, bead `wgclw.9`. The work-facade CLI
+contract spec (2026-07-04) defines the **transport layer**: twelve thin
+verbs, the JSON envelope, protocol versioning, and the internal `Backend`
+adapter seam — the single place bd quirks live. This spec defines the
+**lifecycle layer** above it: the verbs below are implemented over that same
+`Backend` seam, emit the same versioned envelope, and ship in the same
+CI-gated package (`packages/workcli`, binary `work`, per the contract spec's
+naming). Two surface reconciliations against the contract: public creation is
+noun-templated (§4) — the transport-thin create survives as the adapter
+primitive `work create --raw`; and claiming moves out of `update --claim`
+into the guarded lifecycle verbs — **status never moves except through
+lifecycle verbs** (plus the contract's `close`/`reopen`). Beads is the
+storage engine. Skills call the CLI today; the PDLC orchestrator
+(`packages/pdlc`) drives the same verbs later; `holding-place`'s Promote
+contract resolves to `work create <noun>`.
 
 | Verb | What it does | Guards |
 |---|---|---|
@@ -199,7 +209,7 @@ when the backlog drains.
 
 ## 9. Interim protocol (pre-facade)
 
-Until `packages/work` ships its first verbs, skills carry the protocol
+Until `packages/workcli` ships its lifecycle verbs, skills carry the protocol
 manually, and this section is normative:
 
 1. Specs include the `## Continuations` manifest (§6).
@@ -212,7 +222,7 @@ manually, and this section is normative:
 
 `fablize` step 9 and the brainstorming terminal phase adopt this immediately;
 `capture_spec.py` (per the amended spec-capture-glue design) mechanizes it;
-`packages/work` supersedes both.
+the facade supersedes both.
 
 ## 10. Migration
 
@@ -229,7 +239,8 @@ ready-hides-blocked, and labels are all existing primitives.
 
 | Asset | Change |
 |---|---|
-| `packages/work` (new) | The facade (§7). Filed as a `spec`-shaped objective — the first native citizen of its own taxonomy. |
+| `packages/workcli` (new; bead `wgclw.9`) | The facade (§7): transport layer per the CLI contract spec + lifecycle layer per this spec, one package. Impl children minted under `wgclw.9` at the sweep draw from both specs' manifests. |
+| work-facade CLI contract spec | Amended (this PR): layering note in §2; thin `create` → `work create --raw` adapter primitive; `--claim` removed from `update` — status is lifecycle-verb-only. |
 | `whats-next` / `collect.py` | Router rewrite (§8). |
 | `fablize` SKILL.md | Step 9 adopts the interim protocol (§9); readiness end-state = children minted + claim released, never a bare label on a claimed bead. |
 | spec-capture-glue spec (`qn0g.1.1`) | Amended: `capture_spec.py` becomes a facade client (interim: implements §9); its bead-origin stamping adopts placeholder reconciliation; manifest lens added to assessor-lite. |
@@ -242,16 +253,18 @@ ready-hides-blocked, and labels are all existing primitives.
 ## 12. Specfest repair plan
 
 The first manual run of the recovery path (§9.3), covering **every bead
-referenced by specfest PRs #220–#227**, not only the five known-stuck ones —
+referenced by specfest PRs #220–#227**, not only the six known-stuck ones —
 wave 2 (`abn9.40.1`, `25rmt`, `qptb4`, `g42cj`, `abn9.40.3`) is audited for
-the same stale-claim state.
+the same stale-claim state. The sixth (`wgclw.9`, spec PR #223) was caught
+only by direct interrogation — it lacked the triage label the first sweep
+keyed on, which is why this sweep enumerates by PR, never by label.
 
 Per stuck bead (claimed with spec merged; unclaimed wave-2 beads skip the
 release step): release the claim (→ `open`), stamp `brainstormed`, then the
 verdict fork — these specs carry ASSUMPTION ledgers awaiting owner scan (five
 flags on the `abn9.40.4` spec, seven on the shared `abn9.40.2`/`vaac.3` spec,
-seven on `qn0g.1.1`'s; the Gemini seat in the HEAVY-gate panel spec is
-explicitly UNVERIFIED):
+seven on `qn0g.1.1`'s, six on `wgclw.9`'s CLI contract; the Gemini seat in
+the HEAVY-gate panel spec is explicitly UNVERIFIED):
 
 - **Owner scans and blesses** → impl children minted per manifest scope,
   `planned` stamped where children exist.
@@ -260,8 +273,12 @@ explicitly UNVERIFIED):
 
 The shared `abn9.40.2`/`vaac.3` spec splits its continuations across its two
 objectives. `uxns2.1` mints only its own slice of the three-topic PR #224
-spec. The lifecycle objective bead for this design is created during the
-sweep with placement asked at capture.
+spec. `wgclw.9` (under milestone PORT/`uxns2`) is the objective for the whole
+`work` CLI: its impl children draw from both the CLI contract spec's manifest
+(transport layer) and this spec's (lifecycle layer). This spec's non-CLI
+continuations (router rewrite, skill/rules updates, the sweep itself) are
+placed at capture during the sweep, per the design's own placement rule —
+they are not `wgclw.9` children.
 
 ## 13. Non-goals
 
@@ -323,8 +340,9 @@ sweep with placement asked at capture.
 - `ASSUMPTION:` bd type mapping — `spec` → feature (epic when the manifest
   expands past a threshold), `bugfix` → bug, `decision` → decision,
   `spike`/`chore` → task + shape label; facade owns the mapping exclusively.
-- `ASSUMPTION:` `work` package name and location `packages/work`; verb
-  surface as tabled in §7.
+- `ASSUMPTION:` lifecycle verbs ship in `packages/workcli` (adopting the CLI
+  contract spec's naming); `work create --raw` as the transport-thin creation
+  primitive; verb surface as tabled in §7.
 - `ASSUMPTION:` migration stamping heuristic (type + children → shape;
   ≥1 non-closed child → `planned`).
 - `ASSUMPTION:` evidence flags `--spec <ref>` / `--trivial`; exact flag names
@@ -337,8 +355,10 @@ sweep with placement asked at capture.
 
 ## Continuations
 
-- spec: `packages/work` facade — verbs, bd mapping, JSON envelopes (§7) —
-  AC: test plan items 1–11 pass under `make ci`-style gates.
+- feat (under `wgclw.9`): lifecycle verb layer in `packages/workcli` over the
+  CLI contract spec's `Backend` seam (§7) — AC: test plan items 1–11 pass
+  under `make ci`-style gates. (The transport layer is `wgclw.9`'s own
+  manifest, from the CLI contract spec.)
 - feat: `whats-next` router rewrite to declared-state reads with legacy
   fallback (§8) — AC: test plan item 12 passes; formula-era machinery deleted.
 - chore: fablize step 9 + brainstorming terminal phase adopt the interim
