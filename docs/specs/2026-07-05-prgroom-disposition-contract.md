@@ -2,7 +2,7 @@
 
 **Status:** Draft (pending review)
 **Beads:** agents-config-abn9.8.27 (per-item disposition surface), agents-config-abn9.8.13.1 (merge-guard consumption + seam repair). One spec, two beads — edits here affect both; each bead's AC section is separate (§9).
-**Related:** agents-config-abn9.8.28 produces the `posted_reply_ids` field this contract defines (§5); agents-config-abn9.8.26 owns the `decided_by` provenance fix this contract's field semantics depend on (§3.3); agents-config-abn9.8.31 is adjudicated in §8; `docs/architecture/review-merge-policy/design.md` reserves the clearance hook this spec implements (its "design-reserved and not yet implemented" eligibility-predicate row); `2026-06-20-prgroom-fix-verify-subsystem.md` §6.3 is a sibling additive envelope extender (§7).
+**Related:** agents-config-abn9.8.28 produces the `posted_reply_ids` field this contract defines (§5); agents-config-abn9.8.26 owns the `decided_by` provenance fix this contract's field semantics depend on (§3.3); agents-config-abn9.8.31 is adjudicated in §8; `docs/architecture/review-merge-policy/design.md` reserves the clearance hook this spec implements (its "design-reserved and not yet implemented" eligibility-predicate row); `2026-06-20-prgroom-fix-verify-subsystem.md` §6.3 is a sibling additive envelope extender (§3.4).
 
 ## 1. Problem
 
@@ -67,14 +67,14 @@ Rejected alternatives:
 | Field | Source | Semantics |
 |---|---|---|
 | `kind` | `ReviewItem.kind` | `review_thread` \| `review_summary` \| `issue_comment` |
-| `gh_id` | `Identity.gh_id` | **Uniform natural key**: the GitHub object's own `id` for every kind — issue-comment ID for `issue_comment`, review ID for `review_summary`, inline-comment ID for `review_thread`. `(kind, gh_id)` is the item's natural key, and it matches the keys merge-guard's live queries already use (`.id` on issue comments, `.id` on reviews). No key translation layer. |
+| `gh_id` | `Identity.gh_id` | **Uniform natural key**: the GitHub object's own `id` for every kind — issue-comment ID for `issue_comment`, review ID for `review_summary`, inline-comment ID for `review_thread`. `(kind, gh_id)` is the item's natural key, and it names the same GitHub objects merge-guard's live queries key on (`.id` on issue comments, `.id` on reviews). **Type: JSON string** — prgroom persists `Identity.gh_id` as a `str`. No *key* translation, but a *type* coercion is mandatory at the consumer: the live GitHub `.id` is a JSON number and jq `index()` treats `123 ≠ "123"`, so both sides MUST be normalized to string before matching (§4.2). |
 | `thread_id` | `Identity.thread_id` | GraphQL `PRRT_*` node id; non-empty only for `review_thread` items. The identity projection is `gh_id` + `thread_id` only: `Identity.reply_to_comment_id` (thread-reply plumbing consumed internally by the reply step) and `Identity.issue_comment_id` (vestigial — never populated by item construction today) are omitted. |
 | `author` | `ReviewItem.author` | GitHub login of the item's author. Informational — consumers MUST NOT use it for exclusion (policy: exclusion by exact recorded reply ID, never author login). |
 | `disposition` | `ReviewItem.disposition` | `null` when the item has not been processed (== untriaged). Otherwise **exactly** `{kind, decided_at, decided_by}`. The persisted `Disposition`'s remaining fields are deliberately omitted from the projection: `rationale` and `commits` (bulky, no external consumer), `response_path` (a local filesystem path that must not leave the store), `gate` (consumed in-process by the fix-verify subsystem; if its sibling `verify` block ever needs per-item gate data, that is an additive change per §3.4), and `escalation_filed` (escalations surface through the `human-gated` phase flow, not per-item). |
 | `disposition.kind` | `DispositionKind` | One of `fixed`, `already_addressed`, `skipped`, `deferred`, `wont_fix`, `escalated`, `failed`. |
 | `disposition.decided_by` | `Disposition.decided_by` | **The agent that actually produced the decision.** See §3.3 — this semantic is load-bearing and currently mis-stamped on fallback. |
 | `replied` / `resolved` | `ReviewItem` booleans | Reply posted / thread resolved, as already persisted. |
-| `posted_reply_ids` | new persisted field | The GitHub comment IDs of replies **prgroom itself posted** for this item, recorded durably at post time (§5). Empty until the reply-ledger bead lands; an empty list is always safe (fewer exclusions = fail-closed). |
+| `posted_reply_ids` | new persisted field | The GitHub comment IDs of replies **prgroom itself posted** for this item, recorded durably at post time (§5), emitted as JSON **strings** (same consumer-side type-coercion requirement as `gh_id`). Empty until the reply-ledger bead lands; an empty list is always safe (fewer exclusions = fail-closed). |
 
 Durability rule: an item appears with a non-null `disposition` **only after** that disposition has been durably persisted (the store writes via `flock` + atomic rename; `status` reads are lock-free but never partial). There is no "completed pass" marker and none is needed — the legacy `skill_a_completed` guard exists because legacy inventory FIX/SKIP calls were not durable mid-run; prgroom's are.
 
@@ -103,6 +103,8 @@ With `prgroom_available=true` and an `items` array present:
 - `$done_review` += `gh_id` of items with `kind == "review_summary"` AND `disposition.kind` ∈ CLEARING_SET.
 
 **CLEARING_SET = `{fixed, already_addressed, skipped, deferred, wont_fix}`. Blocking: `{escalated, failed}` and `disposition: null`.**
+
+**ID type normalization (required).** prgroom emits `gh_id` and `posted_reply_ids[]` as JSON strings; merge-guard's live GitHub `.id` values are JSON numbers. jq `index()` matches by strict type-and-value, so `"123"` never equals `123` — without coercion the prgroom union excludes nothing, and every item prgroom already cleared re-trips the blocker as a fail-closed false positive (the exact defect this contract removes). Coerce to a common type before building `$agent_replies`, `$done_issue`, and `$done_review`: apply `| tostring` to the live-GitHub side (prgroom's values are already strings). This applies to both the disposition-keyed sets and the posted-reply-ID exclusion set.
 
 This is a 1:1 realization of the policy prose ("fixed / already-addressed / skipped / deferred / won't-fix"). It is deliberately *higher-fidelity than the legacy source*: the legacy inventory classification can only express SKIP and FIX+committed/already_addressed — `deferred` and `wont_fix` are prose-only there. The prgroom source is the first implementation that can honor all five clearing kinds. `escalated`/`failed` remain blockers, consistent with the adjacent no-internal-blocker-items gate.
 
@@ -179,5 +181,6 @@ Behaviors:
 7. Union: an item cleared by legacy inventory alone and another cleared by prgroom alone → both excluded in one run.
 8. The decision JSON's schema (`status`, `blockers[]`, `facts`, `base_ref_oid`) is unchanged across all above cases.
 9. The script passes the PR ref to `status` (seam repair) — asserted via the stub recording its argv.
+10. **ID type normalization:** a prgroom item whose `gh_id` (string, e.g. `"3141592653"`) corresponds to a live GitHub object whose `.id` is the JSON number `3141592653` is correctly matched and excluded; likewise a `posted_reply_ids` string entry against a numeric live comment `.id`. This is the regression guard for the jq `index()` type-mismatch that would otherwise fail closed — a fixture mixing string-typed prgroom IDs with number-typed live IDs must still clear.
 
-AC: behaviors 1–9 as new assertions in the existing suite, every pre-existing assertion still green; the eligibility-predicate row in `docs/architecture/review-merge-policy/design.md` is amended in place from "design-reserved, not yet implemented" to documenting the live prgroom clearance source (that design doc is evergreen; the dated 2026-07-01 plan is a historical artifact and is not edited).
+AC: behaviors 1–10 as new assertions in the existing suite, every pre-existing assertion still green; the eligibility-predicate row in `docs/architecture/review-merge-policy/design.md` is amended in place from "design-reserved, not yet implemented" to documenting the live prgroom clearance source (that design doc is evergreen; the dated 2026-07-01 plan is a historical artifact and is not edited).
