@@ -86,9 +86,18 @@ What this dissolves from the superseded design:
 
 - **Scope** — a destination realm: `user` (per-tool home-dir config roots) or
   `project` (a specific repository's working tree). The closed set for v1.
-- **Selector** — a namespace path pattern addressing staged content
-  (`skills/**`, `rules/memory-routing`, `instructions`), the vocabulary
-  staging already uses.
+- **Selector** — a namespace path pattern (`skills/**`,
+  `rules/memory-routing`, `instructions`) addressing staged content in a
+  **normalized vocabulary** the resolver defines over the staged universe, not
+  a raw installer output. Normalization: each item's `dest_relpath` with its
+  `.md`/`.template` suffix stripped (`rules/memory-routing.md` →
+  `rules/memory-routing`), and the tool-root instruction and settings templates
+  (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, … / `settings.json`, `opencode.jsonc`)
+  collapsed to the synthetic `instructions` and `settings` selectors — there is
+  no `instructions` namespace on disk today, and staging keys on raw
+  `dest_relpath`. This one canonical selector surface is what the §9
+  vocabulary-consolidation prerequisite lands; every selector below matches
+  against it, never against raw `dest_relpath`.
 - **Profile** — a named set of include entries (selector, optional scope
   override) and exclude entries (selector only).
 - **Scope binding** — the CLI-supplied mapping from scope name to a concrete
@@ -154,6 +163,11 @@ include = [
   or an inline table `{ select = "...", scope = "..." }` (explicit scope).
 - Exclude entries are bare selectors only — exclusion is scope-agnostic by
   design ("not anywhere" is the requirement).
+- Selectors are the **normalized** vocabulary (§3): extension-less
+  (`rules/memory-routing`, not `rules/memory-routing.md`), with `instructions`
+  and `settings` addressing the tool-root instruction/settings templates. The
+  resolver normalizes the staged universe once before matching, so a manifest
+  never carries a `.md` suffix or a tool-root filename.
 - `ASSUMPTION:` the starter profile set is `full`, `minimal-user`, `sdlc`,
   `beads-kit`, `no-brainstorming`, `project-lean` as sketched — the owner
   re-cuts contents freely; the mechanism, not the cut, is the contract.
@@ -186,8 +200,10 @@ silently (see step 7).
 4. **Union** — includes := union of include entries across selected profiles;
    excludes := union of exclude entries. Order-independent.
 5. **Match** — selectors match against the staged universe: the post-overlay,
-   pre-flattening plan. Any selector (include *or* exclude) matching nothing
-   in the universe → error naming the selector. This is the anti-drift guard:
+   pre-flattening plan, projected into the normalized selector vocabulary (§3)
+   — suffix-stripped, with tool-root instruction/settings templates mapped to
+   the `instructions`/`settings` selectors. Any selector (include *or* exclude)
+   matching nothing in the universe → error naming the selector. This is the anti-drift guard:
    a manifest entry cannot rot silently when an asset is renamed. An exclude
    *may* subtract nothing from the current include set (no-op subtraction
    keeps exclude profiles composable with any include set); it must still
@@ -334,7 +350,11 @@ Grounded in the 2026-07-06 code survey; module references are to
    the *universe* errors naming the selector; a selection resolving to zero
    items errors (§6 step 6).
 6. Unknown profile name → error naming known profiles; include selector
-   matching nothing → error naming the selector.
+   matching nothing → error naming the selector. Selector matching runs against
+   the normalized vocabulary (§3): `rules/memory-routing` matches the staged
+   `rules/memory-routing.md`, and `instructions` matches the tool-root
+   instruction templates — a `.md`-suffixed or tool-root-filename selector is
+   not the manifest vocabulary.
 7. Duplicate profile name across shipped and user manifests → error; user
    manifest declaring `[scopes]` → error (v1).
 8. Scope-assignment specificity (§6 step 7): a literal include entry
