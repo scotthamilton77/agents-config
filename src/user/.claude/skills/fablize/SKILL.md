@@ -67,6 +67,28 @@ model's.
    upstream dependency edges too — don't propose spec'ing something a blocked
    dependency makes structurally moot.
 
+   **Then verify each candidate is still real, not just rich.** Coverage
+   gauges how *detailed* a bead is; liveness gauges whether the thing it
+   describes still exists — a bead can richly specify surfaces that were
+   archived or deleted out from under it. For each candidate, extract every
+   concrete surface it names (file paths, script names, skill paths, cited
+   rule sections) and resolve each against the live tree, **excluding any path
+   under `archive/`** (`find … -not -path '*/archive/*'`, or grep for the
+   cited text). Match the *cited content*, not just a same-named file: a stub
+   can survive at a path while the substance it references was archived, so
+   "`foo.md`'s X section" needs that section grepped, not `foo.md`'s mere
+   existence. A candidate whose named surfaces are **all** archive-only or
+   missing is disqualified from selection — it wants a disposition decision
+   (close as superseded, or rescope), not a spec; surface it under Phase 2's
+   rejected clusters with that verdict.
+
+   **Read closed siblings' close notes.** A candidate's fate is often settled
+   one bead over: a sibling closed as superseded routinely names the exact
+   archived surfaces the still-open candidates also depend on — a verdict that
+   never propagated to the parent or the open siblings. Before selecting, read
+   the `notes`/close text of closed beads under the same parent; a sibling
+   note condemning a candidate's surfaces is disqualifying evidence.
+
 ## Phase 2 — Select and present (ends in a hard STOP)
 
 4. **Select a small batch.** Default 4–6 items; never propose more without
@@ -126,6 +148,7 @@ model's.
 |---|---|
 | "The batch could be a bit bigger" | No — human review time is the bottleneck, not model capacity. Default stays 4–6. |
 | "This item's spec looks good enough" | Measure description/design/AC content per item; don't eyeball it. |
+| "This bead's description is rich, so it's a strong candidate" | Richness isn't liveness. A detailed bead can describe files, scripts, or skills that were archived out from under it. Resolve every named surface against the live tree (excluding `archive/`, matching cited content not just filenames) before selecting; all-archived-or-missing means disqualify and flag for disposition, not spec. |
 | "I'll skip the STOP and start spec'ing — the batch is obviously right" | Never. Phase 2 always ends in a stop; approval is not optional. |
 | "One strong model can just implement this directly, why spec it" | That defeats the window argument: spec now while frontier capacity is available, implement later on whatever's cheap then. |
 | "Mixed-domain batch is fine, they're all just backlog items" | Domain-mixing is the context-switch tax fablize exists to avoid; keep one domain per batch. |
@@ -138,6 +161,9 @@ model's.
   implementation-ready backlog items.
 - Backlog items that already carry an adequate spec — those don't need a
   frontier pass.
+- Backlog items whose named surfaces resolve only under `archive/` (or not at
+  all) — those describe superseded or removed work; flag them for a
+  disposition decision, don't spec them.
 - Substituting for the project's own readiness or verification gates —
   fablize feeds those gates, it doesn't replace them.
 - Merging pull requests — spec output ships as a PR like anything else;
