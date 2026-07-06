@@ -72,9 +72,12 @@ What this dissolves from the superseded design:
 
 - The `src/project/` source-tree scope partition as a mechanism. Scope comes
   from the manifest; the source tree is just organization.
-- The "project scope has no implicit `full`" special rule (§7). Under
-  scope binding, a project run stages only project-scoped entries of its
-  resolved set; nothing implicit exists to guard against.
+- The "project scope has no implicit `full`" special rule (§7) as a *scope
+  guard*: under scope binding, a project run structurally cannot stage
+  user-scoped entries, so there is no implicit spill to guard against. One
+  deliberate asymmetry survives, relocated into selection (§6 step 2): user
+  runs default to `full`, project runs require an explicit or persisted set —
+  one line in one resolver step, not a routing conditional.
 - `installer.toml`'s parsed-but-inert `tool_dest_overrides` scaffolding — this
   design supersedes it; it is retired rather than wired in (one config
   surface, not two).
