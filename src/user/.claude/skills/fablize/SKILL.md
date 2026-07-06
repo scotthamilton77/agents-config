@@ -73,8 +73,8 @@ model's.
    archived or deleted out from under it. For each candidate, extract every
    concrete surface it names (file paths, script names, skill paths, cited
    rule sections) and resolve each against the live tree, **excluding any path
-   under `archive/`** (`find … -not -path '*/archive/*'`, or grep for the
-   cited text). Match the *cited content*, not just a same-named file: a stub
+   under `archive/`** (`find . -type d -name archive -prune -o -name 'foo.md' -print`,
+   or grep for the cited text). Match the *cited content*, not just a same-named file: a stub
    can survive at a path while the substance it references was archived, so
    "`foo.md`'s X section" needs that section grepped, not `foo.md`'s mere
    existence. A candidate whose named surfaces are **all** archive-only or
