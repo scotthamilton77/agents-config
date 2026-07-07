@@ -41,11 +41,13 @@ tree, not of configuration.
 
 A code survey (packages/installer, 2026-07-06) confirms the ground is clear
 and favorable: no profile code exists anywhere; `StagedItem.dest_relpath` is
-already root-agnostic with the destination root supplied only at consumption
-(`adapter.dest_dir(home)`, two call sites); `home` is a pure injected
-parameter package-wide (`Path.home()` appears exactly once, in `cli.py`); and
-`dump_plan` already materializes a plan under an arbitrary root. Routing by
-scope is a data problem, not a rewrite.
+already root-agnostic, with the destination root resolved only through
+`adapter.dest_dir(home)` — a handful of call sites across plan sync, receipt
+root computation, prune roots, and tool detection, every one fed by the same
+injected `home`; `home` is a pure injected parameter package-wide
+(`Path.home()` appears exactly once, in `cli.py`); and `dump_plan` already
+materializes a plan under an arbitrary root. Routing by scope is a data
+problem, not a rewrite.
 
 ## 2. Decision
 
