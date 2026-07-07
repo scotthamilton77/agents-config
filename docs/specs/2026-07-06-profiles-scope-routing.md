@@ -234,9 +234,11 @@ silently (see step 7).
    include entries matching it across all selected profiles. If any exist,
    the most-specific one wins; a *specificity tie* between entries carrying
    different scopes → error naming both profiles and selectors. If none, the
-   most-specific `[scopes]` entry applies; `[scopes]` entries are validated
-   at manifest load — two same-specificity entries that could assign
-   different scopes to one item are rejected there. No `[scopes]` match →
+   most-specific `[scopes]` entry applies; a specificity tie between
+   `[scopes]` entries assigning different scopes to the same item is detected
+   here — during resolution against the staged universe, like every other
+   check in this algorithm (no load-time glob-intersection analysis) — and
+   errors naming both entries. No `[scopes]` match →
    error (no catch-all default; new namespaces must be routed deliberately).
 8. **Bind and partition** — partition the result by scope; plans for bound
    scopes proceed to flattening and sync; entries for unbound scopes are
@@ -372,7 +374,7 @@ Grounded in the 2026-07-06 code survey; module references are to
    specific one wins; two *equal-specificity* entries with different scopes →
    error naming both profiles and selectors; overlapping `[scopes]` entries
    apply most-specific-wins, and same-specificity conflicting `[scopes]`
-   entries are rejected at manifest load.
+   entries error at resolution time naming both entries.
 9. Item with no `[scopes]` match and no explicit scope → error naming the
    item's namespace.
 10. Scope-override entry routes a user-default asset to project scope; it
