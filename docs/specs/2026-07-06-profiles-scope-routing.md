@@ -125,7 +125,8 @@ consistent with the user-override philosophy of the 07-04 spec §4).
 ```toml
 schema = 1
 
-# Default destination scope per namespace selector.
+# Default destination scope per selector — keys are the §3 normalized
+# selector vocabulary (incl. the synthetic `instructions`/`settings`).
 # Every staged item MUST match an entry; most-specific match wins.
 [scopes]
 "instructions"  = "user"
@@ -239,8 +240,10 @@ silently (see step 7).
    error (no catch-all default; new namespaces must be routed deliberately).
 8. **Bind and partition** — partition the result by scope; plans for bound
    scopes proceed to flattening and sync; entries for unbound scopes are
-   dropped with a single counted notice line naming the scope and the opt-in
-   flag. If *everything* drops (non-empty result, empty bound partition) →
+   dropped with a single counted notice line naming the dropped scope and the
+   run form that would bind it (`--project <path>` for project scope; a
+   default user-scope run for user scope). If *everything* drops (non-empty
+   result, empty bound partition) →
    error: the run would do nothing, and a run that does nothing is a wrong
    profile/flag combination, not a quiet no-op. `ASSUMPTION:` notice-and-drop
    for partial drops, error for total drops — partial keeps `full` composable
@@ -262,8 +265,9 @@ answered by the resolver's inputs — all of them named files or flags.
   requirement 2 is satisfied by two runs. A combined-run mode can follow
   evidence without schema change.
 - **Persistence:** user runs persist the chosen set in
-  `~/.agents/agents-config.toml` (`ASSUMPTION:` name/location per the 07-04
-  spec §6.3, beside the other `~/.agents/` surfaces); project runs persist in
+  `~/.agents/agents-config.toml` (`ASSUMPTION:` name/location carried over
+  from the now-superseded 07-04 §6.3, beside the other `~/.agents/`
+  surfaces); project runs persist in
   the project's `project-config.toml` under `[install]`
   (`profiles = [...]`) so a project's lean context is reproducible by anyone
   who clones it. `--profiles` overrides and re-persists at the run's scope.
