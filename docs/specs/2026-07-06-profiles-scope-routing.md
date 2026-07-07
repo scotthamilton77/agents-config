@@ -112,7 +112,7 @@ What this dissolves from the superseded design:
 | # | Requirement | How this design guarantees it |
 |---|---|---|
 | 1 | Project-only install | `--project` binds *only* the project scope; user-scoped entries are structurally unbound that run — no profile discipline required |
-| 2 | User subset + project rest | Two runs: `install.sh --profiles minimal-user`, then `install.sh --project <path> --profiles beads-kit` — each persisted at its own scope |
+| 2 | User subset + project rest | Two runs: `scripts/install.sh --profiles minimal-user`, then `scripts/install.sh --project <path> --profiles beads-kit` — each persisted at its own scope |
 | 3 | Configurable what-goes-where with defaults | `[scopes]` supplies defaults per namespace; include entries override per selector; user-defined profiles compose in from `~/.agents/profiles.toml` |
 | 4 | Exclude content entirely | `exclude` entries subtract scope-agnostically; excludes always win over includes; `--profiles full,no-brainstorming` composes |
 
@@ -302,7 +302,10 @@ answered by the resolver's inputs — all of them named files or flags.
   `<project>/.beads/PRIME.md`); `[scopes]` defaults `kits/**` to project.
 - **Receipt:** each project install writes its own receipt at
   `<project>/.agents-config/install-receipt.json` (`ASSUMPTION:` carried over
-  from the superseded §7) — the same receipt schema the current machinery
+  from the superseded §7). The user-scope receipt stays where the installer
+  writes it today — `~/.config/agents-config/install-receipt.json` (computed
+  in `cli.py`) — only project installs use the in-project location. Same
+  receipt schema as the current machinery
   writes (v1 at time of writing; the wgclw.16 user-override slice bumps to v2
   with `instruction_hashes`, and project receipts simply adopt whatever
   version is current — the version number is not an invariant of this
