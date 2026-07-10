@@ -106,8 +106,8 @@ cost_per_mtok_out = 75.0
 [providers.openai]
 billing = "metered"
 [providers.openai.models."gpt-5.6-terra"]
-cost_per_mtok_in = 10.0
-cost_per_mtok_out = 40.0
+cost_per_mtok_in = 2.50
+cost_per_mtok_out = 15.0
 
 [providers.openrouter]
 billing = "metered"
