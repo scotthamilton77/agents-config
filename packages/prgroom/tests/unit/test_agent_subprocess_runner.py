@@ -188,17 +188,17 @@ def test_claude_write_requires_boolean_true_not_truthy() -> None:
 
 
 def test_codex_invocation_shape_maps_write_to_workspace_sandbox() -> None:
-    inv = build_invocation(_spec("codex", "gpt-5.5", write=True), prompt="read /x")
+    inv = build_invocation(_spec("codex", "gpt-5.6-terra", write=True), prompt="read /x")
     assert inv.argv[0] == "codex"
     assert "exec" in inv.argv
-    assert "--model" in inv.argv and "gpt-5.5" in inv.argv
+    assert "--model" in inv.argv and "gpt-5.6-terra" in inv.argv
     # write=true grants edit permission via the sandbox policy, not a bare flag.
     assert "--sandbox" in inv.argv and "workspace-write" in inv.argv
     assert "read /x" in inv.argv
 
 
 def test_codex_read_only_omits_sandbox_write() -> None:
-    inv = build_invocation(_spec("codex", "gpt-5.4-mini"), prompt="P")
+    inv = build_invocation(_spec("codex", "gpt-5.6-luna"), prompt="P")
     assert "workspace-write" not in inv.argv
 
 
@@ -252,7 +252,7 @@ def test_recognized_extra_keys_do_not_warn(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level("WARNING"):
         build_invocation(_spec("claude", "haiku", effort="high"), prompt="P")
         build_invocation(_spec("claude", "opus[1m]", write=True), prompt="P")
-        build_invocation(_spec("codex", "gpt-5.5", write=True), prompt="P")
+        build_invocation(_spec("codex", "gpt-5.6-terra", write=True), prompt="P")
     assert not caplog.records
 
 

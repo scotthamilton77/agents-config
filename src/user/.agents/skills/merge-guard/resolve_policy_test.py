@@ -36,7 +36,7 @@ class TestDefaults(unittest.TestCase):
             "merge_rule": None,
             "allow_force_after_bot_timeout": False,
             "judge_backend": "codex",
-            "judge_model": "gpt-5.5",
+            "judge_model": "gpt-5.6-terra",
             "judge_effort": "high",
             "judge_timeout_seconds": 900,
             "judge_max_attempts": 2,
@@ -174,7 +174,7 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(policy["merge_authorization"], "rule-based")
         # judge defaults present
         self.assertEqual(policy["judge_backend"], "codex")
-        self.assertEqual(policy["judge_model"], "gpt-5.5")
+        self.assertEqual(policy["judge_model"], "gpt-5.6-terra")
         self.assertEqual(policy["judge_effort"], "high")
         self.assertEqual(policy["judge_timeout_seconds"], 900)
         self.assertEqual(policy["judge_max_attempts"], 2)

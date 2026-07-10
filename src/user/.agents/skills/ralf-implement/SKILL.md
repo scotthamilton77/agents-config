@@ -107,7 +107,7 @@ The caller may pass an explicit max cycle count. If absent, use the default. Rej
 Per cycle:
 
 1. **Dispatch the doer.** Read the appropriate template by relative path, substitute the uppercase-bracket placeholders, and call `Agent({ subagent_type: <doer>, prompt: <substituted-body> })`. Templates read fresh on each dispatch — no caching.
-   - cycle 1: Codex (`gpt-5.5`) via foreign-cycle dispatch — see `./subagent-foreign-cycle.md` and `./foreign-cli-instructions.md`.
+   - cycle 1: Codex (`gpt-5.6-terra`) via foreign-cycle dispatch — see `./subagent-foreign-cycle.md` and `./foreign-cli-instructions.md`.
    - cycle 2: Gemini via foreign-cycle dispatch — same templates, agent=gemini.
    - cycle 3+: pure-Claude fresh-eyes via `./subagent-fresh-eyes.md`.
 2. **Read the worker's report** from the orchestrator-supplied path. Apply R1.4.1 synthesis-path extension below if the report is malformed.
@@ -205,11 +205,11 @@ This is the only measurable trigger for rejecting `simplify`'s output. The re-ru
 
 | Cycle | Doer dispatch                      | Foreign agent  | Default model       |
 |-------|------------------------------------|----------------|---------------------|
-| 1     | Codex foreign-eyes via `./subagent-foreign-cycle.md` | Codex          | `gpt-5.5`           |
+| 1     | Codex foreign-eyes via `./subagent-foreign-cycle.md` | Codex          | `gpt-5.6-terra`           |
 | 2     | Gemini foreign-eyes via `./subagent-foreign-cycle.md` | Gemini         | (default)           |
 | 3+    | pure-Claude fresh-eyes via `./subagent-fresh-eyes.md` | (none)         | (default Claude)    |
 
-Cycle 1 = Codex (`gpt-5.5`). Cycle 2 = Gemini. Cycle 3+ = pure-Claude.
+Cycle 1 = Codex (`gpt-5.6-terra`). Cycle 2 = Gemini. Cycle 3+ = pure-Claude.
 
 Foreign-agent failures degrade per the **degradation cascade** above (Codex degraded → Gemini fallback → pure-Claude fallback). The cycle still counts. The evidence-store retains both the degraded attempt and the fallback artifact; the fallback's output is canonical.
 
