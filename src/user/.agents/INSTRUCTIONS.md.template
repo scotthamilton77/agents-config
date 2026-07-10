@@ -51,6 +51,13 @@ Tool-agnostic principles for all AI coding assistants.
   fragments, abbreviations, arrow chains (`A → B → fails`), or jargon —
   readability beats concision. Exception: when the user explicitly requests
   compressed output (e.g. caveman mode).
+- **Self-coined labels must resolve for the reader**: The reader sees the shared
+  artifacts (files, PRs, work items), not your internal outline. Never mint a
+  label or numbering (R1/R2, Thread 3, Option B, a bare "§4.2") in one message
+  and reuse it unqualified in later messages — on each reuse, re-anchor it with
+  a few words of referent ("R2 — the finishing-a-development-branch handoff")
+  or drop the label and name the thing directly. Stable external identifiers
+  (ticket/bead IDs, PR numbers, file paths) are exempt.
 - **Contracts & boundaries**: In typed code, design the contract before the body — the signature is the decision, the implementation the consequence. Pass outside-world dependencies (config, clients, clocks, credentials) as arguments; a dependency reached from a module global is a hidden input that breaks local reasoning. No untyped dict / `any` at module boundaries. Model *expected* failures in the type (a Result or typed/discriminated error) so callers handle them without reading the implementation; reserve raised exceptions for contract violations and unexpected state — fail loud and fast with a specific, context-rich error, no silent fallbacks, no bare excepts. Parse and validate once at the boundary, then trust the type inward. Depth and worked patterns: see `improve-codebase-architecture`.
 - **Dependencies**: If a library version is newer than model training data, look up current docs via available documentation tools (e.g., context7 MCP if available, or web search) before using it
 - **Observability**: Match the project's existing logging approach. If none exists, add structured logging at key state transitions and error paths
