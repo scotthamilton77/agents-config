@@ -105,9 +105,17 @@ cost_per_mtok_out = 75.0
 
 [providers.openai]
 billing = "metered"
+# rates for every OpenAI model the archetype chains + routing map reference,
+# so copying this example doesn't trip the invalid-rate-config path:
+[providers.openai.models."gpt-5.6-luna"]
+cost_per_mtok_in = 1.00
+cost_per_mtok_out = 6.00
 [providers.openai.models."gpt-5.6-terra"]
 cost_per_mtok_in = 2.50
 cost_per_mtok_out = 15.0
+[providers.openai.models."gpt-5.6-sol"]
+cost_per_mtok_in = 5.00
+cost_per_mtok_out = 30.0
 
 [providers.openrouter]
 billing = "metered"
