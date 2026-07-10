@@ -40,9 +40,10 @@ comes from the bundled `assets/` — inline them rather than restyling from scra
 5. **Save** to the destination (see Format — user-named path or the dated default),
    then run the self-check.
 6. **Open it** — unless the user asked you not to, open the finished file in the
-   default viewer with the platform opener, passing the saved path as the argument:
-   `open <file>` (macOS), `xdg-open <file>` (Linux), or `start "" <file>` (Windows —
-   the `""` is the window-title arg, so the path must follow it). Suppress on any
+   default viewer with the platform opener, passing the saved path as the argument
+   (quote it if it may contain spaces): `open "<file>"` (macOS), `xdg-open "<file>"`
+   (Linux), or `start "" "<file>"` (Windows — the `""` is the window-title arg, so the
+   path must follow it). Suppress on any
    "don't open / no auto-open / just save" instruction. Either way, print the final
    path so the reader can find it.
 
