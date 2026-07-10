@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core import namespaces
+
 if TYPE_CHECKING:
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
@@ -27,7 +29,7 @@ class ClaudeAdapter:
         return True
 
     def scoped_namespaces(self) -> tuple[str, ...]:
-        return ("commands", "skills", "agents", "rules", "hooks", "workflows")
+        return namespaces.TOOL_SCOPED
 
     def should_install_namespace(
         self,
