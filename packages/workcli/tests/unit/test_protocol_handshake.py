@@ -12,8 +12,19 @@ from io import StringIO
 
 import pytest
 
+from tests.conftest import run_cli
 from workcli import PROTOCOL_VERSION
 from workcli.cli import entry, main
+
+
+def test_run_cli_helper_drives_protocol_version_without_touching_the_scripted_runner():
+    # No verb reaches a Backend yet (Task 2) -- an empty script proves
+    # `--protocol-version` never calls the injected ScriptedBdRunner.
+    exit_code, envelope, stderr_text = run_cli(["--protocol-version"], [])
+
+    assert exit_code == 0
+    assert envelope["data"] == {"protocol": PROTOCOL_VERSION}
+    assert stderr_text == ""
 
 
 def test_protocol_version_emits_success_envelope_with_current_protocol():

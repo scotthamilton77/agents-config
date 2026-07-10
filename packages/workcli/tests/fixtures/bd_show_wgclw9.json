@@ -1,0 +1,105 @@
+[
+  {
+    "id": "agents-config-wgclw.9",
+    "title": "work facade CLI v1: ~10 coarse verbs over bd; JIRA/GH adapter seam",
+    "description": "## Context\n\nThe prgroom CLI (Go, fca6 epic) and the PDLC orchestrator (Python, wgclw.2 epic and descendants) both wrap bd for their own purposes. Each tool's wrapper carries the same kinds of bd-quirk shims independently:\n\n- jq path drift between bd versions\n- parent-child auto-edge semantics\n- task→epic dep-type restrictions\n- bd label list / bd dep list output shape changes\n- error translation, lock-contention retry\n\nAGENTS.md (project-level) explicitly chartered this work under M0: 'Work vs beads — we'll be taking a step back from making that a first class citizen of this project's architecture, placing a work abstraction in front of it — end state is that beads is quarantined behind our own CLI'.\n\n## What this bead is NOT\n\n- It is NOT a unified `WorkTracker` interface across tools. prgroom's `Store` (a per-PR KV+lock blob store) and PDLC's `WorkTracker` (an Objective registry with CAS/fingerprints/Discovery markers) abstract genuinely different data and lifecycles. The naming collision is coincidental, not architectural.\n\n- It is NOT a replacement for either tool's internal state-persistence interface. Both tools keep their own typed adapter layer; this CLI is what their bd-adapter sub-implementations shell out to.\n\n## What it IS\n\nA single CLI (language TBD — Python or Go; runtime-irrelevant since it's a CLI surface) that abstracts bd's command quirks. Both prgroom and PDLC orchestrator shell out to it whenever their bd-adapter is active. Schema/format changes in bd land in one place.\n\n## Open design questions (to brainstorm before any code)\n\n1. **Surface**: subcommand verbs (`wt objective list`, `wt dep add`, ...) or thin pass-through with normalization filters? Hybrid?\n2. **Output contract**: machine-parseable JSON as primary; human-friendly format opt-in?\n3. **Versioning**: how does a consumer pin a wt protocol version? `wt --protocol-version`?\n4. **Naming**: `wt`, `bdsh`, `work`, something else?\n5. **Sequencing vs in-flight work**: should this land before prgroom MVP ships, or after (with prgroom's bd adapter being deferred from v2 to post-shim)?\n6. **PDLC integration shape**: PDLC's WorkTracker spec is still in flux (wgclw.2). When should it commit to consuming this shim vs continuing to bind bd directly?\n\n## Why M0 child (not orphan)\n\nM0's stated end-state explicitly includes 'beads is quarantined behind our own CLI'. This bead is exactly that work. Closing it satisfies one of M0's chartered outcomes.\n\n## Provenance\n\nSurfaced during fca6.12 (prgroom architecture diagrams) on 2026-05-25: when the L1 diagrams of both prgroom and the PDLC orchestrator showed a 'Work Tracker' external system, the question 'can we share this?' surfaced. After analysis, the answer was: not the WorkTracker interfaces themselves (different data shapes), but yes — the bd-quirk-shim CLI underneath. A pre-emptive rename of prgroom's `WorkTracker` to `prsession.Store` (landed in fca6.12) preserves the distinction at the interface level.\n\n## Far-horizon register\n\nOpen design question #6 above is mirrored as architectural question Q2 in `agents-config-wgclw.11` (PDLC architecture far-horizon register), along with seam S8 (WorkTracker abstraction ↔ bd-shim CLI). The register is the cross-epic index; this bead remains the authoritative home for the shim design.",
+    "notes": "Spec PR: https://github.com/scotthamilton77/agents-config/pull/223 (2026-07-04, branch spec/work-facade-cli-contract). Verb set derived from observed usage; 6 ASSUMPTIONs in §13 pending owner scan.\n2026-07-05: Re-parented uxns2(PORT) → vaac(M3) per owner. Second design doc: docs/specs/2026-07-05-work-lifecycle-and-facade.md (lifecycle layer over this bead's CLI contract spec — one CLI, two layers, packages/workcli). Owner scanned+blessed the lifecycle spec's 7 assumptions (§15) 2026-07-05. Impl children to be minted under this bead from BOTH specs' manifests at the repair sweep. Contract spec amended in same PR: create → create --raw adapter primitive; --claim removed from update (status is lifecycle-verb-only).\n2026-07-05 specfest repair sweep: claim released. Objective reconciled per work-lifecycle spec (PR #229; ledger blessed by owner 2026-07-05): impl children minted from both manifests - agents-config-wgclw.9.1 (transport layer, CLI contract spec) and agents-config-wgclw.9.2 (lifecycle layer, blocked behind 9.1). implementation-ready removed: this is now an objective container, dispatch flows through its children. planned stamped (children exist per blessed manifests).\n2026-07-10 owner decision (Scott, in-session): §9/§13 sequencing ASSUMPTION in docs/specs/2026-07-04-work-facade-cli-contract.md is revised — facade v1 may start BEFORE prgroom MVP ships. Confirmed no technical dependency in either direction (prgroom's bd sink is v2-deferred; facade consumes only bd). The load-bearing half stands: facade v1 must land before any prgroom bd-adapter work. Owner also explicitly authorizes working 9.1/9.2 ahead of the M2→M3 milestone gate (ancestral block acknowledged, waived for this objective).",
+    "status": "open",
+    "priority": 1,
+    "issue_type": "task",
+    "assignee": "Scott Hamilton",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-05-25T13:41:39Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-10T21:51:18Z",
+    "started_at": "2026-07-04T18:09:18Z",
+    "labels": [
+      "brainstormed",
+      "planned",
+      "shape-spec",
+      "vision-85-5-10"
+    ],
+    "dependencies": [
+      {
+        "id": "agents-config-fca6.12",
+        "title": "prgroom architecture diagrams (C4 L1-L3 + sequence + data)",
+        "description": "# Architecture diagrams for prgroom CLI\n\nFiled during fca6.2 (Section 4 — Quiescence model) brainstorm closure on 2026-05-25. Operator (Scott) authorized P1 priority once the §4 spec artifact is complete.\n\n## Deliverables\n\n- **C4 Level 1 (System Context)** — prgroom CLI in its broader environment (GitHub, gh CLI, claude/codex agent CLIs, scheduler/cron, operator, bd tracker via WorkTracker interface)\n- **C4 Level 2 (Container)** — prgroom internals at the container/process level: \\`cmd/prgroom\\` entry, \\`internal/lifecycle\\` (runLocked + verbs), \\`internal/tracker\\` (WorkTracker adapters), \\`internal/agent\\` (Contract A/B dispatch), \\`internal/gh\\` (GitHub API wrapper), \\`internal/escalation\\` (EscalationSink + human-review label)\n- **C4 Level 3 (Component)** — drilldown of \\`internal/lifecycle\\`: the runLocked control flow with sub-component breakdown (poll → cluster → fix → push → rereview → reply → resolve → wait), showing call sites of escalate_if_needed and request_human_review_if_needed\n- **Sequence diagrams** (4-6 key flows):\n  - Happy path: PR push → review feedback → fix → push → quiesce\n  - Bot silence path: Copilot doesn't engage → review_start_timeout auto-decline → quiesce\n  - Hard-cap path: 3 rounds without quiescence → human-gated + auto-add human-review-required label\n  - Resumability path: process crash mid-waitLocked → next invocation re-evaluates timeouts from stored UTC timestamps\n- **Data diagrams** — entity-relationship for state schema (PRGroomingState, ReviewItem, Disposition, ReviewerState, QuiescenceState) and JSON contract objects (status output per §4.6, escalation events per Section 5)\n\n## Location convention\n\nAll architecture artifacts under \\`./docs/architecture/{component|feature}/\\`:\n\n- \\`./docs/architecture/component/prgroom/c4-l1-system-context.{md,svg}\\`\n- \\`./docs/architecture/component/prgroom/c4-l2-container.{md,svg}\\`\n- \\`./docs/architecture/component/prgroom/c4-l3-lifecycle.{md,svg}\\`\n- \\`./docs/architecture/feature/pr-grooming-lifecycle/sequence-*.{md,svg}\\`\n- \\`./docs/architecture/component/prgroom/data-state-schema.{md,svg}\\`\n\n## Source-of-truth coupling\n\nDiagrams are derived artifacts. Source of truth remains \\`docs/plans/2026-05-12-prgroom-cli-design.md\\` (Sections 1-8). Diagrams should cite the spec section they visualize and be regenerated when the spec changes.\n\n## Tooling preferences (to confirm during brainstorm)\n\n- C4: Structurizr DSL or PlantUML C4 macros (both render to SVG; both are textual sources friendly to git diffs)\n- Sequence: Mermaid (rendered inline in markdown viewer) or PlantUML\n- Data: Mermaid ER syntax or D2\n\n## Acceptance criteria\n\nC4 L1, L2, L3 diagrams produced for prgroom CLI. At least 4 sequence diagrams covering the named flows above. Data diagrams for state schema and key JSON contract objects. All artifacts under \\`./docs/architecture/{component|feature}/\\`. Tooling choice documented in a one-page README at \\`./docs/architecture/README.md\\`. Build/regeneration approach documented (manual or scripted).\n\n## Provenance\n\nFiled under fca6 epic. Surfaced via fca6.2 brainstorm; not blocked by other fca6 children. Recommended sequencing: after fca6.2 closes (Section 4 spec ratified), before or in parallel with fca6.10 [Impl] Section 3.",
+        "status": "closed",
+        "priority": 1,
+        "issue_type": "task",
+        "assignee": "Scott Hamilton",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-05-25T07:07:33Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-05-31T14:25:24Z",
+        "started_at": "2026-05-25T11:02:46Z",
+        "closed_at": "2026-05-31T14:25:24Z",
+        "close_reason": "prgroom HLD artifact set complete: all 8 diagrams drawn, 3 Copilot review rounds addressed (11 threads fixed/resolved), PR #109 open awaiting merge authorization.",
+        "labels": [
+          "delivery-automation",
+          "vision-85-5-10"
+        ],
+        "dependency_type": "discovered-from"
+      },
+      {
+        "id": "agents-config-vaac",
+        "title": "Milestone M3 — Worker fleet through PR autonomy",
+        "description": "Milestone M3 — Fleet on cheap models: a feature bead from bd ready runs through worker-fleet implementation, completion gate, and PR creation autonomously on Sonnet/GLM-class workers, with the escalation ladder (cheap first; gate failure climbs tiers) and judge-gated merges (agent-ruling merge-rule). HEP escalation pauses only at genuine decision points. KPI: interventions per merged PR, trending down.",
+        "acceptance_criteria": "agents-config-7bk.19 closed. agents-config-7bk.13 + 7bk.20 closed (HEP rollout + lifecycle). agents-config-7bk.14 + 7bk.15 closed (per-step model/effort + cost rightsizing). agents-config-gmxo closed. agents-config-3qz closed. agents-config-76r closed (single-context mode shipped). End-to-end smoke test from fresh feature bead at bd ready to a PR opened against main passes on Claude Code.",
+        "status": "in_progress",
+        "priority": 1,
+        "issue_type": "milestone",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-05-10T13:34:36Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-07-04T15:08:41Z",
+        "started_at": "2026-05-12T15:51:32Z",
+        "dependency_type": "parent-child"
+      }
+    ],
+    "dependents": [
+      {
+        "id": "agents-config-wgclw.9.1",
+        "title": "workcli transport layer: twelve contract verbs over the Backend seam",
+        "description": "Per work-facade CLI contract spec (docs/specs/2026-07-04-work-facade-cli-contract.md): packages/workcli uv project, CI-gated like installer/prgroom (lint, format, mypy strict, coverage floor, audit); twelve thin verbs; JSON envelope + protocol handshake; Backend adapter seam; bd adapter behind a subprocess boundary port. Sequencing: after prgroom MVP ships, before any prgroom bd-adapter work.",
+        "acceptance_criteria": "CLI contract spec test plan items 1-10 pass under a make ci-workcli-style gate.",
+        "notes": "2026-07-10: cleared to start per owner decision recorded on parent agents-config-wgclw.9 (sequencing assumption revised; milestone gate waived for this objective).",
+        "status": "in_progress",
+        "priority": 1,
+        "issue_type": "feature",
+        "assignee": "Scott Hamilton",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-07-05T18:38:04Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-07-10T22:33:13Z",
+        "started_at": "2026-07-10T22:33:13Z",
+        "labels": [
+          "implementation-ready",
+          "shape-feat",
+          "vision-85-5-10"
+        ],
+        "dependency_type": "parent-child"
+      },
+      {
+        "id": "agents-config-wgclw.9.2",
+        "title": "workcli lifecycle layer: noun-templated creation + guarded lifecycle verbs",
+        "description": "Per work-lifecycle spec sections 4-7: work create noun templates (spike/chore/decision/spec/feat/bugfix/epic), evidence rule, blocked impl placeholder + manifest reconciliation, claim/release/deliver/plan/promote/reconcile over the transport Backend seam; status never moves except through lifecycle verbs.",
+        "acceptance_criteria": "Work-lifecycle spec test plan items 1-11 pass under the same gate.",
+        "status": "open",
+        "priority": 1,
+        "issue_type": "feature",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-07-05T18:38:05Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-07-05T18:38:05Z",
+        "labels": [
+          "implementation-ready",
+          "shape-feat",
+          "vision-85-5-10"
+        ],
+        "dependency_type": "parent-child"
+      }
+    ],
+    "parent": "agents-config-vaac"
+  }
+]

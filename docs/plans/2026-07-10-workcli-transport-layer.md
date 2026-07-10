@@ -386,26 +386,26 @@ the root `Makefile`, or paths a task explicitly names.
   `tests/fakes.py`, `tests/fixtures/*.json`,
   `tests/unit/{test_bd_parse.py,test_lock_retry.py,test_drift_alarm.py}`
 
-- [ ] Capture goldens from the MAIN repo root (read-only, decision 14):
+- [x] Capture goldens from the MAIN repo root (read-only, decision 14):
   `bd show agents-config-wgclw.9 --json`, `bd show agents-config-wgclw.9.1 --json`,
   `bd list --status open --limit 5 --json`, `bd dep list agents-config-wgclw.9.1 --json`
   (try `--direction up` and `--direction down`), `bd label list agents-config-wgclw.9.1 --json`
   → save raw into `tests/fixtures/`. Also capture `--help` of `bd show/list/create/update/dep/label`
   into a scratch note (NOT committed) to confirm flag names the adapter must emit.
-- [ ] Write failing parse tests from the goldens: `show` single-element array → one `Item`;
+- [x] Write failing parse tests from the goldens: `show` single-element array → one `Item`;
   `.dependencies[]` full-bead-with-`dependency_type` → lean `DepEdge`; label list flat
   `string[]`; multi-line notes/description survive as JSON strings; missing/renamed keys →
   `WorkError(BACKEND_DRIFT)` (item 9 core)
-- [ ] Implement `model.py`, `backend.py` (pinned above), `parse.py`
-- [ ] Write failing retry tests (item 7): scripted runner fails twice with
+- [x] Implement `model.py`, `backend.py` (pinned above), `parse.py`
+- [x] Write failing retry tests (item 7): scripted runner fails twice with
   `database is locked` then succeeds → `ok: true` and 2 sleep calls recorded; fails 3× →
   `E_LOCK_CONTENTION`; non-retryable stderr → immediate mapped error, zero retries
-- [ ] Implement `retry.py` (attempts=3, backoff [0.5, 1.0], injectable sleep),
+- [x] Implement `retry.py` (attempts=3, backoff [0.5, 1.0], injectable sleep),
   `runner.py`, and `bd/backend.py` methods needed so far (`get`, `batch_get`, `query`)
   with the error-mapping table: not-found stderr → `E_NOT_FOUND`; type-wall → `E_TYPE_WALL`;
   cycle/deadlock → `E_DEP_CYCLE`; unknown → `E_BACKEND_DRIFT` (decision 4)
-- [ ] Implement `tests/fakes.py` ScriptedBdRunner + conftest `run_cli` helper (pinned above)
-- [ ] `cd packages/workcli && uv run pytest -q` green, then lint/format/mypy trio. Commit:
+- [x] Implement `tests/fakes.py` ScriptedBdRunner + conftest `run_cli` helper (pinned above)
+- [x] `cd packages/workcli && uv run pytest -q` green, then lint/format/mypy trio. Commit:
   `feat(workcli): Backend seam, bd adapter core with retry + drift alarm, scripted fake`
 
 ### Task 3: Read verbs — show, list, ready, search

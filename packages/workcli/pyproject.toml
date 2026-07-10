@@ -44,12 +44,20 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+# S101: pytest's `assert` is the standard assertion mechanism, not a stray
+# debug check. TRY003: fakes' loud-failure diagnostics (ScriptedBdRunner's
+# script-mismatch/exhaustion messages) need to be specific and self-contained
+# for whoever reads the test failure, same rationale as parse.py's drift alarm.
+"tests/**" = ["S101", "TRY003"]
 "src/workcli/adapters/bd/runner.py" = ["S603", "S607"]
 # `runner`/`sleep` are load-bearing on main()'s pinned signature (contract
 # stability across Task 2+) but stay unused until those tasks land — same
 # rationale as prgroom's cli.py foundation-skeleton exemption.
 "src/workcli/cli.py" = ["ARG001"]
+# The drift alarm's entire value is a specific, self-contained message naming
+# what bd's shape violated (spec §4 "detail carries ... what failed") -- that
+# is the opposite of the generic "call a message-builder" TRY003 wants.
+"src/workcli/adapters/bd/parse.py" = ["TRY003"]
 
 [tool.ruff.format]
 docstring-code-format = true
