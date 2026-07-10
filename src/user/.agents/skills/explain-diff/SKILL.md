@@ -37,7 +37,15 @@ comes from the bundled `assets/` — inline them rather than restyling from scra
    colors or invent parallel styles — that is what keeps every explainer consistent.
 4. **Write the four sections** (below), using the documented callouts, diagrams, and
    quiz markup.
-5. **Save** to a dated path outside the repo (see Format), then run the self-check.
+5. **Save** to the destination (see Format — user-named path or the dated default),
+   then run the self-check.
+6. **Open it** — unless the user asked you not to, open the finished file in the
+   default viewer with the platform opener, passing the saved path as the argument
+   (quote it if it may contain spaces): `open "<file>"` (macOS), `xdg-open "<file>"`
+   (Linux), or `start "" "<file>"` (Windows — the `""` is the window-title arg, so the
+   path must follow it). Suppress on any
+   "don't open / no auto-open / just save" instruction. Either way, print the final
+   path so the reader can find it.
 
 ## Sections
 
@@ -85,9 +93,12 @@ in that voice for the entire page — one narrator, start to finish.
 - **One self-contained HTML file** — all CSS and JS inlined (from `assets/`), no
   external requests. One long page with section headers and a `.toc` table of
   contents. No tabs for top-level structure. Responsive (theme.css handles it).
-- **Save location:** a global place outside the code repo, filename starting with
-  today's date as `YYYY-MM-DD-`. Example: `/tmp/2026-01-12-explanation-<slug>.html`.
-  Get today's date from the environment; don't guess it.
+- **Save location:** if the user named a destination (a directory or a full path),
+  honor it — write there, keeping the `YYYY-MM-DD-explanation-<slug>.html` filename
+  when they gave only a directory. Otherwise **default** to a global place outside the
+  code repo, filename starting with today's date as `YYYY-MM-DD-`. Example:
+  `/tmp/2026-01-12-explanation-<slug>.html`. Get today's date from the environment;
+  don't guess it.
 - **Diagrams:** pick a small number of reusable diagram families and reuse them.
   Useful kinds: a simplified app-UI mock for UI changes (`.uimock`), a data-flow /
   component system diagram with example data (`.flow` + `.node` + `.data-tag`),
