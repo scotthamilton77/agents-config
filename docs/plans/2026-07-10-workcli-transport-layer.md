@@ -353,29 +353,29 @@ the root `Makefile`, or paths a task explicitly names.
 - Modify: root `Makefile` (WORKCLI var, `ci-workcli` block mirroring `ci-installer`
   one-for-one, add `ci-workcli` to the `ci:` line before `lint-actions`, extend `.PHONY`)
 
-- [ ] Copy `packages/prgroom/pyproject.toml` as the base: name `workcli`, description
+- [x] Copy `packages/prgroom/pyproject.toml` as the base: name `workcli`, description
   "work — facade CLI quarantining the issue-tracker backend (bd) behind a stable contract.",
   `dependencies = []`, `[project.scripts] work = "workcli.cli:entry"`,
   hatch wheel `packages = ["src/workcli"]`, coverage `source = ["src/workcli"]`,
   same ruff/mypy/coverage config verbatim, plus per-file-ignores
   `"src/workcli/adapters/bd/runner.py" = ["S603", "S607"]`
-- [ ] `src/workcli/__init__.py`: `PROTOCOL_VERSION = "1.0"` (+ docstring); create `py.typed`
-- [ ] Write failing tests: `--protocol-version` emits success envelope with
+- [x] `src/workcli/__init__.py`: `PROTOCOL_VERSION = "1.0"` (+ docstring); create `py.typed`
+- [x] Write failing tests: `--protocol-version` emits success envelope with
   `data == {"protocol": "1.0"}`, exit 0 (item 10); envelope unit tests (success/failure
   shapes, exit codes, `E_USAGE` on unknown verb goes through envelope not argparse stderr;
   unexpected exception → `E_INTERNAL` envelope + exit 1)
-- [ ] Implement `envelope.py` (pinned above) and minimal `cli.py`: parser with
+- [x] Implement `envelope.py` (pinned above) and minimal `cli.py`: parser with
   `--protocol-version`, `--format`, subparsers placeholder, dispatch loop with
   WorkError/catch-all handling, `main()` with the pinned signature
-- [ ] `uv sync` (generates uv.lock; commit it), run: `cd packages/workcli && uv run pytest -q`
+- [x] `uv sync` (generates uv.lock; commit it), run: `cd packages/workcli && uv run pytest -q`
   → all pass; `uv run ruff check && uv run ruff format --check && uv run mypy --strict src`
-- [ ] Wire root Makefile; `verify-entry-workcli` is BOTH:
+- [x] Wire root Makefile; `verify-entry-workcli` is BOTH:
   `uv --project $(WORKCLI) run work --protocol-version > /dev/null` and
   `uv --project $(WORKCLI) run work --help > /dev/null`
-- [ ] Write `packages/workcli/AGENTS.md` modeled on prgroom's (gate: `make ci-workcli`;
+- [x] Write `packages/workcli/AGENTS.md` modeled on prgroom's (gate: `make ci-workcli`;
   design rules: verb layer never imports subprocess; adapters never print; all I/O
   injectable; contract tests via ScriptedBdRunner only)
-- [ ] From repo root: `make ci-workcli` → green. Commit:
+- [x] From repo root: `make ci-workcli` → green. Commit:
   `feat(workcli): scaffold package with envelope, protocol handshake, CI gate`
 
 ### Task 2: Model, Backend seam, bd adapter core, scripted fake

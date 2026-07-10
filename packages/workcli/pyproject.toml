@@ -1,0 +1,71 @@
+[project]
+name = "workcli"
+version = "0.1.0"
+description = "work — facade CLI quarantining the issue-tracker backend (bd) behind a stable contract."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+work = "workcli.cli:entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workcli"]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-xdist",
+  "pytest-cov",
+  "ruff",
+  "mypy",
+  "pip-audit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",
+  "I",
+  "B",
+  "UP",
+  "SIM",
+  "S",
+  "RET", "ARG", "PTH",
+  "TRY",
+  "RUF",
+  "N",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/workcli/adapters/bd/runner.py" = ["S603", "S607"]
+# `runner`/`sleep` are load-bearing on main()'s pinned signature (contract
+# stability across Task 2+) but stay unused until those tasks land — same
+# rationale as prgroom's cli.py foundation-skeleton exemption.
+"src/workcli/cli.py" = ["ARG001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+disallow_any_decorated = true
+enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/workcli"]
+
+[tool.coverage.report]
+fail_under = 90
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
+show_missing = true
+skip_covered = true
