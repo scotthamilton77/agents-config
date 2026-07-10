@@ -20,7 +20,7 @@ class TestEnvelope(unittest.TestCase):
     def test_build_envelope_shape(self):
         env = jm.build_envelope(
             head="h", base="b", diff_sha="d", verdict="abstain",
-            abstain_reason="protected-path", judge_model="gpt-5.5",
+            abstain_reason="protected-path", judge_model="gpt-5.6-terra",
             judge_effort="high", author_families=["openai"],
             summary="", merge_blocking_findings=[])
         self.assertEqual(env["verdict"], "abstain")
@@ -33,7 +33,7 @@ class TestEnvelope(unittest.TestCase):
 
     def test_go_has_no_abstain_reason(self):
         env = jm.build_envelope(head="h", base="b", diff_sha="d", verdict="go",
-                                abstain_reason=None, judge_model="gpt-5.5",
+                                abstain_reason=None, judge_model="gpt-5.6-terra",
                                 judge_effort="high", author_families=["openai"],
                                 summary="clean", merge_blocking_findings=[])
         self.assertIsNone(env["abstain_reason"])
@@ -395,7 +395,7 @@ class TestFinalMessageText(unittest.TestCase):
 class TestIdentifierValidation(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()
-        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.5",
+        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.6-terra",
                        "judge_effort": "high", "judge_timeout_seconds": 900,
                        "judge_max_attempts": 2}
 
@@ -427,7 +427,7 @@ class TestMainEndToEnd(unittest.TestCase):
             json.dump({"head_sha": "h",
                        "commits": [{"sha": "c1", "author_families": ["anthropic"], "attestation": "first-hand"}],
                        "recorded_by": "s"}, fh)
-        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.5",
+        self.policy = {"judge_backend": "codex", "judge_model": "gpt-5.6-terra",
                        "judge_effort": "high", "judge_timeout_seconds": 900,
                        "judge_max_attempts": 2}
 

@@ -532,11 +532,11 @@ Each contract is a stable, versioned (`contract_version`) interface; the runtime
 [agents.cluster]
 primary   = { cli = "ollama", model = "gemma4" }
 fallback  = { cli = "claude", model = "haiku", effort = "high" }
-fallback2 = { cli = "codex",  model = "gpt-5.4-mini" }
+fallback2 = { cli = "codex",  model = "gpt-5.6-luna" }
 
 [agents.fix]
 primary   = { cli = "claude", model = "opus[1m]", effort = "xhigh" }
-fallback  = { cli = "codex",  model = "gpt-5.5", write = true }
+fallback  = { cli = "codex",  model = "gpt-5.6-terra", write = true }
 ```
 
 Fallback triggers: primary not on PATH, quota/auth/network exit, or per-contract timeout. If both primary and fallback fail, the verb emits `failed` for affected items and escalates via `EscalationSink`. The PR-review retry budget governs how many full loops `run` may attempt (§3.5). Per-contract prompts live in `agent/prompts/<contract>.tmpl` (overridable via `PRGROOM_PROMPTS_DIR`); per-contract token usage is logged to `$XDG_STATE_HOME/prgroom/usage.jsonl` as MVP baseline-capture only.

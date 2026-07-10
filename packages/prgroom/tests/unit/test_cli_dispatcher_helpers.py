@@ -21,7 +21,7 @@ def test_decided_by_uses_primary_cli_and_model() -> None:
     chain = ProviderChain(
         providers=[
             AgentSpec(cli="claude", model="opus[1m]"),
-            AgentSpec(cli="codex", model="gpt-5.5"),
+            AgentSpec(cli="codex", model="gpt-5.6-terra"),
         ],
         time_budget_s=1.0,
     )

@@ -17,8 +17,8 @@ pipes its prompt on stdin and relies on exactly these flags. Do not change or
 remove them without updating that judge.
 
 **Model selection** (leave `--model` unset to accept the plugin default; set explicitly when a task profile matches):
-- Architecture, cross-subsystem, security, final pre-merge pass → `gpt-5.5`
-- First-pass triage, diff summary, per-file parallel review, cost-sensitive runs → `gpt-5.4-mini`
+- Architecture, cross-subsystem, security, final pre-merge pass → `gpt-5.6-sol`
+- First-pass triage, diff summary, per-file parallel review, cost-sensitive runs → `gpt-5.6-luna`
 - Deeply code-centric, Codex-tuned agentic work → `gpt-5.3-codex`
 
 **Prompt best practices:** One task per run, explicit completion contract. For large blocks of context, use a separate file and reference it in the prompt to avoid hitting input token limits.

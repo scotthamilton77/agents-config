@@ -170,7 +170,7 @@ def test_default_cluster_chain_is_ollama_then_claude_haiku_then_codex() -> None:
     assert [(p.cli, p.model) for p in chain.providers] == [
         ("ollama", "gemma4"),
         ("claude", "haiku"),
-        ("codex", "gpt-5.4-mini"),
+        ("codex", "gpt-5.6-luna"),
     ]
     assert chain.providers[1].extra.get("effort") == "high"
 
@@ -183,7 +183,7 @@ def test_default_fix_chain_makes_both_links_write_capable() -> None:
     chain = load_chain("fix", repo_config=None, model_override=None)
     assert [(p.cli, p.model) for p in chain.providers] == [
         ("claude", "opus[1m]"),
-        ("codex", "gpt-5.5"),
+        ("codex", "gpt-5.6-terra"),
     ]
     assert chain.providers[0].extra.get("effort") == "xhigh"
     assert chain.providers[0].extra.get("write") is True
@@ -275,7 +275,7 @@ def test_absent_section_still_falls_through_to_the_default(tmp_path: Path) -> No
     assert [(p.cli, p.model) for p in chain.providers] == [
         ("ollama", "gemma4"),
         ("claude", "haiku"),
-        ("codex", "gpt-5.4-mini"),
+        ("codex", "gpt-5.6-luna"),
     ]
 
 
@@ -337,7 +337,7 @@ def test_model_override_replaces_the_primary_model_only() -> None:
     assert chain.providers[0].cli == "claude"
     assert chain.providers[0].model == "opus"
     # the fallback link is untouched
-    assert chain.providers[1].model == "gpt-5.5"
+    assert chain.providers[1].model == "gpt-5.6-terra"
 
 
 # ── ladder behavior (table-driven over the acceptance scenarios) ──
@@ -559,7 +559,8 @@ def test_fix_out_of_enum_disposition_falls_through_not_crashes() -> None:
     bad = '{"contract_version": 1, "items": [{"gh_id": "a", "disposition": "garbage"}]}'
     runner = FakeAgentRunner([Succeeds(bad), Succeeds(FIX_OK)])
     dispatcher = FixDispatcher(
-        runner=runner, chain=_chain(AgentSpec("claude", "opus[1m]"), AgentSpec("codex", "gpt-5.5"))
+        runner=runner,
+        chain=_chain(AgentSpec("claude", "opus[1m]"), AgentSpec("codex", "gpt-5.6-terra")),
     )
     out = dispatcher.fix(_fix_input())
     assert out.items == []  # the second provider's good output was parsed

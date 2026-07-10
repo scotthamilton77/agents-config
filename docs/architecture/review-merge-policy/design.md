@@ -351,7 +351,7 @@ ReviewMergePolicy = {
     merge_rule: "bot-quiescence" | "human-approvals" | "agent-ruling" | None,  # required iff rule-based
     # Axis 2 — agent-ruling judge config (inert unless merge_rule = agent-ruling)
     judge_backend: str,                # "codex" (only implemented backend)
-    judge_model: str,                  # e.g. "gpt-5.5"; family must be derivable
+    judge_model: str,                  # e.g. "gpt-5.6-terra"; family must be derivable
     judge_effort: str,                 # none|minimal|low|medium|high|xhigh
     judge_timeout_seconds: int,
     judge_max_attempts: int,           # >= 1
@@ -441,7 +441,7 @@ Built-in defaults (section/key absent):
 | `merge-authorization` | `"never"` \| `"explicit"` \| `"rule-based"` | `"explicit"` |
 | `merge-rule` | `"bot-quiescence"` \| `"human-approvals"` \| `"agent-ruling"` \| unset | unset (required iff `merge-authorization = "rule-based"`) |
 | `judge-backend` | `"codex"` | `"codex"` |
-| `judge-model` | str | `"gpt-5.5"` |
+| `judge-model` | str | `"gpt-5.6-terra"` |
 | `judge-effort` | `"none"` \| `"minimal"` \| `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | `"high"` |
 | `judge-timeout` | duration string | `"15m"` |
 | `judge-max-attempts` | int | `2` |

@@ -56,7 +56,7 @@ class ReviewMergePolicy:
     # These carry dataclass defaults, so they MUST stay after the no-default
     # allow_force_after_bot_timeout field above.
     judge_backend: str = "codex"
-    judge_model: str = "gpt-5.5"
+    judge_model: str = "gpt-5.6-terra"
     judge_effort: str = "high"
     judge_timeout_seconds: int = 900
     judge_max_attempts: int = 2

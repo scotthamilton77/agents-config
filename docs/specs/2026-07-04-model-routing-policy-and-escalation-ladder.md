@@ -58,13 +58,13 @@ owner review may merge, split, or re-route rows.
 | Archetype | What it does | Write access | Default preferred | Default fallback chain |
 |---|---|---|---|---|
 | `mechanical` | Extraction, file surveys, grep-and-summarize, format conversion | no | cheapest local/OpenRouter rung | haiku(low) → sonnet(low) |
-| `classifier` | Review-issue clustering, triage, labeling (prgroom `cluster` is this archetype) | no | local free rung (e.g. ollama gemma4) | haiku(high) → gpt-5.4-mini |
-| `finder` | Multi-lens review finders, explorers, searchers | no | haiku(low) | sonnet(low) → gpt-5.4-mini |
-| `implementer` | Coding workers: edit + commit (prgroom `fix`, Track B workers) | yes | sonnet(medium) | opus(high) → gpt-5.5 |
-| `reviewer` | Code/plan review against standards (quality-reviewer, per-file review passes) | no | sonnet(medium) | opus(high) → gpt-5.5 |
+| `classifier` | Review-issue clustering, triage, labeling (prgroom `cluster` is this archetype) | no | local free rung (e.g. ollama gemma4) | haiku(high) → gpt-5.6-luna |
+| `finder` | Multi-lens review finders, explorers, searchers | no | haiku(low) | sonnet(low) → gpt-5.6-luna |
+| `implementer` | Coding workers: edit + commit (prgroom `fix`, Track B workers) | yes | sonnet(medium) | opus(high) → gpt-5.6-terra |
+| `reviewer` | Code/plan review against standards (quality-reviewer, per-file review passes) | no | sonnet(medium) | opus(high) → gpt-5.6-terra |
 | `refuter` | Adversarial verification panels (quality-gate Verify phase) | no | sonnet(medium) | opus(medium) |
-| `judge` | Synthesis, verdicts, architecture judgment, final pre-merge pass | no | opus(high) | gpt-5.5 → gemini top tier |
-| `spec-writer` | Judgment-dense authoring (specs, design docs) | yes | opus(high) | gpt-5.5 |
+| `judge` | Synthesis, verdicts, architecture judgment, final pre-merge pass | no | opus(high) | gpt-5.6-terra → gemini top tier |
+| `spec-writer` | Judgment-dense authoring (specs, design docs) | yes | opus(high) | gpt-5.6-sol |
 | `interactive` | The main session loop | yes | user's `/model` choice | outside the ladder (§6) |
 
 The `finder` row governs **solo** finder dispatches. Inside a review panel (e.g. the HEAVY
@@ -105,7 +105,7 @@ cost_per_mtok_out = 75.0
 
 [providers.openai]
 billing = "metered"
-[providers.openai.models."gpt-5.5"]
+[providers.openai.models."gpt-5.6-terra"]
 cost_per_mtok_in = 10.0
 cost_per_mtok_out = 40.0
 
@@ -125,14 +125,14 @@ monthly_ceiling_usd = 100       # counts metered spend only (locked decision 1)
 preferred = { cli = "claude", model = "sonnet", effort = "medium", write = true, provider = "anthropic" }
 fallback  = [
   { cli = "claude", model = "opus", effort = "high", write = true, provider = "anthropic" },
-  { cli = "codex",  model = "gpt-5.5", write = true, provider = "openai" },
+  { cli = "codex",  model = "gpt-5.6-terra", write = true, provider = "openai" },
 ]
 
 [archetype.classifier]
 preferred = { cli = "ollama", model = "gemma4", provider = "local" }
 fallback  = [
   { cli = "claude", model = "haiku", effort = "high", provider = "anthropic" },
-  { cli = "codex",  model = "gpt-5.4-mini", provider = "openai" },
+  { cli = "codex",  model = "gpt-5.6-luna", provider = "openai" },
 ]
 # ... one section per archetype in §3
 ```
