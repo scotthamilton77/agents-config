@@ -18,6 +18,7 @@ remove them without updating that judge.
 
 **Model selection** (leave `--model` unset to accept the plugin default; set explicitly when a task profile matches):
 - Architecture, cross-subsystem, security, final pre-merge pass → `gpt-5.6-sol`
+- Standard review, implementation, merge-judge default → `gpt-5.6-terra`
 - First-pass triage, diff summary, per-file parallel review, cost-sensitive runs → `gpt-5.6-luna`
 - Deeply code-centric, Codex-tuned agentic work → `gpt-5.3-codex`
 
