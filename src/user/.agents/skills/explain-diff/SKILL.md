@@ -1,6 +1,8 @@
 ---
 name: explain-diff
 description: Use when the user wants a rich, engaging explanation of a code change — a PR, diff, branch, commit range, or "what changed here." Triggers on "explain this PR", "walk me through this change/branch/diff", "help me understand what this does", "write this up for the team", "onboard someone to this change", or asking for a shareable/interactive writeup of a change. Produces a single self-contained HTML explainer. Not for line-by-line code review.
+model: sonnet
+effort: medium
 ---
 
 # Explain Diff
@@ -27,13 +29,15 @@ comes from the bundled `assets/` — inline them rather than restyling from scra
 1. **Explore before writing.** Read the diff *and* the surrounding code — enough to
    place the change in its bigger picture. You cannot write a good Background or
    Intuition section from the diff alone.
-2. **Inline the theme.** Read `assets/theme.css` and `assets/quiz.js` and paste them
+2. **Resolve the persona** (see Tone below) — decide whose voice narrates *before* you
+   start writing, so the whole page reads in one consistent voice.
+3. **Inline the theme.** Read `assets/theme.css` and `assets/quiz.js` and paste them
    verbatim into a `<style>` and `<script>` block. Read `assets/palette.md` for the
    class vocabulary. Compose the page from those classes; do **not** hardcode hex
    colors or invent parallel styles — that is what keeps every explainer consistent.
-3. **Write the four sections** (below), using the documented callouts, diagrams, and
+4. **Write the four sections** (below), using the documented callouts, diagrams, and
    quiz markup.
-4. **Save** to a dated path outside the repo (see Format), then run the self-check.
+5. **Save** to a dated path outside the repo (see Format), then run the self-check.
 
 ## Sections
 
@@ -51,10 +55,30 @@ comes from the bundled `assets/` — inline them rather than restyling from scra
 
 ## Tone
 
-Funny, snarky, engaging. Playfully sarcastic/condescending is fine. Adopt the
-persona of **Marvin the Paranoid Android** from *The Hitchhiker's Guide to the
-Galaxy* — brilliant, weary, and quietly convinced this was all a waste of his
-considerable talents.
+Funny, snarky, engaging. Playfully sarcastic/condescending is fine. The *specific*
+voice is not hardcoded — resolve a persona, then narrate the whole page in it.
+
+**Resolve the persona — first match wins:**
+
+1. **Named** — if the invocation explicitly names one of the bundled personas (e.g.
+   `--persona=glados`, or "explain this as GLaDOS"), use that one. An explicit ask
+   beats everything.
+2. **Active** — otherwise, if you already have an active persona / voice directive in
+   your context, reuse it. (This is a soft self-check — there's no mechanical signal to
+   query, so if no such directive is present, fall through.)
+3. **Random** — otherwise pick one at random from the bundled assets:
+
+   ```bash
+   ls assets/personas/*.yaml | sort -R | head -1
+   ```
+
+   No git dependency, works in any directory, and picks fresh each run (`sort -R`
+   over `shuf` — `shuf` isn't on stock macOS).
+
+Once resolved, read that persona's YAML and adopt its `theme`, `personality_traits`,
+and `tone_traits`; draw flavor from its `snarky_examples`. Tell the reader up front
+whose voice they're getting and why (e.g. "No persona named — rolled GLaDOS."). Stay
+in that voice for the entire page — one narrator, start to finish.
 
 ## Format
 
@@ -79,3 +103,5 @@ considerable talents.
 - `theme.css` and `quiz.js` are inlined verbatim; no external `<link>`/`<script src>`.
 - TOC anchors match the section `id`s.
 - Each quiz question has exactly one `data-correct="true"` option and a `.feedback` div.
+- A persona was resolved (named / active / random), named to the reader up front, and
+  held consistently across every section — no voice drift, no leftover Marvin default.
