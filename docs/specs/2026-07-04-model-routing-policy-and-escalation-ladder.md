@@ -63,7 +63,7 @@ owner review may merge, split, or re-route rows.
 | `implementer` | Coding workers: edit + commit (prgroom `fix`, Track B workers) | yes | sonnet(medium) | opus(high) → gpt-5.6-terra |
 | `reviewer` | Code/plan review against standards (quality-reviewer, per-file review passes) | no | sonnet(medium) | opus(high) → gpt-5.6-terra |
 | `refuter` | Adversarial verification panels (quality-gate Verify phase) | no | sonnet(medium) | opus(medium) |
-| `judge` | Synthesis, verdicts, architecture judgment, final pre-merge pass | no | opus(high) | gpt-5.6-terra → gemini top tier |
+| `judge` | Synthesis, verdicts, merge-judge ruling | no | opus(high) | gpt-5.6-terra → gemini top tier |
 | `spec-writer` | Judgment-dense authoring (specs, design docs) | yes | opus(high) | gpt-5.6-sol |
 | `interactive` | The main session loop | yes | user's `/model` choice | outside the ladder (§6) |
 
