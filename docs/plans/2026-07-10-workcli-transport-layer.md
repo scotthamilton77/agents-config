@@ -416,15 +416,15 @@ the root `Makefile`, or paths a task explicitly names.
 - Modify: `src/workcli/cli.py` (wire subparsers → registry), `src/workcli/adapters/bd/backend.py`
   (`ready`, `search`), `tests/unit/test_drift_alarm.py` (end-to-end case)
 
-- [ ] Failing tests first (via `run_cli`): item 2 — `work show X` → `data` is an object with
+- [x] Failing tests first (via `run_cli`): item 2 — `work show X` → `data` is an object with
   lean deps + `string[]` labels; `work show X Y` → `data.items` length 2 (decision 10).
   Item 5 — fake returns 60 rows for `list` and 120 for `ready`; all surface; the fake's
   call log shows `--limit 0` was passed; `--limit 7` passes `--limit 7`. Item 9 end-to-end —
   scripted garbage `show` shape → envelope `E_BACKEND_DRIFT`, exit 1. `--parent` filter
   applied client-side if capture in Task 2 showed bd lacks the flag.
-- [ ] Implement `verbs/read.py` + registry + cli wiring; capability gate (decision 11) in the
+- [x] Implement `verbs/read.py` + registry + cli wiring; capability gate (decision 11) in the
   dispatch path
-- [ ] Full local gate trio + pytest. Commit: `feat(workcli): read verbs with normalization and unbounded defaults`
+- [x] Full local gate trio + pytest. Commit: `feat(workcli): read verbs with normalization and unbounded defaults`
 
 ### Task 4: Write verbs — create --raw, update, note, close, reopen
 

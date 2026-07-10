@@ -3,9 +3,9 @@ no longer matches what the parser expects, the facade raises
 `WorkError(BACKEND_DRIFT)` naming exactly what broke -- never a silent
 best-effort guess.
 
-This file covers the parse-level core (malformed/renamed/missing shape).
-Task 3 adds the end-to-end case (a scripted `show` response driving the
-`show` verb all the way to an `E_BACKEND_DRIFT` envelope).
+This file covers both the parse-level core (malformed/renamed/missing shape)
+and the end-to-end case: a scripted `show` response driving the `show` verb
+all the way through the real CLI to an `E_BACKEND_DRIFT` envelope, exit 1.
 """
 
 from __future__ import annotations
@@ -14,7 +14,10 @@ import json
 
 import pytest
 
+from tests.conftest import run_cli
+from tests.fakes import ScriptedStep
 from workcli.adapters.bd.parse import parse_items, parse_labels
+from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode, WorkError
 
 
@@ -99,3 +102,25 @@ def test_label_list_element_that_is_not_a_string_raises_backend_drift():
     error = exc_info.value
     assert error.code == ErrorCode.BACKEND_DRIFT
     assert error.detail["reason"] == "label_not_a_string"
+
+
+def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():
+    # A garbage `show` shape (missing every required key) drives the CLI's
+    # own catch: `handler -> WorkError(BACKEND_DRIFT) -> emit_failure`, not
+    # `E_INTERNAL` -- the parser's own typed error, not an unhandled crash.
+    exit_code, envelope, stderr_text = run_cli(
+        ["show", "x.1"],
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(returncode=0, stdout=json.dumps([{"unexpected": "shape"}]), stderr=""),
+            )
+        ],
+    )
+
+    assert exit_code == 1
+    assert stderr_text == ""
+    assert envelope["ok"] is False
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.BACKEND_DRIFT)

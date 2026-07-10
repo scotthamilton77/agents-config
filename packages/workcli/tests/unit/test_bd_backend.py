@@ -184,3 +184,84 @@ def test_query_maps_an_unrecognized_nonzero_exit_to_backend_drift():
         raise AssertionError("expected WorkError")
     except WorkError as error:
         assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_ready_defaults_to_limit_zero_meaning_unbounded():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("ready", "--json"),
+                BdResult(returncode=0, stdout=_read("bd_list_open_limit5.json"), stderr=""),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    items = backend.ready(None)
+
+    assert len(items) == 5
+    assert runner.calls == [("ready", "--json", "--limit", "0")]
+
+
+def test_ready_passes_through_the_label_filter():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("ready", "--json"), BdResult(returncode=0, stdout="[]", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    backend.ready("tech-debt")
+
+    assert runner.calls == [("ready", "--json", "--label", "tech-debt", "--limit", "0")]
+
+
+def test_ready_maps_an_unrecognized_nonzero_exit_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("ready", "--json"),
+                BdResult(returncode=1, stdout="", stderr="boom: out of memory"),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.ready(None)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_search_sends_the_query_and_returns_normalized_items():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("search", "quarantine", "--json"),
+                BdResult(returncode=0, stdout=_read("bd_list_open_limit5.json"), stderr=""),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    items = backend.search("quarantine")
+
+    assert len(items) == 5
+    assert runner.calls == [("search", "quarantine", "--json")]
+
+
+def test_search_maps_an_unrecognized_nonzero_exit_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("search",),
+                BdResult(returncode=1, stdout="", stderr="boom: out of memory"),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.search("x")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT

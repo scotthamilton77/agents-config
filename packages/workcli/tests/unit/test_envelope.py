@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 from io import StringIO
 
+from tests.fakes import ScriptedBdRunner
 from workcli import PROTOCOL_VERSION
 from workcli import cli as cli_module
 from workcli.envelope import ErrorCode, WorkError, emit_failure, emit_success
@@ -68,13 +69,18 @@ def test_invalid_argparse_choice_yields_usage_envelope_not_argparse_stderr_dump(
 
 
 def test_handler_success_yields_success_envelope_with_returned_data(monkeypatch):
-    def _echo(_args: object) -> dict[str, str]:
+    # A stub replaces a REGISTERED verb's handler ("show") rather than
+    # inventing a new verb name -- real argparse subparsers (Task 3+) reject
+    # any subcommand name that isn't wired up before VERBS is ever consulted.
+    def _echo(_backend: object, _args: object) -> dict[str, str]:
         return {"id": "x.1"}
 
-    monkeypatch.setitem(cli_module.VERBS, "echo", _echo)
+    monkeypatch.setitem(cli_module.VERBS, "show", _echo)
     out = StringIO()
 
-    exit_code = cli_module.main(["echo"], out=out, err=StringIO())
+    exit_code = cli_module.main(
+        ["show", "x.1"], runner=ScriptedBdRunner(steps=[]), out=out, err=StringIO()
+    )
 
     assert exit_code == 0
     envelope = json.loads(out.getvalue())
@@ -83,14 +89,16 @@ def test_handler_success_yields_success_envelope_with_returned_data(monkeypatch)
 
 
 def test_handler_raising_work_error_yields_that_errors_envelope(monkeypatch):
-    def _reject(_args: object) -> None:
+    def _reject(_backend: object, _args: object) -> None:
         raise WorkError(ErrorCode.NOT_FOUND, "no such item", detail={"id": "x.1"})
 
-    monkeypatch.setitem(cli_module.VERBS, "reject", _reject)
+    monkeypatch.setitem(cli_module.VERBS, "show", _reject)
     out = StringIO()
     err = StringIO()
 
-    exit_code = cli_module.main(["reject"], out=out, err=err)
+    exit_code = cli_module.main(
+        ["show", "x.1"], runner=ScriptedBdRunner(steps=[]), out=out, err=err
+    )
 
     assert exit_code == 1
     assert err.getvalue() == ""
@@ -103,14 +111,16 @@ def test_handler_raising_work_error_yields_that_errors_envelope(monkeypatch):
 
 
 def test_handler_exception_yields_internal_envelope_with_traceback_on_stderr(monkeypatch):
-    def _boom(_args: object) -> None:
+    def _boom(_backend: object, _args: object) -> None:
         raise ValueError("kaboom")
 
-    monkeypatch.setitem(cli_module.VERBS, "boom", _boom)
+    monkeypatch.setitem(cli_module.VERBS, "show", _boom)
     out = StringIO()
     err = StringIO()
 
-    exit_code = cli_module.main(["boom"], out=out, err=err)
+    exit_code = cli_module.main(
+        ["show", "x.1"], runner=ScriptedBdRunner(steps=[]), out=out, err=err
+    )
 
     assert exit_code == 1
     envelope = json.loads(out.getvalue())

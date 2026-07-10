@@ -2,25 +2,26 @@
 
 `main()` is the single injectable entry point: every outside-world dependency
 (argv, the bd runner, stdout/stderr, sleep) arrives as an argument, never a
-module global. The verb registry (`VERBS`) starts empty in this scaffold;
-later tasks populate it and wire matching argparse subparsers (Task 3+).
+module global. The `Backend` itself is constructed lazily, inside `main()`,
+only when a verb actually dispatches -- `--protocol-version` short-circuits
+before it and never touches the runner (spec §5: the handshake is cheap and
+side-effect-free).
 """
 
 from __future__ import annotations
 
 import sys
+import time
 import traceback
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
 from typing import NoReturn, TextIO
 
 from workcli import PROTOCOL_VERSION
-from workcli.adapters.bd.runner import BdRunner
-from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
-
-#: verb name -> handler. Populated by later tasks; empty here means every verb
-#: name is, correctly, unrecognized (E_USAGE).
-VERBS: dict[str, Callable[[Namespace], JsonValue]] = {}
+from workcli.adapters.bd.backend import BdBackend
+from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
+from workcli.envelope import ErrorCode, WorkError, emit_failure, emit_success
+from workcli.verbs import VERBS, missing_capability
 
 
 class _EnvelopeArgumentParser(ArgumentParser):
@@ -36,6 +37,24 @@ class _EnvelopeArgumentParser(ArgumentParser):
         raise WorkError(ErrorCode.USAGE, message)
 
 
+def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    show_parser = subparsers.add_parser("show", help="show one or more items by id")
+    show_parser.add_argument("ids", nargs="+", metavar="ID")
+
+    list_parser = subparsers.add_parser("list", help="list items, unbounded unless --limit")
+    list_parser.add_argument("--status")
+    list_parser.add_argument("--label")
+    list_parser.add_argument("--parent")
+    list_parser.add_argument("--type")
+    list_parser.add_argument("--limit", type=int, default=None)
+
+    ready_parser = subparsers.add_parser("ready", help="list ready-to-work items, unbounded")
+    ready_parser.add_argument("--label")
+
+    search_parser = subparsers.add_parser("search", help="search items by query text")
+    search_parser.add_argument("query", metavar="QUERY")
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="work", description="work — issue-tracker facade CLI")
     parser.add_argument(
@@ -49,8 +68,20 @@ def _build_parser() -> _EnvelopeArgumentParser:
         default="json",
         help="human rendering goes to stderr; stdout always carries the JSON envelope",
     )
-    parser.add_argument("verb", nargs="?", help="one of the work verbs")
+    # `parser_class` propagates the raise-don't-exit `error()` override to
+    # every subparser too -- a bad flag inside `work show --bogus` must reach
+    # main()'s WorkError handling exactly like a bad top-level flag does,
+    # never argparse's own stderr-and-exit path.
+    subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
+    _add_read_subparsers(subparsers)
     return parser
+
+
+def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
+    return BdBackend(
+        runner if runner is not None else SubprocessBdRunner(),
+        sleep=sleep if sleep is not None else time.sleep,
+    )
 
 
 def main(
@@ -79,8 +110,21 @@ def main(
     if handler is None:
         return emit_failure(WorkError(ErrorCode.USAGE, f"unknown verb: {args.verb!r}"), out)
 
+    # Constructed only now -- never for --protocol-version above -- so the
+    # handshake never touches the runner (spec §5).
+    backend = _build_backend(runner, sleep)
+
+    if missing_capability(args.verb, backend.capabilities):
+        return emit_failure(
+            WorkError(
+                ErrorCode.UNSUPPORTED_CAPABILITY,
+                f"{args.verb}: not supported by this backend",
+            ),
+            out,
+        )
+
     try:
-        data = handler(args)
+        data = handler(backend, args)
     except WorkError as verb_error:
         return emit_failure(verb_error, out)
     except Exception:

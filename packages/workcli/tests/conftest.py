@@ -34,3 +34,22 @@ def run_cli(
     exit_code = main(argv, runner=runner, out=out, err=err, sleep=sleep)
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()
+
+
+def run_cli_with_runner(
+    argv: Sequence[str],
+    runner: ScriptedBdRunner,
+    *,
+    sleep: Callable[[float], None] | None = None,
+) -> tuple[int, dict[str, JsonValue], str]:
+    """Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.
+
+    `run_cli` builds and discards its own runner, so tests that need to
+    assert against `.calls` after dispatch (the fake's call-log surface)
+    construct the runner themselves and pass it in here instead.
+    """
+    out = StringIO()
+    err = StringIO()
+    exit_code = main(argv, runner=runner, out=out, err=err, sleep=sleep)
+    envelope: dict[str, JsonValue] = json.loads(out.getvalue())
+    return exit_code, envelope, err.getvalue()
