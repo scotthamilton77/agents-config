@@ -779,7 +779,9 @@ begins.
 
 ### DEFER placement (interactive only)
 
-Apply the discovered-work rule (sibling test → anchored filing):
+Apply the discovered-work rule in full (sibling test → anchored filing; the
+triage block carries the deferral's escape-hatch justification; do NOT close
+a newly filed bead this session):
 
 - **In scope** (would have been on the parent epic's original plan) →
   sibling: `bd create --parent <parent-of-current-bead>`, plus the rule's
