@@ -279,8 +279,12 @@ window.PROTO = (function () {
     };
     document.getElementById('notes-copy').onclick = async (e) => {
       const payload = JSON.stringify({ pr: DATA.pr.id, notes }, null, 1);
-      try { await navigator.clipboard.writeText(payload); } catch { /* file:// clipboard quirks */ }
-      e.target.textContent = 'Copied ✓';
+      try {
+        await navigator.clipboard.writeText(payload);
+        e.target.textContent = 'Copied ✓';
+      } catch { /* clipboard unavailable, e.g. on file:// */
+        e.target.textContent = 'Copy failed ✗';
+      }
       setTimeout(persistNotes, 1200);
     };
     persistNotes();
