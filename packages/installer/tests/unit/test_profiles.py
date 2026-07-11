@@ -346,7 +346,7 @@ def test_load_manifest_user_path_is_directory_errors(tmp_path: Path) -> None:
     user_dir = tmp_path / "user-profiles.toml"
     user_dir.mkdir()
 
-    with pytest.raises(ProfilesError, match=r"not a readable regular file"):
+    with pytest.raises(ProfilesError, match=r"not a regular file"):
         load_manifest(shipped, user_dir)
 
 
@@ -358,7 +358,7 @@ def test_load_manifest_user_path_is_broken_symlink_errors(tmp_path: Path) -> Non
     link = tmp_path / "user-profiles.toml"
     link.symlink_to(tmp_path / "nowhere.toml")
 
-    with pytest.raises(ProfilesError, match=r"not a readable regular file"):
+    with pytest.raises(ProfilesError, match=r"not a regular file"):
         load_manifest(shipped, link)
 
 

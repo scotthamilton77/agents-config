@@ -160,19 +160,19 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
     collision (no silent shadowing) — compose or rename instead. The merged
     `Manifest.scopes` comes only from the shipped file.
 
-    A `user` path that is not provided or genuinely absent is ignored; one
-    that exists but is not a readable regular file (a directory, a broken
-    symlink, or an unreadable file) fails loud with a `ProfilesError` naming
-    the path — the same fail-loud posture the rest of this module holds.
+    A `user` path that is not provided or genuinely absent is ignored. One
+    that exists but is not a regular file (a directory or broken symlink), or
+    a regular file that cannot be read, fails loud with a `ProfilesError`
+    naming the path — the same fail-loud posture the rest of this module holds.
     """
     manifest = _parse_manifest_file(shipped, allow_scopes=True)
     if user is None or not (user.exists() or user.is_symlink()):
         return manifest  # not provided, or genuinely absent — ignore
     if not user.is_file():
-        msg = (
-            f"user manifest {user} is not a readable regular file "
-            "(directory, broken symlink, or unreadable)"
-        )
+        # `is_file()` is True for an unreadable regular file (it stats the type,
+        # not the content), so this branch is only non-regular-file objects; an
+        # unreadable regular file is caught by the read below.
+        msg = f"user manifest {user} is not a regular file (a directory or broken symlink)"
         raise ProfilesError(msg)
     try:
         user_manifest = _parse_manifest_file(user, allow_scopes=False)
