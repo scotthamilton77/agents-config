@@ -95,7 +95,9 @@ are the same value, always.
 - `create --raw` → an object carrying the new item's `id` (see
   `verbs/write.py` for the exact shape).
 - `update` / `note` / `close` / `reopen` → `data: null` (no return payload).
-- `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`.
+- `sync` → `{"synced": ..., "mode": "push" | "pull" | "noop"}`. `"noop"` is
+  reserved for server-authoritative backends (the CLI contract spec §6's
+  declared no-op); the bd adapter only ever emits `"push"` or `"pull"`.
 - `--protocol-version` → `{"protocol": "1.0"}`.
 
 Human-readable output is opt-in only (`--format human`): it renders the

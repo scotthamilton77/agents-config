@@ -49,7 +49,9 @@ class DepListing:
 @dataclass(frozen=True)
 class SyncResult:
     synced: bool
-    mode: str  # "push" | "pull" | "noop"
+    # "push" | "pull" | "noop" -- "noop" is reserved for server-authoritative
+    # backends (spec §6's declared no-op); the bd adapter never emits it.
+    mode: str
 
 
 @dataclass(frozen=True)
