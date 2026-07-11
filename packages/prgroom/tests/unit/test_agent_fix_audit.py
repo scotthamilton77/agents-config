@@ -66,6 +66,29 @@ def test_fixed_with_new_commit_is_clean() -> None:
     assert "C_1" not in v
 
 
+def test_fixed_with_null_recommended_gate_from_dict_is_audit_failed() -> None:
+    # Reviewer's exact scenario end-to-end: a provider emits `"recommended_gate": null`.
+    # After json load that is Python None, which from_dict assigns verbatim. The sha
+    # checks pass (new1 is a new commit), so GateStrength.parse(None) -> None drives a
+    # CONTRACT_FIX_AUDIT_FAILED violation — NOT a TypeError crashing the audit.
+    req = _req("C_1")
+    out = FixOutput.from_dict(
+        {
+            "items": [
+                {
+                    "gh_id": "C_1",
+                    "disposition": "fixed",
+                    "commit_shas": ["new1"],
+                    "recommended_gate": None,
+                }
+            ]
+        }
+    )
+    assert out.items[0].recommended_gate is None
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
+    assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
+
+
 def test_fixed_with_no_commits_is_audit_failed() -> None:
     req = _req("C_1")
     out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=[])])

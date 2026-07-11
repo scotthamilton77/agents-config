@@ -22,3 +22,11 @@ def test_parse_accepts_valid_values(raw: str, want: GateStrength) -> None:
 @pytest.mark.parametrize("raw", ["", "banana", "FULL", " full"])
 def test_parse_returns_none_for_invalid(raw: str) -> None:
     assert GateStrength.parse(raw) is None
+
+
+@pytest.mark.parametrize("raw", [None, 5, 5.0, True, ["full"], {"x": 1}])
+def test_parse_returns_none_for_non_str(raw: object) -> None:
+    # The leniency is EXPLICIT, not incidental: a provider emitting JSON null (Python
+    # None) or any other non-str for recommended_gate must yield None, not raise —
+    # so a malformed gate lands as a CONTRACT_FIX_AUDIT_FAILED violation downstream.
+    assert GateStrength.parse(raw) is None
