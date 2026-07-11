@@ -32,8 +32,9 @@ class Recurrence:
     prior_commits: tuple[str, ...]
     """SHAs from the most recent prior disposition (a tuple so the frozen value type
     stays immutable + hashable). Serializes as a JSON list; omitted when empty."""
-    first_seen_round: int
-    """The round the item was first observed."""
+    first_seen_retry: int
+    """The retry (the 0-indexed PR-review retry counter) at which the item was
+    first observed."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for the fix snapshot. ``prior_commits`` omitted when empty (§8.2)."""
@@ -41,7 +42,7 @@ class Recurrence:
             "reopened": self.reopened,
             "attempt_count": self.attempt_count,
             "prior_disposition": self.prior_disposition,
-            "first_seen_round": self.first_seen_round,
+            "first_seen_retry": self.first_seen_retry,
         }
         if self.prior_commits:
             d["prior_commits"] = list(self.prior_commits)

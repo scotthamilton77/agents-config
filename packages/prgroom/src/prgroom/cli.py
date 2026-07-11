@@ -53,6 +53,8 @@ from prgroom.lifecycle import (
 )
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
+from prgroom.lifecycle.push import has_queued_fix_commits
+from prgroom.lifecycle.resolver import apply_retry_budget_gate, retry_budget_exhausted
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
@@ -383,8 +385,12 @@ def push(
     A locked verb: ``read -> push_pr -> write`` under the §2 ``with_lock`` wrapper.
     Direct-invocation preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE``
     (exit 2); a terminal-for-CLI phase (``quiesced`` / ``human-gated`` / ``merged``)
-    -> no-op exit 0; no queued commits -> idempotent no-op exit 0. On a successful
-    push: ``round`` bumps, ``last_pushed_head_sha`` records the pushed SHA, and stale
+    -> no-op exit 0; no queued commits -> idempotent no-op exit 0; a budget-tripping
+    push (queued commits AND the retry budget exhausted, §3.5) -> gated to
+    ``human-gated`` + ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` with nothing uploaded
+    (exit 0) — the direct verb refuses exactly what the run pipeline's cap-guard
+    refuses. On a successful push: ``pr_review_retries_used`` bumps (the initial
+    push is free), ``last_pushed_head_sha`` records the pushed SHA, and stale
     required reviews flip so a follow-up ``rereview`` re-asks them. No phase change.
     """
     store: Store = ctx.obj
@@ -398,6 +404,14 @@ def push(
             state = _read_or_no_state(store, ref)
             if is_terminal_for_cli(state.phase):
                 return  # terminal-for-CLI: no autonomous push (no-op exit 0)
+            # §3.5 applies to the direct verb too — the cheap budget check first so
+            # an untripped budget never reaches the effectful has_queued read.
+            if retry_budget_exhausted(state, config.pr_review_retries) and has_queued_fix_commits(
+                gh, git, ref
+            ):
+                apply_retry_budget_gate(state)
+                store.write(ref, state)
+                return
             state = push_pr(state, ref=ref, gh=gh, git=git, config=config)
             store.write(ref, state)
 
@@ -517,7 +531,8 @@ def resolve_escalated(
     ``with_lock`` wrapper. An invalid ``--as`` is rejected at parse (typer choice,
     exit 2) before any state read. ``decided_by`` stamps ``human:<git-user>`` via the
     git seam. Flipping the last escalated item may release ``human-gated`` ->
-    ``fixes-pending``; never clears cap/failed gating, never bumps ``round``.
+    ``fixes-pending``; never clears budget/failed gating, never bumps
+    ``pr_review_retries_used``.
     """
     store: Store = ctx.obj
     try:
@@ -629,10 +644,12 @@ def run(
         False,
         "--interactive/--autonomous",
         help="Interactive returns at awaiting-review/idle (caller owns the wait); "
-        "autonomous (default) blocks through the wait until quiescent or capped.",
+        "autonomous (default) blocks through the wait until quiescent or human-gated.",
     ),
-    max_rounds: int | None = typer.Option(
-        None, "--max-rounds", help="Hard cap on review-eliciting pushes (§3.5; default 3)."
+    pr_review_retries: int | None = typer.Option(
+        None,
+        "--pr-review-retries",
+        help="PR-review retry budget: fix-push retries after the initial push (§3.5; default 5).",
     ),
     no_prework: bool = typer.Option(
         False,
@@ -641,7 +658,7 @@ def run(
         "orchestrates its own prework (§3.2), so this has no effect here.",
     ),
 ) -> None:
-    """Aggregate: orchestrate the verbs under one lock until quiescent or capped (§3.3).
+    """Aggregate: orchestrate the verbs under one lock until quiescent or human-gated (§3.3).
 
     Acquires the PR lock once and threads ``_poll → _cluster → _fix → [cap] → _push →
     [_rereview] → _reply → _resolve`` per cycle, blocking in ``_wait`` between cycles
@@ -664,7 +681,7 @@ def run(
         gh=_build_gh(),
         git=_build_git(),
         deps=Deps.system(),
-        config=PrgroomConfig.load(max_rounds_flag=max_rounds),
+        config=PrgroomConfig.load(pr_review_retries_flag=pr_review_retries),
         sink=_build_sink(),
         mode=Mode.INTERACTIVE if interactive else Mode.AUTONOMOUS,
         cluster_dispatcher=cluster_dispatcher,
@@ -695,7 +712,8 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
         return
     last_error = envelope["last_error"] or "(clear)"
     sys.stdout.write(
-        f"PR #{envelope['pr']}  phase={envelope['phase']}  round={envelope['round']}\n"
+        f"PR #{envelope['pr']}  phase={envelope['phase']}  "
+        f"pr_review_retries_used={envelope['pr_review_retries_used']}\n"
         f"  ci={envelope['ci_state']}  last_error={last_error}\n"
         f"  items={envelope['items_summary']}\n"
         f"  merge_gates={envelope['merge_gates']}\n"

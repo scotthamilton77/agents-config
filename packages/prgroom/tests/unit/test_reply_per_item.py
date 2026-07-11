@@ -121,7 +121,7 @@ def test_escalated_cap_variant_when_rationale_names_cap() -> None:
                 ItemKind.REVIEW_THREAD,
                 "7",
                 DispositionKind.ESCALATED,
-                rationale="hard cap of 3 rounds reached",
+                rationale="PR-review retry budget exhausted",
             )
         ]
     )

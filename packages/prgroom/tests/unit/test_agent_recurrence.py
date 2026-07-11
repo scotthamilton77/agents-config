@@ -17,7 +17,7 @@ def test_recurrence_serializes_all_fields_when_commits_present() -> None:
         attempt_count=2,
         prior_disposition="wont_fix",
         prior_commits=("abc123", "def456"),
-        first_seen_round=1,
+        first_seen_retry=1,
     )
     # prior_commits is a tuple internally (immutable value type) but serializes as a
     # JSON list for the wire shape.
@@ -26,7 +26,7 @@ def test_recurrence_serializes_all_fields_when_commits_present() -> None:
         "attempt_count": 2,
         "prior_disposition": "wont_fix",
         "prior_commits": ["abc123", "def456"],
-        "first_seen_round": 1,
+        "first_seen_retry": 1,
     }
     assert isinstance(rec.to_dict()["prior_commits"], list)
 
@@ -38,7 +38,7 @@ def test_recurrence_is_hashable() -> None:
         attempt_count=2,
         prior_disposition="fixed",
         prior_commits=("abc123",),
-        first_seen_round=1,
+        first_seen_retry=1,
     )
     assert hash(rec) == hash(rec)  # does not raise; stable
     assert len({rec, rec}) == 1  # usable as a set member
@@ -53,12 +53,12 @@ def test_recurrence_omits_prior_commits_when_empty() -> None:
         attempt_count=1,
         prior_disposition="skipped",
         prior_commits=(),
-        first_seen_round=3,
+        first_seen_retry=3,
     )
     assert "prior_commits" not in rec.to_dict()
     assert rec.to_dict() == {
         "reopened": False,
         "attempt_count": 1,
         "prior_disposition": "skipped",
-        "first_seen_round": 3,
+        "first_seen_retry": 3,
     }

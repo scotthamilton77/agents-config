@@ -6,7 +6,7 @@
 > **Source bead**: `agents-config-fca6.12`
 > **Source design**: [design.md](design.md) — §3 (lifecycle + the run pipeline), §3.4–§3.5 (the verify loop + the two retry caps), §4 (quiescence model)
 
-> **Status**: **The `verify` step is DESIGNED, not built**, and `pr_review_retries_used` / `pr_review_retries` below are target-state names for the built `round` / `max_rounds` counter and CLI flag. `packages/prgroom/src/prgroom/lifecycle/run.py::_build_pipeline` is `cluster → fix → cap-guard → push → reply → resolve → rereview` — there is no `verify` step and no `LIFECYCLE_PR_REVIEW_EXHAUSTED` error code (the built cap-guard trip raises `LIFECYCLE_HARD_CAP_EXCEEDED`). See [`c4-l3-verify.md`](c4-l3-verify.md).
+> **Status**: **The `verify` step is DESIGNED, not built.** `packages/prgroom/src/prgroom/lifecycle/run.py::_build_pipeline` is `cluster → fix → cap-guard → push → reply → resolve → rereview` — there is no `verify` step. `pr_review_retries_used` / `pr_review_retries` and `LIFECYCLE_PR_REVIEW_EXHAUSTED` below are built. See [`c4-l3-verify.md`](c4-l3-verify.md).
 
 ## Glossary
 
@@ -111,7 +111,7 @@ sequenceDiagram
 ### Notes on the happy path
 
 - **One lock per PR for the entire cycle.** `run()` acquires the `prsession.Store` lock once and holds it until terminal exit — minutes to hours depending on reviewer cadence. A concurrent `prgroom run` invocation on the same PR exits immediately with `PRECONDITION_LOCK_HELD` (exit 75). The `status` verb is the lock-free carve-out for diagnostic polling.
-- **`pr_review_retries_used` is incremented once per fix-push.** The bootstrap `_poll` anchors it at `0` — the initial push is not a retry. Subsequent CLI fix-pushes bump it via `_push`; external pushes bump it via `_poll` SHA-transition attribution. The PR-review retry budget (`pr_review_retries`, default 5) counts CLI-observed fix-push retries only — historical out-of-band pushes are invisible.
+- **`pr_review_retries_used` is incremented once per review-eliciting push observed after bootstrap — CLI or external.** The bootstrap `_poll` anchors it at `0` — the initial push is not a retry. CLI fix-pushes bump it via `_push`; external pushes bump it via `_poll` SHA-transition attribution. The PR-review retry budget (`pr_review_retries`, default 5) bounds those observed retries; only pre-bootstrap (historical out-of-band) pushes are invisible.
 - **`verify` gates the push.** Between `fix` and `push`, the `verify` step runs the operator-configured tier command (the strongest `GateStrength` across the clean `FIXED` items) whole-branch; the happy path is a first-try GREEN. A red gate drives the bounded fix↔verify convergence loop ([`c4-l3-verify.md`](c4-l3-verify.md)).
 - **Quiescence is the four hard gates plus the idle timer.** `G_REVIEWERS` (all Required reviewers terminal), `G_CI` (ci_state in {success, absent}), `G_DISPOSITIONS` (every item dispositioned), `G_NO_BLOCKERS` (no escalated / failed items). The idle timer (default 10m) is the soft "let it settle" buffer for slow human reviewers.
 - **The fix agent owns its commits.** The fix contract agent runs `git commit` itself inside the operator's worktree; prgroom does the subsequent `git push`. prgroom does not commit, and the fix contract does not push.
@@ -167,7 +167,7 @@ sequenceDiagram
 
 ## Sequence 3 — PR-review retry exhaustion (budget spent without quiescence)
 
-> **Diagram note**: `pr_review_retries_used`, `pr_review_retries`, the `_verify` step, and `LIFECYCLE_PR_REVIEW_EXHAUSTED` below are target-state names (see Status above). Built today: the counter is `round`, the flag is `--max-rounds`, there is no `_verify` step, and the cap-guard trip raises `LIFECYCLE_HARD_CAP_EXCEEDED`.
+> **Diagram note**: The `_verify` step below is target-state (see Status above); `pr_review_retries_used`, `pr_review_retries`, and `LIFECYCLE_PR_REVIEW_EXHAUSTED` are built.
 
 Operator pushed the PR (`pr_review_retries_used=0`). With the budget lowered to `--pr-review-retries 2` for this example (the default is 5), two prgroom-driven fix-pushes raise it to `pr_review_retries_used=2`. The third reviewer pass still produces FIX comments. The pre-push cap guard refuses the would-be fourth push, sets `phase=human-gated`, emits an `EscalationSink` event, raises the `human-review-required` label on the PR, and exits cleanly (exit 0 — graceful terminal).
 

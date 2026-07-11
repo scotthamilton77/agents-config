@@ -27,7 +27,7 @@ def test_locked_write_read_cycle_stamps_injected_clock(
         state = PRGroomingState(
             pr=pr_ref,
             phase=PRPhase.AWAITING_REVIEW,
-            round=1,
+            pr_review_retries_used=1,
             last_polled_at=deps.clock.now(),
             last_activity_at=deps.clock.now(),
             quiescence=QuiescenceState(),
@@ -45,7 +45,7 @@ def test_store_round_trips_through_json_dict_form(
     state = PRGroomingState(
         pr=pr_ref,
         phase=PRPhase.IDLE,
-        round=0,
+        pr_review_retries_used=0,
         last_polled_at=fixed_now,
         last_activity_at=fixed_now,
         quiescence=QuiescenceState(),
