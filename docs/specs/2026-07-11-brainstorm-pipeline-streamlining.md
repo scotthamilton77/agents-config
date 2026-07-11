@@ -39,9 +39,10 @@ agent could make itself:
   is: recommend the execution mode, suggest a clean-context start (compact or fresh
   session), and hand over a copyable prompt.
 
-Each stop is a human intervention per brainstorm. The prime directive (AGENTS.md >
-Vision) says to move human time upstream and into thin verification gates; these
-gates are neither thin nor verification — they are unconditional pauses.
+Each stop is a human intervention per brainstorm. The project's prime directive —
+get the human out of the agent-babysitting job — says to move human time upstream
+and into thin verification gates; these gates are neither thin nor verification —
+they are unconditional pauses.
 
 ## 2. Locked owner decisions (2026-07-11 brainstorm — requirements, not options)
 
