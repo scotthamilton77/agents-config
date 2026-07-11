@@ -140,6 +140,31 @@ def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
     return value
 
 
+def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[str]:
+    """Return `raw[key]` as a `list[str]`, alarming on any non-string element.
+
+    Layers per-element string validation on top of `_list_field` (absent ->
+    `[]`, null/non-array -> drift). The normalized contract types this field
+    as a `string[]`; a non-string element (a number, an object, ...) is bd
+    model drift, not something to silently coerce with `str()` (spec
+    test-plan item 9) -- the same discipline `parse_labels` applies to the
+    `label list` command.
+    """
+    values = _list_field(raw, key, item_id)
+    for value in values:
+        if not isinstance(value, str):
+            raise _drift(
+                f"bd item's {key} field contains a non-string element",
+                {
+                    "reason": "non_string_list_element",
+                    "field": key,
+                    "id": item_id,
+                    "raw_type": type(value).__name__,
+                },
+            )
+    return values
+
+
 def parse_item(raw: dict[str, JsonValue]) -> Item:
     missing = [key for key in _REQUIRED_ITEM_KEYS if key not in raw]
     if missing:
@@ -180,7 +205,7 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
         type=str(raw["issue_type"]),
         status=str(raw["status"]),
         priority=f"P{priority_raw}",
-        labels=[str(label) for label in _list_field(raw, "labels", item_id)],
+        labels=_string_list_field(raw, "labels", item_id),
         parent=str(raw["parent"]) if raw.get("parent") is not None else None,
         deps=deps,
         children=children,

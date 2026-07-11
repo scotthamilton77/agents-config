@@ -155,6 +155,29 @@ def test_explicit_null_labels_field_raises_backend_drift_not_a_raw_type_error():
     assert error.detail["field"] == "labels"
 
 
+def test_non_string_label_element_raises_backend_drift_not_a_silent_coercion():
+    # bd emitting a non-string element in `labels` (a number, an object, ...)
+    # where the normalized contract says `string[]` is model drift -- it must
+    # alarm, never be silently coerced to a string via `str()` (spec test-plan
+    # item 9), matching parse_labels' discipline for the `label list` command.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "labels": ["real-label", 42],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "non_string_list_element"
+    assert error.detail["field"] == "labels"
+
+
 def test_non_list_dependencies_field_raises_backend_drift_naming_the_field():
     # Neither absent (defaults to []) nor null (its own drift case above) --
     # bd handing back some other non-array shape (e.g. a single object) for
