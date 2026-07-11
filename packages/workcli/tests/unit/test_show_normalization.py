@@ -49,6 +49,31 @@ def test_show_single_id_returns_a_lean_object_not_an_array():
     assert data["children"] == []
 
 
+def test_show_single_id_with_a_real_dependency_yields_a_lean_dep_edge():
+    # bd_show_wgclw9.json's one non-parent-child dependency (`discovered-from`
+    # -> agents-config-fca6.12, status closed) already backs the parser-level
+    # assertion in test_bd_parse.py; this pins the same edge end-to-end
+    # through `work show`, proving the envelope's `deps` serialization is
+    # exactly the lean `{id, type, status}` shape, no extra keys.
+    exit_code, envelope, stderr_text = run_cli(
+        ["show", "agents-config-wgclw.9"],
+        steps=[
+            ScriptedStep(
+                ("show",),
+                BdResult(returncode=0, stdout=_read("bd_show_wgclw9.json"), stderr=""),
+            )
+        ],
+    )
+
+    assert exit_code == 0
+    assert stderr_text == ""
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    assert data["deps"] == [
+        {"id": "agents-config-fca6.12", "type": "discovered-from", "status": "closed"}
+    ]
+
+
 def test_show_two_ids_returns_an_items_array():
     raw_a = {
         "id": "x.1",
