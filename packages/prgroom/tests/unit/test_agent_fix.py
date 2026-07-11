@@ -205,7 +205,14 @@ def test_cluster_flip_rationale_carries_the_hard_violation_detail() -> None:
     # its disposition.rationale (the lifecycle reads rationale, not last_error), not
     # a generic marker. Here C_1 is a valid 'fixed' but n2 is an unclaimed orphan.
     out = FixOutput(
-        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
+        items=[
+            FixItemResult(
+                gh_id="C_1",
+                disposition=DispositionKind.FIXED,
+                commit_shas=["n1"],
+                recommended_gate="full",
+            )
+        ]
     )
     git = _git(ancestors=["pre"], new=["n1", "n2"])
     res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
@@ -221,7 +228,14 @@ def test_swept_item_rationale_is_the_spec_string_with_no_added_prefix() -> None:
     # "cluster failed: " — that diverges from the documented contract string the
     # lifecycle/resolver read as the source of truth for the cause.
     out = FixOutput(
-        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])],
+        items=[
+            FixItemResult(
+                gh_id="C_1",
+                disposition=DispositionKind.FIXED,
+                commit_shas=["n1"],
+                recommended_gate="full",
+            )
+        ],
         memory_writes=["/etc/passwd"],  # escapes memory_dir → hard containment BLOCK
     )
     git = _git(ancestors=["pre"], new=["n1"])  # n1 claimed → no orphan, only containment

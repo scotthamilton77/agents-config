@@ -59,7 +59,9 @@ def _row(gh_id: str, kind: DispositionKind, **kw: object) -> FixItemResult:
 
 def test_fixed_with_new_commit_is_clean() -> None:
     req = _req("C_1")
-    out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=["new1"])])
+    out = FixOutput(
+        items=[_row("C_1", DispositionKind.FIXED, commit_shas=["new1"], recommended_gate="full")]
+    )
     v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
     assert "C_1" not in v
 
@@ -84,6 +86,40 @@ def test_fixed_claiming_pre_baseline_sha_is_audit_failed() -> None:
     out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=["base"])])
     v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
     assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
+
+
+def test_fixed_with_empty_gate_is_audit_failed() -> None:
+    # §6.1: recommended_gate is load-bearing — a FIXED item must carry a valid tier.
+    req = _req("C_1")
+    out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=["new1"])])
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
+    assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
+    assert "recommended_gate" in v["C_1"].detail
+
+
+def test_fixed_with_invalid_gate_is_audit_failed() -> None:
+    req = _req("C_1")
+    out = FixOutput(
+        items=[_row("C_1", DispositionKind.FIXED, commit_shas=["new1"], recommended_gate="banana")]
+    )
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
+    assert v["C_1"].code is ErrorCode.CONTRACT_FIX_AUDIT_FAILED
+
+
+def test_fixed_gate_check_runs_after_sha_checks() -> None:
+    # An unreachable sha must keep its richer UNREACHABLE_SHA code even when the
+    # gate is also missing — first offending rule wins, shas first.
+    req = _req("C_1")
+    out = FixOutput(items=[_row("C_1", DispositionKind.FIXED, commit_shas=["ghost"])])
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster={"new1"})
+    assert v["C_1"].code is ErrorCode.CONTRACT_FIX_UNREACHABLE_SHA
+
+
+def test_non_fixed_dispositions_need_no_gate() -> None:
+    req = _req("C_1")
+    out = FixOutput(items=[_row("C_1", DispositionKind.ALREADY_ADDRESSED, commit_shas=["base"])])
+    v = audit_fix_items(req, out, ancestors_of_pre={"base"}, new_in_cluster=set())
+    assert "C_1" not in v
 
 
 # ───────────────────────── already_addressed ─────────────────────────

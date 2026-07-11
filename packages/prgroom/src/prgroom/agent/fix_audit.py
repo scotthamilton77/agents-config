@@ -14,10 +14,14 @@ The two sets:
 
 §5 fix audit guards:
 
-* ``fixed`` → ≥1 claimed sha, and every claimed sha is a NEW commit
-  (``∈ new_in_cluster``). No commits → ``CONTRACT_FIX_AUDIT_FAILED``; a sha in
-  neither set → ``CONTRACT_FIX_UNREACHABLE_SHA``; a sha that is a pre-baseline
-  ancestor → ``CONTRACT_FIX_AUDIT_FAILED`` (a ``fixed`` must be new work).
+* ``fixed`` → ≥1 claimed sha, every claimed sha is a NEW commit
+  (``∈ new_in_cluster``), and ``recommended_gate`` parses as a
+  :class:`~prgroom.prsession.enums.GateStrength`. No commits →
+  ``CONTRACT_FIX_AUDIT_FAILED``; a sha in neither set →
+  ``CONTRACT_FIX_UNREACHABLE_SHA``; a sha that is a pre-baseline ancestor →
+  ``CONTRACT_FIX_AUDIT_FAILED`` (a ``fixed`` must be new work); an absent/invalid
+  gate → ``CONTRACT_FIX_AUDIT_FAILED`` (the fix-verify spec §6.1 makes the gate
+  load-bearing; the sha checks run first so their richer codes win).
 * ``already_addressed`` → every claimed sha predates the baseline
   (``∈ ancestors_of_pre``). A sha in neither set → ``CONTRACT_FIX_UNREACHABLE_SHA``;
   a brand-new sha → ``CONTRACT_FIX_AUDIT_FAILED`` (claims pre-existing but isn't).
@@ -34,7 +38,7 @@ from typing import TYPE_CHECKING
 from prgroom.agent.errors import AuditViolation
 from prgroom.errors import ErrorCode
 from prgroom.escalation import Severity
-from prgroom.prsession.enums import DispositionKind
+from prgroom.prsession.enums import DispositionKind, GateStrength
 
 if TYPE_CHECKING:
     from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput
@@ -109,6 +113,12 @@ def _audit_fixed(
         if sha in ancestors_of_pre:
             return _fail(row, f"item {row.gh_id!r} 'fixed' claims pre-baseline commit {sha!r}")
         return _unreachable(row, sha)
+    if GateStrength.parse(row.recommended_gate) is None:
+        return _fail(
+            row,
+            f"item {row.gh_id!r} 'fixed' has missing/invalid recommended_gate "
+            f"{row.recommended_gate!r} (must be one of {[g.value for g in GateStrength]})",
+        )
     return None
 
 
