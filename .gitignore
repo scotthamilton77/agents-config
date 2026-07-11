@@ -28,6 +28,9 @@ settings.local.json
 # DevContainer environment variables (contains secrets)
 .devcontainer/.env
 
+# MCP state
+.playwright-mcp/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
