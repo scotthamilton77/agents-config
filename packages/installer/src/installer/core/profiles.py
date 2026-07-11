@@ -163,7 +163,7 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
     A `user` path that is not provided or genuinely absent (nothing at the
     path) is ignored. Anything else fails loud with a `ProfilesError` naming
     the path: a path that cannot be accessed (e.g. a non-searchable parent
-    directory), one that exists but is not a regular file (a directory or
+    directory), one that exists but is not a regular file (e.g. a directory or
     broken symlink), or a regular file that cannot be read — the same
     fail-loud posture the rest of this module holds.
     """
@@ -185,7 +185,7 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
         # `is_file()` is True for an unreadable regular file (it stats the type,
         # not the content), so this branch is only non-regular-file objects; an
         # unreadable regular file is caught by the read below.
-        msg = f"user manifest {user} is not a regular file (a directory or broken symlink)"
+        msg = f"user manifest {user} is not a regular file (e.g. a directory or broken symlink)"
         raise ProfilesError(msg)
     try:
         user_manifest = _parse_manifest_file(user, allow_scopes=False)
