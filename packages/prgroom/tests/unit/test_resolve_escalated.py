@@ -49,7 +49,7 @@ def test_flip_to_skipped_and_advance_phase() -> None:
     assert out.items[0].disposition.kind is DispositionKind.SKIPPED
     assert out.items[0].disposition.decided_by == "human:scott"  # provenance pinned
     assert out.phase is PRPhase.FIXES_PENDING
-    assert out.round == s.round
+    assert out.pr_review_retries_used == s.pr_review_retries_used
 
 
 def test_fixed_without_commits_raises() -> None:

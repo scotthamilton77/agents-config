@@ -13,8 +13,9 @@ only to stamp ``quiesced_at`` on the priority-5 transition.
 
 Priority order (first match wins):
 
-1. Pre-push hard cap (round ≥ max_rounds AND queued commits) → ``human-gated`` +
-   ``LIFECYCLE_HARD_CAP_EXCEEDED``. The cap-tripping push is refused, never uploaded.
+1. Pre-push retry budget (pr_review_retries_used ≥ pr_review_retries AND queued
+   commits) → ``human-gated`` + ``LIFECYCLE_PR_REVIEW_EXHAUSTED``. The
+   budget-tripping push is refused, never uploaded.
 2. Any ``FAILED`` item → ``human-gated`` (cause is per-item ``rationale``; resolver
    does NOT set ``last_error`` — that is reserved for the ``PROPAGATE`` error path).
 3. Any unresolved ``ESCALATED`` item → ``human-gated``.
@@ -37,7 +38,7 @@ from prgroom.prsession.state import PRGroomingState
 class ResolvedPhase:
     """The resolver's verdict — the run-loop applies all three fields to state.
 
-    ``last_error`` is the cap code on priority 1 and ``None`` everywhere else (a
+    ``last_error`` is the budget code on priority 1 and ``None`` everywhere else (a
     ``FAILED`` item's cause lives in its per-item ``rationale``, not here). ``quiesced_at``
     is set only on the priority-5 quiesced transition.
     """
@@ -45,6 +46,30 @@ class ResolvedPhase:
     phase: PRPhase
     last_error: str | None = None
     quiesced_at: datetime | None = None
+
+
+def retry_budget_exhausted(state: PRGroomingState, pr_review_retries: int) -> bool:
+    """The §3.5 budget-trip core: the counter has consumed the whole retry budget.
+
+    Pure and cheap — callers AND it with their own ``has_queued`` reading (an
+    effectful git/gh read), checking this predicate FIRST so an untripped budget
+    short-circuits the read. Single owner of the ``>=`` comparison so the guard,
+    the terminal-entry re-arm, and the end-of-cycle cascade cannot drift.
+    """
+    return state.pr_review_retries_used >= pr_review_retries
+
+
+def apply_retry_budget_gate(state: PRGroomingState) -> None:
+    """Gate a budget-tripping push to ``human-gated`` (§3.5) — the shared refusal.
+
+    Sets ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` and clears ``lifecycle_escalation_filed``
+    so the run loop-top flush fires exactly one Sink event. Single owner of the
+    refusal mutation: the run pipeline's cap-guard and the direct ``push`` CLI verb
+    both apply it, so neither path can publish a push the other would refuse.
+    """
+    state.phase = PRPhase.HUMAN_GATED
+    state.last_error = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
+    state.lifecycle_escalation_filed = False
 
 
 def _has_disposition_kind(state: PRGroomingState, kind: DispositionKind) -> bool:
@@ -57,22 +82,23 @@ def resolve_end_of_cycle_phase(
     state: PRGroomingState,
     *,
     now: datetime,
-    max_rounds: int,
+    pr_review_retries: int,
     has_queued_commits: bool,
     pushed_this_cycle: bool,
     quiescent: bool,
 ) -> ResolvedPhase:
     """Resolve the next phase from ``fixes-pending`` via the §3.2 cascade.
 
-    First-match-wins: see the module docstring for the priority list. ``state.round``
-    and ``state.items`` are read but not mutated; the run-loop applies the result.
+    First-match-wins: see the module docstring for the priority list.
+    ``state.pr_review_retries_used`` and ``state.items`` are read but not mutated;
+    the run-loop applies the result.
     """
-    # Priority 1 — pre-push hard cap (§3.5). Checked before the push so the
-    # cap-tripping commit is refused rather than uploaded.
-    if has_queued_commits and state.round >= max_rounds:
+    # Priority 1 — pre-push retry budget (§3.5). Checked before the push so the
+    # budget-tripping commit is refused rather than uploaded.
+    if has_queued_commits and retry_budget_exhausted(state, pr_review_retries):
         return ResolvedPhase(
             phase=PRPhase.HUMAN_GATED,
-            last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value,
+            last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value,
         )
     # Priority 2 — any FAILED item (any cause). Cause is per-item rationale.
     if _has_disposition_kind(state, DispositionKind.FAILED):

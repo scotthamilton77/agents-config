@@ -130,13 +130,13 @@ class RoutedMemory:
     """A CONTEXTUAL memory entry resolved by ``_fix``, awaiting routing by ``_reply`` (§8.3).
 
     ``content`` is resolved verbatim (inline content, or the file body for a
-    path-form entry). ``(round, source_item)`` is the Decisions-block dedup key.
+    path-form entry). ``(retry, source_item)`` is the Decisions-block dedup key.
     ``target_hint`` is a thread node-id (``PRRT_*``) for a thread reply; ``None``
     routes to the PR-body ``## Decisions`` block.
     """
 
     content: str
-    round: int
+    retry: int
     source_item: str
     decided_by: str
     target_hint: str | None = None
@@ -144,7 +144,7 @@ class RoutedMemory:
     def to_dict(self) -> JsonObj:
         d: JsonObj = {
             "content": self.content,
-            "round": self.round,
+            "retry": self.retry,
             "source_item": self.source_item,
             "decided_by": self.decided_by,
         }
@@ -156,7 +156,7 @@ class RoutedMemory:
     def from_dict(cls, d: JsonObj) -> RoutedMemory:
         return cls(
             content=d["content"],
-            round=d["round"],
+            retry=d["retry"],
             source_item=d["source_item"],
             decided_by=d["decided_by"],
             target_hint=d.get("target_hint"),
@@ -292,7 +292,7 @@ class PRGroomingState:
 
     pr: PRRef
     phase: PRPhase
-    round: int
+    pr_review_retries_used: int
     last_polled_at: datetime
     last_activity_at: datetime
     quiescence: QuiescenceState
@@ -313,7 +313,7 @@ class PRGroomingState:
             "schema_version": self.schema_version,
             "pr": self.pr.to_dict(),
             "phase": self.phase.value,
-            "round": self.round,
+            "pr_review_retries_used": self.pr_review_retries_used,
             "last_polled_at": _iso(self.last_polled_at),
             "last_activity_at": _iso(self.last_activity_at),
             "quiescence": self.quiescence.to_dict(),
@@ -345,7 +345,7 @@ class PRGroomingState:
         return cls(
             pr=PRRef.from_dict(d["pr"]),
             phase=PRPhase(d["phase"]),
-            round=d["round"],
+            pr_review_retries_used=d["pr_review_retries_used"],
             last_polled_at=_parse_dt(d["last_polled_at"]),
             last_activity_at=_parse_dt(d["last_activity_at"]),
             quiescence=QuiescenceState.from_dict(d.get("quiescence", {})),
@@ -368,7 +368,8 @@ def bootstrap_state(pr: PRRef, *, now: datetime) -> PRGroomingState:
 
     Every non-default field is set explicitly so the result round-trips cleanly:
     ``schema_version=1`` (a default 0 would fail STATE_SCHEMA_UNKNOWN on the next
-    read), ``phase=idle``, ``round=0``, empty SHAs, empty reviewer/item containers
+    read), ``phase=idle``, ``pr_review_retries_used=0``, empty SHAs, empty
+    reviewer/item containers
     (never ``None`` — subsequent appends/inserts must be safe), no prior error,
     and all dedup flags cleared. ``now`` (the injected clock's reading) seeds both
     timestamps so the §4 idle timer measures from first contact, not epoch.
@@ -376,7 +377,7 @@ def bootstrap_state(pr: PRRef, *, now: datetime) -> PRGroomingState:
     return PRGroomingState(
         pr=pr,
         phase=PRPhase.IDLE,
-        round=0,
+        pr_review_retries_used=0,
         last_polled_at=now,
         last_activity_at=now,
         quiescence=QuiescenceState(),

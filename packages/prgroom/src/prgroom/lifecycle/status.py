@@ -79,7 +79,7 @@ def build_status(state: PRGroomingState, human_review: HumanReview) -> JsonObj:
         "pr": state.pr.number,
         "phase": state.phase.value,
         "last_error": state.last_error or "",
-        "round": state.round,
+        "pr_review_retries_used": state.pr_review_retries_used,
         "reviewers": _reviewers(state),
         "ci_state": state.quiescence.ci_state,
         "items_summary": _items_summary(state),

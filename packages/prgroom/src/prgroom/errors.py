@@ -118,7 +118,7 @@ class ErrorCode(StrEnum):
     STATE_CORRUPT = "STATE_CORRUPT"
     STATE_SCHEMA_UNKNOWN = "STATE_SCHEMA_UNKNOWN"
     # LIFECYCLE_*
-    LIFECYCLE_HARD_CAP_EXCEEDED = "LIFECYCLE_HARD_CAP_EXCEEDED"
+    LIFECYCLE_PR_REVIEW_EXHAUSTED = "LIFECYCLE_PR_REVIEW_EXHAUSTED"
 
     def registry_entry(self) -> RegistryEntry:
         """The §3.7 what/why/how triple for this code."""
@@ -316,10 +316,15 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
         why="the CLI is older than the state file (or vice versa)",
         how="upgrade/downgrade the CLI; do not run conflicting versions concurrently",
     ),
-    ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED: RegistryEntry(
-        what="the pre-push cap guard tripped (queued commits AND round >= max_rounds)",
-        why="the hard cap was reached without quiescence",
-        how="resolve escalations; raise --max-rounds and re-run, or hand off to human review",
+    ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED: RegistryEntry(
+        what=(
+            "the pre-push retry-budget guard tripped "
+            "(queued commits AND pr_review_retries_used >= pr_review_retries)"
+        ),
+        why="the PR-review retry budget was exhausted without quiescence",
+        how=(
+            "resolve escalations; raise --pr-review-retries and re-run, or hand off to human review"
+        ),
     ),
 }
 
@@ -329,7 +334,7 @@ _REGISTRY: dict[ErrorCode, RegistryEntry] = {
 # paths in §3.6/§3.7 (cap re-arm, state-file inspection, gh/git reconciliation).
 BlockingErrorCodes: frozenset[ErrorCode] = frozenset(
     {
-        ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED,
+        ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED,
         ErrorCode.STATE_CORRUPT,
         ErrorCode.STATE_SCHEMA_UNKNOWN,
         ErrorCode.RUNTIME_GH_TERMINAL,
