@@ -1,0 +1,158 @@
+// PROTOTYPE — wipe me
+(function () {
+  function topDirOf(path) {
+    return path.split('/')[0] || '(root)';
+  }
+
+  PROTO.registerVariant('D', {
+    name: 'Impact sonar',
+    render(el, ctx) {
+      const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill, tipHtml } = ctx;
+      const width = el.clientWidth || 800;
+      const height = el.clientHeight || 600;
+      const cx = width / 2, cy = height / 2;
+      const maxR = Math.max(120, Math.min(width, height) / 2 - 40);
+
+      const svg = d3.select(el).append('svg')
+        .attr('width', width).attr('height', height);
+      const rootG = svg.append('g').attr('transform', `translate(${cx},${cy})`);
+
+      const filesByPath = new Map((DATA.files || []).map(f => [f.path, f]));
+      const changed = (DATA.files || []).filter(f => f.changed);
+      const impactedPaths = DATA.impacted || [];
+      const impactedFiles = impactedPaths.map(p => filesByPath.get(p)).filter(Boolean);
+
+      const rBadge = maxR * 0.16;
+      const r0i = maxR * 0.24, r0o = maxR * 0.46;
+      const r1i = maxR * 0.54, r1o = maxR * 0.74;
+      const r2i = maxR * 0.80, r2o = maxR * 0.90;
+
+      // ---- Ring 0: changed files ----
+      const minWeight = 3;
+      const weightFn = f => Math.max(minWeight, (f.adds || 0) + (f.dels || 0));
+      const pie0 = d3.pie().value(weightFn).sort(null).padAngle(changed.length > 1 ? 0.02 : 0);
+      const arcs0 = pie0(changed);
+      const arcGen0 = d3.arc().innerRadius(r0i).outerRadius(r0o);
+
+      const g0 = rootG.append('g');
+      g0.selectAll('path.ring0').data(arcs0).join('path')
+        .attr('class', 'ring0')
+        .attr('d', arcGen0)
+        .attr('fill', d => heatColor(computeHeat(d.data)))
+        .attr('stroke', '#fbbf24')
+        .attr('stroke-width', 1.5)
+        .style('cursor', 'pointer')
+        .on('mousemove', (evt, d) => showTip(evt, tipHtml(d.data)))
+        .on('mouseleave', () => hideTip())
+        .on('click', (evt, d) => showDrill(d.data));
+
+      g0.selectAll('text.ring0-label').data(arcs0).join('text')
+        .attr('class', 'ring0-label')
+        .attr('transform', d => {
+          const [x, y] = arcGen0.centroid(d);
+          let angDeg = ((d.startAngle + d.endAngle) / 2) * 180 / Math.PI - 90;
+          if (angDeg > 90) angDeg -= 180;
+          return `translate(${x},${y}) rotate(${angDeg})`;
+        })
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.32em')
+        .attr('fill', 'var(--text)')
+        .attr('font-size', 9)
+        .style('pointer-events', 'none')
+        .text(d => d.data.path.split('/').pop());
+
+      // ---- Ring 1: impacted files, grouped/ordered near ring0's dirs ----
+      const ring0TopDirs = [];
+      changed.forEach(f => {
+        const t = topDirOf(f.path);
+        if (!ring0TopDirs.includes(t)) ring0TopDirs.push(t);
+      });
+
+      const groups = new Map();
+      impactedFiles.forEach(f => {
+        const t = topDirOf(f.path);
+        if (!groups.has(t)) groups.set(t, []);
+        groups.get(t).push(f);
+      });
+
+      const leftoverDirs = [...groups.keys()].filter(t => !ring0TopDirs.includes(t)).sort();
+      const orderedTopDirs = [...ring0TopDirs.filter(t => groups.has(t)), ...leftoverDirs];
+      const ring1Files = orderedTopDirs.flatMap(t => groups.get(t));
+
+      const pie1 = d3.pie().value(() => 1).sort(null).padAngle(ring1Files.length > 1 ? 0.01 : 0);
+      const arcs1 = pie1(ring1Files);
+      const arcGen1 = d3.arc().innerRadius(r1i).outerRadius(r1o);
+
+      const g1 = rootG.append('g');
+      g1.selectAll('path.ring1').data(arcs1).join('path')
+        .attr('class', 'ring1')
+        .attr('d', arcGen1)
+        .attr('fill', d => heatColor(computeHeat(d.data)))
+        .attr('stroke', 'var(--line)')
+        .attr('stroke-width', 1)
+        .style('cursor', 'pointer')
+        .on('mousemove', (evt, d) => showTip(evt, tipHtml(d.data)))
+        .on('mouseleave', () => hideTip())
+        .on('click', (evt, d) => showDrill(d.data));
+
+      // ---- Ring 2: aggregate top-level dir arcs, one per dir spanning its ring-1 children ----
+      const g2 = rootG.append('g');
+      orderedTopDirs.forEach(t => {
+        const arcsForGroup = arcs1.filter(d => topDirOf(d.data.path) === t);
+        if (!arcsForGroup.length) return;
+        const startAngle = d3.min(arcsForGroup, d => d.startAngle);
+        const endAngle = d3.max(arcsForGroup, d => d.endAngle);
+        const arcGen2 = d3.arc().innerRadius(r2i).outerRadius(r2o)
+          .startAngle(startAngle).endAngle(endAngle);
+
+        g2.append('path')
+          .attr('d', arcGen2())
+          .attr('fill', 'var(--panel-2)')
+          .attr('stroke', 'var(--line)')
+          .attr('opacity', 0.55)
+          .on('mousemove', evt => showTip(evt,
+            `<div class="path">${t}</div><div style="margin-top:4px;color:var(--muted)">directory context · dependency-distance ring</div>`))
+          .on('mouseleave', () => hideTip());
+
+        const midAngle = (startAngle + endAngle) / 2 - Math.PI / 2;
+        const lr = (r2i + r2o) / 2;
+        g2.append('text')
+          .attr('x', Math.cos(midAngle) * lr)
+          .attr('y', Math.sin(midAngle) * lr)
+          .attr('text-anchor', 'middle')
+          .attr('fill', 'var(--muted)')
+          .attr('font-size', 9)
+          .style('pointer-events', 'none')
+          .text(t);
+      });
+
+      // ---- Center badge ----
+      const pr = DATA.pr || {};
+      rootG.append('circle')
+        .attr('r', rBadge)
+        .attr('fill', 'var(--panel-2)')
+        .attr('stroke', 'var(--accent)')
+        .attr('stroke-width', 1.5);
+      rootG.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '-0.2em')
+        .attr('fill', 'var(--text)')
+        .attr('font-size', 12)
+        .attr('font-weight', 600)
+        .text(pr.id || 'PR');
+      rootG.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '1.2em')
+        .attr('fill', 'var(--muted)')
+        .attr('font-size', 10)
+        .text(`+${pr.adds || 0}/−${pr.dels || 0} · ${pr.files_changed || changed.length} files`);
+
+      // ---- Caption ----
+      svg.append('text')
+        .attr('x', 12).attr('y', height - 12)
+        .attr('fill', 'var(--muted)')
+        .attr('font-size', 11)
+        .text('rings = dependency distance from the PR (0 changed → 1 impacted → 2 directory context)');
+    },
+  });
+})();
