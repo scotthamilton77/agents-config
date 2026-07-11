@@ -147,12 +147,13 @@ defines for specs, flavored for plans.
 planning that the spec does not cover; the plan contains irreversible or migration
 steps; the task graph is large or has subtle ordering constraints. No criterion
 hit → announce `Review routing: lean (no criteria hit)`. Any hit → announce
-`Review routing: deep (criteria: <names>)` and invoke the `ralf-review` skill
-**exactly once** — target = the plan file; review criteria = coverage of the spec
-plus this skill's quality bar (no placeholders, type consistency, exact paths);
-cycle cap = that skill's default. Fix findings inline; the recorded verdict is
-final and is never re-earned by re-invocation. Where the harness cannot dispatch
-an independent reviewer, the deep route is unavailable and the gate fails closed.
+`Review routing: deep (criteria: <names>)` and apply the brainstorming skill's
+Review-Depth Routing mechanics verbatim to the plan (a deliberate cross-skill
+read; both skills deploy together) — single `ralf-review` invocation, findings
+fixed inline but the recorded verdict final and never re-earned, fail-closed
+where the harness cannot dispatch an independent reviewer — with target = the
+plan file and review criteria = coverage of the spec plus this skill's quality
+bar (no placeholders, type consistency, exact paths).
 
 **Attention routing:** apply the brainstorming skill's Attention Routing verbatim
 to the plan — waiver conditions (a) recorded outcome clean, (b) no divergence from
