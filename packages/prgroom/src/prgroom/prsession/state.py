@@ -115,9 +115,12 @@ class Disposition:
             rationale=d.get("rationale", ""),
             commits=list(d.get("commits", [])),
             response_path=d.get("response_path"),
-            # Falsy-raw guard: legacy "" loads as None; an unknown non-empty value
-            # raises like `kind` does (corrupt state file, not silent data loss).
-            gate=GateStrength(raw_gate) if (raw_gate := d.get("gate")) else None,
+            # Absent-form guard: missing/legacy "" load as None; anything else must
+            # parse or raise like `kind` does (corrupt state file, not silent data
+            # loss). Only None and "" are absent — falsy 0/False still parse-or-raise.
+            gate=GateStrength(raw_gate)
+            if (raw_gate := d.get("gate")) is not None and raw_gate != ""
+            else None,
             escalation_filed=d.get("escalation_filed", False),
         )
 

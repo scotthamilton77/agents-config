@@ -276,6 +276,20 @@ def test_disposition_invalid_gate_raises() -> None:
         Disposition.from_dict(raw)
 
 
+def test_disposition_falsy_zero_gate_raises() -> None:
+    # 0 is falsy but not an absent-form (None/""); a truthiness guard would hide it.
+    raw = {"kind": "fixed", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": 0}
+    with pytest.raises(ValueError):
+        Disposition.from_dict(raw)
+
+
+def test_disposition_falsy_false_gate_raises() -> None:
+    # False is falsy but not an absent-form (None/""); it must parse-or-raise, not vanish.
+    raw = {"kind": "fixed", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": False}
+    with pytest.raises(ValueError):
+        Disposition.from_dict(raw)
+
+
 def test_disposition_round_trips_through_item() -> None:
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
