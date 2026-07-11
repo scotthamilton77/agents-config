@@ -69,6 +69,24 @@ def test_missing_verb_yields_usage_envelope():
     envelope = json.loads(out.getvalue())
     assert envelope["ok"] is False
     assert envelope["error"]["code"] == "E_USAGE"
+    # A missing verb must read as missing, not as the confusing "unknown verb: None".
+    assert "no verb given" in envelope["error"]["message"]
+    assert "None" not in envelope["error"]["message"]
+
+
+def test_invalid_format_value_yields_usage_envelope_with_clean_stderr():
+    # An invalid --format value fails the main parse; the lenient format peek
+    # also can't resolve it and falls back to json, so nothing renders to stderr.
+    out = StringIO()
+    err = StringIO()
+
+    exit_code = main(["--format", "bogus"], runner=_ExplodingRunner(), out=out, err=err)
+
+    assert exit_code == 1
+    assert err.getvalue() == ""
+    envelope = json.loads(out.getvalue())
+    assert envelope["ok"] is False
+    assert envelope["error"]["code"] == "E_USAGE"
 
 
 def test_protocol_version_never_constructs_a_backend_or_touches_the_runner():

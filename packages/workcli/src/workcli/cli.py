@@ -137,6 +137,26 @@ def _build_parser() -> _EnvelopeArgumentParser:
     return parser
 
 
+def _peek_format(argv: list[str] | None) -> str:
+    """Best-effort recovery of `--format` when full parsing has already failed.
+
+    `parse_args()` can raise (bad flag, unknown verb) before we learn whether
+    `--format human` was requested, yet spec §4 says the human view still
+    renders to stderr alongside the stdout envelope even on usage errors. A
+    lenient parser that knows only `--format` and ignores everything else
+    recovers the value without re-raising on the very error we're about to
+    report; anything it can't make sense of (e.g. an invalid `--format`
+    value) falls back to the JSON default.
+    """
+    peek = _EnvelopeArgumentParser(add_help=False)
+    peek.add_argument("--format", choices=["json", "human"], default="json")
+    try:
+        known, _ = peek.parse_known_args(argv)
+    except WorkError:
+        return "json"
+    return str(known.format)
+
+
 def _finish_success(data: JsonValue, out: TextIO, err: TextIO, fmt: str) -> int:
     """Emit the success envelope to `out`; additionally render it to `err` on `--format human`.
 
@@ -189,20 +209,30 @@ def main(
     if err is None:
         err = sys.stderr
 
+    argv_list = list(argv) if argv is not None else None
     parser = _build_parser()
     try:
-        args = parser.parse_args(list(argv) if argv is not None else None)
+        args = parser.parse_args(argv_list)
     except WorkError as usage_error:
-        return emit_failure(usage_error, out)
+        return _finish_failure(usage_error, out, err, _peek_format(argv_list))
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
 
-    handler = VERBS.get(args.verb)
-    if handler is None:
+    if args.verb is None:
         return _finish_failure(
-            WorkError(ErrorCode.USAGE, f"unknown verb: {args.verb!r}"), out, err, args.format
+            WorkError(
+                ErrorCode.USAGE,
+                f"no verb given; choose one of: {', '.join(VERBS)}",
+            ),
+            out,
+            err,
+            args.format,
         )
+
+    # argparse's subparser `choices` already rejected any non-None verb that
+    # isn't a registered subcommand, so a name reaching here is always in VERBS.
+    handler = VERBS[args.verb]
 
     # Constructed only now -- never for --protocol-version above -- so the
     # handshake never touches the runner (spec §5).

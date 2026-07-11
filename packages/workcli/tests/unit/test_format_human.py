@@ -53,6 +53,22 @@ def test_format_json_explicit_never_writes_to_stderr() -> None:
     assert stderr_text == ""
 
 
+def test_format_human_on_a_usage_error_still_renders_to_stderr() -> None:
+    # A parse/usage failure raises before the verb dispatches, but spec §4's
+    # "human view to stderr" invariant still applies: --format human must be
+    # recovered from argv even though full parsing never completed.
+    out = StringIO()
+    err = StringIO()
+
+    exit_code = main(["--format", "human", "bogus-verb"], out=out, err=err)
+
+    assert exit_code == 1
+    assert '"ok": false' in out.getvalue()
+    assert "E_USAGE" in out.getvalue()
+    assert "error\n" in err.getvalue()
+    assert "E_USAGE" in err.getvalue()
+
+
 def test_format_human_on_a_failure_case_renders_the_error_to_stderr() -> None:
     out = StringIO()
     err = StringIO()
