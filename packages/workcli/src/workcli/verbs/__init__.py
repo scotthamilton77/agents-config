@@ -16,12 +16,18 @@ from collections.abc import Callable
 from workcli.backend import Backend, Capabilities
 from workcli.envelope import JsonValue
 from workcli.verbs.read import list_, ready, search, show
+from workcli.verbs.write import close, create_raw, note, reopen, update
 
 VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "show": show,
     "list": list_,
     "ready": ready,
     "search": search,
+    "create": create_raw,
+    "update": update,
+    "note": note,
+    "close": close,
+    "reopen": reopen,
 }
 
 REQUIRED_CAPABILITY: dict[str, str] = {

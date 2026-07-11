@@ -1,12 +1,13 @@
 """BdBackend: the `Backend` protocol's bd implementation, over a `BdRunner`.
 
-Read primitives are wired (`capabilities`, `get`, `batch_get`, `query`,
-`ready`, `search`); write/relation/sync primitives (`create`, `set_fields`,
-`append_note`, `close`, `reopen`, `dep_mutate`, `dep_list`, `label_mutate`,
-`labels`, `sync`) raise `NotImplementedError` below as placeholders, so this
-concrete class satisfies the `Backend` Protocol structurally (required for
-`cli.py`'s `handler(backend, args)` dispatch to type-check under `mypy
---strict`) ahead of the tasks that give each one a real body.
+Read and write primitives are wired (`capabilities`, `get`, `batch_get`,
+`query`, `ready`, `search`, `create`, `set_fields`, `append_note`, `close`,
+`reopen`); relation/sync primitives (`dep_mutate`, `dep_list`,
+`label_mutate`, `labels`, `sync`) still raise `NotImplementedError` below as
+placeholders, so this concrete class satisfies the `Backend` Protocol
+structurally (required for `cli.py`'s `handler(backend, args)` dispatch to
+type-check under `mypy --strict`) ahead of Task 5, which gives each one a
+real body.
 
 `ready`/`search` parse through the same `parse_items` the `list`/`show`
 adapters use, on the assumption bd emits the same per-item shape for all four
@@ -14,6 +15,14 @@ read commands. No golden fixture captures `bd ready`/`bd search` output
 specifically (decision 14 only captured `show`/`list`/`dep list`/`label
 list`) -- an actual shape difference surfaces as `E_BACKEND_DRIFT` rather than
 a silent misparse, same as any other unrecognized bd shape.
+
+`create`'s output shape (a single JSON object, not an array -- see
+`adapters/bd/parse.py::parse_created_id`) was confirmed by reading bd's own
+source (`outputJSON(issue)` in `cmd/bd/create.go`), never by running a
+mutating `bd create` in this repo. `set_fields`/`append_note`/`close`/
+`reopen` never pass `--json`: none of them need to parse stdout (they either
+return nothing or, for `create`, only the new id), so the only signal that
+matters is the exit code and stderr that `map_bd_failure` already handles.
 """
 
 from __future__ import annotations
@@ -22,7 +31,7 @@ import time
 from collections.abc import Callable, Sequence
 from typing import cast
 
-from workcli.adapters.bd.parse import map_bd_failure, parse_items
+from workcli.adapters.bd.parse import map_bd_failure, parse_created_id, parse_items
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
 from workcli.backend import Capabilities
@@ -103,22 +112,59 @@ class BdBackend:
             raise map_bd_failure(argv, result)
         return parse_items(result.stdout, command="search")
 
-    # -- Not yet wired: write verbs (Task 4) and relations/sync (Task 5) --
+    def create(self, fields: CreateFields) -> str:
+        argv = ["create", "--json", "--title", fields.title]
+        if fields.description is not None:
+            argv += ["--description", fields.description]
+        if fields.type is not None:
+            argv += ["--type", fields.type]
+        if fields.priority is not None:
+            argv += ["--priority", fields.priority]
+        if fields.parent is not None:
+            argv += ["--parent", fields.parent]
+        if fields.labels:
+            argv += ["--labels", ",".join(fields.labels)]
 
-    def create(self, fields: CreateFields) -> str:  # pragma: no cover -- Task 4
-        raise NotImplementedError
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+        return parse_created_id(result.stdout)
 
-    def set_fields(self, item_id: str, fields: UpdateFields) -> None:  # pragma: no cover
-        raise NotImplementedError  # Task 4
+    def set_fields(self, item_id: str, fields: UpdateFields) -> None:
+        argv = ["update", item_id]
+        if fields.title is not None:
+            argv += ["--title", fields.title]
+        if fields.priority is not None:
+            argv += ["--priority", fields.priority]
+        if fields.description is not None:
+            argv += ["--description", fields.description]
 
-    def append_note(self, item_id: str, text: str) -> None:  # pragma: no cover
-        raise NotImplementedError  # Task 4
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
 
-    def close(self, ids: Sequence[str]) -> None:  # pragma: no cover -- Task 4
-        raise NotImplementedError
+    def append_note(self, item_id: str, text: str) -> None:
+        argv = ["update", item_id, "--append-notes", text]
 
-    def reopen(self, item_id: str) -> None:  # pragma: no cover -- Task 4
-        raise NotImplementedError
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    def close(self, ids: Sequence[str]) -> None:
+        argv = ["close", *ids]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    def reopen(self, item_id: str) -> None:
+        argv = ["reopen", item_id]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    # -- Not yet wired: relations/sync (Task 5) --
 
     def dep_mutate(
         self, op: str, from_id: str, to_id: str, dep_type: str

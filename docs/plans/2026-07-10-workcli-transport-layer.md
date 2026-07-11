@@ -432,13 +432,13 @@ the root `Makefile`, or paths a task explicitly names.
 - Create: `src/workcli/verbs/write.py`, `tests/unit/{test_create_raw.py,test_note_append_only.py}`
 - Modify: `cli.py`, `adapters/bd/backend.py` (`create`, `set_fields`, `append_note`, `close`, `reopen`)
 
-- [ ] Failing tests: item 3 — `create --raw --parent P --title T` → fake log shows exactly ONE
+- [x] Failing tests: item 3 — `create --raw --parent P --title T` → fake log shows exactly ONE
   bd invocation (`create` with `--parent`), and NO `dep add` call; without `--raw` → `E_USAGE`
   (decision 7). Item 6 — two `note` calls → two `--append-notes` invocations in order; grep
   the adapter call log: no call ever carries the bare replace flag `--notes`;
   `update --set-notes x` → `E_FIELD_CLOBBER_GUARD` (decision 6). `close A B --disposition d`
   → one bd close with both ids + one append-note per id. `update` with no `--set-*` → `E_USAGE`.
-- [ ] Implement; commit: `feat(workcli): write verbs with append-only notes and clobber guard`
+- [x] Implement; commit: `feat(workcli): write verbs with append-only notes and clobber guard`
 
 ### Task 5: Relations + sync — dep, label, sync
 

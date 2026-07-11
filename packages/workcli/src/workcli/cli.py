@@ -55,6 +55,42 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     search_parser.add_argument("query", metavar="QUERY")
 
 
+def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    create_parser = subparsers.add_parser(
+        "create",
+        help="create --raw: adapter primitive; public creation is the lifecycle layer's job",
+    )
+    create_parser.add_argument("--raw", action="store_true")
+    create_parser.add_argument("--title", required=True)
+    create_parser.add_argument("--description")
+    create_parser.add_argument("--type")
+    create_parser.add_argument("--priority")
+    create_parser.add_argument("--parent")
+    create_parser.add_argument("--label", action="append", default=[], metavar="LABEL")
+
+    update_parser = subparsers.add_parser(
+        "update", help="update title/priority/description (replace semantics only)"
+    )
+    update_parser.add_argument("id", metavar="ID")
+    update_parser.add_argument("--set-title")
+    update_parser.add_argument("--set-priority")
+    update_parser.add_argument("--set-description")
+    # Recognized only so it reaches the named E_FIELD_CLOBBER_GUARD instead
+    # of a generic E_USAGE unknown-flag error -- notes are append-only.
+    update_parser.add_argument("--set-notes")
+
+    note_parser = subparsers.add_parser("note", help="append a note (append-only)")
+    note_parser.add_argument("id", metavar="ID")
+    note_parser.add_argument("text", metavar="TEXT")
+
+    close_parser = subparsers.add_parser("close", help="close one or more items")
+    close_parser.add_argument("ids", nargs="+", metavar="IDS")
+    close_parser.add_argument("--disposition")
+
+    reopen_parser = subparsers.add_parser("reopen", help="reopen a closed item")
+    reopen_parser.add_argument("id", metavar="ID")
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="work", description="work — issue-tracker facade CLI")
     parser.add_argument(
@@ -74,6 +110,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     # never argparse's own stderr-and-exit path.
     subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
     _add_read_subparsers(subparsers)
+    _add_write_subparsers(subparsers)
     return parser
 
 

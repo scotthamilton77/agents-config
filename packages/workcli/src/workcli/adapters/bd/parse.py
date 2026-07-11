@@ -146,6 +146,39 @@ def parse_items(stdout: str, *, command: str = "show") -> list[Item]:
     return items
 
 
+def parse_created_id(stdout: str, *, command: str = "create") -> str:
+    """Extract the new item's id from `bd create --json` output.
+
+    Unlike show/list/ready/search (which emit a JSON array of items), `bd
+    create --json` emits a single JSON *object* -- the created issue, with a
+    `schema_version` key injected inline (confirmed against the bd source:
+    `outputJSON(issue)` in cmd/bd/create.go, legacy non-envelope-mode
+    wrapping). `Backend.create`'s contract only needs the new id, so this
+    parser is deliberately narrow: a payload that isn't an object, or has no
+    non-empty string `id`, is the same alarm class as any other unrecognized
+    bd shape.
+    """
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise _drift(
+            f"bd {command} produced non-JSON stdout: {exc}",
+            {"reason": "invalid_json", "raw_excerpt": stdout[:200]},
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise _drift(
+            f"bd {command} produced a non-object JSON payload",
+            {"reason": "not_an_object", "raw_type": type(parsed).__name__},
+        )
+    item_id = parsed.get("id")
+    if not isinstance(item_id, str) or not item_id:
+        raise _drift(
+            f"bd {command} payload is missing a non-empty string `id`",
+            {"reason": "missing_id", "raw_keys": cast("list[JsonValue]", list(parsed.keys()))},
+        )
+    return item_id
+
+
 def parse_labels(stdout: str, *, command: str = "label list") -> list[str]:
     raw_labels = _load_json_array(stdout, command=command)
     for label in raw_labels:
