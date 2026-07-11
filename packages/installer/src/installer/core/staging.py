@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from installer.core.merge.registry import MergeRegistry
     from installer.tools.base import ToolAdapter
 
+from installer.core import namespaces
 from installer.core.installignore import InstallIgnore
 from installer.core.merge.place import place_resolved
 from installer.core.merge.registry import default_registry
@@ -157,14 +158,6 @@ def stage_namespace(
     return items
 
 
-_SHARED_NAMESPACES = ("skills", "agents", "rules")  # no commands shared (Phase 2)
-
-# Shared namespaces whose DIR units are carrier dirs — a plugin may
-# carrier-merge disjoint files into one of these; rules/ holds files, not dirs,
-# so it is excluded.
-_CARRIER_NAMESPACES = frozenset({"skills", "agents"})
-
-
 def _mark_carrier(item: StagedItem) -> StagedItem:
     """Stamp the shared-carrier flag on a shared skills/agents DIR item.
 
@@ -174,7 +167,7 @@ def _mark_carrier(item: StagedItem) -> StagedItem:
     (Phase 2) staging — plugin staging must NOT self-mark, which is why this
     lives in ``build_plan`` and not in the shared ``stage_namespace`` walker.
     """
-    if item.kind is FileKind.DIR and item.namespace in _CARRIER_NAMESPACES:
+    if item.kind is FileKind.DIR and item.namespace in namespaces.SHARED_CARRIER:
         return replace(item, shared_carrier=True)
     return item
 
@@ -220,7 +213,7 @@ def build_plan(
 
     for item in stage_templates(shared_root, provenance=prov):  # Phase 1
         _add_item(plan, item, merge_registry)
-    for ns in _SHARED_NAMESPACES:  # Phase 2
+    for ns in namespaces.SHARED:  # Phase 2
         if adapter.should_install_namespace(ns, "shared"):
             for item in stage_namespace(shared_root, ns, provenance=prov, ignore=ignore):
                 _add_item(plan, _mark_carrier(item), merge_registry)
