@@ -154,7 +154,12 @@ def test_clean_routable_extends_pending_memory(tmp_path: Path) -> None:
     dispatcher = FixDispatcherStub(
         [
             _out(
-                FixItemResult(gh_id="a", disposition=DispositionKind.FIXED, commit_shas=["s1"]),
+                FixItemResult(
+                    gh_id="a",
+                    disposition=DispositionKind.FIXED,
+                    commit_shas=["s1"],
+                    recommended_gate="full",
+                ),
                 memory=[MemoryEntry(classification="CONTEXTUAL", content="why")],
             )
         ]
@@ -189,7 +194,10 @@ class _SymlinkPlantingDispatcher:
         return FixOutput(
             items=[
                 FixItemResult(
-                    gh_id=self.gh_id, disposition=DispositionKind.FIXED, commit_shas=["s1"]
+                    gh_id=self.gh_id,
+                    disposition=DispositionKind.FIXED,
+                    commit_shas=["s1"],
+                    recommended_gate="full",
                 )
             ],
             memory=[MemoryEntry(classification="CONTEXTUAL", path=str(link))],
