@@ -2,17 +2,21 @@
 
 A merge-target (settings.json, append-merged instruction file) is never recorded:
 dropping our contribution must not delete the whole file. Coincides with the
-existing prune namespaces.
+canonical prune namespaces (``namespaces.PRUNE``).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from installer.core import namespaces
 from installer.core.model import FileKind, StagedItem
 from installer.core.receipt import ReceiptEntry
 
-PRUNE_NAMESPACES: tuple[str, ...] = ("commands", "skills", "agents", "rules", "workflows")
+# The prune-eligible namespaces, sourced from the canonical vocabulary. Its
+# membership (notably the hooks/formulas exclusions) is documented at the
+# ``namespaces.PRUNE`` definition.
+PRUNE_NAMESPACES: tuple[str, ...] = namespaces.PRUNE
 
 
 def is_prunable(item: StagedItem) -> bool:

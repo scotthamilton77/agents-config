@@ -19,9 +19,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-# Namespaces whose backups route to a sibling ``<namespace>-backup/`` dir rather
-# than an in-place suffix.
-_SCOPED_NAMESPACES = frozenset({"commands", "skills", "agents", "rules", "formulas", "workflows"})
+from installer.core import namespaces
 
 # Backup timestamp format: YYYYMMDD-HHMMSS.
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -46,12 +44,12 @@ def valid_timestamp(timestamp: str) -> bool:
 def _backup_path_for(target: Path, timestamp: str) -> Path:
     """Resolve the backup destination for ``target`` (no I/O).
 
-    A target whose parent is a scoped namespace routes to
-    ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other target
-    gets an in-place ``<name>.backup-<ts>`` sibling.
+    A target whose parent is a backup-routed namespace (``namespaces.BACKUP``)
+    routes to ``<grandparent>/<namespace>-backup/<name>.backup-<ts>``; any other
+    target gets an in-place ``<name>.backup-<ts>`` sibling.
     """
     parent = target.parent
-    if parent.name in _SCOPED_NAMESPACES:
+    if parent.name in namespaces.BACKUP:
         backup_dir = parent.parent / f"{parent.name}-backup"
         return backup_dir / f"{target.name}.backup-{timestamp}"
     return target.with_name(f"{target.name}.backup-{timestamp}")
@@ -65,7 +63,7 @@ def back_up(target: Path, timestamp: str) -> Path:
     path, so this guard is the path-traversal security boundary — safe by default
     rather than relying on every caller to pre-validate.
 
-    Routes via ``_backup_path_for`` (scoped namespace -> sibling
+    Routes via ``_backup_path_for`` (backup-routed namespace -> sibling
     ``<namespace>-backup/``; else in-place), creating the backup dir as needed.
     Directories are copied recursively (``shutil.copytree``), files via
     ``shutil.copy2``.

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from installer.core import namespaces
 from installer.core.model import FileKind, Provenance, StagedItem
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, is_prunable, route_entry_for
 
@@ -47,7 +48,9 @@ def test_entry_for_a_tool_item_owns_by_tool_with_home_relative_root() -> None:
 
 
 def test_prune_namespaces_constant() -> None:
-    assert PRUNE_NAMESPACES == ("commands", "skills", "agents", "rules", "workflows")
+    # ownership re-exports the canonical prune view; the literal membership is
+    # pinned once at its source (test_namespaces.test_prune_view).
+    assert PRUNE_NAMESPACES is namespaces.PRUNE
 
 
 def test_route_entry_for_beads_formula() -> None:

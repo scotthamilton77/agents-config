@@ -29,6 +29,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core import namespaces
 from installer.core.merge.place import place_resolved
 from installer.core.model import FileKind, Provenance
 from installer.core.staging import stage_namespace, stage_settings
@@ -41,11 +42,6 @@ if TYPE_CHECKING:
     from installer.core.model import StagedItem, StagingPlan
     from installer.plugins.base import PluginAdapter
     from installer.tools.base import ToolAdapter
-
-# Plugin namespace staging order, per scope. The tool scope includes commands;
-# the shared scope does not (no shared commands).
-_TOOL_NAMESPACES = ("rules", "commands", "skills", "agents")
-_SHARED_NAMESPACES = ("rules", "skills", "agents")
 
 
 def overlay_plugins(
@@ -67,7 +63,7 @@ def overlay_plugins(
         tool_root = plugin.source_path / f".{adapter.name}"
         shared_root = plugin.source_path / ".agents"
 
-        for ns in _TOOL_NAMESPACES:
+        for ns in namespaces.PLUGIN_TOOL_SCOPED:
             if adapter.should_install_namespace(ns, "tool"):
                 for item in stage_namespace(tool_root, ns, provenance=prov, ignore=ignore):
                     _place(plan, item, registry=registry, carrier_eligible=False)
@@ -79,7 +75,7 @@ def overlay_plugins(
         # fork the builder for no live benefit.
         for item in stage_settings(tool_root, provenance=prov):
             _place(plan, item, registry=registry, carrier_eligible=False)
-        for ns in _SHARED_NAMESPACES:
+        for ns in namespaces.SHARED:
             if adapter.should_install_namespace(ns, "shared"):
                 for item in stage_namespace(shared_root, ns, provenance=prov, ignore=ignore):
                     _place(plan, item, registry=registry, carrier_eligible=True)
