@@ -77,11 +77,11 @@ Collect before writing the report:
 
 - **Task objective** — What were you asked to do? One sentence.
 - **PRs** — Branch names, PR URLs/numbers, current status
-- **Remaining work** — Anything incomplete if this was a partial delivery
-- **Discovered work** — Issues found but not addressed during implementation
-- **Where recorded** — IDs in the project's tracking system, issue numbers, memory entries for each discovered item
+- **Remaining work** — Anything incomplete if this was a partial delivery, plus every in-scope discovery deferred to a tracked item (each is an escalation line here, not just a manifest row)
+- **Discovered work** — Every issue found during implementation: fixed in-session, deferred in-scope, or filed out-of-scope
+- **Triage audit** — For each item filed this session: anchor parent present? Severity rationale present? Provenance link present?
 
-If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work.
+If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work. If a filed item is unanchored or untriaged, **fix it now** per the project's discovered-work placement discipline — an unanchored item is an orphan; anchor it, rate it, and say why.
 
 ### 4. Produce the Report
 
@@ -108,10 +108,17 @@ If discovered work is unrecorded, **record it now** in the project's tracking sy
 [What's still to do, or "None — all work complete"]
 
 ### Discovered Work
-| Item | Recorded In |
-|------|-------------|
-| [description] | id in the project's tracking system / issue:#N / memory / backlog |
+| Item | Scope | Lands in | Bead/Issue | Priority — why |
+|------|-------|----------|------------|----------------|
+| [description] | in-scope | this PR | — | — |
+| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <severity rationale> |
+| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <severity rationale> |
 ```
+
+"Lands in" must name an anchor: `this PR`, `parent epic (<id>)`, an
+epic/milestone id, or `unanchored — needs your call` (rare escalation) — never
+a vague bucket like "future work". Any in-scope row not landing in `this PR`
+must also appear under **Remaining Work** as an escalation line.
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.
 
@@ -131,6 +138,7 @@ If any of these thoughts cross your mind, you're rationalizing:
 | "The user didn't ask for a report" | The report IS the evidence. Produce it. |
 | "These steps don't apply to this task" | Memory says they do. Follow them or justify in the report. |
 | "I'll skip the discovered work section" | Unrecorded work is lost work. Record it now. |
+| "I'll mention the filed items casually at the end" | Every discovery gets a manifest row with full triage — scope, landing anchor, priority rationale. |
 | "No workflows in memory, so I'm clear" | Warn the user. Don't silently skip. |
 | "This was trivial, no report needed" | If the skill was invoked, produce the report. No exceptions. |
 | "I'll just say 'all checks passed'" | Itemize each step with evidence. Vague claims are not proof. |
