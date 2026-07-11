@@ -42,6 +42,21 @@ class DispositionKind(StrEnum):
     FAILED = "failed"
 
 
+class GateStrength(StrEnum):
+    """The verify tier a fix recommends for its item (fix-verify spec §6.1)."""
+
+    FULL = "full"
+    LITE = "lite"
+
+    @classmethod
+    def parse(cls, raw: str) -> GateStrength | None:
+        """None for anything that is not a canonical gate value (lenient boundary parse)."""
+        try:
+            return cls(raw)
+        except ValueError:
+            return None
+
+
 class ReviewerKind(StrEnum):
     """Whether a reviewer is a human or a bot (§2)."""
 
