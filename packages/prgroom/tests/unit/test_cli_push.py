@@ -55,13 +55,13 @@ class FakeGit:
         self.pushes.append((remote, branch))
 
 
-def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, retries_: int = 0) -> PRGroomingState:
+def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, retries: int = 0) -> PRGroomingState:
     # last_poll_sha is non-empty: the initial push has been observed, so a CLI
     # push from here consumes a retry (§3.4).
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        pr_review_retries_used=retries_,
+        pr_review_retries_used=retries,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
@@ -82,7 +82,7 @@ def test_push_uploads_and_persists_consumed_retry(
 ) -> None:
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(retries_=1))
+    patched.write(_REF, _state(retries=1))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == [("origin", "HEAD:feature-x")]
@@ -106,7 +106,7 @@ def test_push_terminal_phase_is_noop(
     # commits go up once the PR has stopped soliciting review.
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(phase=PRPhase.QUIESCED, retries_=2))
+    patched.write(_REF, _state(phase=PRPhase.QUIESCED, retries=2))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == []

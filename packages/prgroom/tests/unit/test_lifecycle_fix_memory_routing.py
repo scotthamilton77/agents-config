@@ -59,7 +59,7 @@ def test_content_form_resolved_verbatim(tmp_path: Path) -> None:
     routed, blocked = resolve_routed_memory(
         [_Entry(content="decided X", target_hint="PRRT_a")],
         memory_dir=str(tmp_path),
-        retry_=2,
+        retry=2,
         decided_by="agent",
         cluster_id="c1",
         warn=warnings.append,
@@ -82,7 +82,7 @@ def test_path_form_read_verbatim(tmp_path: Path) -> None:
     routed, blocked = resolve_routed_memory(
         [_Entry(path=str(f))],
         memory_dir=str(tmp_path),
-        retry_=1,
+        retry=1,
         decided_by="agent",
         cluster_id="c1",
         warn=lambda _m: None,
@@ -99,7 +99,7 @@ def test_relative_path_is_anchored_to_memory_dir_not_cwd(tmp_path: Path) -> None
     routed, blocked = resolve_routed_memory(
         [_Entry(path="note.md")],
         memory_dir=str(tmp_path),
-        retry_=1,
+        retry=1,
         decided_by="agent",
         cluster_id="c1",
         warn=lambda _m: None,
@@ -118,7 +118,7 @@ def test_symlink_escape_is_blocked_not_read(tmp_path: Path) -> None:
     routed, blocked = resolve_routed_memory(
         [_Entry(path=str(link))],
         memory_dir=str(mem),
-        retry_=1,
+        retry=1,
         decided_by="agent",
         cluster_id="c1",
         warn=lambda _m: None,
@@ -134,7 +134,7 @@ def test_unreadable_contained_path_is_soft_warn(tmp_path: Path) -> None:
     routed, blocked = resolve_routed_memory(
         [_Entry(path=str(missing))],
         memory_dir=str(tmp_path),
-        retry_=1,
+        retry=1,
         decided_by="agent",
         cluster_id="c1",
         warn=warnings.append,

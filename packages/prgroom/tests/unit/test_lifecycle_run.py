@@ -246,6 +246,24 @@ def test_cap_guard_no_trip_without_queued_commits() -> None:
     assert guard(ctx).phase is PRPhase.FIXES_PENDING  # at cap but nothing queued
 
 
+def test_cap_guard_skips_has_queued_when_under_budget() -> None:
+    # The cheap counter-vs-budget check must short-circuit the effectful has_queued
+    # gh/git read (same ordering discipline as _entry_probe): under budget the guard
+    # cannot trip, so a transient failure in the read must be unreachable here.
+    reads: list[int] = []
+
+    def spy(_ctx: RunContext) -> bool:
+        reads.append(1)
+        return True
+
+    ctx = _ctx(
+        _quiescent_state(pr_review_retries_used=2), config=PrgroomConfig(pr_review_retries=3)
+    )
+    guard = _cap_guard_step(_verbs([], has_queued_fn=spy))
+    assert guard(ctx).phase is PRPhase.FIXES_PENDING
+    assert reads == []  # has_queued never read when the budget cannot trip
+
+
 def test_rereview_guard_true_when_awaiting_and_reviewer_stale() -> None:
     reviewers = {
         "copilot": ReviewerState(

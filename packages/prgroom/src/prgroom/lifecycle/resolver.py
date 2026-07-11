@@ -48,6 +48,17 @@ class ResolvedPhase:
     quiesced_at: datetime | None = None
 
 
+def retry_budget_exhausted(state: PRGroomingState, pr_review_retries: int) -> bool:
+    """The §3.5 budget-trip core: the counter has consumed the whole retry budget.
+
+    Pure and cheap — callers AND it with their own ``has_queued`` reading (an
+    effectful git/gh read), checking this predicate FIRST so an untripped budget
+    short-circuits the read. Single owner of the ``>=`` comparison so the guard,
+    the terminal-entry re-arm, and the end-of-cycle cascade cannot drift.
+    """
+    return state.pr_review_retries_used >= pr_review_retries
+
+
 def _has_disposition_kind(state: PRGroomingState, kind: DispositionKind) -> bool:
     return any(
         item.disposition is not None and item.disposition.kind == kind for item in state.items
@@ -71,7 +82,7 @@ def resolve_end_of_cycle_phase(
     """
     # Priority 1 — pre-push retry budget (§3.5). Checked before the push so the
     # budget-tripping commit is refused rather than uploaded.
-    if has_queued_commits and state.pr_review_retries_used >= pr_review_retries:
+    if has_queued_commits and retry_budget_exhausted(state, pr_review_retries):
         return ResolvedPhase(
             phase=PRPhase.HUMAN_GATED,
             last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value,

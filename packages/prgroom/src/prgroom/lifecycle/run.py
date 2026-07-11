@@ -50,7 +50,7 @@ from prgroom.lifecycle.quiescence import quiescence_predicate
 from prgroom.lifecycle.reply import reply_pr
 from prgroom.lifecycle.rereview import rereview_pr
 from prgroom.lifecycle.resolve import resolve_pr
-from prgroom.lifecycle.resolver import resolve_end_of_cycle_phase
+from prgroom.lifecycle.resolver import resolve_end_of_cycle_phase, retry_budget_exhausted
 from prgroom.lifecycle.verb_error import VerbDisposition, handle_verb_error
 from prgroom.lifecycle.wait import SignalCancelToken, wait_pr
 from prgroom.prsession.enums import PRPhase
@@ -415,14 +415,14 @@ def _cap_guard_step(verbs: Verbs) -> Callable[[RunContext], PRGroomingState]:
     When commits are queued AND ``pr_review_retries_used >= pr_review_retries``, set
     ``human-gated`` + ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` and clear
     ``lifecycle_escalation_filed`` so the loop-top flush fires exactly one Sink
-    event; the push is then never reached. The effectful ``has_queued`` read can
+    event; the push is then never reached. The cheap budget check runs first so an
+    untripped budget never reaches the effectful ``has_queued`` read, which can
     raise (gh transient) — routed through the single error site like any verb.
     """
 
     def cap_guard(ctx: RunContext) -> PRGroomingState:
-        if (
-            verbs.has_queued(ctx)
-            and ctx.state.pr_review_retries_used >= ctx.config.pr_review_retries
+        if retry_budget_exhausted(ctx.state, ctx.config.pr_review_retries) and verbs.has_queued(
+            ctx
         ):
             ctx.state.phase = PRPhase.HUMAN_GATED
             ctx.state.last_error = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
@@ -541,7 +541,7 @@ def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
         ctx.state.phase is PRPhase.HUMAN_GATED
         and ctx.state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
         and not (
-            ctx.state.pr_review_retries_used >= ctx.config.pr_review_retries
+            retry_budget_exhausted(ctx.state, ctx.config.pr_review_retries)
             and _guarded_has_queued(ctx, verbs)
         )
     ):

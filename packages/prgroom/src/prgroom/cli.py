@@ -384,8 +384,9 @@ def push(
     Direct-invocation preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE``
     (exit 2); a terminal-for-CLI phase (``quiesced`` / ``human-gated`` / ``merged``)
     -> no-op exit 0; no queued commits -> idempotent no-op exit 0. On a successful
-    push: ``round`` bumps, ``last_pushed_head_sha`` records the pushed SHA, and stale
-    required reviews flip so a follow-up ``rereview`` re-asks them. No phase change.
+    push: ``pr_review_retries_used`` bumps (the initial push is free),
+    ``last_pushed_head_sha`` records the pushed SHA, and stale required reviews flip
+    so a follow-up ``rereview`` re-asks them. No phase change.
     """
     store: Store = ctx.obj
     try:
@@ -517,7 +518,8 @@ def resolve_escalated(
     ``with_lock`` wrapper. An invalid ``--as`` is rejected at parse (typer choice,
     exit 2) before any state read. ``decided_by`` stamps ``human:<git-user>`` via the
     git seam. Flipping the last escalated item may release ``human-gated`` ->
-    ``fixes-pending``; never clears cap/failed gating, never bumps ``round``.
+    ``fixes-pending``; never clears budget/failed gating, never bumps
+    ``pr_review_retries_used``.
     """
     store: Store = ctx.obj
     try:

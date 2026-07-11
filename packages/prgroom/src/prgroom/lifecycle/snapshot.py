@@ -8,7 +8,7 @@ dumps everything to the two files the fix contract already passes —
 
 * ``pr_detail_path`` (JSON): the PR **description** (with the ``## Decisions``
   block read (whitespace-trimmed) — writing it is the §8.3 write path, here we only READ it), the PR
-  **labels**, the review threads with their reply-chains, the **prior-round
+  **labels**, the review threads with their reply-chains, the **prior-retry
   dispositions** for already-processed items (kind / rationale / commits /
   decided_by, from ``prsession`` state), and the per-item **recurrence** (§8.2).
   **MVP completeness caveat:** §8.1 promises *every* thread with its *full*
@@ -263,7 +263,7 @@ def _branch_state(git: GitClient, base_ref: str) -> str:
 
 
 def _prior_dispositions(state: PRGroomingState) -> list[dict[str, Any]]:
-    """The §8.1 prior-round dispositions for every already-processed item."""
+    """The §8.1 prior-retry dispositions for every already-processed item."""
     out: list[dict[str, Any]] = []
     for item in state.items:
         disposition = item.disposition

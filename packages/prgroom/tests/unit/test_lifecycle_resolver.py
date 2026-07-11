@@ -68,7 +68,7 @@ def _resolve(
     )
 
 
-# -- priority 1: hard cap --------------------------------------------------
+# -- priority 1: retry budget ----------------------------------------------
 
 
 def test_p1_cap_trips_to_human_gated_with_cap_error() -> None:

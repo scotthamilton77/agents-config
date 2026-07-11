@@ -139,7 +139,7 @@ def _fix_one_cluster(
     routed, blocked = resolve_routed_memory(
         result.contextual_memory,
         memory_dir=snapshot.memory_dir,
-        retry_=state.pr_review_retries_used,
+        retry=state.pr_review_retries_used,
         decided_by=decided_by,
         cluster_id=cluster_id,
         warn=warn,
@@ -183,7 +183,7 @@ def resolve_routed_memory(
     entries: list[MemoryEntry],
     *,
     memory_dir: str,
-    retry_: int,
+    retry: int,
     decided_by: str,
     cluster_id: str,
     warn: Callable[[str], None],
@@ -222,7 +222,7 @@ def resolve_routed_memory(
         routed.append(
             RoutedMemory(
                 content=content,
-                retry=retry_,
+                retry=retry,
                 source_item=f"{cluster_id}#{ordinal}",
                 decided_by=decided_by,
                 target_hint=entry.target_hint,

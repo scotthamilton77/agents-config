@@ -127,7 +127,12 @@ class FileStore:
         version = payload.get("schema_version")
         if not (_is_int_version(version) and version == SCHEMA_VERSION):
             payload = self._migrate(path, raw, version)
-        return PRGroomingState.from_dict(payload)
+        try:
+            return PRGroomingState.from_dict(payload)
+        except (KeyError, ValueError, TypeError) as exc:
+            # Valid JSON whose shape from_dict rejects (e.g. a pre-rename key set
+            # carrying the current schema_version) is a parse failure per §3.7.
+            raise StateCorruptError(f"{path}: state shape invalid: {exc!r}") from exc  # noqa: TRY003  # single call-site; names the offending file + key
 
     def _migrate(self, path: Path, raw: bytes, from_version: object) -> dict[str, object]:
         """Apply a registered migrator for ``from_version`` or trip schema-unknown.
