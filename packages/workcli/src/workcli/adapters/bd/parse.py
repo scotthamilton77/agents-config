@@ -165,6 +165,30 @@ def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> lis
     return values
 
 
+def _assert_object_elements(entries: list[Any], *, field: str, item_id: str) -> None:
+    """Alarm on any `dependencies`/`dependents` element that isn't a JSON object.
+
+    `_dep_edge_from_raw` requires a mapping; a non-object edge entry (bd
+    emitting a bare string/number where every known edge shape is an object)
+    was previously filtered out silently by an `isinstance(entry, dict)`
+    guard at the call site, dropping the edge and continuing with a
+    partially-mangled Item. That is bd shape drift, not something to drop and
+    carry on from (spec test-plan item 9) -- same discipline as
+    `parse_items`'/`parse_dep_edges`' own `element_not_an_object` check.
+    """
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise _drift(
+                f"bd item's {field} entry is not a JSON object",
+                {
+                    "reason": "element_not_an_object",
+                    "field": field,
+                    "id": item_id,
+                    "raw_type": type(entry).__name__,
+                },
+            )
+
+
 def parse_item(raw: dict[str, JsonValue]) -> Item:
     missing = [key for key in _REQUIRED_ITEM_KEYS if key not in raw]
     if missing:
@@ -187,16 +211,18 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
 
     dependencies = _list_field(raw, "dependencies", item_id)
     dependents = _list_field(raw, "dependents", item_id)
+    _assert_object_elements(dependencies, field="dependencies", item_id=item_id)
+    _assert_object_elements(dependents, field="dependents", item_id=item_id)
 
     deps = [
         _dep_edge_from_raw(entry, item_id)
         for entry in dependencies
-        if isinstance(entry, dict) and _dep_type(entry) != "parent-child"
+        if _dep_type(entry) != "parent-child"
     ]
     children = [
         _dep_edge_from_raw(entry, item_id).id
         for entry in dependents
-        if isinstance(entry, dict) and _dep_type(entry) == "parent-child"
+        if _dep_type(entry) == "parent-child"
     ]
 
     return Item(

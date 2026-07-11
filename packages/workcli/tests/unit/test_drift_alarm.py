@@ -301,6 +301,50 @@ def test_parent_child_dependent_missing_id_raises_backend_drift():
     assert error.detail["missing_keys"] == ["id"]
 
 
+def test_non_object_dependency_entry_raises_backend_drift_not_a_silent_drop():
+    # A `dependencies[]` entry that isn't a JSON object (e.g. a bare string)
+    # was previously filtered out silently by `isinstance(entry, dict)` and
+    # continued with a partially-mangled Item -- that is bd shape drift, not
+    # something to drop and carry on from (spec test-plan item 9).
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": ["not-an-object"],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "element_not_an_object"
+    assert error.detail["field"] == "dependencies"
+
+
+def test_non_object_dependent_entry_raises_backend_drift_not_a_silent_drop():
+    # Same discipline for `dependents[]` -- the source of `children` -- as
+    # `dependencies[]` above.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "epic",
+        "status": "open",
+        "priority": 2,
+        "dependents": [42],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "element_not_an_object"
+    assert error.detail["field"] == "dependents"
+
+
 def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():
     # A garbage `show` shape (missing every required key) drives the CLI's
     # own catch: `handler -> WorkError(BACKEND_DRIFT) -> emit_failure`, not
