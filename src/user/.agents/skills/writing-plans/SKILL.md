@@ -188,7 +188,7 @@ template:
 
 > Execute the implementation plan at `<plan-file path>` (spec: `<spec-file path>`).
 > Work on a feature branch in an isolated worktree. Dispatch one fresh subagent
-> per task; each task follows the test-driven-development skill. Start at Task 1.
+> per task; each task follows the `test-driven-development` skill. Start at Task 1.
 
 This is the pipeline's single terminal pause: everything is pre-decided, and the
 prompt exists to be handed to the user, who chooses when and where to clear
