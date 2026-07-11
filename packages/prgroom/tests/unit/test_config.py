@@ -56,21 +56,26 @@ def test_defaults_when_no_file_no_env(tmp_path: Path) -> None:
 
 
 def test_toml_overrides_built_in_default(tmp_path: Path) -> None:
+    # Use a non-default value (4 != DEFAULT_PR_REVIEW_RETRIES) so this assertion
+    # fails if the TOML key is ignored and the built-in default is used instead.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("pr_review_retries = 5\n")
-    assert PrgroomConfig.load(repo_config=toml).pr_review_retries == 5
+    toml.write_text("pr_review_retries = 4\n")
+    assert PrgroomConfig.load(repo_config=toml).pr_review_retries == 4
 
 
 def test_env_overrides_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Non-default TOML value (4) so the assertion proves env beats a live TOML value,
+    # not merely the built-in default.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("pr_review_retries = 5\n")
+    toml.write_text("pr_review_retries = 4\n")
     monkeypatch.setenv("PRGROOM_PR_REVIEW_RETRIES", "7")
     assert PrgroomConfig.load(repo_config=toml).pr_review_retries == 7
 
 
 def test_cli_flag_overrides_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Non-default TOML value (4) so the flag is shown to beat a live TOML+env stack.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("pr_review_retries = 5\n")
+    toml.write_text("pr_review_retries = 4\n")
     monkeypatch.setenv("PRGROOM_PR_REVIEW_RETRIES", "7")
     assert PrgroomConfig.load(repo_config=toml, pr_review_retries_flag=9).pr_review_retries == 9
 
