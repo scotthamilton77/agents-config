@@ -79,7 +79,7 @@ Collect before writing the report:
 - **PRs** — Branch names, PR URLs/numbers, current status
 - **Remaining work** — Anything incomplete if this was a partial delivery, plus every in-scope discovery deferred to a tracked item (each is an escalation line here, not just a manifest row)
 - **Discovered work** — Every issue found during implementation: fixed in-session, deferred in-scope, or filed out-of-scope
-- **Triage audit** — For each item filed this session: anchor parent present? Severity rationale present? Provenance link present?
+- **Triage audit** — For each item filed this session: anchor parent present? Priority rationale present? Provenance link present?
 
 If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work. If a filed item is unanchored or untriaged, **fix it now** per the project's discovered-work placement discipline — an unanchored item is an orphan; anchor it, rate it, and say why.
 
@@ -111,14 +111,17 @@ If discovered work is unrecorded, **record it now** in the project's tracking sy
 | Item | Scope | Lands in | Bead/Issue | Priority — why |
 |------|-------|----------|------------|----------------|
 | [description] | in-scope | this PR | — | — |
-| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <severity rationale> |
-| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <severity rationale> |
+| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |
+| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <priority rationale> |
 ```
 
 "Lands in" must name an anchor: `this PR`, `parent epic (<id>)`, an
 epic/milestone id, or `unanchored — needs your call` (rare escalation) — never
 a vague bucket like "future work". Any in-scope row not landing in `this PR`
-must also appear under **Remaining Work** as an escalation line.
+must also appear under **Remaining Work** as an escalation line. A bare `—`
+cell is legitimate only on `this PR` rows (nothing was filed, so there is no
+tracked item or priority); every row that files a tracked item must fill all
+five cells.
 
 Omit sections that are genuinely empty (no PRs, no discovered work). But you must always include **Objective**, **Verification Checklist**, and **Remaining Work**.
 

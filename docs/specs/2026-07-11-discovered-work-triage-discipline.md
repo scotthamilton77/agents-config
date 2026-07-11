@@ -100,7 +100,7 @@ Second gate; catches what filing missed. Wording stays tracker-neutral (the skil
 ships to all four tools; bd mechanics stay in the beads-plugin rule).
 
 **Audit step (added to "Gather Context"):** for each work item filed this session —
-anchor present? Triage rationale present? Provenance link present? Missing → fix
+anchor present? Priority rationale present? Provenance link present? Missing → fix
 now, with the same teeth as the existing "unrecorded work is lost work" clause: an
 unanchored item is an orphan; anchor it now.
 
@@ -123,6 +123,10 @@ buckets ("future work") are structurally disallowed:
 - `parent epic (<id>)` — in-scope work deferred into the in-flight family.
 - `<epic-or-milestone-id>` — out-of-scope, anchored to the roadmap.
 - `unanchored — needs your call` — the rare no-milestone-fits escalation.
+
+A bare `—` cell is legitimate only on `this PR` rows (nothing was filed, so
+there is no tracked item or priority); every row that files a tracked item must
+fill all five cells.
 
 **Double-reporting rule:** any in-scope row whose "Lands in" is not `this PR` also
 appears in **Remaining Work** as an escalation line.
