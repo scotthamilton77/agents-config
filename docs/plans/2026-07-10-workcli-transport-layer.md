@@ -467,14 +467,14 @@ the root `Makefile`, or paths a task explicitly names.
   one-line rationale), root `AGENTS.md` (packages list + `make ci` composition line),
   `cli.py` (`--format human` hookup)
 
-- [ ] Failing matrix test (item 1): parametrized over all twelve verbs × {success, failure} —
+- [x] Failing matrix test (item 1): parametrized over all twelve verbs × {success, failure} —
   every invocation yields exactly one parseable stdout envelope carrying `protocol`, and exit
   code mirrors `ok`. Handshake consistency (item 10 tail): `--protocol-version`'s
   `data.protocol` equals the `protocol` field of every other verb's envelope.
-- [ ] `--format human`: generic renderer to stderr; test asserts stdout envelope byte-identical
+- [x] `--format human`: generic renderer to stderr; test asserts stdout envelope byte-identical
   with and without the flag
-- [ ] README: verb table, envelope + error-code contract, consumer handshake snippet
-- [ ] Full gate: `make ci-workcli` then `make ci` (all packages + lint-actions) from the
+- [x] README: verb table, envelope + error-code contract, consumer handshake snippet
+- [x] Full gate: `make ci-workcli` then `make ci` (all packages + lint-actions) from the
   worktree root → green; paste evidence. Commit:
   `feat(workcli): envelope invariant matrix, human format, docs; spec: add E_INTERNAL`
 

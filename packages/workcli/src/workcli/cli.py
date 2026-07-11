@@ -20,7 +20,8 @@ from typing import NoReturn, TextIO
 from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
-from workcli.envelope import ErrorCode, WorkError, emit_failure, emit_success
+from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
+from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
 
@@ -136,6 +137,38 @@ def _build_parser() -> _EnvelopeArgumentParser:
     return parser
 
 
+def _finish_success(data: JsonValue, out: TextIO, err: TextIO, fmt: str) -> int:
+    """Emit the success envelope to `out`; additionally render it to `err` on `--format human`.
+
+    stdout always carries the envelope regardless of `fmt` (spec §4) -- this
+    never replaces `emit_success`, only adds the human view alongside it.
+    """
+    exit_code = emit_success(data, out)
+    if fmt == "human":
+        render_human({"protocol": PROTOCOL_VERSION, "ok": True, "data": data, "error": None}, err)
+    return exit_code
+
+
+def _finish_failure(work_error: WorkError, out: TextIO, err: TextIO, fmt: str) -> int:
+    """Emit the failure envelope to `out`; additionally render it to `err` on `--format human`."""
+    exit_code = emit_failure(work_error, out)
+    if fmt == "human":
+        render_human(
+            {
+                "protocol": PROTOCOL_VERSION,
+                "ok": False,
+                "data": None,
+                "error": {
+                    "code": str(work_error.code),
+                    "message": work_error.message,
+                    "detail": work_error.detail,
+                },
+            },
+            err,
+        )
+    return exit_code
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -163,33 +196,39 @@ def main(
         return emit_failure(usage_error, out)
 
     if args.protocol_version:
-        return emit_success({"protocol": PROTOCOL_VERSION}, out)
+        return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
 
     handler = VERBS.get(args.verb)
     if handler is None:
-        return emit_failure(WorkError(ErrorCode.USAGE, f"unknown verb: {args.verb!r}"), out)
+        return _finish_failure(
+            WorkError(ErrorCode.USAGE, f"unknown verb: {args.verb!r}"), out, err, args.format
+        )
 
     # Constructed only now -- never for --protocol-version above -- so the
     # handshake never touches the runner (spec §5).
     backend = _build_backend(runner, sleep)
 
     if missing_capability(args.verb, backend.capabilities):
-        return emit_failure(
+        return _finish_failure(
             WorkError(
                 ErrorCode.UNSUPPORTED_CAPABILITY,
                 f"{args.verb}: not supported by this backend",
             ),
             out,
+            err,
+            args.format,
         )
 
     try:
         data = handler(backend, args)
     except WorkError as verb_error:
-        return emit_failure(verb_error, out)
+        return _finish_failure(verb_error, out, err, args.format)
     except Exception:
         traceback.print_exc(file=err)
-        return emit_failure(WorkError(ErrorCode.INTERNAL, "internal error"), out)
-    return emit_success(data, out)
+        return _finish_failure(
+            WorkError(ErrorCode.INTERNAL, "internal error"), out, err, args.format
+        )
+    return _finish_success(data, out, err, args.format)
 
 
 def entry() -> None:

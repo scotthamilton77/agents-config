@@ -84,6 +84,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 - `packages/` - **Real Python packages** (standalone uv projects, each with its own `pyproject.toml`; not part of the installed config surface)
   - `installer/` - the installer engine that `scripts/install.sh` execs; CI-gated (`make ci-installer`)
   - `prgroom/` - deterministic PR-grooming CLI that supersedes the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills; CI-gated (`make ci-prgroom`). Driven by the `monitor-pr` skill. **Not yet installed by the installer** — run via `uv tool install`/`uv run` from `packages/prgroom/`
+  - `workcli/` - the `work` facade CLI: quarantines the issue-tracker backend (bd) behind a stable JSON-envelope contract, twelve verbs over an injected `Backend` seam; CI-gated (`make ci-workcli`). Driven by the work-facade CLI contract spec (`docs/specs/2026-07-04-work-facade-cli-contract.md`)
   - `pdlc/` - PDLC Orchestrator: the deterministic FSM engine intended to drive Objectives through the lifecycle. Early — happy-path tracer bullet only; not yet CI-gated
   - `holding-place/` - Idea pipeline + the Promote contract into the PDLC Orchestrator. Early; not yet CI-gated
 - `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.
@@ -91,7 +92,7 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
 Other notes:
 
 - Most of the repo (config content under `src/`) is documentation and templates with no build step — changes there just follow existing formatting conventions per file type.
-- **Exception — the packages under `packages/` are real Python code with mandatory quality gates.** `make ci` (the whole-repo gate CI enforces) runs `ci-installer` + `ci-prgroom` + `lint-actions`. Before pushing a change under `packages/installer/` run `make ci-installer`; under `packages/prgroom/` run `make ci-prgroom`. Each gate runs lint, format-check, typecheck, coverage, audit, and entry-verify. See the package's own `AGENTS.md` for its scoped workflow. (`packages/pdlc/` and `packages/holding-place/` are early and not yet wired into `make ci`.)
+- **Exception — the packages under `packages/` are real Python code with mandatory quality gates.** `make ci` (the whole-repo gate CI enforces) runs `ci-installer` + `ci-prgroom` + `ci-workcli` + `lint-actions`. Before pushing a change under `packages/installer/` run `make ci-installer`; under `packages/prgroom/` run `make ci-prgroom`; under `packages/workcli/` run `make ci-workcli`. Each gate runs lint, format-check, typecheck, coverage, audit, and entry-verify. See the package's own `AGENTS.md` for its scoped workflow. (`packages/pdlc/` and `packages/holding-place/` are early and not yet wired into `make ci`.)
 
 **Milestones** are `milestone`-type beads — no required fields, "contains no work itself" by convention. They anchor roadmap phases; child beads carry the actual work. Enumerate with `bd list --type milestone`.
 
