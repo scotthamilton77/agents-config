@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import os
 import signal
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -145,6 +146,10 @@ def _hard_time_budget(seconds: int) -> Iterator[None]:
     termination guard (SIGALRM, Unix main thread) for the DoS-bound tests. A
     regression to unbounded matching hangs and trips the alarm; the bounded
     matcher returns in microseconds, far under any sane budget."""
+    if threading.current_thread() is not threading.main_thread():
+        # `signal.signal` raises ValueError off the main thread; skip rather
+        # than fail if a runner/plugin executes this test in a worker thread.
+        pytest.skip("signal-based time budget requires the main thread")
 
     def _fire(_signum: int, _frame: object) -> None:
         msg = f"selector match exceeded {seconds}s budget (unbounded-recursion regression)"
