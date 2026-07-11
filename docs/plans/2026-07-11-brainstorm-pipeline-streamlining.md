@@ -84,11 +84,14 @@ digraph brainstorming {
 
 ```markdown
 - Check for `CONTEXT.md` (or `CONTEXT-MAP.md` in multi-context repos). When present,
-  announce it ("`CONTEXT.md` found — glossary discipline active") and adopt the
-  grill-with-docs skill's glossary discipline inline for the rest of the brainstorm:
-  challenge the user's terms against the glossary, propose precise canonical terms
-  for fuzzy language, and update `CONTEXT.md` as terms resolve — glossary entries
-  only, no implementation details, per the glossary format that travels with the
+  announce the file actually found ("`CONTEXT.md` found — glossary discipline active",
+  or "`CONTEXT-MAP.md` found — glossary discipline active" for a multi-context repo)
+  and adopt the grill-with-docs skill's glossary discipline inline for the rest of the
+  brainstorm: challenge the user's terms against the glossary, propose precise canonical
+  terms for fuzzy language, and update the glossary as terms resolve — in a single-context
+  repo that is the root `CONTEXT.md`; in a multi-context repo, resolve via `CONTEXT-MAP.md`
+  to the context(s) the design touches and update that context's `CONTEXT.md`. Glossary
+  entries only, no implementation details, per the glossary format that travels with the
   grill-with-docs skill. Do not adopt grill-with-docs' ADR-offering step.
 - When no `CONTEXT.md` exists but the design coins load-bearing domain terms, offer
   once — at spec-write time, folded into the attention-routing message, never as its

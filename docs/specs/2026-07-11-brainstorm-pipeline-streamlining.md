@@ -70,12 +70,15 @@ mutually consistent; the digraph gains the new routing and gate nodes).
 ### 3.1 Glossary discipline (grill trigger)
 
 At the "explore project context" step: check for `CONTEXT.md` (or `CONTEXT-MAP.md`
-in multi-context repos). When present, announce it ("`CONTEXT.md` found — glossary
-discipline active") and adopt grill-with-docs' glossary discipline inline for the
-rest of the brainstorm: challenge the user's terms against the glossary, propose
-precise canonical terms for fuzzy language, and update `CONTEXT.md` as terms resolve
-— glossary entries only, no implementation details, per the glossary format that
-travels with the grill-with-docs skill (referenced by skill name, never by path),
+in multi-context repos). When present, announce the file actually found ("`CONTEXT.md`
+found — glossary discipline active", or "`CONTEXT-MAP.md` found — glossary discipline
+active" for a multi-context repo) and adopt grill-with-docs' glossary discipline inline
+for the rest of the brainstorm: challenge the user's terms against the glossary, propose
+precise canonical terms for fuzzy language, and update the glossary as terms resolve —
+in a single-context repo that is the root `CONTEXT.md`; in a multi-context repo, resolve
+via `CONTEXT-MAP.md` to the context(s) the design touches and update that context's
+`CONTEXT.md`. Glossary entries only, no implementation details, per the glossary format
+that travels with the grill-with-docs skill (referenced by skill name, never by path),
 and explicitly excluding grill-with-docs' ADR-offering step.
 
 When no `CONTEXT.md` exists but the design has coined load-bearing domain terms,
