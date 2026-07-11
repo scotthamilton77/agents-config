@@ -53,6 +53,7 @@ digraph brainstorming {
     "Write design doc" [shape=box];
     "Spec self-review\n(fix inline)" [shape=box];
     "Routing criteria hit?" [shape=diamond];
+    "Independent reviewer available?" [shape=diamond];
     "ralf-review\n(single invocation)" [shape=box];
     "Fix findings,\nrecord verdict" [shape=box];
     "Waive human review?" [shape=diamond];
@@ -73,7 +74,9 @@ digraph brainstorming {
     "Write design doc" -> "Spec self-review\n(fix inline)";
     "Spec self-review\n(fix inline)" -> "Routing criteria hit?";
     "Routing criteria hit?" -> "Waive human review?" [label="no — announce lean"];
-    "Routing criteria hit?" -> "ralf-review\n(single invocation)" [label="yes — announce deep"];
+    "Routing criteria hit?" -> "Independent reviewer available?" [label="yes — announce deep"];
+    "Independent reviewer available?" -> "ralf-review\n(single invocation)" [label="yes"];
+    "Independent reviewer available?" -> "Directed-attention review" [label="no — fails closed"];
     "ralf-review\n(single invocation)" -> "Fix findings,\nrecord verdict";
     "Fix findings,\nrecord verdict" -> "Waive human review?";
     "Waive human review?" -> "Invoke writing-plans skill" [label="yes — notice, no pause"];
