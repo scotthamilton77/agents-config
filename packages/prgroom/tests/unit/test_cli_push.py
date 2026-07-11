@@ -14,6 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prgroom import cli
+from prgroom.errors import ErrorCode
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
@@ -89,6 +90,39 @@ def test_push_uploads_and_persists_consumed_retry(
     written = patched.read(_REF)
     assert written.pr_review_retries_used == 2
     assert written.last_pushed_head_sha == "newhead"
+
+
+def test_push_refuses_when_budget_exhausted_with_queued_commits(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The §3.5 refusal applies to the direct verb too: with queued commits and the
+    # retry budget spent, `prgroom push` gates to human-gated exactly like the run
+    # pipeline's cap-guard — it must not publish a push the run loop would refuse.
+    git = FakeGit(queued=["c1"])
+    monkeypatch.setattr(cli, "_build_git", lambda: git)
+    patched.write(_REF, _state(retries=5))  # at the default budget of 5 -> exhausted
+    result = runner.invoke(cli.app, ["push", "octo/demo#7"])
+    assert result.exit_code == 0, result.output
+    assert git.pushes == []  # nothing uploaded
+    written = patched.read(_REF)
+    assert written.phase is PRPhase.HUMAN_GATED
+    assert written.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
+    assert written.pr_review_retries_used == 5  # the refusal consumes nothing
+    assert written.lifecycle_escalation_filed is False  # one Sink flush on next run
+
+
+def test_push_budget_exhausted_without_queued_commits_stays_ungated(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty queue means there is no budget-tripping push to refuse: the verb
+    # falls through to push_pr's idempotent no-op and the phase is untouched.
+    git = FakeGit(queued=[])
+    monkeypatch.setattr(cli, "_build_git", lambda: git)
+    patched.write(_REF, _state(retries=5))
+    result = runner.invoke(cli.app, ["push", "octo/demo#7"])
+    assert result.exit_code == 0, result.output
+    assert git.pushes == []
+    assert patched.read(_REF).phase is PRPhase.FIXES_PENDING
 
 
 @pytest.mark.usefixtures("patched")

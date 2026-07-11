@@ -59,6 +59,19 @@ def retry_budget_exhausted(state: PRGroomingState, pr_review_retries: int) -> bo
     return state.pr_review_retries_used >= pr_review_retries
 
 
+def apply_retry_budget_gate(state: PRGroomingState) -> None:
+    """Gate a budget-tripping push to ``human-gated`` (§3.5) — the shared refusal.
+
+    Sets ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` and clears ``lifecycle_escalation_filed``
+    so the run loop-top flush fires exactly one Sink event. Single owner of the
+    refusal mutation: the run pipeline's cap-guard and the direct ``push`` CLI verb
+    both apply it, so neither path can publish a push the other would refuse.
+    """
+    state.phase = PRPhase.HUMAN_GATED
+    state.last_error = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
+    state.lifecycle_escalation_filed = False
+
+
 def _has_disposition_kind(state: PRGroomingState, kind: DispositionKind) -> bool:
     return any(
         item.disposition is not None and item.disposition.kind == kind for item in state.items

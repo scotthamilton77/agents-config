@@ -105,6 +105,28 @@ def test_corrupt_json_raises_state_corrupt(tmp_path: Path) -> None:
         FileStore(state_dir=tmp_path).read(ref)
 
 
+def test_non_object_json_root_raises_state_corrupt(tmp_path: Path) -> None:
+    # Valid JSON whose root is not an object ([], "text", 42) must map to the §3.7
+    # STATE_CORRUPT contract — payload.get on a list would otherwise escape as a raw
+    # AttributeError before any shape parsing starts.
+    ref = PRRef("octo", "demo", 7)
+    (tmp_path / "octo-demo-7.json").write_text("[]")
+    with pytest.raises(StateCorruptError):
+        FileStore(state_dir=tmp_path).read(ref)
+
+
+def test_wrongly_nested_container_raises_state_corrupt(tmp_path: Path) -> None:
+    # A JSON object with the current schema_version but a nested field of the wrong
+    # container type (quiescence as a list) fails from_dict with AttributeError —
+    # that too is a parse failure per §3.7, never a raw traceback.
+    ref = PRRef("octo", "demo", 7)
+    payload = _state(ref).to_dict()
+    payload["quiescence"] = []
+    (tmp_path / "octo-demo-7.json").write_text(json.dumps(payload))
+    with pytest.raises(StateCorruptError):
+        FileStore(state_dir=tmp_path).read(ref)
+
+
 def test_stale_shape_with_current_version_raises_state_corrupt(tmp_path: Path) -> None:
     # A valid-JSON file carrying the current schema_version but a pre-rename shape
     # (the retired 'round' key instead of 'pr_review_retries_used') must map to the

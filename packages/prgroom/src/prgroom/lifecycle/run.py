@@ -50,7 +50,11 @@ from prgroom.lifecycle.quiescence import quiescence_predicate
 from prgroom.lifecycle.reply import reply_pr
 from prgroom.lifecycle.rereview import rereview_pr
 from prgroom.lifecycle.resolve import resolve_pr
-from prgroom.lifecycle.resolver import resolve_end_of_cycle_phase, retry_budget_exhausted
+from prgroom.lifecycle.resolver import (
+    apply_retry_budget_gate,
+    resolve_end_of_cycle_phase,
+    retry_budget_exhausted,
+)
 from prgroom.lifecycle.verb_error import VerbDisposition, handle_verb_error
 from prgroom.lifecycle.wait import SignalCancelToken, wait_pr
 from prgroom.prsession.enums import PRPhase
@@ -424,9 +428,7 @@ def _cap_guard_step(verbs: Verbs) -> Callable[[RunContext], PRGroomingState]:
         if retry_budget_exhausted(ctx.state, ctx.config.pr_review_retries) and verbs.has_queued(
             ctx
         ):
-            ctx.state.phase = PRPhase.HUMAN_GATED
-            ctx.state.last_error = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
-            ctx.state.lifecycle_escalation_filed = False
+            apply_retry_budget_gate(ctx.state)
         return ctx.state
 
     return cap_guard

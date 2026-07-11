@@ -53,6 +53,8 @@ from prgroom.lifecycle import (
 )
 from prgroom.lifecycle.human_review import derive_human_review, fetch_human_review_inputs
 from prgroom.lifecycle.locking import with_lock
+from prgroom.lifecycle.push import has_queued_fix_commits
+from prgroom.lifecycle.resolver import apply_retry_budget_gate, retry_budget_exhausted
 from prgroom.lifecycle.run import Mode, run_lifecycle, wait_lifecycle
 from prgroom.lifecycle.status import build_status
 from prgroom.proc import SubprocessRunner
@@ -383,10 +385,13 @@ def push(
     A locked verb: ``read -> push_pr -> write`` under the §2 ``with_lock`` wrapper.
     Direct-invocation preconditions (§3.2): no state -> ``PRECONDITION_NO_STATE``
     (exit 2); a terminal-for-CLI phase (``quiesced`` / ``human-gated`` / ``merged``)
-    -> no-op exit 0; no queued commits -> idempotent no-op exit 0. On a successful
-    push: ``pr_review_retries_used`` bumps (the initial push is free),
-    ``last_pushed_head_sha`` records the pushed SHA, and stale required reviews flip
-    so a follow-up ``rereview`` re-asks them. No phase change.
+    -> no-op exit 0; no queued commits -> idempotent no-op exit 0; a budget-tripping
+    push (queued commits AND the retry budget exhausted, §3.5) -> gated to
+    ``human-gated`` + ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` with nothing uploaded
+    (exit 0) — the direct verb refuses exactly what the run pipeline's cap-guard
+    refuses. On a successful push: ``pr_review_retries_used`` bumps (the initial
+    push is free), ``last_pushed_head_sha`` records the pushed SHA, and stale
+    required reviews flip so a follow-up ``rereview`` re-asks them. No phase change.
     """
     store: Store = ctx.obj
     try:
@@ -399,6 +404,14 @@ def push(
             state = _read_or_no_state(store, ref)
             if is_terminal_for_cli(state.phase):
                 return  # terminal-for-CLI: no autonomous push (no-op exit 0)
+            # §3.5 applies to the direct verb too — the cheap budget check first so
+            # an untripped budget never reaches the effectful has_queued read.
+            if retry_budget_exhausted(state, config.pr_review_retries) and has_queued_fix_commits(
+                gh, git, ref
+            ):
+                apply_retry_budget_gate(state)
+                store.write(ref, state)
+                return
             state = push_pr(state, ref=ref, gh=gh, git=git, config=config)
             store.write(ref, state)
 

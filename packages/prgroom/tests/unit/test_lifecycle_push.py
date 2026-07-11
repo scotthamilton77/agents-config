@@ -305,8 +305,9 @@ def test_push_below_the_budget_is_silent() -> None:
 
 def test_push_past_the_budget_does_not_re_warn() -> None:
     # §3.5: the advisory fires only on the push that consumes the *last* retry,
-    # not on every push once past it. A direct `prgroom push` at retries==budget
-    # (no pre-push guard) takes the counter past the budget and must stay silent —
+    # not on every push once past it. push_pr is mechanism — the budget guard lives
+    # in run's cap-guard and the push CLI verb — so called directly at
+    # retries==budget it takes the counter past the budget and must stay silent:
     # re-warning would print an inaccurate "exhausted" line for an already-spent
     # budget.
     msgs: list[str] = []
