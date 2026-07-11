@@ -24,6 +24,9 @@
   }
 
   function allocateMinutes(changed, computeHeat) {
+    // Empty/placeholder dataset: no files to budget. Return early so the
+    // even-split path never divides by changed.length (Infinity) below.
+    if (changed.length === 0) return [];
     const heats = changed.map(f => Math.max(computeHeat(f), 0));
     const sum = heats.reduce((a, b) => a + b, 0);
     if (sum <= 0) {
