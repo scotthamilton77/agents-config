@@ -28,21 +28,22 @@ Every project goes through this process. A todo list, a single-function utility,
 
 You MUST create a task for each of these items and complete them in order:
 
-1. **Explore project context** — check files, docs, recent commits
+1. **Explore project context** — check files, docs, recent commits; check for `CONTEXT.md` / `CONTEXT-MAP.md` and, if present, activate the glossary discipline (see The Process below)
 2. **Offer visual companion** (if topic will involve visual questions) — this is its own message, not combined with a clarifying question. See the Visual Companion section below.
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
 6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-8. **User reviews written spec** — ask user to review the spec file before proceeding
-9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+8. **Review-depth routing** — assess the spec against the routing criteria; announce lean or deep; deep runs `ralf-review` once and fixes findings (see below)
+9. **Attention routing** — decide whether the user's review is needed: waive with a notice, or direct their attention to specific sections (see below)
+10. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
 
 ```dot
 digraph brainstorming {
-    "Explore project context" [shape=box];
+    "Explore project context\n(+ CONTEXT.md check)" [shape=box];
     "Visual questions ahead?" [shape=diamond];
     "Offer Visual Companion\n(own message, no other content)" [shape=box];
     "Ask clarifying questions" [shape=box];
@@ -51,10 +52,16 @@ digraph brainstorming {
     "User approves design?" [shape=diamond];
     "Write design doc" [shape=box];
     "Spec self-review\n(fix inline)" [shape=box];
-    "User reviews spec?" [shape=diamond];
+    "Routing criteria hit?" [shape=diamond];
+    "ralf-review\n(single invocation)" [shape=box];
+    "Fix findings,\nrecord verdict" [shape=box];
+    "Waive human review?" [shape=diamond];
+    "Directed-attention review" [shape=box];
+    "User approves spec?" [shape=diamond];
+    "Revise spec" [shape=box];
     "Invoke writing-plans skill" [shape=doublecircle];
 
-    "Explore project context" -> "Visual questions ahead?";
+    "Explore project context\n(+ CONTEXT.md check)" -> "Visual questions ahead?";
     "Visual questions ahead?" -> "Offer Visual Companion\n(own message, no other content)" [label="yes"];
     "Visual questions ahead?" -> "Ask clarifying questions" [label="no"];
     "Offer Visual Companion\n(own message, no other content)" -> "Ask clarifying questions";
@@ -64,9 +71,17 @@ digraph brainstorming {
     "User approves design?" -> "Present design sections" [label="no, revise"];
     "User approves design?" -> "Write design doc" [label="yes"];
     "Write design doc" -> "Spec self-review\n(fix inline)";
-    "Spec self-review\n(fix inline)" -> "User reviews spec?";
-    "User reviews spec?" -> "Write design doc" [label="changes requested"];
-    "User reviews spec?" -> "Invoke writing-plans skill" [label="approved"];
+    "Spec self-review\n(fix inline)" -> "Routing criteria hit?";
+    "Routing criteria hit?" -> "Waive human review?" [label="no — announce lean"];
+    "Routing criteria hit?" -> "ralf-review\n(single invocation)" [label="yes — announce deep"];
+    "ralf-review\n(single invocation)" -> "Fix findings,\nrecord verdict";
+    "Fix findings,\nrecord verdict" -> "Waive human review?";
+    "Waive human review?" -> "Invoke writing-plans skill" [label="yes — notice, no pause"];
+    "Waive human review?" -> "Directed-attention review" [label="no"];
+    "Directed-attention review" -> "User approves spec?";
+    "User approves spec?" -> "Invoke writing-plans skill" [label="approved"];
+    "User approves spec?" -> "Revise spec" [label="changes requested"];
+    "Revise spec" -> "Directed-attention review" [label="never re-routes"];
 }
 ```
 
@@ -77,6 +92,20 @@ digraph brainstorming {
 **Understanding the idea:**
 
 - Check out the current project state first (files, docs, recent commits)
+- Check for `CONTEXT.md` (or `CONTEXT-MAP.md` in multi-context repos). When present,
+  announce the file actually found ("`CONTEXT.md` found — glossary discipline active",
+  or "`CONTEXT-MAP.md` found — glossary discipline active" for a multi-context repo)
+  and adopt the grill-with-docs skill's glossary discipline inline for the rest of the
+  brainstorm: challenge the user's terms against the glossary, propose precise canonical
+  terms for fuzzy language, and update the glossary as terms resolve — in a single-context
+  repo that is the root `CONTEXT.md`; in a multi-context repo, resolve via `CONTEXT-MAP.md`
+  to the context(s) the design touches and update that context's `CONTEXT.md`. Glossary
+  entries only, no implementation details, per the glossary format that travels with the
+  grill-with-docs skill. Do not adopt grill-with-docs' ADR-offering step.
+- When no `CONTEXT.md` exists but the design coins load-bearing domain terms, offer
+  once — at spec-write time, folded into the attention-routing message, never as its
+  own blocking question — to start a `CONTEXT.md` per grill-with-docs. The offer
+  lapses if not taken up and does not repeat.
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
@@ -130,12 +159,65 @@ After writing the spec document, look at it with fresh eyes:
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
-**User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+**Review-Depth Routing:**
+After the spec self-review, assess the written spec against these routing criteria:
 
-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+- multiple interacting components or subsystems;
+- new or materially changed public contracts (APIs, schemas, file formats, skill
+  or workflow contracts other agents rely on);
+- security- or auth-adjacent surface;
+- data migration or other hard-to-reverse operations;
+- novel domain concepts introduced by this design;
+- a genuinely balanced trade-off resolved by judgment during the brainstorm.
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+No criterion hit → announce `Review routing: lean (no criteria hit)` and continue
+to Attention Routing.
+
+Any criterion hit → announce `Review routing: deep (criteria: <names>)` and invoke
+the `ralf-review` skill **exactly once**: target = the spec file; review criteria =
+the design's stated goals plus its acceptance criteria (goals-only when the spec
+carries none); cycle cap = that skill's default. Fix what the findings allow
+inline, but the recorded verdict is final: inline fixes improve the artifact the
+user receives — they never upgrade the verdict, and ralf-review is never re-invoked
+to earn a better score. Attention Routing reads the recorded verdict (its Score
+only; the report's recommended-action field stays advisory).
+
+Where the harness cannot dispatch an independent reviewer (no subagent or
+agent-dispatch primitive), the deep route is unavailable: criteria-hit specs go
+straight to directed-attention review — the gate below fails closed.
+
+**Attention Routing:**
+Decide whether the user's review of the written spec is needed. The conversational
+design-approval gate above (the HARD-GATE enforcement point) is untouched — only
+this post-write review stop is waivable. Waive it only when ALL of:
+
+- **(a) Review outcome clean** — deep review was either not warranted (lean route)
+  or ended in a recorded `PASS`. Any other verdict parks for the user, with the
+  verdict and residual concerns attached.
+- **(b) No divergence** — nothing in the written spec goes beyond what the user
+  approved conversationally: no post-approval design changes, and no material
+  assumptions or trade-offs the user has not seen (however the project marks them).
+- **(c) Frontier-tier session** — the session model is frontier-tier: currently
+  Claude Opus or above (Opus 4.x, Fable/Mythos 5) or an equivalent top-tier foreign
+  model. Read the tier from the runtime's declared model identity (the harness
+  states the powering model in the session context); if no identity is declared,
+  this condition fails. This is a qualification check on whatever model the user
+  already chose — never an instruction to select or escalate to a premium model.
+
+When unsure about any condition, do not waive. Announce the decision both ways:
+
+- **Waived:** post a compact notice — a one-paragraph summary of what the spec
+  commits to, plus "if you look anywhere, look at <section>" pointing at the least
+  conventional decision — then proceed directly to the writing-plans transition.
+  No question, no pause.
+- **Not waived:** post a directed-attention request — 2–5 bullets, each naming a
+  specific section, why it may surprise the user or carry risk, and what judgment
+  is being asked of them. Never a bare "please review."
+
+User-directed revisions do not re-enter deep review: when the user requests changes
+at a directed-attention stop, revise and return to the same attention stop — the
+user is engaged, and approving their own requested changes is the review. The user
+can always direct another deep review explicitly.
 
 **Implementation:**
 
