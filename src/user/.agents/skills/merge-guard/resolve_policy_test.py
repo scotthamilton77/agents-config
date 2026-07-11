@@ -40,6 +40,7 @@ class TestDefaults(unittest.TestCase):
             "judge_effort": "high",
             "judge_timeout_seconds": 900,
             "judge_max_attempts": 2,
+            "approver": None,
         })
 
 
@@ -354,6 +355,81 @@ class TestLabelOverrides(unittest.TestCase):
                                     "--labels", "review-exit-copilot-only")
         self.assertEqual(code, 1)
         self.assertIn("human-approvals", err)
+
+
+class TestApproverConfig(unittest.TestCase):
+    RULE_BASED = (
+        '[merge-policy]\n'
+        'merge-authorization = "rule-based"\n'
+        'merge-rule = "bot-quiescence"\n'
+    )
+
+    def test_absent_block_resolves_to_null(self):
+        path = write_toml(self.RULE_BASED)
+        code, out, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 0, err)
+        self.assertIsNone(json.loads(out)["approver"])
+
+    def test_valid_block_resolves_with_default_key_path_env(self):
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = 123456\n')
+        code, out, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["approver"], {
+            "type": "github-app",
+            "app_id": 123456,
+            "key_path_env": "MERGE_GUARD_APPROVER_KEY_PATH",
+        })
+
+    def test_key_path_env_override(self):
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = 1\n'
+              'key-path-env = "MY_KEY"\n')
+        code, out, _ = run_resolver("--project-config", path)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["approver"]["key_path_env"], "MY_KEY")
+
+    def test_approver_is_orthogonal_to_authorization_mode(self):
+        # Valid under plain explicit mode too — approver is mechanism, not authorization.
+        path = write_toml(
+            '[merge-policy]\nmerge-authorization = "explicit"\n'
+            '[merge-policy.approver]\ntype = "github-app"\napp-id = 7\n')
+        code, out, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["approver"]["app_id"], 7)
+
+    def test_missing_app_id_is_policy_error(self):
+        path = write_toml(
+            self.RULE_BASED + '[merge-policy.approver]\ntype = "github-app"\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("app-id", err)
+
+    def test_unknown_type_is_policy_error(self):
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "oauth-app"\napp-id = 1\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("oauth-app", err)
+
+    def test_non_integer_app_id_is_policy_error(self):
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = "123"\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("app-id", err)
+
+    def test_unknown_key_is_policy_error(self):
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = 1\nkey-path = "/x"\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("key-path", err)
 
 
 if __name__ == "__main__":
