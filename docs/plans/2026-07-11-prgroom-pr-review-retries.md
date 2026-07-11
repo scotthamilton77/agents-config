@@ -1,4 +1,4 @@
-# prgroom: reframe the outer PR-review cap as a retry cap
+# prgroom: reframe the outer PR-review cap as a retry budget
 
 Bead: `agents-config-abn9.8.25`. Target state is pinned by the fca6.16 HLD
 artifacts (`docs/architecture/prgroom/data-view.md`, `state-machine.md`): the
