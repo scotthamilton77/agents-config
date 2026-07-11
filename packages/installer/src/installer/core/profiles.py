@@ -267,10 +267,11 @@ def _match_segments(pattern: list[str], key: list[str]) -> bool:
         if pi == len(pattern):
             result = ki == len(key)
         elif pattern[pi] == "**":
-            if pi + 1 == len(pattern):
-                result = True
-            else:
-                result = any(match(pi + 1, kj) for kj in range(ki, len(key) + 1))
+            # `**` matches zero segments (advance past it) OR one-or-more
+            # (consume one key segment, `**` stays active). Two O(1) probes per
+            # state — not an O(K) scan — so the memoized bound is a true
+            # O(len(pattern) * len(key)), matching the docstring.
+            result = match(pi + 1, ki) or (ki < len(key) and match(pi, ki + 1))
         elif ki == len(key) or (pattern[pi] != "*" and pattern[pi] != key[ki]):
             result = False
         else:
