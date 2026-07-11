@@ -50,8 +50,8 @@
 13. **Injectability:** `main()` accepts `argv`, `runner`, `out`, `err`, `sleep` (signature in
     Task 1). Outside-world dependencies always arrive as arguments — never module globals.
 14. **bd sample capture (goldens):** read-only `bd … --json` captures for parser fixtures run
-    from the MAIN repo root (`/Users/scott/src/projects/agents-config`), never from the
-    worktree (DB-in-main-tree rule), and only read verbs (`show`, `list`, `dep list`,
+    from the main repo checkout (outside any worktree), never from a worktree
+    (DB-in-main-tree rule), and only read verbs (`show`, `list`, `dep list`,
     `label list`). Mutating bd verbs are NEVER run against the real DB in this project.
 15. **Coverage floor 90 / branch=true** (sibling standard supersedes the global 80/70 default).
 
@@ -386,7 +386,7 @@ the root `Makefile`, or paths a task explicitly names.
   `tests/fakes.py`, `tests/fixtures/*.json`,
   `tests/unit/{test_bd_parse.py,test_lock_retry.py,test_drift_alarm.py}`
 
-- [x] Capture goldens from the MAIN repo root (read-only, decision 14):
+- [x] Capture goldens from the main repo checkout (read-only, decision 14):
   `bd show agents-config-wgclw.9 --json`, `bd show agents-config-wgclw.9.1 --json`,
   `bd list --status open --limit 5 --json`, `bd dep list agents-config-wgclw.9.1 --json`
   (try `--direction up` and `--direction down`), `bd label list agents-config-wgclw.9.1 --json`
