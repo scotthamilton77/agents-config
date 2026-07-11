@@ -234,22 +234,28 @@ def main(
     # isn't a registered subcommand, so a name reaching here is always in VERBS.
     handler = VERBS[args.verb]
 
-    # Constructed only now -- never for --protocol-version above -- so the
-    # handshake never touches the runner (spec §5).
-    backend = _build_backend(runner, sleep)
-
-    if missing_capability(args.verb, backend.capabilities):
-        return _finish_failure(
-            WorkError(
-                ErrorCode.UNSUPPORTED_CAPABILITY,
-                f"{args.verb}: not supported by this backend",
-            ),
-            out,
-            err,
-            args.format,
-        )
-
+    # Everything from here on -- backend construction, the capability gate,
+    # and the handler call -- runs inside one guarded region. An exception
+    # anywhere in this region must still yield exactly one envelope on
+    # stdout (spec §4's invariant holds even on internal bugs, §4's
+    # `E_INTERNAL` note) rather than escaping with a raw traceback and no
+    # envelope at all.
     try:
+        # Constructed only now -- never for --protocol-version above -- so the
+        # handshake never touches the runner (spec §5).
+        backend = _build_backend(runner, sleep)
+
+        if missing_capability(args.verb, backend.capabilities):
+            return _finish_failure(
+                WorkError(
+                    ErrorCode.UNSUPPORTED_CAPABILITY,
+                    f"{args.verb}: not supported by this backend",
+                ),
+                out,
+                err,
+                args.format,
+            )
+
         data = handler(backend, args)
     except WorkError as verb_error:
         return _finish_failure(verb_error, out, err, args.format)
