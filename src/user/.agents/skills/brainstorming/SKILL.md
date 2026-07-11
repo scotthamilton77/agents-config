@@ -37,7 +37,7 @@ You MUST create a task for each of these items and complete them in order:
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
 8. **Review-depth routing** — assess the spec against the routing criteria; announce lean or deep; deep runs `ralf-review` once and fixes findings (see below)
 9. **Attention routing** — decide whether the user's review is needed: waive with a notice, or direct their attention to specific sections (see below)
-10. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+10. **Transition to implementation** — invoke writing-plans skill to create implementation plan; this is the only post-brainstorm implementation handoff (`ralf-review`, invoked in step 8, does not recur here)
 
 ## Process Flow
 
