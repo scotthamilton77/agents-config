@@ -139,7 +139,7 @@ every discovery gets a manifest row with full triage.
 
 > 9. Discovered work recorded **and triaged** — issues found during work are
 > tracked, priority-rated with rationale, and anchored to the roadmap per the
-> discovered-work placement discipline.
+> discovered-work discipline.
 
 Concept reference, no file paths — survives DYNAMIC-INCLUDE flattening.
 

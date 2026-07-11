@@ -145,7 +145,7 @@ MANDATORY for non-trivial work:
 8. Automated review — automated reviewer feedback collected and triaged
 
 **Housekeeping:**
-9. Discovered work recorded and triaged — issues found during work are tracked, priority-rated with rationale, and anchored to the roadmap per the discovered-work placement discipline
+9. Discovered work recorded and triaged — issues found during work are tracked, priority-rated with rationale, and anchored to the roadmap per the discovered-work discipline
 10. Memory updated — non-obvious decisions, corrections, or context preserved
 
 Tool-specific extensions define which skills, agents, or commands implement each step.

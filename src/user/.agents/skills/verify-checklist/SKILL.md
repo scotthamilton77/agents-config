@@ -81,7 +81,7 @@ Collect before writing the report:
 - **Discovered work** — Every issue found during implementation: fixed in-session, deferred in-scope, or filed out-of-scope
 - **Triage audit** — For each item filed this session: anchor parent present? Priority rationale present? Provenance link present?
 
-If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work. If a filed item is unanchored or untriaged, **fix it now** per the project's discovered-work placement discipline — an unanchored item is an orphan; anchor it, rate it, and say why.
+If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work. If a filed item is unanchored or untriaged, **fix it now** per the project's discovered-work discipline — an unanchored item is an orphan; anchor it, rate it, and say why.
 
 ### 4. Produce the Report
 
