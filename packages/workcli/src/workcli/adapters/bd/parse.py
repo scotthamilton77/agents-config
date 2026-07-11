@@ -39,8 +39,7 @@ _REQUIRED_ITEM_KEYS = ("id", "title", "issue_type", "status", "priority")
 # (see BdBackend.batch_get's own missing-id reconciliation for that case).
 _NOT_FOUND_STDERR_MARKER = "no issue found matching"
 
-# Confirmed by reading bd's own Go source (Task 4 verified the checkout at
-# /Users/scott/src/oss/yegge/beads matches the installed binary):
+# Confirmed by reading bd's own Go source at the installed binary's commit:
 # internal/storage/issueops/dependencies.go emits "epics can only block
 # other epics, not tasks" / "tasks can only block other tasks, not epics"
 # for the cross-type wall, and "adding dependency would create a cycle" for
