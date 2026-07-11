@@ -137,7 +137,7 @@ every discovery gets a manifest row with full triage.
 ### 3.3 Shared checklist step 9 — `src/user/.agents/INSTRUCTIONS.md.template`
 
 > 9. Discovered work recorded **and triaged** — issues found during work are
-> tracked, severity-rated with rationale, and anchored to the roadmap per the
+> tracked, priority-rated with rationale, and anchored to the roadmap per the
 > discovered-work placement discipline.
 
 Concept reference, no file paths — survives DYNAMIC-INCLUDE flattening.

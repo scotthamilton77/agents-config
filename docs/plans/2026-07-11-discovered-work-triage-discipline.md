@@ -188,7 +188,7 @@ git commit -m "feat(skills): verify-checklist — discovered-work manifest + tri
 with:
 
 ```markdown
-9. Discovered work recorded and triaged — issues found during work are tracked, severity-rated with rationale, and anchored to the roadmap per the discovered-work placement discipline
+9. Discovered work recorded and triaged — issues found during work are tracked, priority-rated with rationale, and anchored to the roadmap per the discovered-work placement discipline
 ```
 
 - [ ] **Step 2: Verify**
