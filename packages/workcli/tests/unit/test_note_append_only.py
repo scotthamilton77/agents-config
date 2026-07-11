@@ -6,8 +6,7 @@ flag, in order; no verb path may ever reach bd's bare replace flag `--notes`.
 as a generic `E_USAGE` unknown-flag error) but the verb handler rejects it
 with the named `E_FIELD_CLOBBER_GUARD` code before any bd call (locked
 decision 6) -- notes only ever move through `work note`. The flag is also
-suppressed from `--help` output -- it's a hidden tripwire, not an advertised
-option.
+suppressed from `--help` (rationale at its `add_argument` site in `cli.py`).
 """
 
 from __future__ import annotations

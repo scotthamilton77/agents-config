@@ -47,8 +47,8 @@ def update(backend: Backend, args: Namespace) -> JsonValue:
     (lifecycle verbs own claiming/status). `--set-notes` is recognized by
     argparse only so it reaches this named clobber-guard rather than a
     generic `E_USAGE` (locked decision 6) — notes only ever move through
-    `work note`. It is also suppressed from `--help` output (`cli.py`):
-    a hidden tripwire, not an advertised option.
+    `work note`. (Suppressed from `--help`; rationale at its
+    `add_argument` site in `cli.py`.)
     """
     if args.set_notes is not None:
         raise WorkError(
