@@ -25,8 +25,8 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 Note: the brainstorming skill adopts this skill's glossary discipline inline
 (challenge terms, sharpen language, update `CONTEXT.md`) whenever a `CONTEXT.md`
-exists at brainstorm time. grill-with-docs remains the standalone deep session for
-stress-testing an existing plan.
+or `CONTEXT-MAP.md` exists at brainstorm time. grill-with-docs remains the
+standalone deep session for stress-testing an existing plan.
 
 ## Domain awareness
 
