@@ -54,6 +54,10 @@ select = [
 # what bd's shape violated (spec §4 "detail carries ... what failed") -- that
 # is the opposite of the generic "call a message-builder" TRY003 wants.
 "src/workcli/adapters/bd/parse.py" = ["TRY003"]
+# dep_mutate's impossible-op ValueError needs the actual `op!r` inline --
+# it's a contract-violation diagnostic (Finding 2), same specificity
+# rationale as parse.py's drift alarm above.
+"src/workcli/adapters/bd/backend.py" = ["TRY003"]
 
 [tool.ruff.format]
 docstring-code-format = true

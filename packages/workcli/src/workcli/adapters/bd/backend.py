@@ -36,7 +36,7 @@ from workcli.adapters.bd.parse import (
 )
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
-from workcli.backend import Capabilities
+from workcli.backend import Capabilities, DepOp
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
 
@@ -178,13 +178,20 @@ class BdBackend:
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
 
-    def dep_mutate(self, op: str, from_id: str, to_id: str, dep_type: str) -> None:
+    def dep_mutate(self, op: DepOp, from_id: str, to_id: str, dep_type: str) -> None:
         if op == "add":
             argv = ["dep", "add", from_id, to_id, "--type", dep_type]
-        else:
+        elif op == "remove":
             # bd's own `dep remove` takes no `--type` flag at all (see
             # `bd dep remove --help`).
             argv = ["dep", "remove", from_id, to_id]
+        else:
+            # A contract violation, not a bd-shape concern: an `op` outside
+            # {"add", "remove"} must fail loud here rather than silently
+            # falling through to the destructive `dep remove` branch
+            # (Finding 2). The cli's E_INTERNAL guard turns this into an
+            # envelope at the CLI boundary.
+            raise ValueError(f"impossible dep op: {op!r}")
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:

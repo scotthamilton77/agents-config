@@ -621,6 +621,20 @@ def test_dep_mutate_remove_sends_dep_remove_with_no_type_flag():
     assert runner.calls == [("dep", "remove", "x.1", "x.2")]
 
 
+def test_dep_mutate_rejects_an_invalid_op_and_records_no_bd_invocation():
+    # Finding 2: an `op` outside {"add", "remove"} must fail loud, never
+    # silently fall through to the destructive `dep remove` branch.
+    runner = ScriptedBdRunner(steps=[])
+    backend = BdBackend(runner)
+
+    try:
+        backend.dep_mutate("bogus", "x.1", "x.2", "blocks")  # type: ignore[arg-type]
+        raise AssertionError("expected ValueError")
+    except ValueError as error:
+        assert "bogus" in str(error)
+    assert runner.calls == []
+
+
 def test_dep_mutate_maps_a_cycle_stderr_to_dep_cycle():
     runner = ScriptedBdRunner(
         steps=[

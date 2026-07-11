@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
+
+DepOp = Literal["add", "remove"]
 
 
 @dataclass(frozen=True)
@@ -37,7 +39,7 @@ class Backend(Protocol):
     def query(self, filters: QueryFilters) -> list[Item]: ...  # pragma: no cover
     def ready(self, label: str | None) -> list[Item]: ...  # pragma: no cover
     def dep_mutate(
-        self, op: str, from_id: str, to_id: str, dep_type: str
+        self, op: DepOp, from_id: str, to_id: str, dep_type: str
     ) -> None: ...  # pragma: no cover
     def dep_list(self, item_id: str) -> DepListing: ...  # pragma: no cover
     def label_mutate(

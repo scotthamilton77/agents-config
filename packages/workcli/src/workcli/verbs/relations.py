@@ -64,7 +64,15 @@ def dep(backend: Backend, args: Namespace) -> JsonValue:
     dep_type = args.type if args.type is not None else _DEFAULT_DEP_TYPE
     if args.action == "add":
         _type_wall_check(backend, args.id, args.target, dep_type)
-    backend.dep_mutate(args.action, args.id, args.target, dep_type)
+        backend.dep_mutate("add", args.id, args.target, dep_type)
+    else:
+        # argparse's `choices=["add", "remove", "list"]` already restricts
+        # `args.action` to these three, and "list" returned above -- this
+        # branch is always "remove". Passing the "remove" string literal
+        # directly (not the untyped `args.action` Namespace field) is the
+        # explicit narrow to `Backend.dep_mutate`'s `DepOp` Literal (Finding
+        # 2), never a bare cast.
+        backend.dep_mutate("remove", args.id, args.target, dep_type)
     return None
 
 
