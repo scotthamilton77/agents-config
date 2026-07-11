@@ -20,7 +20,8 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
     """Pre-check the `blocks` type wall (spec item 4, decision 5).
 
     `blocks` requires both items epic, or both non-epic (a milestone counts
-    as non-epic). Two `Backend.get` reads pay for this certainty; a
+    as non-epic). One order-preserving `Backend.batch_get` read pays for
+    this certainty; a
     violation raises before `dep_mutate` (the mutating bd call) is ever
     invoked -- the fake's call log must show zero `dep`-mutation
     invocations in that case.
