@@ -30,6 +30,11 @@
       const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill } = ctx;
       const rerender = () => { el.innerHTML = ''; renderA(el, ctx); };
 
+      // Heat is fixed for the duration of one render pass — compute it once
+      // per file record so fill, label color, and the stats walk share it.
+      const heatByFile = new Map(DATA.files.map(f => [f, computeHeat(f)]));
+      const fileHeat = f => heatByFile.get(f);
+
       const width = el.clientWidth || 800;
       const height = el.clientHeight || 600;
 
@@ -57,7 +62,7 @@
           if (n.file) {
             stats.count++;
             if (n.file.changed) stats.changedCount++;
-            stats.worstHeat = Math.max(stats.worstHeat, computeHeat(n.file));
+            stats.worstHeat = Math.max(stats.worstHeat, fileHeat(n.file));
             stats.totalBytes += Math.max(n.file.bytes || 1, 1);
             return;
           }
@@ -252,7 +257,7 @@
       leafG.append('rect')
         .attr('width', d => Math.max(0, d.x1 - d.x0))
         .attr('height', d => Math.max(0, d.y1 - d.y0))
-        .attr('fill', d => heatColor(computeHeat(d.data.file)))
+        .attr('fill', d => heatColor(fileHeat(d.data.file)))
         .attr('opacity', d => (d.data.file.changed ? 1 : 0.85))
         .attr('stroke', d => (d.data.file.changed ? 'var(--pr-mark)' : 'var(--line)'))
         .attr('stroke-width', d => (d.data.file.changed ? 2 : 0.5))
@@ -266,7 +271,7 @@
       leafG.append('text')
         .attr('x', 3)
         .attr('y', 11)
-        .attr('fill', d => labelColor(heatColor(computeHeat(d.data.file))))
+        .attr('fill', d => labelColor(heatColor(fileHeat(d.data.file))))
         .attr('font-size', 9)
         .attr('pointer-events', 'none')
         .text(d => {

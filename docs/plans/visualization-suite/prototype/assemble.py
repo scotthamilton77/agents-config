@@ -4,7 +4,7 @@ import json
 import sys
 import os
 
-D = "/Users/scott/src/projects/agents-config/.superpowers/brainstorm/proto-v1"
+D = os.path.dirname(os.path.abspath(__file__))
 out_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(D, "assembled.html")
 
 html = open(os.path.join(D, "shell.html")).read()

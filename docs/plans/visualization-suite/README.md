@@ -33,13 +33,12 @@ here is the evidence trail behind it.
 ## Regenerating
 
 ```bash
-python3 prototype/gen_data.py          # writes data.json next to the sources' original home
+python3 prototype/gen_data.py          # writes data.json beside the scripts
 python3 prototype/assemble.py out.html # assembles whatever variant_*.js exist
 ```
 
-Note: the scripts carry absolute paths from their original scratch home
-(`.superpowers/brainstorm/proto-v1/`) — they are throwaway tooling, not a
-build system. Adjust the `D`/`ROOT` constants if regenerating from here.
+Note: paths are derived from the script location (repo root via
+`git rev-parse` for `gen_data.py`) — throwaway tooling, not a build system.
 
 ## Status
 

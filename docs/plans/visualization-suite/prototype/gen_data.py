@@ -12,8 +12,11 @@ from collections import defaultdict
 
 PR_URL = "https://github.com/scotthamilton77/agents-config/pull/238"
 
-ROOT = "/Users/scott/src/projects/agents-config"
-OUT = os.path.join(ROOT, ".superpowers/brainstorm/proto-v1/data.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = subprocess.run(
+    ["git", "rev-parse", "--show-toplevel"], cwd=HERE, capture_output=True, text=True
+).stdout.strip()
+OUT = os.path.join(HERE, "data.json")
 
 # ---- real file tree ----
 files_raw = subprocess.run(
