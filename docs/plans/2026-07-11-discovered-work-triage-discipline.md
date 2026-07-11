@@ -120,7 +120,7 @@ with:
 - **PRs** — Branch names, PR URLs/numbers, current status
 - **Remaining work** — Anything incomplete if this was a partial delivery, plus every in-scope discovery deferred to a tracked item (each is an escalation line here, not just a manifest row)
 - **Discovered work** — Every issue found during implementation: fixed in-session, deferred in-scope, or filed out-of-scope
-- **Triage audit** — For each item filed this session: anchor parent present? Severity rationale present? Provenance link present?
+- **Triage audit** — For each item filed this session: anchor parent present? Priority rationale present? Provenance link present?
 
 If discovered work is unrecorded, **record it now** in the project's tracking system (issues, backlog, memory entries — whatever the project uses). Unrecorded work is lost work. If a filed item is unanchored or untriaged, **fix it now** per the project's discovered-work placement discipline — an unanchored item is an orphan; anchor it, rate it, and say why.
 ```
@@ -141,8 +141,8 @@ with:
 | Item | Scope | Lands in | Bead/Issue | Priority — why |
 |------|-------|----------|------------|----------------|
 | [description] | in-scope | this PR | — | — |
-| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <severity rationale> |
-| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <severity rationale> |
+| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |
+| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <priority rationale> |
 ```
 
 "Lands in" must name an anchor: `this PR`, `parent epic (<id>)`, an
