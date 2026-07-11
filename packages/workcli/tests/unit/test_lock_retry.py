@@ -9,11 +9,13 @@ caller's own error-mapping table decides the specific code.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Sequence
 
 import pytest
 
+from tests.conftest import run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdResult
@@ -100,3 +102,54 @@ def test_timeout_expired_is_retried_like_lock_contention():
     assert result is ok
     assert sleep_calls == [0.5]
     assert len(runner.calls) == 2
+
+
+_ITEM_PAYLOAD = json.dumps(
+    [
+        {
+            "id": "x.1",
+            "title": "T",
+            "issue_type": "task",
+            "status": "open",
+            "priority": 2,
+        }
+    ]
+)
+
+
+def test_cli_show_retries_two_lock_contention_failures_then_succeeds():
+    # Item 7 proven at run_with_retry level above; this pins the same
+    # behavior end-to-end through `main()` and a real verb dispatch.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    ok = BdResult(returncode=0, stdout=_ITEM_PAYLOAD, stderr="")
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("show",), locked),
+            ScriptedStep(("show",), locked),
+            ScriptedStep(("show",), ok),
+        ]
+    )
+    sleep_calls, sleep = _recording_sleep()
+
+    exit_code, envelope, _ = run_cli_with_runner(["show", "x.1"], runner, sleep=sleep)
+
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    assert sleep_calls == [0.5, 1.0]
+    assert len(runner.calls) == 3
+
+
+def test_cli_show_exhausting_all_lock_retries_yields_lock_contention_envelope():
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = ScriptedBdRunner(steps=[ScriptedStep(("show",), locked) for _ in range(3)])
+    sleep_calls, sleep = _recording_sleep()
+
+    exit_code, envelope, _ = run_cli_with_runner(["show", "x.1"], runner, sleep=sleep)
+
+    assert exit_code == 1
+    assert envelope["ok"] is False
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.LOCK_CONTENTION)
+    assert sleep_calls == [0.5, 1.0]
+    assert len(runner.calls) == 3
