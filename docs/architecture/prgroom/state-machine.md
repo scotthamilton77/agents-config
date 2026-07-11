@@ -62,7 +62,7 @@ stateDiagram-v2
     awaiting_review --> merged : poll<br/>(PR closed via merge)
     awaiting_review --> quiesced : _wait quiescence trip (§4.2)<br/>(reviewers terminal — approved / declined /<br/>timed-out — no open items, CI ok,<br/>idle_threshold elapsed)
 
-    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no budget trip, pr_review_retries_used++)
+    fixes_pending --> awaiting_review : end-of-cycle priority 4<br/>(>=1 commit pushed this cycle,<br/>no budget trip,<br/>pr_review_retries_used++ if non-initial push)
     fixes_pending --> quiesced : end-of-cycle priority 5<br/>(zero commits pushed AND<br/>quiescence_predicate(state) == true)
     fixes_pending --> awaiting_review : end-of-cycle priority 6<br/>(zero commits pushed AND quiescence<br/>has not tripped — e.g. all items<br/>skipped / deferred — re-wait for<br/>reviewer activity)
     fixes_pending --> human_gated : verify step (§3.4)<br/>(fix_verify_retries exhausted,<br/>gate still red:<br/>LIFECYCLE_FIX_VERIFY_EXHAUSTED)<br/>+ EscalationSink emit<br/>+ human_review_label_added=true (§4.6)
