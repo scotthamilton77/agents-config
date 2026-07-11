@@ -17,7 +17,7 @@ from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEn
 from prgroom.agent.dispatcher import AllProvidersFailedError
 from prgroom.agent.fix import run_fix
 from prgroom.escalation import Severity
-from prgroom.prsession.enums import DispositionKind, ItemKind
+from prgroom.prsession.enums import DispositionKind, GateStrength, ItemKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import Disposition, Identity, ReviewItem
 
@@ -160,13 +160,49 @@ def test_clean_output_maps_dispositions_straight_through() -> None:
     assert c1.kind is DispositionKind.FIXED
     assert c1.commits == ["n1"]
     assert c1.rationale == "fixed it"
-    assert c1.gate == "full"
+    assert c1.gate is GateStrength.FULL
     assert c1.response_path == "/o/C_1.md"
     assert c1.decided_at == _NOW
     assert c1.decided_by == "prgroom"
     assert res.dispositions["C_2"].kind is DispositionKind.WONT_FIX
     assert res.escalations == []
     assert res.stashed is False
+
+
+def test_fixed_row_with_missing_gate_flips_to_failed_end_to_end() -> None:
+    # The §6.1 audit rule rides through run_fix: a FIXED row without a gate lands
+    # FAILED with the gate cause in the rationale, and the built disposition
+    # carries no gate (failed_disposition drops it).
+    req = _req("C_1")
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
+    )
+    git = _git(ancestors=["pre"], new=["n1"])
+    res = run_fix(req, FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    d = res.dispositions["C_1"]
+    assert d.kind is DispositionKind.FAILED
+    assert "recommended_gate" in d.rationale
+    assert d.gate is None
+
+
+def test_clean_non_fixed_row_with_garbage_gate_parses_to_none() -> None:
+    # _clean_disposition must stay total: a non-FIXED row (no gate audit) carrying
+    # a garbage recommended_gate builds a gate-less disposition instead of raising.
+    req = _req("C_1")
+    out = FixOutput(
+        items=[
+            FixItemResult(
+                gh_id="C_1",
+                disposition=DispositionKind.SKIPPED,
+                rationale="ack",
+                recommended_gate="banana",
+            )
+        ]
+    )
+    res = run_fix(req, FixDispatcherStub(out), _git(), now=_NOW, decided_by="prgroom")
+    d = res.dispositions["C_1"]
+    assert d.kind is DispositionKind.SKIPPED
+    assert d.gate is None
 
 
 # ───────────────────────── per-item audit failure ─────────────────────────
