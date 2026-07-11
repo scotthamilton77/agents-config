@@ -211,8 +211,9 @@ class Item:
 
 @dataclass(frozen=True)
 class DepListing:
-    up: list[DepEdge]
-    down: list[DepEdge]
+    # Named for the relationship, not bd's backward `--direction up|down`
+    depends_on: list[DepEdge]
+    dependents: list[DepEdge]
 
 
 @dataclass(frozen=True)
