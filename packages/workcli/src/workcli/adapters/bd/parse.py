@@ -91,6 +91,32 @@ def _dep_type(entry: dict[str, JsonValue]) -> str:
     return str(dep_type)
 
 
+def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
+    """Return `raw[key]` as a list, defaulting an absent key to `[]`.
+
+    An explicit JSON `null` is NOT the same as a missing key: bd emitting
+    `null` where the facade's model says the field is an array is itself
+    model drift (spec test-plan item 9) -- it must alarm loudly via
+    `WorkError(BACKEND_DRIFT)`, never silently coerce to `[]` and never
+    raise a raw `AssertionError`/`TypeError` from an unguarded downstream
+    `isinstance`/iteration.
+    """
+    if key not in raw:
+        return []
+    value = raw[key]
+    if value is None:
+        raise _drift(
+            f"bd item's {key} field is null, expected an array",
+            {"reason": "null_field", "field": key, "id": item_id},
+        )
+    if not isinstance(value, list):
+        raise _drift(
+            f"bd item's {key} field is not an array",
+            {"reason": "unexpected_field_type", "field": key, "id": item_id},
+        )
+    return value
+
+
 def parse_item(raw: dict[str, JsonValue]) -> Item:
     missing = [key for key in _REQUIRED_ITEM_KEYS if key not in raw]
     if missing:
@@ -111,10 +137,8 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
             {"reason": "unexpected_priority_type", "id": item_id, "priority": priority_raw},
         )
 
-    dependencies = raw.get("dependencies", [])
-    dependents = raw.get("dependents", [])
-    assert isinstance(dependencies, list)  # noqa: S101 -- narrows JsonValue for mypy
-    assert isinstance(dependents, list)  # noqa: S101
+    dependencies = _list_field(raw, "dependencies", item_id)
+    dependents = _list_field(raw, "dependents", item_id)
 
     deps = [
         _dep_edge_from_raw(entry, item_id)
@@ -133,7 +157,7 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
         type=str(raw["issue_type"]),
         status=str(raw["status"]),
         priority=f"P{priority_raw}",
-        labels=[str(label) for label in raw.get("labels", [])],  # type: ignore[union-attr]
+        labels=[str(label) for label in _list_field(raw, "labels", item_id)],
         parent=str(raw["parent"]) if raw.get("parent") is not None else None,
         deps=deps,
         children=children,

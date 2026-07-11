@@ -95,6 +95,88 @@ def test_array_element_that_is_not_an_object_raises_backend_drift():
     assert error.detail["reason"] == "element_not_an_object"
 
 
+def test_explicit_null_dependencies_field_raises_backend_drift_not_a_raw_type_error():
+    # bd emitting `"dependencies": null` where the facade's model says array
+    # is itself model drift -- must never surface as a raw AssertionError/
+    # TypeError from an unguarded `isinstance` check (Finding 2).
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": None,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "dependencies"
+
+
+def test_explicit_null_dependents_field_raises_backend_drift_not_a_raw_type_error():
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependents": None,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "dependents"
+
+
+def test_explicit_null_labels_field_raises_backend_drift_not_a_raw_type_error():
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "labels": None,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "labels"
+
+
+def test_non_list_dependencies_field_raises_backend_drift_naming_the_field():
+    # Neither absent (defaults to []) nor null (its own drift case above) --
+    # bd handing back some other non-array shape (e.g. a single object) for
+    # `dependencies` is the same alarm class.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": {"unexpected": "shape"},
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "unexpected_field_type"
+    assert error.detail["field"] == "dependencies"
+
+
 def test_label_list_element_that_is_not_a_string_raises_backend_drift():
     with pytest.raises(WorkError) as exc_info:
         parse_labels(json.dumps([1, 2]))

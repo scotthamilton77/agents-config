@@ -1,11 +1,12 @@
 """`dep add/remove/list` — type-wall pre-check, positional order, direction mapping.
 
 Spec test-plan item 4 + decision 5: a `blocks` dep between an epic and a
-non-epic is pre-checked via two `Backend.get` reads (never a bd `dep`
-mutation) and raises the named `E_TYPE_WALL` before bd is ever asked to add
-the edge. The wall only applies to `blocks`; any other dep type skips the
-pre-check entirely. `dep list` maps bd's own inverted direction naming
-(`down` = depends-on, `up` = dependents) into the ruling's renamed fields.
+non-epic is pre-checked via one `Backend.batch_get([from_id, to_id])` read
+(never a bd `dep` mutation) and raises the named `E_TYPE_WALL` before bd is
+ever asked to add the edge. The wall only applies to `blocks`; any other dep
+type skips the pre-check entirely. `dep list` maps bd's own inverted
+direction naming (`down` = depends-on, `up` = dependents) into the ruling's
+renamed fields.
 """
 
 from __future__ import annotations
@@ -23,15 +24,17 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 _OK = BdResult(returncode=0, stdout="", stderr="")
 
 
-def _show_result(item_id: str, issue_type: str) -> BdResult:
+def _combined_show_result(*entries: tuple[str, str]) -> BdResult:
+    """A `bd show a b --json` response covering the type-wall's combined read.
+
+    `entries` is `(id, issue_type)` pairs listed in whatever order the fake
+    should emit them -- deliberately independent of request order, since the
+    wall check's own contract (Finding 1) is that `Backend.batch_get`
+    reorders to match the request regardless of bd's own output order.
+    """
     payload = [
-        {
-            "id": item_id,
-            "title": "t",
-            "issue_type": issue_type,
-            "status": "open",
-            "priority": 2,
-        }
+        {"id": item_id, "title": "t", "issue_type": issue_type, "status": "open", "priority": 2}
+        for item_id, issue_type in entries
     ]
     return BdResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
@@ -39,8 +42,10 @@ def _show_result(item_id: str, issue_type: str) -> BdResult:
 def test_dep_add_blocks_between_epic_and_task_yields_type_wall_and_never_mutates():
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "epic.1", "--json"), _show_result("epic.1", "epic")),
-            ScriptedStep(("show", "task.1", "--json"), _show_result("task.1", "task")),
+            ScriptedStep(
+                ("show", "epic.1", "task.1", "--json"),
+                _combined_show_result(("epic.1", "epic"), ("task.1", "task")),
+            ),
         ]
     )
 
@@ -52,18 +57,17 @@ def test_dep_add_blocks_between_epic_and_task_yields_type_wall_and_never_mutates
     error = envelope["error"]
     assert error["code"] == str(ErrorCode.TYPE_WALL)
     assert error["detail"] == {"from": "epic.1", "to": "task.1", "dep_type": "blocks"}
-    assert runner.calls == [
-        ("show", "epic.1", "--json"),
-        ("show", "task.1", "--json"),
-    ]
+    assert runner.calls == [("show", "epic.1", "task.1", "--json")]
     assert not any(call[:2] == ("dep", "add") for call in runner.calls)
 
 
 def test_dep_add_blocks_between_task_and_epic_yields_type_wall_the_other_direction():
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "task.1", "--json"), _show_result("task.1", "task")),
-            ScriptedStep(("show", "epic.1", "--json"), _show_result("epic.1", "epic")),
+            ScriptedStep(
+                ("show", "task.1", "epic.1", "--json"),
+                _combined_show_result(("task.1", "task"), ("epic.1", "epic")),
+            ),
         ]
     )
 
@@ -81,8 +85,10 @@ def test_dep_add_blocks_between_task_and_epic_yields_type_wall_the_other_directi
 def test_dep_add_blocks_between_two_epics_passes_through_to_one_dep_add_call():
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "epic.1", "--json"), _show_result("epic.1", "epic")),
-            ScriptedStep(("show", "epic.2", "--json"), _show_result("epic.2", "epic")),
+            ScriptedStep(
+                ("show", "epic.1", "epic.2", "--json"),
+                _combined_show_result(("epic.1", "epic"), ("epic.2", "epic")),
+            ),
             ScriptedStep(("dep", "add"), _OK),
         ]
     )
@@ -93,8 +99,7 @@ def test_dep_add_blocks_between_two_epics_passes_through_to_one_dep_add_call():
 
     assert exit_code == 0
     assert runner.calls == [
-        ("show", "epic.1", "--json"),
-        ("show", "epic.2", "--json"),
+        ("show", "epic.1", "epic.2", "--json"),
         ("dep", "add", "epic.1", "epic.2", "--type", "blocks"),
     ]
 
@@ -102,8 +107,10 @@ def test_dep_add_blocks_between_two_epics_passes_through_to_one_dep_add_call():
 def test_dep_add_blocks_between_two_tasks_passes_through_with_correct_positional_order():
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "task.1", "--json"), _show_result("task.1", "task")),
-            ScriptedStep(("show", "task.2", "--json"), _show_result("task.2", "task")),
+            ScriptedStep(
+                ("show", "task.1", "task.2", "--json"),
+                _combined_show_result(("task.1", "task"), ("task.2", "task")),
+            ),
             ScriptedStep(("dep", "add"), _OK),
         ]
     )
@@ -118,9 +125,9 @@ def test_dep_add_blocks_between_two_tasks_passes_through_with_correct_positional
 def test_dep_add_with_a_milestone_and_a_task_yields_type_wall_milestone_counts_as_non_epic():
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "epic.1", "--json"), _show_result("epic.1", "epic")),
             ScriptedStep(
-                ("show", "milestone.1", "--json"), _show_result("milestone.1", "milestone")
+                ("show", "epic.1", "milestone.1", "--json"),
+                _combined_show_result(("epic.1", "epic"), ("milestone.1", "milestone")),
             ),
         ]
     )
@@ -131,6 +138,32 @@ def test_dep_add_with_a_milestone_and_a_task_yields_type_wall_milestone_counts_a
 
     assert exit_code == 1
     assert envelope["error"]["code"] == str(ErrorCode.TYPE_WALL)
+
+
+def test_dep_add_epic_task_still_detects_the_wall_when_the_combined_show_returns_reversed_order():
+    # Regression test for the Finding-1 bug: `_type_wall_check` positionally
+    # unpacks `from_item, to_item = backend.batch_get([from_id, to_id])`. If
+    # `batch_get` ever handed back bd's raw output order instead of request
+    # order, a reversed response here would silently validate the wrong item
+    # against each role and miss the violation entirely.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show", "epic.1", "task.1", "--json"),
+                # bd's own response order reversed vs the request.
+                _combined_show_result(("task.1", "task"), ("epic.1", "epic")),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["dep", "add", "epic.1", "task.1", "--type", "blocks"], runner
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert error["code"] == str(ErrorCode.TYPE_WALL)
+    assert error["detail"] == {"from": "epic.1", "to": "task.1", "dep_type": "blocks"}
 
 
 def test_dep_add_with_related_to_type_skips_the_wall_check_entirely():
@@ -204,8 +237,10 @@ def test_dep_add_backend_fallback_maps_a_cycle_stderr_to_dep_cycle():
     # reaches bd -- which is the only layer that can see a real cycle.
     runner = ScriptedBdRunner(
         steps=[
-            ScriptedStep(("show", "task.1", "--json"), _show_result("task.1", "task")),
-            ScriptedStep(("show", "task.2", "--json"), _show_result("task.2", "task")),
+            ScriptedStep(
+                ("show", "task.1", "task.2", "--json"),
+                _combined_show_result(("task.1", "task"), ("task.2", "task")),
+            ),
             ScriptedStep(
                 ("dep", "add"),
                 BdResult(

@@ -27,8 +27,7 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
     """
     if dep_type != _DEFAULT_DEP_TYPE:
         return
-    from_item = backend.get(from_id)
-    to_item = backend.get(to_id)
+    from_item, to_item = backend.batch_get([from_id, to_id])
     from_is_epic = from_item.type == "epic"
     to_is_epic = to_item.type == "epic"
     if from_is_epic == to_is_epic:

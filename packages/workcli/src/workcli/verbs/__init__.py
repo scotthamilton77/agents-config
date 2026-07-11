@@ -1,8 +1,9 @@
 """VERBS registry and the capability gate (decision 11).
 
 `VERBS` maps a verb name to its handler: `(Backend, Namespace) -> JsonValue`.
-`REQUIRED_CAPABILITY` maps a verb name to the `Capabilities` attribute it
-needs; a verb absent from this map has no gate (every v1 backend must
+`REQUIRED_CAPABILITY` maps a verb name to a predicate function over
+`Capabilities` that must return true for the verb to run; a verb absent
+from this map has no gate (every v1 backend must
 support it unconditionally). `cli.py`'s dispatch loop checks the gate before
 ever calling the handler, so an unsupported capability never reaches verb
 code at all.
@@ -35,16 +36,16 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "sync": sync,
 }
 
-REQUIRED_CAPABILITY: dict[str, str] = {
-    "ready": "supports_ready",
-    "sync": "supports_sync",
-    "dep": "supports_dep_types",
+REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities], bool]] = {
+    "ready": lambda c: c.supports_ready,
+    "sync": lambda c: c.supports_sync,
+    "dep": lambda c: c.supports_dep_types,
 }
 
 
 def missing_capability(verb: str, capabilities: Capabilities) -> bool:
     """True when `verb` declares a required capability `capabilities` lacks."""
-    attr = REQUIRED_CAPABILITY.get(verb)
-    if attr is None:
+    check = REQUIRED_CAPABILITY.get(verb)
+    if check is None:
         return False
-    return not getattr(capabilities, attr)
+    return not check(capabilities)

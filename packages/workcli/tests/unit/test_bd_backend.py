@@ -109,6 +109,50 @@ def test_batch_get_raises_not_found_when_bd_silently_omits_a_requested_id():
         assert error.detail["missing"] == ["bogus-id"]
 
 
+def test_batch_get_returns_items_in_the_requested_id_order_even_when_bd_does_not():
+    # bd's own `bd show a b --json` output order is not asserted anywhere to
+    # match argv order -- batch_get's contract promises request order
+    # regardless (Finding 1 remediation), since callers positionally unpack
+    # the result (e.g. verbs/relations.py's type-wall pre-check).
+    payload = [
+        {"id": "b.2", "title": "t2", "issue_type": "task", "status": "open", "priority": 2},
+        {"id": "a.1", "title": "t1", "issue_type": "task", "status": "open", "priority": 1},
+    ]
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show", "a.1", "b.2", "--json"),
+                BdResult(returncode=0, stdout=json.dumps(payload), stderr=""),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    items = backend.batch_get(["a.1", "b.2"])
+
+    assert [item.id for item in items] == ["a.1", "b.2"]
+
+
+def test_batch_get_maps_a_duplicated_requested_id_to_the_same_item_twice():
+    payload = [
+        {"id": "a.1", "title": "t1", "issue_type": "task", "status": "open", "priority": 1},
+    ]
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show", "a.1", "a.1", "--json"),
+                BdResult(returncode=0, stdout=json.dumps(payload), stderr=""),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    items = backend.batch_get(["a.1", "a.1"])
+
+    assert [item.id for item in items] == ["a.1", "a.1"]
+    assert items[0] is items[1]
+
+
 def test_query_defaults_to_limit_zero_meaning_unbounded():
     runner = ScriptedBdRunner(
         steps=[

@@ -25,7 +25,10 @@ class Backend(Protocol):
     @property
     def capabilities(self) -> Capabilities: ...  # pragma: no cover
     def get(self, item_id: str) -> Item: ...  # pragma: no cover
-    def batch_get(self, ids: Sequence[str]) -> list[Item]: ...  # pragma: no cover
+    def batch_get(self, ids: Sequence[str]) -> list[Item]:
+        """Return items in the same order as `ids` (a duplicated id maps to the same item)."""
+        ...  # pragma: no cover
+
     def create(self, fields: CreateFields) -> str: ...  # returns new item id  # pragma: no cover
     def set_fields(self, item_id: str, fields: UpdateFields) -> None: ...  # pragma: no cover
     def append_note(self, item_id: str, text: str) -> None: ...  # pragma: no cover

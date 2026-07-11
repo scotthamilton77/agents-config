@@ -1,13 +1,9 @@
 """BdBackend: the `Backend` protocol's bd implementation, over a `BdRunner`.
 
-Read and write primitives are wired (`capabilities`, `get`, `batch_get`,
-`query`, `ready`, `search`, `create`, `set_fields`, `append_note`, `close`,
-`reopen`); relation/sync primitives (`dep_mutate`, `dep_list`,
-`label_mutate`, `labels`, `sync`) still raise `NotImplementedError` below as
-placeholders, so this concrete class satisfies the `Backend` Protocol
-structurally (required for `cli.py`'s `handler(backend, args)` dispatch to
-type-check under `mypy --strict`) ahead of Task 5, which gives each one a
-real body.
+All `Backend` protocol primitives are wired here: `capabilities`, `get`,
+`batch_get`, `query`, `ready`, `search`, `create`, `set_fields`,
+`append_note`, `close`, `reopen`, `dep_mutate`, `dep_list`, `label_mutate`,
+`labels`, and `sync`.
 
 `ready`/`search` parse through the same `parse_items` the `list`/`show`
 adapters use, on the assumption bd emits the same per-item shape for all four
@@ -74,8 +70,8 @@ class BdBackend:
 
         items = parse_items(result.stdout, command="show")
 
-        returned_ids = {item.id for item in items}
-        missing = [item_id for item_id in ids if item_id not in returned_ids]
+        by_id = {item.id: item for item in items}
+        missing = [item_id for item_id in ids if item_id not in by_id]
         if missing:
             # bd's own quirk (decision 14 golden capture): `bd show a b --json`
             # exits 0 and silently omits any id it couldn't find, logging the
@@ -87,7 +83,12 @@ class BdBackend:
                 f"bd show: no such item(s): {', '.join(missing)}",
                 detail={"missing": cast("list[JsonValue]", missing)},
             )
-        return items
+        # bd's own output order for `show a b --json` is never asserted to
+        # match argv order -- the `Backend` protocol's contract promises
+        # request order regardless (a duplicated requested id maps to the
+        # same item at each position), so callers may positionally unpack a
+        # `batch_get` result rather than re-searching it by id.
+        return [by_id[item_id] for item_id in ids]
 
     def query(self, filters: QueryFilters) -> list[Item]:
         argv = ["list", "--json"]
@@ -176,8 +177,6 @@ class BdBackend:
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
-
-    # -- Not yet wired: sync (Task 5) --
 
     def dep_mutate(self, op: str, from_id: str, to_id: str, dep_type: str) -> None:
         if op == "add":
