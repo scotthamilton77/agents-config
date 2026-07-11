@@ -62,8 +62,18 @@ class GateStrength(StrEnum):
     LITE = "lite"
 
     @classmethod
-    def parse(cls, raw: str) -> GateStrength | None:
-        """None for anything that is not a canonical gate value (lenient boundary parse)."""
+    def parse(cls, raw: object) -> GateStrength | None:
+        """None for anything that is not a canonical gate value (lenient boundary parse).
+
+        ``raw`` is typed ``object`` because the value flows from a contract
+        boundary (``FixItemResult.recommended_gate``) that may carry whatever a
+        provider emitted for that JSON field — a canonical string, but also
+        ``null`` (Python ``None``), a number, a bool, a list, or a dict. The
+        non-str guard makes that leniency explicit: any non-str value returns
+        ``None`` rather than raising.
+        """
+        if not isinstance(raw, str):
+            return None
         try:
             return cls(raw)
         except ValueError:
@@ -148,10 +158,15 @@ Import: add `GateStrength` to the `prgroom.prsession.enums` import block. Field 
             d["gate"] = self.gate.value
 ```
 
-`from_dict` (line 117) — falsy-raw guard keeps legacy `""` loading as None while an unknown non-empty value raises like `kind` does:
+`from_dict` (line 117) — absent-form guard keeps legacy `""` loading as None while any other value (including falsy `0`/`False`) parses or raises like `kind` does:
 
 ```python
-            gate=GateStrength(raw_gate) if (raw_gate := d.get("gate")) else None,
+            # Absent-form guard: missing/legacy "" load as None; anything else must
+            # parse or raise like `kind` does (corrupt state file, not silent data
+            # loss). Only None and "" are absent — falsy 0/False still parse-or-raise.
+            gate=GateStrength(raw_gate)
+            if (raw_gate := d.get("gate")) is not None and raw_gate != ""
+            else None,
 ```
 
 - [ ] **Step 4: Run to verify all serde tests pass**
