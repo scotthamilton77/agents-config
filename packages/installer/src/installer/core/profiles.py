@@ -160,14 +160,27 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
     collision (no silent shadowing) — compose or rename instead. The merged
     `Manifest.scopes` comes only from the shipped file.
 
-    A `user` path that is not provided or genuinely absent is ignored. One
-    that exists but is not a regular file (a directory or broken symlink), or
-    a regular file that cannot be read, fails loud with a `ProfilesError`
-    naming the path — the same fail-loud posture the rest of this module holds.
+    A `user` path that is not provided or genuinely absent (nothing at the
+    path) is ignored. Anything else fails loud with a `ProfilesError` naming
+    the path: a path that cannot be accessed (e.g. a non-searchable parent
+    directory), one that exists but is not a regular file (a directory or
+    broken symlink), or a regular file that cannot be read — the same
+    fail-loud posture the rest of this module holds.
     """
     manifest = _parse_manifest_file(shipped, allow_scopes=True)
-    if user is None or not (user.exists() or user.is_symlink()):
-        return manifest  # not provided, or genuinely absent — ignore
+    if user is None:
+        return manifest
+    try:
+        # `lstat` (not `exists()`/`is_symlink()`, which swallow every OSError
+        # and return False): only a genuinely-missing path (FileNotFoundError)
+        # is ignored; an inaccessible one (e.g. a non-searchable parent) fails
+        # loud instead of being silently treated as absent.
+        user.lstat()
+    except FileNotFoundError:
+        return manifest  # genuinely absent — ignore
+    except OSError as exc:
+        msg = f"user manifest {user} could not be accessed: {exc}"
+        raise ProfilesError(msg) from exc
     if not user.is_file():
         # `is_file()` is True for an unreadable regular file (it stats the type,
         # not the content), so this branch is only non-regular-file objects; an

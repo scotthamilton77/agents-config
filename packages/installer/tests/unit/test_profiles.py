@@ -381,6 +381,29 @@ def test_load_manifest_unreadable_user_file_errors(tmp_path: Path) -> None:
         user.chmod(0o644)  # restore so tmp_path teardown can remove it
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root traverses non-searchable directories, so the path stays accessible",
+)
+def test_load_manifest_inaccessible_user_path_errors(tmp_path: Path) -> None:
+    """A `user` path that exists but cannot be stat'd (a non-searchable parent
+    directory) must fail loud, not be swallowed as 'absent'. `Path.exists()`
+    returns False on that OSError, so a naive presence pre-check would silently
+    ignore a real-but-inaccessible user manifest."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(_SHIPPED_TOML)
+    restricted = tmp_path / "restricted"
+    restricted.mkdir()
+    user = restricted / "user-profiles.toml"
+    user.write_text('schema = 1\n[profiles.my-lean]\ninclude = ["instructions"]\n')
+    restricted.chmod(0o000)
+    try:
+        with pytest.raises(ProfilesError, match=r"could not be accessed"):
+            load_manifest(shipped, user)
+    finally:
+        restricted.chmod(0o755)  # restore so tmp_path teardown can remove it
+
+
 def test_load_manifest_scalar_scopes_table_errors(tmp_path: Path) -> None:
     """A `scopes` value that is a scalar (`scopes = 1`) must fail loud with a
     ProfilesError, not an AttributeError from calling `.items()` on an int."""
