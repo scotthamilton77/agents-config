@@ -24,9 +24,9 @@ def run_cli(
     invariant implicitly: any extra output on stdout fails the `json.loads`
     call with a clear error instead of silently reading the first line.
 
-    No verb is wired to a `Backend` yet (Task 2) -- `steps` is accepted now
-    so Tasks 3-5 write pure behavioral tests (verb in, envelope + call log
-    out) without touching this helper again.
+    `steps` scripts the `ScriptedBdRunner`'s bd responses so each behavioral
+    test stays pure (verb in, envelope + call log out) without touching this
+    helper.
     """
     out = StringIO()
     err = StringIO()
