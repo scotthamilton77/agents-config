@@ -19,8 +19,7 @@ scope. Deferring in-scope work is permitted ONLY via three escape hatches:
 
 Every deferral requires ALL of:
 
-1. File as a **sibling** of the in-flight bead: `bd create --parent
-   <parent-of-in-flight-bead>` — keeps the in-flight bead closeable while the
+1. File as a **sibling** of the in-flight bead: `bd create --parent <parent-of-in-flight-bead>` — keeps the in-flight bead closeable while the
    family holds the deferred work. (No in-flight bead, or it has no parent →
    anchor per the out-of-scope procedure below, recording session/PR provenance
    in the triage block.)
@@ -34,8 +33,7 @@ Every deferral requires ALL of:
 - **Parent = best-fit epic under the milestone the work maps to**; no fitting
   epic → the milestone itself: `bd create --parent <anchor-id>`. Apply the
   project's label conventions.
-- **Provenance edge too**: `bd dep add <new-id> <current-work-id> --type
-  discovered-from`. Provenance is not placement — both edges, always.
+- **Provenance edge too**: `bd dep add <new-id> <current-work-id> --type discovered-from`. Provenance is not placement — both edges, always.
 - **Orphan is a loud exception**: permitted only when genuinely no milestone
   fits, and the completion report must escalate it ("fits no milestone — may be
   out of project scope, needs a human call").

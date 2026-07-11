@@ -785,8 +785,7 @@ Apply the discovered-work rule (sibling test → anchored filing):
   sibling: `bd create --parent <parent-of-current-bead>`, plus the rule's
   triage block and a Remaining-Work escalation in the completion report.
 - **Out of scope** → anchor under the best-fit epic/milestone
-  (`bd create --parent <anchor-id>`), plus `bd dep add <new-id> <bead-id>
-  --type discovered-from` and the triage block. Orphan only when no
+  (`bd create --parent <anchor-id>`), plus `bd dep add <new-id> <bead-id> --type discovered-from` and the triage block. Orphan only when no
   milestone fits — escalate that in the report.
 
 ### Hook is interactive-default
