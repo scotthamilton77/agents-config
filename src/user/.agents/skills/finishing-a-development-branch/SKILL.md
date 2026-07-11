@@ -8,7 +8,7 @@ Source: oss-snapshots/superpowers/finishing-a-development-branch/
 Upstream: https://github.com/obra/superpowers @ f2cbfbefebbfef77321e4c9abc9e949826bea9d7 (v5.1.0)
 Last sync: 2026-05-23
 Drift policy: accept-periodic-resync. Byte-identical copy of upstream at initial import; the in-tree copy is now authoritative and may diverge. To inspect drift, diff against oss-snapshots/superpowers/finishing-a-development-branch/.
-Local divergence (preserve on resync): Option 2 (Create PR) ends with a handoff to PR-review monitoring (monitor-pr / wait-for-pr-comments) that upstream lacks — it is load-bearing for this repo's delivery chain; do not drop it on resync.
+Local divergence (preserve on resync): Option 2 (Create PR) ends with a handoff to PR-review monitoring (`wait-for-pr-comments`) that upstream lacks — it is load-bearing for this repo's delivery chain; do not drop it on resync.
 -->
 
 # Finishing a Development Branch
@@ -165,7 +165,7 @@ This step is best-effort and out of band — its absence at judge time simply fo
 
 **Do NOT clean up worktree** — user needs it alive to iterate on PR feedback.
 
-**Next — creating the PR is NOT the end of delivery.** Hand off to PR-review monitoring: run `monitor-pr` where the prgroom CLI is deployed, otherwise `wait-for-pr-comments`. Poll the review feedback, address it, push fixes, and resolve threads until the PR is quiescent; pause only at the merge step, per the repo's merge-authorization policy. Stopping here at "PR created" is a regression, not a completion.
+**Next — creating the PR is NOT the end of delivery.** Hand off to PR-review monitoring: run `wait-for-pr-comments`. Poll the review feedback, address it, push fixes, and resolve threads until the PR is quiescent; pause only at the merge step, per the repo's merge-authorization policy. Stopping here at "PR created" is a regression, not a completion. (Do not use the `monitor-pr` skill yet: it drives the not-yet-deployed prgroom CLI — `wait-for-pr-comments` is the active path until a future change switches it on.)
 
 #### Option 3: Keep As-Is
 
