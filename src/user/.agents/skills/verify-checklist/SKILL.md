@@ -108,7 +108,7 @@ If discovered work is unrecorded, **record it now** in the project's tracking sy
 [What's still to do, or "None — all work complete"]
 
 ### Discovered Work
-| Item | Scope | Lands in | Bead/Issue | Priority — why |
+| Item | Scope | Lands in | Tracked item | Priority — why |
 |------|-------|----------|------------|----------------|
 | [description] | in-scope | this PR | — | — |
 | [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |

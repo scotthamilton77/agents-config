@@ -109,7 +109,7 @@ those fixed in-session, so the adjudication is visible, not just the leftovers:
 
 ```markdown
 ### Discovered Work
-| Item | Scope | Lands in | Bead | Priority — why |
+| Item | Scope | Lands in | Tracked item | Priority — why |
 |------|-------|----------|------|----------------|
 | null-check in poller | in-scope | this PR | — | — |
 | retry config drift | in-scope | parent epic (<id>) | <id> | P1 — deferred: blast radius; breaks overnight runs |

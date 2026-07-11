@@ -138,7 +138,7 @@ with:
 
 ```markdown
 ### Discovered Work
-| Item | Scope | Lands in | Bead/Issue | Priority — why |
+| Item | Scope | Lands in | Tracked item | Priority — why |
 |------|-------|----------|------------|----------------|
 | [description] | in-scope | this PR | — | — |
 | [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |
@@ -164,7 +164,7 @@ Expected: no output, exit 1 (old two-column manifest retired)
 Run: `grep -c "Lands in\|Triage audit\|casually at the end" src/user/.agents/skills/verify-checklist/SKILL.md`
 Expected: `4` or more (new manifest header + vocabulary paragraph + audit bullet + red-flag row present)
 
-Check wording stays tracker-neutral: `grep -n "bd \|bd create\|beads" src/user/.agents/skills/verify-checklist/SKILL.md`
+Check wording stays tracker-neutral: `grep -n "bd \|bd create\|beads\|Bead" src/user/.agents/skills/verify-checklist/SKILL.md`
 Expected: no output, exit 1 (skill ships to all four tools; bd mechanics live only in the beads-plugin rule)
 
 - [ ] **Step 5: Commit**
