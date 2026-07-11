@@ -138,23 +138,57 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
+## Plan Review Gate
+
+After the plan self-review, run the same two-step gate the brainstorming skill
+defines for specs, flavored for plans.
+
+**Routing criteria:** the plan deviates from the spec; scope was discovered during
+planning that the spec does not cover; the plan contains irreversible or migration
+steps; the task graph is large or has subtle ordering constraints. No criterion
+hit → announce `Review routing: lean (no criteria hit)`. Any hit → announce
+`Review routing: deep (criteria: <names>)` and invoke the `ralf-review` skill
+**exactly once** — target = the plan file; review criteria = coverage of the spec
+plus this skill's quality bar (no placeholders, type consistency, exact paths);
+cycle cap = that skill's default. Fix findings inline; the recorded verdict is
+final and is never re-earned by re-invocation. Where the harness cannot dispatch
+an independent reviewer, the deep route is unavailable and the gate fails closed.
+
+**Attention routing:** apply the brainstorming skill's Attention Routing verbatim
+to the plan — waiver conditions (a) recorded outcome clean, (b) no divergence from
+the spec and the approved design, (c) frontier-tier session per the declaration in
+the brainstorming skill's Attention Routing section (a deliberate cross-skill
+read; both skills deploy together). A plan that silently absorbed a surprising
+change never auto-proceeds. Waived or approved → Execution Handoff. Changes
+requested → revise the plan and return to the attention stop, never back through
+routing.
+
 ## Execution Handoff
 
-After saving the plan, offer execution choice:
+Do not ask which execution approach to use. State a recommendation with one line
+of reasoning:
 
-**"Plan complete and saved to `docs/plans/<filename>.md`. Two execution options:**
+- **Subagent-driven per-task dispatch** — the default where the harness supports
+  independent dispatch: one fresh subagent per task, each receiving the task,
+  required context, and instructions to use the `test-driven-development` skill;
+  review output between tasks.
+- **Workflow-orchestrated execution** — where the harness additionally supports
+  workflow orchestration and the task graph is large or parallelizable.
+- **Inline execution** — sequential in-session with per-task checkpoints
+  (`test-driven-development` red → green → refactor → commit per task); for
+  trivially small plans, and the degraded default on runtimes without independent
+  dispatch.
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+Then recommend a clean-context start — compact the session or begin a fresh one,
+so execution starts free of planning residue — and emit a copyable kickoff prompt
+filled with the session's actual artifact locations (project conventions override
+shipped defaults), varying the body with the recommended mode. Subagent-mode
+template:
 
-**2. Inline Execution** - Execute tasks in this session following the `test-driven-development` red-green-refactor cycle, with checkpoints for review
+> Execute the implementation plan at `<plan-file path>` (spec: `<spec-file path>`).
+> Work on a feature branch in an isolated worktree. Dispatch one fresh subagent
+> per task; each task follows the test-driven-development skill. Start at Task 1.
 
-**Which approach?"**
-
-**If Subagent-Driven chosen:**
-- Dispatch one fresh subagent per task
-- Each subagent receives: task spec, required context, and instructions to use `test-driven-development` skill
-- Review subagent output before dispatching the next task
-
-**If Inline Execution chosen:**
-- Execute tasks sequentially using `test-driven-development` (red → green → refactor → commit per task)
-- Checkpoint after each task: verify tests pass, commit, update plan checkboxes
+This is the pipeline's single terminal pause: everything is pre-decided, and the
+prompt exists to be handed to the user, who chooses when and where to clear
+context and start execution.
