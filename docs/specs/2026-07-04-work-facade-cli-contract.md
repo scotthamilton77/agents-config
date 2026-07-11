@@ -109,6 +109,9 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   (an unexpected facade fault — the envelope invariant holds even on internal bugs).
 - Lock-contention retry: bounded backoff inside the facade; only after
   exhaustion does `E_LOCK_CONTENTION` surface (quirk-shim inventory, last rows).
+- Exception: `--help`/`-h` (root and per-verb) is a human affordance — it prints
+  argparse usage text to stdout and exits 0, and is exempt from the envelope
+  invariant; machine consumers use `--protocol-version` and verb invocations only.
 
 ## 5. Protocol versioning (bead open-Q3)
 
