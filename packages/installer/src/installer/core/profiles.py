@@ -14,6 +14,7 @@ design contract this module implements.
 
 from __future__ import annotations
 
+import stat
 import tomllib
 from dataclasses import dataclass
 from enum import StrEnum
@@ -181,12 +182,24 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
     except OSError as exc:
         msg = f"user manifest {user} could not be accessed: {exc}"
         raise ProfilesError(msg) from exc
-    if not user.is_file():
-        # `is_file()` is True for an unreadable regular file (it stats the type,
-        # not the content), so this branch is only non-regular-file objects; an
-        # unreadable regular file is caught by the read below.
-        msg = f"user manifest {user} is not a regular file (e.g. a directory or broken symlink)"
-        raise ProfilesError(msg)
+    not_regular_msg = (
+        f"user manifest {user} is not a regular file (e.g. a directory or broken symlink)"
+    )
+    try:
+        # An explicit resolving stat (not `is_file()`, which swallows every
+        # OSError into False): a target under a non-searchable directory must
+        # surface as an access error, not be misreported as "not a regular
+        # file". Reading the content (below) is what catches an unreadable
+        # *regular* file — stat only inspects metadata, so it succeeds there.
+        stat_result = user.stat()
+    except FileNotFoundError:
+        raise ProfilesError(not_regular_msg) from None  # broken symlink — target is gone
+    except OSError as exc:
+        msg = f"user manifest {user} could not be accessed: {exc}"
+        raise ProfilesError(msg) from exc
+    if not stat.S_ISREG(stat_result.st_mode):
+        # a directory, FIFO, socket, device — resolves but is not a regular file.
+        raise ProfilesError(not_regular_msg)
     try:
         user_manifest = _parse_manifest_file(user, allow_scopes=False)
     except OSError as exc:

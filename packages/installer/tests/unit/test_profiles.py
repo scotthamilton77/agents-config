@@ -150,13 +150,15 @@ def _hard_time_budget(seconds: int) -> Iterator[None]:
         msg = f"selector match exceeded {seconds}s budget (unbounded-recursion regression)"
         raise TimeoutError(msg)
 
-    previous = signal.signal(signal.SIGALRM, _fire)
-    signal.alarm(seconds)
+    previous_handler = signal.signal(signal.SIGALRM, _fire)
+    previous_remaining = signal.alarm(seconds)  # returns any prior timer's remaining seconds
     try:
         yield
     finally:
         signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_remaining:
+            signal.alarm(previous_remaining)  # restore a pre-existing alarm we displaced
 
 
 @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is Unix-only")
@@ -400,6 +402,31 @@ def test_load_manifest_inaccessible_user_path_errors(tmp_path: Path) -> None:
     try:
         with pytest.raises(ProfilesError, match=r"could not be accessed"):
             load_manifest(shipped, user)
+    finally:
+        restricted.chmod(0o755)  # restore so tmp_path teardown can remove it
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root traverses non-searchable directories, so the target stays accessible",
+)
+def test_load_manifest_symlink_to_inaccessible_target_errors(tmp_path: Path) -> None:
+    """A `user` symlink whose target is a real regular file inside a
+    non-searchable directory must fail loud as an *access* error, not be
+    misreported as 'not a regular file' — the resolving stat() must surface
+    the OSError rather than let `is_file()` swallow it into False."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(_SHIPPED_TOML)
+    restricted = tmp_path / "restricted"
+    restricted.mkdir()
+    target = restricted / "real-profiles.toml"
+    target.write_text('schema = 1\n[profiles.my-lean]\ninclude = ["instructions"]\n')
+    link = tmp_path / "user-profiles.toml"
+    link.symlink_to(target)
+    restricted.chmod(0o000)
+    try:
+        with pytest.raises(ProfilesError, match=r"could not be accessed"):
+            load_manifest(shipped, link)
     finally:
         restricted.chmod(0o755)  # restore so tmp_path teardown can remove it
 
