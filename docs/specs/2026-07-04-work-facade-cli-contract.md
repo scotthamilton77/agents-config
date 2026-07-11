@@ -103,10 +103,15 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   is every existing `bd … --json` call site.
 - Typed error codes (initial set): `E_NOT_FOUND`, `E_TYPE_WALL`, `E_DEP_CYCLE`,
   `E_FIELD_CLOBBER_GUARD`, `E_LOCK_CONTENTION`, `E_SYNC_BEHIND`, `E_BACKEND_DRIFT`
-  (bd output failed the facade's own parser — the drift alarm),
-  `E_UNSUPPORTED_CAPABILITY` (semantics defined in §6), `E_USAGE`.
+  (bd output or behavior failed the facade's own model — the drift alarm — whether
+  the shape is unparseable or the failure is simply unrecognized),
+  `E_UNSUPPORTED_CAPABILITY` (semantics defined in §6), `E_USAGE`, `E_INTERNAL`
+  (an unexpected facade fault — the envelope invariant holds even on internal bugs).
 - Lock-contention retry: bounded backoff inside the facade; only after
   exhaustion does `E_LOCK_CONTENTION` surface (quirk-shim inventory, last rows).
+- Exception: `--help`/`-h` (root and per-verb) is a human affordance — it prints
+  argparse usage text to stdout and exits 0, and is exempt from the envelope
+  invariant; machine consumers use `--protocol-version` and verb invocations only.
 
 ## 5. Protocol versioning (bead open-Q3)
 
