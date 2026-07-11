@@ -73,14 +73,38 @@ def _load_json_array(stdout: str, *, command: str) -> list[Any]:
 def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
     if "dependency_type" in entry:
         # show-shape: full embedded bead + dependency_type; id/status
-        # describe the OTHER end of the edge directly.
+        # describe the OTHER end of the edge directly. A drifted bd omitting
+        # `id` here must alarm loudly (spec test-plan item 9), not raise a
+        # raw KeyError that surfaces as E_INTERNAL.
+        if "id" not in entry:
+            raise _drift(
+                "bd dependency edge (show-shape) is missing required key: id",
+                {
+                    "reason": "missing_edge_keys",
+                    "shape": "show",
+                    "missing_keys": cast("list[JsonValue]", ["id"]),
+                    "self_id": self_id,
+                },
+            )
         return DepEdge(
             id=str(entry["id"]),
             type=str(entry["dependency_type"]),
             status=str(entry.get("status", "")),
         )
     # list-shape: raw edge row {issue_id, depends_on_id, type}; no status
-    # for the other end is available without a second fetch.
+    # for the other end is available without a second fetch. Same drift
+    # discipline: a missing edge key alarms rather than raising KeyError.
+    missing = [key for key in ("issue_id", "depends_on_id", "type") if key not in entry]
+    if missing:
+        raise _drift(
+            f"bd dependency edge (list-shape) is missing required key(s): {', '.join(missing)}",
+            {
+                "reason": "missing_edge_keys",
+                "shape": "list",
+                "missing_keys": cast("list[JsonValue]", missing),
+                "self_id": self_id,
+            },
+        )
     other_id = entry["depends_on_id"] if entry.get("issue_id") == self_id else entry["issue_id"]
     return DepEdge(id=str(other_id), type=str(entry["type"]), status="")
 

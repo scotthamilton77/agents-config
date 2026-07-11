@@ -209,6 +209,51 @@ def test_dep_list_element_missing_dependency_type_raises_backend_drift():
     assert error.detail["reason"] == "missing_required_keys"
 
 
+def test_show_shape_dependency_edge_missing_id_raises_backend_drift():
+    # A `dependencies[]` entry carrying `dependency_type` (show-shape) but no
+    # `id` for the other end would raise a raw KeyError -> E_INTERNAL from
+    # `_dep_edge_from_raw`'s direct indexing. It must alarm as BACKEND_DRIFT
+    # like every other unmappable shape (spec test-plan item 9).
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": [{"dependency_type": "blocks"}],  # no `id` for the other end
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "missing_edge_keys"
+    assert error.detail["missing_keys"] == ["id"]
+
+
+def test_list_shape_dependency_edge_missing_edge_key_raises_backend_drift():
+    # A list-shape raw edge row (no `dependency_type`) missing `depends_on_id`
+    # would raise a raw KeyError -> E_INTERNAL from the ternary's direct
+    # indexing. It must alarm as BACKEND_DRIFT, naming the missing key.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": [{"type": "blocks", "issue_id": "x.1"}],  # no `depends_on_id`
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "missing_edge_keys"
+    assert error.detail["missing_keys"] == ["depends_on_id"]
+
+
 def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():
     # A garbage `show` shape (missing every required key) drives the CLI's
     # own catch: `handler -> WorkError(BACKEND_DRIFT) -> emit_failure`, not
