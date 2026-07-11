@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-11
 **Status:** Draft (pending review)
-**Bead:** idea-origin — minted at capture; id stamped here when created
+**Bead:** agents-config-r14bn (idea-origin; orphan by owner choice at capture)
 **Decision:** Prose-only edits to the brainstorming and writing-plans skills (plus one
 cross-reference line in grill-with-docs) that (1) auto-route a finished spec or plan
 into a ralf-review pass when named complexity criteria hit, (2) replace
@@ -155,7 +155,11 @@ review only when ALL of:
   from the runtime's declared model identity (the harness states the powering model
   in the session context — self-knowledge, not a shell probe, and not the model's
   self-belief); a runtime that declares no model identity fails this condition.
-  writing-plans cites this declaration by concept rather than duplicating it.
+  The declaration is a qualification check on whatever model the owner already put
+  at the helm — never a model-selection or escalation instruction. Premium-tier
+  models (Fable-class) run only on explicit owner request; no step of this flow
+  selects one by default (cost). writing-plans cites this declaration by concept
+  rather than duplicating it.
 
 When unsure about any condition, do not waive. **Both branches are announced:**
 
