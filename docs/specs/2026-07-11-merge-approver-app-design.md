@@ -141,7 +141,9 @@ Behavior:
    `iat` backdated 60s, `exp` +9 min, `iss` = app-id).
 2. Exchange JWT for a short-lived installation token
    (`GET /app/installations` → `POST /app/installations/{id}/access_tokens`).
-3. Fetch the PR. If `reviewDecision` is already `APPROVED` → exit 0 (idempotent).
+3. Fetch the PR. If this App already has an APPROVED review at `--head-sha`
+   (REST reviews list filtered to the App's `[bot]` login — `reviewDecision` is
+   GraphQL-only) → exit 0 (idempotent).
    If live head SHA != `--head-sha` → exit 1, refuse (the approval must attest the
    exact commit the eligibility floor checked).
 4. `POST /repos/{repo}/pulls/{pr}/reviews` with `event: APPROVE`,
