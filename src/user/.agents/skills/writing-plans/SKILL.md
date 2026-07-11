@@ -148,7 +148,7 @@ planning that the spec does not cover; the plan contains irreversible or migrati
 steps; the task graph is large or has subtle ordering constraints. No criterion
 hit → announce `Review routing: lean (no criteria hit)`. Any hit → announce
 `Review routing: deep (criteria: <names>)` and apply the brainstorming skill's
-Review-Depth Routing mechanics verbatim to the plan (a deliberate cross-skill
+Review-Depth Routing mechanics to the plan (a deliberate cross-skill
 read; both skills deploy together) — single `ralf-review` invocation, findings
 fixed inline but the recorded verdict final and never re-earned, fail-closed
 where the harness cannot dispatch an independent reviewer — with target = the
