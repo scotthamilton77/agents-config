@@ -8,7 +8,7 @@ here is the evidence trail behind it.
 ## Contents
 
 - `findings.md` — the running findings log: per-variant verdicts from
-  user-reaction rounds, 13 extracted design principles (spec input), and the
+  user-reaction rounds, 15 extracted design principles (spec input), and the
   fabrication ledger (what's real vs mocked in the prototype).
 - `HANDOFF.md` — session handoff: decisions made, state, and the next actions
   for a fresh context to continue (V2/V3 brainstorm → grouped spec).
