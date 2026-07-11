@@ -36,8 +36,14 @@ class Item:
 
 @dataclass(frozen=True)
 class DepListing:
-    up: list[DepEdge]
-    down: list[DepEdge]
+    # `bd dep list --direction` semantics read backward from intuition: the
+    # default ("down") lists what this item depends on; "up" lists what
+    # depends on this item. Naming the fields after bd's own directions
+    # would silently re-encode that ambiguity into every caller, so these
+    # are named for the relationship instead (verified against golden
+    # fixtures in adapters/bd/backend.py::BdBackend.dep_list).
+    depends_on: list[DepEdge]
+    dependents: list[DepEdge]
 
 
 @dataclass(frozen=True)

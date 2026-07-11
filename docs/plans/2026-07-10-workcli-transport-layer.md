@@ -448,7 +448,7 @@ the root `Makefile`, or paths a task explicitly names.
 - Modify: `cli.py`, `adapters/bd/backend.py` (`dep_mutate`, `dep_list`, `label_mutate`,
   `labels`, `sync`)
 
-- [ ] Failing tests: item 4 — `dep add EPIC TASK --type blocks` where scripted `get`s return
+- [x] Failing tests: item 4 — `dep add EPIC TASK --type blocks` where scripted `get`s return
   type epic/task → `E_TYPE_WALL`, and the fake call log contains NO `dep` mutation (decision 5;
   wall rule: `blocks` requires both epics or both non-epics). Item 8 — `sync` → call log order
   is exactly `dolt commit` then `dolt push`; `sync --pull` with scripted
@@ -456,7 +456,7 @@ the root `Makefile`, or paths a task explicitly names.
   → still `ok: true` (decision 9). `label add ID a b c` → three bd label-add calls (one per
   label), one envelope. `test_capabilities.py`: stub backend with `supports_sync=False` →
   `sync` → `E_UNSUPPORTED_CAPABILITY` (decision 11).
-- [ ] Implement; commit: `feat(workcli): dep/label/sync verbs with type-wall pre-check and ordered sync`
+- [x] Implement; commit: `feat(workcli): dep/label/sync verbs with type-wall pre-check and ordered sync`
 
 ### Task 6: Contract matrix, human format, docs, spec amendment
 

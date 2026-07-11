@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from workcli.adapters.bd.parse import parse_items, parse_labels
+from workcli.adapters.bd.parse import parse_dep_edges, parse_items, parse_labels
 from workcli.model import DepEdge
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
@@ -116,3 +116,19 @@ def test_label_list_flat_string_array_passes_through_unchanged():
     labels = parse_labels(_read("bd_label_list_wgclw9.1.json"))
 
     assert labels == ["implementation-ready", "shape-feat", "vision-85-5-10"]
+
+
+def test_dep_list_down_direction_normalizes_into_a_lean_dep_edge():
+    # bd_dep_list_down.json is wgclw.9.1's default-direction ("depends on")
+    # result: its parent, agents-config-wgclw.9, via a parent-child edge.
+    edges = parse_dep_edges(_read("bd_dep_list_down.json"), self_id="agents-config-wgclw.9.1")
+
+    assert edges == [DepEdge(id="agents-config-wgclw.9", type="parent-child", status="open")]
+
+
+def test_dep_list_up_direction_normalizes_into_a_lean_dep_edge():
+    # bd_dep_list_up.json is wgclw.9.1's --direction=up ("dependents")
+    # result: wgclw.9.2, which is blocked behind it.
+    edges = parse_dep_edges(_read("bd_dep_list_up.json"), self_id="agents-config-wgclw.9.1")
+
+    assert edges == [DepEdge(id="agents-config-wgclw.9.2", type="blocks", status="open")]

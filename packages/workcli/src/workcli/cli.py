@@ -91,6 +91,26 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     reopen_parser.add_argument("id", metavar="ID")
 
 
+def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    dep_parser = subparsers.add_parser("dep", help="manage dependency edges")
+    dep_parser.add_argument("action", choices=["add", "remove", "list"])
+    dep_parser.add_argument("id", metavar="ID")
+    dep_parser.add_argument("target", nargs="?", metavar="TARGET")
+    dep_parser.add_argument("--type")
+
+    label_parser = subparsers.add_parser("label", help="manage labels")
+    label_parser.add_argument("action", choices=["add", "remove", "list"])
+    label_parser.add_argument("id", metavar="ID")
+    label_parser.add_argument("labels", nargs="*", metavar="LABELS")
+
+
+def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    sync_parser = subparsers.add_parser(
+        "sync", help="sync with the backend (bd: dolt commit+push, or --pull)"
+    )
+    sync_parser.add_argument("--pull", action="store_true")
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="work", description="work — issue-tracker facade CLI")
     parser.add_argument(
@@ -111,6 +131,8 @@ def _build_parser() -> _EnvelopeArgumentParser:
     subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
     _add_read_subparsers(subparsers)
     _add_write_subparsers(subparsers)
+    _add_relations_subparsers(subparsers)
+    _add_sync_subparser(subparsers)
     return parser
 
 

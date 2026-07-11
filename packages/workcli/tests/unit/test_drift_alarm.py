@@ -16,7 +16,7 @@ import pytest
 
 from tests.conftest import run_cli
 from tests.fakes import ScriptedStep
-from workcli.adapters.bd.parse import parse_items, parse_labels
+from workcli.adapters.bd.parse import parse_dep_edges, parse_items, parse_labels
 from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode, WorkError
 
@@ -102,6 +102,29 @@ def test_label_list_element_that_is_not_a_string_raises_backend_drift():
     error = exc_info.value
     assert error.code == ErrorCode.BACKEND_DRIFT
     assert error.detail["reason"] == "label_not_a_string"
+
+
+def test_dep_list_element_that_is_not_an_object_raises_backend_drift():
+    with pytest.raises(WorkError) as exc_info:
+        parse_dep_edges(json.dumps(["not-an-object"]), self_id="x.1")
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "element_not_an_object"
+
+
+def test_dep_list_element_missing_dependency_type_raises_backend_drift():
+    # A dep-list record without `dependency_type` is bd emitting the
+    # list-shape raw edge row for a command that's only ever produced the
+    # show-shape in the golden fixtures -- catch it rather than guess.
+    raw_entry = {"id": "x.2", "status": "open"}
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_dep_edges(json.dumps([raw_entry]), self_id="x.1")
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "missing_required_keys"
 
 
 def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():

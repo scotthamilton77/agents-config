@@ -31,12 +31,25 @@ import time
 from collections.abc import Callable, Sequence
 from typing import cast
 
-from workcli.adapters.bd.parse import map_bd_failure, parse_created_id, parse_items
+from workcli.adapters.bd.parse import (
+    map_bd_failure,
+    parse_created_id,
+    parse_dep_edges,
+    parse_items,
+    parse_labels,
+)
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
 from workcli.backend import Capabilities
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
+
+# Decision 9's exact stderr wording (orchestrator ruling, not a golden capture
+# -- `bd dolt` is never run mutating against a real DB in this project): `bd
+# dolt commit` with nothing pending, and `bd dolt pull` against a dirty
+# working set, are asserted to log these substrings to stderr.
+_NOTHING_TO_COMMIT_STDERR_MARKER = "nothing to commit"
+_SYNC_BEHIND_STDERR_MARKER = "cannot merge with uncommitted changes"
 
 
 class BdBackend:
@@ -164,23 +177,83 @@ class BdBackend:
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
 
-    # -- Not yet wired: relations/sync (Task 5) --
+    # -- Not yet wired: sync (Task 5) --
 
-    def dep_mutate(
-        self, op: str, from_id: str, to_id: str, dep_type: str
-    ) -> None:  # pragma: no cover
-        raise NotImplementedError  # Task 5
+    def dep_mutate(self, op: str, from_id: str, to_id: str, dep_type: str) -> None:
+        if op == "add":
+            argv = ["dep", "add", from_id, to_id, "--type", dep_type]
+        else:
+            # bd's own `dep remove` takes no `--type` flag at all (see
+            # `bd dep remove --help`).
+            argv = ["dep", "remove", from_id, to_id]
 
-    def dep_list(self, item_id: str) -> DepListing:  # pragma: no cover -- Task 5
-        raise NotImplementedError
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
 
-    def label_mutate(
-        self, op: str, item_id: str, labels: Sequence[str]
-    ) -> None:  # pragma: no cover
-        raise NotImplementedError  # Task 5
+    def dep_list(self, item_id: str) -> DepListing:
+        # bd's own `--direction` naming reads backward from intuition:
+        # default ("down") = what this item depends on; "up" = what depends
+        # on this item (confirmed against `bd dep list --help` and the
+        # golden fixtures) -- named for the relationship here, never for
+        # bd's own direction word, to kill that ambiguity permanently.
+        down_argv = ["dep", "list", item_id, "--json"]
+        down_result = run_with_retry(self._runner, down_argv, sleep=self._sleep)
+        if down_result.returncode != 0:
+            raise map_bd_failure(down_argv, down_result)
+        depends_on = parse_dep_edges(down_result.stdout, self_id=item_id, command="dep list")
 
-    def labels(self, item_id: str) -> list[str]:  # pragma: no cover -- Task 5
-        raise NotImplementedError
+        up_argv = ["dep", "list", item_id, "--direction", "up", "--json"]
+        up_result = run_with_retry(self._runner, up_argv, sleep=self._sleep)
+        if up_result.returncode != 0:
+            raise map_bd_failure(up_argv, up_result)
+        dependents = parse_dep_edges(
+            up_result.stdout, self_id=item_id, command="dep list --direction up"
+        )
 
-    def sync(self, pull: bool) -> SyncResult:  # pragma: no cover -- Task 5
-        raise NotImplementedError
+        return DepListing(depends_on=depends_on, dependents=dependents)
+
+    def label_mutate(self, op: str, item_id: str, labels: Sequence[str]) -> None:
+        # bd's own `label add`/`label remove` accept exactly one label per
+        # invocation -- one bd call per label (orchestrator ruling).
+        for one_label in labels:
+            argv = ["label", op, item_id, one_label]
+            result = run_with_retry(self._runner, argv, sleep=self._sleep)
+            if result.returncode != 0:
+                raise map_bd_failure(argv, result)
+
+    def labels(self, item_id: str) -> list[str]:
+        argv = ["label", "list", item_id, "--json"]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+        return parse_labels(result.stdout)
+
+    def sync(self, pull: bool) -> SyncResult:
+        if pull:
+            argv = ["dolt", "pull"]
+            result = run_with_retry(self._runner, argv, sleep=self._sleep)
+            if result.returncode != 0:
+                if _SYNC_BEHIND_STDERR_MARKER in result.stderr:
+                    raise WorkError(
+                        ErrorCode.SYNC_BEHIND,
+                        "bd dolt pull: local working set has uncommitted changes",
+                        detail={"argv": cast("list[JsonValue]", list(argv))},
+                    )
+                raise map_bd_failure(argv, result)
+            return SyncResult(synced=True, mode="pull")
+
+        commit_argv = ["dolt", "commit"]
+        commit_result = run_with_retry(self._runner, commit_argv, sleep=self._sleep)
+        if (
+            commit_result.returncode != 0
+            and _NOTHING_TO_COMMIT_STDERR_MARKER not in commit_result.stderr
+        ):
+            raise map_bd_failure(commit_argv, commit_result)
+
+        push_argv = ["dolt", "push"]
+        push_result = run_with_retry(self._runner, push_argv, sleep=self._sleep)
+        if push_result.returncode != 0:
+            raise map_bd_failure(push_argv, push_result)
+        return SyncResult(synced=True, mode="push")

@@ -1,9 +1,10 @@
 """BdBackend: the Backend protocol's bd implementation, over a BdRunner.
 
 Task 2 wired the read primitives (`capabilities`, `get`, `batch_get`,
-`query`); Task 4 adds the write primitives (`create`, `set_fields`,
-`append_note`, `close`, `reopen`) -- relation/sync primitives still land in
-Task 5. Every test here drives a `ScriptedBdRunner`, never a real subprocess.
+`query`); Task 4 added the write primitives (`create`, `set_fields`,
+`append_note`, `close`, `reopen`); Task 5 adds the relation/sync primitives
+(`dep_mutate`, `dep_list`, `label_mutate`, `labels`, `sync`). Every test here
+drives a `ScriptedBdRunner`, never a real subprocess.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdResult
 from workcli.envelope import ErrorCode, WorkError
-from workcli.model import CreateFields, QueryFilters, UpdateFields
+from workcli.model import CreateFields, DepEdge, QueryFilters, UpdateFields
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -552,3 +553,320 @@ def test_reopen_maps_no_issue_found_stderr_to_not_found_error():
         raise AssertionError("expected WorkError")
     except WorkError as error:
         assert error.code == ErrorCode.NOT_FOUND
+
+
+def test_dep_mutate_add_sends_dep_add_with_from_to_and_type():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dep", "add"), BdResult(returncode=0, stdout="", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    backend.dep_mutate("add", "x.1", "x.2", "blocks")
+
+    assert runner.calls == [("dep", "add", "x.1", "x.2", "--type", "blocks")]
+
+
+def test_dep_mutate_remove_sends_dep_remove_with_no_type_flag():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dep", "remove"), BdResult(returncode=0, stdout="", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    backend.dep_mutate("remove", "x.1", "x.2", "blocks")
+
+    assert runner.calls == [("dep", "remove", "x.1", "x.2")]
+
+
+def test_dep_mutate_maps_a_cycle_stderr_to_dep_cycle():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dep", "add"),
+                BdResult(
+                    returncode=1, stdout="", stderr="adding dependency would create a cycle\n"
+                ),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.dep_mutate("add", "x.1", "x.2", "blocks")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.DEP_CYCLE
+
+
+def test_dep_mutate_maps_a_type_wall_stderr_to_type_wall():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dep", "add"),
+                BdResult(
+                    returncode=1, stdout="", stderr="epics can only block other epics, not tasks\n"
+                ),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.dep_mutate("add", "x.1", "x.2", "blocks")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.TYPE_WALL
+
+
+def test_dep_list_sends_down_then_up_and_maps_into_depends_on_and_dependents():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dep", "list", "agents-config-wgclw.9.1", "--json"),
+                BdResult(
+                    returncode=0,
+                    stdout=_read("bd_dep_list_down.json"),
+                    stderr="",
+                ),
+            ),
+            ScriptedStep(
+                ("dep", "list", "agents-config-wgclw.9.1", "--direction", "up", "--json"),
+                BdResult(
+                    returncode=0,
+                    stdout=_read("bd_dep_list_up.json"),
+                    stderr="",
+                ),
+            ),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    listing = backend.dep_list("agents-config-wgclw.9.1")
+
+    assert listing.depends_on == [
+        DepEdge(id="agents-config-wgclw.9", type="parent-child", status="open")
+    ]
+    assert listing.dependents == [
+        DepEdge(id="agents-config-wgclw.9.2", type="blocks", status="open")
+    ]
+    assert runner.calls == [
+        ("dep", "list", "agents-config-wgclw.9.1", "--json"),
+        ("dep", "list", "agents-config-wgclw.9.1", "--direction", "up", "--json"),
+    ]
+
+
+def test_dep_list_maps_an_unrecognized_nonzero_exit_on_the_down_call_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dep", "list"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.dep_list("x.1")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_dep_list_maps_an_unrecognized_nonzero_exit_on_the_up_call_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dep", "list", "x.1", "--json"), BdResult(returncode=0, stdout="[]", stderr="")
+            ),
+            ScriptedStep(
+                ("dep", "list", "x.1", "--direction", "up", "--json"),
+                BdResult(returncode=1, stdout="", stderr="boom"),
+            ),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.dep_list("x.1")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_label_mutate_add_sends_one_bd_call_per_label():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    backend.label_mutate("add", "x.1", ["a", "b"])
+
+    assert runner.calls == [("label", "add", "x.1", "a"), ("label", "add", "x.1", "b")]
+
+
+def test_label_mutate_remove_sends_one_bd_call_per_label():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("label", "remove"), BdResult(returncode=0, stdout="", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    backend.label_mutate("remove", "x.1", ["stale"])
+
+    assert runner.calls == [("label", "remove", "x.1", "stale")]
+
+
+def test_label_mutate_maps_no_issue_found_stderr_to_not_found_error():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("label", "add"),
+                BdResult(returncode=1, stdout="", stderr='no issue found matching "x.1"\n'),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.label_mutate("add", "x.1", ["a"])
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.NOT_FOUND
+
+
+def test_labels_sends_label_list_json_and_returns_the_flat_array():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("label", "list", "agents-config-wgclw.9.1", "--json"),
+                BdResult(
+                    returncode=0,
+                    stdout=_read("bd_label_list_wgclw9.1.json"),
+                    stderr="",
+                ),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    labels = backend.labels("agents-config-wgclw.9.1")
+
+    assert labels == ["implementation-ready", "shape-feat", "vision-85-5-10"]
+    assert runner.calls == [("label", "list", "agents-config-wgclw.9.1", "--json")]
+
+
+def test_labels_maps_an_unrecognized_nonzero_exit_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("label", "list"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.labels("x.1")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_sync_commits_then_pushes_and_returns_push_mode():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("dolt", "commit"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("dolt", "push"), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    result = backend.sync(pull=False)
+
+    assert result.synced is True
+    assert result.mode == "push"
+    assert runner.calls == [("dolt", "commit"), ("dolt", "push")]
+
+
+def test_sync_commit_nothing_to_commit_still_pushes():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dolt", "commit"),
+                BdResult(returncode=1, stdout="", stderr="nothing to commit\n"),
+            ),
+            ScriptedStep(("dolt", "push"), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    result = backend.sync(pull=False)
+
+    assert result.synced is True
+    assert runner.calls == [("dolt", "commit"), ("dolt", "push")]
+
+
+def test_sync_commit_failure_with_unrecognized_stderr_raises_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dolt", "commit"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_sync_push_failure_raises_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("dolt", "commit"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("dolt", "push"), BdResult(returncode=1, stdout="", stderr="boom")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_sync_pull_sends_dolt_pull_and_returns_pull_mode():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dolt", "pull"), BdResult(returncode=0, stdout="", stderr=""))]
+    )
+    backend = BdBackend(runner)
+
+    result = backend.sync(pull=True)
+
+    assert result.synced is True
+    assert result.mode == "pull"
+    assert runner.calls == [("dolt", "pull")]
+
+
+def test_sync_pull_with_dirty_working_set_raises_sync_behind():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dolt", "pull"),
+                BdResult(returncode=1, stdout="", stderr="cannot merge with uncommitted changes\n"),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=True)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.SYNC_BEHIND
+
+
+def test_sync_pull_maps_an_unrecognized_nonzero_exit_to_backend_drift():
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dolt", "pull"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=True)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.BACKEND_DRIFT

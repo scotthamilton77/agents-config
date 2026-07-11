@@ -39,6 +39,17 @@ _REQUIRED_ITEM_KEYS = ("id", "title", "issue_type", "status", "priority")
 # (see BdBackend.batch_get's own missing-id reconciliation for that case).
 _NOT_FOUND_STDERR_MARKER = "no issue found matching"
 
+# Confirmed by reading bd's own Go source (Task 4 verified the checkout at
+# /Users/scott/src/oss/yegge/beads matches the installed binary):
+# internal/storage/issueops/dependencies.go emits "epics can only block
+# other epics, not tasks" / "tasks can only block other tasks, not epics"
+# for the cross-type wall, and "adding dependency would create a cycle" for
+# the recursive-CTE cycle check. These are a safety net for a wall/cycle the
+# verb layer's own pre-check can't see (e.g. a stale read) -- `dep_mutate`'s
+# call is what can actually reach them.
+_TYPE_WALL_STDERR_MARKER = "can only block"
+_DEP_CYCLE_STDERR_MARKER = "would create a cycle"
+
 
 def _drift(message: str, detail: dict[str, JsonValue]) -> WorkError:
     return WorkError(ErrorCode.BACKEND_DRIFT, message, detail=detail)
@@ -179,6 +190,34 @@ def parse_created_id(stdout: str, *, command: str = "create") -> str:
     return item_id
 
 
+def parse_dep_edges(stdout: str, *, self_id: str, command: str = "dep list") -> list[DepEdge]:
+    """Parse `bd dep list --json`'s flat array into lean `DepEdge`s.
+
+    Unlike `show`/`list` (arrays of full items), `bd dep list --json` emits a
+    flat array of edge records: each entry IS the full embedded bead at the
+    other end of the edge, plus a top-level `dependency_type` field --
+    exactly the `show`-shape branch of `_dep_edge_from_raw` (golden fixtures
+    `bd_dep_list_down.json`/`bd_dep_list_up.json` confirm this; bd never
+    emits the list-shape raw edge row for this command). A record missing
+    `dependency_type` is an unrecognized shape, not a silent guess.
+    """
+    raw_entries = _load_json_array(stdout, command=command)
+    edges = []
+    for raw in raw_entries:
+        if not isinstance(raw, dict):
+            raise _drift(
+                f"bd {command} array element is not a JSON object",
+                {"reason": "element_not_an_object", "raw_type": type(raw).__name__},
+            )
+        if "dependency_type" not in raw or "id" not in raw:
+            raise _drift(
+                f"bd {command} record is missing dependency_type/id",
+                {"reason": "missing_required_keys", "raw_keys": cast("list[JsonValue]", list(raw))},
+            )
+        edges.append(_dep_edge_from_raw(raw, self_id))
+    return edges
+
+
 def parse_labels(stdout: str, *, command: str = "label list") -> list[str]:
     raw_labels = _load_json_array(stdout, command=command)
     for label in raw_labels:
@@ -193,17 +232,30 @@ def parse_labels(stdout: str, *, command: str = "label list") -> list[str]:
 def map_bd_failure(argv: Sequence[str], result: BdResult) -> WorkError:
     """Translate a nonzero bd exit into a typed error (decision 4).
 
-    Only NOT_FOUND is mapped here in Task 2 -- TYPE_WALL and DEP_CYCLE
-    stderr matching land in Task 5 alongside `dep_mutate`, the only calls
-    that can actually produce them; wiring those patterns in now would be
-    untested, unreachable code (`get`/`batch_get`/`query` never trigger
-    them). Anything this function doesn't recognize is the same alarm class
-    as an unparseable shape -- the facade's model of bd broke.
+    NOT_FOUND, TYPE_WALL, and DEP_CYCLE are mapped here; anything this
+    function doesn't recognize is the same alarm class as an unparseable
+    shape -- the facade's model of bd broke. TYPE_WALL/DEP_CYCLE are a
+    fallback safety net only: `dep`'s verb layer pre-checks the type wall
+    via two `Backend.get` reads before ever calling `dep_mutate`, so a live
+    bd instance should never actually surface these to this function -- but
+    a pre-check race (a stale read) is still a bd failure, not a crash.
     """
     if _NOT_FOUND_STDERR_MARKER in result.stderr:
         return WorkError(
             ErrorCode.NOT_FOUND,
             "bd reported no matching issue",
+            detail={"argv": list(argv), "stderr": result.stderr.strip()},
+        )
+    if _TYPE_WALL_STDERR_MARKER in result.stderr:
+        return WorkError(
+            ErrorCode.TYPE_WALL,
+            "bd rejected a cross-type dependency",
+            detail={"argv": list(argv), "stderr": result.stderr.strip()},
+        )
+    if _DEP_CYCLE_STDERR_MARKER in result.stderr:
+        return WorkError(
+            ErrorCode.DEP_CYCLE,
+            "bd rejected a dependency that would create a cycle",
             detail={"argv": list(argv), "stderr": result.stderr.strip()},
         )
     return _drift(

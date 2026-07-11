@@ -16,6 +16,8 @@ from collections.abc import Callable
 from workcli.backend import Backend, Capabilities
 from workcli.envelope import JsonValue
 from workcli.verbs.read import list_, ready, search, show
+from workcli.verbs.relations import dep, label
+from workcli.verbs.syncing import sync
 from workcli.verbs.write import close, create_raw, note, reopen, update
 
 VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
@@ -28,10 +30,15 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "note": note,
     "close": close,
     "reopen": reopen,
+    "dep": dep,
+    "label": label,
+    "sync": sync,
 }
 
 REQUIRED_CAPABILITY: dict[str, str] = {
     "ready": "supports_ready",
+    "sync": "supports_sync",
+    "dep": "supports_dep_types",
 }
 
 
