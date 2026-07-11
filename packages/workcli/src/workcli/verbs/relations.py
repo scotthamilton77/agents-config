@@ -32,11 +32,11 @@ def _type_wall_check(backend: Backend, from_id: str, to_id: str, dep_type: str) 
     to_is_epic = to_item.type == "epic"
     if from_is_epic == to_is_epic:
         return
-    from_label = "epic" if from_is_epic else "task"
-    to_label = "task" if from_is_epic else "epic"
+    # Diagnostic uses the items' actual types -- a hardcoded "task" label
+    # would misreport every other non-epic type (milestone, bug, feature).
     raise WorkError(
         ErrorCode.TYPE_WALL,
-        f"blocks: {from_label} may not block {to_label}",
+        f"blocks: {from_item.type} may not block {to_item.type}",
         detail={"from": from_id, "to": to_id, "dep_type": dep_type},
     )
 

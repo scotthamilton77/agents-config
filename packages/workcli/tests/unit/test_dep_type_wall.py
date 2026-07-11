@@ -138,6 +138,9 @@ def test_dep_add_with_a_milestone_and_a_task_yields_type_wall_milestone_counts_a
 
     assert exit_code == 1
     assert envelope["error"]["code"] == str(ErrorCode.TYPE_WALL)
+    # The diagnostic names the actual item types, never a hardcoded
+    # "task" stand-in for every non-epic (milestone here).
+    assert envelope["error"]["message"] == "blocks: epic may not block milestone"
 
 
 def test_dep_add_epic_task_still_detects_the_wall_when_the_combined_show_returns_reversed_order():
