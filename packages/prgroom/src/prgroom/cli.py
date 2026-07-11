@@ -631,7 +631,7 @@ def run(
         False,
         "--interactive/--autonomous",
         help="Interactive returns at awaiting-review/idle (caller owns the wait); "
-        "autonomous (default) blocks through the wait until quiescent or capped.",
+        "autonomous (default) blocks through the wait until quiescent or human-gated.",
     ),
     pr_review_retries: int | None = typer.Option(
         None,
@@ -645,7 +645,7 @@ def run(
         "orchestrates its own prework (§3.2), so this has no effect here.",
     ),
 ) -> None:
-    """Aggregate: orchestrate the verbs under one lock until quiescent or capped (§3.3).
+    """Aggregate: orchestrate the verbs under one lock until quiescent or human-gated (§3.3).
 
     Acquires the PR lock once and threads ``_poll → _cluster → _fix → [cap] → _push →
     [_rereview] → _reply → _resolve`` per cycle, blocking in ``_wait`` between cycles
