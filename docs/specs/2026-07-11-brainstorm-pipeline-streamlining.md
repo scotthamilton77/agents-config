@@ -52,7 +52,7 @@ gates are neither thin nor verification — they are unconditional pauses.
 2. **Auto-run, not suggest.** When complexity criteria hit, the deep review runs —
    announced, not offered. Deciding to run a review is a decision the agent makes.
 3. **Waiver is acceptance-only and fail-closed.** Human review may be waived only on
-   the conditions in §4; a review that terminates without clean acceptance always
+   the conditions in §3.3 (mirrored for plans in §4.1); a review that terminates without clean acceptance always
    parks for the human, and uncertainty about any condition means no waiver.
 4. **The waiver decision is always announced** — the owner is told, every time,
    whether their review is needed and why.
@@ -104,7 +104,7 @@ against named criteria:
 - a genuinely balanced trade-off resolved by judgment during the brainstorm.
 
 **No criterion hit** → announce `Review routing: lean (no criteria hit)` and proceed
-to the attention gate (§4).
+to the attention gate (§3.3).
 
 **Any criterion hit** → announce `Review routing: deep (criteria: <names>)` and
 invoke the `ralf-review` skill **exactly once per artifact**: target = the spec
