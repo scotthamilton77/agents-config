@@ -41,16 +41,25 @@ at the top of `theme.css`.
 - `.uimock` (`.titlebar` + `.body`) — a small stylized app-UI frame for UI changes.
 
 ## Quiz
-Markup per question (script auto-wires clicks — no per-question JS):
+Markup per question (script auto-wires clicks — no per-question JS). The order below
+shows the four required roles; vary their order in each generated question so position
+does not reveal the answer:
 ```html
 <div class="quiz">
   <div class="q">
     <div class="stem">Question?</div>
-    <button class="opt" data-correct="false" data-fb="why wrong">Plausible option</button>
-    <button class="opt" data-correct="true"  data-fb="why right">The answer</button>
-    <button class="opt" data-correct="false" data-fb="the joke's on you">Obviously-wrong funny option</button>
+    <button class="opt" data-correct="false" data-fb="why this believable misconception is wrong">Plausible wrong option A</button>
+    <button class="opt" data-correct="false" data-fb="why this different misconception is wrong">Plausible wrong option B</button>
+    <button class="opt" data-correct="true"  data-fb="why this is right">The answer</button>
+    <button class="opt" data-correct="false" data-comic="true" data-fb="Persona-shaped explanation of why the absurd premise contradicts the change">Obviously impossible, persona-voiced comic foil</button>
     <div class="feedback"></div>
   </div>
 </div>
 ```
-Keep options roughly equal length; include exactly one humorous wrong option per question.
+Every question needs exactly four options: two plausible false distractors, one true
+answer, and one false `data-comic="true"` comic foil. The comic foil must be visibly,
+factually impossible for the change in the question; do not make it a plausible answer
+and try to salvage it with a sarcastic last clause. Its visible wording and feedback
+must sound like the resolved persona, using that persona's cadence, references, and
+attitude. Keep the non-comic options roughly equal length so length is not an answer
+cue; give the comic foil only enough extra detail to make its contradiction obvious.

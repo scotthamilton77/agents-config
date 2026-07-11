@@ -57,9 +57,14 @@ comes from the bundled `assets/` — inline them rather than restyling from scra
 - **Code** — a high-level walkthrough of the changes, grouped/ordered so it reads as
   a story, not a file list.
 - **Quiz** — five medium-difficulty multiple-choice questions that require actually
-  understanding the change (not gotchas), each with feedback on click. Options
-  roughly equal length so length isn't a tell; include exactly one obviously-wrong
-  funny option per question. Use the `.quiz` markup from `palette.md`.
+  understanding the change (not gotchas), each with feedback on click. Every question
+  has exactly four options: two plausible-but-wrong distractors, one correct answer,
+  and one false comic foil marked `data-comic="true"`. The comic foil's **visible
+  text** must be immediately and factually incompatible with the change, not merely a
+  plausible misconception with a snarky suffix. Write both that option and its
+  feedback in the resolved persona's cadence, references, and attitude. The template
+  in `palette.md` shows the required markup; vary option order across questions so the
+  template's position does not become an answer cue.
 
 ## Tone
 
@@ -113,6 +118,11 @@ in that voice for the entire page — one narrator, start to finish.
   `white-space: pre-wrap` or the browser collapses it to one line. Scan each block.
 - `theme.css` and `quiz.js` are inlined verbatim; no external `<link>`/`<script src>`.
 - TOC anchors match the section `id`s.
-- Each quiz question has exactly one `data-correct="true"` option and a `.feedback` div.
+- Each quiz question has exactly four `.opt` buttons: two plausible false distractors,
+  one `data-correct="true"` option, and one false `data-comic="true"` comic foil,
+  plus a `.feedback` div.
+- Read every comic foil before saving: its visible text is plainly impossible for the
+  change, and both it and its feedback sound like the resolved persona. A generic joke
+  pasted onto an otherwise plausible answer does not qualify.
 - A persona was resolved (named / active / random), named to the reader up front, and
   held consistently across every section — no voice drift, no leftover Marvin default.
