@@ -779,12 +779,15 @@ begins.
 
 ### DEFER placement (interactive only)
 
-Apply `beads.md` I3 sibling test:
+Apply the discovered-work rule (sibling test → anchored filing):
 
-- **Pass** (would have been on the parent epic's original plan) →
-  `bd create --parent <parent-of-current-bead>`.
-- **Fail or no parent** → orphan + `bd dep add <new-id> <bead-id>
-  --type discovered-from`.
+- **In scope** (would have been on the parent epic's original plan) →
+  sibling: `bd create --parent <parent-of-current-bead>`, plus the rule's
+  triage block and a Remaining-Work escalation in the completion report.
+- **Out of scope** → anchor under the best-fit epic/milestone
+  (`bd create --parent <anchor-id>`), plus `bd dep add <new-id> <bead-id>
+  --type discovered-from` and the triage block. Orphan only when no
+  milestone fits — escalate that in the report.
 
 ### Hook is interactive-default
 
