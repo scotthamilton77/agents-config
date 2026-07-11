@@ -183,7 +183,7 @@ flowchart LR
 |---|---|---|
 | `state.items[i].resolved == True` but GitHub thread is unresolved | GitHub | Next `_poll` observes; flips `resolved=False`; `_resolve` may re-resolve |
 | `state.reviewers[r].status == in_progress` but no recent activity per `_poll` fetch | GitHub-observed | `evaluate_reviewer_timeouts` re-evaluates and may flip to `declined` |
-| PR HEAD SHA != `state.last_poll_sha` | GitHub | `_poll` updates; pr_review_retries_used++ via SHA-transition attribution if `last_pushed_head_sha` doesn't match |
+| PR HEAD SHA != `state.last_poll_sha` | GitHub | `_poll` updates; pr_review_retries_used++ via SHA-transition attribution if `last_pushed_head_sha` doesn't match (bootstrap exception: an empty `last_poll_sha` only anchors the SHA, no increment — §3.4) |
 | PR has `human-review-required` label but `state.human_review_label_added == False` | GitHub-observed | prgroom does NOT clear the flag mismatch — label is a write-only output from prgroom, not a read input (the label is consumed by `gmxo`/`td39`, not by prgroom itself) |
 | `state.last_error` is set but a successful cycle just completed | prgroom | End-of-cycle resolver clears `last_error` (sets it to `None`) on writing a non-human-gated phase |
 

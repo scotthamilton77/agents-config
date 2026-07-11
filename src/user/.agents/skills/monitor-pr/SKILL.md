@@ -32,7 +32,8 @@ prgroom kicks work back. It supervises; it does not reimplement the loop.
 | cron / `/loop` / CI (e.g. GitHub Actions) | autonomous | `--autonomous` (the default) |
 
 Interactive returns at `awaiting-review`/`idle` so you own the wait and can talk
-to the user; autonomous blocks through the wait until the PR quiesces or caps.
+to the user; autonomous blocks through the wait until the PR quiesces or gates to
+`human-gated` (e.g. the PR-review retry budget is exhausted).
 
 ## 2. Run the loop
 

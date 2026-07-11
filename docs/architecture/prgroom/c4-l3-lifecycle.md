@@ -19,7 +19,7 @@
 | `request_human_review_if_needed` | Cross-cutting hook (§4.6) called at the same two `_run` exit sites as `escalate_if_needed`. POSTs the `human-review-required` label via the gh adapter when `phase=human-gated` AND `state.human_review_label_added == False`; sets the flag. Dedup-safe. |
 | Cluster contract | Cluster-bundling agent dispatch (§5). Cheap; local-first chain ollama → claude haiku → codex-mini. |
 | Fix contract | Per-cluster fix agent dispatch (§5). `opus[1m]` orchestrator that decides per-comment disposition AND implements; emits a required `verify_checklist` claim (trust-but-verify). |
-| `cap_guard` | The pre-push retry-budget guard (between `_fix` and `_push`), built today via `_cap_guard_step` in `_build_pipeline`. No-ops unless commits are queued AND `pr_review_retries_used >= pr_review_retries`; then sets `phase=HUMAN_GATED` + `LIFECYCLE_PR_REVIEW_EXHAUSTED`, refusing the push. |
+| `cap_guard` | The pre-push retry-budget guard (between `_fix` and `_push`), built today via `_cap_guard_step` in `_build_pipeline`. No-ops unless commits are queued AND `pr_review_retries_used >= pr_review_retries`; then sets `phase=HUMAN_GATED` + `LIFECYCLE_PR_REVIEW_EXHAUSTED`, refusing the push. The direct `push` CLI verb applies the same refusal (shared `apply_retry_budget_gate`, §3.2/§3.5), so no path publishes a budget-tripping push. |
 | `_verify` | **DESIGNED, NOT YET IMPLEMENTED** — see [`c4-l3-verify.md`](c4-l3-verify.md). The designed pre-push mechanical gate (between `_fix` and `cap_guard`) that would run the operator-configured tier command (`proc.CommandRunner`, whole-branch, strongest `GateStrength`) and own a bounded fix↔verify convergence loop; would refuse the push on `fix_verify_retries` exhaustion via `phase=HUMAN_GATED` + `LIFECYCLE_FIX_VERIFY_EXHAUSTED`. None of `verify`, `GateStrength`, `VerifyVerdict`, or these two error codes exist in `packages/prgroom/src/` today. |
 | Retry caps | **Built today**: the outer PR-review retry budget, `pr_review_retries` (default 5; `.prgroom.toml` / `PRGROOM_PR_REVIEW_RETRIES` / `--pr-review-retries`) bounds fix-push retries across cycles via the 0-indexed `pr_review_retries_used` counter → `LIFECYCLE_PR_REVIEW_EXHAUSTED`. **Designed, not yet implemented**: the inner `fix_verify_retries` budget (fix↔verify convergence loop → `LIFECYCLE_FIX_VERIFY_EXHAUSTED`) — see [`c4-l3-verify.md`](c4-l3-verify.md). Both are `LIFECYCLE_CAP` tier / exit 0, and re-arm by raising the relevant budget (entry-probe) or `poll` observing an external fix. |
 
@@ -92,7 +92,7 @@ C4Component
     Rel(run, poll, "Each cycle, first step")
     Rel(run, cluster, "After poll, if items unclustered")
     Rel(run, fix, "After cluster, if clusters exist")
-    Rel(run, cap_guard, "After fix, if commits queued (pre-push hard-cap guard)")
+    Rel(run, cap_guard, "After fix, if commits queued (pre-push retry-budget guard)")
     Rel(run, push, "After cap-guard, if commits queued (refused when pr_review_retries_used >= pr_review_retries)")
     Rel(run, reply, "After push: per-item replies + drain pending_memory")
     Rel(run, resolve, "After reply: resolve FIXED threads")
@@ -245,7 +245,7 @@ Two §7 PR-memory responsibilities attach to existing verbs — no new verb. The
 
 ### The `_verify` mechanical gate (DESIGNED, NOT YET IMPLEMENTED)
 
-> **Status**: This subsystem is design-ratified but **0% implemented** — no `verify` step exists in `_build_pipeline` (`lifecycle/run.py`), no `verify` field on `PRGroomingState`, no `[verify]` config table. The only pre-push guard built today is `cap_guard` (§3.5 hard round cap — see the diagram above and its glossary row). The content below documents the target design; see [`c4-l3-verify.md`](c4-l3-verify.md) for the full component view.
+> **Status**: This subsystem is design-ratified but **0% implemented** — no `verify` step exists in `_build_pipeline` (`lifecycle/run.py`), no `verify` field on `PRGroomingState`, no `[verify]` config table. The only pre-push guard built today is `cap_guard` (the §3.5 PR-review retry-budget guard — see the diagram above and its glossary row). The content below documents the target design; see [`c4-l3-verify.md`](c4-l3-verify.md) for the full component view.
 
 `_verify` is the pre-push gate of record, designed to insert between `_fix` and `_push`. It **no-ops when `not has_queued`** (no fix commits to verify — mirrors `_push`'s degenerate no-op). When commits are queued it:
 
