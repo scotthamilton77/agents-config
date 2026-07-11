@@ -57,8 +57,11 @@ Two adjacent gaps surfaced during diagnosis:
 - Replacing or weakening the merge-guard eligibility floor (it remains the quality
   gate; the approval is mechanical satisfaction of GitHub's rule, not a second gate).
 - Auto-approving external contributors' PRs.
-- Automating `--admin`/bypass merges (permanently out of scope; classifier-blocked
-  by design).
+- Automating `--admin`/bypass merges (autonomous use is permanently out of scope;
+  classifier-blocked by design). A **human-directed** `--admin` merge — the owner
+  explicitly instructing it in-session — remains available as the owner's
+  emergency lever, exercised by the owner directly or by the agent as directed
+  proxy.
 - Hosting anything: no webhooks, no server. The App is an identity with a keypair.
 
 ## 3. Design
@@ -174,7 +177,9 @@ Properties: the approver is **not** an authorization source — it never runs un
 merge-guard already decided the merge is authorized; under `merge-authorization =
 "never"` it never fires. `--match-head-commit` keeps the merge bound to the same
 SHA the approval attested. The skill documentation additionally records, as policy:
-**`--admin` is never an autonomous path** (PR #240 precedent).
+**`--admin` is never an autonomous path** (PR #240 precedent) — it remains
+available under explicit in-session human direction as the owner's emergency
+bypass, which always supersedes the rule-based flow.
 
 ### 3.5 Ruleset riders (GitHub-side config, applied via `gh api`)
 
