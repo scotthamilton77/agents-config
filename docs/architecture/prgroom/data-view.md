@@ -6,7 +6,7 @@
 > **Source bead**: `agents-config-fca6.12`
 > **Source design**: [design.md](design.md) — §2 (state schema) + §4.5 (auto-merge eligibility / status output) + §5 (EscalationSink) + §7 (PR-memory channel); the verify gate, VerifyVerdict, GateStrength, and verify_checklist live in §6
 
-> **Status**: **`VerifyVerdict`, `GateStrength`, and the `verify` field/step are DESIGNED, not built.** `packages/prgroom/src/prgroom/prsession/state.py::PRGroomingState` has no `verify` field, and neither type exists anywhere in the package. The retry counter field is `round` (not `pr_review_retries_used`), and the built cap-trip error code is `LIFECYCLE_HARD_CAP_EXCEEDED` (not `LIFECYCLE_PR_REVIEW_EXHAUSTED` / `LIFECYCLE_FIX_VERIFY_EXHAUSTED`). This page documents the target schema — see [`c4-l3-verify.md`](c4-l3-verify.md).
+> **Status**: **`VerifyVerdict` and the `verify` field/step are DESIGNED, not built.** `packages/prgroom/src/prgroom/prsession/state.py::PRGroomingState` has no `verify` field, the `VerifyVerdict` type does not exist in the package, and `LIFECYCLE_FIX_VERIFY_EXHAUSTED` is not built. Built to target: `GateStrength` with validated `Disposition.gate`, the `pr_review_retries_used` counter, and `LIFECYCLE_PR_REVIEW_EXHAUSTED`. This page documents the target schema — see [`c4-l3-verify.md`](c4-l3-verify.md).
 
 ## Glossary
 
@@ -32,7 +32,7 @@ The data view answers: *what shapes does prgroom read, write, and emit; which of
 
 ## Persistent state ER diagram
 
-> **Diagram note**: The `VerifyVerdict` entity, the `PRGroomingState.verify` field, `Disposition.gate: GateStrength`, and the `pr_review_retries_used` field name are target-state (see Status above). The built `PRGroomingState` field is `round`, and there is no `verify` field or `GateStrength` type.
+> **Diagram note**: The `VerifyVerdict` entity and the `PRGroomingState.verify` field are target-state (see Status above). `Disposition.gate: GateStrength` and the `pr_review_retries_used` field are built.
 
 ```mermaid
 erDiagram
@@ -195,7 +195,7 @@ flowchart LR
 
 ## Boundary JSON contract #1 — `prgroom status --json` (§4.5)
 
-> **Contract note**: The `pr_review_retries_used` field name and the `verify` block in the example below are target-state (see Status above); the built state field is `round`.
+> **Contract note**: The `verify` block in the example below is target-state (see Status above); `pr_review_retries_used` is the built state field.
 
 The output of `prgroom status <pr> --json`. Computed per-query from `PRGroomingState` + a small live gh API enrichment (label state, PR-approval reviews). Stability commitment per §4.5: **adding fields is non-breaking; removing or renaming is breaking and requires a version-bumped envelope**.
 
