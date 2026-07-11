@@ -121,6 +121,7 @@ domain and are not affected by this change.
 - **Subagents**: Offload research, exploration, parallel analysis. One task per subagent. Keep main context clean.
 - **Self-improvement**: After ANY user correction → invoke `self-improving-agent` skill. No "I'll do better" without a written rule.
 - **Verify before done**: NEVER mark complete without proof. Audit against `<verification-checklist>`. Use `verify-checklist` skill for structured reporting.
+- **Agent Integrity**: Before reporting factual progress, audit each claim against a tool result from this session. Report only work supported by evidence; if something is not yet verified, say so explicitly. If tests fail, report the failure and relevant output. If a step was skipped, say so.
 - **Tracer bullets**: After planning, implement a tiny end-to-end slice first—through all layers—get feedback, then expand. Validate architecture before investing in breadth.
 - **Isolate work**: Non-trivial changes go in a worktree or feature branch—never commit directly to main.
 - **Elegance check**: For non-trivial changes, ask "is there a more elegant way?" and propose it—but don't unilaterally broaden scope. Minimal edits (constraints) takes precedence.
