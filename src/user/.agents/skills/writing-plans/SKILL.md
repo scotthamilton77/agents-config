@@ -153,7 +153,7 @@ read; both skills deploy together) — single `ralf-review` invocation, findings
 fixed inline but the recorded verdict is final and never re-earned, fail-closed
 where the harness cannot dispatch an independent reviewer — with target = the
 plan file and review criteria = coverage of the spec plus this skill's quality
-bar (no placeholders, type consistency, exact paths).
+bar (see Remember and No Placeholders above).
 
 **Attention routing:** apply the brainstorming skill's Attention Routing
 to the plan — waiver conditions (a) recorded outcome clean (lean route or recorded `PASS` — not `PASS_WITH_RESERVATIONS` or `FAIL`), (b) no divergence from
