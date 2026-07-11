@@ -155,7 +155,7 @@ where the harness cannot dispatch an independent reviewer — with target = the
 plan file and review criteria = coverage of the spec plus this skill's quality
 bar (no placeholders, type consistency, exact paths).
 
-**Attention routing:** apply the brainstorming skill's Attention Routing verbatim
+**Attention routing:** apply the brainstorming skill's Attention Routing
 to the plan — waiver conditions (a) recorded outcome clean, (b) no divergence from
 the spec and the approved design, (c) frontier-tier session per the declaration in
 the brainstorming skill's Attention Routing section (a deliberate cross-skill
