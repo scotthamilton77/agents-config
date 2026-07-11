@@ -19,7 +19,7 @@
 **Files:**
 - Modify: `src/user/.agents/skills/brainstorming/SKILL.md`
 
-- [ ] **Step 1: Replace checklist items** (section `## Checklist`). Replace item 1, replace item 8, renumber the tail. The full new list:
+- [ ] **Step 1: Replace checklist items** (section `## Checklist`). Replace item 1, replace item 8 with two new items (Review-depth routing, Attention routing), renumber the tail (list grows 9 -> 10). The full new list:
 
 ```markdown
 1. **Explore project context** — check files, docs, recent commits; check for `CONTEXT.md` / `CONTEXT-MAP.md` and, if present, activate the glossary discipline (see The Process below)
@@ -162,17 +162,17 @@ can always direct another deep review explicitly.
 
 - [ ] **Step 5: Verify structure and portability**
 
-Run: `grep -c "User Review Gate" src/user/.agents/skills/brainstorming/SKILL.md`
-Expected: `0`
+Run: `! grep -q "User Review Gate" src/user/.agents/skills/brainstorming/SKILL.md`
+Expected: no output, exit code 0 (pattern absent)
 
 Run: `grep -c "Review routing:" src/user/.agents/skills/brainstorming/SKILL.md`
 Expected: `2` (lean + deep announce lines)
 
 Run: `grep -c "Routing criteria hit?" src/user/.agents/skills/brainstorming/SKILL.md`
-Expected: `3` (node declaration + two edges)
+Expected: `4` (node declaration + one incoming + two outgoing edges)
 
-Run: `grep -nE "vaac|owqa|qn0g|abn9|r14bn|src/user/|agents-config" src/user/.agents/skills/brainstorming/SKILL.md`
-Expected: no output (no tracker IDs or repo paths in shipped prose)
+Run: `! grep -nE "vaac|owqa|qn0g|abn9|r14bn|src/user/|agents-config" src/user/.agents/skills/brainstorming/SKILL.md`
+Expected: no output, exit code 0 (no tracker IDs or repo paths in shipped prose)
 
 - [ ] **Step 6: Commit**
 
@@ -253,17 +253,17 @@ context and start execution.
 
 - [ ] **Step 3: Verify structure and portability**
 
-Run: `grep -c "Which approach?" src/user/.agents/skills/writing-plans/SKILL.md`
-Expected: `0`
+Run: `! grep -q "Which approach?" src/user/.agents/skills/writing-plans/SKILL.md`
+Expected: no output, exit code 0 (pattern absent)
 
-Run: `grep -c "If Subagent-Driven chosen\|If Inline Execution chosen" src/user/.agents/skills/writing-plans/SKILL.md`
-Expected: `0`
+Run: `! grep -q "If Subagent-Driven chosen\|If Inline Execution chosen" src/user/.agents/skills/writing-plans/SKILL.md`
+Expected: no output, exit code 0 (pattern absent)
 
 Run: `grep -c "## Plan Review Gate" src/user/.agents/skills/writing-plans/SKILL.md`
 Expected: `1`
 
-Run: `grep -nE "vaac|owqa|qn0g|abn9|r14bn|src/user/|agents-config" src/user/.agents/skills/writing-plans/SKILL.md`
-Expected: no output
+Run: `! grep -nE "vaac|owqa|qn0g|abn9|r14bn|src/user/|agents-config" src/user/.agents/skills/writing-plans/SKILL.md`
+Expected: no output, exit code 0 (no tracker IDs or repo paths in shipped prose)
 
 - [ ] **Step 4: Commit**
 
@@ -313,8 +313,8 @@ Expected: every `[TEST]` line followed by pass output; exit code 0.
 
 - [ ] **Step 2: Cross-file consistency check** — the checklist, digraph, and prose must agree (spec §9 AC7):
 
-Run: `grep -c "Attention Routing" src/user/.agents/skills/brainstorming/SKILL.md`
-Expected: `≥ 3` (checklist reference, prose heading, writing-plans-facing declaration text lives here)
+Run: `grep -ci "Attention Routing" src/user/.agents/skills/brainstorming/SKILL.md`
+Expected: `4` (checklist item, lean-route continuation line, verdict-read sentence, `**Attention Routing:**` heading)
 
 Run: `grep -c "Attention Routing" src/user/.agents/skills/writing-plans/SKILL.md`
-Expected: `≥ 1` (the cross-skill citation)
+Expected: `2` (the two cross-skill citation lines)

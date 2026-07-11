@@ -403,6 +403,6 @@ gate is unaffected. Observable acceptance, on first live runs:
 
 ## Continuations
 
-- feature: Implement brainstorm-pipeline streamlining — AC: §9 items 1–7; edits
+- feature: Implement brainstorm-pipeline streamlining — AC: §9 items 1–8; edits
   confined to the brainstorming, writing-plans, and grill-with-docs skill bodies
   under the shared skills tree; single PR.
