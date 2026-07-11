@@ -107,8 +107,16 @@ def _parse_profile(name: str, entry: object, path: Path) -> Profile:
     if not isinstance(entry, dict):
         msg = f"{path}: [profiles.{name}] must be a table"
         raise ProfilesError(msg)
-    includes = tuple(_parse_include(name, item, path) for item in entry.get("include", []))
-    excludes = tuple(_parse_exclude(name, item, path) for item in entry.get("exclude", []))
+    include_raw = entry.get("include", [])
+    if not isinstance(include_raw, list):
+        msg = f"{path}: [profiles.{name}] include must be an array, got {include_raw!r}"
+        raise ProfilesError(msg)
+    exclude_raw = entry.get("exclude", [])
+    if not isinstance(exclude_raw, list):
+        msg = f"{path}: [profiles.{name}] exclude must be an array, got {exclude_raw!r}"
+        raise ProfilesError(msg)
+    includes = tuple(_parse_include(name, item, path) for item in include_raw)
+    excludes = tuple(_parse_exclude(name, item, path) for item in exclude_raw)
     return Profile(name=name, includes=includes, excludes=excludes)
 
 
@@ -122,6 +130,9 @@ def _parse_manifest_file(path: Path, *, allow_scopes: bool) -> Manifest:
         raise ProfilesError(msg)
 
     scopes_table = data.get("scopes", {})
+    if not isinstance(scopes_table, dict):
+        msg = f"{path}: [scopes] must be a table, got {scopes_table!r}"
+        raise ProfilesError(msg)
     if not allow_scopes and scopes_table:
         msg = f"{path}: a user manifest may not declare [scopes]"
         raise ProfilesError(msg)
@@ -131,6 +142,9 @@ def _parse_manifest_file(path: Path, *, allow_scopes: bool) -> Manifest:
     }
 
     profiles_table = data.get("profiles", {})
+    if not isinstance(profiles_table, dict):
+        msg = f"{path}: [profiles] must be a table, got {profiles_table!r}"
+        raise ProfilesError(msg)
     profiles: dict[str, Profile] = {
         name: _parse_profile(name, entry, path) for name, entry in profiles_table.items()
     }

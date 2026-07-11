@@ -282,6 +282,47 @@ def test_load_manifest_missing_user_file_is_ignored(tmp_path: Path) -> None:
     assert set(manifest.profiles) == {"full", "project-lean", "no-brainstorming"}
 
 
+def test_load_manifest_scalar_scopes_table_errors(tmp_path: Path) -> None:
+    """A `scopes` value that is a scalar (`scopes = 1`) must fail loud with a
+    ProfilesError, not an AttributeError from calling `.items()` on an int."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text('schema = 1\nscopes = 1\n[profiles.full]\ninclude = ["**"]\n')
+
+    with pytest.raises(ProfilesError, match=r"\[scopes\] must be a table"):
+        load_manifest(shipped)
+
+
+def test_load_manifest_scalar_profiles_table_errors(tmp_path: Path) -> None:
+    """A `profiles` value that is a scalar must fail loud with ProfilesError,
+    not an AttributeError from `.items()`."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text("schema = 1\nprofiles = 1\n")
+
+    with pytest.raises(ProfilesError, match=r"\[profiles\] must be a table"):
+        load_manifest(shipped)
+
+
+def test_load_manifest_string_include_errors(tmp_path: Path) -> None:
+    """`include = "**"` (a bare string, not an array) must fail loud rather than
+    silently iterating the string into per-character selectors."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text('schema = 1\n[scopes]\n"x" = "user"\n[profiles.full]\ninclude = "**"\n')
+
+    with pytest.raises(ProfilesError, match="include must be an array"):
+        load_manifest(shipped)
+
+
+def test_load_manifest_string_exclude_errors(tmp_path: Path) -> None:
+    """`exclude = "x"` (a bare string, not an array) must fail loud."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(
+        'schema = 1\n[scopes]\n"x" = "user"\n[profiles.full]\ninclude = ["**"]\nexclude = "x"\n'
+    )
+
+    with pytest.raises(ProfilesError, match="exclude must be an array"):
+        load_manifest(shipped)
+
+
 # ---------------------------------------------------------------------------
 # project_universe — selector-key normalization (spec §3)
 # ---------------------------------------------------------------------------
