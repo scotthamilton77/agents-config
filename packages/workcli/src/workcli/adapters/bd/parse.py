@@ -194,7 +194,7 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
         if isinstance(entry, dict) and _dep_type(entry) != "parent-child"
     ]
     children = [
-        str(entry["id"])
+        _dep_edge_from_raw(entry, item_id).id
         for entry in dependents
         if isinstance(entry, dict) and _dep_type(entry) == "parent-child"
     ]

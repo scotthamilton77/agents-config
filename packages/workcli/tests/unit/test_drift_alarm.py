@@ -277,6 +277,30 @@ def test_list_shape_dependency_edge_missing_edge_key_raises_backend_drift():
     assert error.detail["missing_keys"] == ["depends_on_id"]
 
 
+def test_parent_child_dependent_missing_id_raises_backend_drift():
+    # A `dependents[]` parent-child record (the shape that becomes `children`)
+    # carrying `dependency_type` but no `id` for the other end would raise a
+    # raw KeyError -> E_INTERNAL from `children`'s direct indexing. It must
+    # alarm as BACKEND_DRIFT like the `dependencies[]` show-shape edge does
+    # (spec test-plan item 9).
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "epic",
+        "status": "open",
+        "priority": 2,
+        "dependents": [{"dependency_type": "parent-child"}],  # no `id` for the child
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "missing_edge_keys"
+    assert error.detail["missing_keys"] == ["id"]
+
+
 def test_show_verb_end_to_end_surfaces_backend_drift_envelope_on_garbage_shape():
     # A garbage `show` shape (missing every required key) drives the CLI's
     # own catch: `handler -> WorkError(BACKEND_DRIFT) -> emit_failure`, not
