@@ -265,8 +265,8 @@ Expected: no output, exit 1
 
 - [ ] **Step 3: Vocabulary agreement across the four files**
 
-Run: `grep -rln "Triage" src/plugins/beads/.agents/rules/discovered-work.md src/user/.agents/skills/verify-checklist/SKILL.md src/user/.agents/skills/wait-for-pr-comments/SKILL.md src/user/.agents/INSTRUCTIONS.md.template`
-Expected: all four paths listed (each file speaks the same triage vocabulary)
+Run: `grep -rlni "triage" src/plugins/beads/.agents/rules/discovered-work.md src/user/.agents/skills/verify-checklist/SKILL.md src/user/.agents/skills/wait-for-pr-comments/SKILL.md src/user/.agents/INSTRUCTIONS.md.template`
+Expected: all four paths listed (each file speaks the same triage vocabulary; case-insensitive — two files use it only lowercase)
 
 - [ ] **Step 4: Spec agreement** — re-read spec §3.1–§3.4 against the diff (`git diff main...HEAD -- src/`); each spec requirement maps to a hunk; no hunk contradicts the spec. Record any mismatch instead of papering over it.
 
