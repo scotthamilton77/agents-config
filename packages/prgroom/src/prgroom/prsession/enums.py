@@ -42,6 +42,32 @@ class DispositionKind(StrEnum):
     FAILED = "failed"
 
 
+class GateStrength(StrEnum):
+    """The verify tier a fix recommends for its item (fix-verify spec §6.1)."""
+
+    FULL = "full"
+    LITE = "lite"
+
+    @classmethod
+    def parse(cls, raw: object) -> GateStrength | None:
+        """None for anything that is not a canonical gate value (lenient boundary parse).
+
+        ``raw`` is typed ``object`` because this is a contract-boundary parse: the
+        value flows from ``FixOutput.from_dict`` (``recommended_gate``), which passes
+        through whatever a provider emitted for that JSON field — a canonical string,
+        but also ``null`` (Python ``None``), a number, a bool, a list, or a dict. The
+        non-str guard makes that leniency explicit: any non-str value returns ``None``,
+        so a malformed gate becomes a ``CONTRACT_FIX_AUDIT_FAILED`` violation downstream
+        rather than an exception.
+        """
+        if not isinstance(raw, str):
+            return None
+        try:
+            return cls(raw)
+        except ValueError:
+            return None
+
+
 class ReviewerKind(StrEnum):
     """Whether a reviewer is a human or a bot (§2)."""
 

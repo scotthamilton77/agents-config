@@ -16,6 +16,7 @@ from typing import Any
 
 from prgroom.prsession.enums import (
     DispositionKind,
+    GateStrength,
     ItemKind,
     PRPhase,
     ReviewerKind,
@@ -84,7 +85,7 @@ class Disposition:
     rationale: str = ""
     commits: list[str] = field(default_factory=list)
     response_path: str | None = None
-    gate: str = ""
+    gate: GateStrength | None = None
     escalation_filed: bool = False
 
     def to_dict(self) -> JsonObj:
@@ -99,8 +100,8 @@ class Disposition:
             d["commits"] = list(self.commits)
         if self.response_path is not None:
             d["response_path"] = self.response_path
-        if self.gate:
-            d["gate"] = self.gate
+        if self.gate is not None:
+            d["gate"] = self.gate.value
         if self.escalation_filed:
             d["escalation_filed"] = self.escalation_filed
         return d
@@ -114,7 +115,12 @@ class Disposition:
             rationale=d.get("rationale", ""),
             commits=list(d.get("commits", [])),
             response_path=d.get("response_path"),
-            gate=d.get("gate", ""),
+            # Absent-form guard: missing/legacy "" load as None; anything else must
+            # parse or raise like `kind` does (corrupt state file, not silent data
+            # loss). Only None and "" are absent — falsy 0/False still parse-or-raise.
+            gate=GateStrength(raw_gate)
+            if (raw_gate := d.get("gate")) is not None and raw_gate != ""
+            else None,
             escalation_filed=d.get("escalation_filed", False),
         )
 

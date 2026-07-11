@@ -1,0 +1,191 @@
+[
+  {
+    "id": "agents-config-abn9.40.2",
+    "title": "Model-routing policy rule + escalation ladder (deploys to all tools)",
+    "description": "Parent POSTFABLE-EPIC. AC: routing table (interactive/worker/finder/panel/judge tiers); cheap-first ladder w/ gate-failure escalation; consumed by subagents rule, completion-gate, prgroom chains.",
+    "notes": "Spec PR: https://github.com/scotthamilton77/agents-config/pull/222 — docs/specs/2026-07-04-model-routing-policy-and-escalation-ladder.md (one spec with vaac.3). Archetype-keyed routing table, two-speed bounded ladder, $100/mo default metered-only ceiling, ~/.agents/spend.jsonl ledger. 7 ASSUMPTION flags in §12 for owner scan.\n2026-07-05 specfest repair sweep (work-lifecycle spec section 12): claim released - spec merged in PR #220 but implementation never started; bead was invisible to dispatch while in_progress. Now open + brainstormed; implementation-ready retained pending owner scan of the spec assumption ledger. Continuations split across the two objectives sharing the PR #220 spec.\n2026-07-05: assumption ledger blessed by owner as-is (specfest verdict fork, work-lifecycle spec section 12). Bead is dispatchable implementation work; no manifest children to mint (spec predates the Continuations requirement; this bead is the implementation unit).",
+    "status": "open",
+    "priority": 0,
+    "issue_type": "task",
+    "assignee": "Scott Hamilton",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-07-04T15:08:35Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-05T19:15:23Z",
+    "started_at": "2026-07-04T17:58:50Z",
+    "labels": [
+      "brainstormed",
+      "implementation-ready",
+      "triage-2026-07-04"
+    ],
+    "dependencies": [
+      {
+        "issue_id": "agents-config-abn9.40.2",
+        "depends_on_id": "agents-config-abn9.40",
+        "type": "parent-child",
+        "created_at": "2026-07-04T11:08:34Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0,
+    "parent": "agents-config-abn9.40"
+  },
+  {
+    "id": "agents-config-abn9.40.1",
+    "title": "Cost telemetry: ccusage/OTel session costs + prgroom usage records + weekly rollup",
+    "description": "Spec: docs/specs/2026-07-04-cost-telemetry-and-token-capture.md (SHARED with agents-config-25rmt — edits to that spec affect both beads). Scope for THIS bead: §4 ledger bridge (one spend.jsonl record per completed prgroom dispatch, archetype/rung/provider mapping, estimated flag) + §5 spend_rollup.py weekly rollup script (metered-vs-ceiling, per-archetype/model table, heavy-gate-run rows, ccusage session section) + guide docs. AC: spec §9 (abn9.40.1 block). Interface contract with abn9.8.26 in §4 — no scope overlap.",
+    "notes": "Spec merged to main in PR #227 (2026-07-04). Bead is implementation-ready; spec is the canonical plan.\n2026-07-05 specfest repair sweep: audited (wave 2, PR #227) - already open, no stale claim. brainstormed stamped; owner scan of spec assumption ledger pending.\n2026-07-05: assumption ledger blessed by owner as-is (specfest verdict fork, work-lifecycle spec section 12). Bead is dispatchable implementation work; no manifest children to mint (spec predates the Continuations requirement; this bead is the implementation unit).",
+    "status": "open",
+    "priority": 0,
+    "issue_type": "task",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-07-04T15:08:34Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-05T19:15:24Z",
+    "labels": [
+      "brainstormed",
+      "implementation-ready",
+      "triage-2026-07-04"
+    ],
+    "dependencies": [
+      {
+        "issue_id": "agents-config-abn9.40.1",
+        "depends_on_id": "agents-config-abn9.40",
+        "type": "parent-child",
+        "created_at": "2026-07-04T11:08:34Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0,
+    "parent": "agents-config-abn9.40"
+  },
+  {
+    "id": "agents-config-viiud",
+    "title": "Project-scoped installable content: detection and conditional staging",
+    "description": "Project-scoped installable content: detection and conditional staging (§8 of docs/specs/2026-07-06-profiles-scope-routing.md, superseding the original 07-04 spec's §7). Under the profiles-only scope-routing redesign, project scope is a binding a run either has or doesn't: --project \u003cpath\u003e binds the 'project' scope to that path (explicit opt-in, locked decision preserved) and structurally excludes user-scope writes that run. This bead is rollout slice S2: --project flag, per-tool project_namespaces() support matrix, kits/ source tree (src/kits/\u003ckit\u003e/, e.g. the beads PRIME.md kit), project-local receipt at \u003cproject\u003e/.agents-config/install-receipt.json, and the cwd detection-suggests-only line. Depends on agents-config-uxns2.1's S1 (manifest+resolver) landing first — the resolver and scope-binding mechanism this bead materializes into project writes.",
+    "acceptance_criteria": "Installer can detect at least one project-level condition (TBD by design) and stage project-specific content into the project directory. User is notified or prompted before any project-directory write. Mechanism is extensible to additional detection rules. Scope overlap with Epic F plugin system is resolved with a clear boundary decision.",
+    "notes": "Open design questions: (1) Detection contract — .beads/ presence, project-config.toml fields, or both? (2) Trigger model — auto-silent, detect+prompt, or explicit opt-in flag? (3) Scope boundary vs Epic F plugins — is project-scoped content a plugin concern (plugin targets project dir) or a separate mechanism? (4) Collision model — does the Epic E matrix apply to project-scope paths, or does project-level always win?\nOwner decision 2026-07-04 (interview, session e5fd807a): trigger model = explicit opt-in command (bead open-Q2 resolved). Detection only suggests — installer may detect a candidate project (.beads/ etc.) and print a suggestion, but never writes to a project directory except via the explicit project-scoped command (e.g. install.sh --project \u003cpath\u003e / subcommand; exact surface TBD by spec). Auto-silent and mid-install detect+prompt rejected. Remaining interview scope (project-local boundary, overlay mechanism) deferred to a dedicated brainstorm session with Scott.\nDesign spec PR: https://github.com/scotthamilton77/agents-config/pull/224 (docs/specs/2026-07-04-user-overlay-profiles-project-staging.md)\n2026-07-05 repair sweep: claim released - PR #224 only merged the design spec doc (docs/specs/2026-07-04-user-overlay-profiles-project-staging.md); no implementation code landed. Acceptance criteria (detection + staging mechanism) unmet. Reopened as brainstormed + implementation-ready, matching sibling uxns2.1 treatment.\n2026-07-06 fablize revision in progress (session 4936162e): owner-directed re-open of 07-04 spec §7 — project staging being redesigned under profiles-only scope routing (locked explicit-opt-in trigger decision is preserved). implementation-ready stripped pending revised-spec merge.\n2026-07-08 session paused pending merge: same PR #234 as agents-config-uxns2.1 (docs/specs/2026-07-06-profiles-scope-routing.md), which now also covers this bead's §7 project-staging scope under the profiles-only routing redesign (project scope = an unbound-scope binding structurally, not a special rule). Full status/blocker detail is on uxns2.1's notes — see that bead. Claim released to resume later. TO RESUME: after PR #234 merges, this bead's description needs updating to point at the new spec (was: superseded 07-04 spec §7; now: 2026-07-06-profiles-scope-routing.md §8), then re-stamp implementation-ready alongside uxns2.1.",
+    "status": "open",
+    "priority": 0,
+    "issue_type": "feature",
+    "assignee": "Scott Hamilton",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-05-31T20:48:31Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-08T22:42:06Z",
+    "started_at": "2026-07-04T18:28:27Z",
+    "labels": [
+      "brainstormed",
+      "implementation-ready",
+      "install"
+    ],
+    "dependencies": [
+      {
+        "issue_id": "agents-config-viiud",
+        "depends_on_id": "agents-config-uxns2",
+        "type": "parent-child",
+        "created_at": "2026-07-04T11:08:43Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "agents-config-viiud",
+        "depends_on_id": "agents-config-uxns2.1.3",
+        "type": "blocks",
+        "created_at": "2026-07-10T17:43:41Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "agents-config-viiud",
+        "depends_on_id": "agents-config-w1qls",
+        "type": "blocks",
+        "created_at": "2026-05-31T21:48:36Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 0,
+    "comment_count": 0,
+    "parent": "agents-config-uxns2"
+  },
+  {
+    "id": "agents-config-abn9.13.1",
+    "title": "[merge-gate] add-foreign-agent-review-pass",
+    "description": "Merge gate child for agents-config-abn9.13. Closed only by merge-and-cleanup after merge + branch/worktree cleanup.",
+    "status": "open",
+    "priority": 0,
+    "issue_type": "task",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-05-14T05:34:59Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-05-14T05:34:59Z",
+    "labels": [
+      "merge-gate"
+    ],
+    "dependencies": [
+      {
+        "issue_id": "agents-config-abn9.13.1",
+        "depends_on_id": "agents-config-abn9.13",
+        "type": "parent-child",
+        "created_at": "2026-05-14T07:34:58Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0,
+    "parent": "agents-config-abn9.13"
+  },
+  {
+    "id": "agents-config-abn9.13",
+    "title": "[Impl] Add foreign-agent review pass to ralf-review skill",
+    "description": "Spec externalized to docs/beads/abn9.11-add-foreign-agent-review-pass.md (~73KB, exceeds bd notes safe cap of ~65KB). The bead-as-plan convention is preserved by reference: that file IS the canonical plan.\n\nProvenance:\n- Brainstorm molecule: agents-config-wisp-cqje (brainstorm-bead formula)\n- Crit review: converged round 6 with zero unresolved comments (29 findings resolved across 2 rounds)\n- ralf-review: 3-cycle adversarial pass (cap exhausted)\n  - Cycle 1: 0B / 2C / 10M / 3m (15 findings, all addressed)\n  - Cycle 2: 1B / 2C / 6M / 3m (12 findings, all addressed)\n  - Cycle 3: 0B / 1C / 8M / 4m (13 findings, all addressed)\n  - Final score: PASS_WITH_RESERVATIONS (cap exhausted; final cycle had no blocking/critical structural issues after fixes; remaining concerns are the time-boxed pre-abn9.12 LLM-vs-deterministic execution gaps explicitly documented in R11.2)\n\nFollow-on beads:\n- agents-config-abn9.12 (P0, fast-follow, blocks-on this bead) — deterministic orchestration wrapper\n- agents-config-3f52 (P1, discovered-from this bead) — spec-modularization skill\n\nRemaining concerns documented inline in the spec doc as Open Questions; all are bounded by the abn9.12 fast-follow.",
+    "acceptance_criteria": "- Skill directory exists\n- Required files present\n- Reviser agent file exists\n- Synthesis agent file exists\n- SKILL.md covers all sections\n- All cross-references updated\n- Install dry-run clean\n- Prune-list updated\n- Formula step retargeted\n- Build / typecheck / tests\n- Dogfood gate (single-tier, fixture-target, MVP-scoped)\n- Input-contract fail-fast verified\n- T3 escalation policy verified\n- Preflight size warning verified\n- Fast-follow deps recorded\n- T2-minimum-reserve cap allocation verified\n- YAML schema validation fail-fast verified\n- Reviser path-scope precondition + sha256 safety net verified\n- Per-model efficacy attribution verified\n- EXTERNALIZED_SPEC interactive contract verified",
+    "status": "open",
+    "priority": 0,
+    "issue_type": "task",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-05-14T05:34:44Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-05-14T05:34:44Z",
+    "labels": [
+      "brainstormed",
+      "formula-docs-only",
+      "implementation-readied-session-35dd4fc3",
+      "implementation-ready",
+      "produced-from-agents-config-abn9.11",
+      "ralf:required"
+    ],
+    "dependencies": [
+      {
+        "issue_id": "agents-config-abn9.13",
+        "depends_on_id": "agents-config-abn9",
+        "type": "parent-child",
+        "created_at": "2026-05-14T07:34:44Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "agents-config-abn9.13",
+        "depends_on_id": "agents-config-abn9.11",
+        "type": "discovered-from",
+        "created_at": "2026-05-14T07:34:44Z",
+        "created_by": "Scott Hamilton",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 0,
+    "dependent_count": 1,
+    "comment_count": 0,
+    "parent": "agents-config-abn9"
+  }
+]

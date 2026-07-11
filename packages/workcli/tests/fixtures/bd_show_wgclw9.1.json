@@ -1,0 +1,69 @@
+[
+  {
+    "id": "agents-config-wgclw.9.1",
+    "title": "workcli transport layer: twelve contract verbs over the Backend seam",
+    "description": "Per work-facade CLI contract spec (docs/specs/2026-07-04-work-facade-cli-contract.md): packages/workcli uv project, CI-gated like installer/prgroom (lint, format, mypy strict, coverage floor, audit); twelve thin verbs; JSON envelope + protocol handshake; Backend adapter seam; bd adapter behind a subprocess boundary port. Sequencing: after prgroom MVP ships, before any prgroom bd-adapter work.",
+    "acceptance_criteria": "CLI contract spec test plan items 1-10 pass under a make ci-workcli-style gate.",
+    "notes": "2026-07-10: cleared to start per owner decision recorded on parent agents-config-wgclw.9 (sequencing assumption revised; milestone gate waived for this objective).",
+    "status": "in_progress",
+    "priority": 1,
+    "issue_type": "feature",
+    "assignee": "Scott Hamilton",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-07-05T18:38:04Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-10T22:33:13Z",
+    "started_at": "2026-07-10T22:33:13Z",
+    "labels": [
+      "implementation-ready",
+      "shape-feat",
+      "vision-85-5-10"
+    ],
+    "dependencies": [
+      {
+        "id": "agents-config-wgclw.9",
+        "title": "work facade CLI v1: ~10 coarse verbs over bd; JIRA/GH adapter seam",
+        "description": "## Context\n\nThe prgroom CLI (Go, fca6 epic) and the PDLC orchestrator (Python, wgclw.2 epic and descendants) both wrap bd for their own purposes. Each tool's wrapper carries the same kinds of bd-quirk shims independently:\n\n- jq path drift between bd versions\n- parent-child auto-edge semantics\n- task→epic dep-type restrictions\n- bd label list / bd dep list output shape changes\n- error translation, lock-contention retry\n\nAGENTS.md (project-level) explicitly chartered this work under M0: 'Work vs beads — we'll be taking a step back from making that a first class citizen of this project's architecture, placing a work abstraction in front of it — end state is that beads is quarantined behind our own CLI'.\n\n## What this bead is NOT\n\n- It is NOT a unified `WorkTracker` interface across tools. prgroom's `Store` (a per-PR KV+lock blob store) and PDLC's `WorkTracker` (an Objective registry with CAS/fingerprints/Discovery markers) abstract genuinely different data and lifecycles. The naming collision is coincidental, not architectural.\n\n- It is NOT a replacement for either tool's internal state-persistence interface. Both tools keep their own typed adapter layer; this CLI is what their bd-adapter sub-implementations shell out to.\n\n## What it IS\n\nA single CLI (language TBD — Python or Go; runtime-irrelevant since it's a CLI surface) that abstracts bd's command quirks. Both prgroom and PDLC orchestrator shell out to it whenever their bd-adapter is active. Schema/format changes in bd land in one place.\n\n## Open design questions (to brainstorm before any code)\n\n1. **Surface**: subcommand verbs (`wt objective list`, `wt dep add`, ...) or thin pass-through with normalization filters? Hybrid?\n2. **Output contract**: machine-parseable JSON as primary; human-friendly format opt-in?\n3. **Versioning**: how does a consumer pin a wt protocol version? `wt --protocol-version`?\n4. **Naming**: `wt`, `bdsh`, `work`, something else?\n5. **Sequencing vs in-flight work**: should this land before prgroom MVP ships, or after (with prgroom's bd adapter being deferred from v2 to post-shim)?\n6. **PDLC integration shape**: PDLC's WorkTracker spec is still in flux (wgclw.2). When should it commit to consuming this shim vs continuing to bind bd directly?\n\n## Why M0 child (not orphan)\n\nM0's stated end-state explicitly includes 'beads is quarantined behind our own CLI'. This bead is exactly that work. Closing it satisfies one of M0's chartered outcomes.\n\n## Provenance\n\nSurfaced during fca6.12 (prgroom architecture diagrams) on 2026-05-25: when the L1 diagrams of both prgroom and the PDLC orchestrator showed a 'Work Tracker' external system, the question 'can we share this?' surfaced. After analysis, the answer was: not the WorkTracker interfaces themselves (different data shapes), but yes — the bd-quirk-shim CLI underneath. A pre-emptive rename of prgroom's `WorkTracker` to `prsession.Store` (landed in fca6.12) preserves the distinction at the interface level.\n\n## Far-horizon register\n\nOpen design question #6 above is mirrored as architectural question Q2 in `agents-config-wgclw.11` (PDLC architecture far-horizon register), along with seam S8 (WorkTracker abstraction ↔ bd-shim CLI). The register is the cross-epic index; this bead remains the authoritative home for the shim design.",
+        "notes": "Spec PR: https://github.com/scotthamilton77/agents-config/pull/223 (2026-07-04, branch spec/work-facade-cli-contract). Verb set derived from observed usage; 6 ASSUMPTIONs in §13 pending owner scan.\n2026-07-05: Re-parented uxns2(PORT) → vaac(M3) per owner. Second design doc: docs/specs/2026-07-05-work-lifecycle-and-facade.md (lifecycle layer over this bead's CLI contract spec — one CLI, two layers, packages/workcli). Owner scanned+blessed the lifecycle spec's 7 assumptions (§15) 2026-07-05. Impl children to be minted under this bead from BOTH specs' manifests at the repair sweep. Contract spec amended in same PR: create → create --raw adapter primitive; --claim removed from update (status is lifecycle-verb-only).\n2026-07-05 specfest repair sweep: claim released. Objective reconciled per work-lifecycle spec (PR #229; ledger blessed by owner 2026-07-05): impl children minted from both manifests - agents-config-wgclw.9.1 (transport layer, CLI contract spec) and agents-config-wgclw.9.2 (lifecycle layer, blocked behind 9.1). implementation-ready removed: this is now an objective container, dispatch flows through its children. planned stamped (children exist per blessed manifests).\n2026-07-10 owner decision (Scott, in-session): §9/§13 sequencing ASSUMPTION in docs/specs/2026-07-04-work-facade-cli-contract.md is revised — facade v1 may start BEFORE prgroom MVP ships. Confirmed no technical dependency in either direction (prgroom's bd sink is v2-deferred; facade consumes only bd). The load-bearing half stands: facade v1 must land before any prgroom bd-adapter work. Owner also explicitly authorizes working 9.1/9.2 ahead of the M2→M3 milestone gate (ancestral block acknowledged, waived for this objective).",
+        "status": "open",
+        "priority": 1,
+        "issue_type": "task",
+        "assignee": "Scott Hamilton",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-05-25T13:41:39Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-07-10T21:51:18Z",
+        "started_at": "2026-07-04T18:09:18Z",
+        "labels": [
+          "brainstormed",
+          "planned",
+          "shape-spec",
+          "vision-85-5-10"
+        ],
+        "dependency_type": "parent-child"
+      }
+    ],
+    "dependents": [
+      {
+        "id": "agents-config-wgclw.9.2",
+        "title": "workcli lifecycle layer: noun-templated creation + guarded lifecycle verbs",
+        "description": "Per work-lifecycle spec sections 4-7: work create noun templates (spike/chore/decision/spec/feat/bugfix/epic), evidence rule, blocked impl placeholder + manifest reconciliation, claim/release/deliver/plan/promote/reconcile over the transport Backend seam; status never moves except through lifecycle verbs.",
+        "acceptance_criteria": "Work-lifecycle spec test plan items 1-11 pass under the same gate.",
+        "status": "open",
+        "priority": 1,
+        "issue_type": "feature",
+        "owner": "scotthamilton77@gmail.com",
+        "created_at": "2026-07-05T18:38:05Z",
+        "created_by": "Scott Hamilton",
+        "updated_at": "2026-07-05T18:38:05Z",
+        "labels": [
+          "implementation-ready",
+          "shape-feat",
+          "vision-85-5-10"
+        ],
+        "dependency_type": "blocks"
+      }
+    ],
+    "parent": "agents-config-wgclw.9"
+  }
+]

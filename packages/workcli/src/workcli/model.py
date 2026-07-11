@@ -1,0 +1,80 @@
+"""Shapes shared across the verb layer and every Backend adapter.
+
+Normalized, backend-agnostic dataclasses: `Item`/`DepEdge` are what the bd
+adapter's parser (`adapters/bd/parse.py`) produces from raw bd JSON, and what
+the verb layer serializes into envelope `data` via `dataclasses.asdict`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class DepEdge:
+    id: str
+    type: str  # "blocks" | "related-to" | "parent-child" | "discovered-from" | ...
+    status: str  # status of the bead at the other end
+
+
+@dataclass(frozen=True)
+class Item:
+    id: str
+    title: str
+    type: str  # task|bug|feature|epic|milestone (str, not enum: drift tolerance)
+    status: str  # open|in_progress|closed|deferred
+    priority: str  # "P0".."P4"
+    labels: list[str]
+    parent: str | None
+    deps: list[DepEdge]  # up-edges (what this item depends on)
+    children: list[str]
+    description: str
+    notes: str
+    created: str | None  # ISO strings as bd emits them; no datetime parsing in v1
+    updated: str | None
+
+
+@dataclass(frozen=True)
+class DepListing:
+    # `bd dep list --direction` semantics read backward from intuition: the
+    # default ("down") lists what this item depends on; "up" lists what
+    # depends on this item. Naming the fields after bd's own directions
+    # would silently re-encode that ambiguity into every caller, so these
+    # are named for the relationship instead (verified against golden
+    # fixtures in adapters/bd/backend.py::BdBackend.dep_list).
+    depends_on: list[DepEdge]
+    dependents: list[DepEdge]
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    synced: bool
+    # "push" | "pull" | "noop" -- "noop" is reserved for server-authoritative
+    # backends (spec §6's declared no-op); the bd adapter never emits it.
+    mode: str
+
+
+@dataclass(frozen=True)
+class CreateFields:
+    title: str
+    description: str | None = None
+    type: str | None = None
+    priority: str | None = None
+    parent: str | None = None
+    labels: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class UpdateFields:  # replace-semantics fields ONLY; notes never appear here
+    title: str | None = None
+    priority: str | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class QueryFilters:
+    status: str | None = None
+    label: str | None = None
+    parent: str | None = None
+    type: str | None = None
+    limit: int | None = None

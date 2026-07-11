@@ -20,6 +20,7 @@ import pytest
 
 from prgroom.prsession.enums import (
     DispositionKind,
+    GateStrength,
     ItemKind,
     PRPhase,
     ReviewerKind,
@@ -92,7 +93,7 @@ def test_round_trip_preserves_fully_populated_state() -> None:
         rationale="addressed the off-by-one",
         commits=["abc123", "def456"],
         response_path="/tmp/resp.md",  # noqa: S108  # test fixture path, not a real temp write
-        gate="full",
+        gate=GateStrength.FULL,
     )
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
@@ -180,7 +181,7 @@ def test_every_optional_field_round_trips_when_populated() -> None:
         rationale="needs a human",
         commits=["sha"],
         response_path="/r.md",
-        gate="lite",
+        gate=GateStrength.LITE,
         escalation_filed=True,
     )
     item = ReviewItem(
@@ -240,6 +241,53 @@ def test_parsing_a_tz_naive_datetime_string_raises() -> None:
     d["last_polled_at"] = "2026-06-09T12:00:00"  # no offset
     with pytest.raises(ValueError, match="timezone-aware"):
         PRGroomingState.from_dict(d)
+
+
+def test_disposition_gate_roundtrips_as_enum() -> None:
+    d = Disposition(
+        kind=DispositionKind.FIXED,
+        decided_at=_T,
+        decided_by="agent",
+        gate=GateStrength.FULL,
+    )
+    encoded = d.to_dict()
+    assert encoded["gate"] == "full"
+    decoded = Disposition.from_dict(encoded)
+    assert decoded.gate is GateStrength.FULL
+
+
+def test_disposition_gate_none_is_omitted_and_loads_none() -> None:
+    d = Disposition(kind=DispositionKind.SKIPPED, decided_at=_T, decided_by="agent")
+    encoded = d.to_dict()
+    assert "gate" not in encoded
+    assert Disposition.from_dict(encoded).gate is None
+
+
+def test_disposition_legacy_empty_gate_loads_none() -> None:
+    # Pre-enum writers omitted falsy gates, but a hand-edited "" must not raise.
+    raw = {"kind": "skipped", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": ""}
+    assert Disposition.from_dict(raw).gate is None
+
+
+def test_disposition_invalid_gate_raises() -> None:
+    # Same strictness as kind: an unknown non-empty enum value is a corrupt state file.
+    raw = {"kind": "fixed", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": "banana"}
+    with pytest.raises(ValueError, match="banana"):
+        Disposition.from_dict(raw)
+
+
+def test_disposition_falsy_zero_gate_raises() -> None:
+    # 0 is falsy but not an absent-form (None/""); a truthiness guard would hide it.
+    raw = {"kind": "fixed", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": 0}
+    with pytest.raises(ValueError):
+        Disposition.from_dict(raw)
+
+
+def test_disposition_falsy_false_gate_raises() -> None:
+    # False is falsy but not an absent-form (None/""); it must parse-or-raise, not vanish.
+    raw = {"kind": "fixed", "decided_at": _T.isoformat(), "decided_by": "agent", "gate": False}
+    with pytest.raises(ValueError):
+        Disposition.from_dict(raw)
 
 
 def test_disposition_round_trips_through_item() -> None:

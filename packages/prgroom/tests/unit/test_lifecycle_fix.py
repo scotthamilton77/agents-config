@@ -195,7 +195,12 @@ def test_fix_applies_dispositions_from_result(tmp_path: Path) -> None:
     dispatcher = FixDispatcherStub(
         [
             _out(
-                FixItemResult(gh_id="a", disposition=DispositionKind.FIXED, commit_shas=["sha1"]),
+                FixItemResult(
+                    gh_id="a",
+                    disposition=DispositionKind.FIXED,
+                    commit_shas=["sha1"],
+                    recommended_gate="full",
+                ),
                 FixItemResult(gh_id="b", disposition=DispositionKind.SKIPPED, rationale="ack only"),
             )
         ]
@@ -229,7 +234,16 @@ def test_fix_applies_per_cluster_not_state_wide_gh_id(tmp_path: Path) -> None:
         disposition=prior,
     )
     dispatcher = FixDispatcherStub(
-        [_out(FixItemResult(gh_id="dup", disposition=DispositionKind.FIXED, commit_shas=["sha1"]))]
+        [
+            _out(
+                FixItemResult(
+                    gh_id="dup",
+                    disposition=DispositionKind.FIXED,
+                    commit_shas=["sha1"],
+                    recommended_gate="full",
+                )
+            )
+        ]
     )
     out, _sink, _git = _run(
         _state(target, sibling), dispatcher, tmp_path, git=FakeGit(new_commits=["sha1"])

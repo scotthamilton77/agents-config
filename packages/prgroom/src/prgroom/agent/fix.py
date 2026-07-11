@@ -39,6 +39,7 @@ from prgroom.agent.fix_audit import audit_fix_items, audit_orphans
 from prgroom.agent.memory_audit import audit_memory
 from prgroom.errors import ErrorCode
 from prgroom.escalation import Escalation, Severity
+from prgroom.prsession.enums import GateStrength
 from prgroom.prsession.state import Disposition
 
 if TYPE_CHECKING:
@@ -341,7 +342,9 @@ def _clean_disposition(row: FixItemResult, *, now: datetime, decided_by: str) ->
         rationale=row.rationale,
         commits=list(row.commit_shas),
         response_path=row.response_path,
-        gate=row.recommended_gate,
+        # Lenient parse keeps this total: a clean FIXED row's gate is audit-guaranteed
+        # valid; any other kind's absent/garbage gate becomes None instead of raising.
+        gate=GateStrength.parse(row.recommended_gate),
     )
 
 

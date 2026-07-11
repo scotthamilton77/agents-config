@@ -1,0 +1,21 @@
+[
+  {
+    "id": "agents-config-wgclw.9.2",
+    "title": "workcli lifecycle layer: noun-templated creation + guarded lifecycle verbs",
+    "description": "Per work-lifecycle spec sections 4-7: work create noun templates (spike/chore/decision/spec/feat/bugfix/epic), evidence rule, blocked impl placeholder + manifest reconciliation, claim/release/deliver/plan/promote/reconcile over the transport Backend seam; status never moves except through lifecycle verbs.",
+    "acceptance_criteria": "Work-lifecycle spec test plan items 1-11 pass under the same gate.",
+    "status": "open",
+    "priority": 1,
+    "issue_type": "feature",
+    "owner": "scotthamilton77@gmail.com",
+    "created_at": "2026-07-05T18:38:05Z",
+    "created_by": "Scott Hamilton",
+    "updated_at": "2026-07-05T18:38:05Z",
+    "labels": [
+      "implementation-ready",
+      "shape-feat",
+      "vision-85-5-10"
+    ],
+    "dependency_type": "blocks"
+  }
+]
