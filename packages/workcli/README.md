@@ -19,7 +19,7 @@ Twelve verbs; each is a subcommand of `work`.
 |---|---|
 | `work show IDS...` | — |
 | `work create --raw --title T [--description D] [--type task] [--priority P2] [--parent ID] [--label L ...]` | `--label` repeatable |
-| `work update ID [--set-title T] [--set-priority P] [--set-description D]` | ≥1 `--set-*` required; `--set-notes` → `E_FIELD_CLOBBER_GUARD` |
+| `work update ID [--set-title T] [--set-priority P] [--set-description D]` | ≥1 `--set-*` required; `--set-notes` → `E_FIELD_CLOBBER_GUARD` (suppressed from `--help` — tripwire only) |
 | `work note ID TEXT` | append-only |
 | `work close IDS... [--disposition TEXT]` | disposition = one appended note per id |
 | `work reopen ID` | — |

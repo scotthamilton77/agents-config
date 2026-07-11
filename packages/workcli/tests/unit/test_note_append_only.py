@@ -5,10 +5,14 @@ flag, in order; no verb path may ever reach bd's bare replace flag `--notes`.
 `--set-notes` on `update` is recognized by argparse (so it is never swallowed
 as a generic `E_USAGE` unknown-flag error) but the verb handler rejects it
 with the named `E_FIELD_CLOBBER_GUARD` code before any bd call (locked
-decision 6) -- notes only ever move through `work note`.
+decision 6) -- notes only ever move through `work note`. The flag is also
+suppressed from `--help` output -- it's a hidden tripwire, not an advertised
+option.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from tests.conftest import run_cli
 from tests.fakes import ScriptedBdRunner, ScriptedStep
@@ -62,3 +66,13 @@ def test_update_set_notes_yields_field_clobber_guard_not_generic_usage():
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.FIELD_CLOBBER_GUARD)
+
+
+def test_update_help_does_not_advertise_set_notes(capsys: pytest.CaptureFixture[str]):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["update", "--help"])
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "--set-notes" not in captured.out
+    assert "--set-title" in captured.out
