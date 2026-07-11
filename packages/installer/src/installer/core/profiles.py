@@ -159,12 +159,26 @@ def load_manifest(shipped: Path, user: Path | None = None) -> Manifest:
     not declare `[scopes]`; a profile name present in both files is a
     collision (no silent shadowing) — compose or rename instead. The merged
     `Manifest.scopes` comes only from the shipped file.
+
+    A `user` path that is not provided or genuinely absent is ignored; one
+    that exists but is not a readable regular file (a directory, a broken
+    symlink, or an unreadable file) fails loud with a `ProfilesError` naming
+    the path — the same fail-loud posture the rest of this module holds.
     """
     manifest = _parse_manifest_file(shipped, allow_scopes=True)
-    if user is None or not user.is_file():
-        return manifest
-
-    user_manifest = _parse_manifest_file(user, allow_scopes=False)
+    if user is None or not (user.exists() or user.is_symlink()):
+        return manifest  # not provided, or genuinely absent — ignore
+    if not user.is_file():
+        msg = (
+            f"user manifest {user} is not a readable regular file "
+            "(directory, broken symlink, or unreadable)"
+        )
+        raise ProfilesError(msg)
+    try:
+        user_manifest = _parse_manifest_file(user, allow_scopes=False)
+    except OSError as exc:
+        msg = f"user manifest {user} could not be read: {exc}"
+        raise ProfilesError(msg) from exc
     collisions = set(manifest.profiles) & set(user_manifest.profiles)
     if collisions:
         names = ", ".join(sorted(collisions))
@@ -238,18 +252,33 @@ def _selector_matches(selector: str, candidate_key: str) -> bool:
 
 
 def _match_segments(pattern: list[str], key: list[str]) -> bool:
-    if not pattern:
-        return not key
-    head, *rest = pattern
-    if head == "**":
-        if not rest:
-            return True
-        return any(_match_segments(rest, key[i:]) for i in range(len(key) + 1))
-    if not key:
-        return False
-    if head != "*" and head != key[0]:
-        return False
-    return _match_segments(rest, key[1:])
+    """Memoized on `(pattern_index, key_index)`. Every subproblem is a suffix
+    pair of `pattern`/`key`, uniquely identified by its two start offsets, so
+    caching bounds the work to O(len(pattern) * len(key)) — a hand-authored
+    selector with many `**` globs cannot exponentially backtrack (self-
+    inflicted DoS). The match semantics are unchanged: `**` = zero-or-more
+    segments, `*` = exactly one, a literal matches an equal segment."""
+    memo: dict[tuple[int, int], bool] = {}
+
+    def match(pi: int, ki: int) -> bool:
+        cached = memo.get((pi, ki))
+        if cached is not None:
+            return cached
+        if pi == len(pattern):
+            result = ki == len(key)
+        elif pattern[pi] == "**":
+            if pi + 1 == len(pattern):
+                result = True
+            else:
+                result = any(match(pi + 1, kj) for kj in range(ki, len(key) + 1))
+        elif ki == len(key) or (pattern[pi] != "*" and pattern[pi] != key[ki]):
+            result = False
+        else:
+            result = match(pi + 1, ki + 1)
+        memo[(pi, ki)] = result
+        return result
+
+    return match(0, 0)
 
 
 def _specificity(selector: str) -> tuple[bool, int]:
@@ -319,6 +348,19 @@ def _assign_scope(
     return _break_specificity_tie(key, defaults, source="[scopes]")
 
 
+def _match_selector_or_error(
+    selector: str, universe: Mapping[str, Sequence[UniverseRef]], *, label: str
+) -> set[str]:
+    """Every universe key `selector` matches; a selector matching nothing is a
+    `ProfilesError` (dead selectors fail loud, never silently no-op). `label`
+    prefixes the message so include and exclude call sites stay distinct."""
+    keys = {key for key in universe if _selector_matches(selector, key)}
+    if not keys:
+        msg = f"{label} matches nothing in the staged universe"
+        raise ProfilesError(msg)
+    return keys
+
+
 def resolve(
     manifest: Manifest,
     selection: Sequence[str],
@@ -347,22 +389,13 @@ def resolve(
 
     matched_includes: set[str] = set()
     for profile_name, entry in contributing_includes:
-        keys = {key for key in universe if _selector_matches(entry.selector, key)}
-        if not keys:
-            msg = (
-                f"include selector {entry.selector!r} (profile {profile_name!r}) "
-                "matches nothing in the staged universe"
-            )
-            raise ProfilesError(msg)
-        matched_includes.update(keys)
+        label = f"include selector {entry.selector!r} (profile {profile_name!r})"
+        matched_includes.update(_match_selector_or_error(entry.selector, universe, label=label))
 
     matched_excludes: set[str] = set()
     for selector in excludes:
-        keys = {key for key in universe if _selector_matches(selector, key)}
-        if not keys:
-            msg = f"exclude selector {selector!r} matches nothing in the staged universe"
-            raise ProfilesError(msg)
-        matched_excludes.update(keys)
+        label = f"exclude selector {selector!r}"
+        matched_excludes.update(_match_selector_or_error(selector, universe, label=label))
 
     result_keys = matched_includes - matched_excludes
     if not result_keys:

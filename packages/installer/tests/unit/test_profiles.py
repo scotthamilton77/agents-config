@@ -9,6 +9,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
+import signal
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -123,6 +127,57 @@ def test_selector_matches_pattern_longer_than_key_no_match() -> None:
 def test_selector_matches_double_star_mid_pattern_matches_any_gap() -> None:
     assert _selector_matches("a/**/b", "a/x/y/b") is True
     assert _selector_matches("a/**/b", "a/c") is False
+
+
+def test_selector_matches_consecutive_double_stars_behave_as_one() -> None:
+    """Consecutive `**` segments collapse to the same zero-or-more-segments
+    meaning as a single `**` — the semantics the bound must preserve."""
+    assert _selector_matches("**/**/skills", "skills") is True
+    assert _selector_matches("**/**/skills", "a/b/skills") is True
+    assert _selector_matches("**/**/skills", "a/b/rules") is False
+    assert _selector_matches("a/**/**/b", "a/b") is True
+    assert _selector_matches("a/**/**/b", "a/x/y/b") is True
+
+
+@contextlib.contextmanager
+def _hard_time_budget(seconds: int) -> Iterator[None]:
+    """Fail loud if the wrapped block runs past `seconds` wall-clock — a hard
+    termination guard (SIGALRM, Unix main thread) for the DoS-bound tests. A
+    regression to unbounded matching hangs and trips the alarm; the bounded
+    matcher returns in microseconds, far under any sane budget."""
+
+    def _fire(_signum: int, _frame: object) -> None:
+        msg = f"selector match exceeded {seconds}s budget (unbounded-recursion regression)"
+        raise TimeoutError(msg)
+
+    previous = signal.signal(signal.SIGALRM, _fire)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is Unix-only")
+def test_selector_matches_pathological_consecutive_stars_terminates() -> None:
+    """A hand-authored selector with many consecutive `**` against a long
+    non-matching key must not exponentially backtrack (self-inflicted DoS)."""
+    pattern = "/".join(["**"] * 25 + ["z"])
+    key = "/".join(["abc"] * 40)  # no "z" — forces full exploration
+    with _hard_time_budget(3):
+        assert _selector_matches(pattern, key) is False
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM is Unix-only")
+def test_selector_matches_pathological_separated_stars_terminates() -> None:
+    """`**` globs separated by ambiguous literals are the harder backtracking
+    case that collapsing consecutive `**` alone would not bound — memoization
+    on (pattern, key) position must keep it polynomial."""
+    pattern = "/".join(["**", "a"] * 20 + ["z"])
+    key = "/".join(["a"] * 40)  # no "z" — no match, full backtracking
+    with _hard_time_budget(3):
+        assert _selector_matches(pattern, key) is False
 
 
 def test_specificity_literal_beats_glob() -> None:
@@ -280,6 +335,50 @@ def test_load_manifest_missing_user_file_is_ignored(tmp_path: Path) -> None:
     manifest = load_manifest(shipped, absent)
 
     assert set(manifest.profiles) == {"full", "project-lean", "no-brainstorming"}
+
+
+def test_load_manifest_user_path_is_directory_errors(tmp_path: Path) -> None:
+    """A `user` path that exists but is a directory must fail loud (naming the
+    path), not be silently ignored like an absent file — the fail-loud posture
+    distinguishes not-provided/absent from exists-but-not-a-regular-file."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(_SHIPPED_TOML)
+    user_dir = tmp_path / "user-profiles.toml"
+    user_dir.mkdir()
+
+    with pytest.raises(ProfilesError, match=r"not a readable regular file"):
+        load_manifest(shipped, user_dir)
+
+
+def test_load_manifest_user_path_is_broken_symlink_errors(tmp_path: Path) -> None:
+    """A `user` path that is a dangling symlink exists (the link is present)
+    but resolves to no regular file — fail loud rather than silently ignore."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(_SHIPPED_TOML)
+    link = tmp_path / "user-profiles.toml"
+    link.symlink_to(tmp_path / "nowhere.toml")
+
+    with pytest.raises(ProfilesError, match=r"not a readable regular file"):
+        load_manifest(shipped, link)
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root bypasses file permission bits, so an unreadable file stays readable",
+)
+def test_load_manifest_unreadable_user_file_errors(tmp_path: Path) -> None:
+    """A `user` path that is a regular file the process cannot read must fail
+    loud as a ProfilesError naming the path, not surface a raw OSError."""
+    shipped = tmp_path / "profiles.toml"
+    shipped.write_text(_SHIPPED_TOML)
+    user = tmp_path / "user-profiles.toml"
+    user.write_text('schema = 1\n[profiles.my-lean]\ninclude = ["instructions"]\n')
+    user.chmod(0o000)
+    try:
+        with pytest.raises(ProfilesError, match=r"could not be read"):
+            load_manifest(shipped, user)
+    finally:
+        user.chmod(0o644)  # restore so tmp_path teardown can remove it
 
 
 def test_load_manifest_scalar_scopes_table_errors(tmp_path: Path) -> None:
