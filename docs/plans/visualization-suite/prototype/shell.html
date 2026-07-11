@@ -205,9 +205,10 @@ window.PROTO = (function () {
       html += `<h3>Context</h3><ul><li>Not changed in this PR — shown as codebase context.</li></ul>`;
     }
     if (f.diff_url) html += `<a class="ext" href="${f.diff_url}" target="_blank" rel="noopener">View this file's diff in PR ↗</a>`;
-    html += `<h3>Note to agent</h3><textarea class="notearea" id="note-box" placeholder="Leave a note on ${f.path.split('/').pop()} — copied out via the Notes button for agent processing">${notes[f.path] || ''}</textarea>` +
+    html += `<h3>Note to agent</h3><textarea class="notearea" id="note-box" placeholder="Leave a note on ${f.path.split('/').pop()} — copied out via the Notes button for agent processing"></textarea>` +
             `<button class="hbtn" id="note-save" style="margin-top:6px">Save note</button>`;
     b.innerHTML = html;
+    b.querySelector('#note-box').value = notes[f.path] || ''; // set programmatically; never interpolate the persisted note into markup (a </textarea> in it would break the DOM / stored self-XSS on reopen)
     b.querySelector('#note-save').onclick = () => {
       const v = b.querySelector('#note-box').value.trim();
       if (v) notes[f.path] = v; else delete notes[f.path];
