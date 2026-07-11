@@ -1,0 +1,33 @@
+schema = 1
+
+# Default destination scope per selector. Keys are the normalized selector
+# vocabulary (§3). Every staged item must match one of these (or an explicit
+# include-entry scope), else resolution errors. `instructions` and `settings`
+# are the synthetic tool-root selectors.
+[scopes]
+"instructions" = "user"
+"settings"     = "user"
+"rules/**"     = "user"
+"skills/**"    = "user"
+"agents/**"    = "user"
+"commands/**"  = "user"
+"workflows/**" = "user"
+"hooks/**"     = "user"
+
+# Today's behavior: install everything, user-scoped. The zero-breakage default.
+[profiles.full]
+include = ["**"]
+
+# A deliberately tiny user install.
+[profiles.minimal-user]
+include = ["instructions", "rules/memory-routing", "rules/user-prompts"]
+
+# The SDLC discipline content. commands/** and workflows/** exist only for
+# Claude; the union-universe rule keeps them valid, and they no-op on tools
+# that lack them.
+[profiles.sdlc]
+include = ["rules/**", "skills/**", "agents/**", "commands/**", "workflows/**"]
+
+# Exclude-only profile — composes with any include set.
+[profiles.no-brainstorming]
+exclude = ["skills/brainstorming"]
