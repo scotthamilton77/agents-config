@@ -355,6 +355,8 @@ ReviewMergePolicy = {
     judge_effort: str,                 # none|minimal|low|medium|high|xhigh
     judge_timeout_seconds: int,
     judge_max_attempts: int,           # >= 1
+    # Optional App-attested approver (mechanism, not authorization; None = absent)
+    approver: {type: "github-app", app_id: int, key_path_env: str} | None,
 }
 ```
 
@@ -387,6 +389,9 @@ ReviewMergePolicy = {
     set (`codex` only), a `judge-model` whose family cannot be derived, an
     invalid `judge-effort` enum value, or `judge-max-attempts < 1`.
   - Any `judge-*` key present while `merge-rule` is not `agent-ruling`.
+  - `[merge-policy.approver]` present with an unknown `type` (only
+    `"github-app"` is implemented), a missing or non-integer `app-id`, an
+    empty `key-path-env`, or any unrecognized key.
 
 ### Resolution precedence
 
@@ -445,6 +450,23 @@ Built-in defaults (section/key absent):
 | `judge-effort` | `"none"` \| `"minimal"` \| `"low"` \| `"medium"` \| `"high"` \| `"xhigh"` | `"high"` |
 | `judge-timeout` | duration string | `"15m"` |
 | `judge-max-attempts` | int | `2` |
+
+`[merge-policy.approver]` (optional sub-table — presence enables the
+approve-then-merge path in merge-guard Step 5; absence preserves prior
+behavior exactly):
+
+| Key | Type | Default |
+|---|---|---|
+| `type` | `"github-app"` | — (required) |
+| `app-id` | int | — (required) |
+| `key-path-env` | str (env var naming the PEM path) | `"MERGE_GUARD_APPROVER_KEY_PATH"` |
+
+The approver is orthogonal to `merge-authorization`: it is mechanism for
+satisfying GitHub's required-review rule on an **already-authorized** merge
+(rule-based rule held, or explicit human instruction), never an
+authorization source. Key material never appears in config — only the name
+of the environment variable that points to it.
+Spec: `docs/specs/2026-07-11-merge-approver-app-design.md`.
 
 An unrecognized key in either section is a resolver error (exit 1) — the
 resolver never silently ignores a typo'd or stale key.
