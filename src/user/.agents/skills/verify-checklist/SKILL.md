@@ -115,8 +115,8 @@ If discovered work is unrecorded, **record it now** in the project's tracking sy
 | [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <priority rationale> |
 ```
 
-"Lands in" must name an anchor: `this PR`, `parent epic (<id>)`, an
-epic/milestone id, or `unanchored — needs your call` (rare escalation) — never
+"Lands in" must be one of: `this PR`, `parent epic (<id>)`, an epic/milestone
+id, or `unanchored — needs your call` (the rare loud-escalation value) — never
 a vague bucket like "future work". Any in-scope row not landing in `this PR`
 must also appear under **Remaining Work** as an escalation line. A bare `—`
 cell is legitimate only on `this PR` rows (nothing was filed, so there is no

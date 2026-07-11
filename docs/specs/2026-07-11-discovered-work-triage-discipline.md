@@ -3,7 +3,7 @@
 **Date:** 2026-07-11
 **Status:** Draft (pending review)
 **Bead:** agents-config-vaac.8
-**Decision:** In-scope discoveries are fixed in-session by default (deferral is a justified, escalated exception); out-of-scope discoveries are filed *anchored* to the roadmap with a required triage-rationale block; the completion report renders every discovery in a structured manifest whose "Lands in" value must name an anchor. Prose enforcement now (rule + skill), mechanical enforcement later via a workcli `work discover` verb.
+**Decision:** In-scope discoveries are fixed in-session by default (deferral is a justified, escalated exception); out-of-scope discoveries are filed *anchored* to the roadmap with a required triage-rationale block; the completion report renders every discovery in a structured manifest whose "Lands in" value must be one of a fixed vocabulary (three roadmap anchors plus a loud-escalation value). Prose enforcement now (rule + skill), mechanical enforcement later via a workcli `work discover` verb.
 
 ## 1. Problem
 
@@ -116,7 +116,8 @@ those fixed in-session, so the adjudication is visible, not just the leftovers:
 | stale docs in guide | out-of-scope | <epic-id> (M4 review epic) | <id> | P3 — cosmetic |
 ```
 
-**"Lands in" value vocabulary** — the value must *be* an anchor; vague temporal
+**"Lands in" value vocabulary** — the value must be one of the four below (the
+first three are anchors; the fourth is a loud escalation); vague temporal
 buckets ("future work") are structurally disallowed:
 
 - `this PR` — fixed in-session; no tracking item needed.
