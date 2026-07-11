@@ -35,9 +35,11 @@ _ESCALATED_BODY = (
 _ESCALATED_CAP_BODY = (
     "Round limit reached on this PR; deferring further iterations to a human reviewer."
 )
-# Word-boundary match: the cap rationale names "cap" as a standalone word ("hard cap of
-# N rounds"). A raw substring test would mis-fire on "captured"/"capacity"/"escape".
-_CAP_RE = re.compile(r"\bcap\b", re.IGNORECASE)
+# Word-boundary match: a retry-budget rationale names "budget" as a standalone word
+# ("PR-review retry budget exhausted"); "cap" is kept for free-form agent rationales
+# still using the older vocabulary. A raw substring test would mis-fire on
+# "captured"/"capacity"/"escape"/"budgetary".
+_CAP_RE = re.compile(r"\b(?:cap|budget)\b", re.IGNORECASE)
 _REPLYABLE = frozenset(
     {
         DispositionKind.FIXED,
@@ -74,7 +76,7 @@ def _post_reply(gh: GhClient, ref: PRRef, item: ReviewItem, body: str) -> None:
 
 
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-_MARKER_RE = re.compile(r"^<!-- d:r(?P<round>\d+):(?P<item>\S+) -->")
+_MARKER_RE = re.compile(r"^<!-- d:r(?P<retry>\d+):(?P<item>\S+) -->")
 _ADD_THREAD_REPLY = (
     "mutation($threadId:ID!,$body:String!){"
     "addPullRequestReviewThreadReply(input:{"
@@ -88,8 +90,8 @@ def _sanitize(content: str) -> str:
 
 
 def _decisions_line(rm: RoutedMemory) -> str:
-    marker = f"<!-- d:r{rm.round}:{rm.source_item} -->"
-    return f"{marker} - **[r{rm.round}]** {_sanitize(rm.content)} _(decided_by: {rm.decided_by})_"
+    marker = f"<!-- d:r{rm.retry}:{rm.source_item} -->"
+    return f"{marker} - **[r{rm.retry}]** {_sanitize(rm.content)} _(decided_by: {rm.decided_by})_"
 
 
 def _splice_block(body: str, block: str) -> str:
@@ -116,21 +118,21 @@ def _splice_block(body: str, block: str) -> str:
 def merge_decisions_block(body: str, entries: list[RoutedMemory]) -> str:
     """Merge thread-less decisions into the sentinel-bounded ``## Decisions`` block (§8.3).
 
-    Pure. Parse existing lines by the leading ``<!-- d:r<round>:<item> -->`` marker into
+    Pure. Parse existing lines by the leading ``<!-- d:r<retry>:<item> -->`` marker into
     an ordered key->line map (never markdown-prose guessing); for each new entry, skip if
     its key exists (never overwrite/delete prior), else append; re-render the block
     wholesale and splice between sentinels (creating block + heading if absent). A
-    same-round re-run is byte-identical; an existing key for item A does not block a new
-    same-round entry for item B.
+    same-retry re-run is byte-identical; an existing key for item A does not block a new
+    same-retry entry for item B.
     """
     existing = extract_decisions_block(body)
     ordered: dict[str, str] = {}
     for line in existing.splitlines():
         m = _MARKER_RE.match(line.strip())
         if m:
-            ordered[f"{m.group('round')}:{m.group('item')}"] = line.strip()
+            ordered[f"{m.group('retry')}:{m.group('item')}"] = line.strip()
     for rm in entries:
-        key = f"{rm.round}:{rm.source_item}"
+        key = f"{rm.retry}:{rm.source_item}"
         if key not in ordered:
             ordered[key] = _decisions_line(rm)
     block = "\n".join([DECISIONS_START, "## Decisions", *ordered.values(), DECISIONS_END])

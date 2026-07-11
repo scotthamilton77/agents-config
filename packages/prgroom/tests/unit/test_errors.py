@@ -151,7 +151,7 @@ def test_blocking_error_codes_is_the_exact_documented_set() -> None:
     # stray addition or omission fails here, not silently downstream.
     assert BlockingErrorCodes == frozenset(
         {
-            ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED,
+            ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED,
             ErrorCode.STATE_CORRUPT,
             ErrorCode.STATE_SCHEMA_UNKNOWN,
             ErrorCode.RUNTIME_GH_TERMINAL,
@@ -159,6 +159,14 @@ def test_blocking_error_codes_is_the_exact_documented_set() -> None:
             ErrorCode.RUNTIME_GIT_TERMINAL,
         }
     )
+
+
+def test_pr_review_exhausted_registry_speaks_retry_budget_vocabulary() -> None:
+    # 8.25 reframe: the operator-facing what/why/how must direct to the retry-budget
+    # knob, not the retired hard-cap vocabulary.
+    entry = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.registry_entry()
+    assert "--pr-review-retries" in entry.how
+    assert "hard cap" not in (entry.what + entry.why + entry.how).lower()
 
 
 @pytest.mark.parametrize("absent", ["STATE_LOCK_STALE", "NOTICE_LOCK_STALE_CLEANED"])

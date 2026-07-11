@@ -42,7 +42,7 @@ def _state(**overrides: Any) -> PRGroomingState:
     base: dict[str, Any] = {
         "pr": _REF,
         "phase": PRPhase.QUIESCED,
-        "round": 2,
+        "pr_review_retries_used": 2,
         "last_polled_at": _NOW,
         "last_activity_at": _NOW,
         "quiescence": QuiescenceState(ci_state="success", quiesced_at=_NOW),
@@ -71,7 +71,7 @@ def test_envelope_top_level_keys() -> None:
         "pr",
         "phase",
         "last_error",
-        "round",
+        "pr_review_retries_used",
         "reviewers",
         "ci_state",
         "items_summary",
@@ -83,7 +83,7 @@ def test_envelope_top_level_keys() -> None:
     }
     assert env["pr"] == 42
     assert env["phase"] == "quiesced"
-    assert env["round"] == 2
+    assert env["pr_review_retries_used"] == 2
     assert env["ci_state"] == "success"
     assert env["last_activity_at"] == _NOW.isoformat()
     assert env["quiesced_at"] == _NOW.isoformat()
@@ -116,9 +116,9 @@ def test_non_quiesced_phase_blocks_eligibility() -> None:
 
 
 def test_last_error_blocks_eligibility() -> None:
-    env = build_status(_state(last_error="LIFECYCLE_HARD_CAP_EXCEEDED"), _SATISFIED)
+    env = build_status(_state(last_error="LIFECYCLE_PR_REVIEW_EXHAUSTED"), _SATISFIED)
     assert env["merge_gates"]["last_error_clear"] is False
-    assert env["last_error"] == "LIFECYCLE_HARD_CAP_EXCEEDED"
+    assert env["last_error"] == "LIFECYCLE_PR_REVIEW_EXHAUSTED"
     assert env["auto_merge_eligible"] is False
 
 

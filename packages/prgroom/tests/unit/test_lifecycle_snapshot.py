@@ -73,11 +73,11 @@ def _item(
     )
 
 
-def _state(*items: ReviewItem, round_: int = 2) -> PRGroomingState:
+def _state(*items: ReviewItem, retries_: int = 2) -> PRGroomingState:
     return PRGroomingState(
         pr=_REF,
         phase=PRPhase.FIXES_PENDING,
-        round=round_,
+        pr_review_retries_used=retries_,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(ci_state="success"),
@@ -168,7 +168,7 @@ def test_derive_recurrence_carries_prior_disposition_and_commits() -> None:
     assert rec.prior_disposition == "wont_fix"
     assert rec.prior_commits == ("c1", "c2")
     assert rec.attempt_count == 1  # MVP floor: schema retains one disposition
-    assert rec.first_seen_round == 2  # MVP proxy: current round (schema has no first-seen)
+    assert rec.first_seen_retry == 2  # MVP proxy: current retry counter (schema has no first-seen)
     assert rec.reopened is False  # no newer reply than decided_at
 
 

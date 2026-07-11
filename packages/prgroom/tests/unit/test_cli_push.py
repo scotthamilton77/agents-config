@@ -55,14 +55,17 @@ class FakeGit:
         self.pushes.append((remote, branch))
 
 
-def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, round_: int = 1) -> PRGroomingState:
+def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, retries_: int = 0) -> PRGroomingState:
+    # last_poll_sha is non-empty: the initial push has been observed, so a CLI
+    # push from here consumes a retry (§3.4).
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=round_,
+        pr_review_retries_used=retries_,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
+        last_poll_sha="anchor",
     )
 
 
@@ -74,17 +77,17 @@ def patched(monkeypatch: pytest.MonkeyPatch) -> InMemoryStore:
     return store
 
 
-def test_push_uploads_and_persists_bumped_round(
+def test_push_uploads_and_persists_consumed_retry(
     patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(round_=1))
+    patched.write(_REF, _state(retries_=1))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == [("origin", "HEAD:feature-x")]
     written = patched.read(_REF)
-    assert written.round == 2
+    assert written.pr_review_retries_used == 2
     assert written.last_pushed_head_sha == "newhead"
 
 
@@ -103,11 +106,11 @@ def test_push_terminal_phase_is_noop(
     # commits go up once the PR has stopped soliciting review.
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(phase=PRPhase.QUIESCED, round_=2))
+    patched.write(_REF, _state(phase=PRPhase.QUIESCED, retries_=2))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == []
-    assert patched.read(_REF).round == 2
+    assert patched.read(_REF).pr_review_retries_used == 2
 
 
 def test_push_malformed_ref_exits_two() -> None:

@@ -34,7 +34,7 @@ def _state(ref: PRRef, phase: PRPhase = PRPhase.IDLE) -> PRGroomingState:
     return PRGroomingState(
         pr=ref,
         phase=phase,
-        round=1,
+        pr_review_retries_used=1,
         last_polled_at=_T,
         last_activity_at=_T,
         quiescence=QuiescenceState(ci_state="success"),

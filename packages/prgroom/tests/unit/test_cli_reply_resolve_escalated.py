@@ -85,7 +85,7 @@ def _state(*, phase: PRPhase = PRPhase.HUMAN_GATED) -> PRGroomingState:
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=2,
+        pr_review_retries_used=2,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
@@ -125,7 +125,7 @@ def test_reply_posts_and_persists_replied(
     state = PRGroomingState(
         pr=_REF,
         phase=PRPhase.FIXES_PENDING,
-        round=1,
+        pr_review_retries_used=1,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),

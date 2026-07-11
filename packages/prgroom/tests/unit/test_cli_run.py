@@ -1,7 +1,7 @@
 """Tests for the wired ``run`` CLI verb (§3.3).
 
 Two layers: wiring tests monkeypatch ``run_lifecycle`` to assert the command maps
-flags correctly (``--interactive/--autonomous`` → ``Mode``, ``--max-rounds`` → config)
+flags correctly (``--interactive/--autonomous`` → ``Mode``, ``--pr-review-retries`` → config)
 and propagates the returned exit code; one integration test drives the real
 ``run_lifecycle`` + ``Verbs.system`` end-to-end against a fake gh on the simplest
 real path (autonomous run where ``_poll`` observes the PR merged → terminal), proving
@@ -54,7 +54,7 @@ def test_run_defaults_to_autonomous_mode(captured: dict[str, Any]) -> None:
     assert result.exit_code == 0, result.output
     assert captured["mode"] is Mode.AUTONOMOUS
     assert captured["ref"] == _REF
-    assert captured["config"].max_rounds == 3  # built-in default
+    assert captured["config"].pr_review_retries == 5  # built-in default
 
 
 def test_run_interactive_flag_sets_mode(captured: dict[str, Any]) -> None:
@@ -63,10 +63,10 @@ def test_run_interactive_flag_sets_mode(captured: dict[str, Any]) -> None:
     assert captured["mode"] is Mode.INTERACTIVE
 
 
-def test_run_max_rounds_flag_flows_into_config(captured: dict[str, Any]) -> None:
-    result = runner.invoke(cli.app, ["run", "octo/demo#7", "--max-rounds", "6"])
+def test_run_pr_review_retries_flag_flows_into_config(captured: dict[str, Any]) -> None:
+    result = runner.invoke(cli.app, ["run", "octo/demo#7", "--pr-review-retries", "6"])
     assert result.exit_code == 0, result.output
-    assert captured["config"].max_rounds == 6
+    assert captured["config"].pr_review_retries == 6
 
 
 def test_run_propagates_nonzero_exit_code(captured: dict[str, Any]) -> None:

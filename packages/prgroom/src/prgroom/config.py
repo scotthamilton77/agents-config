@@ -6,8 +6,8 @@ built-in default** (§3.5). Durations are written in TOML as strings
 file is the per-repo ``.prgroom.toml``; a missing file is not an error (every
 setting has a default).
 
-Two TOML scopes (§3.5, §4.3): the hard-cap ``max_rounds`` is a top-level key; the
-§4.3 quiescence knobs live under a ``[quiescence]`` table
+Two TOML scopes (§3.5, §4.3): the PR-review retry budget ``pr_review_retries`` is a
+top-level key; the §4.3 quiescence knobs live under a ``[quiescence]`` table
 (``quiescence.idle_threshold``, ``quiescence.poll_interval``, etc.). Each knob also
 honors a ``PRGROOM_<UPPER>`` env var and an optional CLI flag passed to
 :meth:`PrgroomConfig.load`.
@@ -23,7 +23,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MAX_ROUNDS = 3
+DEFAULT_PR_REVIEW_RETRIES = 5
 DEFAULT_REVIEW_START_TIMEOUT = timedelta(minutes=3)
 DEFAULT_REVIEW_FINISH_TIMEOUT = timedelta(minutes=15)
 DEFAULT_IDLE_THRESHOLD = timedelta(minutes=10)
@@ -128,7 +128,7 @@ def _resolve_bool(
 class PrgroomConfig:
     """Resolved runtime configuration."""
 
-    max_rounds: int = DEFAULT_MAX_ROUNDS
+    pr_review_retries: int = DEFAULT_PR_REVIEW_RETRIES
     review_start_timeout: timedelta = DEFAULT_REVIEW_START_TIMEOUT
     review_finish_timeout: timedelta = DEFAULT_REVIEW_FINISH_TIMEOUT
     idle_threshold: timedelta = DEFAULT_IDLE_THRESHOLD
@@ -140,7 +140,7 @@ class PrgroomConfig:
         cls,
         *,
         repo_config: Path | None = None,
-        max_rounds_flag: int | None = None,
+        pr_review_retries_flag: int | None = None,
         idle_threshold_flag: timedelta | None = None,
         poll_interval_flag: timedelta | None = None,
         review_start_timeout_flag: timedelta | None = None,
@@ -152,7 +152,7 @@ class PrgroomConfig:
         quiescence = subtable(table, _QUIESCENCE_TABLE)
 
         return cls(
-            max_rounds=cls._resolve_max_rounds(table, max_rounds_flag),
+            pr_review_retries=cls._resolve_pr_review_retries(table, pr_review_retries_flag),
             review_start_timeout=_resolve_duration(
                 flag=review_start_timeout_flag,
                 env_var="PRGROOM_REVIEW_START_TIMEOUT",
@@ -191,19 +191,21 @@ class PrgroomConfig:
         )
 
     @staticmethod
-    def _resolve_max_rounds(table: dict[str, Any], flag: int | None) -> int:
+    def _resolve_pr_review_retries(table: dict[str, Any], flag: int | None) -> int:
         if flag is not None:
             return flag
-        env = os.environ.get("PRGROOM_MAX_ROUNDS")
+        env = os.environ.get("PRGROOM_PR_REVIEW_RETRIES")
         if env is not None:
             try:
                 return int(env)
             except ValueError as exc:
-                msg = f"PRGROOM_MAX_ROUNDS (max_rounds) must be an integer, got {env!r}"
+                msg = (
+                    f"PRGROOM_PR_REVIEW_RETRIES (pr_review_retries) must be an integer, got {env!r}"
+                )
                 raise ValueError(msg) from exc
-        if "max_rounds" in table:
-            return _coerce_int(table["max_rounds"], key="max_rounds")
-        return DEFAULT_MAX_ROUNDS
+        if "pr_review_retries" in table:
+            return _coerce_int(table["pr_review_retries"], key="pr_review_retries")
+        return DEFAULT_PR_REVIEW_RETRIES
 
 
 def read_toml(path: Path | None) -> dict[str, Any]:

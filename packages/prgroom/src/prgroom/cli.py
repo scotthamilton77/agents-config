@@ -631,8 +631,10 @@ def run(
         help="Interactive returns at awaiting-review/idle (caller owns the wait); "
         "autonomous (default) blocks through the wait until quiescent or capped.",
     ),
-    max_rounds: int | None = typer.Option(
-        None, "--max-rounds", help="Hard cap on review-eliciting pushes (§3.5; default 3)."
+    pr_review_retries: int | None = typer.Option(
+        None,
+        "--pr-review-retries",
+        help="PR-review retry budget: fix-push retries after the initial push (§3.5; default 5).",
     ),
     no_prework: bool = typer.Option(
         False,
@@ -664,7 +666,7 @@ def run(
         gh=_build_gh(),
         git=_build_git(),
         deps=Deps.system(),
-        config=PrgroomConfig.load(max_rounds_flag=max_rounds),
+        config=PrgroomConfig.load(pr_review_retries_flag=pr_review_retries),
         sink=_build_sink(),
         mode=Mode.INTERACTIVE if interactive else Mode.AUTONOMOUS,
         cluster_dispatcher=cluster_dispatcher,
@@ -695,7 +697,8 @@ def _render_status(envelope: dict[str, object], *, json_out: bool) -> None:
         return
     last_error = envelope["last_error"] or "(clear)"
     sys.stdout.write(
-        f"PR #{envelope['pr']}  phase={envelope['phase']}  round={envelope['round']}\n"
+        f"PR #{envelope['pr']}  phase={envelope['phase']}  "
+        f"pr_review_retries_used={envelope['pr_review_retries_used']}\n"
         f"  ci={envelope['ci_state']}  last_error={last_error}\n"
         f"  items={envelope['items_summary']}\n"
         f"  merge_gates={envelope['merge_gates']}\n"

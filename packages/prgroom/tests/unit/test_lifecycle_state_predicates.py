@@ -52,7 +52,7 @@ def _state(**overrides: object) -> PRGroomingState:
     base: dict[str, object] = {
         "pr": PRRef(owner="octo", repo="demo", number=7),
         "phase": PRPhase.FIXES_PENDING,
-        "round": 1,
+        "pr_review_retries_used": 1,
         "last_polled_at": _NOW,
         "last_activity_at": _NOW,
         "quiescence": QuiescenceState(),
@@ -104,15 +104,14 @@ def test_push_uploaded_commits_false_when_pushed_sha_unchanged() -> None:
 
 
 def test_new_lifecycle_gate_true_when_error_set_this_cycle() -> None:
-    state = _state(last_error="LIFECYCLE_HARD_CAP_EXCEEDED")
+    state = _state(last_error="LIFECYCLE_PR_REVIEW_EXHAUSTED")
     assert new_lifecycle_gate_this_cycle(state, previous_error=None) is True
 
 
 def test_new_lifecycle_gate_false_when_error_carried_over() -> None:
-    state = _state(last_error="LIFECYCLE_HARD_CAP_EXCEEDED")
-    assert (
-        new_lifecycle_gate_this_cycle(state, previous_error="LIFECYCLE_HARD_CAP_EXCEEDED") is False
-    )
+    state = _state(last_error="LIFECYCLE_PR_REVIEW_EXHAUSTED")
+    previous = "LIFECYCLE_PR_REVIEW_EXHAUSTED"
+    assert new_lifecycle_gate_this_cycle(state, previous_error=previous) is False
 
 
 def test_new_lifecycle_gate_false_when_no_error() -> None:
@@ -125,7 +124,7 @@ def test_new_lifecycle_gate_false_when_error_changed_non_none_to_non_none() -> N
     # (a non-None last_error) is not a fresh gate even if the specific code differs;
     # re-firing would emit a duplicate Sink event for an already-reported condition.
     state = _state(last_error="STATE_CORRUPT")
-    result = new_lifecycle_gate_this_cycle(state, previous_error="LIFECYCLE_HARD_CAP_EXCEEDED")
+    result = new_lifecycle_gate_this_cycle(state, previous_error="LIFECYCLE_PR_REVIEW_EXHAUSTED")
     assert result is False
 
 

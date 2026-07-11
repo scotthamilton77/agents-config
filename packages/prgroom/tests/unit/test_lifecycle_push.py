@@ -1,8 +1,9 @@
 """Tests for ``push_pr`` — the lock-held ``_push`` lifecycle internal (§3.2/§3.4/§3.5).
 
 ``push_pr`` is the first write verb: it uploads the fix agent's queued commits to
-the PR's head branch, bumps ``round``, records ``last_pushed_head_sha``, and flips
-stale required reviews so the post-push ``_rereview`` re-asks them. The mocked seam
+the PR's head branch, counts the consumed PR-review retry (the initial observed
+push is free, §3.4), records ``last_pushed_head_sha``, and flips stale required
+reviews so the post-push ``_rereview`` re-asks them. The mocked seam
 is the gh/git adapter surface (duck-typed fakes); state, config, and the reviewer
 flip are real. ``push_pr`` works on a deepcopy and never writes the store (§3.3).
 """
@@ -110,39 +111,45 @@ def _reviewer(status: ReviewerStatus, *, required: bool = True) -> ReviewerState
 
 def _state(
     *,
-    round_: int = 1,
+    retries_: int = 0,
     phase: PRPhase = PRPhase.FIXES_PENDING,
     reviewers: dict[str, ReviewerState] | None = None,
+    last_poll_sha: str = "anchor",
+    last_pushed_head_sha: str = "",
 ) -> PRGroomingState:
+    # last_poll_sha defaults non-empty: the typical mid-flight state has already
+    # observed the initial push via _poll, so the next CLI push is a retry (§3.4).
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=round_,
+        pr_review_retries_used=retries_,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
+        last_poll_sha=last_poll_sha,
+        last_pushed_head_sha=last_pushed_head_sha,
         reviewers=reviewers or {},
     )
 
 
-def test_push_uploads_queued_commits_and_bumps_round() -> None:
+def test_push_uploads_queued_commits_and_counts_a_retry() -> None:
     git = FakeGit(head="newhead", queued=["c1"])
     out = push_pr(
-        _state(round_=1),
+        _state(retries_=1),
         ref=_REF,
         gh=FakeGh(head_name="feature-x"),
         git=git,
         config=PrgroomConfig(),
     )
     assert git.pushes == [("origin", "HEAD:feature-x")]
-    assert out.round == 2
+    assert out.pr_review_retries_used == 2
     assert out.last_pushed_head_sha == "newhead"
 
 
 def test_push_stamps_review_invalidated_sha() -> None:
     git = FakeGit(head="newhead", queued=["c1"])
     out = push_pr(
-        _state(round_=1),
+        _state(retries_=1),
         ref=_REF,
         gh=FakeGh(head_name="feature-x"),
         git=git,
@@ -154,31 +161,47 @@ def test_push_stamps_review_invalidated_sha() -> None:
 
 def test_push_no_queued_commits_is_a_noop() -> None:
     # Remote tip already matches local (rev_list empty) → nothing to push: no git
-    # push, round untouched, last_pushed_head_sha untouched (§3.4 idempotency).
+    # push, counter untouched, last_pushed_head_sha untouched (§3.4 idempotency).
     git = FakeGit(queued=[])
     out = push_pr(
-        _state(round_=2),
+        _state(retries_=2),
         ref=_REF,
         gh=FakeGh(),
         git=git,
         config=PrgroomConfig(),
     )
     assert git.pushes == []
-    assert out.round == 2
+    assert out.pr_review_retries_used == 2
     assert out.last_pushed_head_sha == ""
 
 
-def test_push_bootstraps_round_zero_to_one() -> None:
-    # First-ever CLI push on a freshly-opened PR (round 0): the single increment
-    # anchors the counter at 1 (§3.4 _push bootstrap).
+def test_push_initial_push_consumes_no_retry() -> None:
+    # First-ever review-eliciting push on a freshly-opened PR (no SHA observed by
+    # either code path): the initial push is free — the 0-indexed counter stays 0
+    # (§3.4 _push bootstrap).
     out = push_pr(
-        _state(round_=0),
+        _state(retries_=0, last_poll_sha="", last_pushed_head_sha=""),
         ref=_REF,
         gh=FakeGh(),
-        git=FakeGit(queued=["c1"]),
+        git=FakeGit(head="newhead", queued=["c1"]),
         config=PrgroomConfig(),
     )
-    assert out.round == 1
+    assert out.pr_review_retries_used == 0
+    assert out.last_pushed_head_sha == "newhead"
+
+
+def test_push_after_own_prior_push_counts_a_retry() -> None:
+    # A second CLI push before any successful poll observation: last_poll_sha is
+    # still empty but last_pushed_head_sha marks the initial push as spent, so
+    # this one consumes a retry (§3.4 — the two bootstrap branches are one-shot).
+    out = push_pr(
+        _state(retries_=0, last_poll_sha="", last_pushed_head_sha="prior"),
+        ref=_REF,
+        gh=FakeGh(),
+        git=FakeGit(queued=["c2"]),
+        config=PrgroomConfig(),
+    )
+    assert out.pr_review_retries_used == 1
 
 
 def test_push_flips_stale_required_review_found_to_not_requested() -> None:
@@ -189,7 +212,7 @@ def test_push_flips_stale_required_review_found_to_not_requested() -> None:
         "human": _reviewer(ReviewerStatus.REVIEW_FOUND, required=False),
     }
     out = push_pr(
-        _state(round_=1, reviewers=reviewers),
+        _state(retries_=1, reviewers=reviewers),
         ref=_REF,
         gh=FakeGh(),
         git=FakeGit(queued=["c1"]),
@@ -206,7 +229,7 @@ def test_push_maps_a_vanished_pr_to_a_terminal_error() -> None:
     git = FakeGit(queued=["c1"])
     with pytest.raises(PrgroomError) as exc:
         push_pr(
-            _state(round_=1),
+            _state(retries_=1),
             ref=_REF,
             gh=VanishedGh(),
             git=git,
@@ -218,10 +241,10 @@ def test_push_maps_a_vanished_pr_to_a_terminal_error() -> None:
 
 
 def test_push_rejection_propagates_and_leaves_state_unmutated() -> None:
-    # A rejected push surfaces RUNTIME_PUSH_REJECTED; round/reviewers are mutated
-    # only AFTER a successful push, so the caller keeps its pre-push state.
+    # A rejected push surfaces RUNTIME_PUSH_REJECTED; the counter/reviewers are
+    # mutated only AFTER a successful push, so the caller keeps its pre-push state.
     reviewers = {"copilot": _reviewer(ReviewerStatus.REVIEW_FOUND)}
-    state = _state(round_=1, reviewers=reviewers)
+    state = _state(retries_=1, reviewers=reviewers)
     with pytest.raises(PrgroomError) as exc:
         push_pr(
             state,
@@ -231,23 +254,23 @@ def test_push_rejection_propagates_and_leaves_state_unmutated() -> None:
             config=PrgroomConfig(),
         )
     assert exc.value.code is ErrorCode.RUNTIME_PUSH_REJECTED
-    assert state.round == 1
+    assert state.pr_review_retries_used == 1
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
 
 
-def test_push_warns_when_it_reaches_the_round_cap() -> None:
-    # §3.5: the push that advances round to max_rounds emits a one-line advisory
-    # so operators know the next fix cycle will gate to human-gated.
+def test_push_warns_when_it_exhausts_the_retry_budget() -> None:
+    # §3.5: the push that consumes the last PR-review retry emits a one-line
+    # advisory so operators know the next fix cycle will gate to human-gated.
     msgs: list[str] = []
     push_pr(
-        _state(round_=2),
+        _state(retries_=2),
         ref=_REF,
         gh=FakeGh(),
         git=FakeGit(queued=["c1"]),
-        config=PrgroomConfig(max_rounds=3),
+        config=PrgroomConfig(pr_review_retries=3),
         warn=msgs.append,
     )
-    assert any("max_rounds=3" in m for m in msgs)
+    assert any("pr_review_retries=3" in m for m in msgs)
 
 
 def test_push_on_the_wrong_branch_raises_and_pushes_nothing() -> None:
@@ -257,7 +280,7 @@ def test_push_on_the_wrong_branch_raises_and_pushes_nothing() -> None:
     git = FakeGit(queued=["c1"], branch="main")
     with pytest.raises(PreconditionError) as exc:
         push_pr(
-            _state(round_=1),
+            _state(retries_=1),
             ref=_REF,
             gh=FakeGh(head_name="feature-x"),
             git=git,
@@ -267,31 +290,32 @@ def test_push_on_the_wrong_branch_raises_and_pushes_nothing() -> None:
     assert git.pushes == []
 
 
-def test_push_below_the_cap_is_silent() -> None:
+def test_push_below_the_budget_is_silent() -> None:
     msgs: list[str] = []
     push_pr(
-        _state(round_=1),
+        _state(retries_=1),
         ref=_REF,
         gh=FakeGh(),
         git=FakeGit(queued=["c1"]),
-        config=PrgroomConfig(max_rounds=3),
+        config=PrgroomConfig(pr_review_retries=3),
         warn=msgs.append,
     )
     assert msgs == []
 
 
-def test_push_past_the_cap_does_not_re_warn() -> None:
-    # §3.5: the advisory fires only on the push that advances round *to* the cap,
-    # not on every push once past it. A direct `prgroom push` at round==max (no
-    # pre-push guard) takes round to max+1 and must stay silent — re-warning here
-    # would print an inaccurate "reaches max_rounds=3" for an already-exceeded cap.
+def test_push_past_the_budget_does_not_re_warn() -> None:
+    # §3.5: the advisory fires only on the push that consumes the *last* retry,
+    # not on every push once past it. A direct `prgroom push` at retries==budget
+    # (no pre-push guard) takes the counter past the budget and must stay silent —
+    # re-warning would print an inaccurate "exhausted" line for an already-spent
+    # budget.
     msgs: list[str] = []
     push_pr(
-        _state(round_=3),
+        _state(retries_=3),
         ref=_REF,
         gh=FakeGh(),
         git=FakeGit(queued=["c1"]),
-        config=PrgroomConfig(max_rounds=3),
+        config=PrgroomConfig(pr_review_retries=3),
         warn=msgs.append,
     )
     assert msgs == []
@@ -305,3 +329,23 @@ def test_has_queued_fix_commits_maps_404_to_terminal() -> None:
         has_queued_fix_commits(VanishedGh(), FakeGit(), _REF)
     assert excinfo.value.tier is Tier.RUNTIME_TERMINAL_USER
     assert excinfo.value.code is ErrorCode.RUNTIME_GH_TERMINAL
+
+
+def test_default_budget_allows_six_review_eliciting_pushes_including_initial() -> None:
+    # Off-by-one pinned by the 8.25 reframe: the default budget of 5 retries
+    # permits up to 6 review-eliciting pushes — the free initial plus 5 retries —
+    # and the advisory fires exactly on the push consuming the last retry.
+    msgs: list[str] = []
+    state = _state(retries_=0, last_poll_sha="", last_pushed_head_sha="")
+    for expected in [0, 1, 2, 3, 4, 5]:  # initial push, then five retries
+        state = push_pr(
+            state,
+            ref=_REF,
+            gh=FakeGh(),
+            git=FakeGit(queued=["c"]),
+            config=PrgroomConfig(),
+            warn=msgs.append,
+        )
+        assert state.pr_review_retries_used == expected
+    assert len(msgs) == 1  # only the budget-exhausting sixth push warns
+    assert "pr_review_retries=5" in msgs[0]

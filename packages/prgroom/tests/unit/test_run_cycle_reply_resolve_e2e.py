@@ -106,9 +106,9 @@ def _seed_state() -> PRGroomingState:
     # (routes via graphql) + one thread-less (routes via the PR-body GET/PATCH).
     state.pending_memory = [
         RoutedMemory(
-            content="why", round=1, source_item="c1#0", decided_by="agent", target_hint="PRRT_t"
+            content="why", retry=1, source_item="c1#0", decided_by="agent", target_hint="PRRT_t"
         ),
-        RoutedMemory(content="decision", round=1, source_item="c1#1", decided_by="agent"),
+        RoutedMemory(content="decision", retry=1, source_item="c1#1", decided_by="agent"),
     ]
     return state
 

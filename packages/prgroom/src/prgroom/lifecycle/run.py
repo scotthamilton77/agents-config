@@ -387,8 +387,8 @@ def _run(ctx: RunContext, verbs: Verbs) -> PRGroomingState:
             _execute_step(step, ctx)
             if is_terminal_for_cli(ctx.state.phase):
                 # A step set a terminal-for-CLI phase on a clean return (today only the
-                # pre-push cap guard does — verb errors gate via PROPAGATE, which
-                # re-raises out of the loop). Skip end-of-cycle resolution.
+                # pre-push retry-budget guard does — verb errors gate via PROPAGATE,
+                # which re-raises out of the loop). Skip end-of-cycle resolution.
                 pipeline_terminated = True
                 break
         if not pipeline_terminated:
@@ -410,19 +410,22 @@ def _build_pipeline(verbs: Verbs) -> list[VerbStep]:
 
 
 def _cap_guard_step(verbs: Verbs) -> Callable[[RunContext], PRGroomingState]:
-    """Build the pre-push hard-cap guard (§3.5): refuse the cap-tripping push.
+    """Build the pre-push retry-budget guard (§3.5): refuse the budget-tripping push.
 
-    When commits are queued AND ``round >= max_rounds``, set ``human-gated`` +
-    ``LIFECYCLE_HARD_CAP_EXCEEDED`` and clear ``lifecycle_escalation_filed`` so the
-    loop-top flush fires exactly one Sink event; the push is then never reached. The
-    effectful ``has_queued`` read can raise (gh transient) — routed through the single
-    error site like any verb.
+    When commits are queued AND ``pr_review_retries_used >= pr_review_retries``, set
+    ``human-gated`` + ``LIFECYCLE_PR_REVIEW_EXHAUSTED`` and clear
+    ``lifecycle_escalation_filed`` so the loop-top flush fires exactly one Sink
+    event; the push is then never reached. The effectful ``has_queued`` read can
+    raise (gh transient) — routed through the single error site like any verb.
     """
 
     def cap_guard(ctx: RunContext) -> PRGroomingState:
-        if verbs.has_queued(ctx) and ctx.state.round >= ctx.config.max_rounds:
+        if (
+            verbs.has_queued(ctx)
+            and ctx.state.pr_review_retries_used >= ctx.config.pr_review_retries
+        ):
             ctx.state.phase = PRPhase.HUMAN_GATED
-            ctx.state.last_error = ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
+            ctx.state.last_error = ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
             ctx.state.lifecycle_escalation_filed = False
         return ctx.state
 
@@ -471,7 +474,7 @@ def _flush_terminal_signals(ctx: RunContext) -> None:
 def _guarded_has_queued(ctx: RunContext, verbs: Verbs) -> bool:
     """Read ``has_queued`` (an effectful gh/git read) under the §3.3 error discipline.
 
-    The §3.5 cap re-arm (entry probe) and the end-of-cycle resolver read the queue
+    The §3.5 budget re-arm (entry probe) and the end-of-cycle resolver read the queue
     OUTSIDE the VerbStep pipeline, so they cannot rely on ``_execute_step``. A tagged
     failure here gets the same treatment a verb error would: ``handle_verb_error``
     applies its per-tier mutation, the state is persisted, the two terminal signals
@@ -514,29 +517,33 @@ def _read_or_bootstrap(ctx: RunContext) -> PRGroomingState:
 
 
 def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
-    """Probe external transitions + re-arm the cap when entering at a terminal phase (§3.3/§3.5).
+    """Probe external transitions + re-arm the budget when entering at a terminal phase (§3.3/§3.5).
 
     From ``quiesced`` / ``human-gated`` run ``_poll`` once to detect an external merge
-    or a manual fix-push that cleared the gate; then, if still hard-cap-gated and the
-    cap no longer trips, clear the gate and advance to ``fixes-pending`` for the refused
-    commits to push. The cap stays gated only while it still trips — ``round >=
-    max_rounds`` AND commits are still queued (the exact inverse of the §3.5 cap-trip).
-    So a bare re-run with the refused commits still queued stays gated, whereas raising
-    ``--max-rounds`` (round now below the cap) OR an emptied queue re-arms.
+    or a manual fix-push that cleared the gate; then, if still budget-gated and the
+    budget no longer trips, clear the gate and advance to ``fixes-pending`` for the
+    refused commits to push. The budget stays gated only while it still trips —
+    ``pr_review_retries_used >= pr_review_retries`` AND commits are still queued (the
+    exact inverse of the §3.5 budget-trip). So a bare re-run with the refused commits
+    still queued stays gated, whereas raising ``--pr-review-retries`` (the counter now
+    below the budget) OR an emptied queue re-arms.
     """
     if ctx.state.phase not in {PRPhase.QUIESCED, PRPhase.HUMAN_GATED}:
         return
     _execute_step(VerbStep("poll", verbs.poll), ctx)
-    # Probe the cap ONLY when the poll left us still hard-cap-gated. A poll that moved
+    # Probe the budget ONLY when the poll left us still budget-gated. A poll that moved
     # the PR out of human-gated (external merge, operator fix-push) must NOT trigger the
     # effectful has_queued gh/git read — it is wasted there and a transient failure would
-    # turn an otherwise-clean terminal run into an error. The phase + cap-error checks
-    # short-circuit before the read; within them, `round >= max_rounds` is checked first
-    # so a raised --max-rounds also short-circuits the read.
+    # turn an otherwise-clean terminal run into an error. The phase + budget-error checks
+    # short-circuit before the read; within them, the counter-vs-budget comparison is
+    # checked first so a raised --pr-review-retries also short-circuits the read.
     if (
         ctx.state.phase is PRPhase.HUMAN_GATED
-        and ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
-        and not (ctx.state.round >= ctx.config.max_rounds and _guarded_has_queued(ctx, verbs))
+        and ctx.state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
+        and not (
+            ctx.state.pr_review_retries_used >= ctx.config.pr_review_retries
+            and _guarded_has_queued(ctx, verbs)
+        )
     ):
         ctx.state.phase = PRPhase.FIXES_PENDING
         ctx.state.last_error = None
@@ -548,12 +555,13 @@ def _entry_probe(ctx: RunContext, verbs: Verbs) -> None:
 def _resolve_end_of_cycle(ctx: RunContext, verbs: Verbs) -> None:
     """Apply the §3.2 end-of-cycle phase cascade + the §3.3 reset-on-success (writes state).
 
-    Reads ``has_queued_commits`` honestly (``verbs.has_queued``) rather than assuming it
-    is false. In the normal path the pre-push cap guard already refused any cap-tripping
-    push and a non-capped push consumed the queue, so this is false — but reading it for
-    real keeps the resolver's priority-1 a LIVE safety net: if any pipeline step ever
-    leaves commits queued at the cap (a future commit-producing ``reply``, a partial
-    push), the cap still gates here rather than silently pushing past it. On a
+    Reads ``has_queued_commits`` honestly (``verbs.has_queued``) rather than assuming
+    it is false. In the normal path the pre-push retry-budget guard already refused
+    any budget-tripping push and a non-gated push consumed the queue, so this is
+    false — but reading it for real keeps the resolver's priority-1 a LIVE safety
+    net: if any pipeline step ever leaves commits queued at the budget (a future
+    commit-producing ``reply``, a partial push), the budget still gates here rather
+    than silently pushing past it. On a
     non-``human-gated`` resolution the gating error + both dedup flags clear (success); a
     fresh ``human-gated`` gate clears ``lifecycle_escalation_filed`` once so the loop-top
     emits a single event.
@@ -562,7 +570,7 @@ def _resolve_end_of_cycle(ctx: RunContext, verbs: Verbs) -> None:
     resolved = resolve_end_of_cycle_phase(
         ctx.state,
         now=now,
-        max_rounds=ctx.config.max_rounds,
+        pr_review_retries=ctx.config.pr_review_retries,
         has_queued_commits=_guarded_has_queued(ctx, verbs),
         pushed_this_cycle=push_uploaded_commits_this_cycle(
             ctx.state, cycle_start_pushed_sha=ctx.cycle_start_pushed_sha

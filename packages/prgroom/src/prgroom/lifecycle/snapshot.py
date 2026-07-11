@@ -26,10 +26,10 @@ The two ephemeral working dirs the fix contract needs (``memory_dir`` scratch,
 Detect/interpret boundary: prgroom **detects, it does not interpret** (§8.2). The recurrence
 signal is **derived at snapshot time, not persisted** (§2 schema unchanged). The
 MVP §2 schema retains exactly one :class:`~prgroom.prsession.state.Disposition`
-per item and no first-seen-round, so ``attempt_count`` reports the schema floor
-(``1``) and ``first_seen_round`` reports the current round as the only available
-proxy — both sharpen once disposition-history tracking lands (reported as a
-schema gap, not invented here).
+per item and no first-seen-retry, so ``attempt_count`` reports the schema floor
+(``1``) and ``first_seen_retry`` reports the current retry counter as the only
+available proxy — both sharpen once disposition-history tracking lands (reported
+as a schema gap, not invented here).
 """
 
 from __future__ import annotations
@@ -135,8 +135,9 @@ def derive_recurrence(
       ``reopened == False`` rather than mis-matching.
     * ``attempt_count`` — ``1`` (the MVP schema retains one disposition; a true
       count needs history tracking — reported as a schema gap).
-    * ``first_seen_round`` — ``state.round`` (the schema has no first-seen field;
-      the current round is the only available proxy — reported as a schema gap).
+    * ``first_seen_retry`` — ``state.pr_review_retries_used`` (the schema has no
+      first-seen field; the current retry counter is the only available proxy —
+      reported as a schema gap).
     """
     disposition = item.disposition
     if disposition is None:
@@ -147,7 +148,7 @@ def derive_recurrence(
         attempt_count=1,
         prior_disposition=disposition.kind.value,
         prior_commits=tuple(disposition.commits),
-        first_seen_round=state.round,
+        first_seen_retry=state.pr_review_retries_used,
     )
 
 

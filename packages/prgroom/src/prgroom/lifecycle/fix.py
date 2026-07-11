@@ -139,7 +139,7 @@ def _fix_one_cluster(
     routed, blocked = resolve_routed_memory(
         result.contextual_memory,
         memory_dir=snapshot.memory_dir,
-        round_=state.round,
+        retry_=state.pr_review_retries_used,
         decided_by=decided_by,
         cluster_id=cluster_id,
         warn=warn,
@@ -183,7 +183,7 @@ def resolve_routed_memory(
     entries: list[MemoryEntry],
     *,
     memory_dir: str,
-    round_: int,
+    retry_: int,
     decided_by: str,
     cluster_id: str,
     warn: Callable[[str], None],
@@ -196,7 +196,8 @@ def resolve_routed_memory(
     return ``([], detail)`` so the caller cluster-flips (parity with the lexical BLOCK
     in ``agent/fix._build_result``). A read failure on a contained, non-symlinked path
     is a soft ``warn`` (bookkeeping drift), entry skipped. The per-entry ordinal keys
-    the Decisions-block dedup so two thread-less decisions in one round stay distinct.
+    the Decisions-block dedup so two thread-less decisions in the same retry stay
+    distinct.
     """
     real_dir = os.path.realpath(memory_dir)
     routed: list[RoutedMemory] = []
@@ -221,7 +222,7 @@ def resolve_routed_memory(
         routed.append(
             RoutedMemory(
                 content=content,
-                round=round_,
+                retry=retry_,
                 source_item=f"{cluster_id}#{ordinal}",
                 decided_by=decided_by,
                 target_hint=entry.target_hint,
