@@ -259,7 +259,7 @@ context and start execution.
 Run: `! grep -q "Which approach?" src/user/.agents/skills/writing-plans/SKILL.md`
 Expected: no output, exit code 0 (pattern absent)
 
-Run: `! grep -q "If Subagent-Driven chosen\|If Inline Execution chosen" src/user/.agents/skills/writing-plans/SKILL.md`
+Run: `! grep -qE "If Subagent-Driven chosen|If Inline Execution chosen" src/user/.agents/skills/writing-plans/SKILL.md`
 Expected: no output, exit code 0 (pattern absent)
 
 Run: `grep -c "## Plan Review Gate" src/user/.agents/skills/writing-plans/SKILL.md`
