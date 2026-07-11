@@ -151,7 +151,8 @@ hit → announce `Review routing: lean (no criteria hit)`. Any hit → announce
 Review-Depth Routing mechanics to the plan (a deliberate cross-skill
 read; both skills deploy together) — single `ralf-review` invocation, findings
 fixed inline but the recorded verdict is final and never re-earned, fail-closed
-where the harness cannot dispatch an independent reviewer — with target = the
+straight to the attention stop below when the harness cannot dispatch an
+independent reviewer — with target = the
 plan file and review criteria = coverage of the spec plus this skill's quality
 bar (see Remember and No Placeholders above).
 
