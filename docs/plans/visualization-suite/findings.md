@@ -64,12 +64,15 @@ Question under test: which visual representation of a multi-axis PR heat map
     user-pinned positions. Every visual encoding needs a legend.
 13. **Text legibility beats decoration**: no text-shadows on small labels; pick label
     color by luminance of the underlying fill, per theme.
-14. **The annotation layer must escape user content** (from the HEAVY-gate review):
-    the prototype's drill panel and tooltip inject paths, story text, and saved
-    notes via raw innerHTML — a stored self-XSS in throwaway code, but a hard
-    requirement once notes round-trip through agents or render non-local data.
-    Same review: data-out affordances must never fake success (the notes Copy
-    button reports "Copied ✓" even when the clipboard write fails).
+14. **The annotation layer must escape user content** (surfaced by the HEAVY-gate
+    review): any drill panel, tooltip, or notes field that carries paths, story
+    text, or saved notes must set them as data (`textarea.value` / `textContent`),
+    never build them into a raw innerHTML string — otherwise a note containing
+    `</textarea>` or HTML breaks the DOM (stored self-XSS). The V1 prototype sets
+    notes programmatically for this reason; the requirement only hardens once notes
+    round-trip through agents or render non-local data. Corollary: data-out
+    affordances must never fake success — the notes Copy button reports success
+    only when the clipboard write resolves, and shows a failure state otherwise.
 15. **Centrality tuning — exclude self-edges**: gen_data.py's in-degree counts
     intra-file edges (the majority of graph links are self-file), inflating
     "load-bearing" scores for big self-referential files; the coupling map already
