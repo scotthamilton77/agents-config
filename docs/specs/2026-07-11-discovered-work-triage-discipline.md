@@ -123,7 +123,7 @@ buckets ("future work") are structurally disallowed:
 - `this PR` — fixed in-session; no tracking item needed.
 - `parent work item (<id>)` — in-scope work deferred into the in-flight family.
 - `<anchor-id>` — out-of-scope, anchored to the roadmap.
-- `unanchored — needs your call` — the rare no-milestone-fits escalation.
+- `unanchored — needs your call` — the rare no-roadmap-anchor-fits escalation.
 
 A bare `—` cell is legitimate only on `this PR` rows (nothing was filed, so
 there is no tracked item or priority); every row that files a tracked item must
