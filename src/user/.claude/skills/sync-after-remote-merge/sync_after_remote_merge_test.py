@@ -248,3 +248,88 @@ def test_main_claude_native_hands_off(monkeypatch, main_repo):
         f"git -C {env['main_root']} branch -D feature/x",
     ]
     assert wt.exists()  # script did NOT remove a Claude-native worktree
+
+
+def test_main_squash_merge_succeeds(monkeypatch, main_repo):
+    """The primary case: a squash merge (repo default). The squash commit does
+    NOT have the branch commits as ancestors, so a merge_commit-based
+    containment check would false-abort. Gate A must key off the merged head."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    head_f = _head(wt)  # the PR head GitHub merged
+    # Squash-merge on the "remote": a brand-new commit on main, parent == base,
+    # feature's commit is NOT an ancestor.
+    _git(main_repo, "merge", "--squash", "feature/x")
+    _git(main_repo, "commit", "-m", "squash: feature work")
+    _git(main_repo, "push", "origin", "main")
+    squash_oid = _head(main_repo)
+    # Rewind local main so the script must pull the squash commit.
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": squash_oid}, "headRefOid": head_f}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "ok"
+    assert env["synced_to"] == squash_oid
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" not in branches
+    assert not wt.exists()
+
+
+def test_main_local_commit_beyond_merged_head_aborts(monkeypatch, main_repo):
+    """A local commit made AFTER the merged head would be lost by branch -D —
+    gate A must abort and name the orphan."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    head_f = _head(wt)  # what was merged
+    _git(main_repo, "merge", "--squash", "feature/x")
+    _git(main_repo, "commit", "-m", "squash: feature work")
+    _git(main_repo, "push", "origin", "main")
+    squash_oid = _head(main_repo)
+    # A local commit beyond the merged head (never pushed / merged).
+    (wt / "h.txt").write_text("extra local work\n")
+    _git(wt, "add", "h.txt")
+    _git(wt, "commit", "-m", "extra local work")
+    orphan = _head(wt)
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": squash_oid}, "headRefOid": head_f}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "safety_gate_commits"
+    assert orphan[:9] in json.dumps(env)
+    assert wt.exists()  # nothing torn down
+
+
+def test_main_merged_pr_without_head_oid_aborts(monkeypatch, main_repo):
+    """A MERGED PR with no head SHA can't be containment-checked; abort rather
+    than skip the gate and force-delete."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": None}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "safety_gate_commits"
+    assert "head" in env["remediation_hint"].lower()
+    assert wt.exists()
+
+
+def test_main_rejects_dash_leading_branch(monkeypatch, main_repo):
+    """A ref beginning with '-' would be parsed by git as an option on the
+    destructive teardown/sync commands — refuse it before any git runs."""
+    rc, env = _run_main(monkeypatch, main_repo, None, ["--branch=-x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "invalid_ref"

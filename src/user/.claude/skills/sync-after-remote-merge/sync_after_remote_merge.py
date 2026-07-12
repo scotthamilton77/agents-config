@@ -3,7 +3,7 @@
 
 Pure core over value types; git + `gh` confined to boundary functions (_run,
 gh_pr_view). Invoked by the sync-after-remote-merge skill:
-  python3 sync_after_remote_merge.py [--branch <b>] [--base <b>] [--pr <n>]
+  python3 sync_after_remote_merge.py [--branch <b>] [--base <b>]
 Emits a JSON envelope on stdout on every exit path. The script NEVER merges.
 
 Exit: 0 for ok/handoff/not_merged; non-zero for failed (a partial-state abort).
@@ -77,6 +77,11 @@ def build_envelope(
         "synced_to": synced_to,
         "remediation_hint": remediation_hint,
     }
+
+
+def _emit(status: Status, **fields) -> None:
+    """Print one JSON envelope to stdout — the single output surface for main()."""
+    print(json.dumps(build_envelope(status, **fields)))
 
 
 def classify_pr(pr_json: dict | None) -> PrState:
@@ -187,11 +192,19 @@ def _default_base(main_root: str) -> str:
     return "main"
 
 
+def _require_safe_ref(ref: str, name: str) -> None:
+    """Refuse a ref beginning with '-'. Such a value would be parsed by git as an
+    option on the destructive teardown/sync commands (checkout, branch -D,
+    rev-list) — fail closed rather than pass it through."""
+    if ref.startswith("-"):
+        raise _AbortStep("invalid_ref",
+                         f"{name} {ref!r} begins with '-'; refusing (git option-injection guard)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Reconcile local git state after a remote merge.")
     parser.add_argument("--branch", default=None)
     parser.add_argument("--base", default=None)
-    parser.add_argument("--pr", default=None)  # accepted for symmetry; PR is resolved from branch
     args = parser.parse_args(argv)
 
     completed: list[str] = []
@@ -205,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         common = Path(_run(["git", "rev-parse", "--git-common-dir"]).stdout.strip()).resolve()
         main_root = str(common.parent)
         branch = args.branch or _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        _require_safe_ref(branch, "branch")
         convention = detect_convention(worktree_root, Path(main_root))
         completed.append("preflight")
 
@@ -212,31 +226,42 @@ def main(argv: list[str] | None = None) -> int:
         pr_state = classify_pr(gh_pr_view(branch))
         pr_number = pr_state.pr
         base = args.base or pr_state.base or _default_base(main_root)
+        _require_safe_ref(base, "base")
         if not pr_state.merged:
-            print(json.dumps(build_envelope(
-                Status.NOT_MERGED, steps_completed=completed, worktree_convention=convention,
-                main_root=main_root, base=base, branch=branch, pr=pr_number,
-                remediation_hint=pr_state.reason)))
+            _emit(Status.NOT_MERGED, steps_completed=completed, worktree_convention=convention,
+                  main_root=main_root, base=base, branch=branch, pr=pr_number,
+                  remediation_hint=pr_state.reason)
             return 0
         merge_commit = pr_state.merge_commit
         completed.append("verify_merged")
 
-        # Make the merge commit available locally for the containment check.
-        _run(["git", "-C", main_root, "fetch", "origin", base], check=False)
-
-        # --- safety gate A: no unmerged local commits ---
-        if merge_commit:
-            rev = _run(["git", "-C", main_root, "rev-list", f"{merge_commit}..{branch}"], check=False)
-            orphans = unmerged_commits(rev.stdout) if rev.returncode == 0 else None
-            if orphans is None:
-                raise _AbortStep("safety_gate_commits",
-                                 f"cannot confirm {branch} is contained in the merge "
-                                 f"({merge_commit[:9]} not resolvable locally)",
-                                 cmd=f"git rev-list {merge_commit}..{branch}")
-            if orphans:
-                raise _AbortStep("safety_gate_commits",
-                                 f"{branch} has {len(orphans)} commit(s) not in the merge "
-                                 f"(would be lost): {', '.join(s[:9] for s in orphans)}")
+        # --- safety gate A: no local commits beyond the merged head ---
+        # Containment is checked against the PR head GitHub actually merged
+        # (head_oid), NOT the merge commit. A squash or rebase merge produces a
+        # new commit that does not have the branch's commits as ancestors, so a
+        # merge-commit check would list every branch commit and always
+        # false-abort — and squash is this repo's default. `rev-list
+        # <head>..<branch>` is empty for squash/rebase/merge alike when the
+        # local branch holds nothing beyond the merged head, and lists only
+        # genuine local-only commits when it does. A merged PR with no head SHA
+        # can't be verified — abort rather than skip the gate and force-delete.
+        if not pr_state.head_oid:
+            raise _AbortStep("safety_gate_commits",
+                             "merged PR reports no head SHA; cannot verify the branch is "
+                             "fully merged before deleting it")
+        rev = _run(["git", "-C", main_root, "rev-list", f"{pr_state.head_oid}..{branch}"],
+                   check=False)
+        if rev.returncode != 0:
+            raise _AbortStep("safety_gate_commits",
+                             f"cannot confirm {branch} is contained in the merged head "
+                             f"({pr_state.head_oid[:9]} not resolvable locally)",
+                             cmd=f"git rev-list {pr_state.head_oid}..{branch}",
+                             exit_code=rev.returncode, stderr=rev.stderr)
+        orphans = unmerged_commits(rev.stdout)
+        if orphans:
+            raise _AbortStep("safety_gate_commits",
+                             f"{branch} has {len(orphans)} local commit(s) beyond the merged "
+                             f"head (would be lost): {', '.join(s[:9] for s in orphans)}")
         completed.append("safety_gate_commits")
 
         # --- safety gate B: clean worktree ---
@@ -263,11 +288,10 @@ def main(argv: list[str] | None = None) -> int:
         # --- teardown ---
         remaining = plan_teardown(convention, main_root, branch)
         if convention is Convention.CLAUDE_NATIVE:
-            print(json.dumps(build_envelope(
-                Status.HANDOFF, steps_completed=completed, steps_remaining=remaining,
-                worktree_convention=convention, main_root=main_root, base=base, branch=branch,
-                pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
-                remediation_hint="sync done; finish teardown via the two steps in steps_remaining")))
+            _emit(Status.HANDOFF, steps_completed=completed, steps_remaining=remaining,
+                  worktree_convention=convention, main_root=main_root, base=base, branch=branch,
+                  pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
+                  remediation_hint="sync done; finish teardown via the two steps in steps_remaining")
             return 0
         if convention is Convention.OTHER_AGENT:
             _run(["git", "-C", main_root, "worktree", "remove", str(worktree_root)])
@@ -276,30 +300,28 @@ def main(argv: list[str] | None = None) -> int:
             _run(["git", "-C", main_root, "worktree", "prune"], check=False)
         completed.append("teardown")
 
-        print(json.dumps(build_envelope(
-            Status.OK, steps_completed=completed, worktree_convention=convention,
-            main_root=main_root, base=base, branch=branch, pr=pr_number,
-            merge_commit=merge_commit, synced_to=synced_to,
-            remediation_hint="branch deleted, worktree removed, base synced")))
+        removed = "worktree removed, " if convention is Convention.OTHER_AGENT else ""
+        _emit(Status.OK, steps_completed=completed, worktree_convention=convention,
+              main_root=main_root, base=base, branch=branch, pr=pr_number,
+              merge_commit=merge_commit, synced_to=synced_to,
+              remediation_hint=f"branch deleted, {removed}base synced to {synced_to[:9]}")
         return 0
 
     except _AbortStep as abort:
         remaining = plan_teardown(convention, main_root or "", branch or "") if convention else []
-        print(json.dumps(build_envelope(
-            Status.FAILED, steps_completed=completed, failed_step=abort.failed_step,
-            steps_remaining=remaining, worktree_convention=convention, main_root=main_root,
-            base=base, branch=branch, pr=pr_number, merge_commit=merge_commit,
-            synced_to=synced_to, remediation_hint=abort.hint)))
+        _emit(Status.FAILED, steps_completed=completed, failed_step=abort.failed_step,
+              steps_remaining=remaining, worktree_convention=convention, main_root=main_root,
+              base=base, branch=branch, pr=pr_number, merge_commit=merge_commit,
+              synced_to=synced_to, remediation_hint=abort.hint)
         return 1
     except Exception as exc:  # fail closed on any unexpected error
         detail = (getattr(exc, "stderr", None) or str(exc)).strip()
         one_line = next((ln.strip() for ln in detail.splitlines() if ln.strip()), repr(exc))
-        print(json.dumps(build_envelope(
-            Status.FAILED, steps_completed=completed,
-            failed_step={"name": "unexpected", "cmd": "", "exit_code": 1, "stderr": one_line},
-            worktree_convention=convention, main_root=main_root, base=base, branch=branch,
-            pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
-            remediation_hint=f"unexpected failure: {one_line}")))
+        _emit(Status.FAILED, steps_completed=completed,
+              failed_step={"name": "unexpected", "cmd": "", "exit_code": 1, "stderr": one_line},
+              worktree_convention=convention, main_root=main_root, base=base, branch=branch,
+              pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
+              remediation_hint=f"unexpected failure: {one_line}")
         return 1
 
 
