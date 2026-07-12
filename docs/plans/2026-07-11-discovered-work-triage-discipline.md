@@ -145,7 +145,7 @@ with:
 | [description] | out-of-scope | <anchor id> | <id> | P2 — <priority rationale> |
 ```
 
-"Lands in" must be one of: `this PR`, `parent epic (<id>)`, an epic/milestone
+"Lands in" must be one of: `this PR`, `parent work item (<id>)`, an anchor
 id, or `unanchored — needs your call` (the rare loud-escalation value) — never
 a vague bucket like "future work". Any in-scope row not landing in `this PR`
 must also appear under **Remaining Work** as an escalation line.
