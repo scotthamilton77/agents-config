@@ -76,3 +76,17 @@ def build_envelope(
         "synced_to": synced_to,
         "remediation_hint": remediation_hint,
     }
+
+
+def classify_pr(pr_json: dict | None) -> PrState:
+    """Classify the `gh pr view` payload. Only state == 'MERGED' is a merge."""
+    if not pr_json:
+        return PrState(False, None, None, None, None, "no PR found for branch")
+    state = pr_json.get("state")
+    number = pr_json.get("number")
+    base = pr_json.get("baseRefName")
+    if state != "MERGED":
+        return PrState(False, number, None, base, None,
+                       f"PR #{number} state is {state!r}, not MERGED")
+    merge_commit = (pr_json.get("mergeCommit") or {}).get("oid")
+    return PrState(True, number, merge_commit, base, pr_json.get("headRefOid"), "merged")
