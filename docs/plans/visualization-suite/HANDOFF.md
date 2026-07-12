@@ -1,4 +1,4 @@
-# HANDOFF — Visualization Suite fablize session (next phase: V3 brainstorm → grouped spec)
+# HANDOFF — Visualization Suite fablize session (next phase: "how does this actually work" discussion → V3 brainstorm → grouped spec)
 
 For a fresh context resuming work on **agents-config-yf2ov.2** (epic:
 "Visualization suite: PR shape, work-DAG, and codebase evolution", child of
@@ -62,10 +62,12 @@ resuming fresh.
 
 ## State (files)
 
-- `docs/plans/visualization-suite/prototype-v2/` (promoted from scratch,
-  uncommitted until the delivery PR): `v2_variant_A.html` (lanes),
-  `v2_variant_B.html` (territory), `v2_variant_C.html` (constellation) — all
-  self-contained, playwright-verified, delivered to Scott 2026-07-12.
+- `docs/plans/visualization-suite/prototype-v2/` (COMMITTED to main directly,
+  commit `0605b08`, 2026-07-12, Scott-authorized admin bypass — an explicit
+  exception to the worktree/PR discipline, not a precedent): `v2_variant_A.html`
+  (lanes), `v2_variant_B.html` (territory), `v2_variant_C.html` (constellation)
+  — all self-contained, demo-ready post fix pass, playwright-verified with
+  computed-style evidence, delivered to Scott 2026-07-12.
   Alongside: `v2_data.json` (5 real specimen plans, 10 cross-plan edges — only
   e1 encoded in beads; 9 agent-inferred), `shared-conventions.md` (encoding
   spine + hard requirements), `brief_A/B/C_*.md`, `shots/`.
@@ -79,20 +81,69 @@ resuming fresh.
 
 ## Next actions (in order)
 
-1. ~~Demo-readiness fix pass~~ DONE 2026-07-12: all FIX-SOON + usability items
-   applied and verified across the three prototypes (2 fix rounds; see
-   findings.md "V2 demo-readiness fix pass" for root causes, verification
-   evidence, and residual minors). Backup of pre-fix files at
-   `/tmp/proto-v2-backup-fixpass`.
-2. **V3 brainstorm** (lighter): topical-evolution thread — likely V2 overlay
-   machinery pointed backward through git history plus forward into plans.
-   1–2 mockups, not a full prototype, unless Scott asks.
+1. **"How does this actually work" discussion** (Scott initiates this in a
+   fresh session; do NOT jump to V3 or the spec first). Scott's words:
+   "rather than start on the next brainstorm/prototype, I'd like to discuss
+   _how_ we might actually make this work." This is the operationalization
+   question — moving from reaction mockups with hand-built data to a real,
+   repeatable system. Treat it as a brainstorm (one question at a time,
+   use-cases before architecture); its conclusions feed the F0 section of
+   the grouped spec. The agenda below ("Operationalization questions") is
+   the raw material — Scott drives which threads matter.
+2. **V3 brainstorm** (lighter, another day): topical-evolution thread —
+   likely V2 overlay machinery pointed backward through git history plus
+   forward into plans. 1–2 mockups, not a full prototype, unless Scott asks.
 3. **Write the grouped spec** — `docs/specs/2026-MM-DD-visualization-suite-design.md`:
    F0 foundations (scene contract, shared-canvas runtime, heat model, drill/
-   annotation pattern, encoding spine) + V1/V2/V3 sections + evaluation
-   criteria + `## Continuations` minting child beads with ACs. Then:
+   annotation pattern, encoding spine, + the operationalization decisions
+   from action 1) + V1/V2/V3 sections + evaluation criteria +
+   `## Continuations` minting child beads with ACs. Then:
    brainstorming-skill user review gate → completion gate → PR → at merge:
-   mint continuations, stamp readiness labels, release claim.
+   mint continuations, stamp readiness labels, release claim on yf2ov.2.
+
+## Operationalization questions (agenda for next-action 1)
+
+How the prototypes were actually produced this round — the thing to
+systematize:
+
+- **Data**: `v2_data.json` was hand-authored by agents in-session — plan
+  rosters and statuses pulled from real beads, step waypoints SYNTHESIZED by
+  agent judgment (4–6 per plan), cross-plan edges inferred by reading specs
+  (9 inferred vs 1 encoded; e1 = qptb4 blocks abn9.40.3 is the only
+  beads-encoded cross-plan edge). No pipeline exists; every artifact was a
+  bespoke agent work product.
+- **Rendering**: agent-written self-contained D3 HTML per variant, verified
+  by playwright subagents + human eyeball.
+
+Open "how" threads the discussion should resolve (accumulated evidence in
+findings.md):
+
+1. **Data pipeline**: what regenerates plan/step/edge data — a deterministic
+   extractor (beads + specs + graphify) plus an agent inference pass for
+   edges/steps? Where does inferred-edge provenance live so it survives
+   regeneration (a sidecar file? beads edges minted on acceptance?).
+2. **Regeneration trigger + freshness**: artifact-per-moment (morning
+   triage, on-demand command) vs live polling. Prior lean: regenerated
+   artifact, no server (no-fragile-infra constraint).
+3. **Packaging**: where does this live — a skill (agent regenerates on
+   demand), a `packages/` CLI with an agent step, a command? Placement rule:
+   capability-dependency decides shared vs Claude-only tree.
+4. **Agent-in-the-loop mode**: shared-canvas hybrid is decided (F0) — but
+   the concrete loop (annotation round-trip → agent processes notes → PR
+   comments/bead edits; "recommend work-breakdown revision" action) needs a
+   mechanism: file watch? paste-back JSON (V1's copy-notes button is the
+   embryo)? session-attached local bridge?
+5. **Recommendation engine**: edge drills carry agent recommendations
+   (Scott's ask + meta-directive to derive my own taxonomy). When are these
+   generated — at data-build time (batch, per edge/region) or interactively?
+6. **Scale**: 5 plans hand-built; 20+ plans needs the plan-inclusion filter
+   (built), C-as-entry-view hypothesis, and a data build that doesn't need a
+   frontier model per refresh (cost: this round's data was Fable-judgment-
+   heavy).
+7. **Step synthesis vs backlog truth**: synthesized steps are a lossy view
+   over real beads; the delta is itself a product feature (work-breakdown
+   revision) — but the pipeline must keep the mapping step→bead-ids
+   explicit, not vibes.
 
 ## Synthesis obligations for the spec (from Scott's V2 feedback)
 
