@@ -14,13 +14,17 @@ PR_URL = "https://github.com/scotthamilton77/agents-config/pull/238"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = subprocess.run(
-    ["git", "rev-parse", "--show-toplevel"], cwd=HERE, capture_output=True, text=True
+    ["git", "rev-parse", "--show-toplevel"],
+    cwd=HERE,
+    capture_output=True,
+    text=True,
+    check=True,
 ).stdout.strip()
 OUT = os.path.join(HERE, "data.json")
 
 # ---- real file tree ----
 files_raw = subprocess.run(
-    ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True
+    ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
 ).stdout.splitlines()
 EXCLUDE_PREFIX = (".superpowers/", "graphify-out/", ".beads/", ".playwright-mcp/", "archive/")
 EXCLUDE_SUFFIX = (".lock", ".png", ".jsonl")
