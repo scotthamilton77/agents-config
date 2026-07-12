@@ -108,15 +108,14 @@ def detect_convention(worktree_root: Path, main_root: Path) -> Convention:
     """
     if worktree_root == main_root:
         return Convention.NORMAL_REPO
-    parts = worktree_root.parts
-    for i in range(len(parts) - 1):
-        if parts[i] == ".claude" and parts[i + 1] == "worktrees":
-            return Convention.CLAUDE_NATIVE
-    if ".worktrees" in parts or "worktrees" in parts:
-        return Convention.OTHER_AGENT
+    if worktree_root.is_relative_to(main_root / ".claude" / "worktrees"):
+        return Convention.CLAUDE_NATIVE
+    for wt_dir in (".worktrees", "worktrees"):
+        if worktree_root.is_relative_to(main_root / wt_dir):
+            return Convention.OTHER_AGENT
     raise UnrecognizedWorktree(
-        f"worktree at {worktree_root} is under neither .claude/worktrees/ nor "
-        ".worktrees/; tear it down manually"
+        f"worktree at {worktree_root} is under neither {main_root}/.claude/worktrees/ "
+        f"nor {main_root}/.worktrees/; tear it down manually"
     )
 
 

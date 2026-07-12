@@ -100,6 +100,24 @@ def test_detect_convention_unrecognised_raises():
         m.detect_convention(wt, main_root)
 
 
+def test_detect_convention_unrelated_worktrees_segment_fails_loud():
+    """A `worktrees` path segment NOT anchored under main_root must fail loud,
+    never be scripted-removed as OTHER_AGENT (a bare-segment match would)."""
+    main_root = Path("/repo")
+    wt = Path("/elsewhere/worktrees/feature-x")
+    with pytest.raises(m.UnrecognizedWorktree):
+        m.detect_convention(wt, main_root)
+
+
+def test_detect_convention_unrelated_claude_worktrees_segment_fails_loud():
+    """Same anchoring for the Claude-native check: a `.claude/worktrees` segment
+    outside main_root is not this repo's Claude-native worktree."""
+    main_root = Path("/repo")
+    wt = Path("/elsewhere/.claude/worktrees/feature-x")
+    with pytest.raises(m.UnrecognizedWorktree):
+        m.detect_convention(wt, main_root)
+
+
 # --- Task 4: safety-gate parsers ---
 
 
