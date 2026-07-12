@@ -113,7 +113,7 @@ those fixed in-session, so the adjudication is visible, not just the leftovers:
 |------|-------|----------|------|----------------|
 | null-check in poller | in-scope | this PR | — | — |
 | retry config drift | in-scope | parent work item (<id>) | <id> | P1 — deferred: blast-radius; breaks overnight runs |
-| stale docs in guide | out-of-scope | <anchor-id> (M4 review epic) | <id> | P3 — cosmetic |
+| stale docs in guide | out-of-scope | <anchor id> | <id> | P3 — cosmetic |
 ```
 
 **"Lands in" value vocabulary** — the value must be one of the four below (the
@@ -122,7 +122,7 @@ buckets ("future work") are structurally disallowed:
 
 - `this PR` — fixed in-session; no tracking item needed.
 - `parent work item (<id>)` — in-scope work deferred into the in-flight family.
-- `<anchor-id>` — out-of-scope, anchored to the roadmap.
+- `<anchor id>` — out-of-scope, anchored to the roadmap.
 - `unanchored — needs your call` — the rare no-roadmap-anchor-fits escalation.
 
 A bare `—` cell is legitimate only on `this PR` rows (nothing was filed, so
