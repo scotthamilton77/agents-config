@@ -160,10 +160,11 @@ Envelope (all artifacts):
 - `schema_version`, `generated_at`, `generator` (CLI version).
 - `fingerprints` — the input-hash manifest the scene was built from (§5.4).
 - `descriptors` — self-describing attribute metadata (name, unit, direction).
-- **Per-fact provenance** on every Tier-2/Tier-3-touched fact:
-  `encoded | inferred | accepted | doubted`, plus fingerprint and
-  passage-level citations. Drives the solidity encoding and the drill panel's
-  evidence section.
+- **Per-fact provenance** on every Tier-2/Tier-3-touched fact, on two
+  independent axes: source/verdict `encoded | inferred | accepted` and
+  freshness `fresh | doubted` (an accepted fact can be doubted without
+  losing its recorded acceptance), plus fingerprint and input citations.
+  Drives the solidity encoding and the drill panel's evidence section.
 - `recommendations[]` — attached to high-signal items only (§5.7), each
   carrying its actionability class.
 - **Time reservation (V3):** optional `events[]` (Gource-style minimal
@@ -180,7 +181,7 @@ re-derived per view:
 | Channel | Encoding |
 |---|---|
 | Provenance | line solidity: encoded/accepted = solid; inferred = dashed |
-| Doubted | dashed + a bordered `?` doubt chip beside the kind chip; the drill panel carries the doubt reason |
+| Doubted (freshness overlay) | bordered `?` doubt chip beside the kind chip, over any solidity — an accepted-then-doubted fact stays solid + chip; the drill panel carries the doubt reason |
 | Edge kind | color + bordered glyph chip: dependency gray →, overlap amber ≈, conflict red ✕, synergy green + |
 | Step status | done = filled; in_progress = filled + ring; open = outlined; deferred = full-opacity outline + pause glyph |
 | Plan identity | the five categorical hues, fixed slot order, direct-labeled |
@@ -207,9 +208,13 @@ Never color-alone: every color channel pairs with a glyph, stroke, or label.
   write resolves. Notes key on `viz:<repo>:<artifact-kind>:<fact-id>` —
   fact identity, not scene fingerprint — so notes survive artifact
   regeneration; a note whose fact id no longer resolves surfaces as a
-  "note from a prior generation," never silently hidden. Artifacts show an
-  unprocessed-note count in the header as the round-trip nudge (§5.8;
-  residual loss window ledgered in §13). Artifacts feature-detect
+  "note from a prior generation," never silently hidden. Each note and each
+  copied payload also records the fact's `basis_hash` and source commit at
+  write time; on mismatch at processing time the note is marked
+  stale-evidence, and `viz verdict` / `viz apply` require an explicit
+  reconfirmation against current evidence before acting on it. Artifacts
+  show an unprocessed-note count in the header as the round-trip nudge
+  (§5.8; residual loss window ledgered in §13). Artifacts feature-detect
   localStorage at load (`file://` origins may disable or cross-share it)
   and fall back to in-memory + copy-button-only mode with a visible
   non-persistent warning.
@@ -222,10 +227,14 @@ Never color-alone: every color channel pairs with a glyph, stroke, or label.
 
 ### 4.6 Artifact packaging
 
-Single HTML file, everything inlined. Stable element ids/classes as
-verification hooks — build-time verification drives playwright against served
-copies with computed-style assertions and cache-busted reloads (the
-verification lessons in the corpus are binding on implementation plans).
+Single HTML file, everything inlined. The inlined scene JSON is emitted via
+a **script-safe serializer** (`<` escaped as `\u003c`, etc.) — a
+repo-derived string containing `</script>` must never terminate the script
+element (stored XSS via the embedding path, upstream of all DOM-level
+escaping). Stable element ids/classes as verification hooks — build-time
+verification drives playwright against served copies with computed-style
+assertions and cache-busted reloads (the verification lessons in the corpus
+are binding on implementation plans).
 
 ## 5. F0 — Data pipeline
 
@@ -260,8 +269,11 @@ plans must confirm both by reading source before designing on them.
   (graphify communities, import edges, file sets). A fact like an L2
   contention claim or projected centrality cites graph inputs, not prose.
   Funnel rung 2 (§5.4) cannot be retrofitted onto a fact whose only
-  provenance is "read spec X"; these citations also feed the fact's
-  `basis_hash` (§5.3).
+  provenance is "read spec X". The fact's `basis_hash` (§5.3) covers these
+  cited inputs **plus the inference-contract version** (prompt version,
+  schema version, model id): a contract change forces re-inference or
+  reassessment — rung 2 must never silently restamp facts produced under an
+  obsolete inference contract.
 - **Model routing:** rung-3 doubt checks and step synthesis run on cheap
   models; edge inference on mid-tier; only recommendation synthesis for
   high-signal items warrants a stronger tier. Routed per the model-routing
@@ -338,10 +350,14 @@ re-synthesis moves the recorded pair's beads out of the endpoints' anchor
 sets, an orphaned-promotion flag is raised for human disposition — a
 promoted beads edge is never auto-removed. **Every `blocks` write —
 promotion or `viz apply` — runs cycle detection against the beads DAG first
-and refuses with a flag on a would-be cycle** (an edge closing a cycle
-silently removes work from `bd ready`); `viz verdict` and `viz apply`
-support `--dry-run` previews showing the exact bead mutations before
-anything writes (test item 17). Promotion appends an audit note to the
+and refuses with a flag on a would-be cycle** — and the check runs over the
+**full accepted logical dependency graph**: beads `blocks` edges *plus*
+sidecar-held accepted dependency edges, including type-wall `related-to`
+fallbacks (an edge closing a cycle silently removes work from `bd ready`,
+and a logical cycle through fallback edges would also break §7.5's
+longest-path generation index); `viz verdict` and `viz apply` support
+`--dry-run` previews showing the exact bead mutations before anything
+writes (test item 17). Promotion appends an audit note to the
 target bead (provenance: agent-inferred-then-accepted, date, fingerprint);
 the sidecar ledger — not beads — is authoritative for provenance and for
 which beads edges are agent-created (beads edges carry no metadata), which
@@ -390,6 +406,10 @@ queue, not a process.
   manifests, funnel rungs 1–2, sidecar read/write, scene assembly, HTML
   templating. CI-gated like its siblings (`make ci-vizsuite`: lint,
   format-check, typecheck, coverage, audit). Runs without any model.
+  **All beads reads and writes go through the `work` facade CLI** — the
+  repo's sole tested programmatic bd boundary — via a tracker port with the
+  facade's protocol-version handshake and typed errors; vizsuite never
+  shells `bd` directly (tracker quarantine).
   CLI name **`viz`**; machine verbs emit the JSON-envelope pattern the
   work-facade contract established (stdout envelope, exit mirrors `ok`).
   Verb sketch (implementation plans finalize): `viz pr [<number>]`,
@@ -447,11 +467,16 @@ can execute on acceptance: mint bead, add edge, relabel, resequence) or
 class the annotation round-trip dispatches on; and lives the Tier-2
 lifecycle (fingerprint-keyed, funnel-checked, dismissals persist in
 rejection memory until the basis changes). `one-click` execution goes
-through `viz apply`, which is **idempotent per mutation class** (bead
-minting keys on the recommendation id; edge adds, relabels, and resequences
-converge on target state — replay is a no-op) and appends an audit note to
-every touched bead: the edge-promotion contract (§5.3) generalized to all
-one-click mutations.
+through `viz apply`, which **refuses any recommendation without a recorded
+Tier-3 accepted verdict** (typed error — an attached agent or direct
+invocation can never mutate the tracker from an unreviewed Tier-2
+recommendation), is **idempotent per mutation class** (bead minting keys on
+the recommendation id; edge adds and relabels converge on target state —
+replay is a no-op), and appends an audit note to every touched bead: the
+edge-promotion contract (§5.3) generalized. **Resequencing is
+`ruling-needed`, not `one-click`** — the `work` facade has no resequence
+verb, and vizsuite mutates the tracker only through facade verbs (§5.6); it
+becomes executable only if a versioned facade verb lands first.
 
 ### 5.8 Annotation round-trip
 
@@ -508,8 +533,12 @@ semantics per §4.5):
   baseline; PR-touched files receive a churn-scaled boost (PyDriller,
   merge-base..head). Context files never score below their scc baseline —
   churn only heats, never cools. Replaces the prototype's fabricated scores.
-- **Load-bearing** — Tier 1: graph centrality from graphify, with two
-  binding corrections: (a) **projected post-PR centrality** — computed on
+- **Load-bearing** — Tier 1: graph centrality from graphify, behind a
+  **preflight**: the graph's build-commit marker must match the target
+  revision (refresh if the tool is available, else fail loud or render the
+  axis explicitly unavailable — weight controls exclude it; never report a
+  stale graph as post-PR centrality; graphify is an optional dependency,
+  not an assumed one). Two binding corrections: (a) **projected post-PR centrality** — computed on
   the dependency graph *as the PR leaves it* (changed imports included),
   because history-based centrality scores brand-new load-bearing code at
   zero; (b) **consistent edge set** — intra-file self-edges excluded from
@@ -590,8 +619,8 @@ hide: the four delta triggers (§5.7: backlog gap, orphan work, granularity
 mismatch, sequencing contradiction) compose the UI-initiated **"recommend
 work-breakdown revision"** action. The user invokes it from a plan or step
 drill; the agent responds with delta-cited recommendations whose `one-click`
-members (mint beads, add edges, resequence) execute through the annotation
-round-trip on acceptance. Delta *computation* is deterministic CLI code over
+members (mint beads, add edges) execute through the annotation round-trip on
+acceptance; resequencing proposals arrive as drafted rulings (§5.7). Delta *computation* is deterministic CLI code over
 `steps.json` and the bead subtree; the skill adds only the narrative
 recommendation layer on top.
 
@@ -700,9 +729,13 @@ playwright pass, not CI.
    modulo the build-stamp field.
 7. **Escaping:** hostile fixture strings (`</textarea>`, `<script>`,
    `"><img onerror…`) in paths, stories, and notes render inert (asserted at
-   the templating/escaping unit boundary).
+   the templating/escaping unit boundary); a scene field containing
+   `</script>` survives inline embedding without terminating the script
+   element (script-safe serializer, §4.6).
 8. **Schema gate:** the assembler rejects a scene whose Tier-2 facts lack
-   provenance or citations — loud typed error, no silent default.
+   provenance or citations — loud typed error, no silent default; an
+   accepted fact that becomes doubted carries both signals (verdict axis +
+   freshness axis) through assembly to the encoding.
 9. **Step-mapping integrity:** every synthesized step carries an explicit
    `bead_ids` list (empty ⇒ reported as backlog-gap delta); beads under a
    plan mapped by no step are reported as orphan-work delta — both surfaced,
@@ -721,8 +754,9 @@ playwright pass, not CI.
     prior verdict still joins; a rejected edge whose endpoints renumbered
     stays suppressed; a prose-only plan's rejected edge whose cited passage
     was edited resurfaces annotated with its prior rejection — never fresh.
-14. **Apply idempotency:** replaying `viz apply` for each one-click
-    mutation class (mint bead, add edge, relabel, resequence) is a no-op
+14. **Apply guards:** `viz apply` on a recommendation without a recorded
+    accepted verdict is a typed refusal, beads untouched; replaying it for
+    each one-click mutation class (mint bead, add edge, relabel) is a no-op
     the second time — no duplicate beads, edges, or notes; the ledger, not
     re-derivation, is the idempotency source of truth.
 15. **Contested computation:** fixtures assert L1/L2 level assignment from
