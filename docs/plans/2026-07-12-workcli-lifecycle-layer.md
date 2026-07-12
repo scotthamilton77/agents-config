@@ -71,7 +71,8 @@ timeout-retryable.
 
 **L3. `CreateFields` gains two optional fields** (`acceptance: str | None`,
 `blocked_by: str | None`), both defaulting `None`. When present the bd adapter
-appends `--acceptance <text>` / `--deps blocks:<id>`. Transport `create --raw`
+appends `--acceptance <text>` / `--deps <id>` (bare id — bd's `blocks:<id>`
+form is the reverse direction). Transport `create --raw`
 never sets them, so its argv and existing tests are unchanged. `blocked_by`
 makes the spec-shape placeholder's blocks-edge a single atomic `bd create`,
 shrinking the partial-failure surface.
@@ -296,7 +297,7 @@ class CreateFields:
     parent: str | None = None
     labels: tuple[str, ...] = ()
     acceptance: str | None = None      # NEW — bd `--acceptance`
-    blocked_by: str | None = None      # NEW — bd `--deps blocks:<id>` (atomic blocks-edge at creation)
+    blocked_by: str | None = None      # NEW — bd `--deps <id>` (bare; atomic blocks-edge at creation)
 ```
 
 ### backend.py — four new Protocol methods
@@ -501,7 +502,7 @@ exposes no `.calls`).
     `("update","x","--type","bug")`; `set_acceptance("x","AC")` sends
     `("update","x","--acceptance","AC")`; each raises the mapped `WorkError` on a
     scripted failure. `create(CreateFields(title="T", acceptance="A",
-    blocked_by="d1"))` argv contains `--acceptance A` and `--deps blocks:d1`;
+    blocked_by="d1"))` argv contains `--acceptance A` and `--deps d1`;
     `create(CreateFields(title="T"))` argv contains neither (transport unchanged).
   - `test_retry_safety.py`: with a runner that raises `TimeoutExpired` once then
     would succeed — `run_with_retry(..., retry_on_timeout=True)` retries and
@@ -565,7 +566,7 @@ exposes no `.calls`).
     order, a container `create` (`--type feature`, label `shape-spec`, **no
     `planned` on this create**), a design-child `create` (`--parent
     <container>`, label `shape-design`), a placeholder `create` (`--parent
-    <container>`, `--deps blocks:<designchild>`, label `impl-placeholder`, title
+    <container>`, `--deps <designchild>` (bare id), label `impl-placeholder`, title
     `[Impl] T (scope: per spec)`), and **finally** a `label add <container>
     planned` (L16 — planned is stamped last, after both children exist).
     Envelope `data` returns the container id + child ids.
@@ -615,7 +616,7 @@ exposes no `.calls`).
     `label remove ID planned`. Neither/both of `--done`/`--undo` → `E_USAGE`.
   - **Item 10** — `promote ID` on a `shape-feat` leaf → in order: `label add ID
     shape-spec`, `label remove ID shape-feat`, a design child `create --parent
-    ID`, a placeholder `create --parent ID --deps blocks:<designchild>`,
+    ID`, a placeholder `create --parent ID --deps <designchild>` (bare id),
     **finally** `label add ID planned` (L16); the fake shows **no**
     reparent/new-parent call on ID (id + parent + edges preserved). `promote` on
     a non-`shape-feat` item → `E_USAGE`; already `shape-spec` → no-op exit 0.

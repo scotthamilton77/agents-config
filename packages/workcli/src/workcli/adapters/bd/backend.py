@@ -143,12 +143,21 @@ class BdBackend:
         if fields.acceptance is not None:
             argv += ["--acceptance", fields.acceptance]
         if fields.blocked_by is not None:
-            argv += ["--deps", f"blocks:{fields.blocked_by}"]
+            # bare id = "new depends on / blocked by <id>"; bd's `blocks:<id>`
+            # form is the REVERSE (new blocks id) -- verified against live bd.
+            argv += ["--deps", fields.blocked_by]
 
         result = run_with_retry(self._runner, argv, sleep=self._sleep, retry_on_timeout=False)
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
         return parse_created_id(result.stdout)
+
+    def _update_and_check(self, argv: list[str], *, retry_on_timeout: bool = True) -> None:
+        result = run_with_retry(
+            self._runner, argv, sleep=self._sleep, retry_on_timeout=retry_on_timeout
+        )
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
 
     def set_fields(self, item_id: str, fields: UpdateFields) -> None:
         argv = ["update", item_id]
@@ -159,44 +168,22 @@ class BdBackend:
         if fields.description is not None:
             argv += ["--description", fields.description]
 
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(argv)
 
     def claim(self, item_id: str) -> None:
-        argv = ["update", item_id, "--claim"]
-
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(["update", item_id, "--claim"])
 
     def set_status(self, item_id: str, status: str) -> None:
-        argv = ["update", item_id, "--status", status]
-
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(["update", item_id, "--status", status])
 
     def set_type(self, item_id: str, item_type: str) -> None:
-        argv = ["update", item_id, "--type", item_type]
-
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(["update", item_id, "--type", item_type])
 
     def set_acceptance(self, item_id: str, text: str) -> None:
-        argv = ["update", item_id, "--acceptance", text]
-
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(["update", item_id, "--acceptance", text])
 
     def append_note(self, item_id: str, text: str) -> None:
-        argv = ["update", item_id, "--append-notes", text]
-
-        result = run_with_retry(self._runner, argv, sleep=self._sleep, retry_on_timeout=False)
-        if result.returncode != 0:
-            raise map_bd_failure(argv, result)
+        self._update_and_check(["update", item_id, "--append-notes", text], retry_on_timeout=False)
 
     def close(self, ids: Sequence[str]) -> None:
         argv = ["close", *ids]

@@ -353,7 +353,7 @@ def test_promote_shape_feat_leaf_mints_spec_shape_in_order_planned_stamped_last(
             "--labels",
             "impl-placeholder",
             "--deps",
-            "blocks:x.2",
+            "x.2",
         ),
         ("label", "add", "x.1", "planned"),
     ]

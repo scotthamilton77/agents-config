@@ -353,7 +353,7 @@ def test_create_spec_mints_container_then_design_child_then_placeholder_then_sta
             "--labels",
             "impl-placeholder",
             "--deps",
-            "blocks:x.2",
+            "x.2",
         ),
         ("label", "add", "x.1", "planned"),
     ]

@@ -4,9 +4,10 @@
 primitives the lifecycle verb layer (bead .9.2, later tasks) composes into
 guarded transitions -- each is exactly one `bd update` call, mapped through
 the existing `map_bd_failure` table on a nonzero exit. `create` gains
-`--acceptance`/`--deps blocks:<id>` when `CreateFields.acceptance`/
-`blocked_by` are set; the transport `create --raw` path never sets them, so
-its argv is unchanged (pinned as a regression here).
+`--acceptance`/`--deps <id>` (bare id -- bd's own `blocks:<id>` form is the
+REVERSE direction) when `CreateFields.acceptance`/`blocked_by` are set; the
+transport `create --raw` path never sets them, so its argv is unchanged
+(pinned as a regression here).
 """
 
 from __future__ import annotations
@@ -145,7 +146,7 @@ def test_create_appends_acceptance_and_blocked_by_deps_when_set():
     backend.create(CreateFields(title="T", acceptance="A", blocked_by="d1"))
 
     assert runner.calls == [
-        ("create", "--json", "--title", "T", "--acceptance", "A", "--deps", "blocks:d1")
+        ("create", "--json", "--title", "T", "--acceptance", "A", "--deps", "d1")
     ]
 
 

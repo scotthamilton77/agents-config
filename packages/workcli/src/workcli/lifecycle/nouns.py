@@ -24,13 +24,31 @@ class NounTemplate:
 
 
 NOUN_TEMPLATES: dict[Noun, NounTemplate] = {
-    Noun.SPIKE: NounTemplate("task", "shape-spike", False, False, False),
-    Noun.CHORE: NounTemplate("chore", "shape-chore", False, False, False),
-    Noun.DECISION: NounTemplate("decision", "shape-decision", False, False, False),
-    Noun.FEAT: NounTemplate("feature", "shape-feat", False, True, False),
-    Noun.BUGFIX: NounTemplate("bug", "shape-bugfix", False, True, False),
-    Noun.SPEC: NounTemplate("feature", "shape-spec", True, False, True),
-    Noun.EPIC: NounTemplate("epic", "shape-epic", True, False, False),
+    Noun.SPIKE: NounTemplate(
+        "task", "shape-spike", is_container=False, expects_evidence=False, born_planned=False
+    ),
+    Noun.CHORE: NounTemplate(
+        "chore", "shape-chore", is_container=False, expects_evidence=False, born_planned=False
+    ),
+    Noun.DECISION: NounTemplate(
+        "decision",
+        "shape-decision",
+        is_container=False,
+        expects_evidence=False,
+        born_planned=False,
+    ),
+    Noun.FEAT: NounTemplate(
+        "feature", "shape-feat", is_container=False, expects_evidence=True, born_planned=False
+    ),
+    Noun.BUGFIX: NounTemplate(
+        "bug", "shape-bugfix", is_container=False, expects_evidence=True, born_planned=False
+    ),
+    Noun.SPEC: NounTemplate(
+        "feature", "shape-spec", is_container=True, expects_evidence=False, born_planned=True
+    ),
+    Noun.EPIC: NounTemplate(
+        "epic", "shape-epic", is_container=True, expects_evidence=False, born_planned=False
+    ),
 }
 
 DESIGN_CHILD_LABEL = "shape-design"
