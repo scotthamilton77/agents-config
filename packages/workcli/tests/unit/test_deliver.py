@@ -162,6 +162,57 @@ def test_deliver_design_without_spec_is_usage_error_with_no_bd_call():
     assert runner.calls == [("show", "d.1", "--json")]
 
 
+def test_deliver_design_with_leaf_flags_is_usage_error_naming_them():
+    # --pr/--items/--trivial belong to leaf delivery; a design child rejects
+    # them rather than silently ignoring them (fail fast at the boundary).
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S", "--pr", "https://example/pr/1", "--trivial"], runner
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert "--pr" in error["message"]
+    assert "--trivial" in error["message"]
+    assert runner.calls == [("show", "d.1", "--json")]
+
+
+def test_deliver_design_with_items_flag_is_usage_error():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S", "--items", "a,b"], runner
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert "--items" in error["message"]
+    assert runner.calls == [("show", "d.1", "--json")]
+
+
 def test_deliver_design_replay_after_full_reconciliation_is_a_noop():
     runner = ScriptedBdRunner(
         steps=[
@@ -478,6 +529,30 @@ def test_deliver_design_exactly_two_children_resolves_sibling_and_delivers():
 
 
 # --- deliver (leaf path) ----------------------------------------------------
+
+
+def test_deliver_leaf_with_spec_flag_is_usage_error():
+    # --spec belongs to design delivery; a leaf rejects it rather than
+    # silently ignoring it. Rejection precedes the already-closed/evidence
+    # checks -- flag validation happens at the boundary.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("x.1", status="open", labels=["shape-feat"]))
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "x.1", "--spec", "S", "--pr", "https://example/pr/1"], runner
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert "--spec" in error["message"]
+    assert runner.calls == [("show", "x.1", "--json")]
 
 
 def test_deliver_leaf_with_pr_appends_delivered_note_then_closes():

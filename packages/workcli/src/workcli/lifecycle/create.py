@@ -60,6 +60,11 @@ def _validate_usage(args: Namespace, noun: Noun) -> None:
             ErrorCode.USAGE,
             f"create {noun}: --type is set by the noun; omit it",
         )
+    if args.label:
+        raise WorkError(
+            ErrorCode.USAGE,
+            f"create {noun}: labels are set by the noun; omit --label",
+        )
     if args.spec is not None and args.trivial:
         raise WorkError(
             ErrorCode.USAGE,

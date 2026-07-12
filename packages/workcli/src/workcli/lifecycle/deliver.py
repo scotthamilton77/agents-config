@@ -80,6 +80,17 @@ def _sibling_placeholder(backend: Backend, design_item: Item) -> Item:
 
 
 def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> JsonValue:
+    leaf_flags = [
+        name
+        for name, value in (("--pr", args.pr), ("--items", args.items), ("--trivial", args.trivial))
+        if value
+    ]
+    if leaf_flags:
+        raise WorkError(
+            ErrorCode.USAGE,
+            f"deliver {args.id}: {', '.join(leaf_flags)} belong to leaf delivery; "
+            f"omit for a design child",
+        )
     if args.spec is None:
         raise WorkError(ErrorCode.USAGE, f"deliver {args.id}: design delivery requires --spec")
 
@@ -130,6 +141,11 @@ def _leaf_evidence(backend: Backend, args: Namespace) -> str:
 
 
 def _deliver_leaf(backend: Backend, args: Namespace, item: Item) -> JsonValue:
+    if args.spec is not None:
+        raise WorkError(
+            ErrorCode.USAGE,
+            f"deliver {args.id}: --spec belongs to design delivery; omit for a leaf",
+        )
     if item.status == "closed":
         return _closed(args.id)
 
