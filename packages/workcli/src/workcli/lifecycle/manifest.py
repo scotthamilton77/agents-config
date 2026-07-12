@@ -124,4 +124,23 @@ def parse_continuations(spec_text: str) -> Manifest:
         raise WorkError(ErrorCode.MANIFEST, "empty manifest")
 
     items = tuple(_parse_item_bullet(bullet) for bullet in item_bullets)
+    _reject_duplicate_titles(items)
     return Manifest(items=items, none_reason=None)
+
+
+def _reject_duplicate_titles(items: tuple[ManifestItem, ...]) -> None:
+    """Reject a manifest carrying two items with the identical title.
+
+    `reconcile_placeholder`'s multi-unit path (`deliver.py::_reconcile_multi`)
+    matches existing children by title to make the mint idempotent under
+    replay -- a manifest with two same-titled items would silently mint only
+    one, destroying conservation of committed work (invariant 1). Caught here
+    at parse time, loudly, rather than as a silent under-mint at delivery.
+    """
+    seen: set[str] = set()
+    for item in items:
+        if item.title in seen:
+            raise WorkError(
+                ErrorCode.MANIFEST, f"manifest has duplicate item titles: {item.title!r}"
+            )
+        seen.add(item.title)

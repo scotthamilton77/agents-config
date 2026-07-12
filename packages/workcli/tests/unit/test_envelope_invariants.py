@@ -59,6 +59,41 @@ def _label_list_ok() -> BdResult:
     )
 
 
+def _item_raw(
+    item_id: str, title: str, *, status: str = "open", labels: list[str] | None = None
+) -> dict[str, object]:
+    return {
+        "id": item_id,
+        "title": title,
+        "issue_type": "task",
+        "status": status,
+        "priority": 2,
+        "labels": labels or [],
+        "dependencies": [],
+        "dependents": [],
+    }
+
+
+def _search_result(*raw_items: dict[str, object]) -> BdResult:
+    return BdResult(returncode=0, stdout=json.dumps(list(raw_items)), stderr="")
+
+
+def _show_result(*raw_items: dict[str, object]) -> BdResult:
+    return BdResult(returncode=0, stdout=json.dumps(list(raw_items)), stderr="")
+
+
+def _list_result(*raw_items: dict[str, object]) -> BdResult:
+    return BdResult(returncode=0, stdout=json.dumps(list(raw_items)), stderr="")
+
+
+def _lifecycle_create_result(new_id: str) -> BdResult:
+    return BdResult(
+        returncode=0,
+        stdout=json.dumps({"id": new_id, "schema_version": 3, "title": "T"}),
+        stderr="",
+    )
+
+
 @dataclass(frozen=True)
 class VerbCase:
     verb: str
@@ -163,6 +198,97 @@ VERB_CASES: list[VerbCase] = [
                 BdResult(returncode=1, stdout="", stderr="cannot merge with uncommitted changes\n"),
             )
         ],
+    ),
+    # --- lifecycle verbs (plan Task 7 -- one success + one failure per verb,
+    # over the seven lifecycle verbs from create through reconcile) ---------
+    VerbCase(
+        "create_noun",
+        ["create", "spec", "--title", "New Objective", "--parent", "P"],
+        [
+            ScriptedStep(("search",), _search_result()),  # no title collision
+            ScriptedStep(("create",), _lifecycle_create_result("s.1")),  # container
+            ScriptedStep(("create",), _lifecycle_create_result("s.2")),  # design child
+            ScriptedStep(("create",), _lifecycle_create_result("s.3")),  # placeholder
+            ScriptedStep(("label", "add"), _OK),  # planned, stamped last
+        ],
+        ["create", "feat", "--title", "Existing Feature", "--parent", "P"],
+        [ScriptedStep(("search",), _search_result(_item_raw("f.9", "Existing Feature")))],
+    ),
+    VerbCase(
+        "claim",
+        ["claim", "c.1"],
+        [
+            ScriptedStep(("show",), _show_result(_item_raw("c.1", "T", status="open"))),
+            ScriptedStep(("ready",), _list_result(_item_raw("c.1", "T", status="open"))),
+            ScriptedStep(("update",), _OK),
+        ],
+        ["claim", "c.2"],
+        [ScriptedStep(("show",), _show_result(_item_raw("c.2", "T", status="closed")))],
+    ),
+    VerbCase(
+        "release",
+        ["release", "r.1"],
+        [
+            ScriptedStep(("show",), _show_result(_item_raw("r.1", "T", status="in_progress"))),
+            ScriptedStep(("update",), _OK),
+        ],
+        ["release", "r.2"],
+        [ScriptedStep(("show",), _show_result(_item_raw("r.2", "T", status="closed")))],
+    ),
+    VerbCase(
+        "deliver",
+        ["deliver", "d.1", "--pr", "https://example/pr/9"],
+        [
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("d.1", "T", status="open", labels=["shape-feat"]))
+            ),
+            ScriptedStep(("update",), _OK),  # delivered note
+            ScriptedStep(("close",), _OK),
+        ],
+        ["deliver", "d.2"],  # no --pr/--items/--trivial -> E_EVIDENCE
+        [
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("d.2", "T", status="open", labels=["shape-feat"]))
+            )
+        ],
+    ),
+    VerbCase(
+        "plan",
+        ["plan", "p.1", "--done"],
+        [
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("p.1", "T", status="open", labels=["shape-spec"]))
+            ),
+            ScriptedStep(("label", "add"), _OK),
+        ],
+        ["plan", "p.2"],  # neither --done nor --undo -> E_USAGE, no bd call
+        [],
+    ),
+    VerbCase(
+        "promote",
+        ["promote", "m.1"],
+        [
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("m.1", "T", status="open", labels=["shape-feat"]))
+            ),
+            ScriptedStep(("label", "add"), _OK),  # shape-spec
+            ScriptedStep(("label", "remove"), _OK),  # shape-feat
+            ScriptedStep(("create",), _lifecycle_create_result("m.2")),  # design child
+            ScriptedStep(("create",), _lifecycle_create_result("m.3")),  # placeholder
+            ScriptedStep(("label", "add"), _OK),  # planned, stamped last
+        ],
+        ["promote", "m.2"],  # not shape-feat -> E_USAGE
+        [ScriptedStep(("show",), _show_result(_item_raw("m.2", "T", status="open")))],
+    ),
+    VerbCase(
+        "reconcile",
+        ["reconcile"],
+        [
+            ScriptedStep(("list",), _list_result()),  # interrupted-deliver sweep: empty
+            ScriptedStep(("list",), _list_result()),  # impl-placeholder sweep: empty
+        ],
+        ["reconcile"],
+        [ScriptedStep(("list",), _GARBAGE)],  # unparseable bd list output -> E_BACKEND_DRIFT
     ),
 ]
 

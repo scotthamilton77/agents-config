@@ -1,7 +1,7 @@
 # Work Lifecycle and the `work` Facade — Design
 
 **Date:** 2026-07-05
-**Status:** Draft (pending review)
+**Status:** Implemented (lifecycle layer, bead `agents-config-wgclw.9.2`); the `whats-next` router rewrite (§8) and non-CLI continuations (§12) remain separate beads.
 **Bead:** `agents-config-wgclw.9` for the CLI scope (this spec defines the lifecycle layer; the transport layer is the work-facade CLI contract spec, 2026-07-04). Non-CLI continuations attach to their own homes at the sweep (§12).
 **Decision:** Work-item state is declared, never inferred: status is a claim lease, labels carry phase, and the tracker's own dependency engine gates phase transitions. Objectives are containers that never close before their planned work exists as trackable children; implementation children are created as dependency-blocked placeholders at capture when implementation is expected. The `work` facade CLI (`packages/workcli`) owns every lifecycle mutation — this spec's lifecycle layer over the CLI contract spec's transport layer; skills and the future PDLC orchestrator are its clients. Beads remains the storage engine.
 

@@ -178,3 +178,17 @@ def test_item_bullet_with_empty_acceptance_is_rejected():
         parse_continuations(spec)
 
     assert exc_info.value.code == ErrorCode.MANIFEST
+
+
+def test_duplicate_item_titles_are_rejected():
+    spec = (
+        "## Continuations\n"
+        "- feat: Add the flag — AC: flag toggles behavior\n"
+        "- chore: Add the flag — AC: docs mention the flag\n"
+    )
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_continuations(spec)
+
+    assert exc_info.value.code == ErrorCode.MANIFEST
+    assert "Add the flag" in str(exc_info.value.message)

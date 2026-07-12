@@ -34,6 +34,33 @@ Twelve verbs; each is a subcommand of `work`.
 `epic`/`stats`/`compact`/`delete` are deliberately out of scope for v1 — no
 programmatic consumer observed; use `bd` directly for those.
 
+## Lifecycle verbs
+
+The lifecycle layer sits over the transport verbs above, on the same
+`Backend` seam: **status only ever moves through a lifecycle verb** (plus
+transport's `close`/`reopen`) — `work update` never touches status. `work
+create` gains a noun-templated mode (`create <noun>`) alongside its
+transport-thin `--raw` mode; the two modes share the `create` subcommand,
+selected by whether a noun positional or `--raw` is given.
+
+| Verb | Args/flags |
+|---|---|
+| `work create NOUN --title T (--parent ID \| --orphan) [--description D] [--priority P] [--acceptance AC] [--spec REF] [--trivial]` | `NOUN` one of `spike\|chore\|decision\|feat\|bugfix\|spec\|epic`; placement is required-exactly-one; `--spec`/`--trivial` mutually exclusive |
+| `work claim ID` | open, unblocked, unclaimed leaf → `in_progress`; refuses containers and blocked leaves |
+| `work release ID` | `in_progress` → `open`, no phase advance |
+| `work deliver ID [--spec PATH] [--pr REF] [--items ID,ID] [--trivial]` | on a design child: parses the merged spec's `## Continuations` manifest and reconciles the sibling placeholder; on a leaf: evidence-gated close |
+| `work plan ID (--done \| --undo) [--force]` | stamps/revokes the `planned` label (Planning-queue membership) |
+| `work promote ID` | a `shape-feat` leaf becomes a `shape-spec` container |
+| `work reconcile [--dry-run]` | bd-observable recovery sweep: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
+
+Protocol stays `"1.0"` — the lifecycle layer only added `ErrorCode` members
+(additive within `1.0`, exactly like `E_INTERNAL`); no existing envelope or
+data shape changed. The finer capability-model split (an honest
+server-authoritative `sync` no-op; read-only dep listing surviving
+`supports_dep_types=False`) is deferred to the future non-bd (GH) adapter
+bead — bd itself declares every capability `True`, so nothing in this
+package needs it yet.
+
 ## Envelope contract
 
 Every invocation writes exactly one JSON object to stdout, always, whether
@@ -69,6 +96,11 @@ Failure:
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
 | `E_USAGE` | invalid CLI usage (bad flags, missing required args, `create` without `--raw`) |
 | `E_INTERNAL` | an unexpected internal fault — the envelope invariant holds even on facade bugs |
+| `E_DUPLICATE_TITLE` | `create <noun>` found an exact, case-sensitive title match before minting |
+| `E_NOT_CLAIMABLE` | `claim` refused a container, a blocked leaf, or a closed item |
+| `E_EVIDENCE` | `deliver` has no verifiable evidence (`--pr`/`--items`/`--trivial` missing, or `--items` didn't resolve) |
+| `E_MANIFEST` | a spec's `## Continuations` section is missing, empty, or fails the manifest grammar |
+| `E_TIMEOUT` | a non-idempotent bd mutation (`create`/`note`) timed out; it may have partially applied — run `work reconcile` |
 
 ## Consumer handshake
 
