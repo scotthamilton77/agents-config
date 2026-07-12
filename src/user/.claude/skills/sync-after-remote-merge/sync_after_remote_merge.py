@@ -125,3 +125,19 @@ def unmerged_commits(rev_list_output: str) -> list[str]:
     Fed by `git -C <main> rev-list <merge_commit>..<branch>`.
     """
     return [ln.strip() for ln in rev_list_output.splitlines() if ln.strip()]
+
+
+def plan_teardown(convention: Convention, main_root: str, branch: str) -> list[str]:
+    """Teardown steps the AGENT must run after the script.
+
+    Claude-native worktrees are harness-owned: the script cannot git-remove them
+    (and the live worktree blocks `branch -D`), so it hands back the exact
+    ExitWorktree + branch-delete calls. NORMAL_REPO and OTHER_AGENT teardown is
+    executed by the script itself, so nothing remains for the agent.
+    """
+    if convention is Convention.CLAUDE_NATIVE:
+        return [
+            "ExitWorktree(discard_changes: true)",
+            f"git -C {main_root} branch -D {branch}",
+        ]
+    return []

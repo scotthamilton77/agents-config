@@ -120,3 +120,22 @@ def test_unmerged_commits_lists_orphans():
 def test_unmerged_commits_empty_means_fully_contained():
     assert m.unmerged_commits("") == []
     assert m.unmerged_commits("\n") == []
+
+
+# --- Task 5: plan_teardown ---
+
+
+def test_plan_teardown_claude_native_returns_handoff_steps():
+    steps = m.plan_teardown(m.Convention.CLAUDE_NATIVE, "/repo", "feature/x")
+    assert steps == [
+        "ExitWorktree(discard_changes: true)",
+        "git -C /repo branch -D feature/x",
+    ]
+
+
+def test_plan_teardown_other_agent_is_scripted_no_remaining():
+    assert m.plan_teardown(m.Convention.OTHER_AGENT, "/repo", "feature/x") == []
+
+
+def test_plan_teardown_normal_repo_is_scripted_no_remaining():
+    assert m.plan_teardown(m.Convention.NORMAL_REPO, "/repo", "feature/x") == []
