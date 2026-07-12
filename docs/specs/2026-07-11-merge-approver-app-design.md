@@ -77,14 +77,18 @@ One-time manual setup per install target (owner does this; the agent cannot):
 1. GitHub → Settings → Developer settings → GitHub Apps → New GitHub App.
    - Name: `merge-guard-approver` (display identity: `merge-guard-approver[bot]`).
    - Webhook: **unchecked** (no hosted receiver).
-   - Permissions: **Pull requests: Read & write**. Nothing else.
+   - Permissions: **Pull requests: Read & write** and **Contents: Read & write** —
+     both required. Without `Contents: write`, GitHub records the App's approving
+     review but does **not** count it toward `required_approving_review_count`
+     (`reviewDecision` stays `REVIEW_REQUIRED`). This widens the key's blast radius
+     — see §5.
    - Installable: only on the owning account.
 2. Generate a private key (GitHub issues RSA/PKCS#1); store it locally, e.g.
    `~/.config/merge-guard/approver.pem`, `chmod 600`. Never in any repo.
 3. Install the App on the target repository.
 
 The installation ID is resolved at runtime from the App JWT
-(`GET /app/installations`) — it is not configuration.
+(`GET /repos/{repo}/installation`) — it is not configuration.
 
 ### 3.2 Configuration contract (opt-in switch)
 
@@ -141,8 +145,9 @@ Behavior:
    `iat` backdated 60s, `exp` +9 min, `iss` = app-id).
 2. Exchange JWT for a short-lived installation token, scoped down at mint time to
    this single repo and `pull_requests: write` — the least privilege a review
-   POST needs — so a leaked token cannot exercise the installation's other grants
-   (`GET /app/installations` → `POST /app/installations/{id}/access_tokens`).
+   POST needs — so a leaked *token* cannot exercise the installation's other grants,
+   including `contents: write` (see §5). Mint flow: `GET /app` →
+   `GET /repos/{repo}/installation` → `POST /app/installations/{id}/access_tokens`.
 3. Fetch the PR. If this App already has an APPROVED review at `--head-sha`
    (REST reviews list filtered to the App's `[bot]` login — `reviewDecision` is
    GraphQL-only) → exit 0 (idempotent).
@@ -215,8 +220,12 @@ reproducibility on the work-machine fork:
 
 ## 5. Security considerations
 
-- **Blast radius of the key**: approvals (and PR-write actions) on the installed
-  repos only. Narrower than any PAT. Local file, 0600, outside all repos.
+- **Blast radius of the key**: the App installation holds **`Contents: write`**
+  (required for its approval to count — see §3.1), so a holder of the PEM key can
+  push code to the installed repos, not just approve PRs. Guard it as a write
+  credential: local file, 0600, outside all repos. Mitigation: `approve_pr.py` mints
+  a token scoped down to `pull_requests: write` at run time, so the token it actually
+  uses cannot push — but a holder of the key itself can mint the fuller grant.
 - **No new bypass**: the ruleset's bypass list is untouched; the App *satisfies*
   the review rule. Emergency manual bypass remains the owner's, manually.
 - **External PRs**: unaffected. The approver runs only inside merge-guard's
@@ -235,12 +244,17 @@ Two load-bearing assumptions are verified on a real PR before this design is
 declared working; both have designed fallbacks:
 
 - **(a) An App approval counts toward `required_approving_review_count`.**
-  Expected yes (standard bot-approval mechanics; the App is not the PR author).
-  Falsified → the post-approve re-read halts (see §4) and the design is revisited.
-- **(b) The auto-mode classifier permits approve-then-merge.** Unlike `--admin`,
-  this exercises a purpose-built, human-provisioned credential to satisfy (not
-  bypass) the rule. Falsified → owner runs the recorded command once; precedent
-  documented in the skill.
+  Verified on PR #250 — **conditional on the App holding `Contents: write`**. With
+  `Pull requests: write` alone the approval is recorded but does not count
+  (`reviewDecision` stays `REVIEW_REQUIRED`); granting `Contents: write` flips it to
+  `APPROVED` and a plain merge succeeds. `author_association` reads `NONE` either
+  way — GitHub's review-counting honors the App's real repo write permission, not
+  that field. Had it failed outright, the post-approve re-read would halt (see §4).
+- **(b) The auto-mode classifier permits approve-then-merge.** Verified on PR #250 —
+  the plain (non-`--admin`) squash merge completed. Unlike `--admin`, this exercises
+  a purpose-built, human-provisioned credential to satisfy (not bypass) the rule.
+  Had it been blocked, the fallback is the owner running the recorded command once;
+  precedent documented in the skill.
 
 ## 7. Test plan
 

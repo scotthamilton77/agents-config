@@ -30,7 +30,7 @@ The core architecture is in place, and several keystone enablers have shipped si
 - The "no, not ready" brainstorm-readiness gate is implicit, not enforced (milestone M2)
 - The 85/5/10 ratio is not yet instrumented — aspirational, not measured
 - No spec post-mortem feedback loop yet — failures don't automatically improve future brainstorming
-- Rule-based auto-merge exists but is opt-in per repo; most repos still default to `explicit` (a human "ship it")
+- Rule-based auto-merge exists but is opt-in per repo; most repos still default to `explicit` (a human "ship it") — though on a protected branch it can satisfy the required review via an App-attested approver (`[merge-policy.approver]`)
 - The PDLC Orchestrator (the FSM that would run overnight autonomy) is an early tracer bullet — CLI, durable state, and the strike/recovery machine are designed, not built (milestone M4)
 
 Treat the vision as direction and the rules-as-written as the current contract. Contributions are welcome.
