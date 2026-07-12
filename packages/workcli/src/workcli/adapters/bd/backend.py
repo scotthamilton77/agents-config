@@ -63,6 +63,8 @@ class BdBackend:
         return self.batch_get([item_id])[0]
 
     def batch_get(self, ids: Sequence[str]) -> list[Item]:
+        if not ids:
+            return []
         argv = ["show", *ids, "--json"]
         result = run_with_retry(self._runner, argv, sleep=self._sleep)
         if result.returncode != 0:
@@ -138,8 +140,12 @@ class BdBackend:
             argv += ["--parent", fields.parent]
         if fields.labels:
             argv += ["--labels", ",".join(fields.labels)]
+        if fields.acceptance is not None:
+            argv += ["--acceptance", fields.acceptance]
+        if fields.blocked_by is not None:
+            argv += ["--deps", f"blocks:{fields.blocked_by}"]
 
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        result = run_with_retry(self._runner, argv, sleep=self._sleep, retry_on_timeout=False)
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
         return parse_created_id(result.stdout)
@@ -157,10 +163,38 @@ class BdBackend:
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
 
+    def claim(self, item_id: str) -> None:
+        argv = ["update", item_id, "--claim"]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    def set_status(self, item_id: str, status: str) -> None:
+        argv = ["update", item_id, "--status", status]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    def set_type(self, item_id: str, item_type: str) -> None:
+        argv = ["update", item_id, "--type", item_type]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
+    def set_acceptance(self, item_id: str, text: str) -> None:
+        argv = ["update", item_id, "--acceptance", text]
+
+        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        if result.returncode != 0:
+            raise map_bd_failure(argv, result)
+
     def append_note(self, item_id: str, text: str) -> None:
         argv = ["update", item_id, "--append-notes", text]
 
-        result = run_with_retry(self._runner, argv, sleep=self._sleep)
+        result = run_with_retry(self._runner, argv, sleep=self._sleep, retry_on_timeout=False)
         if result.returncode != 0:
             raise map_bd_failure(argv, result)
 

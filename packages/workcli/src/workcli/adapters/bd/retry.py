@@ -32,13 +32,26 @@ def _is_retryable_stderr(stderr: str) -> bool:
 
 
 def run_with_retry(
-    runner: BdRunner, args: Sequence[str], *, sleep: Callable[[float], None]
+    runner: BdRunner,
+    args: Sequence[str],
+    *,
+    sleep: Callable[[float], None],
+    retry_on_timeout: bool = True,
 ) -> BdResult:
     last_result: BdResult | None = None
     for attempt in range(_ATTEMPTS):
         try:
             result = runner.run(args)
         except subprocess.TimeoutExpired as exc:
+            if not retry_on_timeout:
+                # Non-idempotent mutation (create/append_note): re-running a
+                # possibly-completed call would duplicate it, so a timeout
+                # surfaces immediately rather than retrying blind.
+                raise WorkError(
+                    ErrorCode.TIMEOUT,
+                    "bd timed out; the operation may have partially applied — run `work reconcile`",
+                    detail={"argv": list(args)},
+                ) from exc
             last_result = BdResult(returncode=124, stdout="", stderr=str(exc))
         else:
             if result.returncode == 0 or not _is_retryable_stderr(result.stderr):

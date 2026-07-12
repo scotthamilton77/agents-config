@@ -33,6 +33,10 @@ class Backend(Protocol):
 
     def create(self, fields: CreateFields) -> str: ...  # returns new item id  # pragma: no cover
     def set_fields(self, item_id: str, fields: UpdateFields) -> None: ...  # pragma: no cover
+    def claim(self, item_id: str) -> None: ...  # bd `update --claim`  # pragma: no cover
+    def set_status(self, item_id: str, status: str) -> None: ...  # pragma: no cover
+    def set_type(self, item_id: str, item_type: str) -> None: ...  # pragma: no cover
+    def set_acceptance(self, item_id: str, text: str) -> None: ...  # pragma: no cover
     def append_note(self, item_id: str, text: str) -> None: ...  # pragma: no cover
     def close(self, ids: Sequence[str]) -> None: ...  # pragma: no cover
     def reopen(self, item_id: str) -> None: ...  # pragma: no cover
