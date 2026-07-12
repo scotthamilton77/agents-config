@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 from workcli.backend import Backend
 from workcli.envelope import JsonValue
-from workcli.lifecycle import DELIVERED_MARKER, SPEC_MARKER, has_marker
+from workcli.lifecycle import DELIVERED_MARKER, has_marker, spec_path
 from workcli.lifecycle.deliver import reconcile_placeholder
 from workcli.lifecycle.manifest import parse_continuations
 from workcli.lifecycle.nouns import DESIGN_CHILD_LABEL, IMPL_PLACEHOLDER_LABEL
@@ -40,14 +40,6 @@ def _sweep_interrupted_delivers(backend: Backend, *, dry_run: bool) -> list[Json
             backend.close([item.id])
         findings.append(_finding(item.id, "interrupted_deliver", repaired=not dry_run))
     return findings
-
-
-def _spec_path(notes: str) -> str | None:
-    for line in notes.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(SPEC_MARKER):
-            return stripped[len(SPEC_MARKER) :].strip()
-    return None
 
 
 def _design_sibling_closed(backend: Backend, placeholder: Item) -> bool:
@@ -84,13 +76,13 @@ def _sweep_unreconciled_placeholders(
         if not _design_sibling_closed(backend, placeholder):
             continue
 
-        spec_path = _spec_path(placeholder.notes)
-        if spec_path is None:
+        recorded_spec = spec_path(placeholder.notes)
+        if recorded_spec is None:
             findings.append(_finding(placeholder.id, "needs_spec", repaired=False))
             continue
 
         if not dry_run:
-            manifest = parse_continuations(read_file(spec_path))
+            manifest = parse_continuations(read_file(recorded_spec))
             reconcile_placeholder(backend, placeholder.id, manifest)
         findings.append(_finding(placeholder.id, "unreconciled_placeholder", repaired=not dry_run))
     return findings

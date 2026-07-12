@@ -16,7 +16,7 @@ from argparse import Namespace
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
-from workcli.lifecycle import DELIVERED_MARKER, SPEC_MARKER, has_marker
+from workcli.lifecycle import DELIVERED_MARKER, SPEC_MARKER, has_marker, spec_path
 from workcli.lifecycle.manifest import Manifest, parse_continuations
 from workcli.lifecycle.nouns import (
     DESIGN_CHILD_LABEL,
@@ -98,8 +98,31 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
     if design_item.status == "closed" and IMPL_PLACEHOLDER_LABEL not in placeholder.labels:
         return _closed(args.id)
 
+    # Guard against recovery drift: a partial/previous run may have recorded a
+    # spec path on the placeholder. If it differs from this run's --spec,
+    # reconciling now would leave the recorded marker stale, so a later
+    # `work reconcile` would parse the wrong manifest. Refuse before any read
+    # or mutation; a matching path is an idempotent replay (skip the append).
+    recorded_spec = spec_path(placeholder.notes)
+    if recorded_spec is not None and recorded_spec != args.spec:
+        raise WorkError(
+            ErrorCode.USAGE,
+            (
+                f"deliver {args.id}: placeholder {placeholder.id} already recorded spec "
+                f"'{recorded_spec}'; the design reconciled against that path. Re-run with "
+                f"--spec '{recorded_spec}' (or run `work reconcile`) instead of --spec "
+                f"'{args.spec}' to avoid recovery drift."
+            ),
+            detail={
+                "design_id": args.id,
+                "placeholder_id": placeholder.id,
+                "recorded_spec": recorded_spec,
+                "requested_spec": args.spec,
+            },
+        )
+
     manifest = parse_continuations(args.read_file(args.spec))
-    if not has_marker(placeholder.notes, SPEC_MARKER):
+    if recorded_spec is None:
         backend.append_note(placeholder.id, f"{SPEC_MARKER} {args.spec}")
     # reconcile_placeholder re-fetches the placeholder by id: its contract is a
     # standalone idempotent entry point that `reconcile` (Task 6) reuses with

@@ -528,6 +528,139 @@ def test_deliver_design_exactly_two_children_resolves_sibling_and_delivers():
     assert ("show", "p.1", "--json") in runner.calls
 
 
+# --- deliver (design path) recorded-spec drift ------------------------------
+
+
+def test_deliver_design_spec_mismatch_refuses_before_any_mutation():
+    # A partial/previous run already recorded `[work] spec: old` on the
+    # placeholder; re-running with a different --spec would reconcile against
+    # the new file while leaving the recorded path stale, so later
+    # `work reconcile` reads the wrong manifest. Refuse with a USAGE error
+    # before parsing the spec or mutating anything.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1"])),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw(
+                        "p.1",
+                        status="open",
+                        labels=["impl-placeholder"],
+                        notes=f"{SPEC_MARKER} old.md",
+                    )
+                ),
+            ),
+        ]
+    )
+
+    # Empty reader: reaching parse_continuations for "new.md" would KeyError,
+    # proving the refusal fires before any spec read.
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "new.md"], runner, read_file=fake_reader({})
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert "old.md" in error["message"]
+    assert "new.md" in error["message"]
+    assert error["detail"] == {
+        "design_id": "d.1",
+        "placeholder_id": "p.1",
+        "recorded_spec": "old.md",
+        "requested_spec": "new.md",
+    }
+    assert runner.calls == [
+        ("show", "d.1", "--json"),
+        ("show", "c.1", "--json"),
+        ("show", "p.1", "--json"),
+    ]
+
+
+def test_deliver_design_spec_matches_recorded_marker_skips_reappend_and_reconciles():
+    # A partial run recorded `[work] spec: S` but was interrupted before
+    # reconciliation completed (placeholder still carries impl-placeholder).
+    # Re-running with the SAME --spec must skip the redundant note append yet
+    # still finish reconciliation (idempotent replay).
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1"])),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw(
+                        "p.1",
+                        status="open",
+                        labels=["impl-placeholder"],
+                        notes=f"{SPEC_MARKER} S",
+                    )
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw(
+                        "p.1",
+                        status="open",
+                        labels=["impl-placeholder"],
+                        notes=f"{SPEC_MARKER} S",
+                    )
+                ),
+            ),
+            ScriptedStep(("update",), _OK),  # set_type
+            ScriptedStep(("update",), _OK),  # set_fields title
+            ScriptedStep(("update",), _OK),  # set_acceptance
+            ScriptedStep(("label", "remove"), _OK),  # impl-placeholder
+            ScriptedStep(("label", "add"), _OK),  # shape-feat
+            ScriptedStep(("label", "add"), _OK),  # spec-ready
+            ScriptedStep(("close",), _OK),  # design child
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"],
+        runner,
+        read_file=fake_reader({"S": _MANIFEST_SINGLE}),
+    )
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "d.1", "status": "closed"}
+    # No `--append-notes` call -- the recorded marker already matches --spec.
+    assert runner.calls == [
+        ("show", "d.1", "--json"),
+        ("show", "c.1", "--json"),
+        ("show", "p.1", "--json"),
+        ("show", "p.1", "--json"),
+        ("update", "p.1", "--type", "feature"),
+        ("update", "p.1", "--title", "Widget X"),
+        ("update", "p.1", "--acceptance", "it works"),
+        ("label", "remove", "p.1", "impl-placeholder"),
+        ("label", "add", "p.1", "shape-feat"),
+        ("label", "add", "p.1", "spec-ready"),
+        ("close", "d.1"),
+    ]
+
+
 # --- deliver (leaf path) ----------------------------------------------------
 
 
