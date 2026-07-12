@@ -118,6 +118,29 @@ def test_detect_convention_unrelated_claude_worktrees_segment_fails_loud():
         m.detect_convention(wt, main_root)
 
 
+# --- gh_pr_view: PR-absence vs hard failure classification ---
+
+
+def test_gh_pr_view_no_pr_returns_none(monkeypatch):
+    def fake_run(cmd, cwd=None, check=True):
+        return subprocess.CompletedProcess(cmd, 1, stdout="",
+                                           stderr="no pull requests found for branch feature/x")
+    monkeypatch.setattr(m, "_run", fake_run)
+    assert m.gh_pr_view("feature/x") is None
+
+
+def test_gh_pr_view_generic_not_found_raises(monkeypatch):
+    """A non-PR 'not found' (repo/auth) must raise so main() reports `failed`,
+    not get swallowed into a benign not_merged."""
+    def fake_run(cmd, cwd=None, check=True):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="",
+            stderr="GraphQL: Could not resolve to a Repository (repository not found)")
+    monkeypatch.setattr(m, "_run", fake_run)
+    with pytest.raises(m._AbortStep):
+        m.gh_pr_view("feature/x")
+
+
 # --- Task 4: safety-gate parsers ---
 
 

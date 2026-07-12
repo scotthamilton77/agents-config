@@ -178,7 +178,7 @@ def gh_pr_view(branch: str) -> dict | None:
     if proc.returncode == 0:
         return json.loads(proc.stdout)
     err = (proc.stderr or "").lower()
-    if "no pull requests found" in err or "no pull request found" in err or "not found" in err:
+    if "no pull requests found" in err or "no pull request found" in err:
         return None
     raise _AbortStep("verify_merged", f"gh pr view failed: {proc.stderr.strip()}",
                      cmd=f"gh pr view {branch}", exit_code=proc.returncode, stderr=proc.stderr)
