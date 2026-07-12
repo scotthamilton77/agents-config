@@ -121,8 +121,8 @@ first three are anchors; the fourth is a loud escalation); vague temporal
 buckets ("future work") are structurally disallowed:
 
 - `this PR` — fixed in-session; no tracking item needed.
-- `parent epic (<id>)` — in-scope work deferred into the in-flight family.
-- `<epic-or-milestone-id>` — out-of-scope, anchored to the roadmap.
+- `parent work item (<id>)` — in-scope work deferred into the in-flight family.
+- `<anchor-id>` — out-of-scope, anchored to the roadmap.
 - `unanchored — needs your call` — the rare no-milestone-fits escalation.
 
 A bare `—` cell is legitimate only on `this PR` rows (nothing was filed, so
