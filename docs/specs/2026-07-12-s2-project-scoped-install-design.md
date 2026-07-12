@@ -11,6 +11,9 @@
 S2 turns the pure scope-routing resolver landed in S1 into a working install
 path and adds project materialization on top of it. Concretely it delivers:
 
+- **manifest additions** to the shipped `profiles.toml`: a `kits/** → project`
+  `[scopes]` default and a `beads-kit` profile — neither exists today, and kits
+  cannot resolve without them (§2 decision 6);
 - a `--project <path>` CLI flag that binds the **project** scope for a run;
 - a per-tool `project_namespaces()` capability declaration and a validation
   pass that enforces it;
@@ -18,6 +21,7 @@ path and adds project materialization on top of it. Concretely it delivers:
   with a first inhabitant: the **beads kit** (`.beads/PRIME.md`);
 - a project-local install receipt at `<project>/.agents-config/install-receipt.json`
   with its own lock, prune, and uninstall mechanics;
+- project profile persistence to `<project>/project-config.toml` `[install]`;
 - the detection-suggests-only notice on user-scope runs.
 
 ### 1.1 Starting reality
@@ -46,14 +50,23 @@ Settled inputs, not open questions.
    curated `.beads/PRIME.md`, generalized where repo-specific. This repo does
    not dogfood the kit in S2 (a follow-up).
 4. **Kits are structurally project-only.** Kit content never installs to user
-   space. Beyond the `kits/** → project` default in `[scopes]`, an explicit
-   per-selector override that would route a kit to a non-project scope is a
-   fail-loud validation error (§5.6).
-5. **Kits materialize as project-scoped routes; selection is whole-kit.** Kit
-   content is installed, recorded, and pruned through the *existing* plugin-route
-   machinery (§5.1, §6.2) rather than a bespoke channel — a kit is the
-   project-scope mirror of a plugin route. A kit is selected as a unit (a profile
-   includes `kits/<kit>/**`); sub-file kit selection is not a v1 use case.
+   space. Beyond the `kits/** → project` default S2 *adds* to `[scopes]`, an
+   explicit per-selector override that would route a kit to a non-project scope
+   is a fail-loud validation error (§5.6).
+5. **Kits materialize whole-route through the plugin-route machinery.** Kit
+   content is installed, recorded, and pruned through the *existing*
+   plugin-route path (§5.1, §6.2) rather than a bespoke channel — a kit is the
+   project-scope mirror of a plugin route. Materialization is **whole-route**: a
+   kit route installs its entire source directory; a route runs iff at least one
+   of its files appears in the resolved `PROJECT` partition. Per-file kit
+   selectors cannot subset a route in v1 (a matching selector promotes to the
+   whole route); the `beads-kit` profile selects the whole kit via
+   `kits/beads/**`.
+6. **S2 edits the shipped `profiles.toml`.** Add `"kits/**" = "project"` to
+   `[scopes]` and add `[profiles.beads-kit]` with `include = ["kits/beads/**"]`.
+   This is a required S2 change, not a pre-existing state — the parity golden
+   (§6.6 test 1) must be re-pinned to account for it (it adds a project-default
+   selector and a profile but changes nothing a `full` user run stages).
 
 ## 3. Architecture
 
@@ -88,11 +101,10 @@ key set equals the transformed plans' item set.
                                    │ project_universe(transformed_plans)
                                    │   keys: skills/x, agents/y … (tool refs)
                                    ▼
-  src/kits/<kit>/   ┌──────────────────────────────┐
-  (NEW tree)        │ stage_kits() ──► KitStaging   │
-                    │  refs:  kits/beads/… (tool=None)│ kit_universe(kits)
-                    │  routes: src→<project>/.beads/ │   keys: kits/beads/… (refs)
-                    └──────────────┬────────────────┘
+  src/kits/<kit>/   ┌──────────────────────────────────────┐
+  (NEW tree)        │ stage_kits(kits_root) ──► kit refs     │ kit_universe(refs)
+                    │   UniverseRef(tool=None, dest_relpath) │   keys: kits/beads/… (refs)
+                    └──────────────┬─────────────────────────┘
                                    ▼
                 merged universe: dict[selector → [ref…]]   (tool refs ∪ kit refs)
                                    │
@@ -101,16 +113,21 @@ key set equals the transformed plans' item set.
                                    │
                        ResolvedPlan.included[scope] = [refs…]
                                    │
-                   ┌───────────────┴────────────────┐
-          tool refs (tool≠None)            kit refs (tool=None)
-                   │                                │
-   filter_plan_to_scope + sync_plan(        selected kit → Route(s);
-     adapter, home=<project_root>)          sync_routes(routes, dest=<project>)
-     → <project>/.claude/<ns>/              → <project>/.beads/PRIME.md
-                   │                                │
-   entries_from_outcomes            entries_from_route_outcomes(owner=kit)
-                   └───────────────┬────────────────┘
-              one project receipt @ <project>/.agents-config/ (one lock)
+       ┌───────────────────────────┴───────────────────────────┐
+  USER run (bound {USER})                        PROJECT run (bound {PROJECT})
+  install_pipeline(home=~)                       ── the user tool sync and
+   + install_plugin_routes(home=~)                  install_plugin_routes are
+                                                     NOT run (§5.1, §6.1) ──
+                                                 tool tail:  filter_plan_to_scope
+                                                   + sync_plan(adapter, home=<p>)
+                                                   → <p>/.claude/<ns>/
+                                                 kit tail:   for name in selected_kits:
+                                                   sync_routes(kit_routes[name])
+                                                     (dest_dir baked into each route)
+                                                   → <p>/.beads/PRIME.md
+                                                   entries_from_route_outcomes(
+                                                     plugin=f"kit:{name}")  # per kit
+                                                 one receipt @ <p>/.agents-config/
 ```
 
 ### 3.3 Why kits are not just another namespace
@@ -149,61 +166,98 @@ subtree. A single nullable is preferred over a distinct `KitRef` union: the pure
 resolver treats refs opaquely — it groups by selector key and partitions by
 scope — so a nullable flows through `resolve()` **transparently except for one
 line**: the `final_included` sort key currently reads `r.tool.value`
-(`profiles.py:447`) and must become tolerant of `None`
+(`profiles.py:447`, the only read of `r.tool` in `resolve()`) and must become
+tolerant of `None`
 (`(r.tool.value if r.tool is not None else "", r.dest_relpath.as_posix())`).
 That is the *only* resolver change S2 makes; a `KitRef` union would instead force
 every `ResolvedPlan.included` consumer to pattern-match two types.
 
 Note: `tool=None` is free for the resolver and for materialization dispatch, but
 receipt attribution needs a concrete owner string that `None` cannot supply.
-That owner is defined in §6.2 (`kit:<name>`), independent of the ref's `tool`
-field.
+That owner is `kit:<name>`, assigned at receipt-build time (§6.2), independent of
+the ref's `tool` field.
 
-### 4.2 `stage_kits`
+### 4.2 Staging: `stage_kits` (refs) and `kit_routes` (routes)
 
-`stage_kits(kits_root)` walks `src/kits/<kit>/**` recursively and produces, per
-kit:
+Two functions, split by what each needs — mirroring the plugin precedent, where
+`PluginAdapter.routes(home)` injects the destination root at call time while the
+source layout is fixed:
 
-- **universe refs** — one `UniverseRef(tool=None, dest_relpath=<subpath>)` per
-  file, keyed by its **selector key** `kits/<kit>/<subpath>` (source-relative)
-  for the resolver;
-- **routes** — one `PluginRoute`-shaped route per distinct destination
-  directory (routes install a flat file set per directory), with
-  `source_dir = <kit>/<destdir>`, `dest_dir = <project>/<destdir>`, a glob
-  selecting the kit's files there, and `executable` from the source mode bit.
-  The beads kit is a single route (`src/kits/beads/.beads/*` → `<project>/.beads/`).
+```python
+def stage_kits(kits_root: Path) -> list[UniverseRef]:
+    # walks src/kits/<kit>/** ; one UniverseRef(tool=None, dest_relpath=<subpath>)
+    # per file, keyed by selector key "kits/<kit>/<subpath>" for the resolver.
+    # project-root-independent (refs carry no absolute path).
 
-A missing `src/kits/` yields nothing. Two kit sources resolving to the same
-destination is a fatal error naming both source paths.
+def kit_routes(kits_root: Path, project_root: Path) -> dict[str, list[PluginRoute]]:
+    # keyed by kit name; per kit, one PluginRoute per (destination directory ×
+    # exec-bit): source_dir under the kit, dest_dir = project_root/<destdir>,
+    # glob selecting that group's files, executable set for the group.
+    # Mirrors PluginAdapter.routes(home) but grouped by kit for per-kit owners.
+```
+
+`stage_kits` feeds the resolver universe (§4.3). `kit_routes` is called during
+materialization for the selected kits (§5.1). Routes are grouped by
+`(destination directory × exec-bit)` because a `PluginRoute` applies one
+`executable` bit to every file its glob matches (the beads plugin splits
+`formulas`/`scripts` for exactly this reason); a single kit directory mixing
+executable and non-executable files needs multiple routes. The beads kit is a
+single non-executable route (`src/kits/beads/.beads/*` → `<project>/.beads/`).
+
+**Kit identity.** A kit's name is the directory name directly under `src/kits/`,
+which is also the second segment of its selector key `kits/<name>/<subpath>`.
+Both the selector side (`stage_kits`, which builds the universe keys) and the
+materialization/receipt side (`kit_routes`' dict key, the `kit:<name>` receipt
+owner, and the prune desired-keys) derive the name from that one source via a
+single shared helper, so the `kit:<name>` owner string is provably byte-stable
+across an install run and a later prune run.
+
+A missing `src/kits/` yields nothing from both. Two kit sources resolving to the
+same destination is a fatal error naming both source paths.
 
 ### 4.3 `kit_universe` and merge
 
-`kit_universe(stage_kits output)` groups the kit refs by selector key into
+`kit_universe(stage_kits(kits_root))` groups the kit refs by selector key into
 `dict[str, list[UniverseRef]]`. The caller merges it with
 `project_universe(transformed_plans)` and hands the union to `resolve()`. Kits
 ride the resolver for **selection** only.
 
 ## 5. Materialization, capability matrix, and enforcement
 
-### 5.1 Two tails
+### 5.1 The two tails and the run fork
 
-`resolve()` returns `ResolvedPlan.included[scope]`, a mix of tool refs and kit
-refs. Materialization dispatches on `ref.tool`:
+`cli._run` forks on the scope binding. This fork is the largest implementation
+surface and is stated explicitly so two implementers build it identically:
 
-- **Tool refs** (`tool != None`): `filter_plan_to_scope(plan, kept_dest_relpaths)`
-  narrows the tool's transformed `StagingPlan` to the project-bound refs, then
-  `sync_plan(adapter, filtered_plan, home=<project_root>)` writes them. Because
-  `dest_dir(base) → base/".claude"` is parameterized on its base, passing the
-  project root yields `<project>/.claude/<ns>/` with no new sync code. Receipt
-  entries come from `entries_from_outcomes` (their dest paths are
-  namespace-rooted, e.g. `skills/…`, so they pass the `PRUNE_NAMESPACES` filter).
-- **Kit refs** (`tool == None`): the selected kit's routes are installed via the
-  existing `sync_routes(routes, dest_dir=<project_root>/…)`, and recorded via
-  `entries_from_route_outcomes(outs, plugin="kit:<name>", home=<project_root>)`.
-  This reuses the plugin-route path wholesale: verbatim names, `.beads`-rooted
-  entries (`route_entry_for` computes `root = dest_dir.relative_to(base).parts[0]`
-  → `.beads`), consent-gated overwrite, and prune tracking — the same machinery
-  that already installs the beads plugin's `~/.beads/formulas` on the user side.
+- A **user run** performs the existing `install_pipeline(home=~)` (tool sync) and
+  `install_plugin_routes(home=~)` (plugin routes), unchanged — except each tool
+  plan is first narrowed by `filter_plan_to_scope` to the `USER`-bound refs
+  (which, for the forced-`full` profile, is the whole plan — §6.1 parity).
+- A **project run** does **not** run the user tool sync or `install_plugin_routes`
+  at all (running either against `home=~` would write user space, violating §5.5;
+  against `home=<project>` would leak user-scope plugin content into the project).
+  It runs only two project tails, both under the project receipt lock:
+  - **Tool tail** (`tool != None` refs): `filter_plan_to_scope(plan, kept)`
+    narrows the transformed `StagingPlan` to the project-bound refs, then
+    `sync_plan(adapter, filtered_plan, home=<project_root>)` writes them. Because
+    `dest_dir(base) → base/".claude"` is parameterized on its base, the project
+    root yields `<project>/.claude/<ns>/`. Recorded via `entries_from_outcomes`,
+    called with `dest_root=<project>/.claude` (drives the `PRUNE_NAMESPACES` filter
+    on `o.dest.relative_to(dest_root)`) and `home=<project_root>` (drives the
+    project-relative recorded entry path).
+  - **Kit tail** (`tool == None` refs): the caller determines which kits are
+    selected by cross-referencing the retained kit-universe map (selector key
+    `kits/<name>/…` → refs) against `included[PROJECT]` — a kit is selected iff at
+    least one of its refs' `dest_relpath`s is in `included[PROJECT]`. For each
+    selected kit, `kit_routes(kits_root, project_root)[<name>]` gives its routes
+    (destination already baked into each route's `dest_dir`), `sync_routes`
+    installs them, and the writes are recorded with **that kit's** owner via
+    `entries_from_route_outcomes(outs, plugin=f"kit:{name}", home=<project_root>)`
+    — one call per kit, since the API takes one owner per call. This reuses the
+    plugin-route path wholesale: verbatim names, `.beads`-rooted entries
+    (`route_entry_for` derives the root from the file's parent under the base →
+    `.beads`), consent-gated overwrite, and prune tracking — the same machinery
+    that installs the beads plugin's `~/.beads/formulas` on the user side.
 
 ### 5.2 `project_namespaces()` capability matrix
 
@@ -228,33 +282,50 @@ Enforced by the matrix: no adapter lists `instructions` or `settings`. A
 project's `CLAUDE.md`/`AGENTS.md` and settings are project-authored artifacts the
 installer must not collide with.
 
-### 5.4 Validation pass (post-resolve, not in the resolver)
+### 5.4 Validation passes
 
-The pure resolver stays selector-agnostic. A post-resolve validation pass in the
-orchestrator/cli layer enforces the capability rules over `ResolvedPlan`:
+Two capability checks sit outside the pure resolver (which stays
+selector-agnostic):
 
-- For each **tool** ref bound to project scope, assert its namespace is in that
-  adapter's `project_namespaces()`, else error naming tool + namespace.
-- For each **kit** ref (`tool=None`), assert its assigned scope is `PROJECT`,
-  else error naming the selector (§5.6).
+- **Tool-namespace (post-resolve).** For each **tool** ref in
+  `ResolvedPlan.included[PROJECT]`, assert its namespace (`dest_relpath.parts[0]`)
+  is in that adapter's `project_namespaces()`, else error naming tool + namespace.
+  Tool refs routed to project are present in `included[PROJECT]` carrying tool and
+  destination, so this check has the identity it needs.
+- **Kit-scope (pre-resolve — §5.6).** The mirror check for kits *cannot* run over
+  `ResolvedPlan`: a kit wrongly routed to a non-project scope is dropped by
+  `resolve()` into an anonymous `dropped_counts` tally, losing its selector
+  identity, so a post-resolve pass could neither see nor name it. The kit-scope
+  guard therefore runs before `resolve()` — see §5.6.
 
 ### 5.5 One binding per run
 
 Per §7 of the parent spec, a run has exactly one primary scope binding. A
 `--project` run binds `PROJECT` and does **not** bind `USER`; it structurally
-cannot write user space. There is thus no dual-scope run, no receipt-lock
-nesting, and no lock-ordering hazard — a run holds exactly one receipt lock. The
-project run's tool tail and kit tail both write under that one lock and both feed
-one receipt (§6.2).
+cannot write user space (§5.1 fork). There is thus no dual-scope run, no
+receipt-lock nesting, and no lock-ordering hazard — a run holds exactly one
+receipt lock, and the project run's tool tail and kit tail both write under it
+and feed one receipt (§6.2).
 
-### 5.6 Kit scope enforcement
+### 5.6 Kit scope enforcement (pre-resolve guard)
 
-Kits are structurally project-only. Any kit ref (`tool=None`) that resolves to a
-non-`PROJECT` scope — reachable only via a hand-authored explicit override such
-as `{ select = "kits/beads/**", scope = "user" }` — is a fail-loud validation
-error naming the selector. This mirrors the "instructions/settings are never
-project-routable" guardrail and keeps a clean boundary: plugin routes carry
-user-space out-of-tree content; kits carry project-space out-of-tree content.
+Kits are structurally project-only. The only way a kit reaches a non-project
+scope is an explicit per-selector override in a selected profile (including a
+user-authored `~/.agents/profiles.toml`), e.g.
+`{ select = "kits/beads/**", scope = "user" }` — the shipped `kits/** → project`
+default cannot be overridden by `[scopes]` (user manifests may not declare
+`[scopes]`).
+
+The guard runs in the orchestrator layer **before `resolve()`**, where selector
+identity still exists: for each `IncludeEntry` of the selected profiles that
+carries an explicit non-`PROJECT` `scope`, if its `selector` matches any key in
+the kit universe (via `_selector_matches`), raise a fail-loud error naming the
+selector. Running pre-resolve is required because `resolve()` discards the
+identity of dropped refs (§5.4), and it makes the error fire regardless of
+whether other project content coexists in the run. This mirrors the
+"instructions/settings are never project-routable" guardrail and keeps a clean
+boundary: plugin routes carry user-space out-of-tree content; kits carry
+project-space out-of-tree content.
 
 ## 6. CLI, binding, receipt, collisions, errors
 
@@ -267,44 +338,57 @@ surfaces through the existing OS-error/consent path like any other write. The
 installer does not require `<path>` to look like a project (no `.git`/
 `project-config.toml` precondition); detection (§6.4) only *suggests*.
 
-One resolver, a scope-parameterized tail:
+One resolver, a scope-parameterized fork (§5.1):
 
 | Facet | User run (no `--project`) | Project run (`--project <p>`) |
 |---|---|---|
 | `bound_scopes` | `{USER}` | `{PROJECT}` |
 | Selection | forced `full`; `--profiles` rejected (§6.5) | `--profiles` CSV → else persisted `[install]` in `<p>/project-config.toml` → else error |
 | Universe | `project_universe(transformed_plans)` | same **+** `kit_universe(stage_kits())` |
-| Dest base | `home` → `~/.claude` | `<p>` → `<p>/.claude` (same `dest_dir` fn) |
-| Out-of-tree content | plugin routes (`~/.beads/formulas`) | kit routes (`<p>/.beads/…`) |
+| Tool sync | `install_pipeline(home=~)` | filtered `sync_plan(home=<p>)`; user `install_pipeline` **not** run |
+| Out-of-tree content | `install_plugin_routes(home=~)` | kit routes only; `install_plugin_routes` **not** run |
 | Receipt + lock | `~/.config/agents-config/install-receipt.json` | `<p>/.agents-config/install-receipt.json` (own `.lock`) |
-| Persistence | none in S2 (deferred) | chosen profiles → `<p>/project-config.toml [install]` |
+| Persistence | none in S2 (deferred) | chosen profiles → `<p>/project-config.toml [install]` (see below) |
 
 The user run's forced-`full` resolution matches `**`, routes everything to its
 `user` default, drops nothing, and is byte-identical to today's install. This is
 the safety invariant behind the resolver-on decision, guarded end-to-end by the
 parity test (§6.6 test 1).
 
-**New coupling from wiring the resolver into every run:** the forced-`full` run
-requires that `[scopes]` (plus the synthetic `instructions`/`settings` keys)
-matches *every* staged namespace — `resolve()` raises `ProfilesError` if any
-universe key has no `[scopes]` match. Today `[scopes]` covers `namespaces.ALL`
-plus the synthetics, so parity holds; but a future namespace added to
-`namespaces.ALL` without a corresponding `[scopes]` entry would crash *every*
-user install. §6.6 test adds a CI guard asserting `[scopes]` coverage of
-`namespaces.ALL`. The namespace-addition checklist gains one edit: a `[scopes]`
-entry in `profiles.toml`.
+**Universe-coverage coupling.** Wiring the resolver into every run makes it a hard
+requirement that every *universe key* has a `[scopes]` (or explicit) match —
+`resolve()` raises `ProfilesError` otherwise. Universe keys are exactly the
+namespaces that appear in a transformed tool `StagingPlan` (`TOOL_SCOPED ∪
+SHARED`) plus the synthetic `instructions`/`settings`. This is **not**
+`namespaces.ALL`: `formulas` is in `ALL` but is plugin-routed (installed via a
+`PluginRoute`, never staged into a `StagingPlan`), so it never becomes a universe
+key and correctly has no `[scopes]` entry. §6.6 test 2 guards coverage of the
+*universe-eligible* set (`TOOL_SCOPED ∪ SHARED ∪ {instructions, settings}`), not
+`ALL`, so a future *staged* namespace added without a `[scopes]` entry fails in
+CI rather than in users' installs. The namespace-addition checklist gains one
+edit — a `[scopes]` entry — only when the new namespace is staged (not
+plugin-routed).
+
+**Persistence.** On a successful, non-`--dry-run` project run, the resolved
+profile set is written to `<p>/project-config.toml` under `[install]` as
+`profiles = ["<name>", …]`, at the same point and under the same gating as the
+project receipt write (after materialization succeeds, inside the project lock).
+`--dry-run` never writes `project-config.toml`. A bare `--project <p>` re-run
+with no `--profiles` reads this persisted set (§6.1 Selection); `--profiles`
+overrides it and re-persists.
 
 **Flag interactions.** `--tools` continues to gate which tool plans are staged
 and therefore which tool refs feed `project_universe`; kit staging is unaffected
 (kits are tool-agnostic). A project profile whose selector targets a tool
-excluded via `--tools` resolves to nothing and fails loud as a dead selector —
-S2 does not add a distinct message for the `--tools`/`--profiles` mismatch.
-`--dump-stage` under `--project` includes kit refs alongside tool refs (dest
-path and owner; content is not dumped), so the dump reflects the resolved project
-plan. `--prune`/`--prune-only` operate against the project receipt when
-`--project` is set (§6.2).
+excluded via `--tools` resolves to nothing and fails loud as a dead selector — S2
+adds no distinct message for that mismatch. `--dump-stage` under `--project`
+requires a **new** kit-ref rendering (dest path + owner, no content) added
+alongside `dump_plan`'s tool-plan tree output, since kit refs never enter a tool
+`StagingPlan`; the resolver and kit staging run before the dump branch so the
+listing reflects the resolved project plan. `--prune`/`--prune-only` operate
+against the project receipt when `--project` is set (§6.2).
 
-### 6.2 Project receipt
+### 6.2 Project receipt and prune
 
 The project receipt reuses the `Receipt` schema, `read_receipt`/`write_receipt`/
 `merge_receipt`, and `receipt_lock` unchanged, at
@@ -315,18 +399,27 @@ receipt under one lock:
 - **Tool entries** via `entries_from_outcomes` (namespace-rooted paths pass the
   `PRUNE_NAMESPACES` filter).
 - **Kit entries** via `entries_from_route_outcomes` with owner `kit:<name>` — a
-  non-tool owner, exactly like a plugin owner. `scope_owners` already unions any
-  non-tool owner found in the prior receipt (`retired_plugin_owners`), and
-  `validate_entry` already has the non-tool-owner branch, so kit entries are in
-  scope for prune with **no change** to `scope_owners`/`validate_entry`/root
-  validation (`.beads` is already an accepted route root today).
+  non-tool owner, exactly like a plugin owner.
 
-`record_receipt` gains a kit-outcomes input (route-shaped) whose entries are
-appended to the flat `installed` list before `merge_receipt`; the desired-set for
-orphan detection includes the selected kits' route keys (a
-`desired_route_keys`-shaped set), so a deselected kit's files are detected as
-orphans and pruned. The user receipt is never read or written by a project run,
-and vice versa.
+**No change is needed** to `scope_owners` (its `retired_plugin_owners` union
+already re-includes any non-tool owner found in the prior receipt) or to
+`validate_entry` (its non-tool-owner allowlist branch already accepts a `.beads`
+root). The two seams that **do** need wiring:
+
+- `record_receipt` (`core/run.py`) gains a kit-outcomes input; the kit route
+  entries are appended to the flat `installed` list before `merge_receipt`.
+- `prune_pipeline` (`core/run.py`) — **not** `record_receipt` — is where orphan
+  detection lives. Today it computes the desired route set via
+  `desired_route_keys(plugins, home)`, which iterates `PluginAdapter.routes()`;
+  kits are not plugins, so with no change the kit desired-set is empty and a
+  still-selected kit's just-installed file is flagged an orphan and pruned. S2
+  gives `prune_pipeline` the selected kits' routes (per §5.1) feeding a
+  `desired_route_keys`-shaped set, keyed by the same `kit:<name>` owner helper the
+  record side uses (§4.2) so install-side and prune-side owners provably match,
+  and seeds `live_roots_by_owner["kit:<name>"]`. Selected-kit files are thus
+  desired (not orphaned) and a *deselected* kit's files are detected as orphans
+  and pruned. The user receipt is never read or written by a project run, and
+  vice versa.
 
 ### 6.3 Collision handling
 
@@ -360,8 +453,8 @@ All fail-loud; every message names the offender.
 | Project run, no `--profiles` and no persisted set | pre-resolve CLI guard (see note) | "project install needs an explicit profile (no implicit full)" |
 | Selected profiles → empty project partition | resolve (step 8 today) | "the run would do nothing; no content bound to project" |
 | Tool ref → project, namespace ∉ `project_namespaces()` | post-resolve validation | names tool + namespace |
-| Kit ref → non-`PROJECT` scope | post-resolve validation | names the selector |
-| Two kit sources → same destination | `stage_kits` | names both source paths |
+| Kit selector overridden to non-`PROJECT` scope | pre-resolve guard (§5.6) | names the selector |
+| Two kit sources → same destination | `stage_kits`/`kit_routes` | names both source paths |
 | Concurrent project install | project `receipt_lock` | `ReceiptLockBusy` |
 
 Note: the "no implicit full for a project run" rule is enforced as a **pre-resolve
@@ -378,29 +471,41 @@ temp trees, no live installs.
 
 1. **End-to-end parity (non-negotiable):** a no-flag user install through the
    newly-wired resolver (inserted after `stage_and_transform`) is byte-identical
-   to today's install, including plugin-overlaid content.
-2. **`[scopes]` coverage guard:** `[scopes]` plus the synthetic
-   `instructions`/`settings` keys cover `namespaces.ALL`, so a future namespace
-   addition fails in CI, not in users' installs.
-3. `stage_kits`: tree-mirror destination; verbatim name (PRIME.md stays
-   PRIME.md); source-relative selector key; recursive walk; route grouping by
-   destination directory; executable-bit carry; empty on missing `src/kits/`.
+   to today's install, including plugin-overlaid content, and unaffected by the
+   added `kits/**` scope and `beads-kit` profile.
+2. **Universe-coverage guard:** the `[scopes]` selectors cover the
+   universe-eligible namespace set `TOOL_SCOPED ∪ SHARED ∪ {instructions,
+   settings}`, so a future *staged* namespace without a `[scopes]` entry fails in
+   CI. The guard must not require a `formulas` entry (plugin-routed, never a
+   universe key).
+3. `stage_kits`/`kit_routes`: tree-mirror destination; verbatim name (PRIME.md
+   stays PRIME.md); source-relative selector key; recursive walk; route grouping
+   per (destination directory × exec-bit); executable-bit carry; empty on missing
+   `src/kits/`.
 4. Integration: `--project p --profiles beads-kit` writes `<p>/.beads/PRIME.md`;
    `--project p --profiles sdlc` errors (empty project partition).
-5. Kit-scope guard: an override routing `kits/**` → user errors.
+5. Kit-scope guard: a selected profile with `{ select = "kits/**", scope = "user" }`
+   errors pre-resolve, naming the selector.
 6. `project_namespaces()` matrix: a Claude skill → project works; a namespace →
    project for an unsupporting tool errors naming both.
 7. Project receipt round-trip: install → prune → uninstall against a temp project
-   tree; a beads kit dropped from a later selection is pruned as an orphan; the
-   user receipt is untouched throughout.
-8. Detection-suggestion: a user run in a cwd with `.beads/` prints exactly one
+   tree; a re-install of a still-selected kit does **not** prune its file; a beads
+   kit dropped from a later selection **is** pruned as an orphan; the user receipt
+   is untouched throughout.
+8. Persistence round-trip: `--project p --profiles beads-kit` writes
+   `[install] profiles = ["beads-kit"]` to `<p>/project-config.toml`; a bare
+   `--project p` re-run reads it; `--project p --profiles beads-kit --dry-run`
+   writes no `project-config.toml`.
+9. Detection-suggestion: a user run in a cwd with `.beads/` prints exactly one
    line; a `--project` run prints none.
-9. Overwrite: a kit install over an existing `.beads/PRIME.md` backs it up and
-   respects `--yes` / prompt.
-10. `--project p --profiles beads-kit --dry-run` previews would-be writes via
+10. Overwrite: a kit install over an existing `.beads/PRIME.md` backs it up and
+    respects `--yes` / prompt.
+11. `--project p --profiles beads-kit --dry-run` previews would-be writes via
     `io`, creates no files, and leaves no `.agents-config/install-receipt.json`
     or `.lock` under `<p>`.
-11. `--project` path missing / not a directory errors naming the path.
+12. `--project` path missing / not a directory errors naming the path.
+13. `--dump-stage` under `--project` lists kit refs (dest + owner) alongside tool
+    refs.
 
 ## 7. Deferred work (non-goals for S2)
 
@@ -415,9 +520,10 @@ These move to a dedicated successor slice (§8):
   a rule from the rebuilt instruction file, not only its standalone copy.
 
 Also out of scope: dogfooding the beads kit into this repo (decision 3); any kit
-beyond beads; multi-file/nested kits beyond the single-route beads case (the
-route-grouping generalizes, but only beads is exercised in S2); `installer.toml`
-`tool_dest_overrides` retirement (S3, `agents-config-uxns2.1.2`, independent).
+beyond beads; a kit directory with **mixed** exec bits (v1 groups routes per
+(dir × exec-bit), which handles it, but only the single-route beads case is
+exercised); `installer.toml` `tool_dest_overrides` retirement (S3,
+`agents-config-uxns2.1.2`, independent).
 
 ## 8. Continuations
 
