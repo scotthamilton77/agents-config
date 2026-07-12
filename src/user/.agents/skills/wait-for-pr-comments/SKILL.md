@@ -779,15 +779,8 @@ begins.
 
 ### DEFER placement (interactive only)
 
-Apply the discovered-work rule in full (sibling test → anchored filing; the
-triage block carries the deferral's escape-hatch justification; do NOT close
-a newly filed bead this session):
-
-- **In scope** (would have been on the current work item's original plan/spec) →
-  sibling: `bd create --parent <parent-of-current-bead>` (if the current bead has no parent, follow the out-of-scope anchor procedure below), plus the rule's triage block and a Remaining-Work escalation in the completion report.
-- **Out of scope** → anchor under the best-fit epic/milestone
-  (`bd create --parent <anchor-id>`), plus `bd dep add <new-id> <bead-id> --type discovered-from` and the triage block. Orphan only when no
-  milestone fits — escalate that in the report.
+Use `triaging-discovered-work` before filing or deferring the item. Do not
+duplicate or bypass that contract here.
 
 ### Hook is interactive-default
 

@@ -1,0 +1,74 @@
+[
+  {
+    "query": "While implementing the current bead I found a missing null check in the same request path. We are behind schedule; can I just file it for later?",
+    "should_trigger": true
+  },
+  {
+    "query": "The task is nearly done, but I found a retry defect in a subsystem this change does not touch. I need to decide whether to defer it or fix it now.",
+    "should_trigger": true
+  },
+  {
+    "query": "I discovered that the fix needs credentials for a vendor sandbox. Help me record the blocked work without losing its relationship to this task.",
+    "should_trigger": true
+  },
+  {
+    "query": "A code-review comment uncovered a separate documentation problem. Where should I file it on the roadmap and what evidence belongs with it?",
+    "should_trigger": true
+  },
+  {
+    "query": "I found extra validation that was clearly part of this bead's original acceptance criteria, but it would double the diff. Can I split it out?",
+    "should_trigger": true
+  },
+  {
+    "query": "The current bead has no parent and I uncovered unrelated configuration drift. How do I file the discovery safely?",
+    "should_trigger": true
+  },
+  {
+    "query": "Before I close this work, I found a separate bug that maps to another milestone. Help me create the correctly anchored bead and keep provenance.",
+    "should_trigger": true
+  },
+  {
+    "query": "I found work that does not fit any current milestone. Should I create an orphan and move on?",
+    "should_trigger": true
+  },
+  {
+    "query": "A test failure exposed additional work mid-task. I need to classify its scope, decide whether to defer it, and report it correctly.",
+    "should_trigger": true
+  },
+  {
+    "query": "The approved observability plan already assigns the dashboard task to its epic. Create that known child bead now.",
+    "should_trigger": false
+  },
+  {
+    "query": "Last week's approved migration plan lists a post-release follow-up under the deployment epic. Create that already-adjudicated follow-up.",
+    "should_trigger": false
+  },
+  {
+    "query": "Show me the beads that are ready for implementation.",
+    "should_trigger": false
+  },
+  {
+    "query": "Close the completed child bead and verify whether its parent epic also closed.",
+    "should_trigger": false
+  },
+  {
+    "query": "Triage the backlog for the next planning session and rank the open work.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review pull request 250 and summarize the changes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why does bd list --parent still return an item after I remove its dependency edge?",
+    "should_trigger": false
+  },
+  {
+    "query": "A previous completion report already classified the documentation cleanup as out of scope and named its anchor. Create the tracked item as specified.",
+    "should_trigger": false
+  },
+  {
+    "query": "Find the next milestone that has no blocking dependencies.",
+    "should_trigger": false
+  }
+]

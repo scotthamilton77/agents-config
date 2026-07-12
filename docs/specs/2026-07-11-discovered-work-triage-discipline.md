@@ -3,7 +3,7 @@
 **Date:** 2026-07-11
 **Status:** Draft (pending review)
 **Bead:** agents-config-vaac.8
-**Decision:** In-scope discoveries are fixed in-session by default (deferral is a justified, escalated exception); out-of-scope discoveries are filed *anchored* to the roadmap with a required triage-rationale block; the completion report renders every discovery in a structured manifest whose "Lands in" value must be one of a fixed vocabulary (three roadmap anchors plus a loud-escalation value). Prose enforcement now (rule + skill), mechanical enforcement later via a workcli `work discover` verb.
+**Decision:** In-scope discoveries are fixed in-session by default (deferral is a justified, escalated exception); out-of-scope discoveries are filed *anchored* to the roadmap with a required triage-rationale block; the completion report renders every discovery in a structured manifest whose "Lands in" value must be one of a fixed vocabulary (three roadmap anchors plus a loud-escalation value). An always-loaded rule requires the Beads plugin skill before filing or deferring; the skill owns the detailed filing procedure. Mechanical enforcement follows later via a workcli `work discover` verb.
 
 ## 1. Problem
 
@@ -17,20 +17,18 @@ the discovered work as an untriaged footnote. The human is left not knowing:
 4. **That it exists at all** — the completion report renders discoveries as a bare
    two-column table (`Item | Recorded In`), positioned last.
 
-The orphaning is *by design*: the current discovered-work rule solves exactly one
-problem (close-walk safety) and its out-of-scope branch prescribes "orphan +
-`discovered-from` breadcrumb," full stop. The repo convention "work that maps to a
-milestone is a child of that milestone bead" is never invoked on the discovery path.
+The risk is a placement-only procedure that solves close-walk safety while
+prescribing an orphan plus a `discovered-from` breadcrumb for an out-of-scope
+item. That shape omits the repository convention that work mapping to a
+milestone is a child of that milestone bead.
 
 Measured at design time: of 93 open non-epic/non-milestone beads, 15 had no parent
 anchor; 14 of those carried only a `discovered-from`/`related-to` breadcrumb — the
 exact pattern the rule prescribes.
 
-The subtlest defect: the sibling test ("would this have been on the original
-plan?") routes a **yes** answer to *filing a child bead*, not to *doing the work*.
-"Yes, this was in scope" is precisely the case where the agent should fix it now or
-escalate loudly. The current rule lets agents launder in-scope work into deferrable
-discoveries.
+The sibling test must route a **yes** answer to *doing the work*, not merely to
+filing a child bead. "Yes, this was in scope" is precisely the case where the
+agent fixes it now or escalates a named deferral hatch.
 
 ## 2. Decisions
 
@@ -38,15 +36,25 @@ discoveries.
 |---|----------|----------------------|
 | 1 | **Fix-in-session default** — in-scope discoveries get done in the current session/PR; deferral only through three named escape hatches, each requiring a report escalation | Defer-but-justify (keeps the leak); ask-per-item (returns the human to the babysitting loop) |
 | 2 | **Agent anchors + audit trail** — the agent finds the best-fit epic/milestone and files the bead as its child with a one-line placement rationale; the human audits via the report | Triage inbox (placement work stays on the human); hybrid confidence routing (adds a judgment call agents get wrong both ways) |
-| 3 | **Prose now, workcli verb later** — rule + skill changes ship immediately; a `work discover` verb (mechanical refusal of unanchored/untriaged filings) is filed as a continuation | Helper script now (workcli supersedes it — throwaway); prose only (honor system forever) |
-| 4 | **Rule + skill split** — the beads-plugin rule owns filing-time discipline (always loaded, fires at the discovery moment); verify-checklist owns report-time (manifest + audit that catches what filing missed) | Fat rule (no report-time teeth); dedicated skill (relies on mid-flow invocation discipline — the thing that's failing) |
+| 3 | **Prose now, workcli verb later** — a thin rule and Beads-plugin skill ship immediately; a `work discover` verb (mechanical refusal of unanchored/untriaged filings) is filed as a continuation | Helper script now (workcli supersedes it — throwaway); prose only (honor system forever) |
+| 4 | **Rule + skill split** — the beads-plugin rule is the always-loaded tripwire that requires the detailed `triaging-discovered-work` skill before a filing or deferral; that skill owns the filing-time contract, while verify-checklist owns report-time audit and manifesting | Fat rule (always-loaded context bloat); dedicated skill without a tripwire (relies on mid-flow invocation discipline) |
 
 ## 3. Design
 
-### 3.1 Filing-time contract — rewrite `src/plugins/beads/.agents/rules/discovered-work.md`
+### 3.1 Discovery-time tripwire — minimize `src/plugins/beads/.agents/rules/discovered-work.md`
 
-The rule keeps the sibling test and close-walk safety, and gains the adjudication
-step. New decision procedure when mid-task work surfaces:
+The rule is always loaded, so it carries only the stop condition and skill
+handoff. When mid-task work surfaces a new issue, it requires the agent to stop
+and use `triaging-discovered-work` before it creates, closes, or defers a bead
+or adds a provenance edge. It also states that discovered work is not a deferral
+channel. The rule contains none of the filing decision tree, templates, or
+close-walk detail.
+
+### 3.2 Filing-time contract — add `src/plugins/beads/.agents/skills/triaging-discovered-work/SKILL.md`
+
+The skill is a discipline skill. It preserves the sibling test, the
+fix-in-session default, anchored filing, the triage block, and close-walk safety.
+It supplies the complete decision procedure when mid-task work surfaces:
 
 **Step 1 — Sibling test (kept):** *would this have been on the original plan/spec?*
 
@@ -94,10 +102,10 @@ in-flight bead itself, and never close an out-of-scope discovery's new parent
 chain mid-session. The original trap text (parent auto-closes when all structural
 children close) is retained.
 
-### 3.2 Report-time contract — upgrade `src/user/.agents/skills/verify-checklist/SKILL.md`
+### 3.3 Report-time contract — upgrade `src/user/.agents/skills/verify-checklist/SKILL.md`
 
 Second gate; catches what filing missed. Wording stays tracker-neutral (the skill
-ships to all four tools; bd mechanics stay in the beads-plugin rule).
+ships to all four tools; bd mechanics stay in the Beads-plugin skill).
 
 **Audit step (added to "Gather Context"):** for each work item filed this session —
 anchor present? Priority rationale present? Provenance link present? Missing → fix
@@ -135,7 +143,7 @@ appears in **Remaining Work** as an escalation line.
 **Red-flags table addition:** "I'll mention the filed items casually at the end" →
 every discovery gets a manifest row with full triage.
 
-### 3.3 Shared checklist step 9 — `src/user/.agents/INSTRUCTIONS.md.template`
+### 3.4 Shared checklist step 9 — `src/user/.agents/INSTRUCTIONS.md.template`
 
 > 9. Discovered work recorded **and triaged** — issues found during work are
 > tracked, priority-rated with rationale, and anchored to the roadmap per the
@@ -143,16 +151,18 @@ every discovery gets a manifest row with full triage.
 
 Concept reference, no file paths — survives DYNAMIC-INCLUDE flattening.
 
-### 3.4 Align `src/user/.agents/skills/wait-for-pr-comments/SKILL.md`
+### 3.5 Align `src/user/.agents/skills/wait-for-pr-comments/SKILL.md`
 
 Its filing fallback ("Fail or no parent → orphan + `discovered-from`") is replaced
-with a pointer to the discovered-work rule's anchored-filing procedure. No
-competing instructions left standing.
+with a mandatory handoff to the `triaging-discovered-work` skill. No competing
+instructions left standing.
 
 ## 4. Non-goals
 
-- No new skill, agent, or helper script (mechanical enforcement arrives with the
-  workcli verb — see Continuations).
+- No helper script (mechanical enforcement arrives with the workcli verb — see
+  Continuations).
+- No standalone discovered-work skill without an always-loaded rule requiring
+  it at the filing/deferment decision.
 - No auto-remediation of the 14 existing breadcrumb-only beads in this change
   (separate sweep — see Continuations).
 - No change to close-walk semantics or bd itself.
@@ -161,15 +171,21 @@ competing instructions left standing.
 
 ## 5. Verification
 
-All four touchpoints are prose/config; there is no build step. Verification is:
+The rule, plugin skill, and report-time touchpoints are prose/config; there is no
+build step. Verification is:
 
-1. **Consistency** — the four changed files agree on the procedure, the triage
+1. **Consistency** — the thin rule names the skill, the skill contains the full
+   filing procedure, and the report-time touchpoints agree on the triage
    block format, and the manifest vocabulary; a grep for the retired
    orphan-default pattern across `src/` returns no instruction that still
    prescribes it.
-2. **Install-layout neutrality** — no files added/removed/renamed, so the
-   installer's merge behavior is unchanged.
-3. **Effectivity note** — changes take effect only after the user runs the
+2. **Skill behavior** — pressure scenarios and trigger evaluations cover
+   discovered-work filing/deferment prompts; the skill is selected for the
+   positive cases and rejected for near misses.
+3. **Install layout** — the new skill resides in the Beads plugin shared skill
+   namespace, which the installer overlays into each supported tool when the
+   plugin is active.
+4. **Effectivity note** — changes take effect only after the user runs the
    installer; deployed copies under `~/.claude/` etc. are stale until then.
 
 ## 6. Continuations
