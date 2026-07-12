@@ -90,8 +90,15 @@ graduate to a viz-scoped `CONTEXT.md` (making the repo multi-context via
   question; enters the reassessment queue.
 - **Reassessment queue** — the only place Tier-2 uncertainty is allowed to
   consume human attention.
-- **Rejection memory** — persisted human rejections; a rebuild must never
-  re-propose a rejected fact as fresh (§5.3).
+- **Rejection memory** — persisted human rejections and dismissals; a
+  rebuild must never re-propose a rejected fact as fresh (§5.3).
+- **Fact identity** — every Tier-2 fact's stable id derives from a coarse
+  key anchored to beads (the only stable substrate), never to other Tier-2
+  artifacts (§5.3). Verdicts, flags, annotations, and rejection memory all
+  join on it.
+- **Dismiss** — the third verdict: declines a *recommendation* without
+  asserting it is wrong (reject asserts a *fact* is incorrect). Dismissals
+  persist in rejection memory until the recommendation's basis changes.
 - **Contested (L1/L2/L3)** — the three-level interaction-risk gradient for
   code regions touched by multiple plans (§7.5).
 - **Materialization** — the point in plan-step order at which a fact (edge,
@@ -173,6 +180,7 @@ re-derived per view:
 | Channel | Encoding |
 |---|---|
 | Provenance | line solidity: encoded/accepted = solid; inferred = dashed |
+| Doubted | dashed + a bordered `?` doubt chip beside the kind chip; the drill panel carries the doubt reason |
 | Edge kind | color + bordered glyph chip: dependency gray →, overlap amber ≈, conflict red ✕, synergy green + |
 | Step status | done = filled; in_progress = filled + ring; open = outlined; deferred = full-opacity outline + pause glyph |
 | Plan identity | the five categorical hues, fixed slot order, direct-labeled |
@@ -196,7 +204,12 @@ Never color-alone: every color channel pairs with a glyph, stroke, or label.
   (`textContent` / `textarea.value`) or HTML-escaped — never interpolated
   into innerHTML (stored self-XSS otherwise). Data-out affordances report
   honest success/failure: the copy button confirms only when the clipboard
-  write resolves.
+  write resolves. Notes key on `viz:<repo>:<artifact-kind>:<fact-id>` —
+  fact identity, not scene fingerprint — so notes survive artifact
+  regeneration; a note whose fact id no longer resolves surfaces as a
+  "note from a prior generation," never silently hidden. Artifacts show an
+  unprocessed-note count in the header as the round-trip nudge (§5.8;
+  residual loss window ledgered in §13).
 - **Weight-slider explanation layer** (where sliders exist): sliders are
   share-of-importance, not volume knobs — a file weak on an axis *cools* as
   that axis gains weight. Every slider ships with a live mix readout and a
@@ -255,21 +268,34 @@ plans must confirm both by reading source before designing on them.
   edges.json             # Tier 2: inferred cross-plan edges + citations (machine-rewritten)
   steps.json             # Tier 2: synthesized waypoints + step→bead-ids mapping
   recommendations.json   # Tier 2: high-signal recommendations + actionability class
-  verdicts.json          # Tier 3: accept/reject/dismiss verdicts + annotations
+  flags.json             # Tier 2 class, machine-owned: doubt flags + orphaned-verdict flags (the reassessment-queue store)
+  verdicts.json          # Tier 3: accept/reject/dismiss verdicts + annotations — written only by `viz verdict`
   out/                   # generated artifacts (gitignored)
 ```
 
-Tier-2 files are machine-rewritten on rebuild; **`verdicts.json` is never
-machine-clobbered** — rebuilds may only append flags to it. The assembler
-joins verdicts to facts by fact id. This file split is the structural
-enforcement of "Tier 3 is only ever invalidated, never silently deleted."
+Tier-2 files are machine-rewritten on rebuild; **`verdicts.json` is written
+only by explicit human verdicts** (via `viz verdict`) — no rebuild, sweep,
+or cron path writes it, structurally enforcing "Tier 3 is only ever
+invalidated, never silently deleted." Machine-raised doubt about a fact, or
+a verdict whose subject fact changed or vanished, lands in `flags.json` as a
+flag referencing the fact/verdict id; `viz queue` renders flags joined to
+their facts and verdicts.
 
-**Fact identity and rejection memory.** Every Tier-2 fact carries a stable
-**coarse key** (for an edge: endpoints + kind) plus its basis fingerprint
-(cited passages hash). Rejection memory matches on the coarse key: a rebuild
-that re-derives a rejected edge suppresses it. If the basis has materially
-changed since rejection (cited passages differ), the fact may resurface —
-but always annotated with its prior rejection, never as fresh.
+**Fact identity and rejection memory.** Bead ids are the only stable
+substrate; **every Tier-2 fact's identity anchors to beads, never to other
+Tier-2 artifacts.** An edge's **coarse key** is (from-plan, to-plan, kind,
+the sorted bead-id anchor sets its endpoints resolve to via the step→bead
+mapping); where an endpoint maps to zero beads, its cited-passage
+fingerprint substitutes. The **fact id** is a stable hash of the coarse key;
+verdicts, flags, annotations, and rejection memory all join on it.
+Synthesized steps carry persistent ids with an explicit reconciliation
+contract: on re-synthesis a step inherits its predecessor's id when their
+bead-id sets majority-overlap, so a re-synthesis that renumbers or reorders
+steps never orphans a verdict (test item 13). Rejection memory matches on
+the coarse key: a rebuild that re-derives a rejected fact suppresses it. If
+the basis has materially changed since rejection (cited passages differ),
+the fact may resurface — but always annotated with its prior rejection,
+never as fresh.
 
 **Edge promotion** (accept-time, human-verdict-gated):
 
@@ -302,8 +328,9 @@ clears it:
    this change put the claim in doubt?" No → restamp with an audit note
    (agent-revalidated, date, change hash).
 4. **Human reassessment (precious):** only doubt-flagged facts, surfaced as
-   the reassessment queue. Tier-3 verdicts attached to a doubted fact are
-   flagged, never silently dropped. A doubted fact that was load-bearing for
+   the reassessment queue. Doubt flags live in `flags.json` (§5.3), never in
+   the Tier-3 file. Tier-3 verdicts attached to a doubted fact are flagged,
+   never silently dropped. A doubted fact that was load-bearing for
    downstream accepted verdicts surfaces with its dependents (the cascade
    check, §5.7).
 
@@ -315,7 +342,8 @@ queue, not a process.
 - **Primary: on-demand command** ("rebuild the map"). Works any time; correct
   without any scheduled machinery having run.
 - **Accelerant: overnight sweep** — Tier-1 extraction, funnel rungs 1–3 over
-  the sidecar, doubt flags queued for morning review. **Flag-only:** the
+  the sidecar, doubt flags queued for morning review (written to
+  `flags.json`; the sweep never touches `verdicts.json`). **Flag-only:** the
   night shift never pre-drafts replacement inferences; re-inference happens
   when a human is at the helm. This dial can be revisited without structural
   change.
@@ -331,7 +359,9 @@ queue, not a process.
   CLI name **`viz`**; machine verbs emit the JSON-envelope pattern the
   work-facade contract established (stdout envelope, exit mirrors `ok`).
   Verb sketch (implementation plans finalize): `viz pr [<number>]`,
-  `viz work`, `viz sweep`, `viz queue`, `viz verdict <fact-id> <accept|reject>`.
+  `viz work`, `viz sweep`, `viz queue`,
+  `viz verdict <fact-id> <accept|reject|dismiss>`,
+  `viz apply <recommendation-id>`.
 - **A thin skill (`viz`)** in the Claude tree (`src/user/.claude/skills/`) —
   placement forced by capability-dependency: it dispatches inference
   subagents and drives the claude-in-chrome annotation enhancement. The
@@ -351,8 +381,12 @@ the target repo. Nothing in this suite is agents-config-specific.
 **Timing:** recommendations are generated at data-build time (including the
 overnight sweep) **only where judgment earns its keep** — conflict and
 overlap edges, contested regions, doubt-flagged items, step-vs-backlog
-deltas. Plain dependency edges carry evidence only (bead ids, provenance);
-no canned advice — drill live in an attached session if wanted. This extends
+deltas. **Plain means no trigger condition matched:** a dependency edge
+whose trigger predicate fires (a resequence condition, a decouple pattern,
+a stale-dependency contradiction — table below) joins the build-time
+high-signal set like any conflict edge. Untriggered dependency edges carry
+evidence only (bead ids, provenance); no canned advice — drill live in an
+attached session if wanted. This extends
 the attention bar (findings principle 1) to recommendations: anything code
 can compute renders as fact, not advice.
 
@@ -376,7 +410,12 @@ can execute on acceptance: mint bead, add edge, relabel, resequence) or
 `ruling-needed` (human design decision; agent drafts the question) — the
 class the annotation round-trip dispatches on; and lives the Tier-2
 lifecycle (fingerprint-keyed, funnel-checked, dismissals persist in
-rejection memory until the basis changes).
+rejection memory until the basis changes). `one-click` execution goes
+through `viz apply`, which is **idempotent per mutation class** (bead
+minting keys on the recommendation id; edge adds, relabels, and resequences
+converge on target state — replay is a no-op) and appends an audit note to
+every touched bead: the edge-promotion contract (§5.3) generalized to all
+one-click mutations.
 
 ### 5.8 Annotation round-trip
 
@@ -399,8 +438,9 @@ rejection memory until the basis changes).
 Five plans were hand-built at Fable-judgment cost; 20+ plans must not need a
 frontier model per refresh. The bounds compose: the fingerprint cache (§5.4
 rung 1) removes re-inference of unchanged facts; edge promotion (§5.3)
-permanently shrinks the Tier-2 surface (accepted facts become Tier-1 beads
-reads); the flag-only night shift (§5.5) bounds unattended spend;
+permanently shrinks the dependency-kind Tier-2 surface (promoted edges
+become Tier-1 beads reads; other kinds stay sidecar-cached under rung 1);
+the flag-only night shift (§5.5) bounds unattended spend;
 high-signal-only recommendations (§5.7) bound per-build judgment; the
 plan-inclusion filter (§4.5) bounds rendering. The fleet-scale entry-view
 hypothesis (§11) is the escape hatch if legibility still degrades.
@@ -428,8 +468,10 @@ attention-allocation act), hierarchically at every depth.
 Three axes, each 0–1 per file, combined by user-weighted average (slider
 semantics per §4.5):
 
-- **Complexity** — Tier 1: scc complexity/LOC signals blended with
-  PR-range churn (PyDriller). Replaces the prototype's fabricated scores.
+- **Complexity** — Tier 1: normalized scc complexity/LOC as the estate-wide
+  baseline; PR-touched files receive a churn-scaled boost (PyDriller,
+  merge-base..head). Context files never score below their scc baseline —
+  churn only heats, never cools. Replaces the prototype's fabricated scores.
 - **Load-bearing** — Tier 1: graph centrality from graphify, with two
   binding corrections: (a) **projected post-PR centrality** — computed on
   the dependency graph *as the PR leaves it* (changed imports included),
@@ -451,8 +493,9 @@ config surface is future work, not v1.
 Drill panels carry per-file "what to check" stories (Tier-2, per-PR) subject
 to the attention bar: anything mechanically catchable (deleted assertions,
 lint-class findings) does not belong — the tool directs judgment, not
-restated automation. Intra-file hotspot detail (function/hunk-level) is a
-drill enrichment on the same bar.
+restated automation. Intra-file hotspot detail (function/hunk-level, PR
+files only) ships in the V1 file drill as Tier-2 per-PR garnish on the same
+bar.
 
 ### 6.3 V1 data build
 
@@ -497,8 +540,9 @@ a low-priority experiment (§11).
 materialization step, story, evidence). The **step→bead-ids mapping is
 explicit and mandatory** — synthesized steps are a lossy narrative view over
 real beads, and the mapping is what keeps the loss honest (and makes §7.3's
-delta computable). Plan inclusion at build time uses the plan-inclusion
-filter's persisted selection.
+delta computable). Step ids are persistent across re-synthesis per the §5.3
+reconciliation contract. Plan inclusion at build time uses the
+plan-inclusion filter's persisted selection.
 
 ### 7.3 Step synthesis and the delta instrument
 
@@ -510,7 +554,9 @@ mismatch, sequencing contradiction) compose the UI-initiated **"recommend
 work-breakdown revision"** action. The user invokes it from a plan or step
 drill; the agent responds with delta-cited recommendations whose `one-click`
 members (mint beads, add edges, resequence) execute through the annotation
-round-trip on acceptance.
+round-trip on acceptance. Delta *computation* is deterministic CLI code over
+`steps.json` and the bead subtree; the skill adds only the narrative
+recommendation layer on top.
 
 ### 7.4 Edge inference and review
 
@@ -544,9 +590,13 @@ concrete surfaces; for prose-only plans it is Tier-2 inference, and the
 touch-set's provenance carries through to the contention claim (a region can
 be "L1 (inferred touch-set)" — solidity encoding applies).
 
-**Temporal dimension:** contention exists only where plans' active phases
-overlap. Contested-now renders differently from contested-eventually, and
-region contention state tracks the materialization slider exactly as the
+**Temporal dimension:** a plan's **active span** is [first non-done step,
+last non-done step] in step order, deferred steps excluded. A region's
+contention window is the overlap of the contending plans' active spans
+restricted to their region-touching steps; **contested-now** means the
+window includes the plans' current frontiers (first non-done steps),
+**contested-eventually** means it opens only at a future slider position.
+Region contention state tracks the materialization slider exactly as the
 drill drawers do. Guardrail recommendations key to level (§5.7).
 
 ## 8. V3 — Codebase evolution (direction only)
@@ -574,7 +624,7 @@ timeline-scrub affordance in shared controls (§4.5).
   verdict. The overnight sweep is read-only + flag-only by construction.
 - **Headless surface:** the cron sweep runs under fail-closed headless
   dispatch (explicit allowed-tools), and touches only `.viz/` Tier-2 files
-  and the flag queue.
+  including `flags.json` (the flag queue); it never writes `verdicts.json`.
 - Artifacts inline repo content and open locally; they are not published
   surfaces. Sharing one externally shares its embedded data — worth a
   one-line notice in artifact footers.
@@ -587,6 +637,8 @@ playwright pass, not CI.
 
 1. **Rung-1 reuse:** unchanged input fingerprints → inference layer never
    invoked (fake records zero calls); scene facts carry prior fingerprints.
+   CLI-side assertion: the rung-3 queue stays empty and Tier-2 files are
+   byte-stable.
 2. **Rung-2 restamp:** diff outside a fact's cited passages → fact
    restamped, no model call; diff intersecting citations → fact queued for
    rung 3.
@@ -595,7 +647,8 @@ playwright pass, not CI.
    rejection — never as fresh.
 4. **Tier-3 preservation:** a full rebuild rewrites `edges.json` while
    `verdicts.json` is byte-identical; a verdict whose subject fact changed
-   is flagged, present, and never dropped.
+   produces an orphaned-verdict flag in `flags.json`, and the verdict itself
+   stays present and untouched.
 5. **Promotion mapping:** accepted dependency edge between type-wall-legal
    beads mints `blocks`; epic↔task falls back to `related-to` with sidecar
    kind intact; re-accepting an already-promoted edge is a no-op.
@@ -618,6 +671,17 @@ playwright pass, not CI.
     file set → typed drift error, not a silent union.
 12. **Envelope invariants:** machine verbs emit the JSON envelope on stdout
     with exit code mirroring `ok`, success and failure both.
+13. **Identity survives re-synthesis:** a step re-synthesis that changes
+    step count and order preserves step ids by bead-set overlap; every
+    prior verdict still joins to its fact; a rejected edge whose endpoints
+    renumbered stays suppressed.
+14. **Apply idempotency:** replaying `viz apply` for each one-click
+    mutation class (mint bead, add edge, relabel, resequence) is a no-op
+    the second time — no duplicate beads, edges, or notes.
+15. **Contested computation:** fixtures assert L1/L2 level assignment from
+    touch-sets and the code graph, the badge-highest-level rule, touch-set
+    provenance carry-through to the contention claim, and contested-now vs
+    contested-eventually window derivation per §7.5.
 
 ## 11. Evaluation criteria (decisions this spec defers to evidence)
 
@@ -670,6 +734,12 @@ playwright pass, not CI.
 - `ASSUMPTION:` machine verbs adopt the work-facade JSON-envelope pattern.
 - `ASSUMPTION:` viz vocabulary stays in this spec; multi-context
   `CONTEXT-MAP.md` promotion is offered, not assumed.
+- `ASSUMPTION:` bead-anchored fact identity (§5.3) — steps inherit ids by
+  bead-set majority-overlap on re-synthesis; endpoint identity falls back
+  to passage fingerprints only where a step maps to zero beads.
+- `ASSUMPTION:` annotation durability — a note not yet round-tripped lives
+  only in browser localStorage; the unprocessed-note banner (§4.5) is the
+  mitigation and the residual loss window is accepted.
 
 ## Continuations
 
@@ -681,12 +751,14 @@ playwright pass, not CI.
   and recorded in the implementation plan.
 - feat: V1 PR-shape views — estate treemap (collapse/reflow, worst-offender
   roll-up, label declutter), attention ledger (separated/mixed toggle, diff
-  links), file-sonar drill, constellation (evaluation-gated), heat model per
-  §6.2 with slider explanation layer — AC: playwright-verified against ≥2
-  real PRs; §6.1 requirements demonstrated.
+  links), file-sonar drill with intra-file hotspot listing (PR files),
+  constellation (evaluation-gated), heat model per §6.2 with slider
+  explanation layer — AC: playwright-verified against ≥2 real PRs; §6.1
+  requirements demonstrated.
 - feat: sidecar + staleness funnel + review queue (CLI side) — `.viz/`
-  read/write, fingerprint manifest, rungs 1–2, verdict recording, edge
-  promotion with type-wall mapping — AC: test-plan items 1–5, 9 pass.
+  read/write incl. `flags.json`, fingerprint manifest, rungs 1–2, verdict
+  recording, edge promotion with type-wall mapping, `viz apply` mutation
+  classes — AC: test-plan items 1–5, 9, 13–14 pass.
 - feat: `viz` skill — rebuild driving, rung-3 doubt checks, edge/step
   inference (fixed enum + passage citations), review-queue flow, annotation
   round-trip incl. claude-in-chrome enhancement — AC: end-to-end on this
@@ -694,8 +766,9 @@ playwright pass, not CI.
   memory honored across a rebuild.
 - feat: V2 work-map artifact — lanes + territory views per §7 requirements,
   materialization slider with slider-tracking drills, contested L1–L3
-  badging with temporal window — AC: playwright-verified; reaction round
-  with the owner recorded; step-naming experiment included and judged.
+  badging with temporal window — AC: playwright-verified; test-plan item 15
+  passes; reaction round with the owner recorded; step-naming experiment
+  included and judged.
 - chore: overnight sweep cron recipe — CLI rungs 1–2 + headless cheap-model
   rung 3, flag-only, fail-closed tool allowlist — AC: a scheduled run
   produces a morning queue report with zero beads writes.
