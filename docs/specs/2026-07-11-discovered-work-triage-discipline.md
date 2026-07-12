@@ -112,8 +112,8 @@ those fixed in-session, so the adjudication is visible, not just the leftovers:
 | Item | Scope | Lands in | Tracked item | Priority — why |
 |------|-------|----------|------|----------------|
 | null-check in poller | in-scope | this PR | — | — |
-| retry config drift | in-scope | parent epic (<id>) | <id> | P1 — deferred: blast radius; breaks overnight runs |
-| stale docs in guide | out-of-scope | <epic-id> (M4 review epic) | <id> | P3 — cosmetic |
+| retry config drift | in-scope | parent work item (<id>) | <id> | P1 — deferred: blast-radius; breaks overnight runs |
+| stale docs in guide | out-of-scope | <anchor-id> (M4 review epic) | <id> | P3 — cosmetic |
 ```
 
 **"Lands in" value vocabulary** — the value must be one of the four below (the
