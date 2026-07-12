@@ -173,7 +173,7 @@ def _run_step(cmd: list[str], name: str, hint: str, *, cwd: str | None = None) -
     """
     proc = _run(cmd, cwd=cwd, check=False)
     if proc.returncode != 0:
-        raise _AbortStep(name, hint, cmd=" ".join(cmd), exit_code=proc.returncode, stderr=proc.stderr)
+        raise _AbortStep(name, hint, cmd=shlex.join(cmd), exit_code=proc.returncode, stderr=proc.stderr)
     return proc
 
 

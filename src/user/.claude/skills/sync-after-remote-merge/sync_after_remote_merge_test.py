@@ -121,6 +121,30 @@ def test_detect_convention_unrelated_claude_worktrees_segment_fails_loud():
 # --- gh_pr_view: PR-absence vs hard failure classification ---
 
 
+def test_run_step_abort_cmd_is_shell_reconstructible(monkeypatch):
+    """failed_step.cmd must be a copy-pastable command even when an argument
+    (e.g. a path) contains spaces — shlex.join, not a bare space-join."""
+    def fake_run(cmd, cwd=None, check=True):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+    monkeypatch.setattr(m, "_run", fake_run)
+    with pytest.raises(m._AbortStep) as ei:
+        m._run_step(["git", "-C", "/My Repos/x", "status"], "teardown", "hint")
+    assert ei.value.failed_step["cmd"] == "git -C '/My Repos/x' status"
+
+
+def test_gh_pr_view_abort_cmd_includes_full_argv(monkeypatch):
+    """The gh_pr_view abort must report the real argv (with --json), reconstructed
+    via shlex.join, not a lossy hand-built f-string."""
+    def fake_run(cmd, cwd=None, check=True):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="server error 500")
+    monkeypatch.setattr(m, "_run", fake_run)
+    with pytest.raises(m._AbortStep) as ei:
+        m.gh_pr_view("feat/x")
+    cmd = ei.value.failed_step["cmd"]
+    assert cmd.startswith("gh pr view feat/x")
+    assert "--json" in cmd
+
+
 def test_gh_pr_view_no_pr_returns_none(monkeypatch):
     def fake_run(cmd, cwd=None, check=True):
         return subprocess.CompletedProcess(cmd, 1, stdout="",
