@@ -34,6 +34,8 @@ def _ok(payload: object) -> CommandResult:
 
 
 def _gh_with_head(head: str, *, ci: str = "success") -> GhCli:
+    # The CI read is check-runs first (jkha6); map ci= to a single completed check run.
+    conclusion = ci
     return GhCli(
         RecordedRunner(
             [
@@ -42,7 +44,12 @@ def _gh_with_head(head: str, *, ci: str = "success") -> GhCli:
                 _ok([]),
                 _ok([]),
                 _ok([]),
-                _ok({"state": ci}),
+                _ok(
+                    {
+                        "total_count": 1,
+                        "check_runs": [{"status": "completed", "conclusion": conclusion}],
+                    }
+                ),
             ]
         )
     )

@@ -70,7 +70,12 @@ class GhClient(Protocol):
     def head_ref_name(self, ref: PRRef) -> str: ...  # pragma: no cover
 
     def rest(
-        self, method: str, path: str, *, fields: dict[str, str] | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str] | None = None,
+        paginate: bool = False,
     ) -> Any: ...  # pragma: no cover  # gh api returns object|array|primitive; caller narrows
 
     def graphql(self, query: str, variables: JsonObj) -> JsonObj: ...  # pragma: no cover
@@ -146,8 +151,21 @@ class GhCli:
         parsed: JsonObj = json.loads(out)
         return str(parsed["headRefName"])
 
-    def rest(self, method: str, path: str, *, fields: dict[str, str] | None = None) -> Any:
+    def rest(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str] | None = None,
+        paginate: bool = False,
+    ) -> Any:
         argv = ["gh", "api", "--method", method, path]
+        if paginate:
+            # gh walks every page and concatenates the JSON arrays into one, so a list
+            # read returns ALL items — not just GitHub's first 30. Only valid on GET
+            # collection endpoints (the callers that opt in); object endpoints must not
+            # set it (gh would emit one object per page, breaking json.loads).
+            argv.append("--paginate")
         for key, value in (fields or {}).items():
             argv += ["-f", f"{key}={value}"]
         out = self._run(argv)

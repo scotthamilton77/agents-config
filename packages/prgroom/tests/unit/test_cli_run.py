@@ -91,10 +91,19 @@ class _MergedGh:
         del ref
         return "abc123"
 
-    def rest(self, method: str, path: str, *, fields: dict[str, str] | None = None) -> Any:
-        del method, fields
+    def rest(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str] | None = None,
+        paginate: bool = False,
+    ) -> Any:
+        del method, fields, paginate
         if path == "repos/octo/demo/pulls/7":
             return {"merged_at": "2026-06-09T12:00:00Z"}  # merged close
+        if path.endswith("/check-runs"):
+            return {"total_count": 0, "check_runs": []}  # no check runs → status fallback
         if path.endswith("/status"):
             return {"state": "success"}
         return []  # issue comments / reviews / review comments — none
