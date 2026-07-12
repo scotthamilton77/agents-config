@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import time
 import traceback
-from argparse import ArgumentParser, _SubParsersAction
+from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
 from typing import NoReturn, TextIO
 
@@ -78,7 +78,9 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     update_parser.add_argument("--set-description")
     # Recognized only so it reaches the named E_FIELD_CLOBBER_GUARD instead
     # of a generic E_USAGE unknown-flag error -- notes are append-only.
-    update_parser.add_argument("--set-notes")
+    # help=SUPPRESS hides it from --help entirely: it's a tripwire, not an
+    # advertised option, so it never invites the attempt it then rejects.
+    update_parser.add_argument("--set-notes", help=SUPPRESS)
 
     note_parser = subparsers.add_parser("note", help="append a note (append-only)")
     note_parser.add_argument("id", metavar="ID")

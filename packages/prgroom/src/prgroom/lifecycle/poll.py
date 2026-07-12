@@ -87,8 +87,9 @@ def poll_pr(
 
     new_head = _head_ref_oid(gh, ref)
     if not new_head:
-        # Empty remote HEAD (PR opened with no commits): leave round/last_poll_sha
-        # untouched, no phase change. The next poll re-evaluates the bootstrap.
+        # Empty remote HEAD (PR opened with no commits): leave the retry counter and
+        # last_poll_sha untouched, no phase change. The next poll re-evaluates the
+        # bootstrap.
         return state
 
     merged = _pr_is_merged(gh, ref)
@@ -345,15 +346,16 @@ def _ci_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
 
 
 def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
-    """Apply §3.4 round/attribution for the observed HEAD; return external-push flag.
+    """Apply §3.4 retry counting/attribution for the observed HEAD; return external-push flag.
 
-    Bootstrap (``last_poll_sha == ""``): anchor ``round = max(round, 1)``, set
-    ``last_poll_sha``, no reviewer flip. Unchanged SHA: no-op. CLI's own push
-    (``new_head == last_pushed_head_sha``): advance ``last_poll_sha`` only. External
-    push: ``round += 1``, advance ``last_poll_sha``, flip stale required reviews.
+    Bootstrap (``last_poll_sha == ""``): set ``last_poll_sha``, no reviewer flip,
+    counter untouched — the initial observed push consumes no retry (the counter
+    is a 0-indexed count of fix-push retries). Unchanged SHA: no-op. CLI's own
+    push (``new_head == last_pushed_head_sha``): advance ``last_poll_sha`` only.
+    External push: ``pr_review_retries_used += 1``, advance ``last_poll_sha``,
+    flip stale required reviews.
     """
     if state.last_poll_sha == "":
-        state.round = max(state.round, 1)
         state.last_poll_sha = new_head
         return False
     if new_head == state.last_poll_sha:
@@ -363,7 +365,7 @@ def _apply_sha_attribution(state: PRGroomingState, new_head: str) -> bool:
         state.last_poll_sha = new_head
         return False
     # External push (operator / third party): count it and invalidate stale reviews.
-    state.round += 1
+    state.pr_review_retries_used += 1
     state.last_poll_sha = new_head
     flip_stale_required_reviews(state.reviewers)
     state.last_review_invalidated_sha = new_head

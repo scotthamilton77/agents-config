@@ -46,7 +46,7 @@ def _minimal_state() -> PRGroomingState:
     return PRGroomingState(
         pr=_REF,
         phase=PRPhase.IDLE,
-        round=0,
+        pr_review_retries_used=0,
         last_polled_at=_T,
         last_activity_at=_T,
         quiescence=QuiescenceState(),
@@ -117,7 +117,7 @@ def test_round_trip_preserves_fully_populated_state() -> None:
     state = PRGroomingState(
         pr=_REF,
         phase=PRPhase.FIXES_PENDING,
-        round=2,
+        pr_review_retries_used=2,
         last_polled_at=_T,
         last_activity_at=_T,
         quiescence=QuiescenceState(ci_state="success", quiesced_at=None),
@@ -126,7 +126,7 @@ def test_round_trip_preserves_fully_populated_state() -> None:
         human_review_label_added=True,
         reviewers={"copilot": reviewer},
         items=[item],
-        last_error="LIFECYCLE_HARD_CAP_EXCEEDED",
+        last_error="LIFECYCLE_PR_REVIEW_EXHAUSTED",
         lifecycle_escalation_filed=True,
     )
     assert PRGroomingState.from_dict(state.to_dict()) == state
@@ -209,7 +209,7 @@ def test_every_optional_field_round_trips_when_populated() -> None:
     state = PRGroomingState(
         pr=_REF,
         phase=PRPhase.HUMAN_GATED,
-        round=3,
+        pr_review_retries_used=3,
         last_polled_at=_T,
         last_activity_at=_T,
         quiescence=QuiescenceState(ci_state="failure", quiesced_at=_T),

@@ -124,10 +124,23 @@ class FileStore:
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise StateCorruptError(f"{path}: {exc}") from exc  # noqa: TRY003  # single call-site; message names the offending file
+        if not isinstance(payload, dict):
+            # Valid JSON whose root is not an object ([], "text", 42) — a parse
+            # failure per §3.7, caught before any key access can raise raw.
+            raise StateCorruptError(  # noqa: TRY003  # single call-site; names the file + root type
+                f"{path}: state root must be a JSON object, got {type(payload).__name__}"
+            )
         version = payload.get("schema_version")
         if not (_is_int_version(version) and version == SCHEMA_VERSION):
             payload = self._migrate(path, raw, version)
-        return PRGroomingState.from_dict(payload)
+        try:
+            return PRGroomingState.from_dict(payload)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            # Valid JSON whose shape from_dict rejects is a parse failure per §3.7:
+            # a pre-rename key set (KeyError), a wrongly-typed scalar (ValueError/
+            # TypeError), or a nested field of the wrong container type — e.g.
+            # "quiescence": [] — whose .get/.items access raises AttributeError.
+            raise StateCorruptError(f"{path}: state shape invalid: {exc!r}") from exc  # noqa: TRY003  # single call-site; names the offending file + key
 
     def _migrate(self, path: Path, raw: bytes, from_version: object) -> dict[str, object]:
         """Apply a registered migrator for ``from_version`` or trip schema-unknown.

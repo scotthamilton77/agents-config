@@ -121,14 +121,14 @@ def _emit(sink: Sink, escalation: Escalation, warn: Callable[[str], None]) -> bo
 
 
 def should_request_human_review(state: PRGroomingState) -> bool:
-    """True iff a review-content gate is active (§4.7): cap-trip or an ESCALATED/FAILED item.
+    """True iff a review-content gate is active (§4.7): budget-trip or an ESCALATED/FAILED item.
 
     Deliberately narrower than :func:`escalate_if_needed`'s lifecycle trigger: only the
-    hard-cap ``last_error`` counts here. Infra gates (``RUNTIME_TERMINAL_USER``,
+    retry-budget ``last_error`` counts here. Infra gates (``RUNTIME_TERMINAL_USER``,
     ``STATE_CORRUPT``, ``RUNTIME_PUSH_REJECTED``, …) are §4.7 non-triggers — they are
     operator-infra problems, not review-content problems, so they never add the label.
     """
-    if state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value:
+    if state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value:
         return True
     return any(
         item.disposition is not None and item.disposition.kind in BLOCKER_DISPOSITIONS

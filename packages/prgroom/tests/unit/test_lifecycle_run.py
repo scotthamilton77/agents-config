@@ -109,7 +109,7 @@ def _quiescent_state(*, phase: PRPhase = PRPhase.FIXES_PENDING, **kw: object) ->
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=kw.get("round", 1),  # type: ignore[arg-type]
+        pr_review_retries_used=kw.get("pr_review_retries_used", 1),  # type: ignore[arg-type]
         last_polled_at=_NOW,
         last_activity_at=_STALE,
         quiescence=QuiescenceState(ci_state="success"),
@@ -219,25 +219,49 @@ def test_execute_step_propagate_flushes_then_raises() -> None:
 
 
 def test_cap_guard_trips_when_queued_and_at_cap() -> None:
-    ctx = _ctx(_quiescent_state(round=3), config=PrgroomConfig(max_rounds=3))
+    ctx = _ctx(
+        _quiescent_state(pr_review_retries_used=3), config=PrgroomConfig(pr_review_retries=3)
+    )
     guard = _cap_guard_step(_verbs([], has_queued=True))
     out = guard(ctx)
     assert out.phase is PRPhase.HUMAN_GATED
-    assert out.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
+    assert out.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
     assert out.lifecycle_escalation_filed is False  # cleared so loop-top fires once
 
 
 def test_cap_guard_no_trip_under_cap() -> None:
-    ctx = _ctx(_quiescent_state(round=2), config=PrgroomConfig(max_rounds=3))
+    ctx = _ctx(
+        _quiescent_state(pr_review_retries_used=2), config=PrgroomConfig(pr_review_retries=3)
+    )
     guard = _cap_guard_step(_verbs([], has_queued=True))
     out = guard(ctx)
     assert out.phase is PRPhase.FIXES_PENDING  # unchanged
 
 
 def test_cap_guard_no_trip_without_queued_commits() -> None:
-    ctx = _ctx(_quiescent_state(round=5), config=PrgroomConfig(max_rounds=3))
+    ctx = _ctx(
+        _quiescent_state(pr_review_retries_used=5), config=PrgroomConfig(pr_review_retries=3)
+    )
     guard = _cap_guard_step(_verbs([], has_queued=False))
     assert guard(ctx).phase is PRPhase.FIXES_PENDING  # at cap but nothing queued
+
+
+def test_cap_guard_skips_has_queued_when_under_budget() -> None:
+    # The cheap counter-vs-budget check must short-circuit the effectful has_queued
+    # gh/git read (same ordering discipline as _entry_probe): under budget the guard
+    # cannot trip, so a transient failure in the read must be unreachable here.
+    reads: list[int] = []
+
+    def spy(_ctx: RunContext) -> bool:
+        reads.append(1)
+        return True
+
+    ctx = _ctx(
+        _quiescent_state(pr_review_retries_used=2), config=PrgroomConfig(pr_review_retries=3)
+    )
+    guard = _cap_guard_step(_verbs([], has_queued_fn=spy))
+    assert guard(ctx).phase is PRPhase.FIXES_PENDING
+    assert reads == []  # has_queued never read when the budget cannot trip
 
 
 def test_rereview_guard_true_when_awaiting_and_reviewer_stale() -> None:
@@ -302,16 +326,16 @@ def test_entry_probe_noop_on_non_terminal_phase() -> None:
     assert calls == []  # did not poll — entry probe only runs from terminal-for-CLI
 
 
-def test_entry_probe_cap_rearm_after_raised_max_rounds() -> None:
+def test_entry_probe_cap_rearm_after_raised_pr_review_retries() -> None:
     state = _quiescent_state(
         phase=PRPhase.HUMAN_GATED,
-        round=3,
-        last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value,
+        pr_review_retries_used=3,
+        last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value,
         lifecycle_filed=True,
         label_added=True,
     )
-    ctx = _ctx(state, config=PrgroomConfig(max_rounds=6))  # operator raised the cap
-    # round(3) < max(6) -> cap no longer trips -> re-arm to fixes-pending.
+    ctx = _ctx(state, config=PrgroomConfig(pr_review_retries=6))  # operator raised the cap
+    # retries(3) < budget(6) -> the guard no longer trips -> re-arm to fixes-pending.
     _entry_probe(ctx, _verbs([], has_queued=True))
     assert ctx.state.phase is PRPhase.FIXES_PENDING
     assert ctx.state.last_error is None
@@ -322,13 +346,14 @@ def test_entry_probe_cap_rearm_after_raised_max_rounds() -> None:
 def test_entry_probe_no_rearm_on_bare_rerun() -> None:
     state = _quiescent_state(
         phase=PRPhase.HUMAN_GATED,
-        round=3,
-        last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value,
+        pr_review_retries_used=3,
+        last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value,
     )
-    ctx = _ctx(state, config=PrgroomConfig(max_rounds=3))  # NOT raised
-    _entry_probe(ctx, _verbs([], has_queued=True))  # round(3) >= max(3) AND queued -> stays gated
+    ctx = _ctx(state, config=PrgroomConfig(pr_review_retries=3))  # NOT raised
+    # retries(3) >= budget(3) AND queued -> stays gated
+    _entry_probe(ctx, _verbs([], has_queued=True))
     assert ctx.state.phase is PRPhase.HUMAN_GATED
-    assert ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
+    assert ctx.state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
 
 
 def test_entry_probe_skips_has_queued_when_poll_exits_gate() -> None:
@@ -347,10 +372,10 @@ def test_entry_probe_skips_has_queued_when_poll_exits_gate() -> None:
 
     state = _quiescent_state(
         phase=PRPhase.HUMAN_GATED,
-        round=3,
-        last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value,
+        pr_review_retries_used=3,
+        last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value,
     )
-    ctx = _ctx(state, config=PrgroomConfig(max_rounds=3))
+    ctx = _ctx(state, config=PrgroomConfig(pr_review_retries=3))
     _entry_probe(ctx, _verbs([], poll=poll, has_queued_fn=spy))
     assert ctx.state.phase is PRPhase.MERGED  # left terminal
     assert reads == []  # has_queued never read after the poll exits the gate
@@ -391,13 +416,13 @@ def test_resolve_end_of_cycle_caps_when_queue_survives_at_cap() -> None:
     # H1 safety net: if a pipeline step ever leaves commits queued AT the cap (a future
     # commit-producing reply, a partial push), the honest has_queued read makes the
     # resolver's priority-1 gate here rather than silently pushing past the cap.
-    state = _quiescent_state(round=3)
-    ctx = _ctx(state, config=PrgroomConfig(max_rounds=3))
+    state = _quiescent_state(pr_review_retries_used=3)
+    ctx = _ctx(state, config=PrgroomConfig(pr_review_retries=3))
     ctx.cycle_start_pushed_sha = state.last_pushed_head_sha
     ctx.cycle_start_error = None
     _resolve_end_of_cycle(ctx, _verbs([], has_queued=True))  # queue survived
     assert ctx.state.phase is PRPhase.HUMAN_GATED
-    assert ctx.state.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
+    assert ctx.state.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
 
 
 def test_guarded_has_queued_routes_tagged_error_through_discipline() -> None:
@@ -440,18 +465,18 @@ def test_run_cap_trip_gates_and_labels() -> None:
     sink = RecordingSink()
     gh = FakeGh()
     store = InMemoryStore()
-    store.write(_REF, _quiescent_state(phase=PRPhase.FIXES_PENDING, round=3))
+    store.write(_REF, _quiescent_state(phase=PRPhase.FIXES_PENDING, pr_review_retries_used=3))
     ctx = _ctx(
-        _quiescent_state(phase=PRPhase.FIXES_PENDING, round=3),
+        _quiescent_state(phase=PRPhase.FIXES_PENDING, pr_review_retries_used=3),
         store=store,
         sink=sink,
         gh=gh,
-        config=PrgroomConfig(max_rounds=3),
+        config=PrgroomConfig(pr_review_retries=3),
     )
     out = _run(ctx, _verbs(calls, has_queued=True))
     assert "push" not in calls  # cap guard refused the push
     assert out.phase is PRPhase.HUMAN_GATED
-    assert out.last_error == ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value
+    assert out.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
     assert len(sink.emitted) == 1  # one lifecycle escalation
     assert gh.added == [(_REF, "human-review-required")]  # §4.7 label added
 

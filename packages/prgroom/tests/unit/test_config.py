@@ -1,7 +1,7 @@
 """Tests for the TOML config loader and duration parser (§3.5, §4.3, §7).
 
 These pin coded decisions: the duration-string grammar (``30s`` / ``10m`` /
-``1h30m`` -> timedelta), the built-in defaults (max_rounds=3 per §3.5), the
+``1h30m`` -> timedelta), the built-in defaults (pr_review_retries=5 per §3.5), the
 precedence CLI-flag > env > TOML > default, and graceful handling of a missing
 config file.
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from prgroom.config import (
-    DEFAULT_MAX_ROUNDS,
+    DEFAULT_PR_REVIEW_RETRIES,
     PrgroomConfig,
     parse_duration,
 )
@@ -52,27 +52,32 @@ def test_parse_duration_rejects_malformed_strings(bad: str) -> None:
 
 def test_defaults_when_no_file_no_env(tmp_path: Path) -> None:
     cfg = PrgroomConfig.load(repo_config=tmp_path / "absent.toml")
-    assert cfg.max_rounds == DEFAULT_MAX_ROUNDS == 3
+    assert cfg.pr_review_retries == DEFAULT_PR_REVIEW_RETRIES == 5
 
 
 def test_toml_overrides_built_in_default(tmp_path: Path) -> None:
+    # Use a non-default value (4 != DEFAULT_PR_REVIEW_RETRIES) so this assertion
+    # fails if the TOML key is ignored and the built-in default is used instead.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("max_rounds = 5\n")
-    assert PrgroomConfig.load(repo_config=toml).max_rounds == 5
+    toml.write_text("pr_review_retries = 4\n")
+    assert PrgroomConfig.load(repo_config=toml).pr_review_retries == 4
 
 
 def test_env_overrides_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Non-default TOML value (4) so the assertion proves env beats a live TOML value,
+    # not merely the built-in default.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("max_rounds = 5\n")
-    monkeypatch.setenv("PRGROOM_MAX_ROUNDS", "7")
-    assert PrgroomConfig.load(repo_config=toml).max_rounds == 7
+    toml.write_text("pr_review_retries = 4\n")
+    monkeypatch.setenv("PRGROOM_PR_REVIEW_RETRIES", "7")
+    assert PrgroomConfig.load(repo_config=toml).pr_review_retries == 7
 
 
 def test_cli_flag_overrides_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Non-default TOML value (4) so the flag is shown to beat a live TOML+env stack.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("max_rounds = 5\n")
-    monkeypatch.setenv("PRGROOM_MAX_ROUNDS", "7")
-    assert PrgroomConfig.load(repo_config=toml, max_rounds_flag=9).max_rounds == 9
+    toml.write_text("pr_review_retries = 4\n")
+    monkeypatch.setenv("PRGROOM_PR_REVIEW_RETRIES", "7")
+    assert PrgroomConfig.load(repo_config=toml, pr_review_retries_flag=9).pr_review_retries == 9
 
 
 def test_toml_parses_duration_keys(tmp_path: Path) -> None:
@@ -84,16 +89,18 @@ def test_toml_parses_duration_keys(tmp_path: Path) -> None:
     assert cfg.idle_threshold == timedelta(seconds=90)
 
 
-def test_invalid_max_rounds_in_toml_raises(tmp_path: Path) -> None:
+def test_invalid_pr_review_retries_in_toml_raises(tmp_path: Path) -> None:
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text('max_rounds = "lots"\n')
-    with pytest.raises(ValueError, match="max_rounds"):
+    toml.write_text('pr_review_retries = "lots"\n')
+    with pytest.raises(ValueError, match="pr_review_retries"):
         PrgroomConfig.load(repo_config=toml)
 
 
-def test_env_non_integer_max_rounds_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRGROOM_MAX_ROUNDS", "seven")
-    with pytest.raises(ValueError, match="max_rounds"):
+def test_env_non_integer_pr_review_retries_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PRGROOM_PR_REVIEW_RETRIES", "seven")
+    with pytest.raises(ValueError, match="pr_review_retries"):
         PrgroomConfig.load(repo_config=tmp_path / "absent.toml")
 
 
@@ -105,9 +112,9 @@ def test_non_string_duration_in_toml_raises(tmp_path: Path) -> None:
         PrgroomConfig.load(repo_config=toml)
 
 
-def test_boolean_max_rounds_in_toml_is_rejected(tmp_path: Path) -> None:
+def test_boolean_pr_review_retries_in_toml_is_rejected(tmp_path: Path) -> None:
     # bool is an int subclass in Python; the loader must reject `true` as a count.
     toml = tmp_path / ".prgroom.toml"
-    toml.write_text("max_rounds = true\n")
-    with pytest.raises(ValueError, match="max_rounds"):
+    toml.write_text("pr_review_retries = true\n")
+    with pytest.raises(ValueError, match="pr_review_retries"):
         PrgroomConfig.load(repo_config=toml)

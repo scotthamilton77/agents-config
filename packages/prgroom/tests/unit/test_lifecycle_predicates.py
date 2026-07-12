@@ -79,7 +79,7 @@ def test_bootstrap_state_is_the_zero_value_shape() -> None:
     assert state.pr == pr
     assert state.schema_version == SCHEMA_VERSION == 1
     assert state.phase == PRPhase.IDLE
-    assert state.round == 0
+    assert state.pr_review_retries_used == 0
     assert state.last_poll_sha == ""
     assert state.last_pushed_head_sha == ""
     assert state.reviewers == {}

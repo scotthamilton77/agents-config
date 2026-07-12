@@ -103,7 +103,7 @@ def _state(
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=2,
+        pr_review_retries_used=2,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
@@ -148,18 +148,18 @@ def test_escalate_dedups_already_filed_items(store: InMemoryStore) -> None:
 
 def test_escalate_emits_one_lifecycle_event_for_last_error(store: InMemoryStore) -> None:
     sink = RecordingSink()
-    state = _state(last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value)
+    state = _state(last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value)
     out = escalate_if_needed(state, sink=sink, store=store, ref=_REF)
     assert len(sink.emitted) == 1
     assert sink.emitted[0].item is None
-    assert ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value in sink.emitted[0].reason
+    assert ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value in sink.emitted[0].reason
     assert out.lifecycle_escalation_filed is True
     assert store.read(_REF).lifecycle_escalation_filed is True
 
 
 def test_escalate_dedups_filed_lifecycle_gate(store: InMemoryStore) -> None:
     sink = RecordingSink()
-    state = _state(last_error="LIFECYCLE_HARD_CAP_EXCEEDED", lifecycle_filed=True)
+    state = _state(last_error="LIFECYCLE_PR_REVIEW_EXHAUSTED", lifecycle_filed=True)
     escalate_if_needed(state, sink=sink, store=store, ref=_REF)
     assert sink.emitted == []
 
@@ -193,7 +193,7 @@ def test_escalate_no_work_does_not_write(store: InMemoryStore) -> None:
 @pytest.mark.parametrize(
     ("state", "expected"),
     [
-        (_state(last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value), True),
+        (_state(last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value), True),
         (_state(_item(disposition=_disp(DispositionKind.ESCALATED))), True),
         (_state(_item(disposition=_disp(DispositionKind.FAILED))), True),
         (_state(last_error=ErrorCode.RUNTIME_GH_TERMINAL.value), False),  # §4.7 non-trigger
@@ -210,7 +210,7 @@ def test_should_request_human_review_matrix(state: PRGroomingState, *, expected:
 
 def test_request_human_review_adds_label_once(store: InMemoryStore) -> None:
     gh = FakeGh()
-    state = _state(last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value)
+    state = _state(last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value)
     out = request_human_review_if_needed(state, gh=gh, store=store, ref=_REF, auto_request=True)
     assert gh.added == [(_REF, _LABEL)]
     assert out.human_review_label_added is True
@@ -242,7 +242,7 @@ def test_request_human_review_no_op_on_non_trigger(store: InMemoryStore) -> None
 def test_request_human_review_swallows_label_failure(store: InMemoryStore) -> None:
     gh = FakeGh(fail=True)
     warnings: list[str] = []
-    state = _state(last_error=ErrorCode.LIFECYCLE_HARD_CAP_EXCEEDED.value)
+    state = _state(last_error=ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value)
     out = request_human_review_if_needed(
         state, gh=gh, store=store, ref=_REF, auto_request=True, warn=warnings.append
     )

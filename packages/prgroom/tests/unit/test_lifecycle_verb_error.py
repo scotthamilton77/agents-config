@@ -26,7 +26,7 @@ def _state() -> PRGroomingState:
     return PRGroomingState(
         pr=PRRef(owner="octo", repo="demo", number=7),
         phase=PRPhase.FIXES_PENDING,
-        round=1,
+        pr_review_retries_used=1,
         last_polled_at=_NOW,
         last_activity_at=_NOW,
         quiescence=QuiescenceState(),

@@ -27,9 +27,9 @@ It is a JSON object of the shape:
                   decision already recorded in the `## Decisions` block */ ],
     "pr_detail_path": "<file: COMPLETE PR snapshot — description incl. `## Decisions`,
                         labels, every review thread with full reply-chains, and
-                        prior-round dispositions>",
+                        prior-retry dispositions>",
     "branch_state_path": "<file: recent commits + diff-since-base>",
-    "memory_dir": "<dir: ephemeral within-run scratch; NOT cross-round memory —
+    "memory_dir": "<dir: ephemeral within-run scratch; NOT cross-retry memory —
                     that lives in the PR + dispositions>",
     "response_outbox_dir": "<dir: write per-item reply text files here>"
   }}
@@ -58,4 +58,4 @@ Hard requirements (these are audited; violations flip the item to `failed`):
 - Every commit you make on the branch MUST be claimed by some item's `commit_shas`
   (no orphan commits).
 - Honor prior decisions in the `## Decisions` block; apply established patterns so
-  this round stays consistent with earlier rounds.
+  this retry stays consistent with earlier retries.

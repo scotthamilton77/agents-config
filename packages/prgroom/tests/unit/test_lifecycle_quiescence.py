@@ -81,7 +81,7 @@ def _quiescent_state(
     return PRGroomingState(
         pr=PRRef(owner="octo", repo="demo", number=7),
         phase=PRPhase.AWAITING_REVIEW,
-        round=1,
+        pr_review_retries_used=1,
         last_polled_at=_T0,
         last_activity_at=last_activity_at,
         quiescence=QuiescenceState(ci_state=ci_state),
