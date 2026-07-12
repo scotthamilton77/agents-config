@@ -112,3 +112,16 @@ def detect_convention(worktree_root: Path, main_root: Path) -> Convention:
         f"worktree at {worktree_root} is under neither .claude/worktrees/ nor "
         ".worktrees/; tear it down manually"
     )
+
+
+def dirty_paths(porcelain: str) -> list[str]:
+    """Parse `git status --porcelain` into changed/untracked paths (XY-prefix stripped)."""
+    return [ln[3:] for ln in porcelain.splitlines() if ln.strip()]
+
+
+def unmerged_commits(rev_list_output: str) -> list[str]:
+    """Commit SHAs on the branch not reachable from the merge commit (empty == fully merged).
+
+    Fed by `git -C <main> rev-list <merge_commit>..<branch>`.
+    """
+    return [ln.strip() for ln in rev_list_output.splitlines() if ln.strip()]

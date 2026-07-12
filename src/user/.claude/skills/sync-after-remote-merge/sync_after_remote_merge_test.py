@@ -98,3 +98,25 @@ def test_detect_convention_unrecognised_raises():
     wt = Path("/tmp/somewhere/else")
     with pytest.raises(m.UnrecognizedWorktree):
         m.detect_convention(wt, main_root)
+
+
+# --- Task 4: safety-gate parsers ---
+
+
+def test_dirty_paths_parses_porcelain():
+    porcelain = " M src/a.py\n?? stray.txt\nA  added.py\n"
+    assert m.dirty_paths(porcelain) == ["src/a.py", "stray.txt", "added.py"]
+
+
+def test_dirty_paths_clean_is_empty():
+    assert m.dirty_paths("") == []
+    assert m.dirty_paths("\n\n") == []
+
+
+def test_unmerged_commits_lists_orphans():
+    assert m.unmerged_commits("abc\ndef\n") == ["abc", "def"]
+
+
+def test_unmerged_commits_empty_means_fully_contained():
+    assert m.unmerged_commits("") == []
+    assert m.unmerged_commits("\n") == []
