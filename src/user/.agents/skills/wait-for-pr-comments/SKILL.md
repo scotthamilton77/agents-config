@@ -779,7 +779,7 @@ begins.
 
 ### DEFER placement (interactive only)
 
-Use `triaging-discovered-work` before filing or deferring the item. Do not
+Use the `triaging-discovered-work` skill before filing or deferring the item. Do not
 duplicate or bypass that contract here.
 
 ### Hook is interactive-default
