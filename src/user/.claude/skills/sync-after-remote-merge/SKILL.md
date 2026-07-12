@@ -32,8 +32,9 @@ JSON envelope on stdout and never merges.
 
 ### Reading the envelope
 
-- `status: "ok"` — done: branch deleted, worktree removed (other-agent / normal
-  repo), base synced. Report the result.
+- `status: "ok"` — done: branch deleted, base synced, and — for an other-agent
+  worktree — the worktree removed (a normal repo has no worktree to remove).
+  Report the result.
 - `status: "handoff"` — Claude-native worktree. The script synced the base but
   cannot remove a harness-owned worktree. **Run each step in `steps_remaining`
   in order**: first the `ExitWorktree(discard_changes: true)` tool call, then the
