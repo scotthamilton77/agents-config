@@ -87,6 +87,16 @@ human-approvers-required = 0     # override per bead: review-exit-human-approver
 merge-authorization = "rule-based"
 merge-rule          = "bot-quiescence"
 
+[merge-policy.approver]
+# Opt-in: a GitHub-App-attested approving review satisfies branch protection's
+# required review on authorized autonomous merges. Absent this block, behavior is
+# unchanged (resolver -> approver: null). merge-guard runs the approver only
+# after the eligibility floor re-clears, pinned to the head SHA, fail-loud to the
+# human on any error. Design: docs/specs/2026-07-11-merge-approver-app-design.md
+type         = "github-app"
+app-id       = 4275336
+key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"  # PEM path; the owner exports this
+
 # ---------------------------------------------------------------------------
 # [completion-gate] — tier-routing thresholds for the SKIP/SERIAL/HEAVY gate
 # Read by: gate_triage.py (gate-triage skill), consumed by the completion-gate rule.
