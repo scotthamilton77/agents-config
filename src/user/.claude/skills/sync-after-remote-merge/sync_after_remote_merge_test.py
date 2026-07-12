@@ -38,7 +38,7 @@ def test_envelope_serialises_convention_enum_to_string():
 def test_classify_pr_none_is_not_merged():
     st = m.classify_pr(None)
     assert st.merged is False and st.pr is None
-    assert "no PR" in st.reason.lower()
+    assert "no pr" in st.reason.lower()
 
 
 def test_classify_pr_open_is_not_merged():
