@@ -383,6 +383,23 @@ def test_main_rejects_dash_leading_branch(monkeypatch, main_repo):
     assert env["failed_step"]["name"] == "invalid_ref"
 
 
+def test_main_dirty_claude_native_failure_omits_discard_handoff(monkeypatch, main_repo):
+    """On a dirty-worktree abort the failure envelope must NOT hand back
+    ExitWorktree(discard_changes: true) — that would destroy the changes the
+    gate is protecting. Teardown steps are offered only once the gate passes."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "stray.txt").write_text("uncommitted\n")
+    monkeypatch.setattr(m, "detect_convention", lambda w, r: m.Convention.CLAUDE_NATIVE)
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "safety_gate_worktree"
+    assert env["steps_remaining"] == []
+
+
 def test_main_unrecognised_worktree_is_named_not_unexpected(monkeypatch, main_repo):
     """UnrecognizedWorktree is a deliberate fail-loud outcome; it must surface as
     a named 'detect_convention' step, not fall into the generic 'unexpected'."""

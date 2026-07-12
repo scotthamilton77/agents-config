@@ -339,7 +339,11 @@ def main(argv: list[str] | None = None) -> int:
               remediation_hint=str(exc))
         return 1
     except _AbortStep as abort:
-        remaining = plan_teardown(convention, main_root or "", branch or "") if convention else []
+        # Only hand back destructive teardown once the clean-worktree gate has
+        # passed. Before that, "ExitWorktree(discard_changes: true)" would
+        # destroy the uncommitted work safety_gate_worktree is protecting.
+        remaining = (plan_teardown(convention, main_root or "", branch or "")
+                     if convention and "safety_gate_worktree" in completed else [])
         _emit(Status.FAILED, steps_completed=completed, failed_step=abort.failed_step,
               steps_remaining=remaining, worktree_convention=convention, main_root=main_root,
               base=base, branch=branch, pr=pr_number, merge_commit=merge_commit,
