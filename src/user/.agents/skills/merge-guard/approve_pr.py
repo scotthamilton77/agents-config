@@ -3,8 +3,8 @@
 
 Satisfies branch protection's required approving review with a GitHub App
 identity, at merge time, pinned to the head SHA the merge-guard eligibility
-floor checked. Spec: docs/specs/2026-07-11-merge-approver-app-design.md
-(§3.3 "Approver script contract").
+floor checked. See the merge-approver App design (2026-07-11), section 3.3
+"Approver script contract".
 
 The approval is mechanical policy attestation — never authorization. The
 caller (merge-guard Step 5) runs it only after Axis-2 authorization and a
@@ -64,9 +64,18 @@ def build_jwt(app_id: int, now: int, signer: Signer) -> str:
 
 def openssl_signer(key_path: str) -> Signer:
     def sign(data: bytes) -> bytes:
-        proc = subprocess.run(
-            ["openssl", "dgst", "-sha256", "-sign", key_path],
-            input=data, capture_output=True, timeout=30)
+        try:
+            proc = subprocess.run(
+                ["openssl", "dgst", "-sha256", "-sign", key_path],
+                input=data, capture_output=True, timeout=30)
+        except FileNotFoundError as exc:
+            raise ApproveError(
+                "openssl not found on PATH — it is required to sign the App JWT"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ApproveError(
+                "openssl signing timed out after 30s — the App key must be an "
+                "unencrypted PEM (a passphrase prompt would hang here)") from exc
         if proc.returncode != 0:
             raise ApproveError(
                 "openssl signing failed: "

@@ -391,6 +391,18 @@ class TestApproverConfig(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["approver"]["key_path_env"], "MY_KEY")
 
+    def test_invalid_key_path_env_identifier_is_policy_error(self):
+        # key-path-env is consumed via bash indirect expansion (${!VAR}); a value
+        # that isn't a valid shell identifier (e.g. contains '-') must fail loud
+        # at resolve time, not cryptically at merge time.
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = 1\n'
+              'key-path-env = "MY-KEY"\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("key-path-env", err)
+
     def test_approver_is_orthogonal_to_authorization_mode(self):
         # Valid under plain explicit mode too — approver is mechanism, not authorization.
         path = write_toml(

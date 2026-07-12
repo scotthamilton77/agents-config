@@ -6,6 +6,7 @@ fake signer. No network, no keys, no repo-internal paths.
 """
 import base64
 import json
+import subprocess
 import unittest
 
 import approve_pr
@@ -51,6 +52,40 @@ class TestAttestationBody(unittest.TestCase):
         self.assertIn("authorized under this repo's merge policy", body)
         self.assertNotIn("CI green", body)
         self.assertNotIn("triaged", body)
+
+
+class TestOpensslSigner(unittest.TestCase):
+    """openssl invocation failures are expected environment errors, not bugs:
+    they must surface as ApproveError (fail-loud, one-line diagnostic), not fall
+    through to the generic 'unexpected' catch-all."""
+
+    class _FakeSubprocess:
+        TimeoutExpired = subprocess.TimeoutExpired
+
+        def __init__(self, run_impl):
+            self.run = run_impl
+
+    def _sign_with(self, run_impl):
+        original = approve_pr.subprocess
+        approve_pr.subprocess = self._FakeSubprocess(run_impl)
+        try:
+            return approve_pr.openssl_signer("/irrelevant/key.pem")(b"payload")
+        finally:
+            approve_pr.subprocess = original
+
+    def test_missing_openssl_binary_raises_approve_error(self):
+        def raise_not_found(*a, **k):
+            raise FileNotFoundError(2, "No such file or directory", "openssl")
+        with self.assertRaises(approve_pr.ApproveError) as ctx:
+            self._sign_with(raise_not_found)
+        self.assertIn("openssl", str(ctx.exception).lower())
+
+    def test_signing_timeout_raises_approve_error(self):
+        def raise_timeout(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="openssl", timeout=30)
+        with self.assertRaises(approve_pr.ApproveError) as ctx:
+            self._sign_with(raise_timeout)
+        self.assertIn("timed out", str(ctx.exception).lower())
 
 
 class FakeHttp:

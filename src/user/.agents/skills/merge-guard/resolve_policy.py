@@ -234,6 +234,13 @@ def _parse_approver(merge: dict) -> ApproverConfig | None:
     key_path_env = _typed(section, "key-path-env", str, DEFAULT_APPROVER_KEY_PATH_ENV)
     if not key_path_env:
         raise PolicyError("key-path-env: must be a non-empty string")
+    # The approver reads the key path via bash indirect expansion (${!VAR}), so
+    # the value must be a valid shell identifier; reject anything else here
+    # rather than let it fail cryptically at merge time.
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_path_env):
+        raise PolicyError(
+            f"key-path-env: {key_path_env!r} is not a valid environment variable "
+            "name (must match [A-Za-z_][A-Za-z0-9_]*)")
     return ApproverConfig(type=approver_type, app_id=app_id, key_path_env=key_path_env)
 
 
