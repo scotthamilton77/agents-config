@@ -141,8 +141,8 @@ with:
 | Item | Scope | Lands in | Tracked item | Priority — why |
 |------|-------|----------|------------|----------------|
 | [description] | in-scope | this PR | — | — |
-| [description] | in-scope | parent epic (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |
-| [description] | out-of-scope | <anchor epic/milestone id> | <id> | P2 — <priority rationale> |
+| [description] | in-scope | parent work item (<id>) | <id> | P1 — deferred: <hatch>; <priority rationale> |
+| [description] | out-of-scope | <anchor id> | <id> | P2 — <priority rationale> |
 ```
 
 "Lands in" must be one of: `this PR`, `parent epic (<id>)`, an epic/milestone
