@@ -783,7 +783,7 @@ Apply the discovered-work rule in full (sibling test → anchored filing; the
 triage block carries the deferral's escape-hatch justification; do NOT close
 a newly filed bead this session):
 
-- **In scope** (would have been on the parent epic's original plan) →
+- **In scope** (would have been on the current work item's original plan/spec) →
   sibling: `bd create --parent <parent-of-current-bead>`, plus the rule's
   triage block and a Remaining-Work escalation in the completion report.
 - **Out of scope** → anchor under the best-fit epic/milestone
