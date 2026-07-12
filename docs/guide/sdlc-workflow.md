@@ -118,7 +118,9 @@ enforced by the **`merge-guard`** skill:
 - **`never`** — hands off to you.
 - **`explicit`** (default) — waits for your direct "merge it" / "ship it".
 - **`rule-based`** — auto-merges only when the named rule *and* the live
-  eligibility check both pass.
+  eligibility check both pass. On a protected branch that requires a review, an
+  optional App-attested approver (configured via `[merge-policy.approver]`) supplies
+  that review at merge time so the merge can proceed without a human.
 
 When in doubt, `merge-guard` treats the PR as *not* authorized. This is a
 deliberate risk-asymmetric default: the cost of a wrong merge outweighs the cost

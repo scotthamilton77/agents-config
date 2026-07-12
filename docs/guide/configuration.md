@@ -100,6 +100,42 @@ Absent a `[merge-policy]` section, `explicit` applies — creating a PR is never
 authorization to merge. This is enforced by the `merge-guard` skill; see
 [The SDLC Workflow](./sdlc-workflow.md#7-merge) for how it plays out.
 
+#### Autonomous merge on a protected branch — `[merge-policy.approver]`
+
+If your default branch has protection requiring an approving review, a `rule-based`
+merge would otherwise stall: there is no human to approve, and an agent cannot
+approve its own PR. The optional approver closes that gap — a **GitHub App** submits
+an attested approving review at merge time, pinned to the exact commit the
+eligibility floor checked, *satisfying* the required-review rule rather than
+bypassing it.
+
+```toml
+[merge-policy.approver]           # opt-in; omit the block and behavior is unchanged
+type         = "github-app"
+app-id       = 123456
+key-path-env = "MERGE_GUARD_APPROVER_KEY_PATH"   # env var that names the PEM path
+```
+
+One-time setup (the repo owner does this; the agent cannot):
+
+1. Create a GitHub App (Settings → Developer settings → GitHub Apps) with **no
+   webhook**, installable only on your account. Grant it **Pull requests: Read &
+   write** *and* **Contents: Read & write** — both are required. Without
+   `Contents: write`, GitHub records the App's approval but does **not** count it
+   toward the required review.
+2. Generate a private key; store the PEM locally (e.g.
+   `~/.config/merge-guard/approver.pem`, `chmod 600`) — never in any repo. Install
+   the App on the repo.
+3. Export the env var named above to the PEM path, e.g. in your shell profile:
+   `export MERGE_GUARD_APPROVER_KEY_PATH="$HOME/.config/merge-guard/approver.pem"`.
+
+The approver is **mechanism, not authorization**: `merge-guard` runs it only after a
+`rule-based` merge is already authorized and the eligibility floor re-clears, and any
+failure is a fail-loud hand-off to you — never an `--admin` bypass. **Security:**
+because the App holds `Contents: write`, the PEM key can push code to the repo, so
+guard it like any write credential. (At run time the approver mints a token scoped
+down to `pull_requests: write` only, but a holder of the key can mint more.)
+
 ### Adversarial review — `[foreign-cli]`
 
 If you use cross-model review (Codex/Gemini), point at their binaries and pick
