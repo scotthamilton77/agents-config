@@ -196,9 +196,10 @@ text, keeping every named rule.
 - One inlined JSON scene object per artifact. Shape: cc.json-inspired
   (node tree + generic attributes maps + top-level typed edges + self-
   describing attribute descriptors) with viz-suite extensions:
-  - per-fact **provenance** (`encoded | inferred | accepted | doubted` +
-    fingerprint + passage citations) — drives the solidity encoding and the
-    drill panel's evidence section;
+  - per-fact **provenance** on two independent axes — source/verdict
+    (`encoded | inferred | accepted`) and freshness (`fresh | doubted`) —
+    plus fingerprint + passage citations; drives the solidity encoding and
+    the drill panel's evidence section;
   - plan identity, step waypoints, and the explicit step→bead-id mapping;
   - recommendations attached to high-signal items only (D6), each with
     actionability class;
