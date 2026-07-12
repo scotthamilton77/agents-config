@@ -81,11 +81,19 @@ resuming fresh.
 
 ## Next actions (in order)
 
-1. **DONE (2026-07-12): operationalization discussion.** All seven agenda
-   threads resolved as decisions D1–D8 in `operationalization-notes.md`
-   (provenance tiers, hybrid promotion, staleness funnel, overnight
-   flag-only sweep, packaging split, annotation round-trip, recommendation
-   timing, V3-thin, model split). OSS landscape surveyed and verified:
+1. **DONE (2026-07-12): operationalization discussion.** The seven agenda
+   threads (below) resolved into six decisions D1–D6 in
+   `operationalization-notes.md`, grounded in a three-provenance-tier working
+   model: agenda items 1–5 produced D1–D6 (item 2, regeneration + freshness,
+   split into D2 staleness + D3 trigger), while items 6 (scale) and 7
+   (step-vs-backlog) folded into those decisions by composition rather than
+   minting standalone ones (see that file's "Threads resolved by
+   composition"). Two further decisions emerged during the discussion, outside
+   the original seven agenda items: D7 (V3-thin) and D8 (model split, a
+   process call on which model authors the spec/plans). Decision map: hybrid
+   promotion (D1), staleness funnel (D2), overnight flag-only sweep (D3),
+   packaging split (D4), annotation round-trip (D5), recommendation timing
+   (D6), V3-thin (D7), model split (D8). OSS landscape surveyed and verified:
    `oss-landscape.md`. Judgment-dense spec inputs banked on Fable:
    `spec-judgment-inputs.md` (recommendation taxonomy, contested semantics,
    F0 scene-contract skeleton). These four files + `findings.md` are the
