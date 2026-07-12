@@ -94,7 +94,7 @@ Failure:
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
 | `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm |
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
-| `E_USAGE` | invalid CLI usage (bad flags, missing required args, `create` without `--raw`) |
+| `E_USAGE` | invalid CLI usage — bad flags, missing required args, or a rejected flag combination (e.g. `create` given neither `--raw` nor a noun; noun creation given `--type`/`--label`; `deliver` given flags for the wrong shape) |
 | `E_INTERNAL` | an unexpected internal fault — the envelope invariant holds even on facade bugs |
 | `E_DUPLICATE_TITLE` | `create <noun>` found an exact, case-sensitive title match before minting |
 | `E_NOT_CLAIMABLE` | `claim` refused a container, a blocked leaf, or a closed item |
