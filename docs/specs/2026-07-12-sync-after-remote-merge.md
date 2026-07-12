@@ -111,13 +111,18 @@ and both safety gates are clear.
    emit `status: "not_merged"` and stop — a clean, non-error outcome the skill
    interprets (§3.3). Never infer merge from the user's say-so alone.
 
-3. **Safety gate A — no unmerged local commits.** The local branch tip must be
-   contained in the merge: every commit on `<branch>` not on the base must be
-   reachable from the PR's `mergeCommit` (equivalently, `git merge-base
-   --is-ancestor <branch-tip> <mergeCommit>` after fetch, or the branch tip
-   equals `headRefOid`). If the local branch has commits the merge did not
-   include, abort with `status: "failed"` — deleting the branch would lose
-   work. The abort report lists the orphaned SHAs.
+3. **Safety gate A — no local commits beyond the merged head.** Containment is
+   checked against the PR head GitHub actually merged (`headRefOid`), **not** the
+   `mergeCommit`: a squash or rebase merge produces a new commit that does not
+   have the branch's commits as ancestors, so a `mergeCommit`-reachability check
+   would list every branch commit and always false-abort — and squash is this
+   repo's default. `git rev-list <headRefOid>..<branch>` is empty for
+   squash/rebase/merge alike when the local branch holds nothing beyond the
+   merged head, and lists only genuine local-only commits when it does; a
+   non-empty result aborts with `status: "failed"` (the report lists the orphan
+   SHAs) because deleting the branch would lose that work. A merged PR with no
+   `headRefOid`, or a head SHA not resolvable locally, also aborts — the gate is
+   never skipped-yet-marked-complete on a destructive path.
 
 4. **Safety gate B — clean worktree.** No uncommitted tracked changes and no
    untracked files in the worktree. If dirty, abort with `status: "failed"` and
