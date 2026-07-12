@@ -139,3 +139,112 @@ def test_plan_teardown_other_agent_is_scripted_no_remaining():
 
 def test_plan_teardown_normal_repo_is_scripted_no_remaining():
     assert m.plan_teardown(m.Convention.NORMAL_REPO, "/repo", "feature/x") == []
+
+
+# --- Task 6: boundary + main() orchestration (real tmp git repos; gh faked) ---
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _head(repo):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
+                          capture_output=True, text=True).stdout.strip()
+
+
+@pytest.fixture
+def main_repo(tmp_path):
+    """A real git repo with one commit on `main`, plus an origin it can pull from."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-b", "main", str(origin)], check=True,
+                   capture_output=True, text=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", str(origin), str(repo)], check=True,
+                   capture_output=True, text=True)
+    _git(repo, "config", "user.email", "t@t.t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "f.txt").write_text("base\n")
+    _git(repo, "add", "f.txt")
+    _git(repo, "commit", "-m", "base")
+    _git(repo, "push", "origin", "main")
+    return repo
+
+
+def _run_main(monkeypatch, cwd, pr_json, argv):
+    import contextlib
+    import io
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(m, "gh_pr_view", lambda branch: pr_json)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = m.main(argv)
+    return rc, json.loads(buf.getvalue())
+
+
+def test_main_not_merged_when_no_pr(monkeypatch, main_repo):
+    _git(main_repo, "checkout", "-b", "feature/x")
+    rc, env = _run_main(monkeypatch, main_repo, None, ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "not_merged"
+    assert "verify_merged" not in env["steps_completed"]
+    assert env["merge_commit"] is None
+
+
+def test_main_dirty_worktree_aborts(monkeypatch, main_repo):
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "stray.txt").write_text("uncommitted\n")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "safety_gate_worktree"
+    assert "stray.txt" in json.dumps(env)
+
+
+def test_main_other_agent_full_teardown(monkeypatch, main_repo):
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    # Merge on the "remote": fast-forward main to the feature commit, push.
+    _git(main_repo, "merge", "feature/x")
+    _git(main_repo, "push", "origin", "main")
+    merge_oid = _head(main_repo)
+    _git(main_repo, "checkout", "main")
+    # Rewind local main so the script has to pull the merge.
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": merge_oid}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "ok"
+    assert env["worktree_convention"] == "other-agent"
+    assert env["steps_remaining"] == []
+    assert env["synced_to"] == merge_oid
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" not in branches
+    assert not wt.exists()
+
+
+def test_main_claude_native_hands_off(monkeypatch, main_repo):
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "push", "origin", "feature/x")
+    # Force the Claude-native teardown branch regardless of the real path.
+    monkeypatch.setattr(m, "detect_convention", lambda w, r: m.Convention.CLAUDE_NATIVE)
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "handoff"
+    assert env["steps_remaining"] == [
+        "ExitWorktree(discard_changes: true)",
+        f"git -C {env['main_root']} branch -D feature/x",
+    ]
+    assert wt.exists()  # script did NOT remove a Claude-native worktree
