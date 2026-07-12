@@ -239,6 +239,35 @@ def _finish_failure(work_error: WorkError, out: TextIO, err: TextIO, fmt: str) -
     return exit_code
 
 
+def _default_read_file(path: str) -> str:
+    """Read `path` as UTF-8, typing the two expected boundary failures.
+
+    The default `--spec`/manifest reader `main()` installs when no `read_file`
+    is injected. A raw `Path.read_text` here would let a missing/unreadable
+    path or a non-UTF-8 file escape as a bare `OSError`/`UnicodeDecodeError`
+    that main()'s catch-all reports as an opaque `E_INTERNAL` "internal error";
+    both are *expected* input failures, so they belong in the type as typed
+    envelopes instead: a bad `--spec` path is user error (`E_USAGE`), an
+    undecodable spec is a malformed manifest input (`E_MANIFEST`). Injected
+    `read_file` fakes bypass this helper entirely, so the seam stays
+    test-injectable unchanged.
+    """
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except UnicodeDecodeError as decode_error:
+        raise WorkError(
+            ErrorCode.MANIFEST,
+            f"spec file is not valid UTF-8: {path}",
+            {"path": path},
+        ) from decode_error
+    except OSError as read_error:
+        raise WorkError(
+            ErrorCode.USAGE,
+            f"cannot read spec file {path}: {read_error.strerror or read_error}",
+            {"path": path},
+        ) from read_error
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -271,9 +300,7 @@ def main(
     # `deliver`/`reconcile` read it, but every handler keeps the transport's
     # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
     # travels as an `args` attribute rather than an extra handler parameter.
-    args.read_file = (
-        read_file if read_file is not None else lambda p: Path(p).read_text(encoding="utf-8")
-    )
+    args.read_file = read_file if read_file is not None else _default_read_file
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
