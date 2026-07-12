@@ -106,6 +106,25 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     reopen_parser.add_argument("id", metavar="ID")
 
 
+def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    claim_parser = subparsers.add_parser("claim", help="claim a ready, unclaimed leaf")
+    claim_parser.add_argument("id", metavar="ID")
+
+    release_parser = subparsers.add_parser("release", help="release a claimed item back to open")
+    release_parser.add_argument("id", metavar="ID")
+
+    plan_parser = subparsers.add_parser("plan", help="add/remove an item from the Planning queue")
+    plan_parser.add_argument("id", metavar="ID")
+    plan_parser.add_argument("--done", action="store_true")
+    plan_parser.add_argument("--undo", action="store_true")
+    plan_parser.add_argument("--force", action="store_true")
+
+    promote_parser = subparsers.add_parser(
+        "promote", help="promote a shape-feat leaf to a shape-spec container"
+    )
+    promote_parser.add_argument("id", metavar="ID")
+
+
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     dep_parser = subparsers.add_parser("dep", help="manage dependency edges")
     dep_parser.add_argument("action", choices=["add", "remove", "list"])
@@ -146,6 +165,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
     _add_read_subparsers(subparsers)
     _add_write_subparsers(subparsers)
+    _add_transition_subparsers(subparsers)
     _add_relations_subparsers(subparsers)
     _add_sync_subparser(subparsers)
     return parser
