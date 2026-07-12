@@ -126,9 +126,10 @@ def dirty_paths(porcelain: str) -> list[str]:
 
 
 def unmerged_commits(rev_list_output: str) -> list[str]:
-    """Commit SHAs on the branch not reachable from the merge commit (empty == fully merged).
+    """Parse `git rev-list <ref>..<branch>` output into commit SHAs (empty == none).
 
-    Fed by `git -C <main> rev-list <merge_commit>..<branch>`.
+    A pure parser over rev-list stdout; the caller chooses the base ref (the
+    merged PR head — see safety gate A).
     """
     return [ln.strip() for ln in rev_list_output.splitlines() if ln.strip()]
 
