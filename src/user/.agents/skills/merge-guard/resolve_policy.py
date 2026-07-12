@@ -231,6 +231,8 @@ def _parse_approver(merge: dict) -> ApproverConfig | None:
     if "app-id" not in section:
         raise PolicyError("[merge-policy.approver]: missing required key 'app-id'")
     app_id = _typed(section, "app-id", int, None)
+    if app_id <= 0:
+        raise PolicyError(f"app-id: must be a positive integer, got {app_id}")
     key_path_env = _typed(section, "key-path-env", str, DEFAULT_APPROVER_KEY_PATH_ENV)
     if not key_path_env:
         raise PolicyError("key-path-env: must be a non-empty string")

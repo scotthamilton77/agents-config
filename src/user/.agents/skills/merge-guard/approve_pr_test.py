@@ -192,6 +192,32 @@ class TestFlow(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(http.calls, [])
 
+    def _bad_arg_run(self, **overrides):
+        argv = {"--repo": "o/r", "--pr": "5", "--head-sha": HEAD,
+                "--app-id": "1", "--key-path": "/dev/null", "--facts": "{}"}
+        argv.update(overrides)
+        flat = [tok for kv in argv.items() for tok in kv]
+        http = FakeHttp({})
+        code = approve_pr.main(
+            flat, http=http, signer_factory=lambda path: FAKE_SIGNER,
+            clock=lambda: NOW)
+        return code, http
+
+    def test_non_positive_pr_exits_2_before_any_api_call(self):
+        code, http = self._bad_arg_run(**{"--pr": "0"})
+        self.assertEqual(code, 2)
+        self.assertEqual(http.calls, [])
+
+    def test_non_positive_app_id_exits_2_before_any_api_call(self):
+        code, http = self._bad_arg_run(**{"--app-id": "-3"})
+        self.assertEqual(code, 2)
+        self.assertEqual(http.calls, [])
+
+    def test_malformed_head_sha_exits_2_before_any_api_call(self):
+        code, http = self._bad_arg_run(**{"--head-sha": "not-a-sha"})
+        self.assertEqual(code, 2)
+        self.assertEqual(http.calls, [])
+
     def test_moved_head_refuses_without_posting(self):
         routes = dict(BASE_ROUTES)
         routes[("GET", "/repos/o/r/pulls/5")] = (200, {"head": {"sha": MOVED}})

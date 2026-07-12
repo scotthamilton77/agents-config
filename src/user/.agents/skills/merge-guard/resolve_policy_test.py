@@ -427,6 +427,16 @@ class TestApproverConfig(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("oauth-app", err)
 
+    def test_non_positive_app_id_is_policy_error(self):
+        # Real GitHub App IDs are positive; 0/negative is a config typo that would
+        # otherwise fail late at JWT mint. Reject it at resolve time.
+        path = write_toml(
+            self.RULE_BASED
+            + '[merge-policy.approver]\ntype = "github-app"\napp-id = 0\n')
+        code, _, err = run_resolver("--project-config", path)
+        self.assertEqual(code, 1)
+        self.assertIn("app-id", err)
+
     def test_non_integer_app_id_is_policy_error(self):
         path = write_toml(
             self.RULE_BASED

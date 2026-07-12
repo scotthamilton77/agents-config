@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
 import subprocess
 import sys
 import time
@@ -215,6 +216,13 @@ def main(argv: list[str] | None = None, *, http: Http = urllib_http,
     try:
         if args.repo.count("/") != 1 or not all(args.repo.split("/")):
             raise ApproveError(f"--repo must be owner/name, got {args.repo!r}")
+        if args.pr <= 0:
+            raise ApproveError(f"--pr must be a positive integer, got {args.pr}")
+        if args.app_id <= 0:
+            raise ApproveError(f"--app-id must be a positive integer, got {args.app_id}")
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", args.head_sha):
+            raise ApproveError(
+                f"--head-sha must be a 40-character hex SHA, got {args.head_sha!r}")
         try:
             with open(args.key_path, "rb"):
                 pass
