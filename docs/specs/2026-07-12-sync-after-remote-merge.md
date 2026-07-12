@@ -77,7 +77,7 @@ Invocation (from the agent, run against the worktree it is cleaning up):
 
 ```
 python3 ~/.claude/skills/sync-after-remote-merge/sync_after_remote_merge.py \
-  [--branch <name>] [--base <name>] [--pr <number>]
+  [--branch <name>] [--base <name>]
 ```
 
 The JSON envelope (§3.2) is the sole output on every exit path; there is no
@@ -89,7 +89,9 @@ All arguments are optional and auto-detected when omitted:
 - `--branch` — feature branch; default: current branch.
 - `--base` — base branch; default: the merged PR's `baseRefName`, else the
   repo default branch.
-- `--pr` — PR number; default: resolved from the branch via `gh`.
+
+The PR is always resolved from the branch via `gh` (there is no `--pr`
+override); a branch maps to at most one open/merged PR in this workflow.
 
 The script is **read-mostly until its safety gates pass**; it performs no
 destructive action (branch delete, worktree remove) until merge is confirmed
