@@ -779,12 +779,8 @@ begins.
 
 ### DEFER placement (interactive only)
 
-Apply `beads.md` I3 sibling test:
-
-- **Pass** (would have been on the parent epic's original plan) →
-  `bd create --parent <parent-of-current-bead>`.
-- **Fail or no parent** → orphan + `bd dep add <new-id> <bead-id>
-  --type discovered-from`.
+Use the `triaging-discovered-work` skill before filing or deferring the item. Do not
+duplicate or bypass that contract here.
 
 ### Hook is interactive-default
 

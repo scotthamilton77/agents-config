@@ -40,6 +40,19 @@ class PolicyError(Exception):
     """Invalid configuration or labels. Never silently defaulted."""
 
 
+APPROVER_KEYS = {"type", "app-id", "key-path-env"}
+APPROVER_TYPES = {"github-app"}
+DEFAULT_APPROVER_KEY_PATH_ENV = "MERGE_GUARD_APPROVER_KEY_PATH"
+
+
+@dataclass(frozen=True)
+class ApproverConfig:
+    """Mechanical review-satisfaction identity — never an authorization source."""
+    type: str
+    app_id: int
+    key_path_env: str = DEFAULT_APPROVER_KEY_PATH_ENV
+
+
 @dataclass(frozen=True)
 class ReviewMergePolicy:
     # Axis 1 — review expectation (drives polling)
@@ -60,6 +73,9 @@ class ReviewMergePolicy:
     judge_effort: str = "high"
     judge_timeout_seconds: int = 900
     judge_max_attempts: int = 2
+    # Optional App-attested approver (spec: 2026-07-11-merge-approver-app-design).
+    # Presence enables the approve-then-merge path; None = today's behavior.
+    approver: ApproverConfig | None = None
 
 
 DEFAULTS = ReviewMergePolicy(
@@ -82,7 +98,7 @@ REVIEW_EXPECTATION_KEYS = {
 }
 MERGE_POLICY_KEYS = {"merge-authorization", "merge-rule", "allow-force-after-bot-timeout",
                      "judge-backend", "judge-model", "judge-effort",
-                     "judge-timeout", "judge-max-attempts"}
+                     "judge-timeout", "judge-max-attempts", "approver"}
 
 
 def parse_duration(value: object, key: str) -> int:
@@ -199,6 +215,37 @@ def validate(policy: ReviewMergePolicy) -> None:
             "allow-force-after-bot-timeout is only valid with merge-rule=bot-quiescence")
 
 
+def _parse_approver(merge: dict) -> ApproverConfig | None:
+    if "approver" not in merge:
+        return None
+    section = merge["approver"]
+    if not isinstance(section, dict):
+        raise PolicyError("[merge-policy.approver] must be a table")
+    _check_keys(section, APPROVER_KEYS, "merge-policy.approver")
+    if "type" not in section:
+        raise PolicyError("[merge-policy.approver]: missing required key 'type'")
+    approver_type = _typed(section, "type", str, None)
+    if approver_type not in APPROVER_TYPES:
+        raise PolicyError(
+            f"approver type: {approver_type!r} not in {sorted(APPROVER_TYPES)}")
+    if "app-id" not in section:
+        raise PolicyError("[merge-policy.approver]: missing required key 'app-id'")
+    app_id = _typed(section, "app-id", int, None)
+    if app_id <= 0:
+        raise PolicyError(f"app-id: must be a positive integer, got {app_id}")
+    key_path_env = _typed(section, "key-path-env", str, DEFAULT_APPROVER_KEY_PATH_ENV)
+    if not key_path_env:
+        raise PolicyError("key-path-env: must be a non-empty string")
+    # The approver reads the key path via bash indirect expansion (${!VAR}), so
+    # the value must be a valid shell identifier; reject anything else here
+    # rather than let it fail cryptically at merge time.
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_path_env):
+        raise PolicyError(
+            f"key-path-env: {key_path_env!r} is not a valid environment variable "
+            "name (must match [A-Za-z_][A-Za-z0-9_]*)")
+    return ApproverConfig(type=approver_type, app_id=app_id, key_path_env=key_path_env)
+
+
 def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergePolicy:
     """Resolve config + labels into a validated policy. Raises PolicyError."""
     expect = project_config.get("review-expectations", {})
@@ -243,6 +290,7 @@ def resolve_policy(project_config: dict, bead_labels: list[str]) -> ReviewMergeP
     # validate()) because only resolve_policy() has the raw present-keys set.
     if any(key in merge for key in JUDGE_KEYS) and policy.merge_rule != "agent-ruling":
         raise PolicyError("judge-* keys are only valid with merge-rule = agent-ruling")
+    policy = replace(policy, approver=_parse_approver(merge))
     policy = apply_labels(policy, bead_labels)
     validate(policy)
     return policy

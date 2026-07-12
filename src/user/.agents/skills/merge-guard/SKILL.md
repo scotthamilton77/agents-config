@@ -222,6 +222,44 @@ same discipline `explicit` mode already applies after a wait (Step 4), carried
 through to every path — most importantly `agent-ruling`'s minutes-long judge
 window, where review state has the most time to shift underneath it.
 
+**Pre-merge approval (only when the policy carries an approver).** If
+`POLICY_JSON.approver` is non-null AND
+`gh pr view <n> --json reviewDecision -q .reviewDecision` reads
+`REVIEW_REQUIRED`, satisfy the review requirement with the App attestation
+before merging:
+
+    KEY_ENV="<policy.approver.key_path_env>"           # e.g. MERGE_GUARD_APPROVER_KEY_PATH
+    if [ -z "${!KEY_ENV:-}" ]; then
+      echo "approver configured but \$$KEY_ENV is unset — merge by hand" >&2
+      exit 3                                            # fail loud; hand off
+    fi
+    python3 "${CLAUDE_SKILL_DIR}/approve_pr.py" \
+      --repo <owner>/<repo> --pr <n> \
+      --head-sha "<head_ref_oid from the re-cleared floor JSON>" \
+      --app-id <policy.approver.app_id> \
+      --key-path "${!KEY_ENV}" \
+      --facts '<compact JSON: {"rule": <merge_rule>, "bot_clean_review_at_head": ..., "ci_state": ...} from facts>'
+
+- Exit 0 → re-read `gh pr view <n> --json reviewDecision -q .reviewDecision`.
+  `APPROVED` → proceed to the plain merge below (the script is idempotent: an
+  existing App approval at this head is a no-op). Still `REVIEW_REQUIRED` →
+  **HALT and hand off**: the App's approval did not satisfy the rule — a
+  design assumption is falsified; report it, do not merge, do not `--admin`.
+- Exit 1 (head moved) → re-run from Step 3 against the new head. Never
+  retry blind.
+- Exit 2 (key/mint/API failure) → **HALT. Report the script's stderr
+  verbatim and hand off to the human.** Never retry silently, never fall
+  back to `--admin`. The approver failing is a hand-off, not a bypass
+  ticket.
+- `reviewDecision` already `APPROVED` (or null — no review requirement) →
+  skip this step entirely.
+
+The approver is **mechanism, not authorization**: it never runs unless
+Axis 2 already authorized the merge (a rule that held, or an explicit
+in-session instruction) and the floor re-cleared. Under `never` it is
+unreachable. The review it posts states what it attests and that it is not
+a human review.
+
 ```bash
 gh pr merge <n> --squash --match-head-commit "<head_ref_oid from the JSON>"
 ```
@@ -246,7 +284,8 @@ consult `facts.admin_bypass`:
 | `facts.admin_bypass` | Action |
 |---|---|
 | `review_rule_active == false` | This wasn't a review-count rejection — something else is wrong. Re-run Step 3 from scratch; never retry blind. |
-| `current_actor_can_bypass == true` | GitHub already grants the authenticated identity a standing bypass on this rule (the ruleset's `current_user_can_bypass` is `always` or `pull_requests_only`). Retry once: `gh pr merge <n> --squash --admin --match-head-commit "<head_ref_oid>"`. Announce plainly that `--admin` was used, quote the rejection text that justified it, and note why — the identity holds a pre-existing GitHub bypass grant, and eligibility + authorization were already confirmed independently of it. This is a deliberate, logged exercise of a grant a human configured, never a new override. |
+| `current_actor_can_bypass == true` **and the merge was human-instructed in-session** (explicit-mode merge word or named force-merge) | GitHub already grants the authenticated identity a standing bypass on this rule. Retry once: `gh pr merge <n> --squash --admin --match-head-commit "<head_ref_oid>"`. Announce plainly that `--admin` was used, quote the rejection text that justified it, and note why — the identity holds a pre-existing GitHub bypass grant, and eligibility + authorization were already confirmed independently of it. |
+| `current_actor_can_bypass == true` **and the merge is autonomous** (`rule-based`, no in-session human instruction) | **Fail closed — `--admin` is never an autonomous path** (the auto-mode classifier blocks unsupervised `--admin`, and policy agrees). Hand off to the human, or configure `[merge-policy.approver]` so autonomous merges satisfy the review rule instead of bypassing it. |
 | `current_actor_can_bypass == false` | The identity has no bypass grant. **Fail closed** — do not retry with `--admin`. Report the rejection and hand off to a human who either holds the bypass grant or can adjust the ruleset. |
 
 **Precondition — reachable only via normal authorization.** This `--admin`
@@ -320,3 +359,5 @@ so those rows never apply to it — its non-`go` outcomes fail closed.
 | "The bot timed out, just force it" | Force-merge in rule-based needs ALL of: `allow-force-after-bot-timeout = true`, ask spent (`bot_review_cap_exhausted`), the floor clean so bot-quiescence is the *sole* remaining blocker, and a fresh in-session instruction naming it. Not implicit, not a standing grant. |
 | "Bot never reviewed — good enough, that's basically approval" | No. Silence is not attestation. The rule is fail-closed; the only exits are a clean re-review or a human-authorized scoped force-merge. |
 | "Force-merge got rejected by GitHub, just add `--admin`" | A scoped bot-quiescence force-merge does **not** auto-escalate to `--admin` — that is a blanket per-ruleset bypass the human did not authorize. Hand off; `--admin` is reachable only via its own separate gate. |
+| "approve_pr.py failed, fall back to `--admin`" | No. The approver's fail-loud contract IS the design: exit != 0 → hand off to the human. `--admin` never launders an approver failure. |
+| "Rule held, GitHub wants a review, I hold a bypass — `--admin` it" | Autonomous `--admin` is dead — the auto-mode classifier blocks unsupervised `--admin`. The approver path exists precisely for this; if it isn't configured, hand off. |
