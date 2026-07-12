@@ -81,25 +81,30 @@ resuming fresh.
 
 ## Next actions (in order)
 
-1. **"How does this actually work" discussion** (Scott initiates this in a
-   fresh session; do NOT jump to V3 or the spec first). Scott's words:
-   "rather than start on the next brainstorm/prototype, I'd like to discuss
-   _how_ we might actually make this work." This is the operationalization
-   question — moving from reaction mockups with hand-built data to a real,
-   repeatable system. Treat it as a brainstorm (one question at a time,
-   use-cases before architecture); its conclusions feed the F0 section of
-   the grouped spec. The agenda below ("Operationalization questions") is
-   the raw material — Scott drives which threads matter.
-2. **V3 brainstorm** (lighter, another day): topical-evolution thread —
-   likely V2 overlay machinery pointed backward through git history plus
-   forward into plans. 1–2 mockups, not a full prototype, unless Scott asks.
-3. **Write the grouped spec** — `docs/specs/2026-MM-DD-visualization-suite-design.md`:
-   F0 foundations (scene contract, shared-canvas runtime, heat model, drill/
-   annotation pattern, encoding spine, + the operationalization decisions
-   from action 1) + V1/V2/V3 sections + evaluation criteria +
+1. **DONE (2026-07-12): operationalization discussion.** All seven agenda
+   threads resolved as decisions D1–D8 in `operationalization-notes.md`
+   (provenance tiers, hybrid promotion, staleness funnel, overnight
+   flag-only sweep, packaging split, annotation round-trip, recommendation
+   timing, V3-thin, model split). OSS landscape surveyed and verified:
+   `oss-landscape.md`. Judgment-dense spec inputs banked on Fable:
+   `spec-judgment-inputs.md` (recommendation taxonomy, contested semantics,
+   F0 scene-contract skeleton). These four files + `findings.md` are the
+   complete spec-input corpus.
+2. **V3 brainstorm/prototype: DEFERRED (decision D7).** No mockups before
+   the spec. The spec's V3 section is thin (direction + evaluation criteria
+   + continuation bead gating build on a future reaction round); F0 carries
+   the two V3 reservations (time-keyed event stream in the scene contract,
+   timeline-scrub affordance).
+3. **Write the grouped spec** — `docs/specs/2026-MM-DD-visualization-suite-design.md`.
+   Authoring model: **Opus suffices** (decision D8) — assemble from the
+   spec-input corpus; the frontier judgment is already banked. F0
+   foundations (scene contract, shared-canvas runtime, heat model, drill/
+   annotation pattern, encoding spine, decisions D1–D8) + V1/V2 sections +
+   thin V3 section + evaluation criteria (incl. C-as-fleet-entry-view) +
    `## Continuations` minting child beads with ACs. Then:
    brainstorming-skill user review gate → completion gate → PR → at merge:
    mint continuations, stamp readiness labels, release claim on yf2ov.2.
+   Implementation plans follow the spec, also on Opus.
 
 ## Operationalization questions (agenda for next-action 1)
 
