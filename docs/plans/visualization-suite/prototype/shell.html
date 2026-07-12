@@ -142,7 +142,10 @@ window.PROTO = (function () {
   }
   rebuildRamp();
 
-  const notes = JSON.parse(localStorage.getItem('proto-notes') || '{}');
+  const notes = (() => {
+    try { return JSON.parse(localStorage.getItem('proto-notes') || '{}'); }
+    catch { return {}; }
+  })();
   function persistNotes() {
     localStorage.setItem('proto-notes', JSON.stringify(notes));
     const n = Object.keys(notes).length;

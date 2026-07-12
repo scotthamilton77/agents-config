@@ -39,7 +39,8 @@
       groupNodes.forEach((n, ni) => {
         const t = groupNodes.length > 1 ? (ni / (groupNodes.length - 1)) - 0.5 : 0;
         const angle = baseAngle + t * arc;
-        const r = outerR * (0.55 + 0.45 * Math.random());
+        // deterministic radius from node index (principle 12: reproducible layout)
+        const r = outerR * (0.55 + 0.45 * ((ni * 0.6180339887) % 1));
         n.x = cx + r * Math.cos(angle);
         n.y = cy + r * Math.sin(angle);
       });
