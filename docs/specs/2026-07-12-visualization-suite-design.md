@@ -276,8 +276,9 @@ plans must confirm both by reading source before designing on them.
   obsolete inference contract.
 - **Model routing:** rung-3 doubt checks and step synthesis run on cheap
   models; edge inference on mid-tier; only recommendation synthesis for
-  high-signal items warrants a stronger tier. Routed per the model-routing
-  policy spec (2026-07-04); no stage assumes frontier availability.
+  high-signal items warrants a stronger tier. Routed per
+  `2026-07-04-model-routing-policy-and-escalation-ladder.md`; no stage
+  assumes frontier availability.
 
 ### 5.3 Persistence: sidecar + edge promotion
 
