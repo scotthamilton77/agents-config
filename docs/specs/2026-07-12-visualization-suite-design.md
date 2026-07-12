@@ -679,7 +679,7 @@ Direction: a timeline of the codebase's history in code *and* intent —
 vision, architecture, and direction shifts — explored interactively with an
 agent to surface patterns and lessons. No mockups, no data model, no view
 designs in this spec: V3 gets its own reaction round before any build
-(continuation, §14), because every V1/V2 view that skipped reaction rounds
+(see Continuations), because every V1/V2 view that skipped reaction rounds
 would have shipped wrong.
 
 Two F0 reservations bake in now so V3 never forces rework: the scene
