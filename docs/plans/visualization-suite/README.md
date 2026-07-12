@@ -34,7 +34,7 @@ here is the evidence trail behind it.
 
 ```bash
 python3 prototype/gen_data.py          # writes data.json beside the scripts
-python3 prototype/assemble.py out.html # assembles whatever variant_*.js exist
+python3 prototype/assemble.py out.html # inlines the variant_A–D files that exist
 ```
 
 Note: paths are derived from the script location (repo root via

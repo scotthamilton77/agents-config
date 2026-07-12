@@ -53,7 +53,7 @@ before doing anything.
    ranked reading order, drill panel). Constellation = promising, needs multi-PR
    experience to judge utility (spec: evaluation criterion, not build item).
    Impact sonar = retired as top-level; survives as per-file drill-down concept.
-5. **13 design principles** extracted in `findings.md` — treat them as spec
+5. **15 design principles** extracted in `findings.md` — treat them as spec
    requirements (attention bar for narrative content; centrality-blindness to new
    load-bearing code; layout reflows around attention; view-module container
    hygiene; deterministic force layouts + legends; luminance-picked labels; etc.)
