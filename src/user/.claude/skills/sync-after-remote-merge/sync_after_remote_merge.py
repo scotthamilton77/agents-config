@@ -90,3 +90,25 @@ def classify_pr(pr_json: dict | None) -> PrState:
                        f"PR #{number} state is {state!r}, not MERGED")
     merge_commit = (pr_json.get("mergeCommit") or {}).get("oid")
     return PrState(True, number, merge_commit, base, pr_json.get("headRefOid"), "merged")
+
+
+def detect_convention(worktree_root: Path, main_root: Path) -> Convention:
+    """Which worktree convention (if any) owns teardown of this checkout.
+
+    Claude-native (`.claude/worktrees/`) is checked before the bare-`worktrees`
+    rule so a Claude path never falls through to OTHER_AGENT. A worktree under
+    no known convention fails loud — the script must never git-remove a checkout
+    it does not recognise.
+    """
+    if worktree_root == main_root:
+        return Convention.NORMAL_REPO
+    parts = worktree_root.parts
+    for i in range(len(parts) - 1):
+        if parts[i] == ".claude" and parts[i + 1] == "worktrees":
+            return Convention.CLAUDE_NATIVE
+    if ".worktrees" in parts or "worktrees" in parts:
+        return Convention.OTHER_AGENT
+    raise UnrecognizedWorktree(
+        f"worktree at {worktree_root} is under neither .claude/worktrees/ nor "
+        ".worktrees/; tear it down manually"
+    )

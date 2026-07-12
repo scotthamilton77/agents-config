@@ -65,3 +65,36 @@ def test_classify_pr_merged_carries_commit_and_head():
 def test_classify_pr_merged_without_merge_commit_oid():
     st = m.classify_pr({"number": 7, "state": "MERGED", "baseRefName": "main", "mergeCommit": None})
     assert st.merged is True and st.merge_commit is None
+
+
+# --- Task 3: detect_convention ---
+
+
+def test_detect_convention_normal_repo():
+    root = Path("/repo")
+    assert m.detect_convention(root, root) is m.Convention.NORMAL_REPO
+
+
+def test_detect_convention_claude_native():
+    main_root = Path("/repo")
+    wt = Path("/repo/.claude/worktrees/feature-x")
+    assert m.detect_convention(wt, main_root) is m.Convention.CLAUDE_NATIVE
+
+
+def test_detect_convention_other_agent_dot_worktrees():
+    main_root = Path("/repo")
+    wt = Path("/repo/.worktrees/feature-x")
+    assert m.detect_convention(wt, main_root) is m.Convention.OTHER_AGENT
+
+
+def test_detect_convention_other_agent_bare_worktrees():
+    main_root = Path("/repo")
+    wt = Path("/repo/worktrees/feature-x")
+    assert m.detect_convention(wt, main_root) is m.Convention.OTHER_AGENT
+
+
+def test_detect_convention_unrecognised_raises():
+    main_root = Path("/repo")
+    wt = Path("/tmp/somewhere/else")
+    with pytest.raises(m.UnrecognizedWorktree):
+        m.detect_convention(wt, main_root)
