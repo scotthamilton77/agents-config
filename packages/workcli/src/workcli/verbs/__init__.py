@@ -15,18 +15,35 @@ from argparse import Namespace
 from collections.abc import Callable
 
 from workcli.backend import Backend, Capabilities
-from workcli.envelope import JsonValue
+from workcli.envelope import ErrorCode, JsonValue, WorkError
+from workcli.lifecycle.create import create_noun
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
 from workcli.verbs.syncing import sync
 from workcli.verbs.write import close, create_raw, note, reopen, update
+
+
+def _create(backend: Backend, args: Namespace) -> JsonValue:
+    """Dispatch `work create`: `--raw` (transport primitive) wins over a NOUN;
+    absent both, refuse naming the two valid modes (spec §2, plan L9/CLI surface).
+    """
+    if args.raw:
+        return create_raw(backend, args)
+    if args.noun is not None:
+        return create_noun(backend, args)
+    raise WorkError(
+        ErrorCode.USAGE,
+        "create requires --raw (transport primitive) or a noun "
+        "(spike|chore|decision|feat|bugfix|spec|epic)",
+    )
+
 
 VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "show": show,
     "list": list_,
     "ready": ready,
     "search": search,
-    "create": create_raw,
+    "create": _create,
     "update": update,
     "note": note,
     "close": close,

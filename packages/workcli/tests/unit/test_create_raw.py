@@ -11,11 +11,13 @@ is given -- bd's own `--parent` flag auto-adds the parent edge, so a second
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 
 from tests.conftest import run_cli, run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.runner import BdResult
-from workcli.envelope import ErrorCode
+from workcli.envelope import ErrorCode, WorkError
+from workcli.verbs.write import create_raw
 
 
 def _create_result(new_id: str) -> BdResult:
@@ -54,14 +56,18 @@ def test_create_raw_with_labels_joins_them_into_one_labels_flag():
     assert runner.calls == [("create", "--json", "--title", "T", "--labels", "a,b,c")]
 
 
-def test_create_without_raw_yields_usage_envelope_naming_the_lifecycle_layer():
+def test_create_without_raw_or_noun_yields_usage_envelope_naming_both_modes():
+    # The `create` dispatcher (verbs/__init__.py) owns this case now -- it
+    # never reaches create_raw's own internal `--raw` guard below, which
+    # stays as defensive dead code once --raw is the dispatcher's own gate.
     exit_code, envelope, _ = run_cli(["create", "--title", "T"], steps=[])
 
     assert exit_code == 1
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.USAGE)
-    assert "lifecycle" in error["message"].lower()
+    assert "--raw" in error["message"]
+    assert "spike" in error["message"]
 
 
 def test_create_missing_title_yields_usage_envelope():
@@ -71,6 +77,19 @@ def test_create_missing_title_yields_usage_envelope():
     error = envelope["error"]
     assert isinstance(error, dict)
     assert error["code"] == str(ErrorCode.USAGE)
+
+
+def test_create_raw_called_directly_without_raw_flag_still_refuses():
+    # verbs/__init__.py's dispatcher gates --raw before ever calling
+    # create_raw, so this branch is unreachable through the CLI (Task 3) --
+    # it stays as create_raw's own defensive contract for any direct,
+    # non-CLI caller (create_raw itself is unchanged by Task 3).
+    try:
+        create_raw(None, Namespace(raw=False))  # type: ignore[arg-type]
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.USAGE
+        assert "lifecycle" in error.message.lower()
 
 
 def test_create_raw_not_found_parent_maps_to_not_found_envelope():

@@ -21,6 +21,7 @@ from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
+from workcli.lifecycle.nouns import Noun
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -59,7 +60,14 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
 def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     create_parser = subparsers.add_parser(
         "create",
-        help="create --raw: adapter primitive; public creation is the lifecycle layer's job",
+        help="create --raw (adapter primitive) or create NOUN (lifecycle layer)",
+    )
+    create_parser.add_argument(
+        "noun",
+        nargs="?",
+        choices=[noun.value for noun in Noun],
+        metavar="NOUN",
+        help="spike|chore|decision|feat|bugfix|spec|epic -- omit with --raw",
     )
     create_parser.add_argument("--raw", action="store_true")
     create_parser.add_argument("--title", required=True)
@@ -68,6 +76,10 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--priority")
     create_parser.add_argument("--parent")
     create_parser.add_argument("--label", action="append", default=[], metavar="LABEL")
+    create_parser.add_argument("--orphan", action="store_true")
+    create_parser.add_argument("--spec")
+    create_parser.add_argument("--trivial", action="store_true")
+    create_parser.add_argument("--acceptance")
 
     update_parser = subparsers.add_parser(
         "update", help="update title/priority/description (replace semantics only)"
