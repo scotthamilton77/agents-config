@@ -40,7 +40,8 @@ def fsize(p):
         return 0
 
 # ---- graphify degrees (real structural centrality proxy) ----
-g = json.load(open(os.path.join(ROOT, "graphify-out/graph.json")))
+with open(os.path.join(ROOT, "graphify-out/graph.json"), encoding="utf-8") as f:
+    g = json.load(f)
 node_file = {n["id"]: n.get("source_file") or "" for n in g["nodes"]}
 deg = defaultdict(int)
 file_edges = defaultdict(int)  # (src_file, dst_file) -> count
@@ -253,6 +254,7 @@ data = {
     "dirs": [{"path": k, **v} for k, v in sorted(dirs.items())],
     "dir_edges": [{"source": a, "target": b, "n": n} for (a, b), n in sorted(dir_edges.items())],
 }
-json.dump(data, open(OUT, "w"), indent=1)
+with open(OUT, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=1)
 print(f"files={len(files)} dirs={len(data['dirs'])} dir_edges={len(data['dir_edges'])} impacted={len(impacted)}")
 print(f"wrote {OUT} ({os.path.getsize(OUT)//1024} KB)")
