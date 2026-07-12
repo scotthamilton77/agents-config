@@ -1,5 +1,7 @@
 # Merge-Approver GitHub App Implementation Plan
 
+> **STATUS — IMPLEMENTED (bead agents-config-vaac.6).** Every task below has shipped. The source of truth for the code and its contract is the shipped code itself (`approve_pr.py`, `resolve_policy.py`) and the design spec (`docs/specs/2026-07-11-merge-approver-app-design.md`). A post-implementation gate review corrected three points the inline Task-3 snippets still show in pre-review form — installation-token scoping, the attestation-body wording, and reviews pagination. **Do not re-implement from the snippets below; treat the shipped code and spec as authoritative where they differ.**
+
 > **For agentic workers:** Implement this plan task-by-task using the `test-driven-development` skill (red-green-refactor per task). For subagent dispatch, invoke one fresh subagent per task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** App-attested approving reviews satisfy branch protection's required review for authorized autonomous merges — opt-in by config presence, fail-loud to human on any error.

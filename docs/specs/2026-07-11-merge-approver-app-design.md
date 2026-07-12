@@ -139,7 +139,9 @@ Behavior:
 
 1. Read key; build App JWT (stdlib header/claims + openssl signature;
    `iat` backdated 60s, `exp` +9 min, `iss` = app-id).
-2. Exchange JWT for a short-lived installation token
+2. Exchange JWT for a short-lived installation token, scoped down at mint time to
+   this single repo and `pull_requests: write` — the least privilege a review
+   POST needs — so a leaked token cannot exercise the installation's other grants
    (`GET /app/installations` → `POST /app/installations/{id}/access_tokens`).
 3. Fetch the PR. If this App already has an APPROVED review at `--head-sha`
    (REST reviews list filtered to the App's `[bot]` login — `reviewDecision` is
@@ -150,12 +152,16 @@ Behavior:
    `commit_id: <head-sha>`, and the attestation body:
 
    > Automated policy attestation by merge-guard-approver[bot] — **not a human
-   > review**. The merge-guard eligibility floor passed at `<sha>`: CI green,
-   > bot review clean at head, all review feedback triaged. Attestation facts:
+   > review**. The merge-guard eligibility floor passed at `<sha>` and the merge
+   > was authorized under this repo's merge policy. Authorizing facts:
    > `<facts JSON>`.
 
-   `--facts` carries the eligibility summary (rule name, floor outputs) from the
-   merge-guard run so the review body records *why* the approval exists.
+   The body asserts no rule-specific outcome (CI status, triage state): which
+   checks constitute the floor is a property of the authorizing rule, and the
+   approver never re-verifies them. `--facts` carries that detail — the
+   eligibility summary (rule name, floor outputs) from the merge-guard run — so
+   the review body records *why* the approval exists without the fixed prose
+   claiming outcomes it did not check.
 
 ### 3.4 merge-guard wiring (the only step that changes)
 
@@ -264,6 +270,11 @@ Approver script (`approve_pr_test.py`):
 8. Missing key file / unset env → exit 2 with a one-line diagnostic (no traceback).
 9. Token-exchange HTTP failure (fake transport returns 401) → exit 2, diagnostic
    includes the API status.
+10. Installation-token mint is scoped: the `access_tokens` POST body requests only
+    this repo and `pull_requests: write`, never an unscoped token.
+11. Idempotence pagination: a prior App approval at head sitting past the first
+    reviews page (full first page forces a second GET) is still found → exit 0,
+    no duplicate POST.
 
 Integration (not unit-tested; verified live): the tracer bullet in §6 on a real
 PR — approve, observe `reviewDecision` flip, plain merge succeeds.

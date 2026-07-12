@@ -80,6 +80,9 @@ def urllib_http(method: str, url: str, headers: dict,
     request = urllib.request.Request(url, data=body, method=method, headers={
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        # urllib sets no Content-Type for a bytes body; every bodied call here
+        # sends JSON, so declare it rather than rely on the API inferring it.
+        **({"Content-Type": "application/json"} if body is not None else {}),
         **headers,
     })
     try:
@@ -112,18 +115,29 @@ def mint(http: Http, jwt: str, repo: str) -> tuple[str, str]:
             f"app is not installed on {repo} (GET installation -> 404); "
             "install it via the App's settings page")
     inst = _expect(status, inst, "GET repo installation")
+    # Scope the token to the single repo and the one permission this script
+    # needs — a review POST. An unscoped token would carry every permission the
+    # installation holds; least privilege bounds the blast radius if it leaks.
+    scope = json.dumps({
+        "repositories": [repo.split("/", 1)[1]],
+        "permissions": {"pull_requests": "write"},
+    }).encode()
     tok = _expect(*http("POST", f"{API}/app/installations/{inst['id']}/access_tokens",
-                        headers, b""),
+                        headers, scope),
                   "mint installation token", want=201)
     return tok["token"], app["slug"]
 
 
 def attestation_body(slug: str, head_sha: str, facts: str) -> str:
+    # No rule-specific outcome (CI status, triage state) is asserted here: which
+    # checks ran is a property of the authorizing merge rule, and this script
+    # never re-verifies them. It attests only what it knows — the floor passed
+    # and the merge was authorized — and records the caller's facts verbatim.
     return (
         f"Automated policy attestation by `{slug}[bot]` — **not a human review**.\n\n"
-        f"The merge-guard eligibility floor passed at `{head_sha}`: CI green, bot "
-        "review clean at head, all review feedback triaged.\n\n"
-        f"Attestation facts: `{facts}`"
+        f"The merge-guard eligibility floor passed at `{head_sha}` and the merge "
+        "was authorized under this repo's merge policy.\n\n"
+        f"Authorizing facts: `{facts}`"
     )
 
 
@@ -140,16 +154,27 @@ def run(args: argparse.Namespace, http: Http, signer: Signer, now: int) -> int:
             f"{args.head_sha} — re-run the merge gate against the new head\n")
         return 1
 
-    reviews = _expect(*http("GET", f"{prefix}/reviews?per_page=100", auth, None),
-                      "GET reviews")
+    # Paginate: reviews come back oldest-first, so a prior App approval at the
+    # current head can sit past page 1 on a heavily-reviewed PR. Missing it would
+    # post a duplicate approval, defeating idempotence.
     bot_login = f"{slug}[bot]"
-    for review in reviews:
-        if ((review.get("user") or {}).get("login") == bot_login
-                and review.get("state") == "APPROVED"
-                and review.get("commit_id") == args.head_sha):
-            print(f"already approved by {bot_login} at {args.head_sha} "
-                  f"(review {review['id']}) — idempotent no-op")
-            return 0
+    per_page = 100
+    page = 1
+    while True:
+        reviews = _expect(
+            *http("GET", f"{prefix}/reviews?per_page={per_page}&page={page}",
+                  auth, None),
+            "GET reviews")
+        for review in reviews:
+            if ((review.get("user") or {}).get("login") == bot_login
+                    and review.get("state") == "APPROVED"
+                    and review.get("commit_id") == args.head_sha):
+                print(f"already approved by {bot_login} at {args.head_sha} "
+                      f"(review {review['id']}) — idempotent no-op")
+                return 0
+        if len(reviews) < per_page:
+            break
+        page += 1
 
     body = json.dumps({
         "event": "APPROVE",
@@ -179,6 +204,8 @@ def main(argv: list[str] | None = None, *, http: Http = urllib_http,
     args = parser.parse_args(argv)
 
     try:
+        if args.repo.count("/") != 1 or not all(args.repo.split("/")):
+            raise ApproveError(f"--repo must be owner/name, got {args.repo!r}")
         try:
             with open(args.key_path, "rb"):
                 pass

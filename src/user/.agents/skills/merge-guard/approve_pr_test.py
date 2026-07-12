@@ -34,6 +34,25 @@ class TestJwt(unittest.TestCase):
         self.assertNotIn("=", token)
 
 
+class TestAttestationBody(unittest.TestCase):
+    """The body is an honest attestation: it names itself as non-human, carries
+    the head SHA and the verbatim facts, and asserts NO rule-specific outcome
+    (CI status, triage state) that varies by which merge rule authorized it."""
+
+    def test_names_itself_non_human_and_carries_head_and_facts(self):
+        body = approve_pr.attestation_body(
+            "merge-guard-approver", HEAD, '{"rule": "agent-ruling"}')
+        self.assertIn("not a human review", body)
+        self.assertIn(f"`{HEAD}`", body)
+        self.assertIn('{"rule": "agent-ruling"}', body)
+
+    def test_makes_no_rule_specific_outcome_claim(self):
+        body = approve_pr.attestation_body("slug", HEAD, "{}")
+        self.assertIn("authorized under this repo's merge policy", body)
+        self.assertNotIn("CI green", body)
+        self.assertNotIn("triaged", body)
+
+
 class FakeHttp:
     """Route-table fake transport. Records every call for behavior assertions."""
 
@@ -61,7 +80,7 @@ BASE_ROUTES = {
     ("GET", "/repos/o/r/installation"): (200, {"id": 42}),
     ("POST", "/app/installations/42/access_tokens"): (201, {"token": "tok"}),
     ("GET", "/repos/o/r/pulls/5"): (200, {"head": {"sha": HEAD}}),
-    ("GET", "/repos/o/r/pulls/5/reviews?per_page=100"): (200, []),
+    ("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=1"): (200, []),
     ("POST", "/repos/o/r/pulls/5/reviews"): (200, {"id": 99}),
 }
 
@@ -88,6 +107,56 @@ class TestFlow(unittest.TestCase):
         self.assertIn("not a human review", review["body"])
         self.assertIn('{"rule": "bot-quiescence"}', review["body"])
 
+    def test_mint_scopes_installation_token_to_repo_and_pulls_write(self):
+        code, http = run_main(dict(BASE_ROUTES))
+        self.assertEqual(code, 0)
+        (mint_body,) = [json.loads(b) for m, u, _, b in http.calls
+                        if m == "POST" and u.endswith("/access_tokens")]
+        self.assertEqual(mint_body["repositories"], ["r"])
+        self.assertEqual(mint_body["permissions"], {"pull_requests": "write"})
+
+    def test_paginates_reviews_to_find_prior_approval_beyond_page_one(self):
+        # A full first page (100 reviews) forces a second GET; the App's
+        # approval at HEAD lives on page 2. Without pagination it is missed
+        # and a duplicate approval gets posted.
+        page1 = [{"id": i, "state": "COMMENTED", "commit_id": HEAD,
+                  "user": {"login": "some-human"}} for i in range(100)]
+        routes = dict(BASE_ROUTES)
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=1")] = (
+            200, page1)
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=2")] = (
+            200, [{"id": 500, "state": "APPROVED", "commit_id": HEAD,
+                   "user": {"login": "merge-guard-approver[bot]"}}])
+        code, http = run_main(routes)
+        self.assertEqual(code, 0)
+        self.assertEqual(http.posted_reviews(), [])
+
+    def test_paginates_all_pages_then_posts_when_no_match(self):
+        # Full first page forces a second GET; page 2 is short and still holds
+        # no matching prior approval, so the loop exhausts (page += 1 then a
+        # short page) and a fresh review is POSTed. Pins the exhaustion path.
+        page1 = [{"id": i, "state": "COMMENTED", "commit_id": HEAD,
+                  "user": {"login": "some-human"}} for i in range(100)]
+        routes = dict(BASE_ROUTES)
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=1")] = (
+            200, page1)
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=2")] = (
+            200, [{"id": 500, "state": "APPROVED", "commit_id": MOVED,
+                   "user": {"login": "merge-guard-approver[bot]"}}])  # stale
+        code, http = run_main(routes)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(http.posted_reviews()), 1)
+
+    def test_malformed_repo_exits_2_before_any_api_call(self):
+        http = FakeHttp({})
+        code = approve_pr.main(
+            ["--repo", "no-slash", "--pr", "5", "--head-sha", HEAD,
+             "--app-id", "1", "--key-path", "/dev/null", "--facts", "{}"],
+            http=http, signer_factory=lambda path: FAKE_SIGNER,
+            clock=lambda: NOW)
+        self.assertEqual(code, 2)
+        self.assertEqual(http.calls, [])
+
     def test_moved_head_refuses_without_posting(self):
         routes = dict(BASE_ROUTES)
         routes[("GET", "/repos/o/r/pulls/5")] = (200, {"head": {"sha": MOVED}})
@@ -97,7 +166,7 @@ class TestFlow(unittest.TestCase):
 
     def test_existing_app_approval_at_head_is_noop(self):
         routes = dict(BASE_ROUTES)
-        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100")] = (200, [{
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=1")] = (200, [{
             "id": 7, "state": "APPROVED", "commit_id": HEAD,
             "user": {"login": "merge-guard-approver[bot]"},
         }])
@@ -107,7 +176,7 @@ class TestFlow(unittest.TestCase):
 
     def test_stale_or_foreign_approvals_do_not_shortcut(self):
         routes = dict(BASE_ROUTES)
-        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100")] = (200, [
+        routes[("GET", "/repos/o/r/pulls/5/reviews?per_page=100&page=1")] = (200, [
             {"id": 1, "state": "APPROVED", "commit_id": MOVED,
              "user": {"login": "merge-guard-approver[bot]"}},   # stale commit
             {"id": 2, "state": "APPROVED", "commit_id": HEAD,
