@@ -15,6 +15,7 @@ import time
 import traceback
 from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import NoReturn, TextIO
 
 from workcli import PROTOCOL_VERSION
@@ -123,6 +124,16 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
         "promote", help="promote a shape-feat leaf to a shape-spec container"
     )
     promote_parser.add_argument("id", metavar="ID")
+
+    deliver_parser = subparsers.add_parser(
+        "deliver",
+        help="deliver a leaf (evidence-gated) or reconcile a design child's placeholder",
+    )
+    deliver_parser.add_argument("id", metavar="ID")
+    deliver_parser.add_argument("--spec")
+    deliver_parser.add_argument("--pr")
+    deliver_parser.add_argument("--items")
+    deliver_parser.add_argument("--trivial", action="store_true")
 
 
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
@@ -237,6 +248,7 @@ def main(
     out: TextIO | None = None,
     err: TextIO | None = None,
     sleep: Callable[[float], None] | None = None,
+    read_file: Callable[[str], str] | None = None,
 ) -> int:
     if out is None:
         out = sys.stdout
@@ -249,6 +261,14 @@ def main(
         args = parser.parse_args(argv_list)
     except WorkError as usage_error:
         return _finish_failure(usage_error, out, err, _peek_format(argv_list))
+
+    # Resolved once here and attached to the parsed Namespace -- only
+    # `deliver`/`reconcile` read it, but every handler keeps the transport's
+    # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
+    # travels as an `args` attribute rather than an extra handler parameter.
+    args.read_file = (
+        read_file if read_file is not None else lambda p: Path(p).read_text(encoding="utf-8")
+    )
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
