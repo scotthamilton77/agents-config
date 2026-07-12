@@ -95,16 +95,13 @@ resuming fresh.
    + continuation bead gating build on a future reaction round); F0 carries
    the two V3 reservations (time-keyed event stream in the scene contract,
    timeline-scrub affordance).
-3. **Write the grouped spec** — `docs/specs/2026-MM-DD-visualization-suite-design.md`.
-   Authoring model: **Opus suffices** (decision D8) — assemble from the
-   spec-input corpus; the frontier judgment is already banked. F0
-   foundations (scene contract, shared-canvas runtime, heat model, drill/
-   annotation pattern, encoding spine, decisions D1–D8) + V1/V2 sections +
-   thin V3 section + evaluation criteria (incl. C-as-fleet-entry-view) +
-   `## Continuations` minting child beads with ACs. Then:
-   brainstorming-skill user review gate → completion gate → PR → at merge:
-   mint continuations, stamp readiness labels, release claim on yf2ov.2.
-   Implementation plans follow the spec, also on Opus.
+3. **Grouped spec WRITTEN (2026-07-12, on Fable — Scott overrode D8's
+   Opus-suffices call for spec assembly):**
+   `docs/specs/2026-07-12-visualization-suite-design.md`, on branch
+   `viz-suite-spec`. Remaining: brainstorming-skill user review gate →
+   completion gate → PR → at merge: mint continuations, stamp readiness
+   labels, release claim on yf2ov.2 — in that order. Implementation plans
+   follow the spec (Opus per D8).
 
 ## Operationalization questions (agenda for next-action 1)
 
