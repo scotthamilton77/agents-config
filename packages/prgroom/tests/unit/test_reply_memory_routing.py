@@ -44,7 +44,7 @@ def test_sanitize_strips_newlines_and_comments() -> None:
 def test_merge_appends_new_entry() -> None:
     body = merge_decisions_block(
         "intro",
-        [RoutedMemory(content="decided X", round=1, source_item="c1#0", decided_by="agent")],
+        [RoutedMemory(content="decided X", retry=1, source_item="c1#0", decided_by="agent")],
     )
     assert "<!-- prgroom:decisions:start -->" in body
     assert "decided X" in body
@@ -52,7 +52,7 @@ def test_merge_appends_new_entry() -> None:
 
 
 def test_merge_is_byte_identical_on_rerun() -> None:
-    rm = [RoutedMemory(content="X", round=1, source_item="c1#0", decided_by="agent")]
+    rm = [RoutedMemory(content="X", retry=1, source_item="c1#0", decided_by="agent")]
     once = merge_decisions_block("intro", rm)
     twice = merge_decisions_block(once, rm)
     assert once == twice
@@ -63,7 +63,7 @@ def test_merge_does_not_truncate_body_on_orphan_start_sentinel() -> None:
     # after the orphan start — merge appends a fresh block, preserving every existing byte.
     body = "intro\n<!-- prgroom:decisions:start -->\norphan tail that must survive"
     out = merge_decisions_block(
-        body, [RoutedMemory(content="new", round=1, source_item="c1#0", decided_by="a")]
+        body, [RoutedMemory(content="new", retry=1, source_item="c1#0", decided_by="a")]
     )
     assert "orphan tail that must survive" in out
     assert "new" in out
@@ -71,11 +71,11 @@ def test_merge_does_not_truncate_body_on_orphan_start_sentinel() -> None:
 
 def test_merge_on_orphan_start_is_readable_and_idempotent() -> None:
     # extract_decisions_block reads from the FIRST start sentinel, so appending a fresh
-    # block at the end (round-1 behaviour) left the orphan start first — the new block was
+    # block at the end (the previous behaviour) left the orphan start first — the new block was
     # unreadable (extract returned garbage containing a nested start) and re-merges kept
     # appending. The in-place re-pair makes the block readable and the merge idempotent.
     body = "intro\n<!-- prgroom:decisions:start -->\norphan tail that must survive"
-    rm = [RoutedMemory(content="kept", round=1, source_item="c1#0", decided_by="a")]
+    rm = [RoutedMemory(content="kept", retry=1, source_item="c1#0", decided_by="a")]
     once = merge_decisions_block(body, rm)
     block = extract_decisions_block(once)
     assert "kept" in block
@@ -84,12 +84,12 @@ def test_merge_on_orphan_start_is_readable_and_idempotent() -> None:
     assert merge_decisions_block(once, rm) == once  # idempotent re-pair, not re-append
 
 
-def test_merge_appends_distinct_same_round_keys() -> None:
+def test_merge_appends_distinct_same_retry_keys() -> None:
     body = merge_decisions_block(
         "",
         [
-            RoutedMemory(content="A", round=1, source_item="c1#0", decided_by="a"),
-            RoutedMemory(content="B", round=1, source_item="c1#1", decided_by="a"),
+            RoutedMemory(content="A", retry=1, source_item="c1#0", decided_by="a"),
+            RoutedMemory(content="B", retry=1, source_item="c1#1", decided_by="a"),
         ],
     )
     assert "<!-- d:r1:c1#0 -->" in body and "<!-- d:r1:c1#1 -->" in body
@@ -100,7 +100,7 @@ def test_thread_hint_routes_via_graphql_and_clears() -> None:
     state = _state_with_pending(
         [
             RoutedMemory(
-                content="why", round=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
+                content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
             )
         ]
     )
@@ -113,7 +113,7 @@ def test_thread_hint_routes_via_graphql_and_clears() -> None:
 def test_thread_less_routes_via_patch_and_clears() -> None:
     gh = _RecordingGh(body="orig body")
     state = _state_with_pending(
-        [RoutedMemory(content="decision", round=1, source_item="c1#0", decided_by="a")]
+        [RoutedMemory(content="decision", retry=1, source_item="c1#0", decided_by="a")]
     )
     out = reply_pr(state, gh=gh, ref=_ref())
     methods = [(m, p) for m, p, _ in gh.rest_calls]
@@ -127,7 +127,7 @@ def test_thread_less_noop_merge_skips_patch_but_clears() -> None:
     # On an idempotent re-run (crash-after-PATCH-before-store.write resumes with the same
     # pending_memory), merge_decisions_block returns a byte-identical body. Skip the no-op
     # PATCH (avoid API churn / triggering PR automations) but still clear pending_memory.
-    rm = RoutedMemory(content="decision", round=1, source_item="c1#0", decided_by="a")
+    rm = RoutedMemory(content="decision", retry=1, source_item="c1#0", decided_by="a")
     already = merge_decisions_block("orig body", [rm])
     gh = _RecordingGh(body=already)  # PR body already carries the merged block
     out = reply_pr(_state_with_pending([rm]), gh=gh, ref=_ref())

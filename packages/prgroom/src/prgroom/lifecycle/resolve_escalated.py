@@ -53,8 +53,8 @@ def resolve_escalated_pr(
 ) -> PRGroomingState:
     """Flip one escalated item to a terminal disposition; maybe release human-gated (§3.2).
 
-    Works on a deepcopy, caller persists once. Never clears cap/state-corrupt/failed
-    gating, never increments ``round``. Re-runnable.
+    Works on a deepcopy, caller persists once. Never clears budget/state-corrupt/failed
+    gating, never increments ``pr_review_retries_used``. Re-runnable.
     """
     state = copy.deepcopy(state)
     if as_disposition is DispositionKind.FIXED and not commits:

@@ -39,11 +39,11 @@ def _item(kind: DispositionKind) -> ReviewItem:
     )
 
 
-def _state(*, round_: int = 1, items: list[ReviewItem] | None = None) -> PRGroomingState:
+def _state(*, retries_: int = 1, items: list[ReviewItem] | None = None) -> PRGroomingState:
     return PRGroomingState(
         pr=PRRef(owner="octo", repo="demo", number=7),
         phase=PRPhase.FIXES_PENDING,
-        round=round_,
+        pr_review_retries_used=retries_,
         last_polled_at=_NOW,
         last_activity_at=_NOW,
         quiescence=QuiescenceState(),
@@ -61,29 +61,29 @@ def _resolve(
     return resolve_end_of_cycle_phase(
         state,
         now=_NOW,
-        max_rounds=_CAP,
+        pr_review_retries=_CAP,
         has_queued_commits=has_queued_commits,
         pushed_this_cycle=pushed_this_cycle,
         quiescent=quiescent,
     )
 
 
-# -- priority 1: hard cap --------------------------------------------------
+# -- priority 1: retry budget ----------------------------------------------
 
 
 def test_p1_cap_trips_to_human_gated_with_cap_error() -> None:
     result = _resolve(
-        _state(round_=_CAP), has_queued_commits=True, quiescent=False, pushed_this_cycle=False
+        _state(retries_=_CAP), has_queued_commits=True, quiescent=False, pushed_this_cycle=False
     )
     assert result.phase == PRPhase.HUMAN_GATED
-    assert result.last_error == "LIFECYCLE_HARD_CAP_EXCEEDED"
+    assert result.last_error == "LIFECYCLE_PR_REVIEW_EXHAUSTED"
     assert result.quiesced_at is None
 
 
-def test_p1_cap_not_tripped_below_max_rounds() -> None:
-    # round < cap → cap does not fire even with queued commits.
+def test_p1_cap_not_tripped_below_pr_review_retries() -> None:
+    # retries below the budget → the guard does not fire even with queued commits.
     result = _resolve(
-        _state(round_=_CAP - 1, items=[_item(DispositionKind.FIXED)]),
+        _state(retries_=_CAP - 1, items=[_item(DispositionKind.FIXED)]),
         has_queued_commits=True,
         quiescent=False,
         pushed_this_cycle=True,
@@ -94,11 +94,11 @@ def test_p1_cap_not_tripped_below_max_rounds() -> None:
 def test_p1_cap_first_match_wins_over_escalated_and_failed() -> None:
     # cap + escalated + failed all hold; cap (priority 1) must win.
     state = _state(
-        round_=_CAP, items=[_item(DispositionKind.ESCALATED), _item(DispositionKind.FAILED)]
+        retries_=_CAP, items=[_item(DispositionKind.ESCALATED), _item(DispositionKind.FAILED)]
     )
     result = _resolve(state, has_queued_commits=True, quiescent=False, pushed_this_cycle=False)
     assert result.phase == PRPhase.HUMAN_GATED
-    assert result.last_error == "LIFECYCLE_HARD_CAP_EXCEEDED"
+    assert result.last_error == "LIFECYCLE_PR_REVIEW_EXHAUSTED"
 
 
 # -- priority 2: any FAILED ------------------------------------------------
@@ -171,7 +171,7 @@ def test_p6_no_push_not_quiescent_falls_through_to_awaiting_review() -> None:
 
 
 @pytest.mark.parametrize(
-    ("phase", "round_", "items", "queued", "pushed", "quiescent", "expected"),
+    ("phase", "retries_", "items", "queued", "pushed", "quiescent", "expected"),
     [
         # cap wins over everything
         ("p1", _CAP, [DispositionKind.ESCALATED], True, False, True, PRPhase.HUMAN_GATED),
@@ -189,14 +189,14 @@ def test_p6_no_push_not_quiescent_falls_through_to_awaiting_review() -> None:
 )
 def test_first_match_wins_cascade(
     phase: str,
-    round_: int,
+    retries_: int,
     items: list[DispositionKind],
     queued: bool,
     pushed: bool,
     quiescent: bool,
     expected: PRPhase,
 ) -> None:
-    state = _state(round_=round_, items=[_item(k) for k in items])
+    state = _state(retries_=retries_, items=[_item(k) for k in items])
     result = _resolve(
         state, has_queued_commits=queued, quiescent=quiescent, pushed_this_cycle=pushed
     )

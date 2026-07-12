@@ -104,7 +104,7 @@ def _idle_state() -> PRGroomingState:
 def _state(
     *,
     phase: PRPhase,
-    round_: int = 1,
+    retries_: int = 0,
     last_poll_sha: str = "headsha1",
     last_pushed_head_sha: str = "",
     reviewers: dict[str, ReviewerState] | None = None,
@@ -112,7 +112,7 @@ def _state(
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=round_,
+        pr_review_retries_used=retries_,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
@@ -137,57 +137,62 @@ def _required_reviewer(status: ReviewerStatus) -> dict[str, ReviewerState]:
 # ── bootstrap (last_poll_sha == "") ──
 
 
-def test_bootstrap_non_empty_head_anchors_round_one_and_awaiting_review() -> None:
+def test_bootstrap_non_empty_head_costs_no_retry_and_reaches_awaiting_review() -> None:
+    # The initial observed push anchors the 0-indexed counter at 0 (§3.4): the
+    # first review-eliciting push is free; only subsequent pushes consume retries.
     state = poll_pr(_idle_state(), ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
-    assert state.round == 1
+    assert state.pr_review_retries_used == 0
     assert state.last_poll_sha == "abc"
     assert state.phase is PRPhase.AWAITING_REVIEW
 
 
-def test_bootstrap_empty_head_leaves_round_zero_and_idle() -> None:
+def test_bootstrap_empty_head_leaves_counter_zero_and_idle() -> None:
     # An empty remote HEAD short-circuits: head_ref_oid is the only gh call.
     gh = GhCli(RecordedRunner([_ok({"headRefOid": ""})]))
     state = poll_pr(_idle_state(), ref=_REF, gh=gh, deps=_deps(), config=_config())
-    assert state.round == 0
+    assert state.pr_review_retries_used == 0
     assert state.last_poll_sha == ""
     assert state.phase is PRPhase.IDLE
 
 
-def test_bootstrap_does_not_double_bump_when_push_already_anchored() -> None:
-    # _push may have already set round=1; bootstrap is idempotent (max(round, 1)).
-    start = _state(phase=PRPhase.IDLE, round_=1, last_poll_sha="", last_pushed_head_sha="abc")
+def test_bootstrap_does_not_count_retries_spent_by_prior_pushes() -> None:
+    # _push bootstrap (initial, free) plus one CLI retry may precede the first
+    # successful poll; the poll bootstrap only anchors last_poll_sha — it never
+    # touches the counter (§3.4: the two bootstrap branches are mutually exclusive
+    # with attribution, and the initial-push anchor costs nothing).
+    start = _state(phase=PRPhase.IDLE, retries_=1, last_poll_sha="", last_pushed_head_sha="abc")
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
-    assert state.round == 1
+    assert state.pr_review_retries_used == 1
     assert state.last_poll_sha == "abc"
 
 
 # ── unchanged SHA (idempotent no-op on the push axis) ──
 
 
-def test_unchanged_sha_does_not_bump_round_or_touch_reviewers() -> None:
+def test_unchanged_sha_does_not_count_a_retry_or_touch_reviewers() -> None:
     reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
     start = _state(
-        phase=PRPhase.AWAITING_REVIEW, round_=2, last_poll_sha="same", reviewers=reviewers
+        phase=PRPhase.AWAITING_REVIEW, retries_=2, last_poll_sha="same", reviewers=reviewers
     )
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="same"), deps=_deps(), config=_config())
-    assert state.round == 2
+    assert state.pr_review_retries_used == 2
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
 
 
 # ── CLI's own push (new_head == last_pushed_head_sha) ──
 
 
-def test_cli_own_push_advances_poll_sha_without_round_bump_or_reviewer_flip() -> None:
+def test_cli_own_push_advances_poll_sha_without_retry_count_or_reviewer_flip() -> None:
     reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
     start = _state(
         phase=PRPhase.AWAITING_REVIEW,
-        round_=2,
+        retries_=2,
         last_poll_sha="old",
         last_pushed_head_sha="new",
         reviewers=reviewers,
     )
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="new"), deps=_deps(), config=_config())
-    assert state.round == 2  # _push already counted it
+    assert state.pr_review_retries_used == 2  # _push already counted it
     assert state.last_poll_sha == "new"
     # _push already flipped reviewers; _poll must leave them untouched.
     assert state.reviewers["copilot"].status is ReviewerStatus.REVIEW_FOUND
@@ -196,17 +201,17 @@ def test_cli_own_push_advances_poll_sha_without_round_bump_or_reviewer_flip() ->
 # ── external push (new_head != last_pushed_head_sha) ──
 
 
-def test_external_push_bumps_round_and_flips_required_review_found() -> None:
+def test_external_push_counts_a_retry_and_flips_required_review_found() -> None:
     reviewers = _required_reviewer(ReviewerStatus.REVIEW_FOUND)
     start = _state(
         phase=PRPhase.AWAITING_REVIEW,
-        round_=2,
+        retries_=2,
         last_poll_sha="old",
         last_pushed_head_sha="mine",
         reviewers=reviewers,
     )
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
-    assert state.round == 3
+    assert state.pr_review_retries_used == 3
     assert state.last_poll_sha == "theirs"
     assert state.last_pushed_head_sha == "mine"  # untouched — not the CLI's push
     assert state.reviewers["copilot"].status is ReviewerStatus.NOT_REQUESTED
@@ -224,7 +229,7 @@ def test_external_push_does_not_flip_optional_reviewer() -> None:
     }
     start = _state(
         phase=PRPhase.AWAITING_REVIEW,
-        round_=1,
+        retries_=1,
         last_poll_sha="old",
         last_pushed_head_sha="mine",
         reviewers=reviewers,
@@ -237,7 +242,7 @@ def test_poll_does_not_mutate_caller_state() -> None:
     start = _idle_state()
     poll_pr(start, ref=_REF, gh=_gh(head_oid="abc"), deps=_deps(), config=_config())
     # The caller's object is untouched; poll_pr works on a copy and returns it.
-    assert start.round == 0
+    assert start.pr_review_retries_used == 0
     assert start.last_poll_sha == ""
     assert start.phase is PRPhase.IDLE
 
@@ -682,7 +687,7 @@ def test_bootstrap_with_existing_item_jumps_to_fixes_pending() -> None:
     start = _idle_state()
     gh = _gh(head_oid="abc", issue_comments=[_issue_comment(11)])
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
-    assert state.round == 1
+    assert state.pr_review_retries_used == 0
     assert state.phase is PRPhase.FIXES_PENDING
 
 
@@ -698,20 +703,20 @@ def test_poll_from_merged_is_noop() -> None:
 
 def test_quiesced_external_push_reenters_awaiting_review() -> None:
     start = _state(
-        phase=PRPhase.QUIESCED, round_=1, last_poll_sha="old", last_pushed_head_sha="mine"
+        phase=PRPhase.QUIESCED, retries_=1, last_poll_sha="old", last_pushed_head_sha="mine"
     )
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
     assert state.phase is PRPhase.AWAITING_REVIEW
-    assert state.round == 2
+    assert state.pr_review_retries_used == 2
 
 
 def test_human_gated_external_push_reenters_fixes_pending() -> None:
     start = _state(
-        phase=PRPhase.HUMAN_GATED, round_=1, last_poll_sha="old", last_pushed_head_sha="mine"
+        phase=PRPhase.HUMAN_GATED, retries_=1, last_poll_sha="old", last_pushed_head_sha="mine"
     )
     state = poll_pr(start, ref=_REF, gh=_gh(head_oid="theirs"), deps=_deps(), config=_config())
     assert state.phase is PRPhase.FIXES_PENDING
-    assert state.round == 2
+    assert state.pr_review_retries_used == 2
 
 
 def test_quiesced_new_item_reenters_fixes_pending() -> None:

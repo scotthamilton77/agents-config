@@ -13,7 +13,7 @@ def _ref() -> PRRef:
 def test_routed_memory_roundtrip_thread_form() -> None:
     rm = RoutedMemory(
         content="decided X",
-        round=2,
+        retry=2,
         source_item="c1#0",
         decided_by="claude -p opus[1m]",
         target_hint="PRRT_abc",
@@ -22,7 +22,7 @@ def test_routed_memory_roundtrip_thread_form() -> None:
 
 
 def test_routed_memory_omits_none_target_hint() -> None:
-    rm = RoutedMemory(content="x", round=1, source_item="c1#0", decided_by="a")
+    rm = RoutedMemory(content="x", retry=1, source_item="c1#0", decided_by="a")
     assert "target_hint" not in rm.to_dict()
     assert RoutedMemory.from_dict(rm.to_dict()).target_hint is None
 
@@ -40,7 +40,7 @@ def test_state_new_fields_default_empty_and_omit() -> None:
 
 def test_state_new_fields_roundtrip_when_set() -> None:
     state = bootstrap_state(_ref(), now=_NOW)
-    state.pending_memory = [RoutedMemory(content="m", round=1, source_item="c1#0", decided_by="a")]
+    state.pending_memory = [RoutedMemory(content="m", retry=1, source_item="c1#0", decided_by="a")]
     state.last_rereviewed_sha = "sha-rr"
     state.last_review_invalidated_sha = "sha-inv"
     back = PRGroomingState.from_dict(state.to_dict())

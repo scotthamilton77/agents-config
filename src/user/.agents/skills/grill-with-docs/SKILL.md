@@ -23,6 +23,11 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 <supporting-info>
 
+Note: the brainstorming skill adopts this skill's glossary discipline inline
+(challenge terms, sharpen language, update `CONTEXT.md`) whenever a `CONTEXT.md`
+or `CONTEXT-MAP.md` exists at brainstorm time. grill-with-docs remains the
+standalone deep session for stress-testing an existing plan.
+
 ## Domain awareness
 
 During codebase exploration, also look for existing documentation:

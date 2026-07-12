@@ -59,7 +59,7 @@ def _state(
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=1,
+        pr_review_retries_used=1,
         last_polled_at=_T0,
         last_activity_at=last_activity_at,
         quiescence=QuiescenceState(ci_state=ci_state),

@@ -81,7 +81,7 @@ def test_poll_bootstrap_writes_state_and_exits_zero(
     result = runner.invoke(cli.app, ["poll", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     written = patched.read(_REF)
-    assert written.round == 1
+    assert written.pr_review_retries_used == 0  # the initial observed push is free
     assert written.last_poll_sha == "abc"
     assert written.phase is PRPhase.AWAITING_REVIEW
 

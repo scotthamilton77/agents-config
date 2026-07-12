@@ -14,6 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from prgroom import cli
+from prgroom.errors import ErrorCode
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.memory import InMemoryStore
 from prgroom.prsession.pr_ref import PRRef
@@ -55,14 +56,17 @@ class FakeGit:
         self.pushes.append((remote, branch))
 
 
-def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, round_: int = 1) -> PRGroomingState:
+def _state(*, phase: PRPhase = PRPhase.FIXES_PENDING, retries: int = 0) -> PRGroomingState:
+    # last_poll_sha is non-empty: the initial push has been observed, so a CLI
+    # push from here consumes a retry (§3.4).
     return PRGroomingState(
         pr=_REF,
         phase=phase,
-        round=round_,
+        pr_review_retries_used=retries,
         last_polled_at=_T0,
         last_activity_at=_T0,
         quiescence=QuiescenceState(),
+        last_poll_sha="anchor",
     )
 
 
@@ -74,18 +78,51 @@ def patched(monkeypatch: pytest.MonkeyPatch) -> InMemoryStore:
     return store
 
 
-def test_push_uploads_and_persists_bumped_round(
+def test_push_uploads_and_persists_consumed_retry(
     patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(round_=1))
+    patched.write(_REF, _state(retries=1))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == [("origin", "HEAD:feature-x")]
     written = patched.read(_REF)
-    assert written.round == 2
+    assert written.pr_review_retries_used == 2
     assert written.last_pushed_head_sha == "newhead"
+
+
+def test_push_refuses_when_budget_exhausted_with_queued_commits(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The §3.5 refusal applies to the direct verb too: with queued commits and the
+    # retry budget spent, `prgroom push` gates to human-gated exactly like the run
+    # pipeline's cap-guard — it must not publish a push the run loop would refuse.
+    git = FakeGit(queued=["c1"])
+    monkeypatch.setattr(cli, "_build_git", lambda: git)
+    patched.write(_REF, _state(retries=5))  # at the default budget of 5 -> exhausted
+    result = runner.invoke(cli.app, ["push", "octo/demo#7"])
+    assert result.exit_code == 0, result.output
+    assert git.pushes == []  # nothing uploaded
+    written = patched.read(_REF)
+    assert written.phase is PRPhase.HUMAN_GATED
+    assert written.last_error == ErrorCode.LIFECYCLE_PR_REVIEW_EXHAUSTED.value
+    assert written.pr_review_retries_used == 5  # the refusal consumes nothing
+    assert written.lifecycle_escalation_filed is False  # one Sink flush on next run
+
+
+def test_push_budget_exhausted_without_queued_commits_stays_ungated(
+    patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty queue means there is no budget-tripping push to refuse: the verb
+    # falls through to push_pr's idempotent no-op and the phase is untouched.
+    git = FakeGit(queued=[])
+    monkeypatch.setattr(cli, "_build_git", lambda: git)
+    patched.write(_REF, _state(retries=5))
+    result = runner.invoke(cli.app, ["push", "octo/demo#7"])
+    assert result.exit_code == 0, result.output
+    assert git.pushes == []
+    assert patched.read(_REF).phase is PRPhase.FIXES_PENDING
 
 
 @pytest.mark.usefixtures("patched")
@@ -103,11 +140,11 @@ def test_push_terminal_phase_is_noop(
     # commits go up once the PR has stopped soliciting review.
     git = FakeGit(queued=["c1"])
     monkeypatch.setattr(cli, "_build_git", lambda: git)
-    patched.write(_REF, _state(phase=PRPhase.QUIESCED, round_=2))
+    patched.write(_REF, _state(phase=PRPhase.QUIESCED, retries=2))
     result = runner.invoke(cli.app, ["push", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert git.pushes == []
-    assert patched.read(_REF).round == 2
+    assert patched.read(_REF).pr_review_retries_used == 2
 
 
 def test_push_malformed_ref_exits_two() -> None:
