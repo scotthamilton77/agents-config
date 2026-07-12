@@ -135,6 +135,11 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     deliver_parser.add_argument("--items")
     deliver_parser.add_argument("--trivial", action="store_true")
 
+    reconcile_parser = subparsers.add_parser(
+        "reconcile", help="sweep bd-observable recoverable states"
+    )
+    reconcile_parser.add_argument("--dry-run", action="store_true")
+
 
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     dep_parser = subparsers.add_parser("dep", help="manage dependency edges")

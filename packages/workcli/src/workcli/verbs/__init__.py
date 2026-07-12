@@ -18,6 +18,7 @@ from workcli.backend import Backend, Capabilities
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
+from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
@@ -55,6 +56,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "plan": plan,
     "promote": promote,
     "deliver": deliver,
+    "reconcile": reconcile,
     "dep": dep,
     "label": label,
     "sync": sync,
