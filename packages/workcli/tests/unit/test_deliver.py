@@ -336,6 +336,147 @@ def test_deliver_design_none_manifest_closes_placeholder_with_reason_note():
     ]
 
 
+# --- deliver (design path) sibling-placeholder drift ------------------------
+
+
+def test_deliver_design_null_parent_is_backend_drift():
+    # A design child with no parent container breaks the spec-shape invariant
+    # (`instantiate_spec_shape` always mints it under a container). The drift
+    # is detected before any parent fetch, so d.1 is the only show call.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("d.1", status="open", labels=["shape-design"])),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"], runner, read_file=fake_reader({})
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.BACKEND_DRIFT)
+    assert error["detail"] == {"design_id": "d.1"}
+    assert runner.calls == [("show", "d.1", "--json")]
+
+
+def test_deliver_design_zero_siblings_is_backend_drift():
+    # Container holds only the design child -- no placeholder to reconcile.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1"])),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"], runner, read_file=fake_reader({})
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.BACKEND_DRIFT)
+    assert error["detail"] == {
+        "design_id": "d.1",
+        "container_id": "c.1",
+        "sibling_ids": [],
+    }
+    assert runner.calls == [("show", "d.1", "--json"), ("show", "c.1", "--json")]
+
+
+def test_deliver_design_multiple_siblings_is_backend_drift():
+    # Container holds the design child plus two non-design children -- the
+    # sibling placeholder is ambiguous, so the id set is surfaced for repair.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1", "p.2"])),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"], runner, read_file=fake_reader({})
+    )
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.BACKEND_DRIFT)
+    assert error["detail"] == {
+        "design_id": "d.1",
+        "container_id": "c.1",
+        "sibling_ids": ["p.1", "p.2"],
+    }
+    assert runner.calls == [("show", "d.1", "--json"), ("show", "c.1", "--json")]
+
+
+def test_deliver_design_exactly_two_children_resolves_sibling_and_delivers():
+    # Regression guard for the happy two-child branch: exactly one non-design
+    # sibling resolves structurally to the placeholder and delivery proceeds.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1"])),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("p.1", status="open", labels=["impl-placeholder"])),
+            ),
+            ScriptedStep(("update",), _OK),  # append [work] spec: S note
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("p.1", status="open", labels=["impl-placeholder"])),
+            ),
+            ScriptedStep(("update",), _OK),  # set_type
+            ScriptedStep(("update",), _OK),  # set_fields title
+            ScriptedStep(("update",), _OK),  # set_acceptance
+            ScriptedStep(("label", "remove"), _OK),  # impl-placeholder
+            ScriptedStep(("label", "add"), _OK),  # shape-feat
+            ScriptedStep(("label", "add"), _OK),  # spec-ready
+            ScriptedStep(("close",), _OK),  # design child
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"],
+        runner,
+        read_file=fake_reader({"S": _MANIFEST_SINGLE}),
+    )
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "d.1", "status": "closed"}
+    # The placeholder p.1 (the lone non-design sibling) was the reconcile target.
+    assert ("show", "p.1", "--json") in runner.calls
+
+
 # --- deliver (leaf path) ----------------------------------------------------
 
 

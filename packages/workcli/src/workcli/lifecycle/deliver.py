@@ -13,7 +13,6 @@ label's absence.
 from __future__ import annotations
 
 from argparse import Namespace
-from typing import cast
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
@@ -42,10 +41,42 @@ def _sibling_placeholder(backend: Backend, design_item: Item) -> Item:
     not the container), so "the other child" is always the placeholder,
     identified structurally rather than by its `impl-placeholder` label
     (which a fully-reconciled placeholder no longer carries).
+
+    Backend state that breaks that spec-shape invariant is corruption, not
+    an internal bug, so each break surfaces as a typed `E_BACKEND_DRIFT`
+    carrying the offending ids for repair rather than an opaque
+    `TypeError`/`StopIteration` reported as `E_INTERNAL`:
+    a design child with no parent container, a container with no sibling
+    placeholder, or a container with an ambiguous (>1) non-design sibling set.
     """
-    parent = backend.get(cast(str, design_item.parent))
-    other_id = next(child_id for child_id in parent.children if child_id != design_item.id)
-    return backend.get(other_id)
+    if design_item.parent is None:
+        raise WorkError(
+            ErrorCode.BACKEND_DRIFT,
+            f"deliver {design_item.id}: design item has no parent container",
+            detail={"design_id": design_item.id},
+        )
+    parent = backend.get(design_item.parent)
+    siblings = [child_id for child_id in parent.children if child_id != design_item.id]
+    if not siblings:
+        raise WorkError(
+            ErrorCode.BACKEND_DRIFT,
+            f"deliver {design_item.id}: container {parent.id} has no sibling placeholder",
+            detail={"design_id": design_item.id, "container_id": parent.id, "sibling_ids": []},
+        )
+    if len(siblings) > 1:
+        raise WorkError(
+            ErrorCode.BACKEND_DRIFT,
+            (
+                f"deliver {design_item.id}: container {parent.id} has an ambiguous sibling "
+                f"set (expected exactly one placeholder, found {len(siblings)})"
+            ),
+            detail={
+                "design_id": design_item.id,
+                "container_id": parent.id,
+                "sibling_ids": [child_id for child_id in siblings],
+            },
+        )
+    return backend.get(siblings[0])
 
 
 def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> JsonValue:
