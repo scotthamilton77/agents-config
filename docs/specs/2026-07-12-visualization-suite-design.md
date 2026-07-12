@@ -794,6 +794,10 @@ playwright pass, not CI.
 - `ASSUMPTION:` annotation durability — a note not yet round-tripped lives
   only in browser localStorage; the unprocessed-note banner (§4.5) is the
   mitigation and the residual loss window is accepted.
+- Watch-item (not an assumption): the five-JSON-file sidecar suffices at
+  current scale; if identity/lifecycle merge-and-locking code turns ugly at
+  continuation-3 planning, SQLite is the honest substrate (diskcache
+  already ships it) — revisit there, not here.
 
 ## Continuations
 
