@@ -222,10 +222,11 @@ def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) ->
 
 def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manifest) -> None:
     """Idempotently reconcile one placeholder against a parsed manifest (spec §6):
-    none -> close + reason note; single -> set_type + retitle + set_acceptance +
-    label swap (+ spec-ready); multi -> mint the MISSING children (compare to
-    existing), removing `impl-placeholder` STRICTLY LAST once all exist.
-    Short-circuits on already-reconciled state (no `impl-placeholder` label).
+    none -> close + reason note (only when non-empty) + remove `impl-placeholder`;
+    single -> set_type + retitle + set_acceptance + label swap (+ spec-ready);
+    multi -> mint the MISSING children (compare to existing), removing
+    `impl-placeholder` STRICTLY LAST once all exist. Every completing path
+    removes `impl-placeholder` last, so a replay short-circuits on its absence.
     """
     placeholder = backend.get(placeholder_id)
     if IMPL_PLACEHOLDER_LABEL not in placeholder.labels:
@@ -233,7 +234,15 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
 
     if manifest.none_reason is not None:
         backend.close([placeholder_id])
-        backend.append_note(placeholder_id, manifest.none_reason)
+        # A bare `- none` carries an empty reason (manifest.py::_none_reason);
+        # only record a note when there is real reason text -- never append an
+        # empty note.
+        if manifest.none_reason:
+            backend.append_note(placeholder_id, manifest.none_reason)
+        # impl-placeholder removed STRICTLY LAST, mirroring the single/multi
+        # paths: it is the idempotency handle the top guard short-circuits on,
+        # so replay re-closes nothing and deliver's design-path no-op fires.
+        backend.label_mutate("remove", placeholder_id, [IMPL_PLACEHOLDER_LABEL])
         return
 
     if len(manifest.items) == 1:

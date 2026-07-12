@@ -81,6 +81,10 @@ _MANIFEST_NONE = """## Continuations
 - none — this spec is the deliverable
 """
 
+_MANIFEST_NONE_BARE = """## Continuations
+- none
+"""
+
 
 # --- deliver (design path) -------------------------------------------------
 
@@ -363,6 +367,7 @@ def test_deliver_design_none_manifest_closes_placeholder_with_reason_note():
             ),
             ScriptedStep(("close",), _OK),  # placeholder
             ScriptedStep(("update",), _OK),  # none-reason note
+            ScriptedStep(("label", "remove"), _OK),  # impl-placeholder, strictly last
             ScriptedStep(("close",), _OK),  # design child
         ]
     )
@@ -383,6 +388,119 @@ def test_deliver_design_none_manifest_closes_placeholder_with_reason_note():
         ("show", "p.1", "--json"),
         ("close", "p.1"),
         ("update", "p.1", "--append-notes", "this spec is the deliverable"),
+        ("label", "remove", "p.1", "impl-placeholder"),
+        ("close", "d.1"),
+    ]
+
+
+def test_deliver_design_bare_none_manifest_closes_and_removes_label_without_note():
+    """A bare `- none` (no reason text) closes the placeholder and removes
+    `impl-placeholder` but appends NO note -- an empty none-reason must not
+    record a blank note."""
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1"])),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("p.1", status="open", labels=["impl-placeholder"])),
+            ),
+            ScriptedStep(("update",), _OK),  # append [work] spec: S note
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("p.1", status="open", labels=["impl-placeholder"])),
+            ),
+            ScriptedStep(("close",), _OK),  # placeholder
+            ScriptedStep(("label", "remove"), _OK),  # impl-placeholder, strictly last
+            ScriptedStep(("close",), _OK),  # design child
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"],
+        runner,
+        read_file=fake_reader({"S": _MANIFEST_NONE_BARE}),
+    )
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "d.1", "status": "closed"}
+    # No `--append-notes` for the (empty) none-reason between close and label remove.
+    assert runner.calls == [
+        ("show", "d.1", "--json"),
+        ("show", "c.1", "--json"),
+        ("show", "p.1", "--json"),
+        ("update", "p.1", "--append-notes", f"{SPEC_MARKER} S"),
+        ("show", "p.1", "--json"),
+        ("close", "p.1"),
+        ("label", "remove", "p.1", "impl-placeholder"),
+        ("close", "d.1"),
+    ]
+
+
+def test_deliver_design_replay_after_none_reconciliation_is_a_noop():
+    """A none-reconciled placeholder no longer carries `impl-placeholder`, so a
+    replay (design child still open, spec note already recorded) short-circuits
+    at reconcile_placeholder's top guard -- ZERO further placeholder mutations,
+    only the design close."""
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("d.1", status="open", labels=["shape-design"], parent="c.1")
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("c.1", status="open", children=["d.1", "p.1"])),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw(
+                        "p.1",
+                        status="closed",
+                        labels=[],  # impl-placeholder already removed by the none-path
+                        notes=f"{SPEC_MARKER} S",
+                    )
+                ),
+            ),
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw(
+                        "p.1",
+                        status="closed",
+                        labels=[],
+                        notes=f"{SPEC_MARKER} S",
+                    )
+                ),
+            ),
+            ScriptedStep(("close",), _OK),  # design child
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        ["deliver", "d.1", "--spec", "S"],
+        runner,
+        read_file=fake_reader({"S": _MANIFEST_NONE}),
+    )
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "d.1", "status": "closed"}
+    assert runner.calls == [
+        ("show", "d.1", "--json"),
+        ("show", "c.1", "--json"),
+        ("show", "p.1", "--json"),
+        ("show", "p.1", "--json"),
         ("close", "d.1"),
     ]
 
