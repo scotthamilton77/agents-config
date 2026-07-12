@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE — PR-shape heat map (3 variants)</title>
+<!--
+  THROWAWAY PROTOTYPE — wipe me.
+  Question: which visual representation of a multi-axis PR heat map
+  (complexity x centrality x consequence) best directs human review attention?
+  Three radically different variants (D retired), switchable via the bottom bar / arrow keys.
+
+  CONTRACT for variant modules:
+    PROTO.registerVariant(key, { name, render(el, ctx) })
+    ctx = { DATA, weights, computeHeat(f), heatColor(h01),
+            showTip(evt, html), hideTip(), showDrill(fileRec), hideDrill() }
+    - render() is called on switch and on every weight change; el is pre-cleared.
+    - Variants own layout entirely; they must NOT invent their own heat palette.
+-->
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root {
+    --bg: #f6f8fb; --panel: #ffffff; --panel-2: #eef2f7; --line: #cbd5e1;
+    --text: #0f172a; --muted: #64748b; --accent: #0369a1; --pr-mark: #b45309;
+    --heat-0: #e3e9f2; --heat-1: #c9d4e3; --heat-2: #f59e0b; --heat-3: #dc2626; --heat-4: #7f1d1d;
+  }
+  html[data-theme="dark"] {
+    --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --line: #334155;
+    --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --pr-mark: #fbbf24;
+    --heat-0: #22304a; --heat-1: #3b5168; --heat-2: #d97706; --heat-3: #dc2626; --heat-4: #991b1b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, sans-serif; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 18px; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
+  header .pr { color: var(--muted); font-size: 12px; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; max-width: 34vw; }
+  .weights { display: flex; gap: 14px; margin-left: auto; align-items: center; }
+  .weights label { display: flex; align-items: center; gap: 6px; font-size: 11px;
+                   color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .weights input[type=range] { width: 90px; accent-color: var(--accent); }
+  .legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .legend .swatch { width: 46px; height: 10px; border-radius: 5px;
+    background: linear-gradient(90deg, var(--heat-0), var(--heat-1), var(--heat-2), var(--heat-3), var(--heat-4)); }
+  #stage { position: absolute; inset: 52px 0 0 0; }
+  #stage.drill-open { right: 380px; }
+
+  #tooltip { position: fixed; pointer-events: none; z-index: 50; display: none;
+             background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+             padding: 8px 10px; font-size: 12px; max-width: 340px;
+             box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  #tooltip .path { font-weight: 600; word-break: break-all; }
+  .meter { display: grid; grid-template-columns: 86px 1fr 34px; gap: 6px;
+           align-items: center; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .meter .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; background: var(--accent); }
+
+  #drill { position: fixed; top: 52px; right: 0; bottom: 0; width: 380px; z-index: 40;
+           background: var(--panel); border-left: 1px solid var(--line);
+           padding: 16px; overflow-y: auto; display: none; }
+  #drill.open { display: block; }
+  #drill .close { position: absolute; top: 10px; right: 12px; cursor: pointer;
+                  color: var(--muted); font-size: 18px; background: none; border: none; }
+  #drill h2 { font-size: 14px; margin: 0 34px 2px 0; }
+  #drill .path { font-size: 11px; color: var(--muted); word-break: break-all; margin-bottom: 10px; }
+  #drill .stat { display: inline-block; background: var(--panel-2); border: 1px solid var(--line);
+                 border-radius: 6px; padding: 2px 8px; font-size: 11px; margin: 0 6px 6px 0; }
+  #drill h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+              color: var(--muted); margin: 14px 0 4px; }
+  #drill ul { margin: 4px 0; padding-left: 18px; font-size: 12.5px; }
+  #drill li { margin-bottom: 4px; }
+  #drill .headline { font-size: 13px; font-weight: 600; color: var(--accent); margin: 6px 0; }
+
+  #switcher { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 60;
+              display: flex; align-items: center; gap: 10px; background: var(--panel);
+              border: 1px solid var(--accent); border-radius: 999px; padding: 7px 14px;
+              box-shadow: 0 10px 30px rgba(0,0,0,.35); font-size: 13px; }
+  .hbtn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+          border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  #pr-line { color: var(--muted); text-decoration: none; }
+  #pr-line:hover { color: var(--accent); text-decoration: underline; }
+  .notearea { width: 100%; min-height: 64px; margin-top: 6px; background: var(--panel-2);
+              color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+              padding: 6px 8px; font: 12.5px/1.4 system-ui, sans-serif; resize: vertical; }
+  .hotspot { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin: 8px 0; }
+  .hotspot b { font-size: 12.5px; }
+  .hotspot .hnote { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .mock { font-size: 10px; color: var(--pr-mark); text-transform: none; letter-spacing: 0; }
+  a.ext { display: inline-block; margin-top: 10px; color: var(--accent); font-size: 12.5px; }
+  #switcher button { background: none; border: none; color: var(--accent);
+                     font-size: 16px; cursor: pointer; padding: 0 4px; }
+  #switcher .name { min-width: 210px; text-align: center; }
+  #switcher .key { color: var(--muted); margin-right: 6px; }
+  .proto-badge { position: fixed; bottom: 14px; left: 12px; z-index: 45; font-size: 10px;
+                 letter-spacing: .08em; color: #fbbf24; border: 1px dashed #b45309;
+                 border-radius: 6px; padding: 2px 8px; background: rgba(180,83,9,.08); }
+</style>
+</head>
+<body>
+<header>
+  <h1>PR-shape heat map</h1>
+  <a class="pr" id="pr-line" target="_blank" rel="noopener"></a>
+  <div class="weights">
+    <label>Complexity <input type="range" id="w-complexity" min="0" max="100" value="40"></label>
+    <label>Load-bearing <input type="range" id="w-centrality" min="0" max="100" value="30"></label>
+    <label>Consequence <input type="range" id="w-consequence" min="0" max="100" value="30"></label>
+    <div class="legend"><span>cold</span><div class="swatch"></div><span>hot</span></div>
+    <button class="hbtn" id="notes-copy" title="copy all saved notes as JSON">Notes (0)</button>
+    <button class="hbtn" id="theme-btn" title="toggle light/dark">◐</button>
+  </div>
+</header>
+<div class="proto-badge">PROTOTYPE — THROWAWAY</div>
+<div id="stage"></div>
+<div id="tooltip"></div>
+<aside id="drill">
+  <button class="close" onclick="PROTO.hideDrill()">×</button>
+  <div id="drill-body"></div>
+</aside>
+<div id="switcher">
+  <button id="sw-prev" title="previous variant">◀</button>
+  <div class="name"><span class="key" id="sw-key"></span><span id="sw-name"></span></div>
+  <button id="sw-next" title="next variant">▶</button>
+</div>
+
+<script>
+window.DATA = /*__DATA__*/ null;
+
+window.PROTO = (function () {
+  const variants = new Map();
+  const order = [];
+  let current = null;
+
+  const weights = { ...DATA.weights_default };
+
+  document.documentElement.dataset.theme = localStorage.getItem('proto-theme') || 'light';
+  let ramp;
+  function rebuildRamp() {
+    const cs = getComputedStyle(document.documentElement);
+    ramp = d3.piecewise(d3.interpolateLab,
+      ['--heat-0','--heat-1','--heat-2','--heat-3','--heat-4'].map(v => cs.getPropertyValue(v).trim()));
+  }
+  rebuildRamp();
+
+  const notes = (() => {
+    try { return JSON.parse(localStorage.getItem('proto-notes') || '{}'); }
+    catch { return {}; }
+  })();
+  function persistNotes() {
+    localStorage.setItem('proto-notes', JSON.stringify(notes));
+    const n = Object.keys(notes).length;
+    document.getElementById('notes-copy').textContent = `Notes (${n})`;
+  }
+
+  function computeHeat(f) {
+    const s = weights.complexity + weights.centrality + weights.consequence || 1;
+    return (weights.complexity * (f.complexity || 0)
+          + weights.centrality * (f.centrality || 0)
+          + weights.consequence * (f.consequence || 0)) / s;
+  }
+  const heatColor = h => ramp(Math.max(0, Math.min(1, h)));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  const tip = document.getElementById('tooltip');
+  function showTip(evt, html) {
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = evt.clientX + pad, y = evt.clientY + pad;
+    if (x + w > innerWidth - 8) x = evt.clientX - w - pad;
+    if (y + h > innerHeight - 8) y = evt.clientY - h - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  const meter = (label, v) =>
+    `<div class="meter"><span>${label}</span><div class="bar"><i style="width:${Math.round((v||0)*100)}%"></i></div><span>${(v||0).toFixed(2)}</span></div>`;
+
+  function tipHtml(f) {
+    return `<div class="path">${esc(f.path)}</div>` +
+      meter('complexity', f.complexity) + meter('load-bearing', f.centrality) +
+      meter('consequence', f.consequence) + meter('HEAT', computeHeat(f)) +
+      (f.changed ? `<div style="margin-top:4px;color:var(--pr-mark)">changed: +${f.adds}/−${f.dels} (${esc(f.status)})</div>`
+                 : `<div style="margin-top:4px;color:var(--muted)">context — not in this PR</div>`);
+  }
+
+  const drill = document.getElementById('drill');
+  const stage = document.getElementById('stage');
+  function showDrill(f) {
+    const b = document.getElementById('drill-body');
+    const fname = f.path.split('/').pop();
+    let html = `<h2>${esc(fname)}</h2><div class="path">${esc(f.path)}</div>`;
+    if (f.changed) html += `<span class="stat">+${f.adds}/−${f.dels}</span><span class="stat">${esc(f.status)}</span>`;
+    html += `<span class="stat">heat ${computeHeat(f).toFixed(2)}</span>`;
+    html += meter('complexity', f.complexity) + meter('load-bearing', f.centrality) + meter('consequence', f.consequence);
+    if (f.story) {
+      html += `<div class="headline">${esc(f.story.headline)}</div>`;
+      html += `<h3>Why it's hot</h3><ul>${f.story.why.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+      if (f.story.check && f.story.check.length)
+        html += `<h3>What to check</h3><ul>${f.story.check.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+      if (f.story.hotspots && f.story.hotspots.length) {
+        html += `<h3>Hotspots inside this file <span class="mock">mock scan</span></h3>`;
+        for (const h of f.story.hotspots) {
+          html += `<div class="hotspot"><b>${esc(h.name)}</b>` +
+            meter('complexity', h.complexity) + meter('load-bearing', h.centrality) +
+            meter('consequence', h.consequence) + `<div class="hnote">${esc(h.note)}</div></div>`;
+        }
+      }
+    } else if (!f.changed) {
+      html += `<h3>Context</h3><ul><li>Not changed in this PR — shown as codebase context.</li></ul>`;
+    }
+    if (f.diff_url) html += `<a class="ext" href="${esc(f.diff_url)}" target="_blank" rel="noopener">View this file's diff in PR ↗</a>`;
+    html += `<h3>Note to agent</h3><textarea class="notearea" id="note-box" placeholder="Leave a note on ${esc(fname)} — copied out via the Notes button for agent processing"></textarea>` +
+            `<button class="hbtn" id="note-save" style="margin-top:6px">Save note</button>`;
+    b.innerHTML = html;
+    b.querySelector('#note-box').value = notes[f.path] || ''; // set programmatically; never interpolate the persisted note into markup (a </textarea> in it would break the DOM / stored self-XSS on reopen)
+    b.querySelector('#note-save').onclick = () => {
+      const v = b.querySelector('#note-box').value.trim();
+      if (v) notes[f.path] = v; else delete notes[f.path];
+      persistNotes();
+      const btn = b.querySelector('#note-save');
+      btn.textContent = 'Saved ✓'; setTimeout(() => { btn.textContent = 'Save note'; }, 1200);
+    };
+    drill.classList.add('open'); stage.classList.add('drill-open');
+    rerender();
+  }
+  function hideDrill() {
+    drill.classList.remove('open'); stage.classList.remove('drill-open');
+    rerender();
+  }
+
+  function registerVariant(key, def) { variants.set(key, def); order.push(key); }
+
+  function rerender() {
+    if (!current) return;
+    const def = variants.get(current);
+    document.getElementById('sw-key').textContent = current + ' — ';
+    document.getElementById('sw-name').textContent = def.name;
+    stage.innerHTML = '';
+    stage.removeAttribute('style'); // firewall: no variant's inline styles may leak across renders
+    hideTip();
+    try {
+      def.render(stage, { DATA, weights, computeHeat, heatColor, showTip, hideTip, showDrill, hideDrill, tipHtml, esc });
+    } catch (err) {
+      stage.innerHTML = `<pre style="color:#f87171;padding:20px;white-space:pre-wrap">Variant ${current} blew up:\n${err.stack}</pre>`;
+    }
+  }
+
+  function switchTo(key) {
+    if (!variants.has(key)) return;
+    current = key;
+    location.hash = 'v=' + key;
+    rerender();
+  }
+  const step = d => switchTo(order[(order.indexOf(current) + d + order.length) % order.length]);
+
+  document.getElementById('sw-prev').onclick = () => step(-1);
+  document.getElementById('sw-next').onclick = () => step(1);
+  addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowLeft') step(-1);
+    if (e.key === 'ArrowRight') step(1);
+    if (e.key === 'Escape') hideDrill();
+  });
+  let weightTimer = null;
+  for (const id of ['w-complexity', 'w-centrality', 'w-consequence']) {
+    document.getElementById(id).addEventListener('input', e => {
+      weights[id.slice(2)] = +e.target.value / 100;
+      clearTimeout(weightTimer);
+      weightTimer = setTimeout(rerender, 180); // debounce: don't replot per pixel of slider drag
+    });
+  }
+
+  addEventListener('DOMContentLoaded', () => {
+    const pr = DATA.pr;
+    const line = document.getElementById('pr-line');
+    line.textContent = `${pr.id} ${pr.title} · ${pr.files_changed} files · +${pr.adds}/−${pr.dels}`;
+    if (pr.url) line.href = pr.url;
+    document.getElementById('theme-btn').onclick = () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('proto-theme', next);
+      rebuildRamp(); rerender();
+    };
+    document.getElementById('notes-copy').onclick = async (e) => {
+      const payload = JSON.stringify({ pr: DATA.pr.id, notes }, null, 1);
+      try {
+        await navigator.clipboard.writeText(payload);
+        e.target.textContent = 'Copied ✓';
+      } catch { /* clipboard unavailable, e.g. on file:// */
+        e.target.textContent = 'Copy failed ✗';
+      }
+      setTimeout(persistNotes, 1200);
+    };
+    persistNotes();
+    const fromHash = (location.hash.match(/v=(\w)/) || [])[1];
+    switchTo(variants.has(fromHash) ? fromHash : order[0]);
+  });
+
+  return { registerVariant, showTip, hideTip, showDrill, hideDrill, computeHeat, heatColor };
+})();
+</script>
+
+<script>/*__VARIANT_A__*/</script>
+<script>/*__VARIANT_B__*/</script>
+<script>/*__VARIANT_C__*/</script>
+<script>/*__VARIANT_D__*/</script>
+</body>
+</html>
