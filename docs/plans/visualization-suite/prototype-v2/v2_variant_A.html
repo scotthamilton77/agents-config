@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>V2 Variant A — Flight plans (temporal-primary)</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root {
+    --surface: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --muted: #898781; --gridline: #e1e0d9;
+    --baseline: #c3c2b7; --border: rgba(11,11,11,.10);
+  }
+  html.dark {
+    --surface: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+    --text-secondary: #c3c2b7; --muted: #898781; --gridline: #2c2c2a;
+    --baseline: #383835; --border: rgba(255,255,255,.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--page); }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text-primary);
+  }
+  .viz-root { background: var(--page); min-height: 100vh; }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 20px 4px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .topbar h1 { font-size: 16px; margin: 0 0 2px; font-weight: 700; }
+  .topbar .question { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 12px; }
+  .header-block { max-width: 900px; }
+  #darkToggle {
+    font-family: inherit; font-size: 12px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-primary); border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; height: fit-content;
+  }
+  #darkToggle:hover { background: var(--gridline); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+    padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+    font-size: 11.5px; color: var(--text-secondary);
+  }
+  .legend-group { display: flex; gap: 10px; align-items: center; }
+  .legend-title { font-weight: 600; color: var(--text-primary); margin-right: 2px; }
+  .chip { display: flex; align-items: center; gap: 4px; }
+  .chip .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .legend-line { display: inline-flex; align-items: center; }
+  .legend-line svg { display: block; }
+
+  .filter-row {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 8px 20px 10px; font-size: 11.5px;
+  }
+  .filter-caption { font-weight: 600; color: var(--text-primary); margin-right: 2px; }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 5px; font: inherit; cursor: pointer;
+    border-radius: 12px; padding: 3px 10px 3px 8px; border: 1px solid var(--border);
+    background: none; color: var(--muted);
+  }
+  .filter-chip .fc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .filter-chip:hover { color: var(--text-primary); }
+  .filter-chip[aria-pressed="true"] { border-color: transparent; color: var(--text-primary); }
+  .filter-reset {
+    font: inherit; background: none; border: none; color: var(--text-secondary);
+    text-decoration: underline; cursor: pointer; padding: 2px 4px;
+  }
+  .filter-reset:hover { color: var(--text-primary); }
+
+  .main-wrap { padding: 10px 20px 4px; }
+  svg text { fill: var(--text-primary); }
+  .lane-label-name { fill: var(--text-primary); font-size: 12px; font-weight: 600; }
+  .lane-label-status { fill: var(--text-secondary); font-size: 10px; }
+  .step-label { fill: var(--text-secondary); font-size: 9.5px; }
+  .region-label { fill: var(--text-secondary); font-size: 9.5px; }
+  .region-header-underline { stroke: #fab219; stroke-width: 2px; }
+  .axis-order-label { fill: var(--muted); font-size: 9.5px; }
+  .axis-caption { fill: var(--muted); font-size: 9.5px; font-weight: 600; }
+  .gridline { stroke: var(--gridline); stroke-width: 1px; }
+  .lane-row-bg { fill: var(--surface); }
+  .lane-sep { stroke: var(--border); stroke-width: 1px; }
+  .lane-deferred-border { fill: none; stroke: var(--text-secondary); stroke-width: 1.5px; stroke-dasharray: 5,3; pointer-events: none; }
+  .deferred-pill-bg { fill: var(--gridline); }
+  .deferred-pill-txt { fill: var(--text-secondary); font-size: 9.5px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .deferred-glyph { fill: var(--text-secondary); pointer-events: none; }
+  .seq-link { stroke: var(--baseline); stroke-width: 1.5px; fill: none; }
+  .edge-hit { fill: none; stroke: transparent; stroke-width: 18px; cursor: pointer; }
+  .edge-path { fill: none; pointer-events: none; }
+  .edge-badge-bg { pointer-events: none; stroke: var(--text-primary); stroke-opacity: .55; stroke-width: 1.25px; }
+  .edge-badge-txt { pointer-events: none; font-size: 9px; font-weight: 700; text-anchor: middle; dominant-baseline: central; fill: #ffffff; }
+  .step-hit { cursor: pointer; }
+  .scrubber-line { stroke: var(--text-primary); stroke-width: 1.5px; stroke-dasharray: 3,3; cursor: ew-resize; }
+  .scrubber-handle { cursor: ew-resize; }
+  .scrubber-label { font-size: 10px; fill: var(--text-primary); font-weight: 600; }
+  .region-tick { cursor: default; }
+  .region-col-hit { fill: transparent; cursor: pointer; }
+  .region-col-hit:hover { fill: var(--gridline); opacity: .4; }
+  .strip-title { fill: var(--text-secondary); font-size: 10.5px; font-weight: 600; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 50;
+    background: var(--surface); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+    font-size: 11.5px; max-width: 280px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    display: none; line-height: 1.4;
+  }
+  .tooltip .tt-title { font-weight: 700; margin-bottom: 2px; }
+  .tooltip .tt-row { color: var(--text-secondary); }
+
+  .drill-panel {
+    position: fixed; top: 0; right: -360px; width: 340px; height: 100%;
+    background: var(--surface); border-left: 1px solid var(--border);
+    box-shadow: -6px 0 20px rgba(0,0,0,.15); transition: right .18s ease-out;
+    z-index: 60; overflow-y: auto; padding: 16px;
+  }
+  .drill-panel.open { right: 0; }
+  .drill-close {
+    float: right; border: none; background: none; color: var(--text-secondary);
+    font-size: 18px; cursor: pointer; line-height: 1;
+  }
+  .drill-close:hover { color: var(--text-primary); }
+  .drill-kicker { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 4px; }
+  .drill-title { font-size: 14.5px; font-weight: 700; margin: 0 0 10px; padding-right: 20px; }
+  .drill-field { margin-bottom: 10px; }
+  .drill-field-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .drill-field-value { font-size: 12.5px; color: var(--text-primary); line-height: 1.45; }
+  .drill-badge {
+    display: inline-block; font-size: 10.5px; padding: 2px 7px; border-radius: 10px;
+    border: 1px solid var(--border); margin-right: 4px;
+  }
+  .surface-tag {
+    display: inline-block; font-size: 10.5px; padding: 2px 6px; margin: 2px 4px 0 0;
+    background: var(--gridline); border-radius: 4px; color: var(--text-secondary);
+  }
+  .drill-list-item { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+
+  .footer {
+    padding: 8px 20px 16px; font-size: 10.5px; color: var(--muted);
+    border-top: 1px solid var(--border); margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="viz-root" id="vizRoot">
+  <div class="topbar">
+    <div class="header-block">
+      <h1>Variant A — Flight plans (temporal-primary)</h1>
+      <p class="question">Round-1 question: which organization makes cross-plan relationships and their timing legible — when does plan A come to depend on / collide with / reinforce plan B, and where in the codebase?</p>
+    </div>
+    <button id="darkToggle" type="button">Dark mode</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="main-wrap">
+    <div class="filter-row" id="planFilterRow" role="group" aria-label="Plan filter"></div>
+    <svg id="chart"></svg>
+  </div>
+
+  <div class="footer">
+    Round-1 reaction mockup — data part-real (beads/specs), part-authored (inferred edges); see fabrication ledger.
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="drill-panel" id="drillPanel">
+  <button class="drill-close" id="drillClose" type="button" aria-label="Close">&times;</button>
+  <div id="drillContent"></div>
+</div>
+
+<script>
+const DATA = {
+  "meta": {
+    "round": 1,
+    "question": "Which organization makes cross-plan relationships and their timing legible?",
+    "fabrication": "Real: bead ids/statuses/counts, doc-stated phases, the one encoded edge (e1), footprint surfaces. Authored: step groupings, all inferred edges + stories, materialization points, region mapping."
+  },
+  "plans": [
+    {
+      "key": "prgroom", "label": "prgroom cutover", "color_slot": 0, "status": "executing",
+      "counts": {"closed": 18, "open": 32},
+      "steps": [
+        {"id": "prgroom:1", "label": "CLI foundation + store/errors infra", "order": 1, "status": "done", "surfaces": ["pkg-prgroom", "ci-infra"]},
+        {"id": "prgroom:2", "label": "Agent dispatch contracts + gh/git adapters", "order": 2, "status": "done", "surfaces": ["pkg-prgroom"]},
+        {"id": "prgroom:3", "label": "Lifecycle verbs + run loop + monitor-pr birth", "order": 3, "status": "done", "surfaces": ["pkg-prgroom", "skills-claude", "docs-arch"]},
+        {"id": "prgroom:4", "label": "Disposition envelope + reply ledger + dispatcher observability", "order": 4, "status": "in_progress", "surfaces": ["pkg-prgroom"], "note": "P1 wave: abn9.8.26/.27/.28 + qptb4 real-binary smoke"},
+        {"id": "prgroom:5", "label": "Merge-guard consumption seam", "order": 5, "status": "open", "surfaces": ["skills-claude", "docs-arch"]},
+        {"id": "prgroom:6", "label": "Cutover: retire wfpc skills, rewire delivery rules", "order": 6, "status": "open", "surfaces": ["skills-claude", "skills-shared", "rules"], "note": "blocked by abn9.8.32 E2E proof"}
+      ]
+    },
+    {
+      "key": "workcli", "label": "work facade CLI", "color_slot": 1, "status": "executing",
+      "counts": {"closed": 0, "open": 5},
+      "steps": [
+        {"id": "workcli:1", "label": "Transport: envelope, bd adapter, 12 verbs, CI gate", "order": 1, "status": "done", "surfaces": ["pkg-workcli", "ci-infra"]},
+        {"id": "workcli:2", "label": "Lifecycle layer: templated creation + guarded verbs", "order": 2, "status": "in_progress", "surfaces": ["pkg-workcli", "docs-specs"]},
+        {"id": "workcli:3", "label": "Backend-seam hardening + parse drift gaps", "order": 3, "status": "open", "surfaces": ["pkg-workcli"]},
+        {"id": "workcli:4", "label": "work discover verb — mechanical discovered-work", "order": 4, "status": "open", "surfaces": ["pkg-workcli", "rules"]},
+        {"id": "workcli:5", "label": "Migrate discipline assets off raw bd", "order": 5, "status": "open", "surfaces": ["skills-shared", "skills-claude", "rules", "plugins"]}
+      ]
+    },
+    {
+      "key": "pdlc", "label": "PDLC orchestrator", "color_slot": 2, "status": "parked (deferred)",
+      "counts": {"closed": 5, "open": 20},
+      "steps": [
+        {"id": "pdlc:1", "label": "Core design + HLD artifact set", "order": 1, "status": "done", "surfaces": ["docs-arch", "docs-specs"]},
+        {"id": "pdlc:2", "label": "Happy-path tracer bullet (FSM tick)", "order": 2, "status": "done", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:3", "label": "State repo (Dolt) + sessions + WorkTracker adapter", "order": 3, "status": "deferred", "surfaces": ["pkg-pdlc", "config"]},
+        {"id": "pdlc:4", "label": "Execution pipeline: red/green gates, review, strikes", "order": 4, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:5", "label": "Integration pipeline (Stage A/B/C) + autopsy", "order": 5, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:6", "label": "Holding Place peer service + promote contract", "order": 6, "status": "deferred", "surfaces": ["pkg-holding", "docs-specs"]}
+      ]
+    },
+    {
+      "key": "postfable", "label": "post-Fable economics", "color_slot": 3, "status": "queued (P0)",
+      "counts": {"closed": 0, "open": 6},
+      "steps": [
+        {"id": "postfable:1", "label": "Token capture + spend ledger", "order": 1, "status": "open", "surfaces": ["pkg-prgroom", "config"]},
+        {"id": "postfable:2", "label": "Model-routing policy rule + escalation ladder", "order": 2, "status": "open", "surfaces": ["rules", "config", "scripts"]},
+        {"id": "postfable:3", "label": "OpenRouter wiring: opencode profiles + prgroom AgentSpec", "order": 3, "status": "open", "surfaces": ["config", "pkg-prgroom"]},
+        {"id": "postfable:4", "label": "HEAVY gate re-point to cross-model panel", "order": 4, "status": "open", "surfaces": ["skills-claude", "rules"]},
+        {"id": "postfable:5", "label": "Consolidate foreign-cli config + model-ID SSoT", "order": 5, "status": "open", "surfaces": ["config", "rules"]}
+      ]
+    },
+    {
+      "key": "reviewloop", "label": "review feedback loop", "color_slot": 4, "status": "queued (design)",
+      "counts": {"closed": 0, "open": 4},
+      "steps": [
+        {"id": "reviewloop:1", "label": "Catch-log instrumentation per human catch", "order": 1, "status": "open", "surfaces": ["docs-specs", "config"]},
+        {"id": "reviewloop:2", "label": "Defect router: classify + route every catch", "order": 2, "status": "open", "surfaces": ["rules", "skills-shared"]},
+        {"id": "reviewloop:3", "label": "Feedback-signal miner (PR-history bootstrap)", "order": 3, "status": "open", "surfaces": ["scripts"], "note": "externally blocked by agents-config-qn0g (M2 readiness gate)"},
+        {"id": "reviewloop:4", "label": "Calibration off-ramp: per-category sampling", "order": 4, "status": "open", "surfaces": ["rules", "config"]}
+      ]
+    }
+  ],
+  "regions": [
+    {"key": "pkg-prgroom", "label": "packages/prgroom", "kind": "package"},
+    {"key": "pkg-workcli", "label": "packages/workcli", "kind": "package"},
+    {"key": "pkg-pdlc", "label": "packages/pdlc", "kind": "package"},
+    {"key": "pkg-holding", "label": "packages/holding-place", "kind": "package"},
+    {"key": "pkg-installer", "label": "packages/installer", "kind": "package"},
+    {"key": "skills-shared", "label": "shared skills (.agents)", "kind": "skills"},
+    {"key": "skills-claude", "label": "Claude skills + workflows", "kind": "skills"},
+    {"key": "rules", "label": "rules (shared + Claude)", "kind": "rules"},
+    {"key": "plugins", "label": "src/plugins", "kind": "config"},
+    {"key": "scripts", "label": "scripts + PEP-723 helpers", "kind": "infra"},
+    {"key": "docs-specs", "label": "docs/specs", "kind": "docs"},
+    {"key": "docs-arch", "label": "docs/architecture", "kind": "docs"},
+    {"key": "config", "label": "project-config + tool templates", "kind": "config"},
+    {"key": "ci-infra", "label": "Makefile + CI workflows", "kind": "infra"}
+  ],
+  "edges": [
+    {"id": "e1", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "encoded", "materializes": "postfable:3",
+     "story": "OpenRouter chains can't be smoke-proven until prgroom's real-binary invoker harness exists. The only cross-plan edge the beads DAG actually encodes.",
+     "evidence": "bd: agents-config-qptb4 blocks agents-config-abn9.40.3"},
+    {"id": "e2", "from": {"plan": "postfable", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "postfable:1",
+     "story": "Cost telemetry rides prgroom's per-attempt usage plumbing (usage.py, dispatcher observability abn9.8.26); the ledger bridge lands inside prgroom's dispatch-completion path.",
+     "evidence": "cost-telemetry spec, external-deliverables section"},
+    {"id": "e3", "from": {"plan": "pdlc", "step_order": 3}, "to": {"plan": "workcli", "step_order": 2}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:3",
+     "story": "The orchestrator's WorkTracker protocol needs a bd adapter — workcli's lifecycle layer IS that adapter surface. Building a second one inside pdlc would fork the seam.",
+     "evidence": "orchestrator core spec: 'WorkTracker bd adapter — likely overlaps workcli'"},
+    {"id": "e4", "from": {"plan": "workcli", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 6}, "kind": "conflict", "provenance": "inferred", "materializes": "workcli:5",
+     "story": "Both steps rewrite the same delivery skills and rules: prgroom's cutover rewires PR-review routing while workcli's migration strips raw bd from the same files. Whoever lands second rebases the other's prose — sequence deliberately.",
+     "evidence": "agent-inferred (shared surfaces: skills-shared, skills-claude, rules)"},
+    {"id": "e5", "from": {"plan": "reviewloop", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:1",
+     "story": "prgroom's items[] disposition envelope + reply ledger already record per-finding outcomes — the catch-log could ride that ledger instead of new instrumentation.",
+     "evidence": "agent-inferred; reviewloop spec leaves instrumentation storage open (S8.2)"},
+    {"id": "e6", "from": {"plan": "workcli", "step_order": 4}, "to": {"plan": "pdlc", "step_order": 6}, "kind": "synergy", "provenance": "inferred", "materializes": "pdlc:6",
+     "story": "work discover and Holding-Place Capture are the same gesture at different maturity — one capture contract could serve both, with discover as the CLI front door.",
+     "evidence": "agent-inferred"},
+    {"id": "e7", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "postfable", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "Defect-router categories and the cross-model panel's finding classes are one taxonomy; sharing it lets panel verdicts feed calibration data.",
+     "evidence": "agent-inferred"},
+    {"id": "e8", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "postfable:3",
+     "story": "Provider wiring edits prgroom AgentSpec/chain config while prgroom's own P1 wave rewrites the dispatcher — same package, same window.",
+     "evidence": "openrouter spec names packages/prgroom surfaces"},
+    {"id": "e9", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "pdlc", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "PDLC's Review state defines Mechanical/Advisory/Proposed-Rule finding classes; the defect router is independently defining the same taxonomy while pdlc sleeps. Divergence now is a reconciliation tax later.",
+     "evidence": "agent-inferred (CONTEXT.md Finding classes vs review-feedback-loop categories)"},
+    {"id": "e10", "from": {"plan": "pdlc", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:5",
+     "story": "Integration Stage A is PR grooming — prgroom's run loop and merge gate are that engine. PDLC should drive prgroom, not reimplement it; depends on the disposition envelope being stable.",
+     "evidence": "agent-inferred (CONTEXT.md Integration Stage A vs prgroom scope)"}
+  ]
+};
+
+// ---------- static encoding tables (from shared-conventions.md) ----------
+const PLAN_COLORS = {
+  0: { light: "#2a78d6", dark: "#3987e5" }, // prgroom
+  1: { light: "#1baf7a", dark: "#199e70" }, // workcli
+  2: { light: "#4a3aa7", dark: "#9085e9" }, // pdlc
+  3: { light: "#e87ba4", dark: "#d55181" }, // postfable
+  4: { light: "#eb6834", dark: "#d95926" }  // reviewloop
+};
+const EDGE_KIND = {
+  dependency: { light: "#52514e", dark: "#c3c2b7", glyph: "→" },
+  overlap:    { light: "#fab219", dark: "#fab219", glyph: "≈" },
+  conflict:   { light: "#d03b3b", dark: "#d03b3b", glyph: "✕" },
+  synergy:    { light: "#0ca30c", dark: "#0ca30c", glyph: "+" }
+};
+
+let isDark = false;
+function planColor(slot) { return isDark ? PLAN_COLORS[slot].dark : PLAN_COLORS[slot].light; }
+function edgeKindColor(kind) { return isDark ? EDGE_KIND[kind].dark : EDGE_KIND[kind].light; }
+
+// ---------- lookups ----------
+const plansByKey = new Map(DATA.plans.map(p => [p.key, p]));
+const regionsByKey = new Map(DATA.regions.map(r => [r.key, r]));
+function stepByRef(planKey, order) {
+  const plan = plansByKey.get(planKey);
+  return plan ? plan.steps.find(s => s.order === order) : undefined;
+}
+
+const maxOrder = d3.max(DATA.plans.flatMap(p => p.steps.map(s => s.order)));
+
+// ---------- layout constants ----------
+const W = 1360;
+const MARGIN = { top: 34, right: 40, bottom: 10, left: 190 };
+const LANE_H = 84;
+const LANES_TOP = MARGIN.top;
+const CHART_H = LANES_TOP + DATA.plans.length * LANE_H + 10;
+const STRIP_TOP = CHART_H + 34;
+const STRIP_H = 74;
+const H = STRIP_TOP + STRIP_H + 30;
+
+const xScale = d3.scaleLinear()
+  .domain([1, maxOrder])
+  .range([MARGIN.left + 20, W - MARGIN.right]);
+
+// displayIndex = position among the currently-included plans (not the full DATA.plans index)
+function laneY(displayIndex) { return LANES_TOP + displayIndex * LANE_H + LANE_H / 2; }
+
+// default scrubber position: max order where ANY plan has a done step, + 0.5
+const doneFrontier = d3.max(
+  DATA.plans.flatMap(p => p.steps.filter(s => s.status === "done").map(s => s.order))
+) || 0;
+let scrubberOrder = doneFrontier + 0.5;
+
+// ---------- plan-inclusion filter state ----------
+let includedPlanKeys = new Set(DATA.plans.map(p => p.key));
+function isIncluded(planKey) { return includedPlanKeys.has(planKey); }
+function activePlans() { return DATA.plans.filter(p => isIncluded(p.key)); }
+let openDrillPlans = []; // plan key(s) shown in the currently open drill panel, if any
+
+// ---------- svg scaffold ----------
+const svg = d3.select("#chart").attr("width", W).attr("height", H).attr("viewBox", `0 0 ${W} ${H}`);
+const gLanes = svg.append("g").attr("class", "g-lanes");
+const gSeq = svg.append("g").attr("class", "g-seq");
+const gScrubHit = svg.append("g").attr("class", "g-scrub-hit");
+const gEdges = svg.append("g").attr("class", "g-edges");
+const gSteps = svg.append("g").attr("class", "g-steps");
+const gScrub = svg.append("g").attr("class", "g-scrub");
+const gStrip = svg.append("g").attr("class", "g-strip");
+
+function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+// ---------- step status styling ----------
+function stepStyle(step, colorSlot) {
+  const c = planColor(colorSlot);
+  const base = { fill: c, stroke: c, opacity: 1, extraRing: false, deferred: false, strokeWidth: 2 };
+  if (step.status === "done") { return { ...base }; }
+  if (step.status === "in_progress") { return { ...base, extraRing: true }; }
+  if (step.status === "open") { return { ...base, fill: "none" }; }
+  if (step.status === "deferred") { return { ...base, fill: "none", deferred: true, strokeWidth: 1.5 }; }
+  return base;
+}
+
+function stepTooltipText(plan, step) {
+  return { title: step.label, rows: [`${plan.label} · step ${step.order}`, `status: ${step.status}`] };
+}
+
+// ---------- lanes + order axis (rebuilt on filter/theme change) ----------
+function renderLanes() {
+  gLanes.selectAll("*").remove();
+  const active = activePlans();
+
+  gLanes.append("text")
+    .attr("class", "axis-caption")
+    .attr("x", 20).attr("y", LANES_TOP - 12)
+    .text("plans");
+
+  active.forEach((plan, i) => {
+    const y0 = LANES_TOP + i * LANE_H;
+    gLanes.append("rect")
+      .attr("class", "lane-row-bg")
+      .attr("x", 0).attr("y", y0).attr("width", W).attr("height", LANE_H)
+      .attr("opacity", i % 2 === 0 ? 1 : 0.55);
+    gLanes.append("line")
+      .attr("class", "lane-sep")
+      .attr("x1", 0).attr("x2", W).attr("y1", y0).attr("y2", y0);
+
+    gLanes.append("circle")
+      .attr("class", "swatch-dot")
+      .attr("cx", 14).attr("cy", y0 + LANE_H / 2 - 6).attr("r", 5)
+      .attr("fill", planColor(plan.color_slot));
+    gLanes.append("text")
+      .attr("class", "lane-label-name")
+      .attr("x", 26).attr("y", y0 + LANE_H / 2 - 2)
+      .text(`${plan.label}`);
+    gLanes.append("text")
+      .attr("class", "lane-label-status")
+      .attr("x", 26).attr("y", y0 + LANE_H / 2 + 14)
+      .text(`${plan.status} · ${plan.counts.closed} closed / ${plan.counts.open} open`);
+
+    if (plan.status.includes("deferred")) {
+      gLanes.append("rect")
+        .attr("class", "lane-deferred-border")
+        .attr("x", 2).attr("y", y0 + 2).attr("width", W - 4).attr("height", LANE_H - 4);
+      const pill = gLanes.append("g").attr("class", "deferred-pill");
+      pill.append("rect")
+        .attr("class", "deferred-pill-bg")
+        .attr("x", 26).attr("y", y0 + LANE_H / 2 + 22)
+        .attr("width", 70).attr("height", 15).attr("rx", 7.5);
+      pill.append("text")
+        .attr("class", "deferred-pill-txt")
+        .attr("x", 26 + 35).attr("y", y0 + LANE_H / 2 + 32.5)
+        .text("❚❚ PARKED");
+    }
+  });
+
+  gLanes.append("line")
+    .attr("class", "lane-sep")
+    .attr("x1", 0).attr("x2", W).attr("y1", LANES_TOP + active.length * LANE_H)
+    .attr("y2", LANES_TOP + active.length * LANE_H);
+
+  for (let o = 1; o <= maxOrder; o++) {
+    gLanes.append("line")
+      .attr("class", "gridline")
+      .attr("x1", xScale(o)).attr("x2", xScale(o))
+      .attr("y1", LANES_TOP).attr("y2", LANES_TOP + active.length * LANE_H);
+    gLanes.append("text")
+      .attr("class", "axis-order-label")
+      .attr("x", xScale(o)).attr("y", LANES_TOP - 12)
+      .attr("text-anchor", "middle")
+      .text(`step ${o}`);
+  }
+}
+
+// ---------- sequence links (within-lane) + step nodes (rebuilt on filter/theme change) ----------
+let stepNodePos = new Map(); // "plan:order" -> {x,y}
+function renderStepsAndSeq() {
+  gSeq.selectAll("*").remove();
+  gSteps.selectAll("*").remove();
+  stepNodePos = new Map();
+  const active = activePlans();
+
+  active.forEach((plan, i) => {
+    const y = laneY(i);
+    const sorted = [...plan.steps].sort((a, b) => a.order - b.order);
+    for (let k = 0; k < sorted.length - 1; k++) {
+      gSeq.append("line")
+        .attr("class", "seq-link")
+        .attr("x1", xScale(sorted[k].order)).attr("y1", y)
+        .attr("x2", xScale(sorted[k + 1].order)).attr("y2", y);
+    }
+    sorted.forEach(step => {
+      const x = xScale(step.order);
+      stepNodePos.set(`${plan.key}:${step.order}`, { x, y, planIndex: i });
+      const style = stepStyle(step, plan.color_slot);
+      const node = gSteps.append("g").attr("class", "step-node").attr("data-plan", plan.key).attr("data-order", step.order);
+
+      // wide invisible hit target
+      node.append("circle")
+        .attr("class", "step-hit")
+        .attr("cx", x).attr("cy", y).attr("r", 13)
+        .attr("fill", "transparent");
+
+      node.append("circle")
+        .attr("cx", x).attr("cy", y).attr("r", 7)
+        .attr("fill", style.fill)
+        .attr("stroke", style.stroke)
+        .attr("stroke-width", style.strokeWidth)
+        .attr("opacity", style.opacity)
+        .attr("pointer-events", "none");
+
+      if (style.extraRing) {
+        node.append("circle")
+          .attr("cx", x).attr("cy", y).attr("r", 10.5)
+          .attr("fill", "none").attr("stroke", style.stroke)
+          .attr("stroke-width", 1.5).attr("opacity", 0.8)
+          .attr("pointer-events", "none");
+      }
+
+      if (style.deferred) {
+        // pause glyph: two short vertical bars, centered, secondary ink
+        const barW = 1.2, barH = 5, gap = 2;
+        [x - (barW + gap / 2), x + gap / 2].forEach(bx => {
+          node.append("rect")
+            .attr("class", "deferred-glyph")
+            .attr("x", bx).attr("y", y - barH / 2)
+            .attr("width", barW).attr("height", barH);
+        });
+      }
+
+      node.append("text")
+        .attr("class", "step-label")
+        .attr("x", x).attr("y", y + 22)
+        .attr("text-anchor", "middle")
+        .text(truncate(step.label, 16));
+
+      node
+        .on("mousemove", (ev) => showTooltip(ev, stepTooltipText(plan, step)))
+        .on("mouseleave", hideTooltip)
+        .on("click", () => openStepDrill(plan, step));
+    });
+  });
+}
+
+function edgeTooltipText(edge) {
+  const fromP = plansByKey.get(edge.from.plan), toP = plansByKey.get(edge.to.plan);
+  return {
+    title: `${fromP.label} → ${toP.label}`,
+    rows: [`${edge.kind} · ${edge.provenance}`, `materializes at ${edge.materializes}`]
+  };
+}
+
+// ---------- cross-plan edges (rebuilt on filter/theme change) ----------
+function renderEdges() {
+  gEdges.selectAll("*").remove();
+
+  DATA.edges.forEach(edge => {
+    if (!isIncluded(edge.from.plan) || !isIncluded(edge.to.plan)) return;
+    const fromPos = stepNodePos.get(`${edge.from.plan}:${edge.from.step_order}`);
+    const toPos = stepNodePos.get(`${edge.to.plan}:${edge.to.step_order}`);
+    if (!fromPos || !toPos) return;
+
+    const dx = toPos.x - fromPos.x;
+    const c1x = fromPos.x + dx * 0.5, c1y = fromPos.y;
+    const c2x = toPos.x - dx * 0.5, c2y = toPos.y;
+    const d = `M${fromPos.x},${fromPos.y} C${c1x},${c1y} ${c2x},${c2y} ${toPos.x},${toPos.y}`;
+    const color = edgeKindColor(edge.kind);
+    const dashed = edge.provenance === "inferred";
+
+    const g = gEdges.append("g").attr("class", "edge-group").attr("data-edge", edge.id);
+
+    const visiblePath = g.append("path")
+      .attr("class", "edge-path")
+      .attr("d", d)
+      .attr("stroke", color)
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", dashed ? "6,4" : null);
+
+    // enlarged invisible hit target (>=18px) — preserved across the badge-shape change
+    g.append("path")
+      .attr("class", "edge-hit")
+      .attr("d", d)
+      .on("mousemove", (ev) => showTooltip(ev, edgeTooltipText(edge)))
+      .on("mouseleave", hideTooltip)
+      .on("click", () => openEdgeDrill(edge));
+
+    const node = visiblePath.node();
+    const len = node.getTotalLength();
+    const mid = node.getPointAtLength(len / 2);
+
+    // edge-kind badge chip: rounded rect, kind color fill, white glyph
+    g.append("rect")
+      .attr("class", "edge-badge-bg")
+      .attr("x", mid.x - 9).attr("y", mid.y - 7)
+      .attr("width", 18).attr("height", 14).attr("rx", 4)
+      .attr("fill", color);
+    g.append("text")
+      .attr("class", "edge-badge-txt")
+      .attr("x", mid.x).attr("y", mid.y + 1)
+      .text(EDGE_KIND[edge.kind].glyph);
+  });
+}
+
+// ---------- scrubber ----------
+const scrubX = () => xScale(scrubberOrder);
+const scrubTopY = LANES_TOP - 6;
+function scrubBottomY() { return LANES_TOP + activePlans().length * LANE_H + 6; }
+
+const scrubLine = gScrub.append("line")
+  .attr("class", "scrubber-line")
+  .attr("y1", scrubTopY).attr("y2", scrubBottomY())
+  .attr("x1", scrubX()).attr("x2", scrubX());
+
+const scrubHandle = gScrub.append("circle")
+  .attr("class", "scrubber-handle")
+  .attr("cx", scrubX()).attr("cy", scrubTopY - 8).attr("r", 7)
+  .attr("fill", "var(--text-primary)");
+
+const scrubLabel = gScrub.append("text")
+  .attr("class", "scrubber-label")
+  .attr("x", scrubX()).attr("y", scrubTopY - 16)
+  .attr("text-anchor", "middle")
+  .text(`materialization: ${scrubberOrder.toFixed(1)}`);
+
+const scrubHit = gScrubHit.append("rect")
+  .attr("x", scrubX() - 10).attr("y", scrubTopY - 24)
+  .attr("width", 20).attr("height", scrubBottomY() - scrubTopY + 24)
+  .attr("fill", "transparent")
+  .attr("cursor", "ew-resize");
+
+const minOrderX = xScale(1) - 20, maxOrderX = xScale(maxOrder) + 20;
+const drag = d3.drag().on("drag", (ev) => {
+  let x = Math.max(minOrderX, Math.min(maxOrderX, ev.x));
+  scrubberOrder = xScale.invert(x);
+  redrawScrubber();
+  redrawStrip();
+});
+scrubHit.call(drag);
+scrubHandle.call(drag);
+
+function redrawScrubber() {
+  const x = scrubX();
+  scrubLine.attr("x1", x).attr("x2", x);
+  scrubHandle.attr("cx", x);
+  scrubLabel.attr("x", x).text(`materialization: ${scrubberOrder.toFixed(1)}`);
+  scrubHit.attr("x", x - 10);
+}
+
+function updateScrubberExtent() {
+  const bottom = scrubBottomY();
+  scrubLine.attr("y2", bottom);
+  scrubHit.attr("height", bottom - scrubTopY + 24);
+}
+
+// ---------- substrate strip ----------
+const stripXScale = d3.scaleBand()
+  .domain(DATA.regions.map(r => r.key))
+  .range([MARGIN.left, W - MARGIN.right])
+  .padding(0.18);
+
+gStrip.append("text")
+  .attr("class", "strip-title")
+  .attr("x", MARGIN.left).attr("y", STRIP_TOP - 12)
+  .text("Codebase surfaces touched (at or left of the materialization guide)");
+
+gStrip.append("text")
+  .attr("class", "axis-caption")
+  .attr("x", 20).attr("y", STRIP_TOP + 10)
+  .text("regions");
+
+const stripHeaderG = gStrip.append("g").attr("class", "strip-headers");
+const stripBodyG = gStrip.append("g").attr("class", "strip-body");
+const stripHitG = gStrip.append("g").attr("class", "strip-hits");
+
+DATA.regions.forEach(region => {
+  const x = stripXScale(region.key);
+  const bw = stripXScale.bandwidth();
+
+  stripHeaderG.append("text")
+    .attr("class", "region-label")
+    .attr("transform", `translate(${x + bw / 2},${STRIP_TOP + 2}) rotate(-40)`)
+    .attr("text-anchor", "end")
+    .text(truncate(region.label, 22));
+
+  stripHitG.append("rect")
+    .attr("class", "region-col-hit")
+    .attr("x", x).attr("y", STRIP_TOP + 6)
+    .attr("width", bw).attr("height", STRIP_H)
+    .on("mousemove", (ev) => showTooltip(ev, { title: region.label, rows: [`kind: ${region.kind}`, "click for touching plans/steps"] }))
+    .on("mouseleave", hideTooltip)
+    .on("click", () => openRegionDrill(region));
+});
+
+function redrawStrip() {
+  stripBodyG.selectAll("*").remove();
+  stripHeaderG.selectAll(".region-header-underline").remove();
+
+  DATA.regions.forEach(region => {
+    const x = stripXScale(region.key);
+    const bw = stripXScale.bandwidth();
+    const touches = []; // { plan, step }
+    DATA.plans.forEach(plan => {
+      if (!isIncluded(plan.key)) return;
+      plan.steps.forEach(step => {
+        if (step.order <= scrubberOrder && step.surfaces.includes(region.key)) {
+          touches.push({ plan, step });
+        }
+      });
+    });
+    touches.forEach((t, i) => {
+      stripBodyG.append("rect")
+        .attr("class", "region-tick")
+        .attr("x", x + bw / 2 - 5).attr("y", STRIP_TOP + 12 + i * 9)
+        .attr("width", 10).attr("height", 6).attr("rx", 1.5)
+        .attr("fill", planColor(t.plan.color_slot));
+    });
+    const distinctPlans = new Set(touches.map(t => t.plan.key));
+    if (distinctPlans.size >= 2) {
+      stripHeaderG.append("line")
+        .attr("class", "region-header-underline")
+        .attr("x1", x).attr("x2", x + bw)
+        .attr("y1", STRIP_TOP + 4).attr("y2", STRIP_TOP + 4);
+    }
+  });
+}
+
+// ---------- tooltip ----------
+const tooltipEl = document.getElementById("tooltip");
+function showTooltip(ev, content) {
+  tooltipEl.textContent = "";
+  const titleEl = document.createElement("div");
+  titleEl.className = "tt-title";
+  titleEl.textContent = content.title;
+  tooltipEl.appendChild(titleEl);
+  content.rows.forEach(r => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "tt-row";
+    rowEl.textContent = r;
+    tooltipEl.appendChild(rowEl);
+  });
+  tooltipEl.style.display = "block";
+  const pad = 14;
+  let left = ev.clientX + pad, top = ev.clientY + pad;
+  if (left + 290 > window.innerWidth) left = ev.clientX - 290 - pad;
+  if (top + 90 > window.innerHeight) top = ev.clientY - 90 - pad;
+  tooltipEl.style.left = left + "px";
+  tooltipEl.style.top = top + "px";
+}
+function hideTooltip() { tooltipEl.style.display = "none"; }
+
+// ---------- drill panel ----------
+const drillPanel = document.getElementById("drillPanel");
+const drillContent = document.getElementById("drillContent");
+document.getElementById("drillClose").addEventListener("click", closeDrill);
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeDrill(); });
+
+function closeDrill() { drillPanel.classList.remove("open"); openDrillPlans = []; }
+function openDrill() { drillPanel.classList.add("open"); }
+
+function clearContent(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+function addField(parent, label, valueBuilder) {
+  const field = document.createElement("div");
+  field.className = "drill-field";
+  const labelEl = document.createElement("div");
+  labelEl.className = "drill-field-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("div");
+  valueEl.className = "drill-field-value";
+  valueBuilder(valueEl);
+  field.appendChild(labelEl);
+  field.appendChild(valueEl);
+  parent.appendChild(field);
+}
+
+function openStepDrill(plan, step) {
+  clearContent(drillContent);
+  const kicker = document.createElement("div");
+  kicker.className = "drill-kicker";
+  kicker.textContent = "Step";
+  const title = document.createElement("div");
+  title.className = "drill-title";
+  title.textContent = step.label;
+  drillContent.appendChild(kicker);
+  drillContent.appendChild(title);
+
+  addField(drillContent, "Plan", el => { el.textContent = `${plan.label} (${plan.status})`; });
+  addField(drillContent, "Status", el => { el.textContent = `${step.status} · order ${step.order}`; });
+  addField(drillContent, "Surfaces", el => {
+    step.surfaces.forEach(sk => {
+      const region = regionsByKey.get(sk);
+      const tag = document.createElement("span");
+      tag.className = "surface-tag";
+      tag.textContent = region ? region.label : sk;
+      el.appendChild(tag);
+    });
+  });
+  if (step.note) {
+    addField(drillContent, "Note / evidence", el => { el.textContent = step.note; });
+  }
+  openDrillPlans = [plan.key];
+  openDrill();
+}
+
+function openEdgeDrill(edge) {
+  clearContent(drillContent);
+  const fromPlan = plansByKey.get(edge.from.plan), toPlan = plansByKey.get(edge.to.plan);
+  const fromStep = stepByRef(edge.from.plan, edge.from.step_order);
+  const toStep = stepByRef(edge.to.plan, edge.to.step_order);
+
+  const kicker = document.createElement("div");
+  kicker.className = "drill-kicker";
+  kicker.textContent = "Cross-plan edge";
+  const title = document.createElement("div");
+  title.className = "drill-title";
+  title.textContent = `${fromPlan.label} → ${toPlan.label}`;
+  drillContent.appendChild(kicker);
+  drillContent.appendChild(title);
+
+  addField(drillContent, "Kind / provenance", el => {
+    const b1 = document.createElement("span");
+    b1.className = "drill-badge";
+    b1.textContent = edge.kind;
+    const b2 = document.createElement("span");
+    b2.className = "drill-badge";
+    b2.textContent = edge.provenance;
+    el.appendChild(b1); el.appendChild(b2);
+  });
+  addField(drillContent, "From", el => { el.textContent = `${fromPlan.label} — ${fromStep ? fromStep.label : edge.from.step_order}`; });
+  addField(drillContent, "To", el => { el.textContent = `${toPlan.label} — ${toStep ? toStep.label : edge.to.step_order}`; });
+  addField(drillContent, "Materializes at", el => { el.textContent = edge.materializes; });
+  addField(drillContent, "Story", el => { el.textContent = edge.story; });
+  addField(drillContent, "Evidence", el => { el.textContent = edge.evidence; });
+  openDrillPlans = [edge.from.plan, edge.to.plan];
+  openDrill();
+}
+
+function openRegionDrill(region) {
+  clearContent(drillContent);
+  const kicker = document.createElement("div");
+  kicker.className = "drill-kicker";
+  kicker.textContent = "Region";
+  const title = document.createElement("div");
+  title.className = "drill-title";
+  title.textContent = region.label;
+  drillContent.appendChild(kicker);
+  drillContent.appendChild(title);
+  addField(drillContent, "Kind", el => { el.textContent = region.kind; });
+
+  const touches = [];
+  DATA.plans.forEach(plan => {
+    plan.steps.forEach(step => {
+      if (step.surfaces.includes(region.key)) touches.push({ plan, step });
+    });
+  });
+  addField(drillContent, `Plans/steps touching this region (${touches.length})`, el => {
+    touches.sort((a, b) => a.plan.label.localeCompare(b.plan.label) || a.step.order - b.step.order);
+    touches.forEach(t => {
+      const item = document.createElement("div");
+      item.className = "drill-list-item";
+      item.textContent = `${t.plan.label} · step ${t.step.order} — ${t.step.label} (${t.step.status})`;
+      el.appendChild(item);
+    });
+  });
+  openDrillPlans = [];
+  openDrill();
+}
+
+// ---------- legend ----------
+function buildLegend() {
+  const legend = document.getElementById("legend");
+  clearContent(legend);
+
+  const planGroup = document.createElement("div");
+  planGroup.className = "legend-group";
+  const planTitle = document.createElement("span");
+  planTitle.className = "legend-title";
+  planTitle.textContent = "Plans:";
+  planGroup.appendChild(planTitle);
+  DATA.plans.forEach(plan => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = planColor(plan.color_slot);
+    const label = document.createElement("span");
+    label.textContent = plan.label;
+    chip.appendChild(sw); chip.appendChild(label);
+    planGroup.appendChild(chip);
+  });
+  legend.appendChild(planGroup);
+
+  const kindGroup = document.createElement("div");
+  kindGroup.className = "legend-group";
+  const kindTitle = document.createElement("span");
+  kindTitle.className = "legend-title";
+  kindTitle.textContent = "Edge kind:";
+  kindGroup.appendChild(kindTitle);
+  Object.keys(EDGE_KIND).forEach(kind => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = edgeKindColor(kind);
+    const label = document.createElement("span");
+    label.textContent = `${kind} (${EDGE_KIND[kind].glyph})`;
+    chip.appendChild(sw); chip.appendChild(label);
+    kindGroup.appendChild(chip);
+  });
+  legend.appendChild(kindGroup);
+
+  const solGroup = document.createElement("div");
+  solGroup.className = "legend-group";
+  const solTitle = document.createElement("span");
+  solTitle.className = "legend-title";
+  solTitle.textContent = "Provenance:";
+  solGroup.appendChild(solTitle);
+  [["encoded (beads DAG)", false], ["inferred (agent-read)", true]].forEach(([label, dashed]) => {
+    const wrap = document.createElement("span");
+    wrap.className = "legend-line";
+    const s = d3.select(wrap).append("svg").attr("width", 26).attr("height", 12);
+    s.append("line").attr("x1", 2).attr("x2", 24).attr("y1", 6).attr("y2", 6)
+      .attr("stroke", "var(--text-secondary)").attr("stroke-width", 2)
+      .attr("stroke-dasharray", dashed ? "6,4" : null);
+    const txt = document.createElement("span");
+    txt.textContent = " " + label;
+    solGroup.appendChild(wrap);
+    solGroup.appendChild(txt);
+  });
+  legend.appendChild(solGroup);
+
+  const statusGroup = document.createElement("div");
+  statusGroup.className = "legend-group";
+  const statusTitle = document.createElement("span");
+  statusTitle.className = "legend-title";
+  statusTitle.textContent = "Step status:";
+  statusGroup.appendChild(statusTitle);
+  [
+    ["done", "filled"], ["in_progress", "filled + ring"], ["open", "outlined"]
+  ].forEach(([label, desc]) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = `${label} — ${desc}`;
+    statusGroup.appendChild(chip);
+  });
+  const deferredWrap = document.createElement("span");
+  deferredWrap.className = "legend-line";
+  const dsvg = d3.select(deferredWrap).append("svg").attr("width", 18).attr("height", 16);
+  dsvg.append("circle").attr("cx", 9).attr("cy", 8).attr("r", 6.5)
+    .attr("fill", "none").attr("stroke", "var(--text-secondary)").attr("stroke-width", 1.5);
+  dsvg.append("rect").attr("x", 7.2).attr("y", 5.5).attr("width", 1.2).attr("height", 5).attr("fill", "var(--text-secondary)");
+  dsvg.append("rect").attr("x", 9.6).attr("y", 5.5).attr("width", 1.2).attr("height", 5).attr("fill", "var(--text-secondary)");
+  const deferredTxt = document.createElement("span");
+  deferredTxt.textContent = " deferred (parked)";
+  statusGroup.appendChild(deferredWrap);
+  statusGroup.appendChild(deferredTxt);
+  legend.appendChild(statusGroup);
+}
+
+// ---------- plan-inclusion filter row ----------
+function hexToRgba(hex, alpha) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function buildFilterRow() {
+  const row = document.getElementById("planFilterRow");
+  clearContent(row);
+  const caption = document.createElement("span");
+  caption.className = "filter-caption";
+  caption.textContent = "plans:";
+  row.appendChild(caption);
+
+  DATA.plans.forEach(plan => {
+    const included = isIncluded(plan.key);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "filter-chip";
+    btn.setAttribute("aria-pressed", included ? "true" : "false");
+    btn.style.background = included ? hexToRgba(planColor(plan.color_slot), 0.16) : "none";
+    const dot = document.createElement("span");
+    dot.className = "fc-dot";
+    dot.style.background = included ? planColor(plan.color_slot) : "var(--muted)";
+    const label = document.createElement("span");
+    label.textContent = plan.label;
+    btn.appendChild(dot);
+    btn.appendChild(label);
+    btn.addEventListener("click", () => togglePlanInclusion(plan.key));
+    row.appendChild(btn);
+  });
+
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.className = "filter-reset";
+  reset.textContent = "all";
+  reset.addEventListener("click", resetPlanInclusion);
+  row.appendChild(reset);
+}
+
+function togglePlanInclusion(planKey) {
+  if (includedPlanKeys.has(planKey)) { includedPlanKeys.delete(planKey); }
+  else { includedPlanKeys.add(planKey); }
+  if (openDrillPlans.some(k => !isIncluded(k))) closeDrill();
+  renderScene();
+}
+
+function resetPlanInclusion() {
+  includedPlanKeys = new Set(DATA.plans.map(p => p.key));
+  renderScene();
+}
+
+// ---------- master render ----------
+// Pure function of (DATA, includedPlanKeys, isDark, scrubberOrder) — every call is a full,
+// deterministic rebuild, so filter toggles and theme toggles share one correct code path.
+function renderScene() {
+  buildFilterRow();
+  renderLanes();
+  renderStepsAndSeq();
+  renderEdges();
+  updateScrubberExtent();
+  redrawScrubber();
+  redrawStrip();
+  buildLegend();
+}
+
+// ---------- dark mode ----------
+document.getElementById("darkToggle").addEventListener("click", () => {
+  isDark = !isDark;
+  document.documentElement.classList.toggle("dark", isDark);
+  document.getElementById("darkToggle").textContent = isDark ? "Light mode" : "Dark mode";
+  renderScene();
+});
+
+renderScene();
+</script>
+</body>
+</html>

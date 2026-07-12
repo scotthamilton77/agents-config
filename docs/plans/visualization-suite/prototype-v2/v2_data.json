@@ -1,0 +1,113 @@
+{
+  "meta": {
+    "round": 1,
+    "question": "Which organization makes cross-plan relationships and their timing legible?",
+    "fabrication": "Real: bead ids/statuses/counts, doc-stated phases, the one encoded edge (e1), footprint surfaces. Authored: step groupings, all inferred edges + stories, materialization points, region mapping."
+  },
+  "plans": [
+    {
+      "key": "prgroom", "label": "prgroom cutover", "color_slot": 0, "status": "executing",
+      "counts": {"closed": 18, "open": 32},
+      "steps": [
+        {"id": "prgroom:1", "label": "CLI foundation + store/errors infra", "order": 1, "status": "done", "surfaces": ["pkg-prgroom", "ci-infra"]},
+        {"id": "prgroom:2", "label": "Agent dispatch contracts + gh/git adapters", "order": 2, "status": "done", "surfaces": ["pkg-prgroom"]},
+        {"id": "prgroom:3", "label": "Lifecycle verbs + run loop + monitor-pr birth", "order": 3, "status": "done", "surfaces": ["pkg-prgroom", "skills-claude", "docs-arch"]},
+        {"id": "prgroom:4", "label": "Disposition envelope + reply ledger + dispatcher observability", "order": 4, "status": "in_progress", "surfaces": ["pkg-prgroom"], "note": "P1 wave: abn9.8.26/.27/.28 + qptb4 real-binary smoke"},
+        {"id": "prgroom:5", "label": "Merge-guard consumption seam", "order": 5, "status": "open", "surfaces": ["skills-claude", "docs-arch"]},
+        {"id": "prgroom:6", "label": "Cutover: retire wfpc skills, rewire delivery rules", "order": 6, "status": "open", "surfaces": ["skills-claude", "skills-shared", "rules"], "note": "blocked by abn9.8.32 E2E proof"}
+      ]
+    },
+    {
+      "key": "workcli", "label": "work facade CLI", "color_slot": 1, "status": "executing",
+      "counts": {"closed": 0, "open": 5},
+      "steps": [
+        {"id": "workcli:1", "label": "Transport: envelope, bd adapter, 12 verbs, CI gate", "order": 1, "status": "done", "surfaces": ["pkg-workcli", "ci-infra"]},
+        {"id": "workcli:2", "label": "Lifecycle layer: templated creation + guarded verbs", "order": 2, "status": "in_progress", "surfaces": ["pkg-workcli", "docs-specs"]},
+        {"id": "workcli:3", "label": "Backend-seam hardening + parse drift gaps", "order": 3, "status": "open", "surfaces": ["pkg-workcli"]},
+        {"id": "workcli:4", "label": "work discover verb — mechanical discovered-work", "order": 4, "status": "open", "surfaces": ["pkg-workcli", "rules"]},
+        {"id": "workcli:5", "label": "Migrate discipline assets off raw bd", "order": 5, "status": "open", "surfaces": ["skills-shared", "skills-claude", "rules", "plugins"]}
+      ]
+    },
+    {
+      "key": "pdlc", "label": "PDLC orchestrator", "color_slot": 2, "status": "parked (deferred)",
+      "counts": {"closed": 5, "open": 20},
+      "steps": [
+        {"id": "pdlc:1", "label": "Core design + HLD artifact set", "order": 1, "status": "done", "surfaces": ["docs-arch", "docs-specs"]},
+        {"id": "pdlc:2", "label": "Happy-path tracer bullet (FSM tick)", "order": 2, "status": "done", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:3", "label": "State repo (Dolt) + sessions + WorkTracker adapter", "order": 3, "status": "deferred", "surfaces": ["pkg-pdlc", "config"]},
+        {"id": "pdlc:4", "label": "Execution pipeline: red/green gates, review, strikes", "order": 4, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:5", "label": "Integration pipeline (Stage A/B/C) + autopsy", "order": 5, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:6", "label": "Holding Place peer service + promote contract", "order": 6, "status": "deferred", "surfaces": ["pkg-holding", "docs-specs"]}
+      ]
+    },
+    {
+      "key": "postfable", "label": "post-Fable economics", "color_slot": 3, "status": "queued (P0)",
+      "counts": {"closed": 0, "open": 6},
+      "steps": [
+        {"id": "postfable:1", "label": "Token capture + spend ledger", "order": 1, "status": "open", "surfaces": ["pkg-prgroom", "config"]},
+        {"id": "postfable:2", "label": "Model-routing policy rule + escalation ladder", "order": 2, "status": "open", "surfaces": ["rules", "config", "scripts"]},
+        {"id": "postfable:3", "label": "OpenRouter wiring: opencode profiles + prgroom AgentSpec", "order": 3, "status": "open", "surfaces": ["config", "pkg-prgroom"]},
+        {"id": "postfable:4", "label": "HEAVY gate re-point to cross-model panel", "order": 4, "status": "open", "surfaces": ["skills-claude", "rules"]},
+        {"id": "postfable:5", "label": "Consolidate foreign-cli config + model-ID SSoT", "order": 5, "status": "open", "surfaces": ["config", "rules"]}
+      ]
+    },
+    {
+      "key": "reviewloop", "label": "review feedback loop", "color_slot": 4, "status": "queued (design)",
+      "counts": {"closed": 0, "open": 4},
+      "steps": [
+        {"id": "reviewloop:1", "label": "Catch-log instrumentation per human catch", "order": 1, "status": "open", "surfaces": ["docs-specs", "config"]},
+        {"id": "reviewloop:2", "label": "Defect router: classify + route every catch", "order": 2, "status": "open", "surfaces": ["rules", "skills-shared"]},
+        {"id": "reviewloop:3", "label": "Feedback-signal miner (PR-history bootstrap)", "order": 3, "status": "open", "surfaces": ["scripts"], "note": "externally blocked by agents-config-qn0g (M2 readiness gate)"},
+        {"id": "reviewloop:4", "label": "Calibration off-ramp: per-category sampling", "order": 4, "status": "open", "surfaces": ["rules", "config"]}
+      ]
+    }
+  ],
+  "regions": [
+    {"key": "pkg-prgroom", "label": "packages/prgroom", "kind": "package"},
+    {"key": "pkg-workcli", "label": "packages/workcli", "kind": "package"},
+    {"key": "pkg-pdlc", "label": "packages/pdlc", "kind": "package"},
+    {"key": "pkg-holding", "label": "packages/holding-place", "kind": "package"},
+    {"key": "pkg-installer", "label": "packages/installer", "kind": "package"},
+    {"key": "skills-shared", "label": "shared skills (.agents)", "kind": "skills"},
+    {"key": "skills-claude", "label": "Claude skills + workflows", "kind": "skills"},
+    {"key": "rules", "label": "rules (shared + Claude)", "kind": "rules"},
+    {"key": "plugins", "label": "src/plugins", "kind": "config"},
+    {"key": "scripts", "label": "scripts + PEP-723 helpers", "kind": "infra"},
+    {"key": "docs-specs", "label": "docs/specs", "kind": "docs"},
+    {"key": "docs-arch", "label": "docs/architecture", "kind": "docs"},
+    {"key": "config", "label": "project-config + tool templates", "kind": "config"},
+    {"key": "ci-infra", "label": "Makefile + CI workflows", "kind": "infra"}
+  ],
+  "edges": [
+    {"id": "e1", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "encoded", "materializes": "postfable:3",
+     "story": "OpenRouter chains can't be smoke-proven until prgroom's real-binary invoker harness exists. The only cross-plan edge the beads DAG actually encodes.",
+     "evidence": "bd: agents-config-qptb4 blocks agents-config-abn9.40.3"},
+    {"id": "e2", "from": {"plan": "postfable", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "postfable:1",
+     "story": "Cost telemetry rides prgroom's per-attempt usage plumbing (usage.py, dispatcher observability abn9.8.26); the ledger bridge lands inside prgroom's dispatch-completion path.",
+     "evidence": "cost-telemetry spec, external-deliverables section"},
+    {"id": "e3", "from": {"plan": "pdlc", "step_order": 3}, "to": {"plan": "workcli", "step_order": 2}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:3",
+     "story": "The orchestrator's WorkTracker protocol needs a bd adapter — workcli's lifecycle layer IS that adapter surface. Building a second one inside pdlc would fork the seam.",
+     "evidence": "orchestrator core spec: 'WorkTracker bd adapter — likely overlaps workcli'"},
+    {"id": "e4", "from": {"plan": "workcli", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 6}, "kind": "conflict", "provenance": "inferred", "materializes": "workcli:5",
+     "story": "Both steps rewrite the same delivery skills and rules: prgroom's cutover rewires PR-review routing while workcli's migration strips raw bd from the same files. Whoever lands second rebases the other's prose — sequence deliberately.",
+     "evidence": "agent-inferred (shared surfaces: skills-shared, skills-claude, rules)"},
+    {"id": "e5", "from": {"plan": "reviewloop", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:1",
+     "story": "prgroom's items[] disposition envelope + reply ledger already record per-finding outcomes — the catch-log could ride that ledger instead of new instrumentation.",
+     "evidence": "agent-inferred; reviewloop spec leaves instrumentation storage open (S8.2)"},
+    {"id": "e6", "from": {"plan": "workcli", "step_order": 4}, "to": {"plan": "pdlc", "step_order": 6}, "kind": "synergy", "provenance": "inferred", "materializes": "pdlc:6",
+     "story": "work discover and Holding-Place Capture are the same gesture at different maturity — one capture contract could serve both, with discover as the CLI front door.",
+     "evidence": "agent-inferred"},
+    {"id": "e7", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "postfable", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "Defect-router categories and the cross-model panel's finding classes are one taxonomy; sharing it lets panel verdicts feed calibration data.",
+     "evidence": "agent-inferred"},
+    {"id": "e8", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "postfable:3",
+     "story": "Provider wiring edits prgroom AgentSpec/chain config while prgroom's own P1 wave rewrites the dispatcher — same package, same window.",
+     "evidence": "openrouter spec names packages/prgroom surfaces"},
+    {"id": "e9", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "pdlc", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "PDLC's Review state defines Mechanical/Advisory/Proposed-Rule finding classes; the defect router is independently defining the same taxonomy while pdlc sleeps. Divergence now is a reconciliation tax later.",
+     "evidence": "agent-inferred (CONTEXT.md Finding classes vs review-feedback-loop categories)"},
+    {"id": "e10", "from": {"plan": "pdlc", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:5",
+     "story": "Integration Stage A is PR grooming — prgroom's run loop and merge gate are that engine. PDLC should drive prgroom, not reimplement it; depends on the disposition envelope being stable.",
+     "evidence": "agent-inferred (CONTEXT.md Integration Stage A vs prgroom scope)"}
+  ]
+}

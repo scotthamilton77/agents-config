@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:,">
+<title>Variant C — Plan Constellation</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root {
+    --surface: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,.10);
+    --ink-dependency: #52514e;
+    --overlap: #fab219;
+    --conflict: #d03b3b;
+    --synergy: #0ca30c;
+    --plan0: #2a78d6;
+    --plan1: #1baf7a;
+    --plan2: #4a3aa7;
+    --plan3: #e87ba4;
+    --plan4: #eb6834;
+    --chip-stroke: rgba(11,11,11,0.55);
+  }
+  html.dark {
+    --surface: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,.10);
+    --ink-dependency: #c3c2b7;
+    --plan0: #3987e5;
+    --plan1: #199e70;
+    --plan2: #9085e9;
+    --plan3: #d55181;
+    --plan4: #d95926;
+    --chip-stroke: rgba(255,255,255,0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  .viz-root {
+    background: var(--page);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header.app-header {
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  header.app-header h1 {
+    margin: 0 0 2px 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  header.app-header p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    max-width: 900px;
+  }
+  #darkToggle {
+    position: absolute;
+    top: 12px; right: 16px;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--page);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  #darkToggle:hover { background: var(--gridline); }
+  main.stage {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+  }
+  #graphWrap { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
+  svg#graph { width: 100%; flex: 1; min-height: 0; display: block; background: var(--page); }
+
+  #planFilterRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 11.5px;
+  }
+  .plan-filter-label { color: var(--text-secondary); font-weight: 600; margin-right: 2px; }
+  .plan-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+  .plan-chip-btn .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .plan-chip-btn.excluded { border: 1px dashed var(--muted); color: var(--muted); background: transparent; }
+  .plan-filter-all {
+    font-family: inherit;
+    font-size: 11px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 4px 6px;
+    margin-left: auto;
+  }
+
+  #resetView {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--page);
+    color: var(--text-primary);
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  #resetView:hover { background: var(--gridline); }
+
+  .card-rect { cursor: grab; touch-action: none; }
+  .card-rect:active { cursor: grabbing; }
+  .card-title { font-size: 13px; font-weight: 700; fill: var(--text-primary); pointer-events: none; }
+  .card-status { font-size: 10.5px; fill: var(--text-secondary); pointer-events: none; }
+  .step-sq { stroke-width: 1.4px; cursor: pointer; }
+  .step-hit { fill: transparent; cursor: pointer; touch-action: none; }
+
+  .bundle-path { fill: none; cursor: pointer; }
+  .bundle-hit { fill: none; stroke: transparent; stroke-width: 14px; cursor: pointer; }
+  .bundle-glyph-bg { cursor: pointer; }
+  .bundle-glyph-text { font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .bundle-count-text { font-size: 9.5px; font-weight: 600; text-anchor: middle; pointer-events: none; fill: var(--text-secondary); }
+  .anchor-tick { stroke-width: 1.5px; }
+
+  .legend-panel {
+    position: absolute;
+    left: 12px; bottom: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    max-width: 620px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .legend-panel h3 { margin: 0 0 6px 0; font-size: 11px; color: var(--text-primary); }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 6px; }
+  .legend-row:last-child { margin-bottom: 0; }
+  .legend-chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .legend-line { width: 22px; height: 2px; display: inline-block; }
+
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--text-primary);
+    color: var(--page);
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    max-width: 280px;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity .08s;
+  }
+  html.dark #tooltip { background: #f2f2ee; color: #0d0d0d; }
+
+  #drillPanel {
+    width: 340px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+    overflow-wrap: break-word;
+    transform: translateX(100%);
+    transition: transform .15s ease;
+  }
+  #drillPanel.open { transform: translateX(0); }
+  #drillPanel.hidden-panel { display: none; }
+  #drillClose {
+    float: right;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--text-secondary);
+  }
+  #drillPanel h2 { font-size: 14px; margin: 0 0 4px 0; padding-right: 20px; }
+  #drillPanel h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 4px 0; }
+  #drillPanel p { font-size: 12.5px; line-height: 1.5; margin: 4px 0; color: var(--text-primary); }
+  #drillPanel .meta-line { font-size: 11.5px; color: var(--text-secondary); margin: 2px 0; }
+  .chip {
+    display: inline-block;
+    font-size: 10.5px;
+    background: var(--gridline);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 2px 8px;
+    margin: 2px 4px 2px 0;
+  }
+  .edge-entry { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+  .edge-entry .kind-tag { font-size: 10.5px; font-weight: 700; }
+
+  footer.app-footer {
+    padding: 6px 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="viz-root" id="vizRoot">
+  <header class="app-header">
+    <h1 id="headerTitle"></h1>
+    <p id="headerQuestion"></p>
+    <button id="darkToggle" type="button">Dark mode</button>
+  </header>
+  <main class="stage">
+    <div id="graphWrap">
+      <div class="plan-filter-row" id="planFilterRow">
+        <span class="plan-filter-label">plans:</span>
+      </div>
+      <svg id="graph"></svg>
+      <div class="legend-panel" id="legendPanel"></div>
+    </div>
+    <aside id="drillPanel" class="hidden-panel">
+      <button id="drillClose" type="button" aria-label="Close">✕</button>
+      <div id="drillContent"></div>
+    </aside>
+  </main>
+  <footer class="app-footer">
+    Round-1 reaction mockup — data part-real (beads/specs), part-authored (inferred edges); see fabrication ledger.
+  </footer>
+</div>
+<div id="tooltip"></div>
+
+<script>
+const DATA = {"meta":{"round":1,"question":"Which organization makes cross-plan relationships and their timing legible?","fabrication":"Real: bead ids/statuses/counts, doc-stated phases, the one encoded edge (e1), footprint surfaces. Authored: step groupings, all inferred edges + stories, materialization points, region mapping."},"plans":[{"key":"prgroom","label":"prgroom cutover","color_slot":0,"status":"executing","counts":{"closed":18,"open":32},"steps":[{"id":"prgroom:1","label":"CLI foundation + store/errors infra","order":1,"status":"done","surfaces":["pkg-prgroom","ci-infra"]},{"id":"prgroom:2","label":"Agent dispatch contracts + gh/git adapters","order":2,"status":"done","surfaces":["pkg-prgroom"]},{"id":"prgroom:3","label":"Lifecycle verbs + run loop + monitor-pr birth","order":3,"status":"done","surfaces":["pkg-prgroom","skills-claude","docs-arch"]},{"id":"prgroom:4","label":"Disposition envelope + reply ledger + dispatcher observability","order":4,"status":"in_progress","surfaces":["pkg-prgroom"],"note":"P1 wave: abn9.8.26/.27/.28 + qptb4 real-binary smoke"},{"id":"prgroom:5","label":"Merge-guard consumption seam","order":5,"status":"open","surfaces":["skills-claude","docs-arch"]},{"id":"prgroom:6","label":"Cutover: retire wfpc skills, rewire delivery rules","order":6,"status":"open","surfaces":["skills-claude","skills-shared","rules"],"note":"blocked by abn9.8.32 E2E proof"}]},{"key":"workcli","label":"work facade CLI","color_slot":1,"status":"executing","counts":{"closed":0,"open":5},"steps":[{"id":"workcli:1","label":"Transport: envelope, bd adapter, 12 verbs, CI gate","order":1,"status":"done","surfaces":["pkg-workcli","ci-infra"]},{"id":"workcli:2","label":"Lifecycle layer: templated creation + guarded verbs","order":2,"status":"in_progress","surfaces":["pkg-workcli","docs-specs"]},{"id":"workcli:3","label":"Backend-seam hardening + parse drift gaps","order":3,"status":"open","surfaces":["pkg-workcli"]},{"id":"workcli:4","label":"work discover verb — mechanical discovered-work","order":4,"status":"open","surfaces":["pkg-workcli","rules"]},{"id":"workcli:5","label":"Migrate discipline assets off raw bd","order":5,"status":"open","surfaces":["skills-shared","skills-claude","rules","plugins"]}]},{"key":"pdlc","label":"PDLC orchestrator","color_slot":2,"status":"parked (deferred)","counts":{"closed":5,"open":20},"steps":[{"id":"pdlc:1","label":"Core design + HLD artifact set","order":1,"status":"done","surfaces":["docs-arch","docs-specs"]},{"id":"pdlc:2","label":"Happy-path tracer bullet (FSM tick)","order":2,"status":"done","surfaces":["pkg-pdlc"]},{"id":"pdlc:3","label":"State repo (Dolt) + sessions + WorkTracker adapter","order":3,"status":"deferred","surfaces":["pkg-pdlc","config"]},{"id":"pdlc:4","label":"Execution pipeline: red/green gates, review, strikes","order":4,"status":"deferred","surfaces":["pkg-pdlc"]},{"id":"pdlc:5","label":"Integration pipeline (Stage A/B/C) + autopsy","order":5,"status":"deferred","surfaces":["pkg-pdlc"]},{"id":"pdlc:6","label":"Holding Place peer service + promote contract","order":6,"status":"deferred","surfaces":["pkg-holding","docs-specs"]}]},{"key":"postfable","label":"post-Fable economics","color_slot":3,"status":"queued (P0)","counts":{"closed":0,"open":6},"steps":[{"id":"postfable:1","label":"Token capture + spend ledger","order":1,"status":"open","surfaces":["pkg-prgroom","config"]},{"id":"postfable:2","label":"Model-routing policy rule + escalation ladder","order":2,"status":"open","surfaces":["rules","config","scripts"]},{"id":"postfable:3","label":"OpenRouter wiring: opencode profiles + prgroom AgentSpec","order":3,"status":"open","surfaces":["config","pkg-prgroom"]},{"id":"postfable:4","label":"HEAVY gate re-point to cross-model panel","order":4,"status":"open","surfaces":["skills-claude","rules"]},{"id":"postfable:5","label":"Consolidate foreign-cli config + model-ID SSoT","order":5,"status":"open","surfaces":["config","rules"]}]},{"key":"reviewloop","label":"review feedback loop","color_slot":4,"status":"queued (design)","counts":{"closed":0,"open":4},"steps":[{"id":"reviewloop:1","label":"Catch-log instrumentation per human catch","order":1,"status":"open","surfaces":["docs-specs","config"]},{"id":"reviewloop:2","label":"Defect router: classify + route every catch","order":2,"status":"open","surfaces":["rules","skills-shared"]},{"id":"reviewloop:3","label":"Feedback-signal miner (PR-history bootstrap)","order":3,"status":"open","surfaces":["scripts"],"note":"externally blocked by agents-config-qn0g (M2 readiness gate)"},{"id":"reviewloop:4","label":"Calibration off-ramp: per-category sampling","order":4,"status":"open","surfaces":["rules","config"]}]}],"regions":[{"key":"pkg-prgroom","label":"packages/prgroom","kind":"package"},{"key":"pkg-workcli","label":"packages/workcli","kind":"package"},{"key":"pkg-pdlc","label":"packages/pdlc","kind":"package"},{"key":"pkg-holding","label":"packages/holding-place","kind":"package"},{"key":"pkg-installer","label":"packages/installer","kind":"package"},{"key":"skills-shared","label":"shared skills (.agents)","kind":"skills"},{"key":"skills-claude","label":"Claude skills + workflows","kind":"skills"},{"key":"rules","label":"rules (shared + Claude)","kind":"rules"},{"key":"plugins","label":"src/plugins","kind":"config"},{"key":"scripts","label":"scripts + PEP-723 helpers","kind":"infra"},{"key":"docs-specs","label":"docs/specs","kind":"docs"},{"key":"docs-arch","label":"docs/architecture","kind":"docs"},{"key":"config","label":"project-config + tool templates","kind":"config"},{"key":"ci-infra","label":"Makefile + CI workflows","kind":"infra"}],"edges":[{"id":"e1","from":{"plan":"postfable","step_order":3},"to":{"plan":"prgroom","step_order":4},"kind":"dependency","provenance":"encoded","materializes":"postfable:3","story":"OpenRouter chains can't be smoke-proven until prgroom's real-binary invoker harness exists. The only cross-plan edge the beads DAG actually encodes.","evidence":"bd: agents-config-qptb4 blocks agents-config-abn9.40.3"},{"id":"e2","from":{"plan":"postfable","step_order":1},"to":{"plan":"prgroom","step_order":4},"kind":"dependency","provenance":"inferred","materializes":"postfable:1","story":"Cost telemetry rides prgroom's per-attempt usage plumbing (usage.py, dispatcher observability abn9.8.26); the ledger bridge lands inside prgroom's dispatch-completion path.","evidence":"cost-telemetry spec, external-deliverables section"},{"id":"e3","from":{"plan":"pdlc","step_order":3},"to":{"plan":"workcli","step_order":2},"kind":"dependency","provenance":"inferred","materializes":"pdlc:3","story":"The orchestrator's WorkTracker protocol needs a bd adapter — workcli's lifecycle layer IS that adapter surface. Building a second one inside pdlc would fork the seam.","evidence":"orchestrator core spec: 'WorkTracker bd adapter — likely overlaps workcli'"},{"id":"e4","from":{"plan":"workcli","step_order":5},"to":{"plan":"prgroom","step_order":6},"kind":"conflict","provenance":"inferred","materializes":"workcli:5","story":"Both steps rewrite the same delivery skills and rules: prgroom's cutover rewires PR-review routing while workcli's migration strips raw bd from the same files. Whoever lands second rebases the other's prose — sequence deliberately.","evidence":"agent-inferred (shared surfaces: skills-shared, skills-claude, rules)"},{"id":"e5","from":{"plan":"reviewloop","step_order":1},"to":{"plan":"prgroom","step_order":4},"kind":"synergy","provenance":"inferred","materializes":"reviewloop:1","story":"prgroom's items[] disposition envelope + reply ledger already record per-finding outcomes — the catch-log could ride that ledger instead of new instrumentation.","evidence":"agent-inferred; reviewloop spec leaves instrumentation storage open (S8.2)"},{"id":"e6","from":{"plan":"workcli","step_order":4},"to":{"plan":"pdlc","step_order":6},"kind":"synergy","provenance":"inferred","materializes":"pdlc:6","story":"work discover and Holding-Place Capture are the same gesture at different maturity — one capture contract could serve both, with discover as the CLI front door.","evidence":"agent-inferred"},{"id":"e7","from":{"plan":"reviewloop","step_order":2},"to":{"plan":"postfable","step_order":4},"kind":"synergy","provenance":"inferred","materializes":"reviewloop:2","story":"Defect-router categories and the cross-model panel's finding classes are one taxonomy; sharing it lets panel verdicts feed calibration data.","evidence":"agent-inferred"},{"id":"e8","from":{"plan":"postfable","step_order":3},"to":{"plan":"prgroom","step_order":4},"kind":"overlap","provenance":"inferred","materializes":"postfable:3","story":"Provider wiring edits prgroom AgentSpec/chain config while prgroom's own P1 wave rewrites the dispatcher — same package, same window.","evidence":"openrouter spec names packages/prgroom surfaces"},{"id":"e9","from":{"plan":"reviewloop","step_order":2},"to":{"plan":"pdlc","step_order":4},"kind":"overlap","provenance":"inferred","materializes":"reviewloop:2","story":"PDLC's Review state defines Mechanical/Advisory/Proposed-Rule finding classes; the defect router is independently defining the same taxonomy while pdlc sleeps. Divergence now is a reconciliation tax later.","evidence":"agent-inferred (CONTEXT.md Finding classes vs review-feedback-loop categories)"},{"id":"e10","from":{"plan":"pdlc","step_order":5},"to":{"plan":"prgroom","step_order":4},"kind":"dependency","provenance":"inferred","materializes":"pdlc:5","story":"Integration Stage A is PR grooming — prgroom's run loop and merge gate are that engine. PDLC should drive prgroom, not reimplement it; depends on the disposition envelope being stable.","evidence":"agent-inferred (CONTEXT.md Integration Stage A vs prgroom scope)"}]};
+
+// ---------- constants ----------
+const KIND_GLYPH = { dependency: "→", overlap: "≈", conflict: "✕", synergy: "+" };
+const KIND_LABEL = { dependency: "dependency", overlap: "overlap", conflict: "conflict", synergy: "synergy" };
+function kindColor(kind) {
+  if (kind === "overlap") return "var(--overlap)";
+  if (kind === "conflict") return "var(--conflict)";
+  if (kind === "synergy") return "var(--synergy)";
+  return "var(--ink-dependency)";
+}
+const CARD_W = 200, CARD_H = 120;
+const STRIP_MARGIN = 16, STRIP_Y_OFFSET = 20; // from bottom of card
+const SQ = 13, SQ_GAP = 4;
+const ARROW_PAD = 2; // px gap between card boundary and edge endpoint, clears the card stroke
+function isParkedPlan(plan) { return /parked/i.test(plan.status); }
+
+// ---------- lookups ----------
+const planByKey = new Map(DATA.plans.map(p => [p.key, p]));
+const regionByKey = new Map(DATA.regions.map(r => [r.key, r]));
+
+// ---------- plan-inclusion filter state ----------
+const includedPlans = new Set(DATA.plans.map(p => p.key));
+function isPlanIncluded(key) { return includedPlans.has(key); }
+let drillPlanKeys = []; // plan key(s) whose content is currently shown in the drill panel
+
+// ---------- build bundles ----------
+function pairKey(a, b) { return [a, b].sort().join("|"); }
+const bundleMap = new Map();
+DATA.edges.forEach(e => {
+  const key = pairKey(e.from.plan, e.to.plan) + "::" + e.kind;
+  if (!bundleMap.has(key)) {
+    bundleMap.set(key, {
+      key, pair: pairKey(e.from.plan, e.to.plan),
+      kind: e.kind, fromPlan: e.from.plan, toPlan: e.to.plan,
+      edges: []
+    });
+  }
+  bundleMap.get(key).edges.push(e);
+});
+const bundles = Array.from(bundleMap.values());
+bundles.forEach(b => {
+  b.count = b.edges.length;
+  const provs = new Set(b.edges.map(e => e.provenance));
+  b.provenance = provs.size > 1 ? "mixed" : Array.from(provs)[0];
+  b.minFromOrder = Math.min(...b.edges.map(e => e.from.step_order));
+  b.minToOrder = Math.min(...b.edges.map(e => e.to.step_order));
+});
+// group bundles by pair for curvature fanning
+const bundlesByPair = new Map();
+bundles.forEach(b => {
+  if (!bundlesByPair.has(b.pair)) bundlesByPair.set(b.pair, []);
+  bundlesByPair.get(b.pair).push(b);
+});
+bundlesByPair.forEach(list => {
+  const n = list.length;
+  list.forEach((b, i) => { b.fanIndex = i; b.fanCount = n; });
+});
+
+// ---------- nodes for force layout (deterministic) ----------
+const nodes = DATA.plans.map((p, i) => {
+  const angle = (i / DATA.plans.length) * 2 * Math.PI - Math.PI / 2;
+  return {
+    key: p.key, plan: p,
+    x: 600 + 260 * Math.cos(angle),
+    y: 380 + 260 * Math.sin(angle)
+  };
+});
+const nodeByKey = new Map(nodes.map(n => [n.key, n]));
+const links = Array.from(bundlesByPair.keys()).map(pair => {
+  const [a, b] = pair.split("|");
+  return { source: a, target: b };
+});
+
+const sim = d3.forceSimulation(nodes)
+  .force("charge", d3.forceManyBody().strength(-900))
+  .force("collide", d3.forceCollide(150))
+  .force("center", d3.forceCenter(600, 380).strength(0.06))
+  .force("link", d3.forceLink(links).id(d => d.key).distance(330).strength(0.35))
+  .stop();
+for (let i = 0; i < 320; i++) sim.tick();
+
+// tighten dead space: shift the settled cluster so the topmost card
+// starts ~24px from the canvas top (deterministic, one-time, no relayout)
+const topMost = Math.min(...nodes.map(n => n.y - CARD_H / 2));
+const clusterShiftY = 24 - topMost;
+nodes.forEach(n => { n.y += clusterShiftY; });
+
+// ---------- svg setup ----------
+const svg = d3.select("#graph").attr("viewBox", "0 0 1200 760");
+const defs = svg.append("defs");
+const zoomLayer = svg.append("g").attr("class", "zoom-layer");
+const edgeLayer = zoomLayer.append("g").attr("class", "edge-layer");
+const tickLayer = zoomLayer.append("g").attr("class", "tick-layer");
+const glyphLayer = zoomLayer.append("g").attr("class", "glyph-layer");
+const cardLayer = zoomLayer.append("g").attr("class", "card-layer");
+
+// arrowhead marker per edge kind, fixed ~7px regardless of stroke width
+["dependency", "overlap", "conflict", "synergy"].forEach(k => {
+  defs.append("marker")
+    .attr("id", `arrow-${k}`)
+    .attr("viewBox", "0 0 10 10")
+    .attr("refX", 9).attr("refY", 5)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("markerUnits", "userSpaceOnUse")
+    .attr("orient", "auto-start-reverse")
+    .append("path")
+    .attr("d", "M0,0 L10,5 L0,10 Z")
+    .attr("fill", kindColor(k));
+});
+
+const tooltip = d3.select("#tooltip");
+function showTooltip(html, event) {
+  tooltip.style("opacity", 1).html(html)
+    .style("left", (event.clientX + 14) + "px")
+    .style("top", (event.clientY + 12) + "px");
+}
+function moveTooltip(event) {
+  tooltip.style("left", (event.clientX + 14) + "px").style("top", (event.clientY + 12) + "px");
+}
+function hideTooltip() { tooltip.style("opacity", 0); }
+
+// ---------- geometry helpers ----------
+function rectIntersect(cx, cy, w, h, tx, ty) {
+  const dx = tx - cx, dy = ty - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  const hw = w / 2, hh = h / 2;
+  const sx = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+  const sy = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy);
+  return [cx + dx * s, cy + dy * s];
+}
+// card-boundary point, nudged outward by `pad` so a marker anchored here
+// (e.g. an arrowhead) clears the card's stroke instead of sitting under it
+function offsetToBoundary(cx, cy, w, h, tx, ty, pad) {
+  const [bx, by] = rectIntersect(cx, cy, w, h, tx, ty);
+  const dx = tx - cx, dy = ty - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  return [bx + (dx / len) * pad, by + (dy / len) * pad];
+}
+function rotateVec(dx, dy, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return [dx * c - dy * s, dx * s + dy * c];
+}
+function quadPoint(p0, p1, p2, t) {
+  const mt = 1 - t;
+  return [
+    mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0],
+    mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1]
+  ];
+}
+function stepSquarePos(node, order) {
+  const steps = node.plan.steps;
+  const n = steps.length;
+  const localX = STRIP_MARGIN + (n > 1 ? ((order - 1) / (n - 1)) * (CARD_W - 2 * STRIP_MARGIN) : (CARD_W - 2 * STRIP_MARGIN) / 2);
+  const localY = CARD_H - STRIP_Y_OFFSET;
+  return [node.x - CARD_W / 2 + localX, node.y - CARD_H / 2 + localY];
+}
+
+// ---------- render cards ----------
+const cardG = cardLayer.selectAll("g.card")
+  .data(nodes, d => d.key)
+  .enter().append("g")
+  .attr("class", "card")
+  .attr("transform", d => `translate(${d.x - CARD_W / 2},${d.y - CARD_H / 2})`);
+
+cardG.append("rect")
+  .attr("class", "card-rect")
+  .attr("width", CARD_W).attr("height", CARD_H)
+  .attr("rx", 10).attr("ry", 10)
+  .attr("fill", d => `var(--plan${d.plan.color_slot})`)
+  .attr("fill-opacity", 0.08)
+  .attr("stroke", d => `var(--plan${d.plan.color_slot})`)
+  .attr("stroke-width", 3)
+  .attr("stroke-dasharray", d => isParkedPlan(d.plan) ? "6,4" : null)
+  .on("mouseenter", (event, d) => showTooltip(`<strong>${escapeHtml(d.plan.label)}</strong><br>${escapeHtml(d.plan.status)}`, event))
+  .on("mousemove", moveTooltip)
+  .on("mouseleave", hideTooltip);
+
+// "PARKED" pill badge for deferred plans, top-right of the card
+cardG.filter(d => isParkedPlan(d.plan)).each(function () {
+  const g = d3.select(this).append("g").attr("class", "parked-badge").attr("pointer-events", "none");
+  const w = 66, h = 16, x = CARD_W - w - 8, y = 8;
+  g.append("rect")
+    .attr("x", x).attr("y", y).attr("width", w).attr("height", h).attr("rx", 8)
+    .attr("fill", "var(--gridline)");
+  g.append("text")
+    .attr("x", x + w / 2).attr("y", y + h / 2 + 3.5)
+    .attr("text-anchor", "middle")
+    .attr("font-size", "9px").attr("font-weight", "700")
+    .attr("fill", "var(--text-secondary)")
+    .text("❚❚ PARKED");
+});
+
+// pointerdown/pointerup with a 4px movement threshold separates click
+// (open the plan drawer) from drag (reposition the card); no stateful
+// first-click arming, no double-click. Card gestures never pan the canvas.
+cardG.each(function (d) {
+  const el = d3.select(this);
+  let downX = 0, downY = 0, dragging = false, dragDX = 0, dragDY = 0;
+
+  el.on("pointerdown", function (event) {
+    event.stopPropagation();
+    event.preventDefault();
+    downX = event.clientX; downY = event.clientY;
+    dragging = false;
+    const [px, py] = d3.pointer(event, zoomLayer.node());
+    dragDX = px - d.x; dragDY = py - d.y;
+    this.setPointerCapture(event.pointerId);
+  });
+
+  el.on("pointermove", function (event) {
+    if (event.buttons !== 1) return;
+    if (!dragging) {
+      if (Math.hypot(event.clientX - downX, event.clientY - downY) < 4) return;
+      dragging = true;
+      el.raise();
+    }
+    event.stopPropagation();
+    const [px, py] = d3.pointer(event, zoomLayer.node());
+    d.x = px - dragDX; d.y = py - dragDY;
+    el.attr("transform", `translate(${d.x - CARD_W / 2},${d.y - CARD_H / 2})`);
+    renderEdges();
+  });
+
+  el.on("pointerup", function (event) {
+    event.stopPropagation();
+    if (this.hasPointerCapture(event.pointerId)) this.releasePointerCapture(event.pointerId);
+    if (!dragging) openPlanDrill(d.plan);
+    dragging = false;
+  });
+
+  // silence the native click that always follows pointerup so it can't
+  // bubble to the svg's background-click-closes-drawer listener
+  el.on("click", (event) => event.stopPropagation());
+});
+
+cardG.append("text")
+  .attr("class", "card-title")
+  .attr("x", 12).attr("y", 20)
+  .text(d => d.plan.label);
+
+cardG.append("text")
+  .attr("class", "card-status")
+  .attr("x", 12).attr("y", 35)
+  .text(d => d.plan.status);
+
+// mini step-strip per card
+const stepG = cardG.append("g").attr("class", "step-strip");
+stepG.each(function (d) {
+  const g = d3.select(this);
+  const steps = d.plan.steps;
+  const n = steps.length;
+  steps.forEach((step, i) => {
+    const localX = STRIP_MARGIN + (n > 1 ? (i / (n - 1)) * (CARD_W - 2 * STRIP_MARGIN) : (CARD_W - 2 * STRIP_MARGIN) / 2);
+    const localY = CARD_H - STRIP_Y_OFFSET;
+    const color = `var(--plan${d.plan.color_slot})`;
+    const sqx = localX - SQ / 2, sqy = localY - SQ / 2;
+
+    if (step.status === "deferred") {
+      // parked mark: full-opacity outline circle + centered pause glyph, never dimmed
+      g.append("circle")
+        .attr("class", "step-sq step-deferred")
+        .attr("cx", localX).attr("cy", localY).attr("r", SQ / 2)
+        .attr("fill", "none")
+        .attr("stroke", color)
+        .attr("stroke-width", 1.5);
+      g.append("rect")
+        .attr("class", "step-pause-bar")
+        .attr("x", localX - 2.2).attr("y", localY - 2.5)
+        .attr("width", 1.2).attr("height", 5)
+        .attr("fill", "var(--text-secondary)");
+      g.append("rect")
+        .attr("class", "step-pause-bar")
+        .attr("x", localX + 1.0).attr("y", localY - 2.5)
+        .attr("width", 1.2).attr("height", 5)
+        .attr("fill", "var(--text-secondary)");
+    } else {
+      const strokeOnly = step.status === "open";
+      const ringExtra = step.status === "in_progress";
+      if (ringExtra) {
+        g.append("rect")
+          .attr("x", sqx - 3).attr("y", sqy - 3)
+          .attr("width", SQ + 6).attr("height", SQ + 6)
+          .attr("rx", 2)
+          .attr("fill", "none")
+          .attr("stroke", color)
+          .attr("stroke-width", 1.4)
+          .attr("opacity", 0.9);
+      }
+      g.append("rect")
+        .attr("class", "step-sq")
+        .attr("x", sqx).attr("y", sqy)
+        .attr("width", SQ).attr("height", SQ)
+        .attr("rx", 2)
+        .attr("fill", strokeOnly ? "none" : color)
+        .attr("stroke", color);
+    }
+    // widened hit target
+    g.append("rect")
+      .attr("class", "step-hit")
+      .attr("x", sqx - 4).attr("y", sqy - 6)
+      .attr("width", SQ + 8).attr("height", SQ + 12)
+      .on("pointerdown", (event) => event.stopPropagation())
+      .on("pointerup", (event) => event.stopPropagation())
+      .on("click", (event) => { event.stopPropagation(); openStepDrill(d.plan, step); })
+      .on("mouseenter", (event) => showTooltip(`<strong>${escapeHtml(step.label)}</strong><br>step ${step.order} &middot; ${escapeHtml(step.status)}`, event))
+      .on("mousemove", moveTooltip)
+      .on("mouseleave", hideTooltip);
+  });
+});
+
+// ---------- render edges (re-run on drag) ----------
+function renderEdges() {
+  edgeLayer.selectAll("*").remove();
+  tickLayer.selectAll("*").remove();
+  glyphLayer.selectAll("*").remove();
+
+  bundles.filter(b => isPlanIncluded(b.fromPlan) && isPlanIncluded(b.toPlan)).forEach(b => {
+    const nodeA = nodeByKey.get(b.fromPlan);
+    const nodeB = nodeByKey.get(b.toPlan);
+    const n = b.fanCount, i = b.fanIndex;
+    const angleOffset = (i - (n - 1) / 2) * 0.26;
+    const curvatureMag = (i - (n - 1) / 2) * 26;
+
+    const dAB = rotateVec(nodeB.x - nodeA.x, nodeB.y - nodeA.y, angleOffset);
+    const startPt = offsetToBoundary(nodeA.x, nodeA.y, CARD_W, CARD_H, nodeA.x + dAB[0], nodeA.y + dAB[1], ARROW_PAD);
+    const dBA = rotateVec(nodeA.x - nodeB.x, nodeA.y - nodeB.y, -angleOffset);
+    const endPt = offsetToBoundary(nodeB.x, nodeB.y, CARD_W, CARD_H, nodeB.x + dBA[0], nodeB.y + dBA[1], ARROW_PAD);
+
+    const mid = [(startPt[0] + endPt[0]) / 2, (startPt[1] + endPt[1]) / 2];
+    const dx = endPt[0] - startPt[0], dy = endPt[1] - startPt[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const perp = [-dy / len, dx / len];
+    const control = [mid[0] + perp[0] * curvatureMag, mid[1] + perp[1] * curvatureMag];
+
+    const color = kindColor(b.kind);
+    const dashed = b.provenance !== "encoded";
+    const strokeW = Math.min(8, Math.log(1 + b.count) * 2.5);
+
+    const path = `M${startPt[0]},${startPt[1]} Q${control[0]},${control[1]} ${endPt[0]},${endPt[1]}`;
+
+    edgeLayer.append("path")
+      .attr("class", "bundle-path")
+      .attr("d", path)
+      .attr("stroke", color)
+      .attr("stroke-width", strokeW)
+      .attr("stroke-dasharray", dashed ? "6,4" : null)
+      .attr("opacity", 0.9)
+      .attr("marker-end", `url(#arrow-${b.kind})`);
+
+    edgeLayer.append("path")
+      .attr("class", "bundle-hit")
+      .attr("d", path)
+      .on("click", (event) => { event.stopPropagation(); openBundleDrill(b); })
+      .on("mouseenter", (event) => showTooltip(
+        `<strong>${escapeHtml(planByKey.get(b.fromPlan).label)} ↔ ${escapeHtml(planByKey.get(b.toPlan).label)}</strong><br>${escapeHtml(KIND_LABEL[b.kind])} ×${b.count} &middot; ${escapeHtml(b.provenance)}`, event))
+      .on("mousemove", moveTooltip)
+      .on("mouseleave", hideTooltip);
+
+    // anchor ticks -> earliest-step square on each side
+    const fromSq = stepSquarePos(nodeA, b.minFromOrder);
+    const toSq = stepSquarePos(nodeB, b.minToOrder);
+    tickLayer.append("line")
+      .attr("class", "anchor-tick")
+      .attr("x1", startPt[0]).attr("y1", startPt[1])
+      .attr("x2", fromSq[0]).attr("y2", fromSq[1])
+      .attr("stroke", color).attr("stroke-dasharray", dashed ? "3,3" : null).attr("opacity", 0.5);
+    tickLayer.append("line")
+      .attr("class", "anchor-tick")
+      .attr("x1", endPt[0]).attr("y1", endPt[1])
+      .attr("x2", toSq[0]).attr("y2", toSq[1])
+      .attr("stroke", color).attr("stroke-dasharray", dashed ? "3,3" : null).attr("opacity", 0.5);
+
+    // midpoint glyph badge (chip form) + count
+    const gp = quadPoint(startPt, control, endPt, 0.5);
+    const glyphGroup = glyphLayer.append("g").attr("class", "bundle-glyph-group");
+    const glyphTooltip = `<strong>${escapeHtml(KIND_LABEL[b.kind])}</strong> ${escapeHtml(KIND_GLYPH[b.kind])} &middot; ${b.count} edge${b.count > 1 ? "s" : ""}${b.provenance === "mixed" ? " (mixed provenance)" : ""}`;
+    // enlarged invisible click target (>=18px) — playwright/users click the badge, not the curve
+    glyphGroup.append("rect")
+      .attr("class", "bundle-glyph-hit")
+      .attr("x", gp[0] - 11).attr("y", gp[1] - 11)
+      .attr("width", 22).attr("height", 22)
+      .attr("fill", "transparent")
+      .attr("pointer-events", "all")
+      .style("cursor", "pointer")
+      .on("click", (event) => { event.stopPropagation(); openBundleDrill(b); })
+      .on("mouseenter", (event) => showTooltip(glyphTooltip, event))
+      .on("mousemove", moveTooltip)
+      .on("mouseleave", hideTooltip);
+    // visible chip: rounded rect ~18x14, kind color fill, white glyph
+    glyphGroup.append("rect")
+      .attr("class", "bundle-glyph-bg")
+      .attr("x", gp[0] - 9).attr("y", gp[1] - 7)
+      .attr("width", 18).attr("height", 14)
+      .attr("rx", 4)
+      .attr("fill", color)
+      .attr("stroke", "var(--chip-stroke)").attr("stroke-width", 1.25)
+      .attr("pointer-events", "none");
+    glyphGroup.append("text")
+      .attr("class", "bundle-glyph-text")
+      .attr("x", gp[0]).attr("y", gp[1] + 1)
+      .attr("fill", "#fff")
+      .attr("pointer-events", "none")
+      .text(KIND_GLYPH[b.kind]);
+    glyphLayer.append("text")
+      .attr("class", "bundle-count-text")
+      .attr("x", gp[0]).attr("y", gp[1] + 20)
+      .text(`→ ${b.count}`);
+  });
+
+  // keep cards above edges
+  cardLayer.raise();
+}
+renderEdges();
+
+// ---------- zoom & pan ----------
+// wheel zoom + background-drag pan; card drag (bound directly on each
+// card group, see above) never reaches this via the .filter() below
+const zoomBehavior = d3.zoom()
+  .scaleExtent([0.4, 4])
+  .clickDistance(4)
+  .filter((event) => event.type === "wheel" || !event.target.closest(".card"))
+  .on("zoom", (event) => { zoomLayer.attr("transform", event.transform); });
+
+svg.call(zoomBehavior).on("dblclick.zoom", null);
+
+// ---------- plan-inclusion filter ----------
+const planFilterRow = d3.select("#planFilterRow");
+const chipButtons = planFilterRow.selectAll("button.plan-chip-btn")
+  .data(DATA.plans, p => p.key)
+  .enter()
+  .append("button")
+  .attr("type", "button")
+  .attr("class", "plan-chip-btn")
+  .on("click", (event, p) => {
+    if (includedPlans.has(p.key)) includedPlans.delete(p.key); else includedPlans.add(p.key);
+    refreshPlanFilterUI();
+    applyPlanFilter();
+  });
+chipButtons.append("span").attr("class", "dot");
+chipButtons.append("span").attr("class", "chip-label").text(p => p.label);
+
+planFilterRow.append("button")
+  .attr("type", "button")
+  .attr("class", "plan-filter-all")
+  .text("all")
+  .on("click", () => {
+    DATA.plans.forEach(p => includedPlans.add(p.key));
+    refreshPlanFilterUI();
+    applyPlanFilter();
+  });
+
+// flows immediately after "all" in the same row (no absolute positioning,
+// so it can never overlap the filter chips at any viewport width)
+planFilterRow.append("button")
+  .attr("type", "button")
+  .attr("id", "resetView")
+  .text("reset view")
+  .on("click", () => {
+    svg.transition().duration(200).call(zoomBehavior.transform, d3.zoomIdentity);
+  });
+
+function refreshPlanFilterUI() {
+  chipButtons.each(function (p) {
+    const btn = d3.select(this);
+    const included = includedPlans.has(p.key);
+    btn.classed("excluded", !included);
+    btn.attr("aria-pressed", included ? "true" : "false");
+    btn.style("background", included ? `color-mix(in srgb, var(--plan${p.color_slot}) 18%, transparent)` : null);
+    btn.style("border-color", included ? `var(--plan${p.color_slot})` : null);
+    btn.select(".dot").style("background", included ? `var(--plan${p.color_slot})` : "var(--muted)");
+  });
+}
+function applyPlanFilter() {
+  cardG.style("display", d => isPlanIncluded(d.plan.key) ? null : "none");
+  renderEdges();
+  if (drillPlanKeys.length && drillPlanKeys.some(k => !isPlanIncluded(k))) closeDrill();
+}
+refreshPlanFilterUI();
+
+// ---------- legend ----------
+const legend = d3.select("#legendPanel");
+legend.append("h3").text("Legend");
+
+const planRow = legend.append("div").attr("class", "legend-row");
+DATA.plans.forEach(p => {
+  const chip = planRow.append("span").attr("class", "legend-chip");
+  chip.append("span").attr("class", "legend-swatch").style("background", `var(--plan${p.color_slot})`);
+  chip.append("span").text(p.label);
+});
+
+const kindRow = legend.append("div").attr("class", "legend-row");
+["dependency", "overlap", "conflict", "synergy"].forEach(k => {
+  const chip = kindRow.append("span").attr("class", "legend-chip");
+  const svgChip = chip.append("svg").attr("width", 20).attr("height", 16);
+  svgChip.append("rect").attr("x", 1).attr("y", 1).attr("width", 18).attr("height", 14).attr("rx", 4)
+    .attr("fill", kindColor(k)).attr("stroke", "var(--chip-stroke)").attr("stroke-width", 1.25);
+  svgChip.append("text").attr("x", 10).attr("y", 11).attr("text-anchor", "middle")
+    .attr("font-size", "9px").attr("font-weight", "700").attr("fill", "#fff").text(KIND_GLYPH[k]);
+  chip.append("span").text(`${KIND_LABEL[k]} (arrow points to the affected step)`);
+});
+
+const solidRow = legend.append("div").attr("class", "legend-row");
+(function () {
+  const c1 = solidRow.append("span").attr("class", "legend-chip");
+  c1.append("span").attr("class", "legend-line").style("background", "var(--text-secondary)");
+  c1.append("span").text("solid = encoded (beads DAG)");
+  const c2 = solidRow.append("span").attr("class", "legend-chip");
+  const svgLine = c2.append("svg").attr("width", 22).attr("height", 4);
+  svgLine.append("line").attr("x1", 0).attr("y1", 2).attr("x2", 22).attr("y2", 2)
+    .attr("stroke", "var(--text-secondary)").attr("stroke-width", 2).attr("stroke-dasharray", "5,3");
+  c2.append("span").text("dashed = inferred (agent-read)");
+  const c3 = solidRow.append("span").attr("class", "legend-chip");
+  c3.append("span").text("line thickness = ln(1+edge count) per bundle, capped 8px");
+})();
+
+const statusRow = legend.append("div").attr("class", "legend-row");
+(function () {
+  const items = [
+    ["done", "filled solid"],
+    ["in_progress", "filled + ring"],
+    ["open", "outlined"],
+    ["deferred (parked)", "circle outline + pause glyph, full opacity"]
+  ];
+  items.forEach(([label, desc]) => {
+    const chip = statusRow.append("span").attr("class", "legend-chip");
+    const svgSq = chip.append("svg").attr("width", 14).attr("height", 14);
+    if (label === "deferred (parked)") {
+      svgSq.append("circle").attr("cx", 7).attr("cy", 7).attr("r", 6)
+        .attr("fill", "none").attr("stroke", "var(--text-secondary)").attr("stroke-width", 1.5);
+      svgSq.append("rect").attr("x", 4.8).attr("y", 4.5).attr("width", 1.2).attr("height", 5).attr("fill", "var(--text-secondary)");
+      svgSq.append("rect").attr("x", 8).attr("y", 4.5).attr("width", 1.2).attr("height", 5).attr("fill", "var(--text-secondary)");
+    } else {
+      const on = label === "done" || label === "in_progress";
+      svgSq.append("rect").attr("x", 1).attr("y", 1).attr("width", 12).attr("height", 12).attr("rx", 2)
+        .attr("fill", on ? "var(--text-secondary)" : "none")
+        .attr("stroke", "var(--text-secondary)");
+    }
+    chip.append("span").text(`${label} — ${desc}`);
+  });
+})();
+
+const parkedPlanRow = legend.append("div").attr("class", "legend-row");
+(function () {
+  const chip = parkedPlanRow.append("span").attr("class", "legend-chip");
+  const svgP = chip.append("svg").attr("width", 28).attr("height", 14);
+  svgP.append("rect").attr("x", 1).attr("y", 1).attr("width", 26).attr("height", 12).attr("rx", 4)
+    .attr("fill", "none").attr("stroke", "var(--text-secondary)").attr("stroke-width", 1.3).attr("stroke-dasharray", "4,3");
+  chip.append("span").text("dashed border + ");
+  chip.append("span").attr("class", "chip").style("padding", "1px 6px").style("margin", "0").text("❚❚ PARKED");
+  chip.append("span").text(" — parked plan");
+})();
+
+// ---------- drill panel ----------
+const drillPanel = d3.select("#drillPanel");
+const drillContent = d3.select("#drillContent");
+
+function closeDrill() {
+  drillPanel.classed("open", false);
+  drillPlanKeys = [];
+  setTimeout(() => drillPanel.classed("hidden-panel", true), 150);
+}
+function openDrillPanel() {
+  drillPanel.classed("hidden-panel", false);
+  requestAnimationFrame(() => drillPanel.classed("open", true));
+}
+d3.select("#drillClose").on("click", closeDrill);
+d3.select("#graph").on("click", closeDrill);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrill(); });
+
+function openBundleDrill(b) {
+  drillPlanKeys = [b.fromPlan, b.toPlan];
+  drillContent.selectAll("*").remove();
+  const fromP = planByKey.get(b.fromPlan), toP = planByKey.get(b.toPlan);
+  drillContent.append("h2").text(`${fromP.label} ↔ ${toP.label}`);
+  drillContent.append("p").attr("class", "meta-line")
+    .text(`${KIND_LABEL[b.kind]} × ${b.count} · provenance: ${b.provenance}`);
+  drillContent.append("h4").text("Underlying edges");
+  b.edges.forEach(e => {
+    const box = drillContent.append("div").attr("class", "edge-entry");
+    box.append("div").attr("class", "kind-tag").style("color", kindColor(e.kind)).text(`${KIND_GLYPH[e.kind]} ${KIND_LABEL[e.kind]}`);
+    box.append("p").attr("class", "meta-line")
+      .text(`${e.from.plan}:${e.from.step_order} → ${e.to.plan}:${e.to.step_order}  ·  provenance: ${e.provenance}`);
+    box.append("p").attr("class", "meta-line").text(`materializes at ${e.materializes}`);
+    box.append("p").text(e.story);
+    box.append("p").attr("class", "meta-line").text(`evidence: ${e.evidence}`);
+    const fromStep = planByKey.get(e.from.plan).steps.find(s => s.order === e.from.step_order);
+    const toStep = planByKey.get(e.to.plan).steps.find(s => s.order === e.to.step_order);
+    const regions = new Set([...(fromStep ? fromStep.surfaces : []), ...(toStep ? toStep.surfaces : [])]);
+    const chipsWrap = box.append("div");
+    chipsWrap.append("span").attr("class", "meta-line").text("regions: ");
+    Array.from(regions).forEach(rk => {
+      const r = regionByKey.get(rk);
+      chipsWrap.append("span").attr("class", "chip").text(r ? r.label : rk);
+    });
+  });
+  openDrillPanel();
+}
+
+function openPlanDrill(plan) {
+  drillPlanKeys = [plan.key];
+  drillContent.selectAll("*").remove();
+  drillContent.append("h2").text(plan.label);
+  drillContent.append("p").attr("class", "meta-line").text(`status: ${plan.status}`);
+  drillContent.append("p").attr("class", "meta-line").text(`beads: ${plan.counts.closed} closed · ${plan.counts.open} open`);
+
+  const inKinds = {}, outKinds = {};
+  bundles.forEach(b => {
+    if (b.toPlan === plan.key) b.edges.forEach(e => { if (e.to.plan === plan.key) inKinds[b.kind] = (inKinds[b.kind] || 0) + 1; });
+    if (b.fromPlan === plan.key) b.edges.forEach(e => { if (e.from.plan === plan.key) outKinds[b.kind] = (outKinds[b.kind] || 0) + 1; });
+  });
+  drillContent.append("h4").text("Edge counts by kind");
+  const countsWrap = drillContent.append("p");
+  ["dependency", "overlap", "conflict", "synergy"].forEach(k => {
+    const total = (inKinds[k] || 0) + (outKinds[k] || 0);
+    if (total > 0) countsWrap.append("span").attr("class", "chip").text(`${KIND_GLYPH[k]} ${k}: ${total}`);
+  });
+
+  drillContent.append("h4").text("Steps");
+  plan.steps.forEach(s => {
+    const box = drillContent.append("div").attr("class", "edge-entry");
+    box.append("p").text(`${s.order}. ${s.label}`);
+    box.append("p").attr("class", "meta-line").text(`status: ${s.status}`);
+    const chipsWrap = box.append("div");
+    s.surfaces.forEach(rk => {
+      const r = regionByKey.get(rk);
+      chipsWrap.append("span").attr("class", "chip").text(r ? r.label : rk);
+    });
+  });
+  openDrillPanel();
+}
+
+function openStepDrill(plan, step) {
+  drillPlanKeys = [plan.key];
+  drillContent.selectAll("*").remove();
+  drillContent.append("h2").text(step.label);
+  drillContent.append("p").attr("class", "meta-line").text(`plan: ${plan.label}`);
+  drillContent.append("p").attr("class", "meta-line").text(`order: ${step.order} · status: ${step.status}`);
+  if (step.note) drillContent.append("p").text(step.note);
+  drillContent.append("h4").text("Surfaces");
+  const chipsWrap = drillContent.append("div");
+  step.surfaces.forEach(rk => {
+    const r = regionByKey.get(rk);
+    chipsWrap.append("span").attr("class", "chip").text(r ? r.label : rk);
+  });
+
+  const related = DATA.edges.filter(e =>
+    (e.from.plan === plan.key && e.from.step_order === step.order) ||
+    (e.to.plan === plan.key && e.to.step_order === step.order));
+  if (related.length) {
+    drillContent.append("h4").text("Related cross-plan edges");
+    related.forEach(e => {
+      const box = drillContent.append("div").attr("class", "edge-entry");
+      box.append("div").attr("class", "kind-tag").style("color", kindColor(e.kind)).text(`${KIND_GLYPH[e.kind]} ${KIND_LABEL[e.kind]}`);
+      box.append("p").attr("class", "meta-line").text(`${e.from.plan}:${e.from.step_order} → ${e.to.plan}:${e.to.step_order}`);
+      box.append("p").text(e.story);
+    });
+  }
+  openDrillPanel();
+}
+
+// ---------- header / dark toggle / misc ----------
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+d3.select("#headerTitle").text("Variant C — Plan Constellation");
+d3.select("#headerQuestion").text(DATA.meta.question);
+
+d3.select("#darkToggle").on("click", function () {
+  const html = d3.select(document.documentElement);
+  const isDark = html.classed("dark");
+  html.classed("dark", !isDark);
+  d3.select(this).text(isDark ? "Dark mode" : "Light mode");
+});
+</script>
+</body>
+</html>

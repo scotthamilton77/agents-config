@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 — Variant B: Territory Map</title>
+<link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #f9f9f7;
+  }
+  html.dark, body.dark { background: #0d0d0d; }
+  /* Vars also defined at :root (not just .viz-root) so #tooltip and
+     #drillPanel — body-level siblings of .viz-root, kept out of it so their
+     position:fixed isn't caught by any ancestor transform — still inherit
+     theme custom properties. */
+  :root, .viz-root {
+    --surface: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,.10);
+    --badge-stroke: rgba(11,11,11,.55);
+    --group-wash: #efeee9;
+
+    --plan-0: #2a78d6;
+    --plan-1: #1baf7a;
+    --plan-2: #4a3aa7;
+    --plan-3: #e87ba4;
+    --plan-4: #eb6834;
+
+    --plan-0-tint: rgba(42,120,214,.16);
+    --plan-1-tint: rgba(27,175,122,.16);
+    --plan-2-tint: rgba(74,58,167,.16);
+    --plan-3-tint: rgba(232,123,164,.16);
+    --plan-4-tint: rgba(235,104,52,.16);
+
+    --kind-dependency: #52514e;
+    --kind-overlap: #fab219;
+    --kind-conflict: #d03b3b;
+    --kind-synergy: #0ca30c;
+
+    background: var(--page);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 16px 20px 32px;
+  }
+  :root.dark, .viz-root.dark {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,.10);
+    --badge-stroke: rgba(255,255,255,.55);
+    --group-wash: #232322;
+
+    --plan-0: #3987e5;
+    --plan-1: #199e70;
+    --plan-2: #9085e9;
+    --plan-3: #d55181;
+    --plan-4: #d95926;
+
+    --plan-0-tint: rgba(57,135,229,.22);
+    --plan-1-tint: rgba(25,158,112,.22);
+    --plan-2-tint: rgba(144,133,233,.22);
+    --plan-3-tint: rgba(213,81,129,.22);
+    --plan-4-tint: rgba(217,89,38,.22);
+
+    --kind-dependency: #c3c2b7;
+  }
+
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+  header.top h1 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+  header.top .question {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 8px;
+  }
+  #darkToggle {
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #darkToggle:hover { border-color: var(--text-secondary); }
+
+  .scrub-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    font-size: 12.5px;
+  }
+  .scrub-bar label { color: var(--text-secondary); white-space: nowrap; }
+  .scrub-bar input[type=range] { flex: 1 1 320px; max-width: 480px; }
+  .scrub-bar .k-readout {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    min-width: 90px;
+  }
+  .scrub-bar .scrub-note { color: var(--muted); font-size: 11.5px; }
+
+  .stage {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  #mapWrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    overflow: auto;
+    flex: 1 1 auto;
+  }
+
+  .group-wash {
+    fill: var(--group-wash);
+  }
+  .group-caption {
+    fill: var(--muted);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+
+  .tile rect.tile-bg {
+    fill: var(--surface);
+    stroke: var(--gridline);
+    stroke-width: 1;
+  }
+  .tile text.tile-label {
+    fill: var(--text-primary);
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+  .tile text.tile-sub {
+    fill: var(--muted);
+    font-size: 9px;
+  }
+
+  .strip { transition: opacity .15s; }
+  .hatch-overlay { transition: opacity .15s; pointer-events: none; }
+
+  .edge-path { fill: none; pointer-events: none; }
+  .edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
+  .edge-glyph-bg {
+    stroke: var(--badge-stroke);
+    stroke-width: 1.25px;
+    pointer-events: all;
+    cursor: pointer;
+  }
+  .edge-glyph {
+    font-size: 9px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    fill: #fff;
+    pointer-events: none;
+  }
+  .region-key { fill: var(--text-secondary); }
+
+  /* legend */
+  .legend {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-top: 16px;
+    font-size: 11.5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .legend-block { min-width: 150px; }
+  .legend-block h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin: 0 0 6px 0;
+    font-weight: 600;
+  }
+  .legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--text-primary); }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 9px 3px 6px;
+    background: var(--page);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-primary);
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .chip:hover { border-color: var(--text-secondary); }
+  .chip.plan-chip.excluded {
+    background: var(--page);
+    border-color: var(--muted);
+    color: var(--muted);
+  }
+  .chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .all-reset {
+    border: none;
+    background: none;
+    padding: 3px 4px;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+  }
+  .all-reset:hover { text-decoration-color: var(--text-secondary); color: var(--text-primary); }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .swatch.dot { border-radius: 50%; }
+  .swatch.badge { width: 18px; height: 14px; border-radius: 4px; border: 1.25px solid var(--badge-stroke); }
+  .line-swatch { width: 22px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
+  .line-swatch.dashed { border-top-style: dashed; }
+  .hatch-swatch {
+    width: 16px; height: 12px; border: 1px solid var(--gridline);
+    background-image: repeating-linear-gradient(45deg, var(--text-secondary) 0 1.5px, transparent 1.5px 6px);
+    background-color: var(--surface);
+    flex-shrink: 0;
+  }
+
+  footer.bottom {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* tooltip */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    max-width: 260px;
+    line-height: 1.4;
+    opacity: 0;
+    transition: opacity .1s;
+    z-index: 50;
+    box-shadow: 0 4px 14px rgba(0,0,0,.16);
+  }
+  #tooltip.show { opacity: 1; }
+
+  /* drill panel */
+  #drillPanel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: 340px;
+    max-width: 90vw;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px rgba(0,0,0,.15);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform .18s ease-out, visibility 0s linear .18s;
+    z-index: 100;
+    padding: 18px;
+    overflow-y: auto;
+    font-size: 12.5px;
+  }
+  #drillPanel.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform .18s ease-out;
+  }
+  #drillPanel h2 {
+    font-size: 14px;
+    margin: 0 0 4px 0;
+    padding-right: 24px;
+  }
+  #drillPanel .drill-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: none;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 4px;
+  }
+  #drillPanel .drill-close:hover { color: var(--text-primary); }
+  #drillPanel .field { margin-bottom: 12px; }
+  #drillPanel .field-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  #drillPanel .field-value { color: var(--text-primary); }
+  #drillPanel .step-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  #drillPanel .step-order { font-variant-numeric: tabular-nums; color: var(--muted); width: 16px; flex-shrink: 0; }
+  #drillPanel .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  #drillPanel .upcoming-tag {
+    margin-left: auto;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    background: var(--gridline);
+    border-radius: 999px;
+    padding: 1px 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .drill-footer {
+    position: sticky;
+    bottom: 0;
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .drill-status-row { font-size: 11px; margin-bottom: 5px; }
+</style>
+</head>
+<body>
+<div class="viz-root" id="root">
+
+  <header class="top">
+    <div>
+      <h1>Variant B — Territory Map<span class="question"> · Which organization makes cross-plan relationships and their timing legible?</span></h1>
+    </div>
+    <button id="darkToggle" type="button">Dark mode</button>
+  </header>
+
+  <div class="scrub-bar">
+    <label for="scrubber">Step order</label>
+    <input type="range" id="scrubber" min="1" max="6" value="6" step="1">
+    <span class="k-readout" id="kReadout">k = 6</span>
+    <span class="scrub-note">Territories show regions touched by steps with order ≤ k; edges gate on their materialization step.</span>
+  </div>
+
+  <div class="stage">
+    <div id="mapWrap"></div>
+  </div>
+
+  <div class="legend" id="legend">
+    <div class="legend-block">
+      <h3>Plans</h3>
+      <div class="chip-row">
+        <div id="planChips" class="chip-row"></div>
+        <button type="button" id="planAllReset" class="all-reset">all</button>
+      </div>
+    </div>
+    <div class="legend-block">
+      <h3>Edge kind</h3>
+      <div class="legend-row"><span class="swatch badge" style="background:var(--kind-dependency)"></span>dependency →</div>
+      <div class="legend-row"><span class="swatch badge" style="background:var(--kind-overlap)"></span>overlap ≈</div>
+      <div class="legend-row"><span class="swatch badge" style="background:var(--kind-conflict)"></span>conflict ✕</div>
+      <div class="legend-row"><span class="swatch badge" style="background:var(--kind-synergy)"></span>synergy +</div>
+    </div>
+    <div class="legend-block">
+      <h3>Provenance (line)</h3>
+      <div class="legend-row"><span class="line-swatch" style="border-color:var(--text-secondary)"></span>encoded (beads DAG)</div>
+      <div class="legend-row"><span class="line-swatch dashed" style="border-color:var(--text-secondary)"></span>inferred (agent-read)</div>
+    </div>
+    <div class="legend-block">
+      <h3>Territory &amp; contest</h3>
+      <div class="legend-row">Top-edge strips = plan territory (color-coded, one strip per touching plan).</div>
+      <div class="legend-row"><span class="hatch-swatch"></span>contested — 2+ plans claim work in this region (denser hatch = more plans)</div>
+    </div>
+  </div>
+
+  <footer class="bottom">
+    Round-1 reaction mockup — data part-real (beads/specs), part-authored (inferred edges); see fabrication ledger.
+  </footer>
+
+</div>
+
+<div id="tooltip"></div>
+
+<div id="drillPanel" aria-hidden="true">
+  <button class="drill-close" id="drillClose" aria-label="Close">✕</button>
+  <div id="drillContent"></div>
+  <div id="drillFooter" class="drill-footer"></div>
+</div>
+
+<script>
+const DATA = {
+  "meta": {
+    "round": 1,
+    "question": "Which organization makes cross-plan relationships and their timing legible?",
+    "fabrication": "Real: bead ids/statuses/counts, doc-stated phases, the one encoded edge (e1), footprint surfaces. Authored: step groupings, all inferred edges + stories, materialization points, region mapping."
+  },
+  "plans": [
+    {
+      "key": "prgroom", "label": "prgroom cutover", "color_slot": 0, "status": "executing",
+      "counts": {"closed": 18, "open": 32},
+      "steps": [
+        {"id": "prgroom:1", "label": "CLI foundation + store/errors infra", "order": 1, "status": "done", "surfaces": ["pkg-prgroom", "ci-infra"]},
+        {"id": "prgroom:2", "label": "Agent dispatch contracts + gh/git adapters", "order": 2, "status": "done", "surfaces": ["pkg-prgroom"]},
+        {"id": "prgroom:3", "label": "Lifecycle verbs + run loop + monitor-pr birth", "order": 3, "status": "done", "surfaces": ["pkg-prgroom", "skills-claude", "docs-arch"]},
+        {"id": "prgroom:4", "label": "Disposition envelope + reply ledger + dispatcher observability", "order": 4, "status": "in_progress", "surfaces": ["pkg-prgroom"], "note": "P1 wave: abn9.8.26/.27/.28 + qptb4 real-binary smoke"},
+        {"id": "prgroom:5", "label": "Merge-guard consumption seam", "order": 5, "status": "open", "surfaces": ["skills-claude", "docs-arch"]},
+        {"id": "prgroom:6", "label": "Cutover: retire wfpc skills, rewire delivery rules", "order": 6, "status": "open", "surfaces": ["skills-claude", "skills-shared", "rules"], "note": "blocked by abn9.8.32 E2E proof"}
+      ]
+    },
+    {
+      "key": "workcli", "label": "work facade CLI", "color_slot": 1, "status": "executing",
+      "counts": {"closed": 0, "open": 5},
+      "steps": [
+        {"id": "workcli:1", "label": "Transport: envelope, bd adapter, 12 verbs, CI gate", "order": 1, "status": "done", "surfaces": ["pkg-workcli", "ci-infra"]},
+        {"id": "workcli:2", "label": "Lifecycle layer: templated creation + guarded verbs", "order": 2, "status": "in_progress", "surfaces": ["pkg-workcli", "docs-specs"]},
+        {"id": "workcli:3", "label": "Backend-seam hardening + parse drift gaps", "order": 3, "status": "open", "surfaces": ["pkg-workcli"]},
+        {"id": "workcli:4", "label": "work discover verb — mechanical discovered-work", "order": 4, "status": "open", "surfaces": ["pkg-workcli", "rules"]},
+        {"id": "workcli:5", "label": "Migrate discipline assets off raw bd", "order": 5, "status": "open", "surfaces": ["skills-shared", "skills-claude", "rules", "plugins"]}
+      ]
+    },
+    {
+      "key": "pdlc", "label": "PDLC orchestrator", "color_slot": 2, "status": "parked (deferred)",
+      "counts": {"closed": 5, "open": 20},
+      "steps": [
+        {"id": "pdlc:1", "label": "Core design + HLD artifact set", "order": 1, "status": "done", "surfaces": ["docs-arch", "docs-specs"]},
+        {"id": "pdlc:2", "label": "Happy-path tracer bullet (FSM tick)", "order": 2, "status": "done", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:3", "label": "State repo (Dolt) + sessions + WorkTracker adapter", "order": 3, "status": "deferred", "surfaces": ["pkg-pdlc", "config"]},
+        {"id": "pdlc:4", "label": "Execution pipeline: red/green gates, review, strikes", "order": 4, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:5", "label": "Integration pipeline (Stage A/B/C) + autopsy", "order": 5, "status": "deferred", "surfaces": ["pkg-pdlc"]},
+        {"id": "pdlc:6", "label": "Holding Place peer service + promote contract", "order": 6, "status": "deferred", "surfaces": ["pkg-holding", "docs-specs"]}
+      ]
+    },
+    {
+      "key": "postfable", "label": "post-Fable economics", "color_slot": 3, "status": "queued (P0)",
+      "counts": {"closed": 0, "open": 6},
+      "steps": [
+        {"id": "postfable:1", "label": "Token capture + spend ledger", "order": 1, "status": "open", "surfaces": ["pkg-prgroom", "config"]},
+        {"id": "postfable:2", "label": "Model-routing policy rule + escalation ladder", "order": 2, "status": "open", "surfaces": ["rules", "config", "scripts"]},
+        {"id": "postfable:3", "label": "OpenRouter wiring: opencode profiles + prgroom AgentSpec", "order": 3, "status": "open", "surfaces": ["config", "pkg-prgroom"]},
+        {"id": "postfable:4", "label": "HEAVY gate re-point to cross-model panel", "order": 4, "status": "open", "surfaces": ["skills-claude", "rules"]},
+        {"id": "postfable:5", "label": "Consolidate foreign-cli config + model-ID SSoT", "order": 5, "status": "open", "surfaces": ["config", "rules"]}
+      ]
+    },
+    {
+      "key": "reviewloop", "label": "review feedback loop", "color_slot": 4, "status": "queued (design)",
+      "counts": {"closed": 0, "open": 4},
+      "steps": [
+        {"id": "reviewloop:1", "label": "Catch-log instrumentation per human catch", "order": 1, "status": "open", "surfaces": ["docs-specs", "config"]},
+        {"id": "reviewloop:2", "label": "Defect router: classify + route every catch", "order": 2, "status": "open", "surfaces": ["rules", "skills-shared"]},
+        {"id": "reviewloop:3", "label": "Feedback-signal miner (PR-history bootstrap)", "order": 3, "status": "open", "surfaces": ["scripts"], "note": "externally blocked by agents-config-qn0g (M2 readiness gate)"},
+        {"id": "reviewloop:4", "label": "Calibration off-ramp: per-category sampling", "order": 4, "status": "open", "surfaces": ["rules", "config"]}
+      ]
+    }
+  ],
+  "regions": [
+    {"key": "pkg-prgroom", "label": "packages/prgroom", "kind": "package"},
+    {"key": "pkg-workcli", "label": "packages/workcli", "kind": "package"},
+    {"key": "pkg-pdlc", "label": "packages/pdlc", "kind": "package"},
+    {"key": "pkg-holding", "label": "packages/holding-place", "kind": "package"},
+    {"key": "pkg-installer", "label": "packages/installer", "kind": "package"},
+    {"key": "skills-shared", "label": "shared skills (.agents)", "kind": "skills"},
+    {"key": "skills-claude", "label": "Claude skills + workflows", "kind": "skills"},
+    {"key": "rules", "label": "rules (shared + Claude)", "kind": "rules"},
+    {"key": "plugins", "label": "src/plugins", "kind": "config"},
+    {"key": "scripts", "label": "scripts + PEP-723 helpers", "kind": "infra"},
+    {"key": "docs-specs", "label": "docs/specs", "kind": "docs"},
+    {"key": "docs-arch", "label": "docs/architecture", "kind": "docs"},
+    {"key": "config", "label": "project-config + tool templates", "kind": "config"},
+    {"key": "ci-infra", "label": "Makefile + CI workflows", "kind": "infra"}
+  ],
+  "edges": [
+    {"id": "e1", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "encoded", "materializes": "postfable:3",
+     "story": "OpenRouter chains can't be smoke-proven until prgroom's real-binary invoker harness exists. The only cross-plan edge the beads DAG actually encodes.",
+     "evidence": "bd: agents-config-qptb4 blocks agents-config-abn9.40.3"},
+    {"id": "e2", "from": {"plan": "postfable", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "postfable:1",
+     "story": "Cost telemetry rides prgroom's per-attempt usage plumbing (usage.py, dispatcher observability abn9.8.26); the ledger bridge lands inside prgroom's dispatch-completion path.",
+     "evidence": "cost-telemetry spec, external-deliverables section"},
+    {"id": "e3", "from": {"plan": "pdlc", "step_order": 3}, "to": {"plan": "workcli", "step_order": 2}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:3",
+     "story": "The orchestrator's WorkTracker protocol needs a bd adapter — workcli's lifecycle layer IS that adapter surface. Building a second one inside pdlc would fork the seam.",
+     "evidence": "orchestrator core spec: 'WorkTracker bd adapter — likely overlaps workcli'"},
+    {"id": "e4", "from": {"plan": "workcli", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 6}, "kind": "conflict", "provenance": "inferred", "materializes": "workcli:5",
+     "story": "Both steps rewrite the same delivery skills and rules: prgroom's cutover rewires PR-review routing while workcli's migration strips raw bd from the same files. Whoever lands second rebases the other's prose — sequence deliberately.",
+     "evidence": "agent-inferred (shared surfaces: skills-shared, skills-claude, rules)"},
+    {"id": "e5", "from": {"plan": "reviewloop", "step_order": 1}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:1",
+     "story": "prgroom's items[] disposition envelope + reply ledger already record per-finding outcomes — the catch-log could ride that ledger instead of new instrumentation.",
+     "evidence": "agent-inferred; reviewloop spec leaves instrumentation storage open (S8.2)"},
+    {"id": "e6", "from": {"plan": "workcli", "step_order": 4}, "to": {"plan": "pdlc", "step_order": 6}, "kind": "synergy", "provenance": "inferred", "materializes": "pdlc:6",
+     "story": "work discover and Holding-Place Capture are the same gesture at different maturity — one capture contract could serve both, with discover as the CLI front door.",
+     "evidence": "agent-inferred"},
+    {"id": "e7", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "postfable", "step_order": 4}, "kind": "synergy", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "Defect-router categories and the cross-model panel's finding classes are one taxonomy; sharing it lets panel verdicts feed calibration data.",
+     "evidence": "agent-inferred"},
+    {"id": "e8", "from": {"plan": "postfable", "step_order": 3}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "postfable:3",
+     "story": "Provider wiring edits prgroom AgentSpec/chain config while prgroom's own P1 wave rewrites the dispatcher — same package, same window.",
+     "evidence": "openrouter spec names packages/prgroom surfaces"},
+    {"id": "e9", "from": {"plan": "reviewloop", "step_order": 2}, "to": {"plan": "pdlc", "step_order": 4}, "kind": "overlap", "provenance": "inferred", "materializes": "reviewloop:2",
+     "story": "PDLC's Review state defines Mechanical/Advisory/Proposed-Rule finding classes; the defect router is independently defining the same taxonomy while pdlc sleeps. Divergence now is a reconciliation tax later.",
+     "evidence": "agent-inferred (CONTEXT.md Finding classes vs review-feedback-loop categories)"},
+    {"id": "e10", "from": {"plan": "pdlc", "step_order": 5}, "to": {"plan": "prgroom", "step_order": 4}, "kind": "dependency", "provenance": "inferred", "materializes": "pdlc:5",
+     "story": "Integration Stage A is PR grooming — prgroom's run loop and merge gate are that engine. PDLC should drive prgroom, not reimplement it; depends on the disposition envelope being stable.",
+     "evidence": "agent-inferred (CONTEXT.md Integration Stage A vs prgroom scope)"}
+  ]
+};
+
+// ---------- lookups ----------
+const planByKey = new Map(DATA.plans.map(p => [p.key, p]));
+const regionByKey = new Map(DATA.regions.map(r => [r.key, r]));
+const stepByRef = new Map(); // "plan:order" -> step
+DATA.plans.forEach(p => p.steps.forEach(s => stepByRef.set(p.key + ":" + s.order, s)));
+
+const MAX_ORDER = d3.max(DATA.plans.flatMap(p => p.steps.map(s => s.order)));
+
+const KIND_ORDER = ["package", "skills", "rules", "docs", "config", "infra"];
+const KIND_LABEL = { package: "Packages", skills: "Skills", rules: "Rules", docs: "Docs", config: "Config", infra: "Infra" };
+
+function planColor(planKey) {
+  const p = planByKey.get(planKey);
+  return "var(--plan-" + p.color_slot + ")";
+}
+function planTint(planKey) {
+  const p = planByKey.get(planKey);
+  return "var(--plan-" + p.color_slot + "-tint)";
+}
+function kindColor(kind) { return "var(--kind-" + kind + ")"; }
+function kindGlyph(kind) {
+  return { dependency: "→", overlap: "≈", conflict: "✕", synergy: "+" }[kind];
+}
+
+// ---------- layout ----------
+// Rows pack kind-groups left-to-right until the next group would overflow maxPerRow tile
+// slots; each row's tile width then flex-fills CANVAS_W, clamped to [MIN_TILE, MAX_TILE].
+const CANVAS_W = 900, TILE_H = 88, GAP = 12, MIN_TILE = 160, MAX_TILE = 320, GROUP_GAP = 30, GROUP_CAP_H = 20;
+const MARGIN = { top: 10, left: 10 };
+
+const tilePos = new Map(); // regionKey -> {x, y, w, h, region}
+const groupBoxes = []; // one entry per row: {y, cols: [{kind, x}, ...]}
+// One wash rect per contiguous kind-group run (a row may pack several groups
+// side by side). Padding is smaller on edges shared with a neighboring group
+// so washes stay visibly non-contiguous within the same GAP the layout uses.
+const groupWashes = []; // {kind, x, y, w, h}
+const WASH_PAD_V = 6, WASH_PAD_OUTER = 6, WASH_PAD_INNER = 3;
+(function layout() {
+  const kindGroups = KIND_ORDER
+    .map(kind => ({ kind, regions: DATA.regions.filter(r => r.kind === kind) }))
+    .filter(g => g.regions.length);
+  const maxPerRow = Math.floor((CANVAS_W + GAP) / (MIN_TILE + GAP));
+
+  const rows = [];
+  kindGroups.forEach(g => {
+    const lastRow = rows[rows.length - 1];
+    if (lastRow && lastRow.count + g.regions.length <= maxPerRow) {
+      lastRow.groups.push(g);
+      lastRow.count += g.regions.length;
+    } else {
+      rows.push({ groups: [g], count: g.regions.length });
+    }
+  });
+
+  let y = MARGIN.top;
+  rows.forEach(row => {
+    const tileW = Math.min(MAX_TILE, Math.max(MIN_TILE, (CANVAS_W - (row.count - 1) * GAP) / row.count));
+    const cols = [];
+    let x = MARGIN.left;
+    row.groups.forEach((g, gi) => {
+      cols.push({ kind: g.kind, x });
+      const x0 = x;
+      g.regions.forEach(r => {
+        tilePos.set(r.key, { x, y: y + GROUP_CAP_H, w: tileW, h: TILE_H, region: r });
+        x += tileW + GAP;
+      });
+      const x1 = x - GAP;
+      const padL = gi === 0 ? WASH_PAD_OUTER : WASH_PAD_INNER;
+      const padR = gi === row.groups.length - 1 ? WASH_PAD_OUTER : WASH_PAD_INNER;
+      groupWashes.push({
+        kind: g.kind,
+        x: x0 - padL,
+        y: y + GROUP_CAP_H - WASH_PAD_V,
+        w: (x1 - x0) + padL + padR,
+        h: TILE_H + WASH_PAD_V * 2
+      });
+    });
+    groupBoxes.push({ y, cols });
+    y += GROUP_CAP_H + TILE_H + GROUP_GAP;
+  });
+  groupBoxes.totalHeight = y;
+})();
+
+const SVG_W = MARGIN.left * 2 + CANVAS_W;
+const SVG_H = groupBoxes.totalHeight + 10;
+
+function centroid(regionKey) {
+  const t = tilePos.get(regionKey);
+  if (!t) return null;
+  return { x: t.x + t.w / 2, y: t.y + t.h / 2 };
+}
+
+// ---------- state ----------
+let k = MAX_ORDER;
+let includedPlans = new Set(DATA.plans.map(p => p.key)); // plan-inclusion filter (common fix 2)
+let hoverPlan = null; // transient chip-hover highlight (replaces old click-isolate)
+let currentDrillRegion = null; // region object behind an open tile drill, else null
+let currentDrillEdge = null; // edge object behind an open edge drill, else null
+
+// ---------- derived-at-k helpers ----------
+function planTouchesRegionAtK(planKey, regionKey, kk) {
+  const plan = planByKey.get(planKey);
+  return plan.steps.some(s => s.order <= kk && s.surfaces.includes(regionKey));
+}
+function touchingPlansForRegion(regionKey, kk) {
+  return DATA.plans
+    .filter(p => planTouchesRegionAtK(p.key, regionKey, kk))
+    .map(p => p.key);
+}
+function includedTouchingPlansForRegion(regionKey, kk) {
+  return touchingPlansForRegion(regionKey, kk).filter(pk => includedPlans.has(pk));
+}
+function edgeVisibleAtK(edge, kk) {
+  const order = parseInt(edge.materializes.split(":")[1], 10);
+  return order <= kk;
+}
+function edgeEndpointRegion(endpoint) {
+  const step = stepByRef.get(endpoint.plan + ":" + endpoint.step_order);
+  return step ? step.surfaces[0] : null;
+}
+
+// ---------- svg scaffold ----------
+const mapWrap = d3.select("#mapWrap");
+const svg = mapWrap.append("svg")
+  .attr("width", SVG_W)
+  .attr("height", SVG_H)
+  .attr("viewBox", "0 0 " + SVG_W + " " + SVG_H);
+
+const defs = svg.append("defs");
+[2, 3, 4, 5].forEach(n => {
+  const spacing = Math.max(2, 12 - n * 2);
+  const pat = defs.append("pattern")
+    .attr("id", "hatch-" + n)
+    .attr("width", spacing)
+    .attr("height", spacing)
+    .attr("patternTransform", "rotate(45)")
+    .attr("patternUnits", "userSpaceOnUse");
+  pat.append("line")
+    .attr("x1", 0).attr("y1", 0).attr("x2", 0).attr("y2", spacing)
+    .attr("stroke", "var(--text-secondary)")
+    .attr("stroke-width", Math.min(2.2, 1 + n * 0.2))
+    .attr("stroke-opacity", 0.4);
+});
+
+const groupLayer = svg.append("g").attr("class", "group-layer");
+const tileLayer = svg.append("g").attr("class", "tile-layer");
+const edgeLayer = svg.append("g").attr("class", "edge-layer");
+
+// kind-group containment washes — behind captions and tiles
+groupLayer.selectAll("rect.group-wash")
+  .data(groupWashes)
+  .join("rect")
+  .attr("class", "group-wash")
+  .attr("x", d => d.x)
+  .attr("y", d => d.y)
+  .attr("width", d => d.w)
+  .attr("height", d => d.h)
+  .attr("rx", 8);
+
+// group captions + boundary rects
+const captionData = groupBoxes.flatMap(row => row.cols.map(c => ({ y: row.y, x: c.x, kind: c.kind })));
+groupLayer.selectAll("text.group-caption")
+  .data(captionData)
+  .join("text")
+  .attr("class", "group-caption")
+  .attr("x", d => d.x)
+  .attr("y", d => d.y + 12)
+  .text(d => KIND_LABEL[d.kind]);
+
+// ---------- tiles ----------
+const tileG = tileLayer.selectAll("g.tile")
+  .data(DATA.regions)
+  .join("g")
+  .attr("class", "tile")
+  .attr("transform", d => {
+    const p = tilePos.get(d.key);
+    return "translate(" + p.x + "," + p.y + ")";
+  })
+  .style("cursor", "pointer");
+
+tileG.append("rect")
+  .attr("class", "tile-bg")
+  .attr("width", d => tilePos.get(d.key).w)
+  .attr("height", TILE_H)
+  .attr("rx", 6);
+
+tileG.append("rect")
+  .attr("class", "hatch-overlay")
+  .attr("width", d => tilePos.get(d.key).w)
+  .attr("height", TILE_H)
+  .attr("rx", 6)
+  .attr("fill", "none");
+
+// strip group per tile (populated on render)
+tileG.append("g").attr("class", "strip-group");
+
+tileG.append("text")
+  .attr("class", "tile-label")
+  .attr("x", 8)
+  .attr("y", TILE_H - 20)
+  .text(d => d.label);
+
+tileG.append("text")
+  .attr("class", "tile-sub")
+  .attr("x", 8)
+  .attr("y", TILE_H - 8)
+  .text(d => d.key);
+
+tileG
+  .on("mousemove", (event, d) => showTileTooltip(event, d))
+  .on("mouseleave", hideTooltip)
+  .on("click", (event, d) => openTileDrill(d));
+
+// ---------- edges (rebuilt per render) ----------
+function edgePath(fromKey, toKey) {
+  const a = centroid(fromKey), b = centroid(toKey);
+  if (!a || !b) return null;
+  if (fromKey === toKey) {
+    // loop above the tile
+    const loopTop = a.y - 46;
+    return {
+      d: "M " + (a.x - 18) + " " + (a.y - 20) +
+         " C " + (a.x - 30) + " " + loopTop + ", " + (a.x + 30) + " " + loopTop + ", " + (a.x + 18) + " " + (a.y - 20),
+      mid: { x: a.x, y: loopTop + 8 }
+    };
+  }
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const lift = Math.min(90, dist * 0.28 + 24);
+  const ctrl = { x: mx, y: my - lift };
+  const d = "M " + a.x + " " + a.y + " Q " + ctrl.x + " " + ctrl.y + " " + b.x + " " + b.y;
+  const mid = { x: (a.x + 2 * ctrl.x + b.x) / 4, y: (a.y + 2 * ctrl.y + b.y) / 4 };
+  return { d, mid };
+}
+
+// ---------- render (called on scrubber change / isolation toggle) ----------
+function render() {
+  d3.select("#kReadout").text("k = " + k);
+
+  // tiles: strips + hatch
+  tileG.each(function (d) {
+    const g = d3.select(this);
+    const touching = includedTouchingPlansForRegion(d.key, k)
+      .sort((a, b) => planByKey.get(a).color_slot - planByKey.get(b).color_slot);
+
+    const stripH = 9;
+    const tileW = tilePos.get(d.key).w;
+    const stripGroup = g.select("g.strip-group");
+    const strips = stripGroup.selectAll("rect.strip").data(touching, x => x);
+    strips.join(
+      enter => enter.append("rect")
+        .attr("class", "strip")
+        .attr("x", 0)
+        .attr("width", tileW)
+        .attr("height", stripH),
+      update => update,
+      exit => exit.remove()
+    )
+      .attr("y", (pk, i) => i * stripH)
+      .attr("fill", pk => planColor(pk))
+      .attr("opacity", pk => hoverPlan && pk !== hoverPlan ? 0.05 : 0.9);
+
+    const contested = touching.length >= 2;
+    const hatchOpacity = hoverPlan ? 0 : (contested ? 1 : 0);
+    g.select("rect.hatch-overlay")
+      .attr("fill", contested ? "url(#hatch-" + Math.min(5, touching.length) + ")" : "none")
+      .attr("opacity", hatchOpacity);
+
+    g.select("rect.tile-bg").attr("opacity", 1);
+  });
+
+  // edges
+  const visibleEdges = DATA.edges.filter(e => {
+    if (!edgeVisibleAtK(e, k)) return false;
+    if (!includedPlans.has(e.from.plan) || !includedPlans.has(e.to.plan)) return false;
+    if (hoverPlan && e.from.plan !== hoverPlan && e.to.plan !== hoverPlan) return false;
+    return true;
+  }).map(e => {
+    const fromRegion = edgeEndpointRegion(e.from);
+    const toRegion = edgeEndpointRegion(e.to);
+    const path = fromRegion && toRegion ? edgePath(fromRegion, toRegion) : null;
+    return { edge: e, fromRegion, toRegion, path };
+  }).filter(x => x.path);
+
+  const edgeSel = edgeLayer.selectAll("g.edge").data(visibleEdges, x => x.edge.id);
+  const edgeEnter = edgeSel.enter().append("g").attr("class", "edge").style("cursor", "pointer");
+  edgeEnter.append("path").attr("class", "edge-path");
+  edgeEnter.append("path").attr("class", "edge-hit");
+  edgeEnter.append("rect").attr("class", "edge-glyph-bg").attr("width", 18).attr("height", 14).attr("rx", 4);
+  edgeEnter.append("text").attr("class", "edge-glyph");
+
+  edgeSel.exit().remove();
+
+  const edgeMerged = edgeEnter.merge(edgeSel);
+
+  edgeMerged.select("path.edge-path")
+    .attr("d", x => x.path.d)
+    .attr("stroke", x => kindColor(x.edge.kind))
+    .attr("stroke-width", 2)
+    .attr("stroke-dasharray", x => x.edge.provenance === "inferred" ? "6,4" : null);
+
+  edgeMerged.select("path.edge-hit")
+    .attr("d", x => x.path.d);
+
+  edgeMerged.select("rect.edge-glyph-bg")
+    .attr("x", x => x.path.mid.x - 9)
+    .attr("y", x => x.path.mid.y - 7)
+    .attr("fill", x => kindColor(x.edge.kind));
+
+  edgeMerged.select("text.edge-glyph")
+    .attr("x", x => x.path.mid.x)
+    .attr("y", x => x.path.mid.y)
+    .text(x => kindGlyph(x.edge.kind));
+
+  edgeMerged
+    .on("mousemove", (event, x) => showEdgeTooltip(event, x.edge))
+    .on("mouseleave", hideTooltip)
+    .on("click", (event, x) => openEdgeDrill(x.edge));
+
+  renderLegendChips();
+}
+
+// ---------- tooltip ----------
+const tooltip = d3.select("#tooltip");
+function showTileTooltip(event, region) {
+  const touching = includedTouchingPlansForRegion(region.key, k);
+  let html = region.label + " (" + region.kind + ")";
+  if (touching.length) {
+    if (touching.length >= 2) {
+      html += "\ncontested — claimed by " + touching.map(pk => planByKey.get(pk).label).join(", ");
+    }
+    const lines = touching.map(pk => {
+      const p = planByKey.get(pk);
+      const orders = p.steps.filter(s => s.surfaces.includes(region.key) && s.order <= k).map(s => s.order);
+      return p.label + " @ step " + orders.join(",");
+    });
+    html += "\n" + lines.join("\n");
+  } else {
+    html += "\nno plan touches this region yet";
+  }
+  tooltip.text(html).style("white-space", "pre-line")
+    .style("left", (event.clientX + 14) + "px")
+    .style("top", (event.clientY + 12) + "px")
+    .classed("show", true);
+}
+function showEdgeTooltip(event, edge) {
+  const fromP = planByKey.get(edge.from.plan).label;
+  const toP = planByKey.get(edge.to.plan).label;
+  const text = edge.kind.toUpperCase() + " (" + edge.provenance + ")\n" +
+    fromP + " @" + edge.from.step_order + " " + kindGlyph(edge.kind) + " " + toP + " @" + edge.to.step_order;
+  tooltip.text(text).style("white-space", "pre-line")
+    .style("left", (event.clientX + 14) + "px")
+    .style("top", (event.clientY + 12) + "px")
+    .classed("show", true);
+}
+function hideTooltip() { tooltip.classed("show", false); }
+
+// ---------- drill panel ----------
+const drillPanel = d3.select("#drillPanel");
+const drillContent = d3.select("#drillContent");
+
+function setDrillOpen(isOpen) {
+  if (!isOpen) {
+    // blur focus before hiding, else the browser warns about a focused
+    // descendant inside an aria-hidden container
+    const active = document.activeElement;
+    if (active && drillPanel.node().contains(active)) active.blur();
+    currentDrillRegion = null;
+    currentDrillEdge = null;
+  }
+  drillPanel.classed("open", isOpen).attr("aria-hidden", isOpen ? null : "true");
+}
+
+function drillReferencesPlan(planKey) {
+  if (currentDrillEdge) {
+    return currentDrillEdge.from.plan === planKey || currentDrillEdge.to.plan === planKey;
+  }
+  if (currentDrillRegion) {
+    return DATA.plans.some(p => p.key === planKey && p.steps.some(s => s.surfaces.includes(currentDrillRegion.key)));
+  }
+  return false;
+}
+
+function refreshOpenDrill() {
+  if (currentDrillRegion) openTileDrill(currentDrillRegion);
+  else if (currentDrillEdge) openEdgeDrill(currentDrillEdge);
+}
+
+// deferred step mark (common fix 1): full-opacity ring in the plan hue with a
+// centered pause glyph — no opacity dimming. `dim` mutes it for steps beyond
+// the current scrubber position (fixpass_B item 4), independent of status.
+function statusDotStyle(status, dim) {
+  const ink = dim ? "var(--muted)" : "var(--text-secondary)";
+  switch (status) {
+    case "done": return "background:" + ink + "; border-radius:50%;";
+    case "in_progress": return "background:" + ink + "; border-radius:50%; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px " + ink + ";";
+    case "open": return "background:none; border:1.5px solid " + ink + "; border-radius:50%;";
+    default: return "background:var(--muted); border-radius:50%;";
+  }
+}
+
+function appendStatusMark(container, status, planHue, dim) {
+  if (status === "deferred") {
+    const outline = dim ? "var(--muted)" : planHue;
+    const barFill = dim ? "var(--muted)" : "var(--text-secondary)";
+    const svg = container.append("svg")
+      .attr("class", "status-dot")
+      .attr("width", 8).attr("height", 8).attr("viewBox", "0 0 8 8");
+    svg.append("circle")
+      .attr("cx", 4).attr("cy", 4).attr("r", 3.25)
+      .attr("fill", "none")
+      .attr("stroke", outline)
+      .attr("stroke-width", 1.5);
+    svg.append("rect").attr("x", 1.8).attr("y", 1.5).attr("width", 1.2).attr("height", 5).attr("fill", barFill);
+    svg.append("rect").attr("x", 5.0).attr("y", 1.5).attr("width", 1.2).attr("height", 5).attr("fill", barFill);
+    return;
+  }
+  container.append("span").attr("class", "status-dot").attr("style", statusDotStyle(status, dim));
+}
+
+function renderDrillStatusKey() {
+  const footer = d3.select("#drillFooter");
+  footer.selectAll("*").remove();
+  footer.append("div").attr("class", "field-label").text("Step status");
+  [
+    { status: "done", label: "done" },
+    { status: "in_progress", label: "in progress" },
+    { status: "open", label: "open" },
+    { status: "deferred", label: "deferred (parked)" }
+  ].forEach(entry => {
+    const row = footer.append("div").attr("class", "legend-row drill-status-row");
+    appendStatusMark(row, entry.status, "var(--text-secondary)", false);
+    row.append("span").text(entry.label);
+  });
+}
+
+function openTileDrill(region) {
+  currentDrillRegion = region;
+  currentDrillEdge = null;
+  drillContent.selectAll("*").remove();
+  drillContent.append("h2").text(region.label);
+
+  const f1 = drillContent.append("div").attr("class", "field");
+  f1.append("div").attr("class", "field-label").text("Region key / kind");
+  f1.append("div").attr("class", "field-value").text(region.key + " · " + region.kind);
+
+  const touchingPlans = DATA.plans.filter(p => p.steps.some(s => s.surfaces.includes(region.key)));
+  const f2 = drillContent.append("div").attr("class", "field");
+  f2.append("div").attr("class", "field-label")
+    .text("Plans & steps touching this region (all time; bold = active at k=" + k + ")");
+  const list = f2.append("div");
+  touchingPlans.forEach(p => {
+    p.steps.filter(s => s.surfaces.includes(region.key)).forEach(s => {
+      const active = s.order <= k;
+      const row = list.append("div").attr("class", "step-row" + (active ? "" : " upcoming"));
+      appendStatusMark(row, s.status, planColor(p.key), !active);
+      row.append("span").attr("class", "step-order").text("#" + s.order);
+      row.append("span")
+        .style("font-weight", active ? "700" : "400")
+        .style("color", active ? "var(--text-primary)" : "var(--muted)")
+        .text(p.label + " — " + s.label);
+      if (!active) row.append("span").attr("class", "upcoming-tag").text("upcoming");
+    });
+  });
+
+  const relatedEdges = DATA.edges.filter(e =>
+    edgeEndpointRegion(e.from) === region.key || edgeEndpointRegion(e.to) === region.key);
+  if (relatedEdges.length) {
+    const f3 = drillContent.append("div").attr("class", "field");
+    f3.append("div").attr("class", "field-label").text("Edges touching this region");
+    relatedEdges.forEach(e => {
+      const row = f3.append("div").attr("class", "step-row").style("cursor", "pointer");
+      row.append("span").text(kindGlyph(e.kind) + " " + e.kind + ": " + e.story).style("font-size", "11.5px");
+      row.on("click", () => openEdgeDrill(e));
+    });
+  }
+
+  setDrillOpen(true);
+}
+
+function openEdgeDrill(edge) {
+  currentDrillEdge = edge;
+  currentDrillRegion = null;
+  drillContent.selectAll("*").remove();
+  drillContent.append("h2").text(edge.kind.charAt(0).toUpperCase() + edge.kind.slice(1) + " " + kindGlyph(edge.kind));
+
+  const fields = [
+    ["From", planByKey.get(edge.from.plan).label + " @ step " + edge.from.step_order +
+      (stepByRef.get(edge.from.plan + ":" + edge.from.step_order) ? " — " + stepByRef.get(edge.from.plan + ":" + edge.from.step_order).label : "")],
+    ["To", planByKey.get(edge.to.plan).label + " @ step " + edge.to.step_order +
+      (stepByRef.get(edge.to.plan + ":" + edge.to.step_order) ? " — " + stepByRef.get(edge.to.plan + ":" + edge.to.step_order).label : "")],
+    ["Provenance", edge.provenance],
+    ["Materializes at", edge.materializes],
+    ["Story", edge.story],
+    ["Evidence", edge.evidence]
+  ];
+  fields.forEach(([label, value]) => {
+    const f = drillContent.append("div").attr("class", "field");
+    f.append("div").attr("class", "field-label").text(label);
+    f.append("div").attr("class", "field-value").text(value);
+  });
+
+  setDrillOpen(true);
+}
+
+d3.select("#drillClose").on("click", () => setDrillOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setDrillOpen(false);
+});
+
+// ---------- legend chips: plan-inclusion toggles (common fix 2) ----------
+function togglePlanInclusion(planKey) {
+  if (includedPlans.has(planKey)) {
+    includedPlans.delete(planKey);
+    if (hoverPlan === planKey) hoverPlan = null; // else strips ghost-dim until mouseleave
+    if (drillReferencesPlan(planKey)) setDrillOpen(false);
+  } else {
+    includedPlans.add(planKey);
+  }
+  render();
+}
+
+function renderLegendChips() {
+  const sel = d3.select("#planChips").selectAll("button.chip").data(DATA.plans, d => d.key);
+  const enter = sel.enter().append("button")
+    .attr("type", "button")
+    .attr("class", "chip plan-chip");
+  enter.append("span").attr("class", "swatch dot");
+  enter.append("span").attr("class", "chip-label");
+  enter.on("click", (event, d) => togglePlanInclusion(d.key));
+  enter.on("mouseenter", (event, d) => {
+    if (includedPlans.has(d.key)) { hoverPlan = d.key; render(); }
+  });
+  enter.on("mouseleave", () => {
+    if (hoverPlan) { hoverPlan = null; render(); }
+  });
+
+  const merged = enter.merge(sel);
+  merged.each(function (d) {
+    const included = includedPlans.has(d.key);
+    const chip = d3.select(this);
+    chip.classed("excluded", !included)
+      .attr("aria-pressed", included ? "true" : "false")
+      .style("background", included ? planTint(d.key) : null);
+    chip.select("span.swatch").style("background", included ? planColor(d.key) : "var(--muted)");
+    chip.select("span.chip-label").text(d.label);
+  });
+  sel.exit().remove();
+}
+
+// ---------- controls ----------
+d3.select("#scrubber").on("input", function () {
+  k = +this.value;
+  render();
+  refreshOpenDrill();
+});
+
+d3.select("#planAllReset").on("click", () => {
+  includedPlans = new Set(DATA.plans.map(p => p.key));
+  render();
+});
+
+d3.select("#darkToggle").on("click", function () {
+  const root = d3.select("#root");
+  const nowDark = !root.classed("dark");
+  root.classed("dark", nowDark);
+  d3.select(document.documentElement).classed("dark", nowDark);
+  d3.select(document.body).classed("dark", nowDark);
+  d3.select(this).text(nowDark ? "Light mode" : "Dark mode");
+});
+
+renderDrillStatusKey();
+render();
+</script>
+</body>
+</html>
