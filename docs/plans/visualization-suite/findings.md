@@ -66,13 +66,16 @@ Question under test: which visual representation of a multi-axis PR heat map
     color by luminance of the underlying fill, per theme.
 14. **The annotation layer must escape user content** (surfaced by the HEAVY-gate
     review): any drill panel, tooltip, or notes field that carries paths, story
-    text, or saved notes must set them as data (`textarea.value` / `textContent`),
-    never build them into a raw innerHTML string — otherwise a note containing
-    `</textarea>` or HTML breaks the DOM (stored self-XSS). The V1 prototype sets
-    notes programmatically for this reason; the requirement only hardens once notes
-    round-trip through agents or render non-local data. Corollary: data-out
-    affordances must never fake success — the notes Copy button reports success
-    only when the clipboard write resolves, and shows a failure state otherwise.
+    text, or saved notes must neutralize that content before it reaches the DOM —
+    bind it as data (`textarea.value` / `textContent`) or HTML-escape it before
+    interpolating into markup — never emit an unescaped dynamic value into an
+    innerHTML string, or a value containing `</textarea>` or HTML breaks the DOM
+    (stored self-XSS). The V1 prototype sets the persisted note via `value` and
+    HTML-escapes every interpolated path/story field for this reason; the
+    requirement only hardens once notes round-trip through agents or render
+    non-local data. Corollary: data-out affordances must never fake success — the
+    notes Copy button reports success only when the clipboard write resolves, and
+    shows a failure state otherwise.
 15. **Centrality tuning — exclude self-edges**: gen_data.py's in-degree counts
     intra-file edges (the majority of graph links are self-file), inflating
     "load-bearing" scores for big self-referential files; the coupling map already

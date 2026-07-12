@@ -85,7 +85,7 @@
   PROTO.registerVariant('B', {
     name: 'Dependency constellation',
     render(el, ctx) {
-      const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill, tipHtml } = ctx;
+      const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill, tipHtml, esc } = ctx;
       // Measure fresh every render — never cache dimensions in module state.
       const width = el.clientWidth || 800;
       const height = el.clientHeight || 600;
@@ -210,7 +210,7 @@
             showTip(offsetTipEvent(evt), tipHtml(d.rec));
           } else {
             const dir = d.rec;
-            showTip(offsetTipEvent(evt), `<div class="path">${dir.path}</div>` +
+            showTip(offsetTipEvent(evt), `<div class="path">${esc(dir.path)}</div>` +
               `<div style="margin-top:4px;color:var(--muted)">${dir.files || 0} files · ${dir.changed || 0} changed</div>` +
               meterHtml('complexity', dir.complexity) +
               meterHtml('load-bearing', dir.centrality) +

@@ -163,6 +163,7 @@ window.PROTO = (function () {
           + weights.consequence * (f.consequence || 0)) / s;
   }
   const heatColor = h => ramp(Math.max(0, Math.min(1, h)));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   const tip = document.getElementById('tooltip');
   function showTip(evt, html) {
@@ -180,10 +181,10 @@ window.PROTO = (function () {
     `<div class="meter"><span>${label}</span><div class="bar"><i style="width:${Math.round((v||0)*100)}%"></i></div><span>${(v||0).toFixed(2)}</span></div>`;
 
   function tipHtml(f) {
-    return `<div class="path">${f.path}</div>` +
+    return `<div class="path">${esc(f.path)}</div>` +
       meter('complexity', f.complexity) + meter('load-bearing', f.centrality) +
       meter('consequence', f.consequence) + meter('HEAT', computeHeat(f)) +
-      (f.changed ? `<div style="margin-top:4px;color:var(--pr-mark)">changed: +${f.adds}/−${f.dels} (${f.status})</div>`
+      (f.changed ? `<div style="margin-top:4px;color:var(--pr-mark)">changed: +${f.adds}/−${f.dels} (${esc(f.status)})</div>`
                  : `<div style="margin-top:4px;color:var(--muted)">context — not in this PR</div>`);
   }
 
@@ -191,28 +192,29 @@ window.PROTO = (function () {
   const stage = document.getElementById('stage');
   function showDrill(f) {
     const b = document.getElementById('drill-body');
-    let html = `<h2>${f.path.split('/').pop()}</h2><div class="path">${f.path}</div>`;
-    if (f.changed) html += `<span class="stat">+${f.adds}/−${f.dels}</span><span class="stat">${f.status}</span>`;
+    const fname = f.path.split('/').pop();
+    let html = `<h2>${esc(fname)}</h2><div class="path">${esc(f.path)}</div>`;
+    if (f.changed) html += `<span class="stat">+${f.adds}/−${f.dels}</span><span class="stat">${esc(f.status)}</span>`;
     html += `<span class="stat">heat ${computeHeat(f).toFixed(2)}</span>`;
     html += meter('complexity', f.complexity) + meter('load-bearing', f.centrality) + meter('consequence', f.consequence);
     if (f.story) {
-      html += `<div class="headline">${f.story.headline}</div>`;
-      html += `<h3>Why it's hot</h3><ul>${f.story.why.map(x => `<li>${x}</li>`).join('')}</ul>`;
+      html += `<div class="headline">${esc(f.story.headline)}</div>`;
+      html += `<h3>Why it's hot</h3><ul>${f.story.why.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
       if (f.story.check && f.story.check.length)
-        html += `<h3>What to check</h3><ul>${f.story.check.map(x => `<li>${x}</li>`).join('')}</ul>`;
+        html += `<h3>What to check</h3><ul>${f.story.check.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
       if (f.story.hotspots && f.story.hotspots.length) {
         html += `<h3>Hotspots inside this file <span class="mock">mock scan</span></h3>`;
         for (const h of f.story.hotspots) {
-          html += `<div class="hotspot"><b>${h.name}</b>` +
+          html += `<div class="hotspot"><b>${esc(h.name)}</b>` +
             meter('complexity', h.complexity) + meter('load-bearing', h.centrality) +
-            meter('consequence', h.consequence) + `<div class="hnote">${h.note}</div></div>`;
+            meter('consequence', h.consequence) + `<div class="hnote">${esc(h.note)}</div></div>`;
         }
       }
     } else if (!f.changed) {
       html += `<h3>Context</h3><ul><li>Not changed in this PR — shown as codebase context.</li></ul>`;
     }
-    if (f.diff_url) html += `<a class="ext" href="${f.diff_url}" target="_blank" rel="noopener">View this file's diff in PR ↗</a>`;
-    html += `<h3>Note to agent</h3><textarea class="notearea" id="note-box" placeholder="Leave a note on ${f.path.split('/').pop()} — copied out via the Notes button for agent processing"></textarea>` +
+    if (f.diff_url) html += `<a class="ext" href="${esc(f.diff_url)}" target="_blank" rel="noopener">View this file's diff in PR ↗</a>`;
+    html += `<h3>Note to agent</h3><textarea class="notearea" id="note-box" placeholder="Leave a note on ${esc(fname)} — copied out via the Notes button for agent processing"></textarea>` +
             `<button class="hbtn" id="note-save" style="margin-top:6px">Save note</button>`;
     b.innerHTML = html;
     b.querySelector('#note-box').value = notes[f.path] || ''; // set programmatically; never interpolate the persisted note into markup (a </textarea> in it would break the DOM / stored self-XSS on reopen)
@@ -242,7 +244,7 @@ window.PROTO = (function () {
     stage.removeAttribute('style'); // firewall: no variant's inline styles may leak across renders
     hideTip();
     try {
-      def.render(stage, { DATA, weights, computeHeat, heatColor, showTip, hideTip, showDrill, hideDrill, tipHtml });
+      def.render(stage, { DATA, weights, computeHeat, heatColor, showTip, hideTip, showDrill, hideDrill, tipHtml, esc });
     } catch (err) {
       stage.innerHTML = `<pre style="color:#f87171;padding:20px;white-space:pre-wrap">Variant ${current} blew up:\n${err.stack}</pre>`;
     }
@@ -736,7 +738,7 @@ window.PROTO = (function () {
   PROTO.registerVariant('B', {
     name: 'Dependency constellation',
     render(el, ctx) {
-      const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill, tipHtml } = ctx;
+      const { DATA, computeHeat, heatColor, showTip, hideTip, showDrill, tipHtml, esc } = ctx;
       // Measure fresh every render — never cache dimensions in module state.
       const width = el.clientWidth || 800;
       const height = el.clientHeight || 600;
@@ -861,7 +863,7 @@ window.PROTO = (function () {
             showTip(offsetTipEvent(evt), tipHtml(d.rec));
           } else {
             const dir = d.rec;
-            showTip(offsetTipEvent(evt), `<div class="path">${dir.path}</div>` +
+            showTip(offsetTipEvent(evt), `<div class="path">${esc(dir.path)}</div>` +
               `<div style="margin-top:4px;color:var(--muted)">${dir.files || 0} files · ${dir.changed || 0} changed</div>` +
               meterHtml('complexity', dir.complexity) +
               meterHtml('load-bearing', dir.centrality) +
