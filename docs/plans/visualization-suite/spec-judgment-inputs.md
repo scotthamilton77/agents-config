@@ -120,7 +120,7 @@ These four compose the "recommend work-breakdown revision" UI action:
    fact, not recommendation.
 3. **Actionability class** — every recommendation is stamped either
    `one-click` (agent can execute on acceptance: mint bead, add edge,
-   relabel, resequence) or `ruling-needed` (human design decision; agent
+   relabel) or `ruling-needed` (human design decision; agent
    drafts the question, not the answer). This split is what the annotation
    round-trip (D5) dispatches on.
 4. **Tier-2 lifecycle** — recommendations are inferred facts: fingerprint-
