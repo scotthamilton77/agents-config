@@ -115,8 +115,8 @@ def detect_convention(worktree_root: Path, main_root: Path) -> Convention:
         if worktree_root.is_relative_to(main_root / wt_dir):
             return Convention.OTHER_AGENT
     raise UnrecognizedWorktree(
-        f"worktree at {worktree_root} is under neither {main_root}/.claude/worktrees/ "
-        f"nor {main_root}/.worktrees/; tear it down manually"
+        f"worktree at {worktree_root} is under none of {main_root}/.claude/worktrees/, "
+        f"{main_root}/.worktrees/, or {main_root}/worktrees/; tear it down manually"
     )
 
 

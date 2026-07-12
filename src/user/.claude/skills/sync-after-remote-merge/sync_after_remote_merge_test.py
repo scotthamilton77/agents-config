@@ -100,6 +100,18 @@ def test_detect_convention_unrecognised_raises():
         m.detect_convention(wt, main_root)
 
 
+def test_unrecognised_message_lists_every_checked_convention():
+    """The fail-loud message must name all three conventions detect_convention
+    actually checks, so the remediation guidance matches the code."""
+    main_root = Path("/repo")
+    with pytest.raises(m.UnrecognizedWorktree) as ei:
+        m.detect_convention(Path("/tmp/elsewhere/x"), main_root)
+    msg = str(ei.value)
+    assert "/repo/.claude/worktrees" in msg
+    assert "/repo/.worktrees" in msg
+    assert "/repo/worktrees" in msg
+
+
 def test_detect_convention_unrelated_worktrees_segment_fails_loud():
     """A `worktrees` path segment NOT anchored under main_root must fail loud,
     never be scripted-removed as OTHER_AGENT (a bare-segment match would)."""
