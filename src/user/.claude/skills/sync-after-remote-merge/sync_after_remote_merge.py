@@ -163,6 +163,20 @@ def _run(cmd: list[str], cwd: str | None = None, check: bool = True) -> subproce
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check)
 
 
+def _run_step(cmd: list[str], name: str, hint: str, *, cwd: str | None = None) -> subprocess.CompletedProcess:
+    """Run a git command whose failure is an expected, nameable abort.
+
+    Non-zero exit raises `_AbortStep` tagged with `name`, so an operational
+    failure surfaces as that named step in the envelope rather than falling into
+    the generic 'unexpected' bucket. Reserve the plain `_run` (check=True) for
+    calls whose failure genuinely is a programming error.
+    """
+    proc = _run(cmd, cwd=cwd, check=False)
+    if proc.returncode != 0:
+        raise _AbortStep(name, hint, cmd=" ".join(cmd), exit_code=proc.returncode, stderr=proc.stderr)
+    return proc
+
+
 def gh_pr_view(branch: str) -> dict | None:
     """Return the PR payload for `branch`, or None when no PR is associated.
 
@@ -215,10 +229,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         # --- preflight (runs in the worktree's cwd) ---
-        worktree_root = Path(_run(["git", "rev-parse", "--show-toplevel"]).stdout.strip())
-        common = Path(_run(["git", "rev-parse", "--git-common-dir"]).stdout.strip()).resolve()
+        worktree_root = Path(_run_step(["git", "rev-parse", "--show-toplevel"],
+                                       "preflight", "not inside a git repository").stdout.strip())
+        common = Path(_run_step(["git", "rev-parse", "--git-common-dir"],
+                                "preflight", "cannot resolve the git common dir").stdout.strip()).resolve()
         main_root = str(common.parent)
-        branch = args.branch or _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        branch = args.branch or _run_step(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                          "preflight", "cannot resolve current branch").stdout.strip()
         _require_safe_ref(branch, "branch")
         convention = detect_convention(worktree_root, Path(main_root))
         completed.append("preflight")
@@ -266,20 +283,23 @@ def main(argv: list[str] | None = None) -> int:
         completed.append("safety_gate_commits")
 
         # --- safety gate B: clean worktree ---
-        strays = dirty_paths(_run(["git", "-C", str(worktree_root), "status", "--porcelain"]).stdout)
+        strays = dirty_paths(_run_step(["git", "-C", str(worktree_root), "status", "--porcelain"],
+                                       "safety_gate_worktree", "cannot read worktree status").stdout)
         if strays:
             raise _AbortStep("safety_gate_worktree",
                              f"worktree is dirty; refusing to discard: {', '.join(strays)}")
         completed.append("safety_gate_worktree")
 
         # --- sync base (fast-forward only) ---
-        _run(["git", "-C", main_root, "checkout", base])
+        _run_step(["git", "-C", main_root, "checkout", base], "sync_base",
+                  f"cannot check out base {base!r}")
         ff = _run(["git", "-C", main_root, "pull", "--ff-only"], check=False)
         if ff.returncode != 0:
             raise _AbortStep("sync_base",
                              f"base {base!r} is not fast-forwardable (local diverged); sync by hand",
                              cmd="git pull --ff-only", exit_code=ff.returncode, stderr=ff.stderr)
-        synced_to = _run(["git", "-C", main_root, "rev-parse", "HEAD"]).stdout.strip()
+        synced_to = _run_step(["git", "-C", main_root, "rev-parse", "HEAD"], "sync_base",
+                              "cannot read base HEAD after sync").stdout.strip()
         completed.append("sync_base")
 
         # Leave the worktree before any destructive teardown so the script's own
@@ -295,8 +315,10 @@ def main(argv: list[str] | None = None) -> int:
                   remediation_hint="sync done; finish teardown via the two steps in steps_remaining")
             return 0
         if convention is Convention.OTHER_AGENT:
-            _run(["git", "-C", main_root, "worktree", "remove", str(worktree_root)])
-        _run(["git", "-C", main_root, "branch", "-D", branch])
+            _run_step(["git", "-C", main_root, "worktree", "remove", str(worktree_root)],
+                      "teardown", f"cannot remove worktree {worktree_root}")
+        _run_step(["git", "-C", main_root, "branch", "-D", branch], "teardown",
+                  f"cannot delete branch {branch}")
         if convention is Convention.OTHER_AGENT:
             _run(["git", "-C", main_root, "worktree", "prune"], check=False)
         completed.append("teardown")
@@ -308,6 +330,14 @@ def main(argv: list[str] | None = None) -> int:
               remediation_hint=f"branch deleted, {removed}base synced to {synced_to[:9]}")
         return 0
 
+    except UnrecognizedWorktree as exc:
+        # A deliberate fail-loud outcome — report it as a named step, not 'unexpected'.
+        _emit(Status.FAILED, steps_completed=completed,
+              failed_step={"name": "detect_convention", "cmd": "", "exit_code": 1, "stderr": str(exc)},
+              worktree_convention=None, main_root=main_root, base=base, branch=branch,
+              pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
+              remediation_hint=str(exc))
+        return 1
     except _AbortStep as abort:
         remaining = plan_teardown(convention, main_root or "", branch or "") if convention else []
         _emit(Status.FAILED, steps_completed=completed, failed_step=abort.failed_step,

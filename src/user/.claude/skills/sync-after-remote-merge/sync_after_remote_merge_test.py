@@ -381,3 +381,34 @@ def test_main_rejects_dash_leading_branch(monkeypatch, main_repo):
     assert rc != 0
     assert env["status"] == "failed"
     assert env["failed_step"]["name"] == "invalid_ref"
+
+
+def test_main_unrecognised_worktree_is_named_not_unexpected(monkeypatch, main_repo):
+    """UnrecognizedWorktree is a deliberate fail-loud outcome; it must surface as
+    a named 'detect_convention' step, not fall into the generic 'unexpected'."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+
+    def _raise(w, r):
+        raise m.UnrecognizedWorktree("worktree at /x is under no known convention")
+
+    monkeypatch.setattr(m, "detect_convention", _raise)
+    rc, env = _run_main(monkeypatch, wt, None, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "detect_convention"
+
+
+def test_main_operational_git_failure_is_named_step(monkeypatch, main_repo):
+    """A failing operational git call (checkout of a base that doesn't exist)
+    must surface as a named 'sync_base' step, not the generic 'unexpected'."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "push", "origin", "feature/x")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "no-such-base",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "sync_base"
+    assert env["failed_step"]["name"] != "unexpected"
