@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
+import pytest
+
 from tests.conftest import run_cli, run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.runner import BdResult
@@ -68,6 +70,70 @@ def test_create_without_raw_or_noun_yields_usage_envelope_naming_both_modes():
     assert error["code"] == str(ErrorCode.USAGE)
     assert "--raw" in error["message"]
     assert "spike" in error["message"]
+
+
+@pytest.mark.parametrize(
+    ("extra_argv", "offender"),
+    [
+        (["--orphan"], "--orphan"),
+        (["--spec", "S"], "--spec"),
+        (["--trivial"], "--trivial"),
+        (["--acceptance", "A"], "--acceptance"),
+    ],
+)
+def test_create_raw_with_lifecycle_flag_is_usage_error_naming_it(
+    extra_argv: list[str], offender: str
+):
+    # Comment 3566427048: --raw ignores noun/lifecycle-only flags, so combining
+    # them must be rejected with E_USAGE naming the offender rather than
+    # silently dropping it (a --raw --orphan no-op is especially surprising).
+    exit_code, envelope, _ = run_cli(["create", "--raw", "--title", "T", *extra_argv], steps=[])
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert offender in error["message"]
+    assert "--raw" in error["message"]
+
+
+def test_create_raw_with_noun_positional_is_usage_error_naming_the_noun():
+    exit_code, envelope, _ = run_cli(["create", "spike", "--raw", "--title", "T"], steps=[])
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert "spike" in error["message"]
+
+
+def test_create_raw_with_legal_flags_still_succeeds():
+    # Regression: flags create_raw legitimately consumes (--type/--priority/
+    # --parent/--description/--label) must not trip the reject guard.
+    runner = ScriptedBdRunner(steps=[ScriptedStep(("create",), _create_result("x.11"))])
+
+    exit_code, envelope, _ = run_cli_with_runner(
+        [
+            "create",
+            "--raw",
+            "--title",
+            "T",
+            "--type",
+            "task",
+            "--priority",
+            "1",
+            "--parent",
+            "P",
+            "--description",
+            "D",
+            "--label",
+            "a",
+        ],
+        runner,
+    )
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "x.11"}
 
 
 def test_create_missing_title_yields_usage_envelope():

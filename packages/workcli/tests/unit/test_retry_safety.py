@@ -63,6 +63,30 @@ class _AlwaysTimeoutRunner:
         raise subprocess.TimeoutExpired(cmd=["bd", *args], timeout=60)
 
 
+_TIMEOUT_STEP = object()
+
+
+class _SequencedRunner:
+    """BdRunner double stepping a mixed script of TimeoutExpired raises
+    (`_TIMEOUT_STEP`) and BdResult returns -- the one shape neither
+    ScriptedBdRunner (returns only) nor _AlwaysTimeoutRunner (raises only) can
+    express, needed to exercise exhaustion where the *last* retryable failure
+    is lock contention after an earlier timeout.
+    """
+
+    def __init__(self, steps: Sequence[object]) -> None:
+        self._steps = list(steps)
+        self.calls: list[tuple[str, ...]] = []
+
+    def run(self, args: Sequence[str]) -> BdResult:
+        step = self._steps[len(self.calls)]
+        self.calls.append(tuple(args))
+        if step is _TIMEOUT_STEP:
+            raise subprocess.TimeoutExpired(cmd=["bd", *args], timeout=60)
+        assert isinstance(step, BdResult)
+        return step
+
+
 def _invoke(argv: Sequence[str], runner: object, *, sleep=None):
     out = StringIO()
     err = StringIO()
@@ -98,6 +122,52 @@ def test_retry_on_timeout_false_raises_timeout_immediately_with_zero_retries():
     assert exc_info.value.code == ErrorCode.TIMEOUT
     assert sleep_calls == []
     assert len(runner.calls) == 1
+
+
+def test_all_timeouts_exhausted_raises_timeout_not_lock_contention():
+    # Comment 3566427043: retrying timeouts to exhaustion must surface
+    # E_TIMEOUT, not the generic lock-contention exhaustion code.
+    runner = _AlwaysTimeoutRunner()
+    sleep_calls, sleep = _recording_sleep()
+
+    with pytest.raises(WorkError) as exc_info:
+        run_with_retry(runner, ["show", "x.1", "--json"], sleep=sleep, retry_on_timeout=True)
+
+    assert exc_info.value.code == ErrorCode.TIMEOUT
+    assert "reconcile" in exc_info.value.message
+    assert sleep_calls == [0.5, 1.0]
+    assert len(runner.calls) == 3
+
+
+def test_exhaustion_after_timeout_then_lock_contention_last_raises_lock_contention():
+    # A later lock-contention failure resets the timeout marker, so the
+    # exhaustion code follows the *last* retryable failure -- not a sticky
+    # earlier timeout.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = _SequencedRunner([_TIMEOUT_STEP, locked, locked])
+    sleep_calls, sleep = _recording_sleep()
+
+    with pytest.raises(WorkError) as exc_info:
+        run_with_retry(runner, ["show", "x.1", "--json"], sleep=sleep, retry_on_timeout=True)
+
+    assert exc_info.value.code == ErrorCode.LOCK_CONTENTION
+    assert sleep_calls == [0.5, 1.0]
+    assert len(runner.calls) == 3
+
+
+def test_exhaustion_after_lock_contention_then_timeout_last_raises_timeout():
+    # The mirror case: an earlier lock contention followed by a final timeout
+    # surfaces E_TIMEOUT.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = _SequencedRunner([locked, _TIMEOUT_STEP, _TIMEOUT_STEP])
+    sleep_calls, sleep = _recording_sleep()
+
+    with pytest.raises(WorkError) as exc_info:
+        run_with_retry(runner, ["show", "x.1", "--json"], sleep=sleep, retry_on_timeout=True)
+
+    assert exc_info.value.code == ErrorCode.TIMEOUT
+    assert sleep_calls == [0.5, 1.0]
+    assert len(runner.calls) == 3
 
 
 def test_retry_on_timeout_false_still_retries_lock_contention_stderr():
