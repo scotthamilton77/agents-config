@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -143,7 +144,7 @@ def plan_teardown(convention: Convention, main_root: str, branch: str) -> list[s
     if convention is Convention.CLAUDE_NATIVE:
         return [
             "ExitWorktree(discard_changes: true)",
-            f"git -C {main_root} branch -D {branch}",
+            f"git -C {shlex.quote(main_root)} branch -D {shlex.quote(branch)}",
         ]
     return []
 

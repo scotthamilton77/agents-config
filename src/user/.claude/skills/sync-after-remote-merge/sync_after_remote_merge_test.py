@@ -151,6 +151,13 @@ def test_plan_teardown_claude_native_returns_handoff_steps():
     ]
 
 
+def test_plan_teardown_quotes_shell_significant_paths():
+    """main_root / branch are interpolated into a command string the agent runs;
+    spaces or shell metacharacters must be quoted, not passed through raw."""
+    steps = m.plan_teardown(m.Convention.CLAUDE_NATIVE, "/My Repos/agents", "feat/x y")
+    assert steps[1] == "git -C '/My Repos/agents' branch -D 'feat/x y'"
+
+
 def test_plan_teardown_other_agent_is_scripted_no_remaining():
     assert m.plan_teardown(m.Convention.OTHER_AGENT, "/repo", "feature/x") == []
 
