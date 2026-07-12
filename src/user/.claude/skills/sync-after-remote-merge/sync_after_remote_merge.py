@@ -184,18 +184,16 @@ def gh_pr_view(branch: str) -> dict | None:
     (auth/network → raise, so main reports `failed` rather than a false
     not_merged).
     """
-    proc = _run(
-        ["gh", "pr", "view", branch, "--json",
-         "number,state,mergedAt,mergeCommit,baseRefName,headRefOid"],
-        check=False,
-    )
+    argv = ["gh", "pr", "view", branch, "--json",
+            "number,state,mergedAt,mergeCommit,baseRefName,headRefOid"]
+    proc = _run(argv, check=False)
     if proc.returncode == 0:
         return json.loads(proc.stdout)
     err = (proc.stderr or "").lower()
     if "no pull requests found" in err or "no pull request found" in err:
         return None
     raise _AbortStep("verify_merged", f"gh pr view failed: {proc.stderr.strip()}",
-                     cmd=f"gh pr view {branch}", exit_code=proc.returncode, stderr=proc.stderr)
+                     cmd=shlex.join(argv), exit_code=proc.returncode, stderr=proc.stderr)
 
 
 def _default_base(main_root: str) -> str:
