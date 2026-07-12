@@ -54,6 +54,20 @@ def _gh_http_error(status: int, message: str) -> CommandResult:
     return CommandResult(returncode=1, stdout=body, stderr=f"gh: {message} (HTTP {status})")
 
 
+# The poll CI read is check-runs first, so `_gh`'s ci= knob maps to a single check run.
+# success/failure/pending cover every `_gh` caller; the combined-status FALLBACK path
+# (empty check runs) is exercised by the dedicated fallback tests, never by `_gh`.
+_CI_TO_CHECK_RUN: dict[str, dict[str, object]] = {
+    "success": {"status": "completed", "conclusion": "success"},
+    "failure": {"status": "completed", "conclusion": "failure"},
+    "pending": {"status": "in_progress", "conclusion": None},
+}
+
+
+def _ci_check_runs_read(ci: str) -> CommandResult:
+    return _ok({"total_count": 1, "check_runs": [_CI_TO_CHECK_RUN[ci]]})
+
+
 def _gh(
     *,
     head_oid: str = "headsha1",
@@ -85,7 +99,7 @@ def _gh(
     ]
     if review_comments:
         results.append(_thread_map_ok(thread_nodes or []))
-    results.append(_ok({"state": ci}))
+    results.append(_ci_check_runs_read(ci))
     return GhCli(RecordedRunner(results))
 
 
@@ -366,7 +380,7 @@ def test_review_thread_item_gets_graphql_node_id_as_thread_id() -> None:
                 _ok([]),  # reviews
                 _ok([_review_comment(31)]),  # review comments (REST databaseId 31)
                 _thread_map_ok([{"id": "PRRT_x", "comments": {"nodes": [{"databaseId": 31}]}}]),
-                _ok({"state": "success"}),  # CI status
+                _check_runs_ok([_check_run()]),  # CI (check runs)
             ]
         )
     )
@@ -389,7 +403,7 @@ def test_review_thread_thread_id_empty_when_unmapped() -> None:
                 _ok([]),
                 _ok([_review_comment(31)]),
                 _thread_map_ok([]),  # empty map → no node id for comment 31
-                _ok({"state": "success"}),
+                _check_runs_ok([_check_run()]),  # CI (check runs)
             ]
         )
     )
@@ -628,16 +642,17 @@ def test_ci_failure_passed_through() -> None:
     assert state.quiescence.ci_state == "failure"
 
 
-def test_ci_unknown_rollup_maps_to_pending() -> None:
-    # An empty/unknown combined-status state (not in {success, pending, failure})
-    # is treated as pending — CI exists but is not yet a gate-satisfying verdict.
+def test_ci_combined_status_unknown_rollup_maps_to_pending() -> None:
+    # Fallback path: a commit with no check runs falls back to combined-status; an
+    # empty/unknown state there (not success/pending/failure) is treated as pending.
     results = [
         _ok({"headRefOid": "same"}),
         _ok({"state": "open", "merged_at": None}),
         _ok([]),
         _ok([]),
         _ok([]),
-        _ok({"state": ""}),  # gh returns empty when no rollup verdict yet
+        _ok({"total_count": 0, "check_runs": []}),  # no check runs → fall back
+        _ok({"state": ""}),  # combined-status has no rollup verdict yet
     ]
     gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
@@ -645,27 +660,38 @@ def test_ci_unknown_rollup_maps_to_pending() -> None:
     assert state.quiescence.ci_state == "pending"
 
 
-def test_ci_404_maps_to_absent() -> None:
-    # The status endpoint 404s when no CI is configured for the commit → "absent".
+def test_ci_check_runs_404_falls_back_to_combined_status() -> None:
+    # An unexpected 404 on the check-runs endpoint is not terminal: treat it as "no
+    # check runs" and fall back to combined-status rather than erroring.
     results = [
         _ok({"headRefOid": "same"}),
         _ok({"state": "open", "merged_at": None}),
         _ok([]),
         _ok([]),
         _ok([]),
-        _gh_http_error(404, "Not Found"),
+        _gh_http_error(404, "Not Found"),  # check-runs 404 → fall back
+        _ok({"state": "success"}),  # combined-status carries the verdict
     ]
     gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
-    assert state.quiescence.ci_state == "absent"
+    assert state.quiescence.ci_state == "success"
 
 
-def test_ci_error_maps_to_failure() -> None:
-    # GitHub's combined-status returns state in {success, pending, failure, error};
+def test_ci_combined_status_error_maps_to_failure() -> None:
+    # Fallback path: combined-status returns state in {success, pending, failure, error};
     # an `error` rollup is a CI error, not "not yet" — map it to failure, not pending.
+    results = [
+        _ok({"headRefOid": "same"}),
+        _ok({"state": "open", "merged_at": None}),
+        _ok([]),
+        _ok([]),
+        _ok([]),
+        _ok({"total_count": 0, "check_runs": []}),  # no check runs → fall back
+        _ok({"state": "error"}),
+    ]
+    gh = GhCli(RecordedRunner(results))
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
-    gh = _gh(head_oid="same", ci="error")
     state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
     assert state.quiescence.ci_state == "failure"
 
@@ -933,3 +959,151 @@ def test_graphql_failed_error_propagates_unchanged() -> None:
     with pytest.raises(PrgroomError) as exc:
         poll_pr(start, ref=_REF, gh=_RaisingGh(), deps=_deps(), config=_config())
     assert exc.value.code is ErrorCode.RUNTIME_GRAPHQL_FAILED
+
+
+# ── CI via check-runs (Actions-only repos) + list pagination (jkha6) ──
+
+
+def _check_run(status: str = "completed", conclusion: str | None = "success") -> dict[str, object]:
+    return {"status": status, "conclusion": conclusion}
+
+
+def _check_runs_ok(runs: list[dict[str, object]]) -> CommandResult:
+    return _ok({"total_count": len(runs), "check_runs": runs})
+
+
+def _poll_reads(
+    *,
+    head: str = "same",
+    issue_comments: list[dict[str, object]] | None = None,
+    reviews: list[dict[str, object]] | None = None,
+    review_comments: list[dict[str, object]] | None = None,
+    thread_nodes: list[dict[str, object]] | None = None,
+    trailing: list[CommandResult],
+) -> list[CommandResult]:
+    """The fixed head/PR/issue/reviews/review-comments prefix + caller-supplied CI reads.
+
+    Mirrors ``_gh`` but returns the raw result list so a test can hold the
+    ``RecordedRunner`` and assert on the argv (e.g. ``--paginate``). ``trailing``
+    carries the CI reads: one check-runs read, plus a combined-status read only when
+    the test exercises the empty-check-runs fallback.
+    """
+    reads = [
+        _ok({"headRefOid": head}),
+        _ok({"state": "open", "merged_at": None}),
+        _ok(issue_comments or []),
+        _ok(reviews or []),
+        _ok(review_comments or []),
+    ]
+    if review_comments:
+        reads.append(_thread_map_ok(thread_nodes or []))
+    reads.extend(trailing)
+    return reads
+
+
+def test_ci_derives_success_from_check_runs_not_blind_combined_status() -> None:
+    # The core jkha6 defect-2 fix: on an Actions-only repo the legacy combined-status
+    # endpoint returns pending/total_count=0 forever. poll must read check-runs and
+    # roll a completed/success run up to ci_state="success" — never blinded by (nor
+    # even reading) combined-status when check runs exist.
+    runner = RecordedRunner(_poll_reads(trailing=[_check_runs_ok([_check_run()])]))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "success"
+
+
+def test_ci_check_runs_in_progress_maps_to_pending() -> None:
+    runner = RecordedRunner(
+        _poll_reads(trailing=[_check_runs_ok([_check_run(status="in_progress", conclusion=None)])])
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "pending"
+
+
+def test_ci_check_runs_failure_conclusion_maps_to_failure() -> None:
+    runner = RecordedRunner(
+        _poll_reads(trailing=[_check_runs_ok([_check_run(conclusion="failure")])])
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "failure"
+
+
+def test_ci_failed_run_wins_over_still_running_run() -> None:
+    # Precedence: a definitive failure beats an in-progress run — CI won't go green.
+    runner = RecordedRunner(
+        _poll_reads(
+            trailing=[
+                _check_runs_ok(
+                    [
+                        _check_run(conclusion="failure"),
+                        _check_run(status="in_progress", conclusion=None),
+                    ]
+                )
+            ]
+        )
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "failure"
+
+
+def test_ci_neutral_and_skipped_conclusions_count_as_success() -> None:
+    runner = RecordedRunner(
+        _poll_reads(
+            trailing=[
+                _check_runs_ok([_check_run(conclusion="neutral"), _check_run(conclusion="skipped")])
+            ]
+        )
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "success"
+
+
+def test_ci_falls_back_to_combined_status_when_no_check_runs() -> None:
+    # A repo whose CI posts classic commit statuses (no check runs) must still work:
+    # empty check-runs → fall back to the combined-status endpoint.
+    runner = RecordedRunner(_poll_reads(trailing=[_check_runs_ok([]), _ok({"state": "success"})]))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "success"
+
+
+def test_ci_absent_when_no_check_runs_and_no_combined_status() -> None:
+    # Empty check-runs + a 404 on combined-status (no CI configured at all) → absent.
+    runner = RecordedRunner(
+        _poll_reads(trailing=[_check_runs_ok([]), _gh_http_error(404, "Not Found")])
+    )
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert state.quiescence.ci_state == "absent"
+
+
+def test_list_reads_request_pagination() -> None:
+    # Defect-1 fix: the three REST list reads (issue comments, reviews, review
+    # comments) must pass --paginate so items beyond GitHub's 30-per-page default are
+    # ingested. The single-object reads (PR resource, check-runs) must NOT paginate.
+    runner = RecordedRunner(_poll_reads(trailing=[_check_runs_ok([_check_run()])]))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    for path in (
+        "repos/octo/demo/issues/7/comments",
+        "repos/octo/demo/pulls/7/reviews",
+        "repos/octo/demo/pulls/7/comments",
+    ):
+        assert any(path in call and "--paginate" in call for call in runner.calls), path
+    # exactly the three list reads paginate — the PR resource and check-runs do not
+    assert sum("--paginate" in call for call in runner.calls) == 3
+
+
+def test_ingests_reviews_beyond_the_first_thirty() -> None:
+    # Regression guard (acceptance-mandated): gh --paginate concatenates pages into
+    # one array, so poll must ingest every item, not cap at 30. (PR #234 froze because
+    # a re-review landed on page 4 and was never seen.)
+    many = [_review(1000 + i) for i in range(35)]
+    runner = RecordedRunner(_poll_reads(reviews=many, trailing=[_check_runs_ok([_check_run()])]))
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    state = poll_pr(start, ref=_REF, gh=GhCli(runner), deps=_deps(), config=_config())
+    assert sum(i.kind is ItemKind.REVIEW_SUMMARY for i in state.items) == 35

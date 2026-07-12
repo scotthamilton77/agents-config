@@ -6,7 +6,8 @@ copy (the caller owns ``store.write``). It is **read-only over GitHub** — ever
 call is a REST ``GET`` via the injected :class:`~prgroom.gh.client.GhClient`; no
 push, no review re-request, no resolve.
 
-One poll issues six REST reads in this fixed order (plus one conditional GraphQL read):
+One poll issues these REST reads in a fixed order (plus one conditional GraphQL read,
+and a conditional combined-status fallback read):
 
 1. ``head_ref_oid`` — the remote HEAD SHA. Drives the §3.4 bootstrap / attribution
    / push-detection math. An empty HEAD short-circuits the rest (a PR with no
@@ -15,7 +16,8 @@ One poll issues six REST reads in this fixed order (plus one conditional GraphQL
    → ``merged`` transition. A 404 here is a vanished PR/repo mid-run, mapped to
    ``RUNTIME_GH_TERMINAL`` (the startup precondition that owns
    ``PRECONDITION_REPO_UNREACHABLE`` is out of this verb's scope).
-3. issue comments, 4. reviews, 5. review (inline) comments — ingested into
+3. issue comments, 4. reviews, 5. review (inline) comments — each a ``--paginate``d
+   collection read (all pages, not just GitHub's first 30), ingested into
    :class:`ReviewItem`s (natural key ``(kind, gh_id)``; never re-appended) and used
    to flip reviewer engagement (§4.1).
 5a. **GraphQL ``reviewThreads`` thread-id map** — issued only when step 5 returned
@@ -23,9 +25,12 @@ One poll issues six REST reads in this fixed order (plus one conditional GraphQL
    to its ``PRRT_*`` node id (the id ``resolveReviewThread`` consumes and §8.2
    recurrence keys on); REST exposes only comment databaseIds, so this one GraphQL
    read bridges the key-space. A comment absent from the map degrades to ``""``.
-6. CI combined-status for the head SHA — mapped to ``success | pending | failure |
-   absent`` for ``quiescence.ci_state``. A 404 there means no CI configured →
-   ``absent`` (not an error).
+6. CI for the head SHA — read from **check runs** (``commits/{sha}/check-runs``) and
+   rolled up to ``success | pending | failure`` for ``quiescence.ci_state``. A commit
+   with no check runs falls back to the legacy combined-status endpoint (classic commit
+   statuses); a 404 there means no CI configured → ``absent`` (not an error). Reading
+   check runs first is what lets an Actions-only repo ever reach ``success`` — the
+   combined-status endpoint is blind to Actions and reports pending/0 forever (jkha6).
 
 After the reads it runs ``evaluate_reviewer_timeouts`` (§4.1 auto-decline), stamps
 ``last_polled_at``, advances ``last_activity_at`` on any observed mutation, and
@@ -63,8 +68,26 @@ _BODY_EXCERPT_LEN = 200
 # error, e.g. a check that errored out) is a non-green terminal verdict and maps to
 # `failure`. A 404 (no CI configured) maps to `absent` at the call site; any other
 # empty/unknown value is treated as `pending` (CI exists but has no verdict yet).
+# This endpoint is the FALLBACK path only: it is blind to GitHub Actions check runs,
+# so an Actions-only repo reports pending/total_count=0 here forever (the jkha6
+# defect) — _ci_state reads check runs first and only falls back here for a commit
+# with no check runs (a classic-commit-status CI).
 _CI_STATES_PASSTHROUGH: frozenset[str] = frozenset({"success", "pending", "failure"})
 _CI_STATES_FAILURE: frozenset[str] = frozenset({"error"})
+
+# GitHub check-run conclusions that are a non-green terminal verdict. A failure among
+# them outranks a still-running run — CI cannot go green once one has failed. The rest
+# ({success, neutral, skipped}) are non-failing; a run still queued/in_progress (no
+# conclusion yet) holds the rollup at `pending`.
+_CHECK_RUN_FAILURE_CONCLUSIONS: frozenset[str] = frozenset(
+    {"failure", "timed_out", "action_required", "cancelled", "stale"}
+)
+_CHECK_RUN_SUCCESS_CONCLUSIONS: frozenset[str] = frozenset({"success", "neutral", "skipped"})
+# GitHub caps per_page at 100; one page covers realistic check-run matrices. A commit
+# with >100 check runs would miss the overflow — an accepted bound, revisited only if a
+# real repo hits it. (Object endpoints can't use --paginate: gh would emit one object
+# per page and break json.loads.)
+_CHECK_RUNS_PER_PAGE = "100"
 
 
 def poll_pr(
@@ -140,10 +163,15 @@ def _head_ref_oid(gh: GhClient, ref: PRRef) -> str:
         raise vanished_pr_terminal(ref) from exc
 
 
-def _gh_get(gh: GhClient, ref: PRRef, path: str) -> Any:
-    """``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo)."""
+def _gh_get(gh: GhClient, ref: PRRef, path: str, *, paginate: bool = False) -> Any:
+    """``gh.rest("GET", path)`` with a 404 mapped to terminal (vanished PR/repo).
+
+    ``paginate`` opts a collection read into gh's ``--paginate`` page-walk so items
+    past the first 30 are returned (the jkha6 defect: an unpaginated list read froze
+    grooming once a PR accrued >30 reviews/comments).
+    """
     try:
-        return gh.rest("GET", path)
+        return gh.rest("GET", path, paginate=paginate)
     except GhNotFoundError as exc:
         raise vanished_pr_terminal(ref) from exc
 
@@ -173,9 +201,12 @@ def _ingest_items(
     """
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
     base = f"repos/{ref.owner}/{ref.repo}"
-    raw_issue = _gh_get(gh, ref, f"{base}/issues/{ref.number}/comments")
-    raw_reviews = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/reviews")
-    raw_review_comments = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/comments")
+    # Paginate the three collection reads: prgroom's own reply reviews push any
+    # nontrivial PR past GitHub's 30-per-page default, and an unpaginated read froze
+    # grooming on the invisible page-2+ items (jkha6).
+    raw_issue = _gh_get(gh, ref, f"{base}/issues/{ref.number}/comments", paginate=True)
+    raw_reviews = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/reviews", paginate=True)
+    raw_review_comments = _gh_get(gh, ref, f"{base}/pulls/{ref.number}/comments", paginate=True)
     # Only review-thread items carry a thread_id, so the bridging GraphQL read is
     # skipped entirely when this PR surfaced no inline comments (most polls).
     thread_id_map = fetch_thread_id_map(gh, ref) if raw_review_comments else {}
@@ -329,7 +360,51 @@ def _observe_engagement(
 
 
 def _ci_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
-    """Map the gh combined-status for ``head_sha`` to the §4.1 ci_state vocabulary."""
+    """Resolve §4.1 ci_state for ``head_sha``, preferring check runs over combined-status.
+
+    GitHub Actions reports via check runs; the legacy combined-status endpoint returns
+    pending/total_count=0 on an Actions-only repo, so it can never reach `success` there
+    (the jkha6 defect). Read check runs first and roll them up; only a commit with no
+    check runs (a classic-commit-status CI, or none configured) falls back to
+    combined-status.
+    """
+    rollup = _check_runs_state(gh, ref, head_sha)
+    return rollup if rollup is not None else _combined_status_state(gh, ref, head_sha)
+
+
+def _check_runs_state(gh: GhClient, ref: PRRef, head_sha: str) -> str | None:
+    """Roll the head SHA's check runs up to success|pending|failure; ``None`` if none exist.
+
+    ``None`` signals "no check runs on this commit" so ``_ci_state`` falls back to the
+    combined-status endpoint. A 404 (unexpected on a valid head SHA) is treated the same
+    as no check runs — fall back rather than error.
+    """
+    try:
+        payload = gh.rest(
+            "GET",
+            f"repos/{ref.owner}/{ref.repo}/commits/{head_sha}/check-runs",
+            fields={"per_page": _CHECK_RUNS_PER_PAGE},
+        )
+    except GhNotFoundError:
+        return None
+    runs = payload.get("check_runs") or []
+    if not runs:
+        return None
+    all_passed = True
+    for run in runs:
+        conclusion = str(run.get("conclusion") or "")
+        if conclusion in _CHECK_RUN_FAILURE_CONCLUSIONS:
+            return "failure"  # a definitive failure outranks any still-running run
+        if not (
+            str(run.get("status") or "") == "completed"
+            and conclusion in _CHECK_RUN_SUCCESS_CONCLUSIONS
+        ):
+            all_passed = False
+    return "success" if all_passed else "pending"
+
+
+def _combined_status_state(gh: GhClient, ref: PRRef, head_sha: str) -> str:
+    """Map the legacy combined-status for ``head_sha`` to ci_state (the fallback path)."""
     try:
         status = gh.rest("GET", f"repos/{ref.owner}/{ref.repo}/commits/{head_sha}/status")
     except GhNotFoundError:
