@@ -462,7 +462,7 @@ derives from this table):
 **Cross-cutting contract** (every recommendation): evidence-cited (real bead
 ids and/or passages; mirrors scene colors/glyphs in the drill); passes the
 attention bar; stamped with an **actionability class** — `one-click` (agent
-can execute on acceptance: mint bead, add edge, relabel, resequence) or
+can execute on acceptance: mint bead, add edge, relabel) or
 `ruling-needed` (human design decision; agent drafts the question) — the
 class the annotation round-trip dispatches on; and lives the Tier-2
 lifecycle (fingerprint-keyed, funnel-checked, dismissals persist in
