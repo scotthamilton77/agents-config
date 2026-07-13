@@ -145,6 +145,31 @@ Decision (Scott): option C.
   the D1 sidecar; the step-vs-backlog delta remains a first-class spec
   obligation ("recommend work-breakdown revision" action).
 
+## D7 — V3 deferred thin; two F0 reservations bake in now
+
+Decision (Scott): no V3 brainstorm/prototype before the spec. The grouped
+spec's V3 section is written thin — direction + evaluation criteria + a
+continuation bead requiring V3's own reaction round before build. F0 carries
+two reservations so V3 never forces rework: (a) the scene data contract
+supports a time-keyed event stream / snapshot keyframes (Gource-style
+minimal events as the intermediate); (b) the scene contract's shared
+controls include a timeline-scrub affordance (V2 materialization slider
+generalized).
+
+## D8 — Model split for spec + plans
+
+Decision (Scott): Fable banks the judgment-dense inputs
+(`spec-judgment-inputs.md`: recommendation taxonomy, contested semantics,
+F0 scene-contract skeleton); Opus assembles the grouped spec and writes the
+implementation plans from the banked corpus (this file, that file,
+`oss-landscape.md`, `findings.md`, HANDOFF decisions). Implementation
+planning is mechanical decomposition — no frontier ROI. The spec still runs
+the brainstorming skill's review gates regardless of authoring model.
+
+Outcome (later override): the spec-authoring half of this decision was
+overridden — Scott assembled the grouped spec on Fable, not Opus (see
+`HANDOFF.md`). Opus still writes the implementation plans per D8.
+
 ## Candidate vocabulary (glossary decision deferred to spec time)
 
 Promotion (accepted inference → encoded fact), restamp (revalidation against a

@@ -81,25 +81,35 @@ resuming fresh.
 
 ## Next actions (in order)
 
-1. **"How does this actually work" discussion** (Scott initiates this in a
-   fresh session; do NOT jump to V3 or the spec first). Scott's words:
-   "rather than start on the next brainstorm/prototype, I'd like to discuss
-   _how_ we might actually make this work." This is the operationalization
-   question — moving from reaction mockups with hand-built data to a real,
-   repeatable system. Treat it as a brainstorm (one question at a time,
-   use-cases before architecture); its conclusions feed the F0 section of
-   the grouped spec. The agenda below ("Operationalization questions") is
-   the raw material — Scott drives which threads matter.
-2. **V3 brainstorm** (lighter, another day): topical-evolution thread —
-   likely V2 overlay machinery pointed backward through git history plus
-   forward into plans. 1–2 mockups, not a full prototype, unless Scott asks.
-3. **Write the grouped spec** — `docs/specs/2026-MM-DD-visualization-suite-design.md`:
-   F0 foundations (scene contract, shared-canvas runtime, heat model, drill/
-   annotation pattern, encoding spine, + the operationalization decisions
-   from action 1) + V1/V2/V3 sections + evaluation criteria +
-   `## Continuations` minting child beads with ACs. Then:
-   brainstorming-skill user review gate → completion gate → PR → at merge:
-   mint continuations, stamp readiness labels, release claim on yf2ov.2.
+1. **DONE (2026-07-12): operationalization discussion.** The seven agenda
+   threads (below) resolved into six decisions D1–D6 in
+   `operationalization-notes.md`, grounded in a three-provenance-tier working
+   model: agenda items 1–5 produced D1–D6 (item 2, regeneration + freshness,
+   split into D2 staleness + D3 trigger), while items 6 (scale) and 7
+   (step-vs-backlog) folded into those decisions by composition rather than
+   minting standalone ones (see that file's "Threads resolved by
+   composition"). Two further decisions emerged during the discussion, outside
+   the original seven agenda items: D7 (V3-thin) and D8 (model split, a
+   process call on which model authors the spec/plans). Decision map: hybrid
+   promotion (D1), staleness funnel (D2), overnight flag-only sweep (D3),
+   packaging split (D4), annotation round-trip (D5), recommendation timing
+   (D6), V3-thin (D7), model split (D8). OSS landscape surveyed and verified:
+   `oss-landscape.md`. Judgment-dense spec inputs banked on Fable:
+   `spec-judgment-inputs.md` (recommendation taxonomy, contested semantics,
+   F0 scene-contract skeleton). These four files + `findings.md` are the
+   complete spec-input corpus.
+2. **V3 brainstorm/prototype: DEFERRED (decision D7).** No mockups before
+   the spec. The spec's V3 section is thin (direction + evaluation criteria
+   + continuation bead gating build on a future reaction round); F0 carries
+   the two V3 reservations (time-keyed event stream in the scene contract,
+   timeline-scrub affordance).
+3. **Grouped spec WRITTEN (2026-07-12, on Fable — Scott overrode D8's
+   Opus-suffices call for spec assembly):**
+   `docs/specs/2026-07-12-visualization-suite-design.md`, on branch
+   `viz-suite-spec`. Remaining: brainstorming-skill user review gate →
+   completion gate → PR → at merge: mint continuations, stamp readiness
+   labels, release claim on yf2ov.2 — in that order. Implementation plans
+   follow the spec (Opus per D8).
 
 ## Operationalization questions (agenda for next-action 1)
 
