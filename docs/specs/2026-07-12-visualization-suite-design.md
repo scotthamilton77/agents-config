@@ -15,8 +15,8 @@ Evidence corpus: `docs/plans/visualization-suite/` (findings.md — prototype
 verdicts and 15 design principles; operationalization-notes.md — the decision
 log this spec integrates; spec-judgment-inputs.md — recommendation taxonomy,
 contested semantics, scene-contract skeleton; oss-landscape.md — verified
-build-vs-buy survey). Prototypes: `prototype/` (V1, 3 reaction rounds),
-`prototype-v2/` (V2, reaction round + demo-readiness fix pass, playwright-verified).
+build-vs-buy survey). Prototypes: `docs/plans/visualization-suite/prototype/` (V1, 3 reaction rounds),
+`docs/plans/visualization-suite/prototype-v2/` (V2, reaction round + demo-readiness fix pass, playwright-verified).
 
 ## 1. Problem
 
