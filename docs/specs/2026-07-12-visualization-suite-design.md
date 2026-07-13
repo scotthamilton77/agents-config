@@ -7,7 +7,7 @@
 built on shared foundations (F0): a scene contract every view obeys, a
 three-tier provenance model with a fingerprint-keyed staleness funnel, a
 deterministic `packages/vizsuite` CLI split from a thin agentic skill, and a
-human review queue that promotes accepted inferences into beads. V1 (PR-shape)
+human review queue that edge-promotes accepted inferences into beads. V1 (PR-shape)
 and V2 (work-map) are specified to build; V3 (codebase evolution) is
 direction-only, gated on its own reaction round.
 
@@ -343,15 +343,15 @@ or reordering steps never orphans a verdict.
 
 A conflict resolved by accepting a *serialize-with-checkpoint* recommendation
 (§5.7) mints a real `blocks` edge — via the recommendation, not the conflict
-edge itself. Step-level edges promote to a specific bead pair: the agent
+edge itself. Step-level edges are edge-promoted to a specific bead pair: the agent
 proposes it from the step→bead-ids mapping, the human verdict confirms it,
 and **the chosen pair is recorded on the fact's ledger entry** — idempotency
 checks the ledger, not re-derivation, so re-accepting an already-promoted
 edge is a no-op regardless of what a later re-synthesis would propose. If
 re-synthesis moves the recorded pair's beads out of the endpoints' anchor
-sets, an orphaned-promotion flag is raised for human disposition — a
+sets, an orphaned edge-promotion flag is raised for human disposition — a
 promoted beads edge is never auto-removed. **Every `blocks` write —
-promotion or `viz apply` — runs cycle detection against the beads DAG first
+edge promotion or `viz apply` — runs cycle detection against the beads DAG first
 and refuses with a flag on a would-be cycle** — and the check runs over the
 **full accepted logical dependency graph**: beads `blocks` edges *plus*
 sidecar-held accepted dependency edges, including type-wall `related-to`
@@ -359,11 +359,11 @@ fallbacks (an edge closing a cycle silently removes work from `bd ready`,
 and a logical cycle through fallback edges would also break §7.5's
 longest-path generation index); `viz verdict` and `viz apply` support
 `--dry-run` previews showing the exact bead mutations before anything
-writes (test item 17). Promotion appends an audit note to the
+writes (test item 17). Edge promotion appends an audit note to the
 target bead (provenance: agent-inferred-then-accepted, date, fingerprint);
 the sidecar ledger — not beads — is authoritative for provenance and for
 which beads edges are agent-created (beads edges carry no metadata), which
-is what makes an erroneous promotion identifiable and reversible later.
+is what makes an erroneous edge promotion identifiable and reversible later.
 
 ### 5.4 Staleness funnel
 
@@ -459,7 +459,7 @@ derives from this table):
 | synergy edge | **piggyback** (one plan's work makes another's step nearly free — claim it explicitly in ACs or shrink the second step; unclaimed synergy decays into duplicate spend) |
 | contested region | **guardrail placement** (keyed to contention level: L1 → rebase discipline, L2 → interface freeze or ownership, L3 → design ruling); **ownership assignment** (one plan owns the region for the window; others rebase — serializes by geography, not time); **interface freeze** (pin the public contract so contenders build against a stable seam); **hot-region decomposition** (3+ plans or repeated generations contesting one region = the region does too much; recommend refactor-first work — contention as architecture signal) |
 | step-vs-backlog delta | **backlog gap** (step maps to zero beads → mint them); **orphan work** (beads map to no step → re-synthesize or triage as scope creep; present both readings); **granularity mismatch** (one step maps to a dozen beads, a sibling to one → rebalance); **sequencing contradiction** (bead dependency order contradicts step order → reconcile, citing both) |
-| doubt flag | **reassess-inference** (claim + basis + the change, queued); **cascade check** (the doubted fact was load-bearing for downstream verdicts → review dependents together; doubt propagates along promotion lineage) |
+| doubt flag | **reassess-inference** (claim + basis + the change, queued); **cascade check** (the doubted fact was load-bearing for downstream verdicts → review dependents together; doubt propagates along edge-promotion lineage) |
 
 **Cross-cutting contract** (every recommendation): evidence-cited (real bead
 ids and/or passages; mirrors scene colors/glyphs in the drill); passes the
@@ -630,7 +630,7 @@ recommendation layer on top.
 
 Cross-plan edges are inferred per §5.2 (fixed enum, passage citations),
 persisted per §5.3, aged per §5.4. Proposed edges render dashed (inferred)
-until a human verdict lands; accepted edges render solid and promote into
+until a human verdict lands; accepted edges render solid and are edge-promoted into
 beads. The review queue is the deliberate bottleneck: nothing mutates beads
 without a Tier-3 verdict. Specimen reality check that sized this design:
 of 10 real cross-plan edges identified across 5 plans, exactly 1 was encoded
@@ -724,7 +724,7 @@ playwright pass, not CI.
    `verdicts.json` is byte-identical; a verdict whose subject fact changed
    produces an orphaned-verdict flag in `flags.json`, and the verdict itself
    stays present and untouched.
-5. **Promotion mapping:** accepted dependency edge between type-wall-legal
+5. **Edge-promotion mapping:** accepted dependency edge between type-wall-legal
    beads mints `blocks`; epic↔task falls back to `related-to` with sidecar
    kind intact; re-accepting an already-promoted edge is a no-op.
 6. **Assembly determinism:** same scene + template → byte-identical HTML
@@ -769,7 +769,7 @@ playwright pass, not CI.
 16. **Sidecar concurrency:** two writers contending on `.viz/` serialize on
     the advisory lock; a writer killed mid-write leaves no torn file
     (temp-then-rename discipline).
-17. **Cycle guard:** a `blocks` write (promotion or apply) that would close
+17. **Cycle guard:** a `blocks` write (edge promotion or apply) that would close
     a cycle in the beads DAG is refused with a flag and beads stay
     untouched; `--dry-run` previews the exact mutations without writing.
 
@@ -812,7 +812,7 @@ playwright pass, not CI.
   `.viz/out/` gitignored.
 - `ASSUMPTION:` edge-promotion mapping (§5.3) — dependency→`blocks` with
   `related-to` type-wall fallback; overlap/conflict/synergy→`related-to` +
-  sidecar-authoritative kind. Refines the promotion decision via its own
+  sidecar-authoritative kind. Refines the edge-promotion decision via its own
   "everything beads cannot express lives in the sidecar" clause.
 - `ASSUMPTION:` consequence axis seeded from `.critical-paths` (§6.2) —
   shares the completion gate's source of truth rather than inventing a
@@ -857,7 +857,7 @@ playwright pass, not CI.
 - feat: `viz` skill — rebuild driving, rung-3 doubt checks, edge/step
   inference (fixed enum + passage citations), review-queue flow, annotation
   round-trip incl. claude-in-chrome enhancement — AC: end-to-end on this
-  repo: infer → review → verdict → promotion visible in beads; rejection
+  repo: infer → review → verdict → edge promotion visible in beads; rejection
   memory honored across a rebuild.
 - feat: V2 work-map artifact — lanes + territory views per §7 requirements,
   materialization slider with slider-tracking drills, contested L1–L3
