@@ -1,7 +1,7 @@
 # Visualization Suite — Grouped Design (F0 Foundations, V1 PR-Shape, V2 Work-Map, V3 Evolution)
 
 **Date:** 2026-07-12
-**Status:** Draft (pending review)
+**Status:** Approved — implementation planning (F0/V1/V2 committed to build; V3 direction-only)
 **Bead:** agents-config-yf2ov.2 (epic, child of milestone M5)
 **Decision:** One suite of regenerated, self-contained HTML visualization artifacts
 built on shared foundations (F0): a scene contract every view obeys, a
@@ -746,8 +746,10 @@ playwright pass, not CI.
     load-bearing ranking scores correctly with them excluded; a fixture PR
     introducing new imports scores the new hub non-zero (projected
     centrality).
-11. **Reconciler drift alarm:** PR file list disagreeing with the commit-walk
-    file set → typed drift error, not a silent union.
+11. **Reconciler drift alarm:** local git's net file/commit sets disagreeing
+    with GitHub's un-truncated scalar counts (`changedFiles`,
+    `commits{totalCount}`) → typed drift error, not a silent union (cap-immune;
+    see the Review feedback appendix).
 12. **Envelope invariants:** machine verbs emit the JSON envelope on stdout
     with exit code mirroring `ok`, success and failure both.
 13. **Identity survives re-synthesis:** re-synthesis that renumbers and
@@ -873,3 +875,19 @@ playwright pass, not CI.
 - design: V3 reaction round — mockup round for codebase-evolution views
   gated on V1/V2 shipping; produces V3's own dated spec — AC: reaction
   verdicts recorded; scene-contract time reservation validated or amended.
+
+## Review feedback
+
+- **2026-07-13 — implementation-plan review round 5 (Path C):** §6.3's reconciler
+  mechanism is amended. `gh pr view --json files,commits` truncates both GraphQL
+  connections at `first:100` (verified in GitHub CLI v2.92.0's `query_builder.go`), so gh cannot
+  supply the PR *file list* for reconciliation. Local git is authoritative for
+  the net file and commit **sets** (`git diff base...head --name-only`,
+  `git rev-list base..head`); GitHub remains the second witness via
+  **un-truncated scalar counts** (`changedFiles`, `commits{totalCount}`), and
+  disagreement between local set sizes and GitHub's counts is the loud drift
+  error. Test item 11 reads accordingly: local net sets disagreeing with
+  GitHub's scalar counts → typed drift error, not a silent union — cap-immune on
+  PRs of any size. Extraction likewise reads immutable git objects plus a
+  `git archive` snapshot rather than the operator's checkout; see the
+  implementation plan's §3.5 ("Path C") for the mechanism.
