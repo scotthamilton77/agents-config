@@ -3,9 +3,9 @@
 `GitRunner` is the interface every contract test replaces with
 `tests/fakes.ScriptedGitRunner`; `SubprocessGitRunner` is the sole
 implementation that actually shells out to real `git`. Slice 1 needs only
-`ls_tree`; slice 2 extends this same file with `rev_parse`/`cat_object_exists`/
-`rev_list`/`diff_name_only`/`fetch_pr`/`fetch_base`/`churn_for_commits`, and
-slice 3 adds `archive_tar`.
+`ls_tree`; slice 2 extends this same file with `cat_object_exists`/`rev_list`/
+`diff_name_only`/`fetch_pr`/`fetch_base`/`churn_for_commits`, and slice 3 adds
+`archive_tar`.
 
 `ls_tree` reads the immutable commit *tree object* (`git ls-tree -r <rev>`),
 never the mutable index (`git ls-files`), so every consumer sees a property of
@@ -49,7 +49,6 @@ class ModifiedFileRow(NamedTuple):
 
 class GitRunner(Protocol):
     def ls_tree(self, rev: str) -> list[LsTreeRow]: ...  # pragma: no cover
-    def rev_parse(self, rev: str) -> str: ...  # pragma: no cover
     def cat_object_exists(self, oid: str) -> bool: ...  # pragma: no cover
     def rev_list(self, base: str, head: str) -> list[str]: ...  # pragma: no cover
     def diff_name_only(self, base: str, head: str) -> list[str]: ...  # pragma: no cover
@@ -74,16 +73,6 @@ class SubprocessGitRunner:
             check=True,
         )
         return [_parse_ls_tree_line(line) for line in completed.stdout.splitlines() if line]
-
-    def rev_parse(self, rev: str) -> str:
-        completed = subprocess.run(
-            ["git", "rev-parse", rev],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
-        )
-        return completed.stdout.strip()
 
     def cat_object_exists(self, oid: str) -> bool:
         # `git cat-file -e <oid>` exits 0 iff the object is present locally.

@@ -3,7 +3,7 @@
 Every other test drives a `ScriptedGitRunner` fake; this file is the sole place
 that proves the `git ls-tree -r` wiring (argv, tab-delimited parse, blob rows)
 actually works, against a real throwaway repo (git is always available in CI).
-Slice 2 extends this seam with rev_parse/rev_list/diff/etc.
+Slice 2 extends this seam with cat_object_exists/rev_list/diff/churn/etc.
 """
 
 from __future__ import annotations
@@ -73,13 +73,10 @@ def _two_commit_repo(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, 
     return base, head
 
 
-def test_rev_parse_cat_exists_rev_list_diff_on_real_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_cat_exists_rev_list_diff_on_real_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     base, head = _two_commit_repo(tmp_path, monkeypatch)
     runner = SubprocessGitRunner()
 
-    assert runner.rev_parse("HEAD") == head
     assert runner.cat_object_exists(head) is True
     assert runner.cat_object_exists("0" * 40) is False  # a well-formed but absent OID
     assert runner.rev_list(base, head) == [head]  # exactly one commit in base..head

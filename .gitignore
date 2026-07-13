@@ -48,3 +48,6 @@ htmlcov/
 
 # optimize-my-skill --deep workspaces (persistent but not committed)
 .eval-runs/
+
+# vizsuite artifact output (`viz pr` writes .viz/out/*.html at cwd)
+.viz/

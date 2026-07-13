@@ -43,11 +43,19 @@ def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
     # head (forks too); the base tip is never an ancestor of it, so the base ref is
     # fetched separately. Still absent after both fetches ⇒ stale clone / unreachable
     # remote — refuse loudly rather than die on a cryptic later git error.
-    if not git.cat_object_exists(pr.head_oid):
+    head_present = git.cat_object_exists(pr.head_oid)
+    if not head_present:
         git.fetch_pr(pr_number)
-    if not git.cat_object_exists(pr.base_oid):
+        head_present = git.cat_object_exists(pr.head_oid)
+    base_present = git.cat_object_exists(pr.base_oid)
+    if not base_present:
         git.fetch_base(pr.base_ref)
-    missing = [oid for oid in (pr.base_oid, pr.head_oid) if not git.cat_object_exists(oid)]
+        base_present = git.cat_object_exists(pr.base_oid)
+    missing = [
+        oid
+        for oid, present in ((pr.base_oid, base_present), (pr.head_oid, head_present))
+        if not present
+    ]
     if missing:
         raise VizError(
             ErrorCode.SNAPSHOT_MISMATCH,
@@ -75,5 +83,5 @@ def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
             detail={"local": len(commit_oids), "github_commits": pr.commit_count},
         )
 
-    files = churn(git, sorted(commit_oids), net_files)
+    files = churn(git, commit_oids, net_files)
     return PrScope(pr_number=pr_number, head_oid=pr.head_oid, base_oid=pr.base_oid, files=files)

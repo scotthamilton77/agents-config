@@ -49,3 +49,25 @@ def test_deleted_file_keys_by_old_path():
 
     # a pure delete has new_path=None; it keys by old_path so it stays in scope.
     assert result == {"gone.py": FileChurn(added=0, deleted=7)}
+
+
+def test_net_file_with_no_churn_row_appears_with_zero_churn():
+    from vizsuite.extract.churn import FileChurn, churn
+
+    git = ScriptedGitRunner(
+        churn_rows=[
+            ModifiedFileRow(new_path="a.py", old_path="a.py", added=4, deleted=2),
+        ]
+    )
+
+    # `b.py` is in the reconciled net set but no per-commit row resolves to it
+    # (a rename whose PyDriller row keyed to a different path, or a mode-only /
+    # binary change). It must still appear: `PrScope.files` IS the net set, and
+    # `reconcile` already pinned len(net_files) == GitHub's changed_files, so a
+    # dropped key would silently undercount the PR shape with no error.
+    result = churn(git, ["oid1"], net_files={"a.py", "b.py"})
+
+    assert result == {
+        "a.py": FileChurn(added=4, deleted=2),
+        "b.py": FileChurn(added=0, deleted=0),
+    }
