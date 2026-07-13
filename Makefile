@@ -4,11 +4,14 @@
         ci-prgroom test-prgroom lint-prgroom format-check-prgroom \
         typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom \
         ci-workcli test-workcli lint-workcli format-check-workcli \
-        typecheck-workcli cov-workcli audit-workcli verify-entry-workcli
+        typecheck-workcli cov-workcli audit-workcli verify-entry-workcli \
+        ci-vizsuite test-vizsuite lint-vizsuite format-check-vizsuite \
+        typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite
 
 INSTALLER := packages/installer
 PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
+VIZSUITE := packages/vizsuite
 
 ci: ci-installer ci-prgroom ci-workcli lint-actions
 
@@ -104,3 +107,24 @@ audit-workcli:
 verify-entry-workcli:
 	uv --project $(WORKCLI) run work --protocol-version > /dev/null
 	uv --project $(WORKCLI) run work --help > /dev/null
+
+# ── vizsuite (mirrors the ci-workcli block one-for-one; enforced via the
+# always-run ci-vizsuite.yml job, NOT via the top-level `ci:` aggregate) ──
+ci-vizsuite: lint-vizsuite format-check-vizsuite typecheck-vizsuite \
+             cov-vizsuite audit-vizsuite verify-entry-vizsuite
+
+test-vizsuite:
+	cd $(VIZSUITE) && uv run pytest -q
+lint-vizsuite:
+	cd $(VIZSUITE) && uv run ruff check
+format-check-vizsuite:
+	cd $(VIZSUITE) && uv run ruff format --check
+typecheck-vizsuite:
+	cd $(VIZSUITE) && uv run mypy --strict src
+cov-vizsuite:
+	cd $(VIZSUITE) && uv run pytest --cov --cov-report=term-missing
+audit-vizsuite:
+	cd $(VIZSUITE) && uv sync --frozen && uv run pip-audit
+verify-entry-vizsuite:
+	uv --project $(VIZSUITE) run viz --protocol-version > /dev/null
+	uv --project $(VIZSUITE) run viz --help > /dev/null

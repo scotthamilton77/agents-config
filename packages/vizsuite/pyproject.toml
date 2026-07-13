@@ -1,0 +1,60 @@
+[project]
+name = "vizsuite"
+version = "0.1.0"
+description = "vizsuite — repo/PR visualization suite (Tier-1 extractors, PR-scoped reconciliation, scene assembly, HTML rendering)."
+requires-python = ">=3.11.4"
+dependencies = []
+# Extractor deps are staged in the slice that first needs them (avoids landing
+# unexercised deps in the skeleton PR): slice 2 adds "pydriller"; slice 4 adds
+# "networkx>=3.4,<4". doit + diskcache are the .2.3 funnel substrate (not here).
+# scc + gh + git are external binaries invoked as subprocesses (not pip deps).
+# d3 is vendored JS.
+
+[project.scripts]
+viz = "vizsuite.cli:entry"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vizsuite"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-xdist", "pytest-cov", "ruff", "mypy", "pip-audit"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E","W","F","I","B","UP","SIM","S","RET","ARG","PTH","TRY","RUF","N"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "TRY003"]
+# The subprocess adapters run known binaries (git/scc/gh) on controlled argv —
+# the intentional-subprocess case S603/S607 exist to let a boundary opt out of.
+"src/vizsuite/adapters/git/runner.py" = ["S603", "S607"]
+"src/vizsuite/adapters/scc/runner.py" = ["S603", "S607"]
+"src/vizsuite/adapters/gh/runner.py" = ["S603", "S607"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+disallow_any_decorated = true
+enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
+# If pydriller/networkx lack complete stubs under --strict, add a surgical
+# [[tool.mypy.overrides]] with ignore_missing_imports for that module only.
+
+[tool.coverage.run]
+branch = true
+source = ["src/vizsuite"]
+
+[tool.coverage.report]
+fail_under = 90
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
+show_missing = true
+skip_covered = true
