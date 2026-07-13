@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from typing import NoReturn, TextIO
 
 from vizsuite import PROTOCOL_VERSION
+from vizsuite.adapters.gh.runner import GhRunner, SubprocessGhRunner
 from vizsuite.adapters.git.runner import GitRunner, SubprocessGitRunner
 from vizsuite.envelope import ErrorCode, JsonValue, VizError, emit_failure, emit_success
 from vizsuite.render import render_human
@@ -118,7 +119,7 @@ def main(
     *,
     git_runner: GitRunner | None = None,
     scc_runner: object | None = None,
-    gh_runner: object | None = None,
+    gh_runner: GhRunner | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
 ) -> int:
@@ -158,8 +159,8 @@ def main(
         # handshake never touches any adapter.
         runners = Runners(
             git=git_runner if git_runner is not None else SubprocessGitRunner(),
+            gh=gh_runner if gh_runner is not None else SubprocessGhRunner(),
             scc=scc_runner,
-            gh=gh_runner,
         )
         data = handler(runners, args)
     except VizError as verb_error:

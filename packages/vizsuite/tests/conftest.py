@@ -6,6 +6,7 @@ import json
 from collections.abc import Sequence
 from io import StringIO
 
+from vizsuite.adapters.gh.runner import GhRunner
 from vizsuite.adapters.git.runner import GitRunner
 from vizsuite.cli import main
 from vizsuite.envelope import JsonValue
@@ -15,6 +16,7 @@ def run_cli(
     argv: Sequence[str],
     *,
     git_runner: GitRunner | None = None,
+    gh_runner: GhRunner | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Invoke `main()` capturing stdout/stderr; return `(exit_code, envelope, stderr)`.
 
@@ -24,6 +26,6 @@ def run_cli(
     """
     out = StringIO()
     err = StringIO()
-    exit_code = main(argv, git_runner=git_runner, out=out, err=err)
+    exit_code = main(argv, git_runner=git_runner, gh_runner=gh_runner, out=out, err=err)
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()

@@ -3,10 +3,10 @@ name = "vizsuite"
 version = "0.1.0"
 description = "vizsuite — repo/PR visualization suite (Tier-1 extractors, PR-scoped reconciliation, scene assembly, HTML rendering)."
 requires-python = ">=3.11.4"
-dependencies = []
+dependencies = ["pydriller>=2.5"]
 # Extractor deps are staged in the slice that first needs them (avoids landing
-# unexercised deps in the skeleton PR): slice 2 adds "pydriller"; slice 4 adds
-# "networkx>=3.4,<4". doit + diskcache are the .2.3 funnel substrate (not here).
+# unexercised deps in the skeleton PR): slice 2 adds "pydriller" (churn); slice 4
+# adds "networkx>=3.4,<4". doit + diskcache are the .2.3 funnel substrate (not here).
 # scc + gh + git are external binaries invoked as subprocesses (not pip deps).
 # d3 is vendored JS.
 
@@ -46,8 +46,12 @@ strict = true
 warn_unreachable = true
 disallow_any_decorated = true
 enable_error_code = ["redundant-expr", "truthy-bool", "possibly-undefined"]
-# If pydriller/networkx lack complete stubs under --strict, add a surgical
-# [[tool.mypy.overrides]] with ignore_missing_imports for that module only.
+
+# pydriller ships no type stubs; scope the missing-imports allowance to it alone
+# (slice 4 adds the same for networkx) so --strict stays on everywhere else.
+[[tool.mypy.overrides]]
+module = ["pydriller.*"]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true

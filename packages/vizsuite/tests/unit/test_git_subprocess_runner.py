@@ -23,6 +23,17 @@ def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)  # noqa: S603, S607
 
 
+def _git_out(cwd: Path, *args: str) -> str:
+    result = subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
 def _init_repo(root: Path, files: Sequence[tuple[str, str]]) -> None:
     _git(root, "init", "-q")
     _git(root, "config", "user.email", "t@example.com")
@@ -47,3 +58,70 @@ def test_ls_tree_reads_committed_blob_rows(tmp_path: Path, monkeypatch: pytest.M
         assert row.obj_type == "blob"
         assert row.mode.startswith("100")
         assert len(row.blob_sha) == 40  # full git object SHA-1
+
+
+def _two_commit_repo(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    """A base commit (a.py) then a head commit (modifies a.py, adds b.py). Returns (base, head)."""
+    _init_repo(root, [("a.py", "x = 1\n")])
+    base = _git_out(root, "rev-parse", "HEAD")
+    (root / "a.py").write_text("x = 2\n", encoding="utf-8")
+    (root / "b.py").write_text("y = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "head")
+    head = _git_out(root, "rev-parse", "HEAD")
+    monkeypatch.chdir(root)
+    return base, head
+
+
+def test_rev_parse_cat_exists_rev_list_diff_on_real_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    base, head = _two_commit_repo(tmp_path, monkeypatch)
+    runner = SubprocessGitRunner()
+
+    assert runner.rev_parse("HEAD") == head
+    assert runner.cat_object_exists(head) is True
+    assert runner.cat_object_exists("0" * 40) is False  # a well-formed but absent OID
+    assert runner.rev_list(base, head) == [head]  # exactly one commit in base..head
+    assert set(runner.diff_name_only(base, head)) == {"a.py", "b.py"}  # 3-dot net diff
+
+
+def test_churn_for_commits_sums_real_pydriller_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    base, head = _two_commit_repo(tmp_path, monkeypatch)
+    head_only = SubprocessGitRunner().rev_list(base, head)
+
+    rows = SubprocessGitRunner().churn_for_commits(head_only)
+
+    by_path = {(row.new_path or row.old_path): row for row in rows}
+    # the head commit modified a.py (1 added, 1 deleted) and added b.py (1 added).
+    assert by_path["a.py"].added == 1
+    assert by_path["a.py"].deleted == 1
+    assert by_path["b.py"].added == 1
+    assert by_path["b.py"].deleted == 0
+
+
+def test_churn_for_commits_reads_commit_unreachable_from_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The real case: a PR head not merged into the checked-out branch. PyDriller's
+    # branch-traversal filter (Repository(only_commits=...)) would silently yield
+    # nothing for it; churn must read the commit object directly by SHA.
+    _init_repo(tmp_path, [("a.py", "x = 1\n")])
+    base_branch = _git_out(tmp_path, "rev-parse", "--abbrev-ref", "HEAD")
+    _git(tmp_path, "checkout", "-q", "-b", "feature")
+    (tmp_path / "a.py").write_text("x = 2\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("y = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "feature")
+    feature = _git_out(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", base_branch)  # HEAD no longer reaches `feature`
+    monkeypatch.chdir(tmp_path)
+
+    rows = SubprocessGitRunner().churn_for_commits([feature])
+
+    by_path = {(row.new_path or row.old_path): row for row in rows}
+    assert by_path["a.py"].added == 1
+    assert by_path["a.py"].deleted == 1
+    assert by_path["b.py"].added == 1
