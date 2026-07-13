@@ -286,7 +286,7 @@ plans must confirm both by reading source before designing on them.
 
 ```
 .viz/
-  lock                  # advisory lock for single-writer sidecar commands
+  lock                  # advisory lock for single-writer sidecar commands (local runtime artifact, gitignored — not repo-committed)
   manifest.json          # fingerprint manifest: input hashes + prompt/model/schema versions
   edges.json             # Tier 2: inferred cross-plan edges + citations (machine-rewritten)
   steps.json             # Tier 2: synthesized waypoints + step→bead-ids mapping
