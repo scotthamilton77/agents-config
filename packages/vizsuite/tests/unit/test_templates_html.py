@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from vizsuite.scene.model import FileNode, Scene
-from vizsuite.templates.html import render_html, scene_to_script_json
+from vizsuite.templates.html import _fill_template, render_html, scene_to_script_json
 
 _SCENE_OPEN = '<script id="viz-scene" type="application/json">'
 
@@ -54,6 +54,21 @@ def test_scene_field_with_script_close_tag_survives_inline():
     assert "\\u003c/script\\u003e" in block
     scene_data = json.loads(block)
     assert [node["path"] for node in scene_data["files"]] == [hostile]
+
+
+def test_fill_template_substitution_is_order_independent():
+    # An asset (or repo-derived path) that happens to contain a *later*
+    # placeholder token must be inserted verbatim, never reinterpreted as a
+    # slot. A chained str.replace() would clobber it on the scene-json pass;
+    # the single-pass re.sub() cannot, because injected content is never
+    # re-scanned.
+    hostile_css = "body::after { content: '__VIZ_SCENE_JSON__'; }"
+    out = _fill_template(css=hostile_css, d3="/* d3 */", scene_json='{"pr_number":7}')
+
+    # the css's literal token survived (was not substituted as the scene slot)...
+    assert "content: '__VIZ_SCENE_JSON__';" in out
+    # ...and the real scene json was injected exactly once, at the template slot.
+    assert out.count('{"pr_number":7}') == 1
 
 
 def test_render_inlines_vendored_d3_and_scene_css_and_estate_paths():

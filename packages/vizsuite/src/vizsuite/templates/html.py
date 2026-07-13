@@ -20,14 +20,15 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import re
 
 from vizsuite.envelope import JsonValue
 from vizsuite.scene.model import Scene, scene_to_json
 
-# Placeholder tokens are chosen so they cannot occur in the (controlled) CSS/d3
-# assets or in the escaped scene JSON. The scene JSON is substituted LAST, so
-# even a repo-derived path that happened to contain a token string can never be
-# reinterpreted as a placeholder.
+# Placeholder tokens are substituted in a single pass (see `_fill_template`), so
+# injected content is never re-scanned: an asset or a repo-derived path that
+# happens to contain a token string is inserted verbatim, never reinterpreted as
+# a placeholder slot.
 _TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -91,11 +92,26 @@ def render_html(scene: Scene) -> str:
     scene_json = scene_to_script_json(scene_to_json(scene))
     css = _read_static("scene.css")
     d3 = _read_static("d3.min.js")
-    return (
-        _TEMPLATE.replace("/*__VIZ_CSS__*/", css)
-        .replace("/*__VIZ_D3__*/", d3)
-        .replace("__VIZ_SCENE_JSON__", scene_json)
-    )
+    return _fill_template(css=css, d3=d3, scene_json=scene_json)
+
+
+def _fill_template(*, css: str, d3: str, scene_json: str) -> str:
+    """Fill the template placeholders in a single ``re.sub`` pass.
+
+    One pass (never chained ``str.replace``) makes substitution
+    order-independent: each placeholder in the template is replaced exactly once
+    and injected content is never re-scanned, so an asset or a repo-derived path
+    that happens to contain a token string is inserted verbatim rather than
+    reinterpreted as a slot (spec §4.6). The scene JSON is the only repo-derived
+    input, so this makes the embedding safe by construction, not by ordering.
+    """
+    replacements = {
+        "/*__VIZ_CSS__*/": css,
+        "/*__VIZ_D3__*/": d3,
+        "__VIZ_SCENE_JSON__": scene_json,
+    }
+    pattern = re.compile("|".join(re.escape(token) for token in replacements))
+    return pattern.sub(lambda match: replacements[match.group(0)], _TEMPLATE)
 
 
 def _read_static(name: str) -> str:
