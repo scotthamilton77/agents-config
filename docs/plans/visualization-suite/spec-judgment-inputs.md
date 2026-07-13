@@ -1,9 +1,10 @@
 # Spec judgment inputs — Fable-banked deltas
 
 WORKING NOTE. The three judgment-dense inputs for the grouped spec, authored
-on Fable while session context was hot (per the model-split decision: Opus
-assembles the spec and implementation plans from this corpus). Companions:
-`operationalization-notes.md` (D1–D6), `oss-landscape.md`, `findings.md`.
+on Fable while session context was hot (per model-split decision D8, as
+overridden: the grouped spec was assembled on Fable, with Opus writing the
+implementation plans from this corpus). Companions:
+`operationalization-notes.md` (D1–D8), `oss-landscape.md`, `findings.md`.
 
 These are proposals at brainstorm fidelity — the spec's deep-review pass and
 Scott's spec review are the acceptance gates. Nothing here is implemented.

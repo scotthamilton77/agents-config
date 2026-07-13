@@ -166,6 +166,10 @@ implementation plans from the banked corpus (this file, that file,
 planning is mechanical decomposition — no frontier ROI. The spec still runs
 the brainstorming skill's review gates regardless of authoring model.
 
+Outcome (later override): the spec-authoring half of this decision was
+overridden — Scott assembled the grouped spec on Fable, not Opus (see
+`HANDOFF.md`). Opus still writes the implementation plans per D8.
+
 ## Candidate vocabulary (glossary decision deferred to spec time)
 
 Promotion (accepted inference → encoded fact), restamp (revalidation against a
