@@ -746,8 +746,10 @@ playwright pass, not CI.
     load-bearing ranking scores correctly with them excluded; a fixture PR
     introducing new imports scores the new hub non-zero (projected
     centrality).
-11. **Reconciler drift alarm:** PR file list disagreeing with the commit-walk
-    file set → typed drift error, not a silent union.
+11. **Reconciler drift alarm:** local git's net file/commit sets disagreeing
+    with GitHub's un-truncated scalar counts (`changedFiles`,
+    `commits{totalCount}`) → typed drift error, not a silent union (cap-immune;
+    see the Review feedback appendix).
 12. **Envelope invariants:** machine verbs emit the JSON envelope on stdout
     with exit code mirroring `ok`, success and failure both.
 13. **Identity survives re-synthesis:** re-synthesis that renumbers and
