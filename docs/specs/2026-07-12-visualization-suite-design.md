@@ -880,7 +880,7 @@ playwright pass, not CI.
 
 - **2026-07-13 — implementation-plan review round 5 (Path C):** §6.3's reconciler
   mechanism is amended. `gh pr view --json files,commits` truncates both GraphQL
-  connections at `first:100` (verified in gh's `query_builder.go`), so gh cannot
+  connections at `first:100` (verified in GitHub CLI v2.92.0's `query_builder.go`), so gh cannot
   supply the PR *file list* for reconciliation. Local git is authoritative for
   the net file and commit **sets** (`git diff base...head --name-only`,
   `git rev-list base..head`); GitHub remains the second witness via

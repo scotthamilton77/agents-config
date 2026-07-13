@@ -633,7 +633,7 @@ If a later slice needs the full raw graph, load it with
 name = "vizsuite"
 version = "0.1.0"
 description = "vizsuite — repo/PR visualization suite (Tier-1 extractors, PR-scoped reconciliation, scene assembly, HTML rendering)."
-requires-python = ">=3.11"
+requires-python = ">=3.11.4"
 dependencies = []
 # Extractor deps are staged in the slice that first needs them (avoids landing
 # unexercised deps in the skeleton PR): slice 2 adds "pydriller"; slice 4 adds
@@ -768,6 +768,11 @@ Kickoff prompt (after Scott approves this plan and a clean-context start):
 ---
 
 ## Review ledger
+
+> Entries are point-in-time records of each review round. A mechanism named in an
+> early round may be **superseded** by a later one (e.g. R3/R4's `git ls-files` /
+> porcelain-guard → R5 Path C's `git ls-tree` / snapshot-by-construction). The
+> canonical current design is the body (§3.x), not these historical entries.
 
 **R1 — adversarial review (ralf-review, opus fresh-eyes) — FAIL, all resolved.**
 - **B1** centrality `in_degree()` on undirected graph → crash. **Fixed:** file-level `DiGraph` (§3.6).
