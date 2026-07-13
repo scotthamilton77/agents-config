@@ -1,0 +1,30 @@
+name: CI vizsuite
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  ci-vizsuite:                                   # required-check context; always completes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                         # base ref needed for change detection
+      - id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+               | grep -qE '^(packages/vizsuite/|Makefile$|\.github/workflows/ci-vizsuite\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"   # no vizsuite change → no-op, check stays green
+          fi
+      - if: steps.changed.outputs.run == 'true'
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - if: steps.changed.outputs.run == 'true'
+        run: uv python install 3.11
+      - if: steps.changed.outputs.run == 'true'
+        run: make ci-vizsuite

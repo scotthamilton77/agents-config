@@ -1,0 +1,47 @@
+/* vizsuite scene styles — minimal slice-1 skeleton; the V1 views land in .2.2. */
+:root {
+  color-scheme: light dark;
+  --viz-bg: #ffffff;
+  --viz-fg: #1a1a1a;
+  --viz-muted: #6b7280;
+  --viz-border: #e5e7eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-bg: #0f1115;
+    --viz-fg: #e6e6e6;
+    --viz-muted: #9ca3af;
+    --viz-border: #2a2f3a;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--viz-bg);
+  color: var(--viz-fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#viz-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+#viz-root {
+  margin: 1rem 0;
+}
+.viz-file {
+  padding: 0.15rem 0.5rem;
+  border-bottom: 1px solid var(--viz-border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+#viz-footer {
+  margin-top: 1.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--viz-border);
+  color: var(--viz-muted);
+  font-size: 12px;
+}
