@@ -200,6 +200,11 @@ def _ingest_items(
     full reviews response (a verdict can repeat across polls without a new item).
     """
     seen = {(item.kind, item.identity.gh_id) for item in state.items}
+    # prgroom replies by POSTing a NEW comment whose fresh gh_id is unknown to `seen`;
+    # without this it would re-ingest its own reply every poll and re-triage forever
+    # (recursive self-reply spam). The reply's id was recorded on own_reply_id, so drop
+    # any ingested entry (any kind) whose gh_id matches one of our own posted replies.
+    own_replies = {str(item.own_reply_id) for item in state.items if item.own_reply_id}
     base = f"repos/{ref.owner}/{ref.repo}"
     # Paginate the three collection reads: prgroom's own reply reviews push any
     # nontrivial PR past GitHub's 30-per-page default, and an unpaginated read froze
@@ -219,6 +224,8 @@ def _ingest_items(
     ):
         for entry in raw:
             item = _to_item(kind, entry, ts_field, now=now, thread_id_map=thread_id_map)
+            if item.identity.gh_id in own_replies:
+                continue  # our own posted reply — never re-ingest (self-reply prevention)
             if (item.kind, item.identity.gh_id) not in seen:
                 seen.add((item.kind, item.identity.gh_id))
                 new.append(item)

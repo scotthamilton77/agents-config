@@ -66,13 +66,25 @@ def _render_body(disp: Disposition) -> str:
     return _T_RATIONALE.render({"rationale": disp.rationale})
 
 
-def _post_reply(gh: GhClient, ref: PRRef, item: ReviewItem, body: str) -> None:
+def _post_reply(gh: GhClient, ref: PRRef, item: ReviewItem, body: str) -> int:
+    """POST the reply/comment and return the new comment's numeric id (0 if absent).
+
+    GitHub's reply/comment POST returns the created comment object carrying a numeric
+    ``id``; the caller records it on ``item.own_reply_id`` so a later poll can exclude
+    our own reply (recursive self-reply prevention). Defensive on shape: the id may be
+    int or str, and a malformed response with no usable id degrades to 0.
+    """
     if item.kind is ItemKind.REVIEW_THREAD:
         reply_id = item.identity.reply_to_comment_id or int(item.identity.gh_id)
         path = f"repos/{ref.owner}/{ref.repo}/pulls/{ref.number}/comments/{reply_id}/replies"
     else:
         path = f"repos/{ref.owner}/{ref.repo}/issues/{ref.number}/comments"
-    gh.rest("POST", path, fields={"body": body})
+    response = gh.rest("POST", path, fields={"body": body})
+    raw_id = response.get("id") if isinstance(response, dict) else None
+    try:
+        return int(raw_id)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
 
 
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -188,7 +200,7 @@ def reply_pr(
                 # --rationale). Posting "" fails the GitHub API; skip it and leave `replied`
                 # False so a later rationale can still reply.
                 continue
-            _post_reply(gh, ref, item, body)
+            item.own_reply_id = _post_reply(gh, ref, item, body)
             item.replied = True
         _route_memory(state, gh=gh, ref=ref)
     except GhNotFoundError as exc:

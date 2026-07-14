@@ -175,6 +175,7 @@ class ReviewItem:
     cluster_id: str = ""
     disposition: Disposition | None = None
     replied: bool = False
+    own_reply_id: int = 0
     resolved: bool = False
     duplicate_of_gh_id: str = ""
 
@@ -192,6 +193,8 @@ class ReviewItem:
             d["disposition"] = self.disposition.to_dict()
         if self.replied:
             d["replied"] = self.replied
+        if self.own_reply_id:
+            d["own_reply_id"] = self.own_reply_id
         if self.resolved:
             d["resolved"] = self.resolved
         if self.duplicate_of_gh_id:
@@ -212,6 +215,7 @@ class ReviewItem:
             if raw_disposition is not None
             else None,
             replied=d.get("replied", False),
+            own_reply_id=d.get("own_reply_id", 0),
             resolved=d.get("resolved", False),
             duplicate_of_gh_id=d.get("duplicate_of_gh_id", ""),
         )

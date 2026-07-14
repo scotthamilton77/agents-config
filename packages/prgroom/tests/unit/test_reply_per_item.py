@@ -9,12 +9,17 @@ _NOW = datetime(2026, 6, 19, tzinfo=UTC)
 
 
 class _RecordingGh:
-    def __init__(self) -> None:
+    def __init__(self, post_reply_id: int | None = None) -> None:
         self.rest_calls: list[tuple[str, str, dict]] = []
         self.graphql_calls: list[tuple[str, dict]] = []
+        self._post_reply_id = post_reply_id
 
     def rest(self, method: str, path: str, *, fields=None):
         self.rest_calls.append((method, path, dict(fields or {})))
+        # A reply/comment POST returns the new comment object carrying its numeric id;
+        # the ledger captures it so a later poll can exclude our own reply.
+        if method == "POST" and self._post_reply_id is not None:
+            return {"id": self._post_reply_id}
         return {}
 
     def graphql(self, query: str, variables: dict):
@@ -213,6 +218,25 @@ def test_escalated_replied_regardless_of_escalation_filed() -> None:
     )
     reply_pr(_state([item]), gh=gh, ref=_ref())
     assert "Captured for follow-up" in gh.rest_calls[0][2]["body"]
+
+
+def test_reply_captures_own_reply_id_from_post_response() -> None:
+    # The POST response carries the new comment's numeric id; reply_pr records it on
+    # own_reply_id so a later poll can drop our own reply (recursive-self-reply fix).
+    gh = _RecordingGh(post_reply_id=424242)
+    state = _state([_item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.ALREADY_ADDRESSED)])
+    out = reply_pr(state, gh=gh, ref=_ref())
+    assert out.items[0].replied is True
+    assert out.items[0].own_reply_id == 424242
+
+
+def test_reply_own_reply_id_stays_zero_when_response_lacks_id() -> None:
+    # Defensive: a POST response with no usable "id" leaves own_reply_id at 0.
+    gh = _RecordingGh(post_reply_id=None)
+    state = _state([_item(ItemKind.ISSUE_COMMENT, "12", DispositionKind.ALREADY_ADDRESSED)])
+    out = reply_pr(state, gh=gh, ref=_ref())
+    assert out.items[0].replied is True
+    assert out.items[0].own_reply_id == 0
 
 
 def test_idempotent_skips_already_replied() -> None:
