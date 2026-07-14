@@ -343,7 +343,6 @@ body {
 .viz-sonar-stage {
   position: relative;
   margin: 0 auto;
-  max-width: 100%;
 }
 .viz-sonar-ring-guide {
   position: absolute;
