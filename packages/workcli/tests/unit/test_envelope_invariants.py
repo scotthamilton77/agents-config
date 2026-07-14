@@ -207,9 +207,15 @@ VERB_CASES: list[VerbCase] = [
         [
             ScriptedStep(("search",), _search_result()),  # no title collision
             ScriptedStep(("create",), _lifecycle_create_result("s.1")),  # container
+            ScriptedStep(("label", "add"), _OK),  # shape-spec (finalize shape guard)
+            ScriptedStep(("label", "remove"), _OK),  # shape-feat (finalize shape guard)
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("s.1", "New Objective"))
+            ),  # instantiate get
             ScriptedStep(("create",), _lifecycle_create_result("s.2")),  # design child
             ScriptedStep(("create",), _lifecycle_create_result("s.3")),  # placeholder
-            ScriptedStep(("label", "add"), _OK),  # planned, stamped last
+            ScriptedStep(("label", "add"), _OK),  # planned
+            ScriptedStep(("label", "remove"), _OK),  # creating-spec, removed last
         ],
         ["create", "feat", "--title", "Existing Feature", "--parent", "P"],
         [ScriptedStep(("search",), _search_result(_item_raw("f.9", "Existing Feature")))],
@@ -271,11 +277,16 @@ VERB_CASES: list[VerbCase] = [
             ScriptedStep(
                 ("show",), _show_result(_item_raw("m.1", "T", status="open", labels=["shape-feat"]))
             ),
+            ScriptedStep(("label", "add"), _OK),  # creating-spec
             ScriptedStep(("label", "add"), _OK),  # shape-spec
             ScriptedStep(("label", "remove"), _OK),  # shape-feat
+            ScriptedStep(
+                ("show",), _show_result(_item_raw("m.1", "T", status="open", labels=["shape-spec"]))
+            ),  # instantiate get
             ScriptedStep(("create",), _lifecycle_create_result("m.2")),  # design child
             ScriptedStep(("create",), _lifecycle_create_result("m.3")),  # placeholder
-            ScriptedStep(("label", "add"), _OK),  # planned, stamped last
+            ScriptedStep(("label", "add"), _OK),  # planned
+            ScriptedStep(("label", "remove"), _OK),  # creating-spec, removed last
         ],
         ["promote", "m.2"],  # not shape-feat -> E_USAGE
         [ScriptedStep(("show",), _show_result(_item_raw("m.2", "T", status="open")))],
@@ -287,6 +298,7 @@ VERB_CASES: list[VerbCase] = [
             ScriptedStep(("list",), _list_result()),  # interrupted-deliver sweep: empty
             ScriptedStep(("list",), _list_result()),  # pending-placeholder sweep: empty
             ScriptedStep(("list",), _list_result()),  # orphaned-design sweep: empty
+            ScriptedStep(("list",), _list_result()),  # interrupted-instantiation sweep: empty
         ],
         ["reconcile"],
         [ScriptedStep(("list",), _GARBAGE)],  # unparseable bd list output -> E_BACKEND_DRIFT

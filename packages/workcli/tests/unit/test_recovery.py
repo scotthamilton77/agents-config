@@ -19,10 +19,18 @@ import pytest
 
 from tests.fake_backend import FakeBackend
 from workcli.envelope import ErrorCode, WorkError
-from workcli.lifecycle import DELIVERED_MARKER, MANIFEST_MARKER, SPEC_MARKER, manifest_snapshot
+from workcli.lifecycle import (
+    DELIVERED_MARKER,
+    MANIFEST_MARKER,
+    SPEC_MARKER,
+    is_container,
+    manifest_snapshot,
+)
+from workcli.lifecycle.create import instantiate_spec_shape
 from workcli.lifecycle.deliver import deliver, reconcile_placeholder
 from workcli.lifecycle.manifest import Manifest, ManifestItem, serialize_manifest
 from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
     DESIGN_CHILD_LABEL,
     IMPL_CONTAINER_LABEL,
     IMPL_PLACEHOLDER_LABEL,
@@ -552,3 +560,151 @@ def test_reconcile_repairs_pending_placeholder_with_no_design_sibling():
     assert "shape-feat" in placeholder.labels
     assert IMPL_PLACEHOLDER_LABEL not in placeholder.labels
     assert {"id": "p", "kind": "unreconciled_placeholder", "repaired": True} in findings
+
+
+# --- creating-spec recovery (spec §6, plan L16: interrupted spec instantiation) ---
+
+
+def _creating_spec_container(backend: FakeBackend, *, with_design=False, with_placeholder=False):
+    """A spec container mid-instantiation: carries `creating-spec`, not yet
+    `planned`. `with_design`/`with_placeholder` seed the children a partial crash
+    would have already minted before dying."""
+    backend.add("c", title="T", type="feature", labels=["shape-spec", CREATING_SPEC_LABEL])
+    if with_design:
+        backend.add("d", title="Design: T", type="task", parent="c", labels=[DESIGN_CHILD_LABEL])
+    if with_placeholder:
+        backend.add(
+            "p",
+            title="[Impl] T (scope: per spec)",
+            type="task",
+            parent="c",
+            labels=[IMPL_PLACEHOLDER_LABEL],
+            deps=[DepEdge(id="d", type="blocks", status="open")],
+        )
+
+
+def test_instantiate_spec_shape_is_idempotent_when_both_children_exist():
+    # A replay (reconcile sweep, or a re-run) over a container whose design child
+    # and placeholder already exist must find-or-create: return the existing ids,
+    # mint nothing new -- no duplicate template children (spec §6, L16).
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True, with_placeholder=True)
+
+    design_id, placeholder_id = instantiate_spec_shape(backend, "c", "T")
+
+    assert (design_id, placeholder_id) == ("d", "p")
+    assert sorted(backend.get("c").children) == ["d", "p"]
+
+
+def test_instantiate_spec_shape_ignores_children_that_are_neither_design_nor_placeholder():
+    # Defensive: a stray child under the container (neither `shape-design` nor
+    # `impl-placeholder`) is skipped by the find-or-create scan -- the real
+    # design child + placeholder are still located, nothing duplicated.
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True, with_placeholder=True)
+    backend.add("stray", title="unrelated", type="task", parent="c", labels=["shape-chore"])
+
+    design_id, placeholder_id = instantiate_spec_shape(backend, "c", "T")
+
+    assert (design_id, placeholder_id) == ("d", "p")
+    assert sorted(backend.get("c").children) == ["d", "p", "stray"]
+
+
+def _assert_instantiation_healed(backend: FakeBackend) -> None:
+    """The healed end-state of an interrupted spec instantiation: `planned` on,
+    `creating-spec` off, exactly one design child + one placeholder minted."""
+    container = backend.get("c")
+    assert "planned" in container.labels
+    assert CREATING_SPEC_LABEL not in container.labels
+    child_labels = [backend.get(cid).labels for cid in container.children]
+    design = [ls for ls in child_labels if DESIGN_CHILD_LABEL in ls]
+    placeholder = [ls for ls in child_labels if IMPL_PLACEHOLDER_LABEL in ls]
+    assert len(design) == 1
+    assert len(placeholder) == 1
+
+
+def test_reconcile_heals_interrupted_instantiation_with_no_children():
+    # A crash right after the container was born (`creating-spec` on, no children
+    # yet): the sweep mints the whole template, stamps `planned`, drops the
+    # handle last -- reaching the same state a clean `create spec` would.
+    backend = FakeBackend()
+    _creating_spec_container(backend)  # no children
+
+    findings = _reconcile(backend)
+
+    _assert_instantiation_healed(backend)
+    assert {"id": "c", "kind": "interrupted_instantiation", "repaired": True} in findings
+
+
+def test_reconcile_heals_interrupted_instantiation_with_only_design_child():
+    # A crash after the design child was minted but before the placeholder: the
+    # idempotent replay mints only the missing placeholder, never a second design.
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True)  # design only, no placeholder
+
+    findings = _reconcile(backend)
+
+    _assert_instantiation_healed(backend)
+    # the pre-existing design child is reused, not duplicated
+    designs = [
+        cid for cid in backend.get("c").children if DESIGN_CHILD_LABEL in backend.get(cid).labels
+    ]
+    assert designs == ["d"]
+    assert {"id": "c", "kind": "interrupted_instantiation", "repaired": True} in findings
+
+
+def test_reconcile_heals_interrupted_instantiation_with_both_children_not_yet_planned():
+    # A crash after both template children exist but before `planned` was stamped
+    # (`creating-spec` still on): the sweep mints nothing, only stamps `planned`
+    # and drops the handle -- no duplicate children.
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True, with_placeholder=True)
+
+    findings = _reconcile(backend)
+
+    _assert_instantiation_healed(backend)
+    assert sorted(backend.get("c").children) == ["d", "p"]  # no duplicates minted
+    assert {"id": "c", "kind": "interrupted_instantiation", "repaired": True} in findings
+
+
+def test_reconcile_interrupted_instantiation_dry_run_reports_without_mutating():
+    backend = FakeBackend()
+    _creating_spec_container(backend)  # no children
+
+    findings = _reconcile(backend, dry_run=True)
+
+    container = backend.get("c")
+    assert CREATING_SPEC_LABEL in container.labels  # untouched
+    assert "planned" not in container.labels
+    assert container.children == []  # nothing minted
+    assert {"id": "c", "kind": "interrupted_instantiation", "repaired": False} in findings
+
+
+def test_reconcile_over_a_healed_instantiation_finds_no_creating_spec():
+    backend = FakeBackend()
+    _creating_spec_container(backend)
+
+    _reconcile(backend)  # heal
+    second = _reconcile(backend)  # idempotent second pass
+
+    assert not any(f["kind"] == "interrupted_instantiation" for f in second)
+
+
+def test_reconcile_heals_promote_crash_before_the_shape_feat_to_spec_swap():
+    # `promote` adds `creating-spec` FIRST, then swaps shape-feat->shape-spec in
+    # later calls. A crash in that window leaves a still-`shape-feat` item under
+    # the handle. The sweep must reconstruct the container shape (not just replay
+    # create-spec's tail), else it heals a children-bearing item that is_container
+    # rejects -- a claimable leaf with children, unrepairable once the handle is
+    # gone. Healed state must be a real container: shape-spec on, shape-feat off.
+    backend = FakeBackend()
+    backend.add("c", title="T", type="feature", labels=["shape-feat", CREATING_SPEC_LABEL])
+
+    findings = _reconcile(backend)
+
+    container = backend.get("c")
+    assert "shape-spec" in container.labels
+    assert "shape-feat" not in container.labels
+    assert is_container(container)  # claim() now correctly refuses it as a container
+    _assert_instantiation_healed(backend)
+    assert {"id": "c", "kind": "interrupted_instantiation", "repaired": True} in findings

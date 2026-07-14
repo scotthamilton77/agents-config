@@ -329,18 +329,25 @@ def test_plan_with_both_done_and_undo_is_usage_error():
 # --- promote --------------------------------------------------------------
 
 
-def test_promote_shape_feat_leaf_mints_spec_shape_in_order_planned_stamped_last():
+def test_promote_shape_feat_leaf_mints_spec_shape_in_order_creating_spec_removed_last():
     runner = ScriptedBdRunner(
         steps=[
             ScriptedStep(
                 ("show",),
                 _show_result(_item_raw("x.1", status="open", labels=["shape-feat"], title="T")),
             ),
+            ScriptedStep(("label", "add"), _OK),  # creating-spec
             ScriptedStep(("label", "add"), _OK),  # shape-spec
             ScriptedStep(("label", "remove"), _OK),  # shape-feat
+            # instantiate_spec_shape's find-or-create get: x.1 has no children yet
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("x.1", status="open", labels=["shape-spec"], title="T")),
+            ),
             ScriptedStep(("create",), _create_result("x.2")),  # design child
             ScriptedStep(("create",), _create_result("x.3")),  # placeholder
             ScriptedStep(("label", "add"), _OK),  # planned
+            ScriptedStep(("label", "remove"), _OK),  # creating-spec (LAST)
         ]
     )
 
@@ -350,8 +357,10 @@ def test_promote_shape_feat_leaf_mints_spec_shape_in_order_planned_stamped_last(
     assert envelope["data"] == {"id": "x.1", "promoted": "spec"}
     assert runner.calls == [
         ("show", "x.1", "--json"),
+        ("label", "add", "x.1", "creating-spec"),
         ("label", "add", "x.1", "shape-spec"),
         ("label", "remove", "x.1", "shape-feat"),
+        ("show", "x.1", "--json"),
         (
             "create",
             "--json",
@@ -379,7 +388,10 @@ def test_promote_shape_feat_leaf_mints_spec_shape_in_order_planned_stamped_last(
             "x.2",
         ),
         ("label", "add", "x.1", "planned"),
+        ("label", "remove", "x.1", "creating-spec"),
     ]
+    # `creating-spec` comes off strictly last -- after `planned` (L16).
+    assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")
     # No reparent/new-parent call on x.1 itself -- id, parent, and edges
     # untouched (L16/plan item 10).
     assert not any(call[:2] == ("update", "x.1") for call in runner.calls)
@@ -416,3 +428,28 @@ def test_promote_already_shape_spec_is_a_noop():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1", "promoted": "spec"}
     assert runner.calls == [("show", "x.1", "--json")]
+
+
+def test_promote_rerun_after_shape_swap_is_replay_safe():
+    # The crash window `finalize` opens: a crash after the shape-feat->shape-spec
+    # swap but before `creating-spec` comes off leaves `[shape-spec, creating-spec]`
+    # (no shape-feat). A promote rerun -- the obvious manual recovery -- must NOT
+    # raise E_USAGE on the "only a feat can be promoted" guard; the shape-spec
+    # short-circuit is checked first, so it returns a graceful no-op (the handle
+    # stays for the reconcile sweep to finish).
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("x.1", status="open", labels=["shape-spec", "creating-spec"])
+                ),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(["promote", "x.1"], runner)
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "x.1", "promoted": "spec"}
+    assert runner.calls == [("show", "x.1", "--json")]  # no mutation on the replay

@@ -16,6 +16,7 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import ORPHAN_MARKER
 from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
     DESIGN_CHILD_LABEL,
     IMPL_PLACEHOLDER_LABEL,
     NOUN_TEMPLATES,
@@ -28,29 +29,70 @@ from workcli.model import CreateFields
 
 
 def instantiate_spec_shape(backend: Backend, container_id: str, title: str) -> tuple[str, str]:
-    """Create the design child + blocked placeholder under an existing container.
+    """Find-or-create the design child + blocked placeholder under a container.
 
-    Returns (design_child_id, placeholder_id). Does NOT stamp `planned` --
-    the caller stamps it LAST (L16). Records the `impl-placeholder` label on
-    the placeholder; the design child gets `shape-design`.
+    Returns (design_child_id, placeholder_id). **Idempotent** (spec §6, L16):
+    a child already carrying `shape-design` / `impl-placeholder` under the
+    container is reused, never duplicated -- so the `reconcile` sweep (or a
+    re-run) that replays an interrupted instantiation mints only what a partial
+    crash left missing. Does NOT stamp `planned` or touch `creating-spec` -- the
+    caller owns that ordering (planned last, `creating-spec` removed after).
     """
-    design_child_id = backend.create(
-        CreateFields(
-            title=f"Design: {title}",
-            type="task",
-            parent=container_id,
-            labels=(DESIGN_CHILD_LABEL,),
+    design_child_id: str | None = None
+    placeholder_id: str | None = None
+    for child_id in backend.get(container_id).children:
+        child = backend.get(child_id)
+        if DESIGN_CHILD_LABEL in child.labels:
+            design_child_id = child_id
+        elif IMPL_PLACEHOLDER_LABEL in child.labels:
+            placeholder_id = child_id
+
+    if design_child_id is None:
+        design_child_id = backend.create(
+            CreateFields(
+                title=f"Design: {title}",
+                type="task",
+                parent=container_id,
+                labels=(DESIGN_CHILD_LABEL,),
+            )
         )
-    )
-    placeholder_id = backend.create(
-        CreateFields(
-            title=f"[Impl] {title} (scope: per spec)",
-            type="task",
-            parent=container_id,
-            labels=(IMPL_PLACEHOLDER_LABEL,),
-            blocked_by=design_child_id,
+    if placeholder_id is None:
+        placeholder_id = backend.create(
+            CreateFields(
+                title=f"[Impl] {title} (scope: per spec)",
+                type="task",
+                parent=container_id,
+                labels=(IMPL_PLACEHOLDER_LABEL,),
+                blocked_by=design_child_id,
+            )
         )
-    )
+    return design_child_id, placeholder_id
+
+
+def finalize_spec_instantiation(backend: Backend, container_id: str, title: str) -> tuple[str, str]:
+    """Idempotently complete a spec container born under `creating-spec`.
+
+    The single source of the L16 completion tail shared by `create spec`,
+    `promote`, and the `reconcile` sweep -- triplicating it is what let the
+    `promote` crash window drift open. Every step is idempotent, so replaying it
+    over any crash point (or a fully healed container) converges:
+
+    1. Ensure the container *shape* (`shape-spec` on, `shape-feat` off). `create
+       spec` births the container already `shape-spec`, so this is a no-op there;
+       `promote` adds `creating-spec` before its own swap, so a crash in that
+       window leaves a `shape-feat` item -- this is the *only* path that
+       reconstructs the swap, without which the sweep would heal a children-
+       bearing item that `is_container` rejects (a claimable leaf with children).
+    2. Mint only the template children a partial crash left missing.
+    3. Stamp `planned`, then remove the `creating-spec` handle STRICTLY LAST.
+
+    Returns (design_child_id, placeholder_id).
+    """
+    backend.label_mutate("add", container_id, ["shape-spec"])
+    backend.label_mutate("remove", container_id, ["shape-feat"])
+    design_child_id, placeholder_id = instantiate_spec_shape(backend, container_id, title)
+    backend.label_mutate("add", container_id, [PLANNED_LABEL])
+    backend.label_mutate("remove", container_id, [CREATING_SPEC_LABEL])
     return design_child_id, placeholder_id
 
 
@@ -99,17 +141,19 @@ def _create_spec_container(
             type=template.bd_type,
             priority=args.priority,
             parent=parent,
-            labels=(template.shape_label,),
+            labels=(template.shape_label, CREATING_SPEC_LABEL),
             acceptance=args.acceptance,
         )
     )
     if args.orphan:
         backend.append_note(container_id, ORPHAN_MARKER)
-    design_child_id, placeholder_id = instantiate_spec_shape(backend, container_id, args.title)
-    # Stamped strictly last (L16): an interrupted create leaves an
-    # unplanned, self-reporting container in the Planning queue rather than
-    # a queue-invisible one.
-    backend.label_mutate("add", container_id, [PLANNED_LABEL])
+    # The completion tail (mint children, stamp `planned`, drop `creating-spec`
+    # strictly last -- L16) is shared with `promote` and the `reconcile` sweep.
+    # A crash anywhere before the handle comes off leaves a `shape-spec`
+    # container that is NOT `planned` and still carries `creating-spec`: it
+    # self-reports into the Planning queue (visible) AND is finished by the sweep
+    # through the handle (auto-recoverable). Both nets fire.
+    design_child_id, placeholder_id = finalize_spec_instantiation(backend, container_id, args.title)
     return {"id": container_id, "design_child": design_child_id, "placeholder": placeholder_id}
 
 

@@ -57,5 +57,12 @@ IMPL_PLACEHOLDER_LABEL = "impl-placeholder"
 # manifest children are minted. A declared container-shape handle (joins
 # `_CONTAINER_SHAPE_LABELS`), so `claim` refuses it by label, never child count.
 IMPL_CONTAINER_LABEL = "shape-impl-container"
+# A spec container mid-instantiation: born with this handle (create spec /
+# promote) and removed STRICTLY LAST, after design child + placeholder exist and
+# `planned` is stamped. Its presence is the queryable signal `reconcile`
+# enumerates interrupted spec instantiations through (L10/L16); its absence means
+# the template is wholly minted. Not a container-shape label -- the container
+# already carries `shape-spec` for the claim guard.
+CREATING_SPEC_LABEL = "creating-spec"
 PLANNED_LABEL = "planned"
 SPEC_READY_LABEL = "spec-ready"
