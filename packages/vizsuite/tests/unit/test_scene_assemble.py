@@ -13,7 +13,7 @@ serialized shape so a later slice (.2.2/.2.3) never breaks the contract.
 from __future__ import annotations
 
 from vizsuite.scene.assemble import assemble
-from vizsuite.scene.model import AttributeDescriptor, RenderConfig, scene_to_json
+from vizsuite.scene.model import AttributeDescriptor, Edge, RenderConfig, scene_to_json
 
 _ESTATE = {"src/a.py": "sha_a", "src/b.py": "sha_b"}
 
@@ -158,6 +158,59 @@ def test_render_config_and_repo_nwo_thread_into_the_serialized_envelope():
         "unavailable_axes": ["load_bearing"],
     }
     assert payload["repo_nwo"] == "octocat/hello-world"
+
+
+def test_edges_default_to_empty_when_graphify_is_unavailable():
+    # Fail-soft: an unavailable centrality axis carries empty edges (see
+    # test_extract_centrality.py), and a Scene assembled without any edges
+    # input defaults to the same empty tuple — never crash, never stale edges.
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+    )
+
+    assert scene.edges == ()
+    assert scene_to_json(scene)["edges"] == []
+
+
+def test_edges_thread_through_assemble_and_serialize_sorted_and_deterministically():
+    # Deliberately reverse-ordered input to prove scene_to_json sorts, not the caller.
+    edges = [
+        Edge(source="b.py", target="a.py", kind="dependency"),
+        Edge(source="a.py", target="b.py", kind="dependency"),
+    ]
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        edges=edges,
+    )
+
+    assert scene.edges == tuple(edges)
+    payload = scene_to_json(scene)
+    assert payload["edges"] == [
+        {"source": "a.py", "target": "b.py", "kind": "dependency"},
+        {"source": "b.py", "target": "a.py", "kind": "dependency"},
+    ]
+
+    # Byte-stable across two assemblies of the same edges — only the stamp varies.
+    scene_b = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2099-12-31T23:59:59+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        edges=edges,
+    )
+    assert scene_to_json(scene_b)["edges"] == payload["edges"]
 
 
 def test_render_config_and_repo_nwo_default_when_omitted():
