@@ -18,7 +18,7 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
 from workcli.lifecycle.create import instantiate_spec_shape
-from workcli.lifecycle.nouns import PLANNED_LABEL
+from workcli.lifecycle.nouns import CREATING_SPEC_LABEL, PLANNED_LABEL
 
 
 def claim(backend: Backend, args: Namespace) -> JsonValue:
@@ -77,10 +77,14 @@ def promote(backend: Backend, args: Namespace) -> JsonValue:
     if "shape-spec" in item.labels:
         return {"id": args.id, "promoted": "spec"}
 
+    # `creating-spec` first, removed strictly LAST (L16). A crash mid-promote
+    # leaves the handle on, so the `reconcile` sweep finishes the template
+    # (idempotent `instantiate_spec_shape`), stamps `planned`, and drops the
+    # handle -- rather than stranding a half-promoted, queue-invisible container.
+    backend.label_mutate("add", args.id, [CREATING_SPEC_LABEL])
     backend.label_mutate("add", args.id, ["shape-spec"])
     backend.label_mutate("remove", args.id, ["shape-feat"])
     instantiate_spec_shape(backend, args.id, item.title)
-    # Stamped strictly last (L16) -- mirrors `create spec`'s mint-before-
-    # planned discipline.
     backend.label_mutate("add", args.id, [PLANNED_LABEL])
+    backend.label_mutate("remove", args.id, [CREATING_SPEC_LABEL])
     return {"id": args.id, "promoted": "spec"}

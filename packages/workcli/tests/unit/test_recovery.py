@@ -20,9 +20,11 @@ import pytest
 from tests.fake_backend import FakeBackend
 from workcli.envelope import ErrorCode, WorkError
 from workcli.lifecycle import DELIVERED_MARKER, MANIFEST_MARKER, SPEC_MARKER, manifest_snapshot
+from workcli.lifecycle.create import instantiate_spec_shape
 from workcli.lifecycle.deliver import deliver, reconcile_placeholder
 from workcli.lifecycle.manifest import Manifest, ManifestItem, serialize_manifest
 from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
     DESIGN_CHILD_LABEL,
     IMPL_CONTAINER_LABEL,
     IMPL_PLACEHOLDER_LABEL,
@@ -552,3 +554,51 @@ def test_reconcile_repairs_pending_placeholder_with_no_design_sibling():
     assert "shape-feat" in placeholder.labels
     assert IMPL_PLACEHOLDER_LABEL not in placeholder.labels
     assert {"id": "p", "kind": "unreconciled_placeholder", "repaired": True} in findings
+
+
+# --- creating-spec recovery (spec §6, plan L16: interrupted spec instantiation) ---
+
+
+def _creating_spec_container(backend: FakeBackend, *, with_design=False, with_placeholder=False):
+    """A spec container mid-instantiation: carries `creating-spec`, not yet
+    `planned`. `with_design`/`with_placeholder` seed the children a partial crash
+    would have already minted before dying."""
+    backend.add("c", title="T", type="feature", labels=["shape-spec", CREATING_SPEC_LABEL])
+    if with_design:
+        backend.add("d", title="Design: T", type="task", parent="c", labels=[DESIGN_CHILD_LABEL])
+    if with_placeholder:
+        backend.add(
+            "p",
+            title="[Impl] T (scope: per spec)",
+            type="task",
+            parent="c",
+            labels=[IMPL_PLACEHOLDER_LABEL],
+            deps=[DepEdge(id="d", type="blocks", status="open")],
+        )
+
+
+def test_instantiate_spec_shape_is_idempotent_when_both_children_exist():
+    # A replay (reconcile sweep, or a re-run) over a container whose design child
+    # and placeholder already exist must find-or-create: return the existing ids,
+    # mint nothing new -- no duplicate template children (spec §6, L16).
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True, with_placeholder=True)
+
+    design_id, placeholder_id = instantiate_spec_shape(backend, "c", "T")
+
+    assert (design_id, placeholder_id) == ("d", "p")
+    assert sorted(backend.get("c").children) == ["d", "p"]
+
+
+def test_instantiate_spec_shape_ignores_children_that_are_neither_design_nor_placeholder():
+    # Defensive: a stray child under the container (neither `shape-design` nor
+    # `impl-placeholder`) is skipped by the find-or-create scan -- the real
+    # design child + placeholder are still located, nothing duplicated.
+    backend = FakeBackend()
+    _creating_spec_container(backend, with_design=True, with_placeholder=True)
+    backend.add("stray", title="unrelated", type="task", parent="c", labels=["shape-chore"])
+
+    design_id, placeholder_id = instantiate_spec_shape(backend, "c", "T")
+
+    assert (design_id, placeholder_id) == ("d", "p")
+    assert sorted(backend.get("c").children) == ["d", "p", "stray"]

@@ -313,14 +313,16 @@ def test_create_epic_sends_one_create_with_epic_type_and_shape_label():
     ]
 
 
-def test_create_spec_mints_container_then_design_child_then_placeholder_then_stamps_planned_last():
+def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
     runner = ScriptedBdRunner(
         steps=[
             ScriptedStep(("search",), _search_result()),
             ScriptedStep(("create",), _create_result("x.1")),  # container
+            ScriptedStep(("show",), _search_result(_item_raw("x.1", "T"))),  # instantiate get
             ScriptedStep(("create",), _create_result("x.2")),  # design child
             ScriptedStep(("create",), _create_result("x.3")),  # placeholder
             ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "remove"), BdResult(returncode=0, stdout="", stderr="")),
         ]
     )
 
@@ -342,8 +344,9 @@ def test_create_spec_mints_container_then_design_child_then_placeholder_then_sta
             "--parent",
             "P",
             "--labels",
-            "shape-spec",
+            "shape-spec,creating-spec",
         ),
+        ("show", "x.1", "--json"),
         (
             "create",
             "--json",
@@ -371,7 +374,10 @@ def test_create_spec_mints_container_then_design_child_then_placeholder_then_sta
             "x.2",
         ),
         ("label", "add", "x.1", "planned"),
+        ("label", "remove", "x.1", "creating-spec"),
     ]
+    # `creating-spec` comes off strictly last, after `planned` (L16).
+    assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")
 
 
 def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_orphan_note():
@@ -380,9 +386,11 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
             ScriptedStep(("search",), _search_result()),
             ScriptedStep(("create",), _create_result("x.1")),  # container
             ScriptedStep(("update",), BdResult(returncode=0, stdout="", stderr="")),  # orphan note
+            ScriptedStep(("show",), _search_result(_item_raw("x.1", "T"))),  # instantiate get
             ScriptedStep(("create",), _create_result("x.2")),  # design child
             ScriptedStep(("create",), _create_result("x.3")),  # placeholder
             ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "remove"), BdResult(returncode=0, stdout="", stderr="")),
         ]
     )
 
@@ -394,10 +402,20 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
     assert envelope["data"] == {"id": "x.1", "design_child": "x.2", "placeholder": "x.3"}
     assert runner.calls[:3] == [
         ("search", "T", "--json"),
-        ("create", "--json", "--title", "T", "--type", "feature", "--labels", "shape-spec"),
+        (
+            "create",
+            "--json",
+            "--title",
+            "T",
+            "--type",
+            "feature",
+            "--labels",
+            "shape-spec,creating-spec",
+        ),
         ("update", "x.1", "--append-notes", ORPHAN_MARKER),
     ]
     # The container itself is orphaned, but its own children (design child +
     # placeholder) are still parented under it -- orphan-by-choice is a
     # placement decision about the top-level item, never its own children.
-    assert all("--parent" in call and "x.1" in call for call in runner.calls[3:5])
+    assert all("--parent" in call and "x.1" in call for call in runner.calls[4:6])
+    assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")

@@ -16,6 +16,7 @@ from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import ORPHAN_MARKER
 from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
     DESIGN_CHILD_LABEL,
     IMPL_PLACEHOLDER_LABEL,
     NOUN_TEMPLATES,
@@ -28,29 +29,43 @@ from workcli.model import CreateFields
 
 
 def instantiate_spec_shape(backend: Backend, container_id: str, title: str) -> tuple[str, str]:
-    """Create the design child + blocked placeholder under an existing container.
+    """Find-or-create the design child + blocked placeholder under a container.
 
-    Returns (design_child_id, placeholder_id). Does NOT stamp `planned` --
-    the caller stamps it LAST (L16). Records the `impl-placeholder` label on
-    the placeholder; the design child gets `shape-design`.
+    Returns (design_child_id, placeholder_id). **Idempotent** (spec §6, L16):
+    a child already carrying `shape-design` / `impl-placeholder` under the
+    container is reused, never duplicated -- so the `reconcile` sweep (or a
+    re-run) that replays an interrupted instantiation mints only what a partial
+    crash left missing. Does NOT stamp `planned` or touch `creating-spec` -- the
+    caller owns that ordering (planned last, `creating-spec` removed after).
     """
-    design_child_id = backend.create(
-        CreateFields(
-            title=f"Design: {title}",
-            type="task",
-            parent=container_id,
-            labels=(DESIGN_CHILD_LABEL,),
+    design_child_id: str | None = None
+    placeholder_id: str | None = None
+    for child_id in backend.get(container_id).children:
+        child = backend.get(child_id)
+        if DESIGN_CHILD_LABEL in child.labels:
+            design_child_id = child_id
+        elif IMPL_PLACEHOLDER_LABEL in child.labels:
+            placeholder_id = child_id
+
+    if design_child_id is None:
+        design_child_id = backend.create(
+            CreateFields(
+                title=f"Design: {title}",
+                type="task",
+                parent=container_id,
+                labels=(DESIGN_CHILD_LABEL,),
+            )
         )
-    )
-    placeholder_id = backend.create(
-        CreateFields(
-            title=f"[Impl] {title} (scope: per spec)",
-            type="task",
-            parent=container_id,
-            labels=(IMPL_PLACEHOLDER_LABEL,),
-            blocked_by=design_child_id,
+    if placeholder_id is None:
+        placeholder_id = backend.create(
+            CreateFields(
+                title=f"[Impl] {title} (scope: per spec)",
+                type="task",
+                parent=container_id,
+                labels=(IMPL_PLACEHOLDER_LABEL,),
+                blocked_by=design_child_id,
+            )
         )
-    )
     return design_child_id, placeholder_id
 
 
@@ -99,17 +114,20 @@ def _create_spec_container(
             type=template.bd_type,
             priority=args.priority,
             parent=parent,
-            labels=(template.shape_label,),
+            labels=(template.shape_label, CREATING_SPEC_LABEL),
             acceptance=args.acceptance,
         )
     )
     if args.orphan:
         backend.append_note(container_id, ORPHAN_MARKER)
     design_child_id, placeholder_id = instantiate_spec_shape(backend, container_id, args.title)
-    # Stamped strictly last (L16): an interrupted create leaves an
-    # unplanned, self-reporting container in the Planning queue rather than
-    # a queue-invisible one.
+    # `planned` is stamped, then `creating-spec` is removed, STRICTLY LAST (L16).
+    # A crash anywhere before this removal leaves a `shape-spec` container that
+    # is NOT `planned` and still carries `creating-spec`: it self-reports into
+    # the Planning queue (visible) AND is finished by the `reconcile` sweep
+    # through the handle (auto-recoverable). Both nets fire.
     backend.label_mutate("add", container_id, [PLANNED_LABEL])
+    backend.label_mutate("remove", container_id, [CREATING_SPEC_LABEL])
     return {"id": container_id, "design_child": design_child_id, "placeholder": placeholder_id}
 
 
