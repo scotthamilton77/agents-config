@@ -108,9 +108,12 @@ belong in the shared `src/user/.agents/` tree.
 
 ### 3.2 Script contract
 
-The JSON envelope (§3.2.3) is the sole output on every exit path; there is no
-human-rendered mode and no `--json` toggle. The agent renders it to prose when
-reporting to the user.
+The JSON envelope (§3.2.3) is the sole output on every exit path — including
+malformed invocations: argument errors are caught (argparse's `SystemExit`
+never escapes bare) and emitted as a `failed` envelope, so the calling skill
+always has a `failed_step` and `remediation_hint` to act on. There is no
+human-rendered mode and no `--json` toggle. The agent renders the envelope to
+prose when reporting to the user.
 
 #### 3.2.1 Plan mode (default)
 
@@ -429,6 +432,14 @@ Edit the source rule under `src/user/.agents/rules/`.
 - Deployed-test guard: the `_test.py` ships to `~/.claude/skills/`, so any
   repo-internal path in the test must be `skipTest`-guarded (skill Python is
   not in the ruff gate).
+- **Test-gate discovery.** The repo's configured `gates.test` command searches
+  only `src/user/.agents/skills` and `src/user/.claude/hooks`, so this suite is
+  invisible to the completion/CI test gate. Extend the gate's discovery to
+  `src/user/.claude/skills` (or register this suite explicitly) as part of this
+  work — safety tests that never run protect nothing.
+- Argument-error envelope: a malformed invocation (missing flag value, unknown
+  flag) must still emit a `failed` JSON envelope (§3.2), covered by a unit
+  test.
 
 ## 6. Continuations
 
