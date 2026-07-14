@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.fakes import ScriptedGhRunner, ScriptedGitRunner, gh_pr_meta_result, gh_pr_result
+from tests.fakes import ScriptedGhRunner, ScriptedGitRunner, gh_pr_result
 from vizsuite.adapters.git.runner import ModifiedFileRow
 from vizsuite.envelope import ErrorCode, VizError
 from vizsuite.extract.churn import FileChurn
@@ -79,8 +79,9 @@ def test_scope_carries_pr_metadata_author_review_state_and_timestamps():
     from vizsuite.reconcile.pr_scope import reconcile
 
     gh = ScriptedGhRunner(
-        result=gh_pr_result(changed_files=1, commit_count=1),
-        meta_result=gh_pr_meta_result(author="octocat", review_state="APPROVED"),
+        result=gh_pr_result(
+            changed_files=1, commit_count=1, author="octocat", review_state="APPROVED"
+        )
     )
     git = ScriptedGitRunner(present_oids=set(_PRESENT), diff_files=["a.py"], rev_list_oids=["c1"])
 
@@ -88,7 +89,8 @@ def test_scope_carries_pr_metadata_author_review_state_and_timestamps():
 
     assert scope.meta.author == "octocat"
     assert scope.meta.review_state == "APPROVED"
-    assert ("pr_meta", 7) in gh.calls
+    # single round trip: reconcile never issues a second gh call
+    assert gh.calls == [("pr_graphql", 7)]
 
 
 def test_reverted_only_file_excluded_from_scope():

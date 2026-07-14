@@ -1,11 +1,14 @@
-"""gh api graphql JSON → typed `PrView` (plan slice 2; test item 11 support).
+"""gh api graphql JSON → typed `PrView` (plan slice 2/5; test item 11 support).
 
 `parse_pr_view` is the single place that turns the raw `gh api graphql` stdout
-into vizsuite's `PrView`. The runner (`SubprocessGhRunner`) only shells out; every
-shape decision — nonzero exit, non-JSON, a null/absent pull request, a missing
-scalar — lands here as a loud typed `VizError(ADAPTER_FAILURE)`, never a silent
-default (mirrors workcli's bd/parse drift discipline). These tests drive the parser
-directly on scripted `GhResult`s, so no `gh` binary is ever touched.
+into vizsuite's `PrView` — one round-trip carries both the drift-critical scalar
+join (OIDs, base ref, changed-files/commit counts) and the PR-metadata garnish
+(author/review-state/timestamps), so `reconcile()` never needs a second gh
+subprocess call. The runner (`SubprocessGhRunner`) only shells out; every shape
+decision — nonzero exit, non-JSON, a null/absent pull request, a missing scalar
+— lands here as a loud typed `VizError(ADAPTER_FAILURE)`, never a silent
+default (mirrors workcli's bd/parse drift discipline). These tests drive the
+parser directly on scripted `GhResult`s, so no `gh` binary is ever touched.
 """
 
 from __future__ import annotations
@@ -25,6 +28,11 @@ def _graphql_stdout(
     base_ref: str = "main",
     changed_files: int = 2,
     commit_count: int = 3,
+    author: str = "octocat",
+    review_decision: str | None = "APPROVED",
+    created_at: str = "2026-07-01T00:00:00Z",
+    updated_at: str = "2026-07-02T00:00:00Z",
+    merged_at: str | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -36,6 +44,11 @@ def _graphql_stdout(
                         "baseRefName": base_ref,
                         "changedFiles": changed_files,
                         "commits": {"totalCount": commit_count},
+                        "author": {"login": author},
+                        "reviewDecision": review_decision,
+                        "createdAt": created_at,
+                        "updatedAt": updated_at,
+                        "mergedAt": merged_at,
                     }
                 }
             }
@@ -43,7 +56,7 @@ def _graphql_stdout(
     )
 
 
-def test_parses_oids_ref_and_scalar_counts():
+def test_parses_oids_ref_scalar_counts_and_meta_in_one_round_trip():
     from vizsuite.adapters.gh.parse import parse_pr_view
 
     result = GhResult(returncode=0, stdout=_graphql_stdout(), stderr="")
@@ -55,6 +68,21 @@ def test_parses_oids_ref_and_scalar_counts():
     assert pr.base_ref == "main"
     assert pr.changed_files == 2
     assert pr.commit_count == 3
+    assert pr.meta.author == "octocat"
+    assert pr.meta.review_state == "APPROVED"
+    assert pr.meta.created_at == "2026-07-01T00:00:00Z"
+    assert pr.meta.updated_at == "2026-07-02T00:00:00Z"
+    assert pr.meta.merged_at is None
+
+
+def test_null_review_decision_normalizes_to_none_sentinel():
+    from vizsuite.adapters.gh.parse import parse_pr_view
+
+    result = GhResult(returncode=0, stdout=_graphql_stdout(review_decision=None), stderr="")
+
+    pr = parse_pr_view(result, pr_number=7)
+
+    assert pr.meta.review_state == "NONE"
 
 
 def test_nonzero_gh_exit_is_adapter_failure():
@@ -105,6 +133,11 @@ def test_missing_scalar_field_is_adapter_failure():
         "baseRefName": "main",
         # changedFiles omitted — a drifted gh shape must alarm, not default to 0
         "commits": {"totalCount": 1},
+        "author": {"login": "octocat"},
+        "reviewDecision": "APPROVED",
+        "createdAt": "x",
+        "updatedAt": "y",
+        "mergedAt": None,
     }
     stdout = json.dumps({"data": {"repository": {"pullRequest": pull_request}}})
     result = GhResult(returncode=0, stdout=stdout, stderr="")
@@ -115,79 +148,25 @@ def test_missing_scalar_field_is_adapter_failure():
     assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
 
 
-def _meta_stdout(
-    *,
-    author: str = "octocat",
-    review_decision: str | None = "APPROVED",
-    created_at: str = "2026-07-01T00:00:00Z",
-    updated_at: str = "2026-07-02T00:00:00Z",
-    merged_at: str | None = None,
-) -> str:
-    return json.dumps(
-        {
-            "author": {"login": author},
-            "reviewDecision": review_decision,
-            "createdAt": created_at,
-            "updatedAt": updated_at,
-            "mergedAt": merged_at,
-        }
-    )
+def test_missing_meta_scalar_field_is_adapter_failure():
+    from vizsuite.adapters.gh.parse import parse_pr_view
 
-
-def test_parses_author_review_state_and_timestamps():
-    from vizsuite.adapters.gh.parse import parse_pr_meta
-
-    result = GhResult(returncode=0, stdout=_meta_stdout(), stderr="")
-
-    meta = parse_pr_meta(result, pr_number=7)
-
-    assert meta.author == "octocat"
-    assert meta.review_state == "APPROVED"
-    assert meta.created_at == "2026-07-01T00:00:00Z"
-    assert meta.updated_at == "2026-07-02T00:00:00Z"
-    assert meta.merged_at is None
-
-
-def test_null_review_decision_normalizes_to_none_sentinel():
-    from vizsuite.adapters.gh.parse import parse_pr_meta
-
-    result = GhResult(returncode=0, stdout=_meta_stdout(review_decision=None), stderr="")
-
-    meta = parse_pr_meta(result, pr_number=7)
-
-    assert meta.review_state == "NONE"
-
-
-def test_meta_nonzero_gh_exit_is_adapter_failure():
-    from vizsuite.adapters.gh.parse import parse_pr_meta
-
-    result = GhResult(returncode=1, stdout="", stderr="gh: not authenticated")
-
-    with pytest.raises(VizError) as exc_info:
-        parse_pr_meta(result, pr_number=7)
-
-    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
-    assert exc_info.value.detail["pr_number"] == 7
-
-
-def test_meta_non_json_stdout_is_adapter_failure():
-    from vizsuite.adapters.gh.parse import parse_pr_meta
-
-    result = GhResult(returncode=0, stdout="not json at all", stderr="")
-
-    with pytest.raises(VizError) as exc_info:
-        parse_pr_meta(result, pr_number=7)
-
-    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
-
-
-def test_meta_missing_author_field_is_adapter_failure():
-    from vizsuite.adapters.gh.parse import parse_pr_meta
-
-    stdout = json.dumps({"reviewDecision": "APPROVED", "createdAt": "x", "updatedAt": "y"})
+    pull_request = {
+        "baseRefOid": "b",
+        "headRefOid": "h",
+        "baseRefName": "main",
+        "changedFiles": 1,
+        "commits": {"totalCount": 1},
+        "reviewDecision": "APPROVED",
+        "createdAt": "x",
+        "updatedAt": "y",
+        "mergedAt": None,
+        # author omitted — a drifted gh shape must alarm, not default
+    }
+    stdout = json.dumps({"data": {"repository": {"pullRequest": pull_request}}})
     result = GhResult(returncode=0, stdout=stdout, stderr="")
 
     with pytest.raises(VizError) as exc_info:
-        parse_pr_meta(result, pr_number=7)
+        parse_pr_view(result, pr_number=7)
 
     assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE

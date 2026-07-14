@@ -10,6 +10,14 @@ implementation that actually shells out to real `git`. Slice 1 needs only
 `ls_tree` reads the immutable commit *tree object* (`git ls-tree -r <rev>`),
 never the mutable index (`git ls-files`), so every consumer sees a property of
 the snapshot rather than the operator's checkout state.
+
+Every method runs against an explicitly injected `repo_root`, so a caller can
+point the runner at a throwaway repo without touching its own cwd. The chdir
+immunity is only as strong as the value injected: an absolute root (what
+`cli.main` resolves at construction) is pinned for the runner's lifetime,
+while the default ``"."`` re-resolves against the live process cwd on every
+subprocess spawn — it exists to preserve the historical ambient-cwd behavior
+for bare construction, not to provide isolation.
 """
 
 from __future__ import annotations
@@ -18,6 +26,7 @@ import subprocess
 from collections.abc import Sequence
 from typing import NamedTuple, Protocol
 
+from vizsuite.adapters.subprocess_util import run
 from vizsuite.envelope import ErrorCode, VizError
 
 
@@ -62,51 +71,51 @@ class GitRunner(Protocol):
     ) -> list[ModifiedFileRow]: ...  # pragma: no cover
 
 
+def _adapter_failure(argv: Sequence[str], completed: subprocess.CompletedProcess[str]) -> VizError:
+    return VizError(
+        ErrorCode.ADAPTER_FAILURE,
+        f"{argv[0]} {argv[1]} failed",
+        detail={
+            "argv": list(argv),
+            "returncode": completed.returncode,
+            "stderr": completed.stderr.strip()[:500],
+        },
+    )
+
+
 class SubprocessGitRunner:
     """Drives real `git`. Every read is against the immutable object DB — the tree
     object (`ls_tree`), commit objects (`rev_list`, `churn_for_commits`), or the
     merge-base diff (`diff_name_only`) — never the operator's working tree."""
 
+    def __init__(self, repo_root: str = ".") -> None:
+        self._root = repo_root
+
     def ls_tree(self, rev: str) -> list[LsTreeRow]:
-        completed = subprocess.run(
-            ["git", "ls-tree", "-r", rev],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
-        )
+        argv = ["git", "ls-tree", "-r", rev]
+        completed = run(argv, cwd=self._root, timeout=60)
+        if completed.returncode != 0:
+            raise _adapter_failure(argv, completed)
         return [_parse_ls_tree_line(line) for line in completed.stdout.splitlines() if line]
 
     def cat_object_exists(self, oid: str) -> bool:
         # `git cat-file -e <oid>` exits 0 iff the object is present locally.
-        completed = subprocess.run(
-            ["git", "cat-file", "-e", oid],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
+        completed = run(["git", "cat-file", "-e", oid], cwd=self._root, timeout=60)
         return completed.returncode == 0
 
     def rev_list(self, base: str, head: str) -> list[str]:
-        completed = subprocess.run(
-            ["git", "rev-list", f"{base}..{head}"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
-        )
+        argv = ["git", "rev-list", f"{base}..{head}"]
+        completed = run(argv, cwd=self._root, timeout=60)
+        if completed.returncode != 0:
+            raise _adapter_failure(argv, completed)
         return [line for line in completed.stdout.splitlines() if line]
 
     def diff_name_only(self, base: str, head: str) -> list[str]:
         # 3-dot: the merge-base..head net diff, matching GitHub's "Files changed".
-        completed = subprocess.run(
-            ["git", "diff", f"{base}...{head}", "--name-only"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=True,
-        )
+        argv = ["git", "diff", f"{base}...{head}", "--name-only"]
+        completed = run(argv, cwd=self._root, timeout=60)
+        if completed.returncode != 0:
+            raise _adapter_failure(argv, completed)
         return [line for line in completed.stdout.splitlines() if line]
 
     def archive_tar(self, oid: str) -> bytes:
@@ -117,11 +126,12 @@ class SubprocessGitRunner:
         # surfaces as a typed ADAPTER_FAILURE (not a raw CalledProcessError → an
         # opaque E_INTERNAL), matching the loud-boundary contract of the other
         # slice-3 adapters.
-        completed = subprocess.run(
+        completed = run(
             ["git", "archive", "--format=tar", oid],
-            capture_output=True,
+            cwd=self._root,
             timeout=120,
             check=False,
+            text=False,
         )
         if completed.returncode != 0:
             raise VizError(
@@ -136,22 +146,15 @@ class SubprocessGitRunner:
         return completed.stdout
 
     def fetch_pr(self, pr_number: int) -> None:  # pragma: no cover - needs a remote PR ref
-        subprocess.run(
+        run(
             ["git", "fetch", "origin", f"pull/{pr_number}/head"],
-            capture_output=True,
-            text=True,
+            cwd=self._root,
             timeout=120,
             check=False,
         )
 
     def fetch_base(self, base_ref: str) -> None:  # pragma: no cover - needs a remote
-        subprocess.run(
-            ["git", "fetch", "origin", base_ref],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        run(["git", "fetch", "origin", base_ref], cwd=self._root, timeout=120, check=False)
 
     def churn_for_commits(self, commit_oids: Sequence[str]) -> list[ModifiedFileRow]:
         # Read each commit *object* by SHA via `Git.get_commit` — not
@@ -162,7 +165,7 @@ class SubprocessGitRunner:
         # the checkout. Imported lazily so the estate-only path never pays the cost.
         from pydriller import Git as PyDrillerGit
 
-        git_repo = PyDrillerGit(".")
+        git_repo = PyDrillerGit(self._root)
         rows: list[ModifiedFileRow] = []
         for oid in commit_oids:
             for modified in git_repo.get_commit(oid).modified_files:

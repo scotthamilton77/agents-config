@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from vizsuite import __version__
+from vizsuite.adapters.critical_paths import read_critical_paths
 from vizsuite.adapters.scc.parse import parse_scc
 from vizsuite.envelope import JsonValue
 from vizsuite.extract.complexity import complexity
@@ -52,7 +53,8 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     try:
         scc_records = parse_scc(runners.scc.scan(snapshot))
         complexity_scores = complexity(estate_map, scc_records, scope.files)
-        consequence_scores = consequence(estate_map, snapshot)
+        critical_paths_lines = read_critical_paths(snapshot)
+        consequence_scores = consequence(estate_map, critical_paths_lines)
     finally:
         shutil.rmtree(snapshot, ignore_errors=True)
 

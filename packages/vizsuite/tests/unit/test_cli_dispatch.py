@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from io import StringIO
+from pathlib import Path
 
 import pytest
 
@@ -121,3 +122,26 @@ def test_main_defaults_to_real_streams(capsys: pytest.CaptureFixture[str]):
     captured = capsys.readouterr()
     assert json.loads(captured.out)["data"] == {"protocol": "1"}
     assert captured.err == ""
+
+
+def test_default_runners_pin_repo_root_to_invocation_cwd(monkeypatch: pytest.MonkeyPatch):
+    """The default runners get an absolute repo root captured at construction —
+    `cwd="."` would re-resolve against the live process cwd on every subprocess
+    spawn, so a mid-process `chdir` could silently retarget them."""
+    captured: list[str] = []
+
+    class _RecordingRunner:
+        def __init__(self, repo_root: str = ".") -> None:
+            captured.append(repo_root)
+
+    monkeypatch.setattr("vizsuite.cli.SubprocessGitRunner", _RecordingRunner)
+    monkeypatch.setattr("vizsuite.cli.SubprocessGhRunner", _RecordingRunner)
+
+    exit_code, envelope, _ = run_cli(["pr", "1"])
+
+    # The recorder has no verb methods, so the handler dies after construction;
+    # the envelope invariant must still hold (single E_INTERNAL envelope).
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_INTERNAL"
+    assert len(captured) == 2
+    assert all(root == str(Path.cwd()) and Path(root).is_absolute() for root in captured)

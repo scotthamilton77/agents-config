@@ -1,9 +1,11 @@
-"""SubprocessGitRunner: the one real git I/O boundary in slice 1.
+"""SubprocessGitRunner: the one real git I/O boundary.
 
 Every other test drives a `ScriptedGitRunner` fake; this file is the sole place
-that proves the `git ls-tree -r` wiring (argv, tab-delimited parse, blob rows)
-actually works, against a real throwaway repo (git is always available in CI).
-Slice 2 extends this seam with cat_object_exists/rev_list/diff/churn/etc.
+that proves the real `git` wiring (argv, tab-delimited parse, blob rows, typed
+adapter-failure boundary) actually works, against a real throwaway repo (git is
+always available in CI). `repo_root` is injected explicitly (never the process
+cwd), so these tests never `monkeypatch.chdir` — proving the runner does not
+depend on the ambient working directory.
 """
 
 from __future__ import annotations
@@ -49,11 +51,10 @@ def _init_repo(root: Path, files: Sequence[tuple[str, str]]) -> None:
     _git(root, "commit", "-qm", "init")
 
 
-def test_ls_tree_reads_committed_blob_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_ls_tree_reads_committed_blob_rows(tmp_path: Path):
     _init_repo(tmp_path, [("a.py", "x = 1\n"), ("src/b.py", "y = 2\n")])
-    monkeypatch.chdir(tmp_path)
 
-    rows = SubprocessGitRunner().ls_tree("HEAD")
+    rows = SubprocessGitRunner(repo_root=str(tmp_path)).ls_tree("HEAD")
 
     by_path = {row.path: row for row in rows}
     assert set(by_path) == {"a.py", "src/b.py"}
@@ -63,7 +64,16 @@ def test_ls_tree_reads_committed_blob_rows(tmp_path: Path, monkeypatch: pytest.M
         assert len(row.blob_sha) == 40  # full git object SHA-1
 
 
-def _two_commit_repo(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+def test_ls_tree_nonzero_exit_is_typed_adapter_failure(tmp_path: Path):
+    # Not a git repo at all → `git ls-tree` exits nonzero; must surface as a
+    # typed ADAPTER_FAILURE, not a raw CalledProcessError (→ opaque E_INTERNAL).
+    with pytest.raises(VizError) as excinfo:
+        SubprocessGitRunner(repo_root=str(tmp_path)).ls_tree("HEAD")
+
+    assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def _two_commit_repo(root: Path) -> tuple[str, str]:
     """A base commit (a.py) then a head commit (modifies a.py, adds b.py). Returns (base, head)."""
     _init_repo(root, [("a.py", "x = 1\n")])
     base = _git_out(root, "rev-parse", "HEAD")
@@ -72,13 +82,12 @@ def _two_commit_repo(root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, 
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "head")
     head = _git_out(root, "rev-parse", "HEAD")
-    monkeypatch.chdir(root)
     return base, head
 
 
-def test_cat_exists_rev_list_diff_on_real_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    base, head = _two_commit_repo(tmp_path, monkeypatch)
-    runner = SubprocessGitRunner()
+def test_cat_exists_rev_list_diff_on_real_repo(tmp_path: Path):
+    base, head = _two_commit_repo(tmp_path)
+    runner = SubprocessGitRunner(repo_root=str(tmp_path))
 
     assert runner.cat_object_exists(head) is True
     assert runner.cat_object_exists("0" * 40) is False  # a well-formed but absent OID
@@ -86,13 +95,33 @@ def test_cat_exists_rev_list_diff_on_real_repo(tmp_path: Path, monkeypatch: pyte
     assert set(runner.diff_name_only(base, head)) == {"a.py", "b.py"}  # 3-dot net diff
 
 
-def test_churn_for_commits_sums_real_pydriller_rows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    base, head = _two_commit_repo(tmp_path, monkeypatch)
-    head_only = SubprocessGitRunner().rev_list(base, head)
+def test_rev_list_nonzero_exit_is_typed_adapter_failure(tmp_path: Path):
+    # A well-formed but nonexistent ref on both sides → `git rev-list` exits nonzero.
+    _init_repo(tmp_path, [("a.py", "x = 1\n")])
+    runner = SubprocessGitRunner(repo_root=str(tmp_path))
 
-    rows = SubprocessGitRunner().churn_for_commits(head_only)
+    with pytest.raises(VizError) as excinfo:
+        runner.rev_list("0" * 40, "1" * 40)
+
+    assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def test_diff_name_only_nonzero_exit_is_typed_adapter_failure(tmp_path: Path):
+    _init_repo(tmp_path, [("a.py", "x = 1\n")])
+    runner = SubprocessGitRunner(repo_root=str(tmp_path))
+
+    with pytest.raises(VizError) as excinfo:
+        runner.diff_name_only("0" * 40, "1" * 40)
+
+    assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def test_churn_for_commits_sums_real_pydriller_rows(tmp_path: Path):
+    base, head = _two_commit_repo(tmp_path)
+    runner = SubprocessGitRunner(repo_root=str(tmp_path))
+    head_only = runner.rev_list(base, head)
+
+    rows = runner.churn_for_commits(head_only)
 
     by_path = {(row.new_path or row.old_path): row for row in rows}
     # the head commit modified a.py (1 added, 1 deleted) and added b.py (1 added).
@@ -102,9 +131,7 @@ def test_churn_for_commits_sums_real_pydriller_rows(
     assert by_path["b.py"].deleted == 0
 
 
-def test_churn_for_commits_reads_commit_unreachable_from_head(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_churn_for_commits_reads_commit_unreachable_from_head(tmp_path: Path):
     # The real case: a PR head not merged into the checked-out branch. PyDriller's
     # branch-traversal filter (Repository(only_commits=...)) would silently yield
     # nothing for it; churn must read the commit object directly by SHA.
@@ -117,9 +144,8 @@ def test_churn_for_commits_reads_commit_unreachable_from_head(
     _git(tmp_path, "commit", "-qm", "feature")
     feature = _git_out(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "checkout", "-q", base_branch)  # HEAD no longer reaches `feature`
-    monkeypatch.chdir(tmp_path)
 
-    rows = SubprocessGitRunner().churn_for_commits([feature])
+    rows = SubprocessGitRunner(repo_root=str(tmp_path)).churn_for_commits([feature])
 
     by_path = {(row.new_path or row.old_path): row for row in rows}
     assert by_path["a.py"].added == 1
@@ -127,13 +153,12 @@ def test_churn_for_commits_reads_commit_unreachable_from_head(
     assert by_path["b.py"].added == 1
 
 
-def test_archive_tar_streams_the_committed_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_archive_tar_streams_the_committed_tree(tmp_path: Path):
     # `git archive` reads the commit *tree object*, so the tar carries exactly the
     # committed blobs — the immutable-snapshot seam scc will scan in slice 3.
     _init_repo(tmp_path, [("a.py", "x = 1\n"), ("src/b.py", "y = 2\n")])
-    monkeypatch.chdir(tmp_path)
 
-    tar_bytes = SubprocessGitRunner().archive_tar("HEAD")
+    tar_bytes = SubprocessGitRunner(repo_root=str(tmp_path)).archive_tar("HEAD")
 
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
         members = {m.name: m for m in tar.getmembers() if m.isfile()}
@@ -143,16 +168,27 @@ def test_archive_tar_streams_the_committed_tree(tmp_path: Path, monkeypatch: pyt
         assert extracted.read() == b"x = 1\n"
 
 
-def test_archive_tar_types_git_failure_as_adapter_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_archive_tar_types_git_failure_as_adapter_failure(tmp_path: Path):
     # A failing `git archive` (here: an absent OID) must surface as a typed
     # ADAPTER_FAILURE, not a raw CalledProcessError that the CLI reports as
     # E_INTERNAL — the loud-boundary contract the other slice-3 adapters honor.
     _init_repo(tmp_path, [("a.py", "x = 1\n")])
-    monkeypatch.chdir(tmp_path)
 
     with pytest.raises(VizError) as excinfo:
-        SubprocessGitRunner().archive_tar("0" * 40)  # well-formed but absent OID
+        SubprocessGitRunner(repo_root=str(tmp_path)).archive_tar("0" * 40)  # well-formed, absent
 
     assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def test_runner_never_reads_the_process_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # The load-bearing invariant: constructing the runner against `repo_root`
+    # must work correctly even when the process cwd points somewhere unrelated
+    # (here: a directory with no repo at all).
+    _init_repo(tmp_path, [("a.py", "x = 1\n")])
+    unrelated = tmp_path.parent / "unrelated-cwd"
+    unrelated.mkdir(exist_ok=True)
+    monkeypatch.chdir(unrelated)
+
+    rows = SubprocessGitRunner(repo_root=str(tmp_path)).ls_tree("HEAD")
+
+    assert {row.path for row in rows} == {"a.py"}

@@ -17,6 +17,7 @@ import sys
 import traceback
 from argparse import ArgumentParser, _SubParsersAction
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NoReturn, TextIO
 
 from vizsuite import PROTOCOL_VERSION
@@ -157,10 +158,14 @@ def main(
     # escaping with a raw traceback and no envelope.
     try:
         # Constructed only now — never for --protocol-version above — so the
-        # handshake never touches any adapter.
+        # handshake never touches any adapter. The repo root is resolved to an
+        # absolute path once, here: the default "." would re-resolve against
+        # the live process cwd on every subprocess spawn, so a mid-process
+        # chdir could silently retarget the runners.
+        repo_root = str(Path.cwd())
         runners = Runners(
-            git=git_runner if git_runner is not None else SubprocessGitRunner(),
-            gh=gh_runner if gh_runner is not None else SubprocessGhRunner(),
+            git=git_runner if git_runner is not None else SubprocessGitRunner(repo_root=repo_root),
+            gh=gh_runner if gh_runner is not None else SubprocessGhRunner(repo_root=repo_root),
             scc=scc_runner if scc_runner is not None else SubprocessSccRunner(),
         )
         data = handler(runners, args)

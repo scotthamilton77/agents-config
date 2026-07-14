@@ -1,10 +1,12 @@
-"""PR snapshot resolution + git↔GitHub scalar reconciliation (plan §3.5, slice 2).
+"""PR snapshot resolution + git↔GitHub scalar reconciliation (plan §3.5).
 
 `reconcile` resolves the PR's immutable base/head OIDs and reconciles local git's
 authoritative net file/commit *sets* against GitHub's *un-truncated scalar counts*.
 Every read is against the immutable object DB (never the operator's checkout), so a
 concurrent session mutating the main tree cannot corrupt the artifact. Disagreement
 is a loud `RECONCILER_DRIFT`; OIDs still absent after a fetch are `SNAPSHOT_MISMATCH`.
+One `gh api graphql` call resolves both the scalar join and the PR-metadata garnish
+(`PrView.meta`) — no second gh round trip.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from vizsuite.adapters.gh.runner import GhRunner
 from vizsuite.adapters.git.runner import GitRunner
 from vizsuite.envelope import ErrorCode, JsonValue, VizError
 from vizsuite.extract.churn import FileChurn, churn
-from vizsuite.extract.pr_metadata import pr_metadata
 
 
 @dataclass(frozen=True)
@@ -26,9 +27,9 @@ class PrScope:
 
     `files` is the local *net* set (a file added-then-reverted within the PR is
     excluded), each carrying its summed churn; `head_oid` drives every downstream
-    immutable-object read (estate at head, scc snapshot in slice 3). `meta` is
-    the author/review-state/timestamps garnish (slice 5) — deliberately absent
-    from slice 2, which returned no metadata.
+    immutable-object read (estate at head, scc snapshot). `meta` is the
+    author/review-state/timestamps garnish, parsed from the same graphql
+    response as the scalar join.
     """
 
     pr_number: int
@@ -41,7 +42,6 @@ class PrScope:
 def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
     """Resolve OIDs and reconcile local net sets against GitHub's scalar counts."""
     pr = parse_pr_view(gh.pr_graphql(pr_number), pr_number=pr_number)
-    meta = pr_metadata(gh, pr_number)
 
     # Ensure both immutable OIDs are present locally so every downstream read is
     # against the object DB, not the operator's checkout. `pull/<n>/head` brings the
@@ -90,5 +90,5 @@ def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
 
     files = churn(git, commit_oids, net_files)
     return PrScope(
-        pr_number=pr_number, head_oid=pr.head_oid, base_oid=pr.base_oid, files=files, meta=meta
+        pr_number=pr_number, head_oid=pr.head_oid, base_oid=pr.base_oid, files=files, meta=pr.meta
     )
