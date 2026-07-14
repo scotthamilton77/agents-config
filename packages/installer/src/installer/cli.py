@@ -11,10 +11,12 @@ from installer.config import Config, resolve_plugins, resolve_plugins_root, reso
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
+from installer.core.kits import kit_adapters, kit_name_of, kit_universe, stage_kits
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
+from installer.core.profiles import Scope, load_manifest, project_universe, resolve
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.receipt import Receipt
 from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from installer.core.io_port import IOPort
+    from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
@@ -255,6 +258,17 @@ def _run(
             return 2
         return 0
 
+    # A `--project` run forks here to the project-scoped tail: it installs kit
+    # content (tool-agnostic project refs) under a project-local receipt and
+    # never touches user space or runs the user tool/plugin install below.
+    # `--project --dump-stage` falls through to the dump branch above (unchanged
+    # until a future task teaches the dump renderer about kits), so this fork
+    # only ever sees a plain `--project` run.
+    if args.project is not None:
+        return _run_project(
+            args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
+        )
+
     config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
     adapters = [get_adapter(tool) for tool in tools]
 
@@ -390,6 +404,101 @@ def _run(
         plugins=[p.name for p in plugins],
         all_tools=[t.value for t in known_tools()],
         all_plugins=list(discover(resolve_plugins_root(resolved_repo_root, os.environ))),
+        verbose=args.verbose,
+        io=io,
+    )
+    return 0
+
+
+def _run_project(
+    args: argparse.Namespace,
+    *,
+    plans: dict[Tool, StagingPlan],
+    project_root: Path,
+    repo_root: Path,
+    io: IOPort,
+) -> int:
+    """The project-scoped tail: install kit content under ``project_root``.
+
+    Tracer scope only (S2 plan Task 8) — kit refs alone. A kit rides the
+    existing plugin-route machinery under owner ``kit:<name>`` via
+    ``_KitRouteAdapter``, so it needs no new receipt/prune plumbing: this
+    mirrors the user path's plugin-route install + receipt-record, scoped to a
+    project-local receipt and lock instead of the user one. The user tool
+    sync, user plugin routes, prune, and validation passes never run here.
+    """
+    kits_root = repo_root / "src" / "kits"
+    staged_kits = stage_kits(kits_root)
+    universe = project_universe(plans.values())
+    for key, refs in kit_universe(staged_kits).items():
+        universe.setdefault(key, []).extend(refs)
+
+    manifest = load_manifest(repo_root / "profiles.toml")
+    selection = tuple(p.strip() for p in args.profiles.split(",")) if args.profiles else ()
+    if not selection:
+        sys.stderr.write(
+            "installer: project install needs an explicit profile (no implicit full)\n"
+        )
+        return 2
+    resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
+
+    # A kit is selected iff at least one of its refs' dest_relpaths landed in
+    # the resolved PROJECT scope.
+    project_dests = {r.dest_relpath for r in resolved.included.get(Scope.PROJECT, ())}
+    selected_kits = {
+        kit_name_of(sk.selector_key) for sk in staged_kits if sk.ref.dest_relpath in project_dests
+    }
+    adapters = kit_adapters(kits_root, project_root, selected=selected_kits)
+
+    receipt_path = project_root / ".agents-config" / "install-receipt.json"
+    lock_cm: AbstractContextManager[None] = (
+        nullcontext() if args.dry_run else receipt_lock(receipt_path.with_suffix(".lock"))
+    )
+    counters: dict[str, Counters] = {}
+    plugin_outcomes: dict[str, list[InstallOutcome]] = {}
+    try:
+        with lock_cm:
+            prior_read = read_receipt(receipt_path)
+            prior = (
+                prior_read.receipt
+                if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
+                else Receipt()
+            )
+            try:
+                _merge_into(
+                    counters,
+                    install_plugin_routes(
+                        adapters,
+                        home=project_root,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=args.yes,
+                        outcomes_by_plugin=plugin_outcomes,
+                    ),
+                )
+            except ConsentRequiredError:
+                return 1
+            if not args.dry_run:
+                record_receipt(
+                    receipt_path,
+                    prior=prior,
+                    dest_roots={},
+                    home=project_root,
+                    tool_outcomes={},
+                    plugin_outcomes=plugin_outcomes,
+                    pruned_paths=set(),
+                    relinquished_paths=set(),
+                )
+    except ReceiptLockBusy:
+        io.err(f"another install holds the project receipt lock at {receipt_path}")
+        return 1
+
+    render_summary(
+        counters,
+        tools=[],
+        plugins=sorted(plugin_outcomes),
+        all_tools=[],
+        all_plugins=[],
         verbose=args.verbose,
         io=io,
     )

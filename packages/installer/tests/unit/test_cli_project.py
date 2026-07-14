@@ -62,3 +62,36 @@ def test_project_path_missing_errors(tmp_path: Path, capsys: pytest.CaptureFixtu
     )
     assert rc == 2
     assert "nope" in capsys.readouterr().err
+
+
+def _hermetic_repo_with_profiles(tmp_path: Path) -> Path:
+    """``_hermetic_repo`` plus the real ``profiles.toml`` (needed to resolve
+    ``beads-kit``) and the beads kit content the tracer installs."""
+    repo = _hermetic_repo(tmp_path)
+    (repo / "profiles.toml").write_text(
+        (_REPO_ROOT / "profiles.toml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return repo
+
+
+def test_project_beads_kit_writes_prime_and_receipt(tmp_path: Path) -> None:
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+    receipt = project / ".agents-config" / "install-receipt.json"
+    assert receipt.is_file()
+    assert "kit:beads" in receipt.read_text()
+    assert not (tmp_path / ".beads").exists()
