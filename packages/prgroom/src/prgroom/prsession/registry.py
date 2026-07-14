@@ -54,8 +54,11 @@ def resolve_store(
         # Wrap so the production file store ALSO emits merge-guard's legacy
         # pr-inventory at persist time (best-effort); the inner adapter is the
         # unchanged, pure FileStore. Only the file path is wrapped — bd/in-memory
-        # paths never reach here. Thread ``env`` through so the legacy-dir seam
-        # honours an injected environment (test isolation) rather than silently
-        # resolving against the real ``os.environ``.
-        return LegacyExportStore(FileStore(state_dir=state_dir), env=env)
+        # paths never reach here. Thread the SAME resolved ``environ`` (not the
+        # raw ``env``) into the legacy-dir seam so store selection and legacy-dir
+        # resolution agree on one environment source: an injected mapping drives
+        # both (test isolation), and an absent env resolves neither against the
+        # real ``os.environ`` — env is parsed once at the CLI boundary and passed
+        # inward, never reached as a hidden global here.
+        return LegacyExportStore(FileStore(state_dir=state_dir), env=environ)
     raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE, detail=resolved)
