@@ -13,6 +13,7 @@ schema = 1
 "commands/**"  = "user"
 "workflows/**" = "user"
 "hooks/**"     = "user"
+"kits/**"      = "project"
 
 # Today's behavior: install everything, user-scoped. The zero-breakage default.
 [profiles.full]
@@ -31,3 +32,7 @@ include = ["rules/**", "skills/**", "agents/**", "commands/**", "workflows/**"]
 # Exclude-only profile — composes with any include set.
 [profiles.no-brainstorming]
 exclude = ["skills/brainstorming"]
+
+# The beads project kit (PRIME.md -> <project>/.beads/PRIME.md). Project-scoped.
+[profiles.beads-kit]
+include = ["kits/beads/**"]
