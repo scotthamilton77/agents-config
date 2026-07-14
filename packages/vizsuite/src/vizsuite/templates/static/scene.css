@@ -384,6 +384,11 @@ body {
 .viz-ledger-row:focus-visible {
   outline: 2px solid var(--viz-fg);
   outline-offset: -2px;
+  /* Rows are non-positioned flex children, so z-index alone is inert;
+     position: relative promotes the focused row into a stacking context
+     (matching the treemap tiles' positioned + z-index pattern) so the
+     inset focus ring draws above the adjacent rows' borders. */
+  position: relative;
   z-index: 1;
 }
 .viz-ledger-rank {

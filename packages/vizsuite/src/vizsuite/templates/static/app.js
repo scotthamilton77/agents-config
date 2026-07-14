@@ -586,7 +586,7 @@
     function mountView(name, mountId) {
       var registered = window.vizViews && window.vizViews[name];
       if (!registered || typeof registered.render !== "function") {
-        return;
+        return false;
       }
       // Only one view mounted at a time (spec §6.1 view switcher): destroy
       // the outgoing view before handing out a fresh container (spec §4.2 —
@@ -600,12 +600,17 @@
       var handle = registered.render(container, scene, currentState());
       mountedViews.push(handle);
       activeView = { name: name, container: container, handle: handle };
+      return true;
     }
 
     var viewMountIds = { treemap: IDS.treemapView, ledger: IDS.ledgerView };
     var viewSwitcher = buildViewSwitcher(elements.controls, function (name) {
-      mountView(name, viewMountIds[name]);
-      viewSwitcher.setActive(name);
+      // Only reflect the switch in the toggle when the view actually
+      // mounted; a no-op mount (missing view module) would otherwise leave
+      // the switcher indicating a view that never replaced the current one.
+      if (mountView(name, viewMountIds[name])) {
+        viewSwitcher.setActive(name);
+      }
     });
 
     mountView("treemap", IDS.treemapView);
