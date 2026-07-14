@@ -426,7 +426,15 @@ while (true) {
   for (const f of survivors) {
     if (f.fixClass === 'mechanical') {
       // Sequential on purpose: concurrent writes to the same tree can clobber.
-      const res = await withRepair(a => agent(fixPrompt(f, a), { label: `fix:r${round}:${f.dimension}:a${a}`, phase: 'Verify', model: FIXER_MODEL, effort: VERIFY_EFFORT, schema: FIX_RESULT_SCHEMA }))
+      const res = await withRepair(a =>
+        agent(fixPrompt(f, a), {
+          label: `fix:r${round}:${f.dimension}:a${a}`,
+          phase: 'Verify',
+          model: FIXER_MODEL,
+          effort: VERIFY_EFFORT,
+          schema: FIX_RESULT_SCHEMA,
+        }),
+      )
       if (res && res.applied) {
         applied.push({ ...f, fixNote: res.note })
         appliedThisRound++
