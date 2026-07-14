@@ -58,7 +58,7 @@ from vizsuite.sidecar.models import FactRecord, MatchingDescriptor, Verdict, Ver
 
 _MAJORITY_THRESHOLD = 0.5
 
-BeadOverlapRule = Callable[["tuple[str, ...]", "tuple[str, ...]"], bool]
+BeadOverlapRule = Callable[[tuple[str, ...], tuple[str, ...]], bool]
 
 
 @dataclass(frozen=True)
