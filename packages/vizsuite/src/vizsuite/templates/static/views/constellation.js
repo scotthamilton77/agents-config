@@ -373,7 +373,11 @@
       if (window.vizShared.isDependencyGraphUnavailable(scene)) {
         renderUnavailable(stage);
         return {
-          destroy: makeDestroy(container)
+          destroy: makeDestroy(container),
+          // The unavailable state renders no encodings, so there is nothing to
+          // repaint — but the handle still carries reencode to satisfy the
+          // §4.2 view-module contract shape every other branch returns.
+          reencode: function () {}
         };
       }
 
