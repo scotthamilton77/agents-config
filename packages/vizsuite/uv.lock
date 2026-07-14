@@ -942,6 +942,7 @@ name = "vizsuite"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "pathspec" },
     { name = "pydriller" },
 ]
 
@@ -956,7 +957,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydriller", specifier = ">=2.5" }]
+requires-dist = [
+    { name = "pathspec", specifier = ">=0.12" },
+    { name = "pydriller", specifier = ">=2.5" },
+]
 
 [package.metadata.requires-dev]
 dev = [

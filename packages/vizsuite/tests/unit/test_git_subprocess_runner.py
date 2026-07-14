@@ -8,7 +8,9 @@ Slice 2 extends this seam with cat_object_exists/rev_list/diff/churn/etc.
 
 from __future__ import annotations
 
+import io
 import subprocess
+import tarfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -122,3 +124,19 @@ def test_churn_for_commits_reads_commit_unreachable_from_head(
     assert by_path["a.py"].added == 1
     assert by_path["a.py"].deleted == 1
     assert by_path["b.py"].added == 1
+
+
+def test_archive_tar_streams_the_committed_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # `git archive` reads the commit *tree object*, so the tar carries exactly the
+    # committed blobs — the immutable-snapshot seam scc will scan in slice 3.
+    _init_repo(tmp_path, [("a.py", "x = 1\n"), ("src/b.py", "y = 2\n")])
+    monkeypatch.chdir(tmp_path)
+
+    tar_bytes = SubprocessGitRunner().archive_tar("HEAD")
+
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as tar:
+        members = {m.name: m for m in tar.getmembers() if m.isfile()}
+        assert {"a.py", "src/b.py"} <= set(members)
+        extracted = tar.extractfile("a.py")
+        assert extracted is not None
+        assert extracted.read() == b"x = 1\n"

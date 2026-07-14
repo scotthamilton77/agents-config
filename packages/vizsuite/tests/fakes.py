@@ -9,12 +9,16 @@ returned data and what the code under test actually asked the adapter for.
 
 from __future__ import annotations
 
+import io
 import json
+import tarfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from vizsuite.adapters.gh.runner import GhResult
 from vizsuite.adapters.git.runner import LsTreeRow, ModifiedFileRow
+from vizsuite.adapters.scc.runner import SccResult
 
 
 @dataclass
@@ -38,6 +42,8 @@ class ScriptedGitRunner:
     fetch_brings: set[str] = field(default_factory=set)
     diff_files: list[str] = field(default_factory=list)
     rev_list_oids: list[str] = field(default_factory=list)
+    # Snapshot seam (slice 3): the tar bytes every `archive_tar(oid)` call returns.
+    archive_tar_bytes: bytes = b""
     calls: list[tuple[str, ...]] = field(default_factory=list)
 
     def ls_tree(self, rev: str) -> list[LsTreeRow]:
@@ -59,6 +65,10 @@ class ScriptedGitRunner:
     def rev_list(self, base: str, head: str) -> list[str]:
         self.calls.append(("rev_list", base, head))
         return list(self.rev_list_oids)
+
+    def archive_tar(self, oid: str) -> bytes:
+        self.calls.append(("archive_tar", oid))
+        return self.archive_tar_bytes
 
     def fetch_pr(self, pr_number: int) -> None:
         self.calls.append(("fetch_pr", str(pr_number)))
@@ -111,6 +121,61 @@ def gh_pr_result(
     return GhResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
 
+@dataclass
+class ScriptedSccRunner:
+    """Feeds one scripted scc `SccResult`; records the snapshot dir it was told to scan.
+
+    The complexity path parses this raw result through the real `parse_scc`, so a
+    test exercises the actual parse path (not a hand-built record map). Build the
+    result with `scc_result(...)`; assert on `.calls` for the snapshot dir the verb
+    handed scc (and, after the verb's `finally`, that the dir was torn down).
+    """
+
+    result: SccResult
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def scan(self, snapshot_dir: Path) -> SccResult:
+        self.calls.append(("scan", str(snapshot_dir)))
+        return self.result
+
+
+def scc_result(files: dict[str, int]) -> SccResult:
+    """Build a successful scc `SccResult` scoring `{location: complexity}` (one Python block)."""
+    payload = [
+        {
+            "Name": "Python",
+            "Files": [
+                {
+                    "Location": f"./{location}",
+                    "Language": "Python",
+                    "Lines": complexity_value * 10,
+                    "Code": complexity_value * 8,
+                    "Complexity": complexity_value,
+                }
+                for location, complexity_value in files.items()
+            ],
+        }
+    ]
+    return SccResult(returncode=0, stdout=json.dumps(payload), stderr="")
+
+
 def blob(path: str, blob_sha: str = "0" * 40) -> LsTreeRow:
     """Build a `blob` `LsTreeRow` (the common case) for fixtures."""
     return LsTreeRow(mode="100644", obj_type="blob", blob_sha=blob_sha, path=path)
+
+
+def tar_of(files: dict[str, str]) -> bytes:
+    """Build an in-memory tar of `{path: text}` — a stand-in for `git archive` bytes.
+
+    Lets a materialize test drive `ScriptedGitRunner.archive_tar_bytes` without a
+    real repo, so the extract + estate-sanity logic is exercised in isolation from
+    the git subprocess (which its own real-subprocess test covers).
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for path, content in files.items():
+            data = content.encode("utf-8")
+            info = tarfile.TarInfo(name=path)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()

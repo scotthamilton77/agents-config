@@ -52,6 +52,7 @@ class GitRunner(Protocol):
     def cat_object_exists(self, oid: str) -> bool: ...  # pragma: no cover
     def rev_list(self, base: str, head: str) -> list[str]: ...  # pragma: no cover
     def diff_name_only(self, base: str, head: str) -> list[str]: ...  # pragma: no cover
+    def archive_tar(self, oid: str) -> bytes: ...  # pragma: no cover
     def fetch_pr(self, pr_number: int) -> None: ...  # pragma: no cover
     def fetch_base(self, base_ref: str) -> None: ...  # pragma: no cover
     def churn_for_commits(
@@ -105,6 +106,19 @@ class SubprocessGitRunner:
             check=True,
         )
         return [line for line in completed.stdout.splitlines() if line]
+
+    def archive_tar(self, oid: str) -> bytes:
+        # `git archive` serializes the commit *tree object* to a tar on stdout —
+        # binary bytes, so no `text=True`. The snapshot scc scans (slice 3) is
+        # extracted from this tar, never the operator's working tree, so a dirty
+        # checkout cannot leak into the artifact (the Path-C invariant).
+        completed = subprocess.run(
+            ["git", "archive", "--format=tar", oid],
+            capture_output=True,
+            timeout=120,
+            check=True,
+        )
+        return completed.stdout
 
     def fetch_pr(self, pr_number: int) -> None:  # pragma: no cover - needs a remote PR ref
         subprocess.run(
