@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from vizsuite.envelope import ErrorCode, VizError
+from vizsuite.output import ensure_viz_dir
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -262,6 +263,24 @@ def test_write_preserves_existing_gitignore_content(tmp_path: Path):
 
     lines = (store.viz_dir / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert lines == ["out/", "lock"]
+
+
+def test_gitignore_is_call_order_independent_across_both_writers(tmp_path: Path):
+    # Both sidecar writers share `ensure_viz_gitignore`, which installs the
+    # complete managed set — so whichever runs first, the committed
+    # `.viz/.gitignore` is byte-identical regardless of call order.
+    store_first = tmp_path / "store-first"
+    output_first = tmp_path / "output-first"
+
+    SidecarStore(store_first).write_manifest(Manifest(schema_version="1"))
+    ensure_viz_dir(store_first)
+
+    ensure_viz_dir(output_first)
+    SidecarStore(output_first).write_manifest(Manifest(schema_version="1"))
+
+    store_first_bytes = (store_first / ".viz" / ".gitignore").read_bytes()
+    output_first_bytes = (output_first / ".viz" / ".gitignore").read_bytes()
+    assert store_first_bytes == output_first_bytes == b"lock\nout/\n"
 
 
 # ---- Tier discipline in the API shape: no wholesale verdicts.json rewrite --

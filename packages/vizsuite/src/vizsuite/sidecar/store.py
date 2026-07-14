@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from vizsuite.envelope import ErrorCode, JsonValue, VizError
+from vizsuite.output import ensure_viz_gitignore
 from vizsuite.sidecar.models import (
     FactRecord,
     FlagRecord,
@@ -57,11 +58,6 @@ _STEPS_FILENAME = "steps.json"
 _RECOMMENDATIONS_FILENAME = "recommendations.json"
 _FLAGS_FILENAME = "flags.json"
 _VERDICTS_FILENAME = "verdicts.json"
-
-# `out/` is `vizsuite.output.ensure_viz_dir`'s concern; the store owns `lock`'s
-# entry directly so a sidecar-only workflow (no `viz pr` run yet) still ends up
-# with a correct `.gitignore` regardless of which bootstrap ran first.
-_GITIGNORE_LINE = "lock"
 
 _DEFAULT_LOCK_TIMEOUT_S = 5.0
 _DEFAULT_LOCK_POLL_INTERVAL_S = 0.05
@@ -145,16 +141,6 @@ def _load_records(path: Path, parse_one: Callable[[JsonValue], _T]) -> tuple[_T,
         raise _MalformedSidecarFileError(path, str(exc)) from exc
 
 
-def _ensure_lock_ignored(viz_dir: Path) -> None:
-    """Idempotently ensure `.viz/.gitignore` ignores `lock` (append-if-absent)."""
-    viz_dir.mkdir(parents=True, exist_ok=True)
-    gitignore = viz_dir / ".gitignore"
-    existing = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    if _GITIGNORE_LINE not in existing.splitlines():
-        prefix = existing if existing == "" or existing.endswith("\n") else existing + "\n"
-        gitignore.write_text(f"{prefix}{_GITIGNORE_LINE}\n", encoding="utf-8")
-
-
 @dataclass(frozen=True)
 class SidecarStore:
     """The `.viz/` sidecar's single entry point. `root` is injected, never `Path.cwd()`.
@@ -194,7 +180,7 @@ class SidecarStore:
                     raise _LockTimeoutError(lock_path, self.lock_timeout) from None
                 time.sleep(self.lock_poll_interval)
         try:
-            _ensure_lock_ignored(self.viz_dir)
+            ensure_viz_gitignore(self.viz_dir)
             yield
         finally:
             lock_path.unlink(missing_ok=True)
