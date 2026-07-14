@@ -159,7 +159,7 @@
       return sum + (weights[axis] || 0);
     }, 0);
     active.forEach(function (axis) {
-      var share = total > 0 ? weights[axis] / total : 0;
+      var share = total > 0 ? (weights[axis] || 0) / total : 0;
       var item = document.createElement("span");
       item.textContent = axis + " " + Math.round(share * 100) + "%";
       mixReadoutEl.appendChild(item);
@@ -333,13 +333,14 @@
         return unavailableAxes.indexOf(axis) === -1;
       });
       var weightTotal = activeAxes.reduce(function (sum, axis) {
-        return sum + weights[axis];
+        return sum + (weights[axis] || 0);
       }, 0);
 
       HEAT_AXES.forEach(function (axis) {
         var isUnavailable = unavailableAxes.indexOf(axis) !== -1;
         var raw = typeof attributes[axis] === "number" ? attributes[axis] : 0;
-        var share = isUnavailable || weightTotal <= 0 ? 0 : weights[axis] / weightTotal;
+        var share =
+          isUnavailable || weightTotal <= 0 ? 0 : (weights[axis] || 0) / weightTotal;
 
         var row = document.createElement("div");
         row.setAttribute("class", "viz-drill-row");
