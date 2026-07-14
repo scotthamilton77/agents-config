@@ -104,12 +104,15 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         "consequential_files": sum(1 for value in consequence_scores.values() if value > 0),
         "author": scope.meta.author,
         "review_state": scope.meta.review_state,
+        # Availability is a data property of the axes, not a property of the
+        # caller's weight mix: derive from the canonical input axes
+        # (`heat.DEFAULT_WEIGHTS` keys) minus the axes the model reports
+        # unavailable. Deriving from `heat_model.default_weights` would wrongly
+        # drop an available axis a caller merely omitted from `weights`.
         "heat_axes_available": cast(
             "list[JsonValue]",
             sorted(
-                axis
-                for axis in heat_model.default_weights
-                if axis not in heat_model.unavailable_axes
+                axis for axis in heat.DEFAULT_WEIGHTS if axis not in heat_model.unavailable_axes
             ),
         ),
     }
