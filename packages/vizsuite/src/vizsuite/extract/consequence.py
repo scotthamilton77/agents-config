@@ -14,6 +14,8 @@ from pathlib import Path
 
 from pathspec import GitIgnoreSpec
 
+from vizsuite.envelope import ErrorCode, VizError
+
 _CRITICAL_PATHS_FILE = ".critical-paths"
 
 # Path-class heuristics (§6.2): a file is load-bearing by class even without an
@@ -36,7 +38,16 @@ def _load_critical_paths(snapshot_dir: Path) -> GitIgnoreSpec:
     very file, so consequence and the gate agree on what is load-bearing by policy.
     """
     marker_file = snapshot_dir / _CRITICAL_PATHS_FILE
-    lines = marker_file.read_text(encoding="utf-8").splitlines() if marker_file.is_file() else []
+    if not marker_file.is_file():
+        return GitIgnoreSpec.from_lines([])
+    try:
+        lines = marker_file.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise VizError(
+            ErrorCode.ADAPTER_FAILURE,
+            "could not read .critical-paths from the materialized snapshot",
+            detail={"path": str(marker_file), "error": str(exc)},
+        ) from exc
     return GitIgnoreSpec.from_lines(lines)
 
 

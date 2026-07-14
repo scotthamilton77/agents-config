@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from vizsuite.envelope import ErrorCode, VizError
 from vizsuite.extract.consequence import consequence
 
 
@@ -65,3 +68,14 @@ def test_consequence_security_heuristic_matches_segments_not_substrings(tmp_path
     assert scores["src/author.py"] == 0.0
     assert scores["src/auth/handler.py"] > 0.0
     assert scores["src/token.py"] > 0.0
+
+
+def test_consequence_unreadable_critical_paths_alarms(tmp_path: Path) -> None:
+    # A `.critical-paths` that exists but can't be decoded (or read) must surface
+    # as a typed ADAPTER_FAILURE, not a raw OSError/UnicodeDecodeError → E_INTERNAL.
+    (tmp_path / ".critical-paths").write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
+
+    with pytest.raises(VizError) as excinfo:
+        consequence({"a.py": "s1"}, tmp_path)
+
+    assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE
