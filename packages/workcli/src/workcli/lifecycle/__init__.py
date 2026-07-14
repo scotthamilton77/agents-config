@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from workcli.lifecycle.manifest import Manifest, deserialize_manifest
+from workcli.lifecycle.nouns import IMPL_CONTAINER_LABEL
 from workcli.model import Item
 
 DELIVERED_MARKER = "[work] delivered:"  # leaf note prefix; full: "[work] delivered: <evidence>"
@@ -10,7 +11,7 @@ MANIFEST_MARKER = (
 )
 ORPHAN_MARKER = "[work] orphan-by-choice"  # item note (exact)
 
-_CONTAINER_SHAPE_LABELS = frozenset({"shape-spec", "shape-epic"})
+_CONTAINER_SHAPE_LABELS = frozenset({"shape-spec", "shape-epic", IMPL_CONTAINER_LABEL})
 _CONTAINER_TYPES = frozenset({"epic", "milestone"})  # legacy/unstamped fallback
 
 

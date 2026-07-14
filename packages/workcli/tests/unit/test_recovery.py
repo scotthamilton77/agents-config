@@ -24,6 +24,7 @@ from workcli.lifecycle.deliver import deliver, reconcile_placeholder
 from workcli.lifecycle.manifest import Manifest, ManifestItem, serialize_manifest
 from workcli.lifecycle.nouns import (
     DESIGN_CHILD_LABEL,
+    IMPL_CONTAINER_LABEL,
     IMPL_PLACEHOLDER_LABEL,
     SPEC_READY_LABEL,
 )
@@ -317,6 +318,10 @@ def test_deliver_design_multi_mints_children_under_placeholder_and_closes_design
     placeholder = backend.get("p")
     child_titles = {backend.get(cid).title for cid in placeholder.children}
     assert child_titles == {"Alpha", "Beta"}
+    # The placeholder is now the impl sub-container: stamped so `claim`/the
+    # router treat it as a declared-state container (spec §6), with the
+    # completion handle removed strictly last.
+    assert IMPL_CONTAINER_LABEL in placeholder.labels
     assert IMPL_PLACEHOLDER_LABEL not in placeholder.labels
     assert backend.get("d").status == "closed"
 
@@ -333,6 +338,8 @@ def test_reconcile_multi_mints_only_the_missing_children():
     titles = [backend.get(cid).title for cid in backend.get("p").children]
     assert sorted(titles) == ["Alpha", "Beta"]
     assert titles.count("Alpha") == 1
+    # Re-stamped idempotently across the interrupted expansion's replay.
+    assert IMPL_CONTAINER_LABEL in backend.get("p").labels
     assert IMPL_PLACEHOLDER_LABEL not in backend.get("p").labels
     assert backend.get("d").status == "closed"
 

@@ -98,6 +98,31 @@ def test_claim_on_childless_epic_is_not_claimable_with_no_ready_or_claim_call():
     assert runner.calls == [("show", "x.1", "--json")]
 
 
+def test_claim_on_impl_container_is_not_claimable_by_label():
+    # A multi-unit reconciled sub-container carries `shape-impl-container`;
+    # `claim` refuses it exactly like any other container, keyed on the label
+    # (never child count) -- the new handle joins the declared container set, so
+    # the guard trips before the `ready` set is even consulted.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("x.1", status="open", labels=["shape-impl-container"])
+                ),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(["claim", "x.1"], runner)
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.NOT_CLAIMABLE)
+    assert runner.calls == [("show", "x.1", "--json")]
+
+
 def test_claim_on_leaf_absent_from_ready_set_is_not_claimable_blocked():
     runner = ScriptedBdRunner(
         steps=[
