@@ -9,8 +9,8 @@ separately from identity), and per-fact `Provenance` (reused from
 scene envelope carries, not a second one). `payload` holds the record-kind-
 specific fields; this foundation slice does not yet model V2's per-kind
 domain shapes (§7.2) — later slices read typed views over `payload` without
-changing this envelope. `FlagRecord` models a `flags.json` entry (doubt or
-orphaned-verdict); `VerdictRecord` models a `verdicts.json` entry; `Manifest`
+changing this envelope. `FlagRecord` models a `flags.json` entry (`doubt` or
+`orphaned_verdict`); `VerdictRecord` models a `verdicts.json` entry; `Manifest`
 models `manifest.json`.
 
 Every `*_to_json`/`*_from_json` pair is a pure mapping function, mirroring
@@ -31,7 +31,7 @@ from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind, provenan
 
 
 class FlagKind(StrEnum):
-    """The two `flags.json` record kinds (spec §5.3): doubt vs orphaned-verdict."""
+    """The two `flags.json` record kinds (spec §5.3): `doubt` vs `orphaned_verdict`."""
 
     DOUBT = "doubt"
     ORPHANED_VERDICT = "orphaned_verdict"
@@ -75,7 +75,7 @@ class FactRecord:
 class _FlagVerdictInvariantError(ValueError):
     """Raised when a `FlagRecord`'s `verdict_id` presence disagrees with its `kind`.
 
-    An orphaned-verdict flag must carry a `verdict_id`; a doubt flag must not.
+    An `orphaned_verdict` flag must carry a `verdict_id`; a `doubt` flag must not.
     Subclassing `ValueError` lets the sidecar store wrap a violation from a
     deserialized record into a `VizError(SIDECAR_MALFORMED)` at the read
     boundary (the message is fixed on the class per ruff TRY003).
@@ -87,9 +87,9 @@ class _FlagVerdictInvariantError(ValueError):
 
 @dataclass(frozen=True)
 class FlagRecord:
-    """A `flags.json` entry: a doubt flag or an orphaned-verdict flag (spec §5.3).
+    """A `flags.json` entry: a `doubt` flag or an `orphaned_verdict` flag (spec §5.3).
 
-    `verdict_id` is set only for an orphaned-verdict flag (the verdict whose
+    `verdict_id` is set only for an `orphaned_verdict` flag (the verdict whose
     subject fact changed or vanished on rebuild); a doubt flag references only
     its fact. `__post_init__` enforces this invariant in both directions so both
     directly-constructed and deserialized records are guaranteed consistent.
