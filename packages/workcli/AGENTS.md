@@ -11,6 +11,17 @@ subprocess port. See `docs/specs/2026-07-04-work-facade-cli-contract.md` for
 the behavioral spec and `docs/plans/2026-07-10-workcli-transport-layer.md` for
 the implementation plan.
 
+A lifecycle layer (`src/workcli/lifecycle/`) sits over that same transport
+seam: noun-templated `work create <noun>` plus the guarded verbs
+`claim`/`release`/`deliver`/`plan`/`promote`/`reconcile` — status only ever
+moves through a lifecycle verb (plus transport's `close`/`reopen`). See
+`docs/specs/2026-07-05-work-lifecycle-and-facade.md` and
+`docs/plans/2026-07-12-workcli-lifecycle-layer.md`. The finer capability-model
+split (an honest server-authoritative `sync` no-op; read-only dep listing
+surviving `supports_dep_types=False`) is deferred to the future non-bd (GH)
+adapter bead — bd declares every `Capabilities` flag `True`, so nothing here
+needs it yet.
+
 ## The quality gate is mandatory — run it, do not approximate it
 
 Before pushing **any** change under `packages/workcli/`, run the canonical

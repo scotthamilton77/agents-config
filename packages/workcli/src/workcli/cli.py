@@ -15,12 +15,14 @@ import time
 import traceback
 from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import NoReturn, TextIO
 
 from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
+from workcli.lifecycle.nouns import Noun
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -59,7 +61,14 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
 def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     create_parser = subparsers.add_parser(
         "create",
-        help="create --raw: adapter primitive; public creation is the lifecycle layer's job",
+        help="create --raw (adapter primitive) or create NOUN (lifecycle layer)",
+    )
+    create_parser.add_argument(
+        "noun",
+        nargs="?",
+        choices=[noun.value for noun in Noun],
+        metavar="NOUN",
+        help="spike|chore|decision|feat|bugfix|spec|epic -- omit with --raw",
     )
     create_parser.add_argument("--raw", action="store_true")
     create_parser.add_argument("--title", required=True)
@@ -68,6 +77,10 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--priority")
     create_parser.add_argument("--parent")
     create_parser.add_argument("--label", action="append", default=[], metavar="LABEL")
+    create_parser.add_argument("--orphan", action="store_true")
+    create_parser.add_argument("--spec")
+    create_parser.add_argument("--trivial", action="store_true")
+    create_parser.add_argument("--acceptance")
 
     update_parser = subparsers.add_parser(
         "update", help="update title/priority/description (replace semantics only)"
@@ -92,6 +105,40 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
 
     reopen_parser = subparsers.add_parser("reopen", help="reopen a closed item")
     reopen_parser.add_argument("id", metavar="ID")
+
+
+def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    claim_parser = subparsers.add_parser("claim", help="claim a ready, unclaimed leaf")
+    claim_parser.add_argument("id", metavar="ID")
+
+    release_parser = subparsers.add_parser("release", help="release a claimed item back to open")
+    release_parser.add_argument("id", metavar="ID")
+
+    plan_parser = subparsers.add_parser("plan", help="add/remove an item from the Planning queue")
+    plan_parser.add_argument("id", metavar="ID")
+    plan_parser.add_argument("--done", action="store_true")
+    plan_parser.add_argument("--undo", action="store_true")
+    plan_parser.add_argument("--force", action="store_true")
+
+    promote_parser = subparsers.add_parser(
+        "promote", help="promote a shape-feat leaf to a shape-spec container"
+    )
+    promote_parser.add_argument("id", metavar="ID")
+
+    deliver_parser = subparsers.add_parser(
+        "deliver",
+        help="deliver a leaf (evidence-gated) or reconcile a design child's placeholder",
+    )
+    deliver_parser.add_argument("id", metavar="ID")
+    deliver_parser.add_argument("--spec")
+    deliver_parser.add_argument("--pr")
+    deliver_parser.add_argument("--items")
+    deliver_parser.add_argument("--trivial", action="store_true")
+
+    reconcile_parser = subparsers.add_parser(
+        "reconcile", help="sweep bd-observable recoverable states"
+    )
+    reconcile_parser.add_argument("--dry-run", action="store_true")
 
 
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
@@ -134,6 +181,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
     _add_read_subparsers(subparsers)
     _add_write_subparsers(subparsers)
+    _add_transition_subparsers(subparsers)
     _add_relations_subparsers(subparsers)
     _add_sync_subparser(subparsers)
     return parser
@@ -191,6 +239,35 @@ def _finish_failure(work_error: WorkError, out: TextIO, err: TextIO, fmt: str) -
     return exit_code
 
 
+def _default_read_file(path: str) -> str:
+    """Read `path` as UTF-8, typing the two expected boundary failures.
+
+    The default `--spec`/manifest reader `main()` installs when no `read_file`
+    is injected. A raw `Path.read_text` here would let a missing/unreadable
+    path or a non-UTF-8 file escape as a bare `OSError`/`UnicodeDecodeError`
+    that main()'s catch-all reports as an opaque `E_INTERNAL` "internal error";
+    both are *expected* input failures, so they belong in the type as typed
+    envelopes instead: a bad `--spec` path is user error (`E_USAGE`), an
+    undecodable spec is a malformed manifest input (`E_MANIFEST`). Injected
+    `read_file` fakes bypass this helper entirely, so the seam stays
+    test-injectable unchanged.
+    """
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except UnicodeDecodeError as decode_error:
+        raise WorkError(
+            ErrorCode.MANIFEST,
+            f"spec file is not valid UTF-8: {path}",
+            {"path": path},
+        ) from decode_error
+    except OSError as read_error:
+        raise WorkError(
+            ErrorCode.USAGE,
+            f"cannot read spec file {path}: {read_error.strerror or read_error}",
+            {"path": path},
+        ) from read_error
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -205,6 +282,7 @@ def main(
     out: TextIO | None = None,
     err: TextIO | None = None,
     sleep: Callable[[float], None] | None = None,
+    read_file: Callable[[str], str] | None = None,
 ) -> int:
     if out is None:
         out = sys.stdout
@@ -217,6 +295,12 @@ def main(
         args = parser.parse_args(argv_list)
     except WorkError as usage_error:
         return _finish_failure(usage_error, out, err, _peek_format(argv_list))
+
+    # Resolved once here and attached to the parsed Namespace -- only
+    # `deliver`/`reconcile` read it, but every handler keeps the transport's
+    # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
+    # travels as an `args` attribute rather than an extra handler parameter.
+    args.read_file = read_file if read_file is not None else _default_read_file
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)

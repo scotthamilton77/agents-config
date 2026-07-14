@@ -62,6 +62,8 @@ class CreateFields:
     priority: str | None = None
     parent: str | None = None
     labels: tuple[str, ...] = ()
+    acceptance: str | None = None  # NEW — bd `--acceptance`
+    blocked_by: str | None = None  # NEW — bd `--deps <id>` (bare; atomic blocks-edge at creation)
 
 
 @dataclass(frozen=True)

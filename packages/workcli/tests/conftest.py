@@ -11,11 +11,30 @@ from workcli.cli import main
 from workcli.envelope import JsonValue
 
 
+def fake_reader(paths: dict[str, str]) -> Callable[[str], str]:
+    """A dict-backed fake `read_file`: tests script exact spec text per path.
+
+    Never touches the real filesystem -- a lookup miss raises `KeyError`
+    loudly rather than falling through to `main()`'s real-disk default, so a
+    test that forgets to script a path a code path actually reads fails
+    clearly instead of silently reading whatever happens to be on disk.
+    """
+
+    def read(path: str) -> str:
+        return paths[path]
+
+    return read
+
+
+_NO_READS = fake_reader({})
+
+
 def run_cli(
     argv: Sequence[str],
     steps: Sequence[ScriptedStep],
     *,
     sleep: Callable[[float], None] | None = None,
+    read_file: Callable[[str], str] | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.
 
@@ -26,12 +45,20 @@ def run_cli(
 
     `steps` scripts the `ScriptedBdRunner`'s bd responses so each behavioral
     test stays pure (verb in, envelope + call log out) without touching this
-    helper.
+    helper. `read_file` defaults to a dict-backed fake with no paths scripted
+    (see `fake_reader`) -- never `main()`'s own real-filesystem default.
     """
     out = StringIO()
     err = StringIO()
     runner = ScriptedBdRunner(steps=list(steps))
-    exit_code = main(argv, runner=runner, out=out, err=err, sleep=sleep)
+    exit_code = main(
+        argv,
+        runner=runner,
+        out=out,
+        err=err,
+        sleep=sleep,
+        read_file=read_file if read_file is not None else _NO_READS,
+    )
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()
 
@@ -41,6 +68,7 @@ def run_cli_with_runner(
     runner: ScriptedBdRunner,
     *,
     sleep: Callable[[float], None] | None = None,
+    read_file: Callable[[str], str] | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.
 
@@ -50,6 +78,13 @@ def run_cli_with_runner(
     """
     out = StringIO()
     err = StringIO()
-    exit_code = main(argv, runner=runner, out=out, err=err, sleep=sleep)
+    exit_code = main(
+        argv,
+        runner=runner,
+        out=out,
+        err=err,
+        sleep=sleep,
+        read_file=read_file if read_file is not None else _NO_READS,
+    )
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()
