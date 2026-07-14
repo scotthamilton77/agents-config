@@ -1,9 +1,10 @@
 """`viz pr <n>` — build the PR-shape artifact.
 
-Slice 1 walking skeleton: extract the estate at ``HEAD`` → assemble a heat-free
-scene → render one self-contained HTML file into `.viz/out/pr-<n>.html`. Slice 2
-replaces the ``HEAD`` estate with the reconciled PR head-OID estate (fetch →
-resolve OIDs → scalar reconcile) and slice 3+ thickens the heat axes.
+Slice 2: reconcile the PR to its immutable head OID (fetch → resolve OIDs →
+scalar reconcile against GitHub), then build the estate at that head OID — never
+the operator's ``HEAD`` checkout — and assemble a heat-free scene into one
+self-contained HTML file at `.viz/out/pr-<n>.html`. Slice 3+ thickens the heat
+axes (consuming the reconciled net set + churn); slice 5 hardens the envelope.
 """
 
 from __future__ import annotations
@@ -16,19 +17,21 @@ from vizsuite import __version__
 from vizsuite.envelope import JsonValue
 from vizsuite.extract.estate import estate
 from vizsuite.output import ensure_viz_dir
+from vizsuite.reconcile.pr_scope import reconcile
 from vizsuite.runners import Runners
 from vizsuite.scene.assemble import assemble
 from vizsuite.templates.html import render_html
 
 
 def pr(runners: Runners, args: Namespace) -> JsonValue:
-    """Handle `viz pr <n>`: estate → scene → HTML artifact on disk.
+    """Handle `viz pr <n>`: reconcile → head-OID estate → scene → HTML on disk.
 
-    Returns the envelope `data`: the written artifact path, the PR number, and
-    the estate node count.
+    Returns the envelope `data`: the written artifact path, the PR number, the
+    estate node count, and the reconciled net-file count.
     """
     pr_number: int = args.number
-    estate_map = estate(runners.git, "HEAD")
+    scope = reconcile(pr_number, gh=runners.gh, git=runners.git)
+    estate_map = estate(runners.git, scope.head_oid)
     scene = assemble(
         estate_map,
         pr_number=pr_number,
@@ -45,5 +48,6 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         "pr": pr_number,
         "artifact": str(artifact),
         "nodes": len(estate_map),
+        "net_files": len(scope.files),
     }
     return data
