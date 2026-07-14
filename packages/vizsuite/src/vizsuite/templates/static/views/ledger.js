@@ -166,9 +166,10 @@
     // as the treemap's tiles.
     el.setAttribute("role", "button");
     el.setAttribute("tabindex", "0");
+    var heatText = row.heat.toFixed(2);
     el.setAttribute(
       "aria-label",
-      row.file.path + (row.inPr ? " (changed in this PR)" : "") + ", heat " + row.heat.toFixed(2)
+      row.file.path + (row.inPr ? " (changed in this PR)" : "") + ", heat " + heatText
     );
 
     var rankEl = document.createElement("span");
@@ -192,7 +193,7 @@
 
     var heatEl = document.createElement("span");
     heatEl.setAttribute("class", "viz-ledger-heat");
-    heatEl.textContent = row.heat.toFixed(2);
+    heatEl.textContent = heatText;
     el.appendChild(heatEl);
 
     el.appendChild(buildDiffLinkHolder(scene, row));
