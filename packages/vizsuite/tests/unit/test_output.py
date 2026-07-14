@@ -13,7 +13,8 @@ def test_creates_out_dir_and_ignores_the_managed_set(tmp_path: Path):
     assert out == tmp_path / ".viz" / "out"
     assert out.is_dir()
     # Both managed entries, in canonical (alphabetical) order.
-    assert (tmp_path / ".viz" / ".gitignore").read_text(encoding="utf-8").splitlines() == ["lock", "out/"]
+    gitignore = tmp_path / ".viz" / ".gitignore"
+    assert gitignore.read_text(encoding="utf-8").splitlines() == ["lock", "out/"]
 
 
 def test_idempotent_no_duplicate_ignore_lines(tmp_path: Path):
