@@ -282,6 +282,20 @@ def test_lock_contention_raises_typed_error_after_bounded_retry(tmp_path: Path):
     assert exc_info.value.code == ErrorCode.SIDECAR_LOCKED
 
 
+def test_failed_lock_acquisition_writes_no_gitignore(tmp_path: Path):
+    store = SidecarStore(tmp_path, lock_timeout=0.05, lock_poll_interval=0.01)
+    store.viz_dir.mkdir(parents=True)
+    (store.viz_dir / "lock").touch()  # another writer already holds the lock
+
+    with pytest.raises(VizError) as exc_info:
+        store.write_manifest(Manifest(schema_version="1"))
+
+    assert exc_info.value.code == ErrorCode.SIDECAR_LOCKED
+    # The `.gitignore` rewrite is deferred until the lock is held, so a failed
+    # acquisition leaves the working tree untouched.
+    assert not (store.viz_dir / ".gitignore").exists()
+
+
 def test_lock_is_released_after_a_successful_write(tmp_path: Path):
     store = SidecarStore(tmp_path)
 

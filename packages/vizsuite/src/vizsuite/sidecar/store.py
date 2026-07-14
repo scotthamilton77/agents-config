@@ -177,8 +177,13 @@ class SidecarStore:
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
+        # Acquire the lock BEFORE any other working-tree write: `.viz/` must
+        # exist for the exclusive-create below, but the `.gitignore` rewrite is
+        # deferred until the lock is held. A failed acquisition then leaves only
+        # an (idempotent) empty `.viz/` directory — no torn `.gitignore` — and
+        # the non-atomic read-then-write is serialized under the lock.
         lock_path = self._path(_LOCK_FILENAME)
-        _ensure_lock_ignored(self.viz_dir)
+        self.viz_dir.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self.lock_timeout
         while True:
             try:
@@ -189,6 +194,7 @@ class SidecarStore:
                     raise _LockTimeoutError(lock_path, self.lock_timeout) from None
                 time.sleep(self.lock_poll_interval)
         try:
+            _ensure_lock_ignored(self.viz_dir)
             yield
         finally:
             lock_path.unlink(missing_ok=True)
