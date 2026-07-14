@@ -30,18 +30,31 @@
     var startX = 0;
     var startY = 0;
     var moved = false;
+    // `armed` gates activation on a pointerdown that actually started on this
+    // element. Without it, a pointerup over the element from a drag begun
+    // elsewhere (no pointer capture in play) would activate, because `moved`
+    // starts false.
+    var armed = false;
 
     el.addEventListener("pointerdown", function (evt) {
       startX = evt.clientX;
       startY = evt.clientY;
       moved = false;
+      armed = true;
     });
     el.addEventListener("pointermove", function (evt) {
+      if (!armed) {
+        return;
+      }
       if (Math.abs(evt.clientX - startX) > 4 || Math.abs(evt.clientY - startY) > 4) {
         moved = true;
       }
     });
     el.addEventListener("pointerup", function (evt) {
+      if (!armed) {
+        return;
+      }
+      armed = false;
       if (moved) {
         return;
       }
@@ -49,6 +62,11 @@
         return;
       }
       onActivate();
+    });
+    // A cancelled gesture (browser-initiated, e.g. scroll takeover) must not
+    // leave the helper armed for a later stray pointerup.
+    el.addEventListener("pointercancel", function () {
+      armed = false;
     });
     // Enter/Space activate like a click (a11y); "Spacebar" is the legacy
     // IE/Edge key value. Space must preventDefault or the page scrolls.
