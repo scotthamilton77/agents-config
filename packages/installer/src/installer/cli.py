@@ -280,6 +280,17 @@ def _run(
         sys.stderr.write(f"installer: {exc}\n")
         return 1
 
+    # A `--project` run forks here to the project-scoped tail: it installs kit
+    # content (tool-agnostic project refs) under a project-local receipt and
+    # never touches user space or runs the user tool/plugin install below. This
+    # fork sits BEFORE the user `--dump-stage` branch below so `--project
+    # --dump-stage` renders the resolved PROJECT plan (tool refs + kit refs)
+    # from inside `_run_project` instead of falling through to the user dump.
+    if args.project is not None:
+        return _run_project(
+            args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
+        )
+
     if args.dump_stage is not None:
         try:
             dump_plan(plans, args.dump_stage, io=io)
@@ -290,17 +301,6 @@ def _run(
             sys.stderr.write(f"installer: {exc}\n")
             return 2
         return 0
-
-    # A `--project` run forks here to the project-scoped tail: it installs kit
-    # content (tool-agnostic project refs) under a project-local receipt and
-    # never touches user space or runs the user tool/plugin install below.
-    # `--project --dump-stage` falls through to the dump branch above (unchanged
-    # until a future task teaches the dump renderer about kits), so this fork
-    # only ever sees a plain `--project` run.
-    if args.project is not None:
-        return _run_project(
-            args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
-        )
 
     # Resolver-on for the user path (S2 Task 9): narrow every tool plan to the
     # USER-bound refs the active profile selection resolves to. The user CLI
@@ -578,6 +578,26 @@ def _run_project(
         tool: filter_plan_to_scope(plans[tool], dest_relpaths)
         for tool, dest_relpaths in tool_dest_relpaths.items()
     }
+
+    # `--project --dump-stage` renders the resolved PROJECT plan and returns —
+    # read-only, like the user dump branch it replaces for this path. Tool
+    # refs materialise via the same `dump_plan` tree the user path uses (empty
+    # when the resolved plan carries none); kit refs have no tool tree to land
+    # in, so they render as a `kit:<name>  <dest_relpath>` listing instead.
+    # Nothing under `project_root` is written — no kit content, no receipt.
+    if args.dump_stage is not None:
+        try:
+            dump_plan(tool_plans, args.dump_stage, io=io)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: {exc}\n")
+            return 2
+        for name, dest_relpath in sorted(
+            (kit_name_of(sk.selector_key), sk.ref.dest_relpath)
+            for sk in staged_kits
+            if sk.ref.dest_relpath in project_dests
+        ):
+            io.info(f"kit:{name}  {dest_relpath}")
+        return 0
 
     receipt_path = project_root / ".agents-config" / "install-receipt.json"
     lock_cm: AbstractContextManager[None] = (

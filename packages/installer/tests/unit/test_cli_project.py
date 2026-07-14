@@ -512,3 +512,31 @@ def test_project_run_never_suggests_even_with_beads_dir_in_cwd(tmp_path: Path) -
 
     assert rc == 0
     assert _suggestion_lines(io) == []
+
+
+def test_project_dump_stage_lists_kit_refs_and_writes_nothing(tmp_path: Path) -> None:
+    """``--project p --profiles=beads-kit --dump-stage <dir>`` renders the
+    resolved PROJECT plan (kit refs listed as ``kit:<name>  <dest_relpath>``)
+    and returns 0 WITHOUT installing kit content or writing a receipt — a dump
+    is read-only, even under --project."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    out = tmp_path / "dump"
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--dump-stage", str(out)],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    kit_lines = [e.message for e in io.transcript if e.channel == "info" and "kit:" in e.message]
+    assert kit_lines == ["kit:beads  .beads/PRIME.md"]
+    assert not (project / ".beads" / "PRIME.md").exists()
+    assert not (project / ".agents-config" / "install-receipt.json").exists()
