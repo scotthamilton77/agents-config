@@ -18,7 +18,7 @@ from installer.config import (
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
-from installer.core.kits import kit_adapters, kit_name_of, kit_universe, stage_kits
+from installer.core.kits import kit_adapters, kit_name_of, kit_routes, kit_universe, stage_kits
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters, InstallOutcome
@@ -553,6 +553,13 @@ def _run_project(
     counters: dict[str, Counters] = {}
     tool_outcomes: dict[str, list[InstallOutcome]] = {}
     plugin_outcomes: dict[str, list[InstallOutcome]] = {}
+    pruned_paths: set[Path] = set()
+    relinquished_paths: set[Path] = set()
+    # ALL kit names present under src/kits/ — selected or not — so a
+    # deselected kit's prior receipt entry lands in scope_owners and is
+    # prunable (mirrors the user path's discovered_plugin_names, which is
+    # also the full discovered set, not just the resolved selection).
+    all_kit_owner_names = {f"kit:{name}" for name in kit_routes(kits_root, project_root)}
     try:
         with lock_cm:
             prior_read = read_receipt(receipt_path)
@@ -561,32 +568,54 @@ def _run_project(
                 if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
                 else Receipt()
             )
-            try:
-                _merge_into(
-                    counters,
-                    install_pipeline(
+            if not args.prune_only:
+                try:
+                    _merge_into(
+                        counters,
+                        install_pipeline(
+                            tool_adapters,
+                            plans=tool_plans,
+                            home=project_root,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=args.yes,
+                            outcomes_by_tool=tool_outcomes,
+                        ),
+                    )
+                    _merge_into(
+                        counters,
+                        install_plugin_routes(
+                            kit_route_adapters,
+                            home=project_root,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=args.yes,
+                            outcomes_by_plugin=plugin_outcomes,
+                        ),
+                    )
+                except ConsentRequiredError:
+                    return 1
+
+            if args.prune or args.prune_only:
+                try:
+                    outcome = prune_pipeline(
                         tool_adapters,
+                        plugins=kit_route_adapters,
                         plans=tool_plans,
+                        prior=prior,
                         home=project_root,
+                        discovered_plugin_names=all_kit_owner_names,
                         io=io,
                         dry_run=args.dry_run,
                         auto_yes=args.yes,
-                        outcomes_by_tool=tool_outcomes,
-                    ),
-                )
-                _merge_into(
-                    counters,
-                    install_plugin_routes(
-                        kit_route_adapters,
-                        home=project_root,
-                        io=io,
-                        dry_run=args.dry_run,
-                        auto_yes=args.yes,
-                        outcomes_by_plugin=plugin_outcomes,
-                    ),
-                )
-            except ConsentRequiredError:
-                return 1
+                        prune_only=args.prune_only,
+                    )
+                except PruneAbortedError:
+                    return 1
+                _merge_into(counters, outcome.counters)
+                pruned_paths = outcome.pruned_paths
+                relinquished_paths = outcome.relinquished_paths
+
             if not args.dry_run:
                 record_receipt(
                     receipt_path,
@@ -595,8 +624,8 @@ def _run_project(
                     home=project_root,
                     tool_outcomes=tool_outcomes,
                     plugin_outcomes=plugin_outcomes,
-                    pruned_paths=set(),
-                    relinquished_paths=set(),
+                    pruned_paths=pruned_paths,
+                    relinquished_paths=relinquished_paths,
                 )
                 write_project_profiles(project_root, selection)
     except ReceiptLockBusy:

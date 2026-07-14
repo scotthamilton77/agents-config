@@ -340,6 +340,81 @@ def test_project_dry_run_writes_no_project_config_or_receipt(tmp_path: Path) -> 
     assert not (project / ".agents-config" / "install-receipt.json").exists()
 
 
+def _hermetic_repo_with_two_kits(tmp_path: Path) -> Path:
+    """``_hermetic_repo`` plus a hermetic ``profiles.toml`` carrying two
+    project-scoped kits — ``beads`` and ``other`` — each behind its own
+    profile, so a run can select one while the other's prior receipt entry
+    becomes prunable."""
+    repo = _hermetic_repo(tmp_path)
+    beads_kit = repo / "src" / "kits" / "beads" / ".beads"
+    beads_kit.mkdir(parents=True)
+    (beads_kit / "PRIME.md").write_bytes(b"beads prime\n")
+    other_kit = repo / "src" / "kits" / "other" / ".other"
+    other_kit.mkdir(parents=True)
+    (other_kit / "OTHER.md").write_bytes(b"other kit\n")
+    (repo / "profiles.toml").write_text(
+        "schema = 1\n"
+        "\n"
+        "[scopes]\n"
+        '"instructions" = "user"\n'
+        '"settings" = "user"\n'
+        '"kits/**" = "project"\n'
+        "\n"
+        "[profiles.beads-kit]\n"
+        'include = ["kits/beads/**"]\n'
+        "\n"
+        "[profiles.other-kit]\n"
+        'include = ["kits/other/**"]\n',
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_project_prune_keeps_selected_kit_removes_deselected_kit_orphan(
+    tmp_path: Path,
+) -> None:
+    """A still-selected kit's files survive --prune; a deselected kit's prior
+    receipt entry becomes an orphan and is removed. User space untouched."""
+    repo = _hermetic_repo_with_two_kits(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+    prime = project / ".beads" / "PRIME.md"
+    assert prime.read_bytes() == b"beads prime\n"
+
+    # Still selected, --prune: PRIME.md must NOT be deleted.
+    rc2 = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes", "--prune"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc2 == 0
+    assert prime.is_file()
+
+    # Deselect beads-kit in favor of other-kit, --prune: PRIME.md orphaned and removed.
+    rc3 = main(
+        ["--project", str(project), "--profiles=other-kit", "--yes", "--prune"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc3 == 0
+    assert not prime.exists()
+    assert (project / ".other" / "OTHER.md").read_bytes() == b"other kit\n"
+
+    # User space (home) never touched.
+    assert not (tmp_path / ".beads").exists()
+    assert not (tmp_path / ".agents-config").exists()
+
+
 def test_project_install_preserves_other_tables_in_project_config(tmp_path: Path) -> None:
     """A pre-existing project-config.toml with an unrelated [merge-policy]
     table must keep that table intact after ``--project p --profiles=beads-kit``
