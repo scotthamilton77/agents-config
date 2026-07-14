@@ -50,6 +50,34 @@ def test_kit_routes_grouped_by_dir_and_execbit(tmp_path: Path) -> None:
     assert r.executable is False
 
 
+def test_kit_routes_mixed_exec_bits_one_route_per_file_correct_mode(tmp_path: Path) -> None:
+    # A kit dir holding both a non-exec and an exec file in the SAME directory
+    # must yield one route per file (glob = exact filename), each carrying its
+    # own exec bit. A single glob="*" route per exec group would re-glob the
+    # whole dir and install every file once per group — twice, with the wrong
+    # mode. This pins the per-file contract that prevents that.
+    kits = tmp_path / "kits"
+    tooldir = kits / "toolkit" / "bin"
+    tooldir.mkdir(parents=True)
+    plain = tooldir / "notes.md"
+    plain.write_bytes(b"notes\n")
+    script = tooldir / "run.sh"
+    script.write_bytes(b"#!/bin/sh\n")
+    script.chmod(0o755)
+
+    routes = kit_routes(kits, tmp_path / "proj")["toolkit"]
+    assert len(routes) == 2  # one per file, NOT one per (dir x exec-bit) group
+    by_glob = {r.glob: r for r in routes}
+    assert set(by_glob) == {"notes.md", "run.sh"}
+    assert by_glob["notes.md"].executable is False
+    assert by_glob["run.sh"].executable is True
+    # Every route globs exactly its own file, so no route re-matches a sibling
+    # of a different exec class.
+    for r in routes:
+        matched = sorted(p.name for p in r.source_dir.glob(r.glob) if p.is_file())
+        assert matched == [r.glob]
+
+
 def test_kit_adapters_conform_to_plugin_adapter(tmp_path: Path) -> None:
     kits = _seed(tmp_path)
     project = tmp_path / "proj"

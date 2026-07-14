@@ -19,12 +19,13 @@ from installer.config import (
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
-from installer.core.kits import kit_adapters, kit_name_of, kit_routes, kit_universe, stage_kits
+from installer.core.kits import kit_adapters, kit_name_of, kit_universe, stage_kits
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
 from installer.core.profiles import (
+    ProfilesError,
     Scope,
     _selector_matches,
     filter_plan_to_scope,
@@ -302,7 +303,7 @@ def _run(
             return 2
         return 0
 
-    # Resolver-on for the user path (S2 Task 9): narrow every tool plan to the
+    # Resolver-on for the user path: narrow every tool plan to the
     # USER-bound refs the active profile selection resolves to. The user CLI
     # exposes no --profiles flag yet, so the selection is always empty, which
     # resolve() treats as the "full" profile (`include = ["**"]`) — every
@@ -491,7 +492,7 @@ def _run_project(
 ) -> int:
     """The project-scoped tail: install kit content under ``project_root``.
 
-    Tracer scope only (S2 plan Task 8) — kit refs alone. A kit rides the
+    Tracer scope only — kit refs alone. A kit rides the
     existing plugin-route machinery under owner ``kit:<name>`` via
     ``_KitRouteAdapter``, so it needs no new receipt/prune plumbing: this
     mirrors the user path's plugin-route install + receipt-record, scoped to a
@@ -500,16 +501,25 @@ def _run_project(
     """
     kits_root = repo_root / "src" / "kits"
     staged_kits = stage_kits(kits_root)
+    kit_refs = kit_universe(staged_kits)
     universe = project_universe(plans.values())
-    for key, refs in kit_universe(staged_kits).items():
+    for key, refs in kit_refs.items():
         universe.setdefault(key, []).extend(refs)
 
     manifest = load_manifest(repo_root / "profiles.toml")
     if args.profiles:
         selection: tuple[str, ...] = tuple(p.strip() for p in args.profiles.split(","))
     else:
-        persisted = read_project_profiles(project_root)
-        if persisted is not None:
+        try:
+            persisted = read_project_profiles(project_root)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: malformed project-config.toml [install]: {exc}\n")
+            return 2
+        # An empty persisted list is treated the same as no persisted list: it is
+        # NOT an implicit "full" selection. resolve() reads an empty selection as
+        # the full profile, so falling through here would silently bypass the
+        # no-implicit-full guarantee project installs are supposed to enforce.
+        if persisted:
             selection = persisted
         else:
             sys.stderr.write(
@@ -520,7 +530,7 @@ def _run_project(
     # dropped ref's identity into anonymous per-scope counts, so a check after
     # resolve() would be a tautology — it can never name the offending
     # selector. Walk the selected profiles' IncludeEntries directly instead.
-    kit_keys = set(kit_universe(staged_kits))
+    kit_keys = set(kit_refs)
     for name in selection:
         profile = manifest.profiles.get(name)
         if profile is None:
@@ -538,7 +548,11 @@ def _run_project(
                 )
                 return 2
 
-    resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
+    try:
+        resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
+    except ProfilesError as exc:
+        sys.stderr.write(f"installer: {exc}\n")
+        return 2
 
     # A kit is selected iff at least one of its refs' dest_relpaths landed in
     # the resolved PROJECT scope.
@@ -612,7 +626,11 @@ def _run_project(
     # deselected kit's prior receipt entry lands in scope_owners and is
     # prunable (mirrors the user path's discovered_plugin_names, which is
     # also the full discovered set, not just the resolved selection).
-    all_kit_owner_names = {f"kit:{name}" for name in kit_routes(kits_root, project_root)}
+    all_kit_owner_names = (
+        {f"kit:{p.name}" for p in kits_root.iterdir() if p.is_dir()}
+        if kits_root.is_dir()
+        else set()
+    )
     try:
         with lock_cm:
             prior_read = read_receipt(receipt_path)

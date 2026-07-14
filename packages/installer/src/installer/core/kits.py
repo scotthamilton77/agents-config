@@ -51,25 +51,27 @@ def kit_universe(staged: Iterable[StagedKitRef]) -> dict[str, list[UniverseRef]]
 
 
 def kit_routes(kits_root: Path, project_root: Path) -> dict[str, list[PluginRoute]]:
-    """Per kit, one PluginRoute per (destination directory x exec-bit). Mirrors
-    PluginAdapter.routes(home) but grouped by kit name for per-kit owners."""
+    """Per kit, one PluginRoute per file: ``glob`` is the file's exact name and
+    the route carries that file's own exec bit. A single ``glob='*'`` route per
+    (dir x exec-bit) group would re-glob the whole directory (``sync_routes``
+    globs ``source_dir`` for each route), so a directory mixing executable and
+    non-executable files would install every file once per group — twice, each
+    with the wrong mode. Per-file routes install each file exactly once with its
+    correct permission bit. Mirrors ``PluginAdapter.routes(home)`` but grouped by
+    kit name for per-kit owners."""
     result: dict[str, list[PluginRoute]] = {}
     if not kits_root.is_dir():
         return result
     for kit_dir in sorted(p for p in kits_root.iterdir() if p.is_dir()):
-        groups: dict[tuple[Path, bool], list[str]] = {}
+        routes: list[PluginRoute] = []
         for f in sorted(p for p in kit_dir.rglob("*") if p.is_file()):
             rel = f.relative_to(kit_dir)
-            execbit = bool(f.stat().st_mode & 0o111)
-            groups.setdefault((rel.parent, execbit), []).append(rel.suffix)
-        routes: list[PluginRoute] = []
-        for (destdir, execbit), _suffixes in groups.items():
             routes.append(
                 PluginRoute(
-                    source_dir=kit_dir / destdir,
-                    dest_dir=project_root / destdir,
-                    glob="*",
-                    executable=execbit,
+                    source_dir=kit_dir / rel.parent,
+                    dest_dir=project_root / rel.parent,
+                    glob=f.name,
+                    executable=bool(f.stat().st_mode & 0o111),
                 )
             )
         result[kit_dir.name] = routes

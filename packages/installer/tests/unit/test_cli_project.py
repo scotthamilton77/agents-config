@@ -142,6 +142,71 @@ def test_project_persisted_profiles_resolved_without_explicit_flag(tmp_path: Pat
     assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
 
 
+def test_project_persisted_empty_profiles_list_is_not_implicit_full(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A persisted but EMPTY ``[install] profiles = []`` must NOT be read as an
+    implicit "full" selection — it hits the no-implicit-full guard, same as no
+    persisted config at all. (resolve() treats an empty selection as the full
+    profile, so this guards against a silent full project install.)"""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "project-config.toml").write_text("[install]\nprofiles = []\n", encoding="utf-8")
+
+    rc = main(
+        ["--project", str(project), "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    assert "no implicit full" in capsys.readouterr().err
+    assert not (project / ".beads").exists()
+
+
+def test_project_unknown_profile_exits_cleanly_without_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unknown --profiles name surfaces resolve()'s ProfilesError as a clean
+    exit-2 diagnostic, not an uncaught traceback."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=does-not-exist", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    assert capsys.readouterr().err.startswith("installer:")
+
+
+def test_project_malformed_persisted_config_exits_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A persisted ``[install] profiles`` that is not a list of strings exits 2
+    with a diagnostic instead of raising ValueError out of read_project_profiles."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "project-config.toml").write_text("[install]\nprofiles = 42\n", encoding="utf-8")
+
+    rc = main(
+        ["--project", str(project), "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    assert "malformed project-config.toml" in capsys.readouterr().err
+
+
 def _hermetic_repo_with_project_tool_profile(tmp_path: Path) -> Path:
     """``_hermetic_repo`` plus a hermetic ``profiles.toml`` (independent of the
     real repo-root one — no beads kit needed) carrying one profile,

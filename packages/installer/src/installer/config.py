@@ -99,8 +99,6 @@ def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
     missing-file convention. Raises ``ValueError`` only on a genuine contract
     violation: a present ``[install]`` table whose ``profiles`` is not a list
     of strings.
-
-    Read-only: this task does not add a writer (that is S2 Task 13).
     """
     path = project_root / "project-config.toml"
     if not path.is_file():
