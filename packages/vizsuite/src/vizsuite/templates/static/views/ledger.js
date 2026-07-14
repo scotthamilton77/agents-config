@@ -112,6 +112,9 @@
     if (digest) {
       digest.then(function (hex) {
         anchor.href = base + "#diff-" + hex;
+      }, function () {
+        // Fail soft: if hashing rejects, keep the unanchored /files link
+        // rather than surfacing an unhandled promise rejection.
       });
     }
     return holder;
