@@ -98,13 +98,18 @@
     anchor.rel = "noopener";
     anchor.setAttribute("aria-label", "View diff for " + row.file.path + " on GitHub");
     anchor.textContent = "Diff";
-    // The anchor is its own activation target — never let its click/keydown
-    // also trigger the row's drill-open handler (see wireRowActivation).
-    anchor.addEventListener("click", function (evt) {
+    // The anchor is its own activation target — never let its own events also
+    // trigger the row's drill-open handler (see wireRowActivation). The row
+    // activates on pointerup (with a `fromLink` .closest exemption), so
+    // stopping click/keydown alone leaves the pointer path guarded only by
+    // that exemption, which fails open when evt.target has no `.closest`
+    // (non-Element target). Stop the pointer events that drive row activation
+    // too, so the diff link can never double-fire "open drill" + "open diff".
+    function stopPropagation(evt) {
       evt.stopPropagation();
-    });
-    anchor.addEventListener("keydown", function (evt) {
-      evt.stopPropagation();
+    }
+    ["click", "keydown", "pointerdown", "pointerup"].forEach(function (type) {
+      anchor.addEventListener(type, stopPropagation);
     });
     holder.appendChild(anchor);
 
