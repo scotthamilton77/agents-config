@@ -60,8 +60,11 @@ its own skill.
      git state.
    - **Finish mode** (`--finish`) runs from the main root — the caller has
      already evacuated the worktree by `cd`-ing there as part of the handed-back
-     command. It re-runs every gate fresh in its own process, immediately
-     before each mutation, then performs the sync and teardown.
+     command. Every gate over **mutable** state (branch tip, worktree
+     cleanliness, main-root cleanliness) re-runs in its own process,
+     immediately before the mutation it authorizes; gates over **immutable**
+     post-merge facts (merge state, containment) are carried across the phase
+     boundary by the `branch_sha` binding rather than re-run.
    The agent's execution surface is deliberately minimal: relay one handed-back
    command verbatim (plus the harness-owned `ExitWorktree` call for
    Claude-native worktrees). The agent never composes a git command.
@@ -132,17 +135,20 @@ Plan mode performs **no mutation of any kind**. Step sequence:
    (`git rev-parse --git-common-dir` → parent); the current branch; the
    worktree **convention** — Claude-native (`.claude/worktrees/`), other-agent
    (`<repo-root>/.worktrees/` or bare `worktrees/`), or normal repo (toplevel
-   equals main root). An unrecognized worktree fails loud. In a worktree, an
-   explicit `--branch` that differs from the checked-out branch aborts
-   (mismatched checkout); a normal repo legitimately targets a merged branch
-   other than HEAD.
+   equals main root). An unrecognized worktree fails loud. A detached HEAD
+   with no explicit `--branch` aborts with a specific message (`--abbrev-ref
+   HEAD` yields the literal `HEAD`, which must never flow into later steps).
+   In a worktree, an explicit `--branch` that differs from the checked-out
+   branch aborts (mismatched checkout); a normal repo legitimately targets a
+   merged branch other than HEAD.
 
 2. **Verify merged.** `gh pr view <branch> --json
    number,state,mergedAt,mergeCommit,baseRefName,headRefOid`. If no PR is
-   found, or `state != MERGED` (still open, closed-unmerged, or
-   ambiguous/multiple), emit `status: "not_merged"` and stop — a clean,
-   non-error outcome the skill interprets (§3.3). Never infer merge from the
-   user's say-so alone.
+   found, or `state != MERGED` (still open or closed-unmerged), emit
+   `status: "not_merged"` and stop — a clean, non-error outcome the skill
+   interprets (§3.3). `gh pr view` resolves a single PR per branch; detecting
+   or arbitrating multiple candidate PRs is out of scope (§4). Never infer
+   merge from the user's say-so alone.
 
 3. **Safety gate A — no local commits beyond the merged head.** Containment is
    checked against the PR head GitHub actually merged (`headRefOid`), **not**
@@ -179,7 +185,7 @@ Plan mode performs **no mutation of any kind**. Step sequence:
    ```
    cd <main_root> && python3 ~/.claude/skills/sync-after-remote-merge/sync_after_remote_merge.py \
      --finish --worktree <worktree_root> --branch <branch> \
-     --branch-sha <sha> --base <base> --pr <number>
+     --branch-sha <sha> --base <base> --pr <number> --merge-commit <sha>
    ```
 
    The leading `cd <main_root>` is load-bearing: it is what evacuates the
@@ -188,9 +194,17 @@ Plan mode performs **no mutation of any kind**. Step sequence:
 #### 3.2.2 Finish mode (`--finish`)
 
 Invoked via the handed-back command, from the main root. All arguments are
-required (`--pr` is carried for reporting only); all refs pass the safe-ref
-guard. Finish mode trusts nothing from plan mode except these identifiers —
-every gate re-runs here, adjacent to the mutation it authorizes. Step sequence:
+required (`--pr` and `--merge-commit` are carried for reporting only, so the
+terminal envelope keeps the merge metadata); refs pass the safe-ref guard, and
+`--worktree` must be an absolute, existing-repo path. Finish mode trusts plan
+mode only for facts that are **immutable once the PR is merged**: the merge
+verdict and gate A's containment conclusion, both pinned to `--branch-sha`.
+It therefore does **not** re-run `verify_merged` or safety gate A (it never
+calls `gh`, and the finish command carries no `headRefOid`) — gate A's
+conclusion holds exactly as long as the branch tip still equals
+`--branch-sha`, which is revalidated immediately before deletion. Every gate
+over **mutable** state — worktree cleanliness, main-root cleanliness, branch
+tip — re-runs here, adjacent to the mutation it authorizes. Step sequence:
 
 1. **Finish preflight.** The resolved cwd toplevel must equal the repo's own
    main checkout (its git-common-dir parent must be itself) and must equal the
@@ -201,8 +215,15 @@ every gate re-runs here, adjacent to the mutation it authorizes. Step sequence:
    to remove. Abort on any mismatch.
 
 2. **Re-gate the worktree** (convention-dependent):
-   - **other-agent** — the worktree must still exist and be clean, by a fresh
-     gate-B check (tracked/untracked abort; ignored listed).
+   - **other-agent** — the worktree must be clean, by a fresh gate-B check
+     (tracked/untracked abort; ignored listed), and its checked-out branch
+     must equal `--branch` — a *different* worktree recreated at the same path
+     between phases would be on different work, and path identity alone must
+     never authorize a removal. Exception: a worktree that is already **gone**
+     while `refs/heads/<branch>` still equals `--branch-sha` is a resumable
+     partial teardown (a prior finish run removed the worktree, then failed
+     before deleting the branch) — skip the removal and proceed, rather than
+     stranding the branch behind a gate no re-run can satisfy.
    - **Claude-native** — the worktree must already be **gone** (`ExitWorktree`
      owns its removal and runs before this command). If it still exists, abort
      with the hint to run the `ExitWorktree` step first.
@@ -221,13 +242,17 @@ every gate re-runs here, adjacent to the mutation it authorizes. Step sequence:
    `switch` accepts only branches, closing the checkout path-vs-branch
    ambiguity (an accidental `--base .` under `checkout` silently becomes a
    path checkout that can discard dirty tracked changes) — then
-   `git pull --ff-only`. A non-fast-forward result aborts; the script never
-   rebases or merges to force it. Record the resulting base SHA as
-   `synced_to`.
+   `git pull --ff-only`. The precheck deliberately defeats git's
+   create-from-remote DWIM, so a base that exists only as a remote-tracking
+   ref aborts; the remediation hint says to create the local base first. A
+   non-fast-forward result aborts; the script never rebases or merges to
+   force it. Record the resulting base SHA as `synced_to`.
 
 5. **Teardown.**
-   - other-agent: `git worktree remove <worktree>` — deliberately without
-     `--force`, so git's own dirty-worktree refusal backs the gate.
+   - other-agent: `git worktree remove -- <worktree>` (the `--` guards the
+     path operand, which the safe-ref guard does not cover) — deliberately
+     without `--force`: git's own dirty-worktree refusal is the guard truly
+     adjacent to this removal; the step-2 check ran earlier.
    - all conventions: immediately before deletion, re-verify
      `git rev-parse refs/heads/<branch>` still equals `--branch-sha` (abort if
      the branch moved since plan mode), then `git branch -D <branch>`. `-D`
@@ -265,7 +290,7 @@ re-gated at trigger time.
   },
   "steps_remaining": [
     "ExitWorktree(discard_changes: true)",
-    "cd /main && python3 ~/.claude/skills/sync-after-remote-merge/sync_after_remote_merge.py --finish --worktree /main/.claude/worktrees/x --branch feature/x --branch-sha <sha> --base main --pr 1234"
+    "cd /main && python3 ~/.claude/skills/sync-after-remote-merge/sync_after_remote_merge.py --finish --worktree /main/.claude/worktrees/x --branch feature/x --branch-sha <sha> --base main --pr 1234 --merge-commit <sha>"
   ],
   "worktree_convention": "claude-native | other-agent | normal-repo",
   "main_root": "/abs/path/to/main",
@@ -283,6 +308,11 @@ re-gated at trigger time.
 - `status: "handoff"` is plan mode's only success outcome; `status: "ok"` is
   finish mode's. `not_merged` and `failed` can come from either phase (`phase`
   says which).
+- `steps_completed` names are per-phase (the example shows the union): plan
+  populates from `preflight`, `verify_merged`, `safety_gate_commits`,
+  `safety_gate_worktree`; finish from `preflight`, `regate_worktree`,
+  `gate_main_root`, `sync_base`, `teardown`. `preflight` means each phase's
+  own preflight; `safety_gate_commits` never appears in a finish envelope.
 - `failed_step` is present only when `status == "failed"`; `steps_remaining`
   is populated for `handoff` and may be populated for `failed` (what was not
   attempted).
@@ -325,8 +355,10 @@ projects).
 
 Add `sync-after-remote-merge` to the completion-gate rule's HARD STOP delivery
 chain as the terminal link after `merge`, closing the last-mile gap:
-`… → merge → sync-after-remote-merge`. Edit the source rule under
-`src/user/.agents/rules/`.
+`… → merge → sync-after-remote-merge`. It runs only when a merge actually
+landed — on the `explicit`/`never` policy paths where no merge happens, the
+chain ends at the merge step (§3.3 gates cleanup on `merge-guard` confirming).
+Edit the source rule under `src/user/.agents/rules/`.
 
 ## 4. Non-goals
 
@@ -338,8 +370,9 @@ chain as the terminal link after `merge`, closing the last-mile gap:
   `finishing-a-development-branch`.
 - **Non-fast-forward reconciliation.** Divergence aborts loud; the script never
   rebases or merges to force a sync.
-- **Multi-PR / stacked-branch resolution.** Ambiguous PR state (multiple
-  candidate PRs for a branch) is a `not_merged`/abort, handed to the agent.
+- **Multi-PR / stacked-branch resolution.** `gh pr view` resolves one PR per
+  branch; the script does not detect or arbitrate multiple candidate PRs for
+  the same branch.
 - **Shared-rule portability.** The completion-gate rule lives in the shared
   tree and already references Claude-only capabilities; whether those
   references (including this skill's) should become tool-conditional is a
@@ -355,15 +388,19 @@ chain as the terminal link after `merge`, closing the last-mile gap:
   `headRefOid` aborts); safety gate B (tracked-dirty and untracked abort;
   ignored files reported in `ignored_paths` without blocking); plan mode emits
   `handoff` for **every** convention with the correct ordered
-  `steps_remaining` and a correctly quoted finish command; finish-mode gates —
-  wrong-repo / inside-the-worktree cwd abort, branch moved from `--branch-sha`
-  abort, Claude-native worktree-still-present abort, other-agent
-  worktree-missing abort, dirty main root abort; base not a local branch
-  aborts; ff-only sync abort on divergence.
+  `steps_remaining` and a correctly quoted finish command; detached-HEAD
+  abort; finish-mode gates — wrong-repo / inside-the-worktree cwd abort,
+  branch moved from `--branch-sha` abort, Claude-native worktree-still-present
+  abort, **dirty other-agent worktree abort** (the F2 TOCTOU the fresh re-gate
+  exists to catch), other-agent worktree on the wrong branch abort, resumable
+  partial teardown (worktree gone, branch still at `--branch-sha` → proceeds
+  to branch delete), dirty main root abort; base not a local branch aborts;
+  ff-only sync abort on divergence.
 - **Symlinked-root regression test.** pytest's `tmp_path` is already
   realpath'd, so path-comparison bugs never fire in-suite; at least one test
-  must construct a genuinely symlinked repo root and assert convention
-  detection still classifies correctly.
+  must construct a genuinely symlinked repo root and assert both plan-mode
+  convention detection **and** finish-mode's path-equality preflight (cwd
+  toplevel vs main root vs `--worktree`) classify correctly.
 - **Integration: dirty main root.** A real two-checkout fixture where the main
   checkout has tracked modifications; finish mode must abort without touching
   it.
