@@ -80,12 +80,16 @@
     function set(path, value) {
       var key = keyFor(path);
       if (available) {
-        if (value) {
-          window.localStorage.setItem(key, value);
-        } else {
-          window.localStorage.removeItem(key);
+        try {
+          if (value) {
+            window.localStorage.setItem(key, value);
+          } else {
+            window.localStorage.removeItem(key);
+          }
+          return;
+        } catch (err) {
+          // Fall through to the in-memory map (e.g. quota exceeded).
         }
-        return;
       }
       if (value) {
         memory[key] = value;

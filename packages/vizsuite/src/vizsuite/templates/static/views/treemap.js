@@ -351,13 +351,23 @@
 
       fullRender();
 
+      var resizeDebounceTimer = null;
       var resizeHandler = function () {
-        fullRender();
+        if (resizeDebounceTimer) {
+          clearTimeout(resizeDebounceTimer);
+        }
+        resizeDebounceTimer = setTimeout(function () {
+          resizeDebounceTimer = null;
+          fullRender();
+        }, 150);
       };
       window.addEventListener("resize", resizeHandler);
 
       return {
         destroy: function () {
+          if (resizeDebounceTimer) {
+            clearTimeout(resizeDebounceTimer);
+          }
           window.removeEventListener("resize", resizeHandler);
           d3.select(container).selectAll("*").remove();
         },
