@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from vizsuite.adapters.git.runner import SubprocessGitRunner
+from vizsuite.envelope import ErrorCode, VizError
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -140,3 +141,18 @@ def test_archive_tar_streams_the_committed_tree(tmp_path: Path, monkeypatch: pyt
         extracted = tar.extractfile("a.py")
         assert extracted is not None
         assert extracted.read() == b"x = 1\n"
+
+
+def test_archive_tar_types_git_failure_as_adapter_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # A failing `git archive` (here: an absent OID) must surface as a typed
+    # ADAPTER_FAILURE, not a raw CalledProcessError that the CLI reports as
+    # E_INTERNAL — the loud-boundary contract the other slice-3 adapters honor.
+    _init_repo(tmp_path, [("a.py", "x = 1\n")])
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(VizError) as excinfo:
+        SubprocessGitRunner().archive_tar("0" * 40)  # well-formed but absent OID
+
+    assert excinfo.value.code == ErrorCode.ADAPTER_FAILURE

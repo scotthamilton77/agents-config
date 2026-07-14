@@ -18,6 +18,8 @@ import subprocess
 from collections.abc import Sequence
 from typing import NamedTuple, Protocol
 
+from vizsuite.envelope import ErrorCode, VizError
+
 
 class LsTreeRow(NamedTuple):
     """One `git ls-tree -r` row: ``<mode> <obj_type> <blob_sha>\\t<path>``.
@@ -111,13 +113,26 @@ class SubprocessGitRunner:
         # `git archive` serializes the commit *tree object* to a tar on stdout —
         # binary bytes, so no `text=True`. The snapshot scc scans (slice 3) is
         # extracted from this tar, never the operator's working tree, so a dirty
-        # checkout cannot leak into the artifact (the Path-C invariant).
+        # checkout cannot leak into the artifact (the Path-C invariant). A failure
+        # surfaces as a typed ADAPTER_FAILURE (not a raw CalledProcessError → an
+        # opaque E_INTERNAL), matching the loud-boundary contract of the other
+        # slice-3 adapters.
         completed = subprocess.run(
             ["git", "archive", "--format=tar", oid],
             capture_output=True,
             timeout=120,
-            check=True,
+            check=False,
         )
+        if completed.returncode != 0:
+            raise VizError(
+                ErrorCode.ADAPTER_FAILURE,
+                "git archive failed",
+                detail={
+                    "oid": oid,
+                    "returncode": completed.returncode,
+                    "stderr": completed.stderr.decode("utf-8", "replace").strip()[:500],
+                },
+            )
         return completed.stdout
 
     def fetch_pr(self, pr_number: int) -> None:  # pragma: no cover - needs a remote PR ref
