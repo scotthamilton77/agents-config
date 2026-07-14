@@ -34,6 +34,7 @@ class PrMeta:
     created_at: str
     updated_at: str
     merged_at: str | None
+    repo_nwo: str  # `repository.nameWithOwner` (spec §6.2/G3), same round trip
 
 
 @dataclass(frozen=True)
@@ -84,13 +85,15 @@ def parse_pr_view(result: GhResult, *, pr_number: int) -> PrView:
     except json.JSONDecodeError as exc:
         raise _shape_error(pr_number, result.stdout, source=source, reason="invalid_json") from exc
     try:
-        pull_request = payload["data"]["repository"]["pullRequest"]
+        repository = payload["data"]["repository"]
+        pull_request = repository["pullRequest"]
         meta = PrMeta(
             author=pull_request["author"]["login"],
             review_state=pull_request.get("reviewDecision") or "NONE",
             created_at=pull_request["createdAt"],
             updated_at=pull_request["updatedAt"],
             merged_at=pull_request.get("mergedAt"),
+            repo_nwo=repository["nameWithOwner"],
         )
         return PrView(
             base_oid=pull_request["baseRefOid"],

@@ -29,6 +29,7 @@ from vizsuite.adapters.subprocess_util import run
 _PR_QUERY = (
     "query($owner:String!,$repo:String!,$number:Int!){"
     "repository(owner:$owner,name:$repo){"
+    "nameWithOwner "
     "pullRequest(number:$number){"
     "baseRefOid headRefOid baseRefName changedFiles commits{totalCount}"
     "author{login} reviewDecision createdAt updatedAt mergedAt"

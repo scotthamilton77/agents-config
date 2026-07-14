@@ -1,12 +1,12 @@
 """Scene assembler: estate nodes + fingerprints + Tier-2/3 facts → `Scene`.
 
-Slice 3 merged the complexity/consequence heat axes at the `viz pr` verb level
-(threading them into scene node attributes is `.2.2`); slice 5 hardens the
-envelope itself: every assembly stamps a `Fingerprints` manifest (the PR's
-`base_oid`/`head_oid` plus the estate's own blob-SHA checksums — one pinned
-hash domain, §0.1) and runs the **schema gate**: any attached Tier-2/3 `Fact`
-missing provenance or citations is refused with a loud typed error before a
-`Scene` is ever constructed — no silent default, no dropped fact. The
+Slice 5 hardens the envelope: every assembly stamps a `Fingerprints` manifest
+(the PR's `base_oid`/`head_oid` plus the estate's own blob-SHA checksums — one
+pinned hash domain, §0.1) and runs the **schema gate**: any attached Tier-2/3
+`Fact` missing provenance or citations is refused with a loud typed error
+before a `Scene` is ever constructed — no silent default, no dropped fact.
+`.2.2` threads the cross-axis heat fusion (`scene.heat.combine`) into each
+file's `attributes`, plus `render_config`/`repo_nwo` into the envelope. The
 assembler stays a pure function of its inputs — the clock is injected as
 `generated_at` rather than read from a module global, so assembly is
 deterministic and testable.
@@ -16,12 +16,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from vizsuite.envelope import ErrorCode, VizError
+from vizsuite.envelope import ErrorCode, JsonValue, VizError
 from vizsuite.scene.model import (
     AttributeDescriptor,
     Fact,
     FileNode,
     Fingerprints,
+    RenderConfig,
     Scene,
 )
 
@@ -54,6 +55,9 @@ def assemble(
     tool_versions: dict[str, str] | None = None,
     facts: Sequence[Fact] = (),
     descriptors: Sequence[AttributeDescriptor] = (),
+    attributes: dict[str, dict[str, JsonValue]] | None = None,
+    render_config: RenderConfig | None = None,
+    repo_nwo: str = "",
 ) -> Scene:
     """Assemble the estate `{path: blob_sha}` plus fingerprints/facts into a `Scene`.
 
@@ -63,12 +67,16 @@ def assemble(
     and carry an identical `fingerprints.files` manifest (spec test item: the
     per-file checksum is the estate blob SHA, deterministic across assemblies).
     Raises `VizError(SCHEMA_INVALID)` before constructing anything if any `fact`
-    fails the schema gate.
+    fails the schema gate. `attributes` (keyed by path, as produced by
+    `scene.heat.combine`) attaches each file's heat-axis values to its matching
+    `FileNode`; a path with no entry keeps the pre-.2.2 empty attribute map.
     """
     _validate_facts(facts)
 
+    file_attributes = attributes or {}
     files = tuple(
-        FileNode(path=path, checksum=blob_sha) for path, blob_sha in sorted(estate_map.items())
+        FileNode(path=path, checksum=blob_sha, attributes=dict(file_attributes.get(path, {})))
+        for path, blob_sha in sorted(estate_map.items())
     )
     fingerprints = Fingerprints(
         base_oid=base_oid,
@@ -85,4 +93,8 @@ def assemble(
         fingerprints=fingerprints,
         descriptors=tuple(descriptors),
         facts=tuple(facts),
+        render_config=render_config
+        if render_config is not None
+        else RenderConfig(default_weights={}),
+        repo_nwo=repo_nwo,
     )
