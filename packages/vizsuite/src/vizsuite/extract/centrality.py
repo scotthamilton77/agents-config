@@ -113,5 +113,7 @@ def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
         )
     # Same graph, same pass: the edge list backing `scores` is just this
     # DiGraph's own (already EXTRACTED-only, intra-file-excluded) edges.
-    edges = tuple(sorted(graph.edges()))
+    # Ordering is left to the downstream `scene_to_json` sort — no need to
+    # sort twice.
+    edges = tuple(graph.edges())
     return CentralityAxis.from_indegree(dict(graph.in_degree()), edges=edges)
