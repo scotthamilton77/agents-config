@@ -392,7 +392,13 @@
       var heatLabel = document.createElement("span");
       heatLabel.textContent = "combined heat";
       var heatValue = document.createElement("span");
-      heatValue.textContent = (typeof fileNode.heat === "number" ? fileNode.heat : 0).toFixed(2);
+      // Recompute from `attributes` + the current `weights` rather than the
+      // captured `fileNode.heat`: a full treemap re-render (collapse/resize)
+      // builds fresh nodes via pruneForLayout(), so the captured snapshot can
+      // go stale. Reusing computeHeatFactory keeps this readout consistent with
+      // the per-axis shares above and the tile colors (same math, live weights).
+      var combinedHeat = computeHeatFactory(weights, unavailableAxes)(attributes);
+      heatValue.textContent = combinedHeat.toFixed(2);
       heatRow.appendChild(heatLabel);
       heatRow.appendChild(heatValue);
       panelEl.appendChild(heatRow);
