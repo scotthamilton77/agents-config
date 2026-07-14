@@ -371,7 +371,7 @@
         return;
       }
       // Same success-gated-UI-state contract as mountView: a missing sonar
-      // module (registered view absent) never flips the toggle to "pressed"
+      // module (`window.vizSonar` absent) never flips the toggle to "pressed"
       // over an empty mount.
       if (!drillState.sonarHandle) {
         if (!window.vizSonar || typeof window.vizSonar.render !== "function") {
