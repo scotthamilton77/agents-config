@@ -56,9 +56,12 @@
   function makeAnnotationStore(repoNwo) {
     var prefix = "viz:" + repoNwo + ":pr:";
     var available = false;
+    // Probe key carries a NUL delimiter, which no valid repo path can
+    // contain, so it can never collide with a note key (`prefix + <path>`).
+    var probeKey = prefix + "\u0000probe";
     try {
-      window.localStorage.setItem(prefix + "__probe__", "1");
-      window.localStorage.removeItem(prefix + "__probe__");
+      window.localStorage.setItem(probeKey, "1");
+      window.localStorage.removeItem(probeKey);
       available = true;
     } catch (err) {
       available = false;
