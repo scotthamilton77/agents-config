@@ -64,6 +64,25 @@
       available = false;
     }
     var memory = Object.create(null);
+    var fallbackHandler = null;
+    var fallbackNotified = false;
+
+    // Fires the registered handler the first time a runtime write falls back
+    // to the in-memory map (e.g. quota exceeded) so the UI can surface the
+    // non-persistence warning that boot-time feature detection would miss.
+    function notifyFallback() {
+      if (fallbackNotified) {
+        return;
+      }
+      fallbackNotified = true;
+      if (typeof fallbackHandler === "function") {
+        fallbackHandler();
+      }
+    }
+
+    function onFallback(handler) {
+      fallbackHandler = handler;
+    }
 
     function keyFor(path) {
       return prefix + path;
@@ -88,7 +107,10 @@
           }
           return;
         } catch (err) {
-          // Fall through to the in-memory map (e.g. quota exceeded).
+          // Fall through to the in-memory map (e.g. quota exceeded) and
+          // surface the non-persistence warning — notes stopped persisting
+          // mid-session even though storage was available at page-load.
+          notifyFallback();
         }
       }
       if (value) {
@@ -117,7 +139,13 @@
       return out;
     }
 
-    return { available: available, get: get, set: set, getAll: getAll };
+    return {
+      available: available,
+      get: get,
+      set: set,
+      getAll: getAll,
+      onFallback: onFallback
+    };
   }
 
   // ---- Theme (spec §4.3): an explicit `data-viz-theme` stamp beats the OS
@@ -419,6 +447,17 @@
         "Use “Copy notes as JSON” before closing this tab.";
       elements.storageWarning.hidden = false;
     }
+
+    // Storage was available at page-load but a later write failed (e.g. quota
+    // exceeded) — reveal the same banner so the reviewer sees that notes have
+    // stopped persisting mid-session.
+    annotationStore.onFallback(function () {
+      elements.storageWarning.textContent =
+        "Notes have stopped being saved (a localStorage write failed — the " +
+        "browser storage quota may be full). " +
+        "Use “Copy notes as JSON” before closing this tab.";
+      elements.storageWarning.hidden = false;
+    });
 
     var mountedViews = [];
 
