@@ -19,6 +19,16 @@
 // `options.onActivate()` fires on a qualifying click or Enter/Space;
 // `options.isExempt(evt)`, if given, opts an event out of activation (the
 // ledger row's diff-link guard) — omitted, every candidate event activates.
+//
+// isDependencyGraphUnavailable: the shared "is the dependency graph
+// unavailable?" predicate for the graph-shaped views (constellation, file
+// sonar). The answer is NOT "scene.edges is empty" — an *available*
+// load-bearing (centrality) axis over a repo with no cross-file imports
+// legitimately yields zero edges, and those views must still render (isolated
+// PR nodes / a center-only neighborhood) rather than claim unavailability.
+// The one true signal is the Python heat model listing "load_bearing" in
+// render_config.unavailable_axes (scene/heat.py), which happens exactly when
+// the centrality axis fail-softs (graphify absent/stale/torn).
 (function () {
   "use strict";
 
@@ -92,4 +102,17 @@
   }
 
   window.vizShared.wireClickVsDragActivation = wireClickVsDragActivation;
+
+  // "load_bearing" is the centrality axis's key (mirrored in app.js's
+  // HEAT_AXES and heat.py's _INPUT_AXES); its presence in unavailable_axes is
+  // the fail-soft marker. render_config.unavailable_axes is always present in
+  // the envelope (assemble.py), but the read is null-safe to match the views'
+  // defensive style.
+  function isDependencyGraphUnavailable(scene) {
+    var unavailableAxes =
+      (scene.render_config && scene.render_config.unavailable_axes) || [];
+    return unavailableAxes.indexOf("load_bearing") !== -1;
+  }
+
+  window.vizShared.isDependencyGraphUnavailable = isDependencyGraphUnavailable;
 })();

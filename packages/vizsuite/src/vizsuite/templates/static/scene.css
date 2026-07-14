@@ -504,6 +504,104 @@ body {
   outline-offset: 1px;
 }
 
+/* ---- Dependency constellation (spec §6.1, evaluation-gated §11): PR files
+   + context graph over scene.edges, a pre-settled force layout — no re-sim
+   on slider drag. The stage self-sizes from the node count, like the sonar
+   stage, so no max-width constraint applies to this JS-sized stage inside
+   the scrolling panel (see .viz-sonar-stage precedent). */
+.viz-constellation-inner {
+  margin: 0 0 1rem;
+}
+.viz-constellation-stage {
+  position: relative;
+  margin: 0 auto;
+}
+.viz-constellation-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.viz-constellation-edge {
+  stroke: var(--viz-border-strong);
+  stroke-width: 1.25;
+}
+.viz-constellation-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  border: 1px solid var(--viz-border-strong);
+  background: var(--viz-surface);
+  color: var(--viz-fg);
+  cursor: pointer;
+  overflow: hidden;
+}
+.viz-constellation-node[data-in-pr="true"] {
+  border: 3px solid var(--viz-fg);
+}
+.viz-constellation-node-label {
+  padding: 0 2px;
+  font-size: 8px;
+  line-height: 1.1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Keyboard focus affordance (a11y), same treatment as the sonar ring mark:
+   the base rule is already `position: absolute`, so z-index alone suffices
+   — position: relative here would override the absolute placement on
+   focus and snap the node out of its settled layout position. */
+.viz-constellation-node:focus-visible {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+/* ---- Constellation legend (spec §4.5 legend completeness): rendered
+   inside the view's own container (never the shared #viz-legend — see
+   views/constellation.js), so every entry here always has a real referent
+   in this view specifically. */
+.viz-constellation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.75rem;
+  font-size: 12px;
+  color: var(--viz-secondary);
+}
+.viz-constellation-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.viz-constellation-legend-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 1px solid var(--viz-border-strong);
+}
+.viz-constellation-legend-ring {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 3px solid var(--viz-fg);
+  background: transparent;
+}
+.viz-constellation-legend-line {
+  display: inline-block;
+  width: 1rem;
+  height: 0;
+  border-top: 1.25px solid var(--viz-border-strong);
+}
+
 #viz-footer {
   margin-top: 1.5rem;
   padding-top: 0.75rem;
