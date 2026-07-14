@@ -129,9 +129,10 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     instantiation (`create spec` / `promote` crashed before the handle came off,
     L16) via the shared `finalize_spec_instantiation` -- the same idempotent tail
     the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
-    swap reconstructed, not just create-spec's tail replayed. `query()` returns a
-    fully-populated Item whose `id`/`title` (both required bd fields) are all
-    `finalize` needs; it re-`get()`s the container's children itself. A second
+    swap reconstructed, not just create-spec's tail replayed. `query()` yields a
+    lean Item (no children/deps -- see the module docstring), but its scalar
+    `id`/`title` (both required bd fields) are all `finalize` needs; `finalize`'s
+    `instantiate_spec_shape` re-`get()`s the container's children itself. A second
     sweep over a healed container finds no handle -- idempotent."""
     findings: list[JsonValue] = []
     for container in backend.query(QueryFilters(label=CREATING_SPEC_LABEL)):
