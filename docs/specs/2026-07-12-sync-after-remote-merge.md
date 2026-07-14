@@ -165,9 +165,13 @@ Plan mode performs **no mutation of any kind**. Step sequence:
    (`git rev-parse refs/heads/<branch>`) as `branch_sha`, the binding token
    finish mode revalidates.
 
-4. **Safety gate B — clean worktree.** Tracked modifications or untracked
-   files in the worktree abort with `status: "failed"`, listing the stray
-   paths — a later discard would destroy them. Ignored files
+4. **Safety gate B — clean worktree.** For the two worktree conventions —
+   whose teardown discards the directory — tracked modifications or untracked
+   files abort with `status: "failed"`, listing the stray paths: a later
+   discard would destroy them. For the normal-repo convention nothing is ever
+   discarded, so gate B matches finish's main-root gate exactly: tracked
+   modifications abort, untracked files are permitted (a branch switch
+   neither consumes nor destroys them). Ignored files
    (`git status --porcelain --ignored`) do **not** block but are reported in
    the envelope's `ignored_paths`, because a worktree discard destroys them too
    and the agent should get to eyeball the list (an `.env` is ignored *and*
@@ -195,8 +199,12 @@ Plan mode performs **no mutation of any kind**. Step sequence:
 
 Invoked via the handed-back command, from the main root. All arguments are
 required (`--pr` and `--merge-commit` are carried for reporting only, so the
-terminal envelope keeps the merge metadata); refs pass the safe-ref guard, and
-`--worktree` must be an absolute, existing-repo path. Finish mode trusts plan
+terminal envelope keeps the merge metadata; `--merge-commit` is omitted when
+the PR payload carried none); refs pass the safe-ref guard, and `--worktree`
+must be absolute and lexically within the main root — explicitly **not**
+required to exist on disk, since on the Claude-native happy path
+`ExitWorktree` has already removed it; existence expectations are
+convention-dependent and enforced in step 2. Finish mode trusts plan
 mode only for facts that are **immutable once the PR is merged**: the merge
 verdict and gate A's containment conclusion, both pinned to `--branch-sha`.
 It therefore does **not** re-run `verify_merged` or safety gate A (it never
@@ -254,9 +262,13 @@ tip — re-runs here, adjacent to the mutation it authorizes. Step sequence:
      without `--force`: git's own dirty-worktree refusal is the guard truly
      adjacent to this removal; the step-2 check ran earlier.
    - all conventions: immediately before deletion, re-verify
-     `git rev-parse refs/heads/<branch>` still equals `--branch-sha` (abort if
-     the branch moved since plan mode), then `git branch -D <branch>`. `-D`
-     (not `-d`) because a squash-merge reads as unmerged to `-d`.
+     `git rev-parse refs/heads/<branch>` still equals `--branch-sha`, then
+     `git branch -D <branch>`. `-D` (not `-d`) because a squash-merge reads as
+     unmerged to `-d`. A branch that **moved** from `--branch-sha` aborts. A
+     branch that is **absent** while the worktree is also absent (or normal
+     repo) is the idempotent terminal state — a prior finish run completed
+     teardown before emitting its envelope; skip the deletion and proceed to
+     `ok` rather than aborting on work that is already done.
    - other-agent: `git worktree prune`.
 
 6. **Emit `status: "ok"`.**
@@ -280,8 +292,8 @@ re-gated at trigger time.
   "status": "handoff | ok | not_merged | failed",
   "phase": "plan | finish",
   "steps_completed": ["preflight", "verify_merged", "safety_gate_commits",
-                      "safety_gate_worktree", "gate_main_root", "sync_base",
-                      "teardown"],
+                      "safety_gate_worktree", "regate_worktree",
+                      "gate_main_root", "sync_base", "teardown"],
   "failed_step": {
     "name": "sync_base",
     "cmd": "git -C /main pull --ff-only",
@@ -313,6 +325,8 @@ re-gated at trigger time.
   `safety_gate_worktree`; finish from `preflight`, `regate_worktree`,
   `gate_main_root`, `sync_base`, `teardown`. `preflight` means each phase's
   own preflight; `safety_gate_commits` never appears in a finish envelope.
+  `safety_gate_worktree` (plan) and `regate_worktree` (finish) are the same
+  clean-worktree check under per-phase names, not two behaviors.
 - `failed_step` is present only when `status == "failed"`; `steps_remaining`
   is populated for `handoff` and may be populated for `failed` (what was not
   attempted).
@@ -391,11 +405,15 @@ Edit the source rule under `src/user/.agents/rules/`.
   `steps_remaining` and a correctly quoted finish command; detached-HEAD
   abort; finish-mode gates — wrong-repo / inside-the-worktree cwd abort,
   branch moved from `--branch-sha` abort, Claude-native worktree-still-present
-  abort, **dirty other-agent worktree abort** (the F2 TOCTOU the fresh re-gate
-  exists to catch), other-agent worktree on the wrong branch abort, resumable
-  partial teardown (worktree gone, branch still at `--branch-sha` → proceeds
-  to branch delete), dirty main root abort; base not a local branch aborts;
-  ff-only sync abort on divergence.
+  abort, **finish accepts an absent `--worktree` on the Claude-native happy
+  path** (the polarity opposite the abort case), **dirty other-agent worktree
+  abort** (the F2 TOCTOU the fresh re-gate exists to catch), other-agent
+  worktree on the wrong branch abort, resumable partial teardown (worktree
+  gone, branch still at `--branch-sha` → proceeds to branch delete),
+  idempotent double-run (worktree and branch both gone → `ok`, not an abort),
+  dirty main root abort, **normal-repo untracked files permitted** in both
+  gate B and the main-root gate (tracked modifications still abort); base not
+  a local branch aborts; ff-only sync abort on divergence.
 - **Symlinked-root regression test.** pytest's `tmp_path` is already
   realpath'd, so path-comparison bugs never fire in-suite; at least one test
   must construct a genuinely symlinked repo root and assert both plan-mode
