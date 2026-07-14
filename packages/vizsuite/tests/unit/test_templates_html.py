@@ -172,6 +172,38 @@ def test_render_inlines_sonar_view_bundle_and_playwright_hooks():
     assert "viz-sonar-node" in html
 
 
+def test_render_inlines_constellation_view_bundle_and_playwright_hooks():
+    # Slice 6 (spec §6.1 dependency constellation, evaluation-gated per §11):
+    # the constellation module is its own file under templates/static/views/,
+    # picked up by the same dynamic glob that already inlines treemap.js,
+    # ledger.js, and sonar.js (item 6: bundle markers) — no change to
+    # `_read_views_bundle` needed, so this pins the *contract*, not the glob.
+    # It ships inlined but never auto-mounted: app.js registers it behind a
+    # default-off experimental toggle (spec §6.1 "gated concretely").
+    html = render_html(
+        _scene(
+            FileNode(path="src/app.py", checksum="aaa"),
+            FileNode(path="README.md", checksum="bbb"),
+        )
+    )
+
+    assert "vizsuite/views/constellation.js" in html
+    # Stable ids used as playwright verification hooks (spec §4.6): the
+    # default-off experimental toggle, the view-switch button it registers on
+    # demand, the view's own mount id (a stable string constant present in
+    # the inlined app.js source even though the element itself is created at
+    # runtime), and the module's node-mark + unavailable-state classes.
+    assert "viz-constellation-toggle" in html
+    assert "viz-view-switch-constellation" in html
+    assert "viz-view-constellation" in html
+    assert "viz-constellation-node" in html
+    assert "viz-constellation-unavailable" in html
+    # The toggle's stable, action-naming label (spec §4.5 toggle convention:
+    # the accessible name never flips with state) is the exact wording the
+    # spec's "gated concretely" section names verbatim.
+    assert "Show dependency constellation (experimental)" in html
+
+
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
     # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
     # embedding case, now exercised alongside the new channel) and in a

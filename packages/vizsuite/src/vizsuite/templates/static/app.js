@@ -18,7 +18,20 @@
     root: "viz-root",
     drillPanel: "viz-drill-panel",
     treemapView: "viz-view-treemap",
-    ledgerView: "viz-view-ledger"
+    ledgerView: "viz-view-ledger",
+    constellationView: "viz-view-constellation",
+    constellationToggle: "viz-constellation-toggle"
+  };
+
+  // Stable, action-naming accessible name (spec §4.5 toggle convention: the
+  // aria-label never flips with state) for the constellation's default-off
+  // experimental control (spec §6.1/§11 "gated concretely" — the module
+  // ships inlined but is never mounted unless a reviewer opts in).
+  var CONSTELLATION_TOGGLE_LABEL = "Show dependency constellation (experimental)";
+  var CONSTELLATION_VIEW_OPTION = {
+    name: "constellation",
+    label: "Constellation",
+    id: "viz-view-switch-constellation"
   };
 
   // The three §6.2 input axes, in the same order/names as
@@ -510,7 +523,12 @@
     wrapper.setAttribute("aria-label", "View");
 
     var buttons = {};
-    VIEW_SWITCH_OPTIONS.forEach(function (option) {
+
+    // Registers one switch button on demand — the constellation's
+    // default-off experimental toggle calls this only once a reviewer opts
+    // in (spec §6.1/§11), so the treemap↔ledger switcher stays the only
+    // thing a reviewer sees by default.
+    function addOption(option) {
       var button = document.createElement("button");
       button.type = "button";
       button.id = option.id;
@@ -522,17 +540,64 @@
       });
       wrapper.appendChild(button);
       buttons[option.name] = button;
-    });
+    }
+
+    function removeOption(name) {
+      var button = buttons[name];
+      if (!button) {
+        return;
+      }
+      if (button.parentNode) {
+        button.parentNode.removeChild(button);
+      }
+      delete buttons[name];
+    }
+
+    VIEW_SWITCH_OPTIONS.forEach(addOption);
     container.appendChild(wrapper);
 
     return {
+      addOption: addOption,
+      removeOption: removeOption,
       setActive: function (name) {
-        VIEW_SWITCH_OPTIONS.forEach(function (option) {
-          var isActive = option.name === name;
-          buttons[option.name].setAttribute("aria-pressed", isActive ? "true" : "false");
+        Object.keys(buttons).forEach(function (optionName) {
+          buttons[optionName].setAttribute("aria-pressed", optionName === name ? "true" : "false");
         });
       }
     };
+  }
+
+  // ---- Constellation experimental toggle (spec §6.1/§11 "gated
+  // concretely"): a default-off, clearly-labeled control that registers the
+  // constellation as a third switchable view only on demand — mounting is
+  // never automatic, so the default artifact never pays its layout/render
+  // cost. Toggling off while it is the active view falls back to the
+  // treemap, the same "always land on a real view" contract mountView's
+  // success-gating already protects. ----
+  function appendConstellationToggle(container, viewSwitcher, onToggle) {
+    var toggle = document.createElement("button");
+    toggle.id = IDS.constellationToggle;
+    toggle.type = "button";
+    toggle.setAttribute("class", "viz-btn");
+    toggle.setAttribute("aria-pressed", "false");
+    toggle.setAttribute("aria-label", CONSTELLATION_TOGGLE_LABEL);
+    toggle.textContent = CONSTELLATION_TOGGLE_LABEL;
+    container.appendChild(toggle);
+
+    var enabled = false;
+    toggle.addEventListener("click", function () {
+      enabled = !enabled;
+      toggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+      toggle.textContent = enabled
+        ? "Hide dependency constellation (experimental)"
+        : CONSTELLATION_TOGGLE_LABEL;
+      if (enabled) {
+        viewSwitcher.addOption(CONSTELLATION_VIEW_OPTION);
+      } else {
+        viewSwitcher.removeOption(CONSTELLATION_VIEW_OPTION.name);
+      }
+      onToggle(enabled);
+    });
   }
 
   function main() {
@@ -665,13 +730,30 @@
       return true;
     }
 
-    var viewMountIds = { treemap: IDS.treemapView, ledger: IDS.ledgerView };
+    var viewMountIds = {
+      treemap: IDS.treemapView,
+      ledger: IDS.ledgerView,
+      constellation: IDS.constellationView
+    };
     var viewSwitcher = buildViewSwitcher(elements.controls, function (name) {
       // Only reflect the switch in the toggle when the view actually
       // mounted; a no-op mount (missing view module) would otherwise leave
       // the switcher indicating a view that never replaced the current one.
       if (mountView(name, viewMountIds[name])) {
         viewSwitcher.setActive(name);
+      }
+    });
+
+    appendConstellationToggle(elements.controls, viewSwitcher, function (enabled) {
+      if (enabled) {
+        return;
+      }
+      // Toggling off while the constellation is the active view falls back
+      // to the treemap — the view switcher just lost its button for the
+      // view currently on screen, so this is not merely cosmetic cleanup.
+      if (activeView && activeView.name === "constellation") {
+        mountView("treemap", viewMountIds.treemap);
+        viewSwitcher.setActive("treemap");
       }
     });
 
