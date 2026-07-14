@@ -25,7 +25,8 @@ DEFAULT_WEIGHTS: Mapping[str, float] = {
     "consequence": 0.25,
 }
 
-_HEAT_AXES = ("complexity", "load_bearing", "consequence", "heat")
+_INPUT_AXES = ("complexity", "load_bearing", "consequence")
+_HEAT_AXES = (*_INPUT_AXES, "heat")
 _AXIS_UNIT = "0-1"
 _AXIS_DIRECTION = "higher_is_hotter"
 
@@ -60,9 +61,16 @@ def combine(
     """Fuse the three §6.2 axes into one per-file heat, weighted-average style.
 
     ``heat = Σ(wᵢ·vᵢ) / Σ(wᵢ)``. A file absent from a per-file score map
-    (complexity/consequence/load-bearing alike) contributes a real zero.
+    (complexity/consequence/load-bearing alike) contributes a real zero. An
+    axis omitted from ``weights`` simply drops out of the mix; an *unknown*
+    weight key is a caller error and raises ``ValueError`` (valid axes are
+    complexity/load_bearing/consequence).
     """
     effective_weights = dict(weights) if weights is not None else dict(DEFAULT_WEIGHTS)
+    unknown_axes = set(effective_weights) - set(_INPUT_AXES)
+    if unknown_axes:
+        msg = f"unknown weight axes {sorted(unknown_axes)}; valid axes are {list(_INPUT_AXES)}"
+        raise ValueError(msg)
     # Load-bearing drops out of the mix entirely — weight excluded, not just
     # zeroed — exactly when the axis itself is unavailable; the remaining two
     # axes renormalize over their own weight sum (spec §6.2: "weight controls

@@ -131,6 +131,20 @@ def test_descriptors_name_all_four_heat_axes_not_in_pr() -> None:
     assert names == {"complexity", "load_bearing", "consequence", "heat"}
 
 
+def test_combine_rejects_unknown_weight_axis() -> None:
+    # An unknown weight key can't index into the per-file value map — validate
+    # loudly at the boundary rather than raising a bare KeyError mid-fusion.
+    with pytest.raises(ValueError, match="bogus"):
+        combine(
+            {"a.py": "sha_a"},
+            {"a.py": 0.5},
+            {"a.py": 0.5},
+            _available_centrality(),
+            pr_files=set(),
+            weights={"bogus": 1.0},
+        )
+
+
 def test_default_weights_reflects_the_effective_weights_used() -> None:
     estate = {"a.py": "sha_a"}
     custom_weights = {"complexity": 0.5, "load_bearing": 0.3, "consequence": 0.2}
