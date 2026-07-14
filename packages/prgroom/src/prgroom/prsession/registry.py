@@ -4,7 +4,9 @@ Resolves a ``--store`` flag value (or the ``PRGROOM_STORE`` env var, or the
 built-in default ``file``) to a concrete :class:`~prgroom.prsession.store.Store`.
 Precedence is **flag > env > default** — the flag is consulted first and only
 falls through to the env when unset. ``file`` yields the production
-:class:`~prgroom.prsession.file.FileStore`; ``bd`` is deferred (v2) and any
+:class:`~prgroom.prsession.file.FileStore` wrapped in
+:class:`~prgroom.prsession.legacy_export.LegacyExportStore` (so it also emits
+merge-guard's legacy pr-inventory at persist time); ``bd`` is deferred (v2) and any
 unknown name is a user error — both surface as a terminal
 ``PRECONDITION_STORE_UNAVAILABLE`` (exit 2, rendered 4-line block, no traceback).
 """
@@ -17,6 +19,7 @@ from pathlib import Path
 
 from prgroom.errors import ErrorCode, PreconditionError
 from prgroom.prsession.file import FileStore
+from prgroom.prsession.legacy_export import LegacyExportStore
 from prgroom.prsession.store import Store
 
 ENV_VAR = "PRGROOM_STORE"
@@ -48,5 +51,14 @@ def resolve_store(
     environ = env if env is not None else {}
     resolved = name if name is not None else (environ.get(ENV_VAR) or DEFAULT_STORE)
     if resolved == StoreName.FILE:
-        return FileStore(state_dir=state_dir)
+        # Wrap so the production file store ALSO emits merge-guard's legacy
+        # pr-inventory at persist time (best-effort); the inner adapter is the
+        # unchanged, pure FileStore. Only the file path is wrapped — bd/in-memory
+        # paths never reach here. Thread the SAME resolved ``environ`` (not the
+        # raw ``env``) into the legacy-dir seam so store selection and legacy-dir
+        # resolution agree on one environment source: an injected mapping drives
+        # both (test isolation), and an absent env resolves neither against the
+        # real ``os.environ`` — env is parsed once at the CLI boundary and passed
+        # inward, never reached as a hidden global here.
+        return LegacyExportStore(FileStore(state_dir=state_dir), env=environ)
     raise PreconditionError(ErrorCode.PRECONDITION_STORE_UNAVAILABLE, detail=resolved)

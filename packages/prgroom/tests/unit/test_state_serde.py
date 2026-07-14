@@ -290,6 +290,47 @@ def test_disposition_falsy_false_gate_raises() -> None:
         Disposition.from_dict(raw)
 
 
+def test_own_reply_id_round_trips_when_set() -> None:
+    # The durable posted-reply-id ledger: our reply's own comment id survives the
+    # round-trip so a later poll can exclude it (recursive self-reply prevention).
+    item = ReviewItem(
+        kind=ItemKind.REVIEW_SUMMARY,
+        identity=Identity(gh_id="RS_1"),
+        author="copilot",
+        body_excerpt="overall LGTM",
+        seen_at=_T,
+        replied=True,
+        own_reply_id=987654,
+    )
+    d = item.to_dict()
+    assert d["own_reply_id"] == 987654
+    assert ReviewItem.from_dict(d) == item
+
+
+def test_own_reply_id_omitted_when_zero() -> None:
+    # §2 omit-if-falsy: an item we have not replied to carries no own_reply_id key.
+    item = ReviewItem(
+        kind=ItemKind.ISSUE_COMMENT,
+        identity=Identity(gh_id="IC_1"),
+        author="alice",
+        body_excerpt="nit",
+        seen_at=_T,
+    )
+    assert "own_reply_id" not in item.to_dict()
+
+
+def test_own_reply_id_defaults_to_zero_when_absent_on_read() -> None:
+    # A pre-ledger state file has no own_reply_id key; it must load as 0, not raise.
+    d = {
+        "kind": "issue_comment",
+        "identity": {"gh_id": "IC_1"},
+        "author": "alice",
+        "body_excerpt": "nit",
+        "seen_at": _T.isoformat(),
+    }
+    assert ReviewItem.from_dict(d).own_reply_id == 0
+
+
 def test_disposition_round_trips_through_item() -> None:
     item = ReviewItem(
         kind=ItemKind.REVIEW_THREAD,
