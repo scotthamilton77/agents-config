@@ -11,11 +11,13 @@ implementation that actually shells out to real `git`. Slice 1 needs only
 never the mutable index (`git ls-files`), so every consumer sees a property of
 the snapshot rather than the operator's checkout state.
 
-Every method runs against an explicitly injected `repo_root` (default ``"."``,
-matching the historical ambient-cwd behavior) — never the process's actual
-working directory — so a caller can point the runner at a throwaway repo
-without touching its own cwd, and a concurrent session's `cd` cannot corrupt
-what this runner reads.
+Every method runs against an explicitly injected `repo_root`, so a caller can
+point the runner at a throwaway repo without touching its own cwd. The chdir
+immunity is only as strong as the value injected: an absolute root (what
+`cli.main` resolves at construction) is pinned for the runner's lifetime,
+while the default ``"."`` re-resolves against the live process cwd on every
+subprocess spawn — it exists to preserve the historical ambient-cwd behavior
+for bare construction, not to provide isolation.
 """
 
 from __future__ import annotations
