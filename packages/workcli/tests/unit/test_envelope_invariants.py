@@ -285,7 +285,8 @@ VERB_CASES: list[VerbCase] = [
         ["reconcile"],
         [
             ScriptedStep(("list",), _list_result()),  # interrupted-deliver sweep: empty
-            ScriptedStep(("list",), _list_result()),  # impl-placeholder sweep: empty
+            ScriptedStep(("list",), _list_result()),  # pending-placeholder sweep: empty
+            ScriptedStep(("list",), _list_result()),  # orphaned-design sweep: empty
         ],
         ["reconcile"],
         [ScriptedStep(("list",), _GARBAGE)],  # unparseable bd list output -> E_BACKEND_DRIFT
