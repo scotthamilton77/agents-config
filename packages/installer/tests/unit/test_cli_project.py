@@ -219,6 +219,45 @@ def test_project_tool_ref_outside_project_namespaces_errors(
     assert not (project / ".codex").exists()
 
 
+def test_project_kit_selector_scoped_to_user_errors_pre_resolve(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Kits are project-only. A profile that routes a kit selector to a
+    non-project scope must fail BEFORE resolve() runs — resolve() would
+    silently drop the kit ref into the USER scope's counts, discarding its
+    identity, so only a pre-resolve check can name the offending selector."""
+    repo = _hermetic_repo(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    (repo / "profiles.toml").write_text(
+        "schema = 1\n"
+        "\n"
+        "[scopes]\n"
+        '"instructions" = "user"\n'
+        '"settings" = "user"\n'
+        "\n"
+        "[profiles.bad-kit-scope]\n"
+        'include = [{select="kits/beads/**", scope="user"}, {select="**", scope="user"}]\n',
+        encoding="utf-8",
+    )
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=bad-kit-scope", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "kits/beads/**" in err
+    assert not (project / ".beads").exists()
+    assert not (tmp_path / ".beads").exists()
+
+
 def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
     """A plain user install (no --project) must stay byte-identical once
     main()'s resolver pass (S2 Task 9) is wired in ahead of install_pipeline.

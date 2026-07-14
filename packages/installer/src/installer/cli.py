@@ -24,6 +24,7 @@ from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
 from installer.core.profiles import (
     Scope,
+    _selector_matches,
     filter_plan_to_scope,
     load_manifest,
     project_universe,
@@ -481,6 +482,28 @@ def _run_project(
                 "installer: project install needs an explicit profile (no implicit full)\n"
             )
             return 2
+    # Pre-resolve kit-scope guard: kits are project-only. resolve() discards a
+    # dropped ref's identity into anonymous per-scope counts, so a check after
+    # resolve() would be a tautology — it can never name the offending
+    # selector. Walk the selected profiles' IncludeEntries directly instead.
+    kit_keys = set(kit_universe(staged_kits))
+    for name in selection:
+        profile = manifest.profiles.get(name)
+        if profile is None:
+            continue  # let resolve() raise the real unknown-profile error
+        for entry in profile.includes:
+            scope = entry.scope
+            if (
+                scope is not None
+                and scope is not Scope.PROJECT
+                and any(_selector_matches(entry.selector, key) for key in kit_keys)
+            ):
+                sys.stderr.write(
+                    f"installer: kit selector {entry.selector!r} cannot be scoped to "
+                    f"{scope.value!r}; kits are project-only\n"
+                )
+                return 2
+
     resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
 
     # A kit is selected iff at least one of its refs' dest_relpaths landed in
