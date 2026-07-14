@@ -26,12 +26,15 @@
   // of every edge see each other regardless of import direction. ----
   function buildAdjacency(edges) {
     var adjacency = Object.create(null);
+    var seen = Object.create(null);
     function link(a, b) {
       if (!adjacency[a]) {
         adjacency[a] = [];
+        seen[a] = Object.create(null);
       }
-      if (adjacency[a].indexOf(b) === -1) {
+      if (!(b in seen[a])) {
         adjacency[a].push(b);
+        seen[a][b] = true;
       }
     }
     edges.forEach(function (edge) {
