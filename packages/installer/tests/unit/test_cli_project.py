@@ -97,6 +97,50 @@ def test_project_beads_kit_writes_prime_and_receipt(tmp_path: Path) -> None:
     assert not (tmp_path / ".beads").exists()
 
 
+def test_project_no_profiles_no_persisted_config_errors_no_implicit_full(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No --profiles and no project-config.toml: still the exit-2 guard."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "no implicit full" in err
+
+
+def test_project_persisted_profiles_resolved_without_explicit_flag(tmp_path: Path) -> None:
+    """No --profiles, but <project>/project-config.toml persists a selection:
+    that selection resolves and installs, exactly as if passed via --profiles."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "project-config.toml").write_text(
+        '[install]\nprofiles = ["beads-kit"]\n', encoding="utf-8"
+    )
+
+    rc = main(
+        ["--project", str(project), "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+
+
 def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
     """A plain user install (no --project) must stay byte-identical once
     main()'s resolver pass (S2 Task 9) is wired in ahead of install_pipeline.

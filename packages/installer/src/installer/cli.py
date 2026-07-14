@@ -7,7 +7,13 @@ from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from installer.config import Config, resolve_plugins, resolve_plugins_root, resolve_tools
+from installer.config import (
+    Config,
+    read_project_profiles,
+    resolve_plugins,
+    resolve_plugins_root,
+    resolve_tools,
+)
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
@@ -464,12 +470,17 @@ def _run_project(
         universe.setdefault(key, []).extend(refs)
 
     manifest = load_manifest(repo_root / "profiles.toml")
-    selection = tuple(p.strip() for p in args.profiles.split(",")) if args.profiles else ()
-    if not selection:
-        sys.stderr.write(
-            "installer: project install needs an explicit profile (no implicit full)\n"
-        )
-        return 2
+    if args.profiles:
+        selection: tuple[str, ...] = tuple(p.strip() for p in args.profiles.split(","))
+    else:
+        persisted = read_project_profiles(project_root)
+        if persisted is not None:
+            selection = persisted
+        else:
+            sys.stderr.write(
+                "installer: project install needs an explicit profile (no implicit full)\n"
+            )
+            return 2
     resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
 
     # A kit is selected iff at least one of its refs' dest_relpaths landed in

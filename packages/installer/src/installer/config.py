@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,6 +86,41 @@ def resolve_plugins(
             raise UnknownPluginError(name, valid)
         seen.setdefault(name, None)
     return tuple(discovered[name] for name in seen)
+
+
+def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
+    """Read the persisted profile selection from ``<project_root>/project-config.toml``.
+
+    Returns ``tuple(data["install"]["profiles"])`` when present, else ``None``
+    — absence of the file or of the ``[install]`` table is a valid state (no
+    persisted selection yet), not an error, mirroring ``load_installer_toml``'s
+    missing-file convention. Raises ``ValueError`` only on a genuine contract
+    violation: a present ``[install]`` table whose ``profiles`` is not a list
+    of strings.
+
+    Read-only: this task does not add a writer (that is S2 Task 13).
+    """
+    path = project_root / "project-config.toml"
+    if not path.is_file():
+        return None
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    install = data.get("install")
+    if install is None:
+        return None
+    if not isinstance(install, dict):
+        got = type(install).__name__
+        msg = f"project-config.toml: [install] must be a table, got {got}"
+        raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
+
+    profiles = install.get("profiles")
+    if profiles is None:
+        return None
+    if not isinstance(profiles, list) or not all(isinstance(p, str) for p in profiles):
+        msg = "project-config.toml: [install] profiles must be a list of strings"
+        raise ValueError(msg)  # single call-site; subclass not justified
+
+    return tuple(profiles)
 
 
 def resolve_plugins_root(repo_root: Path, env: Mapping[str, str]) -> Path:
