@@ -95,3 +95,25 @@ def test_project_beads_kit_writes_prime_and_receipt(tmp_path: Path) -> None:
     assert receipt.is_file()
     assert "kit:beads" in receipt.read_text()
     assert not (tmp_path / ".beads").exists()
+
+
+def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
+    """A plain user install (no --project) must stay byte-identical once
+    main()'s resolver pass (S2 Task 9) is wired in ahead of install_pipeline.
+
+    An empty CLI profile selection resolves to the "full" profile
+    (`include = ["**"]` in profiles.toml), so every staged item matches and
+    filter_plan_to_scope narrows each tool plan to itself — a no-op. This
+    pins that no-op end to end against the real repo-root profiles.toml
+    (needed for the resolver to run at all)."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (tmp_path / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"

@@ -60,6 +60,17 @@ def _write_installignore(repo: Path) -> None:
     )
 
 
+def _write_profiles_toml(repo: Path) -> None:
+    """Mirror the real profiles.toml so main()'s resolver pass (S2 Task 9) can
+    load it. Only needed by fixtures that stage non-empty tool plans — main()
+    skips the resolver entirely on an empty universe, so an all-empty fixture
+    (e.g. ``_repo_with_installer_toml``) needs no profiles.toml. Copied from
+    the REAL manifest (not retyped) so it cannot drift from it."""
+    (repo / "profiles.toml").write_text(
+        (_REPO_ROOT / "profiles.toml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+
 def _repo_with_installer_toml(tmp_path: Path) -> Path:
     """Create a minimal repo_root carrying the required .installignore manifest.
 
@@ -82,6 +93,7 @@ def _hermetic_repo(tmp_path: Path) -> Path:
     for tool in ("claude", "codex", "gemini", "opencode"):
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
     _write_installignore(repo)
+    _write_profiles_toml(repo)
     return repo
 
 
@@ -614,6 +626,10 @@ def test_prune_only_honors_plugins_override(tmp_path: Path) -> None:
     widget is excluded.
     """
     repo = _repo_with_installer_toml(tmp_path)
+    # The widget-active run below stages a non-empty universe (rules/widget-rule),
+    # so main()'s resolver pass needs profiles.toml — the widget-excluded run
+    # re-uses the same repo_root and stays empty-universe either way.
+    _write_profiles_toml(repo)
     rule = repo / "src" / "plugins" / "widget" / ".claude" / "rules" / "widget-rule.md"
     rule.parent.mkdir(parents=True)
     rule.write_bytes(b"widget rule\n")
@@ -838,6 +854,7 @@ def _hermetic_repo_with_skill(tmp_path: Path) -> Path:
     for tool in ("claude", "codex", "gemini", "opencode"):
         (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
     _write_installignore(repo)
+    _write_profiles_toml(repo)
     return repo
 
 

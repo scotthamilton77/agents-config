@@ -16,7 +16,13 @@ from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
-from installer.core.profiles import Scope, load_manifest, project_universe, resolve
+from installer.core.profiles import (
+    Scope,
+    filter_plan_to_scope,
+    load_manifest,
+    project_universe,
+    resolve,
+)
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.receipt import Receipt
 from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
@@ -268,6 +274,30 @@ def _run(
         return _run_project(
             args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
         )
+
+    # Resolver-on for the user path (S2 Task 9): narrow every tool plan to the
+    # USER-bound refs the active profile selection resolves to. The user CLI
+    # exposes no --profiles flag yet, so the selection is always empty, which
+    # resolve() treats as the "full" profile (`include = ["**"]`) — every
+    # staged item matches, so filtering changes nothing and the install stays
+    # byte-identical to the pre-resolver output. Guarded on a non-empty
+    # universe: an empty universe (every active tool plan staged zero items)
+    # has nothing to resolve or filter, and skipping avoids both a spurious
+    # profiles.toml requirement and resolve()'s "matches nothing"/"resolves to
+    # zero items" errors on synthetic all-empty fixtures — real installs always
+    # stage at least one item, so this guard never changes real behavior.
+    universe = project_universe(plans.values())
+    if universe:
+        manifest = load_manifest(resolved_repo_root / "profiles.toml")
+        resolved = resolve(manifest, (), universe, bound_scopes=frozenset({Scope.USER}))
+        kept_by_tool: dict[Tool, set[Path]] = {}
+        for ref in resolved.included.get(Scope.USER, ()):
+            if ref.tool is not None:
+                kept_by_tool.setdefault(ref.tool, set()).add(ref.dest_relpath)
+        plans = {
+            tool: filter_plan_to_scope(plan, kept_by_tool.get(tool, set()))
+            for tool, plan in plans.items()
+        }
 
     config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
     adapters = [get_adapter(tool) for tool in tools]
