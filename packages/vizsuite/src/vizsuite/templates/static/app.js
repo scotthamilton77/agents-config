@@ -380,14 +380,7 @@
   }
 
   function dispatchThemeChanged() {
-    var event;
-    if (typeof CustomEvent === "function") {
-      event = new CustomEvent("viz:theme-changed");
-    } else {
-      event = document.createEvent("Event");
-      event.initEvent("viz:theme-changed", true, true);
-    }
-    document.dispatchEvent(event);
+    document.dispatchEvent(new CustomEvent("viz:theme-changed"));
   }
 
   function main() {
