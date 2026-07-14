@@ -21,7 +21,7 @@ _CRITICAL_PATHS_FILE = ".critical-paths"
 # gate-policy / security / public-contract path scores above baseline, below an
 # explicit marker.
 _SECURITY_MARKERS = ("auth", "security", "credential", "secret", "token", "crypto", "login")
-_GATE_POLICY_NAMES = (".critical-paths", "project-config.toml")
+_GATE_POLICY_NAMES = (_CRITICAL_PATHS_FILE, "project-config.toml")
 _PUBLIC_CONTRACT_NAMES = ("__init__.py",)
 
 CONSEQUENCE_MARKED = 1.0  # matches an explicit `.critical-paths` policy marker
@@ -41,13 +41,22 @@ def _load_critical_paths(snapshot_dir: Path) -> GitIgnoreSpec:
 
 
 def _heuristic_hit(path: str) -> bool:
-    """A path-class heuristic match: gate-policy, security-adjacent, or public-contract."""
-    name = path.rsplit("/", 1)[-1]
+    """A path-class heuristic match: gate-policy, security-adjacent, or public-contract.
+
+    Security markers match a whole path *segment* — a directory name or the
+    filename stem — never an arbitrary substring, so `auth/`, `token.py`, and
+    `security/` score while incidental substrings (`tokenizer.py`, `author.py`) do
+    not spuriously inflate the consequence axis.
+    """
     lowered = path.lower()
+    name = lowered.rsplit("/", 1)[-1]
+    directories = lowered.split("/")[:-1]
+    stem = name.split(".", 1)[0]
     return (
         name in _GATE_POLICY_NAMES
         or name in _PUBLIC_CONTRACT_NAMES
-        or any(marker in lowered for marker in _SECURITY_MARKERS)
+        or stem in _SECURITY_MARKERS
+        or any(directory in _SECURITY_MARKERS for directory in directories)
     )
 
 

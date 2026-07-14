@@ -47,3 +47,21 @@ def test_consequence_without_a_critical_paths_file_uses_heuristics_only(tmp_path
 
     assert scores["src/security/vault.py"] > 0.0  # security heuristic still fires
     assert scores["lib/util.py"] == 0.0  # nothing matches → baseline
+
+
+def test_consequence_security_heuristic_matches_segments_not_substrings(tmp_path: Path) -> None:
+    # A security marker matches a path *segment* (dir or filename stem), never an
+    # incidental substring — else `tokenizer.py`/`author.py` would wrongly score.
+    estate = {
+        "src/tokenizer.py": "s1",  # 'token' substring, not a segment → baseline
+        "src/author.py": "s2",  # 'auth' substring, not a segment → baseline
+        "src/auth/handler.py": "s3",  # 'auth' directory segment → heuristic hit
+        "src/token.py": "s4",  # 'token' filename stem → heuristic hit
+    }
+
+    scores = consequence(estate, tmp_path)
+
+    assert scores["src/tokenizer.py"] == 0.0
+    assert scores["src/author.py"] == 0.0
+    assert scores["src/auth/handler.py"] > 0.0
+    assert scores["src/token.py"] > 0.0
