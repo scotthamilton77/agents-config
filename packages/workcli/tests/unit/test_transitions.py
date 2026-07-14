@@ -107,9 +107,7 @@ def test_claim_on_impl_container_is_not_claimable_by_label():
         steps=[
             ScriptedStep(
                 ("show",),
-                _show_result(
-                    _item_raw("x.1", status="open", labels=["shape-impl-container"])
-                ),
+                _show_result(_item_raw("x.1", status="open", labels=["shape-impl-container"])),
             ),
         ]
     )
