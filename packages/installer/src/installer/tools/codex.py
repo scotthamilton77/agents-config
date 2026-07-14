@@ -25,6 +25,9 @@ class CodexAdapter:
     def scoped_namespaces(self) -> tuple[str, ...]:
         return ()
 
+    def project_namespaces(self) -> tuple[str, ...]:
+        return ()
+
     def should_install_namespace(
         self,
         namespace: str,  # noqa: ARG002  # protocol parameter; CodexAdapter accepts uniformly

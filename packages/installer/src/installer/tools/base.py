@@ -23,6 +23,8 @@ class ToolAdapter(Protocol):
 
     def scoped_namespaces(self) -> tuple[str, ...]: ...  # pragma: no cover
 
+    def project_namespaces(self) -> tuple[str, ...]: ...  # pragma: no cover
+
     def should_install_namespace(self, namespace: str, source: str) -> bool: ...  # pragma: no cover
 
     def post_staging_transforms(

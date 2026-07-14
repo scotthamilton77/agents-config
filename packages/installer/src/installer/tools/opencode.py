@@ -35,6 +35,9 @@ class OpenCodeAdapter:
     def scoped_namespaces(self) -> tuple[str, ...]:
         return ()
 
+    def project_namespaces(self) -> tuple[str, ...]:
+        return ()
+
     def should_install_namespace(self, namespace: str, source: str) -> bool:
         # Skip the shared agents/ namespace: OpenCode's agent frontmatter format
         # differs from the shared format (see OPENCODE-EXTENSIONS.md).
