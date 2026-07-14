@@ -111,6 +111,7 @@ def gh_pr_result(
     created_at: str = "2026-07-01T00:00:00Z",
     updated_at: str = "2026-07-02T00:00:00Z",
     merged_at: str | None = None,
+    repo_nwo: str = "octocat/hello-world",
 ) -> GhResult:
     """Build a successful `gh api graphql` `GhResult` for a PR (the common fixture).
 
@@ -120,6 +121,7 @@ def gh_pr_result(
     payload = {
         "data": {
             "repository": {
+                "nameWithOwner": repo_nwo,
                 "pullRequest": {
                     "baseRefOid": base_oid,
                     "headRefOid": head_oid,
@@ -131,7 +133,7 @@ def gh_pr_result(
                     "createdAt": created_at,
                     "updatedAt": updated_at,
                     "mergedAt": merged_at,
-                }
+                },
             }
         }
     }

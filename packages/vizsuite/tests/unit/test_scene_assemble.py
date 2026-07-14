@@ -13,7 +13,7 @@ serialized shape so a later slice (.2.2/.2.3) never breaks the contract.
 from __future__ import annotations
 
 from vizsuite.scene.assemble import assemble
-from vizsuite.scene.model import AttributeDescriptor, scene_to_json
+from vizsuite.scene.model import AttributeDescriptor, RenderConfig, scene_to_json
 
 _ESTATE = {"src/a.py": "sha_a", "src/b.py": "sha_b"}
 
@@ -100,3 +100,76 @@ def test_populated_descriptor_serializes_with_its_name_unit_and_direction():
     assert payload["descriptors"] == [
         {"name": "complexity", "unit": "0-1", "direction": "higher_is_hotter"}
     ]
+
+
+def test_attributes_thread_into_matching_file_nodes_by_path():
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        attributes={
+            "src/a.py": {
+                "complexity": 0.2,
+                "load_bearing": 0.5,
+                "consequence": 0.0,
+                "heat": 0.3,
+                "in_pr": True,
+            }
+        },
+    )
+
+    by_path = {node.path: node.attributes for node in scene.files}
+    assert by_path["src/a.py"] == {
+        "complexity": 0.2,
+        "load_bearing": 0.5,
+        "consequence": 0.0,
+        "heat": 0.3,
+        "in_pr": True,
+    }
+    # a file with no entry in the attribute map keeps the pre-.2.2 empty shape.
+    assert by_path["src/b.py"] == {}
+
+
+def test_render_config_and_repo_nwo_thread_into_the_serialized_envelope():
+    render_config = RenderConfig(
+        default_weights={"complexity": 0.4, "load_bearing": 0.35, "consequence": 0.25},
+        unavailable_axes=("load_bearing",),
+    )
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        render_config=render_config,
+        repo_nwo="octocat/hello-world",
+    )
+
+    assert scene.render_config == render_config
+    assert scene.repo_nwo == "octocat/hello-world"
+
+    payload = scene_to_json(scene)
+    assert payload["render_config"] == {
+        "default_weights": {"complexity": 0.4, "load_bearing": 0.35, "consequence": 0.25},
+        "unavailable_axes": ["load_bearing"],
+    }
+    assert payload["repo_nwo"] == "octocat/hello-world"
+
+
+def test_render_config_and_repo_nwo_default_when_omitted():
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+    )
+
+    payload = scene_to_json(scene)
+    assert payload["render_config"] == {"default_weights": {}, "unavailable_axes": []}
+    assert payload["repo_nwo"] == ""

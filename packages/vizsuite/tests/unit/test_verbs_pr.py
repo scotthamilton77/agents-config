@@ -12,8 +12,11 @@ end-to-end.
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,6 +31,43 @@ from tests.fakes import (
     tar_of,
 )
 from vizsuite.adapters.git.runner import ModifiedFileRow
+
+_SCENE_SCRIPT_RE = re.compile(
+    r'<script id="viz-scene" type="application/json">(.*?)</script>', re.DOTALL
+)
+
+
+def _extract_scene(html: str) -> dict[str, Any]:
+    """Pull the inlined scene JSON back out of a rendered artifact.
+
+    The embedding boundary escapes `<`/`>`/`&` to `\\uXXXX` (spec §4.6); those
+    are valid JSON string escapes, so `json.loads` reads the extracted text
+    back losslessly.
+    """
+    match = _SCENE_SCRIPT_RE.search(html)
+    assert match is not None
+    scene: dict[str, Any] = json.loads(match.group(1))
+    return scene
+
+
+def _write_graph(
+    tmp_path: Path,
+    *,
+    built_at_commit: str,
+    nodes: list[dict[str, str]],
+    links: list[dict[str, str]],
+) -> None:
+    graph_dir = tmp_path / "graphify-out"
+    graph_dir.mkdir()
+    payload = {
+        "directed": False,
+        "multigraph": False,
+        "graph": {},
+        "built_at_commit": built_at_commit,
+        "nodes": nodes,
+        "links": links,
+    }
+    (graph_dir / "graph.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_pr_reconciles_and_emits_html_from_head_estate(
@@ -160,3 +200,107 @@ def test_pr_reconciles_against_real_git_with_fake_gh(
     html = artifact.read_text(encoding="utf-8")
     assert "a.py" in html
     assert "b.py" in html
+
+
+def test_pr_threads_heat_axes_repo_nwo_and_in_pr_into_the_scene(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # .2.2: centrality is wired via the live-tree graphify-out/graph.json,
+    # fused with complexity/consequence into per-file heat, and the repo slug
+    # threads through from the widened gh graphql response.
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(
+            base_oid="base000",
+            head_oid="head111",
+            changed_files=1,
+            commit_count=1,
+            repo_nwo="octocat/demo",
+        )
+    )
+    git = ScriptedGitRunner(
+        present_oids={"base000", "head111"},
+        diff_files=["src/app.py"],
+        rev_list_oids=["c1"],
+        churn_rows=[
+            ModifiedFileRow(new_path="src/app.py", old_path="src/app.py", added=3, deleted=0)
+        ],
+        ls_tree_rows=[blob("src/app.py", "aaa111"), blob("lib/util.py", "bbb222")],
+        archive_tar_bytes=tar_of({"src/app.py": "x = 1\n", "lib/util.py": "y = 1\n"}),
+    )
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5, "lib/util.py": 2}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="head111",
+        nodes=[
+            {"id": "s1", "source_file": "lib/util.py"},
+            {"id": "s2", "source_file": "src/app.py"},
+        ],
+        links=[{"source": "s1", "target": "s2", "relation": "calls", "confidence": "EXTRACTED"}],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "11"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["repo_nwo"] == "octocat/demo"
+    assert scene["render_config"]["unavailable_axes"] == []  # graph present + fresh
+    # envelope mirror of the available heat axes (all present when nothing is unavailable)
+    assert data["heat_axes_available"] == ["complexity", "consequence", "load_bearing"]
+    names = {descriptor["name"] for descriptor in scene["descriptors"]}
+    assert names == {"complexity", "load_bearing", "consequence", "heat"}
+
+    by_path = {node["path"]: node["attributes"] for node in scene["files"]}
+    assert set(by_path["src/app.py"]) == {
+        "complexity",
+        "load_bearing",
+        "consequence",
+        "heat",
+        "in_pr",
+    }
+    assert by_path["src/app.py"]["in_pr"] is True  # net-set file
+    assert by_path["lib/util.py"]["in_pr"] is False  # context-only file
+    assert by_path["src/app.py"]["load_bearing"] == 1.0  # sole EXTRACTED in-edge
+
+
+def test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)  # no graphify-out/ written — the optional-dep absent case
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = ScriptedGitRunner(
+        present_oids={"base000", "head111"},
+        diff_files=["src/app.py"],
+        rev_list_oids=["c1"],
+        churn_rows=[
+            ModifiedFileRow(new_path="src/app.py", old_path="src/app.py", added=3, deleted=0)
+        ],
+        ls_tree_rows=[blob("src/app.py", "aaa111")],
+        archive_tar_bytes=tar_of({"src/app.py": "x = 1\n"}),
+    )
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "12"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["render_config"]["unavailable_axes"] == ["load_bearing"]
+    # envelope mirror: load_bearing drops out of the available axes when graphify-out/ is absent
+    assert data["heat_axes_available"] == ["complexity", "consequence"]
+    by_path = {node["path"]: node["attributes"] for node in scene["files"]}
+    # a real zero, never a stale/omitted value (spec §6.2).
+    assert by_path["src/app.py"]["load_bearing"] == 0.0

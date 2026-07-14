@@ -25,7 +25,7 @@ from vizsuite.envelope import JsonValue
 class FileNode:
     path: str
     checksum: str  # git blob SHA at the snapshot (spec §0.1 / §3.5.1)
-    attributes: dict[str, JsonValue] = field(default_factory=dict)  # heat axes land in .2.2/§6.2
+    attributes: dict[str, JsonValue] = field(default_factory=dict)  # heat axes (§6.2), via .2.2
 
 
 class ProvenanceKind(StrEnum):
@@ -107,6 +107,20 @@ class Fingerprints:
 
 
 @dataclass(frozen=True)
+class RenderConfig:
+    """Slider/legend render hints for the cross-axis heat mix (spec §4.5/§6.2).
+
+    `default_weights` seeds each weight slider's starting position;
+    `unavailable_axes` disables the slider(s) whose axis could not be computed
+    (e.g. a stale/absent graphify build) — never silently reporting a stale
+    value as current (spec §6.2).
+    """
+
+    default_weights: dict[str, float]
+    unavailable_axes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Scene:
     schema_version: str
     generated_at: str  # the one non-deterministic field; isolated for the determinism gate
@@ -114,10 +128,12 @@ class Scene:
     pr_number: int
     files: tuple[FileNode, ...]
     fingerprints: Fingerprints
-    descriptors: tuple[AttributeDescriptor, ...] = ()  # no scene attribute needs one until .2.2
-    facts: tuple[Fact, ...] = ()  # Tier-2/3 facts; empty until .2.2/.2.3 have a producer
+    descriptors: tuple[AttributeDescriptor, ...] = ()  # heat axes' metadata, via .2.2 (§4.4)
+    facts: tuple[Fact, ...] = ()  # Tier-2/3 facts; empty until .2.3 has a producer
     recommendations: tuple[JsonValue, ...] = ()  # always empty for V1 (spec §4.4)
     events: tuple[JsonValue, ...] = ()  # reserved for V3 (spec §4.4/§8); always empty here
+    render_config: RenderConfig = field(default_factory=lambda: RenderConfig(default_weights={}))
+    repo_nwo: str = ""  # spec §6.2/G3; populated once the PR verb threads it through
 
 
 def _provenance_to_json(provenance: Provenance) -> dict[str, JsonValue]:
@@ -149,6 +165,13 @@ def _fingerprints_to_json(fingerprints: Fingerprints) -> dict[str, JsonValue]:
     }
 
 
+def _render_config_to_json(render_config: RenderConfig) -> dict[str, JsonValue]:
+    return {
+        "default_weights": dict(render_config.default_weights),
+        "unavailable_axes": list(render_config.unavailable_axes),
+    }
+
+
 def scene_to_json(scene: Scene) -> dict[str, JsonValue]:
     """Serialize a `Scene` to a plain JSON-shaped mapping, files/facts sorted by key.
 
@@ -177,4 +200,6 @@ def scene_to_json(scene: Scene) -> dict[str, JsonValue]:
         "facts": facts_json,
         "recommendations": list(scene.recommendations),
         "events": list(scene.events),
+        "render_config": _render_config_to_json(scene.render_config),
+        "repo_nwo": scene.repo_nwo,
     }

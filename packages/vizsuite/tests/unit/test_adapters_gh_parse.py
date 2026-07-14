@@ -33,11 +33,13 @@ def _graphql_stdout(
     created_at: str = "2026-07-01T00:00:00Z",
     updated_at: str = "2026-07-02T00:00:00Z",
     merged_at: str | None = None,
+    name_with_owner: str = "octocat/hello-world",
 ) -> str:
     return json.dumps(
         {
             "data": {
                 "repository": {
+                    "nameWithOwner": name_with_owner,
                     "pullRequest": {
                         "baseRefOid": base_oid,
                         "headRefOid": head_oid,
@@ -49,7 +51,7 @@ def _graphql_stdout(
                         "createdAt": created_at,
                         "updatedAt": updated_at,
                         "mergedAt": merged_at,
-                    }
+                    },
                 }
             }
         }
@@ -73,6 +75,7 @@ def test_parses_oids_ref_scalar_counts_and_meta_in_one_round_trip():
     assert pr.meta.created_at == "2026-07-01T00:00:00Z"
     assert pr.meta.updated_at == "2026-07-02T00:00:00Z"
     assert pr.meta.merged_at is None
+    assert pr.meta.repo_nwo == "octocat/hello-world"
 
 
 def test_null_review_decision_normalizes_to_none_sentinel():
@@ -139,6 +142,31 @@ def test_missing_scalar_field_is_adapter_failure():
         "updatedAt": "y",
         "mergedAt": None,
     }
+    stdout = json.dumps({"data": {"repository": {"pullRequest": pull_request}}})
+    result = GhResult(returncode=0, stdout=stdout, stderr="")
+
+    with pytest.raises(VizError) as exc_info:
+        parse_pr_view(result, pr_number=7)
+
+    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def test_missing_name_with_owner_is_adapter_failure():
+    from vizsuite.adapters.gh.parse import parse_pr_view
+
+    pull_request = {
+        "baseRefOid": "b",
+        "headRefOid": "h",
+        "baseRefName": "main",
+        "changedFiles": 1,
+        "commits": {"totalCount": 1},
+        "author": {"login": "octocat"},
+        "reviewDecision": "APPROVED",
+        "createdAt": "x",
+        "updatedAt": "y",
+        "mergedAt": None,
+    }
+    # nameWithOwner omitted from repository — a drifted gh shape must alarm.
     stdout = json.dumps({"data": {"repository": {"pullRequest": pull_request}}})
     result = GhResult(returncode=0, stdout=stdout, stderr="")
 

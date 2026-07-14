@@ -4,10 +4,14 @@ Reconcile the PR to its immutable head OID (fetch → resolve OIDs → scalar
 reconcile against GitHub), build the estate at that head OID — never the
 operator's ``HEAD`` checkout — then materialize the head snapshot from
 `git archive` so scc scores per-file complexity against the committed tree (a
-dirty working copy can never leak in). The heat-free scene is assembled into one
-self-contained HTML file at `.viz/out/pr-<n>.html`. Threading the per-file heat
-values into scene node attributes + the cross-axis fusion is `.2.2` (§6.2); this
-verb delivers the extraction layer and proves the snapshot→scc plumbing.
+dirty working copy can never leak in). The load-bearing axis reads
+`graphify-out/graph.json` from the **live working tree** (it is gitignored,
+so it is never in the materialized snapshot), head-guarded by
+`centrality_axis` itself; an absent/stale graph fails soft to an unavailable
+axis, never a crash and never stale-as-fresh (§6.2). The three axes fuse into
+one per-file heat (`scene.heat.combine`), thread into scene node attributes,
+and the scene assembles into one self-contained HTML file at
+`.viz/out/pr-<n>.html`.
 """
 
 from __future__ import annotations
@@ -16,11 +20,13 @@ import shutil
 from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from vizsuite import __version__
 from vizsuite.adapters.critical_paths import read_critical_paths
 from vizsuite.adapters.scc.parse import parse_scc
 from vizsuite.envelope import JsonValue
+from vizsuite.extract.centrality import centrality_axis
 from vizsuite.extract.complexity import complexity
 from vizsuite.extract.consequence import consequence
 from vizsuite.extract.estate import estate
@@ -28,7 +34,9 @@ from vizsuite.output import ensure_viz_dir
 from vizsuite.reconcile.pr_scope import reconcile
 from vizsuite.reconcile.snapshot import materialize
 from vizsuite.runners import Runners
+from vizsuite.scene import heat
 from vizsuite.scene.assemble import assemble
+from vizsuite.scene.model import RenderConfig
 from vizsuite.templates.html import render_html
 
 
@@ -36,8 +44,8 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     """Handle `viz pr <n>`: reconcile → head-OID estate → snapshot → scc → scene → HTML.
 
     Returns the envelope `data`: the written artifact path, the PR number, the
-    estate node count, the reconciled net-file count, and the number of files the
-    complexity axis scored.
+    estate node count, the reconciled net-file count, the number of files the
+    complexity axis scored, and the heat axes that were available to combine.
     """
     pr_number: int = args.number
     scope = reconcile(pr_number, gh=runners.gh, git=runners.git)
@@ -45,10 +53,9 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
 
     # scc scans a *materialized* snapshot of the head tree, never the live
     # checkout, so a dirty working copy can't leak into the artifact; the snapshot
-    # also carries `.critical-paths` for the consequence axis. Both heat axes are
-    # scored before the tempdir is torn down. The per-file heat values thread into
-    # scene node attributes in `.2.2` (§6.2); scoring them here proves the
-    # snapshot→scc→complexity and snapshot→consequence chains end-to-end on real data.
+    # also carries `.critical-paths` for the consequence axis. Both snapshot-scored
+    # axes (complexity, consequence) are scored before the tempdir is torn down; the
+    # load-bearing axis is computed later from the live working tree (see below).
     snapshot = materialize(runners.git, scope.head_oid, set(estate_map))
     try:
         scc_records = parse_scc(runners.scc.scan(snapshot))
@@ -58,6 +65,15 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     finally:
         shutil.rmtree(snapshot, ignore_errors=True)
 
+    # The load-bearing axis reads the LIVE working tree's `graphify-out/graph.json`
+    # (gitignored — never in the materialized snapshot); `centrality_axis` itself
+    # guards staleness against `scope.head_oid` and fails soft to unavailable.
+    graph_path = Path.cwd() / "graphify-out" / "graph.json"
+    centrality = centrality_axis(graph_path, scope.head_oid)
+    heat_model = heat.combine(
+        estate_map, complexity_scores, consequence_scores, centrality, set(scope.files)
+    )
+
     scene = assemble(
         estate_map,
         pr_number=pr_number,
@@ -65,6 +81,13 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         generator=f"vizsuite/{__version__}",
         base_oid=scope.base_oid,
         head_oid=scope.head_oid,
+        attributes=heat_model.attributes,
+        descriptors=heat_model.descriptors,
+        render_config=RenderConfig(
+            default_weights=heat_model.default_weights,
+            unavailable_axes=heat_model.unavailable_axes,
+        ),
+        repo_nwo=scope.meta.repo_nwo,
     )
     html = render_html(scene)
 
@@ -81,5 +104,16 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         "consequential_files": sum(1 for value in consequence_scores.values() if value > 0),
         "author": scope.meta.author,
         "review_state": scope.meta.review_state,
+        # Availability is a data property of the axes, not a property of the
+        # caller's weight mix: derive from the canonical input axes
+        # (`heat.DEFAULT_WEIGHTS` keys) minus the axes the model reports
+        # unavailable. Deriving from `heat_model.default_weights` would wrongly
+        # drop an available axis a caller merely omitted from `weights`.
+        "heat_axes_available": cast(
+            "list[JsonValue]",
+            sorted(
+                axis for axis in heat.DEFAULT_WEIGHTS if axis not in heat_model.unavailable_axes
+            ),
+        ),
     }
     return data
