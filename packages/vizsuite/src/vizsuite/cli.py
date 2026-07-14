@@ -22,6 +22,7 @@ from typing import NoReturn, TextIO
 from vizsuite import PROTOCOL_VERSION
 from vizsuite.adapters.gh.runner import GhRunner, SubprocessGhRunner
 from vizsuite.adapters.git.runner import GitRunner, SubprocessGitRunner
+from vizsuite.adapters.scc.runner import SccRunner, SubprocessSccRunner
 from vizsuite.envelope import ErrorCode, JsonValue, VizError, emit_failure, emit_success
 from vizsuite.render import render_human
 from vizsuite.runners import Runners
@@ -118,7 +119,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     git_runner: GitRunner | None = None,
-    scc_runner: object | None = None,
+    scc_runner: SccRunner | None = None,
     gh_runner: GhRunner | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
@@ -160,7 +161,7 @@ def main(
         runners = Runners(
             git=git_runner if git_runner is not None else SubprocessGitRunner(),
             gh=gh_runner if gh_runner is not None else SubprocessGhRunner(),
-            scc=scc_runner,
+            scc=scc_runner if scc_runner is not None else SubprocessSccRunner(),
         )
         data = handler(runners, args)
     except VizError as verb_error:
