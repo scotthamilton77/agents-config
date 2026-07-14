@@ -17,7 +17,13 @@ from argparse import Namespace
 
 from workcli.backend import Backend
 from workcli.envelope import JsonValue, WorkError
-from workcli.lifecycle import DELIVERED_MARKER, has_marker, manifest_snapshot
+from workcli.lifecycle import (
+    DELIVERED_MARKER,
+    MANIFEST_MARKER,
+    SPEC_MARKER,
+    has_marker,
+    manifest_snapshot,
+)
 from workcli.lifecycle.deliver import reconcile_placeholder
 from workcli.lifecycle.nouns import DESIGN_CHILD_LABEL, IMPL_PLACEHOLDER_LABEL
 from workcli.model import Item, QueryFilters
@@ -73,16 +79,23 @@ def _placeholder_reconciled(backend: Backend, design: Item) -> bool:
     """True iff this design child's own placeholder has completed its delivery.
 
     The placeholder is the item `instantiate_spec_shape` minted `blocks`-linked
-    behind the design child (spec §6), so it is the design's dependent --
-    identified by that structural edge, never by "some sibling lacks
-    impl-placeholder", which a stray non-placeholder child in the same container
-    would also satisfy. Its delivery is done once it no longer carries the
-    `impl-placeholder` handle. No dependent, or one still carrying the handle,
-    means nothing proves the delivery finished, so the design's close is not
-    this sweep's to make."""
-    for dependent in backend.dep_list(design.id).dependents:
-        if IMPL_PLACEHOLDER_LABEL not in backend.get(dependent.id).labels:
-            return True
+    behind the design child (spec §6). Identify it by that structural edge *plus*
+    a placeholder note marker (`[work] manifest:`, or legacy `[work] spec:`) -- a
+    design may carry other `blocks`-dependents for unrelated reasons, and "any
+    dependent lacks impl-placeholder" would wrongly close the design on one of
+    those. Its delivery is done once that placeholder no longer carries the
+    `impl-placeholder` handle. No marker-bearing blocks-dependent means nothing
+    proves the delivery finished, so the design's close is not this sweep's to
+    make."""
+    for edge in backend.dep_list(design.id).dependents:
+        if edge.type != "blocks":
+            continue
+        placeholder = backend.get(edge.id)
+        if not has_marker(placeholder.notes, MANIFEST_MARKER) and not has_marker(
+            placeholder.notes, SPEC_MARKER
+        ):
+            continue
+        return IMPL_PLACEHOLDER_LABEL not in placeholder.labels
     return False
 
 

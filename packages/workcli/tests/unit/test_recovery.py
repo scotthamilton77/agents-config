@@ -199,6 +199,7 @@ def test_reconcile_closes_orphaned_open_design_whose_placeholder_is_reconciled()
         type="feature",
         parent="c",
         labels=["shape-feat", SPEC_READY_LABEL],
+        notes=_snapshot_note(_single()),  # a reconciled placeholder keeps its snapshot note
         deps=[DepEdge(id="d", type="blocks", status="in_progress")],
     )
 
@@ -216,6 +217,46 @@ def test_reconcile_leaves_open_design_child_whose_container_has_no_placeholder()
     backend.add("c", type="feature", labels=["shape-spec"])
     backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
     backend.add("x", type="task", parent="c", labels=["shape-chore"])  # ordinary, not a placeholder
+
+    findings = _reconcile(backend)
+
+    assert backend.get("d").status == "in_progress"  # not closed
+    assert findings == []
+
+
+def test_reconcile_ignores_a_non_placeholder_blocks_dependent_of_a_design():
+    # A design may be blocked-by unrelated items; only its marker-bearing
+    # placeholder proves delivery. A blocks-dependent with no `[work] manifest:`
+    # / `[work] spec:` marker must not trigger a close.
+    backend = FakeBackend()
+    backend.add("c", type="feature", labels=["shape-spec"])
+    backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
+    backend.add(
+        "unrelated",
+        type="task",
+        labels=["shape-chore"],  # no placeholder marker, no impl-placeholder handle
+        deps=[DepEdge(id="d", type="blocks", status="in_progress")],
+    )
+
+    findings = _reconcile(backend)
+
+    assert backend.get("d").status == "in_progress"  # not closed
+    assert findings == []
+
+
+def test_reconcile_ignores_a_non_blocks_dependent_even_with_a_placeholder_marker():
+    # Only the blocks-edge links a design to its placeholder; a related-to
+    # dependent (even one carrying a manifest marker) is not that relationship.
+    backend = FakeBackend()
+    backend.add("c", type="feature", labels=["shape-spec"])
+    backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
+    backend.add(
+        "relative",
+        type="task",
+        labels=["shape-feat"],
+        notes=_snapshot_note(_single()),  # marker present, but linked related-to, not blocks
+        deps=[DepEdge(id="d", type="related-to", status="in_progress")],
+    )
 
     findings = _reconcile(backend)
 
@@ -427,6 +468,7 @@ def test_reconcile_dry_run_reports_leaf_and_orphaned_design_without_mutating():
         type="feature",
         parent="c",
         labels=["shape-feat"],
+        notes=_snapshot_note(_single()),
         deps=[DepEdge(id="d", type="blocks", status="in_progress")],
     )
 

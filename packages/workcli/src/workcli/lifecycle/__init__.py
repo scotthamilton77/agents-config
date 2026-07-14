@@ -30,9 +30,9 @@ def _first_marker_payload(notes: str, prefix: str) -> str | None:
 def spec_path(notes: str) -> str | None:
     """The path recorded after the first `[work] spec:` marker, or None.
 
-    Shared by `deliver` (to validate a re-run's `--spec` against the recorded
-    path) and `reconcile` (to re-parse the manifest of an interrupted
-    expansion) so both read the marker through one parser.
+    Used by `deliver`'s drift guard to validate a re-run's `--spec` against the
+    path recorded at first delivery. `reconcile` no longer reads it -- it replays
+    toward the in-band `[work] manifest:` snapshot instead of re-reading the spec.
     """
     return _first_marker_payload(notes, SPEC_MARKER)
 
