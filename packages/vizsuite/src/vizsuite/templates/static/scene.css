@@ -325,6 +325,75 @@ body {
   padding: 0.35rem;
 }
 
+/* ---- File sonar (spec §6.1): a drill-panel affordance, not a top-level
+   view — concentric blast-radius rings computed from scene.edges. ---- */
+.viz-drill-sonar-mount {
+  margin: 0.5rem 0;
+}
+.viz-drill-sonar-mount[hidden] {
+  display: none;
+}
+.viz-sonar-unavailable {
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--viz-border-strong);
+  border-radius: 4px;
+  color: var(--viz-secondary);
+  font-size: 12px;
+}
+.viz-sonar-stage {
+  position: relative;
+  margin: 0 auto;
+}
+.viz-sonar-ring-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed var(--viz-border-strong);
+  pointer-events: none;
+}
+.viz-sonar-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--viz-border-strong);
+  background: var(--viz-surface);
+  color: var(--viz-fg);
+  cursor: pointer;
+  overflow: hidden;
+}
+.viz-sonar-node--center {
+  background: var(--viz-hue-blue);
+  color: var(--viz-label-on-dark-fill);
+  border-color: var(--viz-hue-blue);
+  cursor: default;
+}
+.viz-sonar-node-label {
+  padding: 0 2px;
+  font-size: 9px;
+  line-height: 1.1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Keyboard focus affordance (a11y), same treatment as the treemap tile: the
+   base rule is already `position: absolute` (required for ring placement),
+   so z-index alone suffices — unlike the ledger row (a non-positioned flex
+   child), re-setting `position: relative` here would override the absolute
+   placement on focus and snap the node out of its ring position. */
+.viz-sonar-node:focus-visible {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
 /* ---- View switcher (spec §6.1: treemap ↔ ledger) — flow layout in the
    shared control row, same button chrome as the theme/copy buttons. ---- */
 .viz-view-switcher {

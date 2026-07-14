@@ -337,10 +337,68 @@
     container.appendChild(collapseItem);
   }
 
+  // ---- Sonar affordance (spec §6.1: file sonar as a drill, not a top-level
+  // view) — a toggle button + mount appended to the drill panel; wired here
+  // rather than in views/sonar.js because it needs the panel's lifecycle
+  // (destroyed and rebuilt fresh on every openDrill call, spec §4.2). Empty
+  // `scene.edges` (graphify unavailable) is handled by `window.vizSonar`
+  // itself, which renders the "unavailable" state in place of rings — the
+  // affordance is always present and always safe to open.
+  function appendSonarAffordance(panelEl, scene, fileNode, drillState) {
+    var toggle = document.createElement("button");
+    toggle.id = "viz-drill-sonar-toggle";
+    toggle.type = "button";
+    toggle.setAttribute("class", "viz-btn");
+    toggle.setAttribute("aria-pressed", "false");
+    // Stable accessible name (never flips with state, per spec §4.5 toggle
+    // convention) — only the visible text + aria-pressed change.
+    toggle.setAttribute("aria-label", "Show dependency blast radius for this file");
+    toggle.textContent = "Show blast radius";
+    panelEl.appendChild(toggle);
+
+    var mount = document.createElement("div");
+    mount.id = "viz-drill-sonar-mount";
+    mount.setAttribute("class", "viz-drill-sonar-mount");
+    mount.hidden = true;
+    panelEl.appendChild(mount);
+
+    toggle.addEventListener("click", function () {
+      var expanded = toggle.getAttribute("aria-pressed") === "true";
+      if (expanded) {
+        toggle.setAttribute("aria-pressed", "false");
+        toggle.textContent = "Show blast radius";
+        mount.hidden = true;
+        return;
+      }
+      // Same success-gated-UI-state contract as mountView: a missing sonar
+      // module (`window.vizSonar` absent) never flips the toggle to "pressed"
+      // over an empty mount.
+      if (!drillState.sonarHandle) {
+        if (!window.vizSonar || typeof window.vizSonar.render !== "function") {
+          return;
+        }
+        drillState.sonarHandle = window.vizSonar.render(mount, scene, fileNode.path);
+      }
+      toggle.setAttribute("aria-pressed", "true");
+      toggle.textContent = "Hide blast radius";
+      mount.hidden = false;
+    });
+  }
+
   // ---- Drill panel (spec §4.2/§4.5): opaque overlay; Escape closes; the
   // notes textarea binds via `.value`, never `innerHTML`. ----
-  function makeOpenDrill(panelEl, annotationStore, weights, unavailableAxes, drillState) {
+  function makeOpenDrill(panelEl, scene, annotationStore, weights, unavailableAxes, drillState) {
     return function (fileNode) {
+      // A prior file's (or the same file's, on a weight-change refresh)
+      // sonar render is about to be discarded along with the rest of the
+      // panel's DOM — destroy it explicitly rather than relying on the DOM
+      // removal below (spec §4.2: destroy the outgoing content, no leaked
+      // marks when recentering/reopening).
+      if (drillState.sonarHandle && typeof drillState.sonarHandle.destroy === "function") {
+        drillState.sonarHandle.destroy();
+      }
+      drillState.sonarHandle = null;
+
       // Remember the open node so a weight change can recompute the
       // weight-dependent breakdown in place (spec §4.5) — see onWeightChange.
       drillState.node = fileNode;
@@ -406,6 +464,8 @@
       heatRow.appendChild(heatLabel);
       heatRow.appendChild(heatValue);
       panelEl.appendChild(heatRow);
+
+      appendSonarAffordance(panelEl, scene, fileNode, drillState);
 
       var notes = document.createElement("textarea");
       notes.setAttribute("class", "viz-drill-notes");
@@ -521,10 +581,12 @@
     var mountedViews = [];
 
     // Shared drill-panel state: `node` holds the currently-open file node (or
-    // null when closed) so a weight change can refresh the open breakdown.
-    var drillState = { node: null };
+    // null when closed) so a weight change can refresh the open breakdown;
+    // `sonarHandle` holds the currently-mounted sonar drill (or null), so it
+    // can be torn down before the panel rebuilds (spec §4.2).
+    var drillState = { node: null, sonarHandle: null };
     var openDrill = makeOpenDrill(
-      elements.drillPanel, annotationStore, weights, unavailableAxes, drillState
+      elements.drillPanel, scene, annotationStore, weights, unavailableAxes, drillState
     );
 
     function onWeightChange() {

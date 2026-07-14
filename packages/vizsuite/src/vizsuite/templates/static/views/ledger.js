@@ -125,43 +125,18 @@
     return holder;
   }
 
-  // Click-vs-drag threshold (~4px, spec §4.2), mirroring the treemap tile
-  // pattern; reads the live bound row at pointerup/keydown rather than a
-  // captured snapshot, matching the same anti-staleness contract.
+  // Click-vs-drag threshold (~4px, spec §4.2), via the shared
+  // `window.vizShared.wireClickVsDragActivation` (also used by the treemap
+  // tile and the sonar ring mark — see views/_shared.js). A link inside the
+  // row handles its own activation (see buildDiffLinkHolder's stopPropagation
+  // wiring), so a pointerup/keydown originating from it is exempted here
+  // rather than also opening the row's drill.
   function wireRowActivation(el, onActivate) {
-    var startX = 0;
-    var startY = 0;
-    var moved = false;
-    function fromLink(evt) {
-      return Boolean(evt.target.closest && evt.target.closest("a"));
-    }
-    el.addEventListener("pointerdown", function (evt) {
-      startX = evt.clientX;
-      startY = evt.clientY;
-      moved = false;
-    });
-    el.addEventListener("pointermove", function (evt) {
-      if (Math.abs(evt.clientX - startX) > 4 || Math.abs(evt.clientY - startY) > 4) {
-        moved = true;
+    window.vizShared.wireClickVsDragActivation(el, {
+      onActivate: onActivate,
+      isExempt: function (evt) {
+        return Boolean(evt.target.closest && evt.target.closest("a"));
       }
-    });
-    el.addEventListener("pointerup", function (evt) {
-      if (moved || fromLink(evt)) {
-        return;
-      }
-      onActivate();
-    });
-    // Enter/Space activate like a click (a11y); "Spacebar" is the legacy
-    // IE/Edge key value. A link inside the row handles its own activation.
-    el.addEventListener("keydown", function (evt) {
-      if (evt.key !== "Enter" && evt.key !== " " && evt.key !== "Spacebar") {
-        return;
-      }
-      if (fromLink(evt)) {
-        return;
-      }
-      evt.preventDefault();
-      onActivate();
     });
   }
 
