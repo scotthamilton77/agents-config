@@ -297,7 +297,7 @@ def main(
         return _finish_failure(usage_error, out, err, _peek_format(argv_list))
 
     # Resolved once here and attached to the parsed Namespace -- only
-    # `deliver`/`reconcile` read it, but every handler keeps the transport's
+    # `deliver` reads it, but every handler keeps the transport's
     # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
     # travels as an `args` attribute rather than an extra handler parameter.
     args.read_file = read_file if read_file is not None else _default_read_file

@@ -16,7 +16,7 @@ from __future__ import annotations
 from argparse import Namespace
 
 from workcli.backend import Backend
-from workcli.envelope import JsonValue
+from workcli.envelope import JsonValue, WorkError
 from workcli.lifecycle import DELIVERED_MARKER, has_marker, manifest_snapshot
 from workcli.lifecycle.deliver import reconcile_placeholder
 from workcli.lifecycle.nouns import DESIGN_CHILD_LABEL, IMPL_PLACEHOLDER_LABEL
@@ -46,14 +46,20 @@ def _sweep_pending_placeholders(backend: Backend, *, dry_run: bool) -> list[Json
     """Enumerate `impl-placeholder` handles; replay the shared completion toward
     the recorded `[work] manifest:` snapshot **regardless of the design child's
     status** -- the handle, not the design status, is the signal. The shared
-    routine mints only the missing children, closes the design child, and
-    removes the handle last. A placeholder with no snapshot has no recorded
-    target to replay toward, so it surfaces as an attention finding without
-    auto-repair rather than a guess from residual state."""
+    routine mints only the missing children, closes the design child, and removes
+    the handle last. A placeholder with no snapshot has no recorded target, so it
+    surfaces as an attention finding without auto-repair. A corrupt snapshot is
+    one poisoned bead, reported as its own finding rather than aborting recovery
+    of every healthy placeholder (L10) -- the typed drift `manifest_snapshot`
+    raises is caught per-item here."""
     findings: list[JsonValue] = []
     for candidate in backend.query(QueryFilters(label=IMPL_PLACEHOLDER_LABEL)):
         placeholder = backend.get(candidate.id)
-        snapshot = manifest_snapshot(placeholder.notes)
+        try:
+            snapshot = manifest_snapshot(placeholder.notes)
+        except WorkError:
+            findings.append(_finding(placeholder.id, "corrupt_snapshot", repaired=False))
+            continue
         if snapshot is None:
             findings.append(_finding(placeholder.id, "needs_spec", repaired=False))
             continue
@@ -64,30 +70,29 @@ def _sweep_pending_placeholders(backend: Backend, *, dry_run: bool) -> list[Json
 
 
 def _placeholder_reconciled(backend: Backend, design: Item) -> bool:
-    """True iff the design child's container has a non-design sibling that no
-    longer carries `impl-placeholder` -- i.e. the placeholder's delivery already
-    completed and only the design child's own close is outstanding. False when
-    the design has no parent or no such sibling (nothing proves the delivery
-    finished, so its close is not this sweep's to make)."""
-    if design.parent is None:
-        return False
-    container = backend.get(design.parent)
-    for child_id in container.children:
-        if child_id == design.id:
-            continue
-        sibling = backend.get(child_id)
-        if IMPL_PLACEHOLDER_LABEL not in sibling.labels:
+    """True iff this design child's own placeholder has completed its delivery.
+
+    The placeholder is the item `instantiate_spec_shape` minted `blocks`-linked
+    behind the design child (spec §6), so it is the design's dependent --
+    identified by that structural edge, never by "some sibling lacks
+    impl-placeholder", which a stray non-placeholder child in the same container
+    would also satisfy. Its delivery is done once it no longer carries the
+    `impl-placeholder` handle. No dependent, or one still carrying the handle,
+    means nothing proves the delivery finished, so the design's close is not
+    this sweep's to make."""
+    for dependent in backend.dep_list(design.id).dependents:
+        if IMPL_PLACEHOLDER_LABEL not in backend.get(dependent.id).labels:
             return True
     return False
 
 
 def _sweep_orphaned_designs(backend: Backend, *, dry_run: bool) -> list[JsonValue]:
-    """Enumerate `shape-design` children; close any still open whose sibling
-    placeholder is already reconciled (no `impl-placeholder`). Finishes a
-    delivery interrupted between the placeholder's reconciliation and the design
-    child's close -- and recovers an old-code delivery that closed in that
-    order. When the pending-placeholder sweep above just healed a tree, the
-    design child is already closed here, so this never double-reports."""
+    """Enumerate `shape-design` children; close any still open whose own
+    (`blocks`-linked) placeholder is already reconciled. Finishes a delivery
+    interrupted between the placeholder's reconciliation and the design child's
+    close -- and recovers an old-code delivery that closed in that order. When
+    the pending-placeholder sweep above just healed a tree, the design child is
+    already closed here, so this never double-reports."""
     findings: list[JsonValue] = []
     for candidate in backend.query(QueryFilters(label=DESIGN_CHILD_LABEL)):
         design = backend.get(candidate.id)

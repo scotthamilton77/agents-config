@@ -18,6 +18,15 @@ def has_marker(notes: str, prefix: str) -> bool:
     return any(line.strip().startswith(prefix) for line in notes.splitlines())
 
 
+def _first_marker_payload(notes: str, prefix: str) -> str | None:
+    """The stripped payload after the first line matching `prefix`, or None."""
+    for line in notes.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
+    return None
+
+
 def spec_path(notes: str) -> str | None:
     """The path recorded after the first `[work] spec:` marker, or None.
 
@@ -25,11 +34,7 @@ def spec_path(notes: str) -> str | None:
     path) and `reconcile` (to re-parse the manifest of an interrupted
     expansion) so both read the marker through one parser.
     """
-    for line in notes.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(SPEC_MARKER):
-            return stripped[len(SPEC_MARKER) :].strip()
-    return None
+    return _first_marker_payload(notes, SPEC_MARKER)
 
 
 def manifest_snapshot(notes: str) -> Manifest | None:
@@ -38,11 +43,10 @@ def manifest_snapshot(notes: str) -> Manifest | None:
     Recovery replays toward this frozen snapshot and never re-reads the spec
     file, so a post-delivery edit cannot silently drop or alter a committed unit.
     """
-    for line in notes.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(MANIFEST_MARKER):
-            return deserialize_manifest(stripped[len(MANIFEST_MARKER) :].strip())
-    return None
+    payload = _first_marker_payload(notes, MANIFEST_MARKER)
+    if payload is None:
+        return None
+    return deserialize_manifest(payload)
 
 
 def is_container(item: Item) -> bool:

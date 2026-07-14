@@ -246,3 +246,39 @@ def test_manifest_snapshot_absent_marker_is_none():
 def test_manifest_marker_prefix_is_the_pinned_wire_format():
     # Serialization contract: the prefix is written to / read from bd notes.
     assert MANIFEST_MARKER == "[work] manifest:"
+
+
+def test_deserialize_manifest_raises_typed_drift_on_malformed_json():
+    # The snapshot is a mutable, hand-editable bd note; malformed JSON is
+    # expected corruption, surfaced as typed drift, not a raw JSONDecodeError.
+    with pytest.raises(WorkError) as exc_info:
+        deserialize_manifest("{not valid json")
+
+    assert exc_info.value.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_deserialize_manifest_raises_typed_drift_on_missing_keys():
+    with pytest.raises(WorkError) as exc_info:
+        deserialize_manifest('{"items": [{"noun": "feat"}], "none_reason": null}')
+
+    assert exc_info.value.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_deserialize_manifest_raises_typed_drift_on_a_tampered_noun():
+    # A structurally valid payload with an unknown noun is validated at the
+    # boundary, so callers never re-hit Noun(...) mid-reconcile.
+    payload = (
+        '{"items": [{"noun": "widget", "title": "T", "acceptance": "A"}], "none_reason": null}'
+    )
+
+    with pytest.raises(WorkError) as exc_info:
+        deserialize_manifest(payload)
+
+    assert exc_info.value.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_deserialize_manifest_raises_typed_drift_on_non_string_none_reason():
+    with pytest.raises(WorkError) as exc_info:
+        deserialize_manifest('{"items": [], "none_reason": 5}')
+
+    assert exc_info.value.code == ErrorCode.BACKEND_DRIFT

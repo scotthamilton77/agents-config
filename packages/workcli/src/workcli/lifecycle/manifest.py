@@ -166,11 +166,37 @@ def serialize_manifest(manifest: Manifest) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def deserialize_manifest(text: str) -> Manifest:
-    """Inverse of `serialize_manifest`: the recorded snapshot back to a `Manifest`."""
-    payload = json.loads(text)
-    items = tuple(
-        ManifestItem(noun=item["noun"], title=item["title"], acceptance=item["acceptance"])
-        for item in payload["items"]
+def _snapshot_drift(text: str) -> WorkError:
+    return WorkError(
+        ErrorCode.BACKEND_DRIFT,
+        f"corrupt in-band manifest snapshot: {text!r}",
+        detail={"snapshot": text},
     )
-    return Manifest(items=items, none_reason=payload["none_reason"])
+
+
+def deserialize_manifest(text: str) -> Manifest:
+    """Inverse of `serialize_manifest`: the recorded snapshot back to a `Manifest`.
+
+    The snapshot lives in a bd note -- shared, dolt-synced state a human or
+    another agent can hand-edit -- so a truncated, malformed, or tampered payload
+    is *expected* corruption, not an internal bug. It surfaces as a typed
+    `E_BACKEND_DRIFT` carrying the offending text, so `reconcile` can report one
+    poisoned placeholder as a single attention finding (L10) instead of a raw
+    `JSONDecodeError`/`KeyError` aborting the whole sweep as `E_INTERNAL`.
+    Validating the noun here (not just the JSON shape) means a returned
+    `Manifest` is fully trustworthy inward -- callers never re-hit `Noun(...)`.
+    """
+    try:
+        payload = json.loads(text)
+        items = tuple(
+            ManifestItem(noun=item["noun"], title=item["title"], acceptance=item["acceptance"])
+            for item in payload["items"]
+        )
+        for item in items:
+            Noun(item.noun)  # boundary validation: reject a tampered noun as drift
+        none_reason = payload["none_reason"]
+    except (ValueError, KeyError, TypeError) as corruption:
+        raise _snapshot_drift(text) from corruption
+    if none_reason is not None and not isinstance(none_reason, str):
+        raise _snapshot_drift(text)
+    return Manifest(items=items, none_reason=none_reason)

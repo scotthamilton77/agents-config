@@ -28,6 +28,7 @@ from workcli.lifecycle.nouns import (
     SPEC_READY_LABEL,
 )
 from workcli.lifecycle.reconcile import reconcile
+from workcli.model import DepEdge
 
 SPEC_SINGLE = "## Continuations\n- feat: Ship the thing — AC: it works\n"
 SPEC_MULTI = "## Continuations\n- feat: Alpha — AC: build alpha\n- bugfix: Beta — AC: fix beta\n"
@@ -85,6 +86,7 @@ def _spec_tree(
         parent="c",
         labels=[IMPL_PLACEHOLDER_LABEL],
         notes=placeholder_notes,
+        deps=[DepEdge(id="d", type="blocks", status=design_status)],  # blocked-by the design
     )
 
 
@@ -192,12 +194,33 @@ def test_reconcile_closes_orphaned_open_design_whose_placeholder_is_reconciled()
     backend = FakeBackend()
     backend.add("c", type="feature", labels=["shape-spec", "planned"])
     backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
-    backend.add("p", type="feature", parent="c", labels=["shape-feat", SPEC_READY_LABEL])
+    backend.add(
+        "p",
+        type="feature",
+        parent="c",
+        labels=["shape-feat", SPEC_READY_LABEL],
+        deps=[DepEdge(id="d", type="blocks", status="in_progress")],
+    )
 
     findings = _reconcile(backend)
 
     assert backend.get("d").status == "closed"
     assert {"id": "d", "kind": "orphaned_design", "repaired": True} in findings
+
+
+def test_reconcile_leaves_open_design_child_whose_container_has_no_placeholder():
+    # A stray non-placeholder sibling must NOT be mistaken for a reconciled
+    # placeholder: with no blocks-linked placeholder, nothing proves the delivery
+    # finished, so the design child is not this sweep's to close.
+    backend = FakeBackend()
+    backend.add("c", type="feature", labels=["shape-spec"])
+    backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
+    backend.add("x", type="task", parent="c", labels=["shape-chore"])  # ordinary, not a placeholder
+
+    findings = _reconcile(backend)
+
+    assert backend.get("d").status == "in_progress"  # not closed
+    assert findings == []
 
 
 def test_reconcile_reports_pending_placeholder_with_no_snapshot_without_repair():
@@ -399,7 +422,13 @@ def test_reconcile_dry_run_reports_leaf_and_orphaned_design_without_mutating():
     backend.add("leaf", type="task", status="in_progress", notes=f"{DELIVERED_MARKER} pr#1")
     backend.add("c", type="feature", labels=["shape-spec"])
     backend.add("d", type="task", status="in_progress", parent="c", labels=[DESIGN_CHILD_LABEL])
-    backend.add("p", type="feature", parent="c", labels=["shape-feat"])
+    backend.add(
+        "p",
+        type="feature",
+        parent="c",
+        labels=["shape-feat"],
+        deps=[DepEdge(id="d", type="blocks", status="in_progress")],
+    )
 
     findings = _reconcile(backend, dry_run=True)
 
@@ -407,6 +436,40 @@ def test_reconcile_dry_run_reports_leaf_and_orphaned_design_without_mutating():
     assert backend.get("d").status == "in_progress"
     assert {"id": "leaf", "kind": "interrupted_deliver", "repaired": False} in findings
     assert {"id": "d", "kind": "orphaned_design", "repaired": False} in findings
+
+
+def test_reconcile_flags_a_corrupt_snapshot_without_aborting_the_sweep():
+    # One poisoned placeholder must not block recovery of a healthy one: the
+    # typed drift is caught per-item, reported, and the sweep continues (L10).
+    backend = FakeBackend()
+    _spec_tree(backend, design_status="in_progress", placeholder_notes=_snapshot_note(_single()))
+    backend.add("c2", type="feature", labels=["shape-spec"])
+    backend.add("d2", type="task", status="in_progress", parent="c2", labels=[DESIGN_CHILD_LABEL])
+    backend.add(
+        "p2",
+        type="task",
+        parent="c2",
+        labels=[IMPL_PLACEHOLDER_LABEL],
+        notes=f"{MANIFEST_MARKER} {{not valid json",
+        deps=[DepEdge(id="d2", type="blocks", status="in_progress")],
+    )
+
+    findings = _reconcile(backend)
+
+    # healthy placeholder repaired; poisoned one flagged, handle intact
+    assert IMPL_PLACEHOLDER_LABEL not in backend.get("p").labels
+    assert IMPL_PLACEHOLDER_LABEL in backend.get("p2").labels
+    assert {"id": "p2", "kind": "corrupt_snapshot", "repaired": False} in findings
+
+
+def test_deliver_design_on_a_corrupt_snapshot_raises_typed_drift():
+    backend = FakeBackend()
+    _spec_tree(backend, placeholder_notes=f"{MANIFEST_MARKER} {{not valid json")
+
+    with pytest.raises(WorkError) as exc_info:
+        _deliver_design(backend, spec_text=SPEC_SINGLE)
+
+    assert exc_info.value.code == ErrorCode.BACKEND_DRIFT
 
 
 def test_reconcile_ignores_in_progress_leaf_without_a_delivered_marker():
