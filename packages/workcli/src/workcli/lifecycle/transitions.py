@@ -72,10 +72,15 @@ def plan(backend: Backend, args: Namespace) -> JsonValue:
 def promote(backend: Backend, args: Namespace) -> JsonValue:
     """`work promote ID` -- a `shape-feat` leaf becomes a `shape-spec` container (L16)."""
     item = backend.get(args.id)
-    if "shape-feat" not in item.labels:
-        raise WorkError(ErrorCode.USAGE, f"{args.id}: only a feat can be promoted")
+    # `shape-spec` short-circuit FIRST, so a promote rerun is replay-safe: an
+    # interrupted promote leaves `[shape-spec, creating-spec]` (shape-feat already
+    # swapped off), and re-running must return a graceful no-op -- not trip the
+    # "only a feat" guard below on the now-absent shape-feat. The reconcile sweep
+    # finishes the still-present handle.
     if "shape-spec" in item.labels:
         return {"id": args.id, "promoted": "spec"}
+    if "shape-feat" not in item.labels:
+        raise WorkError(ErrorCode.USAGE, f"{args.id}: only a feat can be promoted")
 
     # `creating-spec` is added FIRST -- before the shape swap -- so any crash
     # from here on leaves the handle set and the `reconcile` sweep replays the

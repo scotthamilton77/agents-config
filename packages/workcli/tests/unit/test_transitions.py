@@ -428,3 +428,28 @@ def test_promote_already_shape_spec_is_a_noop():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.1", "promoted": "spec"}
     assert runner.calls == [("show", "x.1", "--json")]
+
+
+def test_promote_rerun_after_shape_swap_is_replay_safe():
+    # The crash window `finalize` opens: a crash after the shape-feat->shape-spec
+    # swap but before `creating-spec` comes off leaves `[shape-spec, creating-spec]`
+    # (no shape-feat). A promote rerun -- the obvious manual recovery -- must NOT
+    # raise E_USAGE on the "only a feat can be promoted" guard; the shape-spec
+    # short-circuit is checked first, so it returns a graceful no-op (the handle
+    # stays for the reconcile sweep to finish).
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(
+                    _item_raw("x.1", status="open", labels=["shape-spec", "creating-spec"])
+                ),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(["promote", "x.1"], runner)
+
+    assert exit_code == 0
+    assert envelope["data"] == {"id": "x.1", "promoted": "spec"}
+    assert runner.calls == [("show", "x.1", "--json")]  # no mutation on the replay
