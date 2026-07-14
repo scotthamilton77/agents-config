@@ -110,7 +110,13 @@
         collapsed: true,
         heat: node.heat,
         inPr: node.inPr,
-        value: node.count,
+        count: node.count,
+        // Nominal, sub-linear sizing — collapse is an attention-allocation
+        // act (spec §6.1): a collapsed group must actually shrink (never
+        // keep its expanded footprint) so siblings absorb the freed space.
+        // A mild log scale still hints "more hidden here" without ever
+        // approaching the group's expanded, file-count-proportional area.
+        value: Math.max(1, Math.log2(node.count + 1)),
         orig: node
       };
     }
@@ -236,7 +242,7 @@
       var label = wrapper.append("span").attr("class", "viz-tile-label");
       label.append("span").attr("class", "viz-collapse-glyph");
       label.append("span").text(function (d) {
-        return " " + d.data.name + " (" + d.value + ")";
+        return " " + d.data.name + " (" + d.data.count + ")";
       });
       return;
     }

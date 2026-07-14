@@ -37,6 +37,8 @@ _TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viz — PR artifact</title>
+<link rel="icon" href="data:,">
+
 <style>
 /*__VIZ_CSS__*/
 </style>
