@@ -148,6 +148,30 @@ def test_render_inlines_ledger_view_bundle_and_playwright_hooks():
     assert "viz-view-switch-ledger" in html
 
 
+def test_render_inlines_sonar_view_bundle_and_playwright_hooks():
+    # Slice 5 (spec §6.1 file sonar, as a drill — not a top-level view): the
+    # sonar module is its own file under templates/static/views/, picked up
+    # by the same dynamic glob that already inlines treemap.js and ledger.js
+    # (item 6: bundle markers) — no change to `_read_views_bundle` needed, so
+    # this pins the *contract*, not the glob.
+    html = render_html(
+        _scene(
+            FileNode(path="src/app.py", checksum="aaa"),
+            FileNode(path="README.md", checksum="bbb"),
+        )
+    )
+
+    assert "vizsuite/views/sonar.js" in html
+    # Stable ids used as playwright verification hooks (spec §4.6): the
+    # drill panel's "open sonar" toggle + mount app.js now wires in, and the
+    # sonar module's own rings/unavailable states and ring-mark class.
+    assert "viz-drill-sonar-toggle" in html
+    assert "viz-drill-sonar-mount" in html
+    assert "viz-sonar-rings" in html
+    assert "viz-sonar-unavailable" in html
+    assert "viz-sonar-node" in html
+
+
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
     # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
     # embedding case, now exercised alongside the new channel) and in a

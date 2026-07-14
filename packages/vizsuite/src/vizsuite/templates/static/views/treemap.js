@@ -203,50 +203,21 @@
     });
   }
 
-  // Click-vs-drag threshold (~4px, spec §4.2): reads the *live* bound datum
-  // at pointerup (never a captured snapshot), so a tile that has survived
-  // several re-layouts always acts on its current data.
+  // Click-vs-drag threshold (~4px, spec §4.2), via the shared
+  // `window.vizShared.wireClickVsDragActivation` (also used by the ledger
+  // row and the sonar ring mark — see views/_shared.js): reads the *live*
+  // bound datum at activation time (never a captured snapshot), so a tile
+  // that has survived several re-layouts always acts on its current data.
   function wireTileInteractions(el, handlers) {
-    var startX = 0;
-    var startY = 0;
-    var moved = false;
-    // Single dispatch shared by pointer and keyboard activation — reads the
-    // *live* bound datum at event time so a tile that survived several
-    // re-layouts always acts on its current data.
-    function activate() {
-      var current = d3.select(el).datum();
-      if (current.data.isFile) {
-        handlers.onFileClick(current.data);
-      } else {
-        handlers.onDirClick(current.data);
+    window.vizShared.wireClickVsDragActivation(el, {
+      onActivate: function () {
+        var current = d3.select(el).datum();
+        if (current.data.isFile) {
+          handlers.onFileClick(current.data);
+        } else {
+          handlers.onDirClick(current.data);
+        }
       }
-    }
-    el.addEventListener("pointerdown", function (evt) {
-      startX = evt.clientX;
-      startY = evt.clientY;
-      moved = false;
-    });
-    el.addEventListener("pointermove", function (evt) {
-      if (Math.abs(evt.clientX - startX) > 4 || Math.abs(evt.clientY - startY) > 4) {
-        moved = true;
-      }
-    });
-    el.addEventListener("pointerup", function () {
-      if (moved) {
-        return;
-      }
-      activate();
-    });
-    // Keyboard operability (a11y): Enter and Space trigger the exact same
-    // drill/collapse action as a click. Space must preventDefault or the page
-    // scrolls; "Spacebar" is the legacy IE/Edge key value. Bound on tile enter
-    // alongside the pointer handlers, so it persists across d3 re-layouts.
-    el.addEventListener("keydown", function (evt) {
-      if (evt.key !== "Enter" && evt.key !== " " && evt.key !== "Spacebar") {
-        return;
-      }
-      evt.preventDefault();
-      activate();
     });
   }
 
