@@ -265,13 +265,13 @@ def main(argv: list[str] | None = None) -> int:
             raise _AbortStep("safety_gate_commits",
                              "merged PR reports no head SHA; cannot verify the branch is "
                              "fully merged before deleting it")
-        rev = _run(["git", "-C", main_root, "rev-list", f"{pr_state.head_oid}..{branch}"],
-                   check=False)
+        rev_argv = ["git", "-C", main_root, "rev-list", f"{pr_state.head_oid}..{branch}"]
+        rev = _run(rev_argv, check=False)
         if rev.returncode != 0:
             raise _AbortStep("safety_gate_commits",
                              f"cannot confirm {branch} is contained in the merged head "
                              f"({pr_state.head_oid[:9]} not resolvable locally)",
-                             cmd=f"git rev-list {pr_state.head_oid}..{branch}",
+                             cmd=shlex.join(rev_argv),
                              exit_code=rev.returncode, stderr=rev.stderr)
         orphans = unmerged_commits(rev.stdout)
         if orphans:
@@ -291,11 +291,13 @@ def main(argv: list[str] | None = None) -> int:
         # --- sync base (fast-forward only) ---
         _run_step(["git", "-C", main_root, "checkout", base], "sync_base",
                   f"cannot check out base {base!r}")
-        ff = _run(["git", "-C", main_root, "pull", "--ff-only"], check=False)
+        ff_argv = ["git", "-C", main_root, "pull", "--ff-only"]
+        ff = _run(ff_argv, check=False)
         if ff.returncode != 0:
             raise _AbortStep("sync_base",
-                             f"base {base!r} is not fast-forwardable (local diverged); sync by hand",
-                             cmd="git pull --ff-only", exit_code=ff.returncode, stderr=ff.stderr)
+                             f"could not fast-forward base {base!r} (git pull --ff-only failed — "
+                             f"local divergence, missing upstream, or network); reconcile by hand",
+                             cmd=shlex.join(ff_argv), exit_code=ff.returncode, stderr=ff.stderr)
         synced_to = _run_step(["git", "-C", main_root, "rev-parse", "HEAD"], "sync_base",
                               "cannot read base HEAD after sync").stdout.strip()
         completed.append("sync_base")

@@ -452,6 +452,49 @@ def test_main_unrecognised_worktree_is_named_not_unexpected(monkeypatch, main_re
     assert env["failed_step"]["name"] == "detect_convention"
 
 
+def test_main_gate_a_unresolvable_head_cmd_is_reconstructible(monkeypatch, main_repo):
+    """When gate A's rev-list fails (head not resolvable locally), failed_step.cmd
+    must be the actual command run — including -C <main_root> — via shlex.join."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "push", "origin", "feature/x")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": "0" * 40}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["failed_step"]["name"] == "safety_gate_commits"
+    cmd = env["failed_step"]["cmd"]
+    assert "-C" in cmd and env["main_root"] in cmd and "rev-list" in cmd
+
+
+def test_main_sync_base_nonff_cmd_is_reconstructible(monkeypatch, main_repo):
+    """A non-fast-forward pull aborts sync_base; failed_step.cmd must include the
+    -C <main_root> actually used, reconstructed via shlex.join."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    head_f = _head(wt)
+    _git(main_repo, "merge", "--squash", "feature/x")
+    _git(main_repo, "commit", "-m", "squash: feature work")
+    _git(main_repo, "push", "origin", "main")
+    # Diverge local main from origin so `git pull --ff-only` fails.
+    _git(main_repo, "checkout", "main")
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    (main_repo / "local-only.txt").write_text("diverge\n")
+    _git(main_repo, "add", "local-only.txt")
+    _git(main_repo, "commit", "-m", "local divergence")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": head_f}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["failed_step"]["name"] == "sync_base"
+    cmd = env["failed_step"]["cmd"]
+    assert "-C" in cmd and env["main_root"] in cmd and "--ff-only" in cmd
+
+
 def test_main_operational_git_failure_is_named_step(monkeypatch, main_repo):
     """A failing operational git call (checkout of a base that doesn't exist)
     must surface as a named 'sync_base' step, not the generic 'unexpected'."""
