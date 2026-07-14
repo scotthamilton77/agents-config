@@ -335,8 +335,12 @@
 
   // ---- Drill panel (spec §4.2/§4.5): opaque overlay; Escape closes; the
   // notes textarea binds via `.value`, never `innerHTML`. ----
-  function makeOpenDrill(panelEl, annotationStore, weights, unavailableAxes) {
+  function makeOpenDrill(panelEl, annotationStore, weights, unavailableAxes, drillState) {
     return function (fileNode) {
+      // Remember the open node so a weight change can recompute the
+      // weight-dependent breakdown in place (spec §4.5) — see onWeightChange.
+      drillState.node = fileNode;
+
       while (panelEl.firstChild) {
         panelEl.removeChild(panelEl.firstChild);
       }
@@ -347,6 +351,7 @@
       closeBtn.setAttribute("class", "viz-btn");
       closeBtn.textContent = "Close";
       closeBtn.addEventListener("click", function () {
+        drillState.node = null;
         panelEl.hidden = true;
       });
       panelEl.appendChild(closeBtn);
@@ -404,9 +409,10 @@
     };
   }
 
-  function wireDrillPanelClose(panelEl) {
+  function wireDrillPanelClose(panelEl, drillState) {
     document.addEventListener("keydown", function (evt) {
       if (evt.key === "Escape" && !panelEl.hidden) {
+        drillState.node = null;
         panelEl.hidden = true;
       }
     });
@@ -461,9 +467,22 @@
 
     var mountedViews = [];
 
+    // Shared drill-panel state: `node` holds the currently-open file node (or
+    // null when closed) so a weight change can refresh the open breakdown.
+    var drillState = { node: null };
+    var openDrill = makeOpenDrill(
+      elements.drillPanel, annotationStore, weights, unavailableAxes, drillState
+    );
+
     function onWeightChange() {
       updateMixReadout(controls.mixReadout, weights, unavailableAxes);
       reencodeAll();
+      // reencodeAll() repaints tiles and refreshes each node's heat in place;
+      // if the drill panel is open its shares + combined-heat math is now
+      // stale, so re-render it from the same node (no duplicated math).
+      if (drillState.node !== null && !elements.drillPanel.hidden) {
+        openDrill(drillState.node);
+      }
     }
 
     function reencodeAll() {
@@ -481,7 +500,7 @@
         unavailableAxes: unavailableAxes,
         computeHeat: computeHeatFactory(weights, unavailableAxes),
         theme: currentThemeName(),
-        openDrill: makeOpenDrill(elements.drillPanel, annotationStore, weights, unavailableAxes)
+        openDrill: openDrill
       };
     }
 
@@ -491,7 +510,7 @@
     });
     wireCopyNotesButton(controls.copyButton, controls.copyStatus, annotationStore);
     buildLegend(elements.legend);
-    wireDrillPanelClose(elements.drillPanel);
+    wireDrillPanelClose(elements.drillPanel, drillState);
 
     document.addEventListener("viz:theme-changed", reencodeAll);
 
