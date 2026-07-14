@@ -1,0 +1,64 @@
+"""Tests for the --project/--profiles guard rails (Task 7 of the S2 plan).
+
+This version adds only the argparse flags and two early validation guards in
+_run(); no project-scoped install behavior exists yet. Each test pins one
+guard's coded decision (exit code + message), not argparse machinery."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from installer.cli import main
+from installer.core.io_port import ScriptedIO
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _write_installignore(repo: Path) -> None:
+    """Mirror the real repo-root .installignore so cli.main's up-front fail-fast
+    load finds it. Copied from the REAL manifest (not retyped) so it cannot
+    drift from it. See test_cli_smoke._write_installignore."""
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / ".installignore").write_text(
+        (_REPO_ROOT / ".installignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+
+def _hermetic_repo(tmp_path: Path) -> Path:
+    """A minimal source repo: one shared template so a Claude plan is
+    non-empty, plus empty tool-root dirs the adapters expect. Mirrors
+    test_cli_smoke._hermetic_repo."""
+    repo = tmp_path / "repo"
+    shared = repo / "src" / "user" / ".agents"
+    shared.mkdir(parents=True)
+    (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
+    for tool in ("claude", "codex", "gemini", "opencode"):
+        (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    _write_installignore(repo)
+    return repo
+
+
+def test_profiles_without_project_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = main(
+        ["--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=_hermetic_repo(tmp_path),
+    )
+    assert rc == 2
+    assert "--profiles requires --project" in capsys.readouterr().err
+
+
+def test_project_path_missing_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(
+        ["--project", str(tmp_path / "nope"), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=_hermetic_repo(tmp_path),
+    )
+    assert rc == 2
+    assert "nope" in capsys.readouterr().err

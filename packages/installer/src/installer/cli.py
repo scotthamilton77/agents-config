@@ -72,6 +72,19 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--project",
+        metavar="PATH",
+        default=None,
+        type=Path,
+        help="Install project-scoped content into PATH instead of user space.",
+    )
+    parser.add_argument(
+        "--profiles",
+        metavar="CSV",
+        default=None,
+        help="Comma-separated profile names (requires --project in this version).",
+    )
+    parser.add_argument(
         "--yes",
         "-y",
         action="store_true",
@@ -146,6 +159,13 @@ def _run(
     args = _build_parser().parse_args(argv)
     resolved_home = home if home is not None else Path.home()
     resolved_repo_root = repo_root if repo_root is not None else _REPO_ROOT
+
+    if args.profiles is not None and args.project is None:
+        sys.stderr.write("installer: --profiles requires --project in this version\n")
+        return 2
+    if args.project is not None and not args.project.is_dir():
+        sys.stderr.write(f"installer: --project path is not a directory: {args.project}\n")
+        return 2
 
     if io is None:
         from installer.core.io_port import TerminalIO
