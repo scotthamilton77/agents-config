@@ -11,11 +11,11 @@ weight.
 from __future__ import annotations
 
 import pytest
-from vizsuite.extract.complexity import complexity
 
 from vizsuite.adapters.scc.parse import SccRecord
 from vizsuite.envelope import ErrorCode, VizError
 from vizsuite.extract.churn import FileChurn
+from vizsuite.extract.complexity import complexity
 
 
 def _record(complexity_value: int) -> SccRecord:
