@@ -126,6 +126,28 @@ def test_render_inlines_vendored_d3_scene_css_app_and_treemap_bundles():
     assert ".text(function (d) { return d.data.name; })" in html
 
 
+def test_render_inlines_ledger_view_bundle_and_playwright_hooks():
+    # Slice 3 (spec §6.1 attention ledger): the ledger view module is its own
+    # file under templates/static/views/, picked up by the same dynamic glob
+    # that already inlines treemap.js (item 6: bundle markers) — no change to
+    # `_read_views_bundle` needed, so this pins the *contract*, not the glob.
+    html = render_html(
+        _scene(
+            FileNode(path="src/app.py", checksum="aaa"),
+            FileNode(path="README.md", checksum="bbb"),
+        )
+    )
+
+    assert "vizsuite/views/ledger.js" in html
+    # Stable ids used as playwright verification hooks (spec §4.6): the
+    # ledger's list mount, the separated/mixed toggle, and the treemap↔ledger
+    # view switcher app.js now renders into the control row.
+    assert "viz-ledger-list" in html
+    assert "viz-ledger-mode-toggle" in html
+    assert "viz-view-switch-treemap" in html
+    assert "viz-view-switch-ledger" in html
+
+
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
     # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
     # embedding case, now exercised alongside the new channel) and in a

@@ -325,6 +325,111 @@ body {
   padding: 0.35rem;
 }
 
+/* ---- View switcher (spec §6.1: treemap ↔ ledger) — flow layout in the
+   shared control row, same button chrome as the theme/copy buttons. ---- */
+.viz-view-switcher {
+  display: flex;
+  gap: 0.25rem;
+}
+.viz-view-switch[aria-pressed="true"] {
+  background: var(--viz-border);
+  font-weight: 600;
+}
+
+/* ---- Attention ledger (spec §6.1): ranked what-to-review-first list. Flow
+   layout only (spec §4.2/§4.5), never absolute positioning — a list, not a
+   spatial layout. ---- */
+.viz-ledger-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+.viz-ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.viz-ledger-section {
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.viz-ledger-section-title {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--viz-secondary);
+  background: var(--viz-surface);
+  border-bottom: 1px solid var(--viz-border);
+}
+.viz-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--viz-border);
+  background: var(--viz-bg);
+  cursor: pointer;
+}
+.viz-ledger-row:last-child {
+  border-bottom: none;
+}
+.viz-ledger-row:hover {
+  background: var(--viz-surface);
+}
+/* Keyboard focus affordance (a11y), same treatment as the treemap's tiles
+   (spec §4.3 theme tokens: `--viz-fg` is the highest-contrast token in both
+   themes). */
+.viz-ledger-row:focus-visible {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: -2px;
+  z-index: 1;
+}
+.viz-ledger-rank {
+  min-width: 2rem;
+  text-align: right;
+  color: var(--viz-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Reuses the legend's bordered-circle "file changed in this PR" badge
+   pattern (spec §4.5 legend completeness) — the same encoding, not a new
+   one. */
+.viz-ledger-badge {
+  flex: none;
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 2px solid var(--viz-fg);
+  background: transparent;
+}
+.viz-ledger-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.viz-ledger-heat {
+  min-width: 3rem;
+  text-align: right;
+  color: var(--viz-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.viz-ledger-link {
+  flex: none;
+}
+.viz-ledger-diff-link {
+  font-size: 12px;
+  color: var(--viz-hue-blue);
+}
+.viz-ledger-diff-link:focus-visible {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: 1px;
+}
+
 #viz-footer {
   margin-top: 1.5rem;
   padding-top: 0.75rem;

@@ -17,7 +17,8 @@
     legend: "viz-legend",
     root: "viz-root",
     drillPanel: "viz-drill-panel",
-    treemapView: "viz-view-treemap"
+    treemapView: "viz-view-treemap",
+    ledgerView: "viz-view-ledger"
   };
 
   // The three §6.2 input axes, in the same order/names as
@@ -431,6 +432,48 @@
     document.dispatchEvent(new CustomEvent("viz:theme-changed"));
   }
 
+  // ---- View switcher (spec §6.1: treemap ↔ ledger) — a control-row toggle
+  // between the registered top-level views. Mutually exclusive by design:
+  // only one view is ever mounted (spec §4.2's "fresh container per
+  // render" means switching destroys the outgoing view before mounting the
+  // next, never layering a second view's DOM on top). ----
+  var VIEW_SWITCH_OPTIONS = [
+    { name: "treemap", label: "Treemap", id: "viz-view-switch-treemap" },
+    { name: "ledger", label: "Ledger", id: "viz-view-switch-ledger" }
+  ];
+
+  function buildViewSwitcher(container, onSelect) {
+    var wrapper = document.createElement("div");
+    wrapper.id = "viz-view-switcher";
+    wrapper.setAttribute("class", "viz-view-switcher");
+    wrapper.setAttribute("role", "group");
+    wrapper.setAttribute("aria-label", "View");
+
+    var buttons = {};
+    VIEW_SWITCH_OPTIONS.forEach(function (option) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.id = option.id;
+      button.setAttribute("class", "viz-btn viz-view-switch");
+      button.textContent = option.label;
+      button.addEventListener("click", function () {
+        onSelect(option.name);
+      });
+      wrapper.appendChild(button);
+      buttons[option.name] = button;
+    });
+    container.appendChild(wrapper);
+
+    return {
+      setActive: function (name) {
+        VIEW_SWITCH_OPTIONS.forEach(function (option) {
+          var isActive = option.name === name;
+          buttons[option.name].setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+      }
+    };
+  }
+
   function main() {
     var scene = JSON.parse(document.getElementById("viz-scene").textContent);
     document.getElementById("viz-title").textContent = "viz — PR #" + scene.pr_number;
@@ -523,22 +566,49 @@
 
     document.addEventListener("viz:theme-changed", reencodeAll);
 
+    var activeView = null;
+
+    function unmountActiveView() {
+      if (!activeView) {
+        return;
+      }
+      if (activeView.handle && typeof activeView.handle.destroy === "function") {
+        activeView.handle.destroy();
+      }
+      if (activeView.container.parentNode) {
+        activeView.container.parentNode.removeChild(activeView.container);
+      }
+      mountedViews = [];
+      activeView = null;
+    }
+
     function mountView(name, mountId) {
       var registered = window.vizViews && window.vizViews[name];
       if (!registered || typeof registered.render !== "function") {
         return;
       }
-      // A fresh container per render (spec §4.2) — never a shared mount
-      // point, so a view never inherits another render's leftover DOM/state.
+      // Only one view mounted at a time (spec §6.1 view switcher): destroy
+      // the outgoing view before handing out a fresh container (spec §4.2 —
+      // never a shared mount point, so a view never inherits another
+      // render's leftover DOM/state).
+      unmountActiveView();
       var container = document.createElement("div");
       container.id = mountId;
       container.setAttribute("class", "viz-" + name);
       elements.root.appendChild(container);
       var handle = registered.render(container, scene, currentState());
       mountedViews.push(handle);
+      activeView = { name: name, container: container, handle: handle };
     }
 
+    var viewMountIds = { treemap: IDS.treemapView, ledger: IDS.ledgerView };
+    var viewSwitcher = buildViewSwitcher(elements.controls, function (name) {
+      mountView(name, viewMountIds[name]);
+      viewSwitcher.setActive(name);
+    });
+
     mountView("treemap", IDS.treemapView);
+    viewSwitcher.setActive("treemap");
   }
 
   main();
