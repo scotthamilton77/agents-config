@@ -31,9 +31,8 @@
     var startY = 0;
     var moved = false;
     // `armed` gates activation on a pointerdown that actually started on this
-    // element. Without it, a pointerup over the element from a drag begun
-    // elsewhere (no pointer capture in play) would activate, because `moved`
-    // starts false.
+    // element, rejecting a stray pointerup from a gesture begun elsewhere
+    // (whose `moved` would still read false).
     var armed = false;
 
     el.addEventListener("pointerdown", function (evt) {
@@ -41,6 +40,16 @@
       startY = evt.clientY;
       moved = false;
       armed = true;
+      // Capture the pointer so every pointermove/pointerup for this gesture
+      // retargets to `el` even after the pointer leaves its bounds. Without
+      // capture, a press near the edge followed by a drag off `el` stops
+      // tracking movement (leaving `moved=false`) and never delivers the
+      // gesture's pointerup, so `armed` stays true and a later stray pointerup
+      // over `el` would wrongly activate. Capture releases implicitly on
+      // pointerup/pointercancel, so no releasePointerCapture call is needed.
+      if (el.setPointerCapture) {
+        el.setPointerCapture(evt.pointerId);
+      }
     });
     el.addEventListener("pointermove", function (evt) {
       if (!armed) {
