@@ -16,8 +16,15 @@ from argparse import Namespace
 
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
-from workcli.lifecycle import DELIVERED_MARKER, SPEC_MARKER, has_marker, spec_path
-from workcli.lifecycle.manifest import Manifest, parse_continuations
+from workcli.lifecycle import (
+    DELIVERED_MARKER,
+    MANIFEST_MARKER,
+    SPEC_MARKER,
+    has_marker,
+    manifest_snapshot,
+    spec_path,
+)
+from workcli.lifecycle.manifest import Manifest, parse_continuations, serialize_manifest
 from workcli.lifecycle.nouns import (
     DESIGN_CHILD_LABEL,
     IMPL_PLACEHOLDER_LABEL,
@@ -121,14 +128,24 @@ def _deliver_design(backend: Backend, args: Namespace, design_item: Item) -> Jso
             },
         )
 
-    manifest = parse_continuations(args.read_file(args.spec))
-    if recorded_spec is None:
-        backend.append_note(placeholder.id, f"{SPEC_MARKER} {args.spec}")
+    # Replay toward the frozen in-band snapshot when one exists; only the first
+    # delivery parses the spec file and records the target (spec §6, L7), so a
+    # post-delivery edit to the file can never alter a committed unit. `manifest:`
+    # and `spec:` are written together at first delivery, but the appends are
+    # gated independently: an old bead carrying only a `spec:` marker (pre-snapshot
+    # delivery, interrupted) gets the snapshot added without a duplicate `spec:`.
+    manifest = manifest_snapshot(placeholder.notes)
+    if manifest is None:
+        manifest = parse_continuations(args.read_file(args.spec))
+        if recorded_spec is None:
+            backend.append_note(placeholder.id, f"{SPEC_MARKER} {args.spec}")
+        backend.append_note(placeholder.id, f"{MANIFEST_MARKER} {serialize_manifest(manifest)}")
     # reconcile_placeholder re-fetches the placeholder by id: its contract is a
-    # standalone idempotent entry point that `reconcile` (Task 6) reuses with
-    # only an id in hand, so the second get() is the price of that reuse.
+    # standalone idempotent entry point that `reconcile` reuses with only an id
+    # in hand, so the second get() is the price of that reuse. It also closes
+    # the design child (args.id) as its shared completion tail -- deliver no
+    # longer closes it separately, so the sweep reaches the identical routine.
     reconcile_placeholder(backend, placeholder.id, manifest)
-    backend.close([args.id])
     return _closed(args.id)
 
 
@@ -188,12 +205,15 @@ def deliver(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def _reconcile_single(backend: Backend, placeholder_id: str, manifest: Manifest) -> None:
+    # Add the shape + spec-ready labels here; `impl-placeholder` is removed by
+    # the shared completion tail, STRICTLY LAST (C2 -- an add-then-remove-here
+    # order would, on a crash between the two, strand the placeholder without
+    # its shape label yet already off the sweep's handle).
     item = manifest.items[0]
     template = NOUN_TEMPLATES[Noun(item.noun)]
     backend.set_type(placeholder_id, template.bd_type)
     backend.set_fields(placeholder_id, UpdateFields(title=item.title))
     backend.set_acceptance(placeholder_id, item.acceptance)
-    backend.label_mutate("remove", placeholder_id, [IMPL_PLACEHOLDER_LABEL])
     backend.label_mutate("add", placeholder_id, [template.shape_label, SPEC_READY_LABEL])
 
 
@@ -214,19 +234,48 @@ def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) ->
                 acceptance=item.acceptance,
             )
         )
-    # impl-placeholder removed STRICTLY LAST -- only once every manifest
-    # child exists (L10: this label is the queryable handle `reconcile`
-    # enumerates interrupted expansions through).
-    backend.label_mutate("remove", placeholder.id, [IMPL_PLACEHOLDER_LABEL])
+    # `impl-placeholder` is removed by the shared completion tail, strictly
+    # last -- only once every manifest child exists AND the design child has
+    # closed (L10: this label is the queryable handle `reconcile` enumerates
+    # interrupted expansions through).
+
+
+def _design_sibling(backend: Backend, placeholder: Item) -> Item | None:
+    """The `shape-design` child sharing the placeholder's container, or None.
+
+    `instantiate_spec_shape` mints exactly a design child + this placeholder
+    under one container, so at most one sibling carries `shape-design`. None
+    when the placeholder has no parent or no such sibling (a legacy or
+    hand-built tree) -- the caller treats a missing design sibling as nothing
+    to close, never an error: the placeholder handle alone drives completion.
+    """
+    if placeholder.parent is None:
+        return None
+    container = backend.get(placeholder.parent)
+    for child_id in container.children:
+        if child_id == placeholder.id:
+            continue
+        child = backend.get(child_id)
+        if DESIGN_CHILD_LABEL in child.labels:
+            return child
+    return None
 
 
 def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manifest) -> None:
-    """Idempotently reconcile one placeholder against a parsed manifest (spec §6):
-    none -> close + reason note (only when non-empty) + remove `impl-placeholder`;
-    single -> set_type + retitle + set_acceptance + label swap (+ spec-ready);
-    multi -> mint the MISSING children (compare to existing), removing
-    `impl-placeholder` STRICTLY LAST once all exist. Every completing path
-    removes `impl-placeholder` last, so a replay short-circuits on its absence.
+    """Idempotently complete one placeholder's delivery against a parsed manifest
+    (spec §6) -- the single completion routine both `deliver` and the `reconcile`
+    sweep call, so every crash point heals to the same final state.
+
+    Body, by manifest shape:
+    none -> close the placeholder + reason note (only when non-empty);
+    single -> set_type + retitle + set_acceptance + add shape label (+ spec-ready);
+    multi -> mint the MISSING children (compared to existing by title).
+
+    Then the shared tail, unconditionally: close the design child, then remove
+    `impl-placeholder` STRICTLY LAST. That ordering (C1/C2, L10) makes the
+    handle's absence the sole "delivery wholly done" signal -- no body path
+    removes it -- so a replay short-circuits on its absence and a crash anywhere
+    leaves it present for the sweep.
     """
     placeholder = backend.get(placeholder_id)
     if IMPL_PLACEHOLDER_LABEL not in placeholder.labels:
@@ -239,14 +288,12 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
         # empty note.
         if manifest.none_reason:
             backend.append_note(placeholder_id, manifest.none_reason)
-        # impl-placeholder removed STRICTLY LAST, mirroring the single/multi
-        # paths: it is the idempotency handle the top guard short-circuits on,
-        # so replay re-closes nothing and deliver's design-path no-op fires.
-        backend.label_mutate("remove", placeholder_id, [IMPL_PLACEHOLDER_LABEL])
-        return
-
-    if len(manifest.items) == 1:
+    elif len(manifest.items) == 1:
         _reconcile_single(backend, placeholder_id, manifest)
-        return
+    else:
+        _reconcile_multi(backend, placeholder, manifest)
 
-    _reconcile_multi(backend, placeholder, manifest)
+    design = _design_sibling(backend, placeholder)
+    if design is not None and design.status != "closed":
+        backend.close([design.id])
+    backend.label_mutate("remove", placeholder_id, [IMPL_PLACEHOLDER_LABEL])

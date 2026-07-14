@@ -99,21 +99,28 @@ consumer is a future non-bd adapter. bd has every flag `True`, so the lifecycle
 layer needs nothing here. Deferred to the GH-adapter bead; recorded in this plan
 and in `packages/workcli/AGENTS.md`. No code in 9.2.
 
-**L7. Idempotency is state-derived, not journalled.** Every lifecycle mutation
-first reads current state and no-ops when already applied (already-closed
-deliver → exit 0; already-`in_progress` claim → exit 0; placeholder already
-reconciled → skip). bd-observable markers make partial progress recoverable —
-each chosen so it is either directly **queryable** (a label) or lives on an
-item reconcile already fetches:
+**L7. Idempotency is state-derived; recovery targets are recorded in-band, never
+in a sidecar journal.** Every lifecycle mutation first reads current state and
+no-ops when already applied (already-closed deliver → exit 0; already-`in_progress`
+claim → exit 0; placeholder already reconciled → skip). Recovery reads a recorded
+target and replays toward it rather than inferring intent from residual symptoms;
+each handle is chosen so it is either directly **queryable** (a label) or lives on
+an item reconcile already fetches:
 - Label `impl-placeholder` — an unreconciled/expanding spec placeholder; removed
-  **strictly last**, only once the placeholder is fully reconciled (L9/L10). It
-  is the queryable handle reconcile enumerates on.
+  **strictly last**, only once the placeholder is fully reconciled *and the design
+  child is closed* (L9/L10). It is the queryable handle reconcile enumerates on;
+  its absence therefore means the whole delivery is done.
+- Label `creating-spec` — a spec container mid-instantiation (`create spec` /
+  `promote`); removed **strictly last**, only after the design child + placeholder
+  exist and `planned` is stamped (L16). The queryable handle reconcile finishes
+  interrupted creations on.
 - Note line `[work] delivered: <evidence>` on the leaf — a leaf deliver in
   flight (written before `close`; presence makes the append idempotent and lets
   `reconcile` finish an interrupted close).
-- Note line `[work] spec: <path>` **on the placeholder** — the merged-spec path
-  recorded by a design `deliver`, so `reconcile` can re-parse the manifest from
-  its `query(label=impl-placeholder)` result (bd `list` carries `notes`).
+- Note line `[work] manifest: <snapshot>` **on the placeholder** — the parsed
+  manifest recorded in-band (frozen) at first design `deliver`, so `reconcile`
+  replays toward it from its `query(label=impl-placeholder)` result without ever
+  re-reading the spec file (bd `list` carries `notes`).
 - Note line `[work] orphan-by-choice` on the item — placement recorded when
   `--orphan` is chosen (never orphan-by-accident).
 
@@ -147,34 +154,42 @@ placeholder is `--type task` + label `impl-placeholder`, blocked-by the design
 child. `epic` carries `shape-epic` (a declared container-shape handle so `claim`
 and the future router key on a label, never on child count — §5/invariant 5).
 
-**L10. `reconcile` scope (bd-observable, idempotent).** reconcile's findings list
+**L10. `reconcile` scope (handle-driven, idempotent).** reconcile's findings list
 **is** the attention self-report (§8 Attention = human-labeled + reconcile
 findings), so every state below is visible even before repair — satisfying
-invariant 2. Candidate sets are enumerated only through queryable handles;
-because `query()`/`list`-sourced Items always have `children == []` and no deps
-(bd `list` has no `dependents` key — see `adapters/bd/parse.py`), reconcile
-**`get()`s each candidate** before reading its children/deps. Three finding
-classes:
+invariant 2. Candidate sets are enumerated **only through removable completion
+handles** (labels) — never inferred from external state such as a design child's
+status or a spec file's contents. Because `query()`/`list`-sourced Items always
+have `children == []` and no deps (bd `list` has no `dependents` key — see
+`adapters/bd/parse.py`), reconcile **`get()`s each candidate** before reading its
+children/deps. Four finding classes:
 - **Interrupted-deliver leaf** — an `in_progress` leaf carrying the
   `[work] delivered:` note but still open → `close` it (item 11's "claimed leaf
   with merged evidence → delivers retroactively", bd-observable form). Enumerate
   via `query(status="in_progress")` then `get()`; filter on the note marker.
-- **Unreconciled placeholder** — enumerate via `query(label=impl-placeholder)`,
-  `get()` each; if its design-child sibling is `closed` and a `[work] spec:`
-  note is present → re-parse and reconcile (idempotent, reuses
-  `reconcile_placeholder`); if the spec note is absent → report as an attention
-  finding, no auto-repair.
-- **Interrupted expansion** — the same `query(label=impl-placeholder)` set: a
-  placeholder mid-multi-unit-expansion still carries `impl-placeholder` (removed
-  last) with fewer children than its recorded manifest → mint only the missing
-  children, then remove `impl-placeholder`. The objective legitimately stays
-  `planned` (its plan is the template); the *placeholder* is the incomplete part
-  and is found via its label.
+- **Pending placeholder** — enumerate via `query(label=impl-placeholder)`,
+  `get()` each; replay the shared completion toward the recorded `[work] manifest:`
+  snapshot **regardless of the design child's status** (the handle, not the design
+  status, is the signal — mint only the missing children, close the design child,
+  remove `impl-placeholder` last). A placeholder with no snapshot → report as an
+  attention finding, no auto-repair. A per-item parse failure is a single finding,
+  never a whole-sweep abort. The top objective legitimately stays `planned` (its
+  plan is the template); the *placeholder* is the incomplete part, found via its
+  label.
+- **Orphaned open design child** — enumerate via `query(label=shape-design)`,
+  `get()` each; if it is still open but its sibling placeholder is already
+  reconciled (no `impl-placeholder`) → close it via the shared completion. This
+  finishes a `deliver` interrupted between the placeholder's reconciliation and
+  the design child's close.
+- **Interrupted spec instantiation** — enumerate via `query(label=creating-spec)`,
+  `get()` each; finish the template idempotently (ensure the design child +
+  placeholder exist), stamp `planned`, remove `creating-spec` last. Repairs an
+  interrupted `create spec` / `promote`.
 `--dry-run` reports findings without mutating. Repairs are idempotent: a second
 run over a healed tree finds nothing. (The §6 "lazy path" — a plain leaf whose
 brainstorm reveals scope — reduces to `promote` in this design, which creates a
 placeholder, so it recovers through the same handle. No separate lazy-decompose
-mechanism in 9.2.)
+mechanism.)
 
 **L11. New error codes (additive; protocol stays `1.0`).** `E_DUPLICATE_TITLE`,
 `E_NOT_CLAIMABLE`, `E_EVIDENCE`, `E_MANIFEST`, `E_TIMEOUT`. Additive to the enum
@@ -206,21 +221,25 @@ with no parent and records a `[work] orphan-by-choice` note.
 completion gate to HEAVY (per repo policy); expect the quality-gate workflow at
 delivery, then `verify-checklist` with fresh `make ci-workcli` evidence.
 
-**L16. Mint-before-`planned` (invariant-2 fix).** A container is claimable-blind
-but must never be queue-invisible. `planned` is what removes a container from the
-Planning queue (§8), so it is stamped **strictly last**, only after the template's
-children exist:
-- `create spec`: container (`shape-spec`, **not** planned) → design child →
-  placeholder → **then** `label add planned`.
-- `promote`: `label add shape-spec` → `label remove shape-feat` →
-  `instantiate_spec_shape` (design child + placeholder) → **then** `label add
-  planned`.
-Any interruption (process death or a bd error mid-template) therefore leaves a
-`shape-spec` container that is **not** `planned` → it self-reports into the
-Planning queue (container, not planned, unclaimed). Recovery is planning /
-replanning (§5), not a blind `create` re-run (which the L13 duplicate-title
-guard would reject — a *visible* stuck state, not a silent one). No new reconcile
-class is needed for interrupted *creation*; the Planning queue is the safety net.
+**L16. Mint-before-`planned` + `creating-spec` handle (invariant-2 fix).** A
+container is claimable-blind but must never be queue-invisible, and an interrupted
+instantiation must be recoverable, not merely visible. Every spec container is
+minted carrying a transient `creating-spec` handle and earns `planned` **strictly
+last**, only after the template's children exist:
+- `create spec`: container born with labels (`shape-spec`, `creating-spec`, **not**
+  planned) → design child → placeholder → `label add planned` → **then** `label
+  remove creating-spec`.
+- `promote`: `label add creating-spec` → `label add shape-spec` → `label remove
+  shape-feat` → `instantiate_spec_shape` (idempotent design child + placeholder) →
+  `label add planned` → **then** `label remove creating-spec`.
+`instantiate_spec_shape` is idempotent (find-or-create each child), so a replay
+mints no duplicates. Any interruption (process death or a bd error mid-template)
+therefore leaves a `shape-spec` container that is **not** `planned` and still
+carries `creating-spec`: it *self-reports* into the Planning queue (container, not
+planned, unclaimed — invariant 2) **and** is *finished* by the `reconcile` sweep
+through the `creating-spec` handle (L10). Both nets fire — visible and
+auto-recoverable — rather than leaving a blind `create` re-run (which the L13
+duplicate-title guard would reject anyway) as the only path.
 
 ## CLI surface (argparse; exact flags — extend `cli.py` per task)
 
