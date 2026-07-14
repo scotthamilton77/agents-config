@@ -455,6 +455,7 @@
       button.type = "button";
       button.id = option.id;
       button.setAttribute("class", "viz-btn viz-view-switch");
+      button.setAttribute("aria-pressed", "false");
       button.textContent = option.label;
       button.addEventListener("click", function () {
         onSelect(option.name);
