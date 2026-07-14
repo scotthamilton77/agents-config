@@ -12,11 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from vizsuite.adapters.gh.parse import parse_pr_view
+from vizsuite.adapters.gh.parse import PrMeta, parse_pr_view
 from vizsuite.adapters.gh.runner import GhRunner
 from vizsuite.adapters.git.runner import GitRunner
 from vizsuite.envelope import ErrorCode, JsonValue, VizError
 from vizsuite.extract.churn import FileChurn, churn
+from vizsuite.extract.pr_metadata import pr_metadata
 
 
 @dataclass(frozen=True)
@@ -25,18 +26,22 @@ class PrScope:
 
     `files` is the local *net* set (a file added-then-reverted within the PR is
     excluded), each carrying its summed churn; `head_oid` drives every downstream
-    immutable-object read (estate at head, scc snapshot in slice 3).
+    immutable-object read (estate at head, scc snapshot in slice 3). `meta` is
+    the author/review-state/timestamps garnish (slice 5) — deliberately absent
+    from slice 2, which returned no metadata.
     """
 
     pr_number: int
     head_oid: str
     base_oid: str
     files: dict[str, FileChurn]
+    meta: PrMeta
 
 
 def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
     """Resolve OIDs and reconcile local net sets against GitHub's scalar counts."""
     pr = parse_pr_view(gh.pr_graphql(pr_number), pr_number=pr_number)
+    meta = pr_metadata(gh, pr_number)
 
     # Ensure both immutable OIDs are present locally so every downstream read is
     # against the object DB, not the operator's checkout. `pull/<n>/head` brings the
@@ -84,4 +89,6 @@ def reconcile(pr_number: int, *, gh: GhRunner, git: GitRunner) -> PrScope:
         )
 
     files = churn(git, commit_oids, net_files)
-    return PrScope(pr_number=pr_number, head_oid=pr.head_oid, base_oid=pr.base_oid, files=files)
+    return PrScope(
+        pr_number=pr_number, head_oid=pr.head_oid, base_oid=pr.base_oid, files=files, meta=meta
+    )

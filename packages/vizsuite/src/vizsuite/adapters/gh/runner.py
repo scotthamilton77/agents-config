@@ -29,6 +29,11 @@ _PR_QUERY = (
     "}}}"
 )
 
+# `gh pr view --json` fields for the PR-metadata garnish (author/review-state/
+# timestamps, spec §4.4) — a separate, widened call from `_PR_QUERY`: this one
+# is metadata only, never part of the reconciler's drift-critical scalar join.
+_PR_META_FIELDS = "author,reviewDecision,createdAt,updatedAt,mergedAt"
+
 
 @dataclass(frozen=True)
 class GhResult:
@@ -39,6 +44,7 @@ class GhResult:
 
 class GhRunner(Protocol):
     def pr_graphql(self, pr_number: int) -> GhResult: ...  # pragma: no cover
+    def pr_meta(self, pr_number: int) -> GhResult: ...  # pragma: no cover
 
 
 class SubprocessGhRunner:
@@ -59,6 +65,18 @@ class SubprocessGhRunner:
                 "-f",
                 f"query={_PR_QUERY}",
             ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        return GhResult(
+            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr
+        )
+
+    def pr_meta(self, pr_number: int) -> GhResult:  # pragma: no cover - needs gh auth+network
+        completed = subprocess.run(
+            ["gh", "pr", "view", str(pr_number), "--json", _PR_META_FIELDS],
             capture_output=True,
             text=True,
             timeout=60,

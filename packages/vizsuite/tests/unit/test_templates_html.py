@@ -1,26 +1,45 @@
 """HTML embedding boundary: the script-safe serializer and the inlined scene.
 
-Spec test item 7 (embedding half): a scene field containing ``</script>`` must
-survive inline embedding without terminating the `<script>` element.
+Spec test item 7 (complete): a scene field containing ``</script>`` must
+survive inline embedding without terminating the `<script>` element, and
+hostile strings in paths, Tier-2 fact notes ("stories"), and other
+repo/agent-derived content render inert — never interpolated into HTML, only
+ever escaped JSON text.
 """
 
 from __future__ import annotations
 
 import json
 
-from vizsuite.scene.model import FileNode, Scene
+from vizsuite.scene.model import Fact, FileNode, Fingerprints, Provenance, ProvenanceKind, Scene
 from vizsuite.templates.html import _fill_template, render_html, scene_to_script_json
 
 _SCENE_OPEN = '<script id="viz-scene" type="application/json">'
 
+_HOSTILE_STRINGS = (
+    "</textarea><script>alert(1)</script>",
+    "<script>alert(1)</script>",
+    '"><img src=x onerror=alert(1)>',
+)
 
-def _scene(*files: FileNode) -> Scene:
+
+def _scene(*files: FileNode, facts: tuple[Fact, ...] = ()) -> Scene:
     return Scene(
         schema_version="1",
         generated_at="2020-01-01T00:00:00+00:00",
         generator="vizsuite/0.1.0",
         pr_number=1,
         files=tuple(files),
+        fingerprints=Fingerprints(base_oid="base000", head_oid="head111"),
+        facts=facts,
+    )
+
+
+def _encoded_fact(fact_id: str, note: str) -> Fact:
+    return Fact(
+        id=fact_id,
+        note=note,
+        provenance=Provenance(kind=ProvenanceKind.ENCODED, citations=("evidence",)),
     )
 
 
@@ -90,3 +109,24 @@ def test_render_inlines_vendored_d3_and_scene_css_and_estate_paths():
     # (`innerHTML` appears inside vendored d3 itself; the invariant is about our
     # own code, so we assert the binding call, not a global substring absence.)
     assert ".text(function (d) { return d.path; })" in html
+
+
+def test_hostile_strings_in_paths_and_fact_notes_render_inert():
+    # Item 7 (complete): hostile strings in *paths* (a repeat of the slice-1
+    # embedding case, now exercised alongside the new channel) and in a
+    # Tier-2 fact's *note* (the "story"/annotation narrative payload) must
+    # both render inert — never interpolated as HTML, only ever escaped JSON
+    # text that round-trips losslessly through `JSON.parse`.
+    for hostile in _HOSTILE_STRINGS:
+        html = render_html(
+            _scene(
+                FileNode(path=f"src/{hostile}.py", checksum="deadbeef"),
+                facts=(_encoded_fact("f1", hostile),),
+            )
+        )
+
+        assert hostile not in html
+        block = _inlined_scene_block(html)
+        scene_data = json.loads(block)
+        assert scene_data["files"][0]["path"] == f"src/{hostile}.py"
+        assert scene_data["facts"][0]["note"] == hostile

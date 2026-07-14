@@ -62,6 +62,9 @@ def test_pr_reconciles_and_emits_html_from_head_estate(
     assert data["nodes"] == 2  # the estate (whole tree at head), not just the net set
     assert data["scored_files"] == 2  # complexity scored both estate files scc recognized
     assert data["consequential_files"] == 1  # src/app.py matched the .critical-paths marker
+    # slice 5: PR metadata garnish (author/review-state) is wired into the envelope.
+    assert data["author"] == "octocat"
+    assert data["review_state"] == "APPROVED"
 
     # The estate is resolved at the reconciled head OID — never the checkout's HEAD.
     assert ("ls_tree", "head111") in git.calls

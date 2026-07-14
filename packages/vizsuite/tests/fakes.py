@@ -81,19 +81,27 @@ class ScriptedGitRunner:
 
 @dataclass
 class ScriptedGhRunner:
-    """Feeds one scripted `gh api graphql` raw result; records the PR asked for.
+    """Feeds one scripted `gh api graphql` result and one scripted `gh pr view
+    --json` metadata result; records the PR number every call asked for.
 
-    Reconcile parses this raw `GhResult` through the real `parse_pr_view`, so a
-    test exercises the actual parse path (not a hand-built `PrView`). Build the
-    `GhResult` with `gh_pr_result(...)`.
+    Reconcile parses these raw `GhResult`s through the real `parse_pr_view`/
+    `parse_pr_meta`, so a test exercises the actual parse path (not a
+    hand-built `PrView`/`PrMeta`). Build them with `gh_pr_result(...)` /
+    `gh_pr_meta_result(...)`; `meta_result` defaults to a valid fixture so
+    tests that only care about OID reconciliation need not script it.
     """
 
-    result: GhResult
+    result: GhResult = field(default_factory=lambda: gh_pr_result(changed_files=0, commit_count=0))
+    meta_result: GhResult = field(default_factory=lambda: gh_pr_meta_result())
     calls: list[tuple[str, int]] = field(default_factory=list)
 
     def pr_graphql(self, pr_number: int) -> GhResult:
         self.calls.append(("pr_graphql", pr_number))
         return self.result
+
+    def pr_meta(self, pr_number: int) -> GhResult:
+        self.calls.append(("pr_meta", pr_number))
+        return self.meta_result
 
 
 def gh_pr_result(
@@ -117,6 +125,25 @@ def gh_pr_result(
                 }
             }
         }
+    }
+    return GhResult(returncode=0, stdout=json.dumps(payload), stderr="")
+
+
+def gh_pr_meta_result(
+    *,
+    author: str = "octocat",
+    review_state: str | None = "APPROVED",
+    created_at: str = "2026-07-01T00:00:00Z",
+    updated_at: str = "2026-07-02T00:00:00Z",
+    merged_at: str | None = None,
+) -> GhResult:
+    """Build a successful `gh pr view --json` `GhResult` (PR-metadata fixture)."""
+    payload = {
+        "author": {"login": author},
+        "reviewDecision": review_state,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+        "mergedAt": merged_at,
     }
     return GhResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
