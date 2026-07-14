@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from workcli.lifecycle.manifest import Manifest, deserialize_manifest
 from workcli.model import Item
 
 DELIVERED_MARKER = "[work] delivered:"  # leaf note prefix; full: "[work] delivered: <evidence>"
 SPEC_MARKER = "[work] spec:"  # placeholder note prefix; full: "[work] spec: <path>"
+MANIFEST_MARKER = (
+    "[work] manifest:"  # placeholder note; full: "[work] manifest: <serialized-manifest>"
+)
 ORPHAN_MARKER = "[work] orphan-by-choice"  # item note (exact)
 
 _CONTAINER_SHAPE_LABELS = frozenset({"shape-spec", "shape-epic"})
@@ -25,6 +29,19 @@ def spec_path(notes: str) -> str | None:
         stripped = line.strip()
         if stripped.startswith(SPEC_MARKER):
             return stripped[len(SPEC_MARKER) :].strip()
+    return None
+
+
+def manifest_snapshot(notes: str) -> Manifest | None:
+    """The parsed manifest recorded after the first `[work] manifest:` marker, or None.
+
+    Recovery replays toward this frozen snapshot and never re-reads the spec
+    file, so a post-delivery edit cannot silently drop or alter a committed unit.
+    """
+    for line in notes.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(MANIFEST_MARKER):
+            return deserialize_manifest(stripped[len(MANIFEST_MARKER) :].strip())
     return None
 
 

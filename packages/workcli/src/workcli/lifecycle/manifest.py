@@ -6,6 +6,7 @@ Pure text parsing -- no `Backend`, no I/O. `deliver` (Task 5) and `reconcile`
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from workcli.envelope import ErrorCode, WorkError
@@ -144,3 +145,32 @@ def _reject_duplicate_titles(items: tuple[ManifestItem, ...]) -> None:
                 ErrorCode.MANIFEST, f"manifest has duplicate item titles: {item.title!r}"
             )
         seen.add(item.title)
+
+
+def serialize_manifest(manifest: Manifest) -> str:
+    """Serialize a parsed `Manifest` to a single-line JSON string.
+
+    Recorded in-band as the `[work] manifest:` note's payload at first design
+    `deliver`, so recovery replays toward this frozen target instead of
+    re-reading the (mutable) spec file. Single-line (no literal newlines, even
+    across a multi-line title/AC — JSON escapes them) so it survives as one bd
+    note line the marker parser reads.
+    """
+    payload = {
+        "items": [
+            {"noun": item.noun, "title": item.title, "acceptance": item.acceptance}
+            for item in manifest.items
+        ],
+        "none_reason": manifest.none_reason,
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def deserialize_manifest(text: str) -> Manifest:
+    """Inverse of `serialize_manifest`: the recorded snapshot back to a `Manifest`."""
+    payload = json.loads(text)
+    items = tuple(
+        ManifestItem(noun=item["noun"], title=item["title"], acceptance=item["acceptance"])
+        for item in payload["items"]
+    )
+    return Manifest(items=items, none_reason=payload["none_reason"])

@@ -13,7 +13,14 @@ from __future__ import annotations
 import pytest
 
 from workcli.envelope import ErrorCode, WorkError
-from workcli.lifecycle.manifest import Manifest, ManifestItem, parse_continuations
+from workcli.lifecycle import MANIFEST_MARKER, manifest_snapshot
+from workcli.lifecycle.manifest import (
+    Manifest,
+    ManifestItem,
+    deserialize_manifest,
+    parse_continuations,
+    serialize_manifest,
+)
 
 
 def test_three_item_section_parses_into_three_manifest_items():
@@ -192,3 +199,50 @@ def test_duplicate_item_titles_are_rejected():
 
     assert exc_info.value.code == ErrorCode.MANIFEST
     assert "Add the flag" in str(exc_info.value.message)
+
+
+def test_serialize_deserialize_round_trips_a_multi_item_manifest():
+    manifest = Manifest(
+        items=(
+            ManifestItem(noun="feat", title="Add the flag", acceptance="flag toggles behavior"),
+            ManifestItem(
+                noun="bugfix", title="Fix the race — with an em dash, comma", acceptance="none"
+            ),
+        ),
+        none_reason=None,
+    )
+
+    assert deserialize_manifest(serialize_manifest(manifest)) == manifest
+
+
+def test_serialize_deserialize_round_trips_a_none_manifest():
+    manifest = Manifest(items=(), none_reason="this spec is the deliverable")
+
+    assert deserialize_manifest(serialize_manifest(manifest)) == manifest
+
+
+def test_serialize_manifest_is_single_line_so_it_survives_a_bd_note():
+    manifest = Manifest(
+        items=(ManifestItem(noun="feat", title="Multi\nline\ntitle", acceptance="ac"),),
+        none_reason=None,
+    )
+
+    assert "\n" not in serialize_manifest(manifest)
+
+
+def test_manifest_snapshot_reads_the_recorded_in_band_marker():
+    manifest = Manifest(
+        items=(ManifestItem(noun="feat", title="T", acceptance="A"),), none_reason=None
+    )
+    notes = f"leading note\n{MANIFEST_MARKER} {serialize_manifest(manifest)}\ntrailing note"
+
+    assert manifest_snapshot(notes) == manifest
+
+
+def test_manifest_snapshot_absent_marker_is_none():
+    assert manifest_snapshot("just a note\n[work] delivered: pr#1") is None
+
+
+def test_manifest_marker_prefix_is_the_pinned_wire_format():
+    # Serialization contract: the prefix is written to / read from bd notes.
+    assert MANIFEST_MARKER == "[work] manifest:"
