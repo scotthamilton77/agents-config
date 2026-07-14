@@ -184,6 +184,30 @@ def test_read_edges_on_record_missing_field_raises_typed_error(tmp_path: Path):
     assert exc_info.value.code == ErrorCode.SIDECAR_MALFORMED
 
 
+def test_read_flags_on_invalid_verdict_id_invariant_raises_typed_error(tmp_path: Path):
+    store = SidecarStore(tmp_path)
+    store.viz_dir.mkdir(parents=True)
+    # A doubt flag must not carry a verdict_id — the FlagRecord invariant.
+    (store.viz_dir / "flags.json").write_text(
+        json.dumps(
+            [
+                {
+                    "flag_id": "flag-1",
+                    "fact_id": "edge-1",
+                    "kind": "doubt",
+                    "reason": "churned",
+                    "verdict_id": "verdict-1",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VizError) as exc_info:
+        store.read_flags()
+    assert exc_info.value.code == ErrorCode.SIDECAR_MALFORMED
+
+
 def test_read_manifest_on_invalid_json_raises_typed_error(tmp_path: Path):
     store = SidecarStore(tmp_path)
     store.viz_dir.mkdir(parents=True)

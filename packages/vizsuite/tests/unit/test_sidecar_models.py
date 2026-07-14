@@ -241,6 +241,40 @@ def test_flag_record_from_json_rejects_unknown_kind():
         )
 
 
+def test_flag_record_rejects_doubt_flag_carrying_a_verdict_id():
+    with pytest.raises(ValueError, match="verdict_id must be set iff"):
+        FlagRecord(
+            flag_id="flag-1",
+            fact_id="fact-1",
+            kind=FlagKind.DOUBT,
+            reason="input changed",
+            verdict_id="verdict-1",
+        )
+
+
+def test_flag_record_rejects_orphaned_verdict_flag_without_a_verdict_id():
+    with pytest.raises(ValueError, match="verdict_id must be set iff"):
+        FlagRecord(
+            flag_id="flag-2",
+            fact_id="fact-1",
+            kind=FlagKind.ORPHANED_VERDICT,
+            reason="fact vanished on rebuild",
+        )
+
+
+def test_flag_record_from_json_rejects_doubt_flag_with_verdict_id():
+    with pytest.raises(ValueError, match="verdict_id must be set iff"):
+        flag_record_from_json(
+            {
+                "flag_id": "flag-1",
+                "fact_id": "fact-1",
+                "kind": "doubt",
+                "reason": "input changed",
+                "verdict_id": "verdict-1",
+            }
+        )
+
+
 def test_verdict_record_round_trips_through_json():
     record = VerdictRecord(
         verdict_id="verdict-1",

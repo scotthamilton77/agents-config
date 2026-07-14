@@ -72,13 +72,27 @@ class FactRecord:
     payload: dict[str, JsonValue] = field(default_factory=dict)
 
 
+class _FlagVerdictInvariantError(ValueError):
+    """Raised when a `FlagRecord`'s `verdict_id` presence disagrees with its `kind`.
+
+    An orphaned-verdict flag must carry a `verdict_id`; a doubt flag must not.
+    Subclassing `ValueError` lets the sidecar store wrap a violation from a
+    deserialized record into a `VizError(SIDECAR_MALFORMED)` at the read
+    boundary (the message is fixed on the class per ruff TRY003).
+    """
+
+    def __init__(self) -> None:
+        super().__init__("verdict_id must be set iff kind is ORPHANED_VERDICT")
+
+
 @dataclass(frozen=True)
 class FlagRecord:
     """A `flags.json` entry: a doubt flag or an orphaned-verdict flag (spec §5.3).
 
     `verdict_id` is set only for an orphaned-verdict flag (the verdict whose
     subject fact changed or vanished on rebuild); a doubt flag references only
-    its fact.
+    its fact. `__post_init__` enforces this invariant in both directions so both
+    directly-constructed and deserialized records are guaranteed consistent.
     """
 
     flag_id: str
@@ -86,6 +100,10 @@ class FlagRecord:
     kind: FlagKind
     reason: str
     verdict_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.kind == FlagKind.ORPHANED_VERDICT) != (self.verdict_id is not None):
+            raise _FlagVerdictInvariantError
 
 
 @dataclass(frozen=True)
