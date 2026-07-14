@@ -72,6 +72,7 @@ def _state(
     items: list[ReviewItem] | None = None,
     last_poll_sha: str = "pollsha",
     last_pushed_head_sha: str = "",
+    last_review_invalidated_sha: str = "",
     reviewers_present: bool = False,
     phase: PRPhase = PRPhase.QUIESCED,
 ) -> PRGroomingState:
@@ -96,6 +97,7 @@ def _state(
         quiescence=QuiescenceState(),
         last_poll_sha=last_poll_sha,
         last_pushed_head_sha=last_pushed_head_sha,
+        last_review_invalidated_sha=last_review_invalidated_sha,
         reviewers=reviewers,
         items=items or [],
     )
@@ -249,7 +251,16 @@ def test_copilot_status_review_found_when_reviewers_present() -> None:
 
 
 def test_pr_head_sha_fields() -> None:
-    inv = to_legacy_inventory(_state(last_poll_sha="poll", last_pushed_head_sha="pushed"))
+    # Production invariant: a prgroom push sets last_review_invalidated_sha
+    # alongside last_pushed_head_sha (push.py), and the head hasn't been re-polled
+    # yet — so head_sha_after_push tracks the freshly-pushed (invalidated) head.
+    inv = to_legacy_inventory(
+        _state(
+            last_poll_sha="poll",
+            last_pushed_head_sha="pushed",
+            last_review_invalidated_sha="pushed",
+        )
+    )
     assert inv["pr"] == {
         "owner": "octo-org",
         "repo": "demo-repo",
@@ -262,20 +273,48 @@ def test_pr_head_sha_fields() -> None:
 # ── Head-sha / filename precedence ──────────────────────────────────────────
 
 
-def test_filename_prefers_pushed_head_sha(tmp_path: Path) -> None:
+def test_filename_prefers_invalidated_head_sha(tmp_path: Path) -> None:
+    # The "just pushed, not yet re-polled" window: invalidated leads poll.
     path = legacy_inventory_path(
-        tmp_path, _state(last_poll_sha="poll", last_pushed_head_sha="pushed")
+        tmp_path,
+        _state(
+            last_poll_sha="poll",
+            last_pushed_head_sha="pushed",
+            last_review_invalidated_sha="pushed",
+        ),
     )
     assert path == tmp_path / "octo-org-demo-repo-42-pushed.json"
 
 
 def test_filename_falls_back_to_poll_sha(tmp_path: Path) -> None:
-    path = legacy_inventory_path(tmp_path, _state(last_poll_sha="poll", last_pushed_head_sha=""))
+    # Bootstrap poll sets last_poll_sha but no invalidated sha.
+    path = legacy_inventory_path(
+        tmp_path, _state(last_poll_sha="poll", last_review_invalidated_sha="")
+    )
     assert path == tmp_path / "octo-org-demo-repo-42-poll.json"
 
 
+def test_filename_ignores_stale_pushed_head_sha_after_external_push(tmp_path: Path) -> None:
+    # Regression (PR #274 review): after prgroom pushes head "oldpush", an EXTERNAL
+    # push moves the head to "newhead". poll.py advances last_poll_sha and
+    # last_review_invalidated_sha to "newhead" but leaves last_pushed_head_sha stale
+    # at "oldpush". The export MUST pin to the current head, never the stale push.
+    path = legacy_inventory_path(
+        tmp_path,
+        _state(
+            last_poll_sha="newhead",
+            last_review_invalidated_sha="newhead",
+            last_pushed_head_sha="oldpush",
+        ),
+    )
+    assert path == tmp_path / "octo-org-demo-repo-42-newhead.json"
+
+
 def test_export_skips_when_no_head_sha(tmp_path: Path) -> None:
-    export_legacy_inventory(_state(last_poll_sha="", last_pushed_head_sha=""), tmp_path)
+    export_legacy_inventory(
+        _state(last_poll_sha="", last_pushed_head_sha="", last_review_invalidated_sha=""),
+        tmp_path,
+    )
     assert list(tmp_path.iterdir()) == []
 
 

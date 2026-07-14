@@ -82,8 +82,18 @@ def resolve_legacy_dir(
 
 
 def _head_sha(state: PRGroomingState) -> str:
-    """The head SHA the legacy filename pins to: pushed head wins, else poll SHA."""
-    return state.last_pushed_head_sha or state.last_poll_sha
+    """The PR's current head SHA the legacy filename pins to.
+
+    ``last_review_invalidated_sha`` is set on *every* head change — prgroom's own
+    push (``push.py``) and an external push (``poll.py``'s sha attribution) — so it
+    tracks the current head, leading ``last_poll_sha`` only in the "pushed but not
+    yet re-polled" window. ``last_pushed_head_sha`` must NOT be used: it is set
+    solely by prgroom's own push and is never re-cleared, so after an external push
+    it goes stale and would pin the export to an old head (filename mismatch +
+    ``head_sha_after_push`` older than ``head_sha_at_inventory``). Falls back to
+    ``last_poll_sha`` for the bootstrap poll, which sets no invalidated sha.
+    """
+    return state.last_review_invalidated_sha or state.last_poll_sha
 
 
 def legacy_inventory_path(export_dir: Path, state: PRGroomingState) -> Path:
