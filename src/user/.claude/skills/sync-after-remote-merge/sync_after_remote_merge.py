@@ -232,10 +232,21 @@ def main(argv: list[str] | None = None) -> int:
         common = Path(_run_step(["git", "rev-parse", "--git-common-dir"],
                                 "preflight", "cannot resolve the git common dir").stdout.strip()).resolve()
         main_root = str(common.parent)
-        branch = args.branch or _run_step(["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                                          "preflight", "cannot resolve current branch").stdout.strip()
+        head_branch = _run_step(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                "preflight", "cannot resolve current branch").stdout.strip()
+        branch = args.branch or head_branch
         _require_safe_ref(branch, "branch")
         convention = detect_convention(worktree_root, Path(main_root))
+        # In a worktree, gate B (clean check) and teardown (worktree removal) act
+        # on THIS checkout, whose branch is head_branch. An explicit --branch that
+        # names a different ref would containment-check and delete that ref while
+        # removing this worktree — incoherent, so fail closed. Normal repos
+        # legitimately delete a merged branch other than HEAD, so the guard is
+        # worktree-only.
+        if convention in (Convention.OTHER_AGENT, Convention.CLAUDE_NATIVE) and branch != head_branch:
+            raise _AbortStep("preflight",
+                             f"--branch {branch!r} does not match the worktree's checked-out "
+                             f"branch {head_branch!r}; refusing to act on a mismatched checkout")
         completed.append("preflight")
 
         # --- verify merged ---

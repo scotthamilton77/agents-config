@@ -410,6 +410,49 @@ def test_main_merged_pr_without_head_oid_aborts(monkeypatch, main_repo):
     assert wt.exists()
 
 
+def test_main_branch_mismatch_in_worktree_aborts(monkeypatch, main_repo):
+    """In a worktree, an explicit --branch differing from the checked-out branch
+    is refused: gate B and teardown act on THIS checkout, so containment-checking
+    and deleting a different ref (while removing this worktree) is incoherent."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "push", "origin", "feature/x")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "some-other-branch"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "preflight"
+    assert "some-other-branch" in json.dumps(env)
+    assert wt.exists()
+
+
+def test_main_branch_mismatch_in_normal_repo_is_allowed(monkeypatch, main_repo):
+    """Normal repo: deleting a merged branch other than the checked-out one is
+    the normal workflow, so the worktree-only branch-match guard must NOT fire."""
+    (main_repo / "g.txt").write_text("feature\n")
+    _git(main_repo, "checkout", "-b", "feature/x")
+    _git(main_repo, "add", "g.txt")
+    _git(main_repo, "commit", "-m", "feature")
+    _git(main_repo, "push", "origin", "feature/x")
+    head_f = _head(main_repo)
+    _git(main_repo, "checkout", "main")
+    _git(main_repo, "merge", "--squash", "feature/x")
+    _git(main_repo, "commit", "-m", "squash: feature")
+    _git(main_repo, "push", "origin", "main")
+    squash_oid = _head(main_repo)
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": squash_oid}, "headRefOid": head_f}
+    rc, env = _run_main(monkeypatch, main_repo, pr, ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "ok"
+    assert env["worktree_convention"] == "normal-repo"
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" not in branches
+
+
 def test_main_rejects_dash_leading_branch(monkeypatch, main_repo):
     """A ref beginning with '-' would be parsed by git as an option on the
     destructive teardown/sync commands — refuse it before any git runs."""
