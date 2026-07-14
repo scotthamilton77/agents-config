@@ -489,13 +489,45 @@ def _run_project(
     selected_kits = {
         kit_name_of(sk.selector_key) for sk in staged_kits if sk.ref.dest_relpath in project_dests
     }
-    adapters = kit_adapters(kits_root, project_root, selected=selected_kits)
+    kit_route_adapters = kit_adapters(kits_root, project_root, selected=selected_kits)
+
+    # Tool tail: refs in the resolved PROJECT scope with a tool (as opposed to
+    # tool-agnostic kit refs, whose `ref.tool is None`) get synced under
+    # `project_root`'s tool tree instead of the plugin-route path above.
+    # Validation-first: every such ref's top-level namespace segment must be
+    # one of the destination tool's declared `project_namespaces()` — a tool
+    # with an empty `project_namespaces()` (Codex/Gemini/OpenCode today)
+    # accepts no project-scoped tool refs at all. Fails loud, naming the tool
+    # and namespace, before any file is written.
+    tool_dest_relpaths: dict[Tool, set[Path]] = {}
+    for ref in resolved.included.get(Scope.PROJECT, ()):
+        if ref.tool is not None:
+            tool_dest_relpaths.setdefault(ref.tool, set()).add(ref.dest_relpath)
+    for tool, dest_relpaths in tool_dest_relpaths.items():
+        allowed_namespaces = set(get_adapter(tool).project_namespaces())
+        for dest_relpath in sorted(dest_relpaths):
+            namespace = dest_relpath.parts[0]
+            if namespace not in allowed_namespaces:
+                sys.stderr.write(
+                    f"installer: tool {tool.value!r} cannot install {namespace!r} to "
+                    f"project scope (not in its project_namespaces()); selected "
+                    f"path: {dest_relpath}\n"
+                )
+                return 1
+
+    tool_adapters = [get_adapter(tool) for tool in tool_dest_relpaths]
+    tool_dest_roots = {adapter.name: adapter.dest_dir(project_root) for adapter in tool_adapters}
+    tool_plans = {
+        tool: filter_plan_to_scope(plans[tool], dest_relpaths)
+        for tool, dest_relpaths in tool_dest_relpaths.items()
+    }
 
     receipt_path = project_root / ".agents-config" / "install-receipt.json"
     lock_cm: AbstractContextManager[None] = (
         nullcontext() if args.dry_run else receipt_lock(receipt_path.with_suffix(".lock"))
     )
     counters: dict[str, Counters] = {}
+    tool_outcomes: dict[str, list[InstallOutcome]] = {}
     plugin_outcomes: dict[str, list[InstallOutcome]] = {}
     try:
         with lock_cm:
@@ -508,8 +540,20 @@ def _run_project(
             try:
                 _merge_into(
                     counters,
+                    install_pipeline(
+                        tool_adapters,
+                        plans=tool_plans,
+                        home=project_root,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=args.yes,
+                        outcomes_by_tool=tool_outcomes,
+                    ),
+                )
+                _merge_into(
+                    counters,
                     install_plugin_routes(
-                        adapters,
+                        kit_route_adapters,
                         home=project_root,
                         io=io,
                         dry_run=args.dry_run,
@@ -523,9 +567,9 @@ def _run_project(
                 record_receipt(
                     receipt_path,
                     prior=prior,
-                    dest_roots={},
+                    dest_roots=tool_dest_roots,
                     home=project_root,
-                    tool_outcomes={},
+                    tool_outcomes=tool_outcomes,
                     plugin_outcomes=plugin_outcomes,
                     pruned_paths=set(),
                     relinquished_paths=set(),
@@ -536,7 +580,7 @@ def _run_project(
 
     render_summary(
         counters,
-        tools=[],
+        tools=[t.value for t in tool_dest_relpaths],
         plugins=sorted(plugin_outcomes),
         all_tools=[],
         all_plugins=[],

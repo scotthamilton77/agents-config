@@ -141,6 +141,84 @@ def test_project_persisted_profiles_resolved_without_explicit_flag(tmp_path: Pat
     assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
 
 
+def _hermetic_repo_with_project_tool_profile(tmp_path: Path) -> Path:
+    """``_hermetic_repo`` plus a hermetic ``profiles.toml`` (independent of the
+    real repo-root one — no beads kit needed) carrying one profile,
+    ``proj-skill``, that routes the shared ``skills/foo`` namespace item to
+    project scope via an explicit include-entry override. Also seeds a real
+    ``skills/foo`` shared skill dir so it stages as a ``DIR`` item for every
+    tool (shared namespaces stage for all tools regardless of
+    ``scoped_namespaces()`` — see ``core/staging.py`` Phase 2)."""
+    repo = _hermetic_repo(tmp_path)
+    skill_dir = repo / "src" / "user" / ".agents" / "skills" / "foo"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_bytes(b"foo skill\n")
+    (repo / "profiles.toml").write_text(
+        "schema = 1\n"
+        "\n"
+        "[scopes]\n"
+        '"instructions" = "user"\n'
+        '"settings" = "user"\n'
+        '"skills/**" = "user"\n'
+        '"agents/**" = "user"\n'
+        '"rules/**" = "user"\n'
+        "\n"
+        "[profiles.proj-skill]\n"
+        'include = [{select="skills/foo", scope="project"}]\n',
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_project_tool_ref_writes_under_project_dest(tmp_path: Path) -> None:
+    """A project-scoped tool ref (skills/foo, scope="project") for the sole
+    active tool (claude, whose project_namespaces() includes "skills") writes
+    under <project>/.claude/skills/foo and is recorded in the receipt under
+    the claude dest root — the tool tail, not the kit path."""
+    repo = _hermetic_repo_with_project_tool_profile(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=proj-skill", "--tools=claude", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (project / ".claude" / "skills" / "foo" / "SKILL.md").read_bytes() == b"foo skill\n"
+    receipt = project / ".agents-config" / "install-receipt.json"
+    assert receipt.is_file()
+    assert "claude" in receipt.read_text()
+    # Never wrote to user space.
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_project_tool_ref_outside_project_namespaces_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The same profile selected for codex — whose project_namespaces() is ()
+    — must fail validation naming the tool and namespace, never silently
+    install or silently drop the ref."""
+    repo = _hermetic_repo_with_project_tool_profile(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=proj-skill", "--tools=codex", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "codex" in err
+    assert "skills" in err
+    assert not (project / ".codex").exists()
+
+
 def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
     """A plain user install (no --project) must stay byte-identical once
     main()'s resolver pass (S2 Task 9) is wired in ahead of install_pipeline.
