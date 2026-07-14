@@ -260,6 +260,17 @@ body {
   outline: 2px solid var(--viz-fg);
   outline-offset: -2px;
 }
+/* Keyboard focus affordance (a11y): a visible, theme-aware ring on the
+   focused tile. `--viz-fg` is the highest-contrast token in both themes
+   (black on light, white on dark). Ordered after the in-pr rule and drawn
+   just outside the tile (outset offset + raised z-index) so it stays
+   distinct from the inset in-pr outline — a focused in-pr tile still shows
+   focus. */
+.viz-tile:focus-visible {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: 1px;
+  z-index: 1;
+}
 .viz-tile[data-collapsed="true"] .viz-collapse-glyph::before {
   content: "▸";
 }

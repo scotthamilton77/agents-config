@@ -210,6 +210,17 @@
     var startX = 0;
     var startY = 0;
     var moved = false;
+    // Single dispatch shared by pointer and keyboard activation — reads the
+    // *live* bound datum at event time so a tile that survived several
+    // re-layouts always acts on its current data.
+    function activate() {
+      var current = d3.select(el).datum();
+      if (current.data.isFile) {
+        handlers.onFileClick(current.data);
+      } else {
+        handlers.onDirClick(current.data);
+      }
+    }
     el.addEventListener("pointerdown", function (evt) {
       startX = evt.clientX;
       startY = evt.clientY;
@@ -224,13 +235,35 @@
       if (moved) {
         return;
       }
-      var current = d3.select(el).datum();
-      if (current.data.isFile) {
-        handlers.onFileClick(current.data);
-      } else {
-        handlers.onDirClick(current.data);
-      }
+      activate();
     });
+    // Keyboard operability (a11y): Enter and Space trigger the exact same
+    // drill/collapse action as a click. Space must preventDefault or the page
+    // scrolls; "Spacebar" is the legacy IE/Edge key value. Bound on tile enter
+    // alongside the pointer handlers, so it persists across d3 re-layouts.
+    el.addEventListener("keydown", function (evt) {
+      if (evt.key !== "Enter" && evt.key !== " " && evt.key !== "Spacebar") {
+        return;
+      }
+      evt.preventDefault();
+      activate();
+    });
+  }
+
+  // Accessible name for a tile (a11y), set via the `aria-label` attribute —
+  // repo-derived path strings flow through d3's `.attr()` (never innerHTML), so
+  // the textContent/attribute-only binding invariant holds. Recomputed in the
+  // merged attr chain on every render so a directory's collapsed/expanded flip
+  // updates its announced state.
+  function tileAriaLabel(d) {
+    var data = d.data;
+    if (data.isFile) {
+      return data.path;
+    }
+    if (data.collapsed) {
+      return data.path + " (collapsed directory, " + data.count + " files)";
+    }
+    return data.path + " (directory)";
   }
 
   function buildTileContent(wrapper, d) {
@@ -291,6 +324,12 @@
       .attr("data-in-pr", function (d) {
         return d.data.inPr ? "true" : "false";
       })
+      // Keyboard reachability + screen-reader semantics (a11y): tiles are
+      // focusable buttons with an accessible name. Re-applied every render so
+      // rebuilt/toggled tiles keep the contract.
+      .attr("role", "button")
+      .attr("tabindex", "0")
+      .attr("aria-label", tileAriaLabel)
       .style("left", function (d) {
         return d.x0 + "px";
       })
