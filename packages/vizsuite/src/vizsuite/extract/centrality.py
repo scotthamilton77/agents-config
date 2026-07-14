@@ -12,7 +12,8 @@ for this `directed: false` payload it returns an undirected `Graph`, which has
 no `in_degree`.
 
 graphify is an optional dependency: an absent `graphify-out/`, a stale build
-(`built_at_commit != head_oid`), or unparseable/torn JSON all fail soft to
+(`built_at_commit != head_oid`), unparseable/torn JSON, or valid JSON of the
+wrong shape (non-object payload, malformed nodes/links) all fail soft to
 `CentralityAxis.unavailable(...)` — never a crash, never stale-as-fresh.
 """
 
@@ -71,28 +72,37 @@ def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
     if not graph_path.exists():
         return CentralityAxis.unavailable("graphify-out absent")  # optional dep, fail soft
     try:
-        raw: dict[str, Any] = json.loads(graph_path.read_text(encoding="utf-8"))
+        raw: Any = json.loads(graph_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return CentralityAxis.unavailable("graph.json unreadable (torn mid-write?)")  # fail soft
+    if not isinstance(raw, dict):
+        return CentralityAxis.unavailable("graph.json malformed (not a JSON object)")
     if raw.get("built_at_commit") != head_oid:
         return CentralityAxis.unavailable("graph build-commit != PR head")  # never stale-as-fresh
 
+    # The whole rollup + graph build is one fail-soft boundary: graphify's JSON
+    # is outside-world input, so any wrong-shape payload that survived parsing
+    # (non-object nodes/links entries, non-iterable containers, missing keys)
+    # funnels to unavailable() rather than escaping as a raw exception.
     try:
         nodes = raw["nodes"]
         links = raw["links"]
-    except (KeyError, TypeError):
-        return CentralityAxis.unavailable("graph.json missing nodes/links")
-
-    id_to_file = {n["id"]: n["source_file"] for n in nodes if n.get("source_file")}
-    graph: nx.DiGraph[str] = nx.DiGraph()
-    for link in links:
-        if link.get("relation") not in DEP_RELATIONS:
-            continue
-        if link.get("confidence") != _EXTRACTED:  # Tier-1 determinism (R3-1)
-            continue
-        src = id_to_file.get(link.get("source"))
-        dst = id_to_file.get(link.get("target"))
-        if src is None or dst is None or src == dst:  # drop intra-file edges
-            continue
-        graph.add_edge(src, dst)  # file-level dependency edge
+        id_to_file = {
+            n["id"]: n["source_file"] for n in nodes if n.get("id") and n.get("source_file")
+        }
+        graph: nx.DiGraph[str] = nx.DiGraph()
+        for link in links:
+            if link.get("relation") not in DEP_RELATIONS:
+                continue
+            if link.get("confidence") != _EXTRACTED:  # Tier-1 determinism (R3-1)
+                continue
+            src = id_to_file.get(link.get("source"))
+            dst = id_to_file.get(link.get("target"))
+            if src is None or dst is None or src == dst:  # drop intra-file edges
+                continue
+            graph.add_edge(src, dst)  # file-level dependency edge
+    except (KeyError, TypeError, AttributeError):
+        return CentralityAxis.unavailable(
+            "graph.json malformed (missing or wrong-shape nodes/links)"
+        )
     return CentralityAxis.from_indegree(dict(graph.in_degree()))  # normalized 0-1 per file

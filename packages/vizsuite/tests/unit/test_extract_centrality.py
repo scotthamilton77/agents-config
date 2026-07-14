@@ -209,6 +209,48 @@ def test_graph_json_missing_nodes_or_links_is_unavailable_not_a_crash(tmp_path: 
     assert axis.scores is None
 
 
+@pytest.mark.parametrize(
+    "payload_text",
+    [
+        pytest.param('["not", "an", "object"]', id="top-level-array"),
+        pytest.param('"just a string"', id="top-level-string"),
+        pytest.param(
+            json.dumps({"built_at_commit": HEAD_OID, "nodes": ["a", "b"], "links": []}),
+            id="non-object-nodes",
+        ),
+        pytest.param(
+            json.dumps(
+                {
+                    "built_at_commit": HEAD_OID,
+                    "nodes": [{"id": "a", "source_file": "a.py"}],
+                    "links": ["not-an-object"],
+                }
+            ),
+            id="non-object-links",
+        ),
+        pytest.param(
+            json.dumps({"built_at_commit": HEAD_OID, "nodes": 42, "links": 7}),
+            id="non-iterable-nodes-links",
+        ),
+    ],
+)
+def test_valid_json_with_wrong_shape_is_unavailable_not_a_crash(
+    tmp_path: Path, payload_text: str
+) -> None:
+    # Valid JSON that is not the expected node-link object shape (top-level
+    # array/scalar, non-object node or link entries, non-iterable containers)
+    # must fail soft like any other malformed graph.json — never raise.
+    graph_path = tmp_path / "graphify-out" / "graph.json"
+    graph_path.parent.mkdir(parents=True, exist_ok=True)
+    graph_path.write_text(payload_text, encoding="utf-8")
+
+    axis = centrality_axis(graph_path, HEAD_OID)
+
+    assert not axis.is_available
+    assert axis.scores is None
+    assert axis.unavailable_reason
+
+
 def test_centrality_axis_unavailable_and_from_indegree_helpers() -> None:
     unavailable = CentralityAxis.unavailable("no graphify-out")
     assert unavailable.scores is None
