@@ -39,10 +39,14 @@ class CentralityAxis:
     `scores` is `None` exactly when the axis is unavailable (optional
     dependency absent, stale, or unparseable) — distinct from an *available*
     axis whose graph happens to carry zero qualifying edges (an empty dict).
+    `edges` is the same file-level `DiGraph`'s EXTRACTED, intra-file-excluded
+    edge list the scores were derived from (one graph build, kept together);
+    it is empty whenever the axis is unavailable — never a stale edge set.
     """
 
     scores: dict[str, float] | None
     unavailable_reason: str | None = None
+    edges: tuple[tuple[str, str], ...] = ()
 
     @property
     def is_available(self) -> bool:
@@ -53,14 +57,16 @@ class CentralityAxis:
         return CentralityAxis(scores=None, unavailable_reason=reason)
 
     @staticmethod
-    def from_indegree(indegree: dict[str, int]) -> CentralityAxis:
+    def from_indegree(
+        indegree: dict[str, int], edges: tuple[tuple[str, str], ...] = ()
+    ) -> CentralityAxis:
         """Normalize raw file-level in-degree counts to a 0-1 axis."""
         max_degree = max(indegree.values(), default=0)
         scores = {
             path: (degree / max_degree if max_degree > 0 else 0.0)
             for path, degree in indegree.items()
         }
-        return CentralityAxis(scores=scores)
+        return CentralityAxis(scores=scores, edges=edges)
 
 
 def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
@@ -105,4 +111,9 @@ def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
         return CentralityAxis.unavailable(
             "graph.json malformed (missing or wrong-shape nodes/links)"
         )
-    return CentralityAxis.from_indegree(dict(graph.in_degree()))  # normalized 0-1 per file
+    # Same graph, same pass: the edge list backing `scores` is just this
+    # DiGraph's own (already EXTRACTED-only, intra-file-excluded) edges.
+    # Ordering is left to the downstream `scene_to_json` sort — no need to
+    # sort twice.
+    edges = tuple(graph.edges())
+    return CentralityAxis.from_indegree(dict(graph.in_degree()), edges=edges)

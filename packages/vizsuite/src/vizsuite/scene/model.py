@@ -81,6 +81,20 @@ class Fact:
 
 
 @dataclass(frozen=True)
+class Edge:
+    """A directed top-level file-dependency edge (spec §4.4 typed-edge shape).
+
+    `kind` is the edge-kind vocabulary tag (spec §4.4 encoding-spine); V1's
+    only source is the EXTRACTED centrality axis, so `kind` is always
+    `"dependency"` here.
+    """
+
+    source: str
+    target: str
+    kind: str
+
+
+@dataclass(frozen=True)
 class AttributeDescriptor:
     """Self-describing metadata for one scene attribute (spec §4.4)."""
 
@@ -130,6 +144,7 @@ class Scene:
     fingerprints: Fingerprints
     descriptors: tuple[AttributeDescriptor, ...] = ()  # heat axes' metadata, via .2.2 (§4.4)
     facts: tuple[Fact, ...] = ()  # Tier-2/3 facts; empty until .2.3 has a producer
+    edges: tuple[Edge, ...] = ()  # EXTRACTED file-dependency edges (§4.4), via .2.2 centrality
     recommendations: tuple[JsonValue, ...] = ()  # always empty for V1 (spec §4.4)
     events: tuple[JsonValue, ...] = ()  # reserved for V3 (spec §4.4/§8); always empty here
     render_config: RenderConfig = field(default_factory=lambda: RenderConfig(default_weights={}))
@@ -154,6 +169,10 @@ def _fact_to_json(fact: Fact) -> dict[str, JsonValue]:
 
 def _descriptor_to_json(descriptor: AttributeDescriptor) -> dict[str, JsonValue]:
     return {"name": descriptor.name, "unit": descriptor.unit, "direction": descriptor.direction}
+
+
+def _edge_to_json(edge: Edge) -> dict[str, JsonValue]:
+    return {"source": edge.source, "target": edge.target, "kind": edge.kind}
 
 
 def _fingerprints_to_json(fingerprints: Fingerprints) -> dict[str, JsonValue]:
@@ -189,6 +208,10 @@ def scene_to_json(scene: Scene) -> dict[str, JsonValue]:
     descriptors_json: list[JsonValue] = [
         _descriptor_to_json(descriptor) for descriptor in scene.descriptors
     ]
+    edges_json: list[JsonValue] = [
+        _edge_to_json(edge)
+        for edge in sorted(scene.edges, key=lambda edge: (edge.source, edge.target, edge.kind))
+    ]
     return {
         "schema_version": scene.schema_version,
         "generated_at": scene.generated_at,
@@ -198,6 +221,7 @@ def scene_to_json(scene: Scene) -> dict[str, JsonValue]:
         "fingerprints": _fingerprints_to_json(scene.fingerprints),
         "descriptors": descriptors_json,
         "facts": facts_json,
+        "edges": edges_json,
         "recommendations": list(scene.recommendations),
         "events": list(scene.events),
         "render_config": _render_config_to_json(scene.render_config),

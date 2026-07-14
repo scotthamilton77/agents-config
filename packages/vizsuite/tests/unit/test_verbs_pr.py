@@ -267,6 +267,11 @@ def test_pr_threads_heat_axes_repo_nwo_and_in_pr_into_the_scene(
     assert by_path["src/app.py"]["in_pr"] is True  # net-set file
     assert by_path["lib/util.py"]["in_pr"] is False  # context-only file
     assert by_path["src/app.py"]["load_bearing"] == 1.0  # sole EXTRACTED in-edge
+    # .2.2 slice 4: the same EXTRACTED, intra-file-excluded edge backing
+    # load_bearing threads onto the scene as a top-level dependency edge.
+    assert scene["edges"] == [
+        {"source": "lib/util.py", "target": "src/app.py", "kind": "dependency"}
+    ]
 
 
 def test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent(
@@ -304,3 +309,5 @@ def test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent(
     by_path = {node["path"]: node["attributes"] for node in scene["files"]}
     # a real zero, never a stale/omitted value (spec §6.2).
     assert by_path["src/app.py"]["load_bearing"] == 0.0
+    # fail-soft: an unavailable centrality axis threads an empty edge set too.
+    assert scene["edges"] == []

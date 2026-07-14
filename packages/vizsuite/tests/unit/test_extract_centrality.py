@@ -126,6 +126,34 @@ def test_naive_node_link_graph_construction_lacks_in_degree_locking_the_trap() -
         naive_graph.in_degree()  # type: ignore[operator]
 
 
+def test_edges_are_extracted_only_and_intra_file_excluded(tmp_path: Path) -> None:
+    # a.py -> b.py is a genuine cross-file EXTRACTED edge (must appear in edges).
+    # c.py -> d.py is INFERRED only (Tier-2, out of scope — must be excluded).
+    # e1/e2 are two symbols in the SAME file (intra-file EXTRACTED edge, excluded).
+    payload = _graph_json(
+        built_at_commit=HEAD_OID,
+        nodes=[
+            _node("a1", "a.py"),
+            _node("b1", "b.py"),
+            _node("c1", "c.py"),
+            _node("d1", "d.py"),
+            _node("e1", "e.py"),
+            _node("e2", "e.py"),
+        ],
+        links=[
+            _link("a1", "b1", relation="calls", confidence="EXTRACTED"),
+            _link("c1", "d1", relation="calls", confidence="INFERRED"),
+            _link("e1", "e2", relation="uses", confidence="EXTRACTED"),
+        ],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID)
+
+    assert axis.is_available
+    assert axis.edges == (("a.py", "b.py"),)
+
+
 def test_head_built_graph_scores_a_newly_added_files_incoming_edges(tmp_path: Path) -> None:
     # A head-built graph (built_at_commit == head_oid) already contains the new
     # file's edges — no overlay step needed, just the preflight passing.
@@ -256,11 +284,16 @@ def test_centrality_axis_unavailable_and_from_indegree_helpers() -> None:
     assert unavailable.scores is None
     assert unavailable.unavailable_reason == "no graphify-out"
     assert not unavailable.is_available
+    assert unavailable.edges == ()  # fail-soft means empty edges too, never stale ones
 
     available = CentralityAxis.from_indegree({"a.py": 2, "b.py": 1, "c.py": 0})
     assert available.is_available
     assert available.scores == {"a.py": 1.0, "b.py": 0.5, "c.py": 0.0}
+    assert available.edges == ()  # edges is opt-in via the `edges=` kwarg
 
     empty = CentralityAxis.from_indegree({})
     assert empty.is_available
     assert empty.scores == {}
+
+    edged = CentralityAxis.from_indegree({"a.py": 1}, edges=(("x.py", "a.py"),))
+    assert edged.edges == (("x.py", "a.py"),)

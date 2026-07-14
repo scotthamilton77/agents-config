@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from vizsuite.envelope import ErrorCode, JsonValue, VizError
 from vizsuite.scene.model import (
     AttributeDescriptor,
+    Edge,
     Fact,
     FileNode,
     Fingerprints,
@@ -58,6 +59,7 @@ def assemble(
     attributes: dict[str, dict[str, JsonValue]] | None = None,
     render_config: RenderConfig | None = None,
     repo_nwo: str = "",
+    edges: Sequence[Edge] = (),
 ) -> Scene:
     """Assemble the estate `{path: blob_sha}` plus fingerprints/facts into a `Scene`.
 
@@ -70,6 +72,9 @@ def assemble(
     fails the schema gate. `attributes` (keyed by path, as produced by
     `scene.heat.combine`) attaches each file's heat-axis values to its matching
     `FileNode`; a path with no entry keeps the pre-.2.2 empty attribute map.
+    `edges` (typically the EXTRACTED centrality axis's file-dependency pairs,
+    tagged `kind="dependency"` by the caller) threads onto the scene as-is —
+    `scene_to_json` is the sort point, not this function.
     """
     _validate_facts(facts)
 
@@ -93,6 +98,7 @@ def assemble(
         fingerprints=fingerprints,
         descriptors=tuple(descriptors),
         facts=tuple(facts),
+        edges=tuple(edges),
         render_config=render_config
         if render_config is not None
         else RenderConfig(default_weights={}),

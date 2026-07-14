@@ -36,7 +36,7 @@ from vizsuite.reconcile.snapshot import materialize
 from vizsuite.runners import Runners
 from vizsuite.scene import heat
 from vizsuite.scene.assemble import assemble
-from vizsuite.scene.model import RenderConfig
+from vizsuite.scene.model import Edge, RenderConfig
 from vizsuite.templates.html import render_html
 
 
@@ -74,6 +74,12 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         estate_map, complexity_scores, consequence_scores, centrality, set(scope.files)
     )
 
+    # The centrality axis's own EXTRACTED, intra-file-excluded edges (empty
+    # when the axis is unavailable — same fail-soft guarantee as load_bearing).
+    edges = tuple(
+        Edge(source=source, target=target, kind="dependency") for source, target in centrality.edges
+    )
+
     scene = assemble(
         estate_map,
         pr_number=pr_number,
@@ -88,6 +94,7 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
             unavailable_axes=heat_model.unavailable_axes,
         ),
         repo_nwo=scope.meta.repo_nwo,
+        edges=edges,
     )
     html = render_html(scene)
 
