@@ -36,6 +36,14 @@ class ErrorCode(StrEnum):
     # slice 5: a Tier-2/Tier-3-touched scene fact is missing its provenance or
     # citations — the assembler's schema gate refuses to assemble it silently.
     SCHEMA_INVALID = "E_SCHEMA_INVALID"
+    # sidecar slice: a `.viz/*.json` record file's content doesn't parse into its
+    # typed record shape (bad JSON, missing/mistyped field) — never a raw
+    # KeyError/JSONDecodeError escaping the sidecar read boundary.
+    SIDECAR_MALFORMED = "E_SIDECAR_MALFORMED"
+    # sidecar slice: the single-writer advisory lock (`.viz/lock`) is still held
+    # by another writer after the bounded retry window — never an unbounded
+    # block.
+    SIDECAR_LOCKED = "E_SIDECAR_LOCKED"
 
 
 @dataclass(frozen=True)
