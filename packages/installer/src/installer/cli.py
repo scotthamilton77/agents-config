@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tomllib
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -153,6 +154,7 @@ def main(
     home: Path | None = None,
     io: IOPort | None = None,
     repo_root: Path | None = None,
+    cwd: Path | None = None,
 ) -> int:
     """CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an
     interactive abort (e.g. at an overwrite prompt) exits cleanly with code 130 and
@@ -160,10 +162,25 @@ def main(
     Every other exit — argparse's ``SystemExit``, the guarded config-error returns —
     passes through unchanged."""
     try:
-        return _run(argv, home=home, io=io, repo_root=repo_root)
+        return _run(argv, home=home, io=io, repo_root=repo_root, cwd=cwd)
     except KeyboardInterrupt:
         sys.stderr.write("\nAborted.\n")
         return 130
+
+
+def _has_install_table(project_config_path: Path) -> bool:
+    """True iff ``project_config_path`` exists, parses as TOML, and has an
+    ``[install]`` table. Best-effort: any read/parse failure counts as "no
+    table" rather than raising — this feeds a passive, suggest-only notice
+    on the USER path, which must never fail a real install over a malformed
+    or unreadable file it does not own."""
+    if not project_config_path.is_file():
+        return False
+    try:
+        data = tomllib.loads(project_config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return False
+    return isinstance(data.get("install"), dict)
 
 
 def _run(
@@ -172,10 +189,12 @@ def _run(
     home: Path | None = None,
     io: IOPort | None = None,
     repo_root: Path | None = None,
+    cwd: Path | None = None,
 ) -> int:
     args = _build_parser().parse_args(argv)
     resolved_home = home if home is not None else Path.home()
     resolved_repo_root = repo_root if repo_root is not None else _REPO_ROOT
+    resolved_cwd = cwd if cwd is not None else Path.cwd()
 
     if args.profiles is not None and args.project is None:
         sys.stderr.write("installer: --profiles requires --project in this version\n")
@@ -445,6 +464,20 @@ def _run(
         verbose=args.verbose,
         io=io,
     )
+
+    # Passive, suggest-only notice for the USER path only (a --project run
+    # returns earlier via _run_project and never reaches here): if cwd looks
+    # like a project (a .beads/ dir, or a project-config.toml carrying an
+    # [install] table), point at the project-scoped install without acting
+    # on it. No scan beyond cwd itself.
+    if (resolved_cwd / ".beads").is_dir() or _has_install_table(
+        resolved_cwd / "project-config.toml"
+    ):
+        io.info(
+            "This looks like a project. To install project-scoped content "
+            "here: install.sh --project ."
+        )
+
     return 0
 
 

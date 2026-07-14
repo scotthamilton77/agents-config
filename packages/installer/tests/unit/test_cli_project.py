@@ -439,3 +439,76 @@ def test_project_install_preserves_other_tables_in_project_config(tmp_path: Path
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert data["merge-policy"] == {"merge-authorization": "explicit"}
     assert data["install"]["profiles"] == ["beads-kit"]
+
+
+def _suggestion_lines(io: ScriptedIO) -> list[str]:
+    return [
+        e.message
+        for e in io.transcript
+        if e.channel == "info" and "looks like a project" in e.message
+    ]
+
+
+def test_user_run_with_beads_dir_in_cwd_suggests_project_install(tmp_path: Path) -> None:
+    """A USER run (no --project) whose cwd contains a .beads/ dir prints
+    exactly one suggestion line pointing at --project ."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    cwd = tmp_path / "proj"
+    (cwd / ".beads").mkdir(parents=True)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+        cwd=cwd,
+    )
+
+    assert rc == 0
+    assert len(_suggestion_lines(io)) == 1
+
+
+def test_user_run_with_plain_cwd_suggests_nothing(tmp_path: Path) -> None:
+    """A USER run whose cwd has neither .beads/ nor a project-config.toml
+    [install] table prints no suggestion line."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    cwd = tmp_path / "plain"
+    cwd.mkdir()
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--tools=claude", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+        cwd=cwd,
+    )
+
+    assert rc == 0
+    assert _suggestion_lines(io) == []
+
+
+def test_project_run_never_suggests_even_with_beads_dir_in_cwd(tmp_path: Path) -> None:
+    """A --project run prints no suggestion line, even when cwd (a DIFFERENT
+    directory than the project target) looks like a project."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    cwd = tmp_path / "cwd_looks_like_project"
+    (cwd / ".beads").mkdir(parents=True)
+    io = ScriptedIO(interactive=False)
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+        cwd=cwd,
+    )
+
+    assert rc == 0
+    assert _suggestion_lines(io) == []
