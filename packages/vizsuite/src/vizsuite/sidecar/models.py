@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from vizsuite.envelope import JsonValue
-from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
+from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind, provenance_to_json
 
 
 class FlagKind(StrEnum):
@@ -178,14 +178,6 @@ def _as_list(value: JsonValue) -> list[JsonValue]:
 # ---- Provenance (reused shape from vizsuite.scene.model) -------------------
 
 
-def _provenance_to_json(provenance: Provenance) -> dict[str, JsonValue]:
-    return {
-        "kind": str(provenance.kind),
-        "freshness": str(provenance.freshness),
-        "citations": list(provenance.citations),
-    }
-
-
 def _provenance_from_json(data: JsonValue) -> Provenance:
     mapping = _as_dict(data)
     citations = [_as_str(item) for item in _as_list(mapping["citations"])]
@@ -231,7 +223,7 @@ def fact_record_to_json(record: FactRecord) -> dict[str, JsonValue]:
         "fact_id": record.fact_id,
         "matching_descriptor": _matching_descriptor_to_json(record.matching_descriptor),
         "basis_hash": record.basis_hash,
-        "provenance": _provenance_to_json(record.provenance),
+        "provenance": provenance_to_json(record.provenance),
         "payload": dict(record.payload),
     }
 

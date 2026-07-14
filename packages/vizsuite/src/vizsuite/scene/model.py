@@ -151,7 +151,7 @@ class Scene:
     repo_nwo: str = ""  # spec §6.2/G3; populated once the PR verb threads it through
 
 
-def _provenance_to_json(provenance: Provenance) -> dict[str, JsonValue]:
+def provenance_to_json(provenance: Provenance) -> dict[str, JsonValue]:
     return {
         "kind": str(provenance.kind),
         "freshness": str(provenance.freshness),
@@ -163,7 +163,7 @@ def _fact_to_json(fact: Fact) -> dict[str, JsonValue]:
     return {
         "id": fact.id,
         "note": fact.note,
-        "provenance": _provenance_to_json(fact.provenance) if fact.provenance is not None else None,
+        "provenance": provenance_to_json(fact.provenance) if fact.provenance is not None else None,
     }
 
 
