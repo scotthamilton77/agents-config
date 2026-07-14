@@ -353,10 +353,13 @@
   // ---- Sonar affordance (spec §6.1: file sonar as a drill, not a top-level
   // view) — a toggle button + mount appended to the drill panel; wired here
   // rather than in views/sonar.js because it needs the panel's lifecycle
-  // (destroyed and rebuilt fresh on every openDrill call, spec §4.2). Empty
-  // `scene.edges` (graphify unavailable) is handled by `window.vizSonar`
+  // (destroyed and rebuilt fresh on every openDrill call, spec §4.2). The
+  // dependency-graph-unavailable state (the load-bearing axis fail-softed,
+  // per render_config.unavailable_axes) is handled by `window.vizSonar`
   // itself, which renders the "unavailable" state in place of rings — the
-  // affordance is always present and always safe to open.
+  // affordance is always present and always safe to open (an available axis
+  // with a legitimately empty edge set renders center-only rings, not the
+  // unavailable state).
   function appendSonarAffordance(panelEl, scene, fileNode, drillState) {
     var toggle = document.createElement("button");
     toggle.id = "viz-drill-sonar-toggle";

@@ -180,10 +180,16 @@
   window.vizSonar = {
     render: function (container, scene, centerPath) {
       var edges = scene.edges || [];
-      // `null` (never an empty adjacency map) marks "no edge data at all" —
-      // the unavailable state — distinct from a real, populated adjacency in
-      // which the current center just happens to have no neighbors.
-      var adjacency = edges.length > 0 ? buildAdjacency(edges) : null;
+      // `null` (never an empty adjacency map) marks the *unavailable* state —
+      // the load-bearing (centrality) axis fail-softed, so there is no
+      // dependency data at all. This is decided by render_config, NOT by an
+      // empty edge set: an available axis over a repo with no cross-file
+      // imports legitimately yields zero edges, in which case buildAdjacency
+      // returns a real, empty map and the center renders as its own
+      // center-only empty neighborhood.
+      var adjacency = window.vizShared.isDependencyGraphUnavailable(scene)
+        ? null
+        : buildAdjacency(edges);
       var inner = null;
 
       // Fresh container per (re)center (spec §4.2): the previous render's

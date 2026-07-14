@@ -73,14 +73,14 @@
     return parts[parts.length - 1];
   }
 
-  // ---- scene.files + scene.edges → { nodes, edges } for the layout, or
-  // `null` when there is no edge data at all (spec: empty scene.edges → the
-  // "dependency graph unavailable" state, same pattern as file sonar). ----
+  // ---- scene.files + scene.edges → { nodes, edges } for the layout. Always
+  // builds a graph: the "dependency graph unavailable" state is decided by the
+  // caller from render_config.unavailable_axes (the load-bearing axis
+  // fail-softed), NOT from an empty edge set. An available axis with zero
+  // cross-file edges still yields the PR-file node set (isolated nodes), the
+  // legitimately-empty rendering — same disambiguation file sonar makes. ----
   function buildGraph(scene) {
     var rawEdges = scene.edges || [];
-    if (rawEdges.length === 0) {
-      return null;
-    }
 
     var fileByPath = Object.create(null);
     scene.files.forEach(function (file) {
@@ -370,14 +370,14 @@
       stage.setAttribute("class", "viz-constellation-inner");
       container.appendChild(stage);
 
-      var graph = buildGraph(scene);
-      if (!graph) {
+      if (window.vizShared.isDependencyGraphUnavailable(scene)) {
         renderUnavailable(stage);
         return {
           destroy: makeDestroy(container)
         };
       }
 
+      var graph = buildGraph(scene);
       buildLegend(stage);
 
       var visual = document.createElement("div");
