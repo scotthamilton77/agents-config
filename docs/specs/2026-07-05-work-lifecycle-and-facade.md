@@ -115,9 +115,13 @@ override). The label is revocable: scope changes remove it and the container
 re-enters the planning queue. Replanning is a state transition, not an
 embarrassment.
 
-`spec`-shaped containers are born `planned` — the template is the plan
-(design child, then impl). Structural containers (`epic`/`milestone`) are
-born unplanned.
+A `spec`-shaped container's template *is* its plan (design child, then impl),
+so it earns `planned` — but the label is stamped **strictly last**, only after
+the template's children exist (the mint-before-`planned` rule). While it is
+being instantiated the container carries a `creating-spec` handle and is not yet
+`planned`, so an interrupted creation self-reports into the planning queue *and*
+is finished by the recovery sweep through that handle (§6). Structural
+containers (`epic`/`milestone`) are born unplanned.
 
 ## 6. The impl placeholder and reconciliation
 
@@ -136,20 +140,39 @@ reshapes scope amends the manifest in the same PR. The assessor-lite verdict
 (spec-capture-glue §5) gains a sixth draining lens: manifest present and
 parseable.
 
-At delivery, reconciliation is pure parsing of the merged spec:
+At delivery, a design child's `deliver` records the operation's target and
+reconciles the placeholder against it. Two rules make an interrupted delivery
+always recoverable without inferring intent from residual state:
 
-- **Single unit** → retitle the placeholder, install spec-derived AC; it
-  surfaces the moment its blocker closed, correctly typed.
+- **Intent is snapshotted in-band.** The merged spec is parsed once, at first
+  delivery, and the parsed manifest is recorded as a `[work] manifest:` note on
+  the placeholder — the frozen target. Every later reconciliation (a `deliver`
+  replay or a `reconcile` sweep) reads that snapshot, never the spec file, so a
+  post-delivery edit to the file cannot silently drop or alter a committed unit.
+- **`impl-placeholder` is the single completion handle, removed strictly last.**
+  It is present while the delivery is pending and absent only when the delivery
+  is wholly done — including the design child's close, which happens *before* the
+  handle comes off. A crash at any point therefore leaves the handle present for
+  the sweep to find; its absence is never a half-finished state.
+
+Reconciliation against the snapshot is pure and idempotent:
+
+- **Single unit** → retitle the placeholder, install spec-derived AC, then swap
+  `impl-placeholder` for the noun's shape label (+ `spec-ready`) as the last
+  mutation; it surfaces the moment its blocker closed, correctly typed.
 - **Multiple units** → the placeholder becomes the impl sub-container: N
-  properly-typed children are created under it, preserving its blocks-edge
-  history; it closes via close-walk when they do.
+  properly-typed children are created under it and it is stamped
+  `shape-impl-container` — a declared container-shape handle, so `claim` refuses
+  it and the router keys on a label, never child count (§5/invariant 5) —
+  preserving its blocks-edge history; it closes via close-walk when the children
+  do.
 - **None** → close the placeholder as not-needed, reason recorded; close-walk
   finishes the objective.
 
-Work captured as a plain leaf whose brainstorm later reveals implementation
-scope takes the lazy path: delivery decomposes it (children minted under it,
-it becomes a container). If reconciliation is interrupted, the item sits
-open + `spec-ready` + childless → planning queue. Self-reporting (invariant 2).
+The design child is closed as part of this same completion, before
+`impl-placeholder` is removed. Work captured as a plain leaf whose brainstorm
+later reveals implementation scope reduces to `promote`, which mints a
+placeholder and recovers through the same handle.
 
 ## 7. The `work` facade
 
@@ -174,10 +197,10 @@ contract resolves to `work create <noun>`.
 | `work create <noun>` | Instantiates the noun's template: items, children, blocks-edges, birth labels; asks placement | duplicate-title guard; evidence rule for `feat`/`bugfix` |
 | `work claim <id>` | open → in_progress for the current phase's work | refuses containers; refuses blocked leaves |
 | `work release <id>` | in_progress → open, no phase advance | — |
-| `work deliver <id> --evidence <pr\|items>` | Closes a leaf against evidence; for a design child, parses the merged spec's manifest and reconciles the placeholder (§6) | evidence must verify (merged PR, existing items); idempotent, replay-safe |
+| `work deliver <id> --evidence <pr\|items>` | Closes a leaf against evidence; for a design child, records the merged manifest as an in-band snapshot and reconciles the placeholder against it (§6), closing the design child before the completion handle is removed | evidence must verify (merged PR, existing items); idempotent, replay-safe |
 | `work plan <id> --done` | Stamps `planned`; container exits planning queue | warns without children/evidence |
 | `work promote <id>` | `feat` → spec-shape when brainstorm reveals scope | — |
-| `work reconcile` | Recovery sweep: stale claims with merged evidence → deliver retroactively; merged-spec-but-unreconciled placeholders; interrupted expansions | pure detection + idempotent repair; safe for any session, model tier, or cron |
+| `work reconcile` | Recovery sweep over completion handles: interrupted leaf delivers; pending placeholders replayed toward their in-band snapshot (any design status); open design children whose placeholder is already reconciled; interrupted spec instantiations (`creating-spec`) | pure detection + idempotent repair; reads no external state; safe for any session, model tier, or cron |
 
 All verbs emit a `--json` result envelope; non-zero exit with a specific
 error on any tracker failure; no silent fallbacks.
@@ -311,9 +334,16 @@ they are not `wgclw.9` children.
    (idempotency markers), exit 0.
 6. `deliver` with unverifiable evidence (no merged PR, missing items) exits
    non-zero; no mutations.
-7. Interrupted expansion (fake fails after child 1 of 3): objective remains
-   open and unplanned → planning-queue membership; re-run completes the
-   remaining children only.
+7. Interrupted operations recover through their completion handles:
+   - Interrupted **spec creation** (fails mid-template): the container is not
+     `planned` and carries `creating-spec` → planning-queue membership; a
+     `reconcile` sweep (or a `create` replay) finishes the template, stamps
+     `planned`, and removes `creating-spec` last.
+   - Interrupted **expansion** (design `deliver` fails after child 1 of 3): the
+     top objective is already `planned` (stamped at creation); the placeholder
+     still carries `impl-placeholder` and its `[work] manifest:` snapshot → a
+     sweep/replay mints the remaining children only, then removes the handle —
+     no re-read of the spec file.
 8. `claim` refuses containers and blocked leaves; `release` restores open
    without phase advance.
 9. `plan --done` without children or evidence warns / requires override;
@@ -330,8 +360,11 @@ they are not `wgclw.9` children.
 ## 15. Assumption ledger (scan here, Scott)
 
 - `ASSUMPTION:` shape label names `shape-spike|chore|decision|spec|feat|bugfix`,
-  plus `shape-design` (design child) and `impl-placeholder` (pre-reconciliation);
-  reconciliation swaps `impl-placeholder` for the manifest noun's shape label.
+  plus `shape-design` (design child), `impl-placeholder` (pre-reconciliation),
+  `shape-impl-container` (multi-unit impl sub-container), and `creating-spec`
+  (spec container mid-instantiation); reconciliation swaps `impl-placeholder`
+  for the manifest noun's shape label (single unit) or `shape-impl-container`
+  (multi-unit).
 - `ASSUMPTION:` `planned` as the container phase label; revocation = label
   removal.
 - `ASSUMPTION:` manifest grammar — `## Continuations` with one bullet per
