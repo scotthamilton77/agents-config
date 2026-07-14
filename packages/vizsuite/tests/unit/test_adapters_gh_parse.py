@@ -113,3 +113,81 @@ def test_missing_scalar_field_is_adapter_failure():
         parse_pr_view(result, pr_number=7)
 
     assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def _meta_stdout(
+    *,
+    author: str = "octocat",
+    review_decision: str | None = "APPROVED",
+    created_at: str = "2026-07-01T00:00:00Z",
+    updated_at: str = "2026-07-02T00:00:00Z",
+    merged_at: str | None = None,
+) -> str:
+    return json.dumps(
+        {
+            "author": {"login": author},
+            "reviewDecision": review_decision,
+            "createdAt": created_at,
+            "updatedAt": updated_at,
+            "mergedAt": merged_at,
+        }
+    )
+
+
+def test_parses_author_review_state_and_timestamps():
+    from vizsuite.adapters.gh.parse import parse_pr_meta
+
+    result = GhResult(returncode=0, stdout=_meta_stdout(), stderr="")
+
+    meta = parse_pr_meta(result, pr_number=7)
+
+    assert meta.author == "octocat"
+    assert meta.review_state == "APPROVED"
+    assert meta.created_at == "2026-07-01T00:00:00Z"
+    assert meta.updated_at == "2026-07-02T00:00:00Z"
+    assert meta.merged_at is None
+
+
+def test_null_review_decision_normalizes_to_none_sentinel():
+    from vizsuite.adapters.gh.parse import parse_pr_meta
+
+    result = GhResult(returncode=0, stdout=_meta_stdout(review_decision=None), stderr="")
+
+    meta = parse_pr_meta(result, pr_number=7)
+
+    assert meta.review_state == "NONE"
+
+
+def test_meta_nonzero_gh_exit_is_adapter_failure():
+    from vizsuite.adapters.gh.parse import parse_pr_meta
+
+    result = GhResult(returncode=1, stdout="", stderr="gh: not authenticated")
+
+    with pytest.raises(VizError) as exc_info:
+        parse_pr_meta(result, pr_number=7)
+
+    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
+    assert exc_info.value.detail["pr_number"] == 7
+
+
+def test_meta_non_json_stdout_is_adapter_failure():
+    from vizsuite.adapters.gh.parse import parse_pr_meta
+
+    result = GhResult(returncode=0, stdout="not json at all", stderr="")
+
+    with pytest.raises(VizError) as exc_info:
+        parse_pr_meta(result, pr_number=7)
+
+    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE
+
+
+def test_meta_missing_author_field_is_adapter_failure():
+    from vizsuite.adapters.gh.parse import parse_pr_meta
+
+    stdout = json.dumps({"reviewDecision": "APPROVED", "createdAt": "x", "updatedAt": "y"})
+    result = GhResult(returncode=0, stdout=stdout, stderr="")
+
+    with pytest.raises(VizError) as exc_info:
+        parse_pr_meta(result, pr_number=7)
+
+    assert exc_info.value.code == ErrorCode.ADAPTER_FAILURE

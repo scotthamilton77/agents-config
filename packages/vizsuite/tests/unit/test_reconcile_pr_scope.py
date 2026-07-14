@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.fakes import ScriptedGhRunner, ScriptedGitRunner, gh_pr_result
+from tests.fakes import ScriptedGhRunner, ScriptedGitRunner, gh_pr_meta_result, gh_pr_result
 from vizsuite.adapters.git.runner import ModifiedFileRow
 from vizsuite.envelope import ErrorCode, VizError
 from vizsuite.extract.churn import FileChurn
@@ -73,6 +73,22 @@ def test_happy_path_returns_scope_with_net_churn():
     }
     # churn walked the local (authoritative) commit set
     assert ("churn_for_commits", "c1") in git.calls
+
+
+def test_scope_carries_pr_metadata_author_review_state_and_timestamps():
+    from vizsuite.reconcile.pr_scope import reconcile
+
+    gh = ScriptedGhRunner(
+        result=gh_pr_result(changed_files=1, commit_count=1),
+        meta_result=gh_pr_meta_result(author="octocat", review_state="APPROVED"),
+    )
+    git = ScriptedGitRunner(present_oids=set(_PRESENT), diff_files=["a.py"], rev_list_oids=["c1"])
+
+    scope = reconcile(7, gh=gh, git=git)
+
+    assert scope.meta.author == "octocat"
+    assert scope.meta.review_state == "APPROVED"
+    assert ("pr_meta", 7) in gh.calls
 
 
 def test_reverted_only_file_excluded_from_scope():

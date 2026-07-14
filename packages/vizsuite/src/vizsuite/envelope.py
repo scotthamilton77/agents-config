@@ -33,6 +33,9 @@ class ErrorCode(StrEnum):
     # slice 2: the PR base/head OID is still absent locally after fetch (a stale
     # clone or unreachable remote), so the snapshot cannot be built.
     SNAPSHOT_MISMATCH = "E_SNAPSHOT_MISMATCH"
+    # slice 5: a Tier-2/Tier-3-touched scene fact is missing its provenance or
+    # citations — the assembler's schema gate refuses to assemble it silently.
+    SCHEMA_INVALID = "E_SCHEMA_INVALID"
 
 
 @dataclass(frozen=True)

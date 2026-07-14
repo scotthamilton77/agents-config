@@ -61,6 +61,8 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         pr_number=pr_number,
         generated_at=datetime.now(UTC).isoformat(),
         generator=f"vizsuite/{__version__}",
+        base_oid=scope.base_oid,
+        head_oid=scope.head_oid,
     )
     html = render_html(scene)
 
@@ -75,5 +77,7 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
         "net_files": len(scope.files),
         "scored_files": len(complexity_scores),
         "consequential_files": sum(1 for value in consequence_scores.values() if value > 0),
+        "author": scope.meta.author,
+        "review_state": scope.meta.review_state,
     }
     return data
