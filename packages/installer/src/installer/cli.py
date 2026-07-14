@@ -13,6 +13,7 @@ from installer.config import (
     resolve_plugins,
     resolve_plugins_root,
     resolve_tools,
+    write_project_profiles,
 )
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
@@ -597,6 +598,7 @@ def _run_project(
                     pruned_paths=set(),
                     relinquished_paths=set(),
                 )
+                write_project_profiles(project_root, selection)
     except ReceiptLockBusy:
         io.err(f"another install holds the project receipt lock at {receipt_path}")
         return 1

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+import tomli_w
 
 from installer.core.model import Tool
 from installer.plugins.base import PluginAdapter
@@ -121,6 +123,31 @@ def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
         raise ValueError(msg)  # single call-site; subclass not justified
 
     return tuple(profiles)
+
+
+def write_project_profiles(project_root: Path, profiles: Sequence[str]) -> None:
+    """Persist ``profiles`` to ``<project_root>/project-config.toml``'s
+    ``[install].profiles``, the write-side counterpart to
+    ``read_project_profiles``.
+
+    Merges into any existing file rather than clobbering it: every other
+    top-level table (e.g. ``[merge-policy]``) survives untouched, and only
+    the ``install.profiles`` key is set. A missing file is created fresh with
+    just the ``[install]`` table.
+    """
+    path = project_root / "project-config.toml"
+    data: dict[str, object] = {}
+    if path.is_file():
+        data = dict(tomllib.loads(path.read_text(encoding="utf-8")))
+
+    existing_install = data.get("install")
+    install: dict[str, object] = (
+        dict(existing_install) if isinstance(existing_install, dict) else {}
+    )
+    install["profiles"] = list(profiles)
+    data["install"] = install
+
+    path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
 
 def resolve_plugins_root(repo_root: Path, env: Mapping[str, str]) -> Path:

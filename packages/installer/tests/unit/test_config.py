@@ -8,11 +8,12 @@ coded decisions. See the writing-unit-tests skill's Tautology Filter."""
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
 
-from installer.config import read_project_profiles, resolve_tools
+from installer.config import read_project_profiles, resolve_tools, write_project_profiles
 from installer.core.model import Tool
 from installer.tools import registry
 from installer.tools.registry import UnknownToolError
@@ -201,3 +202,29 @@ def test_read_project_profiles_returns_none_when_install_table_absent(tmp_path: 
     """
     (tmp_path / "project-config.toml").write_text('[other]\nfoo = "bar"\n', encoding="utf-8")
     assert read_project_profiles(tmp_path) is None
+
+
+def test_write_project_profiles_round_trips_through_read(tmp_path: Path) -> None:
+    """
+    Given a project root with no project-config.toml
+    When write_project_profiles(project_root, ("beads-kit",)) is called
+    Then read_project_profiles(project_root) returns ("beads-kit",).
+    """
+    write_project_profiles(tmp_path, ("beads-kit",))
+    assert read_project_profiles(tmp_path) == ("beads-kit",)
+
+
+def test_write_project_profiles_preserves_other_tables(tmp_path: Path) -> None:
+    """
+    Given project-config.toml with an unrelated [merge-policy] table
+    When write_project_profiles(project_root, ("beads-kit",)) is called
+    Then [merge-policy] survives and [install].profiles is set.
+    """
+    path = tmp_path / "project-config.toml"
+    path.write_text('[merge-policy]\nmerge-authorization = "explicit"\n', encoding="utf-8")
+
+    write_project_profiles(tmp_path, ("beads-kit",))
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["merge-policy"] == {"merge-authorization": "explicit"}
+    assert data["install"]["profiles"] == ["beads-kit"]

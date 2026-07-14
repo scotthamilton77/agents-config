@@ -6,6 +6,7 @@ guard's coded decision (exit code + message), not argparse machinery."""
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -278,3 +279,88 @@ def test_user_install_byte_identical_through_resolver(tmp_path: Path) -> None:
 
     assert rc == 0
     assert (tmp_path / ".claude" / "INSTRUCTIONS.md").read_bytes() == b"shared laws\n"
+
+
+def test_project_install_persists_profiles_then_bare_rerun_reinstalls(tmp_path: Path) -> None:
+    """A successful ``--project p --profiles=beads-kit`` install writes
+    <p>/project-config.toml's [install].profiles; a subsequent BARE
+    ``--project p`` (no --profiles) then reads that persisted selection
+    (Task 10's read_project_profiles path) and reinstalls beads-kit."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc == 0
+
+    config_path = project / "project-config.toml"
+    assert config_path.is_file()
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert data["install"]["profiles"] == ["beads-kit"]
+
+    (project / ".beads" / "PRIME.md").unlink()
+
+    rc2 = main(
+        ["--project", str(project), "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+    assert rc2 == 0
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"
+
+
+def test_project_dry_run_writes_no_project_config_or_receipt(tmp_path: Path) -> None:
+    """``--project p --profiles=beads-kit --dry-run`` must not write
+    project-config.toml or the receipt — dry-run is a no-op on disk."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes", "--dry-run"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert not (project / "project-config.toml").exists()
+    assert not (project / ".agents-config" / "install-receipt.json").exists()
+
+
+def test_project_install_preserves_other_tables_in_project_config(tmp_path: Path) -> None:
+    """A pre-existing project-config.toml with an unrelated [merge-policy]
+    table must keep that table intact after ``--project p --profiles=beads-kit``
+    sets [install].profiles."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    config_path = project / "project-config.toml"
+    config_path.write_text('[merge-policy]\nmerge-authorization = "explicit"\n', encoding="utf-8")
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert data["merge-policy"] == {"merge-authorization": "explicit"}
+    assert data["install"]["profiles"] == ["beads-kit"]
