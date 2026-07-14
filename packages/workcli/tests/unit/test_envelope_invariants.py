@@ -207,6 +207,8 @@ VERB_CASES: list[VerbCase] = [
         [
             ScriptedStep(("search",), _search_result()),  # no title collision
             ScriptedStep(("create",), _lifecycle_create_result("s.1")),  # container
+            ScriptedStep(("label", "add"), _OK),  # shape-spec (finalize shape guard)
+            ScriptedStep(("label", "remove"), _OK),  # shape-feat (finalize shape guard)
             ScriptedStep(
                 ("show",), _show_result(_item_raw("s.1", "New Objective"))
             ),  # instantiate get
@@ -296,6 +298,7 @@ VERB_CASES: list[VerbCase] = [
             ScriptedStep(("list",), _list_result()),  # interrupted-deliver sweep: empty
             ScriptedStep(("list",), _list_result()),  # pending-placeholder sweep: empty
             ScriptedStep(("list",), _list_result()),  # orphaned-design sweep: empty
+            ScriptedStep(("list",), _list_result()),  # interrupted-instantiation sweep: empty
         ],
         ["reconcile"],
         [ScriptedStep(("list",), _GARBAGE)],  # unparseable bd list output -> E_BACKEND_DRIFT

@@ -24,8 +24,13 @@ from workcli.lifecycle import (
     has_marker,
     manifest_snapshot,
 )
+from workcli.lifecycle.create import finalize_spec_instantiation
 from workcli.lifecycle.deliver import reconcile_placeholder
-from workcli.lifecycle.nouns import DESIGN_CHILD_LABEL, IMPL_PLACEHOLDER_LABEL
+from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
+    DESIGN_CHILD_LABEL,
+    IMPL_PLACEHOLDER_LABEL,
+)
 from workcli.model import Item, QueryFilters
 
 
@@ -119,6 +124,23 @@ def _sweep_orphaned_designs(backend: Backend, *, dry_run: bool) -> list[JsonValu
     return findings
 
 
+def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> list[JsonValue]:
+    """Enumerate `creating-spec` handles; finish each interrupted spec
+    instantiation (`create spec` / `promote` crashed before the handle came off,
+    L16) via the shared `finalize_spec_instantiation` -- the same idempotent tail
+    the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
+    swap reconstructed, not just create-spec's tail replayed. `query()` returns a
+    fully-populated Item whose `id`/`title` (both required bd fields) are all
+    `finalize` needs; it re-`get()`s the container's children itself. A second
+    sweep over a healed container finds no handle -- idempotent."""
+    findings: list[JsonValue] = []
+    for container in backend.query(QueryFilters(label=CREATING_SPEC_LABEL)):
+        if not dry_run:
+            finalize_spec_instantiation(backend, container.id, container.title)
+        findings.append(_finding(container.id, "interrupted_instantiation", repaired=not dry_run))
+    return findings
+
+
 def reconcile(backend: Backend, args: Namespace) -> JsonValue:
     """`work reconcile [--dry-run]` (plan L10). Reads no external state (no spec
     file); every candidate is found through a completion handle."""
@@ -126,4 +148,5 @@ def reconcile(backend: Backend, args: Namespace) -> JsonValue:
     findings = _sweep_interrupted_delivers(backend, dry_run=dry_run)
     findings += _sweep_pending_placeholders(backend, dry_run=dry_run)
     findings += _sweep_orphaned_designs(backend, dry_run=dry_run)
+    findings += _sweep_interrupted_instantiations(backend, dry_run=dry_run)
     return {"findings": findings}

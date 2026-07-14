@@ -318,11 +318,19 @@ def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
         steps=[
             ScriptedStep(("search",), _search_result()),
             ScriptedStep(("create",), _create_result("x.1")),  # container
+            ScriptedStep(
+                ("label", "add"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # shape-spec
+            ScriptedStep(
+                ("label", "remove"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # shape-feat
             ScriptedStep(("show",), _search_result(_item_raw("x.1", "T"))),  # instantiate get
             ScriptedStep(("create",), _create_result("x.2")),  # design child
             ScriptedStep(("create",), _create_result("x.3")),  # placeholder
-            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
-            ScriptedStep(("label", "remove"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),  # planned
+            ScriptedStep(
+                ("label", "remove"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # creating-spec
         ]
     )
 
@@ -346,6 +354,8 @@ def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
             "--labels",
             "shape-spec,creating-spec",
         ),
+        ("label", "add", "x.1", "shape-spec"),
+        ("label", "remove", "x.1", "shape-feat"),
         ("show", "x.1", "--json"),
         (
             "create",
@@ -386,11 +396,19 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
             ScriptedStep(("search",), _search_result()),
             ScriptedStep(("create",), _create_result("x.1")),  # container
             ScriptedStep(("update",), BdResult(returncode=0, stdout="", stderr="")),  # orphan note
+            ScriptedStep(
+                ("label", "add"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # shape-spec
+            ScriptedStep(
+                ("label", "remove"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # shape-feat
             ScriptedStep(("show",), _search_result(_item_raw("x.1", "T"))),  # instantiate get
             ScriptedStep(("create",), _create_result("x.2")),  # design child
             ScriptedStep(("create",), _create_result("x.3")),  # placeholder
-            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
-            ScriptedStep(("label", "remove"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),  # planned
+            ScriptedStep(
+                ("label", "remove"), BdResult(returncode=0, stdout="", stderr="")
+            ),  # creating-spec
         ]
     )
 
@@ -417,5 +435,5 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
     # The container itself is orphaned, but its own children (design child +
     # placeholder) are still parented under it -- orphan-by-choice is a
     # placement decision about the top-level item, never its own children.
-    assert all("--parent" in call and "x.1" in call for call in runner.calls[4:6])
+    assert all("--parent" in call and "x.1" in call for call in runner.calls[6:8])
     assert runner.calls[-1] == ("label", "remove", "x.1", "creating-spec")

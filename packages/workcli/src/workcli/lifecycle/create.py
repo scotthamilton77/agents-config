@@ -69,6 +69,33 @@ def instantiate_spec_shape(backend: Backend, container_id: str, title: str) -> t
     return design_child_id, placeholder_id
 
 
+def finalize_spec_instantiation(backend: Backend, container_id: str, title: str) -> tuple[str, str]:
+    """Idempotently complete a spec container born under `creating-spec`.
+
+    The single source of the L16 completion tail shared by `create spec`,
+    `promote`, and the `reconcile` sweep -- triplicating it is what let the
+    `promote` crash window drift open. Every step is idempotent, so replaying it
+    over any crash point (or a fully healed container) converges:
+
+    1. Ensure the container *shape* (`shape-spec` on, `shape-feat` off). `create
+       spec` births the container already `shape-spec`, so this is a no-op there;
+       `promote` adds `creating-spec` before its own swap, so a crash in that
+       window leaves a `shape-feat` item -- this is the *only* path that
+       reconstructs the swap, without which the sweep would heal a children-
+       bearing item that `is_container` rejects (a claimable leaf with children).
+    2. Mint only the template children a partial crash left missing.
+    3. Stamp `planned`, then remove the `creating-spec` handle STRICTLY LAST.
+
+    Returns (design_child_id, placeholder_id).
+    """
+    backend.label_mutate("add", container_id, ["shape-spec"])
+    backend.label_mutate("remove", container_id, ["shape-feat"])
+    design_child_id, placeholder_id = instantiate_spec_shape(backend, container_id, title)
+    backend.label_mutate("add", container_id, [PLANNED_LABEL])
+    backend.label_mutate("remove", container_id, [CREATING_SPEC_LABEL])
+    return design_child_id, placeholder_id
+
+
 def _validate_usage(args: Namespace, noun: Noun) -> None:
     if args.type is not None:
         raise WorkError(
@@ -120,14 +147,13 @@ def _create_spec_container(
     )
     if args.orphan:
         backend.append_note(container_id, ORPHAN_MARKER)
-    design_child_id, placeholder_id = instantiate_spec_shape(backend, container_id, args.title)
-    # `planned` is stamped, then `creating-spec` is removed, STRICTLY LAST (L16).
-    # A crash anywhere before this removal leaves a `shape-spec` container that
-    # is NOT `planned` and still carries `creating-spec`: it self-reports into
-    # the Planning queue (visible) AND is finished by the `reconcile` sweep
+    # The completion tail (mint children, stamp `planned`, drop `creating-spec`
+    # strictly last -- L16) is shared with `promote` and the `reconcile` sweep.
+    # A crash anywhere before the handle comes off leaves a `shape-spec`
+    # container that is NOT `planned` and still carries `creating-spec`: it
+    # self-reports into the Planning queue (visible) AND is finished by the sweep
     # through the handle (auto-recoverable). Both nets fire.
-    backend.label_mutate("add", container_id, [PLANNED_LABEL])
-    backend.label_mutate("remove", container_id, [CREATING_SPEC_LABEL])
+    design_child_id, placeholder_id = finalize_spec_instantiation(backend, container_id, args.title)
     return {"id": container_id, "design_child": design_child_id, "placeholder": placeholder_id}
 
 

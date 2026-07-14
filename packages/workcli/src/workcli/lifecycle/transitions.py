@@ -17,7 +17,7 @@ from argparse import Namespace
 from workcli.backend import Backend
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle import is_container
-from workcli.lifecycle.create import instantiate_spec_shape
+from workcli.lifecycle.create import finalize_spec_instantiation
 from workcli.lifecycle.nouns import CREATING_SPEC_LABEL, PLANNED_LABEL
 
 
@@ -77,14 +77,12 @@ def promote(backend: Backend, args: Namespace) -> JsonValue:
     if "shape-spec" in item.labels:
         return {"id": args.id, "promoted": "spec"}
 
-    # `creating-spec` first, removed strictly LAST (L16). A crash mid-promote
-    # leaves the handle on, so the `reconcile` sweep finishes the template
-    # (idempotent `instantiate_spec_shape`), stamps `planned`, and drops the
-    # handle -- rather than stranding a half-promoted, queue-invisible container.
+    # `creating-spec` is added FIRST -- before the shape swap -- so any crash
+    # from here on leaves the handle set and the `reconcile` sweep replays the
+    # shared completion tail (`finalize_spec_instantiation`: swap shape-feat->
+    # shape-spec, mint the template children, stamp `planned`, drop the handle
+    # strictly last, L16). A crash before the handle is added leaves an untouched
+    # `shape-feat` leaf -- promote simply never started.
     backend.label_mutate("add", args.id, [CREATING_SPEC_LABEL])
-    backend.label_mutate("add", args.id, ["shape-spec"])
-    backend.label_mutate("remove", args.id, ["shape-feat"])
-    instantiate_spec_shape(backend, args.id, item.title)
-    backend.label_mutate("add", args.id, [PLANNED_LABEL])
-    backend.label_mutate("remove", args.id, [CREATING_SPEC_LABEL])
+    finalize_spec_instantiation(backend, args.id, item.title)
     return {"id": args.id, "promoted": "spec"}
