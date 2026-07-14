@@ -93,6 +93,50 @@ def test_deliver_design_without_spec_is_usage_error_with_no_bd_call():
     assert runner.calls == [("show", "d.1", "--json")]
 
 
+def test_deliver_on_impl_container_is_usage_error_pointing_to_close_walk():
+    # A multi-unit reconciled sub-container (`shape-impl-container`, no
+    # `shape-design`) completes by close-walk when its children close, never by
+    # `deliver`. The guard trips at dispatch, before any evidence check or leaf
+    # mutation -- only `show` is called.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("x.1", status="open", labels=["shape-impl-container"])),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(["deliver", "x.1"], runner)
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert runner.calls == [("show", "x.1", "--json")]
+
+
+def test_deliver_on_spec_container_is_usage_error():
+    # The guard is the declared-state container test (`is_container`), not the
+    # new label alone: a `shape-spec` container is refused identically.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("show",),
+                _show_result(_item_raw("x.1", status="open", labels=["shape-spec"])),
+            ),
+        ]
+    )
+
+    exit_code, envelope, _ = run_cli_with_runner(["deliver", "x.1"], runner)
+
+    assert exit_code == 1
+    error = envelope["error"]
+    assert isinstance(error, dict)
+    assert error["code"] == str(ErrorCode.USAGE)
+    assert runner.calls == [("show", "x.1", "--json")]
+
+
 def test_deliver_design_with_leaf_flags_is_usage_error_naming_them():
     # --pr/--items/--trivial belong to leaf delivery; a design child rejects
     # them rather than silently ignoring them (fail fast at the boundary).

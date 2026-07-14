@@ -53,5 +53,9 @@ NOUN_TEMPLATES: dict[Noun, NounTemplate] = {
 
 DESIGN_CHILD_LABEL = "shape-design"
 IMPL_PLACEHOLDER_LABEL = "impl-placeholder"
+# The multi-unit reconciled sub-container: the placeholder becomes this once its
+# manifest children are minted. A declared container-shape handle (joins
+# `_CONTAINER_SHAPE_LABELS`), so `claim` refuses it by label, never child count.
+IMPL_CONTAINER_LABEL = "shape-impl-container"
 PLANNED_LABEL = "planned"
 SPEC_READY_LABEL = "spec-ready"

@@ -5,9 +5,10 @@ Dispatches on the `shape-design` label (CLI surface table): a design
 child's `deliver` parses the merged spec's `## Continuations` manifest and
 reconciles the sibling placeholder (L7/L8); a leaf's `deliver` verifies
 bd-observable evidence before recording the `[work] delivered:` marker and
-closing. `reconcile_placeholder` is exported for reuse by `reconcile`
-(Task 6) -- it is short-circuit idempotent on the `impl-placeholder`
-label's absence.
+closing. A container is refused outright -- it completes via close-walk when
+its children close, never through `deliver`. `reconcile_placeholder` is
+exported for reuse by `reconcile` (Task 6) -- it is short-circuit idempotent
+on the `impl-placeholder` label's absence.
 """
 
 from __future__ import annotations
@@ -21,12 +22,14 @@ from workcli.lifecycle import (
     MANIFEST_MARKER,
     SPEC_MARKER,
     has_marker,
+    is_container,
     manifest_snapshot,
     spec_path,
 )
 from workcli.lifecycle.manifest import Manifest, parse_continuations, serialize_manifest
 from workcli.lifecycle.nouns import (
     DESIGN_CHILD_LABEL,
+    IMPL_CONTAINER_LABEL,
     IMPL_PLACEHOLDER_LABEL,
     NOUN_TEMPLATES,
     SPEC_READY_LABEL,
@@ -201,6 +204,18 @@ def deliver(backend: Backend, args: Namespace) -> JsonValue:
     item = backend.get(args.id)
     if DESIGN_CHILD_LABEL in item.labels:
         return _deliver_design(backend, args, item)
+    # A container is never delivered directly: it closes via close-walk when its
+    # children close (spec §6/§8). Refuse at dispatch -- before any evidence
+    # check or leaf mutation -- so `deliver` on a spec/epic/`shape-impl-container`
+    # fails loud instead of silently recording a leaf delivery on a container.
+    if is_container(item):
+        raise WorkError(
+            ErrorCode.USAGE,
+            (
+                f"deliver {args.id}: {args.id} is a container; a container closes via "
+                f"close-walk when its children close, not through `deliver`"
+            ),
+        )
     return _deliver_leaf(backend, args, item)
 
 
@@ -234,10 +249,15 @@ def _reconcile_multi(backend: Backend, placeholder: Item, manifest: Manifest) ->
                 acceptance=item.acceptance,
             )
         )
-    # `impl-placeholder` is removed by the shared completion tail, strictly
-    # last -- only once every manifest child exists AND the design child has
-    # closed (L10: this label is the queryable handle `reconcile` enumerates
-    # interrupted expansions through).
+    # Stamp the placeholder as the impl sub-container so `claim` and the router
+    # treat it as a declared-state container (spec §6 -- keyed on the label, not
+    # child count). Idempotent (label add is set-union), so an interrupted
+    # expansion replays through the still-present handle and re-stamps
+    # harmlessly. Applied BEFORE the shared tail removes `impl-placeholder`
+    # last: that handle is the queryable signal `reconcile` enumerates
+    # interrupted expansions through, dropped only once every child exists AND
+    # the design child has closed (L10).
+    backend.label_mutate("add", placeholder.id, [IMPL_CONTAINER_LABEL])
 
 
 def _design_sibling(backend: Backend, placeholder: Item) -> Item | None:
@@ -269,7 +289,8 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
     Body, by manifest shape:
     none -> close the placeholder + reason note (only when non-empty);
     single -> set_type + retitle + set_acceptance + add shape label (+ spec-ready);
-    multi -> mint the MISSING children (compared to existing by title).
+    multi -> mint the MISSING children (compared to existing by title) + stamp
+    `shape-impl-container` on the placeholder.
 
     Then the shared tail, unconditionally: close the design child, then remove
     `impl-placeholder` STRICTLY LAST. That ordering (C1/C2, L10) makes the
