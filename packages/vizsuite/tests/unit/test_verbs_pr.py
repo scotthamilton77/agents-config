@@ -251,6 +251,8 @@ def test_pr_threads_heat_axes_repo_nwo_and_in_pr_into_the_scene(
 
     assert scene["repo_nwo"] == "octocat/demo"
     assert scene["render_config"]["unavailable_axes"] == []  # graph present + fresh
+    # envelope mirror of the available heat axes (all present when nothing is unavailable)
+    assert data["heat_axes_available"] == ["complexity", "consequence", "load_bearing"]
     names = {descriptor["name"] for descriptor in scene["descriptors"]}
     assert names == {"complexity", "load_bearing", "consequence", "heat"}
 
@@ -297,6 +299,8 @@ def test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent(
     scene = _extract_scene(artifact.read_text(encoding="utf-8"))
 
     assert scene["render_config"]["unavailable_axes"] == ["load_bearing"]
+    # envelope mirror: load_bearing drops out of the available axes when graphify-out/ is absent
+    assert data["heat_axes_available"] == ["complexity", "consequence"]
     by_path = {node["path"]: node["attributes"] for node in scene["files"]}
     # a real zero, never a stale/omitted value (spec §6.2).
     assert by_path["src/app.py"]["load_bearing"] == 0.0
