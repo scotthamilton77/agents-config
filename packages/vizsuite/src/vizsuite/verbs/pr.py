@@ -53,8 +53,9 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
 
     # scc scans a *materialized* snapshot of the head tree, never the live
     # checkout, so a dirty working copy can't leak into the artifact; the snapshot
-    # also carries `.critical-paths` for the consequence axis. Both heat axes are
-    # scored before the tempdir is torn down.
+    # also carries `.critical-paths` for the consequence axis. Both snapshot-scored
+    # axes (complexity, consequence) are scored before the tempdir is torn down; the
+    # load-bearing axis is computed later from the live working tree (see below).
     snapshot = materialize(runners.git, scope.head_oid, set(estate_map))
     try:
         scc_records = parse_scc(runners.scc.scan(snapshot))
