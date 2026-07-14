@@ -240,6 +240,7 @@
       toggleButton.type = "button";
       toggleButton.id = IDS.modeToggle;
       toggleButton.setAttribute("class", "viz-btn");
+      toggleButton.setAttribute("aria-label", "Mix PR and context files into one ranking");
       toggleRow.appendChild(toggleButton);
       container.appendChild(toggleRow);
 
