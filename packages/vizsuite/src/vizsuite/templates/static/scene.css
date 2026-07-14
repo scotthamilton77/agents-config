@@ -1,19 +1,87 @@
-/* vizsuite scene styles — minimal slice-1 skeleton; the V1 views land in .2.2. */
+/* vizsuite scene styles — shared F0 harness (view shell + controls + legend +
+   drill panel) plus the S2 estate-treemap view (spec §4.2/§4.3/§4.5/§4.6). */
+
+/* ---- Theme tokens (spec §4.3): every color/surface resolves via a `:root`
+   custom property so overlay elements mounted outside the view container
+   (the drill panel) still resolve them. Light is the default; the dark twin
+   applies both to OS dark (`prefers-color-scheme`) and to an explicit
+   `data-viz-theme="dark"` stamp from the in-page theme toggle. A `light`
+   stamp wins over OS dark (the `:not()` guard), matching the toggle's
+   "explicit choice beats ambient preference" rule. */
 :root {
   color-scheme: light dark;
-  --viz-bg: #ffffff;
-  --viz-fg: #1a1a1a;
-  --viz-muted: #6b7280;
-  --viz-border: #e5e7eb;
+  --viz-bg: #f9f9f7;
+  --viz-surface: #fcfcfb;
+  --viz-fg: #0b0b0b;
+  --viz-secondary: #52514e;
+  --viz-muted: #898781;
+  --viz-border: #e1e0d9;
+  --viz-border-strong: rgba(11, 11, 11, 0.18);
+  --viz-overlay-bg: #fcfcfb;
+
+  /* Semantic-heat sequential ramp (dataviz skill: multi-hue sequential is
+     permitted for "semantic heat", always with a scale legend). Anchored on
+     the validated status steps (good/warning/critical) — heat is a
+     continuous risk/attention magnitude, so it borrows the same read
+     without impersonating a discrete status chip. */
+  --viz-heat-cold: #0ca30c;
+  --viz-heat-mid: #fab219;
+  --viz-heat-hot: #d03b3b;
+  --viz-label-on-dark-fill: #ffffff;
+  --viz-label-on-light-fill: #0b0b0b;
+
+  /* Reserved F0 tokens: the five categorical plan-identity hues (spec §4.3).
+     Unused by the treemap view; declared now so later views (§7.1 plan
+     constellation) never have to touch theme tokens again. */
+  --viz-hue-blue: #2a78d6;
+  --viz-hue-aqua: #1baf7a;
+  --viz-hue-violet: #4a3aa7;
+  --viz-hue-magenta: #e87ba4;
+  --viz-hue-orange: #eb6834;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --viz-bg: #0f1115;
-    --viz-fg: #e6e6e6;
-    --viz-muted: #9ca3af;
-    --viz-border: #2a2f3a;
+  :root:not([data-viz-theme="light"]) {
+    --viz-bg: #0d0d0d;
+    --viz-surface: #1a1a19;
+    --viz-fg: #ffffff;
+    --viz-secondary: #c3c2b7;
+    --viz-muted: #898781;
+    --viz-border: #2c2c2a;
+    --viz-border-strong: rgba(255, 255, 255, 0.22);
+    --viz-overlay-bg: #1a1a19;
+
+    --viz-heat-cold: #0ca30c;
+    --viz-heat-mid: #fab219;
+    --viz-heat-hot: #e66767;
+
+    --viz-hue-blue: #3987e5;
+    --viz-hue-aqua: #199e70;
+    --viz-hue-violet: #9085e9;
+    --viz-hue-magenta: #d55181;
+    --viz-hue-orange: #d95926;
   }
 }
+:root[data-viz-theme="dark"] {
+  --viz-bg: #0d0d0d;
+  --viz-surface: #1a1a19;
+  --viz-fg: #ffffff;
+  --viz-secondary: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-border: #2c2c2a;
+  --viz-border-strong: rgba(255, 255, 255, 0.22);
+  --viz-overlay-bg: #1a1a19;
+
+  --viz-heat-cold: #0ca30c;
+  --viz-heat-mid: #fab219;
+  --viz-heat-hot: #e66767;
+
+  --viz-hue-blue: #3987e5;
+  --viz-hue-aqua: #199e70;
+  --viz-hue-violet: #9085e9;
+  --viz-hue-magenta: #d55181;
+  --viz-hue-orange: #d95926;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -28,16 +96,224 @@ body {
   margin: 0 0 0.25rem;
   font-size: 1.25rem;
 }
-#viz-root {
-  margin: 1rem 0;
+#viz-header-meta {
+  color: var(--viz-muted);
+  font-size: 12px;
 }
-.viz-file {
-  padding: 0.15rem 0.5rem;
-  border-bottom: 1px solid var(--viz-border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap;
+
+/* ---- Annotation fallback banner (spec §4.5): visible, never silent. ---- */
+.viz-warning-banner {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--viz-heat-mid);
+  border-radius: 4px;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-heat-mid) 15%, var(--viz-surface));
+  font-size: 12px;
+}
+.viz-warning-banner[hidden] {
+  display: none;
+}
+
+/* ---- Control row (spec §4.2/§4.5): flow layout only, never absolute
+   positioning — structural non-overlap for controls at any viewport. ---- */
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  background: var(--viz-surface);
+}
+.viz-slider-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.viz-slider-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 9rem;
+}
+.viz-slider-item[data-unavailable="true"] {
+  opacity: 0.5;
+}
+.viz-slider-item label {
+  font-size: 12px;
+  color: var(--viz-secondary);
+}
+.viz-slider-item .viz-slider-value {
+  font-size: 11px;
+  color: var(--viz-muted);
+  font-variant-numeric: tabular-nums;
+}
+.viz-mix-readout {
+  font-size: 12px;
+  color: var(--viz-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.viz-btn {
+  border: 1px solid var(--viz-border-strong);
+  border-radius: 4px;
+  background: var(--viz-surface);
+  color: var(--viz-fg);
+  padding: 0.3rem 0.6rem;
+  font-size: 12px;
+  cursor: pointer;
+}
+.viz-btn:hover {
+  background: var(--viz-border);
+}
+
+/* ---- Legend (spec §4.5: every encoding present in the scene appears here). */
+.viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  font-size: 12px;
+  color: var(--viz-secondary);
+}
+.viz-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.viz-legend-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 2px;
+  border: 1px solid var(--viz-border-strong);
+}
+.viz-legend-badge {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 2px solid var(--viz-fg);
+  background: transparent;
+}
+
+/* ---- Estate treemap (spec §6.1). ---- */
+#viz-root {
+  margin: 0 0 1rem;
+}
+.viz-treemap {
+  position: relative;
+  width: 100%;
+  height: 70vh;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  background: var(--viz-surface);
+}
+.viz-tile {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--viz-border-strong);
+  overflow: hidden;
+  cursor: pointer;
+}
+.viz-tile--dir {
+  background: var(--viz-surface);
+}
+.viz-tile--dir > .viz-tile-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 4px;
+  background: var(--viz-border);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.viz-tile--file {
+  display: flex;
+  align-items: flex-end;
+}
+.viz-tile-label {
+  display: block;
+  width: 100%;
+  padding: 1px 3px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.viz-tile-label--hidden {
+  display: none;
+}
+.viz-tile[data-in-pr="true"] {
+  outline: 2px solid var(--viz-fg);
+  outline-offset: -2px;
+}
+.viz-tile[data-collapsed="true"] .viz-collapse-glyph::before {
+  content: "▸";
+}
+.viz-tile:not([data-collapsed="true"]) .viz-collapse-glyph::before {
+  content: "▾";
+}
+.viz-tile--dir[data-collapsed="true"] {
+  background: var(--viz-surface);
+}
+
+/* ---- Drill panel (spec §4.2/§4.5): opaque overlay, bordered, Escape closes. */
+.viz-drill-panel {
+  position: fixed;
+  top: 10vh;
+  right: 1rem;
+  width: min(24rem, 90vw);
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--viz-overlay-bg);
+  opacity: 1;
+  color: var(--viz-fg);
+  border: 1px solid var(--viz-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 0.75rem 1rem;
+  z-index: 10;
+}
+.viz-drill-panel[hidden] {
+  display: none;
+}
+.viz-drill-panel h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
   word-break: break-all;
 }
+.viz-drill-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid var(--viz-border);
+}
+.viz-drill-notes {
+  width: 100%;
+  min-height: 4rem;
+  margin-top: 0.5rem;
+  font: inherit;
+  color: var(--viz-fg);
+  background: var(--viz-surface);
+  border: 1px solid var(--viz-border);
+  border-radius: 4px;
+  padding: 0.35rem;
+}
+
 #viz-footer {
   margin-top: 1.5rem;
   padding-top: 0.75rem;

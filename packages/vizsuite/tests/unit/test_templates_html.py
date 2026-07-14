@@ -82,7 +82,13 @@ def test_fill_template_substitution_is_order_independent():
     # the single-pass re.sub() cannot, because injected content is never
     # re-scanned.
     hostile_css = "body::after { content: '__VIZ_SCENE_JSON__'; }"
-    out = _fill_template(css=hostile_css, d3="/* d3 */", scene_json='{"pr_number":7}')
+    out = _fill_template(
+        css=hostile_css,
+        d3="/* d3 */",
+        app="/* app */",
+        views="/* views */",
+        scene_json='{"pr_number":7}',
+    )
 
     # the css's literal token survived (was not substituted as the scene slot)...
     assert "content: '__VIZ_SCENE_JSON__';" in out
@@ -90,7 +96,7 @@ def test_fill_template_substitution_is_order_independent():
     assert out.count('{"pr_number":7}') == 1
 
 
-def test_render_inlines_vendored_d3_and_scene_css_and_estate_paths():
+def test_render_inlines_vendored_d3_scene_css_app_and_treemap_bundles():
     html = render_html(
         _scene(
             FileNode(path="src/app.py", checksum="aaa"),
@@ -100,15 +106,24 @@ def test_render_inlines_vendored_d3_and_scene_css_and_estate_paths():
 
     assert html.startswith("<!DOCTYPE html>")
     assert "d3js.org v7.9.0" in html  # vendored d3 inlined
-    assert ".viz-file" in html  # scene css inlined
+    assert ".viz-treemap {" in html  # scene css inlined (treemap styles)
+    # the app + treemap JS bundles are inlined (item 6: bundle markers) —
+    # each source file's own identifying banner comment proves it landed.
+    assert "vizsuite/app.js" in html
+    assert "vizsuite/views/treemap.js" in html
+    # the treemap view's mount id is a stable string constant (spec §4.6
+    # verification hook), present in the inlined app.js source even though the
+    # element itself is created at runtime, not by the Python template.
+    assert "viz-view-treemap" in html
     # estate paths are present (inside the inlined JSON scene)
     assert "src/app.py" in html
     assert "README.md" in html
-    # the bootstrap binds each repo-derived path through d3's `.text` (which sets
-    # textContent), never `innerHTML` interpolation — the binding invariant.
-    # (`innerHTML` appears inside vendored d3 itself; the invariant is about our
-    # own code, so we assert the binding call, not a global substring absence.)
-    assert ".text(function (d) { return d.path; })" in html
+    # the treemap binds each repo-derived file/dir name through d3's `.text`
+    # (which sets textContent), never `innerHTML` interpolation — the binding
+    # invariant. (`innerHTML` appears inside vendored d3 itself; the invariant
+    # is about our own code, so we assert the binding call, not a global
+    # substring absence.)
+    assert ".text(function (d) { return d.data.name; })" in html
 
 
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():
