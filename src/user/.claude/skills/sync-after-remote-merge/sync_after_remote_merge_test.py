@@ -680,3 +680,32 @@ def test_finish_main_root_untracked_is_permitted(monkeypatch, main_repo):
     (main_repo / "scratch.txt").write_text("untracked, must not block\n")
     rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
     assert env["failed_step"] is None or env["failed_step"]["name"] != "gate_main_root"
+
+
+# --- Task 10: finish syncs the base with `git switch` (F4) ---
+
+
+def test_finish_base_not_a_local_branch_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    rc, env = _run_finish(monkeypatch, main_repo,
+                          _finish_args(main_repo, wt, sha, base="release"))
+    assert rc != 0
+    assert env["failed_step"]["name"] == "sync_base"
+    assert "local" in env["remediation_hint"]
+
+
+def test_finish_base_dot_is_rejected_not_path_checked_out(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    (main_repo / "f.txt").write_text("would be clobbered by a path checkout\n")
+    args = _finish_args(main_repo, wt, sha)
+    args[args.index("--base") + 1] = "."
+    rc, env = _run_finish(monkeypatch, main_repo, args)
+    assert rc != 0
+    assert (main_repo / "f.txt").read_text() == "would be clobbered by a path checkout\n"
+
+
+def test_finish_nonff_base_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    _git(main_repo, "commit", "--allow-empty", "-m", "local divergence")
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc != 0 and env["failed_step"]["name"] == "sync_base"

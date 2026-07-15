@@ -510,10 +510,33 @@ def _main_finish(args: argparse.Namespace) -> int:
                              f"switch would carry them: {', '.join(tracked)}")
         completed.append("gate_main_root")
 
-        # Placeholder tail — Tasks 10-11 replace this with sync_base and
-        # teardown. A gate-passing run must still fail cleanly (not emit a
-        # bogus success) until those land; the Task 9 tests exercise only gate
-        # FAILURES, so the happy paths abort here as designed.
+        # --- sync the base (§3.2.2 step 4, F4) ---
+        # Verify the base resolves to a LOCAL branch before switching — this
+        # deliberately defeats `git checkout`'s remote-DWIM and path-ambiguity
+        # behavior (e.g. `--base .` must never be treated as a path checkout).
+        verify = _run(["git", "-C", main_root, "rev-parse", "--verify", "--quiet",
+                       f"refs/heads/{args.base}"], check=False)
+        if verify.returncode != 0:
+            raise _AbortStep("sync_base",
+                             f"base {args.base!r} is not a local branch; create/check out the "
+                             f"local base first (this deliberately defeats checkout's remote DWIM)")
+        _run_step(["git", "-C", main_root, "switch", args.base], "sync_base",
+                  f"cannot switch to base {args.base!r}")
+        ff_argv = ["git", "-C", main_root, "pull", "--ff-only"]
+        ff = _run(ff_argv, check=False)
+        if ff.returncode != 0:
+            raise _AbortStep("sync_base",
+                             f"could not fast-forward base {args.base!r} (git pull --ff-only "
+                             f"failed — local divergence, missing upstream, or network); "
+                             f"reconcile by hand",
+                             cmd=shlex.join(ff_argv), exit_code=ff.returncode, stderr=ff.stderr)
+        synced_to = _run_step(["git", "-C", main_root, "rev-parse", "HEAD"], "sync_base",
+                              "cannot read base HEAD after sync").stdout.strip()
+        completed.append("sync_base")
+
+        # Placeholder tail — Task 11 replaces this with teardown. A
+        # gate-passing run must still fail cleanly (not emit a bogus success)
+        # until it lands.
         raise _AbortStep("teardown", "finish-mode teardown not yet implemented")
 
     except UnrecognizedWorktree as exc:
