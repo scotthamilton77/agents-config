@@ -16,22 +16,22 @@
 
 **Files:** none (environment checks)
 
-- [ ] **Step 1: Verify prgroom on PATH**
+- [x] **Step 1: Verify prgroom on PATH**
 
 Run: `command -v prgroom && prgroom --help >/dev/null 2>&1; echo "exit=$?"`
 Expected: `/Users/scott/.local/bin/prgroom` and `exit=0`. (If missing: `uv tool install --from /Users/scott/src/projects/agents-config/packages/prgroom prgroom`.)
 
-- [ ] **Step 2: Verify gh auth**
+- [x] **Step 2: Verify gh auth**
 
 Run: `gh auth status`
 Expected: `Logged in to github.com` for scotthamilton77, no error exit.
 
-- [ ] **Step 3: Create the campaign scratch dir**
+- [x] **Step 3: Create the campaign scratch dir**
 
 Run: `mkdir -p /tmp/prgroom-e2e && echo ok`
 Expected: `ok`. All logs/IDs land here.
 
-- [ ] **Step 4: Announce the two deviations (in chat, verbatim intent)**
+- [x] **Step 4: Announce the two deviations (in chat, verbatim intent)**
 
 (a) prgroom's package doc forbids mutating-verb runs "to try it out" — this campaign is the sanctioned E2E proof gating the cutover. (b) For this PR only, PR-review monitoring runs via monitor-pr/prgroom; wait-for-pr-comments and the detect-pr-push suggestion MUST NOT engage.
 
@@ -40,7 +40,7 @@ Expected: `ok`. All logs/IDs land here.
 **Files:**
 - Modify: `docs/architecture/prgroom/cutover-runbook.md` (insert new section between "Why a runbook…" and "## Drain before cutover")
 
-- [ ] **Step 1: Insert this exact section** (two deliberate gaps: no state-file inspection tip, no upgrade command — the seeds request them)
+- [x] **Step 1: Insert this exact section** (two deliberate gaps: no state-file inspection tip, no upgrade command — the seeds request them)
 
 ```markdown
 ## Operator preflight (before any prgroom run)
@@ -70,12 +70,12 @@ Then, for the PR being groomed:
   retry budget rides on exit 0 with `phase: human-gated`.
 ```
 
-- [ ] **Step 2: Verify the file renders sanely**
+- [x] **Step 2: Verify the file renders sanely**
 
 Run: `grep -n "Operator preflight" docs/architecture/prgroom/cutover-runbook.md`
 Expected: one hit, section present between the state-store table and "Drain before cutover".
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/architecture/prgroom/cutover-runbook.md

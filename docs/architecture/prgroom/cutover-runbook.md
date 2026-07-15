@@ -41,7 +41,8 @@ Then, for the PR being groomed:
 - **Pick the mode by trigger**: a chat/human-initiated session uses
   `prgroom run <owner>/<repo>#<n> --interactive` (returns control between
   cycles); cron/CI supervision uses `--autonomous` (the default — blocks in
-  `wait` between cycles).
+  `wait` between cycles). The monitor-pr skill's trigger table is the
+  authoritative mode-selection rule; this bullet is its operator summary.
 - **One groomer per PR** (the invariant above): confirm the PR has no live
   legacy inventory before pointing prgroom at it, and never invoke the legacy
   skills on a prgroom-groomed PR.
