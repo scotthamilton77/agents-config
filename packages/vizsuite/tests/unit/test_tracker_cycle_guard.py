@@ -130,3 +130,25 @@ def test_deterministic_cycle_path_explores_the_lexicographically_first_child():
     result = find_cycle(port, sidecar_edges=(), proposed=ProposedEdge("end", "start"))
 
     assert result == CycleRefusal(cycle=("end", "start", "path_a", "end"))
+
+
+def test_a_chain_deeper_than_the_recursion_limit_still_returns_a_typed_result():
+    # 5000-link sidecar chain: n0000 -> n0001 -> ... -> n5000. Proposing
+    # "n5000 depends on n0000" closes the loop; the traversal must walk the
+    # full depth and return CycleRefusal, never a RecursionError escaping the
+    # Safe/CycleRefusal contract (each node also answers an empty beads read).
+    depth = 5000
+    names = [f"n{i:04d}" for i in range(depth + 1)]
+    show_results = {name: tracker_show_ok(name, deps=[]) for name in names}
+    port, _runner = _port(show_results)
+    sidecar_edges = tuple(
+        SidecarDependencyEdge(from_bead=names[i], to_bead=names[i + 1]) for i in range(depth)
+    )
+
+    result = find_cycle(
+        port, sidecar_edges=sidecar_edges, proposed=ProposedEdge(names[-1], names[0])
+    )
+
+    assert isinstance(result, CycleRefusal)
+    assert len(result.cycle) == depth + 2  # n5000, n0000..n5000
+    assert result.cycle[0] == names[-1] and result.cycle[-1] == names[-1]

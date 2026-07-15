@@ -84,16 +84,28 @@ def _find_path(
 ) -> tuple[str, ...] | None:
     """DFS from `node` toward `target` following depends-on edges; `None` if
     unreachable. Children are visited in sorted order (`_combined_children`),
-    so the first path found is the same path on every run."""
-    if node == target:
-        return (node,)
-    if node in visited:
-        return None
+    so the first path found is the same path on every run. The stack is
+    explicit — a dependency chain deeper than Python's recursion limit must
+    still yield a typed result, never a `RecursionError` escaping the
+    `Safe`/`CycleRefusal` contract. The caller (`find_cycle`) guarantees
+    `node != target` (self-loops are refused upstream) and a fresh `visited`
+    set, so there are no entry-time checks here."""
     visited.add(node)
-    for child in _combined_children(port, sidecar_children, node):
-        found = _find_path(port, sidecar_children, node=child, target=target, visited=visited)
-        if found is not None:
-            return (node, *found)
+    path = [node]
+    stack = [iter(_combined_children(port, sidecar_children, node))]
+    while stack:
+        child = next(stack[-1], None)
+        if child is None:
+            stack.pop()
+            path.pop()
+            continue
+        if child == target:
+            return (*path, child)
+        if child in visited:
+            continue
+        visited.add(child)
+        path.append(child)
+        stack.append(iter(_combined_children(port, sidecar_children, child)))
     return None
 
 
