@@ -584,3 +584,20 @@ def test_main_operational_git_failure_is_named_step(monkeypatch, main_repo):
     assert env["status"] == "failed"
     assert env["failed_step"]["name"] == "sync_base"
     assert env["failed_step"]["name"] != "unexpected"
+
+
+# --- Task 3: preflight resolves the worktree root (F6) ---
+
+
+def test_symlinked_repo_root_still_classifies_convention(monkeypatch, main_repo, tmp_path):
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    link = tmp_path / "link-to-repo"
+    link.symlink_to(main_repo)
+    # Enter the worktree THROUGH the symlink so --show-toplevel reports a
+    # symlinked spelling while --git-common-dir resolves the real one.
+    rc, env = _run_main(monkeypatch, link / ".worktrees" / "feature-x", None,
+                        ["--branch", "feature/x"])
+    assert rc == 0
+    assert env["status"] == "not_merged"          # got past detect_convention
+    assert env["worktree_convention"] == "other-agent"

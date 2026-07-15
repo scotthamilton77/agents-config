@@ -265,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # --- preflight (runs in the worktree's cwd) ---
         worktree_root = Path(_run_step(["git", "rev-parse", "--show-toplevel"],
-                                       "preflight", "not inside a git repository").stdout.strip())
+                                       "preflight", "not inside a git repository").stdout.strip()).resolve()
         common = Path(_run_step(["git", "rev-parse", "--git-common-dir"],
                                 "preflight", "cannot resolve the git common dir").stdout.strip()).resolve()
         main_root = str(common.parent)
