@@ -176,11 +176,15 @@ def _run_and_parse(runner: TrackerRunner, argv: Sequence[str]) -> Any:
         raise _malformed_shape_error(argv, result) from exc
 
 
-def _malformed_bead_error(bead_id: str, exc: Exception) -> VizError:
+def _malformed_bead_error(bead_id: str, exc: Exception, data: Any) -> VizError:
     return VizError(
         ErrorCode.TRACKER_MALFORMED_ENVELOPE,
         f"work show {bead_id} returned an unexpected bead shape",
-        detail={"bead_id": bead_id, "reason": type(exc).__name__},
+        detail={
+            "bead_id": bead_id,
+            "reason": type(exc).__name__,
+            "raw_data_excerpt": repr(data)[:200],
+        },
     )
 
 
@@ -215,7 +219,7 @@ def _parse_bead_record(data: Any, *, bead_id: str) -> BeadRecord:
             deps=tuple(_parse_dep_edge(entry) for entry in deps),
         )
     except (KeyError, TypeError) as exc:
-        raise _malformed_bead_error(bead_id, exc) from exc
+        raise _malformed_bead_error(bead_id, exc, data) from exc
 
 
 class TrackerPort:

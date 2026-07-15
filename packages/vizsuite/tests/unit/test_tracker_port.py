@@ -556,3 +556,19 @@ def test_handshake_missing_protocol_error_carries_raw_data_excerpt():
 
     assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
     assert "wrong" in exc_info.value.detail["raw_data_excerpt"]
+
+
+def test_malformed_bead_error_carries_raw_data_excerpt():
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout='{"protocol": "1.0", "ok": true, "error": null, "data": {"surprise": true}}',
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+    assert "surprise" in exc_info.value.detail["raw_data_excerpt"]
