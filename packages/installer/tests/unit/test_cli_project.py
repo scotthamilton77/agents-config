@@ -6,6 +6,7 @@ guard's coded decision (exit code + message), not argparse machinery."""
 
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -205,6 +206,74 @@ def test_project_malformed_persisted_config_exits_cleanly(
 
     assert rc == 2
     assert "malformed project-config.toml" in capsys.readouterr().err
+
+
+def test_project_profiles_trailing_comma_rejected_cleanly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stray trailing comma in --profiles is rejected with a clean exit-2
+    diagnostic, not a confusing downstream 'unknown empty profile' error."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit,", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    assert "empty profile name" in capsys.readouterr().err
+    assert not (project / ".beads").exists()
+
+
+def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path) -> None:
+    """A CORRUPT project receipt fails closed (mirrors the user path): the install
+    still proceeds, but the receipt is NOT overwritten — overwriting would erase
+    the record of previously-installed paths and defeat future --prune."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    receipt_path = project / ".agents-config" / "install-receipt.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "integrity": "sha256:deadbeef",  # forged digest -> read_receipt CORRUPT
+                "roots": [".beads"],
+                "entries": [
+                    {
+                        "path": ".beads/STALE.md",
+                        "owner": "kit:beads",
+                        "root": ".beads",
+                        "kind": "file",
+                        "sha256": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = receipt_path.read_bytes()
+
+    io = ScriptedIO(interactive=False)
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 0
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"  # install proceeded
+    assert receipt_path.read_bytes() == before  # corrupt receipt left byte-for-byte untouched
+    assert any("unreadable" in e.message for e in io.transcript)
 
 
 def _hermetic_repo_with_project_tool_profile(tmp_path: Path) -> Path:

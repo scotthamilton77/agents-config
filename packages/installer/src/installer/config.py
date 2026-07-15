@@ -90,6 +90,24 @@ def resolve_plugins(
     return tuple(discovered[name] for name in seen)
 
 
+def parse_profiles_csv(csv: str) -> tuple[str, ...]:
+    """Translate the ``--profiles=`` CLI value into a resolved profile-name tuple.
+
+    Split on commas, strip whitespace, reject empty names (a stray comma such as
+    ``beads-kit,`` would otherwise resolve as an unknown empty profile), and
+    dedupe preserving first occurrence and user order. Mirrors ``resolve_tools``.
+    Raises ``ValueError`` on an empty name. The caller only invokes this for a
+    truthy ``--profiles`` value, so an all-empty value cannot reach here.
+    """
+    seen: dict[str, None] = {}
+    for raw in csv.split(","):
+        name = raw.strip()
+        if not name:
+            raise ValueError("--profiles contains an empty profile name (check for stray commas)")  # noqa: TRY003  # single call-site; subclass not justified
+        seen.setdefault(name, None)
+    return tuple(seen.keys())
+
+
 def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
     """Read the persisted profile selection from ``<project_root>/project-config.toml``.
 

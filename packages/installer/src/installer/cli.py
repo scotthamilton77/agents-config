@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from installer.config import (
     Config,
+    parse_profiles_csv,
     read_project_profiles,
     resolve_plugins,
     resolve_plugins_root,
@@ -508,7 +509,11 @@ def _run_project(
 
     manifest = load_manifest(repo_root / "profiles.toml")
     if args.profiles:
-        selection: tuple[str, ...] = tuple(p.strip() for p in args.profiles.split(","))
+        try:
+            selection: tuple[str, ...] = parse_profiles_csv(args.profiles)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: {exc}\n")
+            return 2
     else:
         try:
             persisted = read_project_profiles(project_root)
@@ -634,6 +639,16 @@ def _run_project(
     try:
         with lock_cm:
             prior_read = read_receipt(receipt_path)
+            # A CORRUPT prior is fail-closed (mirrors the user path): skip prune
+            # and leave the receipt untouched rather than overwriting it with a
+            # fresh record, which would permanently erase the tracking of
+            # previously-installed project paths and defeat future --prune.
+            receipt_corrupt = prior_read.status is ReadStatus.CORRUPT
+            if receipt_corrupt:
+                io.err(
+                    f"project install receipt at {receipt_path} is unreadable; skipping "
+                    "prune and leaving it untouched — reset or migrate it to re-enable pruning"
+                )
             prior = (
                 prior_read.receipt
                 if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
@@ -667,7 +682,7 @@ def _run_project(
                 except ConsentRequiredError:
                     return 1
 
-            if args.prune or args.prune_only:
+            if (args.prune or args.prune_only) and not receipt_corrupt:
                 try:
                     outcome = prune_pipeline(
                         tool_adapters,
@@ -687,7 +702,7 @@ def _run_project(
                 pruned_paths = outcome.pruned_paths
                 relinquished_paths = outcome.relinquished_paths
 
-            if not args.dry_run:
+            if not args.dry_run and not receipt_corrupt:
                 record_receipt(
                     receipt_path,
                     prior=prior,
@@ -698,6 +713,10 @@ def _run_project(
                     pruned_paths=pruned_paths,
                     relinquished_paths=relinquished_paths,
                 )
+            # Persisting the chosen selection targets project-config.toml, not the
+            # install receipt, so a corrupt receipt does not block it — the user's
+            # explicit intent is recorded regardless, keeping bare re-runs working.
+            if not args.dry_run:
                 write_project_profiles(project_root, selection)
     except ReceiptLockBusy:
         io.err(f"another install holds the project receipt lock at {receipt_path}")

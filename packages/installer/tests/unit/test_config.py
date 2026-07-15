@@ -13,7 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from installer.config import read_project_profiles, resolve_tools, write_project_profiles
+from installer.config import (
+    parse_profiles_csv,
+    read_project_profiles,
+    resolve_tools,
+    write_project_profiles,
+)
 from installer.core.model import Tool
 from installer.tools import registry
 from installer.tools.registry import UnknownToolError
@@ -212,6 +217,17 @@ def test_write_project_profiles_round_trips_through_read(tmp_path: Path) -> None
     """
     write_project_profiles(tmp_path, ("beads-kit",))
     assert read_project_profiles(tmp_path) == ("beads-kit",)
+
+
+def test_parse_profiles_csv_strips_dedupes_preserving_order() -> None:
+    assert parse_profiles_csv("beads-kit") == ("beads-kit",)
+    assert parse_profiles_csv(" a , b , a ") == ("a", "b")  # strip + dedupe first-occurrence
+
+
+def test_parse_profiles_csv_rejects_empty_name() -> None:
+    # A stray trailing comma would otherwise resolve as an unknown empty profile.
+    with pytest.raises(ValueError, match="empty profile name"):
+        parse_profiles_csv("beads-kit,")
 
 
 def test_write_project_profiles_preserves_other_tables(tmp_path: Path) -> None:
