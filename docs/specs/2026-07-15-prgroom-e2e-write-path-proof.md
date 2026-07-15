@@ -41,8 +41,8 @@ Worktree on the PR head branch (prgroom's push refuses otherwise: `PRECONDITION_
 
 After Copilot's organic first review lands, post under the operator's login via `gh`:
 
-- Inline comment 1 (fix-class): request that the section also document prgroom's state locations (state dir and legacy inventory export dir).
-- Inline comment 2 (fix-class): request that the install command state its working directory unambiguously.
+- Inline comment 1 (fix-class): request a short "inspecting state" tip — where the per-PR state file lives (the ground truth for a misbehaving run) and that `status --locked` exits 75 under contention rather than blocking.
+- Inline comment 2 (fix-class): request the upgrade form of the install command (`uv tool install --force --from ... prgroom`), so an operator picks up a newer prgroom after pulling main instead of running a stale binary.
 - Issue comment (escalation-class): a genuine operator-policy question — does this PR count toward the readiness gate's "≥3 real PRs groomed clean", given its seeded comments? Only the operator can rule; `escalated` is the correct disposition even with full context.
 
 Record all three comment IDs.
