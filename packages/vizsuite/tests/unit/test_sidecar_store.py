@@ -526,3 +526,24 @@ def test_store_reads_and_writes_are_scoped_to_the_injected_root(tmp_path: Path):
 
     assert store_a.read_manifest() == Manifest(schema_version="a")
     assert store_b.read_manifest() is None
+
+
+def test_lock_file_is_not_leaked_when_the_gitignore_write_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The gitignore write runs after the lock file is created but before the
+    # depth counter is incremented — a raise there must unlink the lock, or
+    # every future writer is permanently locked out.
+    store = SidecarStore(tmp_path)
+
+    def _boom(_viz_dir: Path) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("vizsuite.sidecar.store.ensure_viz_gitignore", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        store.write_manifest(Manifest(schema_version="1"))
+
+    monkeypatch.undo()
+    assert not (store.viz_dir / "lock").exists()
+    store.write_manifest(Manifest(schema_version="1"))  # no lockout — acquires cleanly
+    assert store.read_manifest() == Manifest(schema_version="1")

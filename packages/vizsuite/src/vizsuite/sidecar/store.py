@@ -233,7 +233,14 @@ class SidecarStore:
                 if time.monotonic() >= deadline:
                     raise _LockTimeoutError(lock_path, self.lock_timeout) from None
                 time.sleep(self.lock_poll_interval)
-        ensure_viz_gitignore(self.viz_dir)
+        # The depth counter is still 0 here, so `_locked()`'s finally-unlink
+        # would never run — a raise out of the gitignore write must not leak
+        # the just-created lock file (that would permanently block all writers).
+        try:
+            ensure_viz_gitignore(self.viz_dir)
+        except BaseException:
+            lock_path.unlink(missing_ok=True)
+            raise
 
     # ---- manifest (Tier-2, wholesale-rewrite) ------------------------------
 
