@@ -45,7 +45,8 @@ def test_envelope_serialises_convention_enum_to_string():
 
 
 def test_arg_error_emits_failed_envelope():
-    import contextlib, io
+    import contextlib
+    import io
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = m.main(["--branch"])          # missing value → argparse error
@@ -57,7 +58,8 @@ def test_arg_error_emits_failed_envelope():
 
 
 def test_arg_error_in_finish_mode_reports_finish_phase():
-    import contextlib, io
+    import contextlib
+    import io
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = m.main(["--finish", "--bogus-flag"])
@@ -580,7 +582,8 @@ def test_detached_head_without_branch_aborts(monkeypatch, main_repo):
 
 
 def _run_finish(monkeypatch, cwd, argv):
-    import contextlib, io
+    import contextlib
+    import io
     monkeypatch.chdir(cwd)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
