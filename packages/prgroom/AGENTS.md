@@ -77,6 +77,10 @@ exists.
 - Behavioural, not tautological — each test pins a coded decision, never the
   language/stdlib. Drive lifecycle functions through the fake `gh`/`git`/`Store`
   adapters and assert against observed calls/state.
+- Per-file Gh fakes are deliberate: each test module defines its own small
+  `GhClient`-level fake tailored to what it asserts (`_RecordingGh`, `FakeGh`,
+  …). Do not centralize them or cross-import a sibling test module's fake —
+  `tests/fakes.py` is scoped to the subprocess seam (`CommandRunner`) only.
 - Coverage floor is 90% branch (enforced by `pytest --cov`).
 
 ## Not installed by the installer
