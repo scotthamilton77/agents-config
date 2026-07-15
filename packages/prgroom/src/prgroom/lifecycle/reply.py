@@ -50,6 +50,12 @@ _REPLYABLE = frozenset(
         DispositionKind.ESCALATED,
     }
 )
+# SKIPPED/DEFERRED are internal bookkeeping. On a review thread the rationale belongs
+# as a threaded explanation, but a threadless item (review summary / issue comment)
+# takes the top-level issue-comment route — minting a fresh gh id no ledger recognizes,
+# one new bookkeeping comment per skipped item per cycle (the phantom-review comment
+# flood). Suppress the post; the disposition itself is the record.
+_BOOKKEEPING_ONLY = frozenset({DispositionKind.SKIPPED, DispositionKind.DEFERRED})
 
 
 def _render_body(disp: Disposition) -> str:
@@ -192,6 +198,15 @@ def reply_pr(
             if item.replied or item.disposition is None:
                 continue
             if item.disposition.kind not in _REPLYABLE:
+                continue
+            if (
+                item.kind is not ItemKind.REVIEW_THREAD
+                and item.disposition.kind in _BOOKKEEPING_ONLY
+            ):
+                # Finalized without a post — bookkeeping stays internal (see
+                # _BOOKKEEPING_ONLY). `replied` marks the reply step done so the
+                # item is never revisited.
+                item.replied = True
                 continue
             body = _render_body(item.disposition)
             if not body.strip():
