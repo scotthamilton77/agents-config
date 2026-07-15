@@ -133,18 +133,20 @@ Expected: an entry from `copilot-pull-request-reviewer[bot]` (typically 1–5 mi
 
 ```bash
 HEAD_SHA=$(gh pr view $PR --json headRefOid -q .headRefOid)
-grep -n "uv tool install --from" docs/architecture/prgroom/cutover-runbook.md   # anchor for seed 2
-grep -n "Read \`status --json\`" docs/architecture/prgroom/cutover-runbook.md    # anchor for seed 1
+# Capture the two anchor line numbers so the gh api seeds below paste as-is.
+L2=$(grep -n 'uv tool install --from' docs/architecture/prgroom/cutover-runbook.md | head -1 | cut -d: -f1)   # anchor for seed 2
+L1=$(grep -n 'Read `status --json`' docs/architecture/prgroom/cutover-runbook.md | head -1 | cut -d: -f1)      # anchor for seed 1
+echo "L1=$L1 (status bullet)  L2=$L2 (install command)"
 ```
 
-Expected: two line numbers in the new section (call them `L1` for the status bullet, `L2` for the install command).
+Expected: `L1` (status bullet) and `L2` (install command) set to the two anchor line numbers in the new section, echoed for confirmation.
 
 - [ ] **Step 2: Post inline seed 1 (fix-class — state-inspection gap)**
 
 ```bash
 gh api repos/scotthamilton77/agents-config/pulls/$PR/comments \
   -f body="This preflight should also tell the operator where to look when a run misbehaves: the per-PR state file (~/.local/state/prgroom/<owner>-<repo>-<n>.json) is the ground truth, and \`status --locked\` can exit 75 under contention rather than blocking. Please add a short 'inspecting state' bullet." \
-  -f commit_id="$HEAD_SHA" -f path="docs/architecture/prgroom/cutover-runbook.md" -F line=L1 -f side=RIGHT --jq .id | tee /tmp/prgroom-e2e/seed1-id
+  -f commit_id="$HEAD_SHA" -f path="docs/architecture/prgroom/cutover-runbook.md" -F line=$L1 -f side=RIGHT --jq .id | tee /tmp/prgroom-e2e/seed1-id
 ```
 
 - [ ] **Step 3: Post inline seed 2 (fix-class — upgrade gap)**
@@ -152,7 +154,7 @@ gh api repos/scotthamilton77/agents-config/pulls/$PR/comments \
 ```bash
 gh api repos/scotthamilton77/agents-config/pulls/$PR/comments \
   -f body="The install command should say how to pick up a newer prgroom after pulling main — \`uv tool install --force --from ... prgroom\` — otherwise operators run stale binaries after every merge. Please add the upgrade form." \
-  -f commit_id="$HEAD_SHA" -f path="docs/architecture/prgroom/cutover-runbook.md" -F line=L2 -f side=RIGHT --jq .id | tee /tmp/prgroom-e2e/seed2-id
+  -f commit_id="$HEAD_SHA" -f path="docs/architecture/prgroom/cutover-runbook.md" -F line=$L2 -f side=RIGHT --jq .id | tee /tmp/prgroom-e2e/seed2-id
 ```
 
 - [ ] **Step 4: Post the escalation seed (issue comment, genuine operator question)**
