@@ -33,6 +33,17 @@ prgroom --help   # must exit 0
 gh auth status   # must show an authenticated github.com login
 ```
 
+**Upgrading after pulling a newer main.** This is not one-time setup. prgroom's
+package version is pinned (`0.1.0` — it does not bump per commit), so after you
+`git pull` a newer main the source changes but the version does not. A plain
+re-run of `uv tool install` — and `uv tool upgrade prgroom` — sees that version
+already installed and no-ops, leaving you on the **stale binary**. `--force` is
+required to reinstall from the updated source:
+
+```bash
+uv tool install --force --from /path/to/agents-config/packages/prgroom prgroom
+```
+
 Then, for the PR being groomed:
 
 - **Run from a worktree checked out on the PR's head branch.** The fix agent
