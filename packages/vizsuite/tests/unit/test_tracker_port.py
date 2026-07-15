@@ -572,3 +572,57 @@ def test_malformed_bead_error_carries_raw_data_excerpt():
 
     assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
     assert "surprise" in exc_info.value.detail["raw_data_excerpt"]
+
+
+def test_non_string_bead_fields_are_malformed_not_coerced():
+    # str() coercion would turn a null id into the literal string "None" —
+    # contract drift must refuse as malformed instead.
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout=(
+            '{"protocol": "1.0", "ok": true, "error": null, "data":'
+            ' {"id": null, "status": "open", "labels": [], "deps": []}}'
+        ),
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+
+
+def test_non_string_dep_edge_fields_are_malformed_not_coerced():
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout=(
+            '{"protocol": "1.0", "ok": true, "error": null, "data":'
+            ' {"id": "x.1", "status": "open", "labels": [],'
+            ' "deps": [{"id": "y.1", "type": "blocks", "status": 7}]}}'
+        ),
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+
+
+def test_mint_bead_with_non_string_id_is_malformed_not_none_string():
+    runner = ScriptedTrackerRunner()
+    runner.responses[("create", "task", "--title", "T", "--orphan")] = TrackerResult(
+        returncode=0,
+        stdout='{"protocol": "1.0", "ok": true, "error": null, "data": {"id": null}}',
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.mint_bead("task", "T", orphan=True)
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE

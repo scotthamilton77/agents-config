@@ -201,8 +201,26 @@ class _NotAListError(TypeError):
         super().__init__("expected a JSON array")
 
 
+class _NotAStringError(TypeError):
+    """Raised when an envelope field that must be a JSON string is some other
+    type. `str(...)` coercion would turn contract drift (null/number/object)
+    into a plausible value like "None" instead of failing loud (fixed message
+    per ruff TRY003)."""
+
+    def __init__(self) -> None:
+        super().__init__("expected a JSON string")
+
+
+def _as_str(value: Any) -> str:
+    if not isinstance(value, str):
+        raise _NotAStringError
+    return value
+
+
 def _parse_dep_edge(raw: Any) -> DepEdgeRecord:
-    return DepEdgeRecord(id=str(raw["id"]), type=str(raw["type"]), status=str(raw["status"]))
+    return DepEdgeRecord(
+        id=_as_str(raw["id"]), type=_as_str(raw["type"]), status=_as_str(raw["status"])
+    )
 
 
 def _parse_bead_record(data: Any, *, bead_id: str) -> BeadRecord:
@@ -213,9 +231,9 @@ def _parse_bead_record(data: Any, *, bead_id: str) -> BeadRecord:
         if not isinstance(labels, list) or not isinstance(deps, list):
             raise _NotAListError
         return BeadRecord(
-            id=str(data["id"]),
-            status=str(data["status"]),
-            labels=tuple(str(label) for label in labels),
+            id=_as_str(data["id"]),
+            status=_as_str(data["status"]),
+            labels=tuple(_as_str(label) for label in labels),
             deps=tuple(_parse_dep_edge(entry) for entry in deps),
         )
     except (KeyError, TypeError) as exc:
@@ -311,7 +329,7 @@ class TrackerPort:
             argv.extend(["--acceptance", acceptance])
         data = _run_and_parse(self._runner, argv)
         try:
-            return str(data["id"])
+            return _as_str(data["id"])
         except (KeyError, TypeError) as exc:
             raise VizError(
                 ErrorCode.TRACKER_MALFORMED_ENVELOPE,
