@@ -454,10 +454,56 @@ def _main_finish(args: argparse.Namespace) -> int:
                              f"finish mode must run from the main checkout {main_root}, "
                              f"not {toplevel} (did the handed-back `cd` run?)")
         completed.append("preflight")
-        # Placeholder tail — Tasks 8-11 replace this with regate_worktree,
-        # gate_main_root, sync_base, and teardown. A preflight-passing run must
-        # still fail cleanly (not emit a bogus success) until those land; the
-        # Task 7 tests exercise only preflight FAILURES, so they never reach here.
+
+        # --- re-gate the worktree (§3.2.2 step 2) ---
+        # Every gate over mutable state re-runs here, adjacent to the mutation it
+        # authorizes. branch_oid / worktree_present / terminal_noop / ignored_paths
+        # are computed at this scope so the later teardown steps can consume them.
+        branch_ref = _run(["git", "-C", main_root, "rev-parse", f"refs/heads/{args.branch}"],
+                          check=False)
+        branch_oid = branch_ref.stdout.strip() if branch_ref.returncode == 0 else None
+        worktree_present = worktree.exists()
+        terminal_noop = False
+        ignored_paths: list[str] = []
+        if convention is Convention.CLAUDE_NATIVE:
+            if worktree_present:
+                raise _AbortStep("regate_worktree",
+                                 f"Claude-native worktree {worktree} still exists; run "
+                                 f"ExitWorktree(discard_changes: true) first, then re-run this command")
+        elif convention is Convention.OTHER_AGENT and worktree_present:
+            wt_head = _run_step(["git", "-C", str(worktree), "rev-parse", "--abbrev-ref", "HEAD"],
+                                "regate_worktree", "cannot read the worktree's branch").stdout.strip()
+            if wt_head != args.branch:
+                raise _AbortStep("regate_worktree",
+                                 f"worktree {worktree} is checked out on {wt_head!r}, not "
+                                 f"{args.branch!r}; a recreated worktree must never be removed "
+                                 f"on path identity alone")
+            porcelain = _run_step(["git", "-C", str(worktree), "status", "--porcelain", "--ignored"],
+                                  "regate_worktree", "cannot read worktree status").stdout
+            tracked, untracked, ignored_paths = classify_status_paths(porcelain)
+            strays = blocking_paths(tracked, untracked, convention)
+            if strays:
+                raise _AbortStep("regate_worktree",
+                                 f"worktree is dirty; refusing to remove: {', '.join(strays)}")
+            if branch_oid != args.branch_sha:
+                raise _AbortStep("regate_worktree",
+                                 f"{args.branch} is at {(branch_oid or 'missing')[:9]}, expected "
+                                 f"{args.branch_sha[:9]} (branch moved since plan); re-run the "
+                                 f"plan phase")
+        if not worktree_present or convention is Convention.NORMAL_REPO:
+            if branch_oid is None:
+                terminal_noop = True          # prior finish completed teardown (idempotent re-run)
+            elif convention is Convention.OTHER_AGENT and branch_oid != args.branch_sha:
+                raise _AbortStep("regate_worktree",
+                                 f"worktree {worktree} is gone but {args.branch} moved to "
+                                 f"{branch_oid[:9]} (expected {args.branch_sha[:9]}); not a "
+                                 f"resumable teardown — reconcile by hand")
+        completed.append("regate_worktree")
+
+        # Placeholder tail — Tasks 9-11 replace this with gate_main_root,
+        # sync_base, and teardown. A regate-passing run must still fail cleanly
+        # (not emit a bogus success) until those land; the Task 8 tests exercise
+        # only gate FAILURES, so the happy paths abort here as designed.
         raise _AbortStep("teardown", "finish-mode teardown not yet implemented")
 
     except UnrecognizedWorktree as exc:

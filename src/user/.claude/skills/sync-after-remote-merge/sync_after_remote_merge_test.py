@@ -620,3 +620,44 @@ def test_finish_refuses_foreign_worktree_path(monkeypatch, main_repo, tmp_path):
     rc, env = _run_finish(monkeypatch, main_repo,
                           _finish_args(main_repo, tmp_path / "elsewhere", "abc"))
     assert rc != 0 and env["failed_step"]["name"] in ("preflight", "detect_convention")
+
+
+def _merged_feature(main_repo, convention_dir=".worktrees"):
+    """A merged feature worktree + rewound local main; returns (wt, sha)."""
+    wt = main_repo / convention_dir / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    _git(main_repo, "merge", "feature/x")
+    _git(main_repo, "push", "origin", "main")
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    return wt, _head(wt)
+
+
+def test_finish_dirty_other_agent_worktree_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    (wt / "late.txt").write_text("appeared after plan\n")   # the F2 TOCTOU
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc != 0
+    assert env["failed_step"]["name"] == "regate_worktree"
+    assert "late.txt" in json.dumps(env)
+    assert wt.exists()
+
+
+def test_finish_worktree_on_wrong_branch_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    _git(wt, "checkout", "-b", "other-work")
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc != 0 and env["failed_step"]["name"] == "regate_worktree"
+
+
+def test_finish_claude_native_worktree_still_present_aborts(monkeypatch, main_repo):
+    wt = main_repo / ".claude" / "worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "push", "origin", "feature/x")
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, _head(wt)))
+    assert rc != 0
+    assert env["failed_step"]["name"] == "regate_worktree"
+    assert "ExitWorktree" in env["remediation_hint"]
