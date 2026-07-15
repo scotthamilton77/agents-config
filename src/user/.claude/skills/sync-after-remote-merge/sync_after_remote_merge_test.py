@@ -13,21 +13,30 @@ import sync_after_remote_merge as m  # noqa: E402
 
 
 def test_envelope_has_all_stable_keys():
-    env = m.build_envelope(m.Status.OK, steps_completed=["preflight"], base="main")
+    env = m.build_envelope(m.Status.OK, phase=m.Phase.FINISH,
+                           steps_completed=["preflight"], base="main")
     assert set(env) == {
-        "status", "steps_completed", "failed_step", "steps_remaining",
-        "worktree_convention", "main_root", "base", "branch", "pr",
-        "merge_commit", "synced_to", "remediation_hint",
+        "status", "phase", "steps_completed", "failed_step", "steps_remaining",
+        "worktree_convention", "main_root", "base", "branch", "branch_sha",
+        "pr", "merge_commit", "synced_to", "ignored_paths", "remediation_hint",
     }
     assert env["status"] == "ok"
-    assert env["steps_completed"] == ["preflight"]
-    assert env["base"] == "main"
-    assert env["failed_step"] is None
-    assert env["steps_remaining"] == []
+    assert env["phase"] == "finish"
+    assert env["branch_sha"] is None
+    assert env["ignored_paths"] == []
+
+
+def test_envelope_phase_serialises_to_string():
+    env = m.build_envelope(m.Status.HANDOFF, phase=m.Phase.PLAN,
+                           branch_sha="abc123", ignored_paths=[".venv/"])
+    assert json.loads(json.dumps(env))["phase"] == "plan"
+    assert env["branch_sha"] == "abc123"
+    assert env["ignored_paths"] == [".venv/"]
 
 
 def test_envelope_serialises_convention_enum_to_string():
-    env = m.build_envelope(m.Status.HANDOFF, worktree_convention=m.Convention.CLAUDE_NATIVE)
+    env = m.build_envelope(m.Status.HANDOFF, phase=m.Phase.PLAN,
+                           worktree_convention=m.Convention.CLAUDE_NATIVE)
     assert env["worktree_convention"] == "claude-native"
     assert json.loads(json.dumps(env))["worktree_convention"] == "claude-native"
 

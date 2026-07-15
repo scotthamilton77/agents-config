@@ -28,6 +28,11 @@ class Status(str, Enum):
     FAILED = "failed"
 
 
+class Phase(str, Enum):
+    PLAN = "plan"
+    FINISH = "finish"
+
+
 class Convention(str, Enum):
     NORMAL_REPO = "normal-repo"
     OTHER_AGENT = "other-agent"
@@ -50,6 +55,7 @@ class PrState:
 
 def build_envelope(
     status: Status,
+    phase: Phase,
     *,
     steps_completed: list[str] | tuple[str, ...] = (),
     failed_step: dict | None = None,
@@ -58,14 +64,17 @@ def build_envelope(
     main_root: str | None = None,
     base: str | None = None,
     branch: str | None = None,
+    branch_sha: str | None = None,
     pr: int | None = None,
     merge_commit: str | None = None,
     synced_to: str | None = None,
+    ignored_paths: list[str] | tuple[str, ...] = (),
     remediation_hint: str | None = None,
 ) -> dict:
     """Assemble the JSON envelope with a stable key set (null where N/A)."""
     return {
         "status": status.value,
+        "phase": phase.value,
         "steps_completed": list(steps_completed),
         "failed_step": failed_step,
         "steps_remaining": list(steps_remaining),
@@ -73,16 +82,18 @@ def build_envelope(
         "main_root": main_root,
         "base": base,
         "branch": branch,
+        "branch_sha": branch_sha,
         "pr": pr,
         "merge_commit": merge_commit,
         "synced_to": synced_to,
+        "ignored_paths": list(ignored_paths),
         "remediation_hint": remediation_hint,
     }
 
 
-def _emit(status: Status, **fields) -> None:
+def _emit(status: Status, phase: Phase, **fields) -> None:
     """Print one JSON envelope to stdout — the single output surface for main()."""
-    print(json.dumps(build_envelope(status, **fields)))
+    print(json.dumps(build_envelope(status, phase, **fields)))
 
 
 def classify_pr(pr_json: dict | None) -> PrState:
@@ -255,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         base = args.base or pr_state.base or _default_base(main_root)
         _require_safe_ref(base, "base")
         if not pr_state.merged:
-            _emit(Status.NOT_MERGED, steps_completed=completed, worktree_convention=convention,
+            _emit(Status.NOT_MERGED, Phase.PLAN, steps_completed=completed, worktree_convention=convention,
                   main_root=main_root, base=base, branch=branch, pr=pr_number,
                   remediation_hint=pr_state.reason)
             return 0
@@ -320,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         # --- teardown ---
         remaining = plan_teardown(convention, main_root, branch)
         if convention is Convention.CLAUDE_NATIVE:
-            _emit(Status.HANDOFF, steps_completed=completed, steps_remaining=remaining,
+            _emit(Status.HANDOFF, Phase.PLAN, steps_completed=completed, steps_remaining=remaining,
                   worktree_convention=convention, main_root=main_root, base=base, branch=branch,
                   pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
                   remediation_hint="sync done; finish teardown via the two steps in steps_remaining")
@@ -335,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         completed.append("teardown")
 
         removed = "worktree removed, " if convention is Convention.OTHER_AGENT else ""
-        _emit(Status.OK, steps_completed=completed, worktree_convention=convention,
+        _emit(Status.OK, Phase.PLAN, steps_completed=completed, worktree_convention=convention,
               main_root=main_root, base=base, branch=branch, pr=pr_number,
               merge_commit=merge_commit, synced_to=synced_to,
               remediation_hint=f"branch deleted, {removed}base synced to {synced_to[:9]}")
@@ -343,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
 
     except UnrecognizedWorktree as exc:
         # A deliberate fail-loud outcome — report it as a named step, not 'unexpected'.
-        _emit(Status.FAILED, steps_completed=completed,
+        _emit(Status.FAILED, Phase.PLAN, steps_completed=completed,
               failed_step={"name": "detect_convention", "cmd": "", "exit_code": 1, "stderr": str(exc)},
               worktree_convention=None, main_root=main_root, base=base, branch=branch,
               pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
@@ -355,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
         # destroy the uncommitted work safety_gate_worktree is protecting.
         remaining = (plan_teardown(convention, main_root or "", branch or "")
                      if convention and "safety_gate_worktree" in completed else [])
-        _emit(Status.FAILED, steps_completed=completed, failed_step=abort.failed_step,
+        _emit(Status.FAILED, Phase.PLAN, steps_completed=completed, failed_step=abort.failed_step,
               steps_remaining=remaining, worktree_convention=convention, main_root=main_root,
               base=base, branch=branch, pr=pr_number, merge_commit=merge_commit,
               synced_to=synced_to, remediation_hint=abort.hint)
@@ -363,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # fail closed on any unexpected error
         detail = (getattr(exc, "stderr", None) or str(exc)).strip()
         one_line = next((ln.strip() for ln in detail.splitlines() if ln.strip()), repr(exc))
-        _emit(Status.FAILED, steps_completed=completed,
+        _emit(Status.FAILED, Phase.PLAN, steps_completed=completed,
               failed_step={"name": "unexpected", "cmd": "", "exit_code": 1, "stderr": one_line},
               worktree_convention=convention, main_root=main_root, base=base, branch=branch,
               pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
