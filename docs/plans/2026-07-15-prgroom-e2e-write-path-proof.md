@@ -42,7 +42,7 @@ Expected: `ok`. All logs/IDs land here.
 
 - [x] **Step 1: Insert this exact section** (two deliberate gaps: no state-file inspection tip, no upgrade command — the seeds request them)
 
-```markdown
+````markdown
 ## Operator preflight (before any prgroom run)
 
 prgroom is not yet deployed by the installer; install it as a uv tool and
@@ -68,7 +68,7 @@ Then, for the PR being groomed:
   skills on a prgroom-groomed PR.
 - **Read `status --json`'s `phase`, never the exit code alone** — an exhausted
   retry budget rides on exit 0 with `phase: human-gated`.
-```
+````
 
 - [x] **Step 2: Verify the file renders sanely**
 
