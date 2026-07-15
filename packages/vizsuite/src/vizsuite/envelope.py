@@ -90,6 +90,12 @@ class VizError(Exception):
     message: str
     detail: dict[str, JsonValue] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # The dataclass-generated __init__ never calls Exception.__init__, so
+        # args would stay () and str(error) would render empty in an uncaught
+        # traceback.
+        super().__init__(self.message)
+
 
 def emit_success(data: JsonValue, out: TextIO = sys.stdout) -> int:
     json.dump({"protocol": PROTOCOL_VERSION, "ok": True, "data": data, "error": None}, out)

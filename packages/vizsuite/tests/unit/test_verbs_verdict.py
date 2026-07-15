@@ -795,6 +795,9 @@ def test_dry_run_previews_an_orphaned_already_promoted_edge_without_writing_a_fl
     preview = envelope["data"]["promotion"]
     assert preview["already_promoted"] is True
     assert preview["orphaned"] is True
+    # Parity with the live path's already-promoted data: the preview reports
+    # which kind the existing promotion actually landed as.
+    assert preview["tracker_edge_kind"] == "blocks"
     assert preview["tracker_writes"] == []
     assert store.read_flags() == ()
     assert tracker.calls == []

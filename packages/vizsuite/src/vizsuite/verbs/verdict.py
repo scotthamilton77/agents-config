@@ -378,6 +378,7 @@ def _preview_json(decision: _EdgePromotionDecision) -> JsonValue:
         return {
             "from_bead": decision.entry.from_bead,
             "to_bead": decision.entry.to_bead,
+            "tracker_edge_kind": decision.entry.tracker_edge_kind,
             "already_promoted": True,
             "orphaned": decision.orphaned,
             "tracker_writes": [],
