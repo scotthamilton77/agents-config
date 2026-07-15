@@ -8,7 +8,7 @@
 
 **Tech Stack:** prgroom CLI (uv tool), gh CLI, git worktree, bd.
 
-**Session context established before Task 1:** worktree `/Users/scott/src/projects/agents-config/.claude/worktrees/docs+prgroom-runbook-preflight` on branch `worktree-docs+prgroom-runbook-preflight`; spec committed as `d0abd05`; prgroom installed on PATH.
+**Session context established before Task 1:** worktree `<repo_root>/.claude/worktrees/docs+prgroom-runbook-preflight` on branch `worktree-docs+prgroom-runbook-preflight`; spec already committed on the branch; prgroom installed on PATH.
 
 ---
 
@@ -19,7 +19,7 @@
 - [x] **Step 1: Verify prgroom on PATH**
 
 Run: `command -v prgroom && prgroom --help >/dev/null 2>&1; echo "exit=$?"`
-Expected: `/Users/scott/.local/bin/prgroom` and `exit=0`. (If missing: `uv tool install --from /Users/scott/src/projects/agents-config/packages/prgroom prgroom`.)
+Expected: `~/.local/bin/prgroom` and `exit=0`. (If missing: `uv tool install --from <repo_root>/packages/prgroom prgroom`.)
 
 - [x] **Step 2: Verify gh auth**
 
@@ -86,7 +86,7 @@ git commit -m "docs(prgroom): add operator preflight section to cutover runbook"
 
 - [ ] **Step 1: Run gate-triage**
 
-Run: `uv run /Users/scott/.claude/skills/gate-triage/gate_triage.py --repo-root . --base-ref main` (from the worktree root)
+Run: `uv run ~/.claude/skills/gate-triage/gate_triage.py --repo-root . --base-ref main` (from the worktree root)
 Expected: JSON with a tier. Docs-only diff → likely `SKIP`; announce the tier and driving facts in chat. Non-zero exit → fall back to `SERIAL`.
 
 - [ ] **Step 2: Run the routed tier honestly**
