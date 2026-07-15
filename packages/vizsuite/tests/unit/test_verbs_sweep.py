@@ -14,6 +14,7 @@ silently restamped out from under the flag).
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 
@@ -290,3 +291,27 @@ def test_sweep_output_is_valid_json_and_manifest_bytes_are_deterministic(
     manifest_path = SidecarStore(tmp_path).viz_dir / "manifest.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["input_hashes"] == _CURRENT_FINGERPRINT
+
+
+def test_sweep_raises_on_an_unknown_rung_outcome_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The classification chain ends in a defensive raise: if `RungOutcome` ever
+    # grows a fourth variant that sweep doesn't handle, the sweep must fail
+    # loud rather than silently miscounting the fact as flagged.
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    store.write_manifest(Manifest(schema_version="1", input_hashes=_CURRENT_FINGERPRINT))
+    store.write_edges((_fact("edge-1", citations=("src/app.py",)),))
+    # String-target setattr would resolve `vizsuite.verbs.sweep` to the *function*
+    # re-exported by `verbs/__init__`, not the submodule — patch the module object.
+    sweep_module = importlib.import_module("vizsuite.verbs.sweep")
+    monkeypatch.setattr(sweep_module, "evaluate_fact", lambda *_args, **_kwargs: object())
+
+    exit_code, envelope, stderr = run_cli(["sweep"], git_runner=_git())
+
+    # cli.main's guarded region converts the TypeError into the single
+    # E_INTERNAL envelope (envelope invariant) with the traceback on stderr.
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_INTERNAL"
+    assert "TypeError" in stderr

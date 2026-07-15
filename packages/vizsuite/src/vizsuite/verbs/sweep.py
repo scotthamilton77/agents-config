@@ -37,10 +37,12 @@ from pathlib import Path
 
 from vizsuite.envelope import JsonValue
 from vizsuite.extract.estate import estate
-from vizsuite.funnel.rungs import Restamped, Reused, evaluate_fact
+from vizsuite.funnel.rungs import FlaggedForReassessment, Restamped, Reused, evaluate_fact
 from vizsuite.runners import Runners
 from vizsuite.sidecar.models import FactRecord, FlagKind, FlagRecord, Manifest
 from vizsuite.sidecar.store import SidecarStore
+
+_FactFileEntry = tuple[tuple[FactRecord, ...], Callable[[Sequence[FactRecord]], None]]
 
 
 def _mint_flag_id(fact_id: str) -> str:
@@ -82,9 +84,7 @@ def sweep(runners: Runners, _args: Namespace) -> JsonValue:
     reused_count = restamped_count = flagged_count = 0
     new_flags_by_id: dict[str, FlagRecord] = {}
 
-    fact_files: tuple[
-        tuple[tuple[FactRecord, ...], Callable[[Sequence[FactRecord]], None]], ...
-    ] = (
+    fact_files: tuple[_FactFileEntry, ...] = (
         (store.read_edges(), store.write_edges),
         (store.read_steps(), store.write_steps),
         (store.read_recommendations(), store.write_recommendations),
@@ -108,9 +108,7 @@ def sweep(runners: Runners, _args: Namespace) -> JsonValue:
             elif isinstance(outcome, Restamped):
                 restamped_count += 1
                 rewritten.append(outcome.fact)
-            else:
-                # `RungOutcome`'s only remaining member: mypy narrows `outcome` to
-                # `FlaggedForReassessment` here by elimination (strict mode verifies it).
+            elif isinstance(outcome, FlaggedForReassessment):
                 flagged_count += 1
                 rewritten.append(outcome.fact)
                 flag_id = _mint_flag_id(outcome.fact.fact_id)
@@ -120,6 +118,8 @@ def sweep(runners: Runners, _args: Namespace) -> JsonValue:
                     kind=FlagKind.DOUBT,
                     reason=outcome.reason,
                 )
+            else:
+                raise TypeError(outcome)
         write(rewritten)
 
     if new_flags_by_id:
