@@ -19,6 +19,7 @@ from pathlib import Path
 from vizsuite.adapters.gh.runner import GhResult
 from vizsuite.adapters.git.runner import LsTreeRow, ModifiedFileRow
 from vizsuite.adapters.scc.runner import SccResult
+from vizsuite.tracker.port import TrackerResult
 
 
 @dataclass
@@ -198,3 +199,80 @@ def tar_of(files: dict[str, str]) -> bytes:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
     return buffer.getvalue()
+
+
+@dataclass
+class ScriptedTrackerRunner:
+    """Feeds scripted `work` envelope responses; records every argv invocation.
+
+    - `.protocol`: the protocol string the `--protocol-version` handshake
+      returns (default `"1.0"`, matching `TrackerPort`'s expected major;
+      mismatch tests override this).
+    - `.show_results`: `{bead_id: TrackerResult}` — the envelope `work show
+      <id>` returns for that id.
+    - `.responses`: an explicit `{argv-tuple: TrackerResult}` override for any
+      argv a test needs to script precisely -- including `("--protocol-version",)`
+      or `("show", id)`, both of which it takes precedence over.
+    - `.calls`: every argv this fake was asked to run, in order — the
+      assertion surface for what `TrackerPort` actually sent (and, for
+      `resequence`, that nothing was sent at all).
+    """
+
+    protocol: str = "1.0"
+    show_results: dict[str, TrackerResult] = field(default_factory=dict)
+    responses: dict[tuple[str, ...], TrackerResult] = field(default_factory=dict)
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(self, argv: Sequence[str]) -> TrackerResult:
+        key = tuple(argv)
+        self.calls.append(key)
+        if key in self.responses:
+            return self.responses[key]
+        if key == ("--protocol-version",):
+            return tracker_ok({"protocol": self.protocol})
+        if len(key) == 2 and key[0] == "show" and key[1] in self.show_results:
+            return self.show_results[key[1]]
+        raise AssertionError(f"ScriptedTrackerRunner: no scripted response for {argv!r}")
+
+
+def tracker_ok(data: object) -> TrackerResult:
+    """Build a successful `work` envelope `TrackerResult` carrying `data`."""
+    payload = {"protocol": "1.0", "ok": True, "data": data, "error": None}
+    return TrackerResult(returncode=0, stdout=json.dumps(payload), stderr="")
+
+
+def tracker_error(code: str, message: str, detail: object = None) -> TrackerResult:
+    """Build a failing `work` envelope `TrackerResult` (`ok: false`)."""
+    payload = {
+        "protocol": "1.0",
+        "ok": False,
+        "data": None,
+        "error": {"code": code, "message": message, "detail": detail},
+    }
+    return TrackerResult(returncode=1, stdout=json.dumps(payload), stderr="")
+
+
+def tracker_show_ok(
+    bead_id: str,
+    *,
+    status: str = "open",
+    labels: Sequence[str] = (),
+    deps: Sequence[tuple[str, str, str]] = (),
+) -> TrackerResult:
+    """Build a successful `work show <id>` `TrackerResult`.
+
+    Only the four fields `TrackerPort.read_bead` parses (id/status/labels/deps)
+    are populated — every other field a real `work show` response carries
+    (title, type, priority, ...) is irrelevant to the port and omitted for
+    fixture brevity. `deps` entries are `(id, type, status)` tuples.
+    """
+    data = {
+        "id": bead_id,
+        "status": status,
+        "labels": list(labels),
+        "deps": [
+            {"id": dep_id, "type": dep_type, "status": dep_status}
+            for dep_id, dep_type, dep_status in deps
+        ],
+    }
+    return tracker_ok(data)

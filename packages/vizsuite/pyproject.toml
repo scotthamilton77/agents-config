@@ -38,11 +38,13 @@ select = ["E","W","F","I","B","UP","SIM","S","RET","ARG","PTH","TRY","RUF","N"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "TRY003"]
-# The subprocess adapters run known binaries (git/scc/gh) on controlled argv —
-# the intentional-subprocess case S603/S607 exist to let a boundary opt out of.
+# The subprocess adapters run known binaries (git/scc/gh/work) on controlled
+# argv — the intentional-subprocess case S603/S607 exist to let a boundary opt
+# out of.
 "src/vizsuite/adapters/git/runner.py" = ["S603", "S607"]
 "src/vizsuite/adapters/scc/runner.py" = ["S603", "S607"]
 "src/vizsuite/adapters/gh/runner.py" = ["S603", "S607"]
+"src/vizsuite/tracker/port.py" = ["S603", "S607"]
 
 [tool.ruff.format]
 docstring-code-format = true
