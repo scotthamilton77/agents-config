@@ -601,3 +601,15 @@ def test_symlinked_repo_root_still_classifies_convention(monkeypatch, main_repo,
     assert rc == 0
     assert env["status"] == "not_merged"          # got past detect_convention
     assert env["worktree_convention"] == "other-agent"
+
+
+# --- Task 4: detached HEAD aborts in plan preflight ---
+
+
+def test_detached_head_without_branch_aborts(monkeypatch, main_repo):
+    _git(main_repo, "checkout", "--detach")
+    rc, env = _run_main(monkeypatch, main_repo, None, [])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "preflight"
+    assert "detached" in env["remediation_hint"].lower()

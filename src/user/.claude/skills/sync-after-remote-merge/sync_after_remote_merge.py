@@ -271,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
         main_root = str(common.parent)
         head_branch = _run_step(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 "preflight", "cannot resolve current branch").stdout.strip()
+        if head_branch == "HEAD" and not args.branch:
+            raise _AbortStep("preflight",
+                             "HEAD is detached (no current branch); pass --branch "
+                             "explicitly or check out the feature branch first")
         branch = args.branch or head_branch
         _require_safe_ref(branch, "branch")
         convention = detect_convention(worktree_root, Path(main_root))
