@@ -131,9 +131,29 @@ def detect_convention(worktree_root: Path, main_root: Path) -> Convention:
     )
 
 
-def dirty_paths(porcelain: str) -> list[str]:
-    """Parse `git status --porcelain` into changed/untracked paths (XY-prefix stripped)."""
-    return [ln[3:] for ln in porcelain.splitlines() if ln.strip()]
+def classify_status_paths(porcelain: str) -> tuple[list[str], list[str], list[str]]:
+    """Split `git status --porcelain --ignored` into (tracked, untracked, ignored)."""
+    tracked, untracked, ignored = [], [], []
+    for ln in porcelain.splitlines():
+        if not ln.strip():
+            continue
+        prefix, path = ln[:2], ln[3:]
+        if prefix == "!!":
+            ignored.append(path)
+        elif prefix == "??":
+            untracked.append(path)
+        else:
+            tracked.append(path)
+    return tracked, untracked, ignored
+
+
+def blocking_paths(tracked: list[str], untracked: list[str], convention: Convention) -> list[str]:
+    """Paths that block teardown. Worktree conventions discard the directory, so
+    untracked files block too; a normal repo discards nothing, so only tracked
+    modifications block (matching the finish-mode main-root gate)."""
+    if convention is Convention.NORMAL_REPO:
+        return tracked
+    return tracked + untracked
 
 
 def unmerged_commits(rev_list_output: str) -> list[str]:
@@ -333,8 +353,10 @@ def main(argv: list[str] | None = None) -> int:
         completed.append("safety_gate_commits")
 
         # --- safety gate B: clean worktree ---
-        strays = dirty_paths(_run_step(["git", "-C", str(worktree_root), "status", "--porcelain"],
-                                       "safety_gate_worktree", "cannot read worktree status").stdout)
+        porcelain = _run_step(["git", "-C", str(worktree_root), "status", "--porcelain", "--ignored"],
+                              "safety_gate_worktree", "cannot read worktree status").stdout
+        tracked, untracked, ignored_paths = classify_status_paths(porcelain)
+        strays = blocking_paths(tracked, untracked, convention)
         if strays:
             raise _AbortStep("safety_gate_worktree",
                              f"worktree is dirty; refusing to discard: {', '.join(strays)}")
@@ -364,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
             _emit(Status.HANDOFF, Phase.PLAN, steps_completed=completed, steps_remaining=remaining,
                   worktree_convention=convention, main_root=main_root, base=base, branch=branch,
                   pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
+                  ignored_paths=ignored_paths,
                   remediation_hint="sync done; finish teardown via the two steps in steps_remaining")
             return 0
         if convention is Convention.OTHER_AGENT:
@@ -378,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         removed = "worktree removed, " if convention is Convention.OTHER_AGENT else ""
         _emit(Status.OK, Phase.PLAN, steps_completed=completed, worktree_convention=convention,
               main_root=main_root, base=base, branch=branch, pr=pr_number,
-              merge_commit=merge_commit, synced_to=synced_to,
+              merge_commit=merge_commit, synced_to=synced_to, ignored_paths=ignored_paths,
               remediation_hint=f"branch deleted, {removed}base synced to {synced_to[:9]}")
         return 0
 

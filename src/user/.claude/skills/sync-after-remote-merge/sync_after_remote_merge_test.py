@@ -213,14 +213,21 @@ def test_gh_pr_view_generic_not_found_raises(monkeypatch):
 # --- Task 4: safety-gate parsers ---
 
 
-def test_dirty_paths_parses_porcelain():
-    porcelain = " M src/a.py\n?? stray.txt\nA  added.py\n"
-    assert m.dirty_paths(porcelain) == ["src/a.py", "stray.txt", "added.py"]
+def test_classify_paths_splits_tracked_untracked_ignored():
+    porcelain = " M src/a.py\n?? new.txt\n!! .venv/\n!! .env\n"
+    tracked, untracked, ignored = m.classify_status_paths(porcelain)
+    assert tracked == ["src/a.py"]
+    assert untracked == ["new.txt"]
+    assert ignored == [".venv/", ".env"]
 
 
-def test_dirty_paths_clean_is_empty():
-    assert m.dirty_paths("") == []
-    assert m.dirty_paths("\n\n") == []
+def test_blocking_paths_worktree_conventions_block_untracked():
+    assert m.blocking_paths(["a"], ["b"], m.Convention.OTHER_AGENT) == ["a", "b"]
+    assert m.blocking_paths(["a"], ["b"], m.Convention.CLAUDE_NATIVE) == ["a", "b"]
+
+
+def test_blocking_paths_normal_repo_permits_untracked():
+    assert m.blocking_paths(["a"], ["b"], m.Convention.NORMAL_REPO) == ["a"]
 
 
 def test_unmerged_commits_lists_orphans():
