@@ -22,31 +22,33 @@ Do NOT use it to choose merge/PR/keep/discard for *unmerged* work — that is
 
 ## The script
 
-Run from the worktree being cleaned up:
+Run from the worktree being cleaned up (plan phase — read-only):
 
     python3 ~/.claude/skills/sync-after-remote-merge/sync_after_remote_merge.py [--branch <b>] [--base <b>]
 
-It verifies the PR merged, runs two data-loss safety gates (no unmerged local
-commits; clean worktree), fast-forwards the base, and tears down. It emits a
-JSON envelope on stdout and never merges.
+It verifies the PR merged and runs the data-loss safety gates, then hands back
+the exact remaining steps. It performs no mutation in this phase and never
+merges. Every exit path — including bad arguments — emits one JSON envelope on
+stdout.
 
 ### Reading the envelope
 
-- `status: "ok"` — done: branch deleted, base synced, and — for an other-agent
-  worktree — the worktree removed (a normal repo has no worktree to remove).
-  Report the result.
-- `status: "handoff"` — Claude-native worktree. The script synced the base but
-  cannot remove a harness-owned worktree. **Run each step in `steps_remaining`
-  in order**: first the `ExitWorktree(discard_changes: true)` tool call, then the
-  `git -C <main_root> branch -D <branch>` shell command. Then report done.
+- `status: "handoff"` (plan phase) — checks passed. **Run each step in
+  `steps_remaining` in order, verbatim**: for a Claude-native worktree that is
+  the `ExitWorktree(discard_changes: true)` tool call and then one `cd … &&
+  python3 … --finish …` command; otherwise just the finish command. Do not
+  compose your own git commands. If `ignored_paths` lists anything that looks
+  like configuration or secrets (e.g. `.env`), mention it to the user before
+  the ExitWorktree/discard step.
+- `status: "ok"` (finish phase) — done: base synced, branch deleted, worktree
+  removed where applicable. Report the result from this envelope.
 - `status: "not_merged"` — no merged PR for this branch. Do **not** merge on a
   cleanup request; tell the user there is nothing merged to clean up. (If the
   user's instruction was an explicit "merge it", see Composition.)
-- `status: "failed"` — a safety gate or step aborted. Read `failed_step` and
-  `remediation_hint`, surface them to the user, and remediate the exact
-  condition (dirty worktree → deal with the listed strays; unmerged commits →
-  preserve them; non-fast-forward base → reconcile by hand). Do not force past a
-  gate.
+- `status: "failed"` — a gate or step aborted (the `phase` field says which
+  phase). Read `failed_step` and `remediation_hint`, surface them, remediate
+  the exact condition, and re-run that phase's command — finish mode is
+  re-entrant. Do not force past a gate.
 
 ## Composition — the "merge it" path
 
@@ -68,5 +70,7 @@ This skill never runs `gh pr merge` and has no merge flags. It composes with
 
 - Never infer a merge from the user's say-so — the script confirms via `gh`.
 - Never force past a `failed` safety gate; nothing merged should cost local work.
-- Never git-remove a Claude-native worktree; complete the `handoff` steps.
+- Never git-remove a worktree yourself and never run teardown from inside it;
+  relay the handed-back steps verbatim (the `cd` in the finish command is what
+  evacuates the shell).
 - Never merge from this skill; route "merge it" through `merge-guard`.
