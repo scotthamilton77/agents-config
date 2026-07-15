@@ -137,7 +137,12 @@ class BdBackend:
         if fields.priority is not None:
             argv += ["--priority", fields.priority]
         if fields.parent is not None:
-            argv += ["--parent", fields.parent]
+            # bd copies the parent's CURRENT labels onto a --parent child by
+            # default (verified against bd 1.0.3), which leaks transient
+            # handles like `creating-spec` onto freshly-minted children. The
+            # Backend contract is "the created item carries exactly the
+            # requested labels", so every parented create opts out.
+            argv += ["--parent", fields.parent, "--no-inherit-labels"]
         if fields.labels:
             argv += ["--labels", ",".join(fields.labels)]
         if fields.acceptance is not None:

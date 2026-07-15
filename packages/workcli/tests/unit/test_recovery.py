@@ -708,3 +708,131 @@ def test_reconcile_heals_promote_crash_before_the_shape_feat_to_spec_swap():
     assert is_container(container)  # claim() now correctly refuses it as a container
     _assert_instantiation_healed(backend)
     assert {"id": "c", "kind": "interrupted_instantiation", "repaired": True} in findings
+
+
+# --- wgclw.9.8: leaked creating-spec on a container's own children ---
+#
+# bd copies a parent's current labels onto a `--parent` child by default, so
+# before the adapter opted out (`--no-inherit-labels`), a design child /
+# placeholder minted while their container still carried `creating-spec`
+# (removed from the container STRICTLY LAST, after both children exist) came
+# back from bd carrying `creating-spec` themselves -- verified against real
+# bd 1.0.3. `_sweep_interrupted_instantiations` must never mistake such a
+# leaf for a mid-instantiation container: it heals the leaked handle instead
+# of re-finalizing the child as its own planned spec container.
+
+
+def _legacy_spec_tree_with_leaked_creating_spec(backend: FakeBackend) -> None:
+    """A fully instantiated, already-`planned` spec tree as a live bd install
+    left it BEFORE the adapter disabled label inheritance: the container's own
+    `creating-spec` is off (removed last, per `finalize_spec_instantiation`),
+    but the design child and placeholder it minted while that label was still
+    on the container inherited it -- unlike `_spec_tree()` above, which models
+    the label set the fixed adapter now guarantees."""
+    backend.add("c", title="Objective", type="feature", labels=["shape-spec", "planned"])
+    backend.add(
+        "d",
+        title="Design: Objective",
+        type="task",
+        parent="c",
+        labels=[DESIGN_CHILD_LABEL, CREATING_SPEC_LABEL],
+    )
+    backend.add(
+        "p",
+        title="[Impl] Objective (scope: per spec)",
+        type="task",
+        parent="c",
+        labels=[IMPL_PLACEHOLDER_LABEL, CREATING_SPEC_LABEL],
+        deps=[DepEdge(id="d", type="blocks", status="open")],
+    )
+
+
+def test_reconcile_leaves_a_healthy_spec_tree_byte_unchanged():
+    # Acceptance criterion (wgclw.9.8): reconcile over an already-healthy,
+    # already-`planned` spec tree (clean labels, as the fixed adapter mints
+    # them) performs zero mutations. The undelivered placeholder still
+    # surfaces as an attention finding (needs_spec) -- reporting is not
+    # mutation.
+    backend = FakeBackend()
+    _spec_tree(backend, design_status="open")
+    before = {item_id: backend.get(item_id) for item_id in ("c", "d", "p")}
+
+    findings = _reconcile(backend)
+
+    after = {item_id: backend.get(item_id) for item_id in ("c", "d", "p")}
+    assert after == before
+    assert findings == [{"id": "p", "kind": "needs_spec", "repaired": False}]
+
+
+def test_reconcile_heals_leaked_creating_spec_children_without_refinalizing():
+    # Legacy trees minted before the adapter's --no-inherit-labels opt-out:
+    # the sweep strips the leaked handle from the container's own children and
+    # must NOT finalize them as containers (no `planned`, no grandchildren).
+    backend = FakeBackend()
+    _legacy_spec_tree_with_leaked_creating_spec(backend)
+
+    findings = _reconcile(backend)
+
+    for child_id in ("d", "p"):
+        child = backend.get(child_id)
+        assert CREATING_SPEC_LABEL not in child.labels  # leak healed
+        assert "planned" not in child.labels  # not re-finalized as a container
+        assert "shape-spec" not in child.labels
+        assert child.children == []  # no spurious grandchildren minted
+    assert {"id": "d", "kind": "leaked_creating_spec", "repaired": True} in findings
+    assert {"id": "p", "kind": "leaked_creating_spec", "repaired": True} in findings
+
+    # Once healed, a second sweep performs zero mutations (true idempotency).
+    before = {item_id: backend.get(item_id) for item_id in ("c", "d", "p")}
+    second = _reconcile(backend)
+    assert {item_id: backend.get(item_id) for item_id in ("c", "d", "p")} == before
+    assert all(finding["repaired"] is False for finding in second)
+
+
+def test_reconcile_dry_run_reports_leaked_creating_spec_without_mutating():
+    backend = FakeBackend()
+    _legacy_spec_tree_with_leaked_creating_spec(backend)
+    before = {item_id: backend.get(item_id) for item_id in ("c", "d", "p")}
+
+    findings = _reconcile(backend, dry_run=True)
+
+    assert {item_id: backend.get(item_id) for item_id in ("c", "d", "p")} == before
+    assert {"id": "d", "kind": "leaked_creating_spec", "repaired": False} in findings
+    assert {"id": "p", "kind": "leaked_creating_spec", "repaired": False} in findings
+
+
+def test_reconcile_does_not_clobber_a_freshly_reconciled_placeholders_manifest_shape():
+    # Acceptance criterion (wgclw.9.8), crash-mid-deliver path on a legacy
+    # tree: within ONE `reconcile` call, `_sweep_pending_placeholders`
+    # reconciles the placeholder to its manifest noun (shape-feat) and strips
+    # the leaked `creating-spec` with the handle, so the later
+    # `_sweep_interrupted_instantiations` never sees the healed leaf and its
+    # manifest-noun shape survives.
+    backend = FakeBackend()
+    backend.add("c", title="Objective", type="feature", labels=["shape-spec", "planned"])
+    backend.add(
+        "d",
+        title="Design",
+        type="task",
+        status="in_progress",
+        parent="c",
+        labels=[DESIGN_CHILD_LABEL, CREATING_SPEC_LABEL],  # leaked (wgclw.9.8)
+    )
+    backend.add(
+        "p",
+        title="[Impl] Objective",
+        type="task",
+        parent="c",
+        labels=[IMPL_PLACEHOLDER_LABEL, CREATING_SPEC_LABEL],  # leaked (wgclw.9.8)
+        notes=_snapshot_note(_single()),
+        deps=[DepEdge(id="d", type="blocks", status="in_progress")],
+    )
+
+    _reconcile(backend)
+
+    placeholder = backend.get("p")
+    assert "shape-feat" in placeholder.labels  # its manifest-noun shape survives
+    assert "shape-spec" not in placeholder.labels  # not wrongly re-finalized as a container
+    assert "planned" not in placeholder.labels
+    assert CREATING_SPEC_LABEL not in placeholder.labels  # leak healed with the handle
+    assert placeholder.children == []  # no spurious grandchildren minted

@@ -28,6 +28,7 @@ from workcli.lifecycle import (
 )
 from workcli.lifecycle.manifest import Manifest, parse_continuations, serialize_manifest
 from workcli.lifecycle.nouns import (
+    CREATING_SPEC_LABEL,
     DESIGN_CHILD_LABEL,
     IMPL_CONTAINER_LABEL,
     IMPL_PLACEHOLDER_LABEL,
@@ -317,4 +318,12 @@ def reconcile_placeholder(backend: Backend, placeholder_id: str, manifest: Manif
     design = _design_sibling(backend, placeholder)
     if design is not None and design.status != "closed":
         backend.close([design.id])
+    if CREATING_SPEC_LABEL in placeholder.labels:
+        # A legacy placeholder minted before the adapter's --no-inherit-labels
+        # opt-out inherited the container's `creating-spec` (wgclw.9.8). Strip
+        # it with the handle -- BEFORE the handle, which stays strictly last --
+        # or the later instantiation sweep in the same `reconcile` call would
+        # see a handle-free leaf carrying `creating-spec` and re-finalize it
+        # into a planned shape-spec container, clobbering the shape just set.
+        backend.label_mutate("remove", placeholder_id, [CREATING_SPEC_LABEL])
     backend.label_mutate("remove", placeholder_id, [IMPL_PLACEHOLDER_LABEL])
