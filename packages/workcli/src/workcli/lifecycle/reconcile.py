@@ -138,8 +138,9 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     it `planned` (wgclw.9.8). A second sweep over a healed tree finds no
     handle -- idempotent."""
     findings: list[JsonValue] = []
-    for candidate in backend.query(QueryFilters(label=CREATING_SPEC_LABEL)):
-        item = backend.get(candidate.id)
+    candidates = list(backend.query(QueryFilters(label=CREATING_SPEC_LABEL)))
+    items = backend.batch_get([candidate.id for candidate in candidates])
+    for item in items:
         if DESIGN_CHILD_LABEL in item.labels or IMPL_PLACEHOLDER_LABEL in item.labels:
             if not dry_run:
                 backend.label_mutate("remove", item.id, [CREATING_SPEC_LABEL])
