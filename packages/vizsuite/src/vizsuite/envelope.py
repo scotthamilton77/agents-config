@@ -57,13 +57,44 @@ class ErrorCode(StrEnum):
     # tracker slice: the port verb has no mapped `work` verb today (e.g.
     # resequence, spec §5.7) -- never a `bd` shell-out fallback (spec §5.6).
     TRACKER_NOT_SUPPORTED = "E_TRACKER_NOT_SUPPORTED"
+    # verdict slice: `dismiss` recorded against a fact that isn't in
+    # `recommendations.json` (spec §5.3/§10 item 3: "dismiss is valid only for
+    # recommendation-class facts").
+    VERDICT_DISMISS_NOT_RECOMMENDATION = "E_VERDICT_DISMISS_NOT_RECOMMENDATION"
+    # verdict slice: an edge-class fact's matching descriptor has no bead-id
+    # anchor on one (or both) endpoints -- a prose-only plan's edge can be
+    # reconciled and verdicted, but never edge-promoted until it gains a real
+    # bead anchor.
+    VERDICT_NO_BEAD_ANCHOR = "E_VERDICT_NO_BEAD_ANCHOR"
+    # verdict slice: an accept-time `blocks` promotion would close a cycle in
+    # the full accepted logical dependency graph (spec §5.3/§5.7, test item
+    # 17) -- refused with the cycle path in `detail`; no tracker edge written.
+    VERDICT_CYCLE_REFUSAL = "E_VERDICT_CYCLE_REFUSAL"
 
 
-@dataclass(frozen=True)
+@dataclass
 class VizError(Exception):
+    """`frozen=True` was previously used here but is unsafe for an `Exception`
+    subclass: CPython's exception machinery mutates `__traceback__`/
+    `__context__`/`__cause__` on the instance during propagation, and on
+    Python 3.14 a nested `@contextmanager` teardown (e.g. `SidecarStore.
+    transaction()` wrapping `_locked()`) explicitly assigns `exc.__traceback__`
+    while re-throwing into the generator — a frozen dataclass's `__setattr__`
+    override turns that assignment into a `FrozenInstanceError`, masking the
+    real error with an unrelated crash. Field values still behave as
+    immutable by convention (nothing in this codebase mutates a `VizError`
+    after construction); only the enforcement is gone.
+    """
+
     code: ErrorCode
     message: str
     detail: dict[str, JsonValue] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # The dataclass-generated __init__ never calls Exception.__init__, so
+        # args would stay () and str(error) would render empty in an uncaught
+        # traceback.
+        super().__init__(self.message)
 
 
 def emit_success(data: JsonValue, out: TextIO = sys.stdout) -> int:

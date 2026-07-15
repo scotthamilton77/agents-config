@@ -11,6 +11,7 @@ from vizsuite.adapters.git.runner import GitRunner
 from vizsuite.adapters.scc.runner import SccRunner
 from vizsuite.cli import main
 from vizsuite.envelope import JsonValue
+from vizsuite.tracker.port import TrackerRunner
 
 
 def run_cli(
@@ -19,6 +20,7 @@ def run_cli(
     git_runner: GitRunner | None = None,
     gh_runner: GhRunner | None = None,
     scc_runner: SccRunner | None = None,
+    tracker_runner: TrackerRunner | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Invoke `main()` capturing stdout/stderr; return `(exit_code, envelope, stderr)`.
 
@@ -29,7 +31,13 @@ def run_cli(
     out = StringIO()
     err = StringIO()
     exit_code = main(
-        argv, git_runner=git_runner, gh_runner=gh_runner, scc_runner=scc_runner, out=out, err=err
+        argv,
+        git_runner=git_runner,
+        gh_runner=gh_runner,
+        scc_runner=scc_runner,
+        tracker_runner=tracker_runner,
+        out=out,
+        err=err,
     )
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()

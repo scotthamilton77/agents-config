@@ -15,6 +15,15 @@ from vizsuite import cli as cli_module
 from vizsuite.envelope import ErrorCode, VizError, emit_failure, emit_success
 
 
+def test_viz_error_str_renders_its_message():
+    # The dataclass-generated __init__ never calls Exception.__init__, so
+    # without __post_init__ wiring, args stays () and str() renders empty --
+    # useless in an uncaught traceback.
+    error = VizError(ErrorCode.NOT_FOUND, "no fact 'edge-1' found")
+
+    assert str(error) == "no fact 'edge-1' found"
+
+
 def test_emit_success_writes_ok_envelope_and_returns_zero():
     out = StringIO()
 
