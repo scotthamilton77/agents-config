@@ -111,8 +111,10 @@ def driver(bd_binary: str, fresh_install: Path) -> Callable[[Sequence[str]], dic
 @pytest.fixture(scope="session")
 def read_only_install(bd_binary: str, tmp_path_factory: pytest.TempPathFactory):
     """One shared, seeded install for read/happy-path assertions. Seeded via RAW
-    bd. Yield-based teardown re-asserts the corpus is intact so a stray write-verb
-    fails LOUDLY rather than poisoning later read tests."""
+    bd. Yield-based teardown re-asserts the three seed titles still exist, so a
+    stray write-verb that DELETES a seed fails loudly rather than poisoning later
+    read tests. Note the guard is a subset check: it catches deletion of a named
+    seed, not an in-place mutation (retitle/close/label) or an added item."""
     install = tmp_path_factory.mktemp("read_only_beads")
     _bd_init(bd_binary, install)
     _run_bd(
@@ -170,7 +172,7 @@ def read_only_install(bd_binary: str, tmp_path_factory: pytest.TempPathFactory):
 
     titles = {i["title"] for i in json.loads(_run_bd(bd_binary, install, "list", "--json").stdout)}
     assert {"seed-alpha", "seed-beta", "seed-child"} <= titles, (
-        "read_only corpus was mutated by a test — read fixtures must stay read-only"
+        "a read test DELETED a read_only seed item — read fixtures must stay read-only"
     )
 
 
