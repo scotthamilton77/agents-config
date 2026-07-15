@@ -604,6 +604,21 @@ def test_detached_head_without_branch_aborts(monkeypatch, main_repo):
     assert "detached" in env["remediation_hint"].lower()
 
 
+def test_detached_head_in_worktree_aborts_and_does_not_dead_end_on_branch(monkeypatch, main_repo):
+    """A detached-HEAD worktree must fail closed pointing at 'check out the branch',
+    not suggest --branch (which the worktree mismatch guard would then reject),
+    even when --branch is supplied."""
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    _git(wt, "checkout", "--detach")
+    rc, env = _run_main(monkeypatch, wt, None, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "preflight"
+    assert "detached" in env["remediation_hint"].lower()
+    assert "check out" in env["remediation_hint"].lower()
+
+
 # --- Task 7: finish-mode preflight (identity checks) ---
 
 

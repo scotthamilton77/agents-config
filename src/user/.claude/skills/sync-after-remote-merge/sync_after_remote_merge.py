@@ -300,13 +300,22 @@ def _main_plan(args: argparse.Namespace) -> int:
         main_root = str(common.parent)
         head_branch = _run_step(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 "preflight", "cannot resolve current branch").stdout.strip()
-        if head_branch == "HEAD" and not args.branch:
+        convention = detect_convention(worktree_root, Path(main_root))
+        detached = head_branch == "HEAD"
+        if detached and convention in (Convention.OTHER_AGENT, Convention.CLAUDE_NATIVE):
+            # A worktree's teardown acts on THIS checkout; --branch cannot stand in
+            # for a detached HEAD (the mismatch guard below would reject it anyway),
+            # so point only at the remedy that actually works.
+            raise _AbortStep("preflight",
+                             "worktree HEAD is detached; check out the feature branch in this "
+                             "worktree before running cleanup (--branch cannot substitute — "
+                             "teardown must act on the checked-out branch)")
+        if detached and not args.branch:
             raise _AbortStep("preflight",
                              "HEAD is detached (no current branch); pass --branch "
                              "explicitly or check out the feature branch first")
         branch = args.branch or head_branch
         _require_safe_ref(branch, "branch")
-        convention = detect_convention(worktree_root, Path(main_root))
         # In a worktree, gate B (clean check) and teardown (worktree removal) act
         # on THIS checkout, whose branch is head_branch. An explicit --branch that
         # names a different ref would containment-check and delete that ref while
