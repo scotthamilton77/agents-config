@@ -346,7 +346,11 @@ def _main_plan(args: argparse.Namespace) -> int:
             raise _AbortStep("safety_gate_commits",
                              "merged PR reports no head SHA; cannot verify the branch is "
                              "fully merged before deleting it")
-        rev_argv = ["git", "-C", main_root, "rev-list", f"{pr_state.head_oid}..{branch}"]
+        # Resolve refs/heads/<branch> explicitly: a bare <branch> is ambiguous when
+        # a same-named tag exists (gitrevisions prefers the tag), which would let
+        # gate A validate a different object than the branch_sha bind (365) and
+        # teardown delete (both refs/heads/). Consistency here is a data-loss guard.
+        rev_argv = ["git", "-C", main_root, "rev-list", f"{pr_state.head_oid}..refs/heads/{branch}"]
         rev = _run(rev_argv, check=False)
         if rev.returncode != 0:
             raise _AbortStep("safety_gate_commits",

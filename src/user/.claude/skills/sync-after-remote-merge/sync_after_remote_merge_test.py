@@ -434,6 +434,32 @@ def test_main_local_commit_beyond_merged_head_aborts(monkeypatch, main_repo):
     assert wt.exists()  # nothing torn down
 
 
+def test_main_gate_a_resolves_branch_ref_not_a_shadowing_tag(monkeypatch, main_repo):
+    """Normal-repo path: gate A must resolve refs/heads/<branch>, not a same-named
+    tag. A tag pinned at the merged head shadows a bare <branch> by gitrevisions
+    precedence, masking unmerged local commits that teardown's refs/heads/ delete
+    would destroy. In a worktree the preflight mismatch guard catches the shadow
+    earlier (--abbrev-ref returns 'heads/<branch>'); a normal repo skips that
+    guard, so gate A is the last line of defense against the data loss."""
+    _git(main_repo, "checkout", "-b", "feature/x")
+    (main_repo / "g.txt").write_text("feature\n")
+    _git(main_repo, "add", "g.txt")
+    _git(main_repo, "commit", "-m", "feature work")
+    _git(main_repo, "push", "origin", "feature/x")
+    head_f = _head(main_repo)             # the PR head GitHub merged
+    _git(main_repo, "tag", "feature/x")   # tag SHADOWS the branch, pinned at the merged head
+    (main_repo / "h.txt").write_text("extra local work\n")
+    _git(main_repo, "add", "h.txt")
+    _git(main_repo, "commit", "-m", "extra local work")
+    orphan = _head(main_repo)             # branch tip now AHEAD of the tag
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": head_f}, "headRefOid": head_f}
+    rc, env = _run_main(monkeypatch, main_repo, pr, ["--branch", "feature/x"])
+    assert rc != 0
+    assert env["failed_step"]["name"] == "safety_gate_commits"
+    assert orphan[:9] in json.dumps(env)  # the orphan was seen, not masked by the tag
+
+
 def test_main_merged_pr_without_head_oid_aborts(monkeypatch, main_repo):
     """A MERGED PR with no head SHA can't be containment-checked; abort rather
     than skip the gate and force-delete."""
