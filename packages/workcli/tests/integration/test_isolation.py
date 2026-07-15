@@ -11,7 +11,7 @@ from tests.integration.conftest import assert_off_repo, resolve_bd
 
 
 def test_resolve_bd_returns_absolute_path_or_skips():
-    bd = resolve_bd()  # skips the module if bd is absent
+    bd = resolve_bd()  # skips this test if bd is absent
     assert bd.startswith("/")
 
 

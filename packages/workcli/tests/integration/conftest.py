@@ -24,7 +24,9 @@ _SEED_PREFIX = "itest"
 
 
 def resolve_bd() -> str:
-    """Absolute path to the bd binary, or skip the whole module if absent."""
+    """Absolute path to the bd binary. When bd is absent this raises pytest.skip
+    at call time — skipping the calling test, or (called from the session-scoped
+    bd_binary fixture) every test that needs a real bd."""
     bd = shutil.which("bd")
     if bd is None:
         pytest.skip("bd not on PATH; the real-bd integration suite requires it")
