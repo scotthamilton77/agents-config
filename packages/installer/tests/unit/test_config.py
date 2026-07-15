@@ -8,11 +8,17 @@ coded decisions. See the writing-unit-tests skill's Tautology Filter."""
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
 
-from installer.config import resolve_tools
+from installer.config import (
+    parse_profiles_csv,
+    read_project_profiles,
+    resolve_tools,
+    write_project_profiles,
+)
 from installer.core.model import Tool
 from installer.tools import registry
 from installer.tools.registry import UnknownToolError
@@ -168,3 +174,82 @@ def test_garbage_csv_token_is_rejected(tmp_path: Path) -> None:
     """
     with pytest.raises(UnknownToolError):
         resolve_tools(home=tmp_path, override_csv="foo")
+
+
+def test_read_project_profiles_returns_tuple_when_install_profiles_present(
+    tmp_path: Path,
+) -> None:
+    """
+    Given <project>/project-config.toml with [install] profiles = ["beads-kit"]
+    When read_project_profiles(project_root) is called
+    Then the result is ("beads-kit",).
+    """
+    (tmp_path / "project-config.toml").write_text(
+        '[install]\nprofiles = ["beads-kit"]\n', encoding="utf-8"
+    )
+    assert read_project_profiles(tmp_path) == ("beads-kit",)
+
+
+def test_read_project_profiles_returns_none_when_file_absent(tmp_path: Path) -> None:
+    """
+    Given a project root with no project-config.toml
+    When read_project_profiles(project_root) is called
+    Then the result is None (absence is a valid state, not an error).
+    """
+    assert read_project_profiles(tmp_path) is None
+
+
+def test_read_project_profiles_returns_none_when_install_table_absent(tmp_path: Path) -> None:
+    """
+    Given project-config.toml present but with no [install] table
+    When read_project_profiles(project_root) is called
+    Then the result is None.
+    """
+    (tmp_path / "project-config.toml").write_text('[other]\nfoo = "bar"\n', encoding="utf-8")
+    assert read_project_profiles(tmp_path) is None
+
+
+def test_write_project_profiles_round_trips_through_read(tmp_path: Path) -> None:
+    """
+    Given a project root with no project-config.toml
+    When write_project_profiles(project_root, ("beads-kit",)) is called
+    Then read_project_profiles(project_root) returns ("beads-kit",).
+    """
+    write_project_profiles(tmp_path, ("beads-kit",))
+    assert read_project_profiles(tmp_path) == ("beads-kit",)
+
+
+def test_parse_profiles_csv_strips_dedupes_preserving_order() -> None:
+    assert parse_profiles_csv("beads-kit") == ("beads-kit",)
+    assert parse_profiles_csv(" a , b , a ") == ("a", "b")  # strip + dedupe first-occurrence
+
+
+def test_parse_profiles_csv_rejects_empty_name() -> None:
+    # A stray trailing comma would otherwise resolve as an unknown empty profile.
+    with pytest.raises(ValueError, match="empty profile name"):
+        parse_profiles_csv("beads-kit,")
+
+
+def test_read_project_profiles_malformed_toml_normalized_to_valueerror(tmp_path: Path) -> None:
+    # A present-but-unparseable project-config.toml is normalized to ValueError
+    # (not a bare TOMLDecodeError) so the single caller guard surfaces one clean
+    # diagnostic instead of a traceback.
+    (tmp_path / "project-config.toml").write_text("this is not = valid = toml", encoding="utf-8")
+    with pytest.raises(ValueError, match="could not be read"):
+        read_project_profiles(tmp_path)
+
+
+def test_write_project_profiles_preserves_other_tables(tmp_path: Path) -> None:
+    """
+    Given project-config.toml with an unrelated [merge-policy] table
+    When write_project_profiles(project_root, ("beads-kit",)) is called
+    Then [merge-policy] survives and [install].profiles is set.
+    """
+    path = tmp_path / "project-config.toml"
+    path.write_text('[merge-policy]\nmerge-authorization = "explicit"\n', encoding="utf-8")
+
+    write_project_profiles(tmp_path, ("beads-kit",))
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["merge-policy"] == {"merge-authorization": "explicit"}
+    assert data["install"]["profiles"] == ["beads-kit"]

@@ -3,18 +3,37 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tomllib
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from installer.config import Config, resolve_plugins, resolve_plugins_root, resolve_tools
+from installer.config import (
+    Config,
+    parse_profiles_csv,
+    read_project_profiles,
+    resolve_plugins,
+    resolve_plugins_root,
+    resolve_tools,
+    write_project_profiles,
+)
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
+from installer.core.kits import kit_adapters, kit_name_of, kit_universe, stage_kits
 from installer.core.merge.base import CollisionError
 from installer.core.merge.registry import UnknownMergeKeyError
 from installer.core.model import Counters, InstallOutcome
 from installer.core.orchestrator import stage_and_transform
+from installer.core.profiles import (
+    ProfilesError,
+    Scope,
+    _selector_matches,
+    filter_plan_to_scope,
+    load_manifest,
+    project_universe,
+    resolve,
+)
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.receipt import Receipt
 from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
@@ -33,6 +52,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from installer.core.io_port import IOPort
+    from installer.core.model import StagingPlan, Tool
     from installer.plugins.base import PluginAdapter
 
 # The repo root is the agents-config checkout containing ``src/user/.agents`` and
@@ -70,6 +90,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "src/plugins). Default: auto-detect against $HOME. "
             "Pass --plugins= (empty) to install no plugins."
         ),
+    )
+    parser.add_argument(
+        "--project",
+        metavar="PATH",
+        default=None,
+        type=Path,
+        help="Install project-scoped content into PATH instead of user space.",
+    )
+    parser.add_argument(
+        "--profiles",
+        metavar="CSV",
+        default=None,
+        help="Comma-separated profile names (requires --project in this version).",
     )
     parser.add_argument(
         "--yes",
@@ -123,6 +156,7 @@ def main(
     home: Path | None = None,
     io: IOPort | None = None,
     repo_root: Path | None = None,
+    cwd: Path | None = None,
 ) -> int:
     """CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an
     interactive abort (e.g. at an overwrite prompt) exits cleanly with code 130 and
@@ -130,10 +164,25 @@ def main(
     Every other exit — argparse's ``SystemExit``, the guarded config-error returns —
     passes through unchanged."""
     try:
-        return _run(argv, home=home, io=io, repo_root=repo_root)
+        return _run(argv, home=home, io=io, repo_root=repo_root, cwd=cwd)
     except KeyboardInterrupt:
         sys.stderr.write("\nAborted.\n")
         return 130
+
+
+def _has_install_table(project_config_path: Path) -> bool:
+    """True iff ``project_config_path`` exists, parses as TOML, and has an
+    ``[install]`` table. Best-effort: any read/parse failure counts as "no
+    table" rather than raising — this feeds a passive, suggest-only notice
+    on the USER path, which must never fail a real install over a malformed
+    or unreadable file it does not own."""
+    if not project_config_path.is_file():
+        return False
+    try:
+        data = tomllib.loads(project_config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return False
+    return isinstance(data.get("install"), dict)
 
 
 def _run(
@@ -142,10 +191,19 @@ def _run(
     home: Path | None = None,
     io: IOPort | None = None,
     repo_root: Path | None = None,
+    cwd: Path | None = None,
 ) -> int:
     args = _build_parser().parse_args(argv)
     resolved_home = home if home is not None else Path.home()
     resolved_repo_root = repo_root if repo_root is not None else _REPO_ROOT
+    resolved_cwd = cwd if cwd is not None else Path.cwd()
+
+    if args.profiles is not None and args.project is None:
+        sys.stderr.write("installer: --profiles requires --project in this version\n")
+        return 2
+    if args.project is not None and not args.project.is_dir():
+        sys.stderr.write(f"installer: --project path is not a directory: {args.project}\n")
+        return 2
 
     if io is None:
         from installer.core.io_port import TerminalIO
@@ -224,6 +282,17 @@ def _run(
         sys.stderr.write(f"installer: {exc}\n")
         return 1
 
+    # A `--project` run forks here to the project-scoped tail: it installs kit
+    # content (tool-agnostic project refs) under a project-local receipt and
+    # never touches user space or runs the user tool/plugin install below. This
+    # fork sits BEFORE the user `--dump-stage` branch below so `--project
+    # --dump-stage` renders the resolved PROJECT plan (tool refs + kit refs)
+    # from inside `_run_project` instead of falling through to the user dump.
+    if args.project is not None:
+        return _run_project(
+            args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
+        )
+
     if args.dump_stage is not None:
         try:
             dump_plan(plans, args.dump_stage, io=io)
@@ -234,6 +303,30 @@ def _run(
             sys.stderr.write(f"installer: {exc}\n")
             return 2
         return 0
+
+    # Resolver-on for the user path: narrow every tool plan to the
+    # USER-bound refs the active profile selection resolves to. The user CLI
+    # exposes no --profiles flag yet, so the selection is always empty, which
+    # resolve() treats as the "full" profile (`include = ["**"]`) — every
+    # staged item matches, so filtering changes nothing and the install stays
+    # byte-identical to the pre-resolver output. Guarded on a non-empty
+    # universe: an empty universe (every active tool plan staged zero items)
+    # has nothing to resolve or filter, and skipping avoids both a spurious
+    # profiles.toml requirement and resolve()'s "matches nothing"/"resolves to
+    # zero items" errors on synthetic all-empty fixtures — real installs always
+    # stage at least one item, so this guard never changes real behavior.
+    universe = project_universe(plans.values())
+    if universe:
+        manifest = load_manifest(resolved_repo_root / "profiles.toml")
+        resolved = resolve(manifest, (), universe, bound_scopes=frozenset({Scope.USER}))
+        kept_by_tool: dict[Tool, set[Path]] = {}
+        for ref in resolved.included.get(Scope.USER, ()):
+            if ref.tool is not None:
+                kept_by_tool.setdefault(ref.tool, set()).add(ref.dest_relpath)
+        plans = {
+            tool: filter_plan_to_scope(plan, kept_by_tool.get(tool, set()))
+            for tool, plan in plans.items()
+        }
 
     config = Config(home=resolved_home, tools=tools, auto_yes=args.yes)
     adapters = [get_adapter(tool) for tool in tools]
@@ -370,6 +463,287 @@ def _run(
         plugins=[p.name for p in plugins],
         all_tools=[t.value for t in known_tools()],
         all_plugins=list(discover(resolve_plugins_root(resolved_repo_root, os.environ))),
+        verbose=args.verbose,
+        io=io,
+    )
+
+    # Passive, suggest-only notice for the USER path only (a --project run
+    # returns earlier via _run_project and never reaches here): if cwd looks
+    # like a project (a .beads/ dir, or a project-config.toml carrying an
+    # [install] table), point at the project-scoped install without acting
+    # on it. No scan beyond cwd itself.
+    if (resolved_cwd / ".beads").is_dir() or _has_install_table(
+        resolved_cwd / "project-config.toml"
+    ):
+        io.info(
+            "This looks like a project. To install project-scoped content "
+            "here: install.sh --project ."
+        )
+
+    return 0
+
+
+def _run_project(
+    args: argparse.Namespace,
+    *,
+    plans: dict[Tool, StagingPlan],
+    project_root: Path,
+    repo_root: Path,
+    io: IOPort,
+) -> int:
+    """The project-scoped tail: resolve, validate, and install project content.
+
+    Handles the full project install: staging kits, resolving the selection to
+    the PROJECT scope, the kit-scope + project-namespace validation guards, tool
+    syncing under ``project_root``'s tool tree, kit route installs (a kit rides
+    the existing plugin-route machinery under owner ``kit:<name>`` via
+    ``_KitRouteAdapter``), prune, project-local receipt recording, and profile
+    persistence. The load-bearing invariant: this path writes only under
+    ``project_root`` (never user space) and tracks state in a project-local
+    receipt guarded by a project-local lock. The user-space install pipeline and
+    user plugin routes never run here.
+    """
+    kits_root = repo_root / "src" / "kits"
+    staged_kits = stage_kits(kits_root)
+    kit_refs = kit_universe(staged_kits)
+    universe = project_universe(plans.values())
+    for key, refs in kit_refs.items():
+        universe.setdefault(key, []).extend(refs)
+
+    manifest = load_manifest(repo_root / "profiles.toml")
+    # `is not None` (not truthiness): an explicit `--profiles=` (empty string) is
+    # routed through parse_profiles_csv and rejected cleanly, rather than silently
+    # falling back to the persisted set as if the flag were omitted.
+    if args.profiles is not None:
+        try:
+            selection: tuple[str, ...] = parse_profiles_csv(args.profiles)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: {exc}\n")
+            return 2
+    else:
+        try:
+            persisted = read_project_profiles(project_root)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: malformed project-config.toml [install]: {exc}\n")
+            return 2
+        # An empty persisted list is treated the same as no persisted list: it is
+        # NOT an implicit "full" selection. resolve() reads an empty selection as
+        # the full profile, so falling through here would silently bypass the
+        # no-implicit-full guarantee project installs are supposed to enforce.
+        if persisted:
+            selection = persisted
+        else:
+            sys.stderr.write(
+                "installer: project install needs an explicit profile (no implicit full)\n"
+            )
+            return 2
+    # Pre-resolve kit-scope guard: kits are project-only. resolve() discards a
+    # dropped ref's identity into anonymous per-scope counts, so a check after
+    # resolve() would be a tautology — it can never name the offending
+    # selector. Walk the selected profiles' IncludeEntries directly instead.
+    kit_keys = set(kit_refs)
+    for name in selection:
+        profile = manifest.profiles.get(name)
+        if profile is None:
+            continue  # let resolve() raise the real unknown-profile error
+        for entry in profile.includes:
+            scope = entry.scope
+            if (
+                scope is not None
+                and scope is not Scope.PROJECT
+                and any(_selector_matches(entry.selector, key) for key in kit_keys)
+            ):
+                sys.stderr.write(
+                    f"installer: kit selector {entry.selector!r} cannot be scoped to "
+                    f"{scope.value!r}; kits are project-only\n"
+                )
+                return 2
+
+    try:
+        resolved = resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.PROJECT}))
+    except ProfilesError as exc:
+        sys.stderr.write(f"installer: {exc}\n")
+        return 2
+
+    # A kit is selected iff at least one of its refs' dest_relpaths landed in
+    # the resolved PROJECT scope.
+    project_dests = {r.dest_relpath for r in resolved.included.get(Scope.PROJECT, ())}
+    selected_kits = {
+        kit_name_of(sk.selector_key) for sk in staged_kits if sk.ref.dest_relpath in project_dests
+    }
+    kit_route_adapters = kit_adapters(kits_root, project_root, selected=selected_kits)
+
+    # Tool tail: refs in the resolved PROJECT scope with a tool (as opposed to
+    # tool-agnostic kit refs, whose `ref.tool is None`) get synced under
+    # `project_root`'s tool tree instead of the plugin-route path above.
+    # Validation-first: every such ref's top-level namespace segment must be
+    # one of the destination tool's declared `project_namespaces()` — a tool
+    # with an empty `project_namespaces()` (Codex/Gemini/OpenCode today)
+    # accepts no project-scoped tool refs at all. Fails loud, naming the tool
+    # and namespace, before any file is written.
+    tool_dest_relpaths: dict[Tool, set[Path]] = {}
+    for ref in resolved.included.get(Scope.PROJECT, ()):
+        if ref.tool is not None:
+            tool_dest_relpaths.setdefault(ref.tool, set()).add(ref.dest_relpath)
+    for tool, dest_relpaths in tool_dest_relpaths.items():
+        allowed_namespaces = set(get_adapter(tool).project_namespaces())
+        for dest_relpath in sorted(dest_relpaths):
+            namespace = dest_relpath.parts[0]
+            if namespace not in allowed_namespaces:
+                sys.stderr.write(
+                    f"installer: tool {tool.value!r} cannot install {namespace!r} to "
+                    f"project scope (not in its project_namespaces()); selected "
+                    f"path: {dest_relpath}\n"
+                )
+                return 1
+
+    tool_adapters = [get_adapter(tool) for tool in tool_dest_relpaths]
+    tool_dest_roots = {adapter.name: adapter.dest_dir(project_root) for adapter in tool_adapters}
+    tool_plans = {
+        tool: filter_plan_to_scope(plans[tool], dest_relpaths)
+        for tool, dest_relpaths in tool_dest_relpaths.items()
+    }
+
+    # `--project --dump-stage` renders the resolved PROJECT plan and returns —
+    # read-only, like the user dump branch it replaces for this path. Tool
+    # refs materialise via the same `dump_plan` tree the user path uses (empty
+    # when the resolved plan carries none); kit refs have no tool tree to land
+    # in, so they render as a `kit:<name>  <dest_relpath>` listing instead.
+    # Nothing under `project_root` is written — no kit content, no receipt.
+    if args.dump_stage is not None:
+        try:
+            dump_plan(tool_plans, args.dump_stage, io=io)
+        except ValueError as exc:
+            sys.stderr.write(f"installer: {exc}\n")
+            return 2
+        for name, dest_relpath in sorted(
+            (kit_name_of(sk.selector_key), sk.ref.dest_relpath)
+            for sk in staged_kits
+            if sk.ref.dest_relpath in project_dests
+        ):
+            io.info(f"kit:{name}  {dest_relpath}")
+        return 0
+
+    receipt_path = project_root / ".agents-config" / "install-receipt.json"
+    lock_cm: AbstractContextManager[None] = (
+        nullcontext() if args.dry_run else receipt_lock(receipt_path.with_suffix(".lock"))
+    )
+    counters: dict[str, Counters] = {}
+    tool_outcomes: dict[str, list[InstallOutcome]] = {}
+    plugin_outcomes: dict[str, list[InstallOutcome]] = {}
+    pruned_paths: set[Path] = set()
+    relinquished_paths: set[Path] = set()
+    # ALL kit names present under src/kits/ — selected or not — so a
+    # deselected kit's prior receipt entry lands in scope_owners and is
+    # prunable (mirrors the user path's discovered_plugin_names, which is
+    # also the full discovered set, not just the resolved selection).
+    all_kit_owner_names = (
+        {f"kit:{p.name}" for p in kits_root.iterdir() if p.is_dir() and not p.is_symlink()}
+        if kits_root.is_dir()
+        else set()
+    )
+    try:
+        with lock_cm:
+            prior_read = read_receipt(receipt_path)
+            # A CORRUPT prior is fail-closed (mirrors the user path): skip prune
+            # and leave the receipt untouched rather than overwriting it with a
+            # fresh record, which would permanently erase the tracking of
+            # previously-installed project paths and defeat future --prune.
+            receipt_corrupt = prior_read.status is ReadStatus.CORRUPT
+            if receipt_corrupt:
+                io.err(
+                    f"project install receipt at {receipt_path} is unreadable; skipping "
+                    "prune and leaving it untouched — reset or migrate it to re-enable pruning"
+                )
+            prior = (
+                prior_read.receipt
+                if prior_read.status is ReadStatus.OK and prior_read.receipt is not None
+                else Receipt()
+            )
+            if not args.prune_only:
+                try:
+                    _merge_into(
+                        counters,
+                        install_pipeline(
+                            tool_adapters,
+                            plans=tool_plans,
+                            home=project_root,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=args.yes,
+                            outcomes_by_tool=tool_outcomes,
+                        ),
+                    )
+                    _merge_into(
+                        counters,
+                        install_plugin_routes(
+                            kit_route_adapters,
+                            home=project_root,
+                            io=io,
+                            dry_run=args.dry_run,
+                            auto_yes=args.yes,
+                            outcomes_by_plugin=plugin_outcomes,
+                        ),
+                    )
+                except ConsentRequiredError:
+                    return 1
+
+            if (args.prune or args.prune_only) and not receipt_corrupt:
+                try:
+                    outcome = prune_pipeline(
+                        tool_adapters,
+                        plugins=kit_route_adapters,
+                        plans=tool_plans,
+                        prior=prior,
+                        home=project_root,
+                        discovered_plugin_names=all_kit_owner_names,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=args.yes,
+                        prune_only=args.prune_only,
+                    )
+                except PruneAbortedError:
+                    return 1
+                _merge_into(counters, outcome.counters)
+                pruned_paths = outcome.pruned_paths
+                relinquished_paths = outcome.relinquished_paths
+
+            if not args.dry_run and not receipt_corrupt:
+                record_receipt(
+                    receipt_path,
+                    prior=prior,
+                    dest_roots=tool_dest_roots,
+                    home=project_root,
+                    tool_outcomes=tool_outcomes,
+                    plugin_outcomes=plugin_outcomes,
+                    pruned_paths=pruned_paths,
+                    relinquished_paths=relinquished_paths,
+                )
+            # Persisting the chosen selection targets project-config.toml, not the
+            # install receipt, so a corrupt receipt does not block it — the user's
+            # explicit intent is recorded regardless, keeping bare re-runs working.
+            # A malformed/unreadable existing project-config.toml (or a write
+            # failure) must not crash after a successful install: surface it as a
+            # clean exit-1 diagnostic. The install + receipt are already committed.
+            if not args.dry_run:
+                try:
+                    write_project_profiles(project_root, selection)
+                except (ValueError, OSError) as exc:
+                    io.err(
+                        "install completed but persisting the profile selection to "
+                        f"project-config.toml failed: {exc}"
+                    )
+                    return 1
+    except ReceiptLockBusy:
+        io.err(f"another install holds the project receipt lock at {receipt_path}")
+        return 1
+
+    render_summary(
+        counters,
+        tools=[t.value for t in tool_dest_relpaths],
+        plugins=sorted(plugin_outcomes),
+        all_tools=[],
+        all_plugins=[],
         verbose=args.verbose,
         io=io,
     )

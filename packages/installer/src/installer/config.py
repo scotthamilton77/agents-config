@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import tomllib
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+import tomli_w
 
 from installer.core.model import Tool
 from installer.plugins.base import PluginAdapter
@@ -85,6 +88,88 @@ def resolve_plugins(
             raise UnknownPluginError(name, valid)
         seen.setdefault(name, None)
     return tuple(discovered[name] for name in seen)
+
+
+def parse_profiles_csv(csv: str) -> tuple[str, ...]:
+    """Translate the ``--profiles=`` CLI value into a resolved profile-name tuple.
+
+    Split on commas, strip whitespace, reject empty names (a stray comma such as
+    ``beads-kit,`` would otherwise resolve as an unknown empty profile), and
+    dedupe preserving first occurrence and user order. Mirrors ``resolve_tools``.
+    Raises ``ValueError`` on an empty name. The caller only invokes this for a
+    truthy ``--profiles`` value, so an all-empty value cannot reach here.
+    """
+    seen: dict[str, None] = {}
+    for raw in csv.split(","):
+        name = raw.strip()
+        if not name:
+            raise ValueError("--profiles contains an empty profile name (check for stray commas)")  # noqa: TRY003  # single call-site; subclass not justified
+        seen.setdefault(name, None)
+    return tuple(seen.keys())
+
+
+def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
+    """Read the persisted profile selection from ``<project_root>/project-config.toml``.
+
+    Returns ``tuple(data["install"]["profiles"])`` when present, else ``None``
+    — absence of the file or of the ``[install]`` table is a valid state (no
+    persisted selection yet), not an error, mirroring ``load_installer_toml``'s
+    missing-file convention. Raises ``ValueError`` on any config error: a present
+    ``[install]`` table whose ``profiles`` is not a list of strings, or a file
+    that exists but is unreadable/undecodable/malformed (``OSError`` and TOML/
+    Unicode decode errors are normalized to ``ValueError`` so the single caller
+    guard surfaces one clean diagnostic instead of a traceback).
+    """
+    path = project_root / "project-config.toml"
+    if not path.is_file():
+        return None
+
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:  # ValueError covers TOMLDecodeError + UnicodeDecodeError
+        msg = f"project-config.toml could not be read: {exc}"
+        raise ValueError(msg) from exc  # documented config-error contract
+    install = data.get("install")
+    if install is None:
+        return None
+    if not isinstance(install, dict):
+        got = type(install).__name__
+        msg = f"project-config.toml: [install] must be a table, got {got}"
+        raise ValueError(msg)  # noqa: TRY004  # ValueError is the documented config-error contract
+
+    profiles = install.get("profiles")
+    if profiles is None:
+        return None
+    if not isinstance(profiles, list) or not all(isinstance(p, str) for p in profiles):
+        msg = "project-config.toml: [install] profiles must be a list of strings"
+        raise ValueError(msg)  # single call-site; subclass not justified
+
+    return tuple(profiles)
+
+
+def write_project_profiles(project_root: Path, profiles: Sequence[str]) -> None:
+    """Persist ``profiles`` to ``<project_root>/project-config.toml``'s
+    ``[install].profiles``, the write-side counterpart to
+    ``read_project_profiles``.
+
+    Merges into any existing file rather than clobbering it: every other
+    top-level table (e.g. ``[merge-policy]``) survives untouched, and only
+    the ``install.profiles`` key is set. A missing file is created fresh with
+    just the ``[install]`` table.
+    """
+    path = project_root / "project-config.toml"
+    data: dict[str, object] = {}
+    if path.is_file():
+        data = dict(tomllib.loads(path.read_text(encoding="utf-8")))
+
+    existing_install = data.get("install")
+    install: dict[str, object] = (
+        dict(existing_install) if isinstance(existing_install, dict) else {}
+    )
+    install["profiles"] = list(profiles)
+    data["install"] = install
+
+    path.write_text(tomli_w.dumps(data), encoding="utf-8")
 
 
 def resolve_plugins_root(repo_root: Path, env: Mapping[str, str]) -> Path:

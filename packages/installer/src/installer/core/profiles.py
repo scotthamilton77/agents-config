@@ -223,7 +223,7 @@ class UniverseRef:
     """One staged item's tool + destination path, indexed under its
     normalized selector key by `project_universe`."""
 
-    tool: Tool
+    tool: Tool | None  # None => tool-agnostic kit ref; materializes at the project root
     dest_relpath: Path
 
 
@@ -444,7 +444,15 @@ def resolve(
         raise ProfilesError(msg)
 
     final_included = {
-        scope: tuple(sorted(refs, key=lambda r: (r.tool.value, r.dest_relpath.as_posix())))
+        scope: tuple(
+            sorted(
+                refs,
+                key=lambda r: (
+                    r.tool.value if r.tool is not None else "",
+                    r.dest_relpath.as_posix(),
+                ),
+            )
+        )
         for scope, refs in included.items()
     }
     return ResolvedPlan(included=final_included, dropped_counts=dropped_counts)

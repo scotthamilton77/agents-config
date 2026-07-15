@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from installer.core import namespaces
 from installer.core.installignore import InstallIgnore
 from installer.core.model import FileKind, Provenance, StagedItem, StagingPlan, Tool
 from installer.core.profiles import (
@@ -934,3 +935,47 @@ def test_shipped_profiles_resolve_against_real_universe(
     manifest = load_manifest(_REPO_ROOT / "profiles.toml")
 
     resolve(manifest, selection, universe, bound_scopes=frozenset({Scope.USER}))
+
+
+def test_beads_kit_profile_exists_and_scopes_kits_to_project() -> None:
+    manifest = load_manifest(_REPO_ROOT / "profiles.toml")
+    assert "beads-kit" in manifest.profiles
+    # The kits/** scope default routes to project.
+    assert any(
+        sel == "kits/**" and scope is Scope.PROJECT for sel, scope in manifest.scopes.items()
+    )
+
+
+def test_scopes_cover_universe_eligible_namespaces() -> None:
+    """Guard: every STAGED namespace (TOOL_SCOPED union SHARED) plus the synthetic
+    instructions/settings must have a [scopes] match, or a forced-full user run
+    crashes. formulas is plugin-routed (never a universe key) and must NOT be
+    required."""
+    manifest = load_manifest(_REPO_ROOT / "profiles.toml")
+    eligible = set(namespaces.TOOL_SCOPED) | set(namespaces.SHARED) | {"instructions", "settings"}
+    scope_selectors = list(manifest.scopes.keys())
+    for ns in eligible:
+        probe = ns if ns in ("instructions", "settings") else f"{ns}/probe"
+        matched = any(_selector_matches(sel, probe) for sel in scope_selectors)
+        assert matched, f"namespace {ns!r} has no [scopes] entry"
+    assert "formulas" not in {s.split("/")[0] for s in scope_selectors}
+
+
+def test_resolve_sorts_tool_none_kit_ref_without_crash() -> None:
+    """A tool-agnostic `UniverseRef` (`tool=None`, e.g. a kit file destined for
+    the project root) must not crash the final sort in `resolve()`, and must
+    sort before any tool-bound ref (empty-string sort key < "claude")."""
+    kit_ref = UniverseRef(tool=None, dest_relpath=Path(".beads/PRIME.md"))
+    tool_ref = UniverseRef(tool=Tool.CLAUDE, dest_relpath=Path("skills/x"))
+    universe = {"kits/beads/PRIME": [kit_ref], "skills/x": [tool_ref]}
+    manifest = Manifest(
+        schema=1,
+        scopes={"kits/**": Scope.PROJECT, "skills/**": Scope.PROJECT},
+        profiles={
+            "p": Profile(name="p", includes=(IncludeEntry(selector="**", scope=None),), excludes=())
+        },
+    )
+    resolved = resolve(manifest, ("p",), universe, bound_scopes=frozenset({Scope.PROJECT}))
+    proj = resolved.included[Scope.PROJECT]
+    assert proj[0].tool is None
+    assert kit_ref in proj and tool_ref in proj

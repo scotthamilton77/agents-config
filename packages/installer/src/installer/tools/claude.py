@@ -31,6 +31,9 @@ class ClaudeAdapter:
     def scoped_namespaces(self) -> tuple[str, ...]:
         return namespaces.TOOL_SCOPED
 
+    def project_namespaces(self) -> tuple[str, ...]:
+        return ("skills", "agents", "commands")
+
     def should_install_namespace(
         self,
         namespace: str,  # noqa: ARG002  # protocol parameter; ClaudeAdapter accepts uniformly
