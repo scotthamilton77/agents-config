@@ -48,6 +48,14 @@ def _add_pr_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) ->
     pr_parser.add_argument("number", type=int, metavar="N", help="the pull-request number")
 
 
+def _add_queue_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    subparsers.add_parser("queue", help="list the unresolved reassessment queue")
+
+
+def _add_sweep_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    subparsers.add_parser("sweep", help="run funnel rungs 1-2 over the sidecar's fact files")
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="viz", description="viz — repo/PR visualization suite")
     parser.add_argument(
@@ -66,6 +74,8 @@ def _build_parser() -> _EnvelopeArgumentParser:
     # VizError handling exactly like a bad top-level flag does.
     subparsers = parser.add_subparsers(dest="verb", parser_class=_EnvelopeArgumentParser)
     _add_pr_subparser(subparsers)
+    _add_queue_subparser(subparsers)
+    _add_sweep_subparser(subparsers)
     return parser
 
 
