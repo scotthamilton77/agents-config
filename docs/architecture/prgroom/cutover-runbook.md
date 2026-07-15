@@ -22,6 +22,32 @@ legacy XOR prgroom**. This is an operator-maintained invariant, not an automatic
 guarantee: nothing stops both loops from running against the same PR, which would
 risk double-posting. The procedures below exist to preserve it across the cutover.
 
+## Operator preflight (before any prgroom run)
+
+prgroom is not yet deployed by the installer; install it as a uv tool and
+verify the entry point:
+
+```bash
+uv tool install --from /path/to/agents-config/packages/prgroom prgroom
+prgroom --help   # must exit 0
+gh auth status   # must show an authenticated github.com login
+```
+
+Then, for the PR being groomed:
+
+- **Run from a worktree checked out on the PR's head branch.** The fix agent
+  commits into the current worktree, and `push` refuses to act from any other
+  branch (`PRECONDITION_WRONG_BRANCH`).
+- **Pick the mode by trigger**: a chat/human-initiated session uses
+  `prgroom run <owner>/<repo>#<n> --interactive` (returns control between
+  cycles); cron/CI supervision uses `--autonomous` (the default — blocks in
+  `wait` between cycles).
+- **One groomer per PR** (the invariant above): confirm the PR has no live
+  legacy inventory before pointing prgroom at it, and never invoke the legacy
+  skills on a prgroom-groomed PR.
+- **Read `status --json`'s `phase`, never the exit code alone** — an exhausted
+  retry budget rides on exit 0 with `phase: human-gated`.
+
 ## Drain before cutover
 
 Before installing a destructive cutover phase, finish (merge or abandon) every
