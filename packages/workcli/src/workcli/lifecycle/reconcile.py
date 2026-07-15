@@ -129,16 +129,26 @@ def _sweep_interrupted_instantiations(backend: Backend, *, dry_run: bool) -> lis
     instantiation (`create spec` / `promote` crashed before the handle came off,
     L16) via the shared `finalize_spec_instantiation` -- the same idempotent tail
     the write paths run, so a crashed `promote` gets its `shape-feat`->`shape-spec`
-    swap reconstructed, not just create-spec's tail replayed. `query()` yields a
-    lean Item (no children/deps -- see the module docstring), but its scalar
-    `id`/`title` (both required bd fields) are all `finalize` needs; `finalize`'s
-    `instantiate_spec_shape` re-`get()`s the container's children itself. A second
-    sweep over a healed container finds no handle -- idempotent."""
+    swap reconstructed, not just create-spec's tail replayed. Each candidate is
+    re-`get()`d for its labels first: a container's own design child /
+    placeholder can carry a LEAKED `creating-spec` (bd inherited the parent's
+    labels at mint, before the adapter's `--no-inherit-labels` opt-out); such a
+    leaf is healed by stripping the leaked handle, never finalized as a
+    container -- finalizing a leaf would mint grandchildren under it and stamp
+    it `planned` (wgclw.9.8). A second sweep over a healed tree finds no
+    handle -- idempotent."""
     findings: list[JsonValue] = []
-    for container in backend.query(QueryFilters(label=CREATING_SPEC_LABEL)):
+    candidates = list(backend.query(QueryFilters(label=CREATING_SPEC_LABEL)))
+    items = backend.batch_get([candidate.id for candidate in candidates])
+    for item in items:
+        if DESIGN_CHILD_LABEL in item.labels or IMPL_PLACEHOLDER_LABEL in item.labels:
+            if not dry_run:
+                backend.label_mutate("remove", item.id, [CREATING_SPEC_LABEL])
+            findings.append(_finding(item.id, "leaked_creating_spec", repaired=not dry_run))
+            continue
         if not dry_run:
-            finalize_spec_instantiation(backend, container.id, container.title)
-        findings.append(_finding(container.id, "interrupted_instantiation", repaired=not dry_run))
+            finalize_spec_instantiation(backend, item.id, item.title)
+        findings.append(_finding(item.id, "interrupted_instantiation", repaired=not dry_run))
     return findings
 
 

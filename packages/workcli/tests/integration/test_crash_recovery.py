@@ -94,19 +94,17 @@ def test_interrupted_deliver_is_healed_by_reconcile(fresh_install, bd_binary):
     swept = _drive(real, ["reconcile"])
     assert swept["ok"] is True
 
-    # Assert the recovery invariants that hold under ANY correct heal: the
-    # impl-placeholder recovery handle is cleared (delivery no longer partial),
-    # the design child is closed (delivery complete), and spec-ready is stamped.
-    # We deliberately do NOT pin the placeholder's final *shape* label here: a
-    # tracked lifecycle defect (spec children retain `creating-spec`, so
-    # reconcile's instantiation sweep re-finalizes the placeholder and currently
-    # overwrites its manifest-noun shape) makes that label defect-dependent. The
-    # defect is filed as discovered work; pinning it green would bless the bug,
-    # and pinning the buggy shape would encode it — so the harness asserts only
-    # the handle/close/spec-ready invariants a correct fix must preserve.
+    # Assert the full correct heal: the impl-placeholder recovery handle is
+    # cleared (delivery no longer partial), the design child is closed
+    # (delivery complete), spec-ready is stamped, and the placeholder keeps
+    # its manifest-noun shape — the instantiation sweep must never re-finalize
+    # it into a planned shape-spec container (wgclw.9.8).
     healed = _drive(real, ["show", placeholder])["data"]
     assert "impl-placeholder" not in healed["labels"]  # handle removed strictly last
     assert "spec-ready" in healed["labels"]
+    assert "shape-feat" in healed["labels"]  # manifest-noun shape survives the sweep
+    assert "creating-spec" not in healed["labels"]
+    assert "planned" not in healed["labels"]
     assert _drive(real, ["show", design_child])["data"]["status"] == "closed"
 
 
