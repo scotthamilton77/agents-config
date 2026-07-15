@@ -44,6 +44,19 @@ class ErrorCode(StrEnum):
     # by another writer after the bounded retry window — never an unbounded
     # block.
     SIDECAR_LOCKED = "E_SIDECAR_LOCKED"
+    # tracker slice: the `work` CLI's protocol-version handshake returned a
+    # major version this port was not built against (work-facade contract
+    # spec §5: additive fields bump MINOR, a breaking change bumps MAJOR).
+    TRACKER_PROTOCOL_MISMATCH = "E_TRACKER_PROTOCOL_MISMATCH"
+    # tracker slice: `work`'s stdout did not parse as JSON, or parsed JSON did
+    # not match the envelope/data shape this port expects.
+    TRACKER_MALFORMED_ENVELOPE = "E_TRACKER_MALFORMED_ENVELOPE"
+    # tracker slice: `work` emitted `ok: false` -- the facade's own error code
+    # and message are carried in this error's `detail`.
+    TRACKER_BACKEND_ERROR = "E_TRACKER_BACKEND_ERROR"
+    # tracker slice: the port verb has no mapped `work` verb today (e.g.
+    # resequence, spec §5.7) -- never a `bd` shell-out fallback (spec §5.6).
+    TRACKER_NOT_SUPPORTED = "E_TRACKER_NOT_SUPPORTED"
 
 
 @dataclass(frozen=True)
