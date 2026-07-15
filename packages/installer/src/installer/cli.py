@@ -632,7 +632,7 @@ def _run_project(
     # prunable (mirrors the user path's discovered_plugin_names, which is
     # also the full discovered set, not just the resolved selection).
     all_kit_owner_names = (
-        {f"kit:{p.name}" for p in kits_root.iterdir() if p.is_dir()}
+        {f"kit:{p.name}" for p in kits_root.iterdir() if p.is_dir() and not p.is_symlink()}
         if kits_root.is_dir()
         else set()
     )
@@ -716,8 +716,18 @@ def _run_project(
             # Persisting the chosen selection targets project-config.toml, not the
             # install receipt, so a corrupt receipt does not block it — the user's
             # explicit intent is recorded regardless, keeping bare re-runs working.
+            # A malformed/unreadable existing project-config.toml (or a write
+            # failure) must not crash after a successful install: surface it as a
+            # clean exit-1 diagnostic. The install + receipt are already committed.
             if not args.dry_run:
-                write_project_profiles(project_root, selection)
+                try:
+                    write_project_profiles(project_root, selection)
+                except (ValueError, OSError) as exc:
+                    io.err(
+                        "install completed but persisting the profile selection to "
+                        f"project-config.toml failed: {exc}"
+                    )
+                    return 1
     except ReceiptLockBusy:
         io.err(f"another install holds the project receipt lock at {receipt_path}")
         return 1

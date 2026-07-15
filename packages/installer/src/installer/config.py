@@ -114,15 +114,21 @@ def read_project_profiles(project_root: Path) -> tuple[str, ...] | None:
     Returns ``tuple(data["install"]["profiles"])`` when present, else ``None``
     — absence of the file or of the ``[install]`` table is a valid state (no
     persisted selection yet), not an error, mirroring ``load_installer_toml``'s
-    missing-file convention. Raises ``ValueError`` only on a genuine contract
-    violation: a present ``[install]`` table whose ``profiles`` is not a list
-    of strings.
+    missing-file convention. Raises ``ValueError`` on any config error: a present
+    ``[install]`` table whose ``profiles`` is not a list of strings, or a file
+    that exists but is unreadable/undecodable/malformed (``OSError`` and TOML/
+    Unicode decode errors are normalized to ``ValueError`` so the single caller
+    guard surfaces one clean diagnostic instead of a traceback).
     """
     path = project_root / "project-config.toml"
     if not path.is_file():
         return None
 
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:  # ValueError covers TOMLDecodeError + UnicodeDecodeError
+        msg = f"project-config.toml could not be read: {exc}"
+        raise ValueError(msg) from exc  # documented config-error contract
     install = data.get("install")
     if install is None:
         return None

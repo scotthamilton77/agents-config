@@ -29,9 +29,9 @@ def stage_kits(kits_root: Path) -> list[StagedKitRef]:
     if not kits_root.is_dir():
         return []
     out: list[StagedKitRef] = []
-    for kit_dir in sorted(p for p in kits_root.iterdir() if p.is_dir()):
+    for kit_dir in sorted(p for p in kits_root.iterdir() if p.is_dir() and not p.is_symlink()):
         name = kit_dir.name
-        for f in sorted(p for p in kit_dir.rglob("*") if p.is_file()):
+        for f in sorted(p for p in kit_dir.rglob("*") if p.is_file() and not p.is_symlink()):
             dest_relpath = f.relative_to(kit_dir)
             selector = f"kits/{name}/{dest_relpath.as_posix()}"
             out.append(
@@ -62,9 +62,9 @@ def kit_routes(kits_root: Path, project_root: Path) -> dict[str, list[PluginRout
     result: dict[str, list[PluginRoute]] = {}
     if not kits_root.is_dir():
         return result
-    for kit_dir in sorted(p for p in kits_root.iterdir() if p.is_dir()):
+    for kit_dir in sorted(p for p in kits_root.iterdir() if p.is_dir() and not p.is_symlink()):
         routes: list[PluginRoute] = []
-        for f in sorted(p for p in kit_dir.rglob("*") if p.is_file()):
+        for f in sorted(p for p in kit_dir.rglob("*") if p.is_file() and not p.is_symlink()):
             rel = f.relative_to(kit_dir)
             routes.append(
                 PluginRoute(

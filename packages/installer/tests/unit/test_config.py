@@ -230,6 +230,15 @@ def test_parse_profiles_csv_rejects_empty_name() -> None:
         parse_profiles_csv("beads-kit,")
 
 
+def test_read_project_profiles_malformed_toml_normalized_to_valueerror(tmp_path: Path) -> None:
+    # A present-but-unparseable project-config.toml is normalized to ValueError
+    # (not a bare TOMLDecodeError) so the single caller guard surfaces one clean
+    # diagnostic instead of a traceback.
+    (tmp_path / "project-config.toml").write_text("this is not = valid = toml", encoding="utf-8")
+    with pytest.raises(ValueError, match="could not be read"):
+        read_project_profiles(tmp_path)
+
+
 def test_write_project_profiles_preserves_other_tables(tmp_path: Path) -> None:
     """
     Given project-config.toml with an unrelated [merge-policy] table

@@ -1,8 +1,11 @@
-"""Tests for the --project/--profiles guard rails (Task 7 of the S2 plan).
+"""Tests for project-scoped install (the ``--project``/``--profiles`` flow).
 
-This version adds only the argparse flags and two early validation guards in
-_run(); no project-scoped install behavior exists yet. Each test pins one
-guard's coded decision (exit code + message), not argparse machinery."""
+Covers the CLI guard rails (flag validation, project-path + kit-scope guards,
+clean error exits) and end-to-end project installs: kit materialization,
+project-local receipt, corrupt-receipt fail-close, profile persistence, prune,
+``--dump-stage``, and the user-run suggestion notice. Each test pins a coded
+decision (exit code + message, or a materialized-file/receipt assertion), not
+argparse or stdlib machinery."""
 
 from __future__ import annotations
 
@@ -274,6 +277,32 @@ def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path)
     assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"  # install proceeded
     assert receipt_path.read_bytes() == before  # corrupt receipt left byte-for-byte untouched
     assert any("unreadable" in e.message for e in io.transcript)
+
+
+def test_project_persist_over_malformed_existing_config_exits_cleanly(tmp_path: Path) -> None:
+    """With an explicit --profiles (which skips the persisted-config read at
+    selection time), a malformed EXISTING project-config.toml is only hit at the
+    persistence step. The install still completes, but the persistence failure
+    surfaces as a clean exit-1 diagnostic instead of an uncaught traceback."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    kit = repo / "src" / "kits" / "beads" / ".beads"
+    kit.mkdir(parents=True)
+    (kit / "PRIME.md").write_bytes(b"beads prime\n")
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "project-config.toml").write_text("not = valid = toml", encoding="utf-8")
+
+    io = ScriptedIO(interactive=False)
+    rc = main(
+        ["--project", str(project), "--profiles=beads-kit", "--yes"],
+        home=tmp_path,
+        io=io,
+        repo_root=repo,
+    )
+
+    assert rc == 1
+    assert (project / ".beads" / "PRIME.md").read_bytes() == b"beads prime\n"  # install proceeded
+    assert any("persisting the profile selection" in e.message for e in io.transcript)
 
 
 def _hermetic_repo_with_project_tool_profile(tmp_path: Path) -> Path:
