@@ -225,11 +225,37 @@ def _require_safe_ref(ref: str, name: str) -> None:
                          f"{name} {ref!r} begins with '-'; refusing (git option-injection guard)")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Reconcile local git state after a remote merge.")
+class _ArgError(Exception):
+    pass
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):  # argparse would SystemExit; we must envelope instead
+        raise _ArgError(message)
+
+
+def _parse(raw: list[str]) -> argparse.Namespace:
+    parser = _Parser(description="Reconcile local git state after a remote merge.")
     parser.add_argument("--branch", default=None)
     parser.add_argument("--base", default=None)
-    args = parser.parse_args(argv)
+    parser.add_argument("--finish", action="store_true")
+    parser.add_argument("--worktree", default=None)
+    parser.add_argument("--branch-sha", dest="branch_sha", default=None)
+    parser.add_argument("--pr", type=int, default=None)
+    parser.add_argument("--merge-commit", dest="merge_commit", default=None)
+    return parser.parse_args(raw)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:] if argv is None else argv)
+    phase = Phase.FINISH if "--finish" in raw else Phase.PLAN
+    try:
+        args = _parse(raw)
+    except _ArgError as exc:
+        _emit(Status.FAILED, phase,
+              failed_step={"name": "args", "cmd": "", "exit_code": 2, "stderr": str(exc)},
+              remediation_hint=f"invalid arguments: {exc}")
+        return 1
 
     completed: list[str] = []
     main_root = base = branch = merge_commit = synced_to = None

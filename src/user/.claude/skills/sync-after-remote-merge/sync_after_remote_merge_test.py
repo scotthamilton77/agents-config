@@ -41,6 +41,30 @@ def test_envelope_serialises_convention_enum_to_string():
     assert json.loads(json.dumps(env))["worktree_convention"] == "claude-native"
 
 
+# --- main(): argument errors still emit the JSON envelope ---
+
+
+def test_arg_error_emits_failed_envelope():
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = m.main(["--branch"])          # missing value → argparse error
+    env = json.loads(buf.getvalue())
+    assert rc != 0
+    assert env["status"] == "failed"
+    assert env["failed_step"]["name"] == "args"
+    assert env["phase"] == "plan"
+
+
+def test_arg_error_in_finish_mode_reports_finish_phase():
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = m.main(["--finish", "--bogus-flag"])
+    env = json.loads(buf.getvalue())
+    assert rc != 0 and env["phase"] == "finish"
+
+
 # --- Task 2: classify_pr ---
 
 
