@@ -430,6 +430,87 @@ def test_concurrent_writers_do_not_interleave(tmp_path: Path, monkeypatch: pytes
     assert events == ["start", "end", "start", "end"]
 
 
+# ---- transaction(): re-entrant single-writer hold across a whole cycle -----
+
+
+def test_transaction_allows_nested_writes_without_self_deadlock(tmp_path: Path):
+    # The lock file is non-reentrant, so a write nested inside the transaction
+    # would deadlock (until SIDECAR_LOCKED) if the lock were re-acquired rather
+    # than reused. A short timeout would surface that regression as a failure.
+    store = SidecarStore(tmp_path, lock_timeout=0.2, lock_poll_interval=0.01)
+
+    with store.transaction():
+        store.write_manifest(Manifest(schema_version="1"))
+        store.write_edges((_fact("edge-1"),))
+        assert (store.viz_dir / "lock").exists()  # held for the whole cycle
+
+    assert not (store.viz_dir / "lock").exists()  # released at the outermost exit
+    assert store.read_manifest() == Manifest(schema_version="1")
+    assert store.read_edges() == (_fact("edge-1"),)
+
+
+def test_nested_transactions_release_only_at_the_outermost_exit(tmp_path: Path):
+    store = SidecarStore(tmp_path)
+
+    with store.transaction():
+        with store.transaction():
+            store.write_manifest(Manifest(schema_version="1"))
+            assert (store.viz_dir / "lock").exists()
+        # the inner exit must NOT release the lock — the outer hold is still live.
+        assert (store.viz_dir / "lock").exists()
+
+    assert not (store.viz_dir / "lock").exists()
+
+
+def test_transaction_releases_lock_when_a_nested_write_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SidecarStore(tmp_path)
+
+    def _boom(_self: Path, _target: Path) -> Path:
+        raise OSError("simulated crash before rename")
+
+    monkeypatch.setattr(Path, "replace", _boom)
+    with pytest.raises(OSError, match="simulated crash"), store.transaction():
+        store.write_manifest(Manifest(schema_version="1"))
+
+    monkeypatch.undo()
+    # a raise inside the nested region still unwinds to depth 0 and unlinks.
+    assert not (store.viz_dir / "lock").exists()
+    store.write_manifest(Manifest(schema_version="2"))  # lock is usable again
+    assert store.read_manifest() == Manifest(schema_version="2")
+
+
+def test_second_store_write_during_a_transaction_gets_sidecar_locked(tmp_path: Path):
+    # Re-entrancy is PER INSTANCE, not per-path-global: a second store on the
+    # same root still contends for the `.viz/lock` file and is locked out while
+    # the first store holds a transaction.
+    holder = SidecarStore(tmp_path)
+    contender = SidecarStore(tmp_path, lock_timeout=0.05, lock_poll_interval=0.01)
+
+    with holder.transaction(), pytest.raises(VizError) as exc_info:
+        contender.write_manifest(Manifest(schema_version="contend"))
+
+    assert exc_info.value.code == ErrorCode.SIDECAR_LOCKED
+    # once the holder's transaction exits, the contender can write.
+    contender.write_manifest(Manifest(schema_version="after"))
+    assert contender.read_manifest() == Manifest(schema_version="after")
+
+
+def test_stores_on_the_same_root_are_equal_regardless_of_lock_depth(tmp_path: Path):
+    # The transient re-entrancy counter is excluded from equality: a store
+    # mid-transaction (depth 1) still equals a fresh store (depth 0) on the
+    # same root.
+    held = SidecarStore(tmp_path)
+    fresh = SidecarStore(tmp_path)
+
+    with held.transaction():
+        assert held._lock_depth.value == 1
+        assert held == fresh
+
+    assert held == fresh
+
+
 # ---- root injection: no module-global cwd assumption -----------------------
 
 
@@ -445,3 +526,24 @@ def test_store_reads_and_writes_are_scoped_to_the_injected_root(tmp_path: Path):
 
     assert store_a.read_manifest() == Manifest(schema_version="a")
     assert store_b.read_manifest() is None
+
+
+def test_lock_file_is_not_leaked_when_the_gitignore_write_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The gitignore write runs after the lock file is created but before the
+    # depth counter is incremented — a raise there must unlink the lock, or
+    # every future writer is permanently locked out.
+    store = SidecarStore(tmp_path)
+
+    def _boom(_viz_dir: Path) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("vizsuite.sidecar.store.ensure_viz_gitignore", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        store.write_manifest(Manifest(schema_version="1"))
+
+    monkeypatch.undo()
+    assert not (store.viz_dir / "lock").exists()
+    store.write_manifest(Manifest(schema_version="1"))  # no lockout — acquires cleanly
+    assert store.read_manifest() == Manifest(schema_version="1")

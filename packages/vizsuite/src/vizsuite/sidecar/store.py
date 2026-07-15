@@ -9,6 +9,15 @@ overnight sweep and an on-demand command can never interleave a torn write
 deterministic (sorted keys, records sorted by id) so rewriting unchanged
 content is byte-stable.
 
+A caller needing a multi-file read→classify→write cycle to commit atomically
+wraps it in `transaction()`, which holds the lock across the whole cycle so
+no other writer can interleave between the reads and the writes (or between
+one file's rewrite and the next). The lock is re-entrant PER STORE INSTANCE:
+`write_*` calls nested inside a `transaction()` reuse the already-held lock
+instead of self-deadlocking on the non-reentrant `.viz/lock` file. Re-entrancy
+is per-instance, not per-path — a SECOND `SidecarStore` on the same root still
+contends for the lock and still gets `SIDECAR_LOCKED`.
+
 Tier-2 files (`manifest.json`/`edges.json`/`steps.json`/
 `recommendations.json`/`flags.json`) expose wholesale-rewrite APIs.
 `verdicts.json` is Tier 3 and exposes only `upsert_verdict` — there is
@@ -28,7 +37,7 @@ import os
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
@@ -141,6 +150,20 @@ def _load_records(path: Path, parse_one: Callable[[JsonValue], _T]) -> tuple[_T,
         raise _MalformedSidecarFileError(path, str(exc)) from exc
 
 
+@dataclass
+class _LockDepth:
+    """Mutable per-instance re-entrancy counter for `SidecarStore`.
+
+    The store is a frozen dataclass, but re-entrant locking needs mutable
+    per-instance state. A mutable holder (rather than a rebindable int field)
+    supplies it without unfreezing the store: the frozen field binds once to
+    this holder, and only the holder's `value` mutates. Excluded from the
+    store's `__eq__`/`__repr__` — it is transient runtime state, not identity.
+    """
+
+    value: int = 0
+
+
 @dataclass(frozen=True)
 class SidecarStore:
     """The `.viz/` sidecar's single entry point. `root` is injected, never `Path.cwd()`.
@@ -153,6 +176,7 @@ class SidecarStore:
     root: Path
     lock_timeout: float = _DEFAULT_LOCK_TIMEOUT_S
     lock_poll_interval: float = _DEFAULT_LOCK_POLL_INTERVAL_S
+    _lock_depth: _LockDepth = field(default_factory=_LockDepth, repr=False, compare=False)
 
     @property
     def viz_dir(self) -> Path:
@@ -162,12 +186,42 @@ class SidecarStore:
         return self.viz_dir / filename
 
     @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Hold the single-writer lock across an entire read→classify→write cycle.
+
+        Reads issued inside see a stable snapshot; every `write_*` nested inside
+        commits under the same lock hold — no other writer can interleave between
+        the reads and the writes (or between one file's rewrite and the next),
+        which is exactly the cross-file atomicity a whole-sidecar sweep needs.
+        The nested `write_*` calls reuse this hold (re-entrant per instance)
+        rather than deadlocking on the non-reentrant `.viz/lock` file.
+        """
+        with self._locked():
+            yield
+
+    @contextmanager
     def _locked(self) -> Iterator[None]:
+        # Re-entrant PER INSTANCE: only the outermost entry (depth 0→1) creates
+        # the `.viz/lock` file, and only the outermost exit (1→0) unlinks it, so
+        # a `write_*` nested inside `transaction()` reuses the held lock instead
+        # of self-deadlocking on the non-reentrant exclusive-create.
+        if self._lock_depth.value == 0:
+            self._acquire_lock_file()
+        self._lock_depth.value += 1
+        try:
+            yield
+        finally:
+            self._lock_depth.value -= 1
+            if self._lock_depth.value == 0:
+                self._path(_LOCK_FILENAME).unlink(missing_ok=True)
+
+    def _acquire_lock_file(self) -> None:
         # Acquire the lock BEFORE any other working-tree write: `.viz/` must
         # exist for the exclusive-create below, but the `.gitignore` rewrite is
         # deferred until the lock is held. A failed acquisition then leaves only
-        # an (idempotent) empty `.viz/` directory — no torn `.gitignore` — and
-        # the non-atomic read-then-write is serialized under the lock.
+        # an (idempotent) empty `.viz/` directory — no torn `.gitignore`, and the
+        # depth counter is never incremented — and the non-atomic read-then-write
+        # is serialized under the lock.
         lock_path = self._path(_LOCK_FILENAME)
         self.viz_dir.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + self.lock_timeout
@@ -179,11 +233,14 @@ class SidecarStore:
                 if time.monotonic() >= deadline:
                     raise _LockTimeoutError(lock_path, self.lock_timeout) from None
                 time.sleep(self.lock_poll_interval)
+        # The depth counter is still 0 here, so `_locked()`'s finally-unlink
+        # would never run — a raise out of the gitignore write must not leak
+        # the just-created lock file (that would permanently block all writers).
         try:
             ensure_viz_gitignore(self.viz_dir)
-            yield
-        finally:
+        except BaseException:
             lock_path.unlink(missing_ok=True)
+            raise
 
     # ---- manifest (Tier-2, wholesale-rewrite) ------------------------------
 
