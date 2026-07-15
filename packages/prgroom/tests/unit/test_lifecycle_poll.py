@@ -341,6 +341,33 @@ def test_duplicate_item_not_reappended_and_does_not_retrigger_phase() -> None:
     assert state.phase is PRPhase.AWAITING_REVIEW  # no new-item edge fired
 
 
+def test_own_posted_reply_is_not_ingested_as_new_item() -> None:
+    # Recursive-self-reply fix: prgroom replied by POSTing a new issue comment whose
+    # id was recorded on own_reply_id. A later poll sees that comment in the gh payload
+    # but must NOT re-ingest it as a fresh review item (else it re-triages forever).
+    start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
+    start.items.append(
+        ReviewItem(
+            kind=ItemKind.REVIEW_SUMMARY,
+            identity=Identity(gh_id="21"),
+            author="copilot",
+            body_excerpt="please fix",
+            seen_at=_T0,
+            replied=True,
+            own_reply_id=99001,
+        )
+    )
+    # gh returns our own posted reply (id 99001) plus a genuinely new comment (id 12).
+    gh = _gh(
+        head_oid="same",
+        issue_comments=[_issue_comment(99001), _issue_comment(12)],
+    )
+    state = poll_pr(start, ref=_REF, gh=gh, deps=_deps(), config=_config())
+    ingested_ids = {i.identity.gh_id for i in state.items if i.kind is ItemKind.ISSUE_COMMENT}
+    assert "99001" not in ingested_ids  # our own reply dropped
+    assert "12" in ingested_ids  # a different comment still ingested (no over-filter)
+
+
 def test_top_level_review_comment_has_no_parent() -> None:
     # A top-level inline comment carries no in_reply_to_id → reply_to_comment_id 0.
     start = _state(phase=PRPhase.AWAITING_REVIEW, last_poll_sha="same")
