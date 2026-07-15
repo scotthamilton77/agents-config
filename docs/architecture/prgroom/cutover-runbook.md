@@ -48,6 +48,13 @@ Then, for the PR being groomed:
   skills on a prgroom-groomed PR.
 - **Read `status --json`'s `phase`, never the exit code alone** — an exhausted
   retry budget rides on exit 0 with `phase: human-gated`.
+- **Inspecting state when a run misbehaves**: the per-PR state file
+  (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`, fallback
+  `~/.local/state/prgroom/`) is the ground truth for what the loop believes about
+  the PR. Read it lock-free with `prgroom status <ref> --json`; add `--locked`
+  only for a strictly-consistent read, and note it **exits 75 under contention**
+  rather than blocking — so plain `status --json` is the safe probe while a run
+  holds the lock.
 
 ## Drain before cutover
 
