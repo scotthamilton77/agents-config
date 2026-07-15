@@ -27,6 +27,7 @@ from vizsuite.adapters.scc.runner import SccRunner, SubprocessSccRunner
 from vizsuite.envelope import ErrorCode, JsonValue, VizError, emit_failure, emit_success
 from vizsuite.render import render_human
 from vizsuite.runners import Runners
+from vizsuite.tracker.port import SubprocessTrackerRunner, TrackerRunner
 from vizsuite.verbs import VERBS
 
 
@@ -56,6 +57,23 @@ def _add_sweep_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     subparsers.add_parser("sweep", help="run funnel rungs 1-2 over the sidecar's fact files")
 
 
+def _add_verdict_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    verdict_parser = subparsers.add_parser(
+        "verdict", help="record a Tier-3 verdict on a fact, edge-promoting an accepted edge"
+    )
+    verdict_parser.add_argument(
+        "fact_id", metavar="FACT_ID", help="the fact id to record a verdict on"
+    )
+    verdict_parser.add_argument(
+        "verdict", choices=["accept", "reject", "dismiss"], help="the verdict to record"
+    )
+    verdict_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preview the bead mutations that would happen without writing anything",
+    )
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="viz", description="viz — repo/PR visualization suite")
     parser.add_argument(
@@ -76,6 +94,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_pr_subparser(subparsers)
     _add_queue_subparser(subparsers)
     _add_sweep_subparser(subparsers)
+    _add_verdict_subparser(subparsers)
     return parser
 
 
@@ -132,6 +151,7 @@ def main(
     git_runner: GitRunner | None = None,
     scc_runner: SccRunner | None = None,
     gh_runner: GhRunner | None = None,
+    tracker_runner: TrackerRunner | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
 ) -> int:
@@ -177,6 +197,9 @@ def main(
             git=git_runner if git_runner is not None else SubprocessGitRunner(repo_root=repo_root),
             gh=gh_runner if gh_runner is not None else SubprocessGhRunner(repo_root=repo_root),
             scc=scc_runner if scc_runner is not None else SubprocessSccRunner(),
+            tracker=tracker_runner
+            if tracker_runner is not None
+            else SubprocessTrackerRunner(repo_root=repo_root),
         )
         data = handler(runners, args)
     except VizError as verb_error:

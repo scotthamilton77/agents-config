@@ -9,9 +9,11 @@ separately from identity), and per-fact `Provenance` (reused from
 scene envelope carries, not a second one). `payload` holds the record-kind-
 specific fields; this foundation slice does not yet model V2's per-kind
 domain shapes (§7.2) — later slices read typed views over `payload` without
-changing this envelope. `FlagRecord` models a `flags.json` entry (`doubt` or
-`orphaned_verdict`); `VerdictRecord` models a `verdicts.json` entry; `Manifest`
-models `manifest.json`.
+changing this envelope (the verdict slice's `payload["promotion"]`
+edge-promotion ledger is one such typed view, see `vizsuite.verbs.verdict`).
+`FlagRecord` models a `flags.json` entry (`doubt`, `orphaned_verdict`, or
+`orphaned_edge_promotion`); `VerdictRecord` models a `verdicts.json` entry;
+`Manifest` models `manifest.json`.
 
 Every `*_to_json`/`*_from_json` pair is a pure mapping function, mirroring
 `vizsuite.scene.model.scene_to_json`'s style. `*_from_json` raises a plain
@@ -31,10 +33,16 @@ from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind, provenan
 
 
 class FlagKind(StrEnum):
-    """The two `flags.json` record kinds (spec §5.3): `doubt` vs `orphaned_verdict`."""
+    """The three `flags.json` record kinds (spec §5.3): `doubt`,
+    `orphaned_verdict`, or `orphaned_edge_promotion`."""
 
     DOUBT = "doubt"
     ORPHANED_VERDICT = "orphaned_verdict"
+    # verdict slice: a previously-promoted edge's recorded bead pair fell
+    # outside the fact's current bead-id anchors after re-synthesis. A
+    # promoted tracker edge is never auto-removed (spec §5.3), so this flags
+    # the mismatch for human disposition instead of silently dropping it.
+    ORPHANED_EDGE_PROMOTION = "orphaned_edge_promotion"
 
 
 class Verdict(StrEnum):
