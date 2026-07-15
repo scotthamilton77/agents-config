@@ -198,8 +198,8 @@ Expected: exit 0; item flips to `wont_fix` with `decided_by: human:…`.
 
 - [ ] **Step 3: Confirm release**
 
-Run: `prgroom status "scotthamilton77/agents-config#$PR" --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['phase'], d['last_error'])"`
-Expected: `fixes-pending None` (release requires zero escalated, zero failed, clear last_error).
+Run: `prgroom status "scotthamilton77/agents-config#$PR" --json > /tmp/prgroom-e2e/status-release.json; echo "exit=$?"; python3 -c "import json; d=json.load(open('/tmp/prgroom-e2e/status-release.json')); print(d['phase'], d['last_error'])"`
+Expected: standalone `exit=` line (read the phase, not the exit code); then `fixes-pending None` (release requires zero escalated, zero failed, clear last_error).
 
 ### Task 9: Drive to quiesced
 
