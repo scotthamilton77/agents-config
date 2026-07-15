@@ -62,6 +62,13 @@ select = [
 [tool.ruff.format]
 docstring-code-format = true
 
+[tool.pytest.ini_options]
+# The default collection (make test-workcli / cov-workcli invoke pytest with no
+# path arg) is the hermetic unit suite only. The real-bd integration suite is
+# invoked by explicit path in `make itest-workcli` (which overrides testpaths)
+# and must never enter the coverage-gated run.
+testpaths = ["tests/unit"]
+
 [tool.mypy]
 strict = true
 warn_unreachable = true
