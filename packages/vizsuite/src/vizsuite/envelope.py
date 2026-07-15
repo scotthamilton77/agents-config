@@ -70,6 +70,23 @@ class ErrorCode(StrEnum):
     # the full accepted logical dependency graph (spec §5.3/§5.7, test item
     # 17) -- refused with the cycle path in `detail`; no tracker edge written.
     VERDICT_CYCLE_REFUSAL = "E_VERDICT_CYCLE_REFUSAL"
+    # apply slice: `viz apply <recommendation-id>` invoked on a fact with no
+    # recorded Tier-3 ACCEPTED verdict for that exact fact id -- a reject/
+    # dismiss verdict, no verdict at all, or a verdict recorded against a
+    # different fact id all refuse identically (spec §5.7: "refuses any
+    # recommendation without a recorded Tier-3 accepted verdict").
+    APPLY_NOT_ACCEPTED = "E_APPLY_NOT_ACCEPTED"
+    # apply slice: a resequence recommendation is `ruling-needed`, never
+    # `one-click` -- the work facade has no resequence verb (spec §5.7).
+    # Refused as a deliberate apply-level decision BEFORE the tracker runner
+    # is ever touched, rather than relying on `TrackerPort.resequence`'s own
+    # `TRACKER_NOT_SUPPORTED` surfacing accidentally.
+    APPLY_RESEQUENCE_NOT_SUPPORTED = "E_APPLY_RESEQUENCE_NOT_SUPPORTED"
+    # apply slice: an `add_edge` mutation writing a `blocks` edge would close
+    # a cycle in the full accepted logical dependency graph (spec §5.3/§5.7,
+    # test item 17) -- refused with the cycle path in `detail`; no tracker
+    # edge written. The `viz apply` analog of `VERDICT_CYCLE_REFUSAL`.
+    APPLY_CYCLE_REFUSAL = "E_APPLY_CYCLE_REFUSAL"
 
 
 @dataclass
