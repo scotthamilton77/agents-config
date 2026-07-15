@@ -38,3 +38,41 @@ def test_run_invokes_bd_with_the_given_args_and_captures_the_full_result(tmp_pat
     assert result.returncode == 3
     assert result.stdout == "args: show x.1 --json\n"
     assert result.stderr == "warning: something\n"
+
+
+def test_run_uses_injected_bd_binary_cwd_and_env(tmp_path, monkeypatch):
+    # A fake bd that proves all three injected params reached subprocess.run:
+    # it echoes its own cwd and a custom env var.
+    fake_dir = tmp_path / "bin"
+    fake_dir.mkdir()
+    fake_bd = fake_dir / "mybd"
+    fake_bd.write_text('#!/bin/sh\necho "cwd=$(pwd)"\necho "marker=$WORKCLI_ITEST_MARKER"\n')
+    fake_bd.chmod(fake_bd.stat().st_mode | stat.S_IEXEC)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    # Ensure PATH does NOT contain a `bd`, proving bd_binary (absolute) is used.
+    monkeypatch.setenv("PATH", "/nonexistent")
+
+    runner = SubprocessBdRunner(
+        bd_binary=str(fake_bd),
+        cwd=str(workdir),
+        env={"WORKCLI_ITEST_MARKER": "42", "PATH": "/nonexistent"},
+    )
+    result = runner.run(["show", "--json"])
+
+    assert result.returncode == 0
+    assert f"cwd={os.path.realpath(workdir)}" in result.stdout
+    assert "marker=42" in result.stdout
+
+
+def test_run_defaults_are_unchanged(tmp_path, monkeypatch):
+    # Default construction must remain byte-identical to today: binary "bd",
+    # inherited cwd/env. Prove by putting a fake `bd` on PATH and NOT passing
+    # any injected params.
+    _write_fake_bd(tmp_path, 'echo "default-path-bd"\n')
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+
+    result = SubprocessBdRunner().run(["list"])
+
+    assert result.returncode == 0
+    assert result.stdout == "default-path-bd\n"

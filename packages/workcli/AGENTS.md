@@ -92,6 +92,23 @@ are read-only and run from the **main repo root**, never this worktree — see
 the plan's decision 14. Never invoke a mutating `bd` verb against the real
 database while developing or testing this package.
 
+## Real-bd integration suite (`make itest-workcli`)
+
+`make itest-workcli` is the **sanctioned exception** to the rule above: it drives
+the production `work` CLI against a **real, isolated** bd install (embedded Dolt
+in a temp dir, bound via `BEADS_DIR` and an off-repo `tmp_path` + a git-repo
+pre-flight guard, so it can never reach the repo's `.beads`). It catches bd-JSON
+drift the hermetic `ScriptedBdRunner` fakes cannot. **Requirements & rules:**
+
+- Needs `bd` on PATH; skips wholesale otherwise.
+- **NOT** part of `make ci-workcli` / `make ci` — it needs the bd toolchain and
+  runs ~40s+ serial. It is **pre-push discipline, not a merge gate**. `testpaths`
+  in `pyproject.toml` pins the coverage-gated run to `tests/unit`.
+- Runs serial (`-p no:xdist`) so the shared read-only install pays `bd init` once.
+- Never weaken an integration assertion to make it pass: a failure is a real
+  drift signal — fix the adapter/parser (and note the drift), or file it as
+  discovered work, instead.
+
 ## Reference
 
 Spec: `docs/specs/2026-07-04-work-facade-cli-contract.md`.

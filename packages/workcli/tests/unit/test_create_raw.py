@@ -42,7 +42,9 @@ def test_create_raw_with_parent_sends_exactly_one_bd_call_and_no_dep_add():
     assert exit_code == 0
     assert envelope["data"] == {"id": "x.9"}
     assert len(runner.calls) == 1
-    assert runner.calls == [("create", "--json", "--title", "T", "--parent", "P")]
+    assert runner.calls == [
+        ("create", "--json", "--title", "T", "--parent", "P", "--no-inherit-labels")
+    ]
     assert not any(call[0] == "dep" for call in runner.calls)
 
 

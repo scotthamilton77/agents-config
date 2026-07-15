@@ -21,13 +21,14 @@ default-formula = "implement-feature"  # fallback when no formula-* label on bea
 [gates]
 # This project is primarily documentation — no build, typecheck, or lint —
 # but it now ships an automated bash smoke-test suite for the skill helper
-# scripts under src/user/.agents/skills (added by abn9.4). The build/
+# scripts under src/user/.agents/skills, src/user/.claude/skills, and
+# src/user/.claude/hooks (added by abn9.4). The build/
 # typecheck/lint gates remain empty stubs and stages detect them as such and
 # skip gracefully; the test gate is wired up to the smoke-test runner.
 build     = ""   # no build step
 typecheck = ""   # no type checker
 lint      = ""   # no linter
-test      = "find src/user/.agents/skills src/user/.claude/hooks -name '*_test.sh' -print0 | sort -z | xargs -0 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\" || exit 1' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines (find -print0 / sort -z / xargs -0 are common GNU/BSD extensions, not POSIX; portable on macOS + Linux)
+test      = "find src/user/.agents/skills src/user/.claude/skills src/user/.claude/hooks -name '*_test.sh' -print0 | sort -z | xargs -0 -I{} sh -c 'echo \"[TEST] $1\"; bash \"$1\" || exit 1' _ {}"   # skill smoke tests (added by abn9.4); null-delimited handles spaces/newlines (find -print0 / sort -z / xargs -0 are common GNU/BSD extensions, not POSIX; portable on macOS + Linux)
 
 # ---------------------------------------------------------------------------
 # [coverage] — code coverage settings

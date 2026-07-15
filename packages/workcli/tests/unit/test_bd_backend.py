@@ -364,8 +364,38 @@ def test_create_includes_description_type_priority_and_parent_when_provided():
             "P1",
             "--parent",
             "parent.1",
+            "--no-inherit-labels",
         )
     ]
+
+
+def test_create_disables_bd_label_inheritance_only_for_parented_creates():
+    # bd copies the parent's current labels onto a --parent child by default
+    # (verified against bd 1.0.3), which leaked transient handles like
+    # `creating-spec` onto spec children (wgclw.9.8). The Backend contract is
+    # "the created item carries exactly the requested labels", so every
+    # parented create opts out; an unparented create has nothing to inherit
+    # and stays flag-free.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("create",),
+                BdResult(returncode=0, stdout=json.dumps({"id": "x.8"}), stderr=""),
+            ),
+            ScriptedStep(
+                ("create",),
+                BdResult(returncode=0, stdout=json.dumps({"id": "x.9"}), stderr=""),
+            ),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    backend.create(CreateFields(title="kid", parent="parent.1", labels=("only",)))
+    backend.create(CreateFields(title="solo", labels=("only",)))
+
+    parented, unparented = runner.calls
+    assert "--no-inherit-labels" in parented
+    assert "--no-inherit-labels" not in unparented
 
 
 def test_create_joins_labels_into_one_comma_separated_labels_flag():
