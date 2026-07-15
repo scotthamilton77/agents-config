@@ -574,3 +574,49 @@ def test_detached_head_without_branch_aborts(monkeypatch, main_repo):
     assert env["status"] == "failed"
     assert env["failed_step"]["name"] == "preflight"
     assert "detached" in env["remediation_hint"].lower()
+
+
+# --- Task 7: finish-mode preflight (identity checks) ---
+
+
+def _run_finish(monkeypatch, cwd, argv):
+    import contextlib, io
+    monkeypatch.chdir(cwd)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = m.main(["--finish", *argv])
+    return rc, json.loads(buf.getvalue())
+
+
+def _finish_args(main_repo, wt, sha, **over):
+    a = {"worktree": str(wt), "branch": "feature/x", "branch_sha": sha, "base": "main"}
+    a.update(over)
+    return ["--worktree", a["worktree"], "--branch", a["branch"],
+            "--branch-sha", a["branch_sha"], "--base", a["base"]]
+
+
+def test_finish_requires_all_args(monkeypatch, main_repo):
+    rc, env = _run_finish(monkeypatch, main_repo, ["--worktree", str(main_repo)])
+    assert rc != 0 and env["status"] == "failed"
+    assert env["failed_step"]["name"] in ("args", "preflight")
+
+
+def test_finish_refuses_cwd_inside_target_worktree(monkeypatch, main_repo):
+    wt = main_repo / ".worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    rc, env = _run_finish(monkeypatch, wt, _finish_args(main_repo, wt, _head(wt)))
+    assert rc != 0
+    assert env["failed_step"]["name"] == "preflight"
+    assert "inside" in env["remediation_hint"]
+
+
+def test_finish_refuses_relative_worktree_path(monkeypatch, main_repo):
+    rc, env = _run_finish(monkeypatch, main_repo,
+                          _finish_args(main_repo, ".worktrees/feature-x", "abc"))
+    assert rc != 0 and env["failed_step"]["name"] == "preflight"
+
+
+def test_finish_refuses_foreign_worktree_path(monkeypatch, main_repo, tmp_path):
+    rc, env = _run_finish(monkeypatch, main_repo,
+                          _finish_args(main_repo, tmp_path / "elsewhere", "abc"))
+    assert rc != 0 and env["failed_step"]["name"] in ("preflight", "detect_convention")

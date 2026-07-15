@@ -280,7 +280,12 @@ def main(argv: list[str] | None = None) -> int:
               failed_step={"name": "args", "cmd": "", "exit_code": 2, "stderr": str(exc)},
               remediation_hint=f"invalid arguments: {exc}")
         return 1
+    if args.finish:
+        return _main_finish(args)
+    return _main_plan(args)
 
+
+def _main_plan(args: argparse.Namespace) -> int:
     completed: list[str] = []
     main_root = base = branch = merge_commit = synced_to = None
     convention: Convention | None = None
@@ -410,6 +415,73 @@ def main(argv: list[str] | None = None) -> int:
               failed_step={"name": "unexpected", "cmd": "", "exit_code": 1, "stderr": one_line},
               worktree_convention=convention, main_root=main_root, base=base, branch=branch,
               pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
+              remediation_hint=f"unexpected failure: {one_line}")
+        return 1
+
+
+def _main_finish(args: argparse.Namespace) -> int:
+    completed: list[str] = []
+    convention: Convention | None = None
+    main_root = synced_to = None
+    try:
+        # --- finish preflight (identity checks only — §3.2.2 step 1) ---
+        for name, val in (("--worktree", args.worktree), ("--branch", args.branch),
+                          ("--branch-sha", args.branch_sha), ("--base", args.base)):
+            if not val:
+                raise _AbortStep("preflight", f"--finish requires {name}")
+        _require_safe_ref(args.branch, "branch")
+        _require_safe_ref(args.base, "base")
+        worktree = Path(args.worktree)
+        if not worktree.is_absolute():
+            raise _AbortStep("preflight", f"--worktree {args.worktree!r} must be absolute")
+        toplevel = Path(_run_step(["git", "rev-parse", "--show-toplevel"],
+                                  "preflight", "not inside a git repository").stdout.strip()).resolve()
+        common = Path(_run_step(["git", "rev-parse", "--git-common-dir"],
+                                "preflight", "cannot resolve the git common dir").stdout.strip()).resolve()
+        main_root = str(common.parent)
+        # Convention + the cwd-inside-worktree guard are checked before the
+        # cwd-is-the-main-checkout equality: running from inside the target
+        # worktree trips BOTH (its toplevel is the worktree, not the main root),
+        # and "you are standing in the thing I'm about to remove" is the more
+        # specific, more actionable diagnosis, so it wins.
+        convention = detect_convention(worktree, Path(main_root))
+        if convention is not Convention.NORMAL_REPO and Path.cwd().resolve().is_relative_to(worktree):
+            raise _AbortStep("preflight",
+                             f"cwd is inside the worktree {worktree} this command would "
+                             f"remove; cd to {main_root} first")
+        if toplevel != common.parent:
+            raise _AbortStep("preflight",
+                             f"finish mode must run from the main checkout {main_root}, "
+                             f"not {toplevel} (did the handed-back `cd` run?)")
+        completed.append("preflight")
+        # Placeholder tail — Tasks 8-11 replace this with regate_worktree,
+        # gate_main_root, sync_base, and teardown. A preflight-passing run must
+        # still fail cleanly (not emit a bogus success) until those land; the
+        # Task 7 tests exercise only preflight FAILURES, so they never reach here.
+        raise _AbortStep("teardown", "finish-mode teardown not yet implemented")
+
+    except UnrecognizedWorktree as exc:
+        # A deliberate fail-loud outcome — report it as a named step, not 'unexpected'.
+        _emit(Status.FAILED, Phase.FINISH, steps_completed=completed,
+              failed_step={"name": "detect_convention", "cmd": "", "exit_code": 1, "stderr": str(exc)},
+              worktree_convention=None, main_root=main_root, base=args.base, branch=args.branch,
+              branch_sha=args.branch_sha, pr=args.pr, merge_commit=args.merge_commit,
+              synced_to=synced_to, steps_remaining=[], remediation_hint=str(exc))
+        return 1
+    except _AbortStep as abort:
+        _emit(Status.FAILED, Phase.FINISH, steps_completed=completed, failed_step=abort.failed_step,
+              steps_remaining=[], worktree_convention=convention, main_root=main_root,
+              base=args.base, branch=args.branch, branch_sha=args.branch_sha, pr=args.pr,
+              merge_commit=args.merge_commit, synced_to=synced_to, remediation_hint=abort.hint)
+        return 1
+    except Exception as exc:  # fail closed on any unexpected error
+        detail = (getattr(exc, "stderr", None) or str(exc)).strip()
+        one_line = next((ln.strip() for ln in detail.splitlines() if ln.strip()), repr(exc))
+        _emit(Status.FAILED, Phase.FINISH, steps_completed=completed,
+              failed_step={"name": "unexpected", "cmd": "", "exit_code": 1, "stderr": one_line},
+              steps_remaining=[], worktree_convention=convention, main_root=main_root,
+              base=args.base, branch=args.branch, branch_sha=args.branch_sha, pr=args.pr,
+              merge_commit=args.merge_commit, synced_to=synced_to,
               remediation_hint=f"unexpected failure: {one_line}")
         return 1
 
