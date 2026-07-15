@@ -23,11 +23,11 @@
       "Read(~/.ssh/*)",
       "Read(/etc/shadow)",
       "Read(/etc/passwd)",
-      "Write(/etc/*)",
-      "Write(/bin/*)",
-      "Write(/usr/bin/*)",
-      "Write(/sbin/*)",
-      "Write(/usr/sbin/*)"
+      "Edit(/etc/*)",
+      "Edit(/bin/*)",
+      "Edit(/usr/bin/*)",
+      "Edit(/sbin/*)",
+      "Edit(/usr/sbin/*)"
     ]
   },
   "hooks": {
