@@ -122,8 +122,7 @@ def _inconsistent_exit_error(argv: Sequence[str], result: TrackerResult) -> VizE
     )
 
 
-def _backend_error(argv: Sequence[str], envelope: Any) -> VizError:
-    error = envelope.get("error") or {}
+def _backend_error(argv: Sequence[str], error: dict[str, Any]) -> VizError:
     return VizError(
         ErrorCode.TRACKER_BACKEND_ERROR,
         f"work CLI returned an error envelope: {error.get('message', '<no message>')}",
@@ -152,8 +151,18 @@ def _run_and_parse(runner: TrackerRunner, argv: Sequence[str]) -> Any:
         ok = envelope["ok"]
     except (KeyError, TypeError) as exc:
         raise _malformed_shape_error(argv, result) from exc
-    if ok is not True:
-        raise _backend_error(argv, envelope)
+    if not isinstance(ok, bool):
+        # `ok` must be a JSON boolean — a null/string here is contract drift,
+        # not a backend error; misclassifying it would mask the drift.
+        raise _malformed_shape_error(argv, result)
+    if ok is False:
+        error = envelope.get("error")
+        if not isinstance(error, dict):
+            # An `ok: false` envelope whose `error` is not an object violates
+            # the contract — refuse it as malformed rather than crash on a
+            # `.get` of a string/list (or invent a backend message).
+            raise _malformed_shape_error(argv, result)
+        raise _backend_error(argv, error)
     if result.returncode != 0:
         # An `ok: true` envelope from a nonzero exit is an inconsistent state
         # (partial output, crash after print) — refuse it rather than treat
@@ -170,6 +179,19 @@ def _malformed_bead_error(bead_id: str, exc: Exception) -> VizError:
     )
 
 
+class _NotAListError(TypeError):
+    """Raised when a bead field that must be a JSON array is some other type.
+
+    Iterating a string/dict would silently yield characters/keys instead of
+    failing loud on shape drift (the message is fixed on the class per ruff
+    TRY003); `_parse_bead_record`'s except clause converts it to the typed
+    malformed error.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("expected a JSON array")
+
+
 def _parse_dep_edge(raw: Any) -> DepEdgeRecord:
     return DepEdgeRecord(id=str(raw["id"]), type=str(raw["type"]), status=str(raw["status"]))
 
@@ -177,11 +199,15 @@ def _parse_dep_edge(raw: Any) -> DepEdgeRecord:
 def _parse_bead_record(data: Any, *, bead_id: str) -> BeadRecord:
     """Parse `work show <id>`'s single-object `data` into a `BeadRecord`."""
     try:
+        labels = data["labels"]
+        deps = data["deps"]
+        if not isinstance(labels, list) or not isinstance(deps, list):
+            raise _NotAListError
         return BeadRecord(
             id=str(data["id"]),
             status=str(data["status"]),
-            labels=tuple(str(label) for label in data["labels"]),
-            deps=tuple(_parse_dep_edge(entry) for entry in data["deps"]),
+            labels=tuple(str(label) for label in labels),
+            deps=tuple(_parse_dep_edge(entry) for entry in deps),
         )
     except (KeyError, TypeError) as exc:
         raise _malformed_bead_error(bead_id, exc) from exc

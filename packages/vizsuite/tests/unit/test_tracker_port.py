@@ -451,3 +451,75 @@ def test_ok_envelope_with_nonzero_exit_is_refused_as_inconsistent():
     assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
     assert exc_info.value.detail["returncode"] == 1
     assert exc_info.value.detail["stderr_excerpt"] == "late crash"
+
+
+def test_non_bool_ok_is_malformed_not_backend_error():
+    # `ok: null` / `ok: "true"` is contract drift, not a backend error —
+    # misclassifying it as TRACKER_BACKEND_ERROR would mask the drift.
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout='{"protocol": "1.0", "ok": null, "data": null, "error": null}',
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+
+
+def test_ok_false_with_non_object_error_is_malformed():
+    # An `ok: false` envelope whose `error` is a bare string violates the
+    # contract; refusing it as malformed beats crashing on `.get` of a str.
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=1,
+        stdout='{"protocol": "1.0", "ok": false, "data": null, "error": "boom"}',
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+
+
+def test_bead_labels_as_string_is_malformed_not_character_tuple():
+    # Iterating a string would silently yield a tuple of characters —
+    # shape drift must fail loud instead.
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout=(
+            '{"protocol": "1.0", "ok": true, "error": null, "data":'
+            ' {"id": "x.1", "status": "open", "labels": "oops", "deps": []}}'
+        ),
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+
+
+def test_bead_deps_as_object_is_malformed():
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=0,
+        stdout=(
+            '{"protocol": "1.0", "ok": true, "error": null, "data":'
+            ' {"id": "x.1", "status": "open", "labels": [], "deps": {"id": "y"}}}'
+        ),
+        stderr="",
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
