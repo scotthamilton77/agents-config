@@ -9,7 +9,7 @@ This project tracks durable work with **bd (beads)**.
   in-progress when you start.
 - **In-session planning is yours** — use your native Task / ToDo tools freely to
   plan and track the steps of the work you're doing right now. bd tracks *what*
-  needs doing across sessions; your task list tracks *how* you execute it this one.
+  needs doing across sessions; your task list tracks *how* you execute it in this session.
 - Don't run `bd edit` — it opens `$EDITOR` and hangs a non-interactive agent.
   Edit fields inline: `bd update <id> --title/--description/--notes/--design`.
 

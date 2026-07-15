@@ -491,14 +491,17 @@ def _run_project(
     repo_root: Path,
     io: IOPort,
 ) -> int:
-    """The project-scoped tail: install kit content under ``project_root``.
+    """The project-scoped tail: resolve, validate, and install project content.
 
-    Tracer scope only — kit refs alone. A kit rides the
-    existing plugin-route machinery under owner ``kit:<name>`` via
-    ``_KitRouteAdapter``, so it needs no new receipt/prune plumbing: this
-    mirrors the user path's plugin-route install + receipt-record, scoped to a
-    project-local receipt and lock instead of the user one. The user tool
-    sync, user plugin routes, prune, and validation passes never run here.
+    Handles the full project install: staging kits, resolving the selection to
+    the PROJECT scope, the kit-scope + project-namespace validation guards, tool
+    syncing under ``project_root``'s tool tree, kit route installs (a kit rides
+    the existing plugin-route machinery under owner ``kit:<name>`` via
+    ``_KitRouteAdapter``), prune, project-local receipt recording, and profile
+    persistence. The load-bearing invariant: this path writes only under
+    ``project_root`` (never user space) and tracks state in a project-local
+    receipt guarded by a project-local lock. The user-space install pipeline and
+    user plugin routes never run here.
     """
     kits_root = repo_root / "src" / "kits"
     staged_kits = stage_kits(kits_root)
@@ -508,7 +511,10 @@ def _run_project(
         universe.setdefault(key, []).extend(refs)
 
     manifest = load_manifest(repo_root / "profiles.toml")
-    if args.profiles:
+    # `is not None` (not truthiness): an explicit `--profiles=` (empty string) is
+    # routed through parse_profiles_csv and rejected cleanly, rather than silently
+    # falling back to the persisted set as if the flag were omitted.
+    if args.profiles is not None:
         try:
             selection: tuple[str, ...] = parse_profiles_csv(args.profiles)
         except ValueError as exc:

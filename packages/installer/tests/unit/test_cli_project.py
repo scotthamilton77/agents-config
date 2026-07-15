@@ -232,6 +232,26 @@ def test_project_profiles_trailing_comma_rejected_cleanly(
     assert not (project / ".beads").exists()
 
 
+def test_project_empty_profiles_flag_rejected_not_treated_as_omitted(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit --profiles= (empty string) is routed through parse_profiles_csv
+    and rejected cleanly, not silently treated as if the flag were omitted."""
+    repo = _hermetic_repo_with_profiles(tmp_path)
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    rc = main(
+        ["--project", str(project), "--profiles=", "--yes"],
+        home=tmp_path,
+        io=ScriptedIO(interactive=False),
+        repo_root=repo,
+    )
+
+    assert rc == 2
+    assert "empty profile name" in capsys.readouterr().err
+
+
 def test_project_corrupt_receipt_left_untouched_install_proceeds(tmp_path: Path) -> None:
     """A CORRUPT project receipt fails closed (mirrors the user path): the install
     still proceeds, but the receipt is NOT overwritten — overwriting would erase
