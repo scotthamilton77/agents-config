@@ -500,10 +500,20 @@ def _main_finish(args: argparse.Namespace) -> int:
                                  f"resumable teardown — reconcile by hand")
         completed.append("regate_worktree")
 
-        # Placeholder tail — Tasks 9-11 replace this with gate_main_root,
-        # sync_base, and teardown. A regate-passing run must still fail cleanly
-        # (not emit a bogus success) until those land; the Task 8 tests exercise
-        # only gate FAILURES, so the happy paths abort here as designed.
+        # --- gate the main root (§3.2.2 step 3) ---
+        porcelain = _run_step(["git", "-C", main_root, "status", "--porcelain"],
+                              "gate_main_root", "cannot read main checkout status").stdout
+        tracked, _untracked, _ignored = classify_status_paths(porcelain)
+        if tracked:
+            raise _AbortStep("gate_main_root",
+                             f"main checkout {main_root} has tracked modifications; a branch "
+                             f"switch would carry them: {', '.join(tracked)}")
+        completed.append("gate_main_root")
+
+        # Placeholder tail — Tasks 10-11 replace this with sync_base and
+        # teardown. A gate-passing run must still fail cleanly (not emit a
+        # bogus success) until those land; the Task 9 tests exercise only gate
+        # FAILURES, so the happy paths abort here as designed.
         raise _AbortStep("teardown", "finish-mode teardown not yet implemented")
 
     except UnrecognizedWorktree as exc:

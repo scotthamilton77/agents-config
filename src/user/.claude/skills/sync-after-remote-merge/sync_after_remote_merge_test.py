@@ -661,3 +661,22 @@ def test_finish_claude_native_worktree_still_present_aborts(monkeypatch, main_re
     assert rc != 0
     assert env["failed_step"]["name"] == "regate_worktree"
     assert "ExitWorktree" in env["remediation_hint"]
+
+
+# --- Task 9: finish gates the main root (F3) ---
+
+
+def test_finish_dirty_main_root_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    (main_repo / "f.txt").write_text("local edit\n")       # tracked modification
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc != 0
+    assert env["failed_step"]["name"] == "gate_main_root"
+    assert "f.txt" in json.dumps(env)
+
+
+def test_finish_main_root_untracked_is_permitted(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    (main_repo / "scratch.txt").write_text("untracked, must not block\n")
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert env["failed_step"] is None or env["failed_step"]["name"] != "gate_main_root"
