@@ -168,7 +168,12 @@ def _run_and_parse(runner: TrackerRunner, argv: Sequence[str]) -> Any:
         # (partial output, crash after print) — refuse it rather than treat
         # it as success and hide a real subprocess failure.
         raise _inconsistent_exit_error(argv, result)
-    return envelope.get("data")
+    try:
+        # The envelope contract always carries `data` — a missing key is
+        # drift, distinct from a contract-valid `data: null`.
+        return envelope["data"]
+    except KeyError as exc:
+        raise _malformed_shape_error(argv, result) from exc
 
 
 def _malformed_bead_error(bead_id: str, exc: Exception) -> VizError:
@@ -235,7 +240,7 @@ class TrackerPort:
             raise VizError(
                 ErrorCode.TRACKER_MALFORMED_ENVELOPE,
                 "work --protocol-version returned no protocol field",
-                detail={},
+                detail={"raw_data_excerpt": repr(data)[:200]},
             ) from exc
         if not isinstance(protocol, str):
             raise VizError(
