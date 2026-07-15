@@ -19,7 +19,7 @@ routes any non-``REVIEW_THREAD`` item to the issue-comments endpoint -- so a
 rationale as a brand-new **top-level issue comment**. That comment is itself a
 gh id no ledger recognizes, so the flood compounds every cycle.
 
-Both tests below assert the DESIRED behavior and are expected to fail today.
+Both tests below assert the DESIRED behavior and guard against regression.
 """
 
 from __future__ import annotations
