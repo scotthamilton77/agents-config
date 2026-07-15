@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from vizsuite.envelope import JsonValue
 from vizsuite.runners import Runners
+from vizsuite.verbs.apply import apply
 from vizsuite.verbs.pr import pr
 from vizsuite.verbs.queue import queue
 from vizsuite.verbs.sweep import sweep
@@ -23,4 +24,5 @@ VERBS: dict[str, Callable[[Runners, Namespace], JsonValue]] = {
     "queue": queue,
     "sweep": sweep,
     "verdict": verdict,
+    "apply": apply,
 }

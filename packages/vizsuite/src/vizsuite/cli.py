@@ -74,6 +74,23 @@ def _add_verdict_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser
     )
 
 
+def _add_apply_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    apply_parser = subparsers.add_parser(
+        "apply",
+        help="execute a one-click recommendation's mutation plan, gated on an accepted verdict",
+    )
+    apply_parser.add_argument(
+        "recommendation_id",
+        metavar="RECOMMENDATION_ID",
+        help="the recommendation fact id to apply",
+    )
+    apply_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preview the tracker mutations that would happen without writing anything",
+    )
+
+
 def _build_parser() -> _EnvelopeArgumentParser:
     parser = _EnvelopeArgumentParser(prog="viz", description="viz — repo/PR visualization suite")
     parser.add_argument(
@@ -95,6 +112,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_queue_subparser(subparsers)
     _add_sweep_subparser(subparsers)
     _add_verdict_subparser(subparsers)
+    _add_apply_subparser(subparsers)
     return parser
 
 
