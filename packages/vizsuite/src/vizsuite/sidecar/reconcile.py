@@ -61,6 +61,21 @@ _MAJORITY_THRESHOLD = 0.5
 BeadOverlapRule = Callable[[tuple[str, ...], tuple[str, ...]], bool]
 
 
+class _EndpointArityMismatchError(ValueError):
+    """Raised when two same-kind descriptors carry different endpoint counts.
+
+    Endpoint arity is structural per kind (an edge has two endpoints, a step
+    one), so a mismatch means a corrupt or hand-edited sidecar record — fail
+    loud with a named error rather than guessing a non-match and silently
+    minting a duplicate fact. Subclassing `ValueError` keeps it in the same
+    malformed-input family the store wraps as `SIDECAR_MALFORMED` (the message
+    is fixed on the class per ruff TRY003).
+    """
+
+    def __init__(self) -> None:
+        super().__init__("same-kind descriptors have mismatched endpoint arity")
+
+
 @dataclass(frozen=True)
 class Candidate:
     """A freshly re-derived Tier-2 fact, not yet reconciled to a durable fact id."""
@@ -176,6 +191,8 @@ def _bead_anchor_match(
         return False
     if not candidate.endpoint_bead_ids or not existing.endpoint_bead_ids:
         return False
+    if len(candidate.endpoint_bead_ids) != len(existing.endpoint_bead_ids):
+        raise _EndpointArityMismatchError
     return all(
         overlap(c_ids, e_ids)
         for c_ids, e_ids in zip(

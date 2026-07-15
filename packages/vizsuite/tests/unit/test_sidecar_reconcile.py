@@ -9,6 +9,8 @@ default id-minting strategy) is content-derived, so equality assertions on
 
 from __future__ import annotations
 
+import pytest
+
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import FactRecord, MatchingDescriptor, Verdict, VerdictRecord
 from vizsuite.sidecar.reconcile import (
@@ -86,6 +88,15 @@ def _verdict(
 
 
 # ---- tier 1: bead-anchor overlap (any-overlap rule, edges/recommendations) --
+
+
+def test_mismatched_endpoint_arity_fails_loud_never_mints_a_duplicate():
+
+    existing = _fact("edge-1", endpoint_bead_ids=(("bead-1",), ("bead-2",)))
+    candidate = _candidate(endpoint_bead_ids=(("bead-1",),))
+
+    with pytest.raises(ValueError, match="mismatched endpoint arity"):
+        reconcile_facts((candidate,), (existing,), ())
 
 
 def test_bead_anchor_overlap_inherits_the_existing_fact_id_despite_plan_rename():
