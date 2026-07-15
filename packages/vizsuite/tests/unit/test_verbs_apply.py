@@ -847,6 +847,51 @@ def test_add_edge_cycle_check_refuses_as_malformed_when_another_promoted_ledger_
     assert tracker.calls == []
 
 
+def test_add_edge_cycle_check_refuses_a_promoted_ledger_with_an_unknown_edge_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Same strictness as verdict.py's ledger parser: a hand-edited/corrupt
+    # `tracker_edge_kind` outside {"blocks", "related-to"} must refuse, not
+    # silently feed the cycle check.
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    store.write_edges(
+        (
+            _edge_fact(
+                "edge-corrupt",
+                payload={
+                    "promotion": {
+                        "from_bead": "x",
+                        "to_bead": "y",
+                        "tracker_edge_kind": "sideways",
+                    }
+                },
+            ),
+        )
+    )
+    store.write_recommendations(
+        (
+            _recommendation(
+                "rec-1",
+                mutation={
+                    "kind": "add_edge",
+                    "from_bead": "a",
+                    "to_bead": "b",
+                    "edge_kind": "blocks",
+                },
+            ),
+        )
+    )
+    _accept(store, "rec-1")
+    tracker = ScriptedTrackerRunner()
+
+    exit_code, envelope, _stderr = run_cli(["apply", "rec-1"], tracker_runner=tracker)
+
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_SIDECAR_MALFORMED"
+    assert tracker.calls == []
+
+
 def test_add_edge_raises_on_an_unrecognized_cycle_check_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -1238,6 +1283,35 @@ def test_apply_refuses_an_unrecognized_mutation_kind(
 
     assert exit_code == 1
     assert envelope["error"]["code"] == "E_SIDECAR_MALFORMED"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        # Both anchors set: TrackerPort.mint_bead's argv builder prioritizes
+        # --orphan, so the facade would never see the conflicting --parent --
+        # the silent drop must refuse at the shape boundary instead.
+        {"kind": "mint_bead", "noun": "task", "title": "T", "parent": "epic-1", "orphan": True},
+        # Neither anchor set: knowable at parse time; refusing here beats a
+        # tracker-side E_USAGE surfacing as a backend error mid-apply.
+        {"kind": "mint_bead", "noun": "task", "title": "T"},
+    ],
+    ids=["both-parent-and-orphan", "neither-parent-nor-orphan"],
+)
+def test_apply_refuses_a_mint_payload_without_exactly_one_bead_anchor(
+    mutation: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    store.write_recommendations((_recommendation("rec-1", mutation=mutation),))
+    _accept(store, "rec-1")
+    tracker = ScriptedTrackerRunner()
+
+    exit_code, envelope, _stderr = run_cli(["apply", "rec-1"], tracker_runner=tracker)
+
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_SIDECAR_MALFORMED"
+    assert tracker.calls == []
 
 
 @pytest.mark.parametrize(

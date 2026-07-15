@@ -172,6 +172,13 @@ def _parse_mint_bead(fields: dict[str, JsonValue]) -> MintBeadMutation:
     acceptance = _as_optional_str_field(fields.pop("acceptance", None))
     if fields:
         raise _MalformedMutationShapeError
+    # Exactly one bead anchor: `TrackerPort.mint_bead`'s argv builder
+    # prioritizes `--orphan`, so a plan carrying BOTH would silently drop
+    # `parent` before the facade could refuse the conflict; a plan carrying
+    # NEITHER is knowable-bad at parse time (refusing here beats a
+    # tracker-side `E_USAGE` surfacing as a backend error mid-apply).
+    if (parent is not None) == orphan:
+        raise _MalformedMutationShapeError
     return MintBeadMutation(
         noun=noun,
         title=title,
@@ -294,7 +301,14 @@ def _dependency_sidecar_edges(
                 detail={"fact_id": record.fact_id},
             )
         from_bead, to_bead = raw.get("from_bead"), raw.get("to_bead")
-        if not (isinstance(from_bead, str) and isinstance(to_bead, str)):
+        tracker_edge_kind = raw.get("tracker_edge_kind")
+        if not (
+            isinstance(from_bead, str)
+            and isinstance(to_bead, str)
+            and tracker_edge_kind in ("blocks", "related-to")
+        ):
+            # Same allowed-kind set as verdict.py's ledger parser -- the two
+            # verbs must agree on what a valid promotion ledger looks like.
             raise VizError(
                 ErrorCode.SIDECAR_MALFORMED,
                 "a fact's promotion ledger entry is not valid",
