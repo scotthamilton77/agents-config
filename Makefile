@@ -5,6 +5,7 @@
         typecheck-prgroom cov-prgroom audit-prgroom verify-entry-prgroom \
         ci-workcli test-workcli lint-workcli format-check-workcli \
         typecheck-workcli cov-workcli audit-workcli verify-entry-workcli \
+        itest-workcli \
         ci-vizsuite test-vizsuite lint-vizsuite format-check-vizsuite \
         typecheck-vizsuite cov-vizsuite audit-vizsuite verify-entry-vizsuite
 
@@ -107,6 +108,15 @@ audit-workcli:
 verify-entry-workcli:
 	uv --project $(WORKCLI) run work --protocol-version > /dev/null
 	uv --project $(WORKCLI) run work --help > /dev/null
+
+# itest-workcli is the real-bd integration suite: it stands up an isolated
+# embedded-Dolt bd install per test and drives the production `work` CLI against
+# it. It requires `bd` on PATH and is DELIBERATELY EXCLUDED from `ci-workcli` /
+# `ci` (needs the bd toolchain; ~40s+ serial). Pre-push discipline, not a gate.
+# `-p no:xdist` pins it serial so the session-scoped read_only_install pays its
+# ~1.4s bd init ONCE (under -n auto it would re-init per worker).
+itest-workcli:
+	cd $(WORKCLI) && uv run pytest tests/integration -q -p no:xdist
 
 # ── vizsuite (mirrors the ci-workcli block one-for-one; enforced via the
 # always-run ci-vizsuite.yml job, NOT via the top-level `ci:` aggregate) ──
