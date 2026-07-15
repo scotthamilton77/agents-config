@@ -709,3 +709,81 @@ def test_finish_nonff_base_aborts(monkeypatch, main_repo):
     _git(main_repo, "commit", "--allow-empty", "-m", "local divergence")
     rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
     assert rc != 0 and env["failed_step"]["name"] == "sync_base"
+
+
+# --- Task 11: finish teardown — SHA-bound delete, idempotent terminal state ---
+
+
+def test_finish_other_agent_full_teardown(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc == 0
+    assert env["status"] == "ok" and env["phase"] == "finish"
+    assert not wt.exists()
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" not in branches
+    assert env["synced_to"] == subprocess.run(
+        ["git", "rev-parse", "main"], cwd=main_repo,
+        capture_output=True, text=True).stdout.strip()
+
+
+def test_finish_branch_moved_since_plan_aborts(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    (wt / "h.txt").write_text("new work\n")
+    _git(wt, "add", "h.txt")
+    _git(wt, "commit", "-m", "post-plan commit")           # branch tip advances
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc != 0
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" in branches                          # nothing deleted
+
+
+def test_finish_resumable_partial_teardown(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    _git(main_repo, "worktree", "remove", str(wt))          # simulate prior crash
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc == 0 and env["status"] == "ok"
+    branches = subprocess.run(["git", "branch"], cwd=main_repo,
+                              capture_output=True, text=True).stdout
+    assert "feature/x" not in branches
+
+
+def test_finish_double_run_is_idempotent_ok(monkeypatch, main_repo):
+    wt, sha = _merged_feature(main_repo)
+    args = _finish_args(main_repo, wt, sha)
+    rc1, _ = _run_finish(monkeypatch, main_repo, args)
+    rc2, env2 = _run_finish(monkeypatch, main_repo, args)
+    assert rc1 == 0 and rc2 == 0
+    assert env2["status"] == "ok"
+    assert "already" in env2["remediation_hint"]
+
+
+def test_finish_claude_native_happy_path_accepts_absent_worktree(monkeypatch, main_repo):
+    wt = main_repo / ".claude" / "worktrees" / "feature-x"
+    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
+    (wt / "g.txt").write_text("feature\n")
+    _git(wt, "add", "g.txt")
+    _git(wt, "commit", "-m", "feature work")
+    _git(wt, "push", "origin", "feature/x")
+    sha = _head(wt)
+    _git(main_repo, "merge", "feature/x")
+    _git(main_repo, "push", "origin", "main")
+    _git(main_repo, "reset", "--hard", "HEAD~1")
+    _git(main_repo, "worktree", "remove", "--force", str(wt))   # ExitWorktree stand-in
+    rc, env = _run_finish(monkeypatch, main_repo, _finish_args(main_repo, wt, sha))
+    assert rc == 0 and env["status"] == "ok"
+
+
+def test_finish_through_symlinked_root_passes_preflight(monkeypatch, main_repo, tmp_path):
+    """Spec §5: finish-mode path-equality checks must survive a symlinked repo
+    spelling (cwd toplevel vs git-common-dir parent vs --worktree)."""
+    wt, sha = _merged_feature(main_repo)
+    link = tmp_path / "link-to-repo"
+    link.symlink_to(main_repo)
+    args = ["--worktree", str(link / ".worktrees" / "feature-x"), "--branch", "feature/x",
+            "--branch-sha", sha, "--base", "main"]
+    rc, env = _run_finish(monkeypatch, link, args)
+    assert rc == 0 and env["status"] == "ok"
+    assert not wt.exists()

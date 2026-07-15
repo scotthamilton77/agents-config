@@ -434,6 +434,7 @@ def _main_finish(args: argparse.Namespace) -> int:
         worktree = Path(args.worktree)
         if not worktree.is_absolute():
             raise _AbortStep("preflight", f"--worktree {args.worktree!r} must be absolute")
+        worktree = worktree.resolve()
         toplevel = Path(_run_step(["git", "rev-parse", "--show-toplevel"],
                                   "preflight", "not inside a git repository").stdout.strip()).resolve()
         common = Path(_run_step(["git", "rev-parse", "--git-common-dir"],
@@ -534,10 +535,37 @@ def _main_finish(args: argparse.Namespace) -> int:
                               "cannot read base HEAD after sync").stdout.strip()
         completed.append("sync_base")
 
-        # Placeholder tail — Task 11 replaces this with teardown. A
-        # gate-passing run must still fail cleanly (not emit a bogus success)
-        # until it lands.
-        raise _AbortStep("teardown", "finish-mode teardown not yet implemented")
+        # --- teardown (§3.2.2 step 5) ---
+        # Idempotent terminal state: a prior finish that already removed the
+        # worktree and deleted the branch re-enters here as a clean no-op.
+        if terminal_noop:
+            _emit(Status.OK, Phase.FINISH, steps_completed=completed,
+                  worktree_convention=convention, main_root=main_root, base=args.base,
+                  branch=args.branch, branch_sha=args.branch_sha, pr=args.pr,
+                  merge_commit=args.merge_commit, synced_to=synced_to,
+                  remediation_hint=f"teardown already complete; base synced to {synced_to[:9]}")
+            return 0
+        if convention is Convention.OTHER_AGENT and worktree_present:
+            _run_step(["git", "-C", main_root, "worktree", "remove", "--", str(worktree)],
+                      "teardown", f"cannot remove worktree {worktree}")
+        if branch_oid is not None:
+            now = _run_step(["git", "-C", main_root, "rev-parse", f"refs/heads/{args.branch}"],
+                            "teardown", "cannot re-read the branch tip").stdout.strip()
+            if now != args.branch_sha:
+                raise _AbortStep("teardown",
+                                 f"{args.branch} moved to {now[:9]} (expected "
+                                 f"{args.branch_sha[:9]}); refusing to delete")
+            _run_step(["git", "-C", main_root, "branch", "-D", args.branch], "teardown",
+                      f"cannot delete branch {args.branch}")
+        if convention is Convention.OTHER_AGENT:
+            _run(["git", "-C", main_root, "worktree", "prune"], check=False)
+        completed.append("teardown")
+        _emit(Status.OK, Phase.FINISH, steps_completed=completed,
+              worktree_convention=convention, main_root=main_root, base=args.base,
+              branch=args.branch, branch_sha=args.branch_sha, pr=args.pr,
+              merge_commit=args.merge_commit, synced_to=synced_to, ignored_paths=ignored_paths,
+              remediation_hint=f"branch deleted, base synced to {synced_to[:9]}")
+        return 0
 
     except UnrecognizedWorktree as exc:
         # A deliberate fail-loud outcome — report it as a named step, not 'unexpected'.
