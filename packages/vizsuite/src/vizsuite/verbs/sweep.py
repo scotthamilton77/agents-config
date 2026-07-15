@@ -11,9 +11,11 @@ baseline, classifies every Tier-2 fact (`edges.json`/`steps.json`/
 `recommendations.json`) through `funnel.rungs.evaluate_fact`, rewrites the
 fact files and `flags.json` accordingly, and advances the manifest to the new
 fingerprint (closing rung 1's own loop: the next sweep's baseline is this
-sweep's current, so only genuinely new changes register as "changed"). Every
-write goes through `SidecarStore`, so it is lock-guarded and atomic exactly
-like every other sidecar writer; `verdicts.json` is never opened.
+sweep's current, so only genuinely new changes register as "changed"). The
+entire read→classify→write cycle runs inside a single `SidecarStore.transaction()`,
+so it holds the single-writer lock across all the reads and every fact/flag/
+manifest write — no concurrent writer can interleave and leave a cross-file
+state that never existed atomically; `verdicts.json` is never opened.
 
 **A fact with an already-pending flag is never re-evaluated.** Absent this
 guard, a fact sitting in the reassessment queue (rung 4) awaiting a human
@@ -64,76 +66,82 @@ def sweep(runners: Runners, _args: Namespace) -> JsonValue:
     """
     store = SidecarStore(Path.cwd())
 
-    manifest = store.read_manifest()
-    if manifest is not None:
-        recorded_input_hashes = manifest.input_hashes
-        schema_version, prompt_version, model_id = (
-            manifest.schema_version,
-            manifest.prompt_version,
-            manifest.model_id,
-        )
-    else:
-        recorded_input_hashes = {}
-        schema_version, prompt_version, model_id = "", "", ""
-
-    current_input_hashes = estate(runners.git, "HEAD")
-
-    existing_flags = store.read_flags()
-    already_flagged_fact_ids = {flag.fact_id for flag in existing_flags}
-
-    reused_count = restamped_count = flagged_count = 0
-    new_flags_by_id: dict[str, FlagRecord] = {}
-
-    fact_files: tuple[_FactFileEntry, ...] = (
-        (store.read_edges(), store.write_edges),
-        (store.read_steps(), store.write_steps),
-        (store.read_recommendations(), store.write_recommendations),
-    )
-    for records, write in fact_files:
-        rewritten: list[FactRecord] = []
-        for record in records:
-            if record.fact_id in already_flagged_fact_ids:
-                flagged_count += 1
-                rewritten.append(record)
-                continue
-
-            outcome = evaluate_fact(
-                record,
-                recorded_input_hashes=recorded_input_hashes,
-                current_input_hashes=current_input_hashes,
+    # The entire read→classify→write cycle runs under ONE lock hold: the reads
+    # below see a stable snapshot and every write commits under the same hold,
+    # so no concurrent writer can interleave between a read and its write (or
+    # between two fact-file rewrites) and leave a cross-file state that never
+    # existed atomically.
+    with store.transaction():
+        manifest = store.read_manifest()
+        if manifest is not None:
+            recorded_input_hashes = manifest.input_hashes
+            schema_version, prompt_version, model_id = (
+                manifest.schema_version,
+                manifest.prompt_version,
+                manifest.model_id,
             )
-            if isinstance(outcome, Reused):
-                reused_count += 1
-                rewritten.append(outcome.fact)
-            elif isinstance(outcome, Restamped):
-                restamped_count += 1
-                rewritten.append(outcome.fact)
-            elif isinstance(outcome, FlaggedForReassessment):
-                flagged_count += 1
-                rewritten.append(outcome.fact)
-                flag_id = _mint_flag_id(outcome.fact.fact_id)
-                new_flags_by_id[flag_id] = FlagRecord(
-                    flag_id=flag_id,
-                    fact_id=outcome.fact.fact_id,
-                    kind=FlagKind.DOUBT,
-                    reason=outcome.reason,
-                )
-            else:
-                raise TypeError(outcome)
-        write(rewritten)
+        else:
+            recorded_input_hashes = {}
+            schema_version, prompt_version, model_id = "", "", ""
 
-    if new_flags_by_id:
-        merged = {flag.flag_id: flag for flag in existing_flags}
-        merged.update(new_flags_by_id)
-        store.write_flags(tuple(merged.values()))
+        current_input_hashes = estate(runners.git, "HEAD")
 
-    store.write_manifest(
-        Manifest(
-            schema_version=schema_version,
-            prompt_version=prompt_version,
-            model_id=model_id,
-            input_hashes=current_input_hashes,
+        existing_flags = store.read_flags()
+        already_flagged_fact_ids = {flag.fact_id for flag in existing_flags}
+
+        reused_count = restamped_count = flagged_count = 0
+        new_flags_by_id: dict[str, FlagRecord] = {}
+
+        fact_files: tuple[_FactFileEntry, ...] = (
+            (store.read_edges(), store.write_edges),
+            (store.read_steps(), store.write_steps),
+            (store.read_recommendations(), store.write_recommendations),
         )
-    )
+        for records, write in fact_files:
+            rewritten: list[FactRecord] = []
+            for record in records:
+                if record.fact_id in already_flagged_fact_ids:
+                    flagged_count += 1
+                    rewritten.append(record)
+                    continue
+
+                outcome = evaluate_fact(
+                    record,
+                    recorded_input_hashes=recorded_input_hashes,
+                    current_input_hashes=current_input_hashes,
+                )
+                if isinstance(outcome, Reused):
+                    reused_count += 1
+                    rewritten.append(outcome.fact)
+                elif isinstance(outcome, Restamped):
+                    restamped_count += 1
+                    rewritten.append(outcome.fact)
+                elif isinstance(outcome, FlaggedForReassessment):
+                    flagged_count += 1
+                    rewritten.append(outcome.fact)
+                    flag_id = _mint_flag_id(outcome.fact.fact_id)
+                    new_flags_by_id[flag_id] = FlagRecord(
+                        flag_id=flag_id,
+                        fact_id=outcome.fact.fact_id,
+                        kind=FlagKind.DOUBT,
+                        reason=outcome.reason,
+                    )
+                else:
+                    raise TypeError(outcome)
+            write(rewritten)
+
+        if new_flags_by_id:
+            merged = {flag.flag_id: flag for flag in existing_flags}
+            merged.update(new_flags_by_id)
+            store.write_flags(tuple(merged.values()))
+
+        store.write_manifest(
+            Manifest(
+                schema_version=schema_version,
+                prompt_version=prompt_version,
+                model_id=model_id,
+                input_hashes=current_input_hashes,
+            )
+        )
 
     return {"reused": reused_count, "restamped": restamped_count, "flagged": flagged_count}

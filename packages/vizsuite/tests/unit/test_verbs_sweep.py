@@ -22,6 +22,7 @@ import pytest
 
 from tests.conftest import run_cli
 from tests.fakes import ScriptedGitRunner, blob
+from vizsuite.envelope import ErrorCode, VizError
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -212,6 +213,39 @@ def test_sweep_is_lock_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     assert exit_code == 1
     assert envelope["error"]["code"] == "E_SIDECAR_LOCKED"
+
+
+def test_sweep_holds_the_lock_across_the_whole_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Prove the read→classify→write cycle is one atomic hold: a second store
+    # attempting a write MID-SWEEP (between the reads and the writes, hooked via
+    # the per-fact classify call) is locked out with SIDECAR_LOCKED.
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    store.write_manifest(Manifest(schema_version="1", input_hashes=_CURRENT_FINGERPRINT))
+    store.write_edges((_fact("edge-1", citations=("src/app.py",)),))
+
+    contention: list[object] = []
+    sweep_module = importlib.import_module("vizsuite.verbs.sweep")
+    real_evaluate = sweep_module.evaluate_fact
+
+    def _spy_evaluate(record: FactRecord, **kwargs: object) -> object:
+        contender = SidecarStore(tmp_path, lock_timeout=0.02, lock_poll_interval=0.005)
+        try:
+            contender.write_manifest(Manifest(schema_version="intruder"))
+        except VizError as exc:
+            contention.append(exc.code)
+        else:
+            contention.append(None)  # acquired — the transaction failed to hold the lock
+        return real_evaluate(record, **kwargs)
+
+    monkeypatch.setattr(sweep_module, "evaluate_fact", _spy_evaluate)
+
+    exit_code, _envelope, _stderr = run_cli(["sweep"], git_runner=_git())
+
+    assert exit_code == 0
+    assert contention == [ErrorCode.SIDECAR_LOCKED]  # the one fact classified, contender locked out
 
 
 def test_sweep_never_touches_verdicts_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
