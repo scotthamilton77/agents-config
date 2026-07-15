@@ -22,6 +22,51 @@ legacy XOR prgroom**. This is an operator-maintained invariant, not an automatic
 guarantee: nothing stops both loops from running against the same PR, which would
 risk double-posting. The procedures below exist to preserve it across the cutover.
 
+## Operator preflight (before any prgroom run)
+
+prgroom is not yet deployed by the installer; install it as a uv tool and
+verify the entry point:
+
+```bash
+uv tool install --from /path/to/agents-config/packages/prgroom prgroom
+prgroom --help   # must exit 0
+gh auth status   # must show an authenticated github.com login
+```
+
+**Upgrading after pulling a newer main.** This is not one-time setup. prgroom's
+package version is pinned (`0.1.0` — it does not bump per commit), so after you
+`git pull` a newer main the source changes but the version does not. A plain
+re-run of `uv tool install` — and `uv tool upgrade prgroom` — sees that version
+already installed and no-ops, leaving you on the **stale binary**. `--force` is
+required to reinstall from the updated source:
+
+```bash
+uv tool install --force --from /path/to/agents-config/packages/prgroom prgroom
+```
+
+Then, for the PR being groomed:
+
+- **Run from a worktree checked out on the PR's head branch.** The fix agent
+  commits into the current worktree, and `push` refuses to act from any other
+  branch (`PRECONDITION_WRONG_BRANCH`).
+- **Pick the mode by trigger**: a chat/human-initiated session uses
+  `prgroom run <owner>/<repo>#<n> --interactive` (returns control between
+  cycles); cron/CI supervision uses `--autonomous` (the default — blocks in
+  `wait` between cycles). The monitor-pr skill's trigger table is the
+  authoritative mode-selection rule; this bullet is its operator summary.
+- **One groomer per PR** (the invariant above): confirm the PR has no live
+  legacy inventory before pointing prgroom at it, and never invoke the legacy
+  skills on a prgroom-groomed PR.
+- **Read `status --json`'s `phase`, never the exit code alone** — an exhausted
+  retry budget rides on exit 0 with `phase: human-gated`.
+- **Inspecting state when a run misbehaves**: the per-PR state file
+  (`$XDG_STATE_HOME/prgroom/<owner>-<repo>-<n>.json`, fallback
+  `~/.local/state/prgroom/`) is the ground truth for what the loop believes about
+  the PR. Read it lock-free with `prgroom status <ref> --json`; add `--locked`
+  only for a strictly-consistent read, and note it **exits 75 under contention**
+  rather than blocking — so plain `status --json` is the safe probe while a run
+  holds the lock.
+
 ## Drain before cutover
 
 Before installing a destructive cutover phase, finish (merge or abandon) every
