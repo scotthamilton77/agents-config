@@ -30,6 +30,12 @@ tracker edge itself is never auto-removed.
 calls are pure reads, so they still run) but performs zero sidecar or tracker
 mutation: no `store.transaction()` is ever entered, and no `add_edge`/
 `append_note` call is ever issued.
+
+A failure BETWEEN the tracker writes and the ledger persist (the transaction
+is a lock, not a rollback) is recovered by re-running the same verdict: every
+tracker write is re-issuable (`work dep add` upserts idempotently at the
+backend; a duplicated audit note is accepted noise), so the retry converges on
+the same edge -- see `_execute_edge_promotion`.
 """
 
 from __future__ import annotations
@@ -111,6 +117,8 @@ def _parse_ledger_payload(raw: JsonValue) -> PromotionLedgerEntry:
         and isinstance(to_bead, str)
         and isinstance(tracker_edge_kind, str)
     ):
+        raise _MalformedLedgerShapeError
+    if tracker_edge_kind not in ("blocks", "related-to"):
         raise _MalformedLedgerShapeError
     return PromotionLedgerEntry(
         from_bead=from_bead,
@@ -315,6 +323,16 @@ def _execute_edge_promotion(
     a newly-raised orphan flag or None)`. The caller only rewrites `edges.json`
     when the returned fact differs from `fact` (a fresh promotion); an
     already-promoted no-op never touches the tracker.
+
+    Ordering is tracker-writes-then-ledger, deliberately: `store.transaction()`
+    is a lock, not a rollback, so a failure here leaves the tracker mutated
+    with no ledger record. The recovery contract is RE-RUNNING THE SAME
+    VERDICT, which converges because every tracker write is re-issuable --
+    `work dep add` is an idempotent upsert at the backend (bd exits 0 on a
+    duplicate edge, one edge row results) and a re-appended audit note is
+    accepted noise. Persisting the ledger first would invert the hazard into
+    an unrecoverable one: a ledger claiming a promotion that never happened,
+    which the ledger-only idempotency check would then never retry.
     """
     if isinstance(decision, _AlreadyPromoted):
         flag = _orphan_flag(fact.fact_id, decision.entry) if decision.orphaned else None

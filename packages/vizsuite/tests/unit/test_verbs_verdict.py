@@ -223,6 +223,103 @@ def test_accept_propagates_a_non_type_wall_backend_error_without_a_fallback(
     assert store.read_verdicts() == ()
 
 
+# ── partial failure + retry convergence ─────────────────────────────────────
+
+
+def _partial_failure_tracker() -> ScriptedTrackerRunner:
+    """Scripted for a promotion that fails midway: `dep add` and the first
+    audit note land, the second bead's note errors -- the tracker is mutated
+    but the ledger persist is never reached."""
+    note = _note_text("edge-1", "basis-1")
+    return ScriptedTrackerRunner(
+        show_results={"bead-b": tracker_show_ok("bead-b", deps=[])},
+        responses={
+            ("dep", "add", "bead-a", "bead-b", "--type", "blocks"): tracker_ok(None),
+            ("note", "bead-a", note): tracker_ok(None),
+            ("note", "bead-b", note): tracker_error("E_NOT_FOUND", "no such bead: bead-b"),
+        },
+    )
+
+
+def test_a_note_failure_after_the_edge_write_commits_nothing_to_the_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _freeze_clock(monkeypatch)
+    store = SidecarStore(tmp_path)
+    store.write_edges((_fact("edge-1"),))
+    tracker = _partial_failure_tracker()
+
+    exit_code, envelope, _stderr = run_cli(["verdict", "edge-1", "accept"], tracker_runner=tracker)
+
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_TRACKER_BACKEND_ERROR"
+    # The tracker edge DID land before the failure (a real external side
+    # effect this module cannot roll back) ...
+    assert ("dep", "add", "bead-a", "bead-b", "--type", "blocks") in tracker.calls
+    # ... but not one sidecar write committed: no ledger, no verdict, no flag.
+    (unchanged,) = store.read_edges()
+    assert "promotion" not in unchanged.payload
+    assert store.read_verdicts() == ()
+    assert store.read_flags() == ()
+
+
+def test_reaccepting_after_a_partial_failure_converges_on_the_same_edge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The recovery contract for a failure between the tracker write and the
+    ledger persist is re-running the same verdict: `work dep add` is an
+    idempotent upsert at the backend (bd exits 0 on a duplicate edge, one edge
+    row results), the audit notes re-append (accepted noise), and the ledger +
+    verdict then persist. No compensation machinery -- retry converges."""
+    monkeypatch.chdir(tmp_path)
+    _freeze_clock(monkeypatch)
+    store = SidecarStore(tmp_path)
+    store.write_edges((_fact("edge-1"),))
+    tracker = _partial_failure_tracker()
+    note = _note_text("edge-1", "basis-1")
+
+    first_exit, _envelope, _stderr = run_cli(
+        ["verdict", "edge-1", "accept"], tracker_runner=tracker
+    )
+    assert first_exit == 1
+    tracker.responses[("note", "bead-b", note)] = tracker_ok(None)
+
+    exit_code, envelope, _stderr = run_cli(["verdict", "edge-1", "accept"], tracker_runner=tracker)
+
+    assert exit_code == 0
+    assert envelope["data"]["promotion"] == {
+        "from_bead": "bead-a",
+        "to_bead": "bead-b",
+        "tracker_edge_kind": "blocks",
+        "already_promoted": False,
+        "orphaned": False,
+    }
+    # `dep add` was issued on BOTH attempts -- the retry leans on the
+    # backend's idempotent upsert, never on a sidecar record that was lost.
+    assert tracker.calls.count(("dep", "add", "bead-a", "bead-b", "--type", "blocks")) == 2
+    (updated,) = store.read_edges()
+    assert updated.payload["promotion"]["tracker_edge_kind"] == "blocks"
+    (recorded,) = store.read_verdicts()
+    assert recorded.verdict == Verdict.ACCEPT
+
+
+def test_a_ledger_with_an_unknown_tracker_edge_kind_is_refused_as_malformed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    ledger = {"from_bead": "bead-a", "to_bead": "bead-b", "tracker_edge_kind": "sideways"}
+    store.write_edges((_fact("edge-1", payload={"promotion": ledger}),))
+    tracker = ScriptedTrackerRunner()
+
+    exit_code, envelope, _stderr = run_cli(["verdict", "edge-1", "accept"], tracker_runner=tracker)
+
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_SIDECAR_MALFORMED"
+    assert tracker.calls == []
+
+
 # ── conflict/overlap/synergy: related-to directly, no cycle check ──────────
 
 
