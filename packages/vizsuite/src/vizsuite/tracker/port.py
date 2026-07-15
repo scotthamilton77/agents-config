@@ -85,11 +85,24 @@ class BeadRecord:
     deps: tuple[DepEdgeRecord, ...]
 
 
+def _result_detail(argv: Sequence[str], result: TrackerResult) -> dict[str, Any]:
+    """Diagnostic fields every malformed-envelope error carries (house
+    convention — the scc/gh adapters include the same trio): a raw subprocess
+    failure (missing binary, crash, permission) is diagnosable from the error
+    alone, without rerunning under a debugger."""
+    return {
+        "argv": list(argv),
+        "returncode": result.returncode,
+        "stderr_excerpt": result.stderr[:200],
+        "raw_excerpt": result.stdout[:200],
+    }
+
+
 def _malformed_json_error(argv: Sequence[str], result: TrackerResult) -> VizError:
     return VizError(
         ErrorCode.TRACKER_MALFORMED_ENVELOPE,
         "work CLI stdout did not parse as JSON",
-        detail={"argv": list(argv), "raw_excerpt": result.stdout[:200]},
+        detail=_result_detail(argv, result),
     )
 
 
@@ -97,7 +110,15 @@ def _malformed_shape_error(argv: Sequence[str], result: TrackerResult) -> VizErr
     return VizError(
         ErrorCode.TRACKER_MALFORMED_ENVELOPE,
         "work CLI stdout did not match the envelope shape",
-        detail={"argv": list(argv), "raw_excerpt": result.stdout[:200]},
+        detail=_result_detail(argv, result),
+    )
+
+
+def _inconsistent_exit_error(argv: Sequence[str], result: TrackerResult) -> VizError:
+    return VizError(
+        ErrorCode.TRACKER_MALFORMED_ENVELOPE,
+        "work CLI exited nonzero while emitting an ok envelope",
+        detail=_result_detail(argv, result),
     )
 
 
@@ -133,6 +154,11 @@ def _run_and_parse(runner: TrackerRunner, argv: Sequence[str]) -> Any:
         raise _malformed_shape_error(argv, result) from exc
     if ok is not True:
         raise _backend_error(argv, envelope)
+    if result.returncode != 0:
+        # An `ok: true` envelope from a nonzero exit is an inconsistent state
+        # (partial output, crash after print) — refuse it rather than treat
+        # it as success and hide a real subprocess failure.
+        raise _inconsistent_exit_error(argv, result)
     return envelope.get("data")
 
 

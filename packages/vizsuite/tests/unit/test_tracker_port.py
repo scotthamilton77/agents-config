@@ -416,3 +416,38 @@ def test_subprocess_runner_default_repo_root_is_dot(monkeypatch: pytest.MonkeyPa
     SubprocessTrackerRunner().run(["--protocol-version"])
 
     assert calls[0]["cwd"] == "."
+
+
+def test_malformed_envelope_error_carries_returncode_and_stderr():
+    # House convention (scc/gh adapters): a raw subprocess failure is
+    # diagnosable from the typed error alone — returncode + stderr included.
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=127, stdout="not json", stderr="work: command crashed"
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    detail = exc_info.value.detail
+    assert detail["returncode"] == 127
+    assert detail["stderr_excerpt"] == "work: command crashed"
+
+
+def test_ok_envelope_with_nonzero_exit_is_refused_as_inconsistent():
+    # exit != 0 alongside an `ok: true` envelope is an inconsistent state
+    # (partial output, crash after print) — never treated as success.
+    ok_result = tracker_show_ok("x.1")
+    runner = ScriptedTrackerRunner()
+    runner.responses[("show", "x.1")] = TrackerResult(
+        returncode=1, stdout=ok_result.stdout, stderr="late crash"
+    )
+    port = TrackerPort(runner)
+
+    with pytest.raises(VizError) as exc_info:
+        port.read_bead("x.1")
+
+    assert exc_info.value.code == ErrorCode.TRACKER_MALFORMED_ENVELOPE
+    assert exc_info.value.detail["returncode"] == 1
+    assert exc_info.value.detail["stderr_excerpt"] == "late crash"
