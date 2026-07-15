@@ -213,7 +213,9 @@ def _parse_relabel(fields: dict[str, JsonValue]) -> RelabelMutation:
 
 
 def _parse_resequence(fields: dict[str, JsonValue]) -> ResequenceMutation:
-    reason = _as_str_field(fields.pop("reason", ""))
+    if "reason" not in fields:
+        raise _MalformedMutationShapeError
+    reason = _as_str_field(fields.pop("reason"))
     if fields:
         raise _MalformedMutationShapeError
     return ResequenceMutation(reason=reason)
@@ -482,6 +484,9 @@ def _preview_mint(fact: FactRecord, plan: MintBeadMutation) -> JsonValue:
                 "title": plan.title,
                 "parent": plan.parent,
                 "orphan": plan.orphan,
+                "description": plan.description,
+                "priority": plan.priority,
+                "acceptance": plan.acceptance,
             }
         ],
     }

@@ -240,6 +240,26 @@ def test_resequence_dry_run_is_also_refused_before_touching_the_runner(
     assert tracker.calls == []
 
 
+def test_apply_refuses_a_resequence_payload_missing_its_reason_as_malformed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # "reason" is a REQUIRED field of the resequence shape (same strict-shape
+    # contract as every other mutation class's required fields): a
+    # reason-less resequence recommendation is a producer bug, refused as
+    # malformed rather than defaulted to an empty rationale.
+    monkeypatch.chdir(tmp_path)
+    store = SidecarStore(tmp_path)
+    store.write_recommendations((_recommendation("rec-1", mutation={"kind": "resequence"}),))
+    _accept(store, "rec-1")
+    tracker = ScriptedTrackerRunner()
+
+    exit_code, envelope, _stderr = run_cli(["apply", "rec-1"], tracker_runner=tracker)
+
+    assert exit_code == 1
+    assert envelope["error"]["code"] == "E_SIDECAR_MALFORMED"
+    assert tracker.calls == []
+
+
 # ── mint_bead: fresh mint, idempotent replay, partial-failure ordering ─────
 
 
@@ -328,8 +348,8 @@ def test_mint_bead_partial_failure_persists_the_ledger_before_the_note_and_never
     instant `mint_bead` returns an id -- before the audit-note append -- so a
     failure on the note (the only fallible step left after a successful mint)
     never leaves the ledger unwritten. Replay then finds the ledger and treats
-    the mint as already done (never re-attempting the mint OR the note, mirror
-    -ing verdict.py's `_AlreadyPromoted` no-op contract) -- the accepted
+    the mint as already done (never re-attempting the mint OR the note,
+    mirroring verdict.py's `_AlreadyPromoted` no-op contract) -- the accepted
     residual cost is that a note lost to this exact failure window never gets
     a second attempt, in exchange for an ironclad no-duplicate-mint guarantee.
     """
@@ -466,7 +486,16 @@ def test_dry_run_previews_a_fresh_mint_with_zero_tracker_calls(
     monkeypatch.chdir(tmp_path)
     store = SidecarStore(tmp_path)
     rec = _recommendation(
-        "rec-1", mutation={"kind": "mint_bead", "noun": "task", "title": "T", "orphan": True}
+        "rec-1",
+        mutation={
+            "kind": "mint_bead",
+            "noun": "task",
+            "title": "T",
+            "orphan": True,
+            "description": "why this bead",
+            "priority": "P2",
+            "acceptance": "done when green",
+        },
     )
     store.write_recommendations((rec,))
     _accept(store, "rec-1")
@@ -480,7 +509,20 @@ def test_dry_run_previews_a_fresh_mint_with_zero_tracker_calls(
     preview = data["mutation"]
     assert preview["kind"] == "mint_bead"
     assert preview["already_applied"] is False
-    assert preview["tracker_writes"]
+    # The preview is EXACT: every field live execution would pass to
+    # mint_bead appears, optional ones included.
+    assert preview["tracker_writes"] == [
+        {
+            "op": "mint_bead",
+            "noun": "task",
+            "title": "T",
+            "parent": None,
+            "orphan": True,
+            "description": "why this bead",
+            "priority": "P2",
+            "acceptance": "done when green",
+        }
+    ]
     assert tracker.calls == []
     assert store.read_recommendations() == (rec,)
 
