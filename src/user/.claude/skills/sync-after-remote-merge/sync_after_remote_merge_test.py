@@ -239,32 +239,6 @@ def test_unmerged_commits_empty_means_fully_contained():
     assert m.unmerged_commits("\n") == []
 
 
-# --- Task 5: plan_teardown ---
-
-
-def test_plan_teardown_claude_native_returns_handoff_steps():
-    steps = m.plan_teardown(m.Convention.CLAUDE_NATIVE, "/repo", "feature/x")
-    assert steps == [
-        "ExitWorktree(discard_changes: true)",
-        "git -C /repo branch -D feature/x",
-    ]
-
-
-def test_plan_teardown_quotes_shell_significant_paths():
-    """main_root / branch are interpolated into a command string the agent runs;
-    spaces or shell metacharacters must be quoted, not passed through raw."""
-    steps = m.plan_teardown(m.Convention.CLAUDE_NATIVE, "/My Repos/agents", "feat/x y")
-    assert steps[1] == "git -C '/My Repos/agents' branch -D 'feat/x y'"
-
-
-def test_plan_teardown_other_agent_is_scripted_no_remaining():
-    assert m.plan_teardown(m.Convention.OTHER_AGENT, "/repo", "feature/x") == []
-
-
-def test_plan_teardown_normal_repo_is_scripted_no_remaining():
-    assert m.plan_teardown(m.Convention.NORMAL_REPO, "/repo", "feature/x") == []
-
-
 # --- Task 6: boundary + main() orchestration (real tmp git repos; gh faked) ---
 
 
@@ -328,50 +302,75 @@ def test_main_dirty_worktree_aborts(monkeypatch, main_repo):
     assert "stray.txt" in json.dumps(env)
 
 
-def test_main_other_agent_full_teardown(monkeypatch, main_repo):
+def test_main_other_agent_plan_hands_off(monkeypatch, main_repo):
     wt = main_repo / ".worktrees" / "feature-x"
     _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
     (wt / "g.txt").write_text("feature\n")
     _git(wt, "add", "g.txt")
     _git(wt, "commit", "-m", "feature work")
     _git(wt, "push", "origin", "feature/x")
-    # Merge on the "remote": fast-forward main to the feature commit, push.
-    _git(main_repo, "merge", "feature/x")
-    _git(main_repo, "push", "origin", "main")
-    merge_oid = _head(main_repo)
-    _git(main_repo, "checkout", "main")
-    # Rewind local main so the script has to pull the merge.
-    _git(main_repo, "reset", "--hard", "HEAD~1")
     pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
-          "mergeCommit": {"oid": merge_oid}, "headRefOid": _head(wt)}
+          "mergeCommit": {"oid": _head(wt)}, "headRefOid": _head(wt)}
     rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
     assert rc == 0
-    assert env["status"] == "ok"
-    assert env["worktree_convention"] == "other-agent"
-    assert env["steps_remaining"] == []
-    assert env["synced_to"] == merge_oid
-    branches = subprocess.run(["git", "branch"], cwd=main_repo,
-                              capture_output=True, text=True).stdout
-    assert "feature/x" not in branches
-    assert not wt.exists()
+    assert env["status"] == "handoff" and env["phase"] == "plan"
+    assert env["branch_sha"] == _head(wt)
+    assert wt.exists()                                    # nothing removed
+    assert len(env["steps_remaining"]) == 1
+    cmd = env["steps_remaining"][0]
+    assert cmd.startswith(f"cd {env['main_root']} && ")
+    for frag in ("--finish", "--worktree", "--branch feature/x",
+                 f"--branch-sha {_head(wt)}", "--base main", "--pr 1"):
+        assert frag in cmd
+    # plan mode must NOT have synced the base either
+    assert env["synced_to"] is None
 
 
-def test_main_claude_native_hands_off(monkeypatch, main_repo):
+def test_main_claude_native_handoff_orders_exitworktree_first(monkeypatch, main_repo):
     wt = main_repo / ".worktrees" / "feature-x"
     _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
     _git(wt, "push", "origin", "feature/x")
-    # Force the Claude-native teardown branch regardless of the real path.
     monkeypatch.setattr(m, "detect_convention", lambda w, r: m.Convention.CLAUDE_NATIVE)
     pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
-          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
+          "mergeCommit": {"oid": _head(wt)}, "headRefOid": _head(wt)}
     rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
+    assert rc == 0 and env["status"] == "handoff"
+    assert env["steps_remaining"][0] == "ExitWorktree(discard_changes: true)"
+    assert "--finish" in env["steps_remaining"][1]
+    assert wt.exists()
+
+
+def test_build_finish_command_quotes_spaced_paths():
+    cmd = m.build_finish_command(
+        main_root="/My Repos/x", worktree_root="/My Repos/x/.worktrees/f",
+        branch="feature/x", branch_sha="abc", base="main", pr=7, merge_commit="def")
+    assert cmd.startswith("cd '/My Repos/x' && python3 ")
+    assert "--worktree '/My Repos/x/.worktrees/f'" in cmd
+    assert "--merge-commit def" in cmd
+
+
+def test_build_finish_command_omits_null_merge_commit():
+    cmd = m.build_finish_command(main_root="/r", worktree_root="/r", branch="b",
+                                 branch_sha="abc", base="main", pr=None, merge_commit=None)
+    assert "--merge-commit" not in cmd and "--pr" not in cmd
+
+
+def test_main_normal_repo_plan_hands_off_and_permits_untracked(monkeypatch, main_repo):
+    _git(main_repo, "checkout", "-b", "feature/x")
+    (main_repo / "g.txt").write_text("feature\n")
+    _git(main_repo, "add", "g.txt")
+    _git(main_repo, "commit", "-m", "feature work")
+    _git(main_repo, "push", "origin", "feature/x")
+    sha = _head(main_repo)
+    (main_repo / "scratch.txt").write_text("untracked; must not block a normal repo\n")
+    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
+          "mergeCommit": {"oid": sha}, "headRefOid": sha}
+    rc, env = _run_main(monkeypatch, main_repo, pr, ["--branch", "feature/x"])
     assert rc == 0
-    assert env["status"] == "handoff"
-    assert env["steps_remaining"] == [
-        "ExitWorktree(discard_changes: true)",
-        f"git -C {env['main_root']} branch -D feature/x",
-    ]
-    assert wt.exists()  # script did NOT remove a Claude-native worktree
+    assert env["status"] == "handoff"                      # every convention hands off
+    assert env["worktree_convention"] == "normal-repo"
+    assert len(env["steps_remaining"]) == 1
+    assert "--finish" in env["steps_remaining"][0]
 
 
 def test_main_squash_merge_succeeds(monkeypatch, main_repo):
@@ -397,12 +396,10 @@ def test_main_squash_merge_succeeds(monkeypatch, main_repo):
           "mergeCommit": {"oid": squash_oid}, "headRefOid": head_f}
     rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
     assert rc == 0
-    assert env["status"] == "ok"
-    assert env["synced_to"] == squash_oid
-    branches = subprocess.run(["git", "branch"], cwd=main_repo,
-                              capture_output=True, text=True).stdout
-    assert "feature/x" not in branches
-    assert not wt.exists()
+    assert env["status"] == "handoff"
+    assert "safety_gate_commits" in env["steps_completed"]   # gate A cleared the squash
+    assert env["synced_to"] is None                          # plan mode never syncs
+    assert wt.exists()                                       # plan mode never tears down
 
 
 def test_main_local_commit_beyond_merged_head_aborts(monkeypatch, main_repo):
@@ -486,11 +483,11 @@ def test_main_branch_mismatch_in_normal_repo_is_allowed(monkeypatch, main_repo):
           "mergeCommit": {"oid": squash_oid}, "headRefOid": head_f}
     rc, env = _run_main(monkeypatch, main_repo, pr, ["--branch", "feature/x"])
     assert rc == 0
-    assert env["status"] == "ok"
+    assert env["status"] == "handoff"
     assert env["worktree_convention"] == "normal-repo"
     branches = subprocess.run(["git", "branch"], cwd=main_repo,
                               capture_output=True, text=True).stdout
-    assert "feature/x" not in branches
+    assert "feature/x" in branches                           # plan mode never deletes
 
 
 def test_main_rejects_dash_leading_branch(monkeypatch, main_repo):
@@ -548,49 +545,6 @@ def test_main_gate_a_unresolvable_head_cmd_is_reconstructible(monkeypatch, main_
     assert env["failed_step"]["name"] == "safety_gate_commits"
     cmd = env["failed_step"]["cmd"]
     assert "-C" in cmd and env["main_root"] in cmd and "rev-list" in cmd
-
-
-def test_main_sync_base_nonff_cmd_is_reconstructible(monkeypatch, main_repo):
-    """A non-fast-forward pull aborts sync_base; failed_step.cmd must include the
-    -C <main_root> actually used, reconstructed via shlex.join."""
-    wt = main_repo / ".worktrees" / "feature-x"
-    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
-    (wt / "g.txt").write_text("feature\n")
-    _git(wt, "add", "g.txt")
-    _git(wt, "commit", "-m", "feature work")
-    _git(wt, "push", "origin", "feature/x")
-    head_f = _head(wt)
-    _git(main_repo, "merge", "--squash", "feature/x")
-    _git(main_repo, "commit", "-m", "squash: feature work")
-    _git(main_repo, "push", "origin", "main")
-    # Diverge local main from origin so `git pull --ff-only` fails.
-    _git(main_repo, "checkout", "main")
-    _git(main_repo, "reset", "--hard", "HEAD~1")
-    (main_repo / "local-only.txt").write_text("diverge\n")
-    _git(main_repo, "add", "local-only.txt")
-    _git(main_repo, "commit", "-m", "local divergence")
-    pr = {"number": 1, "state": "MERGED", "baseRefName": "main",
-          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": head_f}
-    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
-    assert rc != 0
-    assert env["failed_step"]["name"] == "sync_base"
-    cmd = env["failed_step"]["cmd"]
-    assert "-C" in cmd and env["main_root"] in cmd and "--ff-only" in cmd
-
-
-def test_main_operational_git_failure_is_named_step(monkeypatch, main_repo):
-    """A failing operational git call (checkout of a base that doesn't exist)
-    must surface as a named 'sync_base' step, not the generic 'unexpected'."""
-    wt = main_repo / ".worktrees" / "feature-x"
-    _git(main_repo, "worktree", "add", "-b", "feature/x", str(wt))
-    _git(wt, "push", "origin", "feature/x")
-    pr = {"number": 1, "state": "MERGED", "baseRefName": "no-such-base",
-          "mergeCommit": {"oid": _head(main_repo)}, "headRefOid": _head(wt)}
-    rc, env = _run_main(monkeypatch, wt, pr, ["--branch", "feature/x"])
-    assert rc != 0
-    assert env["status"] == "failed"
-    assert env["failed_step"]["name"] == "sync_base"
-    assert env["failed_step"]["name"] != "unexpected"
 
 
 # --- Task 3: preflight resolves the worktree root (F6) ---

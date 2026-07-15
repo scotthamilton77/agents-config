@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import subprocess
 import sys
@@ -165,20 +164,25 @@ def unmerged_commits(rev_list_output: str) -> list[str]:
     return [ln.strip() for ln in rev_list_output.splitlines() if ln.strip()]
 
 
-def plan_teardown(convention: Convention, main_root: str, branch: str) -> list[str]:
-    """Teardown steps the AGENT must run after the script.
+def build_finish_command(*, main_root: str, worktree_root: str, branch: str,
+                         branch_sha: str, base: str, pr: int | None,
+                         merge_commit: str | None) -> str:
+    """The single handed-back command. The leading `cd` is load-bearing: it
+    evacuates the calling process from the worktree before anything removes it."""
+    argv = ["python3", str(Path(__file__).resolve()), "--finish",
+            "--worktree", str(worktree_root), "--branch", branch,
+            "--branch-sha", branch_sha, "--base", base]
+    if pr is not None:
+        argv += ["--pr", str(pr)]
+    if merge_commit:
+        argv += ["--merge-commit", merge_commit]
+    return f"cd {shlex.quote(str(main_root))} && {shlex.join(argv)}"
 
-    Claude-native worktrees are harness-owned: the script cannot git-remove them
-    (and the live worktree blocks `branch -D`), so it hands back the exact
-    ExitWorktree + branch-delete calls. NORMAL_REPO and OTHER_AGENT teardown is
-    executed by the script itself, so nothing remains for the agent.
-    """
+
+def plan_handoff_steps(convention: Convention, finish_cmd: str) -> list[str]:
     if convention is Convention.CLAUDE_NATIVE:
-        return [
-            "ExitWorktree(discard_changes: true)",
-            f"git -C {shlex.quote(main_root)} branch -D {shlex.quote(branch)}",
-        ]
-    return []
+        return ["ExitWorktree(discard_changes: true)", finish_cmd]
+    return [finish_cmd]
 
 
 class _AbortStep(Exception):
@@ -350,6 +354,11 @@ def main(argv: list[str] | None = None) -> int:
             raise _AbortStep("safety_gate_commits",
                              f"{branch} has {len(orphans)} local commit(s) beyond the merged "
                              f"head (would be lost): {', '.join(s[:9] for s in orphans)}")
+        # The immutable post-merge fact the finish phase re-verifies against: the
+        # exact branch tip these read-only gates cleared. Bind it into the handed-
+        # back command so finish refuses to delete a branch that moved since.
+        branch_sha = _run_step(["git", "-C", main_root, "rev-parse", f"refs/heads/{branch}"],
+                               "safety_gate_commits", "cannot resolve the branch tip").stdout.strip()
         completed.append("safety_gate_commits")
 
         # --- safety gate B: clean worktree ---
@@ -362,47 +371,19 @@ def main(argv: list[str] | None = None) -> int:
                              f"worktree is dirty; refusing to discard: {', '.join(strays)}")
         completed.append("safety_gate_worktree")
 
-        # --- sync base (fast-forward only) ---
-        _run_step(["git", "-C", main_root, "checkout", base], "sync_base",
-                  f"cannot check out base {base!r}")
-        ff_argv = ["git", "-C", main_root, "pull", "--ff-only"]
-        ff = _run(ff_argv, check=False)
-        if ff.returncode != 0:
-            raise _AbortStep("sync_base",
-                             f"could not fast-forward base {base!r} (git pull --ff-only failed — "
-                             f"local divergence, missing upstream, or network); reconcile by hand",
-                             cmd=shlex.join(ff_argv), exit_code=ff.returncode, stderr=ff.stderr)
-        synced_to = _run_step(["git", "-C", main_root, "rev-parse", "HEAD"], "sync_base",
-                              "cannot read base HEAD after sync").stdout.strip()
-        completed.append("sync_base")
-
-        # Leave the worktree before any destructive teardown so the script's own
-        # cwd is never inside a worktree it is about to remove.
-        os.chdir(main_root)
-
-        # --- teardown ---
-        remaining = plan_teardown(convention, main_root, branch)
-        if convention is Convention.CLAUDE_NATIVE:
-            _emit(Status.HANDOFF, Phase.PLAN, steps_completed=completed, steps_remaining=remaining,
-                  worktree_convention=convention, main_root=main_root, base=base, branch=branch,
-                  pr=pr_number, merge_commit=merge_commit, synced_to=synced_to,
-                  ignored_paths=ignored_paths,
-                  remediation_hint="sync done; finish teardown via the two steps in steps_remaining")
-            return 0
-        if convention is Convention.OTHER_AGENT:
-            _run_step(["git", "-C", main_root, "worktree", "remove", str(worktree_root)],
-                      "teardown", f"cannot remove worktree {worktree_root}")
-        _run_step(["git", "-C", main_root, "branch", "-D", branch], "teardown",
-                  f"cannot delete branch {branch}")
-        if convention is Convention.OTHER_AGENT:
-            _run(["git", "-C", main_root, "worktree", "prune"], check=False)
-        completed.append("teardown")
-
-        removed = "worktree removed, " if convention is Convention.OTHER_AGENT else ""
-        _emit(Status.OK, Phase.PLAN, steps_completed=completed, worktree_convention=convention,
-              main_root=main_root, base=base, branch=branch, pr=pr_number,
-              merge_commit=merge_commit, synced_to=synced_to, ignored_paths=ignored_paths,
-              remediation_hint=f"branch deleted, {removed}base synced to {synced_to[:9]}")
+        # --- handoff (plan mode is strictly read-only) ---
+        # Every convention hands back the single finish command. Nothing above
+        # mutated git state; the finish phase re-gates and performs every
+        # mutation adjacent to the state it just checked, from the main root.
+        finish_cmd = build_finish_command(
+            main_root=main_root, worktree_root=str(worktree_root), branch=branch,
+            branch_sha=branch_sha, base=base, pr=pr_number, merge_commit=merge_commit)
+        _emit(Status.HANDOFF, Phase.PLAN, steps_completed=completed,
+              steps_remaining=plan_handoff_steps(convention, finish_cmd),
+              worktree_convention=convention, main_root=main_root, base=base,
+              branch=branch, branch_sha=branch_sha, pr=pr_number,
+              merge_commit=merge_commit, ignored_paths=ignored_paths,
+              remediation_hint="read-only checks passed; run each step in steps_remaining in order")
         return 0
 
     except UnrecognizedWorktree as exc:
@@ -414,13 +395,11 @@ def main(argv: list[str] | None = None) -> int:
               remediation_hint=str(exc))
         return 1
     except _AbortStep as abort:
-        # Only hand back destructive teardown once the clean-worktree gate has
-        # passed. Before that, "ExitWorktree(discard_changes: true)" would
-        # destroy the uncommitted work safety_gate_worktree is protecting.
-        remaining = (plan_teardown(convention, main_root or "", branch or "")
-                     if convention and "safety_gate_worktree" in completed else [])
+        # A failed plan run has nothing safe to hand back: the finish command is
+        # emitted only once every read-only gate has passed, and plan mode never
+        # mutated anything, so there is no partial teardown to resume.
         _emit(Status.FAILED, Phase.PLAN, steps_completed=completed, failed_step=abort.failed_step,
-              steps_remaining=remaining, worktree_convention=convention, main_root=main_root,
+              steps_remaining=[], worktree_convention=convention, main_root=main_root,
               base=base, branch=branch, pr=pr_number, merge_commit=merge_commit,
               synced_to=synced_to, remediation_hint=abort.hint)
         return 1
