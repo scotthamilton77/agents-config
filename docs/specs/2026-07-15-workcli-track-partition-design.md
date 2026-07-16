@@ -177,8 +177,8 @@ field, so the protocol version bumps MINOR.
     and skipped counts.
   - Raw `work label add track:<anything>` remains possible and **unvalidated by
     design** — raw bd stays usable; lint is the net, `track set` is the gate.
-- **`work lint`** — standing hygiene report (JSON envelope + human text), all
-  advisory in v1 (no CI gate; §9):
+- **`work lint`** — standing hygiene report (JSON envelope on stdout, opt-in
+  `--format human` view to stderr), all advisory in v1 (no CI gate; §9):
   1. every non-closed, non-milestone bead has exactly one `track:*` label;
   2. every non-closed bead has a milestone ancestor or an explicit
      `lint-exempt:no-milestone` label;
