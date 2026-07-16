@@ -197,8 +197,10 @@ field, so the protocol version bumps MINOR.
   Grooming: computes per-track backlog and cross-track edge counts
   (organizing-only tracks appear in counts but are excluded from extraction
   evaluation), echoes the human-declared pressure lists with a "still
-  accurate?" prompt, optionally proposes additions from a best-effort local
-  scan (sibling project manifests and `<project>/.agents-config/` install
+  accurate?" review-question field in the report output — a human-readable
+  question, never an interactive stdin prompt — optionally proposes additions
+  from a best-effort local scan (sibling project manifests and
+  `<project>/.agents-config/` install
   receipts referencing a package) — advisory only, never edits config — and
   emits per-track status:
   `no-pressure` | `pressured-ineligible` | `pressured-eligible (schedule review)`.
