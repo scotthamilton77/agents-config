@@ -439,7 +439,11 @@ class ScriptedCliDeploy:
             raise RuntimeError(msg)
         return self._update_shells.pop(0)
 
-    def smoke(self, shim: Path, args: tuple[str, ...]) -> CommandResult:
+    def smoke(
+        self,
+        shim: Path,
+        args: tuple[str, ...],  # noqa: ARG002  # protocol parameter; fake records only shim
+    ) -> CommandResult:
         self.transcript.append(("smoke", str(shim)))
         if not self._smokes:
             msg = "ScriptedCliDeploy smokes queue exhausted"
@@ -639,6 +643,52 @@ def test_update_shell_already_configured_counts_as_success(
         subprocess, "run", lambda *a, **k: _FakeCompleted(returncode=1, stderr="permission denied")
     )
     assert not port.update_shell().ok
+
+
+def test_bin_dir_uses_uv_tool_dir_when_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """
+    Given `uv tool dir --bin` succeeding
+    When bin_dir() resolves
+    Then the printed path wins over every env fallback.
+
+    Pins spec §4: the uv query is the primary source; the env chain is
+    fallback only (success arm of item 17).
+    """
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ignored"))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: _FakeCompleted(stdout=f"{tmp_path / 'uvdir'}\n")
+    )
+    assert UvCliDeploy().bin_dir() == tmp_path / "uvdir"
+
+
+def test_tool_install_export_failure_aborts_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """
+    Given a locked package whose `uv export` fails
+    When tool_install runs
+    Then the failing export result is returned and `uv tool install` never
+    runs — a lock-respecting install refuses to proceed unconstrained.
+
+    Pins spec §4 / item 16 export-failure arm.
+    """
+    calls: list[list[str]] = []
+
+    def _record(cmd: list[str], **k: object) -> _FakeCompleted:
+        calls.append(cmd)
+        if cmd[:2] == ["uv", "export"]:
+            return _FakeCompleted(returncode=1, stderr="lock out of date")
+        return _FakeCompleted()
+
+    monkeypatch.setattr(subprocess, "run", _record)
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "uv.lock").write_text("lock")
+    result = UvCliDeploy().tool_install(pkg, force=False)
+    assert not result.ok and "lock out of date" in result.output
+    assert all(c[:3] != ["uv", "tool", "install"] for c in calls)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -715,23 +765,26 @@ class UvCliDeploy:
         if force:
             cmd.append("--force")
         lock = package_dir / "uv.lock"
-        if lock.is_file():
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
-                constraints = Path(tmp.name)
+        if not lock.is_file():
+            cmd.append(str(package_dir))
+            return self._run(cmd, _INSTALL_TIMEOUT)
+        # Single lock-guarded block: mypy --strict (possibly-undefined) rejects
+        # binding `constraints` under one `if lock.is_file()` and reading it
+        # under a second; try/finally also cleans up on every return path.
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+            constraints = Path(tmp.name)
+        try:
             export = self._run(
                 ["uv", "export", "--frozen", "--no-dev", "--no-emit-project",
                  "--project", str(package_dir), "-o", str(constraints)],
                 _QUERY_TIMEOUT,
             )
             if not export.ok:
-                constraints.unlink(missing_ok=True)
                 return export
-            cmd.extend(["--constraints", str(constraints)])
-        cmd.append(str(package_dir))
-        result = self._run(cmd, _INSTALL_TIMEOUT)
-        if lock.is_file():
+            cmd.extend(["--constraints", str(constraints), str(package_dir)])
+            return self._run(cmd, _INSTALL_TIMEOUT)
+        finally:
             constraints.unlink(missing_ok=True)
-        return result
 
     def tool_uninstall(self, name: str) -> CommandResult:
         return self._run(["uv", "tool", "uninstall", name], _QUERY_TIMEOUT)
@@ -1112,7 +1165,7 @@ _OK = CommandResult(ok=True, output="")
 
 def _pkg(tmp_path: Path) -> Path:
     pkg = tmp_path / "packages" / "workcli"
-    (pkg / "src").mkdir(parents=True)
+    (pkg / "src").mkdir(parents=True, exist_ok=True)  # idempotent: helpers layer on it
     (pkg / "pyproject.toml").write_bytes(b"[project]\n")
     (pkg / "src" / "m.py").write_bytes(b"pass")
     return pkg
@@ -1256,7 +1309,7 @@ Expected: FAIL with `ImportError: cannot import name 'deploy_clis'`
 
 - [ ] **Step 3: Implement the engine skeleton in `run.py`**
 
-Add imports: `from installer.core.clis import CliDeployPort, CliSpec, MIN_UV_VERSION, cli_source_digest` and `from installer.core.consent import require_consent`; extend the receipt import with `CliReceiptEntry`; add `Mapping` to the existing `TYPE_CHECKING` import from `collections.abc` (it currently imports only `Iterable` — without this mypy fails on `_deploy_one`'s annotation). `RETIRED_CLIS` is NOT imported here — `prune_clis` takes `retired` as a parameter; the constant is consumed only in `cli.py` (Task 11).
+Add imports: `from installer.core.clis import CliDeployPort, CliSpec, MIN_UV_VERSION, cli_source_digest` and `from installer.core.consent import require_consent`; the receipt import already gained `CliReceiptEntry` in Task 5 — verify it is present, do not re-add it; add `Mapping` to the existing `TYPE_CHECKING` import from `collections.abc` (it currently imports only `Iterable` — without this mypy fails on `_deploy_one`'s annotation). `RETIRED_CLIS` is NOT imported here — `prune_clis` takes `retired` as a parameter; the constant is consumed only in `cli.py` (Task 11).
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -1631,9 +1684,8 @@ def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> N
 
     Pins spec §6 provenance precondition / item 19.
     """
-    _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
-    prior = _prior_with_current_digest(tmp_path)
+    prior = _prior_with_current_digest(tmp_path)  # creates the package dir itself
     deploy = ScriptedCliDeploy(
         uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
         tool_list={"other-tool": frozenset({"work"})}, which_map={"work": shim},
@@ -2266,7 +2318,7 @@ git commit -m "feat(installer): prune_clis — allowlist-bounded retirement (wgc
 
 - [ ] **Step 1: Write the failing tests**
 
-The wiring tests drive `main()` end-to-end with a hermetic repo (copy the `_hermetic_repo` helper pattern from `test_cli_smoke.py:86` — reproduce it locally in this file, do not import across test modules) plus a `packages/workcli`-shaped package dir added to the hermetic repo, `io=ScriptedIO(interactive=False)`, and `cli_deploy=ScriptedCliDeploy(...)`.
+The wiring tests drive `main()` end-to-end with a hermetic repo (a local reproduction of `test_cli_smoke.py:86`'s builder — never import across test modules), `io=ScriptedIO(interactive=False)`, and `cli_deploy=ScriptedCliDeploy(...)`. The three helpers below are complete and REQUIRED verbatim: `main()` exits 2 without a `.installignore`, the resolver pass needs `profiles.toml`, and `deploy_clis` calls `cli_source_digest(package_dir)` unconditionally — which raises `FileNotFoundError` (uncaught; `cli.py` catches only `ConsentRequiredError`) on a missing `pyproject.toml`, so without the package seeding every wiring test crashes before its first assertion.
 
 ```python
 """End-to-end wiring tests: main() drives the CLI deploy stage (spec §6/§7)."""
@@ -2282,13 +2334,44 @@ from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 
 _OK = CommandResult(ok=True, output="")
 
-# _hermetic_repo(tmp_path): reproduce the builder from test_cli_smoke.py:86
-# (src/user/.agents tree + .installignore + profiles.toml), then add BOTH
-# registry package dirs so cli_source_digest resolves:
-#   for pkg in ("workcli", "prgroom"):
-#       (repo / "packages" / pkg / "src").mkdir(parents=True)
-#       (repo / "packages" / pkg / "pyproject.toml").write_bytes(b"[project]\n")
-#       (repo / "packages" / pkg / "src" / "m.py").write_bytes(b"pass")
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _write_installignore(repo: Path) -> None:
+    """Copy of the real repo-root .installignore — main() exits 2 without one.
+    Copied (not retyped) so it cannot drift from the real manifest."""
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / ".installignore").write_text(
+        (_REPO_ROOT / ".installignore").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+
+def _write_profiles_toml(repo: Path) -> None:
+    """Copy of the real profiles.toml — main()'s resolver pass loads it for
+    any non-empty tool plan. Copied (not retyped) so it cannot drift."""
+    (repo / "profiles.toml").write_text(
+        (_REPO_ROOT / "profiles.toml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+
+def _hermetic_repo(tmp_path: Path) -> Path:
+    """test_cli_smoke's minimal source repo (one shared template so the
+    Claude plan is non-empty, plus the empty tool-root dirs the adapters
+    expect) extended with BOTH registry package dirs so
+    cli_source_digest(package_dir) resolves for workcli and prgroom."""
+    repo = tmp_path / "repo"
+    shared = repo / "src" / "user" / ".agents"
+    shared.mkdir(parents=True)
+    (shared / "INSTRUCTIONS.md.template").write_bytes(b"shared laws\n")
+    for tool in ("claude", "codex", "gemini", "opencode"):
+        (repo / "src" / "user" / f".{tool}").mkdir(parents=True)
+    _write_installignore(repo)
+    _write_profiles_toml(repo)
+    for pkg in ("workcli", "prgroom"):
+        (repo / "packages" / pkg / "src").mkdir(parents=True)
+        (repo / "packages" / pkg / "pyproject.toml").write_bytes(b"[project]\n")
+        (repo / "packages" / pkg / "src" / "m.py").write_bytes(b"pass")
+    return repo
 
 
 def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> None:
@@ -2347,9 +2430,13 @@ def test_deploy_failure_exits_1_after_summary(tmp_path: Path) -> None:
         io=io, repo_root=repo, cli_deploy=deploy,
     )
     assert rc == 1
+    # The file-install stage emits earlier ok lines ("Installed ... (new)"),
+    # so target the summary's own terminator, not the first ok entry.
     err_idx = next(i for i, e in enumerate(io.transcript) if e.channel == "err")
-    ok_idx = next(i for i, e in enumerate(io.transcript) if e.channel == "ok")
-    assert err_idx < ok_idx  # summary rendered after the failure was recorded
+    done_idx = next(
+        i for i, e in enumerate(io.transcript) if e.channel == "ok" and e.message == "Done."
+    )
+    assert err_idx < done_idx  # summary rendered after the failure was recorded
 
 
 def test_prune_only_drops_retired_cli_through_real_receipt_path(tmp_path: Path) -> None:
@@ -2390,6 +2477,40 @@ def test_prune_only_drops_retired_cli_through_real_receipt_path(tmp_path: Path) 
     result = read_receipt(receipt_path)
     assert result.receipt is not None and result.receipt.clis == ()
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
+
+
+def test_prune_only_no_tty_without_yes_exits_1(tmp_path: Path) -> None:
+    """
+    Given a retired CLI entry pending uninstall on a non-interactive
+    session without --yes (and without --dry-run)
+    When main(["--prune-only"]) runs
+    Then exit 1 via prune_clis's ConsentRequiredError — its own handler in
+    the prune branch, since the existing prune try catches only
+    PruneAbortedError.
+
+    Pins spec §10 item 12, prune half (the deploy half is
+    test_no_tty_without_yes_at_cli_consent_exits_1 below).
+    """
+    repo = _hermetic_repo(tmp_path)
+    home = tmp_path / "home"
+    write_receipt(
+        home / ".config" / "agents-config" / "install-receipt.json",
+        Receipt(clis=(CliReceiptEntry(name="oldtool", binary="old", digest="sha256:aa"),)),
+    )
+    deploy = ScriptedCliDeploy()  # consent gate fires before any uninstall pops
+    import installer.cli as cli_mod
+
+    orig = cli_mod.RETIRED_CLIS
+    cli_mod.RETIRED_CLIS = ("oldtool",)
+    try:
+        rc = main(
+            ["--tools=claude", "--prune-only"], home=home,
+            io=ScriptedIO(interactive=False), repo_root=repo, cli_deploy=deploy,
+        )
+    finally:
+        cli_mod.RETIRED_CLIS = orig
+    assert rc == 1
+    assert not any(t[0] == "tool_uninstall" for t in deploy.transcript)
 
 
 def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
@@ -2509,7 +2630,7 @@ Expected: FAIL with `TypeError: main() got an unexpected keyword argument 'cli_d
 - [ ] **Step 3: Wire `cli.py`**
 
 1. Imports: `from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort` and extend the run import with `CliDeployOutcome, CliPruneOutcome, deploy_clis, prune_clis`; add `from installer.core.receipt_build import merge_clis`.
-2. `main()` and `_run()` gain keyword `cli_deploy: CliDeployPort | None = None`; `main` forwards it. In `_run`, AFTER the `--project` fork (the `if args.project is not None: return _run_project(...)` block) so the project path never constructs the port:
+2. `main()` and `_run()` gain keyword `cli_deploy: CliDeployPort | None = None`; `main`'s body (cli.py:167) becomes `return _run(argv, home=home, io=io, repo_root=repo_root, cwd=cwd, cli_deploy=cli_deploy)`. In `_run`, AFTER the `--project` fork (the `if args.project is not None: return _run_project(...)` block) so the project path never constructs the port:
 
 ```python
     if cli_deploy is None:
@@ -2535,24 +2656,25 @@ Expected: FAIL with `TypeError: main() got an unexpected keyword argument 'cli_d
 
 Declare `cli_outcome: CliDeployOutcome | None = None` before the lock (import `CliDeployOutcome` from run) and assign inside; also declare `cli_prune: CliPruneOutcome | None = None`.
 
-4. In the prune branch (`if (args.prune or args.prune_only) and not receipt_corrupt:`), after the file `prune_pipeline` result handling and inside the same `try` (PruneAbortedError untouched), add:
+4. In the prune branch (`if (args.prune or args.prune_only) and not receipt_corrupt:`), after the file `prune_pipeline` result handling, add the block below. The existing prune `try` catches ONLY `PruneAbortedError` (cli.py:418-432) and must stay that way; `prune_clis` raises `ConsentRequiredError` via `require_consent`, so the call carries its own handler — exactly as shown, never bare:
 
 ```python
-                cli_prune = prune_clis(
-                    prior,
-                    registry_names=frozenset(s.name for s in CLI_PACKAGES),
-                    retired=frozenset(RETIRED_CLIS),
-                    deploy=cli_deploy,
-                    io=io,
-                    dry_run=args.dry_run,
-                    auto_yes=config.auto_yes,
-                )
+                try:
+                    cli_prune = prune_clis(
+                        prior,
+                        registry_names=frozenset(s.name for s in CLI_PACKAGES),
+                        retired=frozenset(RETIRED_CLIS),
+                        deploy=cli_deploy,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=config.auto_yes,
+                    )
+                except ConsentRequiredError:
+                    return 1
                 _merge_into(counters, cli_prune.counters)
 ```
 
-Wrap it in its own `try/except ConsentRequiredError: return 1` if it is outside the install-half try block (it is — mirror the convention).
-
-5. Before `record_receipt`, compute the merged tuple:
+5. **Replace** the existing `if not args.dry_run and not receipt_corrupt: record_receipt(...)` block (cli.py:442-452) with the block below — do NOT insert it alongside; two `record_receipt` calls would race the receipt write:
 
 ```python
             if not args.dry_run and not receipt_corrupt:
@@ -2669,7 +2791,30 @@ Expected: FAIL with `TypeError: render_summary() got an unexpected keyword argum
 
 - [ ] **Step 3: Implement**
 
-`render_summary` gains keyword `clis: Sequence[str] = ()` and forwards to `_report_targets`; `_report_targets` gains the same param and changes its first line to `targets = [*tools, *plugins, *clis]`. In `cli.py`'s user-path `render_summary` call, pass `clis=[f"cli:{s.name}" for s in CLI_PACKAGES] if not args.prune_only else sorted(set(cli_prune.counters) if cli_prune else set())` — simplest correct form: pass every counters key starting with `cli:`:
+Both functions gain a `clis` keyword, threaded through the internal call (the forwarding is the load-bearing part — adding the params without passing one to the other compiles and silently drops every block):
+
+```python
+def _report_targets(
+    counters: Mapping[str, Counters],
+    *,
+    tools: Sequence[str],
+    plugins: Sequence[str],
+    all_plugins: Sequence[str],
+    clis: Sequence[str] = (),
+) -> list[str]:
+    ...
+    targets = [*tools, *plugins, *clis]   # was [*tools, *plugins]
+```
+
+and in `render_summary` (add `clis: Sequence[str] = ()` after `all_plugins` in its signature), change the `_report_targets` call (summary.py:115) to:
+
+```python
+    targets = _report_targets(
+        counters, tools=tools, plugins=plugins, all_plugins=all_plugins, clis=clis
+    )
+```
+
+In `cli.py`'s user-path `render_summary` call, pass every counters key starting with `cli:` (covers deploy and prune halves alike):
 
 ```python
         clis=sorted(k for k in counters if k.startswith("cli:")),
@@ -2775,3 +2920,30 @@ The completion gate routes HEAVY (`packages/**` + `src/**`-adjacent floors it vi
   not upgrade the score. Consequence: the attention stop is NOT waived —
   this plan requires the owner's explicit go before execution (which the
   compaction pause provides naturally).
+- 2026-07-16 ralf-review cycle 2 (fresh-eyes, opus; owner-ordered
+  continuation after the compaction pause): 0 Blocking, 2 Critical, 5 Major,
+  6 Minor. Nothing architectural or spec-level — the reviewer verified the
+  decision-table fidelity, receipt integrity compatibility, merge_clis
+  logic, fake queue arithmetic (12+ budgets recomputed), grounded-code
+  claims, execution order, and full spec §10 coverage all clean. All
+  findings folded: C1 the deploy-failure ordering assertion re-anchored on
+  the summary's "Done." line (the file-install stage emits earlier ok
+  entries); C2 `_pkg` made idempotent (`exist_ok=True`) and the redundant
+  double-call removed from the stale-receipt test; M1 `UvCliDeploy.
+  tool_install` restructured to a single lock-guarded try/finally (mypy
+  possibly-undefined); M2 fake `smoke` gained the house `# noqa: ARG002`;
+  M3 the wiring-test `_hermetic_repo` (+ `_write_installignore` /
+  `_write_profiles_toml` + package seeding) shown as complete code; M4 the
+  prune-side `prune_clis` call shown with its own
+  `try/except ConsentRequiredError: return 1` (the existing prune try
+  catches only PruneAbortedError) plus a new prune-side no-TTY wiring
+  test; M5 step 5 now says REPLACE the existing record_receipt block;
+  m1 two new UvCliDeploy tests (bin_dir success arm, export-failure arm);
+  m2 summary `clis` threading shown as code; m3 `main` forwarding shown
+  inline; m4 Task 6 no longer re-adds the Task 5 import. Accepted without
+  change: m5 (tuple-vs-Sequence is code-refines-spec narrowing), m6
+  (takeover prompt wording for the tool_list-None sub-case — functionally
+  correct, consent still demanded; left as-is to avoid churning prompt
+  text). Recorded verdict per the ralf-review rubric (final cycle found
+  Criticals; budget 2/2 exhausted): **FAIL** — the attention stop remains
+  NOT waived; execution requires the owner's explicit go.
