@@ -600,6 +600,13 @@
       var collapsed = Object.create(null);
       collectDefaultCollapsed(tree, collapsed);
 
+      // Cached once: the tree is fixed for the lifetime of this view, so the
+      // default-collapsed set never changes — recomputing it via a full tree
+      // walk on every persistState() call (i.e. every collapse/expand click)
+      // would be wasted work.
+      var defaultCollapsed = Object.create(null);
+      collectDefaultCollapsed(tree, defaultCollapsed);
+
       var stateStore = makeTreemapStateStore(scene.repo_nwo);
       var focusPath = null;
 
@@ -659,15 +666,13 @@
       container.appendChild(stageEl);
 
       function persistState() {
-        var defaults = Object.create(null);
-        collectDefaultCollapsed(tree, defaults);
         var delta = {};
         Object.keys(collapsed).forEach(function (path) {
-          if (!defaults[path]) {
+          if (!defaultCollapsed[path]) {
             delta[path] = true;
           }
         });
-        Object.keys(defaults).forEach(function (path) {
+        Object.keys(defaultCollapsed).forEach(function (path) {
           if (!collapsed[path]) {
             delta[path] = false;
           }
