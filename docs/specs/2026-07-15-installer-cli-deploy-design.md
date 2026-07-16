@@ -86,10 +86,11 @@ its consumer, mirroring `io_port.py`'s layout):
 ```python
 @runtime_checkable
 class CliDeployPort(Protocol):
+    def uv_version(self) -> tuple[int, ...] | None: ...
     def bin_dir(self) -> Path: ...
     def shim_path(self, binary: str) -> Path | None: ...
-    def tool_list(self) -> frozenset[str] | None: ...
-    def tool_install(self, package_dir: Path) -> CommandResult: ...
+    def tool_list(self) -> Mapping[str, frozenset[str]] | None: ...
+    def tool_install(self, package_dir: Path, *, force: bool) -> CommandResult: ...
     def tool_uninstall(self, name: str) -> CommandResult: ...
     def update_shell(self) -> CommandResult: ...
     def which(self, binary: str) -> Path | None: ...
@@ -105,11 +106,17 @@ directory (`uv tool dir --bin`; on failure, fall back to uv's full documented
 resolution order — `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then
 `$XDG_DATA_HOME/../bin`, then `~/.local/bin`);
 `shim_path(binary)` returns `bin_dir()/<binary>` iff that
-file exists, else `None`. `tool_list()` returns the installed uv tool names
-(parsed `uv tool list`), or `None` when the query fails — consumers must
+file exists, else `None`. `tool_list()` returns a **provenance mapping** —
+installed uv tool name → the executable names that tool provides (both are
+in `uv tool list` output) — or `None` when the query fails; consumers must
 treat `None` as "ownership unproven" and fall toward consent, never toward
-silent `--force`. `which` (plain `shutil.which`) is used **only** for
-the PATH-reachability invariant (§6), never for install-state decisions.
+silent `--force`. Provenance is what makes receipt-based promptless action
+safe: a receipt proves the installer owned the name *in the past*; only a
+live `tool_list()` entry showing the registered tool currently providing
+the registered binary proves it still does. `uv_version()` parses
+`uv --version` (None on failure). `which` (plain `shutil.which`) is used
+**only** for the PATH-reachability invariant (§6), never for install-state
+decisions.
 `smoke` executes the shim by the **absolute path** it is given — a
 `FileNotFoundError` there genuinely means the install is broken, not that
 PATH is unconfigured. `update_shell` runs `uv tool update-shell` (uv's own
@@ -120,11 +127,18 @@ Real implementation `UvCliDeploy`: `tool_install` is **lock-respecting** —
 it exports fully pinned constraints from the package's committed lock
 (`uv export --frozen --no-dev --no-emit-project -o <tmpfile>`, run against
 the package dir) and installs with
-`uv tool install --force --constraints <tmpfile> <abs package_dir>`, so the
+`uv tool install --constraints <tmpfile> <abs package_dir>`, so the
 deployed environment reflects the same dependency set CI audits (a plain
 `uv tool install` resolves fresh and ignores `uv.lock`; prgroom's unbounded
 `typer` bound would otherwise drift). A package without a `uv.lock`
-installs unconstrained (mirroring §5's digest rule). `tool_uninstall` runs
+installs unconstrained (mirroring §5's digest rule). **`--force` is passed
+only when `force=True`**, and callers pass `force=True` only on paths whose
+overwrite authority is already established — consented takeover/upgrade,
+or receipt-owned heal with live provenance (§6). The fresh path installs
+non-forcing, so a tool created between the state read and the install (the
+TOCTOU window the receipt lock cannot close — uv's state is not under our
+lock) makes uv fail loudly instead of being silently replaced; the stage
+then re-reads state and routes to takeover consent. `tool_uninstall` runs
 `uv tool uninstall <name>`. All subprocess calls use
 `subprocess.run(..., capture_output=True, text=True)` with bounded timeouts —
 300s install (cold uv cache + dependency resolution can be slow), 30s smoke,
@@ -185,11 +199,23 @@ unproven `tool_list() is None`) demands takeover consent, because
 
 | Prior receipt entry | Existing-install evidence | Digest vs receipt | Action |
 |---|---|---|---|
-| present | shim present | equal | **verify**: smoke the shim (absolute path); ok → `SKIPPED_IDENTICAL` (no install subprocess); smoke fails → heal-reinstall, no prompt (a corrupted-but-present install we own) |
-| present | shim missing | (any) | heal-reinstall, no prompt (we own it per receipt; a missing shim means the tool is already unusable, so healing deliberately takes precedence over the upgrade prompt even when the digest also differs) |
-| present | shim present | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
-| absent | none (no shim AND `tool_list()` proves the env absent) | — | **fresh install**, no prompt (new-file semantics) |
-| absent | shim present OR env present OR `tool_list()` is `None` (unproven) | — | **takeover** → consent prompt (default No; `--yes` accepts); never a silent `--force` |
+| present | shim present | equal | **verify**: smoke the shim (absolute path); ok → `SKIPPED_IDENTICAL` (no install subprocess); smoke fails → heal-reinstall (`force=True`), no prompt (a corrupted-but-present install we own) |
+| present | shim missing | (any) | heal-reinstall (`force=True`), no prompt (we own it per receipt; a missing shim means the tool is already unusable, so healing deliberately takes precedence over the upgrade prompt even when the digest also differs) |
+| present | shim present | differs | **upgrade** → consent prompt (default No; `--yes` accepts) → `force=True` |
+| absent | none (no shim AND `tool_list()` proves the env absent) | — | **fresh install**, no prompt (new-file semantics), **non-forcing** — an already-exists failure re-reads state and re-routes to takeover consent (closes the TOCTOU window; uv's tool state is outside the receipt lock) |
+| absent | shim present OR env present OR `tool_list()` is `None` (unproven) | — | **takeover** → consent prompt (default No; `--yes` accepts) → `force=True`; never an unconsented `--force` |
+
+**Provenance precondition on every promptless receipt-owned action** (the
+three `present`-rows' verify/heal paths): the live `tool_list()` mapping
+must show the registered tool name currently providing the registered
+binary. A stale-but-valid receipt over a *different* reality — the user
+removed our env and installed another tool that exposes the same binary
+name, or replaced the shim — fails the precondition and re-routes to
+takeover consent instead of promptless smoke/heal force-installing over an
+independently managed command. Exception: provenance "absent entirely" (no
+env under our name, no shim) is simply a user uninstall — heal proceeds,
+but non-forcing (there is nothing proven to overwrite), with the same
+already-exists → takeover re-route as the fresh path.
 
 - Consent declines count as skipped and leave the receipt's prior entry (if
   any) untouched.
@@ -203,20 +229,39 @@ unproven `tool_list() is None`) demands takeover consent, because
   `work`/`prgroom`, so an unreachable or shadowed binary is a deployment
   FAILURE, evaluated on **every run** for every registry CLI whose shim is
   present — skips included, so the steady state cannot go silently
-  unusable. Three outcomes of `which(binary)`:
+  unusable. Reachability is a property of the **bin dir, not the CLI**:
+  it is evaluated once per `bin_dir()` per run and the outcome (including
+  a successful repair) is memoized for every CLI sharing that dir — with
+  both CLIs newly installed, exactly one prompt/repair fires, never a
+  second re-prompt whose decline would turn an already-repaired run into
+  a false failure. Three outcomes of `which(binary)` (checked for each
+  CLI against the shared verdict):
     - resolves inside `bin_dir()` → reachable, silent;
     - `None` (bin dir not on PATH) → offer a consent-gated
       `update_shell()` (`uv tool update-shell`, uv's own PATH-provisioning
       mechanism; `--yes` accepts, `--dry-run` reports would-run). On
-      success, `io.info` that new shells pick up the PATH change (the
-      current process env is unchanged, so `which` is NOT re-checked this
-      run) and the run counts as resolved. Declined, or `update_shell`
-      fails → `io.err` with the exact PATH line to add → deployment
-      failure, exit 1;
+      success — including uv reporting the shell config **already
+      contains** the PATH entry, the expected state when the user re-runs
+      from the same shell after an earlier repair — `io.info` that new
+      shells pick up the PATH change (the current process env is
+      unchanged, so `which` is NOT re-checked this run) and the run
+      counts as resolved; repeat installs from an un-restarted shell stay
+      green. Declined, or `update_shell` genuinely fails → `io.err` with
+      the exact PATH line to add → deployment failure, exit 1;
     - resolves to a path *outside* `bin_dir()` → a foreign `<binary>`
       shadows the deployed one; `update_shell` cannot fix PATH *order* →
       `io.err` naming both paths with the remediation (remove/rename the
       foreign binary or reorder PATH) → deployment failure, exit 1.
+- **uv version guard:** the stage's new uv surface (`uv tool dir --bin`,
+  `uv tool update-shell`, `uv export --no-emit-project`, constraints
+  install) exceeds what the file installer requires of uv. Before any
+  CLI work, `uv_version()` is checked against a `MIN_UV_VERSION` constant
+  in `core/clis.py` (initially pinned to the verified 0.10.4; lower only
+  with explicit verification of every subcommand). Older or unparseable
+  uv → one actionable `io.err` (current version, required version,
+  upgrade command), the whole CLI stage aborts as a deployment failure
+  (exit 1), and no install/uninstall/update-shell subprocess runs — file
+  installs are unaffected.
 - **Receipt vs. exit code on reachability failure (deliberate divergence
   from the reviewers' "do not persist" letter, honoring its substance):**
   the receipt keeps its established contract — a mirror of install state on
@@ -436,6 +481,23 @@ decision (house convention; no tautologies):
     resolution honors `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then
     `$XDG_DATA_HOME/../bin` (only `XDG_DATA_HOME` configured), then
     `~/.local/bin`.
+18. TOCTOU re-route: fresh path installs with `force=False` (transcript-
+    asserted); an already-exists install failure re-reads state and
+    re-routes to takeover consent — accept retries with `force=True`,
+    decline skips; no promptless `--force` fires anywhere in the flow.
+19. Provenance precondition: receipt entry present + shim present, but
+    `tool_list()` shows a DIFFERENT tool providing the binary (or our
+    name absent while a foreign shim exists) → takeover consent, no
+    promptless verify/heal; provenance absent entirely (no env, no shim)
+    → heal proceeds non-forcing.
+20. Reachability memoization: two registry CLIs sharing one `bin_dir`,
+    PATH unconfigured → exactly one update-shell consent prompt + repair
+    for the run, second CLI reports resolved; an update-shell result of
+    "already configured" counts as success (repeat install from the same
+    un-restarted shell exits 0).
+21. uv version guard: `uv_version()` below `MIN_UV_VERSION` (or `None`)
+    → one actionable error, zero install/uninstall/update-shell calls,
+    exit 1; file-install pipeline still runs.
 
 Gate: `make ci-installer` (ruff, format, mypy --strict, pytest --cov 90%
 branch, pip-audit, entry-verify) green before push; delivery routes HEAVY at
@@ -484,3 +546,17 @@ the completion gate (`packages/**` floors it).
   `uv export --frozen` + `--constraints` (§4, §10 item 16); full uv
   bin-dir fallback precedence incl. `$XDG_DATA_HOME/../bin` (§4, §10
   item 17); verify-on-skip smoke with heal-on-fail (§6, §10 item 1).
+- 2026-07-16 Codex cross-model round 2 (adversarial: needs-attention, 2
+  high / 1 medium; native: 0 P1 / 2 P2 — no critical/major, loop
+  termination condition met). All folded: non-forcing fresh install
+  closing the TOCTOU window, `--force` only on consented or
+  provenance-proven paths (§4, §6, §10 item 18); `tool_list()` upgraded
+  to a provenance mapping gating every promptless receipt-owned action
+  (§4, §6, §10 item 19); reachability evaluated once per bin dir per run
+  with memoized repair, and "already configured" update-shell results
+  count as success (§6, §10 item 20); `MIN_UV_VERSION` guard before any
+  CLI work (§6, §10 item 21). Convergence assessment: rounds 1-2
+  findings refine the same two contract boundaries (ownership evidence,
+  process-env semantics); no finding challenged the architecture (uv
+  tool stage / injected port / receipt extension); severity trend
+  declining. No systemic issue.
