@@ -31,6 +31,7 @@ from tests.fakes import (
     tar_of,
 )
 from vizsuite.adapters.git.runner import ModifiedFileRow
+from vizsuite.envelope import ErrorCode, VizError
 
 _SCENE_SCRIPT_RE = re.compile(
     r'<script id="viz-scene" type="application/json">(.*?)</script>', re.DOTALL
@@ -311,3 +312,198 @@ def test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent(
     assert by_path["src/app.py"]["load_bearing"] == 0.0
     # fail-soft: an unavailable centrality axis threads an empty edge set too.
     assert scene["edges"] == []
+
+
+def _pr_git(**overrides: Any) -> ScriptedGitRunner:
+    """A `ScriptedGitRunner` for the fidelity-F1 (`--allow-stale-graph`) tests.
+
+    All of these tests share the same one-file PR shape; only the
+    `rev_list_oids`/`rev_list_errors` seam varies per test (the commits-behind
+    lookup), so this centralizes the boilerplate the F1 slice added.
+    """
+    defaults: dict[str, Any] = {
+        "present_oids": {"base000", "head111"},
+        "diff_files": ["src/app.py"],
+        "rev_list_oids": ["c1"],
+        "churn_rows": [
+            ModifiedFileRow(new_path="src/app.py", old_path="src/app.py", added=3, deleted=0)
+        ],
+        "ls_tree_rows": [blob("src/app.py", "aaa111")],
+        "archive_tar_bytes": tar_of({"src/app.py": "x = 1\n"}),
+    }
+    defaults.update(overrides)
+    return ScriptedGitRunner(**defaults)
+
+
+def test_pr_flag_off_with_mismatched_graph_commit_is_still_unavailable_regression_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # F1 regression pin: with `--allow-stale-graph` omitted, a graph whose
+    # build commit disagrees with the PR head must produce the exact same
+    # envelope as today (byte-identical to
+    # test_pr_fails_soft_to_unavailable_load_bearing_when_graphify_out_is_absent's
+    # assertions) — the opt-in changes nothing about the default path.
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = _pr_git()
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="57a1e00000000000000000000000000000000000",
+        nodes=[{"id": "s1", "source_file": "src/app.py"}],
+        links=[],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "13"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["render_config"]["unavailable_axes"] == ["load_bearing"]
+    assert "stale_graph" not in scene["render_config"]
+    assert data["heat_axes_available"] == ["complexity", "consequence"]
+    assert scene["edges"] == []
+
+
+def test_pr_allow_stale_graph_flag_accepts_mismatched_commit_and_labels_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=4)
+    )
+    git = _pr_git(rev_list_oids=["c1", "c2", "c3", "c4"])
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="57a1e00000000000000000000000000000000000",
+        nodes=[{"id": "s1", "source_file": "src/app.py"}],
+        links=[],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "14", "--allow-stale-graph"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    # load_bearing is available (accepted-stale scores exactly like fresh), so
+    # it drops out of unavailable_axes and back into the available-axes mirror.
+    assert scene["render_config"]["unavailable_axes"] == []
+    assert data["heat_axes_available"] == ["complexity", "consequence", "load_bearing"]
+    assert scene["render_config"]["stale_graph"] == {
+        "built_at_commit": "57a1e00000000000000000000000000000000000",
+        "commits_behind": 4,
+    }
+    # the commits-behind lookup went through the same git-runner seam
+    # (`rev_list`), never a bespoke subprocess call.
+    assert ("rev_list", "57a1e00000000000000000000000000000000000", "head111") in git.calls
+
+
+def test_pr_allow_stale_graph_flag_with_fresh_graph_has_no_stale_graph_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The opt-in is inert when the graph is already fresh — no stale_graph key,
+    # no extra rev_list call for a commits-behind count nobody needs.
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = _pr_git()
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="head111",
+        nodes=[{"id": "s1", "source_file": "src/app.py"}],
+        links=[],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "15", "--allow-stale-graph"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["render_config"]["unavailable_axes"] == []
+    assert "stale_graph" not in scene["render_config"]
+    assert ("rev_list", "head111", "head111") not in git.calls
+
+
+def test_pr_allow_stale_graph_flag_with_absent_graph_stays_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)  # no graphify-out/ written — the optional-dep absent case
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = _pr_git()
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "16", "--allow-stale-graph"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["render_config"]["unavailable_axes"] == ["load_bearing"]
+    assert "stale_graph" not in scene["render_config"]
+
+
+def test_pr_stale_graph_commits_behind_fails_soft_to_none_when_rev_list_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # The build-commit is unknown locally (e.g. a merged/rebased-away commit),
+    # so `git rev-list <built>..<head>` fails — the count fails soft to
+    # `None`, and the build still succeeds with a labeled-but-uncounted badge.
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = _pr_git(
+        rev_list_errors={
+            ("57a1e00000000000000000000000000000000000", "head111"): VizError(
+                ErrorCode.ADAPTER_FAILURE, "unknown revision"
+            )
+        }
+    )
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="57a1e00000000000000000000000000000000000",
+        nodes=[{"id": "s1", "source_file": "src/app.py"}],
+        links=[],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "17", "--allow-stale-graph"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    assert scene["render_config"]["stale_graph"] == {
+        "built_at_commit": "57a1e00000000000000000000000000000000000",
+        "commits_behind": None,
+    }

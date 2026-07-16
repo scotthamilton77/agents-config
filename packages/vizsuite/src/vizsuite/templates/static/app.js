@@ -20,7 +20,9 @@
     treemapView: "viz-view-treemap",
     ledgerView: "viz-view-ledger",
     constellationView: "viz-view-constellation",
-    constellationToggle: "viz-constellation-toggle"
+    constellationToggle: "viz-constellation-toggle",
+    staleGraphBadge: "viz-stale-graph-badge",
+    header: "viz-header"
   };
 
   // Stable, action-naming accessible name (spec §4.5 toggle convention: the
@@ -307,10 +309,36 @@
     });
   }
 
+  // ---- Stale-graph badge (spec §6.2 `--allow-stale-graph` opt-in): a header
+  // badge naming the exact build commit the load-bearing axis was scored
+  // from, so an accepted-stale graph is never mistaken for a fresh one.
+  // Present only when `scene.render_config.stale_graph` is present — a fresh
+  // or unavailable axis carries no `stale_graph`, so no badge renders. ----
+  function staleGraphBadgeText(staleGraph) {
+    var shortSha = String(staleGraph.built_at_commit).slice(0, 7);
+    var text = "graph @ " + shortSha + " (stale";
+    if (typeof staleGraph.commits_behind === "number") {
+      var noun = staleGraph.commits_behind === 1 ? "commit" : "commits";
+      text += ", " + staleGraph.commits_behind + " " + noun + " behind PR head";
+    }
+    return text + ")";
+  }
+
+  function appendStaleGraphBadge(headerEl, staleGraph) {
+    if (!staleGraph) {
+      return;
+    }
+    var badge = document.createElement("div");
+    badge.id = IDS.staleGraphBadge;
+    badge.setAttribute("class", "viz-stale-graph-badge");
+    badge.textContent = staleGraphBadgeText(staleGraph);
+    headerEl.appendChild(badge);
+  }
+
   // ---- Legend (spec §4.5: every encoding present in the scene appears
   // here; no orphan entries) — the heat scale, the PR-touched marker, and
   // the default-collapsed marker are the only encodings this view renders. ----
-  function buildLegend(container) {
+  function buildLegend(container, staleGraph) {
     var heatStops = [
       { token: "heat-cold", label: "low attention" },
       { token: "heat-mid", label: "medium attention" },
@@ -348,6 +376,19 @@
     collapseItem.appendChild(collapseGlyph);
     collapseItem.appendChild(collapseLabel);
     container.appendChild(collapseItem);
+
+    if (staleGraph) {
+      var staleItem = document.createElement("span");
+      staleItem.setAttribute("class", "viz-legend-item");
+      var staleSwatch = document.createElement("span");
+      staleSwatch.setAttribute("class", "viz-legend-badge viz-legend-badge--stale");
+      var staleLabel = document.createElement("span");
+      staleLabel.textContent =
+        staleGraphBadgeText(staleGraph) + " — accepted via --allow-stale-graph";
+      staleItem.appendChild(staleSwatch);
+      staleItem.appendChild(staleLabel);
+      container.appendChild(staleItem);
+    }
   }
 
   // ---- Sonar affordance (spec §6.1: file sonar as a drill, not a top-level
@@ -617,6 +658,7 @@
     });
     var unavailableAxes =
       (scene.render_config && scene.render_config.unavailable_axes) || [];
+    var staleGraph = (scene.render_config && scene.render_config.stale_graph) || null;
 
     var annotationStore = makeAnnotationStore(scene.repo_nwo);
 
@@ -625,8 +667,10 @@
       controls: document.getElementById(IDS.controls),
       legend: document.getElementById(IDS.legend),
       root: document.getElementById(IDS.root),
-      drillPanel: document.getElementById(IDS.drillPanel)
+      drillPanel: document.getElementById(IDS.drillPanel),
+      header: document.getElementById(IDS.header)
     };
+    appendStaleGraphBadge(elements.header, staleGraph);
 
     if (!annotationStore.available) {
       elements.storageWarning.textContent =
@@ -692,7 +736,7 @@
       document.dispatchEvent && dispatchThemeChanged();
     });
     wireCopyNotesButton(controls.copyButton, controls.copyStatus, annotationStore);
-    buildLegend(elements.legend);
+    buildLegend(elements.legend, staleGraph);
     wireDrillPanelClose(elements.drillPanel, drillState);
 
     document.addEventListener("viz:theme-changed", reencodeAll);

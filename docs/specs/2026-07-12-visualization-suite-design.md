@@ -537,10 +537,14 @@ semantics per §4.5):
   churn only heats, never cools. Replaces the prototype's fabricated scores.
 - **Load-bearing** — Tier 1: graph centrality from graphify, behind a
   **preflight**: the graph's build-commit marker must match the target
-  revision (refresh if the tool is available, else fail loud or render the
-  axis explicitly unavailable — weight controls exclude it; never report a
-  stale graph as post-PR centrality; graphify is an optional dependency,
-  not an assumed one). Two binding corrections: (a) **projected post-PR centrality** — computed on
+  revision. Three outcomes, in order: refresh if the tool is available;
+  else, only on an explicit `--allow-stale-graph` opt-in, accept the stale
+  graph and score it, with a visible staleness label (the build commit and
+  commits-behind count) carried in the artifact — never silent; absent
+  either, render the axis explicitly unavailable — weight controls exclude
+  it. Never report a stale graph as current post-PR centrality without that
+  visible label; graphify is an optional dependency, not an assumed one.
+  Two binding corrections: (a) **projected post-PR centrality** — computed on
   the dependency graph *as the PR leaves it* (changed imports included),
   because history-based centrality scores brand-new load-bearing code at
   zero; (b) **consistent edge set** — intra-file self-edges excluded from

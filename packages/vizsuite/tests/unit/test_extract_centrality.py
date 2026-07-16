@@ -20,6 +20,9 @@ import pytest
 from vizsuite.extract.centrality import DEP_RELATIONS, CentralityAxis, centrality_axis
 
 HEAD_OID = "head1234"
+# A full lowercase 40-hex OID — the only marker shape the labeled-stale
+# opt-in trusts (it flows into `git rev-list` argv downstream).
+STALE_OID = "6505d208fee1dfa6d82555437571cfe35d1778aa"
 
 
 def _node(node_id: str, source_file: str) -> dict[str, Any]:
@@ -192,6 +195,125 @@ def test_stale_build_commit_is_unavailable_never_stale_as_fresh(tmp_path: Path) 
 
     assert not axis.is_available
     assert axis.scores is None
+    # default (flag omitted) is byte-identical to `allow_stale=False`: the
+    # opt-in must never be silently on.
+    assert axis.stale_built_at_commit is None
+
+
+def test_allow_stale_false_with_mismatched_commit_is_still_unavailable(tmp_path: Path) -> None:
+    # Explicit `allow_stale=False` regression pin: identical outcome to the
+    # flag-omitted case above — the opt-in is off by default and off means off.
+    payload = _graph_json(
+        built_at_commit="some-other-commit",
+        nodes=[_node("a", "a.py"), _node("b", "b.py")],
+        links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=False)
+
+    assert not axis.is_available
+    assert axis.scores is None
+    assert axis.unavailable_reason == "graph build-commit != PR head"
+
+
+def test_allow_stale_accepts_mismatched_commit_and_surfaces_the_build_commit(
+    tmp_path: Path,
+) -> None:
+    payload = _graph_json(
+        built_at_commit=STALE_OID,
+        nodes=[_node("a", "a.py"), _node("b", "b.py")],
+        links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert axis.is_available
+    assert axis.scores is not None
+    assert axis.scores["b.py"] == 1.0  # scored exactly like the fresh path
+    assert axis.edges == (("a.py", "b.py"),)
+    assert axis.stale_built_at_commit == STALE_OID
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "--glob=refs/heads/*..",  # option-shaped: would reach `git rev-list` argv downstream
+        "some-other-commit",  # not a hex OID at all
+        "ABC123" + "0" * 34,  # uppercase hex — git OIDs are lowercase
+        "6505d208",  # abbreviated — only a full 40-hex OID is trusted
+    ],
+)
+def test_allow_stale_rejects_a_marker_that_is_not_a_full_hex_oid(
+    tmp_path: Path, marker: str
+) -> None:
+    # The accepted-stale marker flows into `git rev-list <marker>..<head>`
+    # (verbs/pr.py `_commits_behind`), so the boundary here trusts nothing but
+    # a full lowercase 40-hex object id — an option-shaped or garbage marker
+    # stays on the unavailable path even with the opt-in on.
+    payload = _graph_json(
+        built_at_commit=marker,
+        nodes=[_node("a", "a.py"), _node("b", "b.py")],
+        links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert not axis.is_available
+    assert axis.unavailable_reason == "graph build-commit != PR head"
+    assert axis.stale_built_at_commit is None
+
+
+def test_allow_stale_with_matching_commit_is_fresh_not_stale(tmp_path: Path) -> None:
+    # A fresh graph never gets stamped stale just because the caller opted in —
+    # the opt-in only matters when it is actually needed.
+    payload = _graph_json(
+        built_at_commit=HEAD_OID,
+        nodes=[_node("a", "a.py"), _node("b", "b.py")],
+        links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert axis.is_available
+    assert axis.stale_built_at_commit is None
+
+
+def test_allow_stale_absent_graphify_out_is_still_unavailable(tmp_path: Path) -> None:
+    missing_path = tmp_path / "graphify-out" / "graph.json"
+
+    axis = centrality_axis(missing_path, HEAD_OID, allow_stale=True)
+
+    assert not axis.is_available
+    assert axis.scores is None
+    assert axis.stale_built_at_commit is None
+
+
+def test_allow_stale_truncated_invalid_json_is_still_unavailable(tmp_path: Path) -> None:
+    graph_path = tmp_path / "graphify-out" / "graph.json"
+    graph_path.parent.mkdir(parents=True, exist_ok=True)
+    graph_path.write_text('{"built_at_commit": "some-other-commit", "nodes": [', encoding="utf-8")
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert not axis.is_available
+    assert axis.scores is None
+    assert axis.stale_built_at_commit is None
+
+
+def test_allow_stale_missing_nodes_or_links_is_still_unavailable(tmp_path: Path) -> None:
+    # The opt-in only bypasses the commit-identity check, never the parse
+    # guards: a stale graph that is ALSO malformed still fails soft.
+    graph_path = _write_graph(tmp_path, {"built_at_commit": "some-other-commit"})
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert not axis.is_available
+    assert axis.scores is None
+    assert axis.stale_built_at_commit is None
 
 
 def test_truncated_invalid_json_is_unavailable_not_a_crash(tmp_path: Path) -> None:
@@ -285,11 +407,13 @@ def test_centrality_axis_unavailable_and_from_indegree_helpers() -> None:
     assert unavailable.unavailable_reason == "no graphify-out"
     assert not unavailable.is_available
     assert unavailable.edges == ()  # fail-soft means empty edges too, never stale ones
+    assert unavailable.stale_built_at_commit is None
 
     available = CentralityAxis.from_indegree({"a.py": 2, "b.py": 1, "c.py": 0})
     assert available.is_available
     assert available.scores == {"a.py": 1.0, "b.py": 0.5, "c.py": 0.0}
     assert available.edges == ()  # edges is opt-in via the `edges=` kwarg
+    assert available.stale_built_at_commit is None  # opt-in via the `stale_built_at_commit=` kwarg
 
     empty = CentralityAxis.from_indegree({})
     assert empty.is_available
@@ -297,3 +421,6 @@ def test_centrality_axis_unavailable_and_from_indegree_helpers() -> None:
 
     edged = CentralityAxis.from_indegree({"a.py": 1}, edges=(("x.py", "a.py"),))
     assert edged.edges == (("x.py", "a.py"),)
+
+    staled = CentralityAxis.from_indegree({"a.py": 1}, stale_built_at_commit="deadbeef")
+    assert staled.stale_built_at_commit == "deadbeef"
