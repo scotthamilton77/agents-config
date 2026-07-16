@@ -66,11 +66,16 @@ CLI_PACKAGES: tuple[CliSpec, ...] = (
     CliSpec("workcli", "packages/workcli", "work", ("--protocol-version",)),
     CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",)),
 )
+
+RETIRED_CLIS: tuple[str, ...] = ()  # names formerly in CLI_PACKAGES
 ```
 
 Closed by design, like the `Tool` enum and unlike the plugins dir-scan:
 `packages/` contains early packages that must NOT auto-deploy. Adding a CLI is
-a deliberate one-line registry change.
+a deliberate one-line registry change. Retiring one moves its name to
+`RETIRED_CLIS` — the closed historical allowlist that (together with
+`CLI_PACKAGES`) bounds uninstall authority (§7): the receipt alone never
+authorizes an uninstall.
 
 ## 4. Injected port
 
@@ -83,8 +88,10 @@ its consumer, mirroring `io_port.py`'s layout):
 class CliDeployPort(Protocol):
     def bin_dir(self) -> Path: ...
     def shim_path(self, binary: str) -> Path | None: ...
+    def tool_list(self) -> frozenset[str] | None: ...
     def tool_install(self, package_dir: Path) -> CommandResult: ...
     def tool_uninstall(self, name: str) -> CommandResult: ...
+    def update_shell(self) -> CommandResult: ...
     def which(self, binary: str) -> Path | None: ...
     def smoke(self, shim: Path, args: tuple[str, ...]) -> CommandResult: ...
 ```
@@ -94,23 +101,36 @@ merged stdout+stderr, surfaced verbatim on failure.
 
 **PATH-independence is load-bearing.** All installed-state decisions use uv's
 bin dir directly, never the process PATH: `bin_dir()` resolves uv's shim
-directory (`uv tool dir --bin`; on failure, fall back to the same resolution
-uv documents — `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then `~/.local/bin`);
+directory (`uv tool dir --bin`; on failure, fall back to uv's full documented
+resolution order — `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then
+`$XDG_DATA_HOME/../bin`, then `~/.local/bin`);
 `shim_path(binary)` returns `bin_dir()/<binary>` iff that
-file exists, else `None`. `which` (plain `shutil.which`) is used **only** for
-the PATH/shadowing advisory (§6), never for decisions. `smoke`
-executes the shim by the **absolute path** it is given — a
+file exists, else `None`. `tool_list()` returns the installed uv tool names
+(parsed `uv tool list`), or `None` when the query fails — consumers must
+treat `None` as "ownership unproven" and fall toward consent, never toward
+silent `--force`. `which` (plain `shutil.which`) is used **only** for
+the PATH-reachability invariant (§6), never for install-state decisions.
+`smoke` executes the shim by the **absolute path** it is given — a
 `FileNotFoundError` there genuinely means the install is broken, not that
-PATH is unconfigured.
+PATH is unconfigured. `update_shell` runs `uv tool update-shell` (uv's own
+mechanism for ensuring the tool bin dir is on PATH via shell config —
+verified present in uv 0.10.4).
 
-Real implementation `UvCliDeploy`: `tool_install` runs
-`uv tool install --force <abs package_dir>`; `tool_uninstall` runs
+Real implementation `UvCliDeploy`: `tool_install` is **lock-respecting** —
+it exports fully pinned constraints from the package's committed lock
+(`uv export --frozen --no-dev --no-emit-project -o <tmpfile>`, run against
+the package dir) and installs with
+`uv tool install --force --constraints <tmpfile> <abs package_dir>`, so the
+deployed environment reflects the same dependency set CI audits (a plain
+`uv tool install` resolves fresh and ignores `uv.lock`; prgroom's unbounded
+`typer` bound would otherwise drift). A package without a `uv.lock`
+installs unconstrained (mirroring §5's digest rule). `tool_uninstall` runs
 `uv tool uninstall <name>`. All subprocess calls use
 `subprocess.run(..., capture_output=True, text=True)` with bounded timeouts —
 300s install (cold uv cache + dependency resolution can be slow), 30s smoke,
-10s `bin_dir` — and `TimeoutExpired` / `FileNotFoundError` map to
-`CommandResult(ok=False, output=...)` (or the documented fallback for
-`bin_dir`).
+10s `bin_dir`/`tool_list`/`update_shell` — and `TimeoutExpired` /
+`FileNotFoundError` map to `CommandResult(ok=False, output=...)` (or the
+documented fallback for `bin_dir`, or `None` for `tool_list`).
 
 Test fake `ScriptedCliDeploy`: per-method answer queues + transcript,
 mirroring `ScriptedIO` (including the exhaustion-error self-diagnosis).
@@ -154,16 +174,22 @@ def deploy_clis(
                        # + counters; any_failed is derived from the outcomes
 ```
 
-Per registered CLI, in registry order ("shim present" always means
-`shim_path(binary) is not None` — the uv bin dir test, never `which`):
+Per registered CLI, in registry order. Two PATH-independent signals feed the
+table: "shim present" means `shim_path(binary) is not None` (the uv bin dir
+test, never `which`); "env present" means the tool's name appears in
+`tool_list()`. A shim can exist without an env (stale link) and an env
+without a shim (link removed) — a valid receipt entry proves ownership;
+absent that proof, ANY evidence of an existing install (shim OR env, or an
+unproven `tool_list() is None`) demands takeover consent, because
+`uv tool install --force` silently replaces an existing environment:
 
-| Prior receipt entry | Shim present | Digest vs receipt | Action |
+| Prior receipt entry | Existing-install evidence | Digest vs receipt | Action |
 |---|---|---|---|
-| present | yes | equal | `SKIPPED_IDENTICAL` (no subprocess) |
-| present | no | (any) | reinstall, no prompt (heal a user uninstall — we own it per receipt; a missing shim means the tool is already unusable, so healing deliberately takes precedence over the upgrade prompt even when the digest also differs) |
-| present | yes | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
-| absent | no | — | **fresh install**, no prompt (new-file semantics) |
-| absent | yes | — | **takeover** of a manual install → consent prompt (default No; `--yes` accepts) |
+| present | shim present | equal | **verify**: smoke the shim (absolute path); ok → `SKIPPED_IDENTICAL` (no install subprocess); smoke fails → heal-reinstall, no prompt (a corrupted-but-present install we own) |
+| present | shim missing | (any) | heal-reinstall, no prompt (we own it per receipt; a missing shim means the tool is already unusable, so healing deliberately takes precedence over the upgrade prompt even when the digest also differs) |
+| present | shim present | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
+| absent | none (no shim AND `tool_list()` proves the env absent) | — | **fresh install**, no prompt (new-file semantics) |
+| absent | shim present OR env present OR `tool_list()` is `None` (unproven) | — | **takeover** → consent prompt (default No; `--yes` accepts); never a silent `--force` |
 
 - Consent declines count as skipped and leave the receipt's prior entry (if
   any) untouched.
@@ -172,18 +198,42 @@ Per registered CLI, in registry order ("shim present" always means
   command against that absolute path. Smoke failure → `io.err` with the
   command output, failure recorded, receipt entry NOT written (next run
   retries). Smoke success → receipt entry written with the new digest.
-- **PATH/shadowing advisory (non-fatal, never blocks the receipt):**
-  evaluated on **every run** for every CLI whose shim is present — skips
-  included, not only after a deploy — so the guidance survives the
-  idempotent steady state instead of firing once and vanishing. If
-  `which(binary)` is `None`, warn that uv's bin dir is not on PATH; if it
-  resolves to a path *outside* `bin_dir()`, warn that a foreign `<binary>`
-  shadows the deployed one; if it resolves inside `bin_dir()`, stay silent.
-  Deploy success is judged solely by install + shim + smoke.
+- **PATH-reachability invariant (a deployment requirement, not an
+  advisory):** the whole point of this design is assets invoking bare
+  `work`/`prgroom`, so an unreachable or shadowed binary is a deployment
+  FAILURE, evaluated on **every run** for every registry CLI whose shim is
+  present — skips included, so the steady state cannot go silently
+  unusable. Three outcomes of `which(binary)`:
+    - resolves inside `bin_dir()` → reachable, silent;
+    - `None` (bin dir not on PATH) → offer a consent-gated
+      `update_shell()` (`uv tool update-shell`, uv's own PATH-provisioning
+      mechanism; `--yes` accepts, `--dry-run` reports would-run). On
+      success, `io.info` that new shells pick up the PATH change (the
+      current process env is unchanged, so `which` is NOT re-checked this
+      run) and the run counts as resolved. Declined, or `update_shell`
+      fails → `io.err` with the exact PATH line to add → deployment
+      failure, exit 1;
+    - resolves to a path *outside* `bin_dir()` → a foreign `<binary>`
+      shadows the deployed one; `update_shell` cannot fix PATH *order* →
+      `io.err` naming both paths with the remediation (remove/rename the
+      foreign binary or reorder PATH) → deployment failure, exit 1.
+- **Receipt vs. exit code on reachability failure (deliberate divergence
+  from the reviewers' "do not persist" letter, honoring its substance):**
+  the receipt keeps its established contract — a mirror of install state on
+  disk — so a successful install+smoke IS receipted even when reachability
+  fails; the run's exit code (1) and `io.err` carry deployment health.
+  Refusing the receipt would force a wasteful `--force` reinstall on every
+  run in an unreachable environment while fixing nothing (the install
+  itself is fine; PATH is the defect, and it is re-checked every run
+  regardless). The installer still never reports overall success while a
+  CLI is unreachable or shadowed.
 - `--dry-run`: report would-skip / would-install / would-upgrade /
-  would-take-over per CLI; no `tool_install`/`tool_uninstall`/`smoke` calls,
-  no lock (consistent with the dry-run-writes-nothing contract; `bin_dir`/
-  `shim_path`/digest reads are non-mutating).
+  would-take-over (and would-run-update-shell) per CLI; no
+  `tool_install`/`tool_uninstall`/`smoke`/`update_shell` calls, no lock
+  (consistent with the dry-run-writes-nothing contract; `bin_dir`/
+  `shim_path`/`tool_list`/`which`/digest reads are non-mutating and stay
+  available so the preview reports real decisions; the verify row reports
+  would-skip without smoking).
 - No-TTY without `--yes` at a consent point → `ConsentRequiredError`, exit 1
   (existing convention).
 - Counters map onto the existing summary vocabulary under target name
@@ -269,19 +319,31 @@ Prune half (runs under `--prune` / `--prune-only`, after the file prune): a
 CLI named in the prior receipt's `clis` but absent from `CLI_PACKAGES` is
 retired → consent-gated `uv tool uninstall` (per-item prompt, `--yes`
 auto-accepts, `--dry-run` previews, no-TTY without `--yes` →
-`ConsentRequiredError` exit 1 — same convention as the deploy side). A
-declined uninstall retains the receipt entry (the tool is still installed).
-Uninstall of a tool uv no longer knows (user removed it manually) is treated
+`ConsentRequiredError` exit 1 — same convention as the deploy side).
+**Uninstall authority is bounded by the closed registry history, never by
+the receipt:** the name must appear in `CLI_PACKAGES ∪ RETIRED_CLIS` (§3)
+for an uninstall to even be offered — the receipt's integrity digest is
+tamper-evidence, not authentication, so a receipt entry naming a foreign
+tool (e.g. `ruff`) must not become deletion authority under `--prune
+--yes`. A prior `clis` entry whose name is outside that closed set is
+warned about and relinquished (dropped from the receipt without any
+uninstall — we never owned it; mirrors the file-prune drift-relinquish
+posture). A declined uninstall retains the receipt entry (the tool is
+still installed; retirement is retried next prune). Uninstall of an
+allowlisted tool uv no longer knows (user removed it manually) is treated
 as success — the desired state is "absent".
 
 A CORRUPT prior receipt disables the CLI prune half exactly as it disables
 file pruning (fail closed); the deploy half still runs, treating every CLI by
-the no-prior-entry rows of the decision table. Consequence (accepted,
-mirrors the downgrade caveat): `record_receipt` is gated on a non-corrupt
-prior, so a deploy under a corrupt receipt is not persisted — each
-subsequent run re-encounters the shim with no prior entry and re-prompts as
-a takeover until the receipt is reset or repaired. Fail-closed, no data
-loss.
+the no-prior-entry rows of the decision table — and because those rows
+demand takeover consent whenever ANY existing-install evidence is present
+(shim, env, or an unproven `tool_list()`), receipt corruption can never
+convert an existing environment into a silent `--force` replacement.
+Consequence (accepted, mirrors the downgrade caveat): `record_receipt` is
+gated on a non-corrupt prior, so a deploy under a corrupt receipt is not
+persisted — each subsequent run re-encounters the install evidence with no
+prior entry and re-prompts as a takeover until the receipt is reset or
+repaired. Fail-closed, no data loss, no unconsented overwrite.
 
 ## 8. Failure posture
 
@@ -312,15 +374,21 @@ loss.
 Unit tests through `ScriptedCliDeploy` + `ScriptedIO`, each pinning a coded
 decision (house convention; no tautologies):
 
-1. Skip: receipt digest equal + shim present → no
-   install/uninstall/smoke calls, skipped counter.
-2. Fresh install: no receipt entry, no shim → install runs, no consent
-   prompt, created counter, receipt entry written.
+1. Verify/skip: receipt digest equal + shim present → smoke runs against
+   the absolute shim path; ok → no install/uninstall calls, skipped
+   counter; smoke FAILS → heal-reinstall without prompt (corrupted-but-
+   present owned install).
+2. Fresh install: no receipt entry, no shim, `tool_list()` proves env
+   absent → install runs, no consent prompt, created counter, receipt
+   entry written.
 3. Heal: receipt entry present, shim missing → reinstall without prompt.
 4. Upgrade: digest differs → consent prompt; accept → install + updated
    counter + new digest; decline → skipped, prior entry retained.
-5. Takeover: no receipt entry, shim present → consent prompt; accept →
-   install + updated counter + entry written; decline → skipped, no entry.
+5. Takeover: no receipt entry + ANY existing-install evidence — shim
+   present, OR env in `tool_list()` with no shim, OR `tool_list()` is
+   `None` (unproven) → consent prompt; accept → install + updated counter
+   + entry written; decline → skipped, no entry. Never a promptless
+   `--force` on any of the three evidence triggers.
 6. Dry-run: each branch reports would-X, zero
    install/uninstall/smoke calls, receipt untouched.
 7. Smoke failure: install ok, smoke fails → err surfaced, no receipt entry,
@@ -328,14 +396,20 @@ decision (house convention; no tautologies):
    fake's transcript). Install-ok-but-no-shim is likewise a failure.
 8. Install failure: `tool_install` not ok → err surfaced, other CLI still
    processed, exit 1.
-9. PATH advisory: `which` miss → warn, entry still written; `which`
-   resolving outside `bin_dir()` → shadowing warn, entry still written;
-   `which` resolving inside `bin_dir()` → NO warn (no false positive); the
-   advisory also fires on a `SKIPPED_IDENTICAL` run (steady-state
-   persistence, not deploy-only).
-10. Prune: prior `clis` entry not in registry → consent-gated uninstall,
-    pruned counter, entry dropped; decline → entry retained (retirement
-    retried next prune); `--dry-run` previews; uninstall-of-absent treated
+9. Reachability invariant: `which` inside `bin_dir()` → silent, exit 0;
+   `which` is `None` → update-shell consent prompt — accept + success →
+   info notice, run resolved (exit 0), entry written; decline OR
+   `update_shell` failure → `io.err` with the PATH line, exit 1 (entry
+   still written — install state is receipted, deployment health is the
+   exit code); `which` outside `bin_dir()` → shadowing `io.err` naming
+   both paths, exit 1; the invariant also fires on a `SKIPPED_IDENTICAL`
+   run (steady-state enforcement, not deploy-only).
+10. Prune: prior `clis` entry not in registry but in `RETIRED_CLIS` →
+    consent-gated uninstall, pruned counter, entry dropped; decline →
+    entry retained (retirement retried next prune); a prior entry whose
+    name is OUTSIDE `CLI_PACKAGES ∪ RETIRED_CLIS` (tampered/foreign, e.g.
+    `ruff`) → NO uninstall offered even under `--yes`, warn + entry
+    relinquished; `--dry-run` previews; uninstall-of-absent treated
     as success; **`--prune-only` run** (deploy half never ran) still drops a
     completed uninstall's entry through the real
     `record_receipt`/`merge_receipt` path while retaining registry CLIs'
@@ -355,6 +429,13 @@ decision (house convention; no tautologies):
 15. Digest rules: missing `pyproject.toml` → loud error; missing `uv.lock`
     → omitted (and adding a lock later changes the digest); a change under
     `tests/**` or `__pycache__`/`*.pyc` does not change the digest.
+16. Lock-respecting install: `tool_install` exports pinned constraints
+    from the package lock and passes `--constraints` (asserted via the
+    fake's transcript); a lock-less package installs unconstrained.
+17. `bin_dir` fallback: with the `uv tool dir --bin` query forced to fail,
+    resolution honors `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then
+    `$XDG_DATA_HOME/../bin` (only `XDG_DATA_HOME` configured), then
+    `~/.local/bin`.
 
 Gate: `make ci-installer` (ruff, format, mypy --strict, pytest --cov 90%
 branch, pip-audit, entry-verify) green before push; delivery routes HEAVY at
@@ -390,3 +471,16 @@ the completion gate (`packages/**` floors it).
   exhausted with a Critical present in the final cycle): **FAIL** — the
   verdict is recorded as-is; the folds above improve the artifact but do
   not upgrade the score.
+- 2026-07-16 Codex cross-model round 1 (adversarial: needs-attention, 3
+  high / 1 medium; native: 2 P1 / 1 P2). All folded: PATH reachability
+  promoted from advisory to deployment invariant with consent-gated
+  `uv tool update-shell` and hard error on decline/shadow (§6, §10 item
+  9; receipt-vs-exit-code divergence rationale recorded); ownership
+  verification via `tool_list()` — takeover consent on any
+  existing-install evidence, corrupt receipt can never silent-`--force`
+  (§4, §6, §7, §10 items 2/5); uninstall authority bounded by
+  `CLI_PACKAGES ∪ RETIRED_CLIS`, foreign receipt names relinquished
+  without uninstall (§3, §7, §10 item 10); lock-respecting install via
+  `uv export --frozen` + `--constraints` (§4, §10 item 16); full uv
+  bin-dir fallback precedence incl. `$XDG_DATA_HOME/../bin` (§4, §10
+  item 17); verify-on-skip smoke with heal-on-fail (§6, §10 item 1).
