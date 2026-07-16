@@ -152,6 +152,7 @@ def scan_markers(*comment_lists: list[JsonObj]) -> dict[str, int]:
     numeric ``id``. First occurrence wins — the earliest (original) comment
     claims the marker; listing order is ascending (§11 ledger). Entries with a
     missing/zero id are skipped."""
+    ...
 
 def carries_own_marker(body: str) -> bool:
     """True iff ``body`` contains a full-grammar prgroom idempotency marker."""
