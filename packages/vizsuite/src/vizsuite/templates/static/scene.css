@@ -101,6 +101,20 @@ body {
   font-size: 12px;
 }
 
+/* ---- Stale-graph badge (spec §6.2 `--allow-stale-graph` opt-in): flow
+   layout in the header, never absolute positioning — a labeled fact about
+   the artifact, not an overlay. ---- */
+.viz-stale-graph-badge {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--viz-heat-mid);
+  border-radius: 4px;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-heat-mid) 15%, var(--viz-surface));
+  font-size: 11px;
+}
+
 /* ---- Annotation fallback banner (spec §4.5): visible, never silent. ---- */
 .viz-warning-banner {
   margin: 0.75rem 0;
@@ -199,6 +213,11 @@ body {
   border-radius: 50%;
   border: 2px solid var(--viz-fg);
   background: transparent;
+}
+.viz-legend-badge--stale {
+  border-radius: 2px;
+  border-color: var(--viz-heat-mid);
+  background: color-mix(in srgb, var(--viz-heat-mid) 15%, var(--viz-surface));
 }
 
 /* ---- Estate treemap (spec §6.1). ---- */

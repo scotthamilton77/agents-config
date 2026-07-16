@@ -19,6 +19,7 @@ from pathlib import Path
 from vizsuite.adapters.gh.runner import GhResult
 from vizsuite.adapters.git.runner import LsTreeRow, ModifiedFileRow
 from vizsuite.adapters.scc.runner import SccResult
+from vizsuite.envelope import VizError
 from vizsuite.tracker.port import TrackerResult
 
 
@@ -43,6 +44,12 @@ class ScriptedGitRunner:
     fetch_brings: set[str] = field(default_factory=set)
     diff_files: list[str] = field(default_factory=list)
     rev_list_oids: list[str] = field(default_factory=list)
+    # Keyed by the exact `(base, head)` args a call should fail for (e.g. a
+    # commits-behind lookup against a build commit unknown locally) — every
+    # other `(base, head)` pair still returns `rev_list_oids` normally, so a
+    # test can script one `rev_list` call to fail without breaking reconcile's
+    # own `(base_oid, head_oid)` call in the same run.
+    rev_list_errors: dict[tuple[str, str], VizError] = field(default_factory=dict)
     # Snapshot seam (slice 3): the tar bytes every `archive_tar(oid)` call returns.
     archive_tar_bytes: bytes = b""
     calls: list[tuple[str, ...]] = field(default_factory=list)
@@ -65,6 +72,9 @@ class ScriptedGitRunner:
 
     def rev_list(self, base: str, head: str) -> list[str]:
         self.calls.append(("rev_list", base, head))
+        error = self.rev_list_errors.get((base, head))
+        if error is not None:
+            raise error
         return list(self.rev_list_oids)
 
     def archive_tar(self, oid: str) -> bytes:

@@ -121,17 +121,37 @@ class Fingerprints:
 
 
 @dataclass(frozen=True)
+class StaleGraph:
+    """The visible staleness label for an explicitly-accepted stale graph (spec §6.2).
+
+    Present on `RenderConfig.stale_graph` only when the caller opted into the
+    labeled-stale centrality path (`viz pr --allow-stale-graph`) and the
+    graphify build actually was stale — never a marker with no stale graph
+    behind it. `commits_behind` is `None` when the count itself could not be
+    computed (e.g. the build commit is unknown locally) — a soft failure of
+    the count, not of the build.
+    """
+
+    built_at_commit: str
+    commits_behind: int | None
+
+
+@dataclass(frozen=True)
 class RenderConfig:
     """Slider/legend render hints for the cross-axis heat mix (spec §4.5/§6.2).
 
     `default_weights` seeds each weight slider's starting position;
     `unavailable_axes` disables the slider(s) whose axis could not be computed
     (e.g. a stale/absent graphify build) — never silently reporting a stale
-    value as current (spec §6.2).
+    value as current (spec §6.2). `stale_graph` is set only when the
+    load-bearing axis was computed from an explicitly-accepted stale graph
+    (spec §6.2's labeled-stale path); a fresh or unavailable axis never
+    carries one.
     """
 
     default_weights: dict[str, float]
     unavailable_axes: tuple[str, ...] = ()
+    stale_graph: StaleGraph | None = None
 
 
 @dataclass(frozen=True)
@@ -185,10 +205,16 @@ def _fingerprints_to_json(fingerprints: Fingerprints) -> dict[str, JsonValue]:
 
 
 def _render_config_to_json(render_config: RenderConfig) -> dict[str, JsonValue]:
-    return {
+    payload: dict[str, JsonValue] = {
         "default_weights": dict(render_config.default_weights),
         "unavailable_axes": list(render_config.unavailable_axes),
     }
+    if render_config.stale_graph is not None:
+        payload["stale_graph"] = {
+            "built_at_commit": render_config.stale_graph.built_at_commit,
+            "commits_behind": render_config.stale_graph.commits_behind,
+        }
+    return payload
 
 
 def scene_to_json(scene: Scene) -> dict[str, JsonValue]:

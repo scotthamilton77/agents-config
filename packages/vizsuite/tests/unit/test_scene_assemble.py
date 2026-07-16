@@ -13,7 +13,7 @@ serialized shape so a later slice (.2.2/.2.3) never breaks the contract.
 from __future__ import annotations
 
 from vizsuite.scene.assemble import assemble
-from vizsuite.scene.model import AttributeDescriptor, Edge, RenderConfig, scene_to_json
+from vizsuite.scene.model import AttributeDescriptor, Edge, RenderConfig, StaleGraph, scene_to_json
 
 _ESTATE = {"src/a.py": "sha_a", "src/b.py": "sha_b"}
 
@@ -211,6 +211,72 @@ def test_edges_thread_through_assemble_and_serialize_sorted_and_deterministicall
         edges=edges,
     )
     assert scene_to_json(scene_b)["edges"] == payload["edges"]
+
+
+def test_render_config_stale_graph_serializes_only_when_present():
+    render_config = RenderConfig(
+        default_weights={"complexity": 0.4, "load_bearing": 0.35, "consequence": 0.25},
+        stale_graph=StaleGraph(built_at_commit="deadbeef123", commits_behind=4),
+    )
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        render_config=render_config,
+    )
+
+    payload = scene_to_json(scene)
+    render_config_json = payload["render_config"]
+    assert isinstance(render_config_json, dict)
+    assert render_config_json["stale_graph"] == {
+        "built_at_commit": "deadbeef123",
+        "commits_behind": 4,
+    }
+
+
+def test_render_config_stale_graph_commits_behind_none_serializes_as_null():
+    render_config = RenderConfig(
+        default_weights={},
+        stale_graph=StaleGraph(built_at_commit="deadbeef123", commits_behind=None),
+    )
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        render_config=render_config,
+    )
+
+    payload = scene_to_json(scene)
+    render_config_json = payload["render_config"]
+    assert isinstance(render_config_json, dict)
+    stale_graph_json = render_config_json["stale_graph"]
+    assert isinstance(stale_graph_json, dict)
+    assert stale_graph_json["commits_behind"] is None
+
+
+def test_render_config_stale_graph_key_absent_when_fresh():
+    # Fresh (no `stale_graph`) render configs never carry the key at all — not
+    # even as a null — so a consumer can key its badge purely off presence.
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        render_config=RenderConfig(default_weights={}),
+    )
+
+    payload = scene_to_json(scene)
+    render_config_json = payload["render_config"]
+    assert isinstance(render_config_json, dict)
+    assert "stale_graph" not in render_config_json
 
 
 def test_render_config_and_repo_nwo_default_when_omitted():

@@ -15,6 +15,13 @@ graphify is an optional dependency: an absent `graphify-out/`, a stale build
 (`built_at_commit != head_oid`), unparseable/torn JSON, or valid JSON of the
 wrong shape (non-object payload, malformed nodes/links) all fail soft to
 `CentralityAxis.unavailable(...)` — never a crash, never stale-as-fresh.
+
+A caller may opt in to a labeled-stale path (`allow_stale=True`, spec §6.2):
+a graph whose `built_at_commit` differs from `head_oid` is scored exactly like
+a fresh one, with `CentralityAxis.stale_built_at_commit` set to the graph's own
+build commit so the caller can render a visible staleness label. The opt-in
+only bypasses the commit-identity check — an absent/unreadable/malformed graph
+still fails soft to unavailable regardless of the flag.
 """
 
 from __future__ import annotations
@@ -42,11 +49,17 @@ class CentralityAxis:
     `edges` is the same file-level `DiGraph`'s EXTRACTED, intra-file-excluded
     edge list the scores were derived from (one graph build, kept together);
     it is empty whenever the axis is unavailable — never a stale edge set.
+    `stale_built_at_commit` is the graph's own build commit exactly when the
+    caller opted into the labeled-stale path (`allow_stale=True`) and the
+    graph's `built_at_commit` differed from the target revision; it is `None`
+    for a fresh graph or an unavailable axis — never a marker with no graph
+    behind it.
     """
 
     scores: dict[str, float] | None
     unavailable_reason: str | None = None
     edges: tuple[tuple[str, str], ...] = ()
+    stale_built_at_commit: str | None = None
 
     @property
     def is_available(self) -> bool:
@@ -58,7 +71,10 @@ class CentralityAxis:
 
     @staticmethod
     def from_indegree(
-        indegree: dict[str, int], edges: tuple[tuple[str, str], ...] = ()
+        indegree: dict[str, int],
+        edges: tuple[tuple[str, str], ...] = (),
+        *,
+        stale_built_at_commit: str | None = None,
     ) -> CentralityAxis:
         """Normalize raw file-level in-degree counts to a 0-1 axis."""
         max_degree = max(indegree.values(), default=0)
@@ -66,14 +82,24 @@ class CentralityAxis:
             path: (degree / max_degree if max_degree > 0 else 0.0)
             for path, degree in indegree.items()
         }
-        return CentralityAxis(scores=scores, edges=edges)
+        return CentralityAxis(
+            scores=scores, edges=edges, stale_built_at_commit=stale_built_at_commit
+        )
 
 
-def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
+def centrality_axis(
+    graph_path: Path, head_oid: str, *, allow_stale: bool = False
+) -> CentralityAxis:
     """Load-bearing axis from graphify. Tier-1 determinism: `EXTRACTED` edges
     only (`INFERRED` graph edges are Tier-2, out of scope for `.2.1`). Intra-file
     edges are dropped; projected post-PR centrality via the head-graph preflight
     (no overlay — a head-built graph already contains new code's edges).
+
+    `allow_stale=True` (spec §6.2 explicit opt-in) accepts a graph whose
+    `built_at_commit` differs from `head_oid`, scoring it exactly like a fresh
+    graph but stamping `stale_built_at_commit` with the graph's own build
+    commit. The opt-in never bypasses the parse guards below it: an absent,
+    unreadable, or wrong-shape graph is unavailable either way.
     """
     if not graph_path.exists():
         return CentralityAxis.unavailable("graphify-out absent")  # optional dep, fail soft
@@ -83,7 +109,17 @@ def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
         return CentralityAxis.unavailable("graph.json unreadable (torn mid-write?)")  # fail soft
     if not isinstance(raw, dict):
         return CentralityAxis.unavailable("graph.json malformed (not a JSON object)")
-    if raw.get("built_at_commit") != head_oid:
+
+    built_at_commit = raw.get("built_at_commit")
+    is_stale = built_at_commit != head_oid
+    # A stale graph is only ever accepted when the caller opted in AND the
+    # build-commit marker itself is a real, non-empty string — a graph missing
+    # that marker entirely has nothing trustworthy to label as stale, so it
+    # stays on the loud unavailable path even with the opt-in on.
+    accepted_stale = bool(
+        is_stale and allow_stale and isinstance(built_at_commit, str) and built_at_commit
+    )
+    if is_stale and not accepted_stale:
         return CentralityAxis.unavailable("graph build-commit != PR head")  # never stale-as-fresh
 
     # The whole rollup + graph build is one fail-soft boundary: graphify's JSON
@@ -116,4 +152,8 @@ def centrality_axis(graph_path: Path, head_oid: str) -> CentralityAxis:
     # Ordering is left to the downstream `scene_to_json` sort — no need to
     # sort twice.
     edges = tuple(graph.edges())
-    return CentralityAxis.from_indegree(dict(graph.in_degree()), edges=edges)
+    return CentralityAxis.from_indegree(
+        dict(graph.in_degree()),
+        edges=edges,
+        stale_built_at_commit=built_at_commit if accepted_stale else None,
+    )

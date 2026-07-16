@@ -11,7 +11,16 @@ from __future__ import annotations
 
 import json
 
-from vizsuite.scene.model import Fact, FileNode, Fingerprints, Provenance, ProvenanceKind, Scene
+from vizsuite.scene.model import (
+    Fact,
+    FileNode,
+    Fingerprints,
+    Provenance,
+    ProvenanceKind,
+    RenderConfig,
+    Scene,
+    StaleGraph,
+)
 from vizsuite.templates.html import _fill_template, render_html, scene_to_script_json
 
 _SCENE_OPEN = '<script id="viz-scene" type="application/json">'
@@ -23,7 +32,11 @@ _HOSTILE_STRINGS = (
 )
 
 
-def _scene(*files: FileNode, facts: tuple[Fact, ...] = ()) -> Scene:
+def _scene(
+    *files: FileNode,
+    facts: tuple[Fact, ...] = (),
+    render_config: RenderConfig | None = None,
+) -> Scene:
     return Scene(
         schema_version="1",
         generated_at="2020-01-01T00:00:00+00:00",
@@ -32,6 +45,9 @@ def _scene(*files: FileNode, facts: tuple[Fact, ...] = ()) -> Scene:
         files=tuple(files),
         fingerprints=Fingerprints(base_oid="base000", head_oid="head111"),
         facts=facts,
+        render_config=render_config
+        if render_config is not None
+        else RenderConfig(default_weights={}),
     )
 
 
@@ -202,6 +218,35 @@ def test_render_inlines_constellation_view_bundle_and_playwright_hooks():
     # the accessible name never flips with state) is the exact wording the
     # spec's "gated concretely" section names verbatim.
     assert "Show dependency constellation (experimental)" in html
+
+
+def test_stale_graph_badge_hook_is_inlined_and_scene_data_is_conditional():
+    # F1 (spec §6.2 labeled-stale opt-in): the badge's stable playwright hook
+    # (spec §4.6) is JS source, so it is inlined regardless of scene content —
+    # same convention as every other conditionally-rendered feature's id
+    # (viz-drill-sonar-toggle, viz-constellation-toggle, ...). What actually
+    # varies with the scene is the embedded `render_config.stale_graph` data
+    # the badge logic reads at runtime to decide whether to render.
+    stale_scene = _scene(
+        FileNode(path="src/app.py", checksum="aaa"),
+        render_config=RenderConfig(
+            default_weights={"complexity": 0.4, "load_bearing": 0.35, "consequence": 0.25},
+            stale_graph=StaleGraph(built_at_commit="deadbeef123", commits_behind=4),
+        ),
+    )
+    html = render_html(stale_scene)
+
+    assert "viz-stale-graph-badge" in html
+
+    scene_data = json.loads(_inlined_scene_block(html))
+    assert scene_data["render_config"]["stale_graph"] == {
+        "built_at_commit": "deadbeef123",
+        "commits_behind": 4,
+    }
+
+    fresh_html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+    fresh_scene_data = json.loads(_inlined_scene_block(fresh_html))
+    assert "stale_graph" not in fresh_scene_data["render_config"]
 
 
 def test_hostile_strings_in_paths_and_fact_notes_render_inert():

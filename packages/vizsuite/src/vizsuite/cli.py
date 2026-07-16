@@ -47,6 +47,14 @@ class _EnvelopeArgumentParser(ArgumentParser):
 def _add_pr_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     pr_parser = subparsers.add_parser("pr", help="build the PR-shape HTML artifact")
     pr_parser.add_argument("number", type=int, metavar="N", help="the pull-request number")
+    pr_parser.add_argument(
+        "--allow-stale-graph",
+        action="store_true",
+        help=(
+            "accept a graphify graph whose build commit differs from the PR head, "
+            "labeling the load-bearing axis visibly stale instead of unavailable"
+        ),
+    )
 
 
 def _add_queue_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
