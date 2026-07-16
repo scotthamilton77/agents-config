@@ -620,8 +620,10 @@
       // Merge the persisted collapse/expand deltas and focus root over the
       // freshly-computed defaults (spec §6.1) — a path the current scene no
       // longer has (or that is no longer a directory) is pruned silently
-      // rather than applied.
+      // rather than applied, and the cleaned state is written back once so
+      // stale keys don't linger in storage until the next user interaction.
       var persisted = stateStore.load();
+      var prunedStale = false;
       if (persisted) {
         var delta =
           persisted.collapseDelta && typeof persisted.collapseDelta === "object"
@@ -630,6 +632,7 @@
         Object.keys(delta).forEach(function (path) {
           var node = pathIndex[path];
           if (!node || node.isFile) {
+            prunedStale = true;
             return;
           }
           if (delta[path]) {
@@ -642,8 +645,16 @@
           var focusNode = pathIndex[persisted.focusRoot];
           if (focusNode && !focusNode.isFile) {
             focusPath = persisted.focusRoot;
+          } else {
+            prunedStale = true;
           }
         }
+      }
+      if (prunedStale) {
+        // persistState is a hoisted declaration below; it recomputes the
+        // delta from the live (already-cleaned) maps, so this one write
+        // replaces the stored blob with exactly the surviving state.
+        persistState();
       }
 
       var heatScale = makeHeatColorScale();
