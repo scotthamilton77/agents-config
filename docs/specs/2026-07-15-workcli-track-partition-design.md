@@ -388,8 +388,8 @@ per-plan lanes, not the lane identity**. Contract-first discipline applies:
     with the package.
 13. `work triggers` reports `pressured-eligible` only when a pressure signal
     fires AND the total cross-track edge count (both directions, per §5) is
-    below threshold; organizing-only tracks never receive an extraction
-    status.
+    at or below the configured `max-cross-track-edges`; organizing-only
+    tracks never receive an extraction status.
 14. `work groom --status` reports nag-breached exactly when days-since-groomed
     exceeds the configured threshold.
 15. Immediately after `work groom --done`, `--status` reports not-breached and
