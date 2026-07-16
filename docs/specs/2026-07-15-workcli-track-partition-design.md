@@ -38,8 +38,11 @@ counts live rather than trusting them.)
 
 ## 2. Decision summary
 
-1. **Track dimension** — every non-closed, non-milestone bead carries exactly one
-   `track:<name>` label. The vocabulary is config-defined, not hardcoded.
+1. **Track dimension** — the target invariant is that every non-closed,
+   non-milestone bead carries exactly one `track:<name>` label, reached via
+   the `[tracks].enforcement` staged rollout (advisory permits untracked
+   creates flagged by lint, required enforces it — §4). The vocabulary is
+   config-defined, not hardcoded.
 2. **Interface in workcli, storage in bd** — `work` verbs enforce and speak track;
    underneath it is a plain bd label. Raw `bd` remains fully usable; rollback is
    a label delete.
