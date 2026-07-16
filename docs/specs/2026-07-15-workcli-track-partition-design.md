@@ -285,7 +285,9 @@ agents-config's initial values: cap 2, PORT exempt, 7-day nag.
 - **WIP cap:** at most `milestone-wip-cap` milestones `in_progress`
   concurrently, excluding `wip-exempt-milestones`. Advisory: `work lint`
   reports breaches; nothing blocks. (Adopted with M0 already narrowed-to-close.)
-- **Backlog Grooming cadence:** nag after `backlog-groom-nag-days`. A session:
+- **Backlog Grooming cadence:** nag when days since `backlog_last_groomed`
+  exceed `backlog-groom-nag-days` (strictly greater than: the nag first fires on
+  day `backlog-groom-nag-days + 1`). A session:
   triage new and deferred beads, confirm trigger declarations (`work
   triggers`), review the lint report, regenerate the landscape artifact,
   `work groom --done`.
@@ -408,7 +410,7 @@ per-plan lanes, not the lane identity**. Contract-first discipline applies:
     at or below the configured `max-cross-track-edges`; organizing-only
     tracks never receive an extraction status.
 14. `work groom --status` reports nag-breached exactly when days-since-groomed
-    exceeds the configured threshold.
+    `>` `backlog-groom-nag-days` (strict greater-than; equal is not breached).
 15. Immediately after `work groom --done`, `--status` reports not-breached and
     the whats-next surface shows no backlog-grooming nag line.
 16. Config resolution finds `project-config.toml` via upward search from a
