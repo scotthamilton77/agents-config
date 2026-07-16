@@ -602,15 +602,17 @@
       var pathIndex = Object.create(null);
       indexTreeByPath(tree, pathIndex);
 
-      var collapsed = Object.create(null);
-      collectDefaultCollapsed(tree, collapsed);
-
       // Cached once: the tree is fixed for the lifetime of this view, so the
       // default-collapsed set never changes — recomputing it via a full tree
       // walk on every persistState() call (i.e. every collapse/expand click)
-      // would be wasted work.
+      // would be wasted work. `collapsed` starts as a mutable copy of it.
       var defaultCollapsed = Object.create(null);
       collectDefaultCollapsed(tree, defaultCollapsed);
+
+      var collapsed = Object.create(null);
+      Object.keys(defaultCollapsed).forEach(function (path) {
+        collapsed[path] = true;
+      });
 
       var stateStore = makeTreemapStateStore(scene.repo_nwo);
       var focusPath = null;
