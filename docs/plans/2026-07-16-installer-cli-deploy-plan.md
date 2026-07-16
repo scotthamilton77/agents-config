@@ -1159,7 +1159,10 @@ The engine processes `CLI_PACKAGES` in registry order. Signals per spec §6: "sh
 
 from pathlib import Path
 
+import pytest
+
 from installer.core.clis import CliSpec, CommandResult, ScriptedCliDeploy
+from installer.core.consent import ConsentRequiredError
 from installer.core.io_port import ScriptedIO
 from installer.core.receipt import CliReceiptEntry, Receipt
 from installer.core.run import deploy_clis
@@ -2020,6 +2023,31 @@ def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
     assert outcome.counters["cli:workcli"].skipped == 1
     assert outcome.any_failed
     assert any(e.channel == "err" and "PATH" in e.message for e in io.transcript)
+
+
+def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
+    """
+    Given a freshly deployed CLI whose bin dir is not on PATH, on a
+    non-interactive session without --yes (and without --dry-run)
+    When the reachability invariant reaches its update-shell consent point
+    Then ConsentRequiredError raises (the caller maps it to exit 1) — the
+    reachability consent point honors the same no-TTY convention as every
+    other consent point, never silently returning a failure.
+
+    Pins spec §6 no-TTY / item 12 (reachability side; symmetric with the
+    prune side's test_prune_no_tty_without_yes_raises).
+    """
+    _pkg(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
+    )
+    with pytest.raises(ConsentRequiredError):
+        deploy_clis(
+            (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+            io=ScriptedIO(interactive=False), dry_run=False, auto_yes=False,
+        )
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -2050,9 +2078,13 @@ def _check_reachability(
         return False
     if bin_dir in resolved_dirs:
         return True
-    accepted = auto_yes or (
-        io.is_interactive()
-        and io.confirm(f"{bin_dir} is not on PATH — run `uv tool update-shell`?", default=False)
+    # Reachability is never evaluated under dry-run: deploy_clis gates this call
+    # with `if not dry_run and shim_present` (Task 6 loop), so dry_run is always
+    # False here — the literal below routes the no-TTY convention at this consent
+    # point (raises ConsentRequiredError iff non-interactive AND not --yes).
+    require_consent(io, dry_run=False, auto_yes=auto_yes)
+    accepted = auto_yes or io.confirm(
+        f"{bin_dir} is not on PATH — run `uv tool update-shell`?", default=False
     )
     if accepted:
         result = deploy.update_shell()
@@ -2065,7 +2097,7 @@ def _check_reachability(
     return False
 ```
 
-Note the decline path falls through to the final `io.err` + `False` — one message serves both decline and repair-failure, always naming the exact PATH line (spec §6).
+The consent point routes `require_consent` first, so a non-interactive run without `--yes`/`--dry-run` raises `ConsentRequiredError` here — the same no-TTY convention every other consent point honors (spec §6 item 12), which the caller maps to exit 1. Reachability is unreachable under dry-run (the `if not dry_run and shim_present` gate in `deploy_clis`), so the literal `dry_run=False` is exact, not a guess. Past that guard an *interactive* decline — or a repair failure after an accepting `--yes`/confirm — falls through to the final `io.err` + `False`, one message serving both decline and repair-failure, always naming the exact PATH line (spec §6).
 
 - [ ] **Step 4: Run tests to verify they pass**
 
