@@ -896,20 +896,25 @@ def test_empty_clis_hashes_identically_to_absent() -> None:
 
 def test_malformed_clis_entry_reads_corrupt(tmp_path: Path) -> None:
     """
-    Given a receipt whose clis entry has a non-string field
+    Given a receipt whose clis entry has a non-string digest, with integrity
+    restamped as a coercing (non-validating) reader would have computed it
     When read
-    Then status is CORRUPT (fail closed — a malformed entry must not drive
-    deploy/prune decisions).
+    Then status is CORRUPT (fail closed — only the clis type validation can
+    produce this, since the restamped integrity MATCHES the coerced value).
 
-    Pins spec §7 validation / item 11.
+    Pins spec §7 validation / item 11: the fail-closed type check in
+    _cli_entry_from_json — not a stale integrity — is what rejects the entry.
     """
     path = tmp_path / "install-receipt.json"
     write_receipt(path, Receipt(clis=(_ENTRY,)))
     raw = json.loads(path.read_text())
     raw["clis"][0]["digest"] = 42
-    # keep integrity in sync is impossible for the attacker without the
-    # canonical form of the mutated field; a stale integrity is exactly the
-    # CORRUPT trigger.
+    # Restamp integrity as a coercing (non-validating) reader would compute it:
+    # digest 42 coerced to "42" makes integrity MATCH, so the ONLY thing that
+    # can flag CORRUPT is the fail-closed type validation itself. (The coerced
+    # receipt mirrors the persisted one — default roots/entries, digest coerced.)
+    coerced = Receipt(clis=(CliReceiptEntry(name=_ENTRY.name, binary=_ENTRY.binary, digest="42"),))
+    raw["integrity"] = compute_integrity(coerced)
     path.write_text(json.dumps(raw))
     assert read_receipt(path).status is ReadStatus.CORRUPT
 ```
