@@ -271,46 +271,57 @@ import pytest
 from installer.core.clis import CommandResult, ScriptedCliDeploy
 
 
-def test_scripted_fake_pops_queues_and_records_transcript(tmp_path: Path) -> None:
+def test_scripted_fake_stable_reads_and_stateful_queues(tmp_path: Path) -> None:
     """
-    Given a ScriptedCliDeploy with pre-loaded answers
+    Given a ScriptedCliDeploy configured with stable query values and
+    mutation queues
     When port methods are called
-    Then each pops its queue in order and the transcript records
-    (method, key-arg) tuples for post-hoc assertion.
+    Then idempotent queries (uv_version/bin_dir/tool_list/which) return the
+    SAME configured value on every call (repeatable reads — tests never
+    count internal call sites for them), state-bearing calls
+    (shim_path/install/smoke/...) pop per-method queues, and the transcript
+    records (method, key-arg) tuples.
 
-    Pins spec §4: the fake mirrors ScriptedIO (queues + transcript).
+    Pins spec §4 fake contract (queue semantics reserved for calls whose
+    sequence matters — ralf plan-review cycle 1 M3).
     """
+    bin_dir = tmp_path / "bin"
     fake = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
-        shims=[tmp_path / "bin" / "work"],
-        tool_lists=[{"workcli": frozenset({"work"})}],
+        uv_version=(0, 10, 4),
+        bin_dir=bin_dir,
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": bin_dir / "work"},
+        shims=[bin_dir / "work"],
         installs=[CommandResult(ok=True, output="")],
         smokes=[CommandResult(ok=True, output="")],
-        whiches=[tmp_path / "bin" / "work"],
     )
     assert fake.uv_version() == (0, 10, 4)
-    assert fake.bin_dir() == tmp_path / "bin"
-    assert fake.shim_path("work") == tmp_path / "bin" / "work"
+    assert fake.uv_version() == (0, 10, 4)  # stable, not consumed
+    assert fake.bin_dir() == bin_dir
+    assert fake.bin_dir() == bin_dir  # stable, not consumed
     assert fake.tool_list() == {"workcli": frozenset({"work"})}
+    assert fake.which("work") == bin_dir / "work"
+    assert fake.which("unknown") is None  # missing key -> not on PATH
+    assert fake.shim_path("work") == bin_dir / "work"
     assert fake.tool_install(tmp_path / "pkg", force=False).ok
-    assert fake.smoke(tmp_path / "bin" / "work", ("--protocol-version",)).ok
-    assert fake.which("work") == tmp_path / "bin" / "work"
+    assert fake.smoke(bin_dir / "work", ("--protocol-version",)).ok
     assert ("tool_install", str(tmp_path / "pkg"), False) in fake.transcript
-    assert ("smoke", str(tmp_path / "bin" / "work")) in fake.transcript
+    assert ("smoke", str(bin_dir / "work")) in fake.transcript
 
 
 def test_scripted_fake_exhaustion_is_loud(tmp_path: Path) -> None:
     """
-    Given a fake with an empty installs queue
-    When tool_install is called
-    Then it raises with a message naming the exhausted queue.
+    Given a fake with an empty installs queue (and an empty shims queue)
+    When tool_install / shim_path are called
+    Then each raises with a message naming the exhausted queue.
 
     Pins spec §4: exhaustion-error self-diagnosis mirrors ScriptedIO.
     """
     fake = ScriptedCliDeploy()
     with pytest.raises(RuntimeError, match="installs"):
         fake.tool_install(tmp_path / "pkg", force=True)
+    with pytest.raises(RuntimeError, match="shims"):
+        fake.shim_path("work")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -341,78 +352,100 @@ class CliDeployPort(Protocol):
 
 
 class ScriptedCliDeploy:
-    """Test fake: per-method answer queues + a transcript of
-    ``(method, *key-args)`` tuples. A pop on an empty queue raises with the
-    queue's name (self-diagnosing, mirroring ScriptedIO)."""
+    """Test fake for CliDeployPort.
+
+    Idempotent queries (uv_version / bin_dir / tool_list / which) return
+    STABLE configured values — they model repeatable reads, so tests never
+    have to count the engine's internal call sites for them. State-bearing
+    calls (shim_path, whose answer legitimately changes across an install;
+    tool_install / tool_uninstall / update_shell / smoke) pop per-method
+    queues; a pop on an empty queue raises naming the queue
+    (self-diagnosing, mirroring ScriptedIO). shim_path queue budget per
+    CLI: one decision read, plus one post-install re-read only when a
+    tool_install succeeded."""
 
     def __init__(
         self,
         *,
-        uv_versions: list[tuple[int, ...] | None] | None = None,
-        bin_dirs: list[Path] | None = None,
+        uv_version: tuple[int, ...] | None = None,
+        bin_dir: Path | None = None,
+        tool_list: Mapping[str, frozenset[str]] | None = None,
+        which_map: Mapping[str, Path | None] | None = None,
         shims: list[Path | None] | None = None,
-        tool_lists: list[Mapping[str, frozenset[str]] | None] | None = None,
         installs: list[CommandResult] | None = None,
         uninstalls: list[CommandResult] | None = None,
         update_shells: list[CommandResult] | None = None,
-        whiches: list[Path | None] | None = None,
         smokes: list[CommandResult] | None = None,
     ) -> None:
-        self._uv_versions = list(uv_versions or [])
-        self._bin_dirs = list(bin_dirs or [])
+        self._uv_version = uv_version
+        self._bin_dir = bin_dir
+        self._tool_list = tool_list
+        self._which_map = dict(which_map or {})
         self._shims = list(shims or [])
-        self._tool_lists = list(tool_lists or [])
         self._installs = list(installs or [])
         self._uninstalls = list(uninstalls or [])
         self._update_shells = list(update_shells or [])
-        self._whiches = list(whiches or [])
         self._smokes = list(smokes or [])
-        self.transcript: list[tuple[str, ...]] = []
+        self.transcript: list[tuple[object, ...]] = []
 
-    def _pop(self, queue: list, name: str):  # type: ignore[no-untyped-def]
-        if not queue:
-            msg = f"ScriptedCliDeploy {name} queue exhausted"
-            raise RuntimeError(msg)
-        return queue.pop(0)
+    # -- idempotent queries: stable values --
 
     def uv_version(self) -> tuple[int, ...] | None:
         self.transcript.append(("uv_version",))
-        return self._pop(self._uv_versions, "uv_versions")  # type: ignore[no-any-return]
+        return self._uv_version
 
     def bin_dir(self) -> Path:
         self.transcript.append(("bin_dir",))
-        return self._pop(self._bin_dirs, "bin_dirs")  # type: ignore[no-any-return]
-
-    def shim_path(self, binary: str) -> Path | None:
-        self.transcript.append(("shim_path", binary))
-        return self._pop(self._shims, "shims")  # type: ignore[no-any-return]
+        if self._bin_dir is None:
+            msg = "ScriptedCliDeploy bin_dir not configured"
+            raise RuntimeError(msg)
+        return self._bin_dir
 
     def tool_list(self) -> Mapping[str, frozenset[str]] | None:
         self.transcript.append(("tool_list",))
-        return self._pop(self._tool_lists, "tool_lists")  # type: ignore[no-any-return]
-
-    def tool_install(self, package_dir: Path, *, force: bool) -> CommandResult:
-        self.transcript.append(("tool_install", str(package_dir), force))
-        return self._pop(self._installs, "installs")  # type: ignore[no-any-return]
-
-    def tool_uninstall(self, name: str) -> CommandResult:
-        self.transcript.append(("tool_uninstall", name))
-        return self._pop(self._uninstalls, "uninstalls")  # type: ignore[no-any-return]
-
-    def update_shell(self) -> CommandResult:
-        self.transcript.append(("update_shell",))
-        return self._pop(self._update_shells, "update_shells")  # type: ignore[no-any-return]
+        return self._tool_list
 
     def which(self, binary: str) -> Path | None:
         self.transcript.append(("which", binary))
-        return self._pop(self._whiches, "whiches")  # type: ignore[no-any-return]
+        return self._which_map.get(binary)
+
+    # -- state-bearing calls: queues --
+
+    def shim_path(self, binary: str) -> Path | None:
+        self.transcript.append(("shim_path", binary))
+        if not self._shims:
+            msg = "ScriptedCliDeploy shims queue exhausted"
+            raise RuntimeError(msg)
+        return self._shims.pop(0)
+
+    def tool_install(self, package_dir: Path, *, force: bool) -> CommandResult:
+        self.transcript.append(("tool_install", str(package_dir), force))
+        if not self._installs:
+            msg = "ScriptedCliDeploy installs queue exhausted"
+            raise RuntimeError(msg)
+        return self._installs.pop(0)
+
+    def tool_uninstall(self, name: str) -> CommandResult:
+        self.transcript.append(("tool_uninstall", name))
+        if not self._uninstalls:
+            msg = "ScriptedCliDeploy uninstalls queue exhausted"
+            raise RuntimeError(msg)
+        return self._uninstalls.pop(0)
+
+    def update_shell(self) -> CommandResult:
+        self.transcript.append(("update_shell",))
+        if not self._update_shells:
+            msg = "ScriptedCliDeploy update_shells queue exhausted"
+            raise RuntimeError(msg)
+        return self._update_shells.pop(0)
 
     def smoke(self, shim: Path, args: tuple[str, ...]) -> CommandResult:
         self.transcript.append(("smoke", str(shim)))
-        return self._pop(self._smokes, "smokes")  # type: ignore[no-any-return]
+        if not self._smokes:
+            msg = "ScriptedCliDeploy smokes queue exhausted"
+            raise RuntimeError(msg)
+        return self._smokes.pop(0)
 ```
-
-Note for the implementer: if mypy strict rejects the `_pop` helper's untyped signature even with the ignore, inline typed pops per method (`if not self._installs: raise ...; return self._installs.pop(0)`) — ScriptedIO uses that per-method form; matching it is the safe fallback.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -579,6 +612,33 @@ def test_subprocess_failures_map_to_not_ok(monkeypatch: pytest.MonkeyPatch, tmp_
     )
     result = port.tool_uninstall("workcli")
     assert not result.ok and "boom" in result.output
+
+
+def test_update_shell_already_configured_counts_as_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Given `uv tool update-shell` exiting non-zero because the shell config
+    already contains the PATH entry
+    When update_shell() runs
+    Then the result is ok=True (expected steady state — repeat installs
+    from an un-restarted shell stay green); a genuinely different failure
+    stays ok=False.
+
+    Pins spec §6 already-configured classification / item 20 (real-impl
+    branch; the stage-level behavior is driven through the fake in Task 9).
+    """
+    port = UvCliDeploy()
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted(returncode=1, stderr="PATH entry already exists"),
+    )
+    assert port.update_shell().ok
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: _FakeCompleted(returncode=1, stderr="permission denied")
+    )
+    assert not port.update_shell().ok
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -698,7 +758,7 @@ Implementer note: verify the exact `uv export` flag spelling against `uv export 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd packages/installer && uv run pytest tests/unit/test_clis_port.py -v`
-Expected: 7 PASS
+Expected: 8 PASS
 
 - [ ] **Step 5: Run lint/type gates early (this module has the trickiest types)**
 
@@ -1073,17 +1133,18 @@ def test_verify_skip_smokes_and_skips(tmp_path: Path) -> None:
     Then no install fires, the smoke ran against the absolute shim path,
     and the counter is skipped.
 
-    Pins spec §6 verify row / item 1.
+    Pins spec §6 verify row / item 1. Shim budget: 1 (decision read only —
+    no install happened).
     """
     prior = _prior_with_current_digest(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": shim},
         shims=[shim],
-        tool_lists=[{"workcli": frozenset({"work"})}],
         smokes=[_OK],
-        whiches=[shim],
     )
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=prior, deploy=deploy,
@@ -1103,18 +1164,19 @@ def test_verify_smoke_failure_heals_with_force(tmp_path: Path) -> None:
     Then a force=True reinstall fires without a consent prompt, then
     re-smokes; the entry is refreshed.
 
-    Pins spec §6 verify row heal-on-fail / item 1.
+    Pins spec §6 verify row heal-on-fail / item 1. Shim budget: 2 (decision
+    + post-install re-read after the successful heal install).
     """
     prior = _prior_with_current_digest(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
-        shims=[shim, shim],  # decision read + post-install re-read
-        tool_lists=[{"workcli": frozenset({"work"})}],
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": shim},
+        shims=[shim, shim],
         smokes=[CommandResult(ok=False, output="boom"), _OK],
         installs=[_OK],
-        whiches=[shim],
     )
     io = ScriptedIO()
     outcome = deploy_clis(
@@ -1129,24 +1191,24 @@ def test_verify_smoke_failure_heals_with_force(tmp_path: Path) -> None:
 
 def test_heal_missing_shim_reinstalls_without_prompt(tmp_path: Path) -> None:
     """
-    Given a receipt entry, shim missing, provenance showing our env provides
-    the binary... or env absent entirely
+    Given a receipt entry, shim missing, env absent entirely
     When deploy_clis runs
     Then it reinstalls without a prompt (created counter) — env absent uses
     force=False.
 
     Pins spec §6 heal row + provenance-absent exception / items 3, 19.
+    Shim budget: 2 (decision None + post-install re-read).
     """
     prior = _prior_with_current_digest(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={},  # env absent entirely -> non-forcing heal
+        which_map={"work": shim},
         shims=[None, shim],
-        tool_lists=[{}],  # env absent entirely -> non-forcing heal
         installs=[_OK],
         smokes=[_OK],
-        whiches=[shim],
     )
     io = ScriptedIO()
     outcome = deploy_clis(
@@ -1165,18 +1227,18 @@ def test_fresh_install_no_evidence_no_prompt(tmp_path: Path) -> None:
     Then a force=False install fires with no prompt; created counter; entry
     recorded after smoke.
 
-    Pins spec §6 fresh row / items 2, 18.
+    Pins spec §6 fresh row / items 2, 18. Shim budget: 2.
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={},
+        which_map={"work": shim},
         shims=[None, shim],
-        tool_lists=[{}],
         installs=[_OK],
         smokes=[_OK],
-        whiches=[shim],
     )
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
@@ -1194,7 +1256,7 @@ Expected: FAIL with `ImportError: cannot import name 'deploy_clis'`
 
 - [ ] **Step 3: Implement the engine skeleton in `run.py`**
 
-Add imports: `from installer.core.clis import CliDeployPort, CliSpec, MIN_UV_VERSION, RETIRED_CLIS, cli_source_digest` and `from installer.core.consent import ConsentRequiredError, require_consent` and extend the receipt import with `CliReceiptEntry`.
+Add imports: `from installer.core.clis import CliDeployPort, CliSpec, MIN_UV_VERSION, cli_source_digest` and `from installer.core.consent import require_consent`; extend the receipt import with `CliReceiptEntry`; add `Mapping` to the existing `TYPE_CHECKING` import from `collections.abc` (it currently imports only `Iterable` — without this mypy fails on `_deploy_one`'s annotation). `RETIRED_CLIS` is NOT imported here — `prune_clis` takes `retired` as a parameter; the constant is consumed only in `cli.py` (Task 11).
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -1244,13 +1306,16 @@ def deploy_clis(
         target = f"cli:{spec.name}"
         counters[target] = Counters()
         package_dir = repo_root / spec.package_dir
-        failed = _deploy_one(
+        failed, shim_present = _deploy_one(
             spec, package_dir=package_dir, prior_entry=prior_by_name.get(spec.name),
             tools=tools, deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
             deployed=deployed, c=counters[target],
         )
         any_failed = any_failed or failed
-        if not dry_run and deploy.shim_path(spec.binary) is not None:
+        # Reachability gate reuses the decision/install outcome — it never
+        # re-reads shim_path, keeping the fake's queue budget deterministic
+        # (1 decision read + 1 re-read per successful install).
+        if not dry_run and shim_present:
             ok = _check_reachability(
                 spec.binary, deploy=deploy, io=io, auto_yes=auto_yes,
                 resolved_dirs=reach_ok_dirs,
@@ -1259,7 +1324,14 @@ def deploy_clis(
     return CliDeployOutcome(deployed=deployed, counters=counters, any_failed=any_failed)
 ```
 
-`_deploy_one` (same module) implements the decision table for one CLI. Complete code:
+`_deploy_one` (same module) implements the decision table for one CLI.
+Return contract, shared by the helpers: every action function returns
+`(failed, installed)`; `_deploy_one` returns
+`(failed, shim_present_at_end)` where `shim_present_at_end = (decision
+shim was present) or installed` — the reachability gate consumes it, so
+`shim_path` is read exactly once at decision time plus once inside
+`_finish_install` after a successful install, never a third time. Complete
+code:
 
 ```python
 def _deploy_one(
@@ -1274,8 +1346,11 @@ def _deploy_one(
     auto_yes: bool,
     deployed: dict[str, CliReceiptEntry],
     c: Counters,
-) -> bool:
-    """Run the §6 decision table for one CLI. Returns True on failure."""
+) -> tuple[bool, bool]:
+    """Run the §6 decision table for one CLI.
+
+    Returns (failed, shim_present_at_end); the caller's reachability gate
+    keys off the second element instead of re-reading shim_path."""
     digest = cli_source_digest(package_dir)
     shim = deploy.shim_path(spec.binary)
     env_present = tools is not None and spec.name in tools
@@ -1283,6 +1358,9 @@ def _deploy_one(
     # binary. Unproven (tools is None) is never provenance (spec §6).
     provenance = tools is not None and spec.binary in tools.get(spec.name, frozenset())
     evidence = shim is not None or env_present or tools is None
+
+    def _done(failed: bool, installed: bool) -> tuple[bool, bool]:
+        return failed, (shim is not None) or installed
 
     if prior_entry is not None:
         if provenance or (tools is not None and not env_present and shim is None):
@@ -1292,93 +1370,94 @@ def _deploy_one(
                 if dry_run:
                     io.info(f"cli:{spec.name}: would skip (up to date)")
                     c.skipped += 1
-                    return False
+                    return _done(False, False)
                 smoke = deploy.smoke(shim, spec.smoke_args)
                 if smoke.ok:
                     c.skipped += 1
-                    return False
+                    return _done(False, False)
                 io.warn(f"cli:{spec.name}: installed copy fails smoke; healing\n{smoke.output}")
-                return _install(
+                return _done(*_install(
                     spec, package_dir, digest, force=True, deploy=deploy, io=io,
-                    dry_run=dry_run, deployed=deployed, c=c, counter_attr="created",
-                )
+                    deployed=deployed, c=c, counter_attr="created",
+                ))
             if shim is None:
                 # Heal. force only when our env is provably still there.
                 if dry_run:
                     io.info(f"cli:{spec.name}: would reinstall (shim missing)")
-                    return False
-                return _install(
+                    return _done(False, False)
+                return _done(*_install(
                     spec, package_dir, digest, force=provenance, deploy=deploy, io=io,
-                    dry_run=dry_run, deployed=deployed, c=c, counter_attr="created",
-                )
+                    deployed=deployed, c=c, counter_attr="created",
+                ))
             # shim present, digest differs -> upgrade (consent).
-            return _consented_install(
+            return _done(*_consented_install(
                 spec, package_dir, digest, prompt=f"Upgrade CLI '{spec.binary}' "
                 f"({spec.name})?", deploy=deploy, io=io, dry_run=dry_run,
                 auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
                 would="would upgrade",
-            )
+            ))
         # Receipt present but provenance mismatch (foreign env/shim) ->
         # takeover consent (spec §6 provenance precondition / item 19).
-        return _consented_install(
+        return _done(*_consented_install(
             spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
             f"(not provably {spec.name}'s)?", deploy=deploy, io=io, dry_run=dry_run,
             auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
             would="would take over",
-        )
+        ))
 
     if not evidence:
         # Fresh: non-forcing; an already-exists failure re-routes to
         # takeover consent (spec §6 fresh row / item 18).
         if dry_run:
             io.info(f"cli:{spec.name}: would install")
-            return False
+            return _done(False, False)
         result = deploy.tool_install(package_dir, force=False)
         if result.ok:
-            return _finish_install(spec, digest, deploy=deploy, io=io, deployed=deployed,
-                                   c=c, counter_attr="created")
+            return _done(*_finish_install(spec, digest, deploy=deploy, io=io,
+                                          deployed=deployed, c=c, counter_attr="created"))
         io.warn(f"cli:{spec.name}: install found existing state; asking to take over")
-        return _consented_install(
+        return _done(*_consented_install(
             spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}'?",
             deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
             deployed=deployed, c=c, counter_attr="updated", would="would take over",
-        )
-    return _consented_install(
+        ))
+    return _done(*_consented_install(
         spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
         f"(manual install detected)?", deploy=deploy, io=io, dry_run=dry_run,
         auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
         would="would take over",
-    )
+    ))
 ```
 
-Shared helpers (same module — complete code):
+Shared helpers (same module — complete code; each returns
+`(failed, installed)`):
 
 ```python
 def _consented_install(
     spec: CliSpec, package_dir: Path, digest: str, *, prompt: str,
     deploy: CliDeployPort, io: IOPort, dry_run: bool, auto_yes: bool,
     deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str, would: str,
-) -> bool:
+) -> tuple[bool, bool]:
     if dry_run:
         io.info(f"cli:{spec.name}: {would}")
-        return False
+        return False, False
     require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
     if not auto_yes and not io.confirm(prompt, default=False):
         c.skipped += 1
-        return False
+        return False, False
     return _install(spec, package_dir, digest, force=True, deploy=deploy, io=io,
-                    dry_run=dry_run, deployed=deployed, c=c, counter_attr=counter_attr)
+                    deployed=deployed, c=c, counter_attr=counter_attr)
 
 
 def _install(
     spec: CliSpec, package_dir: Path, digest: str, *, force: bool,
-    deploy: CliDeployPort, io: IOPort, dry_run: bool,
+    deploy: CliDeployPort, io: IOPort,
     deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
-) -> bool:
+) -> tuple[bool, bool]:
     result = deploy.tool_install(package_dir, force=force)
     if not result.ok:
         io.err(f"cli:{spec.name}: install failed\n{result.output}")
-        return True
+        return True, False
     return _finish_install(spec, digest, deploy=deploy, io=io, deployed=deployed,
                            c=c, counter_attr=counter_attr)
 
@@ -1386,19 +1465,22 @@ def _install(
 def _finish_install(
     spec: CliSpec, digest: str, *, deploy: CliDeployPort, io: IOPort,
     deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
-) -> bool:
+) -> tuple[bool, bool]:
     shim = deploy.shim_path(spec.binary)
     if shim is None:
         io.err(f"cli:{spec.name}: install reported ok but produced no shim")
-        return True
+        return True, False
     smoke = deploy.smoke(shim, spec.smoke_args)
     if not smoke.ok:
         io.err(f"cli:{spec.name}: smoke failed\n{smoke.output}")
-        return True
+        # The shim exists on disk, but the deploy FAILED — installed=False
+        # keeps the reachability gate off this CLI; the failure is already
+        # the run's signal.
+        return True, False
     deployed[spec.name] = CliReceiptEntry(name=spec.name, binary=spec.binary, digest=digest)
     setattr(c, counter_attr, getattr(c, counter_attr) + 1)
     io.ok(f"cli:{spec.name}: deployed '{spec.binary}'")
-    return False
+    return False, True
 ```
 
 `_check_reachability` is stubbed in this task (Task 9 completes it) as:
@@ -1440,24 +1522,21 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
     Then accept -> force install + updated counter; decline -> skipped and
     no install.
 
-    Pins spec §6 upgrade row / item 4.
+    Pins spec §6 upgrade row / item 4. Shim budgets: accept 2, decline 1.
     """
     pkg = _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
     prior = Receipt(clis=(CliReceiptEntry(name="workcli", binary="work", digest="sha256:stale"),))
 
-    def _deploy() -> ScriptedCliDeploy:
-        return ScriptedCliDeploy(
-            uv_versions=[(0, 10, 4)],
-            bin_dirs=[tmp_path / "bin"],
-            shims=[shim, shim],
-            tool_lists=[{"workcli": frozenset({"work"})}],
-            installs=[_OK],
-            smokes=[_OK],
-            whiches=[shim],
-        )
-
-    accept = _deploy()
+    accept = ScriptedCliDeploy(
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": shim},
+        shims=[shim, shim],
+        installs=[_OK],
+        smokes=[_OK],
+    )
     io = ScriptedIO(confirms=[True])
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=prior, deploy=accept,
@@ -1467,8 +1546,9 @@ def test_upgrade_consent_accept_and_decline(tmp_path: Path) -> None:
     assert ("tool_install", str(pkg), True) in accept.transcript
 
     decline = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"], shims=[shim],
-        tool_lists=[{"workcli": frozenset({"work"})}], whiches=[shim],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})}, which_map={"work": shim},
+        shims=[shim],
     )
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=prior, deploy=decline,
@@ -1485,18 +1565,20 @@ def test_takeover_triggers_all_three_evidence_forms(tmp_path: Path) -> None:
     When deploy_clis runs with declining confirms
     Then each form prompts for takeover and no install fires on decline.
 
-    Pins spec §6 takeover row / item 5.
+    Pins spec §6 takeover row / item 5. Case (a) leaves the shim present,
+    so the reachability gate runs — which_map keeps it green; cases (b)/(c)
+    end shimless, no gate.
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
-    cases = [
-        {"shims": [shim], "tool_lists": [{}]},
-        {"shims": [None], "tool_lists": [{"workcli": frozenset({"work"})}]},
-        {"shims": [None], "tool_lists": [None]},
+    cases: list[dict[str, object]] = [
+        {"shims": [shim], "tool_list": {}, "which_map": {"work": shim}},
+        {"shims": [None], "tool_list": {"workcli": frozenset({"work"})}},
+        {"shims": [None], "tool_list": None},
     ]
     for case in cases:
         deploy = ScriptedCliDeploy(
-            uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"], **case,
+            uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", **case,  # type: ignore[arg-type]
         )
         io = ScriptedIO(confirms=[False])
         outcome = deploy_clis(
@@ -1515,18 +1597,20 @@ def test_fresh_toctou_already_exists_reroutes_to_takeover(tmp_path: Path) -> Non
     When deploy_clis runs with an accepting confirm
     Then a takeover consent fires and the retry uses force=True.
 
-    Pins spec §6 fresh row TOCTOU re-route / item 18.
+    Pins spec §6 fresh row TOCTOU re-route / item 18. Shim budget: 2
+    (decision None + post-install re-read after the consented force
+    install; the FAILED non-forcing install triggers no re-read).
     """
     pkg = _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[tmp_path / "bin"],
+        uv_version=(0, 10, 4),
+        bin_dir=tmp_path / "bin",
+        tool_list={},
+        which_map={"work": shim},
         shims=[None, shim],
-        tool_lists=[{}],
         installs=[CommandResult(ok=False, output="already installed"), _OK],
         smokes=[_OK],
-        whiches=[shim],
     )
     io = ScriptedIO(confirms=[True])
     outcome = deploy_clis(
@@ -1551,8 +1635,9 @@ def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> N
     shim = tmp_path / "bin" / "work"
     prior = _prior_with_current_digest(tmp_path)
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"], shims=[shim],
-        tool_lists=[{"other-tool": frozenset({"work"})}], whiches=[shim],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"other-tool": frozenset({"work"})}, which_map={"work": shim},
+        shims=[shim],
     )
     io = ScriptedIO(confirms=[False])
     outcome = deploy_clis(
@@ -1597,8 +1682,8 @@ def test_smoke_failure_after_install_fails_run_no_entry(tmp_path: Path) -> None:
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"],
-        shims=[None, shim], tool_lists=[{}],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim],
         installs=[_OK], smokes=[CommandResult(ok=False, output="kaboom")],
     )
     io = ScriptedIO()
@@ -1620,8 +1705,8 @@ def test_install_ok_but_no_shim_is_failure(tmp_path: Path) -> None:
     """
     _pkg(tmp_path)
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"],
-        shims=[None, None], tool_lists=[{}], installs=[_OK],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, None], installs=[_OK],
     )
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
@@ -1632,59 +1717,82 @@ def test_install_ok_but_no_shim_is_failure(tmp_path: Path) -> None:
 
 def test_one_broken_cli_does_not_block_the_other(tmp_path: Path) -> None:
     """
-    Given two registry CLIs where the first's install fails
+    Given two registry CLIs where the first reaches a genuine hard install
+    failure (receipt-owned heal whose force install fails) and the second
+    is a clean fresh install
     When deploy_clis runs
-    Then the second still processes and any_failed is True.
+    Then the second still deploys and any_failed is True.
 
     Pins spec §6/§8: record-and-continue, exit 1 at the end / item 8.
+    CLI1 path: verify (digest equal, provenance ok) -> smoke fail -> heal
+    force install FAILS -> hard failure, no consent involved. CLI2: fresh
+    success. Shim budgets: CLI1 = 1 (decision; failed install, no re-read),
+    CLI2 = 2.
     """
     pkg2 = tmp_path / "packages" / "prgroom"
     (pkg2 / "src").mkdir(parents=True)
     (pkg2 / "pyproject.toml").write_bytes(b"[project]\n")
-    _pkg(tmp_path)
     spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
+    prior = _prior_with_current_digest(tmp_path)  # also creates workcli pkg
+    shim1 = tmp_path / "bin" / "work"
     shim2 = tmp_path / "bin" / "prgroom"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 2,
-        shims=[None, None, shim2], tool_lists=[{}],
-        installs=[CommandResult(ok=False, output="resolver exploded"),
-                  CommandResult(ok=False, output="second consent decline needed"), _OK],
-        smokes=[_OK], whiches=[shim2],
-    )
-    io = ScriptedIO(confirms=[False])
-    outcome = deploy_clis(
-        (_SPEC, spec2), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
-        io=io, dry_run=False, auto_yes=False,
-    )
-    assert outcome.any_failed
-    assert "prgroom" in outcome.deployed
-
-
-def test_dry_run_previews_without_subprocess(tmp_path: Path) -> None:
-    """
-    Given a fresh-install state under --dry-run
-    When deploy_clis runs
-    Then it reports would-install and never calls
-    tool_install/smoke/update_shell.
-
-    Pins spec §6 dry-run / item 6.
-    """
-    _pkg(tmp_path)
-    deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"],
-        shims=[None], tool_lists=[{}],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": shim1, "prgroom": shim2},
+        shims=[shim1, None, shim2],
+        installs=[CommandResult(ok=False, output="resolver exploded"), _OK],
+        smokes=[CommandResult(ok=False, output="stale"), _OK],
     )
     io = ScriptedIO()
     outcome = deploy_clis(
-        (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
-        io=io, dry_run=True, auto_yes=False,
+        (_SPEC, spec2), repo_root=tmp_path, prior=prior, deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
     )
-    assert not outcome.any_failed
-    assert any("would install" in e.message for e in io.transcript)
-    assert not any(t[0] in ("tool_install", "smoke", "update_shell") for t in deploy.transcript)
-```
+    assert outcome.any_failed
+    assert "prgroom" in outcome.deployed and "workcli" not in outcome.deployed
+    assert any(e.channel == "err" and "resolver exploded" in e.message for e in io.transcript)
 
-Note: the first-install-failure path in `test_one_broken_cli_does_not_block_the_other` triggers the TOCTOU re-route (non-forcing install failed), which prompts takeover; the declining confirm resolves it as skipped-with-failure — the queue shapes above assume that flow. If the engine's read order differs, fix the QUEUES, not the contract assertions.
+
+def test_dry_run_previews_every_branch_without_subprocess(tmp_path: Path) -> None:
+    """
+    Given each decision-table state under --dry-run
+    When deploy_clis runs
+    Then each reports its would-X line and never calls
+    tool_install/smoke/update_shell.
+
+    Pins spec §6 dry-run / item 6 (each branch reports would-X).
+    """
+    prior_current = _prior_with_current_digest(tmp_path)
+    prior_stale = Receipt(
+        clis=(CliReceiptEntry(name="workcli", binary="work", digest="sha256:stale"),)
+    )
+    shim = tmp_path / "bin" / "work"
+    prov = {"workcli": frozenset({"work"})}
+    cases: list[tuple[Receipt, list[Path | None], object, str]] = [
+        (Receipt(), [None], {}, "would install"),
+        (prior_current, [shim], prov, "would skip"),
+        (prior_current, [None], {}, "would reinstall"),
+        (prior_stale, [shim], prov, "would upgrade"),
+        (Receipt(), [shim], {}, "would take over"),
+    ]
+    for prior, shims, tool_list, expected in cases:
+        deploy = ScriptedCliDeploy(
+            uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+            tool_list=tool_list,  # type: ignore[arg-type]
+            shims=shims,
+        )
+        io = ScriptedIO()
+        outcome = deploy_clis(
+            (_SPEC,), repo_root=tmp_path, prior=prior, deploy=deploy,
+            io=io, dry_run=True, auto_yes=False,
+        )
+        assert not outcome.any_failed, expected
+        assert any(expected in e.message for e in io.transcript), expected
+        assert not any(
+            t[0] in ("tool_install", "smoke", "update_shell") for t in deploy.transcript
+        ), expected
+```
 
 - [ ] **Step 2: Run; make green (fix engine only for contract violations)**
 
@@ -1719,7 +1827,7 @@ def test_uv_version_guard_blocks_all_cli_work(tmp_path: Path) -> None:
     Pins spec §6 version guard / item 21.
     """
     for version in [(0, 9, 0), None]:
-        deploy = ScriptedCliDeploy(uv_versions=[version])
+        deploy = ScriptedCliDeploy(uv_version=version)
         io = ScriptedIO()
         outcome = deploy_clis(
             (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
@@ -1740,22 +1848,19 @@ def test_reachability_which_none_update_shell_consent(tmp_path: Path) -> None:
     Then the run resolves (not failed) with an info notice; decline instead
     -> err + failure.
 
-    Pins spec §6 reachability / item 9.
+    Pins spec §6 reachability / item 9. which_map deliberately empty (miss).
     """
     _pkg(tmp_path)
     shim = tmp_path / "bin" / "work"
 
-    def _fresh_deploy(update_ok: bool) -> ScriptedCliDeploy:
-        return ScriptedCliDeploy(
-            uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 2,
-            shims=[None, shim, shim], tool_lists=[{}], installs=[_OK], smokes=[_OK],
-            whiches=[None],
-            update_shells=[CommandResult(ok=update_ok, output="")],
-        )
-
+    accept = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
+        update_shells=[CommandResult(ok=True, output="")],
+    )
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=Receipt(),
-        deploy=_fresh_deploy(True), io=ScriptedIO(confirms=[True]),
+        deploy=accept, io=ScriptedIO(confirms=[True]),
         dry_run=False, auto_yes=False,
     )
     assert not outcome.any_failed
@@ -1764,9 +1869,8 @@ def test_reachability_which_none_update_shell_consent(tmp_path: Path) -> None:
     outcome = deploy_clis(
         (_SPEC,), repo_root=tmp_path, prior=Receipt(),
         deploy=ScriptedCliDeploy(
-            uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 2,
-            shims=[None, shim, shim], tool_lists=[{}], installs=[_OK], smokes=[_OK],
-            whiches=[None],
+            uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+            shims=[None, shim], installs=[_OK], smokes=[_OK],
         ),
         io=io, dry_run=False, auto_yes=False,
     )
@@ -1787,9 +1891,9 @@ def test_reachability_shadow_is_hard_error(tmp_path: Path) -> None:
     shim = tmp_path / "bin" / "work"
     foreign = tmp_path / "other" / "work"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 2,
-        shims=[None, shim, shim], tool_lists=[{}], installs=[_OK], smokes=[_OK],
-        whiches=[foreign],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        which_map={"work": foreign},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
     )
     io = ScriptedIO()
     outcome = deploy_clis(
@@ -1820,9 +1924,9 @@ def test_reachability_memoized_per_bin_dir(tmp_path: Path) -> None:
     spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
     shim1, shim2 = tmp_path / "bin" / "work", tmp_path / "bin" / "prgroom"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 4,
-        shims=[None, shim1, shim1, None, shim2, shim2], tool_lists=[{}],
-        installs=[_OK, _OK], smokes=[_OK, _OK], whiches=[None, None],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim1, None, shim2],
+        installs=[_OK, _OK], smokes=[_OK, _OK],
         update_shells=[CommandResult(ok=True, output="")],
     )
     io = ScriptedIO(confirms=[True])
@@ -1833,6 +1937,32 @@ def test_reachability_memoized_per_bin_dir(tmp_path: Path) -> None:
     assert not outcome.any_failed
     assert sum(1 for t in deploy.transcript if t[0] == "update_shell") == 1
     assert sum(1 for e in io.transcript if e.channel == "confirm") == 1
+
+
+def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
+    """
+    Given a healthy verify/skip CLI whose bin dir is NOT on PATH
+    When deploy_clis runs and the update-shell offer is declined
+    Then the run FAILS — the invariant fires on SKIPPED_IDENTICAL runs,
+    not only after a deploy.
+
+    Pins spec §6 steady-state enforcement / item 9.
+    """
+    prior = _prior_with_current_digest(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        shims=[shim], smokes=[_OK],
+    )
+    io = ScriptedIO(confirms=[False])
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=prior, deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.any_failed
+    assert any(e.channel == "err" and "PATH" in e.message for e in io.transcript)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1907,7 +2037,10 @@ git commit -m "feat(installer): uv version guard + PATH-reachability invariant (
 
 from pathlib import Path
 
+import pytest
+
 from installer.core.clis import CommandResult, ScriptedCliDeploy
+from installer.core.consent import ConsentRequiredError
 from installer.core.io_port import ScriptedIO
 from installer.core.receipt import CliReceiptEntry, Receipt
 from installer.core.run import prune_clis
@@ -2022,7 +2155,28 @@ def test_dry_run_previews_no_uninstall() -> None:
     assert not deploy.transcript or not any(
         t[0] == "tool_uninstall" for t in deploy.transcript
     )
+
+
+def test_prune_no_tty_without_yes_raises() -> None:
+    """
+    Given a retired allowlisted entry on a non-interactive session without
+    --yes or --dry-run
+    When prune_clis reaches its consent point
+    Then ConsentRequiredError raises (the caller maps it to exit 1) — the
+    prune side honors the same no-TTY convention as the deploy side.
+
+    Pins spec §7 no-TTY / item 12 (prune side).
+    """
+    deploy = ScriptedCliDeploy()
+    with pytest.raises(ConsentRequiredError):
+        prune_clis(
+            _prior("oldtool"), registry_names=frozenset({"workcli"}),
+            retired=frozenset({"oldtool"}), deploy=deploy,
+            io=ScriptedIO(interactive=False), dry_run=False, auto_yes=False,
+        )
 ```
+
+Note on version-guarding: `prune_clis` deliberately has NO uv version guard — `uv tool uninstall` predates every subcommand the guard protects (the guard scopes the deploy stage's new uv surface: `tool dir --bin`, `update-shell`, `export --no-emit-project`). Spec §6's "before any CLI work" is satisfied at the deploy stage; a retirement-only `--prune-only` run must not be blocked by an old uv that can still uninstall.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -2095,7 +2249,7 @@ def prune_clis(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd packages/installer && uv run pytest tests/unit/test_prune_clis.py -v`
-Expected: 5 PASS
+Expected: 6 PASS
 
 - [ ] **Step 5: Commit**
 
@@ -2151,13 +2305,13 @@ def test_full_install_deploys_both_clis_and_records_receipt(tmp_path: Path) -> N
     bin_dir = tmp_path / "bin"
     w, p = bin_dir / "work", bin_dir / "prgroom"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)],
-        bin_dirs=[bin_dir] * 4,
-        shims=[None, w, w, None, p, p],
-        tool_lists=[{}],
+        uv_version=(0, 10, 4),
+        bin_dir=bin_dir,
+        tool_list={},
+        which_map={"work": w, "prgroom": p},
+        shims=[None, w, None, p],
         installs=[_OK, _OK],
         smokes=[_OK, _OK],
-        whiches=[w, p],
     )
     rc = main(
         ["--tools=claude", "--yes"], home=tmp_path / "home",
@@ -2180,10 +2334,12 @@ def test_deploy_failure_exits_1_after_summary(tmp_path: Path) -> None:
     Pins spec §6 failure surfacing: exit flag carried out of the lock.
     """
     repo = _hermetic_repo(tmp_path)
+    # --yes auto-accepts the TOCTOU takeover re-route, so each fresh CLI
+    # pops TWO installs (non-forcing fail, then forced fail) = 4 total.
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"] * 2,
-        shims=[None, None], tool_lists=[{}],
-        installs=[CommandResult(ok=False, output="x"), CommandResult(ok=False, output="x")],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, None],
+        installs=[CommandResult(ok=False, output="x")] * 4,
     )
     io = ScriptedIO(interactive=False)
     rc = main(
@@ -2217,7 +2373,7 @@ def test_prune_only_drops_retired_cli_through_real_receipt_path(tmp_path: Path) 
         receipt_path,
         Receipt(clis=(CliReceiptEntry(name="oldtool", binary="old", digest="sha256:aa"),)),
     )
-    deploy = ScriptedCliDeploy(uv_versions=[(0, 10, 4)], uninstalls=[_OK])
+    deploy = ScriptedCliDeploy(uninstalls=[_OK])
     import installer.cli as cli_mod
 
     # simulate a future retirement
@@ -2252,18 +2408,20 @@ def test_second_noop_run_skips_via_persisted_clis(tmp_path: Path) -> None:
 
     def _first() -> ScriptedCliDeploy:
         return ScriptedCliDeploy(
-            uv_versions=[(0, 10, 4)], bin_dirs=[bin_dir] * 4,
-            shims=[None, w, w, None, p, p], tool_lists=[{}],
-            installs=[_OK, _OK], smokes=[_OK, _OK], whiches=[w, p],
+            uv_version=(0, 10, 4), bin_dir=bin_dir, tool_list={},
+            which_map={"work": w, "prgroom": p},
+            shims=[None, w, None, p],
+            installs=[_OK, _OK], smokes=[_OK, _OK],
         )
 
     assert main(["--tools=claude", "--yes"], home=home,
                 io=ScriptedIO(interactive=False), repo_root=repo, cli_deploy=_first()) == 0
     second = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[bin_dir] * 4,
-        shims=[w, w, p, p],
-        tool_lists=[{"workcli": frozenset({"work"}), "prgroom": frozenset({"prgroom"})}],
-        smokes=[_OK, _OK], whiches=[w, p],
+        uv_version=(0, 10, 4), bin_dir=bin_dir,
+        tool_list={"workcli": frozenset({"work"}), "prgroom": frozenset({"prgroom"})},
+        which_map={"work": w, "prgroom": p},
+        shims=[w, p],
+        smokes=[_OK, _OK],
     )
     assert main(["--tools=claude", "--yes"], home=home,
                 io=ScriptedIO(interactive=False), repo_root=repo, cli_deploy=second) == 0
@@ -2309,9 +2467,11 @@ def test_corrupt_receipt_deploy_not_persisted(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     w, p = bin_dir / "work", bin_dir / "prgroom"
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[bin_dir] * 4,
-        shims=[None, w, w, None, p, p], tool_lists=[None],  # unproven -> takeover
-        installs=[_OK, _OK], smokes=[_OK, _OK], whiches=[w, p],
+        uv_version=(0, 10, 4), bin_dir=bin_dir,
+        tool_list=None,  # unproven -> takeover (auto-accepted by --yes)
+        which_map={"work": w, "prgroom": p},
+        shims=[None, w, None, p],
+        installs=[_OK, _OK], smokes=[_OK, _OK],
     )
     rc = main(["--tools=claude", "--yes"], home=home,
               io=ScriptedIO(interactive=False), repo_root=repo, cli_deploy=deploy)
@@ -2333,8 +2493,8 @@ def test_no_tty_without_yes_at_cli_consent_exits_1(tmp_path: Path) -> None:
     """
     repo = _hermetic_repo(tmp_path)
     deploy = ScriptedCliDeploy(
-        uv_versions=[(0, 10, 4)], bin_dirs=[tmp_path / "bin"],
-        shims=[tmp_path / "bin" / "work"], tool_lists=[{}],
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[tmp_path / "bin" / "work"],
     )
     rc = main(["--tools=claude"], home=tmp_path / "home",
               io=ScriptedIO(interactive=False), repo_root=repo, cli_deploy=deploy)
@@ -2348,8 +2508,8 @@ Expected: FAIL with `TypeError: main() got an unexpected keyword argument 'cli_d
 
 - [ ] **Step 3: Wire `cli.py`**
 
-1. Imports: `from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort` and extend the run import with `deploy_clis, prune_clis`; extend receipt_build import (new) with `from installer.core.receipt_build import merge_clis`.
-2. `main()` and `_run()` gain keyword `cli_deploy: CliDeployPort | None = None`; `main` forwards it. In `_run`, after the `io` default block:
+1. Imports: `from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort` and extend the run import with `CliDeployOutcome, CliPruneOutcome, deploy_clis, prune_clis`; add `from installer.core.receipt_build import merge_clis`.
+2. `main()` and `_run()` gain keyword `cli_deploy: CliDeployPort | None = None`; `main` forwards it. In `_run`, AFTER the `--project` fork (the `if args.project is not None: return _run_project(...)` block) so the project path never constructs the port:
 
 ```python
     if cli_deploy is None:
@@ -2423,7 +2583,7 @@ Wrap it in its own `try/except ConsentRequiredError: return 1` if it is outside 
         return 1
 ```
 
-7. `_run_project` is untouched (its `record_receipt` call omits `cli_entries` → `None` → prior preserved; it never constructs a port — the injected `cli_deploy` is simply unused on that path; `_run` forks to `_run_project` BEFORE constructing the default `UvCliDeploy`, so move the default-construction after the `--project` fork to keep the project path subprocess-free).
+7. `_run_project` is untouched: its `record_receipt` call omits `cli_entries` → `None` → prior `clis` preserved, and the default `UvCliDeploy` is constructed after the `--project` fork (step 2), so the project path neither constructs a port nor calls one.
 
 - [ ] **Step 4: Run the wiring tests + full unit suite**
 
@@ -2590,3 +2750,28 @@ git add -A && git commit -m "chore(installer): gate fixes (wgclw.9.9 T14)"
 The completion gate routes HEAVY (`packages/**` + `src/**`-adjacent floors it via `.critical-paths`): run gate-triage, then `Workflow({name: "quality-gate", args: <triage JSON>})`, then `verify-checklist`. Delivery: PR via `finishing-a-development-branch`, `wait-for-pr-comments` review loop, merge per merge-guard policy, `sync-after-remote-merge`. Update bead `agents-config-wgclw.9.9` notes at delivery; closing it unblocks `agents-config-wgclw.9.4`.
 
 **Out of scope for this plan** (spec §2): actually running the installer against the real user space — only the user runs `scripts/install.sh`, ever.
+
+## Review feedback
+
+- 2026-07-16 ralf-review cycle 1 (fresh-eyes, opus): 0 Blocking, 2 Critical,
+  3 Major, 8 Minor. All folded: C1+M3 root-cause fix — ScriptedCliDeploy
+  idempotent queries became stable configured values (queues only for
+  state-bearing calls) and `_deploy_one` returns `(failed,
+  shim_present_at_end)` so the reachability gate never re-reads `shim_path`
+  (shim budget now deterministic: 1 decision read + 1 re-read per successful
+  install; every test's queues re-derived); C2 the one-broken-CLI test
+  rewritten to reach a genuine hard failure via the receipt-owned heal path;
+  M1 transcript typed `list[tuple[object, ...]]`; M2 prune-side no-TTY test;
+  m1 `Mapping` TYPE_CHECKING import; m2 `RETIRED_CLIS` import moved to
+  cli.py only; m3 per-method typed queue pops; m4/m5 single
+  `UvCliDeploy`-construction location after the `--project` fork + outcome
+  types added to cli.py imports; m6 all five dry-run would-X branches
+  tested; m7 steady-state unreachable skip-run test; m8 real
+  `update_shell` already-configured classification test. Cycle 2 NOT run:
+  owner-ordered pause for compaction (2026-07-16) stopped the loop at the
+  earliest honest point after the folds. Recorded verdict per the
+  ralf-review rubric (final completed cycle contained Criticals):
+  **FAIL** — recorded as-is; the folds above address every finding but do
+  not upgrade the score. Consequence: the attention stop is NOT waived —
+  this plan requires the owner's explicit go before execution (which the
+  compaction pause provides naturally).
