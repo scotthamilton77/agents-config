@@ -34,8 +34,10 @@ In scope:
 - A new injected subprocess port for `uv tool` operations + smoke checks.
 - A deploy stage in the user install pipeline (skip / fresh / takeover /
   upgrade / dry-run semantics), consent-gated like file overwrites.
-- Receipt extension (additive `clis` field) + prune-side `uv tool uninstall`
-  for deregistered CLIs.
+- Receipt extension (additive `clis` field) threaded through the existing
+  `record_receipt`/`merge_receipt` write path, + prune-side
+  `uv tool uninstall` for deregistered CLIs.
+- Summary rendering of `cli:<name>` targets.
 - Docs sweep: user guide, package AGENTS.md files, repo AGENTS.md, installer
   HLD.
 
@@ -55,7 +57,7 @@ New module `packages/installer/src/installer/core/clis.py`:
 ```python
 @dataclass(frozen=True, slots=True)
 class CliSpec:
-    name: str          # package name, e.g. "workcli"
+    name: str          # package name == uv tool name, e.g. "workcli"
     package_dir: str   # repo-relative, e.g. "packages/workcli"
     binary: str        # console-script name, e.g. "work"
     smoke_args: tuple[str, ...]  # e.g. ("--protocol-version",)
@@ -79,37 +81,59 @@ its consumer, mirroring `io_port.py`'s layout):
 ```python
 @runtime_checkable
 class CliDeployPort(Protocol):
+    def bin_dir(self) -> Path: ...
+    def shim_path(self, binary: str) -> Path | None: ...
     def tool_install(self, package_dir: Path) -> CommandResult: ...
     def tool_uninstall(self, name: str) -> CommandResult: ...
     def which(self, binary: str) -> Path | None: ...
-    def smoke(self, binary: str, args: tuple[str, ...]) -> CommandResult: ...
+    def smoke(self, shim: Path, args: tuple[str, ...]) -> CommandResult: ...
 ```
 
 `CommandResult` is a frozen dataclass `(ok: bool, output: str)` — output is
-merged stdout+stderr, surfaced verbatim on failure (uv's own PATH warnings
-ride along).
+merged stdout+stderr, surfaced verbatim on failure.
+
+**PATH-independence is load-bearing.** All installed-state decisions use uv's
+bin dir directly, never the process PATH: `bin_dir()` resolves uv's shim
+directory (`uv tool dir --bin`; on failure, uv's documented default
+`~/.local/bin`); `shim_path(binary)` returns `bin_dir()/<binary>` iff that
+file exists, else `None`. `which` (plain `shutil.which`) is used **only** for
+the post-install PATH/shadowing advisory (§6), never for decisions. `smoke`
+executes the shim by the **absolute path** it is given — a
+`FileNotFoundError` there genuinely means the install is broken, not that
+PATH is unconfigured.
 
 Real implementation `UvCliDeploy`: `tool_install` runs
 `uv tool install --force <abs package_dir>`; `tool_uninstall` runs
-`uv tool uninstall <name>`; `which` delegates to `shutil.which`; `smoke` runs
-`<binary> <args...>` with a timeout. All subprocess calls
-`subprocess.run(..., capture_output=True, text=True)` with a bounded timeout
-(60s install, 10s smoke); `TimeoutExpired` and `FileNotFoundError` (uv absent
-— impossible by construction since the installer runs under `uv run`, but fail
-loud anyway) map to `CommandResult(ok=False, output=...)`.
+`uv tool uninstall <name>`. All subprocess calls use
+`subprocess.run(..., capture_output=True, text=True)` with bounded timeouts —
+300s install (cold uv cache + dependency resolution can be slow), 30s smoke,
+10s `bin_dir` — and `TimeoutExpired` / `FileNotFoundError` map to
+`CommandResult(ok=False, output=...)` (or the documented fallback for
+`bin_dir`).
 
 Test fake `ScriptedCliDeploy`: per-method answer queues + transcript,
 mirroring `ScriptedIO` (including the exhaustion-error self-diagnosis).
+
+**Injection seam:** `main()` and `_run()` gain an optional
+`cli_deploy: CliDeployPort | None = None` keyword (mirroring `io`);
+`_run` constructs `UvCliDeploy` when not injected. Unit tests drive
+`main(..., cli_deploy=ScriptedCliDeploy(...))`.
 
 ## 5. Source digest (staleness test)
 
 `cli_source_digest(package_dir: Path) -> str` — a deterministic
 `sha256:<hex>` over the sorted `(relpath, sha256(bytes))` of the package's
 **deployable source**: `pyproject.toml`, `uv.lock`, and every file under
-`src/**`. Excludes `__pycache__` directories and `*.pyc` (build churn is not a
-reason to reinstall). Same construction as `receipt.dir_content_digest`, with
-the exclusion filter and the explicit file list; lives in `core/clis.py`
-beside its consumers.
+`src/**`. Excludes `__pycache__` directories and `*.pyc` (build churn is not
+a reason to reinstall). Same construction as `receipt.dir_content_digest`,
+with the exclusion filter and the explicit file list; lives in
+`core/clis.py` beside its consumers.
+
+Missing-input handling: `pyproject.toml` absent → loud error (a registry
+entry pointing at a non-package is a wiring bug, fail fast); `uv.lock` absent
+→ silently omitted from the digest input (a future lock-less package remains
+deployable; the lock appearing later changes the digest, correctly forcing a
+reinstall).
 
 Digest inputs deliberately exclude `tests/**`, `README`, `AGENTS.md` — a
 docs-only package change does not force a reinstall.
@@ -118,35 +142,51 @@ docs-only package change does not force a reinstall.
 
 New function `deploy_clis(...)` in `core/run.py`, called from `cli._run()`
 (user path only) after `install_plugin_routes`, inside the receipt lock,
-gated on `not args.prune_only`. Per registered CLI, in registry order:
+gated on `not args.prune_only`. Per registered CLI, in registry order
+("shim present" always means `shim_path(binary) is not None` — the uv bin
+dir test, never `which`):
 
-| Prior receipt entry | Shim on PATH | Digest vs receipt | Action |
+| Prior receipt entry | Shim present | Digest vs receipt | Action |
 |---|---|---|---|
-| present | found | equal | `SKIPPED_IDENTICAL` (no subprocess) |
-| present | missing | (any) | reinstall, no prompt (heal a user uninstall — we own it per receipt) |
-| present | found | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
-| absent | missing | — | **fresh install**, no prompt (new-file semantics) |
-| absent | found | — | **takeover** of a manual install → consent prompt (default No; `--yes` accepts) |
+| present | yes | equal | `SKIPPED_IDENTICAL` (no subprocess) |
+| present | no | (any) | reinstall, no prompt (heal a user uninstall — we own it per receipt) |
+| present | yes | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
+| absent | no | — | **fresh install**, no prompt (new-file semantics) |
+| absent | yes | — | **takeover** of a manual install → consent prompt (default No; `--yes` accepts) |
 
 - Consent declines count as skipped and leave the receipt's prior entry (if
   any) untouched.
-- After a real install: run the smoke command. Smoke failure → `io.err` with
-  the command output, failure recorded, receipt entry NOT written (next run
+- After a real install: resolve the shim via `shim_path(binary)` — missing
+  now IS a failure (uv said ok but produced no shim) — then run the smoke
+  command against that absolute path. Smoke failure → `io.err` with the
+  command output, failure recorded, receipt entry NOT written (next run
   retries). Smoke success → receipt entry written with the new digest.
-- Post-install, if `which(binary)` still misses, warn that `~/.local/bin` is
-  not on PATH (non-fatal; uv's own warning text is also in the surfaced
-  output).
+- **PATH/shadowing advisory (non-fatal, never blocks the receipt):** after a
+  successful deploy, if `which(binary)` is `None`, warn that uv's bin dir is
+  not on PATH; if it resolves to a path *outside* `bin_dir()`, warn that a
+  foreign `<binary>` shadows the deployed one. Deploy success is judged
+  solely by install + shim + smoke.
 - `--dry-run`: report would-skip / would-install / would-upgrade /
-  would-take-over per CLI; no subprocess calls, no lock (consistent with the
-  dry-run-writes-nothing contract).
+  would-take-over per CLI; no `tool_install`/`tool_uninstall`/`smoke` calls,
+  no lock (consistent with the dry-run-writes-nothing contract; `bin_dir`/
+  `shim_path`/digest reads are non-mutating).
 - No-TTY without `--yes` at a consent point → `ConsentRequiredError`, exit 1
   (existing convention).
 - Counters map onto the existing summary vocabulary under target name
   `cli:<name>`: fresh/heal → `created`, upgrade/takeover-accepted →
-  `updated`, skip/decline → `skipped`, uninstall → `pruned`. The summary
-  renders these as ordinary per-target blocks.
-- Any install/smoke failure ultimately returns exit 1 from `_run` (after the
-  summary renders), never a silent success.
+  `updated`, skip/decline → `skipped`, uninstall → `pruned`.
+- **Summary rendering (required change):** `render_summary`'s report-target
+  set is built from its `tools`/`plugins` arguments today, so `cli:<name>`
+  keys would be silently dropped. The `render_summary` call and
+  `_report_targets` are extended with the deployed CLI target names
+  (`clis=[...]`) so each CLI renders as an ordinary per-target block.
+- **Failure surfacing:** a deploy/smoke failure increments no counter — it
+  surfaces via the `io.err` line (with subprocess output) and the run's exit
+  code. `deploy_clis` returns a failure indicator; `_run` carries it out of
+  the lock (`with`) block and returns exit 1 **after** the summary renders,
+  never a silent success. The stage never raises on a deploy failure
+  mid-loop: it records and continues to the next CLI (one broken package
+  must not block the other).
 
 `--project` runs (`_run_project`) do not deploy CLIs: CLI deploys are
 user-space state (`uv tool` environments are per-user, not per-project).
@@ -176,14 +216,28 @@ so every receipt written before this field existed hashes byte-identically and
 its persisted integrity still validates. No `SCHEMA_VERSION` bump.
 `receipt_store` read/write round-trips the field, defaulting absent → empty.
 
+Downgrade caveat (accepted): a pre-feature installer reading a
+`clis`-bearing receipt computes integrity without `clis` and sees a mismatch
+→ CORRUPT → prune fail-closed (skipped, receipt untouched) and consent
+re-prompts. Fail-closed with no data loss; noted, not mitigated.
+
+**Write-path threading (required change; the write path is
+`record_receipt` → `merge_receipt`, which reconstructs the `Receipt` and
+would otherwise silently drop `clis`):** `deploy_clis` returns per-CLI
+outcomes (mirroring `tool_outcomes`); `cli._run` threads them into
+`record_receipt`, which passes them to `merge_receipt`; `merge_receipt`
+builds the new `clis` tuple: per registry CLI, the new entry when this run
+deployed it, else the retained prior entry (skip/decline/failure keep the
+old record); entries retired by a completed uninstall are dropped.
+
 Prune half (runs under `--prune` / `--prune-only`, after the file prune): a
 CLI named in the prior receipt's `clis` but absent from `CLI_PACKAGES` is
 retired → consent-gated `uv tool uninstall` (per-item prompt, `--yes`
-auto-accepts, `--dry-run` previews). Uninstall of a tool uv no longer knows
-(user removed it manually) is treated as success — the desired state is
-"absent". The rewritten receipt carries, per registry CLI: the new entry when
-this run deployed it, else the retained prior entry (skip/decline/failure keep
-the old record); retired CLIs' entries are dropped once uninstalled.
+auto-accepts, `--dry-run` previews, no-TTY without `--yes` →
+`ConsentRequiredError` exit 1 — same convention as the deploy side). A
+declined uninstall retains the receipt entry (the tool is still installed).
+Uninstall of a tool uv no longer knows (user removed it manually) is treated
+as success — the desired state is "absent".
 
 A CORRUPT prior receipt disables the CLI prune half exactly as it disables
 file pruning (fail closed); the deploy half still runs, treating every CLI by
@@ -194,8 +248,8 @@ the no-prior-entry rows of the decision table.
 - No silent fallbacks: every subprocess failure surfaces via `io.err` with
   the command output, and the run exits non-zero.
 - The stage never raises on a deploy failure mid-loop; it records the failure
-  and continues to the next CLI (one broken package must not block the
-  other), then the run reports exit 1.
+  and continues to the next CLI, then the run reports exit 1 (§6 failure
+  surfacing).
 - `ConsentRequiredError` propagates (exit 1) — same as file installs.
 
 ## 9. Docs sweep (same PR)
@@ -218,32 +272,37 @@ the no-prior-entry rows of the decision table.
 Unit tests through `ScriptedCliDeploy` + `ScriptedIO`, each pinning a coded
 decision (house convention; no tautologies):
 
-1. Skip: receipt digest equal + shim present → no subprocess calls, skipped
-   counter.
+1. Skip: receipt digest equal + shim present → no
+   install/uninstall/smoke calls, skipped counter.
 2. Fresh install: no receipt entry, no shim → install runs, no consent
    prompt, created counter, receipt entry written.
 3. Heal: receipt entry present, shim missing → reinstall without prompt.
 4. Upgrade: digest differs → consent prompt; accept → install + updated
    counter + new digest; decline → skipped, prior entry retained.
-5. Takeover: no receipt entry, shim present → consent prompt; decline →
-   skipped, no entry.
-6. Dry-run: each branch reports would-X, zero subprocess calls, receipt
-   untouched.
+5. Takeover: no receipt entry, shim present → consent prompt; accept →
+   install + updated counter + entry written; decline → skipped, no entry.
+6. Dry-run: each branch reports would-X, zero
+   install/uninstall/smoke calls, receipt untouched.
 7. Smoke failure: install ok, smoke fails → err surfaced, no receipt entry,
-   exit 1.
+   exit 1; smoke runs against the absolute shim path (asserted via the
+   fake's transcript). Install-ok-but-no-shim is likewise a failure.
 8. Install failure: `tool_install` not ok → err surfaced, other CLI still
    processed, exit 1.
-9. PATH warning: post-install `which` misses → warn emitted, entry still
-   written (deploy succeeded; PATH is user config).
+9. PATH advisory: post-deploy `which` miss → warn, entry still written;
+   `which` resolving outside `bin_dir()` → shadowing warn, entry still
+   written.
 10. Prune: prior `clis` entry not in registry → consent-gated uninstall,
-    pruned counter, entry dropped; `--dry-run` previews; uninstall-of-absent
-    treated as success.
+    pruned counter, entry dropped; decline → entry retained;
+    `--dry-run` previews; uninstall-of-absent treated as success.
 11. Receipt round-trip: `clis` field read/write; legacy receipt (no field)
     loads as empty and its integrity still validates; canonical_bytes omits
-    empty `clis`.
-12. No-TTY without `--yes` at a CLI consent point → `ConsentRequiredError`
-    path, exit 1.
+    empty `clis`; **second no-op run** reads back a non-empty `clis` through
+    the real `record_receipt`/`merge_receipt` path and skips.
+12. No-TTY without `--yes` at a CLI consent point (deploy AND prune sides)
+    → `ConsentRequiredError` path, exit 1.
 13. `--project` run performs no CLI deploys.
+14. CORRUPT prior receipt: CLI prune half skipped (fail closed); deploy half
+    runs treating every CLI by the no-prior-entry rows.
 
 Gate: `make ci-installer` (ruff, format, mypy --strict, pytest --cov 90%
 branch, pip-audit, entry-verify) green before push; delivery routes HEAVY at
@@ -254,3 +313,14 @@ the completion gate (`packages/**` floors it).
 - none — this spec is the deliverable's design; implementation proceeds under
   the same bead (agents-config-wgclw.9.9), and the discipline-layer migration
   it unblocks is already tracked (agents-config-wgclw.9.4).
+
+## Review feedback
+
+- 2026-07-15 ralf-review cycle 1 (fresh-eyes, opus): 1 Critical, 4 Major,
+  7 Minor. All folded into this revision: C1/M1 PATH-independent decision
+  signal + absolute-path smoke (§4, §6); M2 explicit
+  `record_receipt`/`merge_receipt` threading (§7); M3 summary-rendering
+  extension (§6); M4 + m6 test-plan branches (§10 items 5, 10, 12, 14); m1
+  timeouts (§4); m2 downgrade caveat (§7); m3 failure surfacing (§6); m4
+  injection seam (§4); m5 exit-flag control flow (§6); m7 digest
+  missing-input rules (§5).
