@@ -284,11 +284,11 @@ agents-config's initial values: cap 2, PORT exempt, 7-day nag.
   spec's mechanics are name-independent.)
 - **Interim seeing layer:** the 2026-07-15 static landscape generator
   (milestone swimlanes, track colors, cross-track edge emphasis,
-  placement-demo panel) is parked at `scripts/backlog-landscape/` and
-  regenerated from a live export at each Backlog Grooming. **Retirement
-  condition:** deleted when the vizsuite V2 work-map ships its track
-  grouping/filter view. `bd graph --html --all` remains available for ad-hoc
-  dependency inspection.
+  placement-demo panel) is to be parked at `scripts/backlog-landscape/`
+  (a §11 continuation) and regenerated from a live export at each Backlog
+  Grooming. **Retirement condition:** deleted when the vizsuite V2 work-map
+  ships its track grouping/filter view. `bd graph --html --all` remains
+  available for ad-hoc dependency inspection.
 
 ## 7. Backfill migration (one-shot)
 
