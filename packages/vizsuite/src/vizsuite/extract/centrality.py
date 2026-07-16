@@ -27,6 +27,7 @@ still fails soft to unavailable regardless of the flag.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,9 @@ import networkx as nx
 # relations (`contains`, `rationale_for`, ...) never contribute (item 9).
 DEP_RELATIONS = frozenset({"calls", "uses", "imports_from", "inherits", "implements"})
 _EXTRACTED = "EXTRACTED"  # Tier-1 determinism boundary (R3-1)
+# The only build-commit marker shape the labeled-stale opt-in trusts: a full
+# lowercase 40-hex object id (the marker reaches `git rev-list` argv downstream).
+_FULL_HEX_OID_RE = re.compile(r"[0-9a-f]{40}")
 
 
 @dataclass(frozen=True)
@@ -113,11 +117,17 @@ def centrality_axis(
     built_at_commit = raw.get("built_at_commit")
     is_stale = built_at_commit != head_oid
     # A stale graph is only ever accepted when the caller opted in AND the
-    # build-commit marker itself is a real, non-empty string — a graph missing
-    # that marker entirely has nothing trustworthy to label as stale, so it
-    # stays on the loud unavailable path even with the opt-in on.
+    # build-commit marker is a full lowercase 40-hex object id. The accepted
+    # marker flows into `git rev-list <marker>..<head>` argv downstream
+    # (verbs/pr.py `_commits_behind`), and no `--` placement can stop git from
+    # option-parsing a leading-dash revision token — so this boundary is the
+    # injection guard: anything not OID-shaped (missing, garbage, abbreviated,
+    # option-shaped) stays on the loud unavailable path even with the opt-in on.
     accepted_stale = bool(
-        is_stale and allow_stale and isinstance(built_at_commit, str) and built_at_commit
+        is_stale
+        and allow_stale
+        and isinstance(built_at_commit, str)
+        and _FULL_HEX_OID_RE.fullmatch(built_at_commit)
     )
     if is_stale and not accepted_stale:
         return CentralityAxis.unavailable("graph build-commit != PR head")  # never stale-as-fresh

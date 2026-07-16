@@ -20,6 +20,9 @@ import pytest
 from vizsuite.extract.centrality import DEP_RELATIONS, CentralityAxis, centrality_axis
 
 HEAD_OID = "head1234"
+# A full lowercase 40-hex OID — the only marker shape the labeled-stale
+# opt-in trusts (it flows into `git rev-list` argv downstream).
+STALE_OID = "6505d208fee1dfa6d82555437571cfe35d1778aa"
 
 
 def _node(node_id: str, source_file: str) -> dict[str, Any]:
@@ -218,7 +221,7 @@ def test_allow_stale_accepts_mismatched_commit_and_surfaces_the_build_commit(
     tmp_path: Path,
 ) -> None:
     payload = _graph_json(
-        built_at_commit="some-other-commit",
+        built_at_commit=STALE_OID,
         nodes=[_node("a", "a.py"), _node("b", "b.py")],
         links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
     )
@@ -230,7 +233,37 @@ def test_allow_stale_accepts_mismatched_commit_and_surfaces_the_build_commit(
     assert axis.scores is not None
     assert axis.scores["b.py"] == 1.0  # scored exactly like the fresh path
     assert axis.edges == (("a.py", "b.py"),)
-    assert axis.stale_built_at_commit == "some-other-commit"
+    assert axis.stale_built_at_commit == STALE_OID
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "--glob=refs/heads/*..",  # option-shaped: would reach `git rev-list` argv downstream
+        "some-other-commit",  # not a hex OID at all
+        "ABC123" + "0" * 34,  # uppercase hex — git OIDs are lowercase
+        "6505d208",  # abbreviated — only a full 40-hex OID is trusted
+    ],
+)
+def test_allow_stale_rejects_a_marker_that_is_not_a_full_hex_oid(
+    tmp_path: Path, marker: str
+) -> None:
+    # The accepted-stale marker flows into `git rev-list <marker>..<head>`
+    # (verbs/pr.py `_commits_behind`), so the boundary here trusts nothing but
+    # a full lowercase 40-hex object id — an option-shaped or garbage marker
+    # stays on the unavailable path even with the opt-in on.
+    payload = _graph_json(
+        built_at_commit=marker,
+        nodes=[_node("a", "a.py"), _node("b", "b.py")],
+        links=[_link("a", "b", relation="calls", confidence="EXTRACTED")],
+    )
+    graph_path = _write_graph(tmp_path, payload)
+
+    axis = centrality_axis(graph_path, HEAD_OID, allow_stale=True)
+
+    assert not axis.is_available
+    assert axis.unavailable_reason == "graph build-commit != PR head"
+    assert axis.stale_built_at_commit is None
 
 
 def test_allow_stale_with_matching_commit_is_fresh_not_stale(tmp_path: Path) -> None:

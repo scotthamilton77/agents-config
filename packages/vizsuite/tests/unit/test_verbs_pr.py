@@ -351,7 +351,7 @@ def test_pr_flag_off_with_mismatched_graph_commit_is_still_unavailable_regressio
     scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
     _write_graph(
         tmp_path,
-        built_at_commit="stale000",
+        built_at_commit="57a1e00000000000000000000000000000000000",
         nodes=[{"id": "s1", "source_file": "src/app.py"}],
         links=[],
     )
@@ -383,7 +383,7 @@ def test_pr_allow_stale_graph_flag_accepts_mismatched_commit_and_labels_it(
     scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
     _write_graph(
         tmp_path,
-        built_at_commit="stale000",
+        built_at_commit="57a1e00000000000000000000000000000000000",
         nodes=[{"id": "s1", "source_file": "src/app.py"}],
         links=[],
     )
@@ -403,12 +403,12 @@ def test_pr_allow_stale_graph_flag_accepts_mismatched_commit_and_labels_it(
     assert scene["render_config"]["unavailable_axes"] == []
     assert data["heat_axes_available"] == ["complexity", "consequence", "load_bearing"]
     assert scene["render_config"]["stale_graph"] == {
-        "built_at_commit": "stale000",
+        "built_at_commit": "57a1e00000000000000000000000000000000000",
         "commits_behind": 4,
     }
     # the commits-behind lookup went through the same git-runner seam
     # (`rev_list`), never a bespoke subprocess call.
-    assert ("rev_list", "stale000", "head111") in git.calls
+    assert ("rev_list", "57a1e00000000000000000000000000000000000", "head111") in git.calls
 
 
 def test_pr_allow_stale_graph_flag_with_fresh_graph_has_no_stale_graph_key(
@@ -480,13 +480,15 @@ def test_pr_stale_graph_commits_behind_fails_soft_to_none_when_rev_list_raises(
     )
     git = _pr_git(
         rev_list_errors={
-            ("stale000", "head111"): VizError(ErrorCode.ADAPTER_FAILURE, "unknown revision")
+            ("57a1e00000000000000000000000000000000000", "head111"): VizError(
+                ErrorCode.ADAPTER_FAILURE, "unknown revision"
+            )
         }
     )
     scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
     _write_graph(
         tmp_path,
-        built_at_commit="stale000",
+        built_at_commit="57a1e00000000000000000000000000000000000",
         nodes=[{"id": "s1", "source_file": "src/app.py"}],
         links=[],
     )
@@ -502,6 +504,6 @@ def test_pr_stale_graph_commits_behind_fails_soft_to_none_when_rev_list_raises(
     scene = _extract_scene(artifact.read_text(encoding="utf-8"))
 
     assert scene["render_config"]["stale_graph"] == {
-        "built_at_commit": "stale000",
+        "built_at_commit": "57a1e00000000000000000000000000000000000",
         "commits_behind": None,
     }
