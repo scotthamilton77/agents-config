@@ -94,10 +94,11 @@ merged stdout+stderr, surfaced verbatim on failure.
 
 **PATH-independence is load-bearing.** All installed-state decisions use uv's
 bin dir directly, never the process PATH: `bin_dir()` resolves uv's shim
-directory (`uv tool dir --bin`; on failure, uv's documented default
-`~/.local/bin`); `shim_path(binary)` returns `bin_dir()/<binary>` iff that
+directory (`uv tool dir --bin`; on failure, fall back to the same resolution
+uv documents — `$UV_TOOL_BIN_DIR`, then `$XDG_BIN_HOME`, then `~/.local/bin`);
+`shim_path(binary)` returns `bin_dir()/<binary>` iff that
 file exists, else `None`. `which` (plain `shutil.which`) is used **only** for
-the post-install PATH/shadowing advisory (§6), never for decisions. `smoke`
+the PATH/shadowing advisory (§6), never for decisions. `smoke`
 executes the shim by the **absolute path** it is given — a
 `FileNotFoundError` there genuinely means the install is broken, not that
 PATH is unconfigured.
@@ -140,16 +141,26 @@ docs-only package change does not force a reinstall.
 
 ## 6. Deploy stage semantics
 
-New function `deploy_clis(...)` in `core/run.py`, called from `cli._run()`
+New function in `core/run.py`, called from `cli._run()`
 (user path only) after `install_plugin_routes`, inside the receipt lock,
-gated on `not args.prune_only`. Per registered CLI, in registry order
-("shim present" always means `shim_path(binary) is not None` — the uv bin
-dir test, never `which`):
+gated on `not args.prune_only`:
+
+```python
+def deploy_clis(
+    specs: Sequence[CliSpec], *, repo_root: Path, prior: Receipt,
+    deploy: CliDeployPort, io: IOPort,
+    dry_run: bool = False, auto_yes: bool = False,
+) -> CliDeployOutcome  # per-CLI outcomes (entry written / skipped / failed)
+                       # + counters; any_failed is derived from the outcomes
+```
+
+Per registered CLI, in registry order ("shim present" always means
+`shim_path(binary) is not None` — the uv bin dir test, never `which`):
 
 | Prior receipt entry | Shim present | Digest vs receipt | Action |
 |---|---|---|---|
 | present | yes | equal | `SKIPPED_IDENTICAL` (no subprocess) |
-| present | no | (any) | reinstall, no prompt (heal a user uninstall — we own it per receipt) |
+| present | no | (any) | reinstall, no prompt (heal a user uninstall — we own it per receipt; a missing shim means the tool is already unusable, so healing deliberately takes precedence over the upgrade prompt even when the digest also differs) |
 | present | yes | differs | **upgrade** → consent prompt (default No; `--yes` accepts) |
 | absent | no | — | **fresh install**, no prompt (new-file semantics) |
 | absent | yes | — | **takeover** of a manual install → consent prompt (default No; `--yes` accepts) |
@@ -161,11 +172,14 @@ dir test, never `which`):
   command against that absolute path. Smoke failure → `io.err` with the
   command output, failure recorded, receipt entry NOT written (next run
   retries). Smoke success → receipt entry written with the new digest.
-- **PATH/shadowing advisory (non-fatal, never blocks the receipt):** after a
-  successful deploy, if `which(binary)` is `None`, warn that uv's bin dir is
-  not on PATH; if it resolves to a path *outside* `bin_dir()`, warn that a
-  foreign `<binary>` shadows the deployed one. Deploy success is judged
-  solely by install + shim + smoke.
+- **PATH/shadowing advisory (non-fatal, never blocks the receipt):**
+  evaluated on **every run** for every CLI whose shim is present — skips
+  included, not only after a deploy — so the guidance survives the
+  idempotent steady state instead of firing once and vanishing. If
+  `which(binary)` is `None`, warn that uv's bin dir is not on PATH; if it
+  resolves to a path *outside* `bin_dir()`, warn that a foreign `<binary>`
+  shadows the deployed one; if it resolves inside `bin_dir()`, stay silent.
+  Deploy success is judged solely by install + shim + smoke.
 - `--dry-run`: report would-skip / would-install / would-upgrade /
   would-take-over per CLI; no `tool_install`/`tool_uninstall`/`smoke` calls,
   no lock (consistent with the dry-run-writes-nothing contract; `bin_dir`/
@@ -210,11 +224,16 @@ class Receipt:
     clis: tuple[CliReceiptEntry, ...] = ()
 ```
 
-Integrity compatibility follows the `dir_digest` precedent exactly:
-`canonical_bytes` includes a `"clis"` key **only when the tuple is non-empty**,
-so every receipt written before this field existed hashes byte-identically and
-its persisted integrity still validates. No `SCHEMA_VERSION` bump.
-`receipt_store` read/write round-trips the field, defaulting absent → empty.
+Integrity compatibility follows the `dir_digest` precedent analogously (that
+precedent appends a positional list element only when present; here the
+mechanism is a `"clis"` dict key included **only when the tuple is
+non-empty**), so every receipt written before this field existed hashes
+byte-identically and its persisted integrity still validates. No
+`SCHEMA_VERSION` bump. `receipt_store` read/write round-trips the field,
+defaulting absent → empty; each `clis` entry's `name`/`binary`/`digest` is
+validated as a non-null string on read, CORRUPT otherwise (the store's
+established fail-closed discipline — a malformed entry must not drive
+deploy/prune decisions).
 
 Downgrade caveat (accepted): a pre-feature installer reading a
 `clis`-bearing receipt computes integrity without `clis` and sees a mismatch
@@ -223,12 +242,28 @@ re-prompts. Fail-closed with no data loss; noted, not mitigated.
 
 **Write-path threading (required change; the write path is
 `record_receipt` → `merge_receipt`, which reconstructs the `Receipt` and
-would otherwise silently drop `clis`):** `deploy_clis` returns per-CLI
-outcomes (mirroring `tool_outcomes`); `cli._run` threads them into
-`record_receipt`, which passes them to `merge_receipt`; `merge_receipt`
-builds the new `clis` tuple: per registry CLI, the new entry when this run
-deployed it, else the retained prior entry (skip/decline/failure keep the
-old record); entries retired by a completed uninstall are dropped.
+would otherwise silently drop `clis`):** BOTH halves feed the merge,
+mirroring the file precedent (`prune_pipeline` returns `pruned_paths`, which
+`_run` threads into `record_receipt`). The deploy half's `CliDeployOutcome`
+(§6) carries per-CLI results; the CLI prune half returns
+`uninstalled_cli_names: set[str]` (uninstalls that actually completed).
+`cli._run` threads both into `record_receipt` → `merge_receipt`, which
+builds the new `clis` tuple over the **union** of registry CLIs and prior
+`clis` entries:
+
+- registry CLI → the new entry when this run deployed it, else the retained
+  prior entry (skip/decline/failure keep the old record);
+- non-registry prior entry (a retired CLI) → dropped iff its name is in
+  `uninstalled_cli_names`, else retained (a declined or failed uninstall
+  keeps the record, so retirement is retried next prune).
+
+Under `--prune-only` the deploy half never runs: its contribution defaults
+to empty and prior entries for registry CLIs are retained as-is, while
+completed uninstalls still drop — so a retired CLI converges (entry gone)
+even on a prune-only run. Both new `record_receipt`/`merge_receipt`
+parameters default to empty, and `_run_project` passes neither — a
+`--project` run compiles unchanged and leaves any `clis` in its
+project-local receipt untouched (there are none in practice).
 
 Prune half (runs under `--prune` / `--prune-only`, after the file prune): a
 CLI named in the prior receipt's `clis` but absent from `CLI_PACKAGES` is
@@ -241,7 +276,12 @@ as success — the desired state is "absent".
 
 A CORRUPT prior receipt disables the CLI prune half exactly as it disables
 file pruning (fail closed); the deploy half still runs, treating every CLI by
-the no-prior-entry rows of the decision table.
+the no-prior-entry rows of the decision table. Consequence (accepted,
+mirrors the downgrade caveat): `record_receipt` is gated on a non-corrupt
+prior, so a deploy under a corrupt receipt is not persisted — each
+subsequent run re-encounters the shim with no prior entry and re-prompts as
+a takeover until the receipt is reset or repaired. Fail-closed, no data
+loss.
 
 ## 8. Failure posture
 
@@ -288,21 +328,33 @@ decision (house convention; no tautologies):
    fake's transcript). Install-ok-but-no-shim is likewise a failure.
 8. Install failure: `tool_install` not ok → err surfaced, other CLI still
    processed, exit 1.
-9. PATH advisory: post-deploy `which` miss → warn, entry still written;
-   `which` resolving outside `bin_dir()` → shadowing warn, entry still
-   written.
+9. PATH advisory: `which` miss → warn, entry still written; `which`
+   resolving outside `bin_dir()` → shadowing warn, entry still written;
+   `which` resolving inside `bin_dir()` → NO warn (no false positive); the
+   advisory also fires on a `SKIPPED_IDENTICAL` run (steady-state
+   persistence, not deploy-only).
 10. Prune: prior `clis` entry not in registry → consent-gated uninstall,
-    pruned counter, entry dropped; decline → entry retained;
-    `--dry-run` previews; uninstall-of-absent treated as success.
+    pruned counter, entry dropped; decline → entry retained (retirement
+    retried next prune); `--dry-run` previews; uninstall-of-absent treated
+    as success; **`--prune-only` run** (deploy half never ran) still drops a
+    completed uninstall's entry through the real
+    `record_receipt`/`merge_receipt` path while retaining registry CLIs'
+    prior entries.
 11. Receipt round-trip: `clis` field read/write; legacy receipt (no field)
     loads as empty and its integrity still validates; canonical_bytes omits
-    empty `clis`; **second no-op run** reads back a non-empty `clis` through
+    empty `clis`; a malformed `clis` entry (non-string field) reads as
+    CORRUPT; **second no-op run** reads back a non-empty `clis` through
     the real `record_receipt`/`merge_receipt` path and skips.
 12. No-TTY without `--yes` at a CLI consent point (deploy AND prune sides)
     → `ConsentRequiredError` path, exit 1.
-13. `--project` run performs no CLI deploys.
+13. `--project` run performs no CLI deploys and leaves any pre-existing
+    `clis` in the project-local receipt untouched.
 14. CORRUPT prior receipt: CLI prune half skipped (fail closed); deploy half
-    runs treating every CLI by the no-prior-entry rows.
+    runs treating every CLI by the no-prior-entry rows; the deploy is not
+    persisted (receipt untouched).
+15. Digest rules: missing `pyproject.toml` → loud error; missing `uv.lock`
+    → omitted (and adding a lock later changes the digest); a change under
+    `tests/**` or `__pycache__`/`*.pyc` does not change the digest.
 
 Gate: `make ci-installer` (ruff, format, mypy --strict, pytest --cov 90%
 branch, pip-audit, entry-verify) green before push; delivery routes HEAVY at
@@ -317,10 +369,24 @@ the completion gate (`packages/**` floors it).
 ## Review feedback
 
 - 2026-07-15 ralf-review cycle 1 (fresh-eyes, opus): 1 Critical, 4 Major,
-  7 Minor. All folded into this revision: C1/M1 PATH-independent decision
+  7 Minor. All folded: C1/M1 PATH-independent decision
   signal + absolute-path smoke (§4, §6); M2 explicit
   `record_receipt`/`merge_receipt` threading (§7); M3 summary-rendering
   extension (§6); M4 + m6 test-plan branches (§10 items 5, 10, 12, 14); m1
   timeouts (§4); m2 downgrade caveat (§7); m3 failure surfacing (§6); m4
   injection seam (§4); m5 exit-flag control flow (§6); m7 digest
   missing-input rules (§5).
+- 2026-07-15 ralf-review cycle 2 (fresh-eyes, opus, against the cycle-1
+  revision): 0 Blocking, 1 Critical, 3 Major, 7 Minor. All folded: C1
+  prune-half `uninstalled_cli_names` threading + union merge rule +
+  `--prune-only` convergence (§7, §10 item 10); M1 advisory evaluated every
+  run (§6, §10 item 9); M2 `_run_project` call-site defaults (§7, §10 item
+  13); M3 digest-branch tests (§10 item 15); m1 `clis` entry validation
+  (§7, §10 item 11); m2 heal-over-upgrade rationale (§6); m3 corrupt-receipt
+  persistence consequence (§7, §10 item 14); m4 advisory no-warn branch
+  (§10 item 9); m5 `deploy_clis` signature/return contract (§6); m6
+  "analogously" precision (§7); m7 `bin_dir` env-override fallback (§4).
+  Recorded verdict per the ralf-review budget contract (2 cycles,
+  exhausted with a Critical present in the final cycle): **FAIL** — the
+  verdict is recorded as-is; the folds above improve the artifact but do
+  not upgrade the score.
