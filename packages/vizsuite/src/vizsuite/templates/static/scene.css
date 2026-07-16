@@ -287,6 +287,8 @@ body {
   top: 0;
   left: 0;
   right: 0;
+  /* Rendered box (height + border-bottom) must equal DIR_HEADER_PX in
+     views/treemap.js — the treemap layout reserves exactly that much room. */
   height: 18px;
   display: flex;
   align-items: center;

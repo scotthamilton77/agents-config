@@ -236,6 +236,11 @@
     };
   }
 
+  // Layout space reserved for an expanded directory's header strip: must
+  // equal .viz-tile-header's rendered box in scene.css (height 18px +
+  // border-bottom 1px) or child tiles overlap the header.
+  var DIR_HEADER_PX = 19;
+
   function layoutTreemap(root, width, height) {
     var hierarchyRoot = d3
       .hierarchy(root, function (d) {
@@ -252,7 +257,7 @@
       .size([width, height])
       .paddingOuter(2)
       .paddingTop(function (d) {
-        return d.children ? 16 : 0;
+        return d.children ? DIR_HEADER_PX : 0;
       })
       .paddingInner(1)
       .round(true)(hierarchyRoot);
