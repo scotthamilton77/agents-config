@@ -223,6 +223,15 @@ def _ingest_items(
         (ItemKind.REVIEW_THREAD, raw_review_comments, "created_at"),
     ):
         for entry in raw:
+            if kind is ItemKind.REVIEW_SUMMARY and not str(entry.get("body") or "").strip():
+                # GitHub wraps every inline comment posted outside a formal review in a
+                # synthetic COMMENTED review with an empty body; that wrapper's id is
+                # minted server-side and never returned to the comment POST, so the
+                # own_replies ledger structurally cannot cover it. An empty-body review
+                # carries nothing reviewable regardless of author or state — a real
+                # verdict still lands via _terminal_review_verdicts, which reads the
+                # full reviews response, not the ingested items.
+                continue
             item = _to_item(kind, entry, ts_field, now=now, thread_id_map=thread_id_map)
             if item.identity.gh_id in own_replies:
                 continue  # our own posted reply — never re-ingest (self-reply prevention)
