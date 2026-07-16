@@ -213,8 +213,10 @@ field, so the protocol version bumps MINOR.
   `no-pressure` | `pressured-ineligible` | `pressured-eligible` (the last is a
   human hint to schedule an extraction review).
 - **`work groom --done` / `work groom --status`** — records **Backlog
-  Grooming** completion. State (`backlog_last_groomed`) lives **in the bd
-  backend itself**, on the designated `[operating-model].groom-state-bead`
+  Grooming** completion. State (`backlog_last_groomed` — the persisted bd
+  state field name, intentionally snake_case mirroring CONTEXT.md's
+  `last_groomed`, distinct from the kebab-case TOML config keys) lives **in
+  the bd backend itself**, on the designated `[operating-model].groom-state-bead`
   (metadata preferred; a parseable note is the fallback — the mechanism is an
   implementation decision, the requirements are fixed: dolt-synced across
   machines, no per-machine divergence, no git commit churn). `--status`
