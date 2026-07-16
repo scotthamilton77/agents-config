@@ -220,8 +220,11 @@ field, so the protocol version bumps MINOR.
   ships (§6).
 
 **Split-portability constraint (design rule, not shipped code):** no new
-surface in this spec may assume single-DB semantics in its *contract* — every
-verb is track-relative, never repo-relative. The track→backend source-resolver
+surface in this spec may bake single-DB semantics into its *contract* —
+per-item verbs are track-relative, and the repo-wide reporting verbs (`work
+lint`, `work graph --json`, `work triggers`) are defined as aggregations over
+tracks, so a future extraction satisfies them by composing per-backend results
+rather than by changing any contract. The track→backend source-resolver
 itself is **deferred to extraction execution** (§9): at N=1 it would ship zero
 behavior, and amending the `Backend` protocol for zero behavior fails the
 additive audit. When extraction work begins, the resolver is designed then,
