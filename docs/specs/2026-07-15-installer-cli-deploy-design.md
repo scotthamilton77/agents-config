@@ -181,8 +181,9 @@ CLI named in the prior receipt's `clis` but absent from `CLI_PACKAGES` is
 retired → consent-gated `uv tool uninstall` (per-item prompt, `--yes`
 auto-accepts, `--dry-run` previews). Uninstall of a tool uv no longer knows
 (user removed it manually) is treated as success — the desired state is
-"absent". The rewritten receipt carries only the registry's surviving,
-successfully-deployed CLIs.
+"absent". The rewritten receipt carries, per registry CLI: the new entry when
+this run deployed it, else the retained prior entry (skip/decline/failure keep
+the old record); retired CLIs' entries are dropped once uninstalled.
 
 A CORRUPT prior receipt disables the CLI prune half exactly as it disables
 file pruning (fail closed); the deploy half still runs, treating every CLI by
