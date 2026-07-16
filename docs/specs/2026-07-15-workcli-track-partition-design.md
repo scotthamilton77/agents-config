@@ -161,9 +161,13 @@ field, so the protocol version bumps MINOR.
     primitive and a documented bypass. Milestones (created via `--raw
     --type milestone` or raw bd) are track-exempt by §3. Beads entering through
     `--raw` or raw bd are caught by lint invariant 1, not at the gate.
-- **`work list --track <name>`** — filter sugar over the label. `track` becomes
-  an **`Item`-level envelope field**, so it appears on every read verb (`show`,
-  `ready`, `search`, `list`); consumers never parse label strings. Derivation
+- **`work list --track <name>`** — filters on the derived `Item.track` value,
+  not raw label presence, so filter and envelope field always agree: a bead
+  with zero or more than one `track:*` label derives to `track: null` and
+  therefore matches no `--track` result, surfacing only via lint invariant 1.
+  `track` becomes an **`Item`-level envelope field**, so it appears on every
+  read verb (`show`, `ready`, `search`, `list`); consumers never parse label
+  strings. Derivation
   happens in the **verb layer** (the bd adapter stays config-free). Beads with
   no `track:*` label expose `track: null` — a lint violation, not an envelope
   error; beads with **more than one** `track:*` label (reachable via raw label
