@@ -1,7 +1,7 @@
 # prgroom Verb Effect Idempotency — Crash-Safe Remote Side Effects Under the Single-Persist Contract
 
 **Date:** 2026-07-16
-**Status:** Draft (pending review)
+**Status:** Approved (design)
 **Beads:** agents-config-z4m2h (verb remote side-effects are non-atomic vs single persist → duplicate replies on retry; root cause of the 4x recursive duplicate self-reply incident on PR #211).
 **Related:** agents-config-tjgu7 (PR-body GET→PATCH lost-update race in the same `_route_memory` — §7 rules its remediation shape onto this spec's substrate); agents-config-oav16 (response-file persistence lifecycle — §8 establishes independence, no ordering constraint); agents-config-abn9.8.28 / PR #274 (`own_reply_id` ledger — poll-side self-exclusion; §6 closes its partial-failure blind spot); `docs/plans/2026-05-12-prgroom-cli-design.md` line 1651 (names this exact double-post shape for the legacy-drain boundary but never hardens `reply`'s own retry path — the gap this spec closes).
 

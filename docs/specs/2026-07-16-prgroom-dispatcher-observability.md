@@ -1,7 +1,7 @@
 # prgroom Dispatcher Observability: Usage Wiring, Winner Provenance, Fallback Signal — Design
 
 **Date:** 2026-07-16
-**Status:** Draft (pending review)
+**Status:** Approved (design)
 **Beads:** agents-config-abn9.8.26 (dispatcher fallback observability — P1 bug).
 **Related:** `2026-07-04-cost-telemetry-and-token-capture.md` — its §6 carves this spec's work out of that spec's scope; its §4 `spend_hook` shares the two dispatcher build sites and needs the winning link's `AgentSpec` + rung index, which §3 here exposes on one envelope; its §3.3 reserves the `tokens_total` / `reported_cost_usd` `UsageRecord` fields (this spec adds no `UsageRecord` fields — no collision). Bead agents-config-25rmt owns the token parser that will fill the `None` token fields in the rows this spec starts writing.
 

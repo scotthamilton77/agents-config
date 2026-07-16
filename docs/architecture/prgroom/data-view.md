@@ -378,6 +378,27 @@ The fix output gains an optional `memory` channel (§5, §7.3). The agent *decla
 
 `FixOutput` carries a **required** `verify_checklist` artifact: the armed fix agent's own completion-gate claim (what it ran — tests/build/lint — and the result). It is a forcing function (the contract compels the agent to gate itself) and an audit trail; it is **not** byte-compared against prgroom's mechanical gate, which is independently authoritative (trust-but-verify). On a batch with `FIXED` items, a **missing or malformed** `verify_checklist` is a contract-audit failure (`CONTRACT_FIX_AUDIT_FAILED` ⇒ the item flips to `failed`). The mechanical confirmation — `prgroom`'s `verify` step running the operator-configured tier command via `proc.CommandRunner`, whole-branch — is the gate of record; the verdict it persists is `VerifyVerdict` (above). Contract + audit mechanics live in [`c4-l3-verify.md`](c4-l3-verify.md) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md).
 
+The artifact is a **structured findings list**, grouped by the agent's inner fix → review → fix iterations (distinct from prgroom's outer PR-review loop), using the severity rubric shared with quality-reviewer, crit, and simplify:
+
+```json
+"verify_checklist": {
+  "iterations": [
+    {
+      "reviews_run": ["quality-review", "simplify", "make ci-prgroom"],
+      "findings": [
+        {
+          "severity": "BLOCKING | CRITICAL | MAJOR | MINOR",
+          "title": "one-line finding",
+          "resolution": "addressed | unresolved"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity and resolution) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, `docs/specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md` §3).
+
 ### Repair-dispatch input delta — `verify_failure_path` (prgroom → fix agent)
 
 On a red gate, the convergence loop re-dispatches the fix agent in a **whole-branch repair** mode (bounded by `fix_verify_retries`). The repair-mode input gains an optional `verify_failure_path` — the temp file holding the failing gate's `stdout` / `stderr` / exit code — alongside a `fix-repair` prompt template. The commit-attribution audit is adapted so the repair's new commits are claimed by the verify-repair batch, not by any review item. None of this is persisted state; the only persistent residue is the updated `VerifyVerdict`. See [`c4-l3-verify.md`](c4-l3-verify.md).

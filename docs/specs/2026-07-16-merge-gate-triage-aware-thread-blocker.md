@@ -1,7 +1,7 @@
 # Merge-gate triage-aware thread blocker and cap-fact path repair
 
 **Date:** 2026-07-16
-**Status:** Draft (pending review)
+**Status:** Approved (design)
 **Beads:** agents-config-abn9.8.34 (unresolved_threads triage-blindness), agents-config-abn9.8.35 (bot_review_cap_exhausted dead path). One spec, two beads — each bead's AC section is separate (§9).
 **Related:** `docs/architecture/review-merge-policy/design.md` eligibility-predicate rows are amended by this spec (§3); `2026-07-05-prgroom-disposition-contract.md` deliberately scopes prgroom-sourced exclusions to non-thread blockers — this spec fills the thread-level gap via the inventory union instead, and reserves the disposition `items[]` as a future additive source (§7); agents-config-abn9.8.29 (resolve()'s never-resolve-SKIP/ESCALATE policy) is deliberately unchanged — this spec removes the merge-gate pressure that made it look wrong (§7); agents-config-abn9.8.31 (shared PR-state contract library) was rejected as the fix vehicle (§2); `wait-for-pr-comments/filter-actionable-threads.sh` is the in-tree precedent for triage-filtered thread counting (§4).
 
