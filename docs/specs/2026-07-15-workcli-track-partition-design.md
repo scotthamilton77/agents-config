@@ -115,9 +115,16 @@ constructs a config loader and passes it down — never a module-global read, an
 without widening the fixed handler signature (the loader attaches via the same
 `args`-attachment precedent already used for `read_file`). The loader searches
 upward from the working directory to the enclosing git root for
-`project-config.toml`; an explicit `--config <path>` flag overrides. When no
-config is found, every new flag/verb in §4 fails with the typed
-`E_NOT_CONFIGURED` error and **all pre-existing verbs behave exactly as today**.
+`project-config.toml`; an explicit `--config <path>` flag overrides. Config
+loading is **lazy** — attempted only when a track-layer surface (a new §4
+flag, verb, or derivation) actually needs it, so pre-existing verbs never
+trigger a load and **behave exactly as today** regardless of config state.
+When no config is found — or when `project-config.toml` is present but
+unreadable or malformed (unparseable TOML, or invalid `[tracks]` values such
+as a non-list `names`) — every new flag/verb in §4 fails with the typed
+`E_NOT_CONFIGURED` error, its message naming the specific parse or validation
+problem; a broken config therefore fails only the track layer and can never
+break an existing verb.
 
 ## 4. workcli surface changes
 
