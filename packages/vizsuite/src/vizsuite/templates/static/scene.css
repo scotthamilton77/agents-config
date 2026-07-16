@@ -348,8 +348,11 @@ body {
 /* PR-touched border (spec §6.1): thickened from an earlier 2px so it still
    reads at estate scale among hundreds of small tiles. */
 .viz-tile[data-in-pr="true"] {
-  outline: 3px solid var(--viz-fg);
-  outline-offset: -3px;
+  /* Inset ring, not `outline`: the :focus-visible rule below also sets
+     `outline` at equal specificity, so an outline-based PR marker would
+     vanish whenever a PR-touched tile takes keyboard focus. box-shadow and
+     outline coexist — focused PR tiles show both rings. */
+  box-shadow: inset 0 0 0 3px var(--viz-fg);
 }
 /* Keyboard focus affordance (a11y): a visible, theme-aware ring on the
    focused tile. `--viz-fg` is the highest-contrast token in both themes
