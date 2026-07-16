@@ -318,7 +318,8 @@
     var shortSha = String(staleGraph.built_at_commit).slice(0, 7);
     var text = "graph @ " + shortSha + " (stale";
     if (typeof staleGraph.commits_behind === "number") {
-      text += ", " + staleGraph.commits_behind + " commits behind PR head";
+      var noun = staleGraph.commits_behind === 1 ? "commit" : "commits";
+      text += ", " + staleGraph.commits_behind + " " + noun + " behind PR head";
     }
     return text + ")";
   }
