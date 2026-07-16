@@ -203,7 +203,8 @@ field, so the protocol version bumps MINOR.
   `<project>/.agents-config/` install
   receipts referencing a package) — advisory only, never edits config — and
   emits per-track status:
-  `no-pressure` | `pressured-ineligible` | `pressured-eligible (schedule review)`.
+  `no-pressure` | `pressured-ineligible` | `pressured-eligible` (the last is a
+  human hint to schedule an extraction review).
 - **`work groom --done` / `work groom --status`** — records **Backlog
   Grooming** completion. State (`backlog_last_groomed`) lives **in the bd
   backend itself**, on the designated `[operating-model].groom-state-bead`
