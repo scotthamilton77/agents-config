@@ -390,8 +390,8 @@ per-plan lanes, not the lane identity**. Contract-first discipline applies:
    untouched.
 8. Every read verb's envelope carries `track` for every bead: the label's name
    when exactly one `track:*` label is present, `null` when none or more than
-   one is present; `work list --track <name>` returns exactly the beads
-   labeled with that track.
+   one is present; `work list --track <name>` returns exactly the beads whose
+   derived `Item.track` equals `<name>` (beads deriving to `null` never match).
 9. Milestone-type beads are created without any track requirement and are
    never flagged by lint invariant 1.
 10. `work lint` on a fixture exercising all five invariant classes (missing
