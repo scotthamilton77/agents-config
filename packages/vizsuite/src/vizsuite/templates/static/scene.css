@@ -224,7 +224,40 @@ body {
 #viz-root {
   margin: 0 0 1rem;
 }
+/* The view's own flow-laid-out chrome (reset control, focus breadcrumb)
+   stacks above the absolutely-positioned tile stage — never inside it, so
+   the stage's own size (measured for the treemap layout) never has to
+   account for the chrome's height. */
 .viz-treemap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.viz-treemap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.viz-treemap-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 12px;
+  color: var(--viz-secondary);
+}
+.viz-treemap-breadcrumb[hidden] {
+  display: none;
+}
+.viz-treemap-crumb-sep {
+  color: var(--viz-muted);
+}
+.viz-treemap-crumb--current {
+  color: var(--viz-fg);
+  font-weight: 600;
+}
+.viz-treemap-stage {
   position: relative;
   width: 100%;
   height: 70vh;
@@ -244,19 +277,27 @@ body {
 .viz-tile--dir {
   background: var(--viz-surface);
 }
+/* Expanded directory header: deliberately distinct "structural chrome" (a
+   stronger-contrast fill, bold text, a bottom border) from a collapsed
+   tile's flat heat-colored fill — the ▸/▾ glyph flip below is not, on its
+   own, enough for a second click to read as "collapse" rather than a dead
+   expand. */
 .viz-tile--dir > .viz-tile-header {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 16px;
+  height: 18px;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0 4px;
-  background: var(--viz-border);
+  gap: 0.3rem;
+  padding: 0 5px;
+  background: var(--viz-border-strong);
+  color: var(--viz-fg);
   font-size: 10px;
+  font-weight: 600;
   white-space: nowrap;
+  border-bottom: 1px solid var(--viz-border-strong);
 }
 .viz-tile--file {
   display: flex;
@@ -272,12 +313,43 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Inside the header's flex row (glyph + label + fill-screen button), the
+   label must shrink instead of claiming the general rule's 100% width — a
+   flex item's specified width otherwise becomes its used flex-basis and
+   would push the trailing button out of the tile's clipped bounds. */
+.viz-tile-header > .viz-tile-label {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .viz-tile-label--hidden {
   display: none;
 }
-.viz-tile[data-in-pr="true"] {
+.viz-tile-focus-btn {
+  flex: none;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 400;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.viz-tile-focus-btn:hover {
+  color: var(--viz-fg);
+}
+.viz-tile-focus-btn:focus-visible {
   outline: 2px solid var(--viz-fg);
-  outline-offset: -2px;
+  outline-offset: 1px;
+}
+/* PR-touched border (spec §6.1): thickened from an earlier 2px so it still
+   reads at estate scale among hundreds of small tiles. */
+.viz-tile[data-in-pr="true"] {
+  outline: 3px solid var(--viz-fg);
+  outline-offset: -3px;
 }
 /* Keyboard focus affordance (a11y): a visible, theme-aware ring on the
    focused tile. `--viz-fg` is the highest-contrast token in both themes
@@ -290,14 +362,24 @@ body {
   outline-offset: 1px;
   z-index: 1;
 }
+.viz-collapse-glyph {
+  flex: none;
+  font-weight: 700;
+}
 .viz-tile[data-collapsed="true"] .viz-collapse-glyph::before {
   content: "▸";
 }
 .viz-tile:not([data-collapsed="true"]) .viz-collapse-glyph::before {
   content: "▾";
 }
+/* A collapsed directory's dashed border marks it as a compressed stand-in
+   for many files — visually distinct from both an expanded dir's header bar
+   and a flat (solid-bordered) file tile at a glance; the legend's
+   "collapsed group" entry describes exactly this rectangle. */
 .viz-tile--dir[data-collapsed="true"] {
   background: var(--viz-surface);
+  border-style: dashed;
+  border-width: 2px;
 }
 
 /* ---- Drill panel (spec §4.2/§4.5): opaque overlay, bordered, Escape closes. */

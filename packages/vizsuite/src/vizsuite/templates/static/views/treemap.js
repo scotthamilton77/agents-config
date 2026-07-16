@@ -15,17 +15,85 @@
 
   window.vizViews = window.vizViews || {};
 
-  // ---- Flat scene.files paths → a nested dir/file tree. ----
+  // ---- Root-files grouping (spec §6.1): loose files at repo root (no "/" in
+  // their path) live under a synthetic "(root)" directory node — a real,
+  // collapsible tree node, not a rendering special case. Its identity key is
+  // `ROOT_GROUP_PATH`, a NUL-prefixed sentinel no real git path can ever
+  // equal (git paths cannot contain a NUL byte), so it can never collide with
+  // — or silently absorb — an actual top-level directory that happens to be
+  // named "(root)"; that real directory keeps its own ordinary path and
+  // renders as a second, distinct tile. `ROOT_GROUP_INDEX_KEY` is likewise
+  // NUL-prefixed so it can never collide with a real directory's bare name in
+  // `_index`. ----
+  var ROOT_GROUP_NAME = "(root)";
+  var ROOT_GROUP_PATH = "\u0000(root)";
+  var ROOT_GROUP_INDEX_KEY = "\u0000(root)-group";
+
+  // The full path (or, for the synthetic root group, its display name) for
+  // human-facing text — aria-labels and the fill-screen control's label need
+  // the full path; tile/breadcrumb text elsewhere already uses `.name` (the
+  // synthetic node's own name is already the clean "(root)" string).
+  function displayPathFor(data) {
+    return data.path === ROOT_GROUP_PATH ? ROOT_GROUP_NAME : data.path;
+  }
+
+  // ---- Flat scene.files paths → a nested dir/file tree. Every node keeps a
+  // `parent` pointer (root's is null) so a focused directory's ancestor
+  // chain can be walked directly off the tree, never re-derived by splitting
+  // path strings (which would mishandle the root-group's NUL-prefixed path,
+  // among other things). ----
   function buildTree(files) {
-    var root = { name: "", path: "", isFile: false, children: [], _index: Object.create(null) };
+    var root = {
+      name: "",
+      path: "",
+      isFile: false,
+      parent: null,
+      children: [],
+      _index: Object.create(null)
+    };
+
+    function ensureRootGroup() {
+      var existing = root._index[ROOT_GROUP_INDEX_KEY];
+      if (!existing) {
+        existing = {
+          name: ROOT_GROUP_NAME,
+          path: ROOT_GROUP_PATH,
+          isFile: false,
+          parent: root,
+          children: [],
+          _index: Object.create(null)
+        };
+        root._index[ROOT_GROUP_INDEX_KEY] = existing;
+        root.children.push(existing);
+      }
+      return existing;
+    }
+
     files.forEach(function (file) {
       var parts = file.path.split("/");
+      if (parts.length === 1) {
+        var rootGroup = ensureRootGroup();
+        rootGroup.children.push({
+          name: parts[0],
+          path: file.path,
+          isFile: true,
+          parent: rootGroup,
+          file: file
+        });
+        return;
+      }
       var node = root;
       for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
         var isLeaf = i === parts.length - 1;
         if (isLeaf) {
-          node.children.push({ name: part, path: file.path, isFile: true, file: file });
+          node.children.push({
+            name: part,
+            path: file.path,
+            isFile: true,
+            parent: node,
+            file: file
+          });
           continue;
         }
         var existing = node._index[part];
@@ -34,6 +102,7 @@
             name: part,
             path: node.path ? node.path + "/" + part : part,
             isFile: false,
+            parent: node,
             children: [],
             _index: Object.create(null)
           };
@@ -85,10 +154,43 @@
     }
   }
 
+  // ---- path → node lookup, every node except the true estate root (whose
+  // path is "") — resolves a persisted or focused path string back to a real
+  // tree node without re-walking the tree from scratch each time. ----
+  function indexTreeByPath(node, index) {
+    if (node.path) {
+      index[node.path] = node;
+    }
+    if (node.children) {
+      node.children.forEach(function (child) {
+        indexTreeByPath(child, index);
+      });
+    }
+  }
+
+  // Ancestor chain from (but excluding) the true estate root down to `node`,
+  // in breadcrumb reading order — walked via the real tree's `parent`
+  // pointers, never by splitting `node.path` (which would mishandle the
+  // root-group's NUL-prefixed sentinel).
+  function collectAncestorChain(node) {
+    var chain = [];
+    var current = node;
+    while (current && current.path !== "") {
+      chain.unshift(current);
+      current = current.parent;
+    }
+    return chain;
+  }
+
   // ---- Prune the tree for layout: a collapsed directory becomes a leaf
   // (sized by its file count, colored by its rolled-up heat) so the treemap
-  // reflows — siblings absorb the freed space (spec §6.1). ----
-  function pruneForLayout(node, collapsed) {
+  // reflows — siblings absorb the freed space (spec §6.1). `isLayoutRoot` is
+  // true only for the top node handed to this render pass (the whole estate,
+  // or — while a directory is focused — that directory) so it is never
+  // itself treated as collapsed regardless of its own entry in `collapsed`:
+  // it has just become the effective root filling the canvas, and its own
+  // collapse bookkeeping is left untouched for when focus pops back out. ----
+  function pruneForLayout(node, collapsed, isLayoutRoot) {
     if (node.isFile) {
       return {
         name: node.name,
@@ -101,7 +203,7 @@
         orig: node
       };
     }
-    var isCollapsed = Boolean(node.path) && Boolean(collapsed[node.path]);
+    var isCollapsed = !isLayoutRoot && Boolean(node.path) && Boolean(collapsed[node.path]);
     if (isCollapsed) {
       return {
         name: node.name,
@@ -128,7 +230,7 @@
       heat: node.heat,
       inPr: node.inPr,
       children: node.children.map(function (child) {
-        return pruneForLayout(child, collapsed);
+        return pruneForLayout(child, collapsed, false);
       }),
       orig: node
     };
@@ -203,12 +305,21 @@
     });
   }
 
-  // Click-vs-drag threshold (~4px, spec §4.2), via the shared
-  // `window.vizShared.wireClickVsDragActivation` (also used by the ledger
-  // row and the sonar ring mark — see views/_shared.js): reads the *live*
-  // bound datum at activation time (never a captured snapshot), so a tile
-  // that has survived several re-layouts always acts on its current data.
+  // Click-vs-drag(-vs-double-click) threshold (~4px, spec §4.2), via the
+  // shared `window.vizShared.wireClickVsDragActivation` (also used by the
+  // ledger row and the sonar ring mark — see views/_shared.js): reads the
+  // *live* bound datum at activation time (never a captured snapshot), so a
+  // tile that has survived several re-layouts always acts on its current
+  // data. A directory tile's kind (file vs. directory) never changes across
+  // its lifetime — a given path is either a blob or a tree, never both — so
+  // deciding once, at wiring time, whether to offer double-activation is
+  // safe: file tiles never get it (their single-click drill-open keeps firing
+  // with zero added latency, exactly as before this option existed);
+  // directory tiles do, promoting the directory to the fill-screen focus
+  // root (spec §6.1).
   function wireTileInteractions(el, handlers) {
+    var initialDatum = d3.select(el).datum();
+    var isDir = !initialDatum.data.isFile;
     window.vizShared.wireClickVsDragActivation(el, {
       onActivate: function () {
         var current = d3.select(el).datum();
@@ -217,7 +328,15 @@
         } else {
           handlers.onDirClick(current.data);
         }
-      }
+      },
+      onDoubleActivate: isDir
+        ? function () {
+            var current = d3.select(el).datum();
+            if (!current.data.isFile) {
+              handlers.onDirFocus(current.data);
+            }
+          }
+        : undefined
     });
   }
 
@@ -232,12 +351,28 @@
       return data.path;
     }
     if (data.collapsed) {
-      return data.path + " (collapsed directory, " + data.count + " files)";
+      return displayPathFor(data) + " (collapsed directory, " + data.count + " files)";
     }
-    return data.path + " (directory)";
+    return displayPathFor(data) + " (directory)";
   }
 
-  function buildTileContent(wrapper, d) {
+  function wireFocusButton(button, wrapperNode, handlers) {
+    // The button is its own activation target — never let its own events
+    // also trigger the tile's own click-vs-drag activation (collapse
+    // toggle), the same guard views/ledger.js uses for its diff-link nested
+    // inside an activatable row.
+    ["click", "keydown", "pointerdown", "pointerup"].forEach(function (type) {
+      button.addEventListener(type, function (evt) {
+        evt.stopPropagation();
+      });
+    });
+    button.addEventListener("click", function () {
+      var current = d3.select(wrapperNode).datum();
+      handlers.onDirFocus(current.data);
+    });
+  }
+
+  function buildTileContent(wrapper, d, handlers) {
     if (d.data.isFile) {
       wrapper.append("span").attr("class", "viz-tile-label").text(function (d) { return d.data.name; });
       return;
@@ -258,20 +393,33 @@
       .text(function (d) {
         return d.data.name;
       });
+    // Explicit fill-screen control (spec §6.1), alongside double-clicking the
+    // tile itself — only ever present on an *expanded* directory's own header
+    // (a collapsed directory has no header at all; double-click on its leaf-
+    // style tile is still its own path to focus).
+    var focusBtn = header
+      .append("button")
+      .attr("type", "button")
+      .attr("class", "viz-tile-focus-btn")
+      .text("Focus")
+      .attr("aria-label", function (d) {
+        return "Fill the screen with " + displayPathFor(d.data);
+      });
+    wireFocusButton(focusBtn.node(), wrapper.node(), handlers);
   }
 
-  function renderTiles(container, tree, collapsed, heatScale, handlers) {
-    var rect = container.getBoundingClientRect();
-    var width = rect.width || container.clientWidth || 960;
-    var height = rect.height || container.clientHeight || 600;
-    var pruned = pruneForLayout(tree, collapsed);
+  function renderTiles(stageEl, layoutRoot, collapsed, heatScale, handlers) {
+    var rect = stageEl.getBoundingClientRect();
+    var width = rect.width || stageEl.clientWidth || 960;
+    var height = rect.height || stageEl.clientHeight || 600;
+    var pruned = pruneForLayout(layoutRoot, collapsed, true);
     var hierarchyRoot = layoutTreemap(pruned, width, height);
     var nodes = hierarchyRoot.descendants().filter(function (d) {
       return d.depth > 0;
     });
 
     var sel = d3
-      .select(container)
+      .select(stageEl)
       .selectAll("div.viz-tile")
       .data(nodes, function (d) {
         return d.data.path;
@@ -320,7 +468,7 @@
     merged.each(function (d) {
       var wrapper = d3.select(this);
       wrapper.selectAll("*").remove();
-      buildTileContent(wrapper, d);
+      buildTileContent(wrapper, d, handlers);
     });
 
     entered.each(function () {
@@ -330,16 +478,208 @@
     applyEncoding(merged, heatScale);
   }
 
+  // ---- Breadcrumb strip (spec §6.1): visible only while a directory is
+  // focused as the temporary layout root. "Whole estate" always pops focus
+  // entirely; every other crumb re-focuses on that ancestor (a partial pop);
+  // the last crumb (the current focus) is plain text, not a no-op button. ----
+  function renderBreadcrumb(breadcrumbEl, pathIndex, focusPath, onNavigate) {
+    while (breadcrumbEl.firstChild) {
+      breadcrumbEl.removeChild(breadcrumbEl.firstChild);
+    }
+    var focusNode = focusPath ? pathIndex[focusPath] : null;
+    if (!focusNode || focusNode.isFile) {
+      breadcrumbEl.hidden = true;
+      return;
+    }
+    breadcrumbEl.hidden = false;
+
+    var homeCrumb = document.createElement("button");
+    homeCrumb.type = "button";
+    homeCrumb.setAttribute("class", "viz-btn");
+    homeCrumb.textContent = "Whole estate";
+    homeCrumb.addEventListener("click", function () {
+      onNavigate(null);
+    });
+    breadcrumbEl.appendChild(homeCrumb);
+
+    var chain = collectAncestorChain(focusNode);
+    chain.forEach(function (ancestor, index) {
+      var sep = document.createElement("span");
+      sep.setAttribute("class", "viz-treemap-crumb-sep");
+      sep.textContent = "/";
+      breadcrumbEl.appendChild(sep);
+
+      if (index === chain.length - 1) {
+        var current = document.createElement("span");
+        current.setAttribute("class", "viz-treemap-crumb--current");
+        current.textContent = ancestor.name;
+        breadcrumbEl.appendChild(current);
+        return;
+      }
+      var crumb = document.createElement("button");
+      crumb.type = "button";
+      crumb.setAttribute("class", "viz-btn");
+      crumb.textContent = ancestor.name;
+      crumb.addEventListener("click", function () {
+        onNavigate(ancestor.path);
+      });
+      breadcrumbEl.appendChild(crumb);
+    });
+  }
+
+  // ---- Collapse/focus persistence (spec §6.1): localStorage, feature-
+  // detected exactly like app.js's annotation store (in-memory fallback, no
+  // crash on file:// or disabled storage) — a fixed per-repo key (no PR
+  // number in it, matching the annotation store's own per-repo scoping), so a
+  // reviewer's collapse/focus choices carry over between PR artifacts of the
+  // same repo. ----
+  function makeTreemapStateStore(repoNwo) {
+    var key = "viz:" + repoNwo + ":pr:treemap-state";
+    // A NUL-suffixed probe key so the availability check never reads or
+    // clobbers the one real key this store ever touches.
+    var probeKey = key + "\u0000probe";
+    var available = false;
+    try {
+      window.localStorage.setItem(probeKey, "1");
+      window.localStorage.removeItem(probeKey);
+      available = true;
+    } catch (err) {
+      available = false;
+    }
+    var memoryValue = null;
+
+    function load() {
+      var raw = available ? window.localStorage.getItem(key) : memoryValue;
+      if (!raw) {
+        return null;
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function save(state) {
+      var raw = JSON.stringify(state);
+      if (available) {
+        try {
+          window.localStorage.setItem(key, raw);
+          return;
+        } catch (err) {
+          // Fall through to the in-memory fallback (e.g. quota exceeded).
+        }
+      }
+      memoryValue = raw;
+    }
+
+    function clear() {
+      if (available) {
+        try {
+          window.localStorage.removeItem(key);
+        } catch (err) {
+          // ignore — nothing else to fall back to for a removal
+        }
+      }
+      memoryValue = null;
+    }
+
+    return { load: load, save: save, clear: clear };
+  }
+
   window.vizViews.treemap = {
     render: function (container, scene, state) {
       var tree = buildTree(scene.files);
       var current = state;
       annotate(tree, current.computeHeat);
 
+      var pathIndex = Object.create(null);
+      indexTreeByPath(tree, pathIndex);
+
       var collapsed = Object.create(null);
       collectDefaultCollapsed(tree, collapsed);
 
+      var stateStore = makeTreemapStateStore(scene.repo_nwo);
+      var focusPath = null;
+
+      // Merge the persisted collapse/expand deltas and focus root over the
+      // freshly-computed defaults (spec §6.1) — a path the current scene no
+      // longer has (or that is no longer a directory) is pruned silently
+      // rather than applied.
+      var persisted = stateStore.load();
+      if (persisted) {
+        var delta =
+          persisted.collapseDelta && typeof persisted.collapseDelta === "object"
+            ? persisted.collapseDelta
+            : {};
+        Object.keys(delta).forEach(function (path) {
+          var node = pathIndex[path];
+          if (!node || node.isFile) {
+            return;
+          }
+          if (delta[path]) {
+            collapsed[path] = true;
+          } else {
+            delete collapsed[path];
+          }
+        });
+        if (typeof persisted.focusRoot === "string") {
+          var focusNode = pathIndex[persisted.focusRoot];
+          if (focusNode && !focusNode.isFile) {
+            focusPath = persisted.focusRoot;
+          }
+        }
+      }
+
       var heatScale = makeHeatColorScale();
+
+      // ---- Chrome: a reset control and the focus breadcrumb strip, flow-
+      // laid-out above the absolutely-positioned tile stage — scoped to this
+      // view's own container, so switching to another view removes them
+      // along with everything else this module owns (spec §4.2). ----
+      var controlsRow = document.createElement("div");
+      controlsRow.setAttribute("class", "viz-treemap-controls");
+      var resetBtn = document.createElement("button");
+      resetBtn.id = "viz-treemap-reset";
+      resetBtn.type = "button";
+      resetBtn.setAttribute("class", "viz-btn");
+      resetBtn.textContent = "Reset view";
+      controlsRow.appendChild(resetBtn);
+      container.appendChild(controlsRow);
+
+      var breadcrumbEl = document.createElement("div");
+      breadcrumbEl.id = "viz-treemap-breadcrumb";
+      breadcrumbEl.setAttribute("class", "viz-treemap-breadcrumb");
+      breadcrumbEl.hidden = true;
+      container.appendChild(breadcrumbEl);
+
+      var stageEl = document.createElement("div");
+      stageEl.setAttribute("class", "viz-treemap-stage");
+      container.appendChild(stageEl);
+
+      function persistState() {
+        var defaults = Object.create(null);
+        collectDefaultCollapsed(tree, defaults);
+        var delta = {};
+        Object.keys(collapsed).forEach(function (path) {
+          if (!defaults[path]) {
+            delta[path] = true;
+          }
+        });
+        Object.keys(defaults).forEach(function (path) {
+          if (!collapsed[path]) {
+            delta[path] = false;
+          }
+        });
+        stateStore.save({ collapseDelta: delta, focusRoot: focusPath });
+      }
+
+      function setFocus(path) {
+        focusPath = path;
+        persistState();
+        fullRender();
+      }
 
       var handlers = {
         onDirClick: function (data) {
@@ -348,7 +688,11 @@
           } else {
             collapsed[data.path] = true;
           }
+          persistState();
           fullRender();
+        },
+        onDirFocus: function (data) {
+          setFocus(data.path);
         },
         onFileClick: function (data) {
           current.openDrill(data);
@@ -356,8 +700,24 @@
       };
 
       function fullRender() {
-        renderTiles(container, tree, collapsed, heatScale, handlers);
+        var layoutRoot = tree;
+        if (focusPath) {
+          var focusNode = pathIndex[focusPath];
+          if (focusNode && !focusNode.isFile) {
+            layoutRoot = focusNode;
+          }
+        }
+        renderTiles(stageEl, layoutRoot, collapsed, heatScale, handlers);
+        renderBreadcrumb(breadcrumbEl, pathIndex, focusPath, setFocus);
       }
+
+      resetBtn.addEventListener("click", function () {
+        collapsed = Object.create(null);
+        collectDefaultCollapsed(tree, collapsed);
+        focusPath = null;
+        stateStore.clear();
+        fullRender();
+      });
 
       fullRender();
 
@@ -385,7 +745,7 @@
           current = newState;
           annotate(tree, current.computeHeat);
           heatScale = makeHeatColorScale();
-          var selection = d3.select(container).selectAll("div.viz-tile");
+          var selection = d3.select(stageEl).selectAll("div.viz-tile");
           selection.each(function (d) {
             d.data.heat = d.data.orig.heat;
           });

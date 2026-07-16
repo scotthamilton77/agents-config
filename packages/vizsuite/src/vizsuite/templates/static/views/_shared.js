@@ -20,6 +20,20 @@
 // `options.isExempt(evt)`, if given, opts an event out of activation (the
 // ledger row's diff-link guard) — omitted, every candidate event activates.
 //
+// `options.onDoubleActivate()` (optional; used by the treemap's directory
+// fill-screen focus, spec §6.1): a second qualifying pointer activation
+// arriving within
+// `DOUBLE_ACTIVATE_WINDOW_MS` of the first fires this instead of a second
+// `onActivate()` — mirroring the reacted-to prototype's own debounce-the-
+// single-click-then-cancel-on-a-second-click treatment (docs/plans/
+// visualization-suite/prototype/variant_A.js), so a double-click's single-
+// click side effect never also fires. Every existing call site (the ledger
+// row, the sonar ring mark) omits this option, so `onActivate()` keeps firing
+// synchronously for them — this branch is purely additive. Keyboard
+// activation (Enter/Space) never participates in this debounce: it always
+// fires `onActivate()` immediately, since a keyboard user reaches the
+// double-activate behavior via its own dedicated control instead.
+//
 // isDependencyGraphUnavailable: the shared "is the dependency graph
 // unavailable?" predicate for the graph-shaped views (constellation, file
 // sonar). The answer is NOT "scene.edges is empty" — an *available*
@@ -34,8 +48,14 @@
 
   window.vizShared = window.vizShared || {};
 
+  // A second qualifying pointer activation within this window of the first
+  // counts as a double-activation rather than two singles — the same ~300ms
+  // ballpark most desktop OSes use for double-click detection.
+  var DOUBLE_ACTIVATE_WINDOW_MS = 320;
+
   function wireClickVsDragActivation(el, options) {
     var onActivate = options.onActivate;
+    var onDoubleActivate = options.onDoubleActivate;
     var isExempt = options.isExempt;
     var startX = 0;
     var startY = 0;
@@ -44,6 +64,33 @@
     // element, rejecting a stray pointerup from a gesture begun elsewhere
     // (whose `moved` would still read false).
     var armed = false;
+    // Pending single-activate timer (only ever set when `onDoubleActivate`
+    // is given — every other call site's `onActivate` still fires inline,
+    // with zero added latency, exactly as before this option existed).
+    var pendingActivateTimer = null;
+
+    function firePointerActivate() {
+      if (!onDoubleActivate) {
+        onActivate();
+        return;
+      }
+      if (pendingActivateTimer !== null) {
+        clearTimeout(pendingActivateTimer);
+        pendingActivateTimer = null;
+        onDoubleActivate();
+        return;
+      }
+      pendingActivateTimer = setTimeout(function () {
+        pendingActivateTimer = null;
+        // The element may have been removed from the DOM (e.g. a resize or
+        // collapse re-render pruned this tile) between the first click and
+        // this timer firing — never act on a stale, detached element.
+        if (el.isConnected === false) {
+          return;
+        }
+        onActivate();
+      }, DOUBLE_ACTIVATE_WINDOW_MS);
+    }
 
     el.addEventListener("pointerdown", function (evt) {
       startX = evt.clientX;
@@ -80,7 +127,7 @@
       if (isExempt && isExempt(evt)) {
         return;
       }
-      onActivate();
+      firePointerActivate();
     });
     // A cancelled gesture (browser-initiated, e.g. scroll takeover) must not
     // leave the helper armed for a later stray pointerup.
