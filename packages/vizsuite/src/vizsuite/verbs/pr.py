@@ -94,7 +94,12 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     allow_stale_graph: bool = args.allow_stale_graph
     centrality = centrality_axis(graph_path, scope.head_oid, allow_stale=allow_stale_graph)
     heat_model = heat.combine(
-        estate_map, complexity_scores, consequence_scores, centrality, set(scope.files)
+        estate_map,
+        complexity_scores,
+        consequence_scores,
+        centrality,
+        set(scope.files),
+        churn=scope.files,
     )
 
     # The centrality axis's own EXTRACTED, intra-file-excluded edges (empty

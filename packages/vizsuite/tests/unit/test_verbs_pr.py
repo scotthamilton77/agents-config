@@ -258,7 +258,20 @@ def test_pr_threads_heat_axes_repo_nwo_and_in_pr_into_the_scene(
     assert names == {"complexity", "load_bearing", "consequence", "heat"}
 
     by_path = {node["path"]: node["attributes"] for node in scene["files"]}
+    # src/app.py is a net PR file — its churn (from `churn_rows` above) threads
+    # onto its attributes; lib/util.py is context-only and never fabricates them.
     assert set(by_path["src/app.py"]) == {
+        "complexity",
+        "load_bearing",
+        "consequence",
+        "heat",
+        "in_pr",
+        "added",
+        "deleted",
+    }
+    assert by_path["src/app.py"]["added"] == 3
+    assert by_path["src/app.py"]["deleted"] == 0
+    assert set(by_path["lib/util.py"]) == {
         "complexity",
         "load_bearing",
         "consequence",

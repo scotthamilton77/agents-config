@@ -331,6 +331,31 @@
     });
   }
 
+  // Hover score card (spec §4.5), file tiles only — a directory tile (whether
+  // expanded or collapsed) has no single set of per-axis scores to show.
+  // Pointer hover events (enter/move/leave) are a disjoint event family from
+  // wireClickVsDragActivation's own pointerdown/up/cancel, so this never
+  // interferes with click/drag activation or the tile's aria-label.
+  function wireTileTooltip(el, handlers) {
+    el.addEventListener("pointerenter", function (evt) {
+      var current = d3.select(el).datum();
+      if (!current.data.isFile) {
+        return;
+      }
+      handlers.onFileHoverShow(evt, current.data);
+    });
+    el.addEventListener("pointermove", function (evt) {
+      var current = d3.select(el).datum();
+      if (!current.data.isFile) {
+        return;
+      }
+      handlers.onFileHoverMove(evt);
+    });
+    el.addEventListener("pointerleave", function () {
+      handlers.onFileHoverHide();
+    });
+  }
+
   // Accessible name for a tile (a11y), set via the `aria-label` attribute —
   // repo-derived path strings flow through d3's `.attr()` (never innerHTML), so
   // the textContent/attribute-only binding invariant holds. Recomputed in the
@@ -413,6 +438,12 @@
   }
 
   function renderTiles(stageEl, layoutRoot, collapsed, heatScale, handlers) {
+    // A relayout (collapse toggle, focus, resize) can remove the tile the
+    // hover tooltip is currently describing without ever firing a real
+    // `pointerleave` — hide it unconditionally rather than leaving a
+    // dangling reference to a detached tile (fidelity F3).
+    window.vizShared.hideTooltip();
+
     var rect = stageEl.getBoundingClientRect();
     var width = rect.width || stageEl.clientWidth || 960;
     var height = rect.height || stageEl.clientHeight || 600;
@@ -438,8 +469,14 @@
       .attr("class", function (d) {
         return "viz-tile " + (d.data.isFile ? "viz-tile--file" : "viz-tile--dir");
       })
+      // The synthetic root-group's path (ROOT_GROUP_PATH) carries a NUL
+      // sentinel that must never land in a DOM attribute (spec §3's F3
+      // "accreted item C") — emit its display form instead. Nothing reads
+      // this attribute back (views bind via the D3 datum), so the datum's
+      // own `.path` stays the untouched sentinel for internal use (e.g. the
+      // `.data()` join key above).
       .attr("data-path", function (d) {
-        return d.data.path;
+        return displayPathFor(d.data);
       })
       .attr("data-collapsed", function (d) {
         return d.data.collapsed ? "true" : "false";
@@ -477,6 +514,7 @@
 
     entered.each(function () {
       wireTileInteractions(this, handlers);
+      wireTileTooltip(this, handlers);
     });
 
     applyEncoding(merged, heatScale);
@@ -532,28 +570,20 @@
   }
 
   // ---- Collapse/focus persistence (spec §6.1): localStorage, feature-
-  // detected exactly like app.js's annotation store (in-memory fallback, no
-  // crash on file:// or disabled storage) — a fixed per-repo key (no PR
-  // number in it, matching the annotation store's own per-repo scoping), so a
+  // detected via the shared factory (views/_shared.js) app.js's annotation
+  // store also rebases on (fidelity F3) — a fixed per-repo key (no PR number
+  // in it, matching the annotation store's own per-repo scoping), so a
   // reviewer's collapse/focus choices carry over between PR artifacts of the
-  // same repo. ----
+  // same repo. `onFallback` is wired by the caller (render(), below) to the
+  // same storage-warning banner app.js's annotation store surfaces — a
+  // runtime write failure here (e.g. quota exceeded) is no less worth
+  // telling the reviewer about than a lost note. ----
   function makeTreemapStateStore(repoNwo) {
     var key = "viz:" + repoNwo + ":pr:treemap-state";
-    // A NUL-suffixed probe key so the availability check never reads or
-    // clobbers the one real key this store ever touches.
-    var probeKey = key + "\u0000probe";
-    var available = false;
-    try {
-      window.localStorage.setItem(probeKey, "1");
-      window.localStorage.removeItem(probeKey);
-      available = true;
-    } catch (err) {
-      available = false;
-    }
-    var memoryValue = null;
+    var store = window.vizShared.makeLocalStorageStore(key);
 
     function load() {
-      var raw = available ? window.localStorage.getItem(key) : memoryValue;
+      var raw = store.getItem(key);
       if (!raw) {
         return null;
       }
@@ -566,30 +596,14 @@
     }
 
     function save(state) {
-      var raw = JSON.stringify(state);
-      if (available) {
-        try {
-          window.localStorage.setItem(key, raw);
-          return;
-        } catch (err) {
-          // Fall through to the in-memory fallback (e.g. quota exceeded).
-        }
-      }
-      memoryValue = raw;
+      store.setItem(key, JSON.stringify(state));
     }
 
     function clear() {
-      if (available) {
-        try {
-          window.localStorage.removeItem(key);
-        } catch (err) {
-          // ignore — nothing else to fall back to for a removal
-        }
-      }
-      memoryValue = null;
+      store.removeItem(key);
     }
 
-    return { load: load, save: save, clear: clear };
+    return { load: load, save: save, clear: clear, onFallback: store.onFallback };
   }
 
   window.vizViews.treemap = {
@@ -614,6 +628,12 @@
       });
 
       var stateStore = makeTreemapStateStore(scene.repo_nwo);
+      stateStore.onFallback(function () {
+        current.notifyStorageFallback(
+          "Your treemap view (collapsed groups, focus) has stopped being saved " +
+            "— a localStorage write failed (the browser storage quota may be full)."
+        );
+      });
       var focusPath = null;
 
       // Merge the persisted collapse/expand deltas and focus root over the
@@ -718,6 +738,19 @@
         },
         onFileClick: function (data) {
           current.openDrill(data);
+        },
+        onFileHoverShow: function (evt, data) {
+          window.vizShared.showTooltip(evt, function (el) {
+            window.vizShared.buildScoreCard(
+              el, data.path, (data.orig.file.attributes || {}), data.heat
+            );
+          });
+        },
+        onFileHoverMove: function (evt) {
+          window.vizShared.moveTooltip(evt);
+        },
+        onFileHoverHide: function () {
+          window.vizShared.hideTooltip();
         }
       };
 
@@ -734,8 +767,14 @@
       }
 
       resetBtn.addEventListener("click", function () {
+        // Clone the already-computed `defaultCollapsed` map (accreted item B)
+        // rather than re-walking the whole tree via collectDefaultCollapsed —
+        // the default-collapsed set is fixed for the view's lifetime (see the
+        // comment above `defaultCollapsed`'s own computation).
         collapsed = Object.create(null);
-        collectDefaultCollapsed(tree, collapsed);
+        Object.keys(defaultCollapsed).forEach(function (path) {
+          collapsed[path] = true;
+        });
         focusPath = null;
         stateStore.clear();
         fullRender();
@@ -744,7 +783,7 @@
       fullRender();
 
       var resizeDebounceTimer = null;
-      var resizeHandler = function () {
+      function scheduleRelayout() {
         if (resizeDebounceTimer) {
           clearTimeout(resizeDebounceTimer);
         }
@@ -752,15 +791,23 @@
           resizeDebounceTimer = null;
           fullRender();
         }, 150);
-      };
-      window.addEventListener("resize", resizeHandler);
+      }
+      window.addEventListener("resize", scheduleRelayout);
+      // The drill drawer opening/closing shrinks/restores `#viz-root`
+      // (app.js's `onDrillOpenChange`, scene.css's `viz-drill-open` class) —
+      // a real container-size change, not the "encoding-only" case
+      // reencode() covers, so it gets the same debounced relayout as a
+      // window resize (fidelity F3).
+      document.addEventListener("viz:drill-panel-toggled", scheduleRelayout);
 
       return {
         destroy: function () {
           if (resizeDebounceTimer) {
             clearTimeout(resizeDebounceTimer);
           }
-          window.removeEventListener("resize", resizeHandler);
+          window.removeEventListener("resize", scheduleRelayout);
+          document.removeEventListener("viz:drill-panel-toggled", scheduleRelayout);
+          window.vizShared.hideTooltip();
           d3.select(container).selectAll("*").remove();
         },
         reencode: function (newState) {

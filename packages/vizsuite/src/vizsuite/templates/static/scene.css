@@ -38,6 +38,22 @@
   --viz-hue-violet: #4a3aa7;
   --viz-hue-magenta: #e87ba4;
   --viz-hue-orange: #eb6834;
+
+  /* Per-axis meter colors (spec §4.5 "mirroring scene colors", fidelity F3):
+     one token per heat axis, reused verbatim by the drill drawer's meter
+     rows, the hover score card, and the ledger's compact mini-bars — never a
+     bespoke color at any one of those three call sites. Aliases onto the
+     categorical hues above rather than new literals, so a theme edit to
+     `--viz-hue-*` still only lives in one place. */
+  --viz-axis-complexity: var(--viz-hue-blue);
+  --viz-axis-load-bearing: var(--viz-hue-violet);
+  --viz-axis-consequence: var(--viz-hue-orange);
+  --viz-axis-heat: var(--viz-fg);
+
+  /* The drill drawer's fixed width (fidelity F3) — shared by the drawer
+     itself and `#viz-root`'s stage-shrink margin, so the diagram container
+     always narrows by exactly the drawer's own width. */
+  --viz-drill-width: min(24rem, 90vw);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-viz-theme="light"]) {
@@ -223,6 +239,14 @@ body {
 /* ---- Estate treemap (spec §6.1). ---- */
 #viz-root {
   margin: 0 0 1rem;
+  transition: margin-right 0.18s ease;
+}
+/* Drawer conversion (fidelity F3, prototype anatomy `#stage.drill-open`):
+   the drill drawer never overlays the diagram — the view stage SHRINKS by
+   exactly the drawer's own width so tiles/rows under it stay fully
+   interactive. Toggled by app.js's `onDrillOpenChange`. */
+#viz-root.viz-drill-open {
+  margin-right: var(--viz-drill-width);
 }
 /* The view's own flow-laid-out chrome (reset control, focus breadcrumb)
    stacks above the absolutely-positioned tile stage — never inside it, so
@@ -392,30 +416,58 @@ body {
   border-width: 2px;
 }
 
-/* ---- Drill panel (spec §4.2/§4.5): opaque overlay, bordered, Escape closes. */
+/* ---- Drill panel (spec §4.2/§4.5): a full-height right-docked drawer
+   (fidelity F3, prototype anatomy `#drill`) — the diagram stays visible and
+   interactive behind it via `#viz-root.viz-drill-open`'s stage-shrink margin
+   (above), so this is never an overlay in the "blocks the content" sense.
+   Escape closes; bordered on its one open edge. */
 .viz-drill-panel {
   position: fixed;
-  top: 10vh;
-  right: 1rem;
-  width: min(24rem, 90vw);
-  max-height: 70vh;
-  overflow: auto;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--viz-drill-width);
+  max-height: none;
+  overflow-y: auto;
   background: var(--viz-overlay-bg);
   opacity: 1;
   color: var(--viz-fg);
-  border: 1px solid var(--viz-border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border-left: 1px solid var(--viz-border-strong);
+  border-radius: 0;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.25);
   padding: 0.75rem 1rem;
-  z-index: 10;
+  z-index: 20;
 }
 .viz-drill-panel[hidden] {
   display: none;
 }
+.viz-drill-panel #viz-drill-panel-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+}
 .viz-drill-panel h2 {
   font-size: 0.95rem;
-  margin: 0 0 0.5rem;
+  margin: 0 2rem 0.5rem 0;
   word-break: break-all;
+}
+/* PR diff stats (spec §4.5, prototype `.stat` chips): the churn chip and the
+   shared per-file diff link (views/_shared.js), flow-laid-out together. */
+.viz-drill-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+}
+.viz-drill-stat {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  background: var(--viz-surface);
+  font-size: 11px;
+  color: var(--viz-secondary);
 }
 .viz-drill-row {
   display: flex;
@@ -434,6 +486,80 @@ body {
   border: 1px solid var(--viz-border);
   border-radius: 4px;
   padding: 0.35rem;
+}
+
+/* ---- Per-axis meter rows (spec §4.5 "mirroring scene colors", fidelity
+   F3): the shared building block (window.vizShared.buildMeterRow) used by
+   the drill drawer's per-axis breakdown and the hover score card. ---- */
+.viz-meter-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 11px;
+  color: var(--viz-secondary);
+  margin: 0.2rem 0;
+}
+.viz-meter-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--viz-border);
+  overflow: hidden;
+}
+.viz-meter-fill {
+  display: block;
+  height: 100%;
+}
+.viz-meter-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* The ledger row's compact fill-only variant
+   (window.vizShared.buildMiniBar) — no label/value text. */
+.viz-meter-mini {
+  display: inline-block;
+  width: 14px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--viz-border);
+  overflow: hidden;
+}
+.viz-meter-mini-fill {
+  display: block;
+  height: 100%;
+}
+
+/* ---- Hover score card (spec §4.5, fidelity F3, prototype anatomy
+   `#tooltip`): a single shared tooltip element (window.vizShared.showTooltip)
+   reused across every view — pointer-events: none so it never itself becomes
+   a hover/click target, following the cursor and flipped near viewport edges
+   in JS. ---- */
+.viz-tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 50;
+  background: var(--viz-overlay-bg);
+  border: 1px solid var(--viz-border-strong);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 12px;
+  max-width: 22rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: var(--viz-fg);
+}
+.viz-tooltip[hidden] {
+  display: none;
+}
+.viz-tooltip-path {
+  font-weight: 600;
+  word-break: break-all;
+  margin-bottom: 0.25rem;
+}
+.viz-tooltip-churn {
+  margin-top: 0.3rem;
+  color: var(--viz-secondary);
+  font-size: 11px;
 }
 
 /* ---- File sonar (spec §6.1): a drill-panel affordance, not a top-level
@@ -597,6 +723,13 @@ body {
   white-space: nowrap;
   font-size: 12.5px;
 }
+/* Compact per-axis mini-bars (spec §4.5, fidelity F3) — between the path and
+   the numeric heat, same color tokens as the drill drawer/hover score card. */
+.viz-ledger-axis-bars {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
 .viz-ledger-heat {
   min-width: 3rem;
   text-align: right;
@@ -606,11 +739,15 @@ body {
 .viz-ledger-link {
   flex: none;
 }
-.viz-ledger-diff-link {
+/* .viz-diff-link is the shared per-file diff anchor (window.vizShared.
+   buildDiffLink, views/_shared.js) — reused verbatim by the drill drawer's
+   stats row, so its styling lives here rather than under a ledger-specific
+   class name. */
+.viz-diff-link {
   font-size: 12px;
   color: var(--viz-hue-blue);
 }
-.viz-ledger-diff-link:focus-visible {
+.viz-diff-link:focus-visible {
   outline: 2px solid var(--viz-fg);
   outline-offset: 1px;
 }

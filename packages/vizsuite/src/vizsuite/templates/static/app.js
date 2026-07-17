@@ -38,8 +38,9 @@
 
   // The three §6.2 input axes, in the same order/names as
   // `vizsuite.scene.heat._INPUT_AXES` — the JS recompute below mirrors that
-  // module's weighted-average formula exactly.
-  var HEAT_AXES = ["complexity", "load_bearing", "consequence"];
+  // module's weighted-average formula exactly. Sourced from views/_shared.js
+  // (window.vizShared.HEAT_AXES) rather than duplicated here.
+  var HEAT_AXES = window.vizShared.HEAT_AXES;
 
   // ---- Heat math: Σ(wᵢ·vᵢ)/Σ(wᵢ) over the *active* axes only (an
   // unavailable axis is excluded from both the sum and the normalizer, so
@@ -68,102 +69,43 @@
   // detected, with an in-memory fallback so the copy-as-JSON button always
   // works even when the origin (a bare `file://` artifact) disables storage.
   // Notes key on `viz:<repo_nwo>:pr:<file-path>` — V1 has no Tier-2 fact ids,
-  // so the file is the annotatable unit. ----
+  // so the file is the annotatable unit. Rebased on the shared localStorage
+  // factory (views/_shared.js), which treemap.js's collapse/focus-state
+  // store now also uses (fidelity F3). ----
   function makeAnnotationStore(repoNwo) {
     var prefix = "viz:" + repoNwo + ":pr:";
-    var available = false;
-    // Probe key carries a NUL delimiter, which no valid repo path can
-    // contain, so it can never collide with a note key (`prefix + <path>`).
-    var probeKey = prefix + "\u0000probe";
-    try {
-      window.localStorage.setItem(probeKey, "1");
-      window.localStorage.removeItem(probeKey);
-      available = true;
-    } catch (err) {
-      available = false;
-    }
-    var memory = Object.create(null);
-    var fallbackHandler = null;
-    var fallbackNotified = false;
-
-    // Fires the registered handler the first time a runtime write falls back
-    // to the in-memory map (e.g. quota exceeded) so the UI can surface the
-    // non-persistence warning that boot-time feature detection would miss.
-    function notifyFallback() {
-      if (fallbackNotified) {
-        return;
-      }
-      fallbackNotified = true;
-      if (typeof fallbackHandler === "function") {
-        fallbackHandler();
-      }
-    }
-
-    function onFallback(handler) {
-      fallbackHandler = handler;
-    }
+    var store = window.vizShared.makeLocalStorageStore(prefix);
 
     function keyFor(path) {
       return prefix + path;
     }
 
     function get(path) {
-      var key = keyFor(path);
-      if (available) {
-        return window.localStorage.getItem(key) || "";
-      }
-      return memory[key] || "";
+      return store.getItem(keyFor(path)) || "";
     }
 
     function set(path, value) {
-      var key = keyFor(path);
-      if (available) {
-        try {
-          if (value) {
-            window.localStorage.setItem(key, value);
-          } else {
-            window.localStorage.removeItem(key);
-          }
-          return;
-        } catch (err) {
-          // Fall through to the in-memory map (e.g. quota exceeded) and
-          // surface the non-persistence warning — notes stopped persisting
-          // mid-session even though storage was available at page-load.
-          notifyFallback();
-        }
-      }
       if (value) {
-        memory[key] = value;
+        store.setItem(keyFor(path), value);
       } else {
-        delete memory[key];
+        store.removeItem(keyFor(path));
       }
     }
 
     function getAll() {
       var out = {};
-      if (available) {
-        for (var i = 0; i < window.localStorage.length; i++) {
-          var k = window.localStorage.key(i);
-          if (k && k.indexOf(prefix) === 0) {
-            out[k] = window.localStorage.getItem(k);
-          }
-        }
-      } else {
-        for (var mk in memory) {
-          if (Object.prototype.hasOwnProperty.call(memory, mk)) {
-            out[mk] = memory[mk];
-          }
-        }
-      }
+      store.keys().forEach(function (key) {
+        out[key] = store.getItem(key);
+      });
       return out;
     }
 
     return {
-      available: available,
+      available: store.available,
       get: get,
       set: set,
       getAll: getAll,
-      onFallback: onFallback
+      onFallback: store.onFallback
     };
   }
 
@@ -443,9 +385,16 @@
     });
   }
 
-  // ---- Drill panel (spec §4.2/§4.5): opaque overlay; Escape closes; the
-  // notes textarea binds via `.value`, never `innerHTML`. ----
-  function makeOpenDrill(panelEl, scene, annotationStore, weights, unavailableAxes, drillState) {
+  // ---- Drill panel (spec §4.2/§4.5): a full-height right-docked drawer
+  // (fidelity F3 — converted from an earlier floating overlay card, prototype
+  // anatomy `#drill`/`showDrill`); Escape closes; the notes textarea binds
+  // via `.value`, never `innerHTML`. `onOpenChange(open)` toggles the
+  // stage-shrink class on `#viz-root` and lets the treemap re-run its layout
+  // against the narrower container (see `viz:drill-panel-toggled` in
+  // views/treemap.js) — the drawer never overlays the diagram. ----
+  function makeOpenDrill(
+    panelEl, scene, annotationStore, weights, unavailableAxes, drillState, onOpenChange
+  ) {
     return function (fileNode) {
       // A prior file's (or the same file's, on a weight-change refresh)
       // sonar render is about to be discarded along with the rest of the
@@ -473,6 +422,7 @@
       closeBtn.addEventListener("click", function () {
         drillState.node = null;
         panelEl.hidden = true;
+        onOpenChange(false);
       });
       panelEl.appendChild(closeBtn);
 
@@ -482,6 +432,29 @@
 
       var attributes =
         (fileNode.orig && fileNode.orig.file && fileNode.orig.file.attributes) || {};
+      var isInPr = Boolean(attributes.in_pr);
+
+      // PR diff stats (spec §4.5, prototype `.stat` chips) + the shared
+      // per-file diff link (views/_shared.js, hoisted out of views/ledger.js)
+      // — both silently absent for a context file or when the churn/repo_nwo
+      // data isn't there (never fabricated).
+      var statsRow = document.createElement("div");
+      statsRow.setAttribute("class", "viz-drill-stats");
+      if (isInPr && typeof attributes.added === "number") {
+        var deleted = typeof attributes.deleted === "number" ? attributes.deleted : 0;
+        var churnChip = document.createElement("span");
+        churnChip.setAttribute("class", "viz-drill-stat");
+        churnChip.textContent = "+" + attributes.added + "/−" + deleted;
+        statsRow.appendChild(churnChip);
+      }
+      var diffLink = window.vizShared.buildDiffLink(scene, fileNode.path, isInPr);
+      if (diffLink) {
+        statsRow.appendChild(diffLink);
+      }
+      if (statsRow.childNodes.length > 0) {
+        panelEl.appendChild(statsRow);
+      }
+
       var activeAxes = HEAT_AXES.filter(function (axis) {
         return unavailableAxes.indexOf(axis) === -1;
       });
@@ -494,6 +467,13 @@
         var raw = typeof attributes[axis] === "number" ? attributes[axis] : 0;
         var share =
           isUnavailable || weightTotal <= 0 ? 0 : (weights[axis] || 0) / weightTotal;
+
+        // Per-axis colored bar (spec §4.5 "mirroring scene colors"), plus the
+        // existing raw × weight% = contribution breakdown text row beneath it
+        // — the bar is new anatomy, the contribution math is unchanged.
+        panelEl.appendChild(
+          window.vizShared.buildMeterRow(axis, axis + (isUnavailable ? " (unavailable)" : ""), raw)
+        );
 
         var row = document.createElement("div");
         row.setAttribute("class", "viz-drill-row");
@@ -534,14 +514,16 @@
       panelEl.appendChild(notes);
 
       panelEl.hidden = false;
+      onOpenChange(true);
     };
   }
 
-  function wireDrillPanelClose(panelEl, drillState) {
+  function wireDrillPanelClose(panelEl, drillState, onOpenChange) {
     document.addEventListener("keydown", function (evt) {
       if (evt.key === "Escape" && !panelEl.hidden) {
         drillState.node = null;
         panelEl.hidden = true;
+        onOpenChange(false);
       }
     });
   }
@@ -680,15 +662,25 @@
       elements.storageWarning.hidden = false;
     }
 
+    // Shared by every localStorage-backed store's onFallback handler (the
+    // annotation store below, and the treemap's collapse/focus-state store —
+    // views/treemap.js reaches this via `state.notifyStorageFallback`) so a
+    // runtime write failure (e.g. quota exceeded) always surfaces the same
+    // visible banner, whichever store hit it.
+    function surfaceStorageFallback(message) {
+      elements.storageWarning.textContent = message;
+      elements.storageWarning.hidden = false;
+    }
+
     // Storage was available at page-load but a later write failed (e.g. quota
     // exceeded) — reveal the same banner so the reviewer sees that notes have
     // stopped persisting mid-session.
     annotationStore.onFallback(function () {
-      elements.storageWarning.textContent =
+      surfaceStorageFallback(
         "Notes have stopped being saved (a localStorage write failed — the " +
-        "browser storage quota may be full). " +
-        "Use “Copy notes as JSON” before closing this tab.";
-      elements.storageWarning.hidden = false;
+          "browser storage quota may be full). " +
+          "Use “Copy notes as JSON” before closing this tab."
+      );
     });
 
     var mountedViews = [];
@@ -698,8 +690,27 @@
     // `sonarHandle` holds the currently-mounted sonar drill (or null), so it
     // can be torn down before the panel rebuilds (spec §4.2).
     var drillState = { node: null, sonarHandle: null };
+
+    // Drawer conversion (fidelity F3): the drawer never overlays the diagram
+    // — `#viz-root`'s `viz-drill-open` class shrinks it (scene.css), and the
+    // `viz:drill-panel-toggled` event lets the treemap re-run its layout
+    // against the new width (views/treemap.js) — a real dimension change,
+    // not the "encoding-only" case reencode() covers.
+    function onDrillOpenChange(open) {
+      elements.root.classList.toggle("viz-drill-open", open);
+      document.dispatchEvent(
+        new CustomEvent("viz:drill-panel-toggled", { detail: { open: open } })
+      );
+    }
+
     var openDrill = makeOpenDrill(
-      elements.drillPanel, scene, annotationStore, weights, unavailableAxes, drillState
+      elements.drillPanel,
+      scene,
+      annotationStore,
+      weights,
+      unavailableAxes,
+      drillState,
+      onDrillOpenChange
     );
 
     function onWeightChange() {
@@ -728,7 +739,8 @@
         unavailableAxes: unavailableAxes,
         computeHeat: computeHeatFactory(weights, unavailableAxes),
         theme: currentThemeName(),
-        openDrill: openDrill
+        openDrill: openDrill,
+        notifyStorageFallback: surfaceStorageFallback
       };
     }
 
@@ -738,7 +750,7 @@
     });
     wireCopyNotesButton(controls.copyButton, controls.copyStatus, annotationStore);
     buildLegend(elements.legend, staleGraph);
-    wireDrillPanelClose(elements.drillPanel, drillState);
+    wireDrillPanelClose(elements.drillPanel, drillState, onDrillOpenChange);
 
     document.addEventListener("viz:theme-changed", reencodeAll);
 

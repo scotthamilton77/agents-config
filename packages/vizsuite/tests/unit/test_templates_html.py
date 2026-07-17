@@ -236,6 +236,43 @@ def test_render_inlines_constellation_view_bundle_and_playwright_hooks():
     assert "Show dependency constellation (experimental)" in html
 
 
+def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
+    # Fidelity F3 (drawer + content fidelity, spec §4.5): the drill drawer's
+    # stage-shrink class, the shared per-axis meter row/mini-bar building
+    # blocks, the hoisted diff-link class, and the hover score-card tooltip
+    # element are all JS/CSS source — inlined regardless of scene content,
+    # same convention as every other stable id/class (viz-drill-sonar-toggle,
+    # viz-treemap-reset, ...).
+    html = render_html(
+        _scene(
+            FileNode(path="src/app.py", checksum="aaa"),
+            FileNode(path="README.md", checksum="bbb"),
+        )
+    )
+
+    # Drawer conversion: the stage-shrink class app.js toggles on #viz-root.
+    assert "viz-drill-open" in html
+    # Per-axis meter rows (drill drawer + hover score card) and the ledger's
+    # compact mini-bars — the shared building blocks in views/_shared.js.
+    assert "viz-meter-row" in html
+    assert "viz-meter-mini" in html
+    # The per-axis color tokens those two share (scene.css).
+    assert "--viz-axis-complexity" in html
+    assert "--viz-axis-load-bearing" in html
+    assert "--viz-axis-consequence" in html
+    # The diff link, hoisted out of views/ledger.js into views/_shared.js so
+    # the drawer can reuse it too.
+    assert "viz-diff-link" in html
+    assert "vizsuite/views/_shared.js" in html
+    # PR diff stats chips in the drawer.
+    assert "viz-drill-stats" in html
+    assert "viz-drill-stat" in html
+    # The shared hover score-card tooltip.
+    assert "viz-tooltip" in html
+    # The ledger's compact per-axis mini-bars wrapper.
+    assert "viz-ledger-axis-bars" in html
+
+
 def test_stale_graph_badge_hook_is_inlined_and_scene_data_is_conditional():
     # F1 (spec §6.2 labeled-stale opt-in): the badge's stable playwright hook
     # (spec §4.6) is JS source, so it is inlined regardless of scene content —
