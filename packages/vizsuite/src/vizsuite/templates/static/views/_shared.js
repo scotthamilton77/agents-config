@@ -306,10 +306,10 @@
     anchor.setAttribute("aria-label", "View diff for " + path + " on GitHub");
     anchor.textContent = "Diff";
     // The anchor is its own activation target — never let its own events
-    // also trigger the host's row/tile-open handler (see wireClickVsDrag-
-    // Activation callers). Stopping the pointer events too (not just click/
-    // keydown) closes the gap a `.closest("a")` exemption alone leaves when
-    // `evt.target` has no `.closest` (a non-Element target).
+    // also trigger the host's row/tile-open handler (see
+    // wireClickVsDragActivation callers). Stopping the pointer events too
+    // (not just click/keydown) closes the gap a `.closest("a")` exemption
+    // alone leaves when `evt.target` has no `.closest` (a non-Element target).
     function stopPropagation(evt) {
       evt.stopPropagation();
     }
