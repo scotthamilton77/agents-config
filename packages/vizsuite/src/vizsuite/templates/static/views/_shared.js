@@ -144,6 +144,13 @@
         return;
       }
       evt.preventDefault();
+      // A pointer click may have scheduled a deferred onActivate() just
+      // before this keypress — fire once, not twice: the keyboard activation
+      // supersedes the pending pointer one.
+      if (pendingActivateTimer !== null) {
+        clearTimeout(pendingActivateTimer);
+        pendingActivateTimer = null;
+      }
       onActivate();
     });
   }
