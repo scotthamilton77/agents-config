@@ -100,8 +100,10 @@ Each probe resolves to one of: `found` (with version where obtainable), `missing
 drift probe outside an agents-config checkout; renders in the report, is never prompted,
 and never affects the exit code), `drift` (present but deviating from its expected
 projection), `misconfigured` (present but structurally broken, e.g. provider entry names
-an env var that is unset). `missing` on an *optional* row and `misconfigured` anywhere are the
-actionable gaps `setup` walks. `off-*` rows render in the report (so a disabled tool is
+an env var that is unset). `missing` on an *optional* row and `misconfigured` on any
+*optional* row are the actionable gaps `setup` walks (required rows are binary
+presence-and-version probes, so `misconfigured` cannot arise on them; every actionable gap
+is therefore dispositionable). `off-*` rows render in the report (so a disabled tool is
 visible, not invisible) but are never prompted — they are already answered.
 
 Required rows are never part of `setup`'s resolution walk and take no dispositions at all:
