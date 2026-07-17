@@ -13,7 +13,14 @@ serialized shape so a later slice (.2.2/.2.3) never breaks the contract.
 from __future__ import annotations
 
 from vizsuite.scene.assemble import assemble
-from vizsuite.scene.model import AttributeDescriptor, Edge, RenderConfig, StaleGraph, scene_to_json
+from vizsuite.scene.model import (
+    AttributeDescriptor,
+    Edge,
+    FileStory,
+    RenderConfig,
+    StaleGraph,
+    scene_to_json,
+)
 
 _ESTATE = {"src/a.py": "sha_a", "src/b.py": "sha_b"}
 
@@ -131,6 +138,43 @@ def test_attributes_thread_into_matching_file_nodes_by_path():
     }
     # a file with no entry in the attribute map keeps the pre-.2.2 empty shape.
     assert by_path["src/b.py"] == {}
+
+
+def test_story_thread_into_matching_file_node_and_round_trips_through_json():
+    scene = assemble(
+        _ESTATE,
+        pr_number=1,
+        generated_at="2020-01-01T00:00:00+00:00",
+        generator="g",
+        base_oid="base000",
+        head_oid="head111",
+        stories={
+            "src/a.py": FileStory(
+                change_summary="Tightened the retry backoff window.",
+                why_hot=("Touches the shared retry loop.", "No test coverage on the new branch."),
+                what_to_check=("Confirm the backoff cap still matches the SLA doc.",),
+            )
+        },
+    )
+
+    by_path = {node.path: node.story for node in scene.files}
+    assert by_path["src/a.py"] == FileStory(
+        change_summary="Tightened the retry backoff window.",
+        why_hot=("Touches the shared retry loop.", "No test coverage on the new branch."),
+        what_to_check=("Confirm the backoff cap still matches the SLA doc.",),
+    )
+    # a file with no entry in the story map keeps story=None (never fabricated).
+    assert by_path["src/b.py"] is None
+
+    payload = scene_to_json(scene)
+    files_by_path = {f["path"]: f for f in payload["files"]}
+    assert files_by_path["src/a.py"]["story"] == {
+        "change_summary": "Tightened the retry backoff window.",
+        "why_hot": ["Touches the shared retry loop.", "No test coverage on the new branch."],
+        "what_to_check": ["Confirm the backoff cap still matches the SLA doc."],
+    }
+    # absent story = absent key, never a null/empty placeholder.
+    assert "story" not in files_by_path["src/b.py"]
 
 
 def test_render_config_and_repo_nwo_thread_into_the_serialized_envelope():

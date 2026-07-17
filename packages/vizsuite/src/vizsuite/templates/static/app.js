@@ -385,6 +385,23 @@
     });
   }
 
+  function appendBulletList(storySection, titleText, items, listClass) {
+    if (!items || items.length === 0) {
+      return;
+    }
+    var titleEl = document.createElement("h3");
+    titleEl.textContent = titleText;
+    storySection.appendChild(titleEl);
+    var listEl = document.createElement("ul");
+    listEl.setAttribute("class", listClass);
+    items.forEach(function (item) {
+      var itemEl = document.createElement("li");
+      itemEl.textContent = item;
+      listEl.appendChild(itemEl);
+    });
+    storySection.appendChild(listEl);
+  }
+
   // ---- Drill panel (spec §4.2/§4.5): a full-height right-docked drawer
   // (fidelity F3 — converted from an earlier floating overlay card, prototype
   // anatomy `#drill`/`showDrill`); Escape closes; the notes textarea binds
@@ -502,6 +519,34 @@
       heatRow.appendChild(heatLabel);
       heatRow.appendChild(heatValue);
       panelEl.appendChild(heatRow);
+
+      // Tier-2 drill story (spec §6.2 drill-story channel, prototype
+      // anatomy: showDrill's `f.story` branch) — headline + "Why it's hot" +
+      // "What to check" bullets, rendered only when the scene attached a
+      // story to this file. Mechanically-catchable content (deleted
+      // assertions, lint-class findings) is excluded from stories at
+      // GENERATION time (bead .2.4, not built yet) — this render side never
+      // filters, it only shows what's there. All content is bound via
+      // textContent, never innerHTML (spec §4.5 drill-panel DOM-bind
+      // invariant) — repo/agent-derived story text is untrusted.
+      var story = fileNode.orig && fileNode.orig.file && fileNode.orig.file.story;
+      if (story) {
+        var storySection = document.createElement("div");
+        storySection.id = "viz-drill-story";
+        storySection.setAttribute("class", "viz-drill-story");
+
+        var headlineEl = document.createElement("div");
+        headlineEl.setAttribute("class", "viz-drill-story-headline");
+        headlineEl.textContent = story.change_summary;
+        storySection.appendChild(headlineEl);
+
+        appendBulletList(storySection, "Why it's hot", story.why_hot, "viz-drill-story-why");
+        appendBulletList(
+          storySection, "What to check", story.what_to_check, "viz-drill-story-check"
+        );
+
+        panelEl.appendChild(storySection);
+      }
 
       appendSonarAffordance(panelEl, scene, fileNode, drillState);
 

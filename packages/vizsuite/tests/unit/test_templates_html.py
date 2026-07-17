@@ -273,6 +273,22 @@ def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
     assert "viz-ledger-axis-bars" in html
 
 
+def test_render_inlines_f4_drill_story_hooks():
+    # Fidelity F4 (Tier-2 drill-story channel, spec §6.2): the story section's
+    # stable hooks are JS/CSS source — inlined regardless of scene content,
+    # same convention as every other conditionally-rendered feature's hook
+    # (viz-drill-sonar-toggle, viz-stale-graph-badge, ...).
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "viz-drill-story" in html
+    assert "viz-drill-story-headline" in html
+    assert "viz-drill-story-why" in html
+    assert "viz-drill-story-check" in html
+    # "Why it's hot" / "What to check" section headings.
+    assert "Why it's hot" in html
+    assert "What to check" in html
+
+
 def test_stale_graph_badge_hook_is_inlined_and_scene_data_is_conditional():
     # F1 (spec §6.2 labeled-stale opt-in): the badge's stable playwright hook
     # (spec §4.6) is JS source, so it is inlined regardless of scene content —

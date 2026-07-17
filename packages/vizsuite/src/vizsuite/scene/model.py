@@ -22,10 +22,29 @@ from vizsuite.envelope import JsonValue
 
 
 @dataclass(frozen=True)
+class FileStory:
+    """Tier-2 per-file drill story (spec §6.2 drill-story channel).
+
+    `change_summary` is the one-line accent-colored headline; `why_hot` and
+    `what_to_check` are bullet lists rendered under their own headings in the
+    drill drawer (prototype anatomy, pr-shape-proto-v3.html `showDrill`).
+    Mechanically-catchable content — deleted assertions, lint-class findings —
+    is excluded from stories; that rule is enforced at GENERATION time (bead
+    .2.4, not yet built), never here. A `FileNode` with no story simply omits
+    this field (`None`) — never a story with empty/fabricated bullets.
+    """
+
+    change_summary: str
+    why_hot: tuple[str, ...] = ()
+    what_to_check: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class FileNode:
     path: str
     checksum: str  # git blob SHA at the snapshot (spec §0.1 / §3.5.1)
     attributes: dict[str, JsonValue] = field(default_factory=dict)  # heat axes (§6.2), via .2.2
+    story: FileStory | None = None  # Tier-2 drill story (§6.2), via .2.10; absent = no payload
 
 
 class ProvenanceKind(StrEnum):
@@ -179,6 +198,14 @@ def provenance_to_json(provenance: Provenance) -> dict[str, JsonValue]:
     }
 
 
+def _file_story_to_json(story: FileStory) -> dict[str, JsonValue]:
+    return {
+        "change_summary": story.change_summary,
+        "why_hot": list(story.why_hot),
+        "what_to_check": list(story.what_to_check),
+    }
+
+
 def _fact_to_json(fact: Fact) -> dict[str, JsonValue]:
     return {
         "id": fact.id,
@@ -224,10 +251,16 @@ def scene_to_json(scene: Scene) -> dict[str, JsonValue]:
     function of its inputs, so `templates.html.render_html` is byte-stable modulo
     the `generated_at` stamp (spec test item 6).
     """
-    files_json: list[JsonValue] = [
-        {"path": node.path, "checksum": node.checksum, "attributes": node.attributes}
-        for node in sorted(scene.files, key=lambda node: node.path)
-    ]
+    files_json: list[JsonValue] = []
+    for node in sorted(scene.files, key=lambda node: node.path):
+        file_json: dict[str, JsonValue] = {
+            "path": node.path,
+            "checksum": node.checksum,
+            "attributes": node.attributes,
+        }
+        if node.story is not None:
+            file_json["story"] = _file_story_to_json(node.story)
+        files_json.append(file_json)
     facts_json: list[JsonValue] = [
         _fact_to_json(fact) for fact in sorted(scene.facts, key=lambda fact: fact.id)
     ]
