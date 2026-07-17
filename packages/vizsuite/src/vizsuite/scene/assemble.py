@@ -22,6 +22,7 @@ from vizsuite.scene.model import (
     Edge,
     Fact,
     FileNode,
+    FileStory,
     Fingerprints,
     RenderConfig,
     Scene,
@@ -57,6 +58,7 @@ def assemble(
     facts: Sequence[Fact] = (),
     descriptors: Sequence[AttributeDescriptor] = (),
     attributes: dict[str, dict[str, JsonValue]] | None = None,
+    stories: dict[str, FileStory] | None = None,
     render_config: RenderConfig | None = None,
     repo_nwo: str = "",
     edges: Sequence[Edge] = (),
@@ -75,12 +77,22 @@ def assemble(
     `edges` (typically the EXTRACTED centrality axis's file-dependency pairs,
     tagged `kind="dependency"` by the caller) threads onto the scene as-is —
     `scene_to_json` is the sort point, not this function.
+    `stories` (keyed by path, Tier-2 §6.2 drill-story payloads) attaches to
+    each matching `FileNode`; a path with no entry keeps `story=None` — no
+    generator exists yet (bead .2.4), so callers only pass this when they
+    already have a payload in hand.
     """
     _validate_facts(facts)
 
     file_attributes = attributes or {}
+    file_stories = stories or {}
     files = tuple(
-        FileNode(path=path, checksum=blob_sha, attributes=dict(file_attributes.get(path, {})))
+        FileNode(
+            path=path,
+            checksum=blob_sha,
+            attributes=dict(file_attributes.get(path, {})),
+            story=file_stories.get(path),
+        )
         for path, blob_sha in sorted(estate_map.items())
     )
     fingerprints = Fingerprints(
