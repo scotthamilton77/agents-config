@@ -163,6 +163,12 @@ Precedence at read time: **project `off` > user `off` > auto-detect**. There is 
 affirmative "on" state — presence is "on"; forcing a tool on cannot be expressed because
 it cannot be enforced.
 
+The persisted value is always the literal `"off"` — never `"off-user"` or `"off-project"`.
+Scope is supplied by the file that carries the entry, not repeated inside the value: `"off"`
+in `~/.agents/machine.toml` renders in the doctor report as `off-user`; `"off"` in
+`project-config.toml [tools]` renders as `off-project`. The `off-user`/`off-project` tokens
+are report/JSON-envelope states only and never appear in config.
+
 ### 5.2 `~/.agents/machine.toml` (user scope)
 
 Doctor-owned: `setup` writes it, `doctor` and dispatch-time consumers read it. It lives in
