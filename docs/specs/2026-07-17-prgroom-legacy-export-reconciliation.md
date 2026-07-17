@@ -63,7 +63,7 @@ When all four hold, retirement is a deletion, not a migration: drop the `LegacyE
 
 ## Assumption ledger
 
-- `check-merge-eligibility.sh` is the sole reader of the legacy inventory directory (verified by grep at HEAD; wait-for-pr-comments scripts write it and read their own files, but the merge-gate facts flow only through merge-guard).
+- `check-merge-eligibility.sh` is the sole merge-gate consumer of the legacy inventory directory — the only reader that turns its files into eligibility facts (verified by grep at HEAD; wait-for-pr-comments scripts also write and read the directory for their own concurrency and crash-recovery state, but the merge-gate facts flow only through merge-guard).
 - abn9.8.27 remains implementation-ready under the disposition contract as amended; nothing in this ruling changes its shape or ACs.
 - The Phase-1 cutover (abn9.8.20) does not itself remove the legacy inventory directory or the export — verified against the cutover references in `2026-07-05-prgroom-disposition-contract.md` §6 and `2026-07-15-prgroom-e2e-write-path-proof.md`.
 - The disposition-contract spec's Status ("Draft (pending review)") is unchanged by this spec; its promotion is that spec's own concern.
