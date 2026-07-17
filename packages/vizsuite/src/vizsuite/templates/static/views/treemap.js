@@ -310,18 +310,14 @@
     });
   }
 
-  // Click-vs-drag(-vs-double-click) threshold (~4px, spec §4.2), via the
-  // shared `window.vizShared.wireClickVsDragActivation` (also used by the
-  // ledger row and the sonar ring mark — see views/_shared.js): reads the
-  // *live* bound datum at activation time (never a captured snapshot), so a
-  // tile that has survived several re-layouts always acts on its current
-  // data. A directory tile's kind (file vs. directory) never changes across
-  // its lifetime — a given path is either a blob or a tree, never both — so
-  // deciding once, at wiring time, whether to offer double-activation is
-  // safe: file tiles never get it (their single-click drill-open keeps firing
-  // with zero added latency, exactly as before this option existed);
-  // directory tiles do, promoting the directory to the fill-screen focus
-  // root (spec §6.1).
+  // Click-vs-drag threshold (~4px, spec §4.2), via the shared
+  // `window.vizShared.wireClickVsDragActivation` (also used by the ledger
+  // row and the sonar ring mark — see views/_shared.js): reads the *live*
+  // bound datum at activation time (never a captured snapshot), so a tile
+  // that has survived several re-layouts always acts on its current data.
+  // Activation is single-click only — a file tile opens its drill, a
+  // directory tile toggles collapse; fill-screen focus (spec §6.1) is the
+  // explicit Focus button wired in buildTileContent, never a gesture here.
   function wireTileInteractions(el, handlers) {
     window.vizShared.wireClickVsDragActivation(el, {
       onActivate: function () {

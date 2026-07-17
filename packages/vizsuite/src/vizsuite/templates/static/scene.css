@@ -341,7 +341,10 @@ body {
   padding: 0 2px;
 }
 .viz-tile-focus-btn:hover {
-  color: var(--viz-fg);
+  /* Emphasis without a color change: the button inherits the tile label's
+     luminance-computed contrast color, and forcing --viz-fg here would lose
+     contrast on dark heat-colored tiles. */
+  font-weight: 600;
 }
 .viz-tile-focus-btn:focus-visible {
   outline: 2px solid var(--viz-fg);
