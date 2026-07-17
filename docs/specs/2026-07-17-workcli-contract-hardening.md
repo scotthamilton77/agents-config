@@ -98,7 +98,9 @@ run read-only-first then supervised-apply:
   zero with an empty violation list is the criterion; nonzero lists the violators. This
   check is the gate on Decision 3's router cutover — it may be run standalone at any time,
   independent of the sweep.
-- **Sequencing.** Rides the same supervised session as the track-backfill supervised run,
+- **Sequencing.** Rides the same supervised session as the track-backfill supervised run
+  (the track-partition design spec’s §7 backfill continuation — a cross-spec *scheduling*
+  coupling only),
   as a separate independent step. No shared code, no shared state; either may run first.
   Match that run's exit-criterion style: a lint invariant reporting zero violations,
   held before the dependent flip proceeds.
@@ -323,8 +325,10 @@ def with_progress(err: WorkError, progress: StepProgress) -> WorkError:
   and the client-side `EMULATED` ready computation from `query` + dep edges — AC:
   paper-seam (transport §7) validated with contract tests against a GH fake.
 - chore: MINOR protocol bump advertising `partial_progress` + capability
-  surface in the `--protocol-version` handshake and README — AC:
-  `PROTOCOL_VERSION` bumped, handshake test + README updated.
+  surface in the `--protocol-version` handshake and README — the concrete version
+  number is assigned at merge time by landing order (competing MINOR claims exist
+  in the track-partition and work-discover specs), never at spec-authoring time —
+  AC: `PROTOCOL_VERSION` bumped, handshake test + README updated.
 - feat: `reconcile` consumes `partial_progress` detail to rank resumable
   failures — AC: a seam failure carrying `partial_progress` surfaces as a
   resumable reconcile finding.
