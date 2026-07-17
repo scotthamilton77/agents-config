@@ -43,6 +43,13 @@ class UsageRecord:
     """``success`` / ``timeout`` / ``unavailable`` / ``error`` / ``malformed`` /
     ``cancelled`` — the attempt's terminal disposition, one record per chain link
     tried (the dispatcher emits these through its usage hook)."""
+    tokens_total: int | None = None
+    """Undifferentiated total from codex exec's stderr trailer — the only figure
+    that mode exposes (no in/out split). Additive JSONL evolution: readers must
+    tolerate the key's absence in older lines."""
+    reported_cost_usd: float | None = None
+    """claude's envelope ``total_cost_usd`` — the CLI's own authoritative estimate,
+    preferred over rate math whenever present. Additive, nullable."""
 
     def to_dict(self) -> dict[str, Any]:
         """The flat JSONL line. ``pr`` renders as the ``owner/repo#n`` shorthand."""
@@ -56,6 +63,8 @@ class UsageRecord:
             "output_tokens": self.output_tokens,
             "duration_ms": self.duration_ms,
             "outcome": self.outcome,
+            "tokens_total": self.tokens_total,
+            "reported_cost_usd": self.reported_cost_usd,
         }
 
 

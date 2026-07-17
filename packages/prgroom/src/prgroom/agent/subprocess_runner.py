@@ -27,6 +27,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -98,6 +99,24 @@ class AgentInvocation:
 
 
 @dataclass(frozen=True, slots=True)
+class UsageFigures:
+    """Token/cost figures parsed from an agent CLI's own output (§3 token capture).
+
+    Population is per-CLI and best-effort: claude's JSON envelope fills
+    ``tokens_in`` (ALL input-side tokens — uncached + cache-creation + cache-read;
+    the envelope's bare ``input_tokens`` is only the uncached slice), ``tokens_out``
+    and ``reported_cost_usd``; codex's stderr trailer fills only ``tokens_total``
+    (no in/out split in exec mode). Absent figures stay ``None`` — telemetry never
+    fails a dispatch.
+    """
+
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    tokens_total: int | None = None
+    reported_cost_usd: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AgentRunResult:
     """The captured outcome of one agent invocation."""
 
@@ -105,6 +124,7 @@ class AgentRunResult:
     stdout: str
     stderr: str
     duration_ms: int
+    usage: UsageFigures | None = None
 
 
 class AgentTimeoutError(PrgroomError):
@@ -227,7 +247,10 @@ _CLAUDE_WRITE_ALLOWED_TOOLS = "Read Edit Write Bash(git *)"
 def _invocation_for_claude(spec: AgentSpec, prompt: str) -> AgentInvocation:
     # `claude -p <prompt>` runs headless. The contract input path is already inside
     # `prompt` (the agent reads the file) — claude has no --input-file flag.
-    argv = ["claude", "-p", prompt, "--model", spec.model]
+    # --output-format json wraps stdout in the §3.1 result envelope; the runner
+    # unwraps it post-run (see _unwrap_claude_envelope) to expose the payload and
+    # capture token usage.
+    argv = ["claude", "-p", prompt, "--model", spec.model, "--output-format", "json"]
     effort = spec.extra.get("effort")
     if effort:
         argv += ["--effort", str(effort)]
@@ -294,6 +317,79 @@ def build_invocation(spec: AgentSpec, *, prompt: str) -> AgentInvocation:
             ", ".join(unrecognized),
         )
     return invoker(spec, prompt)
+
+
+def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
+    """Unwrap claude's ``--output-format json`` envelope into the effective result.
+
+    Keyed on the envelope SHAPE (``"type": "result"`` + a string ``result`` key),
+    never the CLI name alone: plain-text or non-envelope stdout passes through
+    untouched with ``usage=None`` — telemetry never fails a dispatch. The unwrap
+    MUST happen here, before the dispatcher's lenient parse: that parse takes the
+    LAST top-level JSON object in stdout, which with the flag is the envelope
+    itself, not the contract payload. Unwrap and usage capture run regardless of
+    the envelope's ``is_error``/``subtype`` — classification stays the
+    dispatcher's job (§3.1 rule 2).
+    """
+    try:
+        envelope = json.loads(result.stdout)
+    except ValueError:
+        return result
+    if (
+        not isinstance(envelope, dict)
+        or envelope.get("type") != "result"
+        or not isinstance(envelope.get("result"), str)
+    ):
+        return result
+    usage = envelope.get("usage")
+    tokens_in = tokens_out = None
+    if isinstance(usage, dict):
+        in_side = [
+            usage.get(k)
+            for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+        ]
+        if any(isinstance(v, int) for v in in_side):
+            tokens_in = sum(v for v in in_side if isinstance(v, int))
+        if isinstance(usage.get("output_tokens"), int):
+            tokens_out = usage["output_tokens"]
+    cost = envelope.get("total_cost_usd")
+    return AgentRunResult(
+        returncode=result.returncode,
+        stdout=envelope["result"],
+        stderr=result.stderr,
+        duration_ms=result.duration_ms,
+        usage=UsageFigures(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            reported_cost_usd=cost if isinstance(cost, int | float) else None,
+        ),
+    )
+
+
+# codex's stderr trailer count: comma-grouped (`21,631`) or bare (`950`) — §3.2.
+_CODEX_TOKENS_RE = re.compile(r"^(\d{1,3}(?:,\d{3})*|\d+)$")
+
+
+def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
+    """Read codex exec's stderr ``tokens used`` trailer into ``usage`` (§3.2).
+
+    The trailer is a ``tokens used`` line followed by an integer with optional
+    comma grouping. codex provides no in/out split in exec mode, so only
+    ``tokens_total`` is filled. No trailer → result passes through with
+    ``usage=None`` — telemetry never fails a dispatch.
+    """
+    lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+    for i in range(len(lines) - 1):
+        if lines[i] == "tokens used" and _CODEX_TOKENS_RE.match(lines[i + 1]):
+            total = int(lines[i + 1].replace(",", ""))
+            return AgentRunResult(
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                duration_ms=result.duration_ms,
+                usage=UsageFigures(tokens_total=total),
+            )
+    return result
 
 
 class _PopenHandle:  # pragma: no cover - OS boundary; tests inject a fake handle
@@ -420,7 +516,14 @@ class SubprocessAgentRunner:
             section = _input_section(spec.cli, input_path=input_path, payload=contract_payload)
             prompt = prompt_template.render({**render_data, INPUT_SECTION_KEY: section})
             invocation = build_invocation(spec, prompt=prompt)
-            return self._spawn_and_wait(invocation, time_budget_s=time_budget_s, cancel=cancel)
+            result = self._spawn_and_wait(invocation, time_budget_s=time_budget_s, cancel=cancel)
+            # §3 token capture — per-CLI, best-effort post-processing; the runner
+            # stays classification-free (returncode/stderr pass through untouched).
+            if spec.cli == "claude":
+                result = _unwrap_claude_envelope(result)
+            elif spec.cli == "codex":
+                result = _parse_codex_usage(result)
+            return result
         finally:
             input_path.unlink(missing_ok=True)
 
