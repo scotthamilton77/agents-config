@@ -109,8 +109,7 @@ model's.
    |---|---|
    | Q1 | Batch composition — confirm the set, or adjust it |
    | Q2 | Spec grouping — one dated spec per item, or grouped specs covering related items |
-   | Q3 | Readiness labeling per item — stamp a readiness label at spec merge, or leave labeling to a separate readiness gate (either way, continuation items get minted and the claim gets released at merge — that end-state is not optional; see step 9) |
-   | Q4 | Involvement split — which items need interactive brainstorming with the human, and which can be spec'd autonomously |
+   | Q3 | Involvement split — which items need interactive brainstorming with the human, and which can be spec'd autonomously |
 
 6. **STOP.** Wait for the human's answers. Do not dispatch anything —
    interactive or autonomous — before this approval lands.
@@ -136,8 +135,8 @@ model's.
    discipline; fablize doesn't restate that machinery, only feeds it. At
    spec-PR merge, the delivering session: mints the continuation items in the
    work tracker as children under the still-open objective per the manifest,
-   releases the claim on the item (status back to open/unclaimed), and stamps
-   phase labels (a readiness label per the Q3 answer).
+   releases the claim on the item (status back to open/unclaimed), and stamps 
+   phase labels (readiness label stamped at spec merge — standing default per owner).
    Mint-before-anything-closes, always — successors are created before
    anything closes or releases. A work item left claimed behind a merged spec is a defect; a
    readiness label stamped on a still-claimed item is not a deliverable.
