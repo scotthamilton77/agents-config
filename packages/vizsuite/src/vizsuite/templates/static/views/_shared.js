@@ -62,10 +62,10 @@
 
   window.vizShared = window.vizShared || {};
 
-  // The three §6.2 input axes plus the combined heat, in the same order/
-  // names as `vizsuite.scene.heat._INPUT_AXES` (mirrored in app.js's own
-  // HEAT_AXES, which now reads this shared constant instead of duplicating
-  // it).
+  // The three §6.2 input axes only (the combined heat is derived
+  // separately and is NOT included here), in the same order/names as
+  // `vizsuite.scene.heat._INPUT_AXES` (mirrored in app.js's own HEAT_AXES,
+  // which now reads this shared constant instead of duplicating it).
   var HEAT_AXES = ["complexity", "load_bearing", "consequence"];
   window.vizShared.HEAT_AXES = HEAT_AXES;
 
