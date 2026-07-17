@@ -188,19 +188,28 @@ def _not_configured(problem: str, reason: Reason) -> WorkError:
 
 
 def _find_config(start_dir: Path) -> Path | None:
-    """Upward search from `start_dir` to the enclosing git root (spec §3).
+    """Upward search from `start_dir`, bounded by the enclosing git root (spec §3).
 
-    The directory containing `.git` (a dir, or a file in linked worktrees) is
-    the last one searched; with no git root on the walk -- the working
-    directory lies outside any repo -- the search finds nothing.
+    The git root is located FIRST: with no git root on the walk -- the working
+    directory lies outside any repo -- the search finds nothing, even when a
+    project-config.toml exists in some parent directory (adopting an unrelated
+    parent config would be the fail-unsafe path). The directory containing
+    `.git` (a dir, or a file in linked worktrees) is the last one searched.
     """
     current = start_dir.resolve()
-    for candidate_dir in (current, *current.parents):
+    lineage = (current, *current.parents)
+    git_root = next(
+        (candidate_dir for candidate_dir in lineage if (candidate_dir / ".git").exists()),
+        None,
+    )
+    if git_root is None:
+        return None
+    for candidate_dir in lineage:
         candidate = candidate_dir / CONFIG_FILENAME
         if candidate.is_file():
             return candidate
-        if (candidate_dir / ".git").exists():
-            return None
+        if candidate_dir == git_root:
+            break
     return None
 
 
@@ -262,6 +271,11 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         )
 
     operating = raw.get("operating-model")
+    if operating is not None and not isinstance(operating, dict):
+        # A non-table [operating-model] is malformed config, not an omitted
+        # optional section -- silently ignoring it would silently disable
+        # the lint WIP check.
+        raise _not_configured(f"[operating-model] must be a table in {path}", "invalid")
     operating_table = operating if isinstance(operating, dict) else {}
     cap = operating_table.get("milestone-wip-cap")
     if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int)):
@@ -307,7 +321,10 @@ def test_search_stops_at_git_root(tmp_path: Path) -> None:
 
 def test_outside_any_git_repo_is_not_configured(tmp_path: Path) -> None:
     # No .git anywhere on the walk -> treated as "no config found" (spec §3),
-    # even when a project-config.toml exists in a parent dir.
+    # even when a project-config.toml exists in a parent dir. REGRESSION PIN:
+    # a naive walk that checks for the config file before establishing a git
+    # root adopts that unrelated parent config instead of failing safe --
+    # this test is the tripwire for that ordering bug.
     (tmp_path / "project-config.toml").write_text(VALID_TRACKS, encoding="utf-8")
     workdir = tmp_path / "nested"
     workdir.mkdir()
@@ -397,6 +414,18 @@ def test_operating_model_absent_yields_no_wip_cap(tmp_path: Path) -> None:
     assert config.wip_exempt_milestones == ()
 
 
+def test_non_table_operating_model_is_invalid(tmp_path: Path) -> None:
+    # Malformed, not omitted: must fail loud, never silently disable lint's
+    # WIP check. (Top-level key must precede the [tracks] table in TOML.)
+    root = _repo(
+        tmp_path, config_text='operating-model = "bad"\n[tracks]\nnames = ["alpha"]\n'
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[operating-model]" in exc_info.value.message
+
+
 def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
     # Linked worktrees have a .git FILE, not a dir -- the search must still
     # treat that directory as the root boundary.
@@ -411,7 +440,7 @@ def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
 - [ ] **Step 6: Run the whole file, then lint/type the new module**
 
 Run: `uv run pytest tests/unit/test_config_loading.py -v`
-Expected: PASS (13 tests)
+Expected: PASS (14 tests)
 
 Run: `uv run ruff check src/workcli/config.py src/workcli/envelope.py && uv run ruff format src tests && uv run mypy --strict src`
 Expected: clean (format may rewrap — rerun tests if it does)
@@ -904,6 +933,24 @@ def test_unconfigured_repo_fails_track_flag_with_e_not_configured() -> None:
     with pytest.raises(WorkError) as exc_info:
         list_(_backend(), _list_args("alpha", not_configured))
     assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+
+
+def test_limit_applies_after_track_filtering() -> None:
+    # REGRESSION PIN: a bd-side --limit truncates the candidate set BEFORE
+    # the track filter -- here the first bead is on another track, so a
+    # pre-filter limit of 1 would return zero alpha beads.
+    backend = FakeBackend()
+    backend.add("w-1", labels=["track:beta"])
+    backend.add("w-2", labels=["track:alpha"])
+    backend.add("w-3", labels=["track:alpha"])
+    args = _list_args("alpha", lambda: CONFIG)
+    args.limit = 1
+    data = list_(backend, args)
+    assert isinstance(data, dict)
+    items = data["items"]
+    assert isinstance(items, list)
+    ids = [item["id"] for item in items if isinstance(item, dict)]
+    assert ids == ["w-2"]
 ```
 
 Plus one CLI-level test in the same file — the `--config` passthrough deferred from Task 4 (extend the file's imports with these):
@@ -965,8 +1012,29 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
     so filter and envelope field always agree: zero-or-multi-label beads
     derive to null and match nothing (track spec §4). Validated against the
     vocabulary for parity with `create --track` -- a typo returns
-    E_UNKNOWN_TRACK, not a silently-empty result.
+    E_UNKNOWN_TRACK, not a silently-empty result. Ordering matters twice:
+    config loads BEFORE the backend query (E_NOT_CONFIGURED must precede any
+    backend error, and an unconfigured call must not read the tracker), and
+    --limit applies AFTER the track filter (a bd-side limit would truncate
+    the candidate set before filtering and undercount matches).
     """
+    if args.track is not None:
+        require_known_track(args.track, args.load_config())
+        unbounded = QueryFilters(
+            status=args.status,
+            label=args.label,
+            parent=args.parent,
+            type=args.type,
+            limit=None,
+        )
+        items = [
+            item
+            for item in backend.query(unbounded)
+            if derive_track(item.labels) == args.track
+        ]
+        if args.limit is not None:
+            items = items[: args.limit]
+        return _serialize_items(items)
     filters = QueryFilters(
         status=args.status,
         label=args.label,
@@ -974,11 +1042,7 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
         type=args.type,
         limit=args.limit,
     )
-    items = backend.query(filters)
-    if args.track is not None:
-        require_known_track(args.track, args.load_config())
-        items = [item for item in items if derive_track(item.labels) == args.track]
-    return _serialize_items(items)
+    return _serialize_items(backend.query(filters))
 ```
 
 (Vocabulary validation on `list --track` is a decide-in-scope call: the track spec mandates it only for `create`/`track set`, but a silently-empty result on a typo'd name is the exact failure class `E_UNKNOWN_TRACK` exists for, and the config is already loaded. Recorded here so the contract amendment in Task 6 documents it.)
@@ -1139,7 +1203,7 @@ git commit -m "feat(workcli): create --track flag; --raw refuses it as lifecycle
 - Modify: `packages/workcli/src/workcli/lifecycle/create.py`
 - Test: `packages/workcli/tests/unit/test_create_track_gate.py` (extend)
 
-Resolution order (track spec §4): explicit `--track` (validated) → tracked parent's derived track → enforcement (`advisory`: create untracked + envelope warning; `required`: `E_TRACK_REQUIRED`, create nothing). Config not-found → behave exactly as today (criterion 17); config invalid → same, plus a warning (spec §3 fail-safe). Spec-noun containers stamp the resolved track on their two template children too (they'd otherwise be born as instant lint violations); `promote`/`reconcile` minting stays unchanged — untracked children they mint are lint's to catch, the backfill bead sweeps them.
+Resolution order (track spec §4): explicit `--track` (validated) → tracked parent's derived track (validated: an out-of-vocabulary parent track — reachable via raw label writes — is NEVER inherited; it falls through to enforcement with a warning naming it, so `required` mode can't mint a bead invisible to `list --track` and `track set`) → enforcement (`advisory`: create untracked + envelope warning; `required`: `E_TRACK_REQUIRED`, create nothing). Config not-found → behave exactly as today (criterion 17); config invalid → same, plus a warning (spec §3 fail-safe). Spec-noun containers stamp the resolved track on their two template children, and `instantiate_spec_shape` self-derives the container's track when its caller passes none — so `promote`, `reconcile`, and crash-replay of an interrupted tracked create all preserve the container's track on minted children instead of manufacturing lint violations (config-free derivation: a configless repo without track labels sees zero behavior change).
 
 These are handler-level FakeBackend tests (house pattern for lifecycle: `tests/unit/test_create_noun.py` — copy its Namespace-building helper shape). One red-green cycle per behavior, in this order:
 
@@ -1233,17 +1297,27 @@ def _resolve_track(backend: Backend, args: Namespace, parent: str | None) -> tup
     if args.track is not None:
         require_known_track(args.track, config)
         return args.track, []
+    warnings: list[str] = []
     if parent is not None:
         parent_track = derive_track(backend.get(parent).labels)
         if parent_track is not None:
-            return parent_track, []
+            if parent_track in config.names:
+                return parent_track, []
+            # An out-of-vocabulary parent track (raw label writes) is never
+            # inherited: it would be invisible to list --track and
+            # unrepairable through track set. Fall through to enforcement.
+            warnings.append(
+                f"parent {parent} carries unknown track {parent_track!r}; not "
+                "inherited -- repair the parent via work track set"
+            )
     if config.enforcement == "required":
         raise WorkError(
             ErrorCode.TRACK_REQUIRED,
-            "track is required: pass --track NAME or create under a tracked parent "
-            f"(configured tracks: {', '.join(config.names)})",
+            "track is required: pass --track NAME or create under a parent with a "
+            f"configured track (configured tracks: {', '.join(config.names)})",
         )
-    return None, ["created untracked: no --track and no tracked parent (advisory mode)"]
+    warnings.append("created untracked: no --track and no tracked parent (advisory mode)")
+    return None, warnings
 
 
 def _with_warnings(data: dict[str, JsonValue], warnings: list[str]) -> JsonValue:
@@ -1279,7 +1353,21 @@ Wire into `create_noun` (after `parent = ...`), threading the track into both br
             + ((track_label(track),) if track is not None else ()),
 ```
 
-and it passes `track` through to `finalize_spec_instantiation(backend, container_id, args.title, track)`. Both `finalize_spec_instantiation` and `instantiate_spec_shape` gain a trailing `track: str | None = None` parameter (default `None` keeps `promote`/`reconcile` call sites source-compatible and unchanged in behavior); inside `instantiate_spec_shape`, both `CreateFields.labels` tuples append `(track_label(track),)` when `track is not None`:
+and it passes `track` through to `finalize_spec_instantiation(backend, container_id, args.title, track)`. Both `finalize_spec_instantiation` and `instantiate_spec_shape` gain a trailing `track: str | None = None` parameter (default keeps `promote`/`reconcile` call sites source-compatible). Inside `instantiate_spec_shape`, when the caller passes no track, the container's own derived track fills in — this is the crash-replay guard: a tracked container finished by `promote`, `reconcile`, or a replayed interrupted create still stamps its children (pure derivation, no config needed). The function already fetches the container; hoist that call and derive from it:
+
+```python
+    container = backend.get(container_id)
+    if track is None:
+        # promote/reconcile/crash-replay path: children inherit the
+        # container's own derived track so an interrupted tracked create
+        # never mints lint violations (config-free derivation).
+        track = derive_track(container.labels)
+    design_child_id: str | None = None
+    placeholder_id: str | None = None
+    for child_id in container.children:
+```
+
+(replacing the existing `for child_id in backend.get(container_id).children:` loop head). Both `CreateFields.labels` tuples then append `(track_label(track),)` when `track is not None`:
 
 ```python
                 labels=(DESIGN_CHILD_LABEL,)
@@ -1443,6 +1531,55 @@ def test_spec_container_children_inherit_resolved_track() -> None:
         bead_id = data[key]
         assert isinstance(bead_id, str)
         assert "track:alpha" in backend.labels(bead_id)
+```
+
+- [ ] **Cycle 9: an out-of-vocabulary parent track is never inherited** (two tests, fresh backends each — a second create in one backend would trip the duplicate-title guard before the gate)
+
+```python
+def test_unknown_parent_track_not_inherited_advisory_warns() -> None:
+    backend = FakeBackend()
+    backend.add("epic-1", type="epic", labels=["track:ghost"])
+    data = create_noun(
+        backend, _create_args(parent="epic-1", load_config=lambda: _config("advisory"))
+    )
+    assert isinstance(data, dict)
+    new_id = data["id"]
+    assert isinstance(new_id, str)
+    assert all(not label.startswith("track:") for label in backend.labels(new_id))
+    warnings = data["warnings"]
+    assert isinstance(warnings, list)
+    assert any("ghost" in str(warning) for warning in warnings)
+
+
+def test_unknown_parent_track_required_mode_refuses() -> None:
+    # required mode must not mint a bead whose track is invisible to
+    # list --track and unrepairable via track set.
+    backend = FakeBackend()
+    backend.add("epic-1", type="epic", labels=["track:ghost"])
+    with pytest.raises(WorkError) as exc_info:
+        create_noun(
+            backend, _create_args(parent="epic-1", load_config=lambda: _config("required"))
+        )
+    assert exc_info.value.code is ErrorCode.TRACK_REQUIRED
+    assert backend.ids() == ["epic-1"]
+```
+
+- [ ] **Cycle 10: crash-replay of a tracked container stamps its children** — direct `instantiate_spec_shape` call (add `instantiate_spec_shape` to the file's `workcli.lifecycle.create` import):
+
+```python
+def test_replayed_instantiation_on_tracked_container_stamps_children() -> None:
+    # The reconcile/promote path calls instantiate_spec_shape with no track;
+    # a tracked container's children must inherit its derived track anyway,
+    # or an interrupted tracked create replays into lint violations.
+    backend = FakeBackend()
+    backend.add(
+        "cont-1",
+        type="feature",
+        labels=["shape-spec", "creating-spec", "track:alpha"],
+    )
+    design_id, placeholder_id = instantiate_spec_shape(backend, "cont-1", "T")
+    assert "track:alpha" in backend.labels(design_id)
+    assert "track:alpha" in backend.labels(placeholder_id)
 ```
 
 - [ ] **Final step: full suite, then commit**
@@ -1616,11 +1753,14 @@ def track(backend: Backend, args: Namespace) -> JsonValue:
         "id": args.id,
         "track": args.name,
         "previous": previous,
+        # Both COUNTS per the track spec's cascade contract ("reports
+        # relabeled and skipped counts"); skipped_ids carries the detail.
         "relabeled": relabeled,
+        "skipped": len(skipped),
         # list() wrap: a NAMED list[str] local is not assignable to a
         # JsonValue slot under mypy --strict (invariance); the constructor
         # call re-infers from context. Same idiom as the bd adapter.
-        "skipped": list(skipped),
+        "skipped_ids": list(skipped),
     }
 ```
 
@@ -1693,7 +1833,8 @@ def test_cascade_relabels_matching_and_untracked_skips_other_tracks() -> None:
     assert _track_labels(backend, "child-other") == ["track:beta"]  # already the target
     assert isinstance(data, dict)
     assert data["relabeled"] == 3
-    assert data["skipped"] == []
+    assert data["skipped"] == 0
+    assert data["skipped_ids"] == []
 
 
 def test_cascade_skips_and_reports_descendants_on_a_third_track() -> None:
@@ -1714,7 +1855,8 @@ def test_cascade_skips_and_reports_descendants_on_a_third_track() -> None:
     assert _track_labels(backend, "child-loyal") == ["track:beta"]
     assert isinstance(data, dict)
     assert data["relabeled"] == 0
-    assert data["skipped"] == ["child-loyal"]
+    assert data["skipped"] == 1
+    assert data["skipped_ids"] == ["child-loyal"]
 
 
 def test_without_cascade_descendants_are_untouched() -> None:
@@ -1724,14 +1866,15 @@ def test_without_cascade_descendants_are_untouched() -> None:
     assert _track_labels(backend, "child-untracked") == []
 ```
 
-Wait — `test_cascade_relabels_matching_and_untracked_skips_other_tracks` asserts `child-other` ends at `track:beta` with `skipped == []`: the target IS beta, and a descendant already on the *target* track needs no relabel and is not "deliberately on another track" relative to the outcome. Pin the intended semantics explicitly instead: a descendant's fate depends on its track vs the root's PRE-change track (`alpha`): equal-or-untracked → relabel; anything else → skip. `child-other` (beta ≠ alpha) is therefore SKIPPED — and since it already carries the target label the visible state is identical, but the report must count it in `skipped`. Correct the two assertions to:
+Wait — `test_cascade_relabels_matching_and_untracked_skips_other_tracks` asserts `child-other` ends at `track:beta` with zero skips: the target IS beta, and a descendant already on the *target* track needs no relabel and is not "deliberately on another track" relative to the outcome. Pin the intended semantics explicitly instead: a descendant's fate depends on its track vs the root's PRE-change track (`alpha`): equal-or-untracked → relabel; anything else → skip. `child-other` (beta ≠ alpha) is therefore SKIPPED — and since it already carries the target label the visible state is identical, but the report must count it. Correct the assertions to:
 
 ```python
     assert data["relabeled"] == 3
-    assert data["skipped"] == ["child-other"]
+    assert data["skipped"] == 1
+    assert data["skipped_ids"] == ["child-other"]
 ```
 
-(This mirrors the spec's rule with no target-track special case — one rule, no carve-outs.)
+(This mirrors the spec's rule with no target-track special case — one rule, no carve-outs. Both `relabeled` and `skipped` are counts per the spec's cascade contract; `skipped_ids` carries the detail.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -1834,9 +1977,11 @@ def _fixture() -> FakeBackend:
     backend.add("m-1", type="milestone", status="in_progress")
     backend.add("m-2", type="milestone", status="in_progress")
     backend.add("m-exempt", type="milestone", status="in_progress")
-    # Invariant 1: missing track / multi track (both under a milestone).
+    # Invariant 1: missing track / multi track / out-of-vocabulary track
+    # (all under a milestone).
     backend.add("no-track", parent="m-1", labels=[])
     backend.add("two-tracks", parent="m-1", labels=["track:alpha", "track:beta"])
+    backend.add("ghost-track", parent="m-1", labels=["track:ghost"])
     # Invariant 2: milestone-orphan; and an explicitly exempted orphan.
     backend.add("orphan", labels=["track:alpha"])
     backend.add(
@@ -1869,7 +2014,14 @@ def test_lint_reports_every_invariant_class() -> None:
     violations = report["track_violations"]
     assert isinstance(violations, list)
     flagged = {entry["id"] for entry in violations if isinstance(entry, dict)}
-    assert flagged == {"no-track", "two-tracks"}  # closed + milestones exempt
+    # closed + milestones exempt; ghost-track flagged for its unknown name
+    assert flagged == {"no-track", "two-tracks", "ghost-track"}
+    ghost_entry = next(
+        entry
+        for entry in violations
+        if isinstance(entry, dict) and entry["id"] == "ghost-track"
+    )
+    assert ghost_entry["unknown"] == ["track:ghost"]
 
     orphans = report["milestone_orphans"]
     assert isinstance(orphans, list)
@@ -1937,15 +2089,29 @@ def _sweep(backend: Backend) -> list[Item]:
     return [item for item in backend.query(QueryFilters()) if item.status != "closed"]
 
 
-def _track_violations(non_milestone: list[Item]) -> list[JsonValue]:
-    """Invariant 1: exactly one track:* label per non-closed, non-milestone bead."""
+def _track_violations(non_milestone: list[Item], config: TrackLayerConfig) -> list[JsonValue]:
+    """Invariant 1: exactly one track:* label per non-closed, non-milestone
+    bead, AND its name in the configured vocabulary -- raw label writes can
+    mint `track:ghost`, which no gate sees and `list --track` can't query;
+    lint is the net that makes that corruption recoverable."""
     violations: list[JsonValue] = []
     for item in non_milestone:
         track_labels = [label for label in item.labels if label.startswith(TRACK_PREFIX)]
-        if len(track_labels) != 1:
+        unknown = [
+            label
+            for label in track_labels
+            if label[len(TRACK_PREFIX) :] not in config.names
+        ]
+        if len(track_labels) != 1 or unknown:
             # list() wrap: named list[str] locals are not assignable to a
             # JsonValue slot under mypy --strict (invariance).
-            violations.append({"id": item.id, "track_labels": list(track_labels)})
+            violations.append(
+                {
+                    "id": item.id,
+                    "track_labels": list(track_labels),
+                    "unknown": list(unknown),
+                }
+            )
     return violations
 
 
@@ -2046,7 +2212,7 @@ def lint(backend: Backend, args: Namespace) -> JsonValue:
     by_id = {item.id: item for item in swept}
     non_milestone = [item for item in swept if item.type != "milestone"]
     return {
-        "track_violations": _track_violations(non_milestone),
+        "track_violations": _track_violations(non_milestone, config),
         "milestone_orphans": _milestone_orphans(backend, swept, by_id),
         "wip": _milestone_wip(swept, config),
         "leases": _lease_report(non_milestone),
@@ -2136,7 +2302,7 @@ def test_lint_with_violations_still_exits_zero() -> None:
     assert envelope["ok"] is True
     data = envelope["data"]
     assert isinstance(data, dict)
-    assert data["track_violations"] == [{"id": "w-1", "track_labels": []}]
+    assert data["track_violations"] == [{"id": "w-1", "track_labels": [], "unknown": []}]
 ```
 
 Run: `uv run pytest tests/unit/test_lint.py -v && uv run pytest -n auto`
