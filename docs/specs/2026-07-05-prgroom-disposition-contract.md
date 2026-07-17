@@ -2,7 +2,7 @@
 
 **Status:** Draft (pending review)
 **Beads:** agents-config-abn9.8.27 (per-item disposition surface), agents-config-abn9.8.13.1 (merge-guard consumption + seam repair). One spec, two beads — edits here affect both; each bead's AC section is separate (§9).
-**Related:** agents-config-abn9.8.28 produces the `posted_reply_ids` field this contract defines (§5); agents-config-abn9.8.26 owns the `decided_by` provenance fix this contract's field semantics depend on (§3.3); agents-config-abn9.8.31 is adjudicated in §8; `docs/architecture/review-merge-policy/design.md` reserves the clearance hook this spec implements (its "design-reserved and not yet implemented" eligibility-predicate row); `2026-06-20-prgroom-fix-verify-subsystem.md` §6.3 is a sibling additive envelope extender (§3.4).
+**Related:** `2026-07-17-prgroom-legacy-export-reconciliation.md` governs the role and sunset of the legacy-inventory export this contract coexists with (§2); agents-config-abn9.8.28 produces the `posted_reply_ids` field this contract defines (§5); agents-config-abn9.8.26 owns the `decided_by` provenance fix this contract's field semantics depend on (§3.3); agents-config-abn9.8.31 is adjudicated in §8; `docs/architecture/review-merge-policy/design.md` reserves the clearance hook this spec implements (its "design-reserved and not yet implemented" eligibility-predicate row); `2026-06-20-prgroom-fix-verify-subsystem.md` §6.3 is a sibling additive envelope extender (§3.4).
 
 ## 1. Problem
 
@@ -14,13 +14,14 @@ Three defects/gaps, all verified against current `main`:
 
 ## 2. Decision
 
-**prgroom remains the sole owner of its state schema; the contract is versioned JSON over the CLI.** `prgroom status --json` gains an `items[]` array (§3). merge-guard's `untriaged_feedback` blocker unions prgroom's terminal-clean dispositions and posted-reply IDs as an **additional** exclusion source alongside the legacy inventory union, which stays intact until the Phase-1 cutover retires it (§4). Fail-closed semantics are preserved throughout: prgroom data only ever *adds* exclusions, never removes one, and its absence reproduces today's behavior exactly.
+**prgroom remains the sole owner of its state schema; the contract is versioned JSON over the CLI.** `prgroom status --json` gains an `items[]` array (§3). merge-guard's `untriaged_feedback` blocker unions prgroom's terminal-clean dispositions and posted-reply IDs as an **additional** exclusion source alongside the legacy inventory union, which stays intact until the sunset condition of `2026-07-17-prgroom-legacy-export-reconciliation.md` §4 holds (the Phase-1 cutover removes only the wait-for-pr-comments writer, not the surface) (§4). Fail-closed semantics are preserved throughout: prgroom data only ever *adds* exclusions, never removes one, and its absence reproduces today's behavior exactly.
+
+This contract has a shipped companion, not a competitor: prgroom also writes the legacy inventory format via `LegacyExportStore` (PR #274), byte-compatible files serving as the merge-guard bridge until the `items[]` surfaces below fully replace them — role, extension, and sunset are governed by `2026-07-17-prgroom-legacy-export-reconciliation.md`; its 7→3 disposition collapse is the bridge's deliberate fail-toward-human semantics.
 
 Rejected alternatives:
 
 - **Shared contract library/file both pipelines write** — three writers, a migration of a skill already slated for retirement (the Phase-1/Phase-2 cutover beads), and a second source of truth inside prgroom that will drift from its store.
 - **merge-guard reconstructs dispositions from GitHub live state** — GitHub has no disposition object; a skipped/deferred decision is not inferable from GH, and author-login exclusion is banned by policy ("never excluded by author login"). Retained only as a narrowed resilience follow-on (§8).
-- **prgroom writes the legacy inventory format** — chains prgroom to a dying schema through a lossy 7→3 disposition mapping. Pure debt.
 
 ## 3. The `items[]` contract
 
