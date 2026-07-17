@@ -372,7 +372,8 @@
     var collapseGlyph = document.createElement("span");
     collapseGlyph.textContent = "▸";
     var collapseLabel = document.createElement("span");
-    collapseLabel.textContent = "collapsed group (no PR-touched files by default)";
+    collapseLabel.textContent =
+      "collapsed group (no PR-touched files by default) — area ∝ file count, compressed";
     collapseItem.appendChild(collapseGlyph);
     collapseItem.appendChild(collapseLabel);
     container.appendChild(collapseItem);

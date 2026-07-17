@@ -142,6 +142,22 @@ def test_render_inlines_vendored_d3_scene_css_app_and_treemap_bundles():
     assert ".text(function (d) { return d.data.name; })" in html
 
 
+def test_render_inlines_treemap_interaction_playwright_hooks():
+    # The treemap's reset-view control and focus breadcrumb strip are stable
+    # playwright hooks (spec §4.6) — JS source, so inlined regardless of scene
+    # content, same convention as every other conditionally-rendered feature's
+    # id (viz-drill-sonar-toggle, viz-constellation-toggle, ...).
+    html = render_html(
+        _scene(
+            FileNode(path="src/app.py", checksum="aaa"),
+            FileNode(path="README.md", checksum="bbb"),
+        )
+    )
+
+    assert "viz-treemap-reset" in html
+    assert "viz-treemap-breadcrumb" in html
+
+
 def test_render_inlines_ledger_view_bundle_and_playwright_hooks():
     # Slice 3 (spec §6.1 attention ledger): the ledger view module is its own
     # file under templates/static/views/, picked up by the same dynamic glob

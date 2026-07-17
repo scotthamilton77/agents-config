@@ -20,6 +20,13 @@
 // `options.isExempt(evt)`, if given, opts an event out of activation (the
 // ledger row's diff-link guard) — omitted, every candidate event activates.
 //
+// Activation is always synchronous — there is deliberately NO deferred
+// (debounced double-click) path in this helper. An earlier revision deferred
+// `onActivate()` behind a timer to make room for a double-click gesture, and
+// the pending timer leaked activations through every gesture edge
+// (keyboard, nested controls, drag-after-click, pointercancel). Fill-screen
+// focus is an explicit per-tile control in the treemap instead (spec §6.1).
+//
 // isDependencyGraphUnavailable: the shared "is the dependency graph
 // unavailable?" predicate for the graph-shaped views (constellation, file
 // sonar). The answer is NOT "scene.edges is empty" — an *available*
