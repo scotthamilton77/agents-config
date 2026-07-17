@@ -58,13 +58,13 @@ def _mint_flag_id(fact_id: str) -> str:
     return f"flag-{digest[:16]}"
 
 
-def sweep(runners: Runners, _args: Namespace) -> JsonValue:
+def sweep(runners: Runners, _args: Namespace, repo_root: Path) -> JsonValue:
     """Handle `viz sweep`: classify every Tier-2 fact through funnel rungs 1-2.
 
     Returns the envelope `data`: `reused`/`restamped`/`flagged` counts across
     all three fact files combined.
     """
-    store = SidecarStore(Path.cwd())
+    store = SidecarStore(repo_root)
 
     # The entire read→classify→write cycle runs under ONE lock hold: the reads
     # below see a stable snapshot and every write commits under the same hold,

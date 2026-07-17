@@ -512,13 +512,13 @@ def _verdict_live(
     }
 
 
-def verdict(runners: Runners, args: Namespace) -> JsonValue:
+def verdict(runners: Runners, args: Namespace, repo_root: Path) -> JsonValue:
     """Handle `viz verdict <fact-id> <accept|reject|dismiss> [--dry-run]`."""
     fact_id: str = args.fact_id
     verdict_value = Verdict(args.verdict)
     dry_run: bool = bool(args.dry_run)
     port = TrackerPort(runners.tracker)
-    store = SidecarStore(Path.cwd())
+    store = SidecarStore(repo_root)
 
     if dry_run:
         return _verdict_dry_run(store, port, fact_id, verdict_value)

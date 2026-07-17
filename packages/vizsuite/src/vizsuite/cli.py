@@ -215,19 +215,24 @@ def main(
     try:
         # Constructed only now — never for --protocol-version above — so the
         # handshake never touches any adapter. The repo root is resolved to an
-        # absolute path once, here: the default "." would re-resolve against
-        # the live process cwd on every subprocess spawn, so a mid-process
-        # chdir could silently retarget the runners.
-        repo_root = str(Path.cwd())
+        # absolute path once, here — the only place in this package allowed to
+        # call `Path.cwd()` — and threaded into both the runners and the
+        # dispatched handler: the default "." would re-resolve against the
+        # live process cwd on every subprocess spawn, so a mid-process chdir
+        # could silently retarget the runners, and a verb re-reading
+        # `Path.cwd()` itself would be the same hazard one layer up.
+        repo_root = Path.cwd()
         runners = Runners(
-            git=git_runner if git_runner is not None else SubprocessGitRunner(repo_root=repo_root),
-            gh=gh_runner if gh_runner is not None else SubprocessGhRunner(repo_root=repo_root),
+            git=git_runner
+            if git_runner is not None
+            else SubprocessGitRunner(repo_root=str(repo_root)),
+            gh=gh_runner if gh_runner is not None else SubprocessGhRunner(repo_root=str(repo_root)),
             scc=scc_runner if scc_runner is not None else SubprocessSccRunner(),
             tracker=tracker_runner
             if tracker_runner is not None
-            else SubprocessTrackerRunner(repo_root=repo_root),
+            else SubprocessTrackerRunner(repo_root=str(repo_root)),
         )
-        data = handler(runners, args)
+        data = handler(runners, args, repo_root)
     except VizError as verb_error:
         return _finish_failure(verb_error, out, err, args.format)
     except Exception:

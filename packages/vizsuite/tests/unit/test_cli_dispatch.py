@@ -124,6 +124,31 @@ def test_main_defaults_to_real_streams(capsys: pytest.CaptureFixture[str]):
     assert captured.err == ""
 
 
+def test_handler_receives_main_s_resolved_repo_root_as_a_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`cli.main` resolves `Path.cwd()` exactly once and threads it into the
+    dispatched handler's third positional argument as a `Path` — verbs must
+    never re-resolve `Path.cwd()` themselves."""
+    monkeypatch.chdir(tmp_path)
+    captured: list[Path] = []
+
+    def _fake_pr(_runners: object, _args: object, repo_root: Path) -> dict[str, object]:
+        captured.append(repo_root)
+        return {"ok": True}
+
+    import vizsuite.cli as cli_module
+
+    monkeypatch.setitem(cli_module.VERBS, "pr", _fake_pr)
+
+    exit_code, envelope, _stderr = run_cli(["pr", "1"], git_runner=_ExplodingGitRunner())
+
+    assert exit_code == 0
+    assert envelope["data"] == {"ok": True}
+    assert captured == [Path.cwd()]
+    assert isinstance(captured[0], Path)
+
+
 def test_default_runners_pin_repo_root_to_invocation_cwd(monkeypatch: pytest.MonkeyPatch):
     """The default runners get an absolute repo root captured at construction —
     `cwd="."` would re-resolve against the live process cwd on every subprocess

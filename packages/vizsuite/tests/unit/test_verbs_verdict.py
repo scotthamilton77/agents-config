@@ -21,6 +21,7 @@ cycle-check read is allowed) but performs zero sidecar or tracker mutation.
 from __future__ import annotations
 
 import importlib
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ import pytest
 
 from tests.conftest import run_cli
 from tests.fakes import ScriptedTrackerRunner, tracker_error, tracker_ok, tracker_show_ok
+from vizsuite.runners import Runners
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -37,6 +39,7 @@ from vizsuite.sidecar.models import (
     Verdict,
 )
 from vizsuite.sidecar.store import SidecarStore
+from vizsuite.verbs.verdict import verdict
 
 _NOW = "2026-07-15T09:30:00+00:00"
 
@@ -125,6 +128,28 @@ def test_reject_records_verdict_and_never_touches_the_tracker(
     assert data["verdict"] == "reject"
     assert data["fact_class"] == "edge"
     assert data["promotion"] is None
+    (recorded,) = store.read_verdicts()
+    assert recorded.fact_id == "edge-1"
+    assert recorded.verdict == Verdict.REJECT
+    assert tracker.calls == []
+
+
+def test_verdict_reads_and_writes_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:
+    """`verdict` takes `repo_root` as an explicit third argument -- its sidecar
+    store must resolve from that argument alone. Never chdir'd here: if
+    `verdict` fell back to `Path.cwd()` internally it would search the real
+    process cwd's (nonexistent) `.viz/` and raise `E_NOT_FOUND` instead of
+    successfully recording the reject verdict below."""
+    store = SidecarStore(tmp_path)
+    store.write_edges((_fact("edge-0"), _fact("edge-1")))
+    tracker = ScriptedTrackerRunner()
+    runners = Runners(git=None, gh=None, scc=None, tracker=tracker)  # type: ignore[arg-type]
+    args = Namespace(fact_id="edge-1", verdict="reject", dry_run=False)
+
+    data = verdict(runners, args, tmp_path)
+
+    assert isinstance(data, dict)
+    assert data["verdict"] == "reject"
     (recorded,) = store.read_verdicts()
     assert recorded.fact_id == "edge-1"
     assert recorded.verdict == Verdict.REJECT

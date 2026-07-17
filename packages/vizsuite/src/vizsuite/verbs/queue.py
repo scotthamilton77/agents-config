@@ -37,7 +37,7 @@ def _facts_by_id(store: SidecarStore) -> dict[str, FactRecord]:
     return merged
 
 
-def queue(_runners: Runners, _args: Namespace) -> JsonValue:
+def queue(_runners: Runners, _args: Namespace, repo_root: Path) -> JsonValue:
     """Handle `viz queue`: read `flags.json`, join to facts and verdicts.
 
     Returns the envelope `data`: `count` and `entries`, each entry carrying
@@ -45,7 +45,7 @@ def queue(_runners: Runners, _args: Namespace) -> JsonValue:
     record is missing — a flag can outlive the record it points to across a
     rebuild). Entries are sorted by `flag_id` for deterministic output.
     """
-    store = SidecarStore(Path.cwd())
+    store = SidecarStore(repo_root)
     facts_by_id = _facts_by_id(store)
     verdicts_by_id: dict[str, VerdictRecord] = {
         verdict.verdict_id: verdict for verdict in store.read_verdicts()

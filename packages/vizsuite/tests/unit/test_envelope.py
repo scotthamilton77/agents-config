@@ -60,7 +60,7 @@ def _dispatch(argv: list[str]) -> tuple[int, dict[str, object], str]:
 
 
 def test_handler_success_yields_success_envelope(monkeypatch: pytest.MonkeyPatch):
-    def _echo(_runners: object, _args: object) -> dict[str, str]:
+    def _echo(_runners: object, _args: object, _repo_root: object) -> dict[str, str]:
         return {"pr": "ok"}
 
     monkeypatch.setitem(cli_module.VERBS, "pr", _echo)
@@ -73,7 +73,7 @@ def test_handler_success_yields_success_envelope(monkeypatch: pytest.MonkeyPatch
 
 
 def test_handler_raising_viz_error_yields_that_errors_envelope(monkeypatch: pytest.MonkeyPatch):
-    def _reject(_runners: object, _args: object) -> None:
+    def _reject(_runners: object, _args: object, _repo_root: object) -> None:
         raise VizError(ErrorCode.NOT_FOUND, "no such pr", detail={"pr": 1})
 
     monkeypatch.setitem(cli_module.VERBS, "pr", _reject)
@@ -90,7 +90,7 @@ def test_handler_raising_viz_error_yields_that_errors_envelope(monkeypatch: pyte
 
 
 def test_handler_exception_yields_internal_envelope_with_traceback(monkeypatch: pytest.MonkeyPatch):
-    def _boom(_runners: object, _args: object) -> None:
+    def _boom(_runners: object, _args: object, _repo_root: object) -> None:
         raise ValueError("kaboom")
 
     monkeypatch.setitem(cli_module.VERBS, "pr", _boom)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ import pytest
 from tests.conftest import run_cli
 from tests.fakes import ScriptedGitRunner, blob
 from vizsuite.envelope import ErrorCode, VizError
+from vizsuite.runners import Runners
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -34,6 +36,7 @@ from vizsuite.sidecar.models import (
     VerdictRecord,
 )
 from vizsuite.sidecar.store import SidecarStore
+from vizsuite.verbs.sweep import sweep
 
 _CURRENT_FINGERPRINT = {"src/app.py": "sha-app-1", "docs/readme.md": "sha-readme-1"}
 
@@ -126,6 +129,24 @@ def test_sweep_flags_a_fact_when_a_cited_input_changed(
     assert flag.fact_id == "edge-1"
     assert flag.kind == FlagKind.DOUBT
     assert "src/app.py" in flag.reason
+
+
+def test_sweep_reads_and_writes_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:
+    """`sweep` takes `repo_root` as an explicit third argument -- its sidecar
+    store must resolve from that argument alone. Never chdir'd here: if `sweep`
+    fell back to `Path.cwd()` internally it would read/write the real process
+    cwd's (nonexistent) `.viz/`, not `tmp_path`, and the manifest baseline
+    comparison below would report the fact as freshly-flagged, not reused."""
+    store = SidecarStore(tmp_path)
+    store.write_manifest(Manifest(schema_version="1", input_hashes=_CURRENT_FINGERPRINT))
+    fact = _fact("edge-1", citations=("src/app.py",))
+    store.write_edges((fact,))
+    runners = Runners(git=_git(), gh=None, scc=None, tracker=None)  # type: ignore[arg-type]
+
+    data = sweep(runners, Namespace(), tmp_path)
+
+    assert data == {"reused": 1, "restamped": 0, "flagged": 0}
+    assert store.read_edges() == (fact,)  # byte-for-byte the same record
 
 
 def test_sweep_never_reevaluates_a_fact_that_already_has_a_pending_flag(
