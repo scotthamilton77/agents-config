@@ -186,31 +186,110 @@ approvers=$(jq --arg head "$HEAD_OID" '
 APPROVER_COUNT=$(jq 'length' <<<"$approvers")
 set_fact distinct_current_approvers "$APPROVER_COUNT"
 set_fact approver_logins "$approvers"
-# ── Blocker: unresolved review threads (always live; prgroom is never a
-#    substitute — a thread opened after prgroom quiesced is absent from state) ─
+# ── Durable triage inventories (shared source: the thread partition below and
+#    the non-thread untriaged scan later both read these unions) ──────────────
+inventory_items='[]'
+completed_inventory_items='[]'
+while IFS= read -r -d '' inv_file; do
+    file_items=$(jq '[.items[]?]' "$inv_file" 2>/dev/null) || continue
+    inventory_items=$(jq -n --argjson a "$inventory_items" --argjson b "$file_items" '$a + $b')
+    # Terminal dispositions may only come from a COMPLETED triage pass — a
+    # partial/crash inventory's FIX/SKIP calls are not durable. The
+    # posted_reply_id exclusion union (untriaged scan) deliberately reads ALL
+    # inventories (including partial): reply IDs are recorded at post time
+    # mid-run, so a partial crash file is exactly where a real posted
+    # reply's ID lives.
+    file_completed=$(jq -r '.crash_recovery.skill_a_completed // false' "$inv_file" 2>/dev/null) || file_completed=false
+    if [[ "$file_completed" == "true" ]]; then
+        completed_inventory_items=$(jq -n --argjson a "$completed_inventory_items" --argjson b "$file_items" '$a + $b')
+    fi
+done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
+         -name "${OWNER}-${REPO}-${PR}-*.json" -print0 2>/dev/null)
+# ── Blockers: review threads — live enumeration, triage-aware partition ──────
+# The live GraphQL query ALWAYS enumerates every thread; state never
+# substitutes for enumeration (a thread opened after the last triage pass is
+# absent from every durable record and must block). The live unresolved set is
+# then PARTITIONED against durably recorded triage from completed inventories,
+# aggregated per thread across ALL of the thread's recorded items:
+#   1. any ESCALATE record             → escalations_pending (a human must
+#      rule; cleared only by resolving the thread on GitHub — a later
+#      re-classification never clears it)
+#   2. every record SKIP + posted reply → excluded (the SKIP reply is an
+#      argument to the reviewer, deliberately never resolved on their behalf)
+#   3. everything else                  → unresolved_threads (untriaged /
+#      unresolved-FIX / unposted-SKIP)
 fetch_threads_page() {  # fetch_threads_page [cursor]
     if [[ $# -eq 0 ]]; then
         gh api graphql \
-          -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}' \
+          -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){pageInfo{hasNextPage endCursor}nodes{id isResolved}}}}}' \
           -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" 2>/dev/null
     else
         gh api graphql \
-          -f query='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}' \
+          -f query='query($owner:String!,$repo:String!,$pr:Int!,$cursor:String!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor}nodes{id isResolved}}}}}' \
           -f owner="$OWNER" -f repo="$REPO" -F pr="$PR" -f cursor="$1" 2>/dev/null
     fi
 }
-unresolved_threads=0
+thread_nodes='[]'
 page=$(fetch_threads_page) || { echo "Error: reviewThreads query failed" >&2; exit 3; }
 while :; do
-    count=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' <<<"$page")
-    unresolved_threads=$((unresolved_threads + count))
+    page_nodes=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[] | {id: (.id // null), isResolved}]' <<<"$page")
+    thread_nodes=$(jq -n --argjson a "$thread_nodes" --argjson b "$page_nodes" '$a + $b')
     has_next=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<<"$page")
     [[ "$has_next" == "true" ]] || break
     cursor=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<<"$page")
     page=$(fetch_threads_page "$cursor") || { echo "Error: reviewThreads pagination failed" >&2; exit 3; }
 done
-if [[ "$unresolved_threads" -gt 0 ]]; then
-    add_blocker unresolved_threads "${unresolved_threads} unresolved review thread(s) on the PR"
+
+# Partition ladder — total and mutually exclusive: every live unresolved
+# thread lands on exactly one rung. A null/missing GraphQL id can never match
+# a record → rung 3, untriaged (fail closed). ESCALATE beats coexisting SKIP
+# records for the same thread: inventories carry no reliable cross-round
+# ordering, so failing toward human attention is the only safe tie-break.
+thread_partition=$(jq -n --argjson threads "$thread_nodes" --argjson records "$completed_inventory_items" '
+    ([ $records[] | select(.kind == "review_thread" and .thread_id != null) ]) as $recs
+    | ([ $threads[] | select(.isResolved == false) ]) as $live
+    | ($live | map(
+        (.id // null) as $tid
+        | (if $tid == null then [] else [ $recs[] | select(.thread_id == $tid) ] end) as $r
+        | ([ $r[] | select(.classification == "ESCALATE") ]) as $esc
+        | if ($esc | length) > 0 then
+            {bucket: "escalate", id: $tid,
+             rationale: (([ $esc[] | .rationale // empty ] | first) // null)}
+          elif ($r | length) > 0
+               and (($r | length) == ([ $r[] | select(.classification == "SKIP" and .posted_reply_id != null) ] | length)) then
+            {bucket: "skip", id: $tid}
+          else
+            {bucket: "block", id: $tid,
+             why: (if ($r | length) == 0 then "untriaged"
+                   elif ([ $r[] | select(.classification == "FIX") ] | length) > 0 then "unresolved-FIX"
+                   else "unposted-SKIP" end)}
+          end)) as $placed
+    | {live_unresolved: ($live | length),
+       skip_excluded: ([ $placed[] | select(.bucket == "skip") ] | length),
+       escalations: [ $placed[] | select(.bucket == "escalate") | {id, rationale} ],
+       blocking: [ $placed[] | select(.bucket == "block") ]}')
+set_fact thread_triage "$(jq '{live_unresolved, skip_excluded,
+    escalations_pending: (.escalations | length), blocking: (.blocking | length)}' <<<"$thread_partition")"
+if [[ "$(jq '.blocking | length' <<<"$thread_partition")" -gt 0 ]]; then
+    add_blocker unresolved_threads "$(jq -r '
+        (.blocking) as $b
+        | ([ $b[] | select(.why == "untriaged") ] | length) as $u
+        | ([ $b[] | select(.why == "unresolved-FIX") ] | length) as $f
+        | ([ $b[] | select(.why == "unposted-SKIP") ] | length) as $s
+        | ($b | length | tostring) + " unresolved review thread(s) require triage: "
+          + ($u | tostring) + " untriaged, "
+          + ($f | tostring) + " unresolved-FIX, "
+          + ($s | tostring) + " unposted-SKIP"' <<<"$thread_partition")"
+fi
+if [[ "$(jq '.escalations | length' <<<"$thread_partition")" -gt 0 ]]; then
+    add_blocker escalations_pending "$(jq -r '
+        (.escalations | length | tostring)
+        + " escalated thread(s) awaiting a human ruling (resolve each thread on GitHub to clear): "
+        + ([ .escalations[]
+             | (if (.rationale // "") == "" then "no rationale recorded"
+                else (.rationale | .[0:80]) end) as $why
+             | (.id // "unknown-thread") + " (" + $why + ")" ]
+           | join("; "))' <<<"$thread_partition")"
 fi
 # ── Blocker: required CI checks not green ────────────────────────────────────
 # Required set from branch protection — NEVER derived from the rollup (the
@@ -398,21 +477,31 @@ if [[ "$HUMANS_REQUIRED" -gt 0 ]]; then
     fi
 fi
 set_fact review_wait "$(jq -n --arg b "$review_wait_bot" --arg h "$review_wait_human" '{bot: $b, human: $h}')"
-# ── Fact: bot_review_cap_exhausted (head-exact, fail-closed) ─────────────────
-# Read ONLY the inventory for the CURRENT head (filename embeds HEAD_OID).
-# Never the glob-all used by the untriaged scan below — a stale
-# exhausted=true from a superseded head must not leak onto a fresh head.
-# Absent/malformed/missing-field all resolve to false (force-merge stays
-# locked unless the one-ask budget is provably spent for THIS head).
-cap_inv="${HOME}/.claude/state/pr-inventory/${OWNER}-${REPO}-${PR}-${HEAD_OID}.json"
+# ── Fact: bot_review_cap_exhausted (head-prefix glob, fail-closed) ───────────
+# Match inventories for the CURRENT head by the first 12 hex chars of
+# HEAD_OID — the filename convention detect-pr-context.sh actually writes
+# (12-char truncated sha). The same prefix also covers LegacyExportStore's
+# full-40-char names and tolerates ad-hoc suffixed artifacts. NOT the
+# glob-all used by the untriaged scan below — head-scoping is preserved: a
+# stale exhausted=true from a superseded head never matches this head's
+# prefix (48 bits; a collision is negligible, and the leak direction is a
+# human-attention fact, never an autonomous merge). OR across matches: once
+# the one-ask budget is spent at a head, nothing at the same head can
+# un-spend it.
 # Type-strict: jq -r prints both boolean true and string "true" as the bare
 # word `true`, so a bash string compare fails-OPEN on a string value. Use
 # jq's own typed equality (-e exit status) — a string never equals boolean
-# true, and absent/malformed also exit non-zero, so the fact stays false.
+# true, and absent/malformed/missing-field files contribute false, so the
+# fact stays false unless the budget is provably spent for THIS head.
+head12="${HEAD_OID:0:12}"
 bot_cap_exhausted=false
-if [[ -f "$cap_inv" ]] && jq -e '(.polling.bot_review_cap_exhausted // false) == true' "$cap_inv" >/dev/null 2>&1; then
-    bot_cap_exhausted=true
-fi
+while IFS= read -r -d '' cap_file; do
+    if jq -e '(.polling.bot_review_cap_exhausted // false) == true' "$cap_file" >/dev/null 2>&1; then
+        bot_cap_exhausted=true
+        break
+    fi
+done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
+         -name "${OWNER}-${REPO}-${PR}-${head12}*.json" -print0 2>/dev/null)
 set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 # ── Blocker: untriaged non-thread reviewer feedback ──────────────────────────
 # review_summary / issue_comment items are disjoint GitHub objects from review
@@ -426,23 +515,8 @@ set_fact bot_review_cap_exhausted "$bot_cap_exhausted"
 ISSUE_COMMENTS=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate | jq -s 'add // []') || {
     echo "Error: failed to fetch issue comments" >&2; exit 3; }
 
-inventory_items='[]'
-completed_inventory_items='[]'
-while IFS= read -r -d '' inv_file; do
-    file_items=$(jq '[.items[]?]' "$inv_file" 2>/dev/null) || continue
-    inventory_items=$(jq -n --argjson a "$inventory_items" --argjson b "$file_items" '$a + $b')
-    # Terminal dispositions may only come from a COMPLETED triage pass — a
-    # partial/crash inventory's FIX/SKIP calls are not durable. The
-    # posted_reply_id exclusion union above deliberately reads ALL
-    # inventories (including partial): reply IDs are recorded at post time
-    # mid-run, so a partial crash file is exactly where a real posted
-    # reply's ID lives.
-    file_completed=$(jq -r '.crash_recovery.skill_a_completed // false' "$inv_file" 2>/dev/null) || file_completed=false
-    if [[ "$file_completed" == "true" ]]; then
-        completed_inventory_items=$(jq -n --argjson a "$completed_inventory_items" --argjson b "$file_items" '$a + $b')
-    fi
-done < <(find "${HOME}/.claude/state/pr-inventory" -maxdepth 1 \
-         -name "${OWNER}-${REPO}-${PR}-*.json" -print0 2>/dev/null)
+# inventory_items / completed_inventory_items were collected once, above the
+# thread partition — both unions are shared with it.
 
 # Durable, canonical-path-keyed sidecar written by post-replies.sh — one JSONL
 # line per successful reply POST, shape {"k","v","rid"}. An ADDITIONAL, more

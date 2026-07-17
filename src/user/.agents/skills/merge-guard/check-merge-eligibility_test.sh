@@ -768,40 +768,65 @@ GOOD_NULL_TIMEOUT=$(jq -c '.human_review_timeout_seconds = null' <<<"$BASE_POLIC
 out=$(run_script "$GOOD_NULL_TIMEOUT"); rc=$?
 assert "null human_review_timeout_seconds is still valid" "[ \$rc -eq 0 ]"
 
-# ── bot_review_cap_exhausted: head-exact, fail-closed ────────────────────────
+# ── bot_review_cap_exhausted: head-prefix glob, fail-closed ──────────────────
 # write_inv's schema hardcodes polling: {} (Task 17), so it can't express
 # polling.bot_review_cap_exhausted — write these inventories directly instead.
 write_cap_inv() {  # write_cap_inv <filename> <polling-json>
   jq -n --argjson polling "$2" '{schema_version: 1, pr: {}, polling: $polling, items: []}' \
     > "$INV_DIR/$1"
 }
+HEAD12="${HEAD_SHA:0:12}"
 
-# present-true on the current head
+# production convention: detect-pr-context.sh writes 12-char truncated-sha
+# filenames — the reader MUST see these (regression pin for the dead read
+# path that only matched a full-40-char filename no live writer produces)
+write_cap_inv "o-r-1-${HEAD12}.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "cap true in 12-char-sha inventory (production convention) → fact true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json"
+
+# LegacyExportStore convention: full 40-char sha shares the 12-char prefix,
+# so the same head-scoped glob covers prgroom's writer
 write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":true}'
 out=$(run_script "$BASE_POLICY")
-assert "cap exhausted true on current head → fact true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+assert "cap true in full-sha inventory (LegacyExportStore convention) → fact true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
 rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
 
+# ad-hoc suffixed artifact (the PR #256 incident's manually written -r3 file):
+# tolerated as robustness — no writer constructs suffixed names
+write_cap_inv "o-r-1-${HEAD12}-r3.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "cap true in ad-hoc suffixed inventory → fact true (tolerated)" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+rm -f "$INV_DIR/o-r-1-${HEAD12}-r3.json"
+
+# OR across matching files: once the budget is spent at a head nothing at the
+# same head can un-spend it — a false sibling must not mask a true one
+write_cap_inv "o-r-1-${HEAD12}.json" '{"bot_review_cap_exhausted":false}'
+write_cap_inv "o-r-1-${HEAD12}-r3.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "false + true siblings at same head OR to true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json" "$INV_DIR/o-r-1-${HEAD12}-r3.json"
+
 # present-false
-write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":false}'
+write_cap_inv "o-r-1-${HEAD12}.json" '{"bot_review_cap_exhausted":false}'
 out=$(run_script "$BASE_POLICY")
 assert "cap exhausted false → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
-rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json"
 
 # type-strict: a JSON STRING "true" must NOT satisfy the boolean gate.
 # jq -r prints both boolean true and string "true" as the bare word `true`,
 # so a bash string compare would fail-OPEN on a string. This authorization
 # escape hatch must only unlock on a real JSON boolean true.
-write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"bot_review_cap_exhausted":"true"}'
+write_cap_inv "o-r-1-${HEAD12}.json" '{"bot_review_cap_exhausted":"true"}'
 out=$(run_script "$BASE_POLICY")
 assert "cap exhausted string \"true\" → fact false (type-strict)" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
-rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json"
 
 # field absent → false
-write_cap_inv "o-r-1-${HEAD_SHA}.json" '{"copilot_status":"timeout"}'
+write_cap_inv "o-r-1-${HEAD12}.json" '{"copilot_status":"timeout"}'
 out=$(run_script "$BASE_POLICY")
 assert "field absent → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
-rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json"
 
 # inventory absent → false
 out=$(run_script "$BASE_POLICY")
@@ -809,18 +834,178 @@ assert "inventory absent → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhau
 
 # malformed current-head inventory → false (fail-closed); write raw non-JSON
 # content directly since write_cap_inv always emits valid JSON
-printf 'not json' > "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+printf 'not json' > "$INV_DIR/o-r-1-${HEAD12}.json"
 out=$(run_script "$BASE_POLICY")
 assert "malformed current-head inventory → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
-rm -f "$INV_DIR/o-r-1-${HEAD_SHA}.json"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json"
+
+# malformed file must not abort the scan — a readable true sibling still wins
+printf 'not json' > "$INV_DIR/o-r-1-${HEAD12}.json"
+write_cap_inv "o-r-1-${HEAD12}-r2.json" '{"bot_review_cap_exhausted":true}'
+out=$(run_script "$BASE_POLICY")
+assert "malformed sibling skipped, readable true still resolves → fact true" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = true ]"
+rm -f "$INV_DIR/o-r-1-${HEAD12}.json" "$INV_DIR/o-r-1-${HEAD12}-r2.json"
 
 # STALE-HEAD GUARD: a prior-head inventory with exhausted=true must NOT leak
 # onto the current head when the current-head inventory is absent. This is
 # the regression guard for the "bot timeout ≈ implicit approval" fail-open
-# bug this feature exists to prevent.
-write_cap_inv "o-r-1-deadbeefstalehead.json" '{"bot_review_cap_exhausted":true}'
+# bug this feature exists to prevent. Different 12-char prefix ⇒ no match.
+write_cap_inv "o-r-1-bbbbbbbbbbbb1234.json" '{"bot_review_cap_exhausted":true}'
 out=$(run_script "$BASE_POLICY")
 assert "stale prior-head exhausted does NOT leak → fact false" "[ \"\$(jq '.facts.bot_review_cap_exhausted' <<<\"\$out\")\" = false ]"
-rm -f "$INV_DIR/o-r-1-deadbeefstalehead.json"
+rm -f "$INV_DIR/o-r-1-bbbbbbbbbbbb1234.json"
+
+# ── Spec 2026-07-16: triage-aware thread partition (abn9.8.34) ───────────────
+# Live unresolved threads are partitioned against completed-inventory triage:
+# ESCALATE → escalations_pending; all-SKIP-with-posted-reply → excluded;
+# everything else (untriaged / unresolved-FIX / unposted-SKIP) → blocks.
+export_threads_ids() {  # export_threads_ids <id:resolved>... ; id "-" → null id
+  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'split(":") | {id: (if .[0] == "-" then null else .[0] end), isResolved: (.[1] == "true")}' | jq -s .)
+  jq -n --argjson n "$nodes" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:$n}}}}}'
+}
+export_threads_ids_page() {  # export_threads_ids_page <hasNextPage> <endCursor|""> <id:resolved>...
+  local has="$1" cur="$2"; shift 2
+  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'split(":") | {id: (if .[0] == "-" then null else .[0] end), isResolved: (.[1] == "true")}' | jq -s .)
+  local cur_json=null; [ -n "$cur" ] && cur_json=$(jq -n --arg c "$cur" '$c')
+  jq -n --argjson n "$nodes" --argjson h "$has" --argjson c "$cur_json" \
+    '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:$h,endCursor:$c},nodes:$n}}}}}'
+}
+esc_details() { jq -r '.blockers[] | select(.code == "escalations_pending") | .details' <<<"$1"; }
+thr_details() { jq -r '.blockers[] | select(.code == "unresolved_threads") | .details' <<<"$1"; }
+
+clean_invs; clean_sidecars
+
+# untriaged: unresolved thread with no record in any completed inventory
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "untriaged unresolved thread → unresolved_threads blocker" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+assert "untriaged thread counted in breakdown" "thr_details \"\$out\" | grep -q '1 untriaged'"
+assert "thread_triage fact: 1 live, 1 blocking" \
+  "[ \"\$(jq '.facts.thread_triage.live_unresolved' <<<\"\$out\")\" = 1 ] && [ \"\$(jq '.facts.thread_triage.blocking' <<<\"\$out\")\" = 1 ]"
+
+# a GraphQL node with a null id can never be matched to triage → blocks as untriaged
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids -:false)"); rc=$?
+assert "null-id unresolved thread blocks as untriaged" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+
+# SKIP with a posted reply in a completed inventory → excluded, eligible
+write_inv "o-r-1-thr0001.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"cosmetic pushback","fix_outcome":null,"posted_reply_id":9001}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "SKIP+posted-reply thread excluded → eligible" "[ \$rc -eq 0 ]"
+assert "skip_excluded counted in thread_triage" \
+  "[ \"\$(jq '.facts.thread_triage.skip_excluded' <<<\"\$out\")\" = 1 ] && [ \"\$(jq '.facts.thread_triage.blocking' <<<\"\$out\")\" = 0 ]"
+clean_invs
+
+# SKIP whose reply never posted → still blocks (argument never reached reviewer)
+write_inv "o-r-1-thr0002.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"cosmetic","fix_outcome":null,"posted_reply_id":null}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "SKIP without posted reply → unresolved_threads" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+assert "unposted-SKIP named in breakdown" "thr_details \"\$out\" | grep -q '1 unposted-SKIP'"
+clean_invs
+
+# ESCALATE (wait-for-pr-comments shape: escalation_filed + rationale) →
+# escalations_pending, NOT unresolved_threads
+write_inv "o-r-1-thr0003.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","escalation_filed":true,"rationale":"needs human ruling on API shape","fix_outcome":null,"posted_reply_id":9002}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "ESCALATE thread → escalations_pending blocker" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+assert "ESCALATE thread NOT in unresolved_threads" \
+  "! jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+assert "escalation details carry thread id and rationale" \
+  "esc_details \"\$out\" | grep -q 'T1' && esc_details \"\$out\" | grep -q 'needs human ruling'"
+clean_invs
+
+# ESCALATE (prgroom LegacyExportStore shape: no escalation_filed, no rationale
+# keys) lands in the same bucket — routing keys on classification alone
+write_inv "o-r-1-thr0004.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","fix_outcome":null,"posted_reply_id":9003}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "LegacyExportStore-shape ESCALATE → escalations_pending" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+assert "missing rationale reads '(no rationale recorded)'" \
+  "esc_details \"\$out\" | grep -q '(no rationale recorded)'"
+clean_invs
+
+# ESCALATE beats coexisting SKIP records for the same thread (no reliable
+# cross-round ordering → fail toward human attention)
+write_inv "o-r-1-thr0005.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","escalation_filed":true,"rationale":"human question","fix_outcome":null,"posted_reply_id":9004}]'
+write_inv "o-r-1-thr0006.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"skip it","fix_outcome":null,"posted_reply_id":9005}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "ESCALATE record beats SKIP record for the same thread" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+clean_invs
+
+# one thread, two comments (two items, same thread_id), both SKIP+posted → excluded
+write_inv "o-r-1-thr0007.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"a","fix_outcome":null,"posted_reply_id":9006},
+    {"kind":"review_thread","thread_id":"T1","reply_to_comment_id":502,"classification":"SKIP","rationale":"b","fix_outcome":null,"posted_reply_id":9007}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "multi-item thread, all SKIP+posted → excluded, eligible" "[ \$rc -eq 0 ]"
+clean_invs
+
+# one thread, SKIP+posted item and FIX/committed item, thread still unresolved
+# → blocks (an unresolved FIX is actionable — the fix flow should have resolved it)
+write_inv "o-r-1-thr0008.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"a","fix_outcome":null,"posted_reply_id":9008},
+    {"kind":"review_thread","thread_id":"T1","reply_to_comment_id":502,"classification":"FIX","rationale":"b","fix_outcome":"committed","fix_commit_sha":"abc","posted_reply_id":9009}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "mixed SKIP+FIX thread still unresolved → unresolved_threads" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+assert "unresolved-FIX named in breakdown" "thr_details \"\$out\" | grep -q '1 unresolved-FIX'"
+clean_invs
+
+# a SKIP recorded only in a partial-crash (incomplete) inventory does not count
+write_inv_partial "o-r-1-thr0009.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"a","fix_outcome":null,"posted_reply_id":9010}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "SKIP only in incomplete inventory → still blocks (completed-only discipline)" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads"
+clean_invs
+
+# live enumeration wins: thread resolved on GitHub, stale ESCALATE record remains
+write_inv "o-r-1-thr0010.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","escalation_filed":true,"rationale":"ruled","fix_outcome":null,"posted_reply_id":9011}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:true)"); rc=$?
+assert "resolved-on-GitHub thread with stale ESCALATE record → no blocker" "[ \$rc -eq 0 ]"
+assert "resolved thread not counted live" "[ \"\$(jq '.facts.thread_triage.live_unresolved' <<<\"\$out\")\" = 0 ]"
+clean_invs
+
+# partition across pages: SKIP-excluded thread on page 1, untriaged on page 2
+write_inv "o-r-1-thr0011.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"a","fix_outcome":null,"posted_reply_id":9012}]'
+p1=$(export_threads_ids_page true CURSOR1 T1:false)
+p2=$(export_threads_ids_page false "" T2:false)
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$p1" FIXTURE_GRAPHQL_THREADS_PAGE2="$p2"); rc=$?
+assert "cross-page partition: only the untriaged page-2 thread blocks" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q unresolved_threads && ! jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+assert "cross-page counts: 2 live, 1 skip-excluded, 1 blocking" \
+  "[ \"\$(jq '.facts.thread_triage.live_unresolved' <<<\"\$out\")\" = 2 ] && [ \"\$(jq '.facts.thread_triage.skip_excluded' <<<\"\$out\")\" = 1 ] && [ \"\$(jq '.facts.thread_triage.blocking' <<<\"\$out\")\" = 1 ]"
+clean_invs
+
+# PR #256 composite (AC): 1 posted SKIP + 2 filed ESCALATEs, nothing else →
+# exactly one blocker, escalations_pending, with both ids and rationales
+write_inv "o-r-1-thr0012.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"SKIP","rationale":"defensible pushback","fix_outcome":null,"posted_reply_id":9013},
+    {"kind":"review_thread","thread_id":"T2","reply_to_comment_id":502,"classification":"ESCALATE","escalation_filed":true,"rationale":"design question A","fix_outcome":null,"posted_reply_id":9014},
+    {"kind":"review_thread","thread_id":"T3","reply_to_comment_id":503,"classification":"ESCALATE","escalation_filed":true,"rationale":"design question B","fix_outcome":null,"posted_reply_id":9015}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false T2:false T3:false)"); rc=$?
+assert "PR#256 state: exactly one blocker" "[ \$rc -eq 1 ] && [ \"\$(jq '.blockers | length' <<<\"\$out\")\" = 1 ]"
+assert "PR#256 state: the blocker is escalations_pending" \
+  "jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+assert "PR#256 state: both thread ids and rationales in details" \
+  "esc_details \"\$out\" | grep -q 'T2' && esc_details \"\$out\" | grep -q 'T3' && esc_details \"\$out\" | grep -q 'design question A' && esc_details \"\$out\" | grep -q 'design question B'"
+assert "PR#256 counts: 3 live = 1 skip + 2 escalations + 0 blocking" \
+  "[ \"\$(jq '.facts.thread_triage.live_unresolved' <<<\"\$out\")\" = 3 ] && [ \"\$(jq '.facts.thread_triage.skip_excluded' <<<\"\$out\")\" = 1 ] && [ \"\$(jq '.facts.thread_triage.escalations_pending' <<<\"\$out\")\" = 2 ] && [ \"\$(jq '.facts.thread_triage.blocking' <<<\"\$out\")\" = 0 ]"
+
+# …and after a human resolves both escalated threads on GitHub → eligible
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false T2:true T3:true)"); rc=$?
+assert "PR#256 after human resolves escalated threads → eligible" "[ \$rc -eq 0 ]"
+clean_invs
 
 exit $FAIL
