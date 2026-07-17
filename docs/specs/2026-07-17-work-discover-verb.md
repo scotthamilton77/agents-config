@@ -70,7 +70,7 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | Flag | Required | Meaning |
 |---|---|---|
 | `--noun` | yes | kind of discovered work; routes the shared noun template |
-| `--title` / `--description` | title yes | bead title/body (triage block is appended to the body by the verb) |
+| `--title` / `--description` | `--title` yes; `--description` no | bead title/body (triage block is appended to the body by the verb) |
 | `--anchor ID` | XOR `--orphan` | parent edge: best-fit epic under the mapped milestone (out-of-scope) or parent-of-in-flight-bead (in-scope deferral) |
 | `--orphan` | XOR `--anchor` | the loud no-anchor-fits escalation; requires `--escalation-why` |
 | `--discovered-from ID` | yes | the current-work bead; becomes a `discovered-from` provenance edge |
