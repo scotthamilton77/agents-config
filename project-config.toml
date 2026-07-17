@@ -80,16 +80,13 @@ command = ""   # no lint auto-fix for this project
 # ---------------------------------------------------------------------------
 [review-expectations]
 bot-review-expected      = true
-bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]"]  # exact identities, never substrings
+bot-reviewers            = ["Copilot", "copilot-pull-request-reviewer[bot]", "chatgpt-codex-connector[bot]"]  # exact identities, never substrings; Codex = Copilot-equivalent (owner directive 2026-07-17), trigger via "@codex review" comment
 human-approvers-required = 0     # override per bead: review-exit-human-approvers-<n>
 
 [merge-policy]
 # This repo auto-merges on a clean trusted-bot review — a deliberate, named choice.
 merge-authorization = "rule-based"
 merge-rule          = "bot-quiescence"
-# Trusted review-bot identities. Codex reviews count the same as Copilot's
-# (owner directive 2026-07-17); trigger one with a "@codex review" PR comment.
-bot-reviewers       = ["Copilot", "copilot-pull-request-reviewer[bot]", "chatgpt-codex-connector[bot]"]
 
 [merge-policy.approver]
 # Opt-in: a GitHub-App-attested approving review satisfies branch protection's
