@@ -82,7 +82,15 @@
     } catch (err) {
       available = false;
     }
+    // The in-memory overlay holds two kinds of entry localStorage never got:
+    // fallback writes (a runtime setItem failed, e.g. quota) and removal
+    // tombstones (a runtime removeItem failed while the value still sits in
+    // localStorage). TOMBSTONE is a unique sentinel distinguishing "removed
+    // after a runtime fallback" from "never written" — getItem/keys consult
+    // the overlay first so writes and removals read back consistently once a
+    // runtime failure has diverged the overlay from localStorage.
     var memory = Object.create(null);
+    var TOMBSTONE = {};
     var fallbackHandler = null;
     var fallbackNotified = false;
 
@@ -101,19 +109,30 @@
     }
 
     function getItem(key) {
+      // Consult the overlay first: a fallback write or a removal tombstone
+      // recorded after a runtime failure must win over the (stale or still-
+      // present) localStorage entry, so values written after a fallback stay
+      // readable and tombstoned removals stay removed.
+      if (Object.prototype.hasOwnProperty.call(memory, key)) {
+        return memory[key] === TOMBSTONE ? null : memory[key];
+      }
       if (available) {
         return window.localStorage.getItem(key);
       }
-      return Object.prototype.hasOwnProperty.call(memory, key) ? memory[key] : null;
+      return null;
     }
 
     function setItem(key, value) {
       if (available) {
         try {
           window.localStorage.setItem(key, value);
+          // localStorage is authoritative for this key again; drop any stale
+          // overlay entry (a prior fallback write or tombstone) so it can't
+          // shadow the fresh value.
+          delete memory[key];
           return;
         } catch (err) {
-          // Fall through to the in-memory map (e.g. quota exceeded) and
+          // Fall through to the in-memory overlay (e.g. quota exceeded) and
           // surface the non-persistence warning via the caller's handler.
           notifyFallback();
         }
@@ -125,9 +144,14 @@
       if (available) {
         try {
           window.localStorage.removeItem(key);
+          delete memory[key];
           return;
         } catch (err) {
+          // The value is still in localStorage; record a tombstone so the
+          // removal is reflected once getItem/keys fall back to the overlay.
           notifyFallback();
+          memory[key] = TOMBSTONE;
+          return;
         }
       }
       delete memory[key];
@@ -135,18 +159,25 @@
 
     function keys() {
       var out = [];
+      var seen = Object.create(null);
       if (available) {
         for (var i = 0; i < window.localStorage.length; i++) {
           var k = window.localStorage.key(i);
-          if (k && k.indexOf(prefix) === 0) {
+          if (k && k.indexOf(prefix) === 0 && memory[k] !== TOMBSTONE) {
             out.push(k);
+            seen[k] = true;
           }
         }
-      } else {
-        for (var mk in memory) {
-          if (Object.prototype.hasOwnProperty.call(memory, mk)) {
-            out.push(mk);
-          }
+      }
+      // Merge overlay keys (fallback writes localStorage never got), deduped
+      // against the localStorage pass and excluding tombstoned removals.
+      for (var mk in memory) {
+        if (
+          Object.prototype.hasOwnProperty.call(memory, mk) &&
+          memory[mk] !== TOMBSTONE &&
+          !seen[mk]
+        ) {
+          out.push(mk);
         }
       }
       return out;
