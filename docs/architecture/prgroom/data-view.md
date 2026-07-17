@@ -394,7 +394,7 @@ The artifact is a **structured findings list**, grouped by the agent's inner fix
 }
 ```
 
-Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity — one of `BLOCKING`, `CRITICAL`, `MAJOR`, `MINOR` — and a valid resolution — one of `addressed`, `unresolved`) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, `docs/specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md` §3).
+Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity — one of `BLOCKING`, `CRITICAL`, `MAJOR`, `MINOR` — and a valid resolution — one of `addressed`, `unresolved`) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, [`2026-07-16-prgroom-fix-verify-implementation-readiness.md`](../../specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md) §3).
 
 ### Repair-dispatch input delta — `verify_failure_path` (prgroom → fix agent)
 
