@@ -158,15 +158,15 @@ Repair mode emits the same top-level `FixOutput` schema with:
 
   ```json
   "repair": {
-    "commits": ["<full sha>", "..."],
-    "verify_checklist": { "iterations": [ ... ] }
+    "commits": ["<full sha>", "..."]
   }
   ```
 
   `commits` claims every commit the repair created (may be empty when the
   agent concluded no change was needed — the re-gate then decides).
-  `verify_checklist` follows §3's schema and audit rule, triggered by
-  non-empty `commits`.
+  `verify_checklist` stays a top-level `FixOutput` field in repair mode too
+  (§3 — one checklist per dispatch, never nested under `repair`); §3's schema
+  and audit rule apply, triggered by non-empty `commits`.
 
 ### 5.2 Repair audit — dispatch-scoped baseline
 
