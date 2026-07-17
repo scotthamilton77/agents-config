@@ -860,8 +860,7 @@ rm -f "$INV_DIR/o-r-1-bbbbbbbbbbbb1234.json"
 # ESCALATE → escalations_pending; all-SKIP-with-posted-reply → excluded;
 # everything else (untriaged / unresolved-FIX / unposted-SKIP) → blocks.
 export_threads_ids() {  # export_threads_ids <id:resolved>... ; id "-" → null id
-  local nodes; nodes=$(printf '%s\n' "$@" | jq -R 'split(":") | {id: (if .[0] == "-" then null else .[0] end), isResolved: (.[1] == "true")}' | jq -s .)
-  jq -n --argjson n "$nodes" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:$n}}}}}'
+  export_threads_ids_page false "" "$@"
 }
 export_threads_ids_page() {  # export_threads_ids_page <hasNextPage> <endCursor|""> <id:resolved>...
   local has="$1" cur="$2"; shift 2
