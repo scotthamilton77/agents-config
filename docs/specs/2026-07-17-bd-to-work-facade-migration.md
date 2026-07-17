@@ -62,7 +62,7 @@ Classification is per **file** by dominant usage. `RTF` = route-through-facade,
 | `src/user/.agents/skills/wait-for-pr-comments/SKILL.md` | `label add <id> human`, `update --append-notes`, `label list --json`; `.beads/worker-audit/` path | RTF (path=BDS) | `work label add`, `work note`, `work label list`; `.beads/` audit path stays bd infra | B |
 | `src/user/.agents/skills/reply-and-resolve-pr-threads/SKILL.md` | `label add <id> human` + `update --append-notes`; "no bd jargon in replies" policy | RTF (policy=BDS) | `work label add`, `work note`; PR-hygiene policy unaffected (output rule, not a call) | B |
 | `src/user/.agents/skills/triaging-discovered-work/SKILL.md` | `create --parent`, `dep add --type discovered-from`, `reopen`, `create` | RTF | the filing recipe targets **`work discover`** (the composed verb — see the 2026-07-17 work-discover-verb spec), NOT raw `work create` + `work dep add`, which would reinstate the unanchored-filing leak the verb closes; `work reopen` and reads migrate directly (typed dep edges verified shipped end-to-end if ever needed raw) | C |
-| `src/user/.claude/skills/fablize/SKILL.md` | reads sibling closed-bead `notes`/close text; "spec out beads" trigger vocab | RTF | `work list --parent` + `work show`; trigger vocabulary unchanged | C |
+| `src/user/.claude/skills/fablize/SKILL.md` | reads sibling closed-bead `notes`/close text; "spec out beads" trigger vocab | RTF | `work list --parent <id>` (open children) **and** `work list --parent <id> --status closed` (close-note supersession evidence — bd/facade default omits closed items), each read via `work show`; trigger vocabulary unchanged | C |
 | `src/user/.claude/skills/orchestrating-subagents/SKILL.md` | prose "verify git/gh/bd first" | RTF (light) | swap bd→`work show` in the verify-state noun | C |
 | `src/user/.agents/skills/simplify/SKILL.md` | "Do NOT use `bd remember`" steer-away note | BDS | no call site; names a bd anti-usage — keep | D |
 | `src/user/.claude/skills/handoff/SKILL.md` | "don't duplicate beads content" | BDS | no call; teaching — keep | D |
@@ -165,6 +165,11 @@ are low-risk and can land early to shrink the epic.
    item renders as unassigned) and confirms the normalized `type`/`created` remapping.
 7. Class D/E files are unchanged except optional mapping-rationale annotations; each is
    confirmed stays-bd-specific in the child's review notes.
+8. The migrated fablize recipe issues **both** the open-children query (`work list
+   --parent <id>`) **and** an explicit closed-sibling query (`work list --parent <id>
+   --status closed`) before candidate selection — the facade's default `list` omits
+   closed items, so without the explicit `--status closed` pass the survey loses the
+   close-note supersession evidence the skill requires and can select stale candidates.
 
 ## Continuations
 
