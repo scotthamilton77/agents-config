@@ -75,8 +75,8 @@ doctor/fix split (abn9.8.24, deferred — not yet built), but as two subcommands
 a flag pair, since these are general-purpose CLI verbs, not a package-local mode:
 
 ```
-install.sh doctor [--json] [--project <path>]
-install.sh setup  [--project <path>] [--defaults] [--reset]
+scripts/install.sh doctor [--json] [--project <path>]
+scripts/install.sh setup  [--project <path>] [--defaults] [--reset]
 ```
 
 - **`doctor`** — run every probe, print the report, exit. Read-only: writes nothing,
@@ -262,10 +262,10 @@ endpoint a parameter with OpenRouter as merely the default instance.
 
 ## 9. Acceptance criteria
 
-1. `install.sh doctor` runs every catalog row offline, renders the table with per-row
+1. `scripts/install.sh doctor` runs every catalog row offline, renders the table with per-row
    state/severity/version, and honors the §3.1 exit-code contract. `--json` emits the
    `doctor-report-v1` envelope.
-2. `install.sh setup` walks exactly the actionable gaps with the four-option prompt,
+2. `scripts/install.sh setup` walks exactly the actionable gaps with the four-option prompt,
    persists `off-user` to `~/.agents/machine.toml`, `off-project` to
    `project-config.toml [tools]`, persists nothing for auto-detect, and never re-asks a
    persisted disposition absent `--reset`. `--defaults` completes with zero prompts and
