@@ -80,14 +80,19 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | `--priority-why` | yes | one-line priority rationale |
 | `--anchor-why` / `--escalation-why` | one, by placement | one-line placement rationale (or why no anchor fits) |
 
-**Both edges in one call.** A valid invocation creates the parent edge atomically via
-the `create --parent <anchor>` primitive, then adds the `discovered-from` edge — one
+**Both edges in one call.** A valid invocation resolves `--discovered-from` *before*
+minting (§4 step 2), then creates the parent edge atomically via the
+`create --parent <anchor>` primitive, then adds the `discovered-from` edge — one
 `work discover` call, both edges. The `discovered-from` add is a second bd operation
 (bd `create` cannot express a typed non-blocks edge at birth), so the create→edge seam
 is non-transactional like `work track set`'s label swap: on edge-add failure the verb
 returns the error **with the created id in `detail`** so the caller replays only the
-edge (`work dep add`), never a duplicate bead. This is the sole partial-failure window
-and it is caller-recoverable, not silent.
+edge (`work dep add`), never a duplicate bead. Because the provenance source is
+validated pre-mint, that replay always has a live target — the only edge-add failure
+left is a *transient* backend fault against an already-validated source, never an
+unresolvable input (a deleted/invalid source is refused before anything is minted, per
+§4 step 2). That transient fault is the sole partial-failure window, and it is
+caller-recoverable, not silent.
 
 **`Lands in` derivation** (never an input; this is what structurally disallows vague
 temporal buckets):
@@ -146,6 +151,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | `--orphan` without `--escalation-why`; `--anchor` without `--anchor-why` | `E_TRIAGE_INCOMPLETE` | the loud-escalation / placement rationale is mandatory |
 | duplicate exact title | `E_DUPLICATE_TITLE` | inherited from the `create <noun>` guard; names the collision |
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
+| `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
 | `required` track mode, `--orphan` (no parent to inherit track), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition) |
 | create succeeds, `discovered-from` edge add fails | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for edge replay |
 
@@ -161,20 +167,27 @@ non-epic parent.
 
 1. **Validate triage form** (mechanical refusals above) — *before* any bd call, mirroring
    `create <noun>`'s pre-mint duplicate guard. Bad form creates nothing.
-2. **Render the triage block** into the description, exactly the skill's markdown:
+2. **Resolve the provenance source** — resolve `--discovered-from` against the backend via
+   the `show`/get path, *before* any create call. If it names a deleted or non-existent
+   bead, refuse with `E_NOT_FOUND` naming `--discovered-from` and create nothing.
+   Validating the source here guarantees the step-5 provenance-edge add has a live target,
+   so the only edge-add failure that remains (§3.2) is a transient backend fault, never an
+   unresolvable input — the create-then-discover-the-edge-is-impossible ordering the seam
+   would otherwise permit is closed.
+3. **Render the triage block** into the description, exactly the skill's markdown:
    ```
    ## Triage
    - Scope: <scope> — <scope-why>
    - Priority: <priority> — <priority-why>
    - Anchor: <anchor-or-"none: escalated"> — <anchor-why-or-escalation-why>
    ```
-3. **Mint via the shared creation path** — build the `create <noun>` inputs
+4. **Mint via the shared creation path** — build the `create <noun>` inputs
    (`--noun`, `--title`, composed `--description`, `--priority`, and `--parent <anchor>`
    or `--orphan`) and call the same `create_noun` code. discover adds **no** new minting
    logic: noun→type/shape templating, the duplicate-title guard, placement validation,
    and the track resolution all execute unchanged.
-4. **Add the provenance edge** — `dep add <new-id> <discovered-from> --type discovered-from`.
-5. **Assemble the envelope** — derive `lands_in`, build `manifest_row`, set
+5. **Add the provenance edge** — `dep add <new-id> <discovered-from> --type discovered-from`.
+6. **Assemble the envelope** — derive `lands_in`, build `manifest_row`, set
    `remaining_work` (true iff scope is `in-scope-deferred:*`), pass through any create-path
    warnings.
 
@@ -236,6 +249,10 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
 13. With the track layer active in `required` mode, `--orphan` with no `--track` exits
     `E_TRACK_REQUIRED` (inherited from the create gate); in `advisory` mode it succeeds
     with a `data.warnings` entry.
+14. A `--discovered-from` naming a deleted or non-existent bead exits `E_NOT_FOUND` whose
+    message names `--discovered-from`, and **creates nothing** — the fake call log shows
+    the pre-mint source `show`/get and **zero** `create` calls (the provenance source is
+    validated before any mint).
 
 ## 7. Protocol impact
 
@@ -253,8 +270,8 @@ spec-authoring time; the changes are independent and additive, so any order work
   composing `create_noun`, the `discovered-from` edge, triage-block rendering, and
   manifest-row assembly; the `E_TRIAGE_INCOMPLETE` ErrorCode member; `cli.py` subparser
   and `verbs/__init__.py` registration; MINOR protocol bump — AC: acceptance criteria
-  1–12 pass under `make ci-workcli` (criterion 13 passes once the track-partition create
-  gate has landed — verify in whichever PR lands second); behavioral tests use `run_cli_with_runner` call-log
+  1–12 and 14 pass under `make ci-workcli` (criterion 13 passes once the track-partition
+  create gate has landed — verify in whichever PR lands second); behavioral tests use `run_cli_with_runner` call-log
   assertions against the `ScriptedBdRunner` fake, no live bd.
 - chore: retire the prose filing mechanics once the verb ships — repoint the
   `triaging-discovered-work` skill and the `wait-for-pr-comments` filing fallback at
