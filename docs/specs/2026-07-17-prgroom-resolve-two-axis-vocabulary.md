@@ -11,7 +11,7 @@ The original deadlock this bead was filed against — resolve() deliberately nev
 
 1. **prgroom's 7-kind `DispositionKind`** (`prsession/enums.py`): `fixed`, `already_addressed`, `skipped`, `deferred`, `wont_fix`, `escalated`, `failed`.
 2. **The legacy 3-way classification** (`_DISPOSITION_TO_LEGACY`, `prsession/legacy_export.py`): collapses `SKIPPED`/`WONT_FIX` → `SKIP`, `FIXED`/`ALREADY_ADDRESSED`/`FAILED` → `FIX`, and — the contested edge — **`DEFERRED`/`ESCALATED` → `ESCALATE`**.
-3. **wait-for-pr-comments' live practice**: its triage vocabulary has no DEFER at all (FIX/SKIP/ESCALATE); a deferral is routed as **SKIP** with a rationale naming the filed bead — and SKIP-with-posted-reply threads *clear* the gate (partition rung 2).
+3. **wait-for-pr-comments' live practice**: its persisted classification vocabulary is FIX/SKIP/ESCALATE with no DEFER at all; a deferral is routed as **SKIP** whose public reply points at the tracked follow-up via a public tracking reference (a GitHub issue or PR cross-reference — never an internal bead ID) — and SKIP-with-posted-reply threads *clear* the gate (partition rung 2).
 
 The divergence in one sentence: **a deferred thread blocks the merge (lands in `escalations_pending` via the prgroom export's ESCALATE collapse) while the semantically identical wait-for-pr-comments deferral clears (rides SKIP)** — and meanwhile the disposition contract's non-thread CLEARING_SET treats `deferred` as clearing. Same human decision, three valences, chosen by which pipeline and item kind happened to carry it.
 
@@ -33,7 +33,7 @@ Disposition valence at full 7-kind fidelity — binding on every current and fut
 | `already_addressed` | fix | leaves the live set (resolved by resolve()) | clears | resolves |
 | `skipped` | skip | **clears** once the rationale reply is posted (rung 2) | clears | never |
 | `wont_fix` | skip | **clears** once the rationale reply is posted (rung 2) — wont_fix is skip-with-finality, same argument-posted semantics | clears | never |
-| `deferred` | skip + tracking obligation | **clears** once the rationale reply (naming the deferral's tracking item) is posted — see §2.3 | clears | never |
+| `deferred` | skip + tracking obligation | **clears** once the rationale reply (pointing at the deferral's public tracking reference) is posted — see §2.3 | clears | never |
 | `escalated` | human | **blocks** (`escalations_pending`) until a human resolves the thread | blocks | never |
 | `failed` | actionable | **blocks** (`unresolved_threads` rung 3 — an unaddressed fix failure is actionable work) | blocks | never |
 
@@ -41,7 +41,7 @@ This is one story told three times: the disposition contract's non-thread CLEARI
 
 ### 2.3 `deferred` — the valence is skip-family; the legacy collapse is a fidelity artifact
 
-**Ruling: at full fidelity, a deferred thread with a posted rationale reply clears like SKIP.** A deferral is an argument plus a durable tracking commitment: the reply names the filed work item, and enforcing that the item actually gets filed is the triage discipline's job (the discovered-work discipline), not the merge gate's. This is already the live behavior for every wait-for-pr-comments deferral (routed as SKIP) — the ruling makes prgroom's future full-fidelity behavior converge with existing practice instead of diverging from it.
+**Ruling: at full fidelity, a deferred thread with a posted rationale reply clears like SKIP.** A deferral is an argument plus a durable tracking commitment: the public reply points at the tracked follow-up via a public tracking reference (a GitHub issue or PR cross-reference, never an internal bead ID), and enforcing that the follow-up actually gets filed is the triage discipline's job (the discovered-work discipline), not the merge gate's. This is already the live behavior for every wait-for-pr-comments deferral (routed as SKIP) — the ruling makes prgroom's future full-fidelity behavior converge with existing practice instead of diverging from it.
 
 **The legacy export's `DEFERRED → "ESCALATE"` collapse is affirmed as-is** — for the bridge only. The exported record carries no rationale and no tracking evidence (until abn9.8.42 lands the metadata), so a consumer of the collapsed record cannot distinguish "deferred with a filed bead and a posted argument" from "parked and forgotten"; failing toward human attention is the correct fail-closed default for an evidence-free record, exactly as the triage-aware spec reasoned. The collapse is therefore *bridge semantics under lossy fidelity*, not the canonical valence.
 
