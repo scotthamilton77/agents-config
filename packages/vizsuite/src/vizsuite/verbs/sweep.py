@@ -32,14 +32,20 @@ so re-running sweep never mints a second flag for the same fact.
 
 from __future__ import annotations
 
-import hashlib
 from argparse import Namespace
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from vizsuite.envelope import JsonValue
 from vizsuite.extract.estate import estate
-from vizsuite.funnel.rungs import FlaggedForReassessment, Restamped, Reused, evaluate_fact
+from vizsuite.funnel.rungs import (
+    FlaggedForReassessment,
+    Restamped,
+    Reused,
+    changed_keys,
+    evaluate_fact,
+)
+from vizsuite.ids import deterministic_id
 from vizsuite.runners import Runners
 from vizsuite.sidecar.models import FactRecord, FlagKind, FlagRecord, Manifest
 from vizsuite.sidecar.store import SidecarStore
@@ -54,8 +60,7 @@ def _mint_flag_id(fact_id: str) -> str:
     `flag_id` (below) is a true idempotent merge rather than an accumulating
     duplicate.
     """
-    digest = hashlib.sha256(fact_id.encode("utf-8")).hexdigest()
-    return f"flag-{digest[:16]}"
+    return deterministic_id("flag", fact_id)
 
 
 def sweep(runners: Runners, _args: Namespace, repo_root: Path) -> JsonValue:
@@ -85,6 +90,9 @@ def sweep(runners: Runners, _args: Namespace, repo_root: Path) -> JsonValue:
             schema_version, prompt_version, model_id = "", "", ""
 
         current_input_hashes = estate(runners.git, "HEAD")
+        # Loop-invariant across every fact in this sweep — computed once here,
+        # never re-derived per fact inside `evaluate_fact`.
+        changed = changed_keys(recorded_input_hashes, current_input_hashes)
 
         existing_flags = store.read_flags()
         already_flagged_fact_ids = {flag.fact_id for flag in existing_flags}
@@ -107,7 +115,7 @@ def sweep(runners: Runners, _args: Namespace, repo_root: Path) -> JsonValue:
 
                 outcome = evaluate_fact(
                     record,
-                    recorded_input_hashes=recorded_input_hashes,
+                    changed_keys=changed,
                     current_input_hashes=current_input_hashes,
                 )
                 if isinstance(outcome, Reused):

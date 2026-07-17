@@ -660,6 +660,9 @@ def test_reaccept_raises_an_orphan_flag_when_resynthesis_moved_the_bead_pair(
     (flag,) = store.read_flags()
     assert flag.kind == FlagKind.ORPHANED_EDGE_PROMOTION
     assert flag.fact_id == "edge-1"
+    # Characterization: this flag_id is persisted verbatim in flags.json —
+    # pinned so a future hashing-internals refactor cannot silently change it.
+    assert flag.flag_id == "flag-orphaned-edge-e61601041a767613"
     assert tracker.calls == []  # idempotent -- no tracker call at all
 
 

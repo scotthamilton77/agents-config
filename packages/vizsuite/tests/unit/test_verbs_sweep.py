@@ -129,6 +129,9 @@ def test_sweep_flags_a_fact_when_a_cited_input_changed(
     assert flag.fact_id == "edge-1"
     assert flag.kind == FlagKind.DOUBT
     assert "src/app.py" in flag.reason
+    # Characterization: this flag_id is persisted verbatim in flags.json —
+    # pinned so a future hashing-internals refactor cannot silently change it.
+    assert flag.flag_id == "flag-df594d71a145abdc"
 
 
 def test_sweep_reads_and_writes_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:

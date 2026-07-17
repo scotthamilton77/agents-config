@@ -40,7 +40,6 @@ the same edge -- see `_execute_edge_promotion`.
 
 from __future__ import annotations
 
-import hashlib
 from argparse import Namespace
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -49,6 +48,7 @@ from pathlib import Path
 from typing import cast
 
 from vizsuite.envelope import ErrorCode, JsonValue, VizError
+from vizsuite.ids import deterministic_id
 from vizsuite.runners import Runners
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -202,8 +202,7 @@ def _mint_orphan_flag_id(fact_id: str) -> str:
     # A distinct namespace from sweep's doubt-flag ids (`flag-{...}`) so an
     # orphan flag never collides with -- and silently clobbers -- a standing
     # doubt flag for the same fact.
-    digest = hashlib.sha256(f"orphaned-edge-promotion:{fact_id}".encode()).hexdigest()
-    return f"flag-orphaned-edge-{digest[:16]}"
+    return deterministic_id("flag-orphaned-edge", f"orphaned-edge-promotion:{fact_id}")
 
 
 def _orphan_flag(fact_id: str, entry: PromotionLedgerEntry) -> FlagRecord:
