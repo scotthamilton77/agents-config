@@ -58,6 +58,7 @@ work discover --noun {feat|bugfix|chore|spike|decision} --title T [--description
               --scope {out-of-scope | in-scope-deferred:HATCH}  --scope-why TEXT
               --priority P0-P4                                   --priority-why TEXT
               (--anchor-why TEXT  when --anchor  |  --escalation-why TEXT  when --orphan)
+              [--track NAME]
 ```
 
 `HATCH ∈ {externally-blocked, blast-radius, own-cycle}` (the three named deferral
@@ -79,6 +80,7 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | `--priority` | yes | `P0`–`P4` (regex `^P[0-4]$`); form only, not correctness |
 | `--priority-why` | yes | priority rationale; same non-blank single-line rule |
 | `--anchor-why` / `--escalation-why` | one, by placement | placement rationale (or why no anchor fits); same non-blank single-line rule |
+| `--track NAME` | no | forwarded **unmodified** to the shared `create <noun>` path, where the track layer's normal resolution and validation apply; unnecessary for `--anchor` filings (parent-track inheritance stamps the track), and the only way an `--orphan` discovery can satisfy `required` track mode |
 
 **Rationale-shape rule.** Each rationale flag (`--scope-why`, `--priority-why`, and the
 applicable placement rationale `--anchor-why`/`--escalation-why`) is a required *one-line*
@@ -207,7 +209,11 @@ inheritance stamps the `track:*` label; in `advisory` mode an underivable create
 `--orphan` path with no `--track`) succeeds with an envelope warning; in `required` mode
 it is refused with `E_TRACK_REQUIRED`. This is the correct coupling — the unanchored
 discovery is exactly the case that should trip track enforcement — and discover
-re-implements none of it. `--track` may be passed through when the track layer is live.
+re-implements none of it. `--track NAME` (§3.1, §3.2) is forwarded **unmodified** to the
+same `create <noun>` path, where the track layer's normal resolution and validation
+apply; it is the sole way an `--orphan` discovery can satisfy `required` track mode
+(`--anchor` filings inherit their parent's track, so they need `--track` only to
+override it).
 
 ## 5. What stays prose (the judgment boundary)
 
@@ -261,8 +267,10 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
 12. Every `work discover` invocation, success or failure, emits one parseable envelope
     carrying `protocol`, with exit code mirroring `ok` (contract invariant).
 13. With the track layer active in `required` mode, `--orphan` with no `--track` exits
-    `E_TRACK_REQUIRED` (inherited from the create gate); in `advisory` mode it succeeds
-    with a `data.warnings` entry.
+    `E_TRACK_REQUIRED` (inherited from the create gate), while `--orphan --track NAME`
+    succeeds — the forwarded `--track` satisfies the create gate (fake call log shows the
+    `--track` value reaching the `create` path); in `advisory` mode `--orphan` with no
+    `--track` succeeds with a `data.warnings` entry.
 14. A `--discovered-from` naming a deleted or non-existent bead exits `E_NOT_FOUND` whose
     message names `--discovered-from`, and **creates nothing** — the fake call log shows
     the pre-mint source `show`/get and **zero** `create` calls (the provenance source is
