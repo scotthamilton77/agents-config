@@ -130,9 +130,10 @@ are low-risk and can land early to shrink the epic.
   re-introduce the drift the facade removes). Prose skills: a one-line guard ("if `work`
   is not on PATH, stop and tell the operator to run the installer — do not use raw `bd`").
   `collect.py`: on `FileNotFoundError` for `work`, exit non-zero with a
-  `work-not-installed` error naming the installer (deliberately NOT echoing a real
-  `ErrorCode` member — this fires in the calling script before `work` is ever invoked), not the empty-list swallow it
-  uses today for bd absence.
+  `work-not-installed` error naming the installer. That error deliberately does NOT echo a
+  real `ErrorCode` member — it fires in the calling script before `work` is ever invoked.
+  This replaces `collect.py`'s current behavior, which silently swallows `bd` absence into
+  an empty list.
 - **Envelope parsing.** Migrated call sites parse the JSON envelope (`{ok, data, error}`)
   and branch on `ok`/`error.code`, replacing every `--json | jq` idiom and every
   `--limit 0` truncation workaround (facade verbs are unbounded by default).
