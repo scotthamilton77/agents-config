@@ -16,10 +16,11 @@ contract, but no installed asset consumes it yet. This epic migrates every asset
 implementation — landing the M0 charter's "beads is quarantined behind our own CLI"
 all the way to the asset surface.
 
-Facade verb surface migrated against — transport (contract spec §3): `show`, `create --raw`,
-`update`, `note`, `close`, `reopen`, `list`, `ready`, `dep`, `label`, `search`, `sync`;
-lifecycle (lifecycle plan): `create <noun>`, `claim`, `release`, `deliver`, `plan`,
-`promote`, `reconcile`. A bd usage maps only if one of these covers it.
+Facade verb surface migrated against — transport (`docs/specs/2026-07-04-work-facade-cli-contract.md` §3):
+`show`, `create --raw`, `update`, `note`, `close`, `reopen`, `list`, `ready`, `dep`, `label`,
+`search`, `sync`; lifecycle (`docs/plans/2026-07-12-workcli-lifecycle-layer.md`): `create <noun>`,
+`claim`, `release`, `deliver`, `plan`, `promote`, `reconcile`. A bd usage maps only if one of
+these covers it.
 
 ## 2. Decision summary (normative — do not reopen)
 
