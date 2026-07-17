@@ -96,9 +96,11 @@ implementations.
 ### 3.1 Gap classes and exit codes
 
 Each probe resolves to one of: `found` (with version where obtainable), `missing`,
-`off-user`, `off-project`, `drift` (present but deviating from its expected projection),
-`misconfigured` (present but structurally broken, e.g. provider entry names an env var
-that is unset). `missing` on an *optional* row and `misconfigured` anywhere are the
+`off-user`, `off-project`, `skipped` (probe not applicable in this environment — e.g. the
+drift probe outside an agents-config checkout; renders in the report, is never prompted,
+and never affects the exit code), `drift` (present but deviating from its expected
+projection), `misconfigured` (present but structurally broken, e.g. provider entry names
+an env var that is unset). `missing` on an *optional* row and `misconfigured` anywhere are the
 actionable gaps `setup` walks. `off-*` rows render in the report (so a disabled tool is
 visible, not invisible) but are never prompted — they are already answered.
 
@@ -108,8 +110,8 @@ one away is self-defeating). A `missing` required row therefore always renders a
 defect, never as a walkable gap.
 
 `doctor` exit codes: `0` all required rows found and no `misconfigured`; `1` a required
-row is `missing` or any row is `misconfigured`; `2` probe-engine error. `drift` and
-optional-`missing` do not affect the exit code — they are advisory.
+row is `missing` or any row is `misconfigured`; `2` probe-engine error. `drift`,
+`skipped`, and optional-`missing` do not affect the exit code — they are advisory.
 
 ### 3.2 JSON envelope
 
