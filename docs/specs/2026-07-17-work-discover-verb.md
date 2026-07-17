@@ -75,10 +75,19 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | `--orphan` | XOR `--anchor` | the loud no-anchor-fits escalation; requires `--escalation-why` |
 | `--discovered-from ID` | yes | the current-work bead; becomes a `discovered-from` provenance edge |
 | `--scope` | yes | `out-of-scope` or `in-scope-deferred:HATCH`; drives `Lands in` derivation |
-| `--scope-why` | yes | one-line scope rationale |
+| `--scope-why` | yes | scope rationale; must be non-blank after strip and single-line (no embedded newline) — see the rationale-shape rule below |
 | `--priority` | yes | `P0`–`P4` (regex `^P[0-4]$`); form only, not correctness |
-| `--priority-why` | yes | one-line priority rationale |
-| `--anchor-why` / `--escalation-why` | one, by placement | one-line placement rationale (or why no anchor fits) |
+| `--priority-why` | yes | priority rationale; same non-blank single-line rule |
+| `--anchor-why` / `--escalation-why` | one, by placement | placement rationale (or why no anchor fits); same non-blank single-line rule |
+
+**Rationale-shape rule.** Each rationale flag (`--scope-why`, `--priority-why`, and the
+applicable placement rationale `--anchor-why`/`--escalation-why`) is a required *one-line*
+value, so presence alone is insufficient: the verb strips surrounding whitespace and
+refuses a value that is empty post-strip or contains an embedded newline
+(`\n`/`\r`), returning `E_TRIAGE_INCOMPLETE` naming the offending field, **before**
+minting. This closes the `--scope-why ""` (and multiline-`*-why`) hole that would
+otherwise let a discovery be filed with an empty or malformed triage block — defeating
+the complete-record gate.
 
 **Both edges in one call.** A valid invocation resolves `--discovered-from` *before*
 minting (§4 step 2), then creates the parent edge atomically via the
@@ -149,6 +158,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | missing any of `--scope`/`--scope-why`/`--priority`/`--priority-why`/`--discovered-from` | `E_TRIAGE_INCOMPLETE` | names the missing triage field |
 | `--scope` value not `out-of-scope` / `in-scope-deferred:HATCH`; unknown `HATCH`; `--priority` not `P0`–`P4` | `E_TRIAGE_INCOMPLETE` | names field + valid vocabulary (the refusal message names the accepted `P0`–`P4` range) |
 | `--orphan` without `--escalation-why`; `--anchor` without `--anchor-why` | `E_TRIAGE_INCOMPLETE` | the loud-escalation / placement rationale is mandatory |
+| any rationale flag (`--scope-why`, `--priority-why`, `--anchor-why`/`--escalation-why`) blank after strip or containing an embedded newline | `E_TRIAGE_INCOMPLETE` | the rationale-shape rule (§3.2): a required one-line value cannot be empty or multiline; names the offending field; creates nothing |
 | duplicate exact title | `E_DUPLICATE_TITLE` | inherited from the `create <noun>` guard; names the collision |
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
 | `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
@@ -230,7 +240,10 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
    (regex `^P[0-4]$`) exits `E_TRIAGE_INCOMPLETE` naming the field and the valid vocabulary
    (the refusal message names the accepted `P0`–`P4` range).
 4. `--orphan` without `--escalation-why`, or `--anchor` without `--anchor-why`, exits
-   `E_TRIAGE_INCOMPLETE`.
+   `E_TRIAGE_INCOMPLETE`. Likewise a rationale flag (`--scope-why`, `--priority-why`, or
+   the applicable placement rationale) whose value is blank after strip (e.g.
+   `--scope-why ""` or all-whitespace) or contains an embedded newline exits
+   `E_TRIAGE_INCOMPLETE` naming the offending field, and **creates nothing**.
 5. A valid `--anchor` invocation creates the bead with **both** edges — parent (via the
    `create --parent` primitive) and `discovered-from` — in one call (fake call log shows a
    `create --parent <anchor>` then a `dep add <new-id> <from> --type discovered-from`).
