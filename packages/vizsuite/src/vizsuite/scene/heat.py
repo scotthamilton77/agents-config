@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from vizsuite.envelope import JsonValue
 from vizsuite.extract.centrality import CentralityAxis
+from vizsuite.extract.churn import FileChurn
 from vizsuite.scene.model import AttributeDescriptor
 
 # Tunable cross-axis mix (spec §6.2). The tested invariants are share-of-
@@ -56,6 +57,7 @@ def combine(
     centrality: CentralityAxis,
     pr_files: Collection[str],
     *,
+    churn: Mapping[str, FileChurn] | None = None,
     weights: Mapping[str, float] | None = None,
 ) -> HeatModel:
     """Fuse the three §6.2 axes into one per-file heat, weighted-average style.
@@ -65,6 +67,12 @@ def combine(
     axis omitted from ``weights`` simply drops out of the mix; an *unknown*
     weight key is a caller error and raises ``ValueError`` (valid axes are
     complexity/load_bearing/consequence).
+
+    ``churn``, when supplied, threads each of its files' added/deleted line
+    counts onto that file's attributes (spec §4.5 PR diff stats). A file
+    absent from ``churn`` — a context file, or simply an unsupplied caller —
+    never fabricates the keys, the same "never fabricate" discipline `in_pr`
+    already follows.
     """
     effective_weights = dict(weights) if weights is not None else dict(DEFAULT_WEIGHTS)
     unknown_axes = set(effective_weights) - set(_INPUT_AXES)
@@ -91,7 +99,12 @@ def combine(
         }
         weighted_sum = sum(active_weights[axis] * values[axis] for axis in active_weights)
         heat_value = weighted_sum / weight_total if weight_total > 0 else 0.0
-        attributes[path] = {**values, "heat": heat_value, "in_pr": path in pr_files}
+        entry: dict[str, JsonValue] = {**values, "heat": heat_value, "in_pr": path in pr_files}
+        file_churn = churn.get(path) if churn is not None else None
+        if file_churn is not None:
+            entry["added"] = file_churn.added
+            entry["deleted"] = file_churn.deleted
+        attributes[path] = entry
 
     descriptors = tuple(
         AttributeDescriptor(name=name, unit=_AXIS_UNIT, direction=_AXIS_DIRECTION)

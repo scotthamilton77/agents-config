@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from vizsuite.extract.centrality import CentralityAxis
+from vizsuite.extract.churn import FileChurn
 from vizsuite.scene.heat import DEFAULT_WEIGHTS, combine
 
 _ESTATE = {"a.py": "sha_a", "b.py": "sha_b", "c.py": "sha_c"}
@@ -119,6 +120,36 @@ def test_in_pr_membership_reflects_the_net_file_set() -> None:
 
     assert model.attributes["a.py"]["in_pr"] is True
     assert model.attributes["b.py"]["in_pr"] is False
+
+
+def test_combine_threads_added_deleted_onto_pr_files_when_churn_is_supplied() -> None:
+    # F3 (spec §4.5 PR diff stats): a file present in the `churn` map gets its
+    # added/deleted counts threaded onto its attributes; a file absent from it
+    # (a context file, or a PR file the caller didn't supply churn for) never
+    # fabricates the keys — same "never fabricate" discipline as `in_pr`.
+    estate = {"a.py": "sha_a", "b.py": "sha_b"}
+    complexity = {"a.py": 0.5, "b.py": 0.5}
+    consequence = {"a.py": 0.5, "b.py": 0.5}
+    centrality = CentralityAxis.unavailable("no graph")
+    churn = {"a.py": FileChurn(added=12, deleted=3)}
+
+    model = combine(estate, complexity, consequence, centrality, pr_files={"a.py"}, churn=churn)
+
+    assert model.attributes["a.py"]["added"] == 12
+    assert model.attributes["a.py"]["deleted"] == 3
+    assert "added" not in model.attributes["b.py"]
+    assert "deleted" not in model.attributes["b.py"]
+
+
+def test_combine_omits_added_deleted_when_churn_is_not_supplied() -> None:
+    estate = {"a.py": "sha_a"}
+
+    model = combine(
+        estate, {"a.py": 0.5}, {"a.py": 0.5}, CentralityAxis.unavailable("x"), pr_files={"a.py"}
+    )
+
+    assert "added" not in model.attributes["a.py"]
+    assert "deleted" not in model.attributes["a.py"]
 
 
 def test_descriptors_name_all_four_heat_axes_not_in_pr() -> None:

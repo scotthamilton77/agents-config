@@ -7,22 +7,11 @@
 // treemap's tile x/y/width/height), not a flat list's own paint order,
 // which the spec explicitly allows to reflow on re-rank.
 //
-// Diff-link decision (spec §6.1 "attention ledger" / G3): GitHub's per-file
-// anchor on a PR's "Files changed" tab is `pull/<n>/files#diff-<sha256hex
-// (path)>` (current, undocumented scheme). Computing that hash needs
-// SubtleCrypto, which only exists in a secure context (https, or
-// http://localhost) — never on a `file://` origin, which is exactly how
-// these artifacts are normally opened (spec §4.1: double-click, offline,
-// detached from any session). Rather than vendor a hand-rolled SHA-256
-// implementation for an anchor-only affordance, this module degrades: every
-// PR-file row gets the bare `.../pull/<n>/files` link synchronously (correct,
-// just not scrolled to the right file), then upgrades `href` in place to the
-// anchored form if-and-when a digest resolves. A `file://` artifact keeps the
-// still-useful bare-tab link forever; a served/https copy (this repo's
-// playwright checks, or a shared internal copy) gets the precise per-file
-// anchor a tick later. `repo_nwo` absent/empty (the PR verb couldn't resolve
-// the GitHub remote) never fabricates a URL — the file name renders unlinked
-// instead, same as any context (non-PR) file, which has no diff to link to.
+// Diff-link decision (spec §6.1 "attention ledger" / G3): the per-file
+// diff-link builder (GitHub's `pull/<n>/files#diff-<sha256hex(path)>` anchor
+// scheme) is shared with the drill drawer via `window.vizShared.buildDiffLink`
+// (hoisted to views/_shared.js, fidelity F3) — see that module for the full
+// SubtleCrypto/`file://` degrade rationale.
 (function () {
   "use strict";
 
@@ -35,26 +24,6 @@
     sectionContext: "viz-ledger-section-context",
     sectionAll: "viz-ledger-section-all"
   };
-
-  // Returns a Promise<string> (lowercase hex sha256) when SubtleCrypto is
-  // available in this context, or `null` synchronously when it is not, so
-  // the caller never blocks first paint on the digest.
-  function sha256HexOrNull(text) {
-    var subtle = window.crypto && window.crypto.subtle;
-    if (!subtle || typeof subtle.digest !== "function" || typeof TextEncoder === "undefined") {
-      return null;
-    }
-    var bytes = new TextEncoder().encode(text);
-    return subtle.digest("SHA-256", bytes).then(function (buffer) {
-      var view = new Uint8Array(buffer);
-      var hex = "";
-      for (var i = 0; i < view.length; i++) {
-        var byteHex = view[i].toString(16);
-        hex += byteHex.length === 1 ? "0" + byteHex : byteHex;
-      }
-      return hex;
-    });
-  }
 
   // ---- scene.files → ranked rows (spec §6.1): one row per file, heat via
   // the shared computeHeat (never re-derived here), in_pr read straight off
@@ -87,42 +56,25 @@
   function buildDiffLinkHolder(scene, row) {
     var holder = document.createElement("span");
     holder.setAttribute("class", "viz-ledger-link");
-    if (!row.inPr || !scene.repo_nwo) {
-      return holder; // no PR diff for a context file; never fabricate a URL without repo_nwo
-    }
-    var base = "https://github.com/" + scene.repo_nwo + "/pull/" + scene.pr_number + "/files";
-    var anchor = document.createElement("a");
-    anchor.setAttribute("class", "viz-ledger-diff-link");
-    anchor.href = base;
-    anchor.target = "_blank";
-    anchor.rel = "noopener";
-    anchor.setAttribute("aria-label", "View diff for " + row.file.path + " on GitHub");
-    anchor.textContent = "Diff";
-    // The anchor is its own activation target — never let its own events also
-    // trigger the row's drill-open handler (see wireRowActivation). The row
-    // activates on pointerup (with a `fromLink` .closest exemption), so
-    // stopping click/keydown alone leaves the pointer path guarded only by
-    // that exemption, which fails open when evt.target has no `.closest`
-    // (non-Element target). Stop the pointer events that drive row activation
-    // too, so the diff link can never double-fire "open drill" + "open diff".
-    function stopPropagation(evt) {
-      evt.stopPropagation();
-    }
-    ["click", "keydown", "pointerdown", "pointerup"].forEach(function (type) {
-      anchor.addEventListener(type, stopPropagation);
-    });
-    holder.appendChild(anchor);
-
-    var digest = sha256HexOrNull(row.file.path);
-    if (digest) {
-      digest.then(function (hex) {
-        anchor.href = base + "#diff-" + hex;
-      }, function () {
-        // Fail soft: if hashing rejects, keep the unanchored /files link
-        // rather than surfacing an unhandled promise rejection.
-      });
+    var link = window.vizShared.buildDiffLink(scene, row.file.path, row.inPr);
+    if (link) {
+      holder.appendChild(link);
     }
     return holder;
+  }
+
+  // Compact per-axis colored mini-bars (spec §4.5 "mirroring scene colors"),
+  // same color tokens as the drill drawer and hover score card
+  // (window.vizShared.axisColorVar) — one bare fill-only bar per heat axis,
+  // no label/value text so the row stays compact.
+  function buildAxisMiniBars(attributes) {
+    var wrap = document.createElement("span");
+    wrap.setAttribute("class", "viz-ledger-axis-bars");
+    window.vizShared.HEAT_AXES.forEach(function (axis) {
+      var value = typeof attributes[axis] === "number" ? attributes[axis] : 0;
+      wrap.appendChild(window.vizShared.buildMiniBar(axis, value));
+    });
+    return wrap;
   }
 
   // Click-vs-drag threshold (~4px, spec §4.2), via the shared
@@ -137,6 +89,26 @@
       isExempt: function (evt) {
         return Boolean(evt.target.closest && evt.target.closest("a"));
       }
+    });
+  }
+
+  // Hover score card (spec §4.5) — a disjoint event family (pointerenter/
+  // move/leave) from wireRowActivation's own pointerdown/up/click/keydown,
+  // so it never interferes with row activation or the diff link's own
+  // stopPropagation guard.
+  function wireRowTooltip(el, row) {
+    el.addEventListener("pointerenter", function (evt) {
+      window.vizShared.showTooltip(evt, function (container) {
+        window.vizShared.buildScoreCard(
+          container, row.file.path, row.file.attributes || {}, row.heat
+        );
+      });
+    });
+    el.addEventListener("pointermove", function (evt) {
+      window.vizShared.moveTooltip(evt);
+    });
+    el.addEventListener("pointerleave", function () {
+      window.vizShared.hideTooltip();
     });
   }
 
@@ -174,6 +146,8 @@
     pathEl.textContent = row.file.path;
     el.appendChild(pathEl);
 
+    el.appendChild(buildAxisMiniBars(row.file.attributes || {}));
+
     var heatEl = document.createElement("span");
     heatEl.setAttribute("class", "viz-ledger-heat");
     heatEl.textContent = heatText;
@@ -188,6 +162,7 @@
       // any tree-building machinery the ledger doesn't need.
       openDrill({ path: row.file.path, orig: { file: row.file } });
     });
+    wireRowTooltip(el, row);
 
     return el;
   }
@@ -240,6 +215,10 @@
       }
 
       function renderAll() {
+        // A rebuild (mode toggle, weight change) discards the current rows'
+        // DOM without ever firing a real `pointerleave` on a hovered one —
+        // hide unconditionally rather than leaving a dangling tooltip.
+        window.vizShared.hideTooltip();
         while (listEl.firstChild) {
           listEl.removeChild(listEl.firstChild);
         }
@@ -275,6 +254,7 @@
 
       return {
         destroy: function () {
+          window.vizShared.hideTooltip();
           while (container.firstChild) {
             container.removeChild(container.firstChild);
           }
