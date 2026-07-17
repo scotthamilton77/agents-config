@@ -104,10 +104,11 @@ an env var that is unset). `missing` on an *optional* row and `misconfigured` an
 actionable gaps `setup` walks. `off-*` rows render in the report (so a disabled tool is
 visible, not invisible) but are never prompted — they are already answered.
 
-Required rows accept only `install-and-rerun`: an `off-*` disposition on a required-severity
-row is refused with an error (the discipline layer cannot run without them, so dispositioning
-one away is self-defeating). A `missing` required row therefore always renders as an exit-code-1
-defect, never as a walkable gap.
+Required rows are never part of `setup`'s resolution walk and take no dispositions at all:
+the discipline layer cannot run without them, so dispositioning one away would be
+self-defeating. An `off` entry hand-written into config for a required-severity row is
+refused with an error at read time, and a `missing` required row renders as an exit-code-1
+defect with install guidance — reported, never prompted.
 
 `doctor` exit codes: `0` all required rows found and no `misconfigured`; `1` a required
 row is `missing` or any row is `misconfigured`; `2` probe-engine error. `drift`,
