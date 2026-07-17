@@ -236,7 +236,9 @@ endpoint a parameter with OpenRouter as merely the default instance.
 - **Projection:** `setup` writes each declared provider into the opencode config as a
   custom provider block (`options.baseURL` + `options.apiKey = "{env:<api_key_env>}"` +
   the model list), preserving all other keys — the same additive discipline abn9.40.3's
-  snippet mandates. The opencode block is a *projection*; the `machine.toml` entry is the
+  snippet mandates. The exact option-key names are tentative until abn9.40.3's real-binary
+  smoke suite (qptb4) confirms the opencode custom-provider shape; the projection adopts
+  whatever key names that smoke verifies. The opencode block is a *projection*; the `machine.toml` entry is the
   declaration. Doctor's row-11 probe flags divergence between them as `misconfigured`.
 - **Model ids need no mapping layer:** opencode addresses models as
   `providerID/modelID`, and the model list is already per-entry config — an internal
