@@ -345,7 +345,9 @@ body {
 }
 .viz-tile-focus-btn:focus-visible {
   outline: 2px solid var(--viz-fg);
-  outline-offset: 1px;
+  /* Inward: .viz-tile clips overflow, so an outward ring near the tile edge
+     would be cut off. */
+  outline-offset: -2px;
 }
 /* PR-touched border (spec §6.1): thickened from an earlier 2px so it still
    reads at estate scale among hundreds of small tiles. */

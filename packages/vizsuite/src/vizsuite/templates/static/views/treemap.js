@@ -323,8 +323,6 @@
   // directory tiles do, promoting the directory to the fill-screen focus
   // root (spec §6.1).
   function wireTileInteractions(el, handlers) {
-    var initialDatum = d3.select(el).datum();
-    var isDir = !initialDatum.data.isFile;
     window.vizShared.wireClickVsDragActivation(el, {
       onActivate: function () {
         var current = d3.select(el).datum();
@@ -333,15 +331,7 @@
         } else {
           handlers.onDirClick(current.data);
         }
-      },
-      onDoubleActivate: isDir
-        ? function () {
-            var current = d3.select(el).datum();
-            if (!current.data.isFile) {
-              handlers.onDirFocus(current.data);
-            }
-          }
-        : undefined
+      }
     });
   }
 
@@ -388,6 +378,20 @@
       label.append("span").text(function (d) {
         return " " + d.data.name + " (" + d.data.count + ")";
       });
+      // Fill-screen focus is an explicit control on collapsed tiles too —
+      // nested inside the label span so the label-declutter rule hides it
+      // along with the label on tiles too small to hold either. On a tile
+      // that small, the path to focus is expand-first, then the header
+      // control.
+      var collapsedFocusBtn = label
+        .append("button")
+        .attr("type", "button")
+        .attr("class", "viz-tile-focus-btn")
+        .text("Focus")
+        .attr("aria-label", function (d) {
+          return "Fill the screen with " + displayPathFor(d.data);
+        });
+      wireFocusButton(collapsedFocusBtn.node(), wrapper.node(), handlers);
       return;
     }
     var header = wrapper.append("div").attr("class", "viz-tile-header");
@@ -398,10 +402,9 @@
       .text(function (d) {
         return d.data.name;
       });
-    // Explicit fill-screen control (spec §6.1), alongside double-clicking the
-    // tile itself — only ever present on an *expanded* directory's own header
-    // (a collapsed directory has no header at all; double-click on its leaf-
-    // style tile is still its own path to focus).
+    // Explicit fill-screen control (spec §6.1) — the ONLY focus gesture;
+    // there is deliberately no double-click path (a deferred single-click
+    // timer leaked activations through gesture edges; see views/_shared.js).
     var focusBtn = header
       .append("button")
       .attr("type", "button")
