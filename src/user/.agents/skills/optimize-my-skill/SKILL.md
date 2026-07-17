@@ -9,7 +9,9 @@ description: Audits and improves existing SKILL.md files for discoverability, pr
 Sources (amalgam):
   - Native (audit/assess methodology — Phases 1–3, 6)
   - oss-snapshots/anthropics/skill-creator/
-    Upstream: https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174
+    Upstream: https://github.com/anthropics/claude-plugins-official (supersedes
+    the now-defunct https://github.com/anthropics/skills @ f458cee31a7577a47ba0c9a101976fa599385174;
+    content verified byte-identical at the 2026-07-17 repo-move refresh)
 Last sync: 2026-05-20
 Drift policy: accept-periodic-resync
 
