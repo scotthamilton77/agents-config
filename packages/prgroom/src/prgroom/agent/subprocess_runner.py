@@ -33,7 +33,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -353,11 +353,9 @@ def _unwrap_claude_envelope(result: AgentRunResult) -> AgentRunResult:
         if isinstance(usage.get("output_tokens"), int):
             tokens_out = usage["output_tokens"]
     cost = envelope.get("total_cost_usd")
-    return AgentRunResult(
-        returncode=result.returncode,
+    return replace(
+        result,
         stdout=envelope["result"],
-        stderr=result.stderr,
-        duration_ms=result.duration_ms,
         usage=UsageFigures(
             tokens_in=tokens_in,
             tokens_out=tokens_out,
@@ -382,13 +380,7 @@ def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
     for i in range(len(lines) - 1):
         if lines[i] == "tokens used" and _CODEX_TOKENS_RE.match(lines[i + 1]):
             total = int(lines[i + 1].replace(",", ""))
-            return AgentRunResult(
-                returncode=result.returncode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                duration_ms=result.duration_ms,
-                usage=UsageFigures(tokens_total=total),
-            )
+            return replace(result, usage=UsageFigures(tokens_total=total))
     return result
 
 
