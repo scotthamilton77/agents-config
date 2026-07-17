@@ -385,6 +385,23 @@
     });
   }
 
+  function appendBulletList(storySection, titleText, items, listClass) {
+    if (!items || items.length === 0) {
+      return;
+    }
+    var titleEl = document.createElement("h3");
+    titleEl.textContent = titleText;
+    storySection.appendChild(titleEl);
+    var listEl = document.createElement("ul");
+    listEl.setAttribute("class", listClass);
+    items.forEach(function (item) {
+      var itemEl = document.createElement("li");
+      itemEl.textContent = item;
+      listEl.appendChild(itemEl);
+    });
+    storySection.appendChild(listEl);
+  }
+
   // ---- Drill panel (spec §4.2/§4.5): a full-height right-docked drawer
   // (fidelity F3 — converted from an earlier floating overlay card, prototype
   // anatomy `#drill`/`showDrill`); Escape closes; the notes textarea binds
@@ -523,25 +540,10 @@
         headlineEl.textContent = story.change_summary;
         storySection.appendChild(headlineEl);
 
-        function appendBulletList(titleText, items, listClass) {
-          if (!items || items.length === 0) {
-            return;
-          }
-          var titleEl = document.createElement("h3");
-          titleEl.textContent = titleText;
-          storySection.appendChild(titleEl);
-          var listEl = document.createElement("ul");
-          listEl.setAttribute("class", listClass);
-          items.forEach(function (item) {
-            var itemEl = document.createElement("li");
-            itemEl.textContent = item;
-            listEl.appendChild(itemEl);
-          });
-          storySection.appendChild(listEl);
-        }
-
-        appendBulletList("Why it's hot", story.why_hot, "viz-drill-story-why");
-        appendBulletList("What to check", story.what_to_check, "viz-drill-story-check");
+        appendBulletList(storySection, "Why it's hot", story.why_hot, "viz-drill-story-why");
+        appendBulletList(
+          storySection, "What to check", story.what_to_check, "viz-drill-story-check"
+        );
 
         panelEl.appendChild(storySection);
       }
