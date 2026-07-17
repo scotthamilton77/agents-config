@@ -386,18 +386,15 @@ The artifact is a **structured findings list**, grouped by the agent's inner fix
     {
       "reviews_run": ["quality-review", "simplify", "make ci-prgroom"],
       "findings": [
-        {
-          "severity": "BLOCKING | CRITICAL | MAJOR | MINOR",
-          "title": "one-line finding",
-          "resolution": "addressed | unresolved"
-        }
+        { "severity": "MAJOR", "title": "unguarded array access in dispatch loop", "resolution": "addressed" },
+        { "severity": "MINOR", "title": "stale import left after refactor", "resolution": "unresolved" }
       ]
     }
   ]
 }
 ```
 
-Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity and resolution) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, `docs/specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md` §3).
+Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity — one of `BLOCKING`, `CRITICAL`, `MAJOR`, `MINOR` — and a valid resolution — one of `addressed`, `unresolved`) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, `docs/specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md` §3).
 
 ### Repair-dispatch input delta — `verify_failure_path` (prgroom → fix agent)
 

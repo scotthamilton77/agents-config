@@ -61,11 +61,8 @@ simplify:
     {
       "reviews_run": ["quality-review", "simplify", "make ci-prgroom"],
       "findings": [
-        {
-          "severity": "BLOCKING | CRITICAL | MAJOR | MINOR",
-          "title": "one-line finding",
-          "resolution": "addressed | unresolved"
-        }
+        { "severity": "MAJOR", "title": "unguarded array access in dispatch loop", "resolution": "addressed" },
+        { "severity": "MINOR", "title": "stale import left after refactor", "resolution": "unresolved" }
       ]
     }
   ]
@@ -91,7 +88,8 @@ simplify:
 - **Audit rule** (extends the existing `CONTRACT_FIX_AUDIT_FAILED` audit): on
   a batch that claims commits, `verify_checklist` must be present and
   schema-valid — a parseable object with ≥1 iteration, every finding carrying
-  a valid severity and resolution. Malformed ⇒ the same contract-audit
+  a valid severity (one of `BLOCKING`, `CRITICAL`, `MAJOR`, `MINOR`) and a
+  valid resolution (one of `addressed`, `unresolved`). Malformed ⇒ the same contract-audit
   failure path as a missing checklist. An `unresolved` BLOCKING or CRITICAL
   finding is **not** an audit failure — the checklist is the agent's honest
   claim, and the mechanical gate remains the sole authority on whether the
