@@ -565,12 +565,12 @@ def _apply_dry_run(store: SidecarStore, port: TrackerPort, recommendation_id: st
 # ---- the verb ----------------------------------------------------------------
 
 
-def apply(runners: Runners, args: Namespace) -> JsonValue:
+def apply(runners: Runners, args: Namespace, repo_root: Path) -> JsonValue:
     """Handle `viz apply <recommendation-id> [--dry-run]`."""
     recommendation_id: str = args.recommendation_id
     dry_run: bool = bool(args.dry_run)
     port = TrackerPort(runners.tracker)
-    store = SidecarStore(Path.cwd())
+    store = SidecarStore(repo_root)
 
     if dry_run:
         return _apply_dry_run(store, port, recommendation_id)

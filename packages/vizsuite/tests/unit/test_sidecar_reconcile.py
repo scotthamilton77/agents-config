@@ -310,6 +310,15 @@ def test_content_fact_id_is_deterministic_and_content_derived():
     assert content_fact_id(candidate) != content_fact_id(different_basis)
 
 
+def test_content_fact_id_pins_the_exact_persisted_id_for_a_fixed_candidate():
+    """Characterization test: `content_fact_id`'s output is persisted verbatim
+    in `edges.json`/`steps.json`/`recommendations.json` across sweeps — this
+    pins the literal id a fixed candidate mints so a future refactor of the
+    hashing internals (e.g. routing through a shared id helper) cannot
+    silently change already-persisted ids."""
+    assert content_fact_id(_candidate()) == "fact-c4425b7c67e328f2"
+
+
 def test_reconcile_accepts_an_injected_mint_fact_id_factory():
     candidate = _candidate()
 

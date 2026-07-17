@@ -61,7 +61,7 @@ def _commits_behind(git: GitRunner, built_at_commit: str, head_oid: str) -> int 
         return None
 
 
-def pr(runners: Runners, args: Namespace) -> JsonValue:
+def pr(runners: Runners, args: Namespace, repo_root: Path) -> JsonValue:
     """Handle `viz pr <n>`: reconcile → head-OID estate → snapshot → scc → scene → HTML.
 
     Returns the envelope `data`: the written artifact path, the PR number, the
@@ -90,7 +90,7 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     # (gitignored — never in the materialized snapshot); `centrality_axis` itself
     # guards staleness against `scope.head_oid` and fails soft to unavailable,
     # unless `--allow-stale-graph` opted into the labeled-stale path (§6.2).
-    graph_path = Path.cwd() / "graphify-out" / "graph.json"
+    graph_path = repo_root / "graphify-out" / "graph.json"
     allow_stale_graph: bool = args.allow_stale_graph
     centrality = centrality_axis(graph_path, scope.head_oid, allow_stale=allow_stale_graph)
     heat_model = heat.combine(
@@ -136,7 +136,7 @@ def pr(runners: Runners, args: Namespace) -> JsonValue:
     )
     html = render_html(scene)
 
-    out_dir = ensure_viz_dir(Path.cwd())
+    out_dir = ensure_viz_dir(repo_root)
     artifact = out_dir / f"pr-{pr_number}.html"
     artifact.write_text(html, encoding="utf-8")
 

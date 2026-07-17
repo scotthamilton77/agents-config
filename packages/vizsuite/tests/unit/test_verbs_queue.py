@@ -10,12 +10,14 @@ separate "resolved" marker to filter on here.
 
 from __future__ import annotations
 
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
 from tests.conftest import run_cli
 from vizsuite.adapters.git.runner import LsTreeRow
+from vizsuite.runners import Runners
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import (
     FactRecord,
@@ -26,6 +28,7 @@ from vizsuite.sidecar.models import (
     VerdictRecord,
 )
 from vizsuite.sidecar.store import SidecarStore
+from vizsuite.verbs.queue import queue
 
 
 class _ExplodingGitRunner:
@@ -158,6 +161,25 @@ def test_queue_resolves_facts_stored_in_steps_and_recommendations_too(
     assert data["count"] == 2
     fact_ids = {entry["fact"]["fact_id"] for entry in data["entries"]}
     assert fact_ids == {"step-1", "rec-1"}
+
+
+def test_queue_reads_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:
+    """`queue` takes `repo_root` as an explicit third argument -- its sidecar
+    store must resolve from that argument alone. Never chdir'd here: if `queue`
+    fell back to `Path.cwd()` internally it would read the real process cwd's
+    (nonexistent) `.viz/`, not `tmp_path`, and see zero entries instead of one.
+    """
+    store = SidecarStore(tmp_path)
+    store.write_edges((_fact("edge-1"),))
+    store.write_flags(
+        (FlagRecord(flag_id="flag-1", fact_id="edge-1", kind=FlagKind.DOUBT, reason="churned"),)
+    )
+    runners = Runners(git=_ExplodingGitRunner(), gh=None, scc=None, tracker=None)  # type: ignore[arg-type]
+
+    data = queue(runners, Namespace(), tmp_path)
+
+    assert isinstance(data, dict)
+    assert data["count"] == 1
 
 
 def test_queue_entries_are_sorted_by_flag_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -11,18 +11,19 @@ rung this module evaluates.
 input-fingerprint set, not a per-fact check — every fact trivially clears it
 whenever nothing tracked changed at all, which is exactly why the spec calls
 it "free" and strictly cheaper than rung 2's per-fact citation-intersection
-test. `evaluate_fact` still takes one fact at a time (the sweep verb calls it
-once per Tier-2 record), but the *changed-key computation* is the same set
-for every call in one sweep.
+test. The caller computes `changed_keys(recorded, current)` ONCE per sweep —
+it is loop-invariant across every fact in that run — and passes the resulting
+set into `evaluate_fact`, which takes one fact at a time (the sweep verb calls
+it once per Tier-2 record) but never recomputes the changed-key set itself.
 
 **Rung 2 (provenance-intersection)** compares that changed-key set against
 `fact.provenance.citations` (spec §5.2: a fact's citations are exactly the
-inputs it was derived from). The matching rule is deliberately simple: a
-tracked input key is "changed" if it is present in exactly one of
-`recorded_input_hashes`/`current_input_hashes`, or present in both with a
-different value; rung 2 clears when the changed-key set does not intersect
-the fact's citations, using plain string-equality set membership — no path
-normalization, no fuzzy matching. Both mappings are opaque `{input-key: hash}`
+inputs it was derived from). `changed_keys`'s matching rule is deliberately
+simple: a tracked input key is "changed" if it is present in exactly one of
+`recorded`/`current`, or present in both with a different value; rung 2
+clears when the changed-key set does not intersect the fact's citations,
+using plain string-equality set membership — no path normalization, no fuzzy
+matching. Both mappings `changed_keys` takes are opaque `{input-key: hash}`
 snapshots the caller supplies (the sweep verb sources them from the sidecar
 manifest and a fresh Tier-1 fingerprint read respectively); this module never
 touches git, a file, or the sidecar itself.
@@ -49,11 +50,11 @@ than silently assumed away.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from vizsuite.ids import deterministic_id
 from vizsuite.sidecar.models import FactRecord
 
 
@@ -94,8 +95,14 @@ class FlaggedForReassessment:
 RungOutcome = Reused | Restamped | FlaggedForReassessment
 
 
-def _changed_keys(recorded: Mapping[str, str], current: Mapping[str, str]) -> frozenset[str]:
-    """Every input key whose value differs (or is present in only one mapping)."""
+def changed_keys(recorded: Mapping[str, str], current: Mapping[str, str]) -> frozenset[str]:
+    """Every input key whose value differs (or is present in only one mapping).
+
+    Loop-invariant across one sweep: the sweep verb computes this ONCE against
+    the manifest baseline and the fresh Tier-1 fingerprint, then passes the
+    same set into every `evaluate_fact` call for that run — it is a function of
+    the whole tracked input set, never of any individual fact.
+    """
     keys = set(recorded) | set(current)
     return frozenset(key for key in keys if recorded.get(key) != current.get(key))
 
@@ -103,22 +110,26 @@ def _changed_keys(recorded: Mapping[str, str], current: Mapping[str, str]) -> fr
 def _restamped_basis_hash(current_input_hashes: Mapping[str, str]) -> str:
     """Deterministic hash of the entire current fingerprint set — "the new fingerprint"."""
     content = json.dumps(dict(current_input_hashes), sort_keys=True)
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    return f"basis-{digest[:16]}"
+    return deterministic_id("basis", content)
 
 
 def evaluate_fact(
     fact: FactRecord,
     *,
-    recorded_input_hashes: Mapping[str, str],
+    changed_keys: frozenset[str],
     current_input_hashes: Mapping[str, str],
 ) -> RungOutcome:
-    """Run `fact` through funnel rungs 1-2 and return its typed exit outcome."""
-    changed = _changed_keys(recorded_input_hashes, current_input_hashes)
-    if not changed:
+    """Run `fact` through funnel rungs 1-2 and return its typed exit outcome.
+
+    `changed_keys` is the caller's precomputed `changed_keys(recorded, current)`
+    result — the same set for every fact in one sweep (rung 1 is a check over
+    the whole tracked input set, not a per-fact one); this function only
+    intersects it against `fact.provenance.citations` (rung 2).
+    """
+    if not changed_keys:
         return Reused(fact=fact)
 
-    intersecting = changed & frozenset(fact.provenance.citations)
+    intersecting = changed_keys & frozenset(fact.provenance.citations)
     if not intersecting:
         restamped_fact = FactRecord(
             fact_id=fact.fact_id,
@@ -128,7 +139,7 @@ def evaluate_fact(
             payload=fact.payload,
         )
         note = (
-            f"auto-restamped: {len(changed)} tracked input(s) changed but none "
+            f"auto-restamped: {len(changed_keys)} tracked input(s) changed but none "
             "intersect this fact's citations"
         )
         return Restamped(fact=restamped_fact, note=note)

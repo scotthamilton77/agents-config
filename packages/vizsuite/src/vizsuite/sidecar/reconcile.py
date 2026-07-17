@@ -47,12 +47,12 @@ unchanged inputs always mints the same id. Callers may inject their own
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from vizsuite.envelope import JsonValue
+from vizsuite.ids import deterministic_id
 from vizsuite.scene.model import Provenance
 from vizsuite.sidecar.models import FactRecord, MatchingDescriptor, Verdict, VerdictRecord
 
@@ -180,8 +180,7 @@ def content_fact_id(candidate: Candidate) -> str:
         },
         sort_keys=True,
     )
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    return f"fact-{digest[:16]}"
+    return deterministic_id("fact", content)
 
 
 def _bead_anchor_match(

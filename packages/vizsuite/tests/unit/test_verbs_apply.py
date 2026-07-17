@@ -34,6 +34,7 @@ see `test_mint_...` below for the crash-window behavior this ordering buys.
 from __future__ import annotations
 
 import importlib
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -41,9 +42,12 @@ import pytest
 
 from tests.conftest import run_cli
 from tests.fakes import ScriptedTrackerRunner, tracker_error, tracker_ok, tracker_show_ok
+from vizsuite.envelope import ErrorCode, VizError
+from vizsuite.runners import Runners
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import FactRecord, MatchingDescriptor, Verdict, VerdictRecord
 from vizsuite.sidecar.store import SidecarStore
+from vizsuite.verbs.apply import apply
 
 _NOW = "2026-07-15T09:30:00+00:00"
 
@@ -143,6 +147,26 @@ def test_apply_refuses_a_recommendation_with_no_recorded_verdict(
 
     assert exit_code == 1
     assert envelope["error"]["code"] == "E_APPLY_NOT_ACCEPTED"
+    assert tracker.calls == []
+
+
+def test_apply_reads_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:
+    """`apply` takes `repo_root` as an explicit third argument -- its sidecar
+    store must resolve from that argument alone. Never chdir'd here: if
+    `apply` fell back to `Path.cwd()` internally it would find no
+    `recommendations.json` in the real process cwd and raise `E_NOT_FOUND`
+    instead of the `E_APPLY_NOT_ACCEPTED` refusal below, which requires the
+    recommendation to actually be found."""
+    store = SidecarStore(tmp_path)
+    store.write_recommendations((_recommendation("rec-1", mutation={"kind": "resequence"}),))
+    tracker = ScriptedTrackerRunner()
+    runners = Runners(git=None, gh=None, scc=None, tracker=tracker)  # type: ignore[arg-type]
+    args = Namespace(recommendation_id="rec-1", dry_run=False)
+
+    with pytest.raises(VizError) as exc_info:
+        apply(runners, args, tmp_path)
+
+    assert exc_info.value.code == ErrorCode.APPLY_NOT_ACCEPTED
     assert tracker.calls == []
 
 

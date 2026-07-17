@@ -9,7 +9,13 @@ process").
 
 from __future__ import annotations
 
-from vizsuite.funnel.rungs import FlaggedForReassessment, Restamped, Reused, evaluate_fact
+from vizsuite.funnel.rungs import (
+    FlaggedForReassessment,
+    Restamped,
+    Reused,
+    changed_keys,
+    evaluate_fact,
+)
 from vizsuite.scene.model import Freshness, Provenance, ProvenanceKind
 from vizsuite.sidecar.models import FactRecord, MatchingDescriptor
 
@@ -34,7 +40,9 @@ def test_rung1_reuses_fact_verbatim_when_no_tracked_input_changed():
     fact = _fact(citations=("src/app.py",))
     hashes = {"src/app.py": "sha-a", "README.md": "sha-b"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=hashes, current_input_hashes=dict(hashes))
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(hashes, hashes), current_input_hashes=dict(hashes)
+    )
 
     assert outcome == Reused(fact=fact)
 
@@ -43,7 +51,9 @@ def test_rung1_clears_even_when_fact_has_no_citations():
     fact = _fact(citations=())
     hashes = {"src/app.py": "sha-a"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=hashes, current_input_hashes=dict(hashes))
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(hashes, hashes), current_input_hashes=dict(hashes)
+    )
 
     assert outcome == Reused(fact=fact)
 
@@ -53,7 +63,9 @@ def test_rung2_restamps_when_changed_inputs_do_not_intersect_citations():
     recorded = {"src/app.py": "sha-a", "README.md": "sha-b"}
     current = {"src/app.py": "sha-a", "README.md": "sha-b-changed"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=recorded, current_input_hashes=current)
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(recorded, current), current_input_hashes=current
+    )
 
     assert isinstance(outcome, Restamped)
     assert outcome.fact.fact_id == fact.fact_id
@@ -62,6 +74,9 @@ def test_rung2_restamps_when_changed_inputs_do_not_intersect_citations():
     assert outcome.fact.matching_descriptor == fact.matching_descriptor
     assert outcome.fact.payload == fact.payload
     assert outcome.note  # non-empty audit note
+    # Characterization: this basis_hash is persisted verbatim in edges.json —
+    # pinned so a future hashing-internals refactor cannot silently change it.
+    assert outcome.fact.basis_hash == "basis-bd123e1c10eb491b"
 
 
 def test_restamp_basis_hash_is_a_deterministic_function_of_current_fingerprints_only():
@@ -70,12 +85,9 @@ def test_restamp_basis_hash_is_a_deterministic_function_of_current_fingerprints_
     fact_one = _fact(fact_id="fact-1", citations=("src/app.py",), basis_hash="basis-one")
     fact_two = _fact(fact_id="fact-2", citations=("src/app.py",), basis_hash="basis-two")
 
-    outcome_one = evaluate_fact(
-        fact_one, recorded_input_hashes=recorded, current_input_hashes=current
-    )
-    outcome_two = evaluate_fact(
-        fact_two, recorded_input_hashes=recorded, current_input_hashes=current
-    )
+    keys = changed_keys(recorded, current)
+    outcome_one = evaluate_fact(fact_one, changed_keys=keys, current_input_hashes=current)
+    outcome_two = evaluate_fact(fact_two, changed_keys=keys, current_input_hashes=current)
 
     assert isinstance(outcome_one, Restamped)
     assert isinstance(outcome_two, Restamped)
@@ -89,7 +101,9 @@ def test_neither_rung_clears_flags_for_reassessment_when_a_cited_input_changed()
     recorded = {"src/app.py": "sha-a"}
     current = {"src/app.py": "sha-a-changed"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=recorded, current_input_hashes=current)
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(recorded, current), current_input_hashes=current
+    )
 
     assert isinstance(outcome, FlaggedForReassessment)
     assert outcome.fact == fact  # the fact is carried through unmodified — no write happens
@@ -102,7 +116,9 @@ def test_flag_reports_only_the_intersecting_citations_not_every_changed_key():
     recorded = {"src/app.py": "sha-a", "README.md": "sha-b", "other.py": "sha-c"}
     current = {"src/app.py": "sha-a-changed", "README.md": "sha-b", "other.py": "sha-c-changed"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=recorded, current_input_hashes=current)
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(recorded, current), current_input_hashes=current
+    )
 
     assert isinstance(outcome, FlaggedForReassessment)
     # other.py changed too but is not cited — only the cited+changed key surfaces.
@@ -114,7 +130,9 @@ def test_an_added_key_the_fact_cites_flags_for_reassessment():
     recorded: dict[str, str] = {}
     current = {"new/file.py": "sha-a"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=recorded, current_input_hashes=current)
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(recorded, current), current_input_hashes=current
+    )
 
     assert isinstance(outcome, FlaggedForReassessment)
     assert outcome.changed_citations == frozenset({"new/file.py"})
@@ -125,6 +143,8 @@ def test_a_removed_key_the_fact_does_not_cite_restamps():
     recorded = {"src/app.py": "sha-a", "removed.py": "sha-old"}
     current = {"src/app.py": "sha-a"}
 
-    outcome = evaluate_fact(fact, recorded_input_hashes=recorded, current_input_hashes=current)
+    outcome = evaluate_fact(
+        fact, changed_keys=changed_keys(recorded, current), current_input_hashes=current
+    )
 
     assert isinstance(outcome, Restamped)

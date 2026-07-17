@@ -14,7 +14,7 @@ PRGROOM := packages/prgroom
 WORKCLI := packages/workcli
 VIZSUITE := packages/vizsuite
 
-ci: ci-installer ci-prgroom ci-workcli lint-actions
+ci: ci-installer ci-prgroom ci-workcli ci-vizsuite lint-actions
 
 ci-installer: lint-installer format-check-installer typecheck-installer \
               cov-installer audit-installer verify-entry-installer
@@ -119,7 +119,7 @@ itest-workcli:
 	cd $(WORKCLI) && uv run pytest tests/integration -q -p no:xdist
 
 # ── vizsuite (mirrors the ci-workcli block one-for-one; enforced via the
-# always-run ci-vizsuite.yml job, NOT via the top-level `ci:` aggregate) ──
+# top-level `ci:` aggregate) ──
 ci-vizsuite: lint-vizsuite format-check-vizsuite typecheck-vizsuite \
              cov-vizsuite audit-vizsuite verify-entry-vizsuite
 

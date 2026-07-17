@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ from tests.fakes import (
 )
 from vizsuite.adapters.git.runner import ModifiedFileRow
 from vizsuite.envelope import ErrorCode, VizError
+from vizsuite.runners import Runners
+from vizsuite.verbs.pr import pr
 
 _SCENE_SCRIPT_RE = re.compile(
     r'<script id="viz-scene" type="application/json">(.*?)</script>', re.DOTALL
@@ -116,6 +119,45 @@ def test_pr_reconciles_and_emits_html_from_head_estate(
     html = artifact.read_text(encoding="utf-8")
     assert html.startswith("<!DOCTYPE html>")
     assert "src/app.py" in html
+
+
+def test_pr_reads_and_writes_under_explicit_repo_root_without_chdir(tmp_path: Path) -> None:
+    """`pr` takes `repo_root` as an explicit third argument -- both the
+    load-bearing `graphify-out/graph.json` read and the `.viz/out/` artifact
+    write must resolve from that argument alone. Never chdir'd here: if `pr`
+    fell back to `Path.cwd()` internally, the graph write below (under
+    `tmp_path`) would go unseen and the centrality axis would report
+    unavailable instead of `load_bearing` being present."""
+    gh = ScriptedGhRunner(
+        gh_pr_result(base_oid="base000", head_oid="head111", changed_files=1, commit_count=1)
+    )
+    git = ScriptedGitRunner(
+        present_oids={"base000", "head111"},
+        diff_files=["src/app.py"],
+        rev_list_oids=["c1"],
+        churn_rows=[
+            ModifiedFileRow(new_path="src/app.py", old_path="src/app.py", added=3, deleted=0)
+        ],
+        ls_tree_rows=[blob("src/app.py", "aaa111")],
+        archive_tar_bytes=tar_of({"src/app.py": "x = 1\n", ".critical-paths": "src/**\n"}),
+    )
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="head111",
+        nodes=[{"id": "s1", "source_file": "src/app.py"}],
+        links=[],
+    )
+    runners = Runners(git=git, gh=gh, scc=scc, tracker=None)  # type: ignore[arg-type]
+    args = Namespace(number=7, allow_stale_graph=False)
+
+    data = pr(runners, args, tmp_path)
+
+    assert isinstance(data, dict)
+    assert data["heat_axes_available"] == ["complexity", "consequence", "load_bearing"]
+    artifact = Path(str(data["artifact"]))
+    assert artifact == tmp_path / ".viz" / "out" / "pr-7.html"
+    assert artifact.exists()
 
 
 def test_pr_materializes_snapshot_scans_scc_then_cleans_up(
