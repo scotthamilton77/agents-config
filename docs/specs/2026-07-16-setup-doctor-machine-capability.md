@@ -139,7 +139,7 @@ everything else is **optional**.
 | 3 | `uv` | core | required | binary + version |
 | 4 | `bd` | core | required | binary + version |
 | 5 | `claude` | agent-cli | optional | binary + version |
-| 6 | `codex` | agent-cli | optional | Codex plugin runtime present (companion script path per the Codex routing rule) or `codex` binary |
+| 6 | `codex` | agent-cli | optional | Codex plugin runtime present (companion script at the Codex routing rule's install path) AND `node` on PATH; the raw `codex` binary is deliberately not probed — the routing rule mandates all Codex invocation goes through the plugin |
 | 7 | `opencode` | agent-cli | optional | binary + version |
 | 8 | `ollama` | agent-cli | optional | binary + version |
 | 9 | `dolt` | support | optional | binary + version |
