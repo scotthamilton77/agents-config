@@ -56,7 +56,7 @@ work discover --noun {feat|bugfix|chore|spike|decision} --title T [--description
               (--anchor ID | --orphan)
               --discovered-from CURRENT_WORK_ID
               --scope {out-of-scope | in-scope-deferred:HATCH}  --scope-why TEXT
-              --priority P<N>                                    --priority-why TEXT
+              --priority P0-P4                                   --priority-why TEXT
               (--anchor-why TEXT  when --anchor  |  --escalation-why TEXT  when --orphan)
 ```
 
@@ -76,7 +76,7 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | `--discovered-from ID` | yes | the current-work bead; becomes a `discovered-from` provenance edge |
 | `--scope` | yes | `out-of-scope` or `in-scope-deferred:HATCH`; drives `Lands in` derivation |
 | `--scope-why` | yes | one-line scope rationale |
-| `--priority` | yes | `P<N>` (regex `^P\d$`); form only, not correctness |
+| `--priority` | yes | `P0`–`P4` (regex `^P[0-4]$`); form only, not correctness |
 | `--priority-why` | yes | one-line priority rationale |
 | `--anchor-why` / `--escalation-why` | one, by placement | one-line placement rationale (or why no anchor fits) |
 
@@ -147,7 +147,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 |---|---|---|
 | missing `--title`; neither/both of `--anchor`/`--orphan`; `--noun` not a leaf noun | `E_USAGE` | pure arg-shape; argparse or cheap check |
 | missing any of `--scope`/`--scope-why`/`--priority`/`--priority-why`/`--discovered-from` | `E_TRIAGE_INCOMPLETE` | names the missing triage field |
-| `--scope` value not `out-of-scope` / `in-scope-deferred:HATCH`; unknown `HATCH`; `--priority` not `P<N>` | `E_TRIAGE_INCOMPLETE` | names field + valid vocabulary |
+| `--scope` value not `out-of-scope` / `in-scope-deferred:HATCH`; unknown `HATCH`; `--priority` not `P0`–`P4` | `E_TRIAGE_INCOMPLETE` | names field + valid vocabulary (the refusal message names the accepted `P0`–`P4` range) |
 | `--orphan` without `--escalation-why`; `--anchor` without `--anchor-why` | `E_TRIAGE_INCOMPLETE` | the loud-escalation / placement rationale is mandatory |
 | duplicate exact title | `E_DUPLICATE_TITLE` | inherited from the `create <noun>` guard; names the collision |
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
@@ -212,7 +212,7 @@ stay caller judgment, owned by the `triaging-discovered-work` skill:
   fix, the verb files; verify-checklist and the human audit whether that was right.
 - **Best-fit anchor.** The verb checks the anchor exists (and soft-warns if it is not a
   container); *which* epic is the right home is judgment.
-- **Priority level.** The verb enforces `P<N>` form and a rationale; whether P1 vs P3 is
+- **Priority level.** The verb enforces `P0`–`P4` form and a rationale; whether P1 vs P3 is
   correct is judgment.
 
 The test for "mechanical": could a reviewer decide the refusal from the CLI inputs alone,
@@ -226,8 +226,9 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
    whose `detail.field` names the missing field, and **creates nothing** (fake records no
    `create` call).
 2. `work discover` with neither `--anchor` nor `--orphan` (or both) exits `E_USAGE`.
-3. An invalid `--scope` value, an unknown `HATCH`, or a `--priority` not matching `P<N>`
-   exits `E_TRIAGE_INCOMPLETE` naming the field and the valid vocabulary.
+3. An invalid `--scope` value, an unknown `HATCH`, or a `--priority` not matching `P0`–`P4`
+   (regex `^P[0-4]$`) exits `E_TRIAGE_INCOMPLETE` naming the field and the valid vocabulary
+   (the refusal message names the accepted `P0`–`P4` range).
 4. `--orphan` without `--escalation-why`, or `--anchor` without `--anchor-why`, exits
    `E_TRIAGE_INCOMPLETE`.
 5. A valid `--anchor` invocation creates the bead with **both** edges — parent (via the
