@@ -286,8 +286,9 @@ if [[ "$(jq '.escalations | length' <<<"$thread_partition")" -gt 0 ]]; then
         (.escalations | length | tostring)
         + " escalated thread(s) awaiting a human ruling (resolve each thread on GitHub to clear): "
         + ([ .escalations[]
-             | (if (.rationale // "") == "" then "no rationale recorded"
-                else (.rationale | .[0:80]) end) as $why
+             | ((.rationale // "") | tostring) as $r0
+             | (if $r0 == "" then "no rationale recorded"
+                else $r0[0:80] end) as $why
              | (.id // "unknown-thread") + " (" + $why + ")" ]
            | join("; "))' <<<"$thread_partition")"
 fi

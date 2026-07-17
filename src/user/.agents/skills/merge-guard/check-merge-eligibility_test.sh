@@ -929,6 +929,24 @@ assert "missing rationale reads '(no rationale recorded)'" \
   "esc_details \"\$out\" | grep -q '(no rationale recorded)'"
 clean_invs
 
+# non-string rationale (number) from a malformed/hand-edited inventory: the
+# formatter must coerce before slicing, not let jq abort under set -e
+write_inv "o-r-1-thr0004b.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","escalation_filed":true,"rationale":42,"fix_outcome":null,"posted_reply_id":9013}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "numeric rationale → escalations_pending (no abort)" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+assert "numeric rationale coerced into details" "esc_details \"\$out\" | grep -q '42'"
+clean_invs
+
+# non-string rationale (object) is equally type-robust
+write_inv "o-r-1-thr0004c.json" \
+  '[{"kind":"review_thread","thread_id":"T1","reply_to_comment_id":501,"classification":"ESCALATE","escalation_filed":true,"rationale":{"note":"x"},"fix_outcome":null,"posted_reply_id":9014}]'
+out=$(run_script "$BASE_POLICY" FIXTURE_GRAPHQL_THREADS="$(export_threads_ids T1:false)"); rc=$?
+assert "object rationale → escalations_pending (no abort)" \
+  "[ \$rc -eq 1 ] && jq -r '.blockers[].code' <<<\"\$out\" | grep -q escalations_pending"
+clean_invs
+
 # ESCALATE beats coexisting SKIP records for the same thread (no reliable
 # cross-round ordering → fail toward human attention)
 write_inv "o-r-1-thr0005.json" \
