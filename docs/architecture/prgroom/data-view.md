@@ -376,7 +376,25 @@ The fix output gains an optional `memory` channel (§5, §7.3). The agent *decla
 
 ### Fix output — `verify_checklist` artifact (fix agent → prgroom)
 
-`FixOutput` carries a **required** `verify_checklist` artifact: the armed fix agent's own completion-gate claim (what it ran — tests/build/lint — and the result). It is a forcing function (the contract compels the agent to gate itself) and an audit trail; it is **not** byte-compared against prgroom's mechanical gate, which is independently authoritative (trust-but-verify). On a batch with `FIXED` items, a **missing or malformed** `verify_checklist` is a contract-audit failure (`CONTRACT_FIX_AUDIT_FAILED` ⇒ the item flips to `failed`). The mechanical confirmation — `prgroom`'s `verify` step running the operator-configured tier command via `proc.CommandRunner`, whole-branch — is the gate of record; the verdict it persists is `VerifyVerdict` (above). Contract + audit mechanics live in [`c4-l3-verify.md`](c4-l3-verify.md) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md).
+`FixOutput` carries a `verify_checklist` artifact — **required whenever the dispatch claims commits** (a batch with `FIXED` items, or a repair with non-empty `repair.commits`), its absence tolerated otherwise: the armed fix agent's own completion-gate claim (what it ran — tests/build/lint — and the result). It is a forcing function (the contract compels the agent to gate itself) and an audit trail; it is **not** byte-compared against prgroom's mechanical gate, which is independently authoritative (trust-but-verify). On a batch with `FIXED` items, a **missing or malformed** `verify_checklist` is a contract-audit failure (`CONTRACT_FIX_AUDIT_FAILED` ⇒ the item flips to `failed`); symmetrically, on a repair with non-empty `repair.commits`, a **missing or malformed** `verify_checklist` fails the repair's contract audit — the attempt consumes a retry (`retries_used` increments) and the branch re-gates as-is. The mechanical confirmation — `prgroom`'s `verify` step running the operator-configured tier command via `proc.CommandRunner`, whole-branch — is the gate of record; the verdict it persists is `VerifyVerdict` (above). Contract + audit mechanics live in [`c4-l3-verify.md`](c4-l3-verify.md) and [`c4-l3-agent-dispatch.md`](c4-l3-agent-dispatch.md).
+
+The artifact is a **structured findings list**, grouped by the agent's inner fix → review → fix iterations (distinct from prgroom's outer PR-review loop), using the severity rubric shared with quality-reviewer, crit, and simplify:
+
+```json
+"verify_checklist": {
+  "iterations": [
+    {
+      "reviews_run": ["quality-review", "simplify", "make ci-prgroom"],
+      "findings": [
+        { "severity": "MAJOR", "title": "unguarded array access in dispatch loop", "resolution": "addressed" },
+        { "severity": "MINOR", "title": "stale import left after refactor", "resolution": "unresolved" }
+      ]
+    }
+  ]
+}
+```
+
+Schema-validity (a parseable object with ≥1 iteration; every finding carrying a valid severity — one of `BLOCKING`, `CRITICAL`, `MAJOR`, `MINOR` — and a valid resolution — one of `addressed`, `unresolved`) is part of the audit rule above — malformed follows the missing-checklist path. An `unresolved` finding of any severity is **not** an audit failure: the checklist is the agent's honest claim, and the mechanical gate alone decides whether the branch ships (see the readiness reconciliation spec, [`2026-07-16-prgroom-fix-verify-implementation-readiness.md`](../../specs/2026-07-16-prgroom-fix-verify-implementation-readiness.md) §3).
 
 ### Repair-dispatch input delta — `verify_failure_path` (prgroom → fix agent)
 
