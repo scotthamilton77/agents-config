@@ -96,14 +96,29 @@ minting (§4 step 2), then creates the parent edge atomically via the
 `create --parent <anchor>` primitive, then adds the `discovered-from` edge — one
 `work discover` call, both edges. The `discovered-from` add is a second bd operation
 (bd `create` cannot express a typed non-blocks edge at birth), so the create→edge seam
-is non-transactional like `work track set`'s label swap: on edge-add failure the verb
-returns the error **with the created id in `detail`** so the caller replays only the
-edge (`work dep add`), never a duplicate bead. Because the provenance source is
-validated pre-mint, that replay always has a live target — the only edge-add failure
-left is a *transient* backend fault against an already-validated source, never an
-unresolvable input (a deleted/invalid source is refused before anything is minted, per
-§4 step 2). That transient fault is the sole partial-failure window, and it is
-caller-recoverable, not silent.
+is non-transactional like `work track set`'s label swap.
+
+**Recovery contract — every post-create failure carries `created_id`.** Once the backend
+`create` returns an id the bead exists, so *any* later step that fails must surface that
+id in `detail.created_id`; the caller then replays only the failed step against the
+already-minted bead, never a duplicate. Two post-create seams exist, both non-transactional:
+
+1. **Orphan-marker note append** (`--orphan` only). The shared `create_noun` path writes
+   the orphan marker as a *separate* `append_note` after the create returns
+   (`lifecycle/create.py`, `--orphan` branch); a failure leaves a created-but-unmarked bead.
+2. **`discovered-from` provenance edge add** (§4 step 5, every filing); a failure leaves a
+   created bead with no provenance edge.
+
+For either seam the verb returns the error **with `detail.created_id` set** so the caller
+replays only that step — re-append the marker, or add the edge (`work dep add`). This
+obliges the shared create path to surface `created_id` on its own post-create note-append
+failure instead of raising a bare error that discards it; discover, as the wrapper,
+guarantees the id reaches `detail` for every failure after the mint. Because the provenance
+source is validated pre-mint, the edge replay always has a live target — the remaining
+edge-add failure is a *transient* backend fault against an already-validated source, never
+an unresolvable input (a deleted/invalid source is refused before anything is minted, per
+§4 step 2). These post-create faults are the complete set of partial-failure windows, and
+each is caller-recoverable, not silent.
 
 **`Lands in` derivation** (never an input; this is what structurally disallows vague
 temporal buckets):
@@ -165,6 +180,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
 | `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
 | `required` track mode, `--orphan` (no parent to inherit track), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition) |
+| create succeeds, orphan-marker note append fails (`--orphan` path) | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for marker replay |
 | create succeeds, `discovered-from` edge add fails | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for edge replay |
 
 Non-container anchor (anchor exists but is a `task`/leaf, not epic/milestone) is a
@@ -197,7 +213,9 @@ non-epic parent.
    (`--noun`, `--title`, composed `--description`, `--priority`, and `--parent <anchor>`
    or `--orphan`) and call the same `create_noun` code. discover adds **no** new minting
    logic: noun→type/shape templating, the duplicate-title guard, placement validation,
-   and the track resolution all execute unchanged.
+   and the track resolution all execute unchanged. For an `--orphan` filing this path also
+   writes the orphan marker as a post-create `append_note`; per the §3.2 recovery contract,
+   a failure there surfaces `detail.created_id` rather than discarding the mint.
 5. **Add the provenance edge** — `dep add <new-id> <discovered-from> --type discovered-from`.
 6. **Assemble the envelope** — derive `lands_in`, build `manifest_row`, set
    `remaining_work` (true iff scope is `in-scope-deferred:*`), pass through any create-path
@@ -275,6 +293,10 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
     message names `--discovered-from`, and **creates nothing** — the fake call log shows
     the pre-mint source `show`/get and **zero** `create` calls (the provenance source is
     validated before any mint).
+15. An `--orphan` create that succeeds but whose **orphan-marker note append** fails
+    returns an error with `detail.created_id` set (marker replayable, no duplicate bead) —
+    the fake call log shows exactly **one** `create` followed by the failing `append_note`,
+    and the caller can re-run the marker step against the returned id.
 
 ## 7. Protocol impact
 
@@ -292,7 +314,7 @@ spec-authoring time; the changes are independent and additive, so any order work
   composing `create_noun`, the `discovered-from` edge, triage-block rendering, and
   manifest-row assembly; the `E_TRIAGE_INCOMPLETE` ErrorCode member; `cli.py` subparser
   and `verbs/__init__.py` registration; MINOR protocol bump — AC: acceptance criteria
-  1–12 and 14 pass under `make ci-workcli` (criterion 13 passes once the track-partition
+  1–12, 14, and 15 pass under `make ci-workcli` (criterion 13 passes once the track-partition
   create gate has landed — verify in whichever PR lands second); behavioral tests use `run_cli_with_runner` call-log
   assertions against the `ScriptedBdRunner` fake, no live bd.
 - chore: retire the prose filing mechanics once the verb ships — repoint the
