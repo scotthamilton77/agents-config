@@ -22,7 +22,11 @@ Facade verb surface migrated against — transport (`docs/specs/2026-07-04-work-
 `claim`, `release`, `deliver`, `plan`, `promote`, `reconcile`. A bd usage maps only if one of
 these covers it.
 
-## 2. Decision summary (normative — do not reopen)
+## 2. Decision summary (owner-ratified)
+
+These four decisions were ratified by the repo owner in an interactive brainstorming
+session before this spec was drafted; they bind the implementing agent and are not for
+that agent to reopen. Review comments on them during this PR are still welcome.
 
 1. **Classification is exhaustive.** Every bd reference in `src/**` (and the primer
    knowledge base) is classified exactly one of **route-through-facade** (a shipped/
