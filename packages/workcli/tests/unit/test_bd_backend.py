@@ -820,6 +820,147 @@ def test_label_mutate_maps_no_issue_found_stderr_to_not_found_error():
         assert error.code == ErrorCode.NOT_FOUND
 
 
+def test_label_mutate_wraps_a_mid_sequence_failure_with_partial_progress():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), BdResult(returncode=1, stdout="", stderr="boom")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.label_mutate("add", "x.1", ["a", "b", "c"])
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.detail["partial_progress"] == {
+            "operation": "label_mutate",
+            "steps_total": 3,
+            "completed": ["a"],
+            "failed": "b",
+            "remaining": ["c"],
+        }
+
+
+def test_label_mutate_wraps_retry_exhaustion_with_partial_progress():
+    # Codex review finding on PR #319: run_with_retry itself raises WorkError
+    # on retry exhaustion (E_LOCK_CONTENTION/E_TIMEOUT) rather than returning
+    # a BdResult -- that path bypassed the `returncode != 0` branch entirely,
+    # so a label already applied before it went unreported.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), locked),
+            ScriptedStep(("label", "add"), locked),
+            ScriptedStep(("label", "add"), locked),
+        ]
+    )
+    backend = BdBackend(runner, sleep=lambda _seconds: None)
+
+    try:
+        backend.label_mutate("add", "x.1", ["a", "b", "c"])
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.LOCK_CONTENTION
+        assert error.detail["partial_progress"] == {
+            "operation": "label_mutate",
+            "steps_total": 3,
+            "completed": ["a"],
+            "failed": "b",
+            "remaining": ["c"],
+        }
+
+
+def test_label_mutate_failing_on_the_first_label_carries_no_partial_progress():
+    # AC 9: "absence means atomic" applies even to the first sub-step of a
+    # multi-step op when nothing preceded it.
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("label", "add"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.label_mutate("add", "x.1", ["a", "b"])
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert "partial_progress" not in error.detail
+
+
+def test_label_mutate_reinvocation_after_partial_failure_heals_and_completes():
+    # Retry-from-top after a partial failure: label "a" is re-applied (bd
+    # absorbs the already-present case) and "b"/"c" succeed this time.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("label", "add"),
+                BdResult(returncode=1, stdout="", stderr="issue x.1 already has label a\n"),
+            ),
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("label", "add"), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    backend.label_mutate("add", "x.1", ["a", "b", "c"])  # must not raise
+
+    assert runner.calls == [
+        ("label", "add", "x.1", "a"),
+        ("label", "add", "x.1", "b"),
+        ("label", "add", "x.1", "c"),
+    ]
+
+
+def test_label_mutate_add_absorbs_already_present_stderr_as_success():
+    # Marker text is speculative (live-verified against bd 1.0.3 as currently
+    # unreachable -- a repeat `label add` exits 0 with no stderr; see the
+    # marker constant's comment). Proves the absorption mechanism works if a
+    # future bd version ever does error on this outcome.
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("label", "add"),
+                BdResult(returncode=1, stdout="", stderr="issue x.1 already has label a\n"),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    backend.label_mutate("add", "x.1", ["a"])  # must not raise
+
+    assert runner.calls == [("label", "add", "x.1", "a")]
+
+
+def test_label_mutate_remove_absorbs_absent_stderr_as_success():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("label", "remove"),
+                BdResult(returncode=1, stdout="", stderr="issue x.1 does not have label stale\n"),
+            )
+        ]
+    )
+    backend = BdBackend(runner)
+
+    backend.label_mutate("remove", "x.1", ["stale"])  # must not raise
+
+    assert runner.calls == [("label", "remove", "x.1", "stale")]
+
+
+def test_set_status_failure_carries_no_partial_progress():
+    # AC 9: a single-call primitive's WorkError never carries partial_progress.
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("update",), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.set_status("x.1", "closed")
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert "partial_progress" not in error.detail
+
+
 def test_labels_sends_label_list_json_and_returns_the_flat_array():
     runner = ScriptedBdRunner(
         steps=[
@@ -915,6 +1056,89 @@ def test_sync_push_failure_raises_backend_drift():
         raise AssertionError("expected WorkError")
     except WorkError as error:
         assert error.code == ErrorCode.BACKEND_DRIFT
+
+
+def test_sync_push_failure_wraps_with_partial_progress_commit_completed():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("dolt", "commit"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("dolt", "push"), BdResult(returncode=1, stdout="", stderr="boom")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.detail["partial_progress"] == {
+            "operation": "sync",
+            "steps_total": 2,
+            "completed": ["commit"],
+            "failed": "push",
+            "remaining": [],
+        }
+
+
+def test_sync_wraps_push_retry_exhaustion_with_partial_progress():
+    # Codex review finding on PR #319: run_with_retry itself raises WorkError
+    # on retry exhaustion rather than returning a BdResult -- that path
+    # bypassed the `returncode != 0` branch, leaving out `completed:["commit"]`
+    # even though the commit had already succeeded.
+    locked = BdResult(returncode=1, stdout="", stderr="database is locked")
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(("dolt", "commit"), BdResult(returncode=0, stdout="", stderr="")),
+            ScriptedStep(("dolt", "push"), locked),
+            ScriptedStep(("dolt", "push"), locked),
+            ScriptedStep(("dolt", "push"), locked),
+        ]
+    )
+    backend = BdBackend(runner, sleep=lambda _seconds: None)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert error.code == ErrorCode.LOCK_CONTENTION
+        assert error.detail["partial_progress"] == {
+            "operation": "sync",
+            "steps_total": 2,
+            "completed": ["commit"],
+            "failed": "push",
+            "remaining": [],
+        }
+
+
+def test_sync_commit_failure_carries_no_partial_progress():
+    # AC 9: a multi-step primitive failing on step 1 (nothing completed) also
+    # carries no partial_progress key.
+    runner = ScriptedBdRunner(
+        steps=[ScriptedStep(("dolt", "commit"), BdResult(returncode=1, stdout="", stderr="boom"))]
+    )
+    backend = BdBackend(runner)
+
+    try:
+        backend.sync(pull=False)
+        raise AssertionError("expected WorkError")
+    except WorkError as error:
+        assert "partial_progress" not in error.detail
+
+
+def test_sync_reinvocation_after_push_failure_completes():
+    runner = ScriptedBdRunner(
+        steps=[
+            ScriptedStep(
+                ("dolt", "commit"), BdResult(returncode=1, stdout="", stderr="nothing to commit\n")
+            ),
+            ScriptedStep(("dolt", "push"), BdResult(returncode=0, stdout="", stderr="")),
+        ]
+    )
+    backend = BdBackend(runner)
+
+    result = backend.sync(pull=False)  # must not raise: re-commit is a no-op, push succeeds
+
+    assert result.synced is True
 
 
 def test_sync_pull_sends_dolt_pull_and_returns_pull_mode():

@@ -10,7 +10,14 @@ from io import StringIO
 from tests.fakes import ScriptedBdRunner
 from workcli import PROTOCOL_VERSION
 from workcli import cli as cli_module
-from workcli.envelope import ErrorCode, WorkError, emit_failure, emit_success
+from workcli.envelope import (
+    ErrorCode,
+    StepProgress,
+    WorkError,
+    emit_failure,
+    emit_success,
+    with_progress,
+)
 
 
 def test_emit_success_writes_ok_envelope_and_returns_zero():
@@ -107,6 +114,42 @@ def test_handler_raising_work_error_yields_that_errors_envelope(monkeypatch):
         "code": "E_NOT_FOUND",
         "message": "no such item",
         "detail": {"id": "x.1"},
+    }
+
+
+def test_step_progress_as_detail_shapes_the_partial_progress_record():
+    progress = StepProgress(
+        operation="label_mutate", steps_total=3, completed=("a",), failed="b", remaining=("c",)
+    )
+
+    assert progress.as_detail() == {
+        "partial_progress": {
+            "operation": "label_mutate",
+            "steps_total": 3,
+            "completed": ["a"],
+            "failed": "b",
+            "remaining": ["c"],
+        }
+    }
+
+
+def test_with_progress_preserves_the_original_code_and_message_and_merges_detail():
+    err = WorkError(ErrorCode.BACKEND_DRIFT, "bd exited weird", detail={"argv": ["x"]})
+    progress = StepProgress(
+        operation="sync", steps_total=2, completed=("commit",), failed="push", remaining=()
+    )
+
+    wrapped = with_progress(err, progress)
+
+    assert wrapped.code == ErrorCode.BACKEND_DRIFT
+    assert wrapped.message == "bd exited weird"
+    assert wrapped.detail["argv"] == ["x"]
+    assert wrapped.detail["partial_progress"] == {
+        "operation": "sync",
+        "steps_total": 2,
+        "completed": ["commit"],
+        "failed": "push",
+        "remaining": [],
     }
 
 
