@@ -23,6 +23,7 @@ dev = [
   "ruff",
   "mypy",
   "pip-audit",
+  "jsonschema",
 ]
 
 [tool.ruff]

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workcli/work-graph.schema.json",
+  "title": "work graph --json `data` payload",
+  "description": "Bulk export: every non-closed bead plus closed containers needed for ancestry; dependency edges typed as bd emits them, parent-child edges synthesized child->parent. Edge endpoints MAY reference closed beads absent from nodes (severed-blocker case).",
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "title", "type", "status", "priority", "labels", "track", "parent"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "track": { "type": ["string", "null"] },
+        "parent": { "type": ["string", "null"] }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    }
+  }
+}
