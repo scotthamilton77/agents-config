@@ -26,7 +26,7 @@ from prgroom.prsession.state import (
     QuiescenceState,
     ReviewItem,
 )
-from tests.fakes import RecordedRunner
+from tests.fakes import RecordedRunner, RecordingGh
 
 runner = CliRunner()
 
@@ -39,31 +39,6 @@ class _FakeGit:
 
     def config_user(self) -> str:
         return "tester"
-
-
-class _RecordingGh:
-    """Minimal ``GhClient`` stand-in recording the reply POST; reply_pr ignores returns."""
-
-    def __init__(self) -> None:
-        self.rest_calls: list[tuple[str, str, dict]] = []
-        self.graphql_calls: list[tuple[str, dict]] = []
-
-    def rest(
-        self,
-        method: str,
-        path: str,
-        *,
-        fields: dict | None = None,
-        paginate: bool = False,  # noqa: ARG002  # Protocol signature; the pre-flight scan passes it
-    ) -> dict | list:
-        self.rest_calls.append((method, path, dict(fields or {})))
-        if method == "GET" and path.endswith("/comments"):
-            return []  # the idempotency pre-flight scan reads an empty listing
-        return {}
-
-    def graphql(self, query: str, variables: dict) -> dict:
-        self.graphql_calls.append((query, dict(variables)))
-        return {}
 
 
 def _fixed_item() -> ReviewItem:
@@ -129,7 +104,7 @@ def test_reply_posts_and_persists_replied(
 ) -> None:
     # Happy path: the lock wrapper reads state, runs the real reply_pr (which POSTs),
     # and writes the replied flag back. Proves the CLI wiring, not just the no-state gate.
-    gh = _RecordingGh()
+    gh = RecordingGh()
     monkeypatch.setattr(cli, "_build_gh", lambda: gh)
     state = PRGroomingState(
         pr=_REF,

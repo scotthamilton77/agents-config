@@ -14,6 +14,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
+import pytest
+
+from prgroom.errors import PrgroomError
 from prgroom.gh import GhCli
 from prgroom.lifecycle.resolve import resolve_pr
 from prgroom.proc import CommandResult
@@ -111,9 +114,6 @@ def test_resolve_rerun_reissues_idempotent_mutation_after_midloop_failure() -> N
     # server-side, so resolve needs no markers — a mid-loop failure discards the
     # deepcopy, and the rerun harmlessly re-issues BOTH mutations. This pins the
     # reasoning resolve.py documents, which had zero retry-path coverage.
-    import pytest
-
-    from prgroom.errors import PrgroomError
 
     def fresh_state() -> PRGroomingState:
         return _state(
