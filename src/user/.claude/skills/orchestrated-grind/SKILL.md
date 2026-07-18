@@ -1,6 +1,6 @@
 ---
 name: orchestrated-grind
-description: Use when running a long multi-lane agent grind — several work lanes advancing in parallel under named lieutenant agents, each shipping its own PRs through an autonomous bot-review-and-merge loop. Triggers on "orchestrated grind", "grind plan with lanes", "lieutenant orchestration", "run a multi-lane grind", "overnight grind", "grind the backlog", "run these lanes in parallel overnight", "spin up lanes for this plan", "work this queue while I sleep", or any request to drive a conflict-partitioned plan across parallel agent lanes with a live status dashboard. Also apply when an in-flight grind stalls, a lane goes quiet, or a bot reviewer keeps re-raising the same findings.
+description: Use when running a long multi-lane agent grind — several work lanes advancing in parallel under named lieutenant agents, each shipping its own PRs through an autonomous bot-review-and-merge loop. Triggers on "orchestrated grind", "grind plan with lanes", "lieutenant orchestration", "run a multi-lane grind", "overnight grind", "grind the backlog", "run these lanes in parallel overnight", "spin up lanes for this plan", "work this queue while I sleep", or any request to drive many PRs' worth of work across parallel, conflict-partitioned agent lanes with a live status dashboard. Also apply when an in-flight grind stalls, a lane goes quiet, a bot reviewer keeps re-raising the same findings, or a long multi-agent run nears compaction and its orchestration state must survive the handoff.
 ---
 
 # Orchestrated Grind
