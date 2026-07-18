@@ -529,21 +529,14 @@
     };
   }
 
-  function labelColorFor(colorString) {
-    var rgb = d3.rgb(colorString);
-    var luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
-    return luminance > 0.6 ? "var(--viz-label-on-light-fill)" : "var(--viz-label-on-dark-fill)";
-  }
-
   function applyEncoding(entries, heatScale, computeHeat) {
     entries.forEach(function (entry) {
       var heat = computeHeat(entry.node.attributes);
       var color = heatScale(heat);
       entry.el.style.backgroundColor = color;
-      // A culled (unlabeled) node has no labelEl at all — see renderNodes.
-      if (entry.labelEl) {
-        entry.labelEl.style.color = labelColorFor(color);
-      }
+      // The label rides above the mark over the stage background (not on the
+      // node fill), so its color is a fixed muted CSS value, not a
+      // fill-contrast computation — nothing to repaint on reencode.
       // The aria-label's heat figure must track the same reencode a weight
       // change drives, or a screen-reader user reads a stale value while a
       // sighted user sees the fill already updated.
@@ -569,6 +562,17 @@
   function applyNodePosition(el, node) {
     el.style.left = node.x + "px";
     el.style.top = node.y + "px";
+  }
+
+  // A label sits centered just above its node mark (prototype anatomy
+  // variant_B.js's `labelSel` at `y = d.y - d.r - 4`). Placed in the same
+  // transformed stage as the node, so it pans/zooms with the layout and
+  // follows the node when dragged (see wireDrag's reposition). CSS
+  // translate(-50%, -100%) centers it horizontally and anchors its bottom
+  // edge at this top coordinate.
+  function applyLabelPosition(labelEl, node) {
+    labelEl.style.left = node.x + "px";
+    labelEl.style.top = node.y - node.r - 4 + "px";
   }
 
   // ---- Label culling (spec: cosmetic parity fidelity, prototype anatomy
@@ -634,10 +638,18 @@
 
       var label = null;
       if (labeledIds[node.id]) {
+        // The visual label rides ABOVE the mark as a separate stage sibling,
+        // never a child of the node div — .viz-constellation-node clips
+        // overflow (needed for the round mark), so a label nested inside the
+        // ~4px content box of a satellite would be invisible. Presentational
+        // only: the node element already carries the path via title/aria-label,
+        // so aria-hidden keeps a screen reader from reading it twice.
         label = document.createElement("span");
         label.setAttribute("class", "viz-constellation-node-label");
+        label.setAttribute("aria-hidden", "true");
         label.textContent = basename(displayPath);
-        el.appendChild(label);
+        applyLabelPosition(label, node);
+        stage.appendChild(label);
       }
 
       window.vizShared.wireClickVsDragActivation(el, {
@@ -678,6 +690,12 @@
 
     function reposition() {
       applyNodePosition(el, node);
+      // The label is a separate stage sibling, so a drag/un-pin must move it
+      // in lockstep with the node (a culled node has no label — see
+      // renderNodes).
+      if (entry.labelEl) {
+        applyLabelPosition(entry.labelEl, node);
+      }
       incidentLines.forEach(function (incident) {
         updateEdgeEndpoint(incident.lineEl, incident.role, node);
       });

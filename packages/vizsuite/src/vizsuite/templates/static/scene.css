@@ -855,14 +855,23 @@ body {
 .viz-constellation-node[data-in-pr="true"] {
   border: 3px solid var(--viz-fg);
 }
+/* The label is a separate stage sibling positioned ABOVE its node mark
+   (left/top set inline by views/constellation.js), never a child clipped
+   inside the round .viz-constellation-node (which sets overflow: hidden and
+   leaves a satellite only a ~4px content box). translate(-50%, -100%)
+   centers it horizontally on the node and anchors its bottom edge at the
+   inline top. pointer-events: none so it never steals the node's hover/drag;
+   a fixed muted color since it sits over the stage background, not the fill. */
 .viz-constellation-node-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
   padding: 0 2px;
   font-size: 8px;
   line-height: 1.1;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
+  color: var(--viz-secondary);
 }
 /* Keyboard focus affordance (a11y), same treatment as the sonar ring mark:
    the base rule is already `position: absolute`, so z-index alone suffices
