@@ -27,6 +27,9 @@ class ErrorCode(StrEnum):
     EVIDENCE = "E_EVIDENCE"
     MANIFEST = "E_MANIFEST"
     TIMEOUT = "E_TIMEOUT"
+    TRACK_REQUIRED = "E_TRACK_REQUIRED"
+    UNKNOWN_TRACK = "E_UNKNOWN_TRACK"
+    NOT_CONFIGURED = "E_NOT_CONFIGURED"
 
 
 @dataclass(frozen=True)

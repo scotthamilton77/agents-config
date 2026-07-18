@@ -58,6 +58,10 @@ select = [
 # it's a contract-violation diagnostic (Finding 2), same specificity
 # rationale as parse.py's drift alarm above.
 "src/workcli/adapters/bd/backend.py" = ["TRY003"]
+# Every E_NOT_CONFIGURED message must name the specific config problem and
+# path inline (spec §3: "a message naming the specific problem") -- same
+# specificity rationale as parse.py's drift alarm above.
+"src/workcli/config.py" = ["TRY003"]
 
 [tool.ruff.format]
 docstring-code-format = true
