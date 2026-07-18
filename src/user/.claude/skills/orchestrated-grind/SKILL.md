@@ -213,7 +213,11 @@ wrong state. Distinguish the two, because they have different exits:
 
 1. **Verify the fix exists at the commit the reviewer claims it reviewed** —
    `git show <sha>:<path>`. Not at HEAD, and not in the PR diff: if the reviewer
-   is reading a stale head, HEAD proves nothing about what it saw.
+   is reading a stale head, HEAD proves nothing about what it saw. A path that
+   is **absent** at that commit is not yet an answer — deleting or renaming the
+   file can *be* the fix. On a missing path, check the commit's diff or tree
+   before concluding anything, and read step 4 as applying only once you have
+   confirmed the flagged code genuinely survives.
 2. If the fix **is** there, hand the reviewer that evidence through the review
    skill's reply path — one evidence-forward nudge, not an argument. A
    do-not-relitigate round already spent **is** that nudge; do not spend a
@@ -270,18 +274,32 @@ directly. The guard checks eligibility, not whether your lieutenant was right.
 runs with `merge-guard` structurally unavailable — misconfigured, mid-refactor,
 missing a credential — and the human grants merge authority for the session
 directly instead. That grant replaces the *authorization* the guard would have
-resolved; it does not replace the *eligibility* it would have computed. Verify
-three facts yourself, per PR, before every such merge:
+resolved; it does not replace the *eligibility* it would have computed.
+
+**Prefer the canonical eligibility check over a hand-rolled one.** The guard is
+more than its policy resolver; if its eligibility script still runs, run it and
+use its verdict. Reconstructing eligibility from memory is how a blocker that
+exists in the canonical check quietly goes missing from the grind's copy. Only
+when nothing of the guard is operable do you verify by hand, and then all four
+of these facts, per PR, before every such merge:
 
 1. **CI green at the head commit** you are about to merge — not at an earlier one.
 2. **Reviewer approval at that same head** — an approval of a superseded head is
    not an approval of this one.
 3. **Zero unresolved review threads.**
+4. **No active requested-changes verdict from any reviewer.** This one is
+   **sticky and not head-scoped**: a push does not clear it, and another
+   reviewer's approval does not override it. It clears only by dismissal or by
+   a later approval from *the same* reviewer. Check it separately — the other
+   three can all pass while one reviewer is still blocking.
 
 Any one missing and the PR goes to the human's docket, session grant or not.
-Record in the handoff (§7) that the guard was bypassed and on what authority —
-a grant nobody wrote down is indistinguishable, later, from a lane that merged
-on its own initiative.
+The docket is not a dead end: once there, the human may rule on that PR
+specifically, and their ruling supersedes the floor — merging despite a missing
+fact is a call they are allowed to make and ROOT is not. Record the ruling with
+the merge. Likewise record in the handoff (§7) that the guard was bypassed and
+on what authority — a grant nobody wrote down is indistinguishable, later, from
+a lane that merged on its own initiative.
 
 **An honest verdict cannot be manufactured.** If the reviewer will not approve
 and you judge its findings unfounded, that is the human's call. Merging around
@@ -366,11 +384,14 @@ question: *has anything happened on this PR since I armed?*
   running, unwatched, and silent.
 - **Triggers on a count increase** in reviews, review comments, issue comments,
   or **reactions** against baselines sampled at arm time. Counts, not contents.
-- **Count reactions too.** A reviewer can signal entirely through a reaction —
-  in the reference run one approval arrived as a lone thumbs-up on the PR body,
-  with no review object and no comment, and a watcher blind to reactions slept
-  through it to timeout. Reactions are a count like any other, so this costs the
-  doorbell nothing and keeps it dumb.
+- **Count reactions too, including nested ones.** A reviewer can signal entirely
+  through a reaction — in the reference run one approval arrived as a lone
+  thumbs-up, with no review object and no comment, and a watcher blind to
+  reactions slept through it to timeout. Count reactions on the PR body *and* on
+  each individual comment and review: a reaction on an existing comment moves
+  none of the other counts, so a body-only reaction check has the same blind
+  spot in a narrower form. Reactions are a count like any other, so this costs
+  the doorbell nothing and keeps it dumb.
 - **The ring is a DOORBELL.** On a ring, ROOT re-engages the owning lane and
   the lane consults the review skill for the actual verdict. ROOT does not
   interpret PR state itself.
