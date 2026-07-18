@@ -102,7 +102,14 @@ dependent asset-class child can fully close.
   Filed as a single continuation. Additionally, the Class A migration must confirm the
   normalized `type`/`created` fields remap correctly onto `collect.py`'s consumers (bd's
   raw `created_at`/type strings are renamed on the `Item` boundary), so the in-flight
-  and ready sections read the envelope's normalized names, not the raw bd keys.
+  and ready sections read the envelope's normalized names, not the raw bd keys. The same
+  boundary also inverts `priority`: the facade serializes `Item.priority` as a `"P<n>"`
+  string (`"P0".."P4"`), but `collect.py` sorts on the raw integer priority
+  (`bead_sort_key` defaults it to `99`) and emits it as an integer in its public JSON
+  contract (documented by the whats-next skill as `"priority": 1`). The migration owns
+  the `"P<n>"`-string→integer conversion at the `Item` boundary so the sort ordering
+  and the public JSON shape stay unchanged — the integer contract is preserved, not
+  replaced by the facade's string form.
 - **G4 — readiness-filtered typed list: CONFIRMED REAL GAP.** `collect.py`'s planning
   queue issues three `bd list --type {milestone,epic,feature} --ready` queries, but the
   facade exposes `--type` only on `work list` (no `--ready`) and `--label` only on `work
