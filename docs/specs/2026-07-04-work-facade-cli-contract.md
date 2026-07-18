@@ -89,8 +89,8 @@ only their envelope/error-code vocabulary above).
 JSON envelope on stdout, always, exit code mirrors `ok`:
 
 ```json
-{"protocol": "1.1", "ok": true, "data": { ... }, "error": null}
-{"protocol": "1.1", "ok": false, "data": null,
+{"protocol": "1.2", "ok": true, "data": { ... }, "error": null}
+{"protocol": "1.2", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y", "dep_type": "blocks"}}}
 ```
@@ -132,7 +132,7 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
 - Every envelope carries `protocol` (semver `MAJOR.MINOR`). Additive fields bump
   MINOR; any breaking change to envelope or `data` shapes bumps MAJOR.
 - `work --protocol-version` returns a standard success envelope on stdout
-  (`ok: true`, `data: {"protocol": "1.1"}`, exit 0) — no exception to the
+  (`ok: true`, `data: {"protocol": "1.2"}`, exit 0) — no exception to the
   "stdout is always a JSON envelope" invariant (§4). It is the consumer
   handshake at adapter init (prgroom/PDLC pin a major and refuse a mismatch at
   startup rather than mis-parsing mid-run).
@@ -145,13 +145,38 @@ query(filters), ready, dep_mutate, dep_list, label_mutate, labels, search, sync`
 The verb layer owns normalization, typed errors, and retries; adapters own only
 backend I/O and concept mapping. v1 ships the `bd` adapter alone.
 
-Capability flags per adapter (`supports_ready`, `supports_dep_types`,
-`supports_sync`): a verb a backend cannot honor returns
-`E_UNSUPPORTED_CAPABILITY` rather than emulating silently — with two declared
-exceptions: `ready` is computed client-side from `query` + dep edges when the
-backend lacks blocker semantics (both JIRA and GH need this; bd does not), and
-`sync` on a server-authoritative backend succeeds honestly as a declared no-op
-(`data.synced: false`) since there is nothing to synchronize.
+Capability disposition per adapter (`Capabilities.ready: ReadySupport`,
+`Capabilities.sync: SyncSupport`, `Capabilities.supports_dep_write: bool`;
+1.2 amendment, superseding the original three-boolean design): a verb a
+backend cannot honor returns `E_UNSUPPORTED_CAPABILITY` rather than emulating
+silently — with two declared exceptions matched by the disposition enums
+themselves: `ReadySupport.EMULATED` computes `ready` client-side from `query`
++ dep edges when the backend lacks blocker semantics (both JIRA and GH need
+this; bd does not), and `SyncSupport.SERVER_AUTHORITATIVE` succeeds honestly
+as a declared no-op (`data.synced: false`) since there is nothing to
+synchronize. The `EMULATED` ready computation is a forward contract, not
+shipped code: the verb layer gains that branch with the first adapter that
+declares it (today's sole adapter, bd, is `NATIVE` on every disposition, so
+no emulation path exists yet). `dep list` is never gated — only typed dep writes are, via
+`supports_dep_write` — since every seam-target backend can at least
+enumerate relationships.
+
+Multi-step mutation partial-progress (1.2 amendment): the seam's two
+irreducibly multi-call primitives, `label_mutate` (one `bd label` call per
+label) and `sync` (`dolt commit` then `dolt push`), are each pinned to a
+two-part contract. First, idempotent as a whole — re-invoking the same call
+after a partial failure completes safely; the adapter absorbs bd's
+already-applied/already-absent outcomes as success. Second, structured
+partial-progress on failure — a mid-sequence `WorkError` carries a
+`detail.partial_progress` record (`operation`, `steps_total`, `completed`,
+`failed`, `remaining`) naming exactly what already applied, so the caller
+can tell a resumable failure from a from-scratch one. (The record is
+caller-facing only: `work reconcile`'s sweep is lifecycle-scoped and does
+not consume it.)
+Absence of the key is the contract signal that nothing applied yet: a
+single-call primitive's `WorkError`, or a first-sub-step failure, never
+carries it — though because both primitives are idempotent as a whole,
+retrying from the top is always safe either way.
 
 ## 7. Seam validation on paper (no code): JIRA and GitHub Issues
 
