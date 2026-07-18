@@ -714,3 +714,63 @@ def _check_reachability(
         io.err(f"uv tool update-shell failed:\n{result.output}")
     io.err(f'{bin_dir} is not on PATH; add it (e.g. export PATH="{bin_dir}:$PATH")')
     return False
+
+
+@dataclass(frozen=True, slots=True)
+class CliPruneOutcome:
+    """CLI prune half result: names whose uninstall completed (drop from the
+    receipt), names relinquished (foreign — drop without uninstall), and
+    per-target counters."""
+
+    uninstalled_names: set[str]
+    relinquished_names: set[str]
+    counters: dict[str, Counters]
+
+
+def prune_clis(
+    prior: Receipt,
+    *,
+    registry_names: frozenset[str],
+    retired: frozenset[str],
+    deploy: CliDeployPort,
+    io: IOPort,
+    dry_run: bool = False,
+    auto_yes: bool = False,
+) -> CliPruneOutcome:
+    """Retire prior CLI entries no longer in the registry (spec §7).
+
+    Uninstall authority is bounded by ``registry_names | retired`` — the
+    receipt's integrity digest is tamper-evidence, not authentication, so a
+    foreign name is warned about and relinquished, never uninstalled."""
+    uninstalled: set[str] = set()
+    relinquished: set[str] = set()
+    counters: dict[str, Counters] = {}
+    for entry in prior.clis:
+        if entry.name in registry_names:
+            continue
+        target = f"cli:{entry.name}"
+        counters.setdefault(target, Counters())
+        if entry.name not in retired:
+            io.warn(
+                f"receipt names CLI '{entry.name}' which this installer never shipped; "
+                "dropping the record without uninstalling"
+            )
+            relinquished.add(entry.name)
+            continue
+        if dry_run:
+            io.info(f"cli:{entry.name}: would uninstall (retired)")
+            continue
+        require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
+        if not auto_yes and not io.confirm(
+            f"Uninstall retired CLI '{entry.name}' ({entry.binary})?", default=False
+        ):
+            continue
+        result = deploy.tool_uninstall(entry.name)
+        if result.ok or "not installed" in result.output:
+            uninstalled.add(entry.name)
+            counters[target].pruned += 1
+        else:
+            io.err(f"cli:{entry.name}: uninstall failed\n{result.output}")
+    return CliPruneOutcome(
+        uninstalled_names=uninstalled, relinquished_names=relinquished, counters=counters
+    )
