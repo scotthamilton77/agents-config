@@ -681,4 +681,36 @@ def _check_reachability(
     auto_yes: bool,
     resolved_dirs: set[Path],
 ) -> bool:
-    return True  # completed in Task 9 (reachability invariant)
+    """PATH-reachability invariant (spec §6): a property of the bin dir,
+    evaluated once per dir per run; update-shell repair memoized. Returns
+    False only on a genuine deployment failure."""
+    bin_dir = deploy.bin_dir()
+    found = deploy.which(binary)
+    if found is not None:
+        if found.parent == bin_dir:
+            return True
+        shim = bin_dir / binary
+        io.err(
+            f"'{binary}' on PATH resolves to {found}, shadowing the deployed {shim}; "
+            "remove/rename the foreign binary or reorder PATH"
+        )
+        return False
+    if bin_dir in resolved_dirs:
+        return True
+    # Reachability is never evaluated under dry-run: deploy_clis gates this call
+    # with `if not dry_run and shim_present` (Task 6 loop), so dry_run is always
+    # False here — the literal below routes the no-TTY convention at this consent
+    # point (raises ConsentRequiredError iff non-interactive AND not --yes).
+    require_consent(io, dry_run=False, auto_yes=auto_yes)
+    accepted = auto_yes or io.confirm(
+        f"{bin_dir} is not on PATH — run `uv tool update-shell`?", default=False
+    )
+    if accepted:
+        result = deploy.update_shell()
+        if result.ok:
+            resolved_dirs.add(bin_dir)
+            io.info(f"PATH updated for new shells (restart or re-source to pick up {bin_dir})")
+            return True
+        io.err(f"uv tool update-shell failed:\n{result.output}")
+    io.err(f'{bin_dir} is not on PATH; add it (e.g. export PATH="{bin_dir}:$PATH")')
+    return False

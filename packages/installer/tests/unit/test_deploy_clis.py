@@ -407,3 +407,176 @@ def test_dry_run_previews_every_branch_without_subprocess(tmp_path: Path) -> Non
         assert not any(
             t[0] in ("tool_install", "smoke", "update_shell") for t in deploy.transcript
         ), expected
+
+
+def test_uv_version_guard_blocks_all_cli_work(tmp_path: Path) -> None:
+    """
+    Given uv older than MIN_UV_VERSION (or unparseable)
+    When deploy_clis runs
+    Then one actionable err fires, zero install/uninstall/update_shell
+    calls happen, and any_failed is True.
+
+    Pins spec §6 version guard / item 21.
+    """
+    for version in [(0, 9, 0), None]:
+        deploy = ScriptedCliDeploy(uv_version=version)
+        io = ScriptedIO()
+        outcome = deploy_clis(
+            (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+            io=io, dry_run=False, auto_yes=True,
+        )
+        assert outcome.any_failed
+        assert any(e.channel == "err" and "uv" in e.message for e in io.transcript)
+        assert not any(
+            t[0] in ("tool_install", "tool_uninstall", "update_shell")
+            for t in deploy.transcript
+        )
+
+
+def test_reachability_which_none_update_shell_consent(tmp_path: Path) -> None:
+    """
+    Given a deployed CLI whose binary which() cannot find
+    When the invariant runs with an accepting confirm and update_shell ok
+    Then the run resolves (not failed) with an info notice; decline instead
+    -> err + failure.
+
+    Pins spec §6 reachability / item 9. which_map deliberately empty (miss).
+    """
+    _pkg(tmp_path)
+    shim = tmp_path / "bin" / "work"
+
+    accept = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
+        update_shells=[CommandResult(ok=True, output="")],
+    )
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=Receipt(),
+        deploy=accept, io=ScriptedIO(confirms=[True]),
+        dry_run=False, auto_yes=False,
+    )
+    assert not outcome.any_failed
+
+    io = ScriptedIO(confirms=[False])
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=Receipt(),
+        deploy=ScriptedCliDeploy(
+            uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+            shims=[None, shim], installs=[_OK], smokes=[_OK],
+        ),
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.any_failed
+    assert any(e.channel == "err" and "PATH" in e.message for e in io.transcript)
+
+
+def test_reachability_shadow_is_hard_error(tmp_path: Path) -> None:
+    """
+    Given which() resolving OUTSIDE bin_dir (foreign shadow)
+    When the invariant runs
+    Then err names both paths and the run fails; update_shell is never
+    offered (it cannot fix PATH order).
+
+    Pins spec §6 shadowing / item 9.
+    """
+    _pkg(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    foreign = tmp_path / "other" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        which_map={"work": foreign},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
+    )
+    io = ScriptedIO()
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.any_failed
+    assert any(
+        e.channel == "err" and str(foreign) in e.message and str(shim) in e.message
+        for e in io.transcript
+    )
+    assert not any(t[0] == "update_shell" for t in deploy.transcript)
+
+
+def test_reachability_memoized_per_bin_dir(tmp_path: Path) -> None:
+    """
+    Given two CLIs sharing one bin_dir, PATH unconfigured
+    When deploy_clis runs with ONE accepting confirm
+    Then update_shell runs exactly once and the second CLI reuses the
+    memoized success (no second prompt, no failure).
+
+    Pins spec §6 memoization / item 20.
+    """
+    pkg2 = tmp_path / "packages" / "prgroom"
+    (pkg2 / "src").mkdir(parents=True)
+    (pkg2 / "pyproject.toml").write_bytes(b"[project]\n")
+    _pkg(tmp_path)
+    spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
+    shim1, shim2 = tmp_path / "bin" / "work", tmp_path / "bin" / "prgroom"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim1, None, shim2],
+        installs=[_OK, _OK], smokes=[_OK, _OK],
+        update_shells=[CommandResult(ok=True, output="")],
+    )
+    io = ScriptedIO(confirms=[True])
+    outcome = deploy_clis(
+        (_SPEC, spec2), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert not outcome.any_failed
+    assert sum(1 for t in deploy.transcript if t[0] == "update_shell") == 1
+    assert sum(1 for e in io.transcript if e.channel == "confirm") == 1
+
+
+def test_reachability_fires_on_steady_state_skip_run(tmp_path: Path) -> None:
+    """
+    Given a healthy verify/skip CLI whose bin dir is NOT on PATH
+    When deploy_clis runs and the update-shell offer is declined
+    Then the run FAILS — the invariant fires on SKIPPED_IDENTICAL runs,
+    not only after a deploy.
+
+    Pins spec §6 steady-state enforcement / item 9.
+    """
+    prior = _prior_with_current_digest(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        shims=[shim], smokes=[_OK],
+    )
+    io = ScriptedIO(confirms=[False])
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=prior, deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.counters["cli:workcli"].skipped == 1
+    assert outcome.any_failed
+    assert any(e.channel == "err" and "PATH" in e.message for e in io.transcript)
+
+
+def test_reachability_no_tty_without_yes_raises(tmp_path: Path) -> None:
+    """
+    Given a freshly deployed CLI whose bin dir is not on PATH, on a
+    non-interactive session without --yes (and without --dry-run)
+    When the reachability invariant reaches its update-shell consent point
+    Then ConsentRequiredError raises (the caller maps it to exit 1) — the
+    reachability consent point honors the same no-TTY convention as every
+    other consent point, never silently returning a failure.
+
+    Pins spec §6 no-TTY / item 12 (reachability side; symmetric with the
+    prune side's test_prune_no_tty_without_yes_raises).
+    """
+    _pkg(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim], installs=[_OK], smokes=[_OK],
+    )
+    with pytest.raises(ConsentRequiredError):
+        deploy_clis(
+            (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+            io=ScriptedIO(interactive=False), dry_run=False, auto_yes=False,
+        )
