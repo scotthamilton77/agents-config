@@ -254,6 +254,30 @@ def test_render_inlines_constellation_interaction_hooks():
     assert html.count("window.vizShared.buildScoreCard(") == 3
 
 
+def test_render_inlines_constellation_structural_hooks():
+    # Structural parity (prototype anatomy variant_B.js): dir super-nodes,
+    # satellites, dir-dir coupling edges, the pruning-affordance caption
+    # text, and the prototype's five legend entries — all JS/CSS source, so
+    # inlined regardless of scene content, same convention as every other
+    # stable hook.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    # Node-kind hooks (dir super-node vs. satellite/file).
+    assert 'data-kind", node.kind' in html
+    assert "viz-constellation-edge--tether" in html
+    # Pruning affordance (spec: "N unconnected directories hidden").
+    assert "unconnected directories hidden" in html
+    # The prototype's five legend entries.
+    assert "Size = load-bearing (in-degree)" in html
+    assert "Color = composite heat" in html
+    assert "Edge width = coupling strength" in html
+    assert "Ringed dot = changed in PR" in html
+    assert "Satellites = the PR's changed files" in html
+    # The dir hover tooltip (hover-only, never a drill — a dir has no
+    # story/diff to show).
+    assert "viz-constellation-dir-counts" in html
+
+
 def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
     # Fidelity F3 (drawer + content fidelity, spec §4.5): the drill drawer's
     # stage-shrink class, the shared per-axis meter row/mini-bar building

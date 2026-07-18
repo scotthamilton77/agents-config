@@ -4,14 +4,27 @@
 // toggle). Obeys the §4.2 view-module interface: render(container, scene,
 // state) → handle, with handle.destroy() and handle.reencode(state).
 //
-// Node set (spec §6.1 "PR files + context graph"): every PR-touched file
-// (attributes.in_pr) is always a node, even with zero edges of its own — an
-// isolated PR file still belongs on the graph; a context (non-PR) file is a
-// node only when scene.edges actually connects it to something, otherwise it
-// isn't part of "the graph" at all. `scene.files` is the *whole estate*
-// (assemble.py), so building the node set from PR files ∪ edge endpoints —
-// never from every scene.files entry — is what keeps this a small, legible
-// PR-shape subgraph instead of a second treemap.
+// Node model (prototype anatomy `variant_B.js`, structural parity): two
+// kinds of node, both derived client-side from the scene JSON (no Python
+// changes) —
+//   - dir super-nodes: every directory (gen_data.py's `dir_of`: up to 4 path
+//     segments, deepest level capped) over the *whole estate* (scene.files),
+//     with per-dir metrics the MAX over its member files' complexity/
+//     load_bearing/consequence, plus files/changed counts. A dir with too
+//     little going on (fewer than 2 files AND no changed files AND
+//     load_bearing < 0.05) never becomes a node at all (noise threshold); a
+//     surviving dir with no coupling edge and no tethered satellite is
+//     still dropped (connectivity prune) and counted toward the "N
+//     unconnected directories hidden" caption.
+//   - satellites: every in-PR (changed) file is always a fixed-size node,
+//     tethered by a dashed line to its containing dir node (walking up to 4
+//     path-segment ancestors, per `findContainingDir`, falling back to the
+//     synthetic "(root)" dir) — never gated by the connectivity prune above,
+//     since a satellite's own presence is what makes its dir "connected".
+// Dir-dir coupling edges are the scene's deduped file-level dependency edges
+// (this view never encodes import direction) rolled up to distinct
+// (dir, dir) pairs, excluding same-dir pairs, weighted by how many file
+// edges rolled into each pair.
 //
 // Layout (spec §4.2 "deterministic pre-settled layout … force simulations
 // run N ticks synchronously with a fixed seed"): d3-force (bundled as part
@@ -26,7 +39,7 @@
 // our controlled sequence rather than the library's own internal default —
 // explicit determinism, not a reliance on an undocumented library default.
 // Node order feeds d3-force's index-based initial phyllotaxis spiral, so the
-// node list is sorted by path before layout runs (spec test item 6: the same
+// node list is sorted by id before layout runs (spec test item 6: the same
 // scene always settles the same graph). `handle.reencode(state)` repaints
 // node fill colors only — it never re-creates the simulation or touches
 // node.x/node.y (spec §4.2 "no re-sim on slider drag"), and interaction
@@ -35,7 +48,10 @@
 //
 // Interaction parity (fidelity, prototype anatomy `variant_B.js`):
 //   - Hover score card: the same shared tooltip (views/_shared.js
-//     showTooltip/buildScoreCard) the treemap tile and ledger row use.
+//     showTooltip/buildScoreCard) the treemap tile and ledger row use, for
+//     file/satellite nodes; a dir node gets its own bespoke (hover-only —
+//     a dir has no story/diff to drill into) tooltip built from its rolled-up
+//     stats, via the same shared meter-row building block.
 //   - Zoom/pan: a `.viz-constellation-viewport` clipping window wraps the
 //     layout stage; d3.zoom drives its CSS transform (scaleExtent [0.3, 6]),
 //     never the layout itself — panning/zooming is purely a view transform,
@@ -51,18 +67,18 @@
 //     layoutGraph()) — the closest faithful analog available to the
 //     prototype's "un-pin + brief reheat", since this module deliberately
 //     has no persistent simulation to reheat.
-//   - Click-to-focus: an explicit `focusOnNode` zoom-to mechanism (min scale
-//     1.5, ~500ms), wired to node activation once dir nodes exist.
+//   - Click-to-focus: a dir node's activation animates center+zoom to it
+//     (min scale 1.5, ~500ms); a file/satellite node's activation opens the
+//     drill panel, unchanged from before dir nodes existed.
 //
 // Legend (spec §4.5 "legend completeness"): rendered *inside* this module's
 // own container, never into the shared `#viz-legend` app.js owns for
 // treemap/ledger — the view-module contract forbids styling/rendering
-// outside the fresh container a view was handed (spec §4.2), and this view's
-// encodings (heat fill, the PR-ring, the dependency edge line) differ from
-// treemap/ledger's, so a legend of its own is the only way to keep every
-// entry backed by a real referent.
+// outside the fresh container a view was handed (spec §4.2). The prototype's
+// five entries (size, color, edge width, ringed dot, satellites) are what is
+// actually rendered here — every entry has a real referent.
 //
-// Every repo-derived string (a file path) is bound via `textContent`/
+// Every repo-derived string (a file/dir path) is bound via `textContent`/
 // `title`/`aria-label` attribute, never `innerHTML`, matching the DOM-bind
 // invariant the other view modules hold.
 (function () {
@@ -74,8 +90,29 @@
   // Any fixed constant works; changing it changes the settled layout but
   // never removes its determinism (spec §4.2).
   var LAYOUT_SEED = 1337;
-  var NODE_RADIUS = 13; // px; approximates the CSS node mark's 1.7rem box for layout math only
   var DRAG_THRESHOLD = 4; // px; same click-vs-drag threshold as wireClickVsDragActivation
+
+  // ---- Node sizing (prototype anatomy `variant_B.js`): a dir's radius grows
+  // with its rolled-up load-bearing score; a satellite is always the same
+  // small fixed size (it is the tethered detail, never the focal point). ----
+  var DIR_RADIUS_BASE = 4;
+  var DIR_RADIUS_SCALE = 14;
+  var SATELLITE_RADIUS = 5;
+
+  // ---- Dir noise threshold (prototype anatomy: gen_data.py's dir_of +
+  // variant_B.js's dirNodes filter): a directory with too few files, no
+  // changes, and negligible load-bearing never becomes a node — it would be
+  // pure clutter. ----
+  var NOISE_MIN_FILES = 2;
+  var NOISE_MIN_CENTRALITY = 0.05;
+
+  // The synthetic root-group directory (files at repo root, no "/" in their
+  // path) — a NUL-prefixed sentinel key (a real git path can never contain a
+  // NUL byte) so it can never collide with an actual top-level directory
+  // that happens to be named "(root)" (same guard views/treemap.js's own
+  // ROOT_GROUP_PATH uses for its synthetic root node).
+  var ROOT_DIR_NAME = "(root)";
+  var ROOT_DIR_PATH = "\u0000(root)";
 
   // ---- Seeded PRNG (mulberry32): injected via `simulation.randomSource`
   // so the layout is a pure, reproducible function of the node/edge set,
@@ -97,49 +134,119 @@
     return parts[parts.length - 1];
   }
 
-  // ---- scene.files + scene.edges → { nodes, edges } for the layout. Always
-  // builds a graph: the "dependency graph unavailable" state is decided by the
-  // caller from render_config.unavailable_axes (the load-bearing axis
-  // fail-softed), NOT from an empty edge set. An available axis with zero
-  // cross-file edges still yields the PR-file node set (isolated nodes), the
-  // legitimately-empty rendering — same disambiguation file sonar makes. ----
-  function buildGraph(scene) {
-    var rawEdges = scene.edges || [];
+  function numberOr0(value) {
+    return typeof value === "number" ? value : 0;
+  }
 
-    var fileByPath = Object.create(null);
-    scene.files.forEach(function (file) {
-      fileByPath[file.path] = file;
-    });
+  // A dir path never surfaces its NUL sentinel to the DOM — this is the one
+  // place that translation happens, mirroring views/treemap.js's own
+  // displayPathFor for its synthetic root group.
+  function dirDisplayPath(path) {
+    return path === ROOT_DIR_PATH ? ROOT_DIR_NAME : path;
+  }
 
-    var nodeSet = Object.create(null);
-    var nodePaths = [];
-    function addNode(path) {
-      if (!nodeSet[path]) {
-        nodeSet[path] = true;
-        nodePaths.push(path);
+  // ---- dir_of (prototype anatomy: gen_data.py lines ~221-223): a file's
+  // containing directory, capped at 4 path segments deep — a file 6 levels
+  // deep still aggregates into its 4th-level ancestor, not a very-long,
+  // very-specific leaf directory. A root-level file (no "/" in its path)
+  // aggregates into the synthetic "(root)" dir. ----
+  function dirOf(path) {
+    var parts = path.split("/");
+    var segCount = Math.min(parts.length - 1, 4);
+    var dir = parts.slice(0, segCount).join("/");
+    return dir || ROOT_DIR_PATH;
+  }
+
+  // ---- findContainingDir (prototype anatomy: variant_B.js): a satellite's
+  // tether target. `dir_of(path)`'s own dir may have been dropped by the
+  // noise threshold, so this walks shorter path prefixes looking for the
+  // nearest *surviving* ancestor dir, falling back to the root dir (which
+  // may itself be absent, e.g. every file lives in some real directory). ----
+  function findContainingDir(path, dirNodeByPath) {
+    var parts = path.split("/");
+    for (var i = Math.min(parts.length - 1, 4); i >= 1; i--) {
+      var candidate = parts.slice(0, i).join("/");
+      if (dirNodeByPath[candidate]) {
+        return dirNodeByPath[candidate];
       }
     }
+    return dirNodeByPath[ROOT_DIR_PATH] || null;
+  }
 
-    // PR files are always nodes, even isolated ones (spec: "PR files +
-    // context graph" — a PR-touched file belongs on the graph regardless of
-    // whether this run's edge set happens to connect it to anything).
-    scene.files.forEach(function (file) {
-      if (file.attributes && file.attributes.in_pr) {
-        addNode(file.path);
+  // ---- Per-dir aggregation (prototype anatomy: gen_data.py lines ~225-233):
+  // MAX over member files' heat axes, plus file/changed counts — over the
+  // *whole estate* (scene.files), never just the PR files, so a dir's
+  // rolled-up context reflects everything living under it. ----
+  function computeDirStats(files) {
+    var stats = Object.create(null);
+    files.forEach(function (file) {
+      var dirPath = dirOf(file.path);
+      var attributes = file.attributes || {};
+      var entry = stats[dirPath];
+      if (!entry) {
+        entry = {
+          path: dirPath,
+          files: 0,
+          changed: 0,
+          complexity: 0,
+          load_bearing: 0,
+          consequence: 0
+        };
+        stats[dirPath] = entry;
       }
+      entry.files += 1;
+      if (attributes.in_pr) {
+        entry.changed += 1;
+      }
+      entry.complexity = Math.max(entry.complexity, numberOr0(attributes.complexity));
+      entry.load_bearing = Math.max(entry.load_bearing, numberOr0(attributes.load_bearing));
+      entry.consequence = Math.max(entry.consequence, numberOr0(attributes.consequence));
     });
+    return stats;
+  }
 
-    // Context files are nodes only via an edge (that's what makes them part
-    // of "the graph" rather than the whole estate); dedup by unordered pair
-    // so an A→B/B→A pair (or an exact repeat) draws one line, not two
-    // indistinguishable overlapping ones — this view never encodes import
-    // direction (same "either direction" stance file sonar takes for its
-    // blast-radius hops).
+  function isNoiseDir(stats) {
+    return (
+      stats.files < NOISE_MIN_FILES && stats.changed === 0 && stats.load_bearing < NOISE_MIN_CENTRALITY
+    );
+  }
+
+  function makeDirNode(stats) {
+    return {
+      id: "dir:" + stats.path,
+      kind: "dir",
+      path: stats.path,
+      stats: stats,
+      attributes: {
+        complexity: stats.complexity,
+        load_bearing: stats.load_bearing,
+        consequence: stats.consequence
+      },
+      r: DIR_RADIUS_BASE + DIR_RADIUS_SCALE * Math.sqrt(stats.load_bearing || 0)
+    };
+  }
+
+  function makeSatelliteNode(file, dirNode) {
+    return {
+      id: "file:" + file.path,
+      kind: "file",
+      path: file.path,
+      file: file,
+      attributes: file.attributes || {},
+      inPr: true,
+      r: SATELLITE_RADIUS,
+      dir: dirNode
+    };
+  }
+
+  // Deduped by unordered pair (this view never encodes import direction, the
+  // same "either direction" stance file sonar takes for its blast-radius
+  // hops) — an A→B/B→A pair (or an exact repeat) rolls up as one file edge,
+  // not two.
+  function buildDedupedFileEdges(rawEdges) {
     var seenPairs = Object.create(null);
     var edges = [];
     rawEdges.forEach(function (edge) {
-      addNode(edge.source);
-      addNode(edge.target);
       var key =
         edge.source < edge.target
           ? edge.source + "\0" + edge.target
@@ -150,30 +257,130 @@
       seenPairs[key] = true;
       edges.push({ source: edge.source, target: edge.target });
     });
+    return edges;
+  }
+
+  // ---- Dir-dir coupling edges (prototype anatomy: gen_data.py lines
+  // ~235-239): roll the deduped file-level edges up to distinct dir pairs,
+  // excluding same-dir pairs (an edge wholly inside one directory says
+  // nothing about coupling *between* directories), weighted by how many
+  // file edges rolled into each pair. Only pairs where BOTH dirs survived
+  // the noise threshold are considered — the connectivity prune (in
+  // buildGraph) runs as a second pass over this result. ----
+  function rollUpDirEdges(fileEdges, dirNodeByPath) {
+    var counts = Object.create(null);
+    var order = [];
+    fileEdges.forEach(function (edge) {
+      var a = dirOf(edge.source);
+      var b = dirOf(edge.target);
+      if (a === b) {
+        return;
+      }
+      if (!dirNodeByPath[a] || !dirNodeByPath[b]) {
+        return;
+      }
+      var lo = a < b ? a : b;
+      var hi = a < b ? b : a;
+      var key = lo + "\0" + hi;
+      if (!counts[key]) {
+        counts[key] = { source: lo, target: hi, n: 0 };
+        order.push(key);
+      }
+      counts[key].n += 1;
+    });
+    return order.map(function (key) {
+      var entry = counts[key];
+      return {
+        source: dirNodeByPath[entry.source].id,
+        target: dirNodeByPath[entry.target].id,
+        n: entry.n,
+        tether: false
+      };
+    });
+  }
+
+  // ---- scene.files + scene.edges → { nodes, edges, droppedDirCount } for
+  // the layout. Always builds a graph: the "dependency graph unavailable"
+  // state is decided by the caller from render_config.unavailable_axes (the
+  // load-bearing axis fail-softed), NOT from an empty edge set — dir
+  // coupling edges derive from that same dependency graph, so the whole
+  // structural view depends on it exactly as file-level edges did before. ----
+  function buildGraph(scene) {
+    var dirStats = computeDirStats(scene.files);
+    var dirPaths = Object.keys(dirStats).sort();
+
+    var allDirNodes = dirPaths
+      .filter(function (path) {
+        return !isNoiseDir(dirStats[path]);
+      })
+      .map(function (path) {
+        return makeDirNode(dirStats[path]);
+      });
+
+    var dirNodeByPath = Object.create(null);
+    allDirNodes.forEach(function (node) {
+      dirNodeByPath[node.path] = node;
+    });
+
+    var fileEdges = buildDedupedFileEdges(scene.edges || []);
+    var dirEdges = rollUpDirEdges(fileEdges, dirNodeByPath);
+
+    var satelliteNodes = scene.files
+      .filter(function (file) {
+        return Boolean(file.attributes && file.attributes.in_pr);
+      })
+      .map(function (file) {
+        return makeSatelliteNode(file, findContainingDir(file.path, dirNodeByPath));
+      })
+      .sort(function (a, b) {
+        return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+      });
+
+    // Connectivity prune (spec: unconnected dir nodes hidden): a dir that
+    // survived the noise threshold above still needs a real relationship to
+    // the rest of the graph — a coupling edge, or at least one tethered
+    // satellite — or it is dropped and counted toward the "N unconnected
+    // directories hidden" caption.
+    var connectedDirIds = Object.create(null);
+    dirEdges.forEach(function (edge) {
+      connectedDirIds[edge.source] = true;
+      connectedDirIds[edge.target] = true;
+    });
+    satelliteNodes.forEach(function (sat) {
+      if (sat.dir) {
+        connectedDirIds[sat.dir.id] = true;
+      }
+    });
+
+    var survivingDirNodes = allDirNodes.filter(function (node) {
+      return Boolean(connectedDirIds[node.id]);
+    });
+    var droppedDirCount = allDirNodes.length - survivingDirNodes.length;
+    var survivingIds = Object.create(null);
+    survivingDirNodes.forEach(function (node) {
+      survivingIds[node.id] = true;
+    });
+
+    var finalDirEdges = dirEdges.filter(function (edge) {
+      return survivingIds[edge.source] && survivingIds[edge.target];
+    });
+    var tetherLinks = satelliteNodes
+      .filter(function (sat) {
+        return sat.dir && survivingIds[sat.dir.id];
+      })
+      .map(function (sat) {
+        return { source: sat.id, target: sat.dir.id, tether: true };
+      });
 
     // Sorted so the node list — and therefore d3-force's index-based initial
     // phyllotaxis spiral — is a pure function of the node identities, never
     // of incidental scene.files/scene.edges iteration order.
-    var nodes = nodePaths
-      .slice()
-      .sort()
-      .map(function (path) {
-        // A context path absent from scene.files would be a scene data-
-        // integrity bug upstream (every edge endpoint should be a tracked
-        // estate path per assemble.py) — default to an empty-attribute file
-        // rather than crash, so the graph still renders the node's identity.
-        var file = fileByPath[path] || { path: path, checksum: "", attributes: {} };
-        var attributes = file.attributes || {};
-        return {
-          id: "file:" + path,
-          kind: "file",
-          path: path,
-          file: file,
-          inPr: Boolean(attributes.in_pr)
-        };
-      });
+    var nodes = survivingDirNodes.concat(satelliteNodes).sort(function (a, b) {
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    var edges = finalDirEdges.concat(tetherLinks);
 
-    return { nodes: nodes, edges: edges };
+    return { nodes: nodes, edges: edges, droppedDirCount: droppedDirCount };
   }
 
   // ---- Pre-settled force layout (spec §4.2): runs to completion
@@ -195,12 +402,26 @@
           .id(function (d) {
             return d.id;
           })
-          .distance(64)
-          .strength(0.5)
+          .distance(function (d) {
+            return d.tether ? 18 : 60;
+          })
+          .strength(function (d) {
+            return d.tether ? 0.8 : 0.25;
+          })
       )
-      .force("charge", d3.forceManyBody().strength(-160))
+      .force(
+        "charge",
+        d3.forceManyBody().strength(function (d) {
+          return d.kind === "file" ? -30 : -120;
+        })
+      )
       .force("center", d3.forceCenter(side / 2, side / 2))
-      .force("collide", d3.forceCollide(NODE_RADIUS + 8))
+      .force(
+        "collide",
+        d3.forceCollide(function (d) {
+          return d.r + 3;
+        })
+      )
       .alpha(1)
       .alphaDecay(1 - Math.pow(0.001, 1 / FIXED_TICKS));
 
@@ -212,8 +433,8 @@
     // barycenter toward the stage center but places no hard wall, so a
     // sparse graph can still settle a hair outside the box without this.
     nodes.forEach(function (node) {
-      node.x = Math.min(side - NODE_RADIUS, Math.max(NODE_RADIUS, node.x));
-      node.y = Math.min(side - NODE_RADIUS, Math.max(NODE_RADIUS, node.y));
+      node.x = Math.min(side - node.r, Math.max(node.r, node.x));
+      node.y = Math.min(side - node.r, Math.max(node.r, node.y));
     });
 
     return side;
@@ -244,15 +465,20 @@
     var entries = edges.map(function (edge) {
       // Post-layout, d3.forceLink has replaced these string endpoints with
       // node object references (standard d3-force behavior) — the fresh
-      // `{source, target}` copies buildGraph() made are what absorbed that
-      // mutation, never scene.edges itself, so sonar's later reads of
-      // scene.edges (string source/target) are untouched.
+      // edge objects buildGraph() made are what absorbed that mutation,
+      // never scene.edges itself.
       var line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("class", "viz-constellation-edge");
+      line.setAttribute(
+        "class",
+        "viz-constellation-edge" + (edge.tether ? " viz-constellation-edge--tether" : "")
+      );
       line.setAttribute("x1", String(edge.source.x));
       line.setAttribute("y1", String(edge.source.y));
       line.setAttribute("x2", String(edge.target.x));
       line.setAttribute("y2", String(edge.target.y));
+      // Coupling-edge width scales with rolled-up count (spec: "edge width =
+      // coupling strength"); a tether is always a thin fixed line.
+      line.style.strokeWidth = (edge.tether ? 1 : 1 + Math.log1p(edge.n || 1)) + "px";
       svg.appendChild(line);
       return { edge: edge, lineEl: line };
     });
@@ -294,7 +520,7 @@
 
   function applyEncoding(entries, heatScale, computeHeat) {
     entries.forEach(function (entry) {
-      var heat = computeHeat(entry.node.file.attributes || {});
+      var heat = computeHeat(entry.node.attributes);
       var color = heatScale(heat);
       entry.el.style.backgroundColor = color;
       entry.labelEl.style.color = labelColorFor(color);
@@ -306,12 +532,18 @@
   }
 
   function nodeAriaLabel(node, heat) {
-    return (
-      node.path +
-      (node.inPr ? " (changed in this PR)" : " (context file)") +
-      ", heat " +
-      heat.toFixed(2)
-    );
+    if (node.kind === "dir") {
+      return (
+        dirDisplayPath(node.path) +
+        " (directory, " +
+        node.stats.files +
+        " files, " +
+        node.stats.changed +
+        " changed), heat " +
+        heat.toFixed(2)
+      );
+    }
+    return node.path + " (changed in this PR), heat " + heat.toFixed(2);
   }
 
   function applyNodePosition(el, node) {
@@ -327,11 +559,13 @@
   function renderNodes(stage, nodes, handlers) {
     var entries = [];
     nodes.forEach(function (node) {
+      var displayPath = node.kind === "dir" ? dirDisplayPath(node.path) : node.path;
       var el = document.createElement("div");
       el.setAttribute("class", "viz-constellation-node");
-      el.setAttribute("data-path", node.path);
-      el.setAttribute("data-in-pr", node.inPr ? "true" : "false");
-      el.setAttribute("title", node.path);
+      el.setAttribute("data-kind", node.kind);
+      el.setAttribute("data-path", displayPath);
+      el.setAttribute("data-in-pr", node.kind === "file" ? "true" : "false");
+      el.setAttribute("title", displayPath);
       // Keyboard reachability + screen-reader semantics (a11y), same
       // contract as the treemap tile, ledger row, and sonar ring mark.
       // aria-label (with its heat figure) is applyEncoding's job, called
@@ -341,10 +575,12 @@
       el.setAttribute("role", "button");
       el.setAttribute("tabindex", "0");
       applyNodePosition(el, node);
+      el.style.width = 2 * node.r + "px";
+      el.style.height = 2 * node.r + "px";
 
       var label = document.createElement("span");
       label.setAttribute("class", "viz-constellation-node-label");
-      label.textContent = basename(node.path);
+      label.textContent = basename(displayPath);
       el.appendChild(label);
 
       window.vizShared.wireClickVsDragActivation(el, {
@@ -456,49 +692,114 @@
     return (!event.ctrlKey || event.type === "wheel") && !event.button;
   }
 
-  // ---- Legend (spec §4.5): every encoding this view renders, in its own
-  // container — heat fill, the PR-ring, and the dependency edge line. ----
+  // ---- Dir hover tooltip (prototype anatomy: variant_B.js's dir `mousemove`
+  // branch) — hover-only, never a drill: a dir has no story/diff to show, so
+  // fabricating a drill-panel record for it would be inventing content the
+  // scene never attached. Built from the same shared meter-row block the
+  // file score card uses (views/_shared.js), so a dir's bars mirror a file's
+  // exactly. ----
+  function buildDirTooltip(container, node, heatValue) {
+    var pathEl = document.createElement("div");
+    pathEl.setAttribute("class", "viz-tooltip-path");
+    pathEl.textContent = dirDisplayPath(node.path);
+    container.appendChild(pathEl);
+
+    var countsEl = document.createElement("div");
+    countsEl.setAttribute("class", "viz-constellation-dir-counts");
+    countsEl.textContent = node.stats.files + " files · " + node.stats.changed + " changed";
+    container.appendChild(countsEl);
+
+    window.vizShared.HEAT_AXES.forEach(function (axis) {
+      container.appendChild(window.vizShared.buildMeterRow(axis, axis, node.attributes[axis] || 0));
+    });
+    container.appendChild(window.vizShared.buildMeterRow("heat", "heat", heatValue));
+  }
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs).forEach(function (key) {
+      el.setAttribute(key, attrs[key]);
+    });
+    return el;
+  }
+
+  function buildSizeSwatch() {
+    var svg = svgEl("svg", { width: "22", height: "14" });
+    svg.appendChild(svgEl("circle", { cx: "5", cy: "7", r: "2.5", fill: "var(--viz-muted)" }));
+    svg.appendChild(svgEl("circle", { cx: "16", cy: "7", r: "5.5", fill: "var(--viz-muted)" }));
+    return svg;
+  }
+
+  function buildColorSwatch() {
+    var span = document.createElement("span");
+    span.setAttribute("class", "viz-constellation-legend-color");
+    return span;
+  }
+
+  function buildEdgeWidthSwatch() {
+    var svg = svgEl("svg", { width: "22", height: "14" });
+    svg.appendChild(
+      svgEl("line", { x1: "1", y1: "11", x2: "21", y2: "11", stroke: "var(--viz-muted)", "stroke-width": "1" })
+    );
+    svg.appendChild(
+      svgEl("line", { x1: "1", y1: "5", x2: "21", y2: "5", stroke: "var(--viz-muted)", "stroke-width": "3" })
+    );
+    return svg;
+  }
+
+  function buildSatelliteSwatch() {
+    var svg = svgEl("svg", { width: "22", height: "14" });
+    svg.appendChild(svgEl("circle", { cx: "5", cy: "7", r: "4", fill: "var(--viz-muted)" }));
+    svg.appendChild(
+      svgEl("line", {
+        x1: "9",
+        y1: "7",
+        x2: "17",
+        y2: "7",
+        stroke: "var(--viz-muted)",
+        "stroke-width": "1",
+        "stroke-dasharray": "2,2"
+      })
+    );
+    svg.appendChild(
+      svgEl("circle", {
+        cx: "19",
+        cy: "7",
+        r: "2.5",
+        fill: "var(--viz-heat-mid)",
+        stroke: "var(--viz-fg)",
+        "stroke-width": "1.5"
+      })
+    );
+    return svg;
+  }
+
+  function legendItem(swatchEl, labelText) {
+    var item = document.createElement("span");
+    item.setAttribute("class", "viz-constellation-legend-item");
+    item.appendChild(swatchEl);
+    var label = document.createElement("span");
+    label.textContent = labelText;
+    item.appendChild(label);
+    return item;
+  }
+
+  // ---- Legend (spec §4.5): the prototype's five entries — every encoding
+  // this view actually renders (size, color, edge width, the PR-ring, and
+  // the satellite tether), never an orphan entry. ----
   function buildLegend(container) {
     var legend = document.createElement("div");
     legend.setAttribute("class", "viz-constellation-legend");
 
-    var heatStops = [
-      { token: "heat-cold", label: "low attention" },
-      { token: "heat-mid", label: "medium attention" },
-      { token: "heat-hot", label: "high attention" }
-    ];
-    heatStops.forEach(function (stop) {
-      var item = document.createElement("span");
-      item.setAttribute("class", "viz-constellation-legend-item");
-      var swatch = document.createElement("span");
-      swatch.setAttribute("class", "viz-constellation-legend-swatch");
-      swatch.style.background = "var(--viz-" + stop.token + ")";
-      var label = document.createElement("span");
-      label.textContent = stop.label;
-      item.appendChild(swatch);
-      item.appendChild(label);
-      legend.appendChild(item);
-    });
+    legend.appendChild(legendItem(buildSizeSwatch(), "Size = load-bearing (in-degree)"));
+    legend.appendChild(legendItem(buildColorSwatch(), "Color = composite heat"));
+    legend.appendChild(legendItem(buildEdgeWidthSwatch(), "Edge width = coupling strength"));
 
-    var prItem = document.createElement("span");
-    prItem.setAttribute("class", "viz-constellation-legend-item");
-    var prRing = document.createElement("span");
-    prRing.setAttribute("class", "viz-constellation-legend-ring");
-    var prLabel = document.createElement("span");
-    prLabel.textContent = "file changed in this PR";
-    prItem.appendChild(prRing);
-    prItem.appendChild(prLabel);
-    legend.appendChild(prItem);
+    var ring = document.createElement("span");
+    ring.setAttribute("class", "viz-constellation-legend-ring");
+    legend.appendChild(legendItem(ring, "Ringed dot = changed in PR"));
 
-    var edgeItem = document.createElement("span");
-    edgeItem.setAttribute("class", "viz-constellation-legend-item");
-    var edgeLine = document.createElement("span");
-    edgeLine.setAttribute("class", "viz-constellation-legend-line");
-    var edgeLabel = document.createElement("span");
-    edgeLabel.textContent = "file dependency";
-    edgeItem.appendChild(edgeLine);
-    edgeItem.appendChild(edgeLabel);
-    legend.appendChild(edgeItem);
+    legend.appendChild(legendItem(buildSatelliteSwatch(), "Satellites = the PR's changed files"));
 
     container.appendChild(legend);
   }
@@ -621,14 +922,32 @@
       });
       viewport.appendChild(resetBtn);
 
+      // Pruning affordance (spec: "N unconnected directories hidden") — only
+      // present when the connectivity prune actually dropped something.
+      if (graph.droppedDirCount > 0) {
+        var hiddenCaption = document.createElement("div");
+        hiddenCaption.setAttribute("class", "viz-constellation-hidden-caption");
+        hiddenCaption.textContent = graph.droppedDirCount + " unconnected directories hidden";
+        viewport.appendChild(hiddenCaption);
+      }
+
+      // File/satellite click keeps the existing openDrill path unchanged; a
+      // dir click has no story/diff to drill into, so it only focuses.
       function onActivate(node) {
+        if (node.kind === "dir") {
+          focusOnNode(node);
+          return;
+        }
         current.openDrill({ path: node.path, orig: { file: node.file } });
       }
       function onHoverShow(evt, node) {
         window.vizShared.showTooltip(evt, function (el) {
-          window.vizShared.buildScoreCard(
-            el, node.path, node.file.attributes || {}, current.computeHeat(node.file.attributes || {})
-          );
+          var heat = current.computeHeat(node.attributes);
+          if (node.kind === "dir") {
+            buildDirTooltip(el, node, heat);
+          } else {
+            window.vizShared.buildScoreCard(el, node.path, node.attributes, heat);
+          }
         });
       }
       function onHoverMove(evt) {

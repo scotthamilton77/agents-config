@@ -578,7 +578,11 @@ body {
   word-break: break-all;
   margin-bottom: 0.25rem;
 }
-.viz-tooltip-churn {
+/* Also the dir hover tooltip's files/changed counts line
+   (views/constellation.js's buildDirTooltip) — same secondary-line
+   treatment as this file score card's churn line. */
+.viz-tooltip-churn,
+.viz-constellation-dir-counts {
   margin-top: 0.3rem;
   color: var(--viz-secondary);
   font-size: 11px;
@@ -815,16 +819,21 @@ body {
 }
 .viz-constellation-edge {
   stroke: var(--viz-border-strong);
-  stroke-width: 1.25;
+  opacity: 0.65;
 }
+.viz-constellation-edge--tether {
+  stroke-dasharray: 3, 3;
+  opacity: 0.75;
+}
+/* Node width/height/left/top are per-node (a dir's radius scales with its
+   load-bearing score; a satellite is always small) — set inline by
+   views/constellation.js, never by this fixed rule. */
 .viz-constellation-node {
   position: absolute;
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
   border-radius: 50%;
   border: 1px solid var(--viz-border-strong);
   background: var(--viz-surface);
@@ -871,13 +880,6 @@ body {
   align-items: center;
   gap: 0.35rem;
 }
-.viz-constellation-legend-swatch {
-  display: inline-block;
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
-  border: 1px solid var(--viz-border-strong);
-}
 .viz-constellation-legend-ring {
   display: inline-block;
   width: 0.85rem;
@@ -886,11 +888,27 @@ body {
   border: 3px solid var(--viz-fg);
   background: transparent;
 }
-.viz-constellation-legend-line {
+/* Color swatch (spec: "Color = composite heat") — the same ramp anchors
+   heatScale itself resolves, so the legend never drifts from what is
+   actually rendered. */
+.viz-constellation-legend-color {
   display: inline-block;
-  width: 1rem;
-  height: 0;
-  border-top: 1.25px solid var(--viz-border-strong);
+  width: 1.25rem;
+  height: 0.6rem;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--viz-heat-cold), var(--viz-heat-mid), var(--viz-heat-hot));
+}
+
+/* ---- Pruning affordance (spec: unconnected dir nodes hidden) — bottom-left
+   caption, present only when the connectivity prune actually dropped a
+   dir. ---- */
+.viz-constellation-hidden-caption {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  z-index: 2;
+  font-size: 11px;
+  color: var(--viz-muted);
 }
 
 #viz-footer {
