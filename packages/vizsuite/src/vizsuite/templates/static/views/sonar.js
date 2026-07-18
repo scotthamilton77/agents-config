@@ -110,6 +110,20 @@
     container.appendChild(message);
   }
 
+  // ---- Empty-neighborhood state (round-2 fix): a center with real
+  // dependency-graph data but literally zero edges of its own previously
+  // rendered as a lone, unlabeled center dot with no rings — indistinguishable
+  // from a rendering glitch. An explicit message replaces it. Distinct from
+  // renderUnavailable (the graph itself was never built). ----
+  function renderEmptyNeighborhood(container, centerPath) {
+    var message = document.createElement("div");
+    message.id = "viz-sonar-empty";
+    message.setAttribute("class", "viz-sonar-empty");
+    message.textContent =
+      "No known dependents or dependencies in the graph for " + centerPath + ".";
+    container.appendChild(message);
+  }
+
   function renderRings(container, groups, centerPath, onRecenter) {
     var stage = document.createElement("div");
     stage.id = "viz-sonar-rings";
@@ -208,6 +222,10 @@
           return;
         }
         var groups = groupByHop(computeHops(adjacency, path));
+        if (groups.length === 0) {
+          renderEmptyNeighborhood(inner, path);
+          return;
+        }
         renderRings(inner, groups, path, mount);
       }
 

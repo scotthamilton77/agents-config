@@ -91,6 +91,29 @@
   // never removes its determinism (spec §4.2).
   var LAYOUT_SEED = 1337;
   var DRAG_THRESHOLD = 4; // px; same click-vs-drag threshold as wireClickVsDragActivation
+
+  // ---- Layout density (round-2 fix): caps how far apart two nodes still
+  // push each other, and a weak per-node pull toward the box center — both
+  // consumed by layoutGraph below. Tuning constants, not determinism knobs:
+  // the seed and tick count are untouched, so the same node/edge set still
+  // settles the same way every time. ----
+  var CHARGE_DISTANCE_MAX = 260;
+  var CENTER_FORCE_STRENGTH = 0.045;
+
+  // ---- Drag-time localized reheat (round-2 fix: drag re-orients neighbors,
+  // prototype anatomy variant_B.js's alphaTarget(0.05) drag hold): a low
+  // starting alpha, decaying fast enough to settle well under ~1s after
+  // drop, applied only to the dragged node's own 1-hop neighborhood
+  // sub-simulation (see createLocalReheat below) — every other node is
+  // never added to that sub-simulation, so the global deterministic layout
+  // is never disturbed. ----
+  var REHEAT_ALPHA = 0.3;
+  var REHEAT_ALPHA_DECAY = 0.1;
+
+  // ---- Reset view transition (round-2 fix): shared by the zoom-transform
+  // transition and the node-position CSS transition (.viz-constellation-
+  // resetting, scene.css) so both animate over the same window. ----
+  var RESET_TRANSITION_MS = 400;
   // Double-click un-pin window (ms): a node click's activation (dir focus /
   // file drill) is deferred by this window and cancelled when the un-pin
   // dblclick lands, so the un-pin gesture never also opens the drill (whose
@@ -158,13 +181,20 @@
   }
 
   // ---- dir_of (prototype anatomy: gen_data.py lines ~221-223): a file's
-  // containing directory, capped at 4 path segments deep — a file 6 levels
-  // deep still aggregates into its 4th-level ancestor, not a very-long,
-  // very-specific leaf directory. A root-level file (no "/" in its path)
-  // aggregates into the synthetic "(root)" dir. ----
+  // containing directory, capped at DIR_DEPTH_CAP path segments deep — a
+  // file 6 levels deep still aggregates into its DIR_DEPTH_CAP-th-level
+  // ancestor, not a very-long, very-specific leaf directory. A root-level
+  // file (no "/" in its path) aggregates into the synthetic "(root)" dir.
+  // The fixed cap is an interim heuristic (round-2 fix: raised 4→5 so
+  // packages/<pkg>/src/<pkg>/<subpkg>/* no longer folds into one blob) — an
+  // adaptive per-repo depth is a separate design, not built here.
+  // `findContainingDir` below must walk the identical cap, so both share
+  // this one constant. ----
+  var DIR_DEPTH_CAP = 5;
+
   function dirOf(path) {
     var parts = path.split("/");
-    var segCount = Math.min(parts.length - 1, 4);
+    var segCount = Math.min(parts.length - 1, DIR_DEPTH_CAP);
     var dir = parts.slice(0, segCount).join("/");
     return dir || ROOT_DIR_PATH;
   }
@@ -176,7 +206,7 @@
   // may itself be absent, e.g. every file lives in some real directory). ----
   function findContainingDir(path, dirNodeByPath) {
     var parts = path.split("/");
-    for (var i = Math.min(parts.length - 1, 4); i >= 1; i--) {
+    for (var i = Math.min(parts.length - 1, DIR_DEPTH_CAP); i >= 1; i--) {
       var candidate = parts.slice(0, i).join("/");
       if (dirNodeByPath[candidate]) {
         return dirNodeByPath[candidate];
@@ -401,7 +431,11 @@
   // ---- Pre-settled force layout (spec §4.2): runs to completion
   // synchronously, before this module ever paints a node. ----
   function layoutGraph(nodes, edges) {
-    var side = Math.max(320, Math.round(Math.sqrt(nodes.length) * 90) + 140);
+    // Tightened from an earlier (sqrt(n) * 90 + 140) box (round-2 fix:
+    // layout density) — a smaller box, the charge distanceMax cap, and the
+    // weak x/y centering force below all pull the settled graph in off the
+    // corners, instead of leaving it to spread out with vast whitespace.
+    var side = Math.max(280, Math.round(Math.sqrt(nodes.length) * 70) + 90);
 
     var simulation = d3
       .forceSimulation(nodes)
@@ -426,11 +460,25 @@
       )
       .force(
         "charge",
-        d3.forceManyBody().strength(function (d) {
-          return d.kind === "file" ? -30 : -120;
-        })
+        d3
+          .forceManyBody()
+          .strength(function (d) {
+            return d.kind === "file" ? -24 : -100;
+          })
+          // Caps how far apart two nodes still push each other (round-2 fix:
+          // layout density) — without it, distant pairs keep accumulating
+          // repulsion and drift the graph's outer nodes toward the box
+          // corners.
+          .distanceMax(CHARGE_DISTANCE_MAX)
       )
       .force("center", d3.forceCenter(side / 2, side / 2))
+      // A weak per-node pull toward the box center (round-2 fix: layout
+      // density) — forceCenter above only recenters the graph's
+      // *barycenter*, it applies no restoring pull on any individual
+      // outlier, which is why charge + long weak links alone were settling
+      // nodes out toward the edges.
+      .force("x", d3.forceX(side / 2).strength(CENTER_FORCE_STRENGTH))
+      .force("y", d3.forceY(side / 2).strength(CENTER_FORCE_STRENGTH))
       .force(
         "collide",
         d3.forceCollide(function (d) {
@@ -619,6 +667,63 @@
     return (dirNode.stats.load_bearing || 0) + (dirNode.stats.changed > 0 ? 1 : 0);
   }
 
+  // ---- Label disambiguation (round-2 fix): the culled label set above
+  // often contains several nodes whose *leaf* path segment collides (e.g.
+  // four dirs all named "unit") — a leaf-only label is ambiguous for any of
+  // them. Grouped by leaf, a unique leaf stays leaf-only; a colliding group
+  // extends every member's label by one more trailing path segment at a
+  // time until the group's own labels are mutually unique (or every member
+  // has been extended all the way to its full path, whichever comes
+  // first). Groups never interact with each other here — two different
+  // leaves can never collide after extension, since the leaf itself is the
+  // last segment of every extended label. ----
+  function computeDisambiguatedLabels(labeledNodes) {
+    var groupsByLeaf = Object.create(null);
+    labeledNodes.forEach(function (node) {
+      var displayPath = node.kind === "dir" ? dirDisplayPath(node.path) : node.path;
+      var leaf = basename(displayPath);
+      (groupsByLeaf[leaf] || (groupsByLeaf[leaf] = [])).push({
+        id: node.id,
+        segments: displayPath.split("/")
+      });
+    });
+
+    var labelById = Object.create(null);
+    Object.keys(groupsByLeaf).forEach(function (leaf) {
+      var members = groupsByLeaf[leaf];
+      if (members.length === 1) {
+        labelById[members[0].id] = leaf;
+        return;
+      }
+      var depth = 1;
+      var labelsThisPass;
+      for (;;) {
+        depth += 1;
+        var seen = Object.create(null);
+        var collided = false;
+        labelsThisPass = Object.create(null);
+        members.forEach(function (member) {
+          var suffix = member.segments.slice(Math.max(0, member.segments.length - depth)).join("/");
+          labelsThisPass[member.id] = suffix;
+          if (seen[suffix]) {
+            collided = true;
+          }
+          seen[suffix] = true;
+        });
+        var exhausted = members.every(function (member) {
+          return depth >= member.segments.length;
+        });
+        if (!collided || exhausted) {
+          break;
+        }
+      }
+      members.forEach(function (member) {
+        labelById[member.id] = labelsThisPass[member.id];
+      });
+    });
+    return labelById;
+  }
+
   // ---- Node DOM + click-vs-drag/hover wiring (spec §4.2's activation
   // scaffold, the same one the treemap tile and ledger row use). `handlers`
   // is `{ onActivate(node), onHoverShow(evt, node), onHoverMove(evt),
@@ -626,7 +731,7 @@
   // drill/focus/tooltip wiring specifics. A node outside `labeledIds` gets no
   // label element at all (not merely a hidden one) — still fully
   // identifiable via its `title`/aria-label and the hover card. ----
-  function renderNodes(stage, nodes, labeledIds, handlers, activationGroup) {
+  function renderNodes(stage, nodes, labeledIds, labelTextById, handlers, activationGroup) {
     var entries = [];
     nodes.forEach(function (node) {
       var displayPath = node.kind === "dir" ? dirDisplayPath(node.path) : node.path;
@@ -659,7 +764,11 @@
         label = document.createElement("span");
         label.setAttribute("class", "viz-constellation-node-label");
         label.setAttribute("aria-hidden", "true");
-        label.textContent = basename(displayPath);
+        // Disambiguated (round-2 fix): a unique leaf renders leaf-only; a
+        // colliding leaf (e.g. four dirs all named "unit") renders extended
+        // with parent segments until it reads unambiguously — see
+        // computeDisambiguatedLabels.
+        label.textContent = labelTextById[node.id] || basename(displayPath);
         applyLabelPosition(label, node);
         stage.appendChild(label);
       }
@@ -700,6 +809,128 @@
     return entries;
   }
 
+  // ---- Localized drag reheat (round-2 fix: drag re-orients neighbors,
+  // prototype anatomy variant_B.js's live-simulation drag hold). Builds an
+  // undirected id → [neighbor node] map from the resolved edge list (post-
+  // layoutGraph, `edge.source`/`edge.target` are node object references, not
+  // ids — see renderEdges' own comment on that mutation), so a dragged
+  // node's 1-hop neighborhood (dir-dir coupling *and* satellite tethers,
+  // whichever the dragged node itself participates in) is a plain lookup. ----
+  function buildEdgeAdjacency(edges) {
+    var adjacency = Object.create(null);
+    function link(a, b) {
+      (adjacency[a.id] || (adjacency[a.id] = [])).push(b);
+    }
+    edges.forEach(function (edge) {
+      link(edge.source, edge.target);
+      link(edge.target, edge.source);
+    });
+    return adjacency;
+  }
+
+  // ---- createLocalReheat (round-2 fix): one view-scoped controller, shared
+  // by every node's wireDrag, so starting a new drag always tears down any
+  // still-settling sub-simulation from a previous drag rather than letting
+  // two fight over shared neighbor nodes. The sub-simulation's node set is
+  // exactly [draggedNode].concat(its 1-hop neighbors) — every node outside
+  // that neighborhood is simply never handed to `d3.forceSimulation`, so it
+  // cannot move; the dragged node itself is `fx`/`fy`-pinned to the pointer
+  // so only its neighbors visibly respond, mirroring the prototype's own
+  // drag-time reheat under this module's one-shot (no persistent
+  // simulation) layout contract. ----
+  function createLocalReheat(edges, entriesById, incidentByNodeId) {
+    var adjacency = buildEdgeAdjacency(edges);
+    var activeSim = null;
+
+    function stop() {
+      if (activeSim) {
+        activeSim.stop();
+        activeSim = null;
+      }
+    }
+
+    function start(draggedNode) {
+      stop();
+      var neighbors = adjacency[draggedNode.id] || [];
+      if (neighbors.length === 0) {
+        return;
+      }
+      var subNodes = [draggedNode].concat(neighbors);
+      var subIds = Object.create(null);
+      subNodes.forEach(function (n) {
+        subIds[n.id] = true;
+      });
+      var subEdges = edges.filter(function (edge) {
+        return subIds[edge.source.id] && subIds[edge.target.id];
+      });
+
+      draggedNode.fx = draggedNode.x;
+      draggedNode.fy = draggedNode.y;
+
+      activeSim = d3
+        .forceSimulation(subNodes)
+        .alpha(REHEAT_ALPHA)
+        .alphaDecay(REHEAT_ALPHA_DECAY)
+        .force(
+          "link",
+          d3
+            .forceLink(subEdges)
+            .distance(function (d) {
+              return d.tether ? 18 : 60;
+            })
+            .strength(function (d) {
+              return d.tether ? 0.8 : 0.25;
+            })
+        )
+        .force(
+          "charge",
+          d3.forceManyBody().strength(function (d) {
+            return d.kind === "file" ? -30 : -120;
+          })
+        )
+        .force(
+          "collide",
+          d3.forceCollide(function (d) {
+            return d.r + 3;
+          })
+        )
+        .on("tick", function () {
+          subNodes.forEach(function (n) {
+            var subEntry = entriesById[n.id];
+            if (!subEntry) {
+              return;
+            }
+            applyNodePosition(subEntry.el, n);
+            if (subEntry.labelEl) {
+              applyLabelPosition(subEntry.labelEl, n);
+            }
+            (incidentByNodeId[n.id] || []).forEach(function (incident) {
+              updateEdgeEndpoint(incident.lineEl, incident.role, n);
+            });
+          });
+        })
+        .on("end", function () {
+          draggedNode.fx = null;
+          draggedNode.fy = null;
+          activeSim = null;
+        });
+    }
+
+    // Called on every drag-move so a long-held drag keeps the neighborhood
+    // warm instead of cooling to alphaMin mid-gesture (the sub-simulation's
+    // own timer ticks independently of pointer events, but only while its
+    // alpha stays above alphaMin).
+    function touch(draggedNode) {
+      draggedNode.fx = draggedNode.x;
+      draggedNode.fy = draggedNode.y;
+      if (activeSim) {
+        activeSim.alpha(Math.max(activeSim.alpha(), REHEAT_ALPHA));
+      }
+    }
+
+    return { start: start, touch: touch, stop: stop };
+  }
+
   // ---- Drag-to-reposition + pin-on-drop (spec: drag must coexist with, not
   // replace, wireClickVsDragActivation's own click-vs-drag distinguishing —
   // these are separate listeners on the same element, so both run off the
@@ -707,7 +938,7 @@
   // reads the *live* zoom scale so a drag delta (in screen px) converts back
   // to the node's own untransformed coordinate space — otherwise a dragged
   // node would drift away from the cursor at any zoom level but 1. ----
-  function wireDrag(entry, incidentLines, getScale) {
+  function wireDrag(entry, incidentLines, getScale, localReheat) {
     var node = entry.node;
     var el = entry.el;
     var startX = 0;
@@ -759,6 +990,11 @@
       var dy = evt.clientY - startY;
       if (!dragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
         dragging = true;
+        // Drag start (prototype anatomy: d3.drag's own 'start' event) —
+        // reheat the dragged node's 1-hop neighborhood so the drag visibly
+        // re-orients its links, without disturbing the rest of the
+        // deterministic layout.
+        localReheat.start(node);
       }
       if (!dragging) {
         return;
@@ -768,6 +1004,7 @@
       node.y += dy / scale;
       startX = evt.clientX;
       startY = evt.clientY;
+      localReheat.touch(node);
       reposition();
     });
     function endDrag(evt) {
@@ -779,6 +1016,10 @@
       active = false;
       dragging = false;
       activePointerId = null;
+      // The dragged node stays fx/fy-pinned at the drop point (existing
+      // "stays pinned where dropped" behavior) while its localized
+      // sub-simulation keeps settling on its own timer for up to ~1s — see
+      // createLocalReheat's "end" handler for the fx/fy release.
     }
     el.addEventListener("pointerup", endDrag);
     el.addEventListener("pointercancel", endDrag);
@@ -791,6 +1032,9 @@
     // live-simulation reheat-on-unpin available under this contract.
     el.addEventListener("dblclick", function (evt) {
       evt.stopPropagation();
+      localReheat.stop();
+      node.fx = null;
+      node.fy = null;
       node.x = node.origX;
       node.y = node.origY;
       reposition();
@@ -1033,11 +1277,23 @@
 
       // Centered baseline for the current viewport size — recomputed on resize
       // (below) because the drill drawer narrows the viewport after mount.
+      // Round-2 fix (layout density): baseline now also scales the layout
+      // box to fit the viewport (`fitScale`) instead of always showing it at
+      // 1:1 — a graph whose settled box is larger than the viewport starts
+      // zoomed out to fit rather than requiring a manual zoom-out, and a
+      // small graph's box is scaled up to fill the viewport rather than
+      // sitting tiny in the middle. Clamped to the zoom behavior's own
+      // scaleExtent so baseline never starts outside the user's zoom range.
       function computeBaseTransform() {
         var rect = viewport.getBoundingClientRect();
         var width = rect.width || viewport.clientWidth || side;
         var height = rect.height || viewport.clientHeight || side;
-        return d3.zoomIdentity.translate((width - side) / 2, (height - side) / 2);
+        var fitScale = Math.min(width / side, height / side);
+        var scale = Math.max(0.3, Math.min(6, fitScale));
+        return d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(scale)
+          .translate(-side / 2, -side / 2);
       }
       var baseTransform = computeBaseTransform();
 
@@ -1084,14 +1340,50 @@
         d3.select(viewport).transition().duration(500).call(zoomBehavior.transform, next);
       }
 
+      // ---- Reset view (round-2 fix): restores every displaced/pinned node
+      // to its originally-settled position (origX/origY, captured right
+      // after layoutGraph()) and stops any in-flight localized drag reheat,
+      // in addition to the zoom-transform restore this control already did
+      // — after Reset, the view is pixel-identical to first render.
+      // `resetView` is a hoisted function declaration, so this handler can
+      // reference it even though it (and the `entries`/`edgeEntries`/
+      // `localReheat` it closes over) aren't assigned until further down
+      // this render() call — by the time a user can actually click the
+      // button, render() has long since finished executing. ----
+      function resetView() {
+        localReheat.stop();
+        visual.classList.add("viz-constellation-resetting");
+        graph.nodes.forEach(function (node) {
+          node.fx = null;
+          node.fy = null;
+          node.x = node.origX;
+          node.y = node.origY;
+        });
+        entries.forEach(function (entry) {
+          applyNodePosition(entry.el, entry.node);
+          if (entry.labelEl) {
+            applyLabelPosition(entry.labelEl, entry.node);
+          }
+        });
+        edgeEntries.forEach(function (entry) {
+          updateEdgeEndpoint(entry.lineEl, "source", entry.edge.source);
+          updateEdgeEndpoint(entry.lineEl, "target", entry.edge.target);
+        });
+        window.setTimeout(function () {
+          visual.classList.remove("viz-constellation-resetting");
+        }, RESET_TRANSITION_MS);
+        d3.select(viewport)
+          .transition()
+          .duration(RESET_TRANSITION_MS)
+          .call(zoomBehavior.transform, baseTransform);
+      }
+
       var resetBtn = document.createElement("button");
       resetBtn.id = "viz-constellation-reset";
       resetBtn.type = "button";
       resetBtn.setAttribute("class", "viz-btn viz-constellation-reset");
       resetBtn.textContent = "Reset view";
-      resetBtn.addEventListener("click", function () {
-        d3.select(viewport).transition().duration(400).call(zoomBehavior.transform, baseTransform);
-      });
+      resetBtn.addEventListener("click", resetView);
       viewport.appendChild(resetBtn);
 
       // Pruning affordance (spec: "N unconnected directories hidden") — only
@@ -1130,10 +1422,15 @@
       }
 
       var labeledIds = computeLabeledIds(graph.nodes);
+      var labeledNodes = graph.nodes.filter(function (node) {
+        return Boolean(labeledIds[node.id]);
+      });
+      var labelTextById = computeDisambiguatedLabels(labeledNodes);
       var entries = renderNodes(
         visual,
         graph.nodes,
         labeledIds,
+        labelTextById,
         {
           onActivate: onActivate,
           onHoverShow: onHoverShow,
@@ -1142,10 +1439,23 @@
         },
         activationGroup
       );
+      var entriesById = Object.create(null);
       entries.forEach(function (entry) {
-        wireDrag(entry, incidentByNodeId[entry.node.id] || [], function () {
-          return zoomTransform.k;
-        });
+        entriesById[entry.node.id] = entry;
+      });
+      // One view-scoped localized-reheat controller (round-2 fix: drag
+      // re-orients neighbors), shared by every node's wireDrag — see
+      // createLocalReheat above.
+      var localReheat = createLocalReheat(graph.edges, entriesById, incidentByNodeId);
+      entries.forEach(function (entry) {
+        wireDrag(
+          entry,
+          incidentByNodeId[entry.node.id] || [],
+          function () {
+            return zoomTransform.k;
+          },
+          localReheat
+        );
       });
       applyEncoding(entries, heatScale, current.computeHeat);
 
@@ -1155,6 +1465,9 @@
           if (resizeObserver) {
             resizeObserver.disconnect();
           }
+          // Stop any still-settling localized drag reheat so its timer never
+          // fires into a torn-down view.
+          localReheat.stop();
           // Flush every node's still-pending deferred activation so no timer
           // fires a focus/drill into a torn-down view.
           activationGroup.cancelAll();

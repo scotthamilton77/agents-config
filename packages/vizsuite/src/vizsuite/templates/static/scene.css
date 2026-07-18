@@ -249,6 +249,12 @@ body {
 
 /* ---- Estate treemap (spec §6.1). ---- */
 #viz-root {
+  /* Positioning context for the blast-radius overlay (round-2 fix, scene.css
+     .viz-blast-overlay below) — an `inset: 0` absolute overlay covers
+     exactly this box, so it already excludes the drawer (which docks
+     outside #viz-root via its own `position: fixed`) without any extra
+     width math. */
+  position: relative;
   margin: 0 0 1rem;
   transition: margin-right 0.18s ease;
 }
@@ -607,7 +613,40 @@ body {
 .viz-drill-sonar-mount[hidden] {
   display: none;
 }
+/* ---- Blast-radius overlay (round-2 fix, app.js's appendSonarAffordance):
+   the toggle opens the sonar rendering as a full-canvas overlay above the
+   main scene area rather than squeezed inside the ~370px drawer — real edge
+   density needs the room. Absolutely positioned over #viz-root (position:
+   relative, above), which already excludes the drawer sitting beside it. ---- */
+.viz-blast-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  background: var(--viz-overlay-bg);
+  border: 1px solid var(--viz-border-strong);
+  border-radius: 6px;
+}
+.viz-blast-overlay-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+}
 .viz-sonar-unavailable {
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--viz-border-strong);
+  border-radius: 4px;
+  color: var(--viz-secondary);
+  font-size: 12px;
+}
+/* Empty-neighborhood state (round-2 fix): a center file with real
+   dependency-graph data but zero edges of its own — distinct from
+   .viz-sonar-unavailable (the graph itself was never built), same visual
+   treatment since both are "nothing to draw here" states. */
+.viz-sonar-empty {
   padding: 0.5rem 0.6rem;
   border: 1px dashed var(--viz-border-strong);
   border-radius: 4px;
@@ -881,6 +920,19 @@ body {
   outline: 2px solid var(--viz-fg);
   outline-offset: 1px;
   z-index: 1;
+}
+
+/* ---- Reset view transition (round-2 fix): applied only for the duration of
+   a Reset click (views/constellation.js toggles this class, then removes it
+   after RESET_TRANSITION_MS) — outside a reset, node/edge positions are set
+   directly with no transition, so drag and the drag-reheat sub-simulation
+   stay perfectly responsive. ---- */
+.viz-constellation-stage.viz-constellation-resetting .viz-constellation-node,
+.viz-constellation-stage.viz-constellation-resetting .viz-constellation-node-label {
+  transition: left 0.4s ease, top 0.4s ease;
+}
+.viz-constellation-stage.viz-constellation-resetting .viz-constellation-edge {
+  transition: x1 0.4s ease, y1 0.4s ease, x2 0.4s ease, y2 0.4s ease;
 }
 
 /* ---- Constellation legend (spec §4.5 legend completeness): rendered

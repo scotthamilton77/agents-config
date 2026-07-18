@@ -335,16 +335,19 @@
   }
 
   // ---- Sonar affordance (spec §6.1: file sonar as a drill, not a top-level
-  // view) — a toggle button + mount appended to the drill panel; wired here
-  // rather than in views/sonar.js because it needs the panel's lifecycle
-  // (destroyed and rebuilt fresh on every openDrill call, spec §4.2). The
-  // dependency-graph-unavailable state (the load-bearing axis fail-softed,
-  // per render_config.unavailable_axes) is handled by `window.vizSonar`
-  // itself, which renders the "unavailable" state in place of rings — the
-  // affordance is always present and always safe to open (an available axis
-  // with a legitimately empty edge set renders center-only rings, not the
-  // unavailable state).
-  function appendSonarAffordance(panelEl, scene, fileNode, drillState) {
+  // view) — a toggle button in the drill panel opens the sonar rendering as
+  // a full-canvas overlay (round-2 fix) over `rootEl` (`#viz-root`, the main
+  // scene area) rather than squeezed inside the ~370px drawer — real edge
+  // density needs the room the drawer can't give it. The overlay is its own
+  // fresh container per open (spec §4.2), never a child of the drawer, so it
+  // survives the drawer's own DOM wipe on a later openDrill call — see the
+  // explicit teardown in makeOpenDrill below. The dependency-graph-
+  // unavailable state (the load-bearing axis fail-softed, per
+  // render_config.unavailable_axes) is handled by `window.vizSonar` itself,
+  // which renders the "unavailable" state (or, for a file with zero edges of
+  // its own, an explicit empty-neighborhood state) in place of rings — the
+  // affordance is always present and always safe to open.
+  function appendSonarAffordance(panelEl, rootEl, scene, fileNode, drillState) {
     var toggle = document.createElement("button");
     toggle.id = "viz-drill-sonar-toggle";
     toggle.type = "button";
@@ -356,32 +359,64 @@
     toggle.textContent = "Show blast radius";
     panelEl.appendChild(toggle);
 
-    var mount = document.createElement("div");
-    mount.id = "viz-drill-sonar-mount";
-    mount.setAttribute("class", "viz-drill-sonar-mount");
-    mount.hidden = true;
-    panelEl.appendChild(mount);
+    // Shared close path for the toggle's own "Hide" click, the overlay's own
+    // close button, and Escape (wireDrillPanelClose below) — every close
+    // fully destroys the sonar render and removes the overlay, rather than
+    // merely hiding it, so the "fresh container per open" contract holds
+    // for every trigger, not just a drawer rebuild.
+    function closeOverlay() {
+      if (drillState.sonarHandle && typeof drillState.sonarHandle.destroy === "function") {
+        drillState.sonarHandle.destroy();
+      }
+      drillState.sonarHandle = null;
+      if (drillState.sonarOverlayEl && drillState.sonarOverlayEl.parentNode) {
+        drillState.sonarOverlayEl.parentNode.removeChild(drillState.sonarOverlayEl);
+      }
+      drillState.sonarOverlayEl = null;
+      drillState.closeSonarOverlay = null;
+      toggle.setAttribute("aria-pressed", "false");
+      toggle.textContent = "Show blast radius";
+    }
 
     toggle.addEventListener("click", function () {
       var expanded = toggle.getAttribute("aria-pressed") === "true";
       if (expanded) {
-        toggle.setAttribute("aria-pressed", "false");
-        toggle.textContent = "Show blast radius";
-        mount.hidden = true;
+        closeOverlay();
         return;
       }
       // Same success-gated-UI-state contract as mountView: a missing sonar
       // module (`window.vizSonar` absent) never flips the toggle to "pressed"
-      // over an empty mount.
-      if (!drillState.sonarHandle) {
-        if (!window.vizSonar || typeof window.vizSonar.render !== "function") {
-          return;
-        }
-        drillState.sonarHandle = window.vizSonar.render(mount, scene, fileNode.path);
+      // over an empty overlay.
+      if (!window.vizSonar || typeof window.vizSonar.render !== "function") {
+        return;
       }
+
+      var overlay = document.createElement("div");
+      overlay.id = "viz-blast-overlay";
+      overlay.setAttribute("class", "viz-blast-overlay");
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-label", "Dependency blast radius for " + fileNode.path);
+
+      var closeBtn = document.createElement("button");
+      closeBtn.id = "viz-blast-overlay-close";
+      closeBtn.type = "button";
+      closeBtn.setAttribute("class", "viz-btn viz-blast-overlay-close");
+      closeBtn.textContent = "Close blast radius";
+      closeBtn.addEventListener("click", closeOverlay);
+      overlay.appendChild(closeBtn);
+
+      var mount = document.createElement("div");
+      mount.id = "viz-drill-sonar-mount";
+      mount.setAttribute("class", "viz-drill-sonar-mount");
+      overlay.appendChild(mount);
+
+      rootEl.appendChild(overlay);
+      drillState.sonarOverlayEl = overlay;
+      drillState.closeSonarOverlay = closeOverlay;
+      drillState.sonarHandle = window.vizSonar.render(mount, scene, fileNode.path);
+
       toggle.setAttribute("aria-pressed", "true");
       toggle.textContent = "Hide blast radius";
-      mount.hidden = false;
     });
   }
 
@@ -410,18 +445,25 @@
   // against the narrower container (see `viz:drill-panel-toggled` in
   // views/treemap.js) — the drawer never overlays the diagram. ----
   function makeOpenDrill(
-    panelEl, scene, annotationStore, weights, unavailableAxes, drillState, onOpenChange
+    panelEl, rootEl, scene, annotationStore, weights, unavailableAxes, drillState, onOpenChange
   ) {
     return function (fileNode) {
       // A prior file's (or the same file's, on a weight-change refresh)
-      // sonar render is about to be discarded along with the rest of the
-      // panel's DOM — destroy it explicitly rather than relying on the DOM
-      // removal below (spec §4.2: destroy the outgoing content, no leaked
-      // marks when recentering/reopening).
+      // sonar render is about to be discarded — destroy it explicitly rather
+      // than relying on the panel DOM removal below (spec §4.2: destroy the
+      // outgoing content, no leaked marks when recentering/reopening). The
+      // blast-radius overlay (round-2 fix) lives under `rootEl`, not
+      // `panelEl`, so wiping the panel's children alone would leave it
+      // behind — remove it explicitly too.
       if (drillState.sonarHandle && typeof drillState.sonarHandle.destroy === "function") {
         drillState.sonarHandle.destroy();
       }
       drillState.sonarHandle = null;
+      if (drillState.sonarOverlayEl && drillState.sonarOverlayEl.parentNode) {
+        drillState.sonarOverlayEl.parentNode.removeChild(drillState.sonarOverlayEl);
+      }
+      drillState.sonarOverlayEl = null;
+      drillState.closeSonarOverlay = null;
 
       // Remember the open node so a weight change can recompute the
       // weight-dependent breakdown in place (spec §4.5) — see onWeightChange.
@@ -548,7 +590,7 @@
         panelEl.appendChild(storySection);
       }
 
-      appendSonarAffordance(panelEl, scene, fileNode, drillState);
+      appendSonarAffordance(panelEl, rootEl, scene, fileNode, drillState);
 
       var notes = document.createElement("textarea");
       notes.setAttribute("class", "viz-drill-notes");
@@ -565,7 +607,18 @@
 
   function wireDrillPanelClose(panelEl, drillState, onOpenChange) {
     document.addEventListener("keydown", function (evt) {
-      if (evt.key === "Escape" && !panelEl.hidden) {
+      if (evt.key !== "Escape") {
+        return;
+      }
+      // Round-2 fix: the blast-radius overlay sits "on top" of the drawer
+      // (spec: "drawer stays open beside it") — the first Escape closes
+      // just the overlay; a second Escape then closes the drawer, same as
+      // before the overlay existed.
+      if (drillState.sonarOverlayEl && typeof drillState.closeSonarOverlay === "function") {
+        drillState.closeSonarOverlay();
+        return;
+      }
+      if (!panelEl.hidden) {
         drillState.node = null;
         panelEl.hidden = true;
         onOpenChange(false);
@@ -733,8 +786,16 @@
     // Shared drill-panel state: `node` holds the currently-open file node (or
     // null when closed) so a weight change can refresh the open breakdown;
     // `sonarHandle` holds the currently-mounted sonar drill (or null), so it
-    // can be torn down before the panel rebuilds (spec §4.2).
-    var drillState = { node: null, sonarHandle: null };
+    // can be torn down before the panel rebuilds (spec §4.2). `sonarOverlayEl`
+    // / `closeSonarOverlay` (round-2 fix) track the full-canvas blast-radius
+    // overlay, which lives outside the drawer under `#viz-root` and so needs
+    // its own explicit teardown (see makeOpenDrill and wireDrillPanelClose).
+    var drillState = {
+      node: null,
+      sonarHandle: null,
+      sonarOverlayEl: null,
+      closeSonarOverlay: null
+    };
 
     // Drawer conversion (fidelity F3): the drawer never overlays the diagram
     // — `#viz-root`'s `viz-drill-open` class shrinks it (scene.css), and the
@@ -750,6 +811,7 @@
 
     var openDrill = makeOpenDrill(
       elements.drillPanel,
+      elements.root,
       scene,
       annotationStore,
       weights,
