@@ -37,29 +37,64 @@ TIMEOUT_SECONDS=1800   # 30 minutes
 # GraphQL-only connection and is rejected here — verify any field you add
 # against a real `gh` before shipping, not against a stub.
 fetch_pr() {
-  gh pr view "$PR" --repo "$REPO" --json reviews,comments 2>/dev/null
+  gh pr view "$PR" --repo "$REPO" --json reviews,comments,reactionGroups 2>/dev/null
+}
+
+# `gh pr view --json comments` returns ISSUE comments only — inline
+# review-thread comments live on a different endpoint and carry their own
+# reactions. A reaction there moves no other count, so without this second
+# fetch a thumbs-up on a review comment is still invisible. Emits a bare
+# integer, or NOTHING on failure (treated as unreadable by the caller).
+#
+# The failure path must stay distinguishable from a real zero. Piping straight
+# into `jq -s` cannot do that: a failed `gh` produces an empty stream, which
+# `jq -s ... // 0` happily renders as a successful "0" — fabricating a zero
+# baseline, defeating the WATCH-ERROR/WATCH-FLAKE guards, and setting up a
+# false ring when the endpoint recovers. So capture first, check, then parse.
+fetch_review_comment_reactions() {
+  local json
+  json=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" 2>/dev/null) || return 1
+  [ -n "$json" ] || return 1
+  jq -s -r '[ .[][] | (.reactions.total_count // 0) ] | add // 0' <<<"$json" 2>/dev/null
 }
 
 read_counts() {
-  # stdin: PR JSON. stdout: "<reviews> <comments>"
+  # stdin: PR JSON. stdout: "<reviews> <comments> <reactions>"
   # Each array element is fully parenthesized: in jq `|` binds across `,`, so
   # bare `A | length, B | length` chains the second expression onto the first.
+  # Reactions are counted because a reviewer can approve with nothing but a
+  # thumbs-up: no review object, no comment, and a watcher blind to reactions
+  # sleeps through it to timeout. Two subtleties:
+  #   - `reactionGroups` is one entry per emoji, so sum the per-group user
+  #     totals rather than taking `length` — a second thumbs-up on an existing
+  #     group must still register.
+  #   - A reaction can land on the PR body OR on any individual comment or
+  #     review, and those nested reactions move none of the other counts.
+  #     `comments[]` and `reviews[]` each carry their own reactionGroups, so
+  #     all three sources are flattened into one total.
   jq -r '
     [ ((.reviews // []) | length),
-      ((.comments // []) | length)
+      ((.comments // []) | length),
+      ([ (.reactionGroups // []),
+         ((.comments // []) | map(.reactionGroups // []) | add // []),
+         ((.reviews  // []) | map(.reactionGroups // []) | add // [])
+       ] | flatten | map(.users.totalCount // 0) | add // 0)
     ] | @tsv' 2>/dev/null | tr '\t' ' '
 }
 
-read -r BASE_REVIEWS BASE_COMMENTS <<<"$(fetch_pr | read_counts)"
+read -r BASE_REVIEWS BASE_COMMENTS BASE_PR_REACTIONS <<<"$(fetch_pr | read_counts)"
+BASE_RC_REACTIONS="$(fetch_review_comment_reactions)"
 
 # An unreadable baseline would make every later comparison meaningless, so
 # fail loud rather than arming a watcher that can only produce noise.
-if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ]; then
+if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ] || [ -z "$BASE_PR_REACTIONS" ] \
+   || [ -z "$BASE_RC_REACTIONS" ]; then
   echo "WATCH-ERROR pr=$PR could not sample baselines (gh unavailable or PR unreadable)"
   exit 2
 fi
 
-echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS"
+BASE_REACTIONS=$((BASE_PR_REACTIONS + BASE_RC_REACTIONS))
+echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS reactions=$BASE_REACTIONS"
 
 # --- Poll loop --------------------------------------------------------------
 elapsed=0
@@ -67,23 +102,46 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   sleep "$INTERVAL_SECONDS"
   elapsed=$((elapsed + INTERVAL_SECONDS))
 
-  read -r reviews comments <<<"$(fetch_pr | read_counts)"
+  read -r reviews comments pr_reactions <<<"$(fetch_pr | read_counts)"
+  rc_reactions="$(fetch_review_comment_reactions)"
 
   # An empty read is a flake, not a signal. Skip the round; do not treat a
   # missing value as zero — that would read as a count DECREASE and mask a
   # real increase on the following poll.
-  if [ -z "$reviews" ] || [ -z "$comments" ]; then
+  if [ -z "$reviews" ] || [ -z "$comments" ] || [ -z "$pr_reactions" ] \
+     || [ -z "$rc_reactions" ]; then
     echo "WATCH-FLAKE pr=$PR t=${elapsed}s (empty read, skipping round)"
     continue
   fi
+  reactions=$((pr_reactions + rc_reactions))
 
-  if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ]; then
-    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS"
+  # Reviews and comments only ever accumulate, so `-gt` is the right test for
+  # them. Reactions are MUTABLE — they can be removed — so `-gt` would miss
+  # activity whenever a removal offsets an addition: baseline 1, a reviewer
+  # withdraws theirs (0), another reacts before the next poll (1), and both
+  # rounds compare equal while two reaction events went by. Any change is
+  # activity, so reactions test `-ne`. A removal on its own is a ring too;
+  # this is a doorbell, and someone taking a reaction back is something
+  # happening.
+  #
+  # KNOWN LIMIT — accepted, not overlooked. A total cannot see a replacement
+  # that completes INSIDE one 60s window (one reviewer's reaction removed and
+  # another's added before the next sample nets to zero). Catching that needs
+  # per-user reaction identities diffed across polls, which is exactly the
+  # "clever watcher" this script's header rejects: in the reference run a
+  # filter-based monitor ghosted twice and each time the lane looked stuck when
+  # the monitor had died. A missed ring costs a bounded wait — the timeout is
+  # documented as "no activity," never "no verdict," and the lane re-arms or
+  # checks the PR directly. A silently dead watcher costs the whole lane. Given
+  # that trade, the dumb total wins.
+  if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ] \
+     || [ "$reactions" -ne "$BASE_REACTIONS" ]; then
+    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"
     echo "DOORBELL ONLY — no verdict implied. Re-engage the owning lane; the lane reads the verdict via the PR-review skill."
     exit 0
   fi
 
-  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments"
+  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments reactions=$reactions"
 done
 
 # Timeout means NO ACTIVITY, not "no verdict" — a reviewer can signal in ways a

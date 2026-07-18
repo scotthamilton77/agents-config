@@ -120,7 +120,8 @@ Rules that are not negotiable:
    the page in the browser **exactly once**.
 4. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
-   (§8), and the instruction to report **reviewed-clean** rather than merging.
+   (§8), the instruction to report **reviewed-clean** rather than merging, and
+   the instruction to **request** a watcher from ROOT rather than arm one (§6).
 5. **Record the roster** — you will need it for the compaction handoff (§7).
 
 Brief every lieutenant with **worktree-absolute paths**. A bare or relative
@@ -180,12 +181,53 @@ who runs it, and where a verdict goes:
   the lane.
 - **The lane reports the terminal verdict up** — reviewed-clean, or blocked and
   why. It never merges (§4).
+- **If the repo has no usable review skill, ROOT supplies one inline.** The repo
+  may have none, or its skill may be undeployed or banned for this run. Settle
+  that at setup, not mid-review: ROOT briefs every lane with an explicit verdict
+  protocol — how a re-review is requested, what counts as a clean pass, how
+  threads get replied to and resolved, and what the terminal verdict looks like.
+  A lane improvising its own is how two lanes end up with two different
+  definitions of "reviewed-clean," which §4 then merges on.
 
 **Stalemate rule.** A re-raise round on **unchanged code** gets one final
-disposition round, then the lane stops and puts the PR on the human's docket
-via ROOT. Round count alone is not evidence of a loop; unchanged code under
-re-raise is. A reviewer finding *genuine defects* round after round is earning
-its keep, not looping.
+disposition round, then the **do-not-relitigate round** below, and only then
+does the lane stop and put the PR on the human's docket via ROOT. Round count
+alone is not evidence of a loop; unchanged code under re-raise is. A reviewer
+finding *genuine defects* round after round is earning its keep, not looping.
+
+**The do-not-relitigate round — try this before the human docket.** Before
+escalating a stalemate, spend **one** more review round that hands the reviewer
+the settled dispositions and their evidence, via the review skill's re-review
+path. A stalemate earns one evidence-bearing round before it costs the human a
+decision.
+
+- Spend it even when you expect the reviewer to hold. In the reference run one
+  such round suppressed the settled noise *and* surfaced a genuine remaining
+  bug — the outcome the plain escalation path throws away.
+- Once. If the reviewer re-raises settled threads *after* being handed the
+  dispositions, that is a malfunction (below) or a genuine fork — escalate.
+
+**Reviewer malfunction — diagnose before you escalate.** A reviewer that
+re-flags something already fixed is not stalemated with you; it is reviewing the
+wrong state. Distinguish the two, because they have different exits:
+
+1. **Verify the fix exists at the commit the reviewer claims it reviewed** —
+   `git show <sha>:<path>`. Not at HEAD, and not in the PR diff: if the reviewer
+   is reading a stale head, HEAD proves nothing about what it saw. A path that
+   is **absent** at that commit is not yet an answer — deleting or renaming the
+   file can *be* the fix. On a missing path, check the commit's diff or tree
+   before concluding anything, and read step 4 as applying only once you have
+   confirmed the flagged code genuinely survives.
+2. If the fix **is** there, hand the reviewer that evidence through the review
+   skill's reply path — one evidence-forward nudge, not an argument. A
+   do-not-relitigate round already spent **is** that nudge; do not spend a
+   second one.
+3. If the reviewer re-flags the **same** finding a second time against that same
+   evidence, stop. It is malfunctioning, further rounds are free tokens spent on
+   noise, and the PR goes to ROOT for the human's docket labelled as a
+   *malfunction* — which is a different ask of the human than a genuine fork.
+4. If the fix is **not** there, the reviewer is right and you have a real
+   finding. This is the branch that makes step 1 non-optional.
 
 **When a round cap and a productive reviewer collide, ROOT rules.** A PR-review
 skill may cap re-review rounds and escalate past the cap — a sound default
@@ -227,6 +269,43 @@ when the guard says to.
 **Verify the lane's claim before invoking the guard.** "Reviewed-clean" is a
 report, and §8's standing rule applies to it like any other: confirm it
 directly. The guard checks eligibility, not whether your lieutenant was right.
+
+**When the guard itself is broken, the floor does not move.** A grind sometimes
+runs with `merge-guard` structurally unavailable — misconfigured, mid-refactor,
+missing a credential — and the human grants merge authority for the session
+directly instead. That grant replaces the *authorization* the guard would have
+resolved; it does not replace the *eligibility* it would have computed.
+
+**Run the canonical eligibility check — do not reconstruct one.** The guard is
+more than its policy resolver, so if its eligibility script still runs, run it
+and use its verdict even when the authorization half is dead.
+
+**When nothing of the guard runs, ROOT does not merge.** The PR goes to the
+human's docket, session grant or not. This is not caution for its own sake: the
+canonical check's blocker set is larger than anyone remembers and it *grows* —
+requested-changes verdicts, in-flight reviews, pending escalations, untriaged
+feedback, blockers contributed by other tooling in the repo. Any list written
+here is a snapshot that silently rots, and a hand-rolled floor that looks
+complete is more dangerous than an honest handoff, because it authorizes a
+merge on a check nobody maintains. So the floor is not reproduced here.
+
+What ROOT owes the human is a **useful docket entry**, not a verdict. Gather
+what you can establish cheaply — CI state at the head you would merge, whether
+an approval exists at *that same* head, unresolved thread count, and whether any
+reviewer has an active requested-changes verdict (sticky and not head-scoped: a
+push does not clear it, and another reviewer's approval does not override it).
+Report those as **facts you checked, not as clearance**, and name the guard as
+inoperable so the human knows the usual gate did not run.
+
+The human then rules on that PR. Their ruling supersedes the floor — merging
+with the guard down is a call they are allowed to make and ROOT is not. If the
+ruling is to merge, **pin the merge to the head that was checked**, so a lane
+pushing in between fails the merge rather than silently retargeting it; that
+race is exactly what the guard's head-pinned command exists to close. Record the
+ruling with
+the merge. Likewise record in the handoff (§7) that the guard was bypassed and
+on what authority — a grant nobody wrote down is indistinguishable, later, from
+a lane that merged on its own initiative.
 
 **An honest verdict cannot be manufactured.** If the reviewer will not approve
 and you judge its findings unfounded, that is the human's call. Merging around
@@ -283,6 +362,16 @@ Parked lieutenants cannot self-wake, so when a lane is waiting on review
 activity ROOT arms one background poll script per awaited PR, from
 `scripts/watch-pr.sh.tmpl`.
 
+**ROOT arms every watcher. A lane NEVER arms its own.** This is the same
+structural fact stated from the other side, and it is worth stating explicitly
+because the inverse looks so reasonable: the lane owns the PR, so surely it
+should watch it. It cannot. A lane that arms its own watcher then parks, and a
+parked agent cannot hear its own background task complete — the completion wakes
+ROOT, which has no idea what the ring was for. The watcher runs, rings into the
+void, and the lane looks stuck when nothing is wrong with it. In the reference
+run one lane did this three times and every "failure" was this and only this.
+Brief lanes to *request* a watcher from ROOT, never to launch one.
+
 **A watcher detects PR *activity*, never a verdict.** It knows nothing about
 approval signals, reviewer identity, or clean-pass phrasing — that is the
 review skill's job (§3), and duplicating any of it here guarantees drift the
@@ -299,13 +388,26 @@ question: *has anything happened on this PR since I armed?*
   wrapper command with `&`. The wrapper exits immediately, the completion
   notification fires for the *wrapper*, and the real watcher is orphaned —
   running, unwatched, and silent.
-- **Triggers on a count increase** in reviews, review comments, or issue
-  comments against baselines sampled at arm time. Counts, not contents.
+- **Triggers on a count increase** in reviews, review comments, issue comments,
+  or **reactions** against baselines sampled at arm time. Counts, not contents.
+- **Count reactions too, including nested ones.** A reviewer can signal entirely
+  through a reaction — in the reference run one approval arrived as a lone
+  thumbs-up, with no review object and no comment, and a watcher blind to
+  reactions slept through it to timeout. Count reactions on the PR body *and* on
+  each individual comment and review: a reaction on an existing comment moves
+  none of the other counts, so a body-only reaction check has the same blind
+  spot in a narrower form. Reactions are a count like any other, so this costs
+  the doorbell nothing and keeps it dumb.
 - **The ring is a DOORBELL.** On a ring, ROOT re-engages the owning lane and
   the lane consults the review skill for the actual verdict. ROOT does not
   interpret PR state itself.
 - **A timeout means "no activity," not "no verdict."** Re-arm, or have the lane
-  check directly. Reviewers can signal in ways a count-based poll will not see.
+  check directly. Reviewers can signal in ways a count-based poll will not see —
+  including a reaction *replaced* within a single polling window, which nets to
+  no change in a count. Closing that particular gap would take per-user reaction
+  identities diffed across polls, and a clever watcher that dies silently costs
+  far more than a dumb one that occasionally makes a lane wait out its timeout.
+  The dumbness rule wins here on purpose; the timeout is the backstop.
 
 ## 7. Compaction safety
 
@@ -387,8 +489,12 @@ stale inode, where writes go somewhere other than where it thinks. If teardown
 cannot be done safely from outside, defer it and record it in the handoff for a
 main-tree owner to finish.
 
-**Escalate to the human ONLY for:** merge-authority grants, reviewer
-stalemates and malfunctions, and genuine scope forks. Everything else is
+**Escalate to the human ONLY for:** merge-authority grants, genuine scope
+forks, and reviewer stalemates or malfunctions that have run out §3's ladder —
+a stalemate after its do-not-relitigate round, a malfunction after its one
+evidence-forward nudge. The two are different diagnoses with different exits,
+not steps in one chain: a confirmed malfunction escalates on its own path
+without first spending the stalemate rounds. Everything else is
 decide-in-scope or verify-facts — decide it.
 
 **Workers self-flag deviations** — TDD compromises, fixture fixes, plan drift —
@@ -405,6 +511,12 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "The findings are clearly unfounded, I'll just merge." | An honest verdict cannot be manufactured. Human docket. |
 | "This report contradicts my order — the lane ignored me." | It almost certainly crossed in flight. Check timestamps first. |
 | "Six review rounds is obviously a loop, invoke the stalemate rule." | Rounds of *real defects* are the reviewer working. The rule applies only to re-raises on unchanged code. |
+| "Stalemate confirmed — straight to the human's docket." | One do-not-relitigate round first: re-review with every settled disposition and its evidence. It broke four of four in the reference run. |
+| "The reviewer keeps re-flagging a fix I know I made — it's stalemated." | Check `git show <sha>:<file>` at the commit it claims it reviewed. A reviewer reading a stale head is malfunctioning, which is a different escalation. |
+| "I'll have the lane watch its own PR — it owns it." | A parked lane cannot hear its own watcher ring; the ring wakes ROOT. ROOT owns every watcher. |
+| "The watcher's been quiet, so nothing has happened." | Only if it counts reactions. A lone thumbs-up approval is invisible to a reviews-and-comments watcher. |
+| "merge-guard is broken and I have a session grant, so I can merge." | The grant replaces authorization, not eligibility. Run the canonical eligibility check if any of it still runs; if none of it does, ROOT does not merge — the PR goes to the human's docket. |
+| "I checked CI, approval, and threads myself — that's the floor." | It isn't. The canonical blocker set is larger than anyone remembers and grows over time. Those are facts for the docket entry, not clearance to merge. |
 | "The lane says it is fine, and re-checking would cost me context." | Verify anyway before anything irreversible, and whenever report and world disagree. Everywhere else, trust the lane. |
 | "I have context to spare, I will just review the diff myself." | You are the manager, not the reviewer. Re-running the lane's gate spends the one resource the run cannot replace. |
 | "The lane has retried this four times, it will get there." | Two rounds without progress is ROOT's cue to intervene. Unbounded retrying is the most expensive failure mode in a long run. |
@@ -425,7 +537,14 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - You are dispatching a worker without setting model and effort.
 - You are writing review-bot mechanics into this skill instead of delegating
   to the repo's PR-review skill (§3).
-- You are about to merge without `merge-guard` resolving the policy (§4).
+- You are about to merge without `merge-guard` resolving the policy (§4) — or,
+  where the guard is wholly inoperable, at all — that PR belongs on the human's
+  docket (§4).
+- You are sending a PR to the human's docket as a stalemate without having run
+  the do-not-relitigate round (§3).
+- You are treating a re-flagged fix as a stalemate without having checked the
+  commit the reviewer claims it reviewed (§3).
+- A lane is arming its own watcher (§6).
 - You are re-opening the dashboard in a browser.
 - Your last three actions were implementation work. You are ROOT — you manage,
   decide, and unblock. Hand it to a lane.
