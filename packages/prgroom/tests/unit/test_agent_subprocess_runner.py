@@ -150,6 +150,14 @@ def test_claude_invocation_shape() -> None:
     assert "read /x" in inv.argv  # prompt (carrying the path) is a positional
 
 
+def test_claude_invocation_requests_json_envelope() -> None:
+    # Token capture (§3.1): every claude dispatch asks for the JSON envelope so
+    # the runner can unwrap the result payload and read the usage block.
+    inv = build_invocation(_spec("claude", "haiku"), prompt="P")
+    assert "--output-format" in inv.argv
+    assert "json" in inv.argv
+
+
 def test_claude_write_role_grants_headless_dontask_and_scoped_allowed_tools() -> None:
     # A WRITE-capable claude agent (the fix role) MUST be dispatched headless-correct:
     # `claude -p` in the default permission mode queues Edit/Bash tool calls awaiting
@@ -610,6 +618,193 @@ def test_cancel_escalates_to_sigkill_when_child_survives_sigterm(tmp_path: Path)
             cancel=cancel,
         )
     assert proc.terminated and proc.killed and proc.reaped
+
+
+# ── token capture (§3): claude envelope unwrap + codex stderr trailer ──
+#
+# Fixtures are the live-captured probe outputs from the cost-telemetry spec §3
+# (2026-07-04) — verified formats, not stipulations.
+
+_CLAUDE_ENVELOPE = json.dumps(
+    {
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "duration_ms": 2436,
+        "result": '{"clusters": []}',
+        "session_id": "abc",
+        "total_cost_usd": 0.02487,
+        "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 18301,
+            "cache_read_input_tokens": 17757,
+            "output_tokens": 43,
+        },
+    }
+)
+
+
+def _run_cli(runner: SubprocessAgentRunner, cli: str) -> AgentRunResult:
+    return runner.run(
+        _spec(cli, "m"),
+        prompt_template=_PROMPT,
+        render_data={},
+        contract_payload={},
+        time_budget_s=5.0,
+    )
+
+
+def test_claude_envelope_is_unwrapped_and_usage_captured(tmp_path: Path) -> None:
+    # §3.1: the envelope's `result` field IS the contract payload the dispatcher
+    # must see; tokens_in sums ALL input-side fields (uncached + cache-creation +
+    # cache-read — the bare input_tokens alone undercounts by orders of magnitude).
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(returncode=0, stdout=_CLAUDE_ENVELOPE),  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "claude")
+    assert result.stdout == '{"clusters": []}'
+    assert result.usage is not None
+    assert result.usage.tokens_in == 10 + 18301 + 17757
+    assert result.usage.tokens_out == 43
+    assert result.usage.reported_cost_usd == 0.02487
+    assert result.usage.tokens_total is None  # codex-only field
+
+
+def test_claude_plain_text_stdout_passes_through_with_no_usage(tmp_path: Path) -> None:
+    # §3.1 rule 3: envelope parse failure (plain-text stdout) falls back to
+    # current behavior — raw stdout through, usage=None. Telemetry never fails
+    # a dispatch.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(returncode=0, stdout="plain text banner"),  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "claude")
+    assert result.stdout == "plain text banner"
+    assert result.usage is None
+
+
+def test_claude_non_envelope_json_passes_through(tmp_path: Path) -> None:
+    # The unwrap is keyed on the envelope SHAPE, not "stdout parses as JSON": a
+    # CLI that emitted the bare contract JSON despite the flag must pass through
+    # untouched, not be mistaken for an envelope.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(returncode=0, stdout='{"clusters": []}'),  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "claude")
+    assert result.stdout == '{"clusters": []}'
+    assert result.usage is None
+
+
+def test_claude_error_envelope_still_unwraps_and_captures_usage(tmp_path: Path) -> None:
+    # §3.1 rule 2: unwrap + usage capture happen regardless of is_error/subtype.
+    # The envelope's error flag never short-circuits classification — the
+    # dispatcher decides from returncode and parseability, not from the flag.
+    envelope = json.dumps(
+        {
+            "type": "result",
+            "subtype": "error_during_execution",
+            "is_error": True,
+            "result": "the model refused",
+            "total_cost_usd": 0.001,
+            "usage": {"input_tokens": 5, "output_tokens": 7},
+        }
+    )
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(returncode=0, stdout=envelope),  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "claude")
+    assert result.stdout == "the model refused"  # unwrapped despite is_error
+    assert result.usage is not None
+    assert result.usage.tokens_in == 5  # cache fields absent → just the uncached slice
+    assert result.usage.tokens_out == 7
+    assert result.usage.reported_cost_usd == 0.001
+
+
+def test_codex_stderr_trailer_yields_tokens_total(tmp_path: Path) -> None:
+    # §3.2: codex exec emits the reply on stdout and a stderr trailer
+    # "tokens used\n21,631" (comma-grouped). No in/out split in this mode.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
+            returncode=0, stdout='{"clusters": []}', stderr="banner\ntokens used\n21,631\n"
+        ),
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "codex")
+    assert result.stdout == '{"clusters": []}'  # stdout untouched
+    assert result.usage is not None
+    assert result.usage.tokens_total == 21631
+    assert result.usage.tokens_in is None
+    assert result.usage.tokens_out is None
+    assert result.usage.reported_cost_usd is None
+
+
+def test_codex_stderr_without_trailer_yields_no_usage(tmp_path: Path) -> None:
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
+            returncode=0, stdout="{}", stderr="warning: something else\n"
+        ),
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "codex")
+    assert result.usage is None
+
+
+def test_codex_trailer_without_comma_grouping_parses(tmp_path: Path) -> None:
+    # Counts under 1,000 carry no comma — the pattern accepts both groupings.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
+            returncode=0, stdout="{}", stderr="tokens used\n950\n"
+        ),
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "codex")
+    assert result.usage is not None
+    assert result.usage.tokens_total == 950
+
+
+def test_codex_usage_reads_final_trailer_not_earlier_diagnostic(tmp_path: Path) -> None:
+    # §3.2: the usage trailer is the FINAL "tokens used" pair. An earlier
+    # diagnostic "tokens used\n100" must not shadow the real CLI trailer —
+    # scan backward so the last adjacent pair wins.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
+            returncode=0,
+            stdout="{}",
+            stderr="tokens used\n100\nreconnecting...\nretrying\ntokens used\n21,631\n",
+        ),
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "codex")
+    assert result.usage is not None
+    assert result.usage.tokens_total == 21631
+
+
+def test_claude_envelope_contract_reaches_dispatcher_parse(tmp_path: Path) -> None:
+    # The §3.1 interaction trap, end-to-end: the dispatcher's lenient parse takes
+    # the LAST top-level JSON object in stdout — with --output-format json that
+    # would be the envelope, not the contract payload. The runner's unwrap must
+    # happen first, or every claude dispatch classifies malformed. A real
+    # SubprocessAgentRunner (fake spawn) feeding a real ClusterDispatcher proves
+    # the contract JSON inside `result` parses.
+    from prgroom.agent.contracts import ClusterInput
+    from prgroom.agent.dispatcher import ClusterDispatcher, ProviderChain
+    from prgroom.prsession.pr_ref import PRRef
+
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(returncode=0, stdout=_CLAUDE_ENVELOPE),  # noqa: ARG005
+        scratch_dir=tmp_path,
+    )
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=ProviderChain(providers=[_spec("claude", "haiku")], time_budget_s=5.0),
+    )
+    output = dispatcher.cluster(
+        ClusterInput(pr=PRRef(owner="o", repo="r", number=1), items=[], pr_context_path="/ctx")
+    )
+    assert output.clusters == []  # the payload inside `result`, not the envelope
 
 
 def test_run_builds_the_argv_for_the_specs_cli(tmp_path: Path) -> None:

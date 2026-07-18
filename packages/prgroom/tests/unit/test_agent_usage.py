@@ -50,6 +50,8 @@ def test_append_writes_schema_line_to_xdg_state_path(
         "output_tokens": 80,
         "duration_ms": 1450,
         "outcome": "success",
+        "tokens_total": None,
+        "reported_cost_usd": None,
     }
 
 
@@ -105,3 +107,58 @@ def test_absent_usage_is_a_noop_not_an_error(
     append_usage(None)
 
     assert not (tmp_path / "prgroom" / "usage.jsonl").exists()
+
+
+def test_additive_token_fields_serialize_in_the_jsonl_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # §3.3 additive JSONL evolution: tokens_total (codex path) and
+    # reported_cost_usd (claude path) join the line schema as nullable fields —
+    # readers tolerate absent keys, writers always emit them.
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    record = UsageRecord(
+        ts="2026-07-17T00:00:00+00:00",
+        pr=PRRef(owner="octo", repo="demo", number=7),
+        contract="fix",
+        provider="codex",
+        model="gpt-5.6-terra",
+        input_tokens=None,
+        output_tokens=None,
+        duration_ms=10,
+        outcome="success",
+        tokens_total=21631,
+        reported_cost_usd=None,
+    )
+    append_usage(record)
+
+    line = json.loads(
+        (tmp_path / "prgroom" / "usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert line["tokens_total"] == 21631
+    assert line["reported_cost_usd"] is None
+
+
+def test_new_token_fields_default_none_for_existing_call_sites(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Additive means additive: a constructor call that predates the new fields
+    # (the dispatcher's _emit_usage) still works, and the line carries nulls.
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    record = UsageRecord(
+        ts="2026-07-17T00:00:00+00:00",
+        pr=PRRef(owner="octo", repo="demo", number=7),
+        contract="cluster",
+        provider="claude",
+        model="haiku",
+        input_tokens=None,
+        output_tokens=None,
+        duration_ms=5,
+        outcome="success",
+    )
+    append_usage(record)
+
+    line = json.loads(
+        (tmp_path / "prgroom" / "usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert line["tokens_total"] is None
+    assert line["reported_cost_usd"] is None
