@@ -51,6 +51,7 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     list_parser.add_argument("--parent")
     list_parser.add_argument("--type")
     list_parser.add_argument("--limit", type=int, default=None)
+    list_parser.add_argument("--track", metavar="NAME")
 
     ready_parser = subparsers.add_parser("ready", help="list ready-to-work items, unbounded")
     ready_parser.add_argument("--label")

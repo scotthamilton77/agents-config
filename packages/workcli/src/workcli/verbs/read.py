@@ -14,7 +14,7 @@ from typing import cast
 from workcli.backend import Backend
 from workcli.envelope import JsonValue
 from workcli.model import Item, QueryFilters
-from workcli.tracks import derive_track
+from workcli.tracks import derive_track, require_known_track
 
 
 def _serialize_item(item: Item) -> dict[str, JsonValue]:
@@ -40,7 +40,33 @@ def show(backend: Backend, args: Namespace) -> JsonValue:
 
 
 def list_(backend: Backend, args: Namespace) -> JsonValue:
-    """`work list [--status --label --parent --type --limit]` — unbounded unless `--limit`."""
+    """`work list [--status --label --parent --type --limit --track]`.
+
+    `--track` filters on the DERIVED `Item.track` (never raw label presence),
+    so filter and envelope field always agree: zero-or-multi-label beads
+    derive to null and match nothing (track spec §4). Validated against the
+    vocabulary for parity with `create --track` -- a typo returns
+    E_UNKNOWN_TRACK, not a silently-empty result. Ordering matters twice:
+    config loads BEFORE the backend query (E_NOT_CONFIGURED must precede any
+    backend error, and an unconfigured call must not read the tracker), and
+    --limit applies AFTER the track filter (a bd-side limit would truncate
+    the candidate set before filtering and undercount matches).
+    """
+    if args.track is not None:
+        require_known_track(args.track, args.load_config())
+        unbounded = QueryFilters(
+            status=args.status,
+            label=args.label,
+            parent=args.parent,
+            type=args.type,
+            limit=None,
+        )
+        items = [
+            item for item in backend.query(unbounded) if derive_track(item.labels) == args.track
+        ]
+        if args.limit is not None:
+            items = items[: args.limit]
+        return _serialize_items(items)
     filters = QueryFilters(
         status=args.status,
         label=args.label,
