@@ -35,7 +35,10 @@ code tier at a similar context window, with confirmed reasoning support.
 `https://openrouter.ai/api` exposes an Anthropic Messages API–compatible
 endpoint (OpenRouter's "Anthropic Skin"), which is what lets
 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` route a stock Claude Code
-process through it with no local proxy. Model IDs are OpenRouter's normal
+process through it. Compatibility is not complete, though: responses that end
+on a reasoning block break the client, which is why this skill routes through
+the local repair proxy rather than pointing at OpenRouter directly (see the
+main SKILL.md). Model IDs are OpenRouter's normal
 `vendor/model-slug` form — no extra prefixing needed beyond what's in this
 table. OpenRouter also normalizes a `reasoning.effort` parameter
 (`none`/`minimal`/`low`/`medium`/`high`/`xhigh`, internally mapped to a
