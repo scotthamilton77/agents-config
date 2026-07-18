@@ -233,7 +233,12 @@ def discover(backend: Backend, args: Namespace) -> JsonValue:
             edge_error.code, edge_error.message, {**edge_error.detail, "created_id": new_id}
         ) from edge_error
 
-    track = derive_track(backend.get(new_id).labels)
+    try:
+        track = derive_track(backend.get(new_id).labels)
+    except WorkError as read_error:
+        raise WorkError(
+            read_error.code, read_error.message, {**read_error.detail, "created_id": new_id}
+        ) from read_error
     lands_in = _derive_lands_in(scope, args.anchor, args.orphan)
     manifest_row: dict[str, JsonValue] = {
         "item": args.title,

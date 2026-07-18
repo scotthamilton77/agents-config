@@ -26,6 +26,7 @@ from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
 from workcli.config import TrackLayerConfig
 from workcli.envelope import ErrorCode, WorkError
 from workcli.lifecycle.discover import discover
+from workcli.model import Item
 
 
 def _not_found_config_loader(_explicit_path: str | None = None) -> TrackLayerConfig:
@@ -401,6 +402,33 @@ class _EdgeFailingBackend(FakeBackend):
 
 def test_edge_add_failure_surfaces_created_id_for_replay() -> None:
     backend = _EdgeFailingBackend()
+    backend.add("epic-1", type="epic", labels=["shape-epic"])
+    backend.add("src-1", type="task", parent="epic-1")
+    args = _out_of_scope_args()
+
+    with pytest.raises(WorkError) as exc_info:
+        discover(backend, args)
+
+    assert exc_info.value.code is ErrorCode.BACKEND_DRIFT
+    assert exc_info.value.detail["created_id"] in backend.ids()
+    assert exc_info.value.detail["created_id"] not in ("epic-1", "src-1")
+
+
+# --- recovery contract: post-create track read fails -> detail.created_id set ---
+# (codex review finding on PR #327: backend.get(new_id) for track derivation is a
+# third post-create step the spec's §3.2 enumeration didn't name; it must carry
+# created_id on failure exactly like the edge-add and orphan-marker seams do.)
+
+
+class _GetFailingBackend(FakeBackend):
+    def get(self, item_id: str) -> Item:
+        if item_id not in ("epic-1", "src-1"):
+            raise WorkError(ErrorCode.BACKEND_DRIFT, "boom", detail={})
+        return super().get(item_id)
+
+
+def test_post_create_track_read_failure_surfaces_created_id_for_replay() -> None:
+    backend = _GetFailingBackend()
     backend.add("epic-1", type="epic", labels=["shape-epic"])
     backend.add("src-1", type="task", parent="epic-1")
     args = _out_of_scope_args()
