@@ -321,6 +321,26 @@ def test_permissions_403_mentioning_rate_limit_stays_terminal() -> None:
 # ── REST empty-body (204) ──
 
 
+def test_rest_paginate_merges_page_delimited_output() -> None:
+    # Real ``gh api --paginate`` emits each page as its OWN JSON document
+    # back-to-back (``[...][...]``) — not one concatenated array. A bare
+    # ``json.loads`` raises JSONDecodeError on the second document, so a
+    # multi-page listing froze every paginated caller. rest() must parse the
+    # page-delimited stream and merge the page arrays into one list.
+    runner = RecordedRunner([_ok('[{"id": 1}, {"id": 2}]\n[{"id": 3}]')])
+    client = GhCli(runner)
+    out = client.rest("GET", "repos/octo/demo/pulls/7/comments", paginate=True)
+    assert out == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert "--paginate" in runner.calls[0]
+
+
+def test_rest_paginate_single_page_returns_the_array() -> None:
+    # One page (the common case) is a single well-formed array — returned as-is.
+    runner = RecordedRunner([_ok('[{"id": 9}]')])
+    client = GhCli(runner)
+    assert client.rest("GET", "repos/octo/demo/pulls/7/comments", paginate=True) == [{"id": 9}]
+
+
 def test_rest_empty_body_returns_empty_dict() -> None:
     # A 204 No Content (e.g. DELETE) returns an empty stdout; rest() must yield {}.
     runner = RecordedRunner([_ok("")])

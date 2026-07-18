@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 from prgroom.gh.client import GhNotFoundError
 from prgroom.gh.review_threads import fetch_thread_id_map
 from prgroom.lifecycle.gh_errors import vanished_pr_terminal
+from prgroom.lifecycle.idempotency import carries_own_marker
 from prgroom.lifecycle.predicates import flip_stale_required_reviews
 from prgroom.lifecycle.quiescence import evaluate_reviewer_timeouts
 from prgroom.prsession.enums import ItemKind, PRPhase, ReviewerStatus
@@ -231,6 +232,12 @@ def _ingest_items(
                 # carries nothing reviewable regardless of author or state — a real
                 # verdict still lands via _terminal_review_verdicts, which reads the
                 # full reviews response, not the ingested items.
+                continue
+            if carries_own_marker(str(entry.get("body") or "")):
+                # prgroom's own posted effect — never ingest, ledger or no ledger.
+                # The state-independent backstop for the crash window where a POST
+                # landed but the persist recording own_reply_id was discarded
+                # (verb-atomicity §6). Content-keyed, never author-keyed.
                 continue
             item = _to_item(kind, entry, ts_field, now=now, thread_id_map=thread_id_map)
             if item.identity.gh_id in own_replies:

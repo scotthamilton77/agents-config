@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 
+from prgroom.lifecycle.idempotency import memory_marker, with_marker
 from prgroom.lifecycle.reply import _sanitize, merge_decisions_block, reply_pr
 from prgroom.lifecycle.snapshot import DECISIONS_START, extract_decisions_block
 from prgroom.prsession.enums import PRPhase
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import RoutedMemory, bootstrap_state
+from tests.fakes import RecordingGh
 
 _NOW = datetime(2026, 6, 19, tzinfo=UTC)
 
@@ -96,17 +98,32 @@ def test_merge_appends_distinct_same_retry_keys() -> None:
 
 
 def test_thread_hint_routes_via_graphql_and_clears() -> None:
-    gh = _RecordingGh()
-    state = _state_with_pending(
-        [
-            RoutedMemory(
-                content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
-            )
-        ]
+    # Uses the shared RecordingGh: a target-hinted entry triggers the pre-flight
+    # review-comments scan, and the posted body carries the §4 memory marker.
+    gh = RecordingGh()
+    rm = RoutedMemory(
+        content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
     )
-    out = reply_pr(state, gh=gh, ref=_ref())
+    out = reply_pr(_state_with_pending([rm]), gh=gh, ref=_ref())
     assert gh.graphql_calls and gh.graphql_calls[0][1]["threadId"] == "PRRT_abc"
-    assert gh.graphql_calls[0][1]["body"] == "why"
+    assert gh.graphql_calls[0][1]["body"] == with_marker("why", memory_marker(rm))
+    assert out.pending_memory == []
+
+
+def test_identical_pending_memory_posts_once_within_a_pass() -> None:
+    # Two identical target-hinted entries (same retry/source/hint/content — e.g. two
+    # fix dispatches in one retry reusing a minted cluster id) derive the SAME marker.
+    # The pre-flight snapshot can't see this pass's own first POST, so an in-pass
+    # seen set must absorb the second entry: one GraphQL reply, not two.
+    gh = RecordingGh()
+    dup = [
+        RoutedMemory(
+            content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
+        )
+        for _ in range(2)
+    ]
+    out = reply_pr(_state_with_pending(dup), gh=gh, ref=_ref())
+    assert len(gh.graphql_calls) == 1
     assert out.pending_memory == []
 
 

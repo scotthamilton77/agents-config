@@ -83,6 +83,29 @@ class GhClient(Protocol):
     def add_label(self, ref: PRRef, label: str) -> None: ...  # pragma: no cover
 
 
+def _merge_paginated_output(out: str) -> Any:
+    """Merge ``gh api --paginate`` output into one list.
+
+    gh emits each page as its own JSON document back-to-back (``[...][...]``),
+    not one concatenated array — a bare ``json.loads`` raises ``Extra data`` on
+    page 2. Decode document-by-document and merge; a single page returns as-is.
+    """
+    decoder = json.JSONDecoder()
+    docs: list[Any] = []
+    idx, end = 0, len(out)
+    while idx < end:
+        doc, idx = decoder.raw_decode(out, idx)
+        docs.append(doc)
+        while idx < end and out[idx].isspace():
+            idx += 1
+    if len(docs) == 1:
+        return docs[0]
+    merged: list[Any] = []
+    for doc in docs:
+        merged.extend(doc)  # pages are arrays by the rest() paginate contract
+    return merged
+
+
 def _classify_gh_failure(stdout: str, stderr: str) -> PrgroomError | GhNotFoundError:
     """Map a failed ``gh`` invocation to its registry error (§3.6/§3.7)."""
     matches = _HTTP_STATUS.findall(stderr)
@@ -161,18 +184,22 @@ class GhCli:
     ) -> Any:
         argv = ["gh", "api", "--method", method, path]
         if paginate:
-            # gh walks every page and concatenates the JSON arrays into one, so a list
-            # read returns ALL items — not just GitHub's first 30. Only valid on GET
-            # collection endpoints (the callers that opt in); object endpoints must not
-            # set it (gh would emit one object per page, breaking json.loads).
+            # gh walks every page so a list read returns ALL items — not just
+            # GitHub's first 30. Only valid on GET collection endpoints (the
+            # callers that opt in); each page arrives as its OWN JSON array
+            # document, merged below.
             argv.append("--paginate")
         for key, value in (fields or {}).items():
             argv += ["-f", f"{key}={value}"]
         out = self._run(argv)
+        if not out.strip():
+            # An empty body (e.g. a 204) normalizes to {}.
+            return {}
+        if paginate:
+            return _merge_paginated_output(out)
         # gh api returns a JSON object, array, or primitive depending on the
-        # endpoint — the caller (which knows the endpoint) narrows. An empty body
-        # (e.g. a 204) normalizes to {}.
-        return json.loads(out) if out.strip() else {}
+        # endpoint — the caller (which knows the endpoint) narrows.
+        return json.loads(out)
 
     def graphql(self, query: str, variables: JsonObj) -> JsonObj:
         argv = ["gh", "api", "graphql", "-f", f"query={query}"]
