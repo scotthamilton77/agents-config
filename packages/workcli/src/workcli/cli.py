@@ -15,6 +15,7 @@ import time
 import traceback
 from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn, TextIO
 
@@ -175,6 +176,13 @@ def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser
     graph_parser.add_argument("--json", action="store_true", dest="json_output")
     subparsers.add_parser("triggers", help="extraction pressure/eligibility per track (advisory)")
 
+    groom_parser = subparsers.add_parser(
+        "groom", help="Backlog Grooming state: --done records completion, --status reports nag"
+    )
+    groom_group = groom_parser.add_mutually_exclusive_group(required=True)
+    groom_group.add_argument("--done", action="store_true")
+    groom_group.add_argument("--status", action="store_true")
+
 
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     sync_parser = subparsers.add_parser(
@@ -303,6 +311,13 @@ def _default_config_loader(explicit_path: str | None) -> TrackLayerConfig:
     return load_config(Path.cwd(), explicit_path)
 
 
+def _default_now() -> datetime:
+    """The real wall clock: `work groom`'s only source of "now" (never a bare
+    `datetime.now()` call anywhere in the verb layer -- injected for testability,
+    same seam precedent as `read_file`/`config_loader`)."""
+    return datetime.now(UTC)
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -319,6 +334,7 @@ def main(
     sleep: Callable[[float], None] | None = None,
     read_file: Callable[[str], str] | None = None,
     config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
+    now: Callable[[], datetime] | None = None,
 ) -> int:
     if out is None:
         out = sys.stdout
@@ -343,6 +359,12 @@ def main(
     # pre-existing verbs never trigger config resolution (track spec §3).
     resolved_config_loader = config_loader if config_loader is not None else _default_config_loader
     args.load_config = lambda: resolved_config_loader(args.config)
+
+    # Same args-attachment precedent as read_file -- but attached
+    # unconditionally, not lazily: reading the clock has no I/O cost, so
+    # there is no laziness contract to preserve (unlike config_loader, which
+    # stays lazy so pre-existing verbs never trigger config resolution).
+    args.now = now if now is not None else _default_now
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
