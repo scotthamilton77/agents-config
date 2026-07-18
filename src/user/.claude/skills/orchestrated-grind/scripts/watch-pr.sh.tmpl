@@ -123,6 +123,17 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   # activity, so reactions test `-ne`. A removal on its own is a ring too;
   # this is a doorbell, and someone taking a reaction back is something
   # happening.
+  #
+  # KNOWN LIMIT — accepted, not overlooked. A total cannot see a replacement
+  # that completes INSIDE one 60s window (one reviewer's reaction removed and
+  # another's added before the next sample nets to zero). Catching that needs
+  # per-user reaction identities diffed across polls, which is exactly the
+  # "clever watcher" this script's header rejects: in the reference run a
+  # filter-based monitor ghosted twice and each time the lane looked stuck when
+  # the monitor had died. A missed ring costs a bounded wait — the timeout is
+  # documented as "no activity," never "no verdict," and the lane re-arms or
+  # checks the PR directly. A silently dead watcher costs the whole lane. Given
+  # that trade, the dumb total wins.
   if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ] \
      || [ "$reactions" -ne "$BASE_REACTIONS" ]; then
     echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"

@@ -402,7 +402,12 @@ question: *has anything happened on this PR since I armed?*
   the lane consults the review skill for the actual verdict. ROOT does not
   interpret PR state itself.
 - **A timeout means "no activity," not "no verdict."** Re-arm, or have the lane
-  check directly. Reviewers can signal in ways a count-based poll will not see.
+  check directly. Reviewers can signal in ways a count-based poll will not see —
+  including a reaction *replaced* within a single polling window, which nets to
+  no change in a count. Closing that particular gap would take per-user reaction
+  identities diffed across polls, and a clever watcher that dies silently costs
+  far more than a dumb one that occasionally makes a lane wait out its timeout.
+  The dumbness rule wins here on purpose; the timeout is the backstop.
 
 ## 7. Compaction safety
 
