@@ -9,6 +9,11 @@ authorizes an uninstall.
 from __future__ import annotations
 
 import hashlib
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,3 +201,117 @@ class ScriptedCliDeploy:
             msg = "ScriptedCliDeploy smokes queue exhausted"
             raise RuntimeError(msg)
         return self._smokes.pop(0)
+
+
+_INSTALL_TIMEOUT = 300  # cold uv cache + dependency resolution can be slow
+_SMOKE_TIMEOUT = 30
+_QUERY_TIMEOUT = 10
+
+
+class UvCliDeploy:
+    """Real CliDeployPort backed by uv subprocesses. The ONLY module code
+    that shells out for CLI deploys; everything above it stays pure."""
+
+    def _run(self, cmd: list[str], timeout: int) -> CommandResult:
+        try:
+            proc = subprocess.run(  # noqa: S603  # fixed argv, no shell
+                cmd, capture_output=True, text=True, timeout=timeout, check=False
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(ok=False, output=f"timed out after {timeout}s: {' '.join(cmd)}")
+        except FileNotFoundError as exc:
+            return CommandResult(ok=False, output=f"not found: {exc}")
+        output = (proc.stdout or "") + (proc.stderr or "")
+        return CommandResult(ok=proc.returncode == 0, output=output)
+
+    def uv_version(self) -> tuple[int, ...] | None:
+        result = self._run(["uv", "--version"], _QUERY_TIMEOUT)
+        match = re.search(r"\buv (\d+)\.(\d+)\.(\d+)", result.output) if result.ok else None
+        return tuple(int(g) for g in match.groups()) if match else None
+
+    def bin_dir(self) -> Path:
+        result = self._run(["uv", "tool", "dir", "--bin"], _QUERY_TIMEOUT)
+        if result.ok and result.output.strip():
+            return Path(result.output.strip().splitlines()[0])
+        # uv's documented resolution order, in full (spec §4; item 17).
+        if env := os.environ.get("UV_TOOL_BIN_DIR"):
+            return Path(env)
+        if env := os.environ.get("XDG_BIN_HOME"):
+            return Path(env)
+        if env := os.environ.get("XDG_DATA_HOME"):
+            return (Path(env) / ".." / "bin").resolve()
+        return Path.home() / ".local" / "bin"
+
+    def shim_path(self, binary: str) -> Path | None:
+        candidate = self.bin_dir() / binary
+        return candidate if candidate.is_file() else None
+
+    def tool_list(self) -> Mapping[str, frozenset[str]] | None:
+        result = self._run(["uv", "tool", "list"], _QUERY_TIMEOUT)
+        if not result.ok:
+            return None
+        tools: dict[str, set[str]] = {}
+        current: str | None = None
+        for line in result.output.splitlines():
+            if line.startswith("- ") and current is not None:
+                tools[current].add(line[2:].strip())
+            else:
+                match = re.match(r"^(\S+) v\S+", line)
+                if match:
+                    current = match.group(1)
+                    tools[current] = set()
+        return {name: frozenset(exes) for name, exes in tools.items()}
+
+    def tool_install(self, package_dir: Path, *, force: bool) -> CommandResult:
+        cmd = ["uv", "tool", "install"]
+        if force:
+            cmd.append("--force")
+        lock = package_dir / "uv.lock"
+        if not lock.is_file():
+            cmd.append(str(package_dir))
+            return self._run(cmd, _INSTALL_TIMEOUT)
+        # Single lock-guarded block: mypy --strict (possibly-undefined) rejects
+        # binding `constraints` under one `if lock.is_file()` and reading it
+        # under a second; try/finally also cleans up on every return path.
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+            constraints = Path(tmp.name)
+        try:
+            export = self._run(
+                [
+                    "uv",
+                    "export",
+                    "--frozen",
+                    "--no-dev",
+                    "--no-emit-project",
+                    "--project",
+                    str(package_dir),
+                    "-o",
+                    str(constraints),
+                ],
+                _QUERY_TIMEOUT,
+            )
+            if not export.ok:
+                return export
+            cmd.extend(["--constraints", str(constraints), str(package_dir)])
+            return self._run(cmd, _INSTALL_TIMEOUT)
+        finally:
+            constraints.unlink(missing_ok=True)
+
+    def tool_uninstall(self, name: str) -> CommandResult:
+        return self._run(["uv", "tool", "uninstall", name], _QUERY_TIMEOUT)
+
+    def update_shell(self) -> CommandResult:
+        result = self._run(["uv", "tool", "update-shell"], _QUERY_TIMEOUT)
+        # uv exits non-zero when the shell config already contains the PATH
+        # entry; that expected steady state counts as success (spec §6 /
+        # item 20 — repeat installs from an un-restarted shell stay green).
+        if not result.ok and "already" in result.output.lower():
+            return CommandResult(ok=True, output=result.output)
+        return result
+
+    def which(self, binary: str) -> Path | None:
+        found = shutil.which(binary)
+        return Path(found) if found else None
+
+    def smoke(self, shim: Path, args: tuple[str, ...]) -> CommandResult:
+        return self._run([str(shim), *args], _SMOKE_TIMEOUT)
