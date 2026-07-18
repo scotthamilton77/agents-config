@@ -323,10 +323,75 @@ def test_pr_threads_heat_axes_repo_nwo_and_in_pr_into_the_scene(
     assert by_path["src/app.py"]["in_pr"] is True  # net-set file
     assert by_path["lib/util.py"]["in_pr"] is False  # context-only file
     assert by_path["src/app.py"]["load_bearing"] == 1.0  # sole EXTRACTED in-edge
-    # .2.2 slice 4: the same EXTRACTED, intra-file-excluded edge backing
-    # load_bearing threads onto the scene as a top-level dependency edge.
+    # .2.2 slice 4 / yf2ov.2.14: the same intra-file-excluded edge backing
+    # load_bearing threads onto the scene as a top-level dependency edge,
+    # tagged with its centrality-axis provenance tier.
     assert scene["edges"] == [
-        {"source": "lib/util.py", "target": "src/app.py", "kind": "dependency"}
+        {
+            "source": "lib/util.py",
+            "target": "src/app.py",
+            "kind": "dependency",
+            "provenance": "extracted",
+        }
+    ]
+
+
+def test_pr_threads_an_inferred_only_edge_onto_the_scene_with_its_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # yf2ov.2.14: an INFERRED-only dependency edge now contributes to the
+    # load-bearing axis and threads onto the scene tagged "inferred" — not
+    # dropped, and not silently upgraded to "extracted".
+    monkeypatch.chdir(tmp_path)
+    gh = ScriptedGhRunner(
+        gh_pr_result(
+            base_oid="base000",
+            head_oid="head111",
+            changed_files=1,
+            commit_count=1,
+            repo_nwo="octocat/demo",
+        )
+    )
+    git = ScriptedGitRunner(
+        present_oids={"base000", "head111"},
+        diff_files=["src/app.py"],
+        rev_list_oids=["c1"],
+        churn_rows=[
+            ModifiedFileRow(new_path="src/app.py", old_path="src/app.py", added=3, deleted=0)
+        ],
+        ls_tree_rows=[blob("src/app.py", "aaa111"), blob("lib/util.py", "bbb222")],
+        archive_tar_bytes=tar_of({"src/app.py": "x = 1\n", "lib/util.py": "y = 1\n"}),
+    )
+    scc = ScriptedSccRunner(scc_result({"src/app.py": 5, "lib/util.py": 2}))
+    _write_graph(
+        tmp_path,
+        built_at_commit="head111",
+        nodes=[
+            {"id": "s1", "source_file": "lib/util.py"},
+            {"id": "s2", "source_file": "src/app.py"},
+        ],
+        links=[{"source": "s1", "target": "s2", "relation": "calls", "confidence": "INFERRED"}],
+    )
+
+    exit_code, envelope, _stderr = run_cli(
+        ["pr", "11"], git_runner=git, gh_runner=gh, scc_runner=scc
+    )
+
+    assert exit_code == 0
+    data = envelope["data"]
+    assert isinstance(data, dict)
+    artifact = Path(str(data["artifact"]))
+    scene = _extract_scene(artifact.read_text(encoding="utf-8"))
+
+    by_path = {node["path"]: node["attributes"] for node in scene["files"]}
+    assert by_path["src/app.py"]["load_bearing"] == 1.0  # sole INFERRED in-edge now counts
+    assert scene["edges"] == [
+        {
+            "source": "lib/util.py",
+            "target": "src/app.py",
+            "kind": "dependency",
+            "provenance": "inferred",
+        }
     ]
 
 

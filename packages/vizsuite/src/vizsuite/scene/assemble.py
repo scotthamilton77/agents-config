@@ -74,9 +74,10 @@ def assemble(
     fails the schema gate. `attributes` (keyed by path, as produced by
     `scene.heat.combine`) attaches each file's heat-axis values to its matching
     `FileNode`; a path with no entry keeps the pre-.2.2 empty attribute map.
-    `edges` (typically the EXTRACTED centrality axis's file-dependency pairs,
-    tagged `kind="dependency"` by the caller) threads onto the scene as-is —
-    `scene_to_json` is the sort point, not this function.
+    `edges` (typically the centrality axis's two-tier file-dependency pairs,
+    tagged `kind="dependency"` and their per-edge `provenance` by the caller)
+    threads onto the scene as-is — `scene_to_json` is the sort point, not this
+    function.
     `stories` (keyed by path, Tier-2 §6.2 drill-story payloads) attaches to
     each matching `FileNode`; a path with no entry keeps `story=None` — no
     generator exists yet (bead .2.4), so callers only pass this when they

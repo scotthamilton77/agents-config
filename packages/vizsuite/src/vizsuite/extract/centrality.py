@@ -1,15 +1,15 @@
-"""Graphify EXTRACTED-dependency centrality axis (spec §6.2, plan §3.6).
+"""Graphify two-tier dependency centrality axis (spec §6.2, plan §3.6).
 
-Load-bearing axis sourced from graphify's `graph.json`, restricted to
-deterministic (Tier-1 `EXTRACTED`) dependency-relation edges — `INFERRED`
-edges (60% of the real graph's dependency-relation edges) are Tier-2 inference
-and out of scope here (R3-1); counting them would launder agent-produced
-inference into a "deterministic" axis. The graph is undirected, symbol-level
-node-link JSON with no stored centrality, so this module rolls symbols up to a
-file-level `DiGraph` (dropping intra-file edges) and scores normalized
-in-degree. `nx.node_link_graph` is deliberately never used to build that graph:
-for this `directed: false` payload it returns an undirected `Graph`, which has
-no `in_degree`.
+Load-bearing axis sourced from graphify's `graph.json`, scoring both
+deterministic (`EXTRACTED`) and agent-produced (`INFERRED`) dependency-relation
+edges, with per-edge provenance carried through to `CentralityAxis.edges` so
+downstream clients can distinguish the two tiers. Any confidence value other
+than `EXTRACTED`/`INFERRED` is still dropped. The graph is undirected,
+symbol-level node-link JSON with no stored centrality, so this module rolls
+symbols up to a file-level `DiGraph` (dropping intra-file edges) and scores
+normalized in-degree over the union of both tiers. `nx.node_link_graph` is
+deliberately never used to build that graph: for this `directed: false`
+payload it returns an undirected `Graph`, which has no `in_degree`.
 
 graphify is an optional dependency: an absent `graphify-out/`, a stale build
 (`built_at_commit != head_oid`), unparseable/torn JSON, or valid JSON of the
@@ -37,7 +37,11 @@ import networkx as nx
 # Dependency-relation edge types the centrality axis considers; non-dependency
 # relations (`contains`, `rationale_for`, ...) never contribute (item 9).
 DEP_RELATIONS = frozenset({"calls", "uses", "imports_from", "inherits", "implements"})
-_EXTRACTED = "EXTRACTED"  # Tier-1 determinism boundary (R3-1)
+_EXTRACTED = "EXTRACTED"  # Tier-1 determinism tag
+_INFERRED = "INFERRED"  # Tier-2 agent-produced tag
+# Both confidence tiers are accepted; any other value is dropped.
+_ACCEPTED_CONFIDENCE = frozenset({_EXTRACTED, _INFERRED})
+_PROVENANCE_BY_CONFIDENCE = {_EXTRACTED: "extracted", _INFERRED: "inferred"}
 # The only build-commit marker shape the labeled-stale opt-in trusts: a full
 # lowercase 40-hex object id (the marker reaches `git rev-list` argv downstream).
 _FULL_HEX_OID_RE = re.compile(r"[0-9a-f]{40}")
@@ -50,9 +54,10 @@ class CentralityAxis:
     `scores` is `None` exactly when the axis is unavailable (optional
     dependency absent, stale, or unparseable) — distinct from an *available*
     axis whose graph happens to carry zero qualifying edges (an empty dict).
-    `edges` is the same file-level `DiGraph`'s EXTRACTED, intra-file-excluded
-    edge list the scores were derived from (one graph build, kept together);
-    it is empty whenever the axis is unavailable — never a stale edge set.
+    `edges` is the same file-level `DiGraph`'s two-tier, intra-file-excluded
+    edge list the scores were derived from (one graph build, kept together),
+    each entry tagged with its provenance (`"extracted"` or `"inferred"`); it
+    is empty whenever the axis is unavailable — never a stale edge set.
     `stale_built_at_commit` is the graph's own build commit exactly when the
     caller opted into the labeled-stale path (`allow_stale=True`) and the
     graph's `built_at_commit` differed from the target revision; it is `None`
@@ -62,7 +67,7 @@ class CentralityAxis:
 
     scores: dict[str, float] | None
     unavailable_reason: str | None = None
-    edges: tuple[tuple[str, str], ...] = ()
+    edges: tuple[tuple[str, str, str], ...] = ()
     stale_built_at_commit: str | None = None
 
     @property
@@ -76,7 +81,7 @@ class CentralityAxis:
     @staticmethod
     def from_indegree(
         indegree: dict[str, int],
-        edges: tuple[tuple[str, str], ...] = (),
+        edges: tuple[tuple[str, str, str], ...] = (),
         *,
         stale_built_at_commit: str | None = None,
     ) -> CentralityAxis:
@@ -94,10 +99,12 @@ class CentralityAxis:
 def centrality_axis(
     graph_path: Path, head_oid: str, *, allow_stale: bool = False
 ) -> CentralityAxis:
-    """Load-bearing axis from graphify. Tier-1 determinism: `EXTRACTED` edges
-    only (`INFERRED` graph edges are Tier-2, out of scope for `.2.1`). Intra-file
-    edges are dropped; projected post-PR centrality via the head-graph preflight
-    (no overlay — a head-built graph already contains new code's edges).
+    """Load-bearing axis from graphify. Scores both `EXTRACTED` and `INFERRED`
+    dependency-relation edges, tagging each with its tier so downstream
+    consumers can distinguish them; any other confidence value is dropped.
+    Intra-file edges are dropped; projected post-PR centrality via the
+    head-graph preflight (no overlay — a head-built graph already contains new
+    code's edges).
 
     `allow_stale=True` (spec §6.2 explicit opt-in) accepts a graph whose
     `built_at_commit` differs from `head_oid`, scoring it exactly like a fresh
@@ -146,22 +153,29 @@ def centrality_axis(
         for link in links:
             if link.get("relation") not in DEP_RELATIONS:
                 continue
-            if link.get("confidence") != _EXTRACTED:  # Tier-1 determinism (R3-1)
+            confidence = link.get("confidence")
+            if confidence not in _ACCEPTED_CONFIDENCE:
                 continue
             src = id_to_file.get(link.get("source"))
             dst = id_to_file.get(link.get("target"))
             if src is None or dst is None or src == dst:  # drop intra-file edges
                 continue
-            graph.add_edge(src, dst)  # file-level dependency edge
+            provenance = _PROVENANCE_BY_CONFIDENCE[confidence]
+            existing = graph.get_edge_data(src, dst)
+            # "extracted" is the stronger claim: once a file pair is tagged
+            # extracted, a later inferred link for the same pair must never
+            # downgrade it.
+            if existing is None or existing["provenance"] != "extracted":
+                graph.add_edge(src, dst, provenance=provenance)
     except (KeyError, TypeError, AttributeError):
         return CentralityAxis.unavailable(
             "graph.json malformed (missing or wrong-shape nodes/links)"
         )
     # Same graph, same pass: the edge list backing `scores` is just this
-    # DiGraph's own (already EXTRACTED-only, intra-file-excluded) edges.
-    # Ordering is left to the downstream `scene_to_json` sort — no need to
-    # sort twice.
-    edges = tuple(graph.edges())
+    # DiGraph's own (already two-tier, intra-file-excluded) edges, each tagged
+    # with the provenance it was resolved to above. Ordering is left to the
+    # downstream `scene_to_json` sort — no need to sort twice.
+    edges = tuple((src, dst, data["provenance"]) for src, dst, data in graph.edges(data=True))
     return CentralityAxis.from_indegree(
         dict(graph.in_degree()),
         edges=edges,

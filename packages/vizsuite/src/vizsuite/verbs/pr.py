@@ -102,10 +102,11 @@ def pr(runners: Runners, args: Namespace, repo_root: Path) -> JsonValue:
         churn=scope.files,
     )
 
-    # The centrality axis's own EXTRACTED, intra-file-excluded edges (empty
+    # The centrality axis's own two-tier, intra-file-excluded edges (empty
     # when the axis is unavailable — same fail-soft guarantee as load_bearing).
     edges = tuple(
-        Edge(source=source, target=target, kind="dependency") for source, target in centrality.edges
+        Edge(source=source, target=target, kind="dependency", provenance=provenance)
+        for source, target, provenance in centrality.edges
     )
 
     stale_graph: StaleGraph | None = None

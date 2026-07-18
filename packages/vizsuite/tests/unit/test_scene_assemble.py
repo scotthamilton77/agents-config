@@ -223,8 +223,9 @@ def test_edges_default_to_empty_when_graphify_is_unavailable():
 
 def test_edges_thread_through_assemble_and_serialize_sorted_and_deterministically():
     # Deliberately reverse-ordered input to prove scene_to_json sorts, not the caller.
+    # Mixed provenance proves the field flows through to the JSON payload too.
     edges = [
-        Edge(source="b.py", target="a.py", kind="dependency"),
+        Edge(source="b.py", target="a.py", kind="dependency", provenance="inferred"),
         Edge(source="a.py", target="b.py", kind="dependency"),
     ]
     scene = assemble(
@@ -240,8 +241,8 @@ def test_edges_thread_through_assemble_and_serialize_sorted_and_deterministicall
     assert scene.edges == tuple(edges)
     payload = scene_to_json(scene)
     assert payload["edges"] == [
-        {"source": "a.py", "target": "b.py", "kind": "dependency"},
-        {"source": "b.py", "target": "a.py", "kind": "dependency"},
+        {"source": "a.py", "target": "b.py", "kind": "dependency", "provenance": "extracted"},
+        {"source": "b.py", "target": "a.py", "kind": "dependency", "provenance": "inferred"},
     ]
 
     # Byte-stable across two assemblies of the same edges — only the stamp varies.
