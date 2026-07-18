@@ -400,9 +400,16 @@ def deploy_clis(
         counters[target] = Counters()
         package_dir = repo_root / spec.package_dir
         failed, shim_present = _deploy_one(
-            spec, package_dir=package_dir, prior_entry=prior_by_name.get(spec.name),
-            tools=tools, deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
-            deployed=deployed, c=counters[target],
+            spec,
+            package_dir=package_dir,
+            prior_entry=prior_by_name.get(spec.name),
+            tools=tools,
+            deploy=deploy,
+            io=io,
+            dry_run=dry_run,
+            auto_yes=auto_yes,
+            deployed=deployed,
+            c=counters[target],
         )
         any_failed = any_failed or failed
         # Reachability gate reuses the decision/install outcome — it never
@@ -410,7 +417,10 @@ def deploy_clis(
         # (1 decision read + 1 re-read per successful install).
         if not dry_run and shim_present:
             ok = _check_reachability(
-                spec.binary, deploy=deploy, io=io, auto_yes=auto_yes,
+                spec.binary,
+                deploy=deploy,
+                io=io,
+                auto_yes=auto_yes,
                 resolved_dirs=reach_ok_dirs,
             )
             any_failed = any_failed or not ok
@@ -459,34 +469,72 @@ def _deploy_one(
                     c.skipped += 1
                     return _done(False, False)
                 io.warn(f"cli:{spec.name}: installed copy fails smoke; healing\n{smoke.output}")
-                return _done(*_install(
-                    spec, package_dir, digest, force=True, deploy=deploy, io=io,
-                    deployed=deployed, c=c, counter_attr="created",
-                ))
+                return _done(
+                    *_install(
+                        spec,
+                        package_dir,
+                        digest,
+                        force=True,
+                        deploy=deploy,
+                        io=io,
+                        deployed=deployed,
+                        c=c,
+                        counter_attr="created",
+                    )
+                )
             if shim is None:
                 # Heal. force only when our env is provably still there.
                 if dry_run:
                     io.info(f"cli:{spec.name}: would reinstall (shim missing)")
                     return _done(False, False)
-                return _done(*_install(
-                    spec, package_dir, digest, force=provenance, deploy=deploy, io=io,
-                    deployed=deployed, c=c, counter_attr="created",
-                ))
+                return _done(
+                    *_install(
+                        spec,
+                        package_dir,
+                        digest,
+                        force=provenance,
+                        deploy=deploy,
+                        io=io,
+                        deployed=deployed,
+                        c=c,
+                        counter_attr="created",
+                    )
+                )
             # shim present, digest differs -> upgrade (consent).
-            return _done(*_consented_install(
-                spec, package_dir, digest, prompt=f"Upgrade CLI '{spec.binary}' "
-                f"({spec.name})?", deploy=deploy, io=io, dry_run=dry_run,
-                auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
-                would="would upgrade",
-            ))
+            return _done(
+                *_consented_install(
+                    spec,
+                    package_dir,
+                    digest,
+                    prompt=f"Upgrade CLI '{spec.binary}' ({spec.name})?",
+                    deploy=deploy,
+                    io=io,
+                    dry_run=dry_run,
+                    auto_yes=auto_yes,
+                    deployed=deployed,
+                    c=c,
+                    counter_attr="updated",
+                    would="would upgrade",
+                )
+            )
         # Receipt present but provenance mismatch (foreign env/shim) ->
         # takeover consent (spec §6 provenance precondition / item 19).
-        return _done(*_consented_install(
-            spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
-            f"(not provably {spec.name}'s)?", deploy=deploy, io=io, dry_run=dry_run,
-            auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
-            would="would take over",
-        ))
+        return _done(
+            *_consented_install(
+                spec,
+                package_dir,
+                digest,
+                prompt=f"Take over existing '{spec.binary}' (not provably {spec.name}'s)?",
+                deploy=deploy,
+                io=io,
+                dry_run=dry_run,
+                auto_yes=auto_yes,
+                deployed=deployed,
+                c=c,
+                counter_attr="updated",
+                would="would take over",
+            )
+        )
 
     if not evidence:
         # Fresh: non-forcing; an already-exists failure re-routes to
@@ -496,26 +544,66 @@ def _deploy_one(
             return _done(False, False)
         result = deploy.tool_install(package_dir, force=False)
         if result.ok:
-            return _done(*_finish_install(spec, digest, deploy=deploy, io=io,
-                                          deployed=deployed, c=c, counter_attr="created"))
+            return _done(
+                *_finish_install(
+                    spec,
+                    digest,
+                    deploy=deploy,
+                    io=io,
+                    deployed=deployed,
+                    c=c,
+                    counter_attr="created",
+                )
+            )
         io.warn(f"cli:{spec.name}: install found existing state; asking to take over")
-        return _done(*_consented_install(
-            spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}'?",
-            deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
-            deployed=deployed, c=c, counter_attr="updated", would="would take over",
-        ))
-    return _done(*_consented_install(
-        spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
-        f"(manual install detected)?", deploy=deploy, io=io, dry_run=dry_run,
-        auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
-        would="would take over",
-    ))
+        return _done(
+            *_consented_install(
+                spec,
+                package_dir,
+                digest,
+                prompt=f"Take over existing '{spec.binary}'?",
+                deploy=deploy,
+                io=io,
+                dry_run=dry_run,
+                auto_yes=auto_yes,
+                deployed=deployed,
+                c=c,
+                counter_attr="updated",
+                would="would take over",
+            )
+        )
+    return _done(
+        *_consented_install(
+            spec,
+            package_dir,
+            digest,
+            prompt=f"Take over existing '{spec.binary}' (manual install detected)?",
+            deploy=deploy,
+            io=io,
+            dry_run=dry_run,
+            auto_yes=auto_yes,
+            deployed=deployed,
+            c=c,
+            counter_attr="updated",
+            would="would take over",
+        )
+    )
 
 
 def _consented_install(
-    spec: CliSpec, package_dir: Path, digest: str, *, prompt: str,
-    deploy: CliDeployPort, io: IOPort, dry_run: bool, auto_yes: bool,
-    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str, would: str,
+    spec: CliSpec,
+    package_dir: Path,
+    digest: str,
+    *,
+    prompt: str,
+    deploy: CliDeployPort,
+    io: IOPort,
+    dry_run: bool,
+    auto_yes: bool,
+    deployed: dict[str, CliReceiptEntry],
+    c: Counters,
+    counter_attr: str,
+    would: str,
 ) -> tuple[bool, bool]:
     if dry_run:
         io.info(f"cli:{spec.name}: {would}")
@@ -524,26 +612,49 @@ def _consented_install(
     if not auto_yes and not io.confirm(prompt, default=False):
         c.skipped += 1
         return False, False
-    return _install(spec, package_dir, digest, force=True, deploy=deploy, io=io,
-                    deployed=deployed, c=c, counter_attr=counter_attr)
+    return _install(
+        spec,
+        package_dir,
+        digest,
+        force=True,
+        deploy=deploy,
+        io=io,
+        deployed=deployed,
+        c=c,
+        counter_attr=counter_attr,
+    )
 
 
 def _install(
-    spec: CliSpec, package_dir: Path, digest: str, *, force: bool,
-    deploy: CliDeployPort, io: IOPort,
-    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
+    spec: CliSpec,
+    package_dir: Path,
+    digest: str,
+    *,
+    force: bool,
+    deploy: CliDeployPort,
+    io: IOPort,
+    deployed: dict[str, CliReceiptEntry],
+    c: Counters,
+    counter_attr: str,
 ) -> tuple[bool, bool]:
     result = deploy.tool_install(package_dir, force=force)
     if not result.ok:
         io.err(f"cli:{spec.name}: install failed\n{result.output}")
         return True, False
-    return _finish_install(spec, digest, deploy=deploy, io=io, deployed=deployed,
-                           c=c, counter_attr=counter_attr)
+    return _finish_install(
+        spec, digest, deploy=deploy, io=io, deployed=deployed, c=c, counter_attr=counter_attr
+    )
 
 
 def _finish_install(
-    spec: CliSpec, digest: str, *, deploy: CliDeployPort, io: IOPort,
-    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
+    spec: CliSpec,
+    digest: str,
+    *,
+    deploy: CliDeployPort,
+    io: IOPort,
+    deployed: dict[str, CliReceiptEntry],
+    c: Counters,
+    counter_attr: str,
 ) -> tuple[bool, bool]:
     shim = deploy.shim_path(spec.binary)
     if shim is None:
@@ -563,7 +674,11 @@ def _finish_install(
 
 
 def _check_reachability(
-    binary: str, *, deploy: CliDeployPort, io: IOPort, auto_yes: bool,
+    binary: str,
+    *,
+    deploy: CliDeployPort,
+    io: IOPort,
+    auto_yes: bool,
     resolved_dirs: set[Path],
 ) -> bool:
     return True  # completed in Task 9 (reachability invariant)
