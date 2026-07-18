@@ -14,6 +14,12 @@ class Noun(StrEnum):
     EPIC = "epic"
 
 
+# Leaf nouns -- everything except the two container nouns (spec/epic). `work
+# discover` restricts to these (discover spec §3.1): a discovery files a work
+# item, not a structural container.
+LEAF_NOUNS: tuple[Noun, ...] = (Noun.SPIKE, Noun.CHORE, Noun.DECISION, Noun.FEAT, Noun.BUGFIX)
+
+
 @dataclass(frozen=True)
 class NounTemplate:
     bd_type: str  # bd --type value

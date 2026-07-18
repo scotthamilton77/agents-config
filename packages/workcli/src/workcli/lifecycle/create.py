@@ -219,7 +219,7 @@ def _create_spec_container(
         )
     )
     if args.orphan:
-        backend.append_note(container_id, ORPHAN_MARKER)
+        _append_orphan_marker(backend, container_id)
     # The completion tail (mint children, stamp `planned`, drop `creating-spec`
     # strictly last -- L16) is shared with `promote` and the `reconcile` sweep.
     # A crash anywhere before the handle comes off leaves a `shape-spec`
@@ -266,5 +266,23 @@ def create_noun(backend: Backend, args: Namespace) -> JsonValue:
         )
     )
     if args.orphan:
-        backend.append_note(new_id, ORPHAN_MARKER)
+        _append_orphan_marker(backend, new_id)
     return _with_warnings({"id": new_id}, warnings)
+
+
+def _append_orphan_marker(backend: Backend, item_id: str) -> None:
+    """Append the orphan marker, surfacing `item_id` on failure (discover spec §3.2).
+
+    The mint (`backend.create`) already returned by the time this runs, so a
+    failure here leaves a created-but-unmarked bead. `detail.created_id` lets
+    the caller replay only this step against the already-minted id, rather
+    than discarding it behind a bare error.
+    """
+    try:
+        backend.append_note(item_id, ORPHAN_MARKER)
+    except WorkError as append_error:
+        raise WorkError(
+            append_error.code,
+            append_error.message,
+            {**append_error.detail, "created_id": item_id},
+        ) from append_error

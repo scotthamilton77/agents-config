@@ -20,6 +20,7 @@ from workcli.backend import Backend, Capabilities, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
+from workcli.lifecycle.discover import discover
 from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
 from workcli.verbs.groom import groom
@@ -100,6 +101,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "promote": promote,
     "deliver": deliver,
     "reconcile": reconcile,
+    "discover": discover,
     "dep": dep,
     "label": label,
     "sync": sync,
@@ -114,6 +116,10 @@ REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {
     "ready": lambda c, _a: c.ready is not ReadySupport.UNSUPPORTED,
     "sync": lambda c, _a: c.sync is not SyncSupport.UNSUPPORTED,
     "dep": lambda c, a: a.action == "list" or c.supports_dep_write,
+    # discover always mints a typed discovered-from edge (step 5), so it
+    # carries the same precondition as `dep add`/`dep remove` -- gated
+    # ahead of the handler exactly like `dep` itself (spec §4 step 0).
+    "discover": lambda c, _a: c.supports_dep_write,
 }
 
 
