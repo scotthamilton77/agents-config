@@ -76,14 +76,17 @@ def _report_targets(
     tools: Sequence[str],
     plugins: Sequence[str],
     all_plugins: Sequence[str],
+    clis: Sequence[str] = (),
 ) -> list[str]:
     """Ordered report-target set.
 
     Active tools, then active plugins, then any ALL_* plugin that is not already
     a report target but accumulated prune activity — so a plugin pruned outside
-    the active set (AC#19) is reported once, as a real block.
+    the active set (AC#19) is reported once, as a real block. ``clis`` (the
+    cli:<name> deploy/prune targets) are appended last, unconditionally — they
+    have no ALL_* universe of their own.
     """
-    targets = [*tools, *plugins]
+    targets = [*tools, *plugins, *clis]
     seen = set(targets)
     for plugin in all_plugins:
         if plugin in seen:
@@ -101,6 +104,7 @@ def render_summary(
     plugins: Sequence[str],
     all_tools: Sequence[str],
     all_plugins: Sequence[str],
+    clis: Sequence[str] = (),
     verbose: bool,
     io: IOPort,
 ) -> None:
@@ -109,10 +113,13 @@ def render_summary(
     ``counters`` is the merged per-target tally (a target absent from the map is
     treated as all-zero). ``tools`` / ``plugins`` are the active sets in report
     order; ``all_tools`` / ``all_plugins`` are the ALL_* universes used to emit
-    the '(not detected, skipped)' footers. ``verbose`` selects the per-tool block
-    form over the one-line quiet form.
+    the '(not detected, skipped)' footers. ``clis`` is the active cli:<name>
+    deploy/prune target set. ``verbose`` selects the per-tool block form over
+    the one-line quiet form.
     """
-    targets = _report_targets(counters, tools=tools, plugins=plugins, all_plugins=all_plugins)
+    targets = _report_targets(
+        counters, tools=tools, plugins=plugins, all_plugins=all_plugins, clis=clis
+    )
     if verbose:
         _render_verbose(counters, targets, all_tools=all_tools, all_plugins=all_plugins, io=io)
     else:

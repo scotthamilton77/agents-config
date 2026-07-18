@@ -363,3 +363,39 @@ def test_entries_carry_a_transcript_record() -> None:
     )
     assert io.transcript
     assert all(isinstance(e, TranscriptEntry) for e in io.transcript)
+
+
+def test_cli_targets_render_as_blocks() -> None:
+    """
+    Given counters keyed cli:workcli with activity
+    When render_summary runs with clis=("cli:workcli",)
+    Then verbose renders a '-- cli:workcli --' block and quiet renders its
+    change line (previously cli:* keys were silently dropped).
+
+    Pins spec §6 summary-rendering change.
+    """
+    counters = {"cli:workcli": Counters(created=1)}
+    io = ScriptedIO()
+    render_summary(
+        counters,
+        tools=[],
+        plugins=[],
+        all_tools=[],
+        all_plugins=[],
+        clis=["cli:workcli"],
+        verbose=True,
+        io=io,
+    )
+    assert any(e.message == "-- cli:workcli --" for e in io.transcript)
+    io2 = ScriptedIO()
+    render_summary(
+        counters,
+        tools=[],
+        plugins=[],
+        all_tools=[],
+        all_plugins=[],
+        clis=["cli:workcli"],
+        verbose=False,
+        io=io2,
+    )
+    assert any("cli:workcli: 1 installed" in e.message for e in io2.transcript)
