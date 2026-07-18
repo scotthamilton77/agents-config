@@ -24,7 +24,7 @@ from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
 from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
-from workcli.lifecycle.nouns import Noun
+from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -145,6 +145,30 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     reconcile_parser.add_argument("--dry-run", action="store_true")
 
 
+def _add_discover_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    discover_parser = subparsers.add_parser(
+        "discover", help="file a discovered-work item with a mechanically-enforced triage record"
+    )
+    discover_parser.add_argument(
+        "--noun",
+        required=True,
+        choices=[noun.value for noun in LEAF_NOUNS],
+        help="spike|chore|decision|feat|bugfix -- leaf nouns only, a discovery is not a container",
+    )
+    discover_parser.add_argument("--title", required=True)
+    discover_parser.add_argument("--description")
+    discover_parser.add_argument("--anchor")
+    discover_parser.add_argument("--orphan", action="store_true")
+    discover_parser.add_argument("--discovered-from", dest="discovered_from")
+    discover_parser.add_argument("--scope")
+    discover_parser.add_argument("--scope-why", dest="scope_why")
+    discover_parser.add_argument("--priority")
+    discover_parser.add_argument("--priority-why", dest="priority_why")
+    discover_parser.add_argument("--anchor-why", dest="anchor_why")
+    discover_parser.add_argument("--escalation-why", dest="escalation_why")
+    discover_parser.add_argument("--track", metavar="NAME")
+
+
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     dep_parser = subparsers.add_parser("dep", help="manage dependency edges")
     dep_parser.add_argument("action", choices=["add", "remove", "list"])
@@ -218,6 +242,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_read_subparsers(subparsers)
     _add_write_subparsers(subparsers)
     _add_transition_subparsers(subparsers)
+    _add_discover_subparser(subparsers)
     _add_relations_subparsers(subparsers)
     _add_track_subparsers(subparsers)
     _add_report_subparsers(subparsers)
