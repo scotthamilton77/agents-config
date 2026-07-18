@@ -14,6 +14,7 @@
 const http = require("http");
 const https = require("https");
 const { URL } = require("url");
+const { StringDecoder } = require("string_decoder");
 
 const TARGET = { protocol: "https:", hostname: "openrouter.ai" };
 
@@ -45,6 +46,9 @@ const ANTHROPIC_EVENTS = new Set([
 /** Block types that must not be the final block in a response. */
 const REASONING_BLOCKS = new Set(["thinking", "redacted_thinking"]);
 
+/** SSE events are separated by a blank line, in either LF or CRLF form. */
+const EVENT_DELIMITER = /\r?\n\r?\n/;
+
 /** Logs go to stderr: stdout belongs to the child `claude` process, and it
  *  carries the JSON result that is the entire point of the exercise. */
 function defaultLog(msg) {
@@ -74,7 +78,7 @@ function isStreamingRequest(headers) {
 function parseSSEBlock(block) {
   let event = "";
   let data = null;
-  for (const line of block.split("\n")) {
+  for (const line of block.split(/\r?\n/)) {
     if (line.startsWith("data:")) {
       try { data = JSON.parse(line.slice(5).trim()); } catch { /* non-JSON payload */ }
     } else if (line.startsWith("event:")) {
@@ -123,6 +127,8 @@ function splitMixedMessages(messages) {
 function createSSEFixer(res, log = defaultLog) {
   let buffer = "";
   let mode = "detecting"; // detecting | repair | passthrough
+  let sawMessageStop = false;
+  const decoder = new StringDecoder("utf8");
 
   const preamble = [];       // message_start and anything before the blocks
   const tail = [];           // message_delta and friends
@@ -144,8 +150,12 @@ function createSSEFixer(res, log = defaultLog) {
   /** Accumulate one event into the block model. */
   function collect(raw, event, data) {
     // Terminators are regenerated on replay; drop the originals so a duplicate
-    // or early message_stop cannot survive into the output.
-    if (event === "message_stop" || raw.trimEnd().endsWith("[DONE]")) return;
+    // or early message_stop cannot survive into the output. Record that a real
+    // one arrived — replay must not invent completion for a truncated stream.
+    if (event === "message_stop" || raw.trimEnd().endsWith("[DONE]")) {
+      sawMessageStop = true;
+      return;
+    }
 
     if (event === "content_block_start") {
       // A repeated index would orphan the first block's deltas and replay the
@@ -221,13 +231,30 @@ function createSSEFixer(res, log = defaultLog) {
     });
 
     for (const { event, data, raw } of tail) emit(event, data, raw);
-    emit("message_stop", { type: "message_stop" });
-    res.write("event: data\ndata: [DONE]\n\n");
+
+    // Only re-emit the terminators that were actually dropped above. Upstream
+    // can end without a message_stop (a provider-side truncation), and
+    // synthesizing one there would dress a failed response up as a complete
+    // one — leaving the caller to consume partial output instead of retrying.
+    if (sawMessageStop) {
+      emit("message_stop", { type: "message_stop" });
+      res.write("event: data\ndata: [DONE]\n\n");
+    } else {
+      log("WARNING: upstream stream ended without message_stop — forwarding as incomplete");
+    }
   }
 
   function processChunk(chunk) {
-    buffer += chunk.toString();
-    const events = buffer.split("\n\n");
+    // Decode through a stateful decoder, not per-chunk. A multibyte character
+    // split across two network chunks would otherwise decode to U+FFFD on
+    // each side and silently corrupt any non-ASCII model output.
+    buffer += decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+
+    // SSE permits CRLF line endings. Splitting on "\n\n" alone would leave a
+    // CRLF stream as one unsplit block that never classifies, so it would be
+    // passed through unrepaired — reproducing the empty-result failure this
+    // proxy exists to fix.
+    const events = buffer.split(EVENT_DELIMITER);
     buffer = events.pop();
 
     for (const raw of events) {
@@ -258,6 +285,10 @@ function createSSEFixer(res, log = defaultLog) {
   }
 
   function finish() {
+    // Release any bytes the decoder is still holding for an incomplete
+    // character, so a truncated final code point is not lost outright.
+    buffer += decoder.end();
+
     if (mode === "repair") {
       // A stream that ends without a trailing blank line leaves its final
       // event in `buffer`. Collect it before replaying — dropping it would
@@ -376,9 +407,17 @@ function proxyRequest(clientReq, clientRes, log) {
     // client but leaves only a status code behind, which is exactly the case
     // worth reading when a follow-up turn is rejected.
     if (proxyRes.statusCode >= 400) {
-      let errBody = "";
-      proxyRes.on("data", (c) => { if (errBody.length < 2048) errBody += c.toString(); });
+      // Collect bytes and decode once at the end: decoding each chunk on
+      // arrival would mangle any multibyte character split across chunks.
+      const errChunks = [];
+      let errBytes = 0;
+      proxyRes.on("data", (c) => {
+        if (errBytes >= 2048) return;
+        errBytes += c.length;
+        errChunks.push(c);
+      });
       proxyRes.on("end", () => {
+        const errBody = Buffer.concat(errChunks).toString("utf8");
         log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${errBody.trim().slice(0, 1000)}`);
       });
     }

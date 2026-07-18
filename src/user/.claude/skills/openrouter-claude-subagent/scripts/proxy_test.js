@@ -599,3 +599,138 @@ test("a normal origin-form request is not rejected by the target-pin, body-size,
     await proxy.close();
   }
 });
+
+// ─── createSSEFixer: multibyte characters split across chunks ───────
+//
+// Before the stateful StringDecoder, each chunk was decoded independently
+// with `chunk.toString()`. A multibyte character straddling a chunk
+// boundary would have its bytes split across two `Buffer.toString()` calls,
+// and each half decodes on its own to the replacement character (U+FFFD),
+// silently corrupting any non-ASCII model output. These tests split a
+// Buffer mid-character on purpose and assert both that the original text
+// survives AND that no U+FFFD appears — the latter is what actually
+// regresses if a fix reverts to per-chunk decoding.
+
+test("reassembles a multibyte character split across chunk boundaries without corrupting it", () => {
+  const text = "café 日本語 \u{1F600}";
+  const stream = streamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, text), blockStop(0),
+    msgStop(), done(),
+  ]);
+  const buf = Buffer.from(stream, "utf8");
+
+  // "é" is a 2-byte UTF-8 sequence (0xC3 0xA9). Split one byte into it so
+  // the first chunk ends mid-character.
+  const eIndex = buf.indexOf(Buffer.from("é", "utf8"));
+  const cut = eIndex + 1;
+
+  const res = fakeRes();
+  const fixer = createSSEFixer(res, () => {});
+  fixer.processChunk(buf.subarray(0, cut));
+  fixer.processChunk(buf.subarray(cut));
+  fixer.finish();
+
+  const events = res.output().split("\n\n").filter((s) => s.trim()).map(parseSSEBlock);
+  const delta = events.find((e) => e.event === "content_block_delta");
+  assert.equal(delta.data.delta.text, text);
+  assert.ok(!res.output().includes("�"), "output must not contain the replacement character");
+});
+
+test("reassembles an astral-plane emoji (4-byte UTF-8 surrogate pair) split across chunk boundaries", () => {
+  // The emoji is the case most likely to break a naive fix: it is a
+  // surrogate pair in UTF-16 and 4 bytes in UTF-8, so a split can land
+  // inside either the byte sequence or, if mishandled, the resulting
+  // surrogate pair.
+  const text = "before \u{1F600} after";
+  const stream = streamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, text), blockStop(0),
+    msgStop(), done(),
+  ]);
+  const buf = Buffer.from(stream, "utf8");
+
+  const emojiIndex = buf.indexOf(Buffer.from("\u{1F600}", "utf8"));
+  const cut = emojiIndex + 2; // 2 of the emoji's 4 UTF-8 bytes in the first chunk
+
+  const res = fakeRes();
+  const fixer = createSSEFixer(res, () => {});
+  fixer.processChunk(buf.subarray(0, cut));
+  fixer.processChunk(buf.subarray(cut));
+  fixer.finish();
+
+  const events = res.output().split("\n\n").filter((s) => s.trim()).map(parseSSEBlock);
+  const delta = events.find((e) => e.event === "content_block_delta");
+  assert.equal(delta.data.delta.text, text);
+  assert.ok(!res.output().includes("�"), "output must not contain the replacement character");
+});
+
+// ─── createSSEFixer: CRLF-delimited streams ──────────────────────────
+//
+// SSE permits CRLF line endings. Before EVENT_DELIMITER accounted for it,
+// splitting only on "\n\n" left a CRLF stream as one giant unsplit block
+// that never crossed the classifier, so it was forwarded byte-for-byte
+// unrepaired — reproducing the exact empty-result bug (response ending on
+// a reasoning block) this proxy exists to fix.
+
+/** Build a CRLF-delimited SSE stream from the same [event, data] blocks the
+ *  LF helpers use, joined with "\r\n\r\n" and each internal line ending in
+ *  "\r\n" — mirroring `streamText`/`block` but for the CRLF wire format. */
+function crlfStreamText(blocks) {
+  return blocks.map((b) => b.replace(/\n/g, "\r\n")).join("\r\n\r\n") + "\r\n\r\n";
+}
+
+test("classifies and repairs a CRLF-delimited stream instead of passing it through unrepaired", () => {
+  const text = crlfStreamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, "hello"), blockStop(0),
+    blockStart(1, "thinking"), blockDelta(1, "pondering"), blockStop(1),
+    msgStop(), done(),
+  ]);
+  const { events } = runFixer(text);
+
+  // Assert via parsed output events, not string matching: if the stream had
+  // been passed through unrepaired, `events` would just be the raw CRLF
+  // blocks in their original order, ending on "thinking" rather than "text".
+  const starts = events.filter((e) => e.event === "content_block_start");
+  assert.equal(starts.length, 2, "a passed-through CRLF stream would still parse as blocks, but reordering proves repair mode ran");
+  assert.equal(starts[starts.length - 1].data.content_block.type, "text", "text block must be replayed last");
+
+  const deltas = events.filter((e) => e.event === "content_block_delta");
+  assert.equal(deltas[deltas.length - 1].data.delta.text, "hello", "text block's delta must be replayed last");
+});
+
+// ─── createSSEFixer: completion is not synthesized for a truncated stream ──
+//
+// Before this fix, replay() unconditionally appended message_stop + [DONE].
+// That dressed up a provider-side truncation as a complete response, so the
+// caller consumed partial output instead of retrying. Test A drives the
+// truncation case; Test B is a required regression guard — without it, a
+// broken fix that simply never emits terminators (even for complete
+// streams) would pass Test A alone.
+
+test("does not synthesize message_stop or [DONE] for a stream that ends without an upstream message_stop", () => {
+  const text = streamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, "hello"), blockStop(0),
+    blockStart(1, "thinking"), blockDelta(1, "pondering"), blockStop(1),
+    // No msgStop(), no done() — upstream cut off mid-response.
+  ]);
+  const { events, logs } = runFixer(text);
+
+  assert.ok(!events.some((e) => e.event === "message_stop"), "must not synthesize message_stop for a truncated stream");
+  assert.ok(!events.some((e) => e.data === null), "must not synthesize [DONE] for a truncated stream");
+  assert.ok(logs.some((m) => m.includes("without message_stop")), "must log a warning naming the missing message_stop");
+});
+
+test("REGRESSION GUARD: still emits message_stop and [DONE] for a normal complete stream", () => {
+  const text = streamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, "hello"), blockStop(0),
+    msgStop(), done(),
+  ]);
+  const { events } = runFixer(text);
+
+  assert.ok(events.some((e) => e.event === "message_stop"), "a complete stream must still get message_stop");
+  assert.ok(events.some((e) => e.data === null), "a complete stream must still get [DONE]");
+});
