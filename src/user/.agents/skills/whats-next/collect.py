@@ -56,6 +56,12 @@ def work_groom_status():
             ["work", "groom", "--status"],
             capture_output=True, text=True, timeout=30,
         )
+        if result.returncode != 0:
+            # A non-zero exit is a documented self-silencing failure; parsing
+            # stdout anyway risks accepting a stale/partial envelope a
+            # wrapper or half-failed `work` binary wrote before exiting
+            # non-zero (Codex finding).
+            return None
         envelope = json.loads(result.stdout)
     except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError):
         # OSError (a superclass of FileNotFoundError) also covers a `work`
@@ -63,7 +69,10 @@ def work_groom_status():
         # noexec mount -- which subprocess.run raises as PermissionError,
         # a plain FileNotFoundError catch would miss (Codex finding).
         return None
-    if not envelope.get("ok"):
+    if not isinstance(envelope, dict) or not envelope.get("ok"):
+        # Valid JSON that isn't an envelope object (e.g. a PATH-shadowed
+        # `work` emitting `[]`) must self-silence too, not crash .get() with
+        # AttributeError (Codex finding).
         return None
     data = envelope.get("data")
     return data if isinstance(data, dict) else None

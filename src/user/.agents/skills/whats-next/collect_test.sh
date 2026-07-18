@@ -1023,4 +1023,44 @@ assert 'backlog_grooming_nag' not in out, f'nag must be absent on an ok:false en
 " || fail "T16d: backlog_grooming_nag must be absent when work groom --status returns ok:false"
 pass "T16d: backlog_grooming_nag absent when work groom --status returns an ok:false envelope (e.g. E_NOT_CONFIGURED)"
 
+# (e) `work` exits non-zero but stdout still carries a stale/partial ok:true
+# envelope (a wrapper or half-failed binary) -> the non-zero exit alone must
+# self-silence, never trusting stdout it wrote on the way out.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1.0","ok":true,"data":{"backlog_last_groomed":"2026-01-01T00:00:00Z","days_since":30,"nag_days":7,"breached":true},"error":null}'
+exit 1
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16E="$TMP_T16/e.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16E" 2>"$TMP_T16/err.e"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16e: collect.py exited $ec with a non-zero work exit (stderr: $(cat "$TMP_T16/err.e"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16E'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent on a non-zero exit even with ok:true stdout; got: {out}'
+" || fail "T16e: backlog_grooming_nag must be absent when work groom --status exits non-zero"
+pass "T16e: backlog_grooming_nag absent when work groom --status exits non-zero despite an ok:true envelope"
+
+# (f) `work` exits 0 with valid JSON that is not an envelope object (e.g. a
+# PATH-shadowed or stale binary emitting a bare array) -> self-silence, not
+# an AttributeError crash from calling .get() on a non-dict.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '[]'
+exit 0
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16F="$TMP_T16/f.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16F" 2>"$TMP_T16/err.f"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16f: collect.py exited $ec with a non-object work JSON body (stderr: $(cat "$TMP_T16/err.f"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16F'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent on a non-object JSON body; got: {out}'
+" || fail "T16f: backlog_grooming_nag must be absent when work groom --status emits non-object JSON"
+pass "T16f: backlog_grooming_nag absent when work groom --status emits valid but non-object JSON"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
