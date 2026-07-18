@@ -125,7 +125,7 @@ def classify(bid):
         return t
     return 'unknown'
 
-NONCLOSED = ('open', 'in_progress', 'deferred')
+NONCLOSED = ('open', 'in_progress', 'blocked', 'deferred')
 nonclosed_ids = [bid for bid, b in beads.items() if b['status'] in NONCLOSED]
 print("nonclosed total", len(nonclosed_ids))
 
@@ -148,6 +148,13 @@ json.dump(classification, open(args.out, 'w'))
 
 print("\n\n=== MILESTONE MAP ===")
 for mid, (name, order) in sorted(MILESTONES.items(), key=lambda x: x[1][1]):
+    if mid not in beads:
+        # A hard-coded milestone id absent from a partial/filtered export
+        # (e.g. a scrubbed or scoped `bd export`) is a diagnostic gap, not a
+        # reason to crash before the classification.json this script exists
+        # to produce has been written.
+        print(f"\n{name} ({mid}) -- not present in this export, skipping")
+        continue
     m = beads[mid]
     children = [bid for bid in beads if parent_of(bid) == mid]
     open_desc_count = 0

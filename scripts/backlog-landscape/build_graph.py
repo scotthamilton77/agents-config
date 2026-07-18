@@ -2,6 +2,7 @@
 classification. Interim census tool -- see README.md for the retirement note.
 """
 import argparse
+import collections
 import datetime
 import json
 import re
@@ -58,7 +59,7 @@ def milestone_of(bid):
     return None
 
 classification = json.load(open(args.classification))
-NONCLOSED = ('open', 'in_progress', 'deferred')
+NONCLOSED = ('open', 'in_progress', 'blocked', 'deferred')
 nonclosed_ids = set(bid for bid, b in beads.items() if b['status'] in NONCLOSED)
 
 # Determine which closed epics/milestones are needed as containers (ancestor of a non-closed bead)
@@ -75,16 +76,46 @@ def clean_desc(b):
     d = re.sub(r'\s+', ' ', d).strip()
     return d[:200]
 
+def inherited_track(bid):
+    # `classification` only covers non-closed beads (classify.py's own
+    # NONCLOSED scope). A closed container is included here precisely
+    # because it has a non-closed descendant (`needed_closed`'s own
+    # construction), so inherit the majority track among its classified
+    # descendants instead of defaulting to 'unknown' -- a wrong color and
+    # spurious cross-track edges on every dependency touching it otherwise.
+    counts = collections.Counter()
+    stack = [bid]
+    seen = {bid}
+    while stack:
+        cur = stack.pop()
+        for cid in beads:
+            if cid not in seen and parent_of(cid) == cur:
+                seen.add(cid)
+                stack.append(cid)
+                if cid in classification:
+                    counts[classification[cid]] += 1
+    if not counts:
+        return 'unknown'
+    return counts.most_common(1)[0][0]
+
 bead_records = []
 for bid in include_ids:
     b = beads[bid]
+    if bid in classification:
+        track = classification[bid]
+    elif b.get('issue_type') == 'milestone':
+        track = 'ops-meta'
+    elif bid in needed_closed:
+        track = inherited_track(bid)
+    else:
+        track = 'unknown'
     rec = {
         'id': bid,
         'title': b['title'],
         'status': b['status'],
         'priority': b.get('priority'),
         'type': b.get('issue_type'),
-        'track': classification.get(bid, 'ops-meta' if b.get('issue_type') == 'milestone' else 'unknown'),
+        'track': track,
         'milestone': milestone_of(bid),
         'parent': parent_of(bid),
         'labels': b.get('labels') or [],
@@ -113,6 +144,8 @@ graph = {
     'milestones': [
         {'id': mid, 'title': beads[mid]['title'], 'status': beads[mid]['status'], 'order': order}
         for mid, (short, order) in sorted(MILESTONES.items(), key=lambda x: x[1][1])
+        if mid in beads  # a hard-coded milestone absent from a partial/filtered export
+                          # is a diagnostic gap, not a reason to crash mid-render
     ],
     'tracks': ['installer', 'prgroom', 'workcli', 'pdlc-orchestrator', 'holding-place', 'vizsuite',
                'skills-discipline', 'portability', 'ops-meta', 'unknown'],
