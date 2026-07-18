@@ -65,3 +65,6 @@ fail_under = 90
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "@overload"]
 show_missing = true
 skip_covered = true
+
+[tool.pytest.ini_options]
+markers = ["cli_deploy: exercises the real deploy stage wiring"]

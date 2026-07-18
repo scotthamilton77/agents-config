@@ -4,7 +4,7 @@
 
 ## Purpose
 
-A `uv`-managed Python package (`packages/installer`) that installs agent configuration from this repo into AI coding assistant homes (`~/.claude/`, `~/.codex/`, `~/.gemini/`, OpenCode XDG). User-facing entry point is `scripts/install.sh`, a thin `exec uv run --project packages/installer python -m installer` stub. This repo is the first Python subproject in a modular monorepo; its layout is the template for future Python subprojects.
+A `uv`-managed Python package (`packages/installer`) that installs agent configuration from this repo into AI coding assistant homes (`~/.claude/`, `~/.codex/`, `~/.gemini/`, OpenCode XDG). User-facing entry point is `scripts/install.sh`, a thin `exec uv run --project packages/installer python -m installer` stub. This repo is the first Python subproject in a modular monorepo; its layout is the template for future Python subprojects. On the user path, the same install run also deploys the `work` (`packages/workcli`) and `prgroom` (`packages/prgroom`) CLIs onto PATH via `uv tool install` — a closed registry, receipt-tracked, healed/pruned on later runs — through the CLI-deploy stage (`core/clis.py` + `core/run.py`'s `deploy_clis`/`prune_clis`).
 
 ## Architecture
 

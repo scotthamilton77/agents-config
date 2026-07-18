@@ -31,6 +31,28 @@ def _neutralize_opencode_path_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("installer.tools.opencode.which", lambda _cmd: None)
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_cli_deploys(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Keep pre-existing full-install tests hermetic (no uv subprocesses).
+    Deploy-stage tests opt out with @pytest.mark.cli_deploy."""
+    if request.node.get_closest_marker("cli_deploy"):
+        return
+    from installer.core.run import CliDeployOutcome, CliPruneOutcome
+
+    monkeypatch.setattr(
+        "installer.cli.deploy_clis",
+        lambda *_a, **_k: CliDeployOutcome(deployed={}, counters={}, any_failed=False),
+    )
+    monkeypatch.setattr(
+        "installer.cli.prune_clis",
+        lambda *_a, **_k: CliPruneOutcome(
+            uninstalled_names=set(), relinquished_names=set(), counters={}
+        ),
+    )
+
+
 @pytest.fixture
 def ignore() -> InstallIgnore:
     """The canonical .installignore content as an in-memory object, so a staging

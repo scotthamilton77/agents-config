@@ -17,6 +17,7 @@ from installer.config import (
     resolve_tools,
     write_project_profiles,
 )
+from installer.core.clis import CLI_PACKAGES, RETIRED_CLIS, CliDeployPort
 from installer.core.consent import ConsentRequiredError
 from installer.core.dump import dump_plan
 from installer.core.installignore import load_installignore
@@ -36,11 +37,16 @@ from installer.core.profiles import (
 )
 from installer.core.prune_flow import PruneAbortedError
 from installer.core.receipt import Receipt
+from installer.core.receipt_build import merge_clis
 from installer.core.receipt_lock import ReceiptLockBusy, receipt_lock
 from installer.core.receipt_store import ReadStatus, read_receipt
 from installer.core.run import (
+    CliDeployOutcome,
+    CliPruneOutcome,
+    deploy_clis,
     install_pipeline,
     install_plugin_routes,
+    prune_clis,
     prune_pipeline,
     record_receipt,
 )
@@ -157,6 +163,7 @@ def main(
     io: IOPort | None = None,
     repo_root: Path | None = None,
     cwd: Path | None = None,
+    cli_deploy: CliDeployPort | None = None,
 ) -> int:
     """CLI entry point. Runs the installer, catching Ctrl-C at the boundary so an
     interactive abort (e.g. at an overwrite prompt) exits cleanly with code 130 and
@@ -164,7 +171,7 @@ def main(
     Every other exit — argparse's ``SystemExit``, the guarded config-error returns —
     passes through unchanged."""
     try:
-        return _run(argv, home=home, io=io, repo_root=repo_root, cwd=cwd)
+        return _run(argv, home=home, io=io, repo_root=repo_root, cwd=cwd, cli_deploy=cli_deploy)
     except KeyboardInterrupt:
         sys.stderr.write("\nAborted.\n")
         return 130
@@ -192,6 +199,7 @@ def _run(
     io: IOPort | None = None,
     repo_root: Path | None = None,
     cwd: Path | None = None,
+    cli_deploy: CliDeployPort | None = None,
 ) -> int:
     args = _build_parser().parse_args(argv)
     resolved_home = home if home is not None else Path.home()
@@ -293,6 +301,11 @@ def _run(
             args, plans=plans, project_root=args.project, repo_root=resolved_repo_root, io=io
         )
 
+    if cli_deploy is None:
+        from installer.core.clis import UvCliDeploy
+
+        cli_deploy = UvCliDeploy()
+
     if args.dump_stage is not None:
         try:
             dump_plan(plans, args.dump_stage, io=io)
@@ -349,6 +362,8 @@ def _run(
     plugin_outcomes: dict[str, list[InstallOutcome]] = {}
     pruned_paths: set[Path] = set()
     relinquished_paths: set[Path] = set()
+    cli_outcome: CliDeployOutcome | None = None
+    cli_prune: CliPruneOutcome | None = None
 
     # Single-writer advisory lock over the whole mutation section (receipt-read ->
     # install -> prune -> receipt-write). A concurrent second installer fails fast
@@ -407,6 +422,16 @@ def _run(
                             outcomes_by_plugin=plugin_outcomes,
                         ),
                     )
+                    cli_outcome = deploy_clis(
+                        CLI_PACKAGES,
+                        repo_root=resolved_repo_root,
+                        prior=prior,
+                        deploy=cli_deploy,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=config.auto_yes,
+                    )
+                    _merge_into(counters, cli_outcome.counters)
                 except ConsentRequiredError:
                     # A non-interactive run lacking --yes/--dry-run cannot answer the
                     # per-file overwrite prompt; sync_plan's up-front guard raises
@@ -434,12 +459,33 @@ def _run(
                 pruned_paths = outcome.pruned_paths
                 relinquished_paths = outcome.relinquished_paths
 
+                try:
+                    cli_prune = prune_clis(
+                        prior,
+                        registry_names=frozenset(s.name for s in CLI_PACKAGES),
+                        retired=frozenset(RETIRED_CLIS),
+                        deploy=cli_deploy,
+                        io=io,
+                        dry_run=args.dry_run,
+                        auto_yes=config.auto_yes,
+                    )
+                except ConsentRequiredError:
+                    return 1
+                _merge_into(counters, cli_prune.counters)
+
             # Write the receipt on every non-dry-run install (not only --prune):
             # built from the real per-item outcomes so it mirrors disk. Inside the
             # lock so a concurrent installer cannot interleave its own write. A
             # CORRUPT prior is left untouched (fail closed) so a scoped run never
             # erases another owner's recorded entries.
             if not args.dry_run and not receipt_corrupt:
+                cli_entries = merge_clis(
+                    prior_clis=prior.clis,
+                    registry_names=frozenset(s.name for s in CLI_PACKAGES),
+                    deployed=cli_outcome.deployed if cli_outcome else {},
+                    uninstalled_names=cli_prune.uninstalled_names if cli_prune else set(),
+                    relinquished_names=cli_prune.relinquished_names if cli_prune else set(),
+                )
                 record_receipt(
                     receipt_path,
                     prior=prior,
@@ -449,6 +495,7 @@ def _run(
                     plugin_outcomes=plugin_outcomes,
                     pruned_paths=pruned_paths,
                     relinquished_paths=relinquished_paths,
+                    cli_entries=cli_entries,
                 )
     except ReceiptLockBusy:
         io.err("another install is in progress; re-run when it finishes")
@@ -463,9 +510,14 @@ def _run(
         plugins=[p.name for p in plugins],
         all_tools=[t.value for t in known_tools()],
         all_plugins=list(discover(resolve_plugins_root(resolved_repo_root, os.environ))),
+        clis=sorted(k for k in counters if k.startswith("cli:")),
+        any_failed=cli_outcome is not None and cli_outcome.any_failed,
         verbose=args.verbose,
         io=io,
     )
+
+    if cli_outcome is not None and cli_outcome.any_failed:
+        return 1
 
     # Passive, suggest-only notice for the USER path only (a --project run
     # returns earlier via _run_project and never reaches here): if cwd looks

@@ -48,7 +48,8 @@ C4Component
             Component(overlay, "overlay.py", "Python", "Phase 6: overlay_plugins — merges each active plugin's content onto the base plan, alphabetical plugin order. Carrier-merges a plugin's disjoint files into a shared_carrier skills/agents DIR; every other collision routes through the merge registry (DIR is fatal).")
             Component(sync, "sync.py", "Python", "Phase 7: require_consent guard -> hash-compare -> diff -> confirm -> path-aware backup -> write. Reports per-item InstallOutcome (WRITTEN / SKIPPED_IDENTICAL / DECLINED). Honours --dry-run.")
             Component(consent, "consent.py", "Python", "require_consent: hard-fails a non-interactive run (no TTY) that passes neither --yes nor --dry-run, before any write. Raises ConsentRequiredError, caught by cli.py as exit 1.")
-            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog, e.g. beads' ~/.beads/formulas + scripts) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk).")
+            Component(run, "run.py", "Python", "Run-level composition, called directly by cli.py after staging finishes for every tool: install_pipeline + install_plugin_routes (the plugin-route analog, e.g. beads' ~/.beads/formulas + scripts) + deploy_clis / prune_clis (the CLI-deploy stage: uv tool install/uninstall for the work + prgroom console scripts) + prune_pipeline (diff -> partition -> run_prune) + record_receipt (mirrors disk, now including cli deploy/prune outcomes).")
+            Component(clis, "clis.py", "Python", "CLI_PACKAGES registry (workcli -> work, prgroom -> prgroom) + RETIRED_CLIS allowlist; cli_source_digest (deployable-source hash); the CliDeployPort protocol + UvCliDeploy (real, the only module that shells out for CLI deploys) + ScriptedCliDeploy (test fake).")
             Component(receipt, "receipt.py + receipt_store.py + receipt_lock.py", "Python", "Receipt / ReceiptEntry model + canonical serialization + integrity digest; read (MISSING vs CORRUPT) / atomic write; single-writer advisory flock.")
             Component(rdiff, "receipt_diff.py + receipt_build.py", "Python", "scope_owners + validate_entry + diff_orphans -> Orphan list; desired_staged_keys / desired_route_keys, entry builders, merge_receipt.")
             Component(phash, "prune_hash.py", "Python", "is_prunable + partition_file_orphans: hash/type-aware prune-vs-relinquish, re-checked at the deletion boundary (TOCTOU guard).")
@@ -93,8 +94,10 @@ C4Component
     Rel(orch, overlay, "overlay_plugins(plan, plugins) -- Phase 6")
     Rel(orch, pext, "apply_extensions per tool plan")
 
-    Rel(cli, run, "install_pipeline + install_plugin_routes (separate whole-fleet sync pass), then optional prune_pipeline + record_receipt")
+    Rel(cli, run, "install_pipeline + install_plugin_routes (separate whole-fleet sync pass) + deploy_clis, then optional prune_pipeline + prune_clis + record_receipt")
     Rel(run, sync, "flush each tool's / plugin's plan to dest")
+    Rel(run, clis, "deploy_clis / prune_clis over CLI_PACKAGES via the injected CliDeployPort")
+    Rel(clis, dest_ext, "uv tool install/uninstall onto PATH (UvCliDeploy)")
     Rel(cli, consent, "catches ConsentRequiredError -> exit 1")
     Rel(overlay, mreg, "collision -> strategy (plugin overlay)")
     Rel(overlay, ignore, "consult exclusion set for plugin namespace walk")
@@ -161,6 +164,7 @@ The engine knows nothing about any specific tool; it takes a `ToolAdapter` and a
   - **`prune_hash.py`** (`is_prunable` / `partition_file_orphans`) decides prune-vs-relinquish by on-disk hash (files) or type (dirs), evaluated against the live FS at scan time AND re-checked at the deletion boundary (TOCTOU guard).
   - **`prune_flow.py`** (`run_prune`) is the unchanged interactive executor: backup-before-delete always, three-way (all / one-by-one / cancel) or `--yes` consent, with a `revalidate` callback enforcing the boundary re-check.
   - **`ownership.py`** is the wholesale-vs-merge-target classifier deciding which staged items the receipt records (never `settings.json` or the assembled instruction files).
+  - **`clis.py`** is the CLI-deploy engine's pure/port half: the closed `CLI_PACKAGES` registry (`workcli` → `work`, `prgroom` → `prgroom`, deliberately excluding early packages like `pdlc`/`holding-place`/`vizsuite`), `RETIRED_CLIS` (the uninstall allowlist), `cli_source_digest` (a deterministic hash over each package's `pyproject.toml` + `uv.lock` + `src/**`, excluding tests/build churn), and the `CliDeployPort` protocol with its `UvCliDeploy` (real, subprocess-only) and `ScriptedCliDeploy` (test fake) implementations. `run.py`'s `deploy_clis` (verify/heal/fresh decision table) and `prune_clis` (allowlist-bounded retirement) drive it inside the same receipt-lock section as the file install/prune, and their outcomes feed `merge_clis` (`receipt_build.py`) into `record_receipt`.
 - **`merge/`** is the collision matrix: `registry.py` maps `(FileKind, namespace)` to a strategy; `base.py` is the `MergeStrategy` protocol; `strategies/` holds the five concrete classes, each in its own module with its own test.
 
 ### `tools/` — per-tool adapters
