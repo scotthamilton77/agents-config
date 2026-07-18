@@ -278,6 +278,21 @@ def test_render_inlines_constellation_structural_hooks():
     assert "viz-constellation-dir-counts" in html
 
 
+def test_render_inlines_constellation_cosmetic_hooks():
+    # Cosmetic parity (prototype anatomy variant_B.js's `rebuildRamp`): the
+    # 5-stop piecewise LAB heat ramp (extending the shared cold/mid/hot
+    # anchors with two intermediate stops) and the label-culling constant —
+    # all JS/CSS source, so inlined regardless of scene content.
+    html = render_html(_scene(FileNode(path="src/app.py", checksum="aaa")))
+
+    assert "d3.piecewise(d3.interpolateLab, stops)" in html
+    assert "--viz-heat-cold-mid" in html
+    assert "--viz-heat-mid-hot" in html
+    # Label culling: only the top-20 dir nodes (by load-bearing + a changed
+    # bonus) plus every satellite are labeled.
+    assert "LABEL_TOP_DIR_COUNT = 20" in html
+
+
 def test_render_inlines_f3_drawer_meter_tooltip_and_axis_bar_hooks():
     # Fidelity F3 (drawer + content fidelity, spec §4.5): the drill drawer's
     # stage-shrink class, the shared per-axis meter row/mini-bar building

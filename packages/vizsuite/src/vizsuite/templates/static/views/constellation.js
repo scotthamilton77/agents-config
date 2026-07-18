@@ -496,20 +496,34 @@
     }
   }
 
-  // ---- Heat color scale (spec §4.3): mirrors the treemap view's own scale
-  // (same `:root` custom-property anchors), resolved fresh on every render
-  // and reencode so a theme change picks up its own twin. ----
+  // ---- Heat color scale (spec §4.3, cosmetic parity fidelity): a 5-stop
+  // piecewise LAB ramp (prototype anatomy: variant_B.js's `rebuildRamp`,
+  // `d3.piecewise(d3.interpolateLab, [...])`) — LAB interpolation is
+  // perceptually smoother than the treemap/ledger's 3-stop RGB scale, and
+  // the two extra intermediate stops give this view's much larger heat-color
+  // range (every dir + every satellite, vs. a handful of drill-panel bars) a
+  // higher-resolution ramp. Anchors are still the shared `--viz-heat-*`
+  // custom properties (resolved fresh on every render/reencode so a theme
+  // change picks up its own twin) — extended with two intermediate stops
+  // rather than a bespoke palette, so this view's ramp stays a strict
+  // refinement of the shared cold/mid/hot anchors, never a competing one. ----
+  var HEAT_RAMP_STOPS = [
+    "--viz-heat-cold",
+    "--viz-heat-cold-mid",
+    "--viz-heat-mid",
+    "--viz-heat-mid-hot",
+    "--viz-heat-hot"
+  ];
+
   function makeHeatColorScale() {
     var style = getComputedStyle(document.documentElement);
-    var cold = style.getPropertyValue("--viz-heat-cold").trim();
-    var mid = style.getPropertyValue("--viz-heat-mid").trim();
-    var hot = style.getPropertyValue("--viz-heat-hot").trim();
-    return d3
-      .scaleLinear()
-      .domain([0, 0.5, 1])
-      .range([cold, mid, hot])
-      .interpolate(d3.interpolateRgb)
-      .clamp(true);
+    var stops = HEAT_RAMP_STOPS.map(function (token) {
+      return style.getPropertyValue(token).trim();
+    });
+    var ramp = d3.piecewise(d3.interpolateLab, stops);
+    return function (heat) {
+      return ramp(Math.max(0, Math.min(1, heat)));
+    };
   }
 
   function labelColorFor(colorString) {
@@ -523,7 +537,10 @@
       var heat = computeHeat(entry.node.attributes);
       var color = heatScale(heat);
       entry.el.style.backgroundColor = color;
-      entry.labelEl.style.color = labelColorFor(color);
+      // A culled (unlabeled) node has no labelEl at all — see renderNodes.
+      if (entry.labelEl) {
+        entry.labelEl.style.color = labelColorFor(color);
+      }
       // The aria-label's heat figure must track the same reencode a weight
       // change drives, or a screen-reader user reads a stale value while a
       // sighted user sees the fill already updated.
@@ -551,12 +568,46 @@
     el.style.top = node.y + "px";
   }
 
+  // ---- Label culling (spec: cosmetic parity fidelity, prototype anatomy
+  // variant_B.js's separate `labelNodes` selection): only the top-20 dir
+  // nodes by (load_bearing + a changed-in-PR bonus) plus every satellite are
+  // labeled — everything else is unlabeled (still identifiable via hover and
+  // its aria-label). Ranked by load_bearing/changed only, both weight-
+  // independent, so a weight-slider drag never re-ranks or re-culls labels
+  // (only applyEncoding's recolor runs on reencode). ----
+  var LABEL_TOP_DIR_COUNT = 20;
+
+  function computeLabeledIds(nodes) {
+    var dirNodes = nodes.filter(function (node) {
+      return node.kind === "dir";
+    });
+    var ranked = dirNodes.slice().sort(function (a, b) {
+      return labelRank(b) - labelRank(a);
+    });
+    var labeled = Object.create(null);
+    ranked.slice(0, LABEL_TOP_DIR_COUNT).forEach(function (node) {
+      labeled[node.id] = true;
+    });
+    nodes.forEach(function (node) {
+      if (node.kind === "file") {
+        labeled[node.id] = true;
+      }
+    });
+    return labeled;
+  }
+
+  function labelRank(dirNode) {
+    return (dirNode.stats.load_bearing || 0) + (dirNode.stats.changed > 0 ? 1 : 0);
+  }
+
   // ---- Node DOM + click-vs-drag/hover wiring (spec §4.2's activation
   // scaffold, the same one the treemap tile and ledger row use). `handlers`
   // is `{ onActivate(node), onHoverShow(evt, node), onHoverMove(evt),
   // onHoverHide() }` — supplied by render() so this stays agnostic of
-  // drill/focus/tooltip wiring specifics. ----
-  function renderNodes(stage, nodes, handlers) {
+  // drill/focus/tooltip wiring specifics. A node outside `labeledIds` gets no
+  // label element at all (not merely a hidden one) — still fully
+  // identifiable via its `title`/aria-label and the hover card. ----
+  function renderNodes(stage, nodes, labeledIds, handlers) {
     var entries = [];
     nodes.forEach(function (node) {
       var displayPath = node.kind === "dir" ? dirDisplayPath(node.path) : node.path;
@@ -578,10 +629,13 @@
       el.style.width = 2 * node.r + "px";
       el.style.height = 2 * node.r + "px";
 
-      var label = document.createElement("span");
-      label.setAttribute("class", "viz-constellation-node-label");
-      label.textContent = basename(displayPath);
-      el.appendChild(label);
+      var label = null;
+      if (labeledIds[node.id]) {
+        label = document.createElement("span");
+        label.setAttribute("class", "viz-constellation-node-label");
+        label.textContent = basename(displayPath);
+        el.appendChild(label);
+      }
 
       window.vizShared.wireClickVsDragActivation(el, {
         onActivate: function () {
@@ -957,7 +1011,8 @@
         window.vizShared.hideTooltip();
       }
 
-      var entries = renderNodes(visual, graph.nodes, {
+      var labeledIds = computeLabeledIds(graph.nodes);
+      var entries = renderNodes(visual, graph.nodes, labeledIds, {
         onActivate: onActivate,
         onHoverShow: onHoverShow,
         onHoverMove: onHoverMove,

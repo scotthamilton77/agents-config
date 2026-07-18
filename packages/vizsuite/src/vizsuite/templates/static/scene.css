@@ -27,6 +27,13 @@
   --viz-heat-cold: #0ca30c;
   --viz-heat-mid: #fab219;
   --viz-heat-hot: #d03b3b;
+  /* Intermediate stops (cosmetic parity fidelity): extend the same ramp with
+     two in-between anchors — a refinement of cold/mid/hot, never a competing
+     palette — so the constellation view's 5-stop piecewise LAB heat scale
+     (views/constellation.js) has a higher-resolution ramp than the treemap/
+     ledger's 3-stop scale without diverging from it at the shared anchors. */
+  --viz-heat-cold-mid: #83aa12;
+  --viz-heat-mid-hot: #e5762a;
   --viz-label-on-dark-fill: #ffffff;
   --viz-label-on-light-fill: #0b0b0b;
 
@@ -69,6 +76,8 @@
     --viz-heat-cold: #0ca30c;
     --viz-heat-mid: #fab219;
     --viz-heat-hot: #e66767;
+    --viz-heat-cold-mid: #83aa12;
+    --viz-heat-mid-hot: #f08c40;
 
     --viz-hue-blue: #3987e5;
     --viz-hue-aqua: #199e70;
@@ -90,6 +99,8 @@
   --viz-heat-cold: #0ca30c;
   --viz-heat-mid: #fab219;
   --viz-heat-hot: #e66767;
+  --viz-heat-cold-mid: #83aa12;
+  --viz-heat-mid-hot: #f08c40;
 
   --viz-hue-blue: #3987e5;
   --viz-hue-aqua: #199e70;
@@ -896,7 +907,17 @@ body {
   width: 1.25rem;
   height: 0.6rem;
   border-radius: 3px;
-  background: linear-gradient(90deg, var(--viz-heat-cold), var(--viz-heat-mid), var(--viz-heat-hot));
+  /* Same five stops as the JS ramp's own anchors (HEAT_RAMP_STOPS in
+     views/constellation.js) — the legend swatch must never drift from what
+     heatScale() actually renders. */
+  background: linear-gradient(
+    90deg,
+    var(--viz-heat-cold),
+    var(--viz-heat-cold-mid),
+    var(--viz-heat-mid),
+    var(--viz-heat-mid-hot),
+    var(--viz-heat-hot)
+  );
 }
 
 /* ---- Pruning affordance (spec: unconnected dir nodes hidden) — bottom-left
