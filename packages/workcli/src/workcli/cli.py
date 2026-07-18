@@ -83,6 +83,7 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--spec")
     create_parser.add_argument("--trivial", action="store_true")
     create_parser.add_argument("--acceptance")
+    create_parser.add_argument("--track", metavar="NAME")
 
     update_parser = subparsers.add_parser(
         "update", help="update title/priority/description (replace semantics only)"

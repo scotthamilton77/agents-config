@@ -33,9 +33,10 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
 
     `create_raw` reads only title/description/type/priority/parent/labels; the
     positional noun and the lifecycle flags below (`--orphan`/`--spec`/
-    `--trivial`/`--acceptance`) are silently ignored under `--raw`. `--orphan`
-    in particular changes placement intent yet never records the orphan marker,
-    so an ignored combination is a surprising no-op rather than a harmless one.
+    `--trivial`/`--acceptance`/`--track`) are silently ignored under `--raw`.
+    `--orphan` in particular changes placement intent yet never records the
+    orphan marker, so an ignored combination is a surprising no-op rather than
+    a harmless one.
     """
     offenders: list[str] = []
     if args.noun is not None:
@@ -48,6 +49,8 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
         offenders.append("--trivial")
     if args.acceptance is not None:
         offenders.append("--acceptance")
+    if args.track is not None:
+        offenders.append("--track")
     return offenders
 
 
