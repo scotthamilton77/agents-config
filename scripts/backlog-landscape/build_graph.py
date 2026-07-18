@@ -66,6 +66,14 @@ nonclosed_ids = set(bid for bid, b in beads.items() if b['status'] in NONCLOSED)
 needed_closed = set()
 for bid in nonclosed_ids:
     for a in ancestors(bid):
+        if a not in beads:
+            # A partial/scoped export can retain a non-closed child while
+            # omitting its parent record entirely -- an edge annotation
+            # naming an ancestor id that isn't itself in this export.
+            # parent_of() already stops the chain here (beads.get(a) is
+            # None), so there is nothing further to inherit; just don't
+            # crash dereferencing a record that was never exported.
+            continue
         if beads[a]['status'] == 'closed':
             needed_closed.add(a)
 

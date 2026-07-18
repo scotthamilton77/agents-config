@@ -746,6 +746,12 @@ svg.addEventListener('click',ev=>{
 });
 
 // ---- filtering ------------------------------------------------------------
+// nearest_epic() in the generator already flattens grandchildren to their
+// single rendering container, so grouping D.nodes by `.epic` here gives the
+// exact, one-level set of dots each container actually holds.
+const nodesByEpic={};
+D.nodes.forEach(n=>{ if(n.epic){ (nodesByEpic[n.epic]=nodesByEpic[n.epic]||[]).push(n); } });
+
 function nodeVisible(n){
   if(!state.tracks.has(n.track))return false;
   if(!state.status.has(n.status))return false;
@@ -753,10 +759,14 @@ function nodeVisible(n){
   return true;
 }
 function epicVisible(E){
-  if(!state.tracks.has(E.track))return false;
-  if(!state.status.has(E.status))return false;
-  if(E.priority>state.prio)return false;
-  return true;
+  const ownVisible = state.tracks.has(E.track) && state.status.has(E.status) && E.priority<=state.prio;
+  if(ownVisible)return true;
+  // A container whose own track/status differs from the filter can still
+  // hold a descendant that matches -- e.g. a skills-discipline epic with a
+  // pdlc-orchestrator child. Keep it (and its label) so a visible dot never
+  // loses its context, closed containers included.
+  const kids=nodesByEpic[E.id]||[];
+  return kids.some(nodeVisible);
 }
 function applyFilters(){
   // nodes
