@@ -432,7 +432,16 @@ is the "before" value for each hook's false → true `PushNotification` check.
 Neither hook passes `--silent-cap` — the silent re-request cap is locked at
 the helper's default (1) per spec decision, not a per-repo config knob.
 
-1. **Trigger a fresh review cycle** (idempotency guard):
+1. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`
+   **before** issuing the re-review request in step 2. The downstream `--after`
+   (step 3) and `--since-timestamp` (step 4) filters require the bot signal to be
+   strictly later than this value, so capturing it first bounds the prior round
+   without excluding a fast Codex response that lands while `request-rereview.sh`
+   is still returning (or in the same API-timestamp second). Capturing it after
+   the dispatch would discard that valid `+1` or marker comment as stale and
+   count the ask as a timeout.
+
+2. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
      --owner "$OWNER" --repo "$REPO" --pr "$PR" \
@@ -446,8 +455,6 @@ the helper's default (1) per spec decision, not a per-repo config knob.
    re-review ask reaching nobody. (`--add-reviewer` alone is idempotent and
    silently does nothing, which is why the helper still pairs it with
    `--remove-reviewer` for Copilot.)
-
-2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
 
 3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
