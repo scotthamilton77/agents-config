@@ -8,15 +8,36 @@ description: Use when running a long multi-lane agent grind — several work lan
 ## Overview
 
 A **grind** is a long autonomous run in which several work lanes advance in
-parallel, each shipping its own pull requests, while one root orchestrator
-acts as a switchboard. It exists to convert a conflict-partitioned plan into
-merged PRs with minimal human intervention — the human sets direction, rules
-on genuine forks, and sleeps.
+parallel, each shipping its own pull requests, under one root orchestrator. It
+exists to convert a conflict-partitioned plan into merged PRs with minimal
+human intervention — the human sets direction, rules on genuine forks, and
+sleeps.
 
-**Core principle: the root orchestrator is a switchboard, not a manager.** It
-routes messages, verifies ground truth, and merges. It does not implement, does
-not relitigate its lieutenants' judgment, and never trusts a report it can
-cheaply check itself.
+**Core principle: ROOT is the accountable manager of the lanes.** It holds each
+lieutenant to the standard ROOT would apply if it were running that lane
+itself, and it is answerable for the quality of what the lanes produce. Its
+standing job is to keep lanes from spinning or getting stuck, to keep them
+making progress, and to optimize the run's path through the backlog.
+
+Being the manager does **not** mean doing the work twice:
+
+- ROOT does not implement. It delegates, and it chooses *what* to delegate to.
+- ROOT does not re-run a lane's quality gate or re-review its diffs. The lane
+  owns its gate; ROOT holds it accountable for having one.
+- ROOT does not relitigate a lieutenant's judgment call inside its own lane.
+- ROOT **does** verify cheaply before anything irreversible, and whenever a
+  report and the world appear to disagree (§8).
+
+**Protect ROOT's context window — it is the scarcest resource in the run.**
+A ROOT that reads diffs, re-checks routine reports, or implements anything will
+exhaust its context and take the whole grind down with it. Delegation is not
+just division of labor; it is how ROOT stays alive long enough to finish.
+
+**Run ROOT on a reasoning model at medium effort.** The judgment ROOT actually
+exercises — sizing model and effort for every dispatch, reading whether a lane
+is stuck or merely parked, deciding what escalates — needs real reasoning
+capacity. Cheap models produce a manager who relays instead of managing.
+Workers are sized per task (§1); ROOT is not the place to economize.
 
 This is a **discipline skill**. The rules below were paid for in a real
 overnight run of twelve merged PRs; each one exists because its absence cost
@@ -24,7 +45,7 @@ something. Follow them as written.
 
 **REQUIRED BACKGROUND:** You MUST understand `orchestrating-subagents` — it
 carries the nesting constraint (a subagent cannot await a child it spawns) that
-makes this topology necessary in the first place.
+shapes this whole topology.
 
 ## When to use
 
@@ -38,10 +59,10 @@ lanes collide constantly on the same files (repartition first, or serialize).
 A run short enough to supervise directly — the dashboard and bookkeeper
 overhead only pays off across hours.
 
-## 1. Topology — the switchboard
+## 1. Topology and the roster
 
 ```
-ROOT (you, running this skill)
+ROOT (you — reasoning model, medium effort)
 ├── lane-<name>   (NAMED lieutenant, one per lane)  ─┐
 ├── lane-<name>   (NAMED lieutenant)                 ├─ each dispatches
 ├── lane-<name>   (NAMED lieutenant)                ─┘  UNNAMED workers
@@ -59,11 +80,23 @@ Rules that are not negotiable:
 - **Lieutenants park after dispatching.** A bare idle notification means
   *parked*. It never means "done" and never means "stuck." Do not nudge on an
   idle notification alone.
-- **Right-size every worker.** Sonnet for implementation, haiku for mechanical
-  work. Never let a worker silently inherit the session model. A dispatch with
-  no model and no effort set is the violation, not a neutral default.
+- **Sizing every dispatch is ROOT's judgment, not a lookup.** ROOT decides the
+  model and effort each lane and each worker runs at, from what that task
+  actually demands: mechanical work (extraction, file surveys, format
+  conversion) goes cheap and low-effort; implementation goes mid-tier;
+  judgment-dense work (architecture, adversarial review, final synthesis) goes
+  high. Lieutenants apply the same discipline to the workers they dispatch. A
+  dispatch that silently inherits the session model is the violation, not a
+  neutral default — and a lane quietly running everything at ROOT's tier will
+  burn the run's budget without anyone noticing.
 - **Two to three plan tasks per worker, maximum.** Workers report in fifteen
   lines or fewer.
+- **Keep lieutenants context-conscious.** A lieutenant that runs out of context
+  mid-lane strands its queue. ROOT cannot compact a teammate, but it CAN order
+  one to drive to a good stopping point — work committed, state reported —
+  and then spawn a fresh lieutenant to resume that lane's queue. Do this on
+  ROOT's initiative when a lane has been running long, not after the lane
+  starts degrading. Lane handover is routine maintenance, not failure.
 - **Worker output still passes the completion gate.** A worker self-gates
   inline on what it can run itself — the package's CI target, its own review
   and simplify pass — but it MUST NOT spawn subagents to do it, because a
@@ -75,14 +108,20 @@ Rules that are not negotiable:
 ### Setup sequence
 
 1. **Partition the plan into lanes by file-conflict surface**, not by theme.
-   Two lanes that both edit the same module are one lane.
-2. **Spawn the bookkeeper first**, with the dashboard template and the state
+   Two lanes that both edit the same module are one lane. Partition to minimize
+   merge conflict, and prefer small PRs all the way through every lane's plan —
+   speed comes from many small landings, never from relaxing quality.
+2. **Propose the partition and roster to the human, and wait.** Present the
+   lanes, what each will claim, the model/effort you intend per lane, and the
+   bookkeeper. Get confirmation before spawning anyone. A grind launched on an
+   unconfirmed partition is expensive to unwind once four agents are live.
+3. **Spawn the bookkeeper first**, with the dashboard template and the state
    schema. It writes the initial `state.json` and `dashboard.html`, and opens
    the page in the browser **exactly once**.
-3. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
+4. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
    (§8), and the instruction to report **reviewed-clean** rather than merging.
-4. **Record the roster** — you will need it for the compaction handoff (§7).
+5. **Record the roster** — you will need it for the compaction handoff (§7).
 
 Brief every lieutenant with **worktree-absolute paths**. A bare or relative
 path makes a worker anchor on the main repo root while its shell sits in a
@@ -124,8 +163,17 @@ of that protocol will drift from the one the rest of the repo uses.
 What this skill governs is only the part the review skill cannot know about —
 who runs it, and where a verdict goes:
 
-- **The lane owns the loop for its own PRs**, start to finish. ROOT does not
-  run review loops; it has a switchboard to operate.
+- **The lane owns the loop for its own PRs**, and drives it to a verdict.
+- **Whoever runs the review skill must be able to await the agents it
+  dispatches.** A PR-review skill that fixes findings by dispatching a subagent
+  per finding creates children whose completions wake ROOT, not the lieutenant
+  that spawned them — so a lieutenant running such a skill parks after the
+  first fix and never resumes. Resolve this before the grind starts, not
+  mid-review: either ROOT runs the review skill for the lane and relays results
+  back, or ROOT relays each child completion to the lieutenant and re-engages
+  it. Whichever you choose, brief the lieutenants on it explicitly. This is the
+  nesting constraint from `orchestrating-subagents` applied to review work, and
+  it is the single easiest place in a grind to deadlock a lane.
 - **Findings triage** stays the review skill's contract, with one addition: a
   finding whose disposition would change lane scope, cross into another lane's
   files, or need a human ruling is **ESCALATED to ROOT** rather than decided in
@@ -135,10 +183,18 @@ who runs it, and where a verdict goes:
 
 **Stalemate rule.** A re-raise round on **unchanged code** gets one final
 disposition round, then the lane stops and puts the PR on the human's docket
-via ROOT. Rounds that surface *genuine defects* never trip this rule — six
-consecutive rounds of real bugs is the reviewer earning its keep, and the lane
-keeps going. Round count alone is not evidence of a loop; unchanged code under
-re-raise is.
+via ROOT. Round count alone is not evidence of a loop; unchanged code under
+re-raise is. A reviewer finding *genuine defects* round after round is earning
+its keep, not looping.
+
+**When a round cap and a productive reviewer collide, ROOT rules.** A PR-review
+skill may cap re-review rounds and escalate past the cap — a sound default
+against infinite loops, but it fires on round count, which cannot distinguish a
+stuck reviewer from a thorough one. Do not override the cap inside the lane and
+do not promise the lane will keep going regardless: the lane escalates to ROOT,
+and ROOT — which can see the defect history — decides whether to authorize
+further rounds or to put the PR on the human's docket. This is exactly the
+judgment call a manager exists to make.
 
 **Drain sweep.** After about four rounds of real defects in one module, the
 lane performs ONE inline proactive audit of all changed code against the defect
@@ -151,7 +207,7 @@ because a grind cannot afford four more serial round-trips per module.
 ## 4. Merge authority
 
 **ROOT merges. Lanes never do.** A lane reports its PR reviewed-clean; the
-decision to merge is a switchboard duty, because only ROOT sees the whole board
+decision to merge is ROOT's, because only ROOT sees the whole board
 and the human's standing grants.
 
 **Resolve the repo's merge-authorization policy through `merge-guard` — do not
@@ -233,6 +289,11 @@ review skill's job (§3), and duplicating any of it here guarantees drift the
 first time a reviewer changes behavior. The watcher answers exactly one
 question: *has anything happened on this PR since I armed?*
 
+- **Keep the watcher dumb.** A plain timer loop comparing counts beats a clever
+  filter on commit metadata or author fields: clever watchers fail silently and
+  a silent watcher is indistinguishable from a quiet PR. In the reference run a
+  filter-based monitor ghosted twice before anyone noticed, and both times the
+  lane looked stuck when it was the monitor that had died.
 - **60-second interval, 30-minute timeout.**
 - **Launch DIRECTLY via `run_in_background`.** Never nest the watcher inside a
   wrapper command with `&`. The wrapper exits immediately, the completion
@@ -270,11 +331,32 @@ already begun is composed from the wrong context.
 
 ## 8. Standing rules from the run
 
-**Verify every factual lane claim cheaply before relying on it.** `bd show`,
-`git show`, `gh pr view`. Trust-but-verify caught, in one run: a work item
-claimed closed that was still open, a "missing" doc amendment that had actually
-been inherited from a prior merge, and a phantom "dropped order" that was
-mid-execution.
+**Verify at the points that matter — not everywhere.** ROOT cannot re-check
+every claim without destroying its own context, and it should not: the lane
+owns its gate. Spend verification where being wrong is expensive:
+
+- **Before anything irreversible** — above all, before a merge.
+- **When a report and the world disagree** — a dashboard that says stuck while
+  the PR says otherwise, a claim that contradicts your standing order, a status
+  that has not moved in a suspiciously long time.
+- **When a claim is load-bearing for a decision you are about to make.**
+
+The checks are cheap and shallow: `gh pr view`, `git log`, a work-item show.
+Trust-but-verify at these points caught, in one run: a work item claimed closed
+that was still open, a "missing" doc amendment actually inherited from a prior
+merge, and a phantom "dropped order" that was mid-execution. Routine progress
+reports in between do not need auditing — that is what holding a lieutenant
+accountable for its own gate buys you.
+
+**Suspect the tooling before the teammate.** When a lane looks stuck, the
+culprit is often a poller or watcher that silently died, not an agent that
+stopped working. Check the mechanism, then the agent.
+
+**Do not let the run spin.** Trust in the lanes is not permission to burn
+tokens circling a problem no agent can solve. When a lane has gone two rounds
+without progress on the same obstacle, ROOT intervenes: change the approach,
+re-scope the item, park it, or escalate. Unbounded retrying is the most
+expensive failure mode in a long run, and the least visible while it happens.
 
 **Ask the right verification question.** To check "is X documented," inspect
 the branch's **final state**, not the PR diff — a rebase can inherit the text,
@@ -322,7 +404,12 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "The watcher fired, so the reviewer approved." | The watcher is a doorbell. Its filters flake. Re-verify directly. |
 | "The findings are clearly unfounded, I'll just merge." | An honest verdict cannot be manufactured. Human docket. |
 | "This report contradicts my order — the lane ignored me." | It almost certainly crossed in flight. Check timestamps first. |
-| "Six review rounds is obviously a loop, invoke the stalemate rule." | Six rounds of *real defects* is the reviewer working. The rule applies only to re-raises on unchanged code. |
+| "Six review rounds is obviously a loop, invoke the stalemate rule." | Rounds of *real defects* are the reviewer working. The rule applies only to re-raises on unchanged code. |
+| "The lane says it is fine, and re-checking would cost me context." | Verify anyway before anything irreversible, and whenever report and world disagree. Everywhere else, trust the lane. |
+| "I have context to spare, I will just review the diff myself." | You are the manager, not the reviewer. Re-running the lane's gate spends the one resource the run cannot replace. |
+| "The lane has retried this four times, it will get there." | Two rounds without progress is ROOT's cue to intervene. Unbounded retrying is the most expensive failure mode in a long run. |
+| "This lieutenant has been going for hours and is still answering." | Rotate it at a good stopping point before it degrades, not after. Lane handover is maintenance, not failure. |
+| "Sonnet is fine for everything, it saves me deciding." | Sizing each dispatch is your judgment to exercise. A lane running everything at one tier burns budget or botches judgment work. |
 | "I'll wrap the watcher in a helper script with `&`, it's tidier." | The wrapper exits, the notification fires for it, the watcher is orphaned. Launch directly. |
 | "I'll write the compaction handoff when compaction is close." | By then you are composing from degraded context. Write it early. |
 | "The dashboard looks stale, I'll re-open it in the browser." | Open exactly once. Check `state.json`'s timestamp instead. |
@@ -340,8 +427,14 @@ punished; a worker that hides a compromise costs far more than one that admits i
   to the repo's PR-review skill (§3).
 - You are about to merge without `merge-guard` resolving the policy (§4).
 - You are re-opening the dashboard in a browser.
-- Your last three actions were implementation work. You are ROOT — you route,
-  verify, and merge. Hand it to a lane.
+- Your last three actions were implementation work. You are ROOT — you manage,
+  decide, and unblock. Hand it to a lane.
+- You are reading a diff, or re-running a gate a lane already ran.
+- A lane has been circling the same obstacle for two rounds and you have not
+  intervened.
+- You are dispatching the review skill from a named lieutenant without having
+  settled who awaits its children (§3).
+- You spawned lanes without the human confirming the partition.
 
 ## Shutdown
 
