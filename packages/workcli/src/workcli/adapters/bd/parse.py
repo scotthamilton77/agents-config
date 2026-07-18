@@ -109,9 +109,24 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
     return DepEdge(id=str(other_id), type=str(entry["type"]), status="")
 
 
-def _dep_type(entry: dict[str, JsonValue]) -> str:
-    dep_type = entry.get("dependency_type", entry.get("type"))
-    return str(dep_type)
+def _dep_type(entry: dict[str, JsonValue], item_id: str) -> str:
+    """Return the edge's type, preferring `dependency_type` then `type`.
+
+    Same null-vs-absent discipline as `_list_field`: an explicit JSON `null`
+    on whichever key is present is bd model drift and must alarm loudly, not
+    silently fall through to the other key or coerce to the literal string
+    "None".
+    """
+    for key in ("dependency_type", "type"):
+        if key in entry:
+            value = entry[key]
+            if value is None:
+                raise _drift(
+                    f"bd dependency edge's {key} field is null, expected a string",
+                    {"reason": "null_field", "field": key, "id": item_id},
+                )
+            return str(value)
+    return str(None)
 
 
 def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
@@ -138,6 +153,37 @@ def _list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[Any]:
             {"reason": "unexpected_field_type", "field": key, "id": item_id},
         )
     return value
+
+
+def _string_field(
+    raw: dict[str, JsonValue], key: str, item_id: str, *, default: str | None = None
+) -> str:
+    """Return `raw[key]` as a `str`, applying the same null-vs-absent discipline
+
+    as `_list_field`: an explicit JSON `null` is bd model drift and must
+    alarm via `WorkError(BACKEND_DRIFT)`, never silently coerce to the
+    literal string "None". An absent key returns `default` when given
+    (callers pass `default=None` -- Python's default -- only for keys whose
+    presence is already guaranteed by `_REQUIRED_ITEM_KEYS`).
+    """
+    if key not in raw:
+        if default is not None:
+            return default
+        raise _drift(
+            f"bd item is missing required key: {key}",
+            {
+                "reason": "missing_required_keys",
+                "missing_keys": cast("list[JsonValue]", [key]),
+                "id": item_id,
+            },
+        )
+    value = raw[key]
+    if value is None:
+        raise _drift(
+            f"bd item's {key} field is null, expected a string",
+            {"reason": "null_field", "field": key, "id": item_id},
+        )
+    return str(value)
 
 
 def _string_list_field(raw: dict[str, JsonValue], key: str, item_id: str) -> list[str]:
@@ -217,26 +263,26 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
     deps = [
         _dep_edge_from_raw(entry, item_id)
         for entry in dependencies
-        if _dep_type(entry) != "parent-child"
+        if _dep_type(entry, item_id) != "parent-child"
     ]
     children = [
         _dep_edge_from_raw(entry, item_id).id
         for entry in dependents
-        if _dep_type(entry) == "parent-child"
+        if _dep_type(entry, item_id) == "parent-child"
     ]
 
     return Item(
         id=item_id,
         title=str(raw["title"]),
         type=str(raw["issue_type"]),
-        status=str(raw["status"]),
+        status=_string_field(raw, "status", item_id),
         priority=f"P{priority_raw}",
         labels=_string_list_field(raw, "labels", item_id),
         parent=str(raw["parent"]) if raw.get("parent") is not None else None,
         deps=deps,
         children=children,
-        description=str(raw.get("description", "")),
-        notes=str(raw.get("notes", "")),
+        description=_string_field(raw, "description", item_id, default=""),
+        notes=_string_field(raw, "notes", item_id, default=""),
         created=str(raw["created_at"]) if raw.get("created_at") is not None else None,
         updated=str(raw["updated_at"]) if raw.get("updated_at") is not None else None,
     )

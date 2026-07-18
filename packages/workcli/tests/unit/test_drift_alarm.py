@@ -155,6 +155,125 @@ def test_explicit_null_labels_field_raises_backend_drift_not_a_raw_type_error():
     assert error.detail["field"] == "labels"
 
 
+def test_explicit_null_status_field_raises_backend_drift_not_the_literal_string_none():
+    # bd emitting `"status": null` must never silently become the literal
+    # string "None" via an unguarded `str(raw["status"])` -- same null-vs-
+    # absent discipline as `_list_field`, extended to scalar fields.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": None,
+        "priority": 2,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "status"
+
+
+def test_explicit_null_description_field_raises_backend_drift_not_the_literal_string_none():
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "description": None,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "description"
+
+
+def test_missing_description_field_defaults_to_empty_string_not_drift():
+    # Absent is NOT the same as explicit null: an absent `description` key
+    # keeps its "" default, same as `_list_field`'s absent-key behavior.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+    }
+
+    items = parse_items(json.dumps([raw_item]))
+
+    assert items[0].description == ""
+
+
+def test_explicit_null_notes_field_raises_backend_drift_not_the_literal_string_none():
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "notes": None,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "notes"
+
+
+def test_explicit_null_dependency_type_field_raises_backend_drift_not_the_literal_string_none():
+    # The show-shape dependency edge's `dependency_type` field going explicitly
+    # null must alarm, never silently coerce to the literal string "None" via
+    # an unguarded `str(entry.get(...))`.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": [{"id": "x.2", "status": "open", "dependency_type": None}],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "dependency_type"
+
+
+def test_explicit_null_type_field_fallback_raises_backend_drift_not_the_literal_string_none():
+    # The list-shape edge row's `type` field (used as `dependency_type`'s
+    # fallback when the key is absent, not when it's explicitly null) going
+    # null must alarm the same way.
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": [{"issue_id": "x.1", "depends_on_id": "x.2", "type": None}],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "type"
+
+
 def test_non_string_label_element_raises_backend_drift_not_a_silent_coercion():
     # bd emitting a non-string element in `labels` (a number, an object, ...)
     # where the normalized contract says `string[]` is model drift -- it must
