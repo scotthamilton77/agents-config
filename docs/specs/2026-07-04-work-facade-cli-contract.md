@@ -89,8 +89,8 @@ only their envelope/error-code vocabulary above).
 JSON envelope on stdout, always, exit code mirrors `ok`:
 
 ```json
-{"protocol": "1.2", "ok": true, "data": { ... }, "error": null}
-{"protocol": "1.2", "ok": false, "data": null,
+{"protocol": "1.3", "ok": true, "data": { ... }, "error": null}
+{"protocol": "1.3", "ok": false, "data": null,
  "error": {"code": "E_TYPE_WALL", "message": "blocks: epic may not block task",
            "detail": {"from": "x.1", "to": "y", "dep_type": "blocks"}}}
 ```
@@ -120,7 +120,10 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
   never a pre-existing verb): `E_TRACK_REQUIRED` (a required-mode create with no
   track label), `E_UNKNOWN_TRACK` (a `--track` name outside the configured
   vocabulary), `E_NOT_CONFIGURED` (no resolvable/valid `project-config.toml`
-  `[tracks]` table).
+  `[tracks]` table). `discover` surface only (the mechanical discovered-work
+  triage verb, 2026-07-17 design spec): `E_TRIAGE_INCOMPLETE` (a missing,
+  malformed, or misplaced triage field — scope/priority/anchor form, not
+  correctness).
 - Lock-contention retry: bounded backoff inside the facade; only after
   exhaustion does `E_LOCK_CONTENTION` surface (quirk-shim inventory, last rows).
 - Exception: `--help`/`-h` (root and per-verb) is a human affordance — it prints
@@ -132,7 +135,7 @@ JSON envelope on stdout, always, exit code mirrors `ok`:
 - Every envelope carries `protocol` (semver `MAJOR.MINOR`). Additive fields bump
   MINOR; any breaking change to envelope or `data` shapes bumps MAJOR.
 - `work --protocol-version` returns a standard success envelope on stdout
-  (`ok: true`, `data: {"protocol": "1.2"}`, exit 0) — no exception to the
+  (`ok: true`, `data: {"protocol": "1.3"}`, exit 0) — no exception to the
   "stdout is always a JSON envelope" invariant (§4). It is the consumer
   handshake at adapter init (prgroom/PDLC pin a major and refuse a mismatch at
   startup rather than mis-parsing mid-run).

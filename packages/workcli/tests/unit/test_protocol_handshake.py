@@ -60,4 +60,4 @@ def test_protocol_wire_value_is_pinned() -> None:
     # The serialization boundary pins the literal wire value; every other
     # test references PROTOCOL_VERSION. Bumping the protocol means updating
     # this one assertion deliberately.
-    assert PROTOCOL_VERSION == "1.2"
+    assert PROTOCOL_VERSION == "1.3"
