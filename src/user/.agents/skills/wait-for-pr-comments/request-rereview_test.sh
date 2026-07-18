@@ -144,6 +144,16 @@ assert "multi-identity dispatch exits 0" "[ \$rc_multi -eq 0 ]"
 assert "multi-identity dispatch asks Copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
 assert "multi-identity dispatch asks Codex" "grep -qF 'pr comment' '$FAKE_GH_LOG'"
 
+# Alias dedup: both Copilot aliases share one mechanism, so a call listing both
+# must run the remove+re-add dance exactly ONCE — not once per alias.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "copilot-pull-request-reviewer[bot]"]' >/dev/null 2>&1
+rc_alias_dedup=$?
+assert "both Copilot aliases exit 0" "[ \$rc_alias_dedup -eq 0 ]"
+assert "both Copilot aliases remove @copilot exactly once" "[ \$(grep -cF -- '--remove-reviewer @copilot' '$FAKE_GH_LOG') -eq 1 ]"
+assert "both Copilot aliases add @copilot exactly once" "[ \$(grep -cF -- '--add-reviewer @copilot' '$FAKE_GH_LOG') -eq 1 ]"
+
 # Unknown identity: warns to stderr and is skipped WITHOUT aborting siblings.
 : > "$FAKE_GH_LOG"
 err_out=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \

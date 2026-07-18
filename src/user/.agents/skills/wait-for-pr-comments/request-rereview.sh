@@ -127,18 +127,31 @@ if [ -z "$BOT_REVIEWERS" ]; then
 fi
 
 SUCCEEDED=0
+# Track mechanisms already dispatched this invocation. Multiple aliases can map
+# to the same mechanism (e.g. both `Copilot` and
+# `copilot-pull-request-reviewer[bot]` -> the reviewer dance); dispatching each
+# mechanism at most once avoids a redundant remove+re-add cycle per alias.
+DISPATCHED=""
 while IFS= read -r identity; do
   lower=$(printf '%s' "$identity" | tr '[:upper:]' '[:lower:]')
   case "$lower" in
-    copilot|"copilot-pull-request-reviewer[bot]")
-      if request_copilot; then SUCCEEDED=$((SUCCEEDED + 1)); fi
-      ;;
-    "chatgpt-codex-connector[bot]")
-      if request_codex; then SUCCEEDED=$((SUCCEEDED + 1)); fi
-      ;;
+    copilot|"copilot-pull-request-reviewer[bot]") mechanism=copilot ;;
+    "chatgpt-codex-connector[bot]")               mechanism=codex ;;
     *)
       echo "warning: no known re-review mechanism for reviewer identity '$identity' — skipping" >&2
+      continue
       ;;
+  esac
+
+  # Skip mechanisms already asked this invocation (alias dedup).
+  case " $DISPATCHED " in
+    *" $mechanism "*) continue ;;
+  esac
+  DISPATCHED="$DISPATCHED $mechanism"
+
+  case "$mechanism" in
+    copilot) if request_copilot; then SUCCEEDED=$((SUCCEEDED + 1)); fi ;;
+    codex)   if request_codex;   then SUCCEEDED=$((SUCCEEDED + 1)); fi ;;
   esac
 done < <(jq -r '.[]' <<<"$BOT_REVIEWERS")
 
