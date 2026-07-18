@@ -35,12 +35,23 @@ class ReceiptEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class CliReceiptEntry:
+    """One installer-deployed uv tool (spec §7). ``name`` is the registry /
+    uv tool name; ``digest`` is ``cli_source_digest`` at deploy time."""
+
+    name: str
+    binary: str
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
 class Receipt:
     """The whole receipt. ``roots`` is the persisted install-root allowlist."""
 
     schema_version: int = SCHEMA_VERSION
     roots: tuple[Path, ...] = ()
     entries: tuple[ReceiptEntry, ...] = ()
+    clis: tuple[CliReceiptEntry, ...] = ()
     integrity: str | None = field(default=None)
 
 
@@ -56,6 +67,13 @@ def canonical_bytes(receipt: Receipt) -> bytes:
         "roots": sorted(str(r) for r in receipt.roots),
         "entries": [_entry_canonical(e) for e in entries],
     }
+    # Included only when non-empty — a receipt written before this field
+    # existed hashes byte-identically, so its persisted integrity still
+    # validates (the dir_digest compatibility precedent, dict-key form).
+    if receipt.clis:
+        payload["clis"] = [
+            [c.name, c.binary, c.digest] for c in sorted(receipt.clis, key=lambda c: c.name)
+        ]
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 

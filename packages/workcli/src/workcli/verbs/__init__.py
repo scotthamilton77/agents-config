@@ -2,7 +2,9 @@
 
 `VERBS` maps a verb name to its handler: `(Backend, Namespace) -> JsonValue`.
 `REQUIRED_CAPABILITY` maps a verb name to a predicate function over
-`Capabilities` that must return true for the verb to run; a verb absent
+`(Capabilities, Namespace)` that must return true for the verb to run; the
+`Namespace` lets the `dep` predicate distinguish `dep list` (always allowed)
+from `dep add`/`dep remove` (gated on `supports_dep_write`). A verb absent
 from this map has no gate (every v1 backend must
 support it unconditionally). `cli.py`'s dispatch loop checks the gate before
 ever calling the handler, so an unsupported capability never reaches verb
@@ -14,15 +16,19 @@ from __future__ import annotations
 from argparse import Namespace
 from collections.abc import Callable
 
-from workcli.backend import Backend, Capabilities
+from workcli.backend import Backend, Capabilities, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
+from workcli.lifecycle.discover import discover
 from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
+from workcli.verbs.groom import groom
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
+from workcli.verbs.report import graph, lint, triggers
 from workcli.verbs.syncing import sync
+from workcli.verbs.tracks import track
 from workcli.verbs.write import close, create_raw, note, reopen, update
 
 
@@ -31,9 +37,10 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
 
     `create_raw` reads only title/description/type/priority/parent/labels; the
     positional noun and the lifecycle flags below (`--orphan`/`--spec`/
-    `--trivial`/`--acceptance`) are silently ignored under `--raw`. `--orphan`
-    in particular changes placement intent yet never records the orphan marker,
-    so an ignored combination is a surprising no-op rather than a harmless one.
+    `--trivial`/`--acceptance`/`--track`) are silently ignored under `--raw`.
+    `--orphan` in particular changes placement intent yet never records the
+    orphan marker, so an ignored combination is a surprising no-op rather than
+    a harmless one.
     """
     offenders: list[str] = []
     if args.noun is not None:
@@ -46,6 +53,8 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
         offenders.append("--trivial")
     if args.acceptance is not None:
         offenders.append("--acceptance")
+    if args.track is not None:
+        offenders.append("--track")
     return offenders
 
 
@@ -92,21 +101,31 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "promote": promote,
     "deliver": deliver,
     "reconcile": reconcile,
+    "discover": discover,
     "dep": dep,
     "label": label,
     "sync": sync,
+    "track": track,
+    "lint": lint,
+    "graph": graph,
+    "triggers": triggers,
+    "groom": groom,
 }
 
-REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities], bool]] = {
-    "ready": lambda c: c.supports_ready,
-    "sync": lambda c: c.supports_sync,
-    "dep": lambda c: c.supports_dep_types,
+REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {
+    "ready": lambda c, _a: c.ready is not ReadySupport.UNSUPPORTED,
+    "sync": lambda c, _a: c.sync is not SyncSupport.UNSUPPORTED,
+    "dep": lambda c, a: a.action == "list" or c.supports_dep_write,
+    # discover always mints a typed discovered-from edge (step 5), so it
+    # carries the same precondition as `dep add`/`dep remove` -- gated
+    # ahead of the handler exactly like `dep` itself (spec §4 step 0).
+    "discover": lambda c, _a: c.supports_dep_write,
 }
 
 
-def missing_capability(verb: str, capabilities: Capabilities) -> bool:
+def missing_capability(verb: str, capabilities: Capabilities, args: Namespace) -> bool:
     """True when `verb` declares a required capability `capabilities` lacks."""
     check = REQUIRED_CAPABILITY.get(verb)
     if check is None:
         return False
-    return not check(capabilities)
+    return not check(capabilities, args)

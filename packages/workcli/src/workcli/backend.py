@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Literal, Protocol
 
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
@@ -16,11 +17,23 @@ from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResu
 DepOp = Literal["add", "remove"]
 
 
+class SyncSupport(StrEnum):
+    NATIVE = "native"
+    SERVER_AUTHORITATIVE = "server_authoritative"
+    UNSUPPORTED = "unsupported"
+
+
+class ReadySupport(StrEnum):
+    NATIVE = "native"
+    EMULATED = "emulated"
+    UNSUPPORTED = "unsupported"
+
+
 @dataclass(frozen=True)
 class Capabilities:
-    supports_ready: bool
-    supports_dep_types: bool
-    supports_sync: bool
+    ready: ReadySupport
+    sync: SyncSupport
+    supports_dep_write: bool  # typed dep add/remove; `dep list` is never gated
 
 
 class Backend(Protocol):

@@ -15,14 +15,16 @@ import time
 import traceback
 from argparse import SUPPRESS, ArgumentParser, _SubParsersAction
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn, TextIO
 
 from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
+from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
-from workcli.lifecycle.nouns import Noun
+from workcli.lifecycle.nouns import LEAF_NOUNS, Noun
 from workcli.render import render_human
 from workcli.verbs import VERBS, missing_capability
 
@@ -50,6 +52,7 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     list_parser.add_argument("--parent")
     list_parser.add_argument("--type")
     list_parser.add_argument("--limit", type=int, default=None)
+    list_parser.add_argument("--track", metavar="NAME")
 
     ready_parser = subparsers.add_parser("ready", help="list ready-to-work items, unbounded")
     ready_parser.add_argument("--label")
@@ -81,6 +84,7 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--spec")
     create_parser.add_argument("--trivial", action="store_true")
     create_parser.add_argument("--acceptance")
+    create_parser.add_argument("--track", metavar="NAME")
 
     update_parser = subparsers.add_parser(
         "update", help="update title/priority/description (replace semantics only)"
@@ -141,6 +145,30 @@ def _add_transition_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPa
     reconcile_parser.add_argument("--dry-run", action="store_true")
 
 
+def _add_discover_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    discover_parser = subparsers.add_parser(
+        "discover", help="file a discovered-work item with a mechanically-enforced triage record"
+    )
+    discover_parser.add_argument(
+        "--noun",
+        required=True,
+        choices=[noun.value for noun in LEAF_NOUNS],
+        help="spike|chore|decision|feat|bugfix -- leaf nouns only, a discovery is not a container",
+    )
+    discover_parser.add_argument("--title", required=True)
+    discover_parser.add_argument("--description")
+    discover_parser.add_argument("--anchor")
+    discover_parser.add_argument("--orphan", action="store_true")
+    discover_parser.add_argument("--discovered-from", dest="discovered_from")
+    discover_parser.add_argument("--scope")
+    discover_parser.add_argument("--scope-why", dest="scope_why")
+    discover_parser.add_argument("--priority")
+    discover_parser.add_argument("--priority-why", dest="priority_why")
+    discover_parser.add_argument("--anchor-why", dest="anchor_why")
+    discover_parser.add_argument("--escalation-why", dest="escalation_why")
+    discover_parser.add_argument("--track", metavar="NAME")
+
+
 def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     dep_parser = subparsers.add_parser("dep", help="manage dependency edges")
     dep_parser.add_argument("action", choices=["add", "remove", "list"])
@@ -152,6 +180,32 @@ def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPar
     label_parser.add_argument("action", choices=["add", "remove", "list"])
     label_parser.add_argument("id", metavar="ID")
     label_parser.add_argument("labels", nargs="*", metavar="LABELS")
+
+
+def _add_track_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    track_parser = subparsers.add_parser(
+        "track", help="track assignment: track set ID NAME [--cascade]"
+    )
+    track_parser.add_argument("action", choices=["set"])
+    track_parser.add_argument("id", metavar="ID")
+    track_parser.add_argument("name", metavar="NAME")
+    track_parser.add_argument("--cascade", action="store_true")
+
+
+def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    subparsers.add_parser("lint", help="track/milestone hygiene report (advisory; always exits 0)")
+    graph_parser = subparsers.add_parser(
+        "graph", help="bulk node/edge export for visualization consumers"
+    )
+    graph_parser.add_argument("--json", action="store_true", dest="json_output")
+    subparsers.add_parser("triggers", help="extraction pressure/eligibility per track (advisory)")
+
+    groom_parser = subparsers.add_parser(
+        "groom", help="Backlog Grooming state: --done records completion, --status reports nag"
+    )
+    groom_group = groom_parser.add_mutually_exclusive_group(required=True)
+    groom_group.add_argument("--done", action="store_true")
+    groom_group.add_argument("--status", action="store_true")
 
 
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
@@ -174,6 +228,12 @@ def _build_parser() -> _EnvelopeArgumentParser:
         default="json",
         help="human rendering goes to stderr; stdout always carries the JSON envelope",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="explicit project-config.toml path; overrides the upward search",
+    )
     # `parser_class` propagates the raise-don't-exit `error()` override to
     # every subparser too -- a bad flag inside `work show --bogus` must reach
     # main()'s WorkError handling exactly like a bad top-level flag does,
@@ -182,7 +242,10 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_read_subparsers(subparsers)
     _add_write_subparsers(subparsers)
     _add_transition_subparsers(subparsers)
+    _add_discover_subparser(subparsers)
     _add_relations_subparsers(subparsers)
+    _add_track_subparsers(subparsers)
+    _add_report_subparsers(subparsers)
     _add_sync_subparser(subparsers)
     return parser
 
@@ -268,6 +331,18 @@ def _default_read_file(path: str) -> str:
         ) from read_error
 
 
+def _default_config_loader(explicit_path: str | None) -> TrackLayerConfig:
+    """The real track-layer config resolution: upward search from cwd (track spec §3)."""
+    return load_config(Path.cwd(), explicit_path)
+
+
+def _default_now() -> datetime:
+    """The real wall clock: `work groom`'s only source of "now" (never a bare
+    `datetime.now()` call anywhere in the verb layer -- injected for testability,
+    same seam precedent as `read_file`/`config_loader`)."""
+    return datetime.now(UTC)
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -283,6 +358,8 @@ def main(
     err: TextIO | None = None,
     sleep: Callable[[float], None] | None = None,
     read_file: Callable[[str], str] | None = None,
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
+    now: Callable[[], datetime] | None = None,
 ) -> int:
     if out is None:
         out = sys.stdout
@@ -301,6 +378,18 @@ def main(
     # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
     # travels as an `args` attribute rather than an extra handler parameter.
     args.read_file = read_file if read_file is not None else _default_read_file
+
+    # Same args-attachment precedent as read_file: resolved once, loaded
+    # LAZILY -- only a track-layer surface calls args.load_config(), so
+    # pre-existing verbs never trigger config resolution (track spec §3).
+    resolved_config_loader = config_loader if config_loader is not None else _default_config_loader
+    args.load_config = lambda: resolved_config_loader(args.config)
+
+    # Same args-attachment precedent as read_file -- but attached
+    # unconditionally, not lazily: reading the clock has no I/O cost, so
+    # there is no laziness contract to preserve (unlike config_loader, which
+    # stays lazy so pre-existing verbs never trigger config resolution).
+    args.now = now if now is not None else _default_now
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)
@@ -331,7 +420,7 @@ def main(
         # handshake never touches the runner (spec §5).
         backend = _build_backend(runner, sleep)
 
-        if missing_capability(args.verb, backend.capabilities):
+        if missing_capability(args.verb, backend.capabilities, args):
             return _finish_failure(
                 WorkError(
                     ErrorCode.UNSUPPORTED_CAPABILITY,
