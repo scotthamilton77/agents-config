@@ -16,9 +16,6 @@ contract).
 prgroom does the gh/git legwork for the light PR-context file the cluster
 contract passes (``pr_context_path``): the PR title/body + recent commits + the
 poll-derived CI summary, written under the caller-provided scratch dir.
-``decided_by`` is part of the uniform ``run_cluster``/``run_fix`` signature;
-clustering decides no disposition, so ``run_cluster`` ignores it (it is threaded
-through for signature symmetry with the fix path).
 """
 
 from __future__ import annotations
@@ -54,7 +51,6 @@ def cluster_pr(
     deps: Deps,
     config: PrgroomConfig,
     dispatcher: ClusterContract,
-    decided_by: str,
     scratch_dir: Path,
 ) -> PRGroomingState:
     """Cluster the unclustered items, applying the assignments to a state copy.
@@ -64,7 +60,7 @@ def cluster_pr(
     caller to persist. Idempotent: a no-op when every item is already clustered.
     No disposition, no phase change (§3.2 cluster row).
     """
-    del config  # cluster reads no config knob today; kept for signature symmetry
+    del config, deps  # cluster reads no config knob and no clock today; kept for signature symmetry
     state = copy.deepcopy(state)
     pending = _unclustered_unprocessed(state.items)
     if not pending:
@@ -72,7 +68,7 @@ def cluster_pr(
 
     context_path = _write_pr_context(ref, gh, git, scratch_dir, ci_state=state.quiescence.ci_state)
     req = ClusterInput(pr=ref, items=pending, pr_context_path=str(context_path))
-    result = run_cluster(req, dispatcher, now=deps.clock.now(), decided_by=decided_by)
+    result = run_cluster(req, dispatcher)
 
     for item in pending:
         cluster_id = result.assignments.get(item.identity.gh_id)

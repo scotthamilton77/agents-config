@@ -54,6 +54,10 @@ if TYPE_CHECKING:
 # the scheduler retries on the next cadence (see AllProvidersFailedError's tier).
 _BOTH_FAIL_SEVERITY = Severity.WARN
 
+# The both-fail provenance stamp: no agent produced output — the ladder itself
+# decided FAILED. Consistent with the empty-chain degradation to "prgroom".
+_BOTH_FAIL_DECIDED_BY = "prgroom"
+
 
 @dataclass(frozen=True, slots=True)
 class FixRunResult:
@@ -73,6 +77,7 @@ class FixRunResult:
     dispositions: dict[str, Disposition]
     escalations: list[Escalation]
     stashed: bool
+    decided_by: str
     deferred_memory: list[MemoryEntry] = field(default_factory=list)
     contextual_memory: list[MemoryEntry] = field(default_factory=list)
     unwritten: list[str] = field(default_factory=list)
@@ -84,7 +89,6 @@ def run_fix(
     git: GitClient,
     *,
     now: datetime,
-    decided_by: str,
     known_thread_ids: set[str] | None = None,
 ) -> FixRunResult:
     """Dispatch the fix contract, audit the output, and isolate contamination.
@@ -95,9 +99,10 @@ def run_fix(
     """
     pre = git.head_sha()
     try:
-        out = dispatcher.fix(req)
+        dispatched = dispatcher.fix(req)
     except AllProvidersFailedError as exc:
-        return _both_fail_result(req, exc, now=now, decided_by=decided_by)
+        return _both_fail_result(req, exc, now=now)
+    out = dispatched.output
 
     post = git.head_sha()
     ancestors_of_pre = set(git.rev_list(pre))
@@ -125,7 +130,7 @@ def run_fix(
         out,
         git,
         now=now,
-        decided_by=decided_by,
+        decided_by=dispatched.decided_by,
         item_violations=item_violations,
         orphan=orphan,
         memory_violations=memory.violations,
@@ -146,11 +151,11 @@ def _items_by_gh(req: FixInput) -> dict[str, ReviewItem]:
 
 
 def _both_fail_result(
-    req: FixInput, exc: AllProvidersFailedError, *, now: datetime, decided_by: str
+    req: FixInput, exc: AllProvidersFailedError, *, now: datetime
 ) -> FixRunResult:
     by_gh = _items_by_gh(req)
     dispositions = {
-        gh_id: provider_failure_disposition(exc.detail, now=now, decided_by=decided_by)
+        gh_id: provider_failure_disposition(exc.detail, now=now, decided_by=_BOTH_FAIL_DECIDED_BY)
         for gh_id in req.item_gh_ids
     }
     escalations = [
@@ -159,7 +164,12 @@ def _both_fail_result(
         )
         for gh_id in req.item_gh_ids
     ]
-    return FixRunResult(dispositions=dispositions, escalations=escalations, stashed=False)
+    return FixRunResult(
+        dispositions=dispositions,
+        escalations=escalations,
+        stashed=False,
+        decided_by=_BOTH_FAIL_DECIDED_BY,
+    )
 
 
 def _build_result(
@@ -244,6 +254,7 @@ def _build_result(
         dispositions=dispositions,
         escalations=escalations,
         stashed=cluster_flip,
+        decided_by=decided_by,
         deferred_memory=deferred_memory,
         contextual_memory=memory_routable,
         unwritten=unwritten,

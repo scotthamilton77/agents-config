@@ -15,11 +15,16 @@ in later beads.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from prgroom.prsession.enums import DispositionKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import ReviewItem
+
+if TYPE_CHECKING:
+    # Annotation-only: dispatcher.py imports this module at runtime, so the
+    # reverse edge must never execute (no runtime cycle).
+    from prgroom.agent.dispatcher import Dispatched
 
 CONTRACT_VERSION = 1
 
@@ -83,7 +88,7 @@ class ClusterOutput:
 class ClusterContract(Protocol):
     """The cluster dispatch surface. A provider groups items into fix-bundles."""
 
-    def cluster(self, request: ClusterInput) -> ClusterOutput: ...  # pragma: no cover
+    def cluster(self, request: ClusterInput) -> Dispatched[ClusterOutput]: ...  # pragma: no cover
 
 
 # ───────────────────────── Fix contract ─────────────────────────
@@ -208,4 +213,4 @@ class FixOutput:
 class FixContract(Protocol):
     """The fix dispatch surface. A provider decides disposition AND implements."""
 
-    def fix(self, request: FixInput) -> FixOutput: ...  # pragma: no cover
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]: ...  # pragma: no cover

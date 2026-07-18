@@ -12,10 +12,12 @@ Protocols exactly.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEntry
-from prgroom.agent.dispatcher import AllProvidersFailedError
+from prgroom.agent.dispatcher import AllProvidersFailedError, Dispatched, LinkFailure
 from prgroom.agent.fix import run_fix
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.escalation import Severity
 from prgroom.prsession.enums import DispositionKind, GateStrength, ItemKind
 from prgroom.prsession.pr_ref import PRRef
@@ -55,12 +57,12 @@ class FixDispatcherStub:
         self._outcome = outcome
         self.calls = 0
 
-    def fix(self, request: FixInput) -> FixOutput:
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]:
         del request  # canned outcome; mirrors the FixContract Protocol signature
         self.calls += 1
         if isinstance(self._outcome, Exception):
             raise self._outcome
-        return self._outcome
+        return Dispatched(output=self._outcome, winner=AgentSpec(cli="claude", model="opus[1m]"))
 
 
 class FakeGit:
@@ -113,7 +115,7 @@ def test_both_fail_flips_every_item_to_failed_with_escalation_and_no_stash() -> 
     req = _req("C_1", "C_2")
     disp = FixDispatcherStub(AllProvidersFailedError(detail="ollama down; opus down"))
     git = _git()
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert {g: d.kind for g, d in res.dispositions.items()} == {
         "C_1": DispositionKind.FAILED,
         "C_2": DispositionKind.FAILED,
@@ -129,7 +131,7 @@ def test_both_fail_does_not_read_head_or_rev_list() -> None:
     req = _req("C_1")
     disp = FixDispatcherStub(AllProvidersFailedError(detail="down"))
     git = FakeGit(pre="pre", post="post", ancestors=["pre"], new=[])
-    run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    run_fix(req, disp, git, now=_NOW)
     # head_sha was read once (pre); post was never consumed because the both-fail
     # short-circuit returns before computing the commit sets.
     assert git.head_calls == 1
@@ -155,7 +157,7 @@ def test_clean_output_maps_dispositions_straight_through() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     c1 = res.dispositions["C_1"]
     assert c1.kind is DispositionKind.FIXED
     assert c1.commits == ["n1"]
@@ -163,7 +165,7 @@ def test_clean_output_maps_dispositions_straight_through() -> None:
     assert c1.gate is GateStrength.FULL
     assert c1.response_path == "/o/C_1.md"
     assert c1.decided_at == _NOW
-    assert c1.decided_by == "prgroom"
+    assert c1.decided_by == "claude opus[1m]"  # the stub's winner, not a static config
     assert res.dispositions["C_2"].kind is DispositionKind.WONT_FIX
     assert res.escalations == []
     assert res.stashed is False
@@ -178,7 +180,7 @@ def test_fixed_row_with_missing_gate_flips_to_failed_end_to_end() -> None:
         items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
     )
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, FixDispatcherStub(out), git, now=_NOW)
     d = res.dispositions["C_1"]
     assert d.kind is DispositionKind.FAILED
     assert "recommended_gate" in d.rationale
@@ -199,7 +201,7 @@ def test_clean_non_fixed_row_with_garbage_gate_parses_to_none() -> None:
             )
         ]
     )
-    res = run_fix(req, FixDispatcherStub(out), _git(), now=_NOW, decided_by="prgroom")
+    res = run_fix(req, FixDispatcherStub(out), _git(), now=_NOW)
     d = res.dispositions["C_1"]
     assert d.kind is DispositionKind.SKIPPED
     assert d.gate is None
@@ -225,7 +227,7 @@ def test_item_with_audit_violation_flips_to_failed_only_for_that_item() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["C_1"].kind is DispositionKind.FIXED
     assert res.dispositions["C_2"].kind is DispositionKind.FAILED
     assert any(e.item is not None and e.item.identity.gh_id == "C_2" for e in res.escalations)
@@ -251,7 +253,7 @@ def test_cluster_flip_rationale_carries_the_hard_violation_detail() -> None:
         ]
     )
     git = _git(ancestors=["pre"], new=["n1", "n2"])
-    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW)
     assert res.stashed is True
     flipped = res.dispositions["C_1"]
     assert flipped.kind is DispositionKind.FAILED
@@ -275,7 +277,7 @@ def test_swept_item_rationale_is_the_spec_string_with_no_added_prefix() -> None:
         memory_writes=["/etc/passwd"],  # escapes memory_dir → hard containment BLOCK
     )
     git = _git(ancestors=["pre"], new=["n1"])  # n1 claimed → no orphan, only containment
-    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW)
     assert res.stashed is True
     assert res.dispositions["C_1"].rationale == "memory containment violation: /etc/passwd"
 
@@ -290,7 +292,7 @@ def test_ghost_row_cannot_suppress_orphan_detection() -> None:
         ]
     )
     git = _git(ancestors=["pre"], new=["n1", "n2"])
-    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW, decided_by="prgroom")
+    res = run_fix(_req("C_1"), FixDispatcherStub(out), git, now=_NOW)
     assert res.stashed is True  # orphan detected despite the GHOST's claim
     assert "GHOST" not in res.dispositions  # unrequested rows are never dispositioned
 
@@ -321,7 +323,7 @@ def test_requested_item_missing_from_output_gets_failed_disposition_and_escalati
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     # Keys are exactly the authoritative requested set.
     assert set(res.dispositions) == {"A", "B"}
     assert res.dispositions["A"].kind is DispositionKind.FIXED
@@ -350,7 +352,7 @@ def test_extra_unrequested_item_escalates_but_gets_no_disposition() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert set(res.dispositions) == {"A"}  # GHOST is NOT disposed
     assert res.dispositions["A"].kind is DispositionKind.FIXED
     # GHOST is surfaced for visibility.
@@ -369,7 +371,7 @@ def test_duplicate_gh_id_in_output_fails_that_item_with_one_disposition() -> Non
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert set(res.dispositions) == {"A"}  # exactly one disposition for the id
     assert res.dispositions["A"].kind is DispositionKind.FAILED
     assert any(e.item is not None and e.item.identity.gh_id == "A" for e in res.escalations)
@@ -388,7 +390,7 @@ def test_duplicate_with_real_audit_violation_keeps_the_richer_violation_detail()
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=[])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["A"].kind is DispositionKind.FAILED
     # The per-item audit detail (no commits) is preserved, not overwritten by the
     # duplicate-shape message.
@@ -414,7 +416,7 @@ def test_orphan_flips_all_cluster_items_to_failed_and_stashes_once() -> None:
     disp = FixDispatcherStub(out)
     # n2 is a new commit no item claimed → orphan.
     git = _git(ancestors=["pre"], new=["n1", "n2"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["C_1"].kind is DispositionKind.FAILED
     assert res.dispositions["C_2"].kind is DispositionKind.FAILED
     assert res.stashed is True
@@ -435,7 +437,7 @@ def test_containment_violation_flips_cluster_and_stashes() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=[])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["C_1"].kind is DispositionKind.FAILED
     assert res.dispositions["C_2"].kind is DispositionKind.FAILED
     assert res.stashed is True
@@ -465,7 +467,7 @@ def test_warn_memory_violation_surfaces_escalation_without_flip_or_stash() -> No
     )
     disp = FixDispatcherStub(out)
     git = _git(ancestors=["pre"], new=["n1"])
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     # Items keep their agent dispositions — the WARN did not flip them.
     assert res.dispositions["C_1"].kind is DispositionKind.FIXED
     assert res.dispositions["C_2"].kind is DispositionKind.WONT_FIX
@@ -487,7 +489,7 @@ def test_non_contextual_memory_is_returned_as_deferred() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git()
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert [m.classification for m in res.deferred_memory] == ["PROJECT"]
     assert res.dispositions["C_1"].kind is DispositionKind.SKIPPED  # not a failure
 
@@ -503,7 +505,7 @@ def test_declared_but_unwritten_path_does_not_fail_the_cluster() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git()
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["C_1"].kind is DispositionKind.SKIPPED
     assert res.stashed is False
     assert res.unwritten == []  # MVP declared==written: soft-warning list is empty
@@ -519,7 +521,8 @@ def test_run_fix_signature_takes_no_state_object() -> None:
 
     params = set(inspect.signature(run_fix).parameters)
     assert "state" not in params
-    assert {"req", "dispatcher", "git", "now", "decided_by"} <= params
+    assert {"req", "dispatcher", "git", "now"} <= params
+    assert "decided_by" not in params  # provenance now comes from the Dispatched envelope
 
 
 def test_known_thread_ids_default_to_item_thread_ids() -> None:
@@ -532,7 +535,7 @@ def test_known_thread_ids_default_to_item_thread_ids() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git()
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom")
+    res = run_fix(req, disp, git, now=_NOW)
     assert res.dispositions["C_1"].kind is DispositionKind.SKIPPED  # hint resolved, no failure
 
 
@@ -546,5 +549,53 @@ def test_explicit_known_thread_ids_override_item_thread_ids() -> None:
     )
     disp = FixDispatcherStub(out)
     git = _git()
-    res = run_fix(req, disp, git, now=_NOW, decided_by="prgroom", known_thread_ids={"PRT_OTHER"})
+    res = run_fix(req, disp, git, now=_NOW, known_thread_ids={"PRT_OTHER"})
     assert res.dispositions["C_1"].kind is DispositionKind.SKIPPED  # override resolved the hint
+
+
+# ── winner provenance stamps dispositions (observability spec §3, behaviors 7-9) ──
+
+
+def _dispatched_stub(out: FixOutput, winner: AgentSpec, *failures: LinkFailure) -> Any:
+    class _Stub:
+        def fix(self, request: FixInput) -> Dispatched[FixOutput]:
+            del request
+            return Dispatched(output=out, winner=winner, failures=tuple(failures))
+
+    return _Stub()
+
+
+def test_winner_stamps_every_disposition_and_the_result() -> None:
+    # The bead-item-2 regression: under the old code decided_by read the CONFIGURED
+    # chain head; it must read the link that actually produced the output.
+    winner = AgentSpec(cli="codex", model="gpt-5.6-terra")
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["n1"])]
+    )
+    timeout = LinkFailure(AgentSpec("claude", "opus[1m]"), "timeout: budget", kind="timeout")
+    disp = _dispatched_stub(out, winner, timeout)
+    res = run_fix(_req("C_1"), disp, _git(new=["n1"]), now=_NOW)
+    assert res.dispositions["C_1"].decided_by == "codex gpt-5.6-terra"
+    assert res.decided_by == "codex gpt-5.6-terra"
+
+
+def test_synthesized_and_flipped_rows_stamp_the_winner_too() -> None:
+    # The winning agent produced the output being audited; prgroom's audit
+    # rejecting it does not change who decided. C_2 is synthesized (omitted from
+    # the output); C_1 is flipped FAILED (claimed commit not in the new set).
+    winner = AgentSpec(cli="claude", model="haiku")
+    out = FixOutput(
+        items=[FixItemResult(gh_id="C_1", disposition=DispositionKind.FIXED, commit_shas=["ghost"])]
+    )
+    res = run_fix(_req("C_1", "C_2"), _dispatched_stub(out, winner), _git(new=["n1"]), now=_NOW)
+    assert res.dispositions["C_1"].kind == DispositionKind.FAILED  # audit-flipped
+    assert res.dispositions["C_2"].kind == DispositionKind.FAILED  # synthesized
+    assert all(d.decided_by == "claude haiku" for d in res.dispositions.values())
+
+
+def test_both_fail_stamps_prgroom() -> None:
+    # No agent produced output — the ladder itself decided FAILED.
+    disp = FixDispatcherStub(AllProvidersFailedError(detail="all down"))
+    res = run_fix(_req("C_1"), disp, _git(), now=_NOW)
+    assert res.dispositions["C_1"].decided_by == "prgroom"
+    assert res.decided_by == "prgroom"

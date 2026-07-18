@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEntry
+from prgroom.agent.dispatcher import Dispatched
 from prgroom.agent.fix import run_fix
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.prsession.enums import DispositionKind, ItemKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import Identity, ReviewItem
@@ -27,7 +29,7 @@ class _Dispatcher:
 
     def fix(self, request: FixInput) -> FixOutput:
         del request  # canned outcome; mirrors the FixContract Protocol signature
-        return self._out
+        return Dispatched(output=self._out, winner=AgentSpec(cli="claude", model="opus[1m]"))
 
 
 def _item(gh_id: str, thread_id: str = "") -> ReviewItem:
@@ -59,7 +61,7 @@ def test_contextual_memory_carried_for_cluster_thread() -> None:
         items=[FixItemResult(gh_id="100", disposition=DispositionKind.FIXED, commit_shas=["s1"])],
         memory=[MemoryEntry(classification="CONTEXTUAL", content="why", target_hint="PRRT_a")],
     )
-    res = run_fix(_req([item]), _Dispatcher(out), _FakeGit(), now=_NOW, decided_by="agent")
+    res = run_fix(_req([item]), _Dispatcher(out), _FakeGit(), now=_NOW)
     assert [e.content for e in res.contextual_memory] == ["why"]
 
 
@@ -69,5 +71,5 @@ def test_non_cluster_target_hint_not_routed() -> None:
         items=[FixItemResult(gh_id="100", disposition=DispositionKind.FIXED, commit_shas=["s1"])],
         memory=[MemoryEntry(classification="CONTEXTUAL", content="x", target_hint="PRRT_other")],
     )
-    res = run_fix(_req([item]), _Dispatcher(out), _FakeGit(), now=_NOW, decided_by="agent")
+    res = run_fix(_req([item]), _Dispatcher(out), _FakeGit(), now=_NOW)
     assert res.contextual_memory == []  # unknown-thread hint -> audit violation, not routed

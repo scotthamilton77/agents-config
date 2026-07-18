@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 
 from prgroom.agent.contracts import ClusterInput, ClusterOutput, ClusterResult
+from prgroom.agent.dispatcher import Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PrgroomError, Tier
@@ -111,10 +113,13 @@ class ClusterDispatcherStub:
         self.calls = 0
         self.last_request: ClusterInput | None = None
 
-    def cluster(self, request: ClusterInput) -> ClusterOutput:
+    def cluster(self, request: ClusterInput) -> Dispatched[ClusterOutput]:
         self.calls += 1
         self.last_request = request
-        return ClusterOutput(clusters=self._clusters)
+        return Dispatched(
+            output=ClusterOutput(clusters=self._clusters),
+            winner=AgentSpec(cli="ollama", model="gemma4"),
+        )
 
 
 def _run(
@@ -132,7 +137,6 @@ def _run(
         deps=_deps(),
         config=PrgroomConfig(),
         dispatcher=dispatcher,
-        decided_by="ollama gemma4",
         scratch_dir=scratch_dir,
     )
 

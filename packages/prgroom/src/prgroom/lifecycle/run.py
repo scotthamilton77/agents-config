@@ -149,11 +149,9 @@ class Verbs:
         cls,
         *,
         cluster_dispatcher: ClusterContract,
-        cluster_decided_by: str,
         fix_dispatcher: FixContract,
-        fix_decided_by: str,
     ) -> Verbs:
-        """Wire the production verbs; cluster/fix capture their dispatchers + decided_by."""
+        """Wire the production verbs; cluster/fix capture their dispatchers."""
 
         def cluster(ctx: RunContext) -> PRGroomingState:
             with TemporaryDirectory(prefix="prgroom-cluster-") as scratch:
@@ -165,7 +163,6 @@ class Verbs:
                     deps=ctx.deps,
                     config=ctx.config,
                     dispatcher=cluster_dispatcher,
-                    decided_by=cluster_decided_by,
                     scratch_dir=Path(scratch),
                 )
 
@@ -180,7 +177,6 @@ class Verbs:
                     config=ctx.config,
                     dispatcher=fix_dispatcher,
                     sink=ctx.sink,
-                    decided_by=fix_decided_by,
                     scratch_dir=Path(scratch),
                 )
 
@@ -251,9 +247,7 @@ def run_lifecycle(
     sink: Sink,
     mode: Mode,
     cluster_dispatcher: ClusterContract,
-    cluster_decided_by: str,
     fix_dispatcher: FixContract,
-    fix_decided_by: str,
 ) -> int:
     """Run the lifecycle under one lock; return the §3.3 exit code (the CLI entry).
 
@@ -277,9 +271,7 @@ def run_lifecycle(
     )
     verbs = Verbs.system(
         cluster_dispatcher=cluster_dispatcher,
-        cluster_decided_by=cluster_decided_by,
         fix_dispatcher=fix_dispatcher,
-        fix_decided_by=fix_decided_by,
     )
     handlers = _signal_handlers(cancel) if mode is Mode.AUTONOMOUS else nullcontext()
     with handlers:

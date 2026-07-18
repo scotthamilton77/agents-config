@@ -16,7 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEntry
-from prgroom.agent.dispatcher import AllProvidersFailedError
+from prgroom.agent.dispatcher import AllProvidersFailedError, Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
 from prgroom.escalation import Escalation
@@ -125,18 +126,21 @@ class FakeGit:
 class FixDispatcherStub:
     """A ``FixContract`` fake returning a canned output (or raising) per cluster call."""
 
-    def __init__(self, outcomes: list[FixOutput | Exception]) -> None:
+    def __init__(
+        self, outcomes: list[FixOutput | Exception], *, winner: AgentSpec | None = None
+    ) -> None:
         self._outcomes = list(outcomes)
+        self._winner = winner if winner is not None else AgentSpec(cli="claude", model="opus[1m]")
         self.calls = 0
         self.requests: list[FixInput] = []
 
-    def fix(self, request: FixInput) -> FixOutput:
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]:
         self.calls += 1
         self.requests.append(request)
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        return Dispatched(output=outcome, winner=self._winner)
 
 
 class RecordingSink:
@@ -173,7 +177,6 @@ def _run(
         config=PrgroomConfig(),
         dispatcher=dispatcher,
         sink=sink,
-        decided_by="claude opus[1m]",
         scratch_dir=scratch_dir,
     )
     return out, sink, git
@@ -351,7 +354,6 @@ def test_fix_logs_deferred_memory_via_warn_seam(tmp_path: Path) -> None:
         config=PrgroomConfig(),
         dispatcher=dispatcher,
         sink=RecordingSink(),
-        decided_by="claude opus[1m]",
         scratch_dir=tmp_path,
         warn=warnings.append,
     )
@@ -380,7 +382,6 @@ def test_fix_logs_unwritten_paths_via_warn_seam(tmp_path: Path) -> None:
         config=PrgroomConfig(),
         dispatcher=dispatcher,
         sink=RecordingSink(),
-        decided_by="claude opus[1m]",
         scratch_dir=tmp_path,
         warn=warnings.append,
     )

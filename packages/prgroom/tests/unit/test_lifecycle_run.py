@@ -659,9 +659,7 @@ def test_run_lifecycle_lock_held_returns_75() -> None:
             sink=RecordingSink(),  # type: ignore[arg-type]
             mode=Mode.INTERACTIVE,
             cluster_dispatcher=object(),  # type: ignore[arg-type] - never reached
-            cluster_decided_by="x",
             fix_dispatcher=object(),  # type: ignore[arg-type]
-            fix_decided_by="x",
         )
     finally:
         store.release(_REF)
@@ -697,9 +695,7 @@ def test_verbs_system_adapters_delegate_to_real_verbs(monkeypatch: pytest.Monkey
 
     verbs = Verbs.system(
         cluster_dispatcher=object(),  # type: ignore[arg-type]
-        cluster_decided_by="claude",
         fix_dispatcher=object(),  # type: ignore[arg-type]
-        fix_decided_by="claude",
     )
     ctx = _ctx(_quiescent_state())
     for adapter in (

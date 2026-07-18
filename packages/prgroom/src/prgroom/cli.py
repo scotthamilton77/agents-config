@@ -15,6 +15,7 @@ Verb names with underscores in the function name render as hyphenated commands
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -28,10 +29,10 @@ from prgroom.agent.contracts import ClusterContract, FixContract
 from prgroom.agent.dispatcher import (
     ClusterDispatcher,
     FixDispatcher,
-    ProviderChain,
     load_chain,
 )
 from prgroom.agent.subprocess_runner import SubprocessAgentRunner
+from prgroom.agent.usage import append_usage
 from prgroom.config import PrgroomConfig
 from prgroom.deps import Deps
 from prgroom.errors import ErrorCode, PreconditionError, PrgroomError, exit_code_for_tier
@@ -119,54 +120,34 @@ def _git_user() -> str:
     return _build_git().config_user()
 
 
-def _decided_by(chain: ProviderChain) -> str:
-    """Derive ``decided_by`` from a resolved chain's primary provider (``"<cli> <model>"``).
-
-    The primary (first) provider is the one prgroom prefers; its ``cli`` + ``model``
-    name the deciding agent on every disposition this run stamps (e.g.
-    ``"claude opus[1m]"``). An empty chain (a misconfig the dispatcher would reject
-    on dispatch) degrades to ``"prgroom"`` so the field is never blank.
-    """
-    if not chain.providers:
-        return "prgroom"
-    head = chain.providers[0]
-    return f"{head.cli} {head.model}"
-
-
-def _build_cluster_dispatcher() -> tuple[ClusterContract, str]:
+def _build_cluster_dispatcher() -> ClusterContract:
     """Resolve the cluster provider chain + a dispatcher.
 
-    A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
-    ``decided_by``. Production wires a :class:`ClusterDispatcher` over the real
+    A seam: tests monkeypatch this to inject a stub dispatcher. Production wires
+    a :class:`ClusterDispatcher` over the real
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
     pass ``None`` too — there is no resolver), so ``[agents.cluster]`` overrides and a
     ``--cluster-model`` flag stay inert pending that cross-verb config-path wiring.
     """
-    chain = load_chain("cluster", repo_config=None, model_override=None)  # pragma: no cover
-    dispatcher = ClusterDispatcher(  # pragma: no cover - production wiring
-        runner=SubprocessAgentRunner(), chain=chain
-    )
-    return dispatcher, _decided_by(chain)  # pragma: no cover - production wiring
+    chain = load_chain("cluster", repo_config=None, model_override=None)
+    return ClusterDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
 
 
-def _build_fix_dispatcher() -> tuple[FixContract, str]:
+def _build_fix_dispatcher() -> FixContract:
     """Resolve the fix provider chain + a dispatcher.
 
-    A seam: tests monkeypatch this to inject a stub dispatcher + a fixed
-    ``decided_by``. Production wires a :class:`FixDispatcher` over the real
+    A seam: tests monkeypatch this to inject a stub dispatcher. Production wires
+    a :class:`FixDispatcher` over the real
     :class:`SubprocessAgentRunner`. It calls :func:`load_chain` with
     ``repo_config=None`` / ``model_override=None``, so the shipped DEFAULT chain is
     used today: no verb resolves the per-repo ``.prgroom.toml`` path yet (poll/status
     pass ``None`` too — there is no resolver), so ``[agents.fix]`` overrides and a
     ``--fix-model`` flag stay inert pending that cross-verb config-path wiring.
     """
-    chain = load_chain("fix", repo_config=None, model_override=None)  # pragma: no cover
-    dispatcher = FixDispatcher(  # pragma: no cover - production wiring
-        runner=SubprocessAgentRunner(), chain=chain
-    )
-    return dispatcher, _decided_by(chain)  # pragma: no cover - production wiring
+    chain = load_chain("fix", repo_config=None, model_override=None)
+    return FixDispatcher(runner=SubprocessAgentRunner(), chain=chain, usage_hook=append_usage)
 
 
 def _build_sink() -> Sink:
@@ -298,7 +279,7 @@ def cluster(
                 raise PreconditionError(ErrorCode.PRECONDITION_NO_ITEMS, detail=ref.display())
             if not _needs_clustering(state.items):
                 return  # already clustered / all processed → idempotent no-op exit 0
-            dispatcher, decided_by = _build_cluster_dispatcher()
+            dispatcher = _build_cluster_dispatcher()
             with tempfile.TemporaryDirectory(prefix="prgroom-cluster-") as scratch:
                 state = cluster_pr(
                     state,
@@ -308,7 +289,6 @@ def cluster(
                     deps=deps,
                     config=config,
                     dispatcher=dispatcher,
-                    decided_by=decided_by,
                     scratch_dir=Path(scratch),
                 )
             store.write(ref, state)
@@ -353,7 +333,7 @@ def fix(
                 if state.items and all(item.disposition is not None for item in state.items):
                     return
                 raise PreconditionError(ErrorCode.PRECONDITION_NO_CLUSTERS, detail=ref.display())
-            dispatcher, decided_by = _build_fix_dispatcher()
+            dispatcher = _build_fix_dispatcher()
             sink = _build_sink()
             with tempfile.TemporaryDirectory(prefix="prgroom-fix-") as scratch:
                 state = fix_pr(
@@ -365,7 +345,6 @@ def fix(
                     config=config,
                     dispatcher=dispatcher,
                     sink=sink,
-                    decided_by=decided_by,
                     scratch_dir=Path(scratch),
                 )
             store.write(ref, state)
@@ -673,8 +652,8 @@ def run(
         ref = PRRef.parse(pr)
     except PrgroomError as err:
         raise typer.Exit(code=handle_cli_error(err)) from err
-    cluster_dispatcher, cluster_decided_by = _build_cluster_dispatcher()
-    fix_dispatcher, fix_decided_by = _build_fix_dispatcher()
+    cluster_dispatcher = _build_cluster_dispatcher()
+    fix_dispatcher = _build_fix_dispatcher()
     code = run_lifecycle(
         store=store,
         ref=ref,
@@ -685,9 +664,7 @@ def run(
         sink=_build_sink(),
         mode=Mode.INTERACTIVE if interactive else Mode.AUTONOMOUS,
         cluster_dispatcher=cluster_dispatcher,
-        cluster_decided_by=cluster_decided_by,
         fix_dispatcher=fix_dispatcher,
-        fix_decided_by=fix_decided_by,
     )
     if code != 0:
         raise typer.Exit(code=code)
@@ -734,13 +711,38 @@ def handle_cli_error(err: PrgroomError, *, stderr: IO[str] | None = None) -> int
     return exit_code_for_tier(err)
 
 
+def _resolve_log_level(raw: str | None) -> tuple[int, str | None]:
+    """Map ``PRGROOM_LOG_LEVEL`` to a stdlib level, fail-lateral on garbage.
+
+    A typo'd env var must never take down an autonomous overnight run: an
+    unrecognized value degrades to WARNING with a one-line notice (the loud
+    part), never an exception.
+    """
+    if not raw:
+        return logging.WARNING, None
+    level = logging.getLevelNamesMapping().get(raw.upper())
+    if level is None:
+        return logging.WARNING, f"prgroom: unknown PRGROOM_LOG_LEVEL {raw!r}; using WARNING"
+    return level, None
+
+
 def main() -> None:
     """Console-script entry point (``prgroom``).
 
     Wraps the typer app so a tier-tagged :class:`PrgroomError` raised by a verb
     is rendered through :func:`handle_cli_error` and turned into the documented
-    exit code, rather than surfacing as an uncaught traceback.
+    exit code, rather than surfacing as an uncaught traceback. Configures the
+    root logging handler ONCE, here — stdout stays reserved for contract output;
+    every diagnostic goes to stderr. Library modules only ever
+    ``getLogger(__name__)``; ``basicConfig`` no-ops when a root handler already
+    exists (embedding-safe).
     """
+    level, notice = _resolve_log_level(os.environ.get("PRGROOM_LOG_LEVEL"))
+    if notice is not None:
+        print(notice, file=sys.stderr)  # pre-logging bootstrap notice
+    logging.basicConfig(
+        stream=sys.stderr, level=level, format="prgroom %(levelname)s %(name)s: %(message)s"
+    )
     try:
         app()
     except PrgroomError as err:

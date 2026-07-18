@@ -3,9 +3,8 @@
 ``run_cluster`` dispatches, audits, and on failure retries once; a second
 failure (or a both-fail) falls back to per-item degenerate clusters that are
 coverage-complete by construction. It is pure of state — it returns a
-:class:`ClusterRunResult`, never mutating ``PRGroomingState``. ``now`` is unused
-by clustering (ids derive from gh_id, not the clock) but is part of the uniform
-8.7 signature; the fakes mirror the ``ClusterContract`` Protocol exactly.
+:class:`ClusterRunResult`, never mutating ``PRGroomingState``. The fakes mirror
+the ``ClusterContract`` Protocol exactly.
 """
 
 from __future__ import annotations
@@ -14,7 +13,8 @@ from datetime import UTC, datetime
 
 from prgroom.agent.cluster import run_cluster
 from prgroom.agent.contracts import ClusterInput, ClusterOutput, ClusterResult
-from prgroom.agent.dispatcher import AllProvidersFailedError
+from prgroom.agent.dispatcher import AllProvidersFailedError, Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.prsession.enums import ItemKind
 from prgroom.prsession.pr_ref import PRRef
 from prgroom.prsession.state import Identity, ReviewItem
@@ -50,13 +50,13 @@ class ScriptedClusterDispatcher:
         self._outcomes = list(outcomes)
         self.calls = 0
 
-    def cluster(self, request: ClusterInput) -> ClusterOutput:
+    def cluster(self, request: ClusterInput) -> Dispatched[ClusterOutput]:
         del request  # scripted by call order; mirrors the ClusterContract Protocol
         self.calls += 1
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        return Dispatched(output=outcome, winner=AgentSpec(cli="ollama", model="gemma4"))
 
 
 def _one_cluster(req: ClusterInput, *, rationale: str = "all of them") -> ClusterOutput:
@@ -74,7 +74,7 @@ def _one_cluster(req: ClusterInput, *, rationale: str = "all of them") -> Cluste
 def test_clean_first_attempt_passes_through() -> None:
     req = _req("C_1", "C_2")
     disp = ScriptedClusterDispatcher([_one_cluster(req)])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert disp.calls == 1
     assert result.attempts == 1
     assert result.degenerate is False
@@ -88,7 +88,7 @@ def test_retry_once_succeeds_on_second_attempt() -> None:
         clusters=[ClusterResult(cluster_id="c-1", item_gh_ids=["C_1"], rationale="")]
     )
     disp = ScriptedClusterDispatcher([bad, _one_cluster(req)])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert disp.calls == 2
     assert result.attempts == 2
     assert result.degenerate is False
@@ -99,7 +99,7 @@ def test_two_audit_failures_fall_back_to_degenerate() -> None:
     req = _req("C_1", "C_2")
     bad = ClusterOutput(clusters=[])  # coverage-empty — fails audit twice
     disp = ScriptedClusterDispatcher([bad, bad])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert disp.calls == 2
     assert result.degenerate is True
     # One cluster per item, coverage-complete by construction.
@@ -111,7 +111,7 @@ def test_both_fail_twice_falls_back_to_degenerate_without_agent() -> None:
     req = _req("C_1")
     err = AllProvidersFailedError(detail="ollama down; haiku down")
     disp = ScriptedClusterDispatcher([err, err])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert disp.calls == 2
     assert result.degenerate is True
     assert set(result.assignments) == {"C_1"}
@@ -121,7 +121,7 @@ def test_degenerate_cluster_id_derives_from_gh_id_not_clock() -> None:
     req = _req("C_1")
     err = AllProvidersFailedError(detail="down")
     disp = ScriptedClusterDispatcher([err, err])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     # Deterministic: the id is a pure function of the gh_id (no counter+clock).
     assert result.assignments["C_1"] == "degen-C_1"
 
@@ -131,7 +131,7 @@ def test_degenerate_clusters_each_carry_a_rationale() -> None:
     req = _req("C_1", "C_2")
     err = AllProvidersFailedError(detail="down")
     disp = ScriptedClusterDispatcher([err, err])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert all(c.rationale.strip() for c in result.clusters)
     assert {c.cluster_id for c in result.clusters} == {"degen-C_1", "degen-C_2"}
 
@@ -141,7 +141,7 @@ def test_first_attempt_both_fail_then_clean_retry_succeeds() -> None:
     # go degenerate — retry-once covers the transient case.
     req = _req("C_1")
     disp = ScriptedClusterDispatcher([AllProvidersFailedError(detail="blip"), _one_cluster(req)])
-    result = run_cluster(req, disp, now=_NOW, decided_by="prgroom")
+    result = run_cluster(req, disp)
     assert disp.calls == 2
     assert result.degenerate is False
     assert result.assignments == {"C_1": "c-1"}

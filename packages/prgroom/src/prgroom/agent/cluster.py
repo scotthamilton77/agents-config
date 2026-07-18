@@ -12,9 +12,7 @@ the coverage invariant — even a totally-unavailable agent yields a usable
 clustering, built directly without any dispatch.
 
 8.7 boundary: this returns a :class:`ClusterRunResult`; it never mutates
-``PRGroomingState`` or transitions phases. ``now`` / ``decided_by`` are part of
-the uniform 8.7 signature; clustering itself decides no disposition, so it does
-not use them (the fix path does).
+``PRGroomingState`` or transitions phases.
 """
 
 from __future__ import annotations
@@ -27,8 +25,6 @@ from prgroom.agent.contracts import ClusterOutput, ClusterResult
 from prgroom.agent.dispatcher import AllProvidersFailedError
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from prgroom.agent.contracts import ClusterContract, ClusterInput
 
 _DEGENERATE_RATIONALE = "degenerate fallback: agent clustering failed twice; one cluster per item"
@@ -81,21 +77,20 @@ def _try_dispatch(req: ClusterInput, dispatcher: ClusterContract) -> ClusterOutp
     breach: a ``None`` that drives the caller toward retry/fallback.
     """
     try:
-        out = dispatcher.cluster(req)
+        dispatched = dispatcher.cluster(req)
     except AllProvidersFailedError:
         return None
+    out = dispatched.output
     return out if not audit_cluster(req, out) else None
 
 
-def run_cluster(
-    req: ClusterInput,
-    dispatcher: ClusterContract,
-    *,
-    now: datetime,
-    decided_by: str,
-) -> ClusterRunResult:
-    """Dispatch → audit → retry-once → degenerate fallback (§5). Pure of state."""
-    del now, decided_by  # uniform 8.7 signature; clustering decides no disposition
+def run_cluster(req: ClusterInput, dispatcher: ClusterContract) -> ClusterRunResult:
+    """Dispatch → audit → retry-once → degenerate fallback (§5). Pure of state.
+
+    Clustering decides no disposition, so it records no provenance: the
+    degenerate path never dispatched, and an audit-rejected dispatch's winner
+    is discarded with its output.
+    """
     for attempt in (1, 2):
         out = _try_dispatch(req, dispatcher)
         if out is not None:
