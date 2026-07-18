@@ -432,18 +432,29 @@ is the "before" value for each hook's false → true `PushNotification` check.
 Neither hook passes `--silent-cap` — the silent re-request cap is locked at
 the helper's default (1) per spec decision, not a per-repo config knob.
 
-1. **Trigger a fresh review cycle** (idempotency guard):
+1. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`
+   **before** issuing the re-review request in step 2. The downstream `--after`
+   (step 3) and `--since-timestamp` (step 4) filters require the bot signal to be
+   strictly later than this value, so capturing it first bounds the prior round
+   without excluding a fast Codex response that lands while `request-rereview.sh`
+   is still returning (or in the same API-timestamp second). Capturing it after
+   the dispatch would discard that valid `+1` or marker comment as stale and
+   count the ask as a timeout.
+
+2. **Trigger a fresh review cycle** (idempotency guard):
    ```bash
    ${CLAUDE_SKILL_DIR}/request-rereview.sh \
-     --owner "$OWNER" --repo "$REPO" --pr "$PR"
-   # exit 0 on success; exit 1 on gh failure
+     --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+     --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
+   # exit 0 when at least one ask succeeded; exit 1 when none did
    ```
-   The helper performs the `remove-reviewer` + `add-reviewer` pair which
-   reliably triggers a new `review_requested` event even when Copilot is
-   already on the list. (`--add-reviewer` alone is idempotent and silently
-   does nothing.)
-
-2. **Capture** `<rereview_since_timestamp> = $(date -u +%Y-%m-%dT%H:%M:%SZ)`.
+   `--bot-reviewers` dispatches on each policy-trusted identity's own
+   mechanism (the `remove-reviewer` + `add-reviewer` pair for Copilot, an
+   `@codex review` issue comment for Codex) instead of always performing the
+   Copilot-only dance — omitting it would leave a Codex-reviewed repo's
+   re-review ask reaching nobody. (`--add-reviewer` alone is idempotent and
+   silently does nothing, which is why the helper still pairs it with
+   `--remove-reviewer` for Copilot.)
 
 3. **Launch** `poll-copilot-rereview-start.sh --owner "$OWNER" --repo "$REPO" --pr "$PR" --after <rereview_since_timestamp>` (80s max window:
    20s pre-sleep + 6 × 10s polls). This detects the `copilot_work_started`
@@ -933,12 +944,13 @@ ${CLAUDE_SKILL_DIR}/build-inventory-body.sh \
   > /tmp/pr-inventory-build-<n>.json
 ```
 
-**Request Copilot re-review** (Phase 6 — replaces the legacy remove+add
-reviewer pair):
+**Request a bot re-review** (Phase 6 — per-bot dispatch on the policy's
+`bot_reviewers` allowlist, not just the legacy Copilot remove+add pair):
 
 ```bash
 ${CLAUDE_SKILL_DIR}/request-rereview.sh \
-  --owner "$OWNER" --repo "$REPO" --pr "$PR"
+  --owner "$OWNER" --repo "$REPO" --pr "$PR" \
+  --bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"
 ```
 
 **Count unresolved threads** (Phase 9 — replaces the inline GraphQL block):
