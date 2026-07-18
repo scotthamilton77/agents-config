@@ -205,6 +205,32 @@ def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
     assert GROOM_STATE_BEAD in exc_info.value.message
 
 
+# -- round-3 Codex finding: clock skew across dolt-synced machines --
+# backlog_last_groomed is synced via dolt (spec §6); a marker written from a
+# fast-clocked machine can land slightly in the future. <=24h is ordinary
+# NTP drift and clamps to days_since=0; beyond that is invalid state.
+
+
+def test_status_small_future_skew_clamps_to_zero_not_breached() -> None:
+    now = datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)
+    # 23h59m in the future -- inside the 24h tolerance.
+    backend = _backend(notes="backlog_last_groomed: 2026-07-19T11:59:00Z")
+    result = groom(backend, _args(status=True, now=now))
+    assert result["days_since"] == 0
+    assert result["breached"] is False
+
+
+def test_status_gross_future_skew_is_invalid_state() -> None:
+    now = datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)
+    # 24h01m in the future -- one minute past the tolerance.
+    backend = _backend(notes="backlog_last_groomed: 2026-07-19T12:01:00Z")
+    with pytest.raises(WorkError) as exc_info:
+        groom(backend, _args(status=True, now=now))
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert GROOM_STATE_BEAD in exc_info.value.message
+
+
 # -- criterion 15: immediately after --done, --status reports not-breached --
 
 

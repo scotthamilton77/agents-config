@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from argparse import Namespace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from workcli.backend import Backend
 from workcli.config import TrackLayerConfig
@@ -27,6 +27,13 @@ from workcli.envelope import ErrorCode, JsonValue, WorkError
 
 _NOTE_LINE_PATTERN = re.compile(r"^backlog_last_groomed: (\S+)$", re.MULTILINE)
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# backlog_last_groomed is dolt-synced across machines (spec §6): ordinary
+# NTP drift on a fast clock can leave a freshly-written marker slightly in
+# the future, and treating that as invalid would fail a groom that just
+# happened. A marker further in the future than this isn't drift -- it's
+# invalid state (clock misconfiguration or a bad raw write) -- and is
+# rejected the same way a malformed marker is (Codex finding, round 3).
+_FUTURE_SKEW_TOLERANCE = timedelta(hours=24)
 
 
 def _require_groom_state_bead(config: TrackLayerConfig) -> str:
@@ -46,6 +53,19 @@ def _last_groomed(backend: Backend, groom_state_bead: str) -> str | None:
     None when no matching line exists yet (bootstrap: never groomed)."""
     matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_bead).notes)
     return matches[-1] if matches else None
+
+
+def _invalid_marker(groom_state_bead: str, last_groomed: str, problem: str) -> WorkError:
+    """Notes are append-only and raw `bd note`/`bd label` writes stay possible
+    outside `work groom --done` -- any marker this module cannot trust must
+    fail loud as a typed error here, never crash into E_INTERNAL (which would
+    silently drop the nag rather than surfacing the broken state)."""
+    return WorkError(
+        ErrorCode.NOT_CONFIGURED,
+        f"backlog_last_groomed note on {groom_state_bead} is malformed: "
+        f"{last_groomed!r} ({problem})",
+        detail={"reason": "invalid"},
+    )
 
 
 def _done(backend: Backend, args: Namespace, groom_state_bead: str) -> JsonValue:
@@ -72,18 +92,19 @@ def _status(
     try:
         parsed = datetime.strptime(last_groomed, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
     except ValueError as parse_error:
-        # Notes are append-only and raw `bd note`/`bd label` writes stay
-        # possible outside `work groom --done` -- a corrupted marker line
-        # must fail loud as a typed error here, never crash into E_INTERNAL
-        # (which would silently drop the nag rather than surfacing the
-        # broken state) (Codex finding).
-        raise WorkError(
-            ErrorCode.NOT_CONFIGURED,
-            f"backlog_last_groomed note on {groom_state_bead} is malformed: "
-            f"{last_groomed!r} ({parse_error})",
-            detail={"reason": "invalid"},
-        ) from parse_error
-    days_since = (args.now() - parsed).days
+        raise _invalid_marker(groom_state_bead, last_groomed, str(parse_error)) from parse_error
+    now = args.now()
+    elapsed = now - parsed
+    if elapsed < -_FUTURE_SKEW_TOLERANCE:
+        # Further in the future than ordinary clock drift explains -- not a
+        # slightly-fast machine, invalid state (round 3 Codex finding).
+        raise _invalid_marker(
+            groom_state_bead, last_groomed, f"timestamp is {-elapsed} in the future"
+        )
+    # A small future skew (<= tolerance) is ordinary NTP drift on a fast
+    # clock across dolt-synced machines: clamp to 0 rather than raising, so
+    # an honest cross-machine groom never falsely reports breached=True.
+    days_since = max((now - parsed).days, 0)
     breached = nag_days is not None and days_since > nag_days  # strict > (criterion 14)
     return {
         "backlog_last_groomed": last_groomed,
