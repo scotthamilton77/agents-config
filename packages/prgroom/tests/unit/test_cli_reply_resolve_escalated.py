@@ -48,8 +48,17 @@ class _RecordingGh:
         self.rest_calls: list[tuple[str, str, dict]] = []
         self.graphql_calls: list[tuple[str, dict]] = []
 
-    def rest(self, method: str, path: str, *, fields: dict | None = None) -> dict:
+    def rest(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict | None = None,
+        paginate: bool = False,  # noqa: ARG002  # Protocol signature; the pre-flight scan passes it
+    ) -> dict | list:
         self.rest_calls.append((method, path, dict(fields or {})))
+        if method == "GET" and path.endswith("/comments"):
+            return []  # the idempotency pre-flight scan reads an empty listing
         return {}
 
     def graphql(self, query: str, variables: dict) -> dict:
@@ -135,7 +144,13 @@ def test_reply_posts_and_persists_replied(
     result = runner.invoke(cli.app, ["reply", "octo/demo#7"])
     assert result.exit_code == 0, result.output
     assert gh.rest_calls == [
-        ("POST", "repos/octo/demo/pulls/7/comments/555/replies", {"body": "Fixed in abc1234."})
+        # The pre-flight idempotency scan reads the review-comments surface first.
+        ("GET", "repos/octo/demo/pulls/7/comments", {}),
+        (
+            "POST",
+            "repos/octo/demo/pulls/7/comments/555/replies",
+            {"body": "Fixed in abc1234.\n\n<!-- prgroom:reply:review_thread:555 -->"},
+        ),
     ]
     assert patched.read(_REF).items[0].replied is True
 

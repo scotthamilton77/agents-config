@@ -46,9 +46,20 @@ class _RecordingGh:
         self._body = body
         self.ops: list[tuple[str, ...]] = []
 
-    def rest(self, method: str, path: str, *, fields: dict | None = None) -> dict:  # noqa: ARG002
+    def rest(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict | None = None,  # noqa: ARG002
+        paginate: bool = False,  # noqa: ARG002
+    ) -> dict | list:
         self.ops.append(("rest", method, path))
         if method == "GET":
+            # Path-keyed dispatch: comment listings (the pre-flight idempotency
+            # scan) return an empty page; the PR resource returns the body.
+            if path.endswith("/comments"):
+                return []
             return {"body": self._body}
         return {}
 

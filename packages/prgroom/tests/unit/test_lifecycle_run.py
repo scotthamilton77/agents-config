@@ -81,8 +81,10 @@ class FakeGh:
     def add_label(self, ref: PRRef, label: str) -> None:
         self.added.append((ref, label))
 
-    def rest(self, method: str, path: str, *, fields=None) -> dict:
+    def rest(self, method: str, path: str, *, fields=None, paginate: bool = False) -> dict | list:  # noqa: ARG002
         self.rest_calls.append((method, path, dict(fields or {})))
+        if method == "GET" and path.endswith("/comments"):
+            return []  # the idempotency pre-flight scan reads an empty listing
         return {}
 
 
@@ -637,7 +639,13 @@ def test_run_drives_real_reply_posts_for_replyable_item() -> None:
     assert out.phase is PRPhase.QUIESCED
     assert out.items[0].replied is True
     assert gh.rest_calls == [
-        ("POST", "repos/octo/demo/pulls/7/comments/1/replies", {"body": "Fixed in abc1234."})
+        # The pre-flight idempotency scan reads the review-comments surface first.
+        ("GET", "repos/octo/demo/pulls/7/comments", {}),
+        (
+            "POST",
+            "repos/octo/demo/pulls/7/comments/1/replies",
+            {"body": "Fixed in abc1234.\n\n<!-- prgroom:reply:review_thread:1 -->"},
+        ),
     ]
 
 

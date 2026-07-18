@@ -19,6 +19,16 @@ without gh/git — production wires :meth:`Verbs.system`; tests pass fakes. The 
 flush hooks (``escalate_if_needed`` + ``request_human_review_if_needed``) fire at
 exactly two dedup-safe sites: the loop-top terminal-for-CLI check, and immediately
 before each ``PROPAGATE`` re-raise.
+
+**Effect-idempotency invariant:** every remote mutation a verb issues must be safe
+to re-issue on a rerun from the pre-call state: naturally idempotent server-side
+(``resolve``'s ``resolveReviewThread``), guarded by a natural existence check
+(``push``'s ``has_queued_fix_commits``), content-addressed (the Decisions-block
+merge), or marker-guarded via pre-flight existence adoption (``reply``'s item POSTs
+and memory thread replies — ``lifecycle/idempotency.py``). The single-persist
+contract discards a raising verb's progress by design; each effect must tolerate
+that. A future verb adding a remote mutation must name its mechanism against this
+invariant at design time.
 """
 
 from __future__ import annotations
