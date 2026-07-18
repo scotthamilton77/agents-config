@@ -40,6 +40,46 @@ def bd_json(*args):
         return []
 
 
+def work_groom_status():
+    """Best-effort `work groom --status` call for the backlog-grooming nag line.
+
+    Self-silences on ANY failure -- `work` not on PATH, a non-zero exit, an
+    unparseable envelope, or an `ok: false` envelope (e.g. E_NOT_CONFIGURED --
+    the real case in THIS repo today, since its own groom-state-bead is still
+    blank pending the backfill migration) -- returns None rather than raising
+    or printing, mirroring bd_json's discipline above. Distinct from that
+    ceremony's own state: this is workcli's Backlog Grooming nag, never to be
+    confused with CONTEXT.md's separate Holding-Place Grooming Nag.
+    """
+    try:
+        result = subprocess.run(
+            ["work", "groom", "--status"],
+            capture_output=True, text=True, timeout=30,
+        )
+        envelope = json.loads(result.stdout)
+    except (json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if not envelope.get("ok"):
+        return None
+    data = envelope.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def backlog_grooming_nag_line(status):
+    """Render the one-line nag from a `work groom --status` data dict, or
+    None when not breached (or status is None -- the call failed/unavailable).
+    """
+    if not status or not status.get("breached"):
+        return None
+    days_since = status.get("days_since")
+    if days_since is not None:
+        return (
+            f"Backlog Grooming overdue ({days_since} days since last groomed) — "
+            "run 'work groom --done' after triage."
+        )
+    return "Backlog Grooming overdue — run 'work groom --done' after triage."
+
+
 # ---------------------------------------------------------------------------
 # Project prefix detection
 # ---------------------------------------------------------------------------
@@ -635,6 +675,13 @@ def main():
 
     # Mode-independent, like `totals` (see the in-flight section comment).
     output["in_flight"] = in_flight_beads
+
+    # Best-effort, self-silencing (see work_groom_status docstring): key is
+    # present only when breached, absent otherwise -- same absent-not-empty
+    # convention as the mode-gated sections above.
+    nag_line = backlog_grooming_nag_line(work_groom_status())
+    if nag_line is not None:
+        output["backlog_grooming_nag"] = nag_line
 
     print(json.dumps(output, indent=2))
 

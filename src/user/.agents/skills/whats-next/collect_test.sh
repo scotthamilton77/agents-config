@@ -930,4 +930,97 @@ for bad in (None, 12345, [], {}, ""):
 PY
 pass "T15: parse_bd_timestamp returns aware datetimes and None for non-string/missing input"
 
+# -----------------------------------------------------------------------------
+# T16. backlog_grooming_nag: best-effort `work groom --status` call.
+#   (a) work unavailable (not on PATH) -> key absent, collect.py still exits 0.
+#   (b) work available, breached:false -> key absent.
+#   (c) work available, breached:true, days_since known -> key present with
+#       the day count folded into the message.
+#   (d) work exits non-zero (e.g. E_NOT_CONFIGURED, this repo's real case
+#       today since its own groom-state-bead is still blank) -> key absent.
+# All four self-silence: none may raise or change collect.py's exit code.
+# -----------------------------------------------------------------------------
+TMP_T16=$(mktemp -d)
+trap 'rm -rf "$TMP_T3" "$TMP_T5" "$TMP_T6" "$TMP_T8" "$TMP_T9" ${TMP_T10:+"$TMP_T10"} "$TMP_T11" "$TMP_T12" "$TMP_T13" "$TMP_T14" "$TMP_T16"' EXIT
+
+cat > "$TMP_T16/bd" <<'SHIM'
+#!/usr/bin/env bash
+# One human bead keeps collect.py off its "nothing anywhere" exit-1 bail
+# (empty_raw everywhere) -- every other query returns empty.
+case "$*" in
+  "list --label human --limit 0 --json")
+    echo '[{"id":"proj-h1","issue_type":"task","status":"open","priority":1,"title":"H","labels":["human"]}]' ;;
+  *) echo '[]' ;;
+esac
+SHIM
+chmod +x "$TMP_T16/bd"
+
+# (a) no `work` shim at all -- collect.py's `work_groom_status` must catch
+# FileNotFoundError and return None; the whole run must still exit 0.
+OUT_T16A="$TMP_T16/a.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16A" 2>"$TMP_T16/err.a"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16a: collect.py exited $ec with no 'work' on PATH (stderr: $(cat "$TMP_T16/err.a"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16A'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when work is unavailable; got: {out}'
+" || fail "T16a: backlog_grooming_nag must be absent when 'work' is not on PATH"
+pass "T16a: backlog_grooming_nag absent when 'work' is not on PATH (self-silenced)"
+
+# (b) `work groom --status` succeeds, breached:false -> key absent.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1.0","ok":true,"data":{"backlog_last_groomed":"2026-07-14T00:00:00Z","days_since":2,"nag_days":7,"breached":false},"error":null}'
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16B="$TMP_T16/b.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16B" 2>"$TMP_T16/err.b"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16b: collect.py exited $ec with breached:false (stderr: $(cat "$TMP_T16/err.b"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16B'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when not breached; got: {out}'
+" || fail "T16b: backlog_grooming_nag must be absent when not breached"
+pass "T16b: backlog_grooming_nag absent when work groom --status reports breached:false"
+
+# (c) breached:true, days_since known -> key present, day count folded in.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1.0","ok":true,"data":{"backlog_last_groomed":"2026-07-01T00:00:00Z","days_since":17,"nag_days":7,"breached":true},"error":null}'
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16C="$TMP_T16/c.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16C" 2>"$TMP_T16/err.c"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16c: collect.py exited $ec with breached:true (stderr: $(cat "$TMP_T16/err.c"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16C'))
+nag = out.get('backlog_grooming_nag')
+assert nag is not None, f'nag must be present when breached; got: {out}'
+assert '17' in nag, f'nag must fold in days_since; got: {nag!r}'
+assert 'Backlog Grooming' in nag, f'nag must be labeled Backlog Grooming; got: {nag!r}'
+" || fail "T16c: backlog_grooming_nag must be present and carry the day count when breached"
+pass "T16c: backlog_grooming_nag present with day count when work groom --status reports breached:true"
+
+# (d) `work` exits non-zero (E_NOT_CONFIGURED envelope, ok:false) -> key absent.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1.0","ok":false,"data":null,"error":{"code":"E_NOT_CONFIGURED","message":"nope","detail":{}}}'
+exit 1
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16D="$TMP_T16/d.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16D" 2>"$TMP_T16/err.d"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16d: collect.py exited $ec with an E_NOT_CONFIGURED work envelope (stderr: $(cat "$TMP_T16/err.d"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16D'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent on an ok:false envelope; got: {out}'
+" || fail "T16d: backlog_grooming_nag must be absent when work groom --status returns ok:false"
+pass "T16d: backlog_grooming_nag absent when work groom --status returns an ok:false envelope (e.g. E_NOT_CONFIGURED)"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."
