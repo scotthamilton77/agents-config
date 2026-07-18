@@ -366,11 +366,23 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     # rejects clean signals this round; review objects above are unaffected.
     # Comparison is epoch seconds (fromdateiso8601); an unparseable created_at is
     # rejected per item.
+    #
+    # The bound/created_at comparison is ASYMMETRIC by bound source (both are
+    # second precision, so an equal-second collision is realistic):
+    #   - SINCE (ask timestamp, captured BEFORE dispatch): accept equal-second
+    #     (>=). Causality — capture precedes the ask precedes any response — makes
+    #     an equal-second signal necessarily this round's, and rejecting it would
+    #     drop Codex's one-shot clean signal (no later signal arrives).
+    #   - head-date bound (initial poll): keep strict > — an equal-second reaction
+    #     could belong to the pre-push head (the ~10s tear-down race); spec
+    #     Component 2 pins strictly-greater for this bound.
     if [[ -n "$BOT_REVIEWERS" ]]; then
         if [[ -n "$SINCE" ]]; then
             clean_bound_epoch=$(printf '%s' "$SINCE" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null) || clean_bound_epoch=""
+            clean_bound_inclusive=true
         else
             clean_bound_epoch=$(head_clean_bound_epoch) || clean_bound_epoch=""
+            clean_bound_inclusive=false
         fi
 
         if [[ -z "$clean_bound_epoch" ]]; then
@@ -380,8 +392,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
                 --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
                 echo "Warning: reactions API failed (attempt ${i})" >&2; reactions='[]';
             }
-            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" \
-                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
+            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
+                '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
 
             if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass reaction found (attempt ${i})" >&2
@@ -393,8 +405,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
                 --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
                 echo "Warning: issue comments API failed (attempt ${i})" >&2; clean_comments='[]';
             }
-            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" \
-                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
+            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
+                '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
 
             if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass marker comment found (attempt ${i})" >&2

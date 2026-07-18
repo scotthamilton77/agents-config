@@ -230,6 +230,34 @@ env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVI
 rc_no_policy=$?
 assert "clean-reaction signal is ignored without --bot-reviewers (timeout, exit 1)" "[ \$rc_no_policy -eq 1 ]"
 
+# ── Equal-second clean signal on the ask-bound (--since-timestamp) path ──────
+# SINCE is captured to second precision immediately before dispatch; GitHub
+# reaction/comment created_at is also second precision. A fast Codex clean
+# response created in that same second has created_at == SINCE. Causality — the
+# capture precedes the ask, which precedes any response — makes an equal-second
+# signal necessarily this round's, so the ask-bound path accepts it (>=), where
+# the head-date bound below keeps strict >.
+
+FIXTURE_REACTIONS_EQUAL="[{\"id\":4,\"content\":\"+1\",\"user\":{\"login\":\"$CODEX_ID\",\"type\":\"Bot\"},\"created_at\":\"$SINCE_TS\"}]"
+
+out_equal_reaction=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_EQUAL" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_equal_reaction=$?
+assert "ask-bound: +1 created in the ask second completes (exit 0)" "[ \$rc_equal_reaction -eq 0 ]"
+assert "ask-bound: equal-second +1 reports completion_kind clean_reaction" "printf '%s' \"\$out_equal_reaction\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+FIXTURE_ISSUE_COMMENTS_EQUAL="[{\"id\":5,\"user\":{\"login\":\"$CODEX_ID\"},\"body\":\"Codex Review: Didn't find any major issues in this PR.\",\"created_at\":\"$SINCE_TS\"}]"
+
+out_equal_comment=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS="$FIXTURE_ISSUE_COMMENTS_EQUAL" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_equal_comment=$?
+assert "ask-bound: marker comment created in the ask second completes (exit 0)" "[ \$rc_equal_comment -eq 0 ]"
+assert "ask-bound: equal-second marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_equal_comment\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
 # Only "timeout" may count as a silent ask against a caller's retry cap: chain
 # the actual accounting helper the skill uses, mapping this script's exit
 # code the way SKILL.md Phase 6 does (0 -> --event none, 1 -> --event silent).
@@ -283,6 +311,21 @@ out_posthead=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTE
 rc_posthead=$?
 assert "initial poll: +1 post-dating head committer date completes (exit 0)" "[ \$rc_posthead -eq 0 ]"
 assert "initial poll: post-dating +1 reports completion_kind clean_reaction" "printf '%s' \"\$out_posthead\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# (b2) A `+1` created in the SAME second as the head committer date is still
+#      REJECTED on the initial poll (no --since-timestamp): the head-date bound
+#      keeps strict > because an equal-second reaction could belong to the
+#      pre-push head (the ~10s tear-down race), per spec Component 2 — the
+#      asymmetric counterpart to the ask-bound path's inclusive >=.
+FIXTURE_REACTIONS_EQUALHEAD='[{"id":12,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:00:00Z"}]'
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_EQUALHEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_equalhead=$?
+assert "initial poll: +1 in the same second as head committer date does NOT complete (timeout, exit 1)" "[ \$rc_equalhead -eq 1 ]"
 
 # (c) An unparseable head committer date rejects clean signals on the initial
 #     poll (fail closed) — even a would-be-fresh `+1`.
