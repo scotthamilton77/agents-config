@@ -44,10 +44,18 @@ fetch_pr() {
 # review-thread comments live on a different endpoint and carry their own
 # reactions. A reaction there moves no other count, so without this second
 # fetch a thumbs-up on a review comment is still invisible. Emits a bare
-# integer, or empty on failure (treated as a flake by the caller).
+# integer, or NOTHING on failure (treated as unreadable by the caller).
+#
+# The failure path must stay distinguishable from a real zero. Piping straight
+# into `jq -s` cannot do that: a failed `gh` produces an empty stream, which
+# `jq -s ... // 0` happily renders as a successful "0" — fabricating a zero
+# baseline, defeating the WATCH-ERROR/WATCH-FLAKE guards, and setting up a
+# false ring when the endpoint recovers. So capture first, check, then parse.
 fetch_review_comment_reactions() {
-  gh api --paginate "repos/$REPO/pulls/$PR/comments" 2>/dev/null \
-    | jq -s -r '[ .[][] | (.reactions.total_count // 0) ] | add // 0' 2>/dev/null
+  local json
+  json=$(gh api --paginate "repos/$REPO/pulls/$PR/comments" 2>/dev/null) || return 1
+  [ -n "$json" ] || return 1
+  jq -s -r '[ .[][] | (.reactions.total_count // 0) ] | add // 0' <<<"$json" 2>/dev/null
 }
 
 read_counts() {
@@ -107,8 +115,16 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   fi
   reactions=$((pr_reactions + rc_reactions))
 
+  # Reviews and comments only ever accumulate, so `-gt` is the right test for
+  # them. Reactions are MUTABLE — they can be removed — so `-gt` would miss
+  # activity whenever a removal offsets an addition: baseline 1, a reviewer
+  # withdraws theirs (0), another reacts before the next poll (1), and both
+  # rounds compare equal while two reaction events went by. Any change is
+  # activity, so reactions test `-ne`. A removal on its own is a ring too;
+  # this is a doorbell, and someone taking a reaction back is something
+  # happening.
   if [ "$reviews" -gt "$BASE_REVIEWS" ] || [ "$comments" -gt "$BASE_COMMENTS" ] \
-     || [ "$reactions" -gt "$BASE_REACTIONS" ]; then
+     || [ "$reactions" -ne "$BASE_REACTIONS" ]; then
     echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS reactions=$reactions/$BASE_REACTIONS"
     echo "DOORBELL ONLY — no verdict implied. Re-engage the owning lane; the lane reads the verdict via the PR-review skill."
     exit 0
