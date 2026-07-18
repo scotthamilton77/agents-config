@@ -158,6 +158,21 @@ synchronize. `dep list` is never gated — only typed dep writes are, via
 `supports_dep_write` — since every seam-target backend can at least
 enumerate relationships.
 
+Multi-step mutation partial-progress (1.2 amendment): the seam's two
+irreducibly multi-call primitives, `label_mutate` (one `bd label` call per
+label) and `sync` (`dolt commit` then `dolt push`), are each pinned to a
+two-part contract. First, idempotent as a whole — re-invoking the same call
+after a partial failure completes safely; the adapter absorbs bd's
+already-applied/already-absent outcomes as success. Second, structured
+partial-progress on failure — a mid-sequence `WorkError` carries a
+`detail.partial_progress` record (`operation`, `steps_total`, `completed`,
+`failed`, `remaining`) naming exactly what already applied, so `work
+reconcile` can prioritize a resumable failure over a from-scratch retry.
+Absence of the key is the contract signal that nothing applied yet: a
+single-call primitive's `WorkError`, or a first-sub-step failure, never
+carries it — though because both primitives are idempotent as a whole,
+retrying from the top is always safe either way.
+
 ## 7. Seam validation on paper (no code): JIRA and GitHub Issues
 
 | Facade concept | bd | JIRA (mapping only) | GitHub Issues |

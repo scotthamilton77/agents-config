@@ -54,16 +54,32 @@ selected by whether a noun positional or `--raw` is given.
 | `work reconcile [--dry-run]` | bd-observable recovery sweep: interrupted delivers, unreconciled placeholders, interrupted expansions — idempotent, safe to run from any session or cron |
 
 Protocol is `"1.2"` — additive-only bumps (new `ErrorCode` members, the
-derived `Item.track` field, the capability-disposition model below) never
-change an existing envelope or data shape. `Capabilities` splits `ready` and
-`sync` into a `ReadySupport`/`SyncSupport` disposition each (`NATIVE` |
-`EMULATED`/`SERVER_AUTHORITATIVE` | `UNSUPPORTED`) instead of a single
-boolean, and `dep` gates only typed writes via `supports_dep_write` — `dep
-list` is never gated, even when writes are unsupported. bd itself declares
-every disposition `NATIVE` (`supports_dep_write=True`), so nothing in this
-package needs the finer split yet; it exists for the future non-bd (GH)
-adapter bead, which can declare an honest server-authoritative `sync` no-op
-or an emulated `ready` computed client-side from `query` + dep edges.
+derived `Item.track` field, the capability-disposition model and
+`partial_progress` detail below) never change an existing envelope or data
+shape. `Capabilities` splits `ready` and `sync` into a `ReadySupport`/
+`SyncSupport` disposition each (`NATIVE` | `EMULATED`/`SERVER_AUTHORITATIVE`
+| `UNSUPPORTED`) instead of a single boolean, and `dep` gates only typed
+writes via `supports_dep_write` — `dep list` is never gated, even when
+writes are unsupported. bd itself declares every disposition `NATIVE`
+(`supports_dep_write=True`), so nothing in this package needs the finer
+split yet; it exists for the future non-bd (GH) adapter bead, which can
+declare an honest server-authoritative `sync` no-op or an emulated `ready`
+computed client-side from `query` + dep edges.
+
+The seam's two irreducibly multi-call `Backend` primitives (`label_mutate` —
+one `bd label` call per label; `sync` — `dolt commit` then `dolt push`) can
+fail after some sub-steps already applied. A mid-sequence failure's
+`WorkError` carries a `detail.partial_progress` record —
+`{"operation": "label_mutate" | "sync", "steps_total": int, "completed":
+[...], "failed": ..., "remaining": [...]}` — naming exactly what already
+applied so a caller can resume safely instead of guessing. Both primitives
+are idempotent as a whole (the adapter absorbs bd's already-applied/already-
+absent outcomes as success), so retrying from the top after any failure —
+with or without a `partial_progress` key — always completes safely; the
+key's presence is diagnostic detail for `work reconcile` to prioritize, not
+a safety gate. Absence of the key is the contract signal that nothing
+applied yet: a single-call primitive's `WorkError`, or a `label_mutate`/
+`sync` failure on its first sub-step, never carries it.
 
 ## Envelope contract
 
@@ -94,7 +110,7 @@ Failure:
 | `E_TYPE_WALL` | a `blocks` dep between an epic and a non-epic (pre-checked before any mutation reaches the backend) |
 | `E_DEP_CYCLE` | the backend rejected a dep edge as a cycle |
 | `E_FIELD_CLOBBER_GUARD` | an attempt to replace notes via `update` instead of appending via `note` |
-| `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry |
+| `E_LOCK_CONTENTION` | backend lock contention survived the bounded retry — from `label_mutate`/`sync`, may carry `detail.partial_progress` |
 | `E_SYNC_BEHIND` | `sync --pull` with uncommitted local changes |
 | `E_BACKEND_DRIFT` | the backend's output or behavior failed the facade's own model — the drift alarm |
 | `E_UNSUPPORTED_CAPABILITY` | the verb is not supported by the active backend's declared `Capabilities` |
@@ -104,7 +120,7 @@ Failure:
 | `E_NOT_CLAIMABLE` | `claim` refused a container, a blocked leaf, or a closed item |
 | `E_EVIDENCE` | `deliver` has no verifiable evidence (`--pr`/`--items`/`--trivial` missing, or `--items` didn't resolve) |
 | `E_MANIFEST` | a spec's `## Continuations` section is missing, empty, or fails the manifest grammar |
-| `E_TIMEOUT` | a non-idempotent bd mutation (`create`/`note`) timed out; it may have partially applied — run `work reconcile` |
+| `E_TIMEOUT` | a non-idempotent bd mutation (`create`/`note`) timed out; it may have partially applied — run `work reconcile`. A retryable mutation (`label_mutate`/`sync`) surfaces this only after retry exhaustion, and may carry `detail.partial_progress` |
 
 ## Consumer handshake
 
