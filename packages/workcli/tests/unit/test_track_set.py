@@ -17,6 +17,10 @@ CONFIG = TrackLayerConfig(
     enforcement="advisory",
     milestone_wip_cap=None,
     wip_exempt_milestones=(),
+    extraction_max_track_backlog=None,
+    extraction_external_consumer_tracks=(),
+    extraction_independent_release_tracks=(),
+    extraction_max_cross_track_edges=None,
 )
 
 

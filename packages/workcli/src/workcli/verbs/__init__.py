@@ -24,7 +24,7 @@ from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
-from workcli.verbs.report import graph, lint
+from workcli.verbs.report import graph, lint, triggers
 from workcli.verbs.syncing import sync
 from workcli.verbs.tracks import track
 from workcli.verbs.write import close, create_raw, note, reopen, update
@@ -105,6 +105,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "track": track,
     "lint": lint,
     "graph": graph,
+    "triggers": triggers,
 }
 
 REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {

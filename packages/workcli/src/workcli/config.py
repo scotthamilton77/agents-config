@@ -32,6 +32,14 @@ class TrackLayerConfig:
         int | None
     )  # None: [operating-model] absent/key omitted -> lint skips WIP check
     wip_exempt_milestones: tuple[str, ...]
+    extraction_max_track_backlog: (
+        int | None
+    )  # None: [extraction.pressure] absent/key omitted -> backlog pressure never fires
+    extraction_external_consumer_tracks: tuple[str, ...]
+    extraction_independent_release_tracks: tuple[str, ...]
+    extraction_max_cross_track_edges: (
+        int | None
+    )  # None: [extraction.eligibility] absent/key omitted -> eligibility never proven (fail-safe)
 
 
 def _not_configured(problem: str, reason: Reason) -> WorkError:
@@ -146,10 +154,68 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         "[operating-model].wip-exempt-milestones",
         path,
     )
+    extraction = raw.get("extraction")
+    if extraction is not None and not isinstance(extraction, dict):
+        raise _not_configured(f"[extraction] must be a table in {path}", "invalid")
+    extraction_table = extraction if isinstance(extraction, dict) else {}
+
+    pressure = extraction_table.get("pressure")
+    if pressure is not None and not isinstance(pressure, dict):
+        raise _not_configured(f"[extraction.pressure] must be a table in {path}", "invalid")
+    pressure_table = pressure if isinstance(pressure, dict) else {}
+    max_track_backlog = pressure_table.get("max-track-backlog")
+    if max_track_backlog is not None and (
+        isinstance(max_track_backlog, bool) or not isinstance(max_track_backlog, int)
+    ):
+        raise _not_configured(
+            f"[extraction.pressure].max-track-backlog must be an integer in {path}", "invalid"
+        )
+    external_consumer_tracks = _string_tuple(
+        pressure_table.get("external-consumer-tracks", []),
+        "[extraction.pressure].external-consumer-tracks",
+        path,
+    )
+    unknown_external_consumer = [name for name in external_consumer_tracks if name not in names]
+    if unknown_external_consumer:
+        raise _not_configured(
+            "[extraction.pressure].external-consumer-tracks entries not in names: "
+            f"{unknown_external_consumer} in {path}",
+            "invalid",
+        )
+    independent_release_tracks = _string_tuple(
+        pressure_table.get("independent-release-tracks", []),
+        "[extraction.pressure].independent-release-tracks",
+        path,
+    )
+    unknown_independent_release = [name for name in independent_release_tracks if name not in names]
+    if unknown_independent_release:
+        raise _not_configured(
+            "[extraction.pressure].independent-release-tracks entries not in names: "
+            f"{unknown_independent_release} in {path}",
+            "invalid",
+        )
+
+    eligibility = extraction_table.get("eligibility")
+    if eligibility is not None and not isinstance(eligibility, dict):
+        raise _not_configured(f"[extraction.eligibility] must be a table in {path}", "invalid")
+    eligibility_table = eligibility if isinstance(eligibility, dict) else {}
+    max_cross_track_edges = eligibility_table.get("max-cross-track-edges")
+    if max_cross_track_edges is not None and (
+        isinstance(max_cross_track_edges, bool) or not isinstance(max_cross_track_edges, int)
+    ):
+        raise _not_configured(
+            f"[extraction.eligibility].max-cross-track-edges must be an integer in {path}",
+            "invalid",
+        )
+
     return TrackLayerConfig(
         names=names,
         organizing_only=organizing_only,
         enforcement=str(enforcement),
         milestone_wip_cap=cap,
         wip_exempt_milestones=exempt,
+        extraction_max_track_backlog=max_track_backlog,
+        extraction_external_consumer_tracks=external_consumer_tracks,
+        extraction_independent_release_tracks=independent_release_tracks,
+        extraction_max_cross_track_edges=max_cross_track_edges,
     )

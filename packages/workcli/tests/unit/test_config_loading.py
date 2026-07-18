@@ -176,3 +176,136 @@ def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
     (root / "project-config.toml").write_text(VALID_TRACKS, encoding="utf-8")
 
     assert load_config(root).names == ("alpha", "beta", "gamma")
+
+
+# -- [extraction.pressure] / [extraction.eligibility] (extraction policy §5) --
+
+
+def test_extraction_tables_absent_yield_safe_defaults(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
+    config = load_config(root)
+    assert config.extraction_max_track_backlog is None
+    assert config.extraction_external_consumer_tracks == ()
+    assert config.extraction_independent_release_tracks == ()
+    assert config.extraction_max_cross_track_edges is None
+
+
+def test_extraction_pressure_and_eligibility_parsed(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text="""
+[tracks]
+names = ["alpha", "beta"]
+
+[extraction.pressure]
+max-track-backlog = 100
+external-consumer-tracks = ["alpha"]
+independent-release-tracks = ["beta"]
+
+[extraction.eligibility]
+max-cross-track-edges = 3
+""",
+    )
+    config = load_config(root)
+    assert config.extraction_max_track_backlog == 100
+    assert config.extraction_external_consumer_tracks == ("alpha",)
+    assert config.extraction_independent_release_tracks == ("beta",)
+    assert config.extraction_max_cross_track_edges == 3
+
+
+def test_external_consumer_tracks_outside_names_is_invalid(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): a typo'd track name in a declared
+    # pressure list must fail loud, not silently produce zero pressure
+    # signal -- mirrors [tracks].organizing-only's existing vocabulary check.
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        '[extraction.pressure]\nexternal-consumer-tracks = ["prgoom"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "external-consumer-tracks" in exc_info.value.message
+    assert "prgoom" in exc_info.value.message
+
+
+def test_independent_release_tracks_outside_names_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        '[extraction.pressure]\nindependent-release-tracks = ["ghost"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "independent-release-tracks" in exc_info.value.message
+    assert "ghost" in exc_info.value.message
+
+
+def test_non_table_extraction_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='extraction = "bad"\n[tracks]\nnames = ["alpha"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[extraction]" in exc_info.value.message
+
+
+def test_non_table_extraction_pressure_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[extraction]\npressure = "bad"\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[extraction.pressure]" in exc_info.value.message
+
+
+def test_non_table_extraction_eligibility_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[extraction]\neligibility = "bad"\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[extraction.eligibility]" in exc_info.value.message
+
+
+def test_max_track_backlog_bool_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        "[extraction.pressure]\nmax-track-backlog = true\n",
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "max-track-backlog" in exc_info.value.message
+
+
+def test_max_cross_track_edges_bool_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        "[extraction.eligibility]\nmax-cross-track-edges = false\n",
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "max-cross-track-edges" in exc_info.value.message
+
+
+def test_external_consumer_tracks_non_list_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        '[extraction.pressure]\nexternal-consumer-tracks = "alpha"\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "external-consumer-tracks" in exc_info.value.message

@@ -173,6 +173,7 @@ def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser
         "graph", help="bulk node/edge export for visualization consumers"
     )
     graph_parser.add_argument("--json", action="store_true", dest="json_output")
+    subparsers.add_parser("triggers", help="extraction pressure/eligibility per track (advisory)")
 
 
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
