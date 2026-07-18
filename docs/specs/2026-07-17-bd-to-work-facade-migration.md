@@ -54,7 +54,7 @@ Classification is per **file** by dominant usage. `RTF` = route-through-facade,
 
 | asset (path) | bd usages (summarized) | class | target work verb(s) / gap | asset-class |
 |---|---|---|---|---|
-| `src/user/.agents/skills/whats-next/collect.py` | `ready --json --limit 0`, `list --status open,in_progress --limit 0`, `list --label`, `list --parent`, `show <id> --json`; parses `id/parent/labels/notes/started_at/assignee` | RTF (+verify G2,G3) | `work ready`, `work list [--status --label --parent]`, `work show`; envelope replaces jq/`--limit 0` | A |
+| `src/user/.agents/skills/whats-next/collect.py` | `ready --json --limit 0`, `list --status open,in_progress --limit 0`, `list --label`, `list --parent`, three `list --type {milestone,epic,feature} --ready` (planning queue), `show <id> --json`; parses `id/parent/labels/notes/started_at/assignee` | RTF (+verify G2; gaps G3,G4) | `work ready`, `work list [--status --label --parent]`, `work show`; planning-queue typed+ready query needs G4; envelope replaces jq/`--limit 0` | A |
 | `src/user/.agents/skills/whats-next/collect_test.sh` | 12 `bd` shims fixture the CLI seam | RTF | re-point shims to `work`; assert envelope shape | A |
 | `src/user/.agents/skills/whats-next/SKILL.md` | prose `bd ready --label`, `bd show <id>`; run-queue calls `bd ready --label implementation-ready` | RTF | `work ready --label`, `work show` | A |
 | `src/user/.agents/skills/where-does-this-fit/SKILL.md` | `show <id> --json`, `show <parent> --json`, `list --parent` | RTF | `work show`, `work list --parent` | A |
@@ -103,8 +103,16 @@ dependent asset-class child can fully close.
   normalized `type`/`created` fields remap correctly onto `collect.py`'s consumers (bd's
   raw `created_at`/type strings are renamed on the `Item` boundary), so the in-flight
   and ready sections read the envelope's normalized names, not the raw bd keys.
+- **G4 — readiness-filtered typed list: CONFIRMED REAL GAP.** `collect.py`'s planning
+  queue issues three `bd list --type {milestone,epic,feature} --ready` queries, but the
+  facade exposes `--type` only on `work list` (no `--ready`) and `--label` only on `work
+  ready` (no `--type`) — neither verb can express "ready items of this type," so a direct
+  replacement would leak dependency-blocked containers into the planning queue. Resolution:
+  add a `--ready` flag to `work list` (it already carries `--type`), mirroring bd's own
+  `list --ready` — one additive flag, no new verb. Filed alongside G3.
 
-G3 is the only real gap, and it is a pair of additive envelope fields, not a verb.
+G3 and G4 are the real gaps — a pair of additive envelope fields (G3) and one additive
+`work list --ready` flag (G4), neither a new verb.
 Formulas (`bd mol`/`cook`) are a **deliberate v1 exclusion**, not a gap — FORMULAS_PRIMER
 stays bd-specific by decision, no verb is owed.
 
@@ -112,14 +120,15 @@ stays bd-specific by decision, no verb is owed.
 
 | slice | asset-class | files | gap-blocked? | ships |
 |---|---|---|---|---|
-| **A — programmatic skills** | A | whats-next (collect.py + collect_test.sh + SKILL.md), where-does-this-fit | G3 (item `started` + `assignee` fields) for the in-flight audit only | first — heaviest value, exercises the full envelope |
+| **A — programmatic skills** | A | whats-next (collect.py + collect_test.sh + SKILL.md), where-does-this-fit | G3 (item `started` + `assignee` fields) for the in-flight audit, G4 (`work list --ready`) for the planning queue | first — heaviest value, exercises the full envelope |
 | **B — PR-workflow skills** | B | merge-guard, wait-for-pr-comments, reply-and-resolve-pr-threads | no | after A |
 | **C — triage/create skills** | C | triaging-discovered-work, fablize, orchestrating-subagents | no verb gap; filing recipe sequenced after `work discover` lands | after B and after the discover verb |
 | **D — rules + templates + plugin/optimizer docs** | D | beads.md, beads-readme.md, plugins/AGENTS.md, INSTRUCTIONS.md.template, simplify, handoff, optimize-my-{agent,skill} | no (audit-only) | anytime, parallel — annotate stays-bd-specific rationale; no code migration |
 | **E — agents + primers** | E | tech-lead, kits PRIME.md, primers | no (audit-only) | anytime, parallel |
 
-Ordering: A → B → C, with D/E and the G3 envelope fields runnable in parallel (G3 must
-land before Class A's in-flight audit migrates; the rest of Class A does not wait). All
+Ordering: A → B → C, with D/E and the G3/G4 facade additions runnable in parallel (G3 must
+land before Class A's in-flight audit migrates and G4 before its planning-queue migrates;
+the rest of Class A does not wait). All
 slices sit behind installer 9.9. Class C's triaging-discovered-work *filing recipe*
 additionally waits on `work discover` (spec ships alongside this one); if the verb has
 not landed when Class C runs, the slice defers that file — it never migrates the filing
@@ -160,9 +169,11 @@ are low-risk and can land early to shrink the epic.
 5. Every migrated asset has a `work`-absent guard that fails loud (no silent bd fallback);
    grep confirms no `bd` fallback branch in Class A/B/C.
 6. A filed workcli work item exists for G3 (the additive `started` **and** `assignee`
-   envelope fields) before the Class A child closes; the epic does not close with an
-   unfiled gap. The Class A child's in-flight audit preserves both fields (no assigned
-   item renders as unassigned) and confirms the normalized `type`/`created` remapping.
+   envelope fields) **and** for G4 (the additive `work list --ready` flag) before the
+   Class A child closes; the epic does not close with an unfiled gap. The Class A child's
+   in-flight audit preserves both fields (no assigned item renders as unassigned) and
+   confirms the normalized `type`/`created` remapping, and its planning queue gates typed
+   queries on readiness (no dependency-blocked container leaks in).
 7. Class D/E files are unchanged except optional mapping-rationale annotations; each is
    confirmed stays-bd-specific in the child's review notes.
 8. The migrated fablize recipe issues **both** the open-children query (`work list
@@ -178,4 +189,4 @@ are low-risk and can land early to shrink the epic.
 - feat: migrate Class C triage/create skills — triaging-discovered-work’s filing recipe onto `work discover` (sequenced after the verb lands; same call-site work as the discover spec’s retire-prose continuation — one work item), its reads plus fablize and orchestrating-subagents onto the read/lifecycle verbs — AC: §7.1,2,5 pass for Class C; no raw bd remains.
 - chore: audit-and-annotate Class D rules + templates + optimizer docs as stays-bd-specific — AC: §7.7; mapping rationale recorded, no behavioral change.
 - chore: audit-and-annotate Class E agents + primers as stays-bd-specific; flag tech-lead for the bd-refs-in-shared-agents cleanup — AC: §7.7.
-- feat: workcli additive `started` + `assignee` item-envelope fields (G3) sourced from bd `started_at`/`assignee`, one MINOR protocol bump — AC: `work show`/`work list` items carry `started` and `assignee` (`null` when unset); contract test pins the G2 multi-status passthrough in the same PR; unblocks Class A's in-flight audit.
+- feat: workcli additive `started` + `assignee` item-envelope fields (G3) plus a `--ready` flag on `work list` (G4), sourced from bd `started_at`/`assignee` and bd's `list --ready`, one MINOR protocol bump — AC: `work show`/`work list` items carry `started` and `assignee` (`null` when unset) and `work list --type <t> --ready` returns only dep-unblocked items; contract test pins the G2 multi-status passthrough in the same PR; unblocks Class A's in-flight audit and planning queue.
