@@ -57,19 +57,33 @@ def _latest_marker(backend: Backend, groom_state_bead: str) -> tuple[str, dateti
     process computes its timestamp, stalls before `append_note`, and appends
     after a later completion already wrote a newer one) -- trusting note
     order in that case would regress the persisted reset time and could fire
-    the nag prematurely (Codex finding, round 4)."""
+    the nag prematurely (Codex finding, round 4).
+
+    Unparsable lines are SKIPPED, not fatal, as long as at least one valid
+    marker exists elsewhere in history: notes are append-only, so a corrupted
+    line can never be deleted, and hard-failing on the first bad candidate
+    would brick `--status` forever even after a hundred valid `--done`
+    appends. Fail-loud (round 1) governs the case where no trustworthy
+    answer exists at all -- it doesn't demand refusing a trustworthy answer
+    because a corpse is also in the room (round 4 refinement)."""
     matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_bead).notes)
     if not matches:
         return None
     parsed_markers: list[tuple[str, datetime]] = []
+    invalid: list[tuple[str, str]] = []
     for raw in matches:
         try:
             parsed_markers.append(
                 (raw, datetime.strptime(raw, _TIMESTAMP_FORMAT).replace(tzinfo=UTC))
             )
         except ValueError as parse_error:
-            raise _invalid_marker(groom_state_bead, raw, str(parse_error)) from parse_error
-    return max(parsed_markers, key=lambda marker: marker[1])
+            invalid.append((raw, str(parse_error)))
+    if parsed_markers:
+        return max(parsed_markers, key=lambda marker: marker[1])
+    # Every candidate failed to parse: unlike a single corrupted line among
+    # valid ones, there is no trustworthy answer anywhere in history.
+    raw, problem = invalid[0]
+    raise _invalid_marker(groom_state_bead, raw, problem)
 
 
 def _invalid_marker(groom_state_bead: str, last_groomed: str, problem: str) -> WorkError:

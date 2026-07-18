@@ -215,7 +215,9 @@ def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
     # writes remain possible outside `work groom --done`, so a corrupted
     # marker (`\S+` matches non-timestamp garbage too) must surface as a
     # typed E_NOT_CONFIGURED naming the bad value, never crash into
-    # E_INTERNAL and silently drop the nag.
+    # E_INTERNAL and silently drop the nag. This is the ALL-INVALID case --
+    # the only marker in history is malformed, so no trustworthy answer
+    # exists anywhere.
     backend = _backend(notes="backlog_last_groomed: not-a-timestamp")
     with pytest.raises(WorkError) as exc_info:
         groom(backend, _args(status=True))
@@ -223,6 +225,26 @@ def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
     assert exc_info.value.detail["reason"] == "invalid"
     assert "not-a-timestamp" in exc_info.value.message
     assert GROOM_STATE_BEAD in exc_info.value.message
+
+
+def test_status_skips_malformed_line_when_a_valid_marker_exists() -> None:
+    # REGRESSION PIN (round 4 refinement): notes are append-only -- a bad
+    # line written months ago can never be deleted -- so a single corrupted
+    # candidate coexisting with later VALID markers must not permanently
+    # brick --status. Only the all-invalid case (above) is fail-loud.
+    notes = "\n".join(
+        [
+            "backlog_last_groomed: not-a-timestamp",  # old corpse, never cleaned up
+            "backlog_last_groomed: 2026-07-17T00:00:00Z",  # a later, valid groom
+        ]
+    )
+    backend = _backend(notes=notes)
+    result = groom(
+        backend,
+        _args(status=True, now=datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)),
+    )
+    assert result["backlog_last_groomed"] == "2026-07-17T00:00:00Z"
+    assert result["breached"] is False
 
 
 # -- round-3 Codex finding: clock skew across dolt-synced machines --
