@@ -32,12 +32,17 @@
 # freshness bound cannot be established, clean signals are rejected that round
 # (fail closed). `completion_kind` distinguishes "review" / "clean_reaction" /
 # "timeout"; only "timeout" should count against a caller's silent-ask budget.
+# If a clean-signal endpoint (reactions / issue comments) is FAILING at the
+# deadline, a clean pass and bot silence are indistinguishable — so the script
+# exits 3 (infrastructure error), NOT 1/timeout, and a transport failure is
+# never miscounted as a silent bot ask.
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
 #   1 — Timeout (no review within --timeout-seconds, default ~10 minutes)
 #   2 — Copilot not requested (not added as reviewer within ~1 minute)
-#   3 — Error (auth failure, invalid args, network issue)
+#   3 — Error (auth failure, invalid args, network issue, or a clean-signal
+#       endpoint failing at the deadline)
 #
 # Stdout (exit 0):
 #   { "status": "copilot_review_found", "completion_kind": "review"|"clean_reaction", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
@@ -45,6 +50,8 @@
 #   { "status": "copilot_review_timeout", "completion_kind": "timeout" }
 # Stdout (exit 2):
 #   { "status": "copilot_not_requested" }
+# Stdout (exit 3, clean-signal endpoint failed at the deadline):
+#   { "status": "copilot_review_error", "completion_kind": "error", "message": "clean-signal endpoint failure: <endpoints>" }
 # Stderr: diagnostic messages
 
 set -euo pipefail
@@ -296,7 +303,16 @@ if [[ -n "$SINCE" ]]; then
     echo "  Filtering for reviews submitted after ${SINCE} (stale-cache guard)" >&2
 fi
 
+# Names the clean-signal endpoint(s) that failed on the CURRENT attempt (reset
+# each iteration). If it is still set when the loop exhausts, clean signals were
+# unobservable at the deadline: a clean pass and bot silence are
+# indistinguishable, so the poll exits 3 (infra error) rather than reporting a
+# timeout the caller would miscount as a silent ask.
+clean_signal_failed_endpoint=""
+
 for i in $(seq 1 "$MAX_ITERATIONS"); do
+    clean_signal_failed_endpoint=""
+
     # Check PR state periodically (every 5th iteration)
     if [[ $((i % 5)) -eq 0 ]]; then
         if ! pr_is_open; then
@@ -390,7 +406,9 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         else
             reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions" \
                 --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
-                echo "Warning: reactions API failed (attempt ${i})" >&2; reactions='[]';
+                echo "Warning: reactions API failed (attempt ${i})" >&2
+                reactions='[]'
+                clean_signal_failed_endpoint="reactions"
             }
             reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
                 '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
@@ -403,7 +421,9 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 
             clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments" \
                 --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
-                echo "Warning: issue comments API failed (attempt ${i})" >&2; clean_comments='[]';
+                echo "Warning: issue comments API failed (attempt ${i})" >&2
+                clean_comments='[]'
+                clean_signal_failed_endpoint="${clean_signal_failed_endpoint:+$clean_signal_failed_endpoint, }issue comments"
             }
             clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
                 '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
@@ -421,5 +441,20 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 done
 
 echo "Copilot review not received after ${TIMEOUT_SECONDS}s" >&2
+
+# A clean-signal endpoint failing on the final attempt makes a clean pass
+# indistinguishable from bot silence — report the documented infrastructure
+# error (exit 3) rather than a timeout the caller would burn its silent-ask
+# budget on.
+if [[ -n "$clean_signal_failed_endpoint" ]]; then
+    echo "Error: clean-signal endpoint(s) failed at the deadline (${clean_signal_failed_endpoint}); cannot distinguish a clean pass from bot silence" >&2
+    jq -n --arg ep "$clean_signal_failed_endpoint" '{
+        status: "copilot_review_error",
+        completion_kind: "error",
+        message: ("clean-signal endpoint failure: " + $ep)
+    }'
+    exit 3
+fi
+
 jq -n '{"status": "copilot_review_timeout", "completion_kind": "timeout"}'
 exit 1

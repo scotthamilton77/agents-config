@@ -93,8 +93,16 @@ if [ "$1" = "api" ]; then
   done
   case "$path" in
     */issues/*/events*)    body="${FIXTURE_EVENTS:-[]}" ;;
-    */issues/*/reactions*) body="${FIXTURE_REACTIONS:-[]}" ;;
-    */issues/*/comments*)  body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */issues/*/reactions*)
+        if [ "${FIXTURE_REACTIONS_FAIL:-0}" = 1 ]; then
+          echo "gh: 500 Internal Server Error" >&2; exit 1
+        fi
+        body="${FIXTURE_REACTIONS:-[]}" ;;
+    */issues/*/comments*)
+        if [ "${FIXTURE_ISSUE_COMMENTS_FAIL:-0}" = 1 ]; then
+          echo "gh: 500 Internal Server Error" >&2; exit 1
+        fi
+        body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
     */issues/*/timeline*)
         if [ "${FIXTURE_TIMELINE_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
@@ -385,5 +393,57 @@ env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVI
   --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
 rc_tlfail=$?
 assert "initial poll: timeline fetch failure fails closed (timeout, exit 1)" "[ \$rc_tlfail -eq 1 ]"
+
+# ── Clean-signal endpoint failure at the deadline is an infra error, not a
+#    silent ask ─────────────────────────────────────────────────────────────
+# When a clean-signal endpoint (reactions / issue comments) is failing at the
+# deadline, a clean pass and bot silence are indistinguishable — so the script
+# must NOT report the ordinary timeout (exit 1, which the caller counts as a
+# silent ask against its one-ask cap). It exits 3 (infrastructure error) with a
+# distinct status naming the failed endpoint, leaving the caller's cap intact.
+# Uses the ask-bound path (--since-timestamp) so the freshness bound is set
+# without touching the head-date/timeline endpoints; only the clean-signal
+# fetches fault.
+
+# (g) A persistently-failing reactions endpoint at the deadline exits 3 (not 1),
+#     and does not report a plain timeout.
+out_rxfail=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS_FAIL=1 FIXTURE_ISSUE_COMMENTS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_rxfail=$?
+assert "reactions endpoint failing at the deadline exits 3 (infra error, not timeout)" "[ \$rc_rxfail -eq 3 ]"
+assert "reactions-endpoint failure does NOT report copilot_review_timeout" "! printf '%s' \"\$out_rxfail\" | grep -q copilot_review_timeout"
+assert "reactions-endpoint failure reports status copilot_review_error" "printf '%s' \"\$out_rxfail\" | jq -e '.status == \"copilot_review_error\"' >/dev/null"
+assert "reactions-endpoint failure does NOT report completion_kind timeout" "printf '%s' \"\$out_rxfail\" | jq -e '.completion_kind != \"timeout\"' >/dev/null"
+
+# (h) The marker-comment (issue comments) endpoint has the same problem: a
+#     persistent failure at the deadline exits 3, not 1.
+out_ccfail=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS_FAIL=1 \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_ccfail=$?
+assert "marker-comment endpoint failing at the deadline exits 3 (infra error, not timeout)" "[ \$rc_ccfail -eq 3 ]"
+assert "marker-comment-endpoint failure reports status copilot_review_error" "printf '%s' \"\$out_ccfail\" | jq -e '.status == \"copilot_review_error\"' >/dev/null"
+
+# (i) An infra-error exit (3) must NOT be counted as a silent ask against the
+#     caller's retry cap — only a real timeout (exit 1) may. Mirrors the Phase 6
+#     accounting: exit 3 maps to --event none (like a clean completion), so the
+#     silent-ask counter does not advance.
+map_to_polling_event_infra() { case "$1" in 1) echo silent ;; *) echo none ;; esac; }
+polling_after_infra=$("$HERE/compute-rereview-polling.sh" --prior-count 0 --prior-exhausted false \
+  --event "$(map_to_polling_event_infra "$rc_rxfail")")
+assert "an infra-error (exit 3) does NOT increment the silent-ask counter" \
+  "[ \"\$(jq '.rereview_round_count' <<<\"\$polling_after_infra\")\" = 0 ]"
+
+# (j) Control: healthy clean-signal endpoints with no signal still time out
+#     (exit 1) — the infra-error path only triggers on an actual endpoint failure.
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_healthy_timeout=$?
+assert "healthy clean-signal endpoints with no signal still time out (exit 1)" "[ \$rc_healthy_timeout -eq 1 ]"
 
 exit $FAIL
