@@ -57,7 +57,11 @@ def work_groom_status():
             capture_output=True, text=True, timeout=30,
         )
         envelope = json.loads(result.stdout)
-    except (json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError):
+    except (json.JSONDecodeError, subprocess.TimeoutExpired, OSError):
+        # OSError (a superclass of FileNotFoundError) also covers a `work`
+        # that resolves on PATH but can't be executed -- lost +x bit, a
+        # noexec mount -- which subprocess.run raises as PermissionError,
+        # a plain FileNotFoundError catch would miss (Codex finding).
         return None
     if not envelope.get("ok"):
         return None

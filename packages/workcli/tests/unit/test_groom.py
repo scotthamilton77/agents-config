@@ -190,6 +190,21 @@ def test_status_ignores_non_matching_note_lines() -> None:
     assert result["backlog_last_groomed"] == "2026-07-17T00:00:00Z"
 
 
+def test_status_malformed_timestamp_fails_loud_not_e_internal() -> None:
+    # REGRESSION PIN (Codex finding): notes stay append-only and raw bd
+    # writes remain possible outside `work groom --done`, so a corrupted
+    # marker (`\S+` matches non-timestamp garbage too) must surface as a
+    # typed E_NOT_CONFIGURED naming the bad value, never crash into
+    # E_INTERNAL and silently drop the nag.
+    backend = _backend(notes="backlog_last_groomed: not-a-timestamp")
+    with pytest.raises(WorkError) as exc_info:
+        groom(backend, _args(status=True))
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "not-a-timestamp" in exc_info.value.message
+    assert GROOM_STATE_BEAD in exc_info.value.message
+
+
 # -- criterion 15: immediately after --done, --status reports not-breached --
 
 

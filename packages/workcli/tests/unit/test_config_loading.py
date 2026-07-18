@@ -229,6 +229,22 @@ def test_backlog_groom_nag_days_bool_is_invalid(tmp_path: Path) -> None:
     assert "backlog-groom-nag-days" in exc_info.value.message
 
 
+def test_backlog_groom_nag_days_negative_is_invalid(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): a negative threshold makes day 0
+    # (immediately after `work groom --done`) already breached (0 > -1),
+    # defeating the reset --done is meant to guarantee (criterion 15).
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\nbacklog-groom-nag-days = -1\n'
+        ),
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "backlog-groom-nag-days" in exc_info.value.message
+
+
 def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
     # Linked worktrees have a .git FILE, not a dir -- the search must still
     # treat that directory as the root boundary.

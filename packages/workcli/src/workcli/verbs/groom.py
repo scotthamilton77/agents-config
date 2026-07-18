@@ -69,7 +69,20 @@ def _status(
             "nag_days": nag_days,
             "breached": True,
         }
-    parsed = datetime.strptime(last_groomed, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
+    try:
+        parsed = datetime.strptime(last_groomed, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
+    except ValueError as parse_error:
+        # Notes are append-only and raw `bd note`/`bd label` writes stay
+        # possible outside `work groom --done` -- a corrupted marker line
+        # must fail loud as a typed error here, never crash into E_INTERNAL
+        # (which would silently drop the nag rather than surfacing the
+        # broken state) (Codex finding).
+        raise WorkError(
+            ErrorCode.NOT_CONFIGURED,
+            f"backlog_last_groomed note on {groom_state_bead} is malformed: "
+            f"{last_groomed!r} ({parse_error})",
+            detail={"reason": "invalid"},
+        ) from parse_error
     days_since = (args.now() - parsed).days
     breached = nag_days is not None and days_since > nag_days  # strict > (criterion 14)
     return {

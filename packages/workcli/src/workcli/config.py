@@ -167,6 +167,15 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         raise _not_configured(
             f"[operating-model].backlog-groom-nag-days must be an integer in {path}", "invalid"
         )
+    if backlog_groom_nag_days is not None and backlog_groom_nag_days < 0:
+        # A negative threshold makes day 0 (immediately after `work groom
+        # --done`) already breached (0 > negative), defeating the reset
+        # `--done` is meant to guarantee (Codex finding).
+        raise _not_configured(
+            f"[operating-model].backlog-groom-nag-days must be non-negative, "
+            f"got {backlog_groom_nag_days} in {path}",
+            "invalid",
+        )
     groom_state_bead_raw = operating_table.get("groom-state-bead")
     if groom_state_bead_raw is not None and not isinstance(groom_state_bead_raw, str):
         raise _not_configured(
