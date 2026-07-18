@@ -76,8 +76,8 @@ applied so a caller can resume safely instead of guessing. Both primitives
 are idempotent as a whole (the adapter absorbs bd's already-applied/already-
 absent outcomes as success), so retrying from the top after any failure —
 with or without a `partial_progress` key — always completes safely; the
-key's presence is diagnostic detail for `work reconcile` to prioritize, not
-a safety gate. Absence of the key is the contract signal that nothing
+key's presence is caller-facing diagnostic detail, not a safety gate
+(`work reconcile`'s sweep is lifecycle-scoped and does not consume it). Absence of the key is the contract signal that nothing
 applied yet: a single-call primitive's `WorkError`, or a `label_mutate`/
 `sync` failure on its first sub-step, never carries it.
 
