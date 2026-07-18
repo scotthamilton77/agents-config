@@ -152,10 +152,53 @@ def lint(backend: Backend, args: Namespace) -> JsonValue:
     }
 
 
-def graph(_backend: Backend, args: Namespace) -> JsonValue:
-    """`work graph --json` -- placeholder wired for slice C; Task 12 replaces
-    this stub's body with real node/edge export. `--json` is the only v1
-    output, so its absence is a usage error, never a silent default."""
-    if not getattr(args, "json_output", False):
+def _node(item: Item) -> JsonValue:
+    return {
+        "id": item.id,
+        "title": item.title,
+        "type": item.type,
+        "status": item.status,
+        "priority": item.priority,
+        "labels": list(item.labels),
+        "track": derive_track(item.labels),
+        "parent": item.parent,
+    }
+
+
+def _closed_ancestors(backend: Backend, items: list[Item], by_id: dict[str, Item]) -> list[Item]:
+    """Closed containers needed for ancestry: walk every parent chain, fetch
+    what the sweep didn't carry, memoized, cycle-guarded."""
+    fetched: dict[str, Item] = {}
+    for item in items:
+        seen: set[str] = set()
+        parent_id = item.parent
+        while parent_id is not None and parent_id not in seen:
+            seen.add(parent_id)
+            if parent_id in by_id:
+                parent_id = by_id[parent_id].parent
+                continue
+            if parent_id not in fetched:
+                fetched[parent_id] = backend.get(parent_id)
+            parent_id = fetched[parent_id].parent
+    return list(fetched.values())
+
+
+def graph(backend: Backend, args: Namespace) -> JsonValue:
+    """`work graph --json` -- the vizsuite V2 / landscape data contract
+    (track spec §4; schema shipped at workcli/schemas/work-graph.schema.json)."""
+    if not args.json_output:
         raise WorkError(ErrorCode.USAGE, "work graph requires --json (the only v1 output)")
-    return {"nodes": [], "edges": []}
+    args.load_config()  # new-verb gate (criterion 17); the payload itself is config-free
+    lean = _sweep(backend)
+    items = backend.batch_get([item.id for item in lean])  # full detail: deps + children
+    by_id = {item.id: item for item in items}
+    ancestors = _closed_ancestors(backend, items, by_id)
+
+    edges: list[JsonValue] = []
+    for item in items:
+        edges.extend({"from": item.id, "to": edge.id, "type": edge.type} for edge in item.deps)
+    for node_item in (*items, *ancestors):
+        if node_item.parent is not None:
+            edges.append({"from": node_item.id, "to": node_item.parent, "type": "parent-child"})
+
+    return {"nodes": [_node(item) for item in (*items, *ancestors)], "edges": edges}
