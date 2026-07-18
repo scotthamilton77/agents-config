@@ -152,8 +152,8 @@
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/fakes.py": {
-    "mtime": 1781090834.8461988,
-    "hash": "80a42c687500523c39456c007d9f6abc"
+    "mtime": 1784389175.613086,
+    "hash": "7825ed4f6bb0f5d5f5bfecb0e112bacc"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_agent_cluster_audit.py": {
     "mtime": 1781363890.6893246,
@@ -208,8 +208,8 @@
     "hash": "eaea073b6fcabe851a670e1453bbd7ab"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_gh_fit.py": {
-    "mtime": 1781632843.6941218,
-    "hash": "8813c92066a9d3e0276b9d417936fc87"
+    "mtime": 1784389175.6141431,
+    "hash": "70ca3658323421ea80a6da30c6b9dcc1"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_pr_ref_parse.py": {
     "mtime": 1781090834.8495913,
@@ -228,8 +228,8 @@
     "hash": "e7c3955f79749134ce8f7a254da65a7b"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_lifecycle_resolve.py": {
-    "mtime": 1783805716.8960145,
-    "hash": "9b6639507a54eacc60b177417706f0d0"
+    "mtime": 1784389175.6171973,
+    "hash": "55a9c4012a19f0c24047b1ab760a619c"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_state_routed_memory.py": {
     "mtime": 1783805716.8982406,
@@ -272,8 +272,8 @@
     "hash": "f2c86f6527b71dac8fb49cb4ff693faf"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_run_cycle_reply_resolve_e2e.py": {
-    "mtime": 1783805716.8979769,
-    "hash": "10f3772106c6ed60626dd759d3c7b2e4"
+    "mtime": 1784389175.620495,
+    "hash": "0c916ec1f77a11e16f8e3b645453b3eb"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_agent_fix_contextual_memory.py": {
     "mtime": 1784382380.446414,
@@ -316,8 +316,8 @@
     "hash": "6eaa2b6ef964e96db325a218b6dfd11e"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_lifecycle_run.py": {
-    "mtime": 1784382380.4497287,
-    "hash": "025fa443940e88832d19cc4249be198c"
+    "mtime": 1784389175.6174567,
+    "hash": "142ba11c3ceeea3ee2ee17445d9c3163"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_errors_new_codes.py": {
     "mtime": 1781891956.370824,
@@ -328,8 +328,8 @@
     "hash": "a1f515dec647181a3037d0fe57f8047d"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_reply_memory_routing.py": {
-    "mtime": 1783805716.8974187,
-    "hash": "e834411150cd0d5efac7a5890676398b"
+    "mtime": 1784389175.6196797,
+    "hash": "b7f0de588316d071d1618df5606abd5a"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_agent_contracts_memory.py": {
     "mtime": 1781363890.6895192,
@@ -348,8 +348,8 @@
     "hash": "a8a21af03490d4e3acffa7236f3afa91"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_cli_reply_resolve_escalated.py": {
-    "mtime": 1783805716.8918042,
-    "hash": "a22c33612c3c4efa93a5cba0dba559a6"
+    "mtime": 1784389175.6136594,
+    "hash": "44fada70e3500cf2b04a2d2c86e33d99"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_lifecycle_quiescence.py": {
     "mtime": 1783805716.8956623,
@@ -372,8 +372,8 @@
     "hash": "90984201da5c3434cb6117e823cb57e6"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_reply_per_item.py": {
-    "mtime": 1784065518.5359325,
-    "hash": "2f5e450bf37e5aa229d0a8be3983b7ee"
+    "mtime": 1784389175.6202502,
+    "hash": "cad24847e84a2538222cf6586b19b70c"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_human_review.py": {
     "mtime": 1781090834.8485203,
@@ -392,8 +392,8 @@
     "hash": "01a7e44d9bc0d283455853211f221c5b"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_lifecycle_poll.py": {
-    "mtime": 1784065518.5352218,
-    "hash": "d3d1e017a8bc869400317c2a6685773f"
+    "mtime": 1784389175.6168818,
+    "hash": "83642b21b6303127d20b151a1116813e"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_git_config_user.py": {
     "mtime": 1781891956.370922,
@@ -434,6 +434,10 @@
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_agent_prompt_loader.py": {
     "mtime": 1781343872.8794832,
     "hash": "6e2130130bdae68826f858131a9924dd"
+  },
+  "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_reply_partial_failure.py": {
+    "mtime": 1784389175.6199117,
+    "hash": "2d949f8fd34d8b797ca49d8faba5e9de"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/tests/unit/test_agent_dispatcher.py": {
     "mtime": 1784382380.4455698,
@@ -512,8 +516,8 @@
     "hash": "cbf3441773d5a17ab0ea9b250cd60c64"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/gh/client.py": {
-    "mtime": 1783864321.259334,
-    "hash": "2d50be7676ed366b7ca4bdba7c8f3412"
+    "mtime": 1784389175.6110241,
+    "hash": "7c23ff0ef4501645226b494d6e7559a6"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/gh/__init__.py": {
     "mtime": 1781090834.843594,
@@ -524,8 +528,8 @@
     "hash": "c519e29af4a271f29e2fc0ccebc6c8c3"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/run.py": {
-    "mtime": 1784382380.4449902,
-    "hash": "7a270a9ba75c0c561977082114e570cb"
+    "mtime": 1784389175.6126208,
+    "hash": "5711583599346fd08ff0e15ebbfcd837"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/predicates.py": {
     "mtime": 1781891956.3684497,
@@ -534,6 +538,10 @@
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/resolve.py": {
     "mtime": 1781478727.563728,
     "hash": "b063fbcf87e59422002d7096220caa4c"
+  },
+  "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/idempotency.py": {
+    "mtime": 1784389175.6113129,
+    "hash": "6357e01893286057e1a95e2585e121fc"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/wait.py": {
     "mtime": 1781632843.693315,
@@ -584,16 +592,16 @@
     "hash": "9c19112c8561098956699f051c4f6afd"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/poll.py": {
-    "mtime": 1784163999.7842474,
-    "hash": "26472c149029e70736a2384cf3facaca"
+    "mtime": 1784389175.6117709,
+    "hash": "eb7aae83108d1a234d90fd0ec46f852b"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/resolve_escalated.py": {
     "mtime": 1783805716.887395,
     "hash": "e0f20cc8167d5af84e606f022d2672a4"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/reply.py": {
-    "mtime": 1784163999.7845736,
-    "hash": "85061f6f4f6d0a866e1990154378bf7b"
+    "mtime": 1784389175.6121244,
+    "hash": "774ecf16a21bbaf4bceda437368578c3"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/src/prgroom/lifecycle/snapshot.py": {
     "mtime": 1783805716.8883636,
@@ -716,12 +724,12 @@
     "hash": "748309c66c7f723254a0a30b3159b0de"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/conftest.py": {
-    "mtime": 1784035804.0161555,
-    "hash": "cadc946c34960bf1fb3b26699507cdb7"
+    "mtime": 1784404142.5248415,
+    "hash": "e7f453f7f6578ab4c8cf2a14861cd834"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/fake_backend.py": {
-    "mtime": 1784055582.534199,
-    "hash": "c3d8a79d64cd76f99cd625be2ebe0bf6"
+    "mtime": 1784395310.9299388,
+    "hash": "b349c0eb384b22436514b3421d53147b"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/__init__.py": {
     "mtime": 1783781276.5479853,
@@ -731,6 +739,14 @@
     "mtime": 1783781276.5482268,
     "hash": "44dd8c1de5f7ff2f2b733ad44fae695a"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_list_track_filter.py": {
+    "mtime": 1784404142.5264916,
+    "hash": "c422cd74e6fce7d2de4b58e52be61474"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_config_loading.py": {
+    "mtime": 1784404142.525136,
+    "hash": "419d29f4bf20539121deb9e743993a06"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_nouns.py": {
     "mtime": 1784035804.0185757,
     "hash": "f31cd8902ac5e03f906a190c4e1e9166"
@@ -738,6 +754,10 @@
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_label_verbs.py": {
     "mtime": 1783781276.5499496,
     "hash": "09c3330b13e0dfb27e8801a33b65f246"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_discover.py": {
+    "mtime": 1784405472.4200618,
+    "hash": "d9d96f0a8ed684eae78f5ddecf8d43c8"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_write_verbs.py": {
     "mtime": 1783781276.5507414,
@@ -756,20 +776,32 @@
     "hash": "53e72a9f4069d353d6c371fb08c156a7"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_capabilities.py": {
-    "mtime": 1783781276.5491052,
-    "hash": "7d46f7036fa64dd1306444dc92227400"
+    "mtime": 1784395310.9304025,
+    "hash": "ac7686e99b48e7173173ddc1a65f246d"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_internal_guard.py": {
     "mtime": 1783781276.5498793,
     "hash": "a0dfe4ee74f302b1428bea09788c1936"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_track_set.py": {
+    "mtime": 1784404142.527147,
+    "hash": "56f88bad1118e82fd9a7b76007c79234"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_create_raw.py": {
     "mtime": 1784136962.9853737,
     "hash": "2c48d82f3ebf5aec543904f5867fc05f"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_create_track_gate.py": {
+    "mtime": 1784404142.5254862,
+    "hash": "9b7c5c3e8d3c70cf1709c49c917941b4"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_recovery.py": {
     "mtime": 1784136962.985693,
     "hash": "5c92f9c7320e0273fc3a89caecbd8384"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_triggers.py": {
+    "mtime": 1784404142.5274272,
+    "hash": "26ac0fa07d29162ba50e6cecdccdc46e"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/__init__.py": {
     "mtime": 1783781276.5488865,
@@ -780,12 +812,12 @@
     "hash": "37f9ca3e22c669a429640e83b6f5dfa8"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_drift_alarm.py": {
-    "mtime": 1783781276.5494337,
-    "hash": "273e0b5b98929d8e1f49f61861fb1d26"
+    "mtime": 1784394916.3346245,
+    "hash": "abe8e5c56e477f524a6a43e17bdc0c3b"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_envelope_invariants.py": {
-    "mtime": 1784065518.5379055,
-    "hash": "4ed320ffd20ffb0d3661b8d5457ebe3c"
+    "mtime": 1784400218.6990044,
+    "hash": "5f8c91ff41d67584e100b7aca894642e"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_cli_dispatch.py": {
     "mtime": 1783781276.5491698,
@@ -800,8 +832,8 @@
     "hash": "4cab8ac0740f107ac50ced965de1afac"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_bd_backend.py": {
-    "mtime": 1784136962.9847763,
-    "hash": "6396ebcdc5ed27501f997861183ecdce"
+    "mtime": 1784400339.6726217,
+    "hash": "85bd5b281197732d701294b1c5ea6566"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_render_human.py": {
     "mtime": 1783781276.5503843,
@@ -831,9 +863,13 @@
     "mtime": 1783807553.9432764,
     "hash": "81561b46d902a7c917db5fdcff9bbaf2"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_item_track_field.py": {
+    "mtime": 1784400218.6994393,
+    "hash": "e2fa46173d69e258375ef105815de1e3"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_envelope.py": {
-    "mtime": 1783781276.5494986,
-    "hash": "32838c39e57fba9063fdfe01aa000e49"
+    "mtime": 1784400339.6729858,
+    "hash": "6ed1997e4efb1e2e153e6d05dbba800e"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_retry_safety.py": {
     "mtime": 1784035804.0194182,
@@ -844,12 +880,20 @@
     "hash": "0803902b1f9d0036376ada5ab7459358"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_create_noun.py": {
-    "mtime": 1784136962.9850433,
-    "hash": "81f6706e96237790ba82f0e856ef1637"
+    "mtime": 1784400218.6982336,
+    "hash": "627d36e1ecebe564e9375f9972166ba3"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_dep_type_wall.py": {
     "mtime": 1783781276.5493531,
     "hash": "3239ee2c642d3a2f23ad885621c64add"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_lint.py": {
+    "mtime": 1784404142.5262737,
+    "hash": "2ddb4022f7a2e4fcbfe022bb1ce6371f"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_config_seam.py": {
+    "mtime": 1784400218.6975465,
+    "hash": "0bfe2392675857844aadc48158162ce9"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_help_exemption.py": {
     "mtime": 1783781276.5498025,
@@ -859,6 +903,10 @@
     "mtime": 1784117975.8984647,
     "hash": "b6ad36d880877b5a2c31f85d3eb3b9c3"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_graph.py": {
+    "mtime": 1784404142.525778,
+    "hash": "3ba64258860a3c61c1a0ba2b7becb2a1"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_transitions.py": {
     "mtime": 1784136962.985846,
     "hash": "4fbed1eaf98fbf68b29c33a820b22a96"
@@ -867,9 +915,17 @@
     "mtime": 1784035804.0196788,
     "hash": "b828f864df5616fa33ac9f2e4cc16f36"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_track_derivation.py": {
+    "mtime": 1784400218.7008634,
+    "hash": "427e7f1c76d75999b1284d55a22fe728"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_groom.py": {
+    "mtime": 1784404142.525967,
+    "hash": "2d6c6a7eb321bc32c8080c3995c9d11e"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/unit/test_protocol_handshake.py": {
-    "mtime": 1783781276.5503168,
-    "hash": "7f135c23c4c0b31f7953c10dd07e146f"
+    "mtime": 1784405472.4203637,
+    "hash": "fe2a8225b64dd0cd410772e39a128f71"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/tests/integration/test_verbs_happy.py": {
     "mtime": 1784117975.8982038,
@@ -920,36 +976,48 @@
     "hash": "0b843861eeee96262fc44a2089abcd1c"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/backend.py": {
-    "mtime": 1784035804.0125034,
-    "hash": "18fb471e37a2c2d6625f44647ac3aa22"
+    "mtime": 1784395310.9288282,
+    "hash": "4d07382eced039ceaa8860762ed7f4a3"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/config.py": {
+    "mtime": 1784404142.5240686,
+    "hash": "892986c5e1d5c3966d01b0f02c90a277"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/tracks.py": {
+    "mtime": 1784400218.694451,
+    "hash": "e38a2281acd7c97af55edf9449e4fba6"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/render.py": {
     "mtime": 1783781276.5475078,
     "hash": "488e83dfdbe5673dca8762009ae3bea3"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/__init__.py": {
-    "mtime": 1783781276.546514,
-    "hash": "f310a78f09f419ab956573bf4032ea67"
+    "mtime": 1784405472.4179657,
+    "hash": "fa56ab497ef0bca01fef7394761dd3d0"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/model.py": {
     "mtime": 1784035804.015524,
     "hash": "22fe9ffccaad9753184b81cec446f420"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/cli.py": {
-    "mtime": 1784055582.5335371,
-    "hash": "601754936b9df036d3d603d70ac77d75"
+    "mtime": 1784405472.4183977,
+    "hash": "01eba2b74da4f63c14a41a6315c19f8f"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/envelope.py": {
-    "mtime": 1784035804.0133233,
-    "hash": "1496cd0f1f8b11898c00a2681cb14f1f"
+    "mtime": 1784405472.4187062,
+    "hash": "0ffd96686fbdf9f03b98383f22974aa1"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/create.py": {
-    "mtime": 1784065518.5366054,
-    "hash": "72b541c35311081c38a2a42cfe3c98d3"
+    "mtime": 1784405472.419016,
+    "hash": "7050109fa3d9eff164233b5804fc8c4d"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/manifest.py": {
     "mtime": 1784055582.5339606,
     "hash": "98af75d1cbf2b3faa53c95b947e10b59"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/discover.py": {
+    "mtime": 1784405472.4192328,
+    "hash": "9bbf26e49bd3f40088fa10f3f52778cd"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/__init__.py": {
     "mtime": 1784059604.2852862,
@@ -960,8 +1028,8 @@
     "hash": "e2a27e9bfb6fc7701eaa85c4a5a7823c"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/nouns.py": {
-    "mtime": 1784065518.536885,
-    "hash": "bd9127668d8ac87bd9142c8c4635c578"
+    "mtime": 1784405472.419553,
+    "hash": "b48022eaa342082c0b2ffad29e06efb3"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/lifecycle/reconcile.py": {
     "mtime": 1784136962.9840987,
@@ -980,8 +1048,8 @@
     "hash": "95889b18dff61ebb364f0fc8db5ad043"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/adapters/bd/backend.py": {
-    "mtime": 1784136962.9833224,
-    "hash": "bc3e17131c232bf0eabb3435092c4949"
+    "mtime": 1784400339.6719553,
+    "hash": "2966f4580ebd04d2a8735f138d0b4498"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/adapters/bd/__init__.py": {
     "mtime": 1783781276.5467272,
@@ -992,8 +1060,12 @@
     "hash": "3b6b9d9e0a9c8eba009cd9c404b26098"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/adapters/bd/parse.py": {
-    "mtime": 1783781276.5468962,
-    "hash": "ca1b229a3609ceff1f6fcb58e6870c7f"
+    "mtime": 1784394916.33432,
+    "hash": "86a608bd28d697d6fcfe38e2b0e79b24"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/tracks.py": {
+    "mtime": 1784400218.6963472,
+    "hash": "c3a63ffa462d88cc49ca71dc337bd275"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/write.py": {
     "mtime": 1783807553.9429204,
@@ -1003,17 +1075,25 @@
     "mtime": 1783781276.547777,
     "hash": "1926e473f02f960b99c716fe966ff2ff"
   },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/groom.py": {
+    "mtime": 1784404142.5245457,
+    "hash": "88ac5394bd566366e64eef19b1c84e6b"
+  },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/__init__.py": {
-    "mtime": 1784035804.0157917,
-    "hash": "23b67a3fdfa2d9d808543dc40af9fff9"
+    "mtime": 1784405472.4198356,
+    "hash": "bae108aae7552e6ee7c84a10f8fea437"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/syncing.py": {
-    "mtime": 1783781276.5478425,
-    "hash": "b000d14e0d1d465b6e0bdcda6e7d4b7c"
+    "mtime": 1784395310.9296489,
+    "hash": "f5b78da6c5355d59cd1917e406bbf140"
+  },
+  "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/report.py": {
+    "mtime": 1784400218.6958692,
+    "hash": "ceed08f9536a482d087ea245830a13b4"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/src/workcli/verbs/read.py": {
-    "mtime": 1783781276.5476637,
-    "hash": "65f4bb7421ae1990050689ccd1a33ae2"
+    "mtime": 1784400218.6955621,
+    "hash": "d26c947c9b88909e5bda8d9f683c612c"
   },
   "/Users/scott/src/projects/agents-config/packages/holding-place/tests/__init__.py": {
     "mtime": 1780218133.1598463,
@@ -1046,6 +1126,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/tests/__init__.py": {
     "mtime": 1779027910.90448,
     "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_prune_clis.py": {
+    "mtime": 1784400339.6716127,
+    "hash": "34bd03d93671e5711e937f7a0b6ee230"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_model.py": {
     "mtime": 1779038386.9892788,
@@ -1154,6 +1238,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_plugins_beads.py": {
     "mtime": 1781217660.4817755,
     "hash": "86bcf1be94e0f6623ed00fafea15cceb"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_receipt_clis.py": {
+    "mtime": 1784394916.3339274,
+    "hash": "a812853e2bd1cae1d6afca2210702cf7"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_project_namespaces.py": {
     "mtime": 1784109982.7533581,
@@ -1291,6 +1379,14 @@
     "mtime": 1782041528.8815975,
     "hash": "9d6bc3d5b55ca8a9f9ec2033be14dfb6"
   },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_clis_registry.py": {
+    "mtime": 1784394916.3337634,
+    "hash": "279aea6c8208904699c5ec77a7122612"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_clis_port.py": {
+    "mtime": 1784394916.333476,
+    "hash": "8c2fd0c2577885373a7ef389b9755aaf"
+  },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_hashing.py": {
     "mtime": 1782652140.8038547,
     "hash": "620a7938e08639ed7dbbbdb766e84bdd"
@@ -1314,6 +1410,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_receipt_build.py": {
     "mtime": 1782597556.4833183,
     "hash": "9447592effa8d29c57e387041e093cc0"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_deploy_clis.py": {
+    "mtime": 1784400339.6713417,
+    "hash": "30ac2b876d769d6865e57eab0f81953b"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/tests/unit/test_receipt_lock.py": {
     "mtime": 1782583935.7309315,
@@ -1396,8 +1496,8 @@
     "hash": "9e78bddb1526fd95e48a1a8704bea816"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/run.py": {
-    "mtime": 1782597556.482758,
-    "hash": "98783033844be9edd6b22dbfdda64296"
+    "mtime": 1784400339.6710014,
+    "hash": "548852734a219387abad8c2caacfea6f"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/backup.py": {
     "mtime": 1783732315.6523013,
@@ -1414,6 +1514,10 @@
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/paths.py": {
     "mtime": 1781360161.168202,
     "hash": "db2fca7be5dd7b1f182edfb93067a90f"
+  },
+  "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/clis.py": {
+    "mtime": 1784394916.3314066,
+    "hash": "e3f715d06d3d29806fb65cf59554e40c"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/installer_toml.py": {
     "mtime": 1782583935.7250516,
@@ -1464,8 +1568,8 @@
     "hash": "4204681d09be2e13f73634fc2f186177"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/receipt.py": {
-    "mtime": 1782652140.8034952,
-    "hash": "ed5e9a0dbc3b9eaae399f4875c131c90"
+    "mtime": 1784394916.3320005,
+    "hash": "406dd22d99ef18720bc6363ad144b413"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/installignore.py": {
     "mtime": 1782511292.9448018,
@@ -1476,8 +1580,8 @@
     "hash": "52c5ffa100fa4b5c7cd7d487ba854044"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/receipt_store.py": {
-    "mtime": 1782597556.4822357,
-    "hash": "318825465157ef85141fcf9edeaf7a50"
+    "mtime": 1784394916.3328738,
+    "hash": "30dfe0cd3d5e9249a1e8c5a8c62e7bcb"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/consent.py": {
     "mtime": 1782072226.7338238,
@@ -1492,8 +1596,8 @@
     "hash": "9bc586009166273f19e71fd4d92d95b3"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/receipt_build.py": {
-    "mtime": 1782597556.4819238,
-    "hash": "2e9bf2bc8d5c45e4a9381d6563f8f6a8"
+    "mtime": 1784394916.3324382,
+    "hash": "c57434ec782bb693838c40e64e13cd15"
   },
   "/Users/scott/src/projects/agents-config/packages/installer/src/installer/core/namespaces.py": {
     "mtime": 1783732315.6524332,
@@ -2020,8 +2124,8 @@
     "hash": "e33a98c5f14c21ee2ca8928a79098708"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/whats-next/collect.py": {
-    "mtime": 1783280158.6010046,
-    "hash": "b47ee5d0cfe73141abceb69ab67ee613"
+    "mtime": 1784404142.5286484,
+    "hash": "da2fea45a793273fc0a74f0b0c4e12f9"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/brainstorming/scripts/helper.js": {
     "mtime": 1779569098.531295,
@@ -3247,6 +3351,10 @@
     "mtime": 1783113173.201757,
     "hash": "24f2fa91fbd65e4357c24077d34daca0"
   },
+  "/Users/scott/src/projects/agents-config/docs/specs/2026-07-18-codex-rereview-path-design.md": {
+    "mtime": 1784391900.855115,
+    "hash": "bcb42f29db8699526414617473d68979"
+  },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-06-30-pr-review-merge-policy.md": {
     "mtime": 1783036017.136083,
     "hash": "90b6a08738aadcef1ff349bfe197fb02"
@@ -3344,8 +3452,8 @@
     "hash": "3ef067fed3f9ffcb72376f4c3988126d"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-04-work-facade-cli-contract.md": {
-    "mtime": 1783781276.545855,
-    "hash": "6c6def49f45aff415d4bae4c572aa24d"
+    "mtime": 1784405472.4176426,
+    "hash": "8501b227a95df8e1f07b494471316789"
   },
   "/Users/scott/src/projects/agents-config/docs/specs/2026-07-06-profiles-scope-routing.md": {
     "mtime": 1783550602.810316,
@@ -3572,12 +3680,12 @@
     "hash": "edbe83c89f35fd8054957b7e364d6f4f"
   },
   "/Users/scott/src/projects/agents-config/packages/prgroom/AGENTS.md": {
-    "mtime": 1784382380.4416797,
-    "hash": "08fc7075cd8d771c5694eb8a4a8428c8"
+    "mtime": 1784389175.6101985,
+    "hash": "4cb727eadac3ea2484ecece3d193ea88"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/README.md": {
-    "mtime": 1784035804.0112817,
-    "hash": "f1c1ab31525650bfdf718fa12f8aaaa4"
+    "mtime": 1784404142.522863,
+    "hash": "01cc891be50fed508a96a27722e9dae4"
   },
   "/Users/scott/src/projects/agents-config/packages/workcli/AGENTS.md": {
     "mtime": 1784117975.8953178,
@@ -3824,8 +3932,8 @@
     "hash": "4d621214b5c0425ab5fb9795618d95be"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/whats-next/SKILL.md": {
-    "mtime": 1783280158.6007218,
-    "hash": "251763d60e75af07e44b29c72eac1f3a"
+    "mtime": 1784404142.5283256,
+    "hash": "4ebc5494ff11dde74dc601db4cefd286"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/brainstorming/visual-companion.md": {
     "mtime": 1779569098.531996,
@@ -3992,8 +4100,8 @@
     "hash": "645fd768fa7686c0b4b3f5e3f25f7388"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/SKILL.md": {
-    "mtime": 1783862622.1095586,
-    "hash": "0cb1355cc1cb004d11bf3a53a78a20fd"
+    "mtime": 1784405581.7668684,
+    "hash": "d8380a92e5e2d58f42b267c27cea784b"
   },
   "/Users/scott/src/projects/agents-config/src/user/.agents/skills/wait-for-pr-comments/references/handling-feedback.md": {
     "mtime": 1779626817.1472526,
