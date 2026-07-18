@@ -80,7 +80,7 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 | `--priority` | yes | `P0`–`P4` (regex `^P[0-4]$`); form only, not correctness |
 | `--priority-why` | yes | priority rationale; same non-blank single-line rule |
 | `--anchor-why` / `--escalation-why` | one, by placement | placement rationale (or why no anchor fits); same non-blank single-line rule |
-| `--track NAME` | no | forwarded **unmodified** to the shared `create <noun>` path, where the track layer's normal resolution and validation apply; unnecessary for `--anchor` filings (parent-track inheritance stamps the track), and the only way an `--orphan` discovery can satisfy `required` track mode |
+| `--track NAME` | no | forwarded **unmodified** to the shared `create <noun>` path, where the track layer's normal resolution and validation apply; needed only when the track is *underivable* — an `--orphan` filing (no parent) or an `--anchor` under a track-less parent (a milestone carries no `track:*` label by design and falls through to enforcement). An `--anchor` under a *tracked* parent inherits that parent's track, so there `--track` only overrides it |
 
 **Rationale-shape rule.** Each rationale flag (`--scope-why`, `--priority-why`, and the
 applicable placement rationale `--anchor-why`/`--escalation-why`) is a required *one-line*
@@ -180,7 +180,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
 | `--scope out-of-scope` with a non-container `--anchor` (declared-state `is_container` false: no epic/milestone type or container shape label) | `E_TRIAGE_INCOMPLETE` | out-of-scope work must anchor under an epic or milestone (canonical discovered-work contract); names the rule; creates nothing. The in-scope-deferred path keeps the soft warning (below) |
 | `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
-| `required` track mode, `--orphan` (no parent to inherit track), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition) |
+| `required` track mode, underivable track (`--orphan`, or `--anchor` under a track-less parent such as a milestone), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition); a track-less parent falls through to enforcement exactly like `--orphan` |
 | create succeeds, orphan-marker note append fails (`--orphan` path) | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for marker replay |
 | create succeeds, `discovered-from` edge add fails | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for edge replay |
 
@@ -241,15 +241,19 @@ container is the *right* home stays judgment (§5).
 
 **Track composition is free.** Because discover mints through `create <noun> --parent
 <anchor>`, it inherits the track partition's create gate verbatim: parent-track
-inheritance stamps the `track:*` label; in `advisory` mode an underivable create (the
-`--orphan` path with no `--track`) succeeds with an envelope warning; in `required` mode
-it is refused with `E_TRACK_REQUIRED`. This is the correct coupling — the unanchored
-discovery is exactly the case that should trip track enforcement — and discover
-re-implements none of it. `--track NAME` (§3.1, §3.2) is forwarded **unmodified** to the
-same `create <noun>` path, where the track layer's normal resolution and validation
-apply; it is the sole way an `--orphan` discovery can satisfy `required` track mode
-(`--anchor` filings inherit their parent's track, so they need `--track` only to
-override it).
+inheritance stamps the `track:*` label *when the parent has one*; a track-less parent
+falls through to enforcement exactly like `--orphan`. Two placement outcomes therefore
+leave the track underivable — an `--orphan` filing (no parent), and an `--anchor` under a
+track-less parent (the canonical out-of-scope fallback is a milestone, and milestones
+carry no `track:*` label by design). For either underivable case: in `advisory` mode the
+create succeeds with an envelope warning; in `required` mode it is refused with
+`E_TRACK_REQUIRED`. This is the correct coupling — a discovery with no derivable track is
+exactly the case that should trip track enforcement — and discover re-implements none of
+it. `--track NAME` (§3.1, §3.2) is forwarded **unmodified** to the same `create <noun>`
+path, where the track layer's normal resolution and validation apply; it is how a
+discovery whose track is underivable — `--orphan`, or `--anchor` under a track-less
+parent — satisfies `required` track mode. An `--anchor` under a *tracked* parent inherits
+that parent's track, so there `--track` only overrides it.
 
 ## 5. What stays prose (the judgment boundary)
 
@@ -313,7 +317,11 @@ declared `is_container` state) — yes, mechanical. "Is this really out of scope
     `E_TRACK_REQUIRED` (inherited from the create gate), while `--orphan --track NAME`
     succeeds — the forwarded `--track` satisfies the create gate (fake call log shows the
     `--track` value reaching the `create` path); in `advisory` mode `--orphan` with no
-    `--track` succeeds with a `data.warnings` entry.
+    `--track` succeeds with a `data.warnings` entry. The same holds for an `--anchor` under
+    a track-less parent (a milestone anchor, the canonical out-of-scope fallback): in
+    `required` mode with no `--track` it exits `E_TRACK_REQUIRED`, and
+    `--anchor <milestone> --track NAME` succeeds — the anchored filing under a track-less
+    parent falls through to enforcement exactly like `--orphan`.
 14. A `--discovered-from` naming a deleted or non-existent bead exits `E_NOT_FOUND` whose
     message names `--discovered-from`, and **creates nothing** — the fake call log shows
     the pre-mint source `show`/get and **zero** `create` calls (the provenance source is
