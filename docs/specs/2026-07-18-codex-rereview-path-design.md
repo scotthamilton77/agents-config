@@ -116,9 +116,18 @@ of strings, rejected otherwise), and dispatches on reviewer identity:
 An identity with no known mechanism warns on stderr and is skipped; it does not
 abort dispatch to its siblings. Exit codes: 0 when at least one ask succeeded,
 1 when none did, 2 reserved for usage errors as today. Omitting
-`--bot-reviewers` preserves today's Copilot-only behaviour, so existing callers
-continue to work unchanged. The script's header comment, which currently
-describes it as Copilot-specific, is rewritten to describe the dispatch table.
+`--bot-reviewers` preserves today's Copilot-only behaviour — a standalone
+compatibility default only, not how the loop runs. The script's header comment,
+which currently describes it as Copilot-specific, is rewritten to describe the
+dispatch table.
+
+**Both existing callers are updated to pass the flag** — the helper's new
+capability is inert until they do, which would leave D1 unfixed on any repo
+whose active reviewer is Codex. `wait-for-pr-comments` Phase 6 step 1 passes
+`--bot-reviewers "$(jq -c '.bot_reviewers' <<<"$POLICY_JSON")"` (the policy it
+already resolves in Phase 1), and merge-guard's one-ask retry instruction is
+rewritten to name the same flag with its own resolved policy's allowlist. The
+Delivery section maps each caller edit to its PR.
 
 Identity matching follows each script's existing convention:
 `poll-copilot-review.sh` compares case-insensitively and Component 1 mirrors it;
@@ -179,12 +188,30 @@ pinned as observed on 2026-07-18; if the vendor rewords it, the comment resumes
 blocking — a false negative, which hands off to a human and is the acceptable
 direction.
 
-### Component 3 — handshake accounting
+### Component 3 — handshake accounting and clean-pass completion
 
 The `eyes` reaction is exposed to the re-review poll path so the one-ask cap can
 distinguish *the ask never reached a reviewer* from *the ask reached a reviewer
 that is still working*. Conflating those is what currently burns the cap and
 forces a hand-off.
+
+The handshake alone is not enough: the existing poll helper completes only on a
+submitted review object, so a clean Codex pass — which submits none — would time
+out and consume the cap despite succeeding. The re-review completion contract
+therefore recognises **any** of the following as completion, checked against the
+same allowlist:
+
+- a new review object from an allowlisted identity (the findings case, as
+  today);
+- a `+1` reaction on the PR body from an allowlisted identity whose
+  `created_at` post-dates the ask (the clean case);
+- an issue comment from an allowlisted identity carrying the clean-pass marker
+  and post-dating the ask.
+
+The poll helper's output gains a `completion_kind` field — `review`,
+`clean_reaction`, or `timeout` — so callers (merge-guard's retry, Phase 6) can
+distinguish a clean completion from silence. Only `timeout` counts as a silent
+ask against the cap.
 
 ## Accepted residual
 
@@ -213,6 +240,12 @@ when none do, exit 2 on usage errors as today; omitting `--bot-reviewers` still
 performs the Copilot dance; `--bot-reviewers` rejects a non-array, an empty
 array, and non-string members.
 
+The poll-helper tests gain a clean-Codex completion case: a fixture where no
+review object ever arrives but a `+1` (or the marker comment) post-dating the
+ask does, asserting `completion_kind == "clean_reaction"` and that the silent
+counter is NOT incremented — plus the inverse, where nothing arrives and
+`completion_kind == "timeout"` increments it.
+
 `check-merge-eligibility_test.sh` covers the fact as a truth table over fixture
 payloads, asserting both `bot_clean_review_at_head` and
 `bot_clean_signal_source`:
@@ -237,10 +270,13 @@ prefix still blocks.
 Two pull requests, because the components sit in different skills and Component 1
 is independently valuable — it is the part that is currently broken outright.
 
-1. Components 1 and 3 and their tests, in `wait-for-pr-comments` — both the
-   dispatch table and the handshake marker live in that skill's helper scripts,
-   and merge-guard's retry calls those helpers directly.
-2. Components 2 and 2b and their tests, in `merge-guard`.
+1. Components 1 and 3 and their tests, in `wait-for-pr-comments` — the dispatch
+   table, the completion contract, and that skill's own caller edit (Phase 6
+   step 1 passes `--bot-reviewers`); merge-guard's retry calls these helpers
+   directly.
+2. Components 2 and 2b and their tests, in `merge-guard` — including the
+   merge-guard caller edit (the retry instruction passes `--bot-reviewers` and
+   branches on `completion_kind`).
 
 Both touch `src/**` and therefore floor to the HEAVY completion gate regardless
 of diff size.
