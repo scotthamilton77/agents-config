@@ -167,6 +167,14 @@ def _add_track_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     track_parser.add_argument("--cascade", action="store_true")
 
 
+def _add_report_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    subparsers.add_parser("lint", help="track/milestone hygiene report (advisory; always exits 0)")
+    graph_parser = subparsers.add_parser(
+        "graph", help="bulk node/edge export for visualization consumers"
+    )
+    graph_parser.add_argument("--json", action="store_true", dest="json_output")
+
+
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     sync_parser = subparsers.add_parser(
         "sync", help="sync with the backend (bd: dolt commit+push, or --pull)"
@@ -203,6 +211,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_transition_subparsers(subparsers)
     _add_relations_subparsers(subparsers)
     _add_track_subparsers(subparsers)
+    _add_report_subparsers(subparsers)
     _add_sync_subparser(subparsers)
     return parser
 
