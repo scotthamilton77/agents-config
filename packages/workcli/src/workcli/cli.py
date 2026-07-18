@@ -331,7 +331,7 @@ def main(
         # handshake never touches the runner (spec §5).
         backend = _build_backend(runner, sleep)
 
-        if missing_capability(args.verb, backend.capabilities):
+        if missing_capability(args.verb, backend.capabilities, args):
             return _finish_failure(
                 WorkError(
                     ErrorCode.UNSUPPORTED_CAPABILITY,

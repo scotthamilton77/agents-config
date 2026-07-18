@@ -15,6 +15,7 @@ from pathlib import Path
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdResult
+from workcli.backend import ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, WorkError
 from workcli.model import CreateFields, DepEdge, QueryFilters, UpdateFields
 
@@ -25,14 +26,14 @@ def _read(name: str) -> str:
     return (FIXTURES / name).read_text()
 
 
-def test_capabilities_are_all_true_for_bd():
+def test_capabilities_are_all_native_for_bd():
     backend = BdBackend(ScriptedBdRunner(steps=[]))
 
     caps = backend.capabilities
 
-    assert caps.supports_ready is True
-    assert caps.supports_dep_types is True
-    assert caps.supports_sync is True
+    assert caps.ready is ReadySupport.NATIVE
+    assert caps.sync is SyncSupport.NATIVE
+    assert caps.supports_dep_write is True
 
 
 def test_get_sends_show_json_and_returns_the_normalized_item():

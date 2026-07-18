@@ -36,7 +36,7 @@ from workcli.adapters.bd.parse import (
 )
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
-from workcli.backend import Capabilities, DepOp
+from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
 
@@ -56,8 +56,10 @@ class BdBackend:
     @property
     def capabilities(self) -> Capabilities:
         # bd has native blocker semantics, typed dep edges, and dolt sync --
-        # every capability flag is true.
-        return Capabilities(supports_ready=True, supports_dep_types=True, supports_sync=True)
+        # every capability is at its native corner.
+        return Capabilities(
+            ready=ReadySupport.NATIVE, sync=SyncSupport.NATIVE, supports_dep_write=True
+        )
 
     def get(self, item_id: str) -> Item:
         return self.batch_get([item_id])[0]
