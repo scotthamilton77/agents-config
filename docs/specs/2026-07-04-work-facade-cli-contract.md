@@ -154,7 +154,10 @@ themselves: `ReadySupport.EMULATED` computes `ready` client-side from `query`
 + dep edges when the backend lacks blocker semantics (both JIRA and GH need
 this; bd does not), and `SyncSupport.SERVER_AUTHORITATIVE` succeeds honestly
 as a declared no-op (`data.synced: false`) since there is nothing to
-synchronize. `dep list` is never gated — only typed dep writes are, via
+synchronize. The `EMULATED` ready computation is a forward contract, not
+shipped code: the verb layer gains that branch with the first adapter that
+declares it (today's sole adapter, bd, is `NATIVE` on every disposition, so
+no emulation path exists yet). `dep list` is never gated — only typed dep writes are, via
 `supports_dep_write` — since every seam-target backend can at least
 enumerate relationships.
 
@@ -166,8 +169,10 @@ after a partial failure completes safely; the adapter absorbs bd's
 already-applied/already-absent outcomes as success. Second, structured
 partial-progress on failure — a mid-sequence `WorkError` carries a
 `detail.partial_progress` record (`operation`, `steps_total`, `completed`,
-`failed`, `remaining`) naming exactly what already applied, so `work
-reconcile` can prioritize a resumable failure over a from-scratch retry.
+`failed`, `remaining`) naming exactly what already applied, so the caller
+can tell a resumable failure from a from-scratch one. (The record is
+caller-facing only: `work reconcile`'s sweep is lifecycle-scoped and does
+not consume it.)
 Absence of the key is the contract signal that nothing applied yet: a
 single-call primitive's `WorkError`, or a first-sub-step failure, never
 carries it — though because both primitives are idempotent as a whole,
