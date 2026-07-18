@@ -100,6 +100,24 @@ def test_limit_applies_after_track_filtering() -> None:
     assert ids == ["w-2"]
 
 
+def test_limit_zero_is_the_unbounded_sentinel() -> None:
+    # REGRESSION PIN (Codex finding): the bd adapter sends "--limit 0" for
+    # both an omitted limit and an explicit `--limit 0`, so 0 is the
+    # existing unbounded sentinel repo-wide -- it must not slice the
+    # track-filtered set down to zero items.
+    backend = FakeBackend()
+    backend.add("w-1", labels=["track:alpha"])
+    backend.add("w-2", labels=["track:alpha"])
+    args = _list_args("alpha", lambda: CONFIG)
+    args.limit = 0
+    data = list_(backend, args)
+    assert isinstance(data, dict)
+    items = data["items"]
+    assert isinstance(items, list)
+    ids = [item["id"] for item in items if isinstance(item, dict)]
+    assert ids == ["w-1", "w-2"]
+
+
 def test_config_flag_reaches_the_loader_verbatim() -> None:
     # main()'s seam threads --config through to the loader untouched;
     # list --track is the first surface that triggers a load.

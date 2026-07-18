@@ -50,7 +50,10 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
     config loads BEFORE the backend query (E_NOT_CONFIGURED must precede any
     backend error, and an unconfigured call must not read the tracker), and
     --limit applies AFTER the track filter (a bd-side limit would truncate
-    the candidate set before filtering and undercount matches).
+    the candidate set before filtering and undercount matches). `--limit 0`
+    is the existing unbounded sentinel (mirrored from the bd adapter, which
+    sends "0" for both an omitted limit and an explicit 0) -- it must not
+    slice the filtered set down to zero items.
     """
     if args.track is not None:
         require_known_track(args.track, args.load_config())
@@ -64,7 +67,7 @@ def list_(backend: Backend, args: Namespace) -> JsonValue:
         items = [
             item for item in backend.query(unbounded) if derive_track(item.labels) == args.track
         ]
-        if args.limit is not None:
+        if args.limit:
             items = items[: args.limit]
         return _serialize_items(items)
     filters = QueryFilters(
