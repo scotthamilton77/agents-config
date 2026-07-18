@@ -19,6 +19,8 @@ from typer.testing import CliRunner
 
 from prgroom import cli
 from prgroom.agent.contracts import ClusterInput, ClusterOutput, ClusterResult
+from prgroom.agent.dispatcher import Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.gh import GhCli
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import DispositionKind, ItemKind, PRPhase
@@ -70,10 +72,13 @@ class ClusterDispatcherStub:
         self._clusters = clusters
         self.calls = 0
 
-    def cluster(self, request: ClusterInput) -> ClusterOutput:
+    def cluster(self, request: ClusterInput) -> Dispatched[ClusterOutput]:
         del request
         self.calls += 1
-        return ClusterOutput(clusters=self._clusters)
+        return Dispatched(
+            output=ClusterOutput(clusters=self._clusters),
+            winner=AgentSpec(cli="ollama", model="gemma4"),
+        )
 
 
 def _item(
@@ -118,7 +123,7 @@ def patched(monkeypatch: pytest.MonkeyPatch) -> InMemoryStore:
 
 
 def _wire_dispatcher(monkeypatch: pytest.MonkeyPatch, dispatcher: ClusterDispatcherStub) -> None:
-    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: (dispatcher, "ollama gemma4"))
+    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: dispatcher)
 
 
 def test_cluster_applies_and_persists(

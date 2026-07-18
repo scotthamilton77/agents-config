@@ -801,10 +801,10 @@ def test_claude_envelope_contract_reaches_dispatcher_parse(tmp_path: Path) -> No
         runner=runner,
         chain=ProviderChain(providers=[_spec("claude", "haiku")], time_budget_s=5.0),
     )
-    output = dispatcher.cluster(
+    dispatched = dispatcher.cluster(
         ClusterInput(pr=PRRef(owner="o", repo="r", number=1), items=[], pr_context_path="/ctx")
     )
-    assert output.clusters == []  # the payload inside `result`, not the envelope
+    assert dispatched.output.clusters == []  # the payload inside `result`, not the envelope
 
 
 def test_run_builds_the_argv_for_the_specs_cli(tmp_path: Path) -> None:

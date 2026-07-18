@@ -37,8 +37,8 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(cli, "_build_gh", lambda: object())
     monkeypatch.setattr(cli, "_build_git", lambda: object())
     monkeypatch.setattr(cli, "_build_sink", lambda: object())
-    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: (_StubDispatcher(), "claude"))
-    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: (_StubDispatcher(), "claude"))
+    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: _StubDispatcher())
+    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: _StubDispatcher())
     box: dict[str, Any] = {}
 
     def fake_run_lifecycle(**kwargs: Any) -> int:
@@ -117,8 +117,8 @@ def test_run_integration_merged_pr_reaches_terminal(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(cli, "_build_store", lambda _name: store)
     monkeypatch.setattr(cli, "_build_gh", lambda: _MergedGh())
     monkeypatch.setattr(cli, "_build_git", lambda: object())  # unused: never reaches push
-    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: (_StubDispatcher(), "claude"))
-    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: (_StubDispatcher(), "claude"))
+    monkeypatch.setattr(cli, "_build_cluster_dispatcher", lambda: _StubDispatcher())
+    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: _StubDispatcher())
     # Drives the REAL run_lifecycle -> _run -> poll_pr -> flush via Verbs.system.
     result = runner.invoke(cli.app, ["run", "octo/demo#7", "--autonomous"])
     assert result.exit_code == 0, result.output

@@ -18,6 +18,8 @@ from typer.testing import CliRunner
 
 from prgroom import cli
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput
+from prgroom.agent.dispatcher import Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.gh import GhCli
 from prgroom.proc import CommandResult
 from prgroom.prsession.enums import DispositionKind, ItemKind, PRPhase
@@ -69,10 +71,10 @@ class FixDispatcherStub:
         self._output = output
         self.calls = 0
 
-    def fix(self, request: FixInput) -> FixOutput:
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]:
         del request
         self.calls += 1
-        return self._output
+        return Dispatched(output=self._output, winner=AgentSpec(cli="claude", model="opus[1m]"))
 
 
 def _item(
@@ -118,7 +120,7 @@ def patched(monkeypatch: pytest.MonkeyPatch) -> InMemoryStore:
 
 
 def _wire_dispatcher(monkeypatch: pytest.MonkeyPatch, dispatcher: FixDispatcherStub) -> None:
-    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: (dispatcher, "claude opus[1m]"))
+    monkeypatch.setattr(cli, "_build_fix_dispatcher", lambda: dispatcher)
 
 
 def test_fix_applies_and_persists(patched: InMemoryStore, monkeypatch: pytest.MonkeyPatch) -> None:

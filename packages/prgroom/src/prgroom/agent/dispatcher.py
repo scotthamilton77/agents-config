@@ -29,13 +29,14 @@ or-fall-through; it parses the output shape but does not validate its invariants
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from prgroom.agent.contracts import (
     ClusterInput,
@@ -47,13 +48,17 @@ from prgroom.agent.prompt_loader import PromptTemplate, load_prompt
 from prgroom.agent.subprocess_runner import (
     AgentCancelledError,
     AgentRunner,
+    AgentRunResult,
     AgentSpec,
     AgentTimeoutError,
+    UsageFigures,
 )
 from prgroom.agent.usage import UsageRecord
 from prgroom.config import read_toml, subtable
 from prgroom.errors import ErrorCode, PrgroomError, Tier
 from prgroom.prsession.pr_ref import PRRef
+
+_logger = logging.getLogger(__name__)
 
 ContractName = Literal["cluster", "fix"]
 
@@ -235,8 +240,9 @@ def _utc_now_iso() -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class _LinkFailure:
-    """One chain link's failure, recorded for the both-fail escalation detail.
+class LinkFailure:
+    """One chain link's failure — the both-fail escalation detail and, on a
+    fallback success, an entry in :attr:`Dispatched.failures`.
 
     ``reason`` is normalized to a single line at construction: every source (an
     agent stderr, a timeout ``detail``, a parse exception message) may contain
@@ -244,11 +250,17 @@ class _LinkFailure:
     summary — so collapse all whitespace once, centrally, here. ``kind`` is the
     usage-telemetry outcome tag for the failed attempt (``timeout`` /
     ``unavailable`` / ``error`` / ``malformed``).
+
+    ``usage`` carries any token/cost figures the runner parsed from the failed
+    attempt — a non-zero-exit CLI still ran and can report usage — so the failed
+    attempt's :class:`UsageRecord` does not lose that data. ``None`` for the
+    result-less triggers (timeout, binary-absent, spawn error).
     """
 
     spec: AgentSpec
     reason: str
     kind: str
+    usage: UsageFigures | None = None
 
     def __post_init__(self) -> None:
         # Collapse all whitespace (one-line guarantee), then cap so a huge agent
@@ -260,6 +272,36 @@ class _LinkFailure:
             tail_chars = _REASON_MAX_CHARS - _REASON_HEAD_CHARS - len(_REASON_ELLIPSIS)
             collapsed = collapsed[:_REASON_HEAD_CHARS] + _REASON_ELLIPSIS + collapsed[-tail_chars:]
         object.__setattr__(self, "reason", collapsed)
+
+
+@dataclass(frozen=True, slots=True)
+class Dispatched(Generic[T]):
+    """One resolved dispatch: the parsed output plus which chain link produced it.
+
+    The success shape only — chain exhaustion stays the typed
+    :class:`AllProvidersFailedError`. ``rung`` is derived, not stored: every link
+    before the winner either appended a :class:`LinkFailure` and continued, or
+    returned, so ``rung == len(failures)`` is a ladder invariant with one source
+    of truth (and exactly the rung index the spend bridge needs).
+    """
+
+    output: T
+    winner: AgentSpec
+    failures: tuple[LinkFailure, ...] = ()
+
+    @property
+    def rung(self) -> int:
+        """Index of the winning link in the chain."""
+        return len(self.failures)
+
+    @property
+    def fell_back(self) -> bool:
+        return bool(self.failures)
+
+    @property
+    def decided_by(self) -> str:
+        """The persisted-provenance string, in the established ``<cli> <model>`` format."""
+        return f"{self.winner.cli} {self.winner.model}"
 
 
 class _Dispatcher:
@@ -294,71 +336,134 @@ class _Dispatcher:
         # contract surfaces (cluster()/fix()) carry no parameter for it.
         self._cancel = cancel
         # §5 usage logging: one UsageRecord per ATTEMPT (failed links included) is
-        # pushed through this hook — the lifecycle wires it to usage.append_usage.
-        # Token counts stay None until a usage-line parser exists. `clock` (monotonic,
-        # durations) and `now` (wall, the ts field) are injectable so tests never sleep.
+        # pushed through this hook — the production dispatcher builders in the CLI
+        # wire it to usage.append_usage; None (tests, embedders) disables emission.
+        # `clock` (monotonic, durations) and `now` (wall, the ts field) are
+        # injectable so tests never sleep.
         self._usage_hook = usage_hook
         self._clock = clock
         self._now = now
 
-    def _run_chain(self, payload: dict[str, Any], parse: Callable[[str], T]) -> T:
-        """Try each provider; return the first parseable output, else raise both-fail.
+    def _run_chain(self, payload: dict[str, Any], parse: Callable[[str], T]) -> Dispatched[T]:
+        """Try each provider; return the first parseable output in its
+        :class:`Dispatched` envelope — winner + prior-link failures — else raise
+        both-fail.
 
         Per-link failures — binary absent, non-zero exit (quota/auth/network),
         budget timeout, or 0-exit-but-unparseable output — fall through to the next
         link. An exhausted chain raises :class:`AllProvidersFailedError` naming every
         link's rejection (§5 both-fail → failed disposition + escalation).
         """
-        failures: list[_LinkFailure] = []
+        failures: list[LinkFailure] = []
         for spec in self._chain.providers:
             started = self._clock()
             try:
                 outcome = self._try_one(spec, payload)
             except AgentCancelledError:
                 # The abort-everything path still leaves a telemetry trace of the
-                # attempt before propagating past the ladder.
+                # attempt before propagating past the ladder. No result reached us,
+                # so the record is usage-less.
                 self._emit_usage(spec, payload, started=started, outcome="cancelled")
                 raise
-            if isinstance(outcome, _LinkFailure):
-                self._emit_usage(spec, payload, started=started, outcome=outcome.kind)
+            if isinstance(outcome, LinkFailure):
+                self._emit_usage(
+                    spec, payload, started=started, outcome=outcome.kind, usage=outcome.usage
+                )
+                self._warn_link_failure(outcome)
                 failures.append(outcome)
                 continue
+            stdout = outcome.stdout
             try:
-                parsed = parse(outcome)
+                parsed = parse(stdout)
             except (KeyError, TypeError, ValueError) as exc:
                 # ValueError subsumes json.JSONDecodeError AND an out-of-enum
                 # DispositionKind (StrEnum raises ValueError): a model emitting bogus
                 # JSON or a bogus disposition is THIS provider's malformed output —
-                # fall through to the next link, never crash the whole dispatch.
-                self._emit_usage(spec, payload, started=started, outcome="malformed")
-                failures.append(_LinkFailure(spec, f"malformed output: {exc}", kind="malformed"))
+                # fall through to the next link, never crash the whole dispatch. The
+                # CLI still ran, so carry its parsed usage onto the failed record.
+                self._emit_usage(
+                    spec, payload, started=started, outcome="malformed", usage=outcome.usage
+                )
+                failure = LinkFailure(spec, f"malformed output: {exc}", kind="malformed")
+                self._warn_link_failure(failure)
+                failures.append(failure)
                 continue
-            self._emit_usage(spec, payload, started=started, outcome="success")
-            return parsed
+            self._emit_usage(spec, payload, started=started, outcome="success", usage=outcome.usage)
+            if failures:
+                # The greppable partial-fallback signal: a dispatcher-layer fact
+                # ("this dispatch resolved at rung N"), deliberately not "decided
+                # by" — a cluster caller may still discard the winning output.
+                _logger.warning(
+                    "%s dispatch fell back to %s:%s (rung %d); failed: %s",
+                    self._contract,
+                    spec.cli,
+                    spec.model,
+                    len(failures),
+                    _render_links(failures),
+                )
+            return Dispatched(output=parsed, winner=spec, failures=tuple(failures))
         raise AllProvidersFailedError(detail=_render_failures(self._contract, failures))
 
-    def _emit_usage(
-        self, spec: AgentSpec, payload: dict[str, Any], *, started: float, outcome: str
-    ) -> None:
-        """Push one per-attempt :class:`UsageRecord` through the hook, if wired."""
-        if self._usage_hook is None:
-            return
-        self._usage_hook(
-            UsageRecord(
-                ts=self._now(),
-                pr=PRRef.from_dict(payload["pr"]),
-                contract=self._contract,
-                provider=spec.cli,
-                model=spec.model,
-                input_tokens=None,
-                output_tokens=None,
-                duration_ms=int((self._clock() - started) * 1000),
-                outcome=outcome,
-            )
+    def _warn_link_failure(self, failure: LinkFailure) -> None:
+        """Stream one WARNING at failure time — a fix link's budget is up to 30
+        minutes, so an operator learns of the primary's failure when it happens,
+        not when the fallback finishes."""
+        _logger.warning(
+            "%s link %s:%s failed (%s): %s",
+            self._contract,
+            failure.spec.cli,
+            failure.spec.model,
+            failure.kind,
+            failure.reason,
         )
 
-    def _try_one(self, spec: AgentSpec, payload: dict[str, Any]) -> str | _LinkFailure:
-        """Run one provider; return its stdout on a 0-exit, else a :class:`_LinkFailure`."""
+    def _emit_usage(
+        self,
+        spec: AgentSpec,
+        payload: dict[str, Any],
+        *,
+        started: float,
+        outcome: str,
+        usage: UsageFigures | None = None,
+    ) -> None:
+        """Push one per-attempt :class:`UsageRecord` through the hook, if wired.
+
+        ``usage`` is the runner's parsed token/cost figures for the attempt (claude
+        envelope / codex trailer), threaded onto the record so the §5 usage log
+        keeps the captured data; ``None`` (result-less triggers) leaves the token
+        and cost fields null.
+
+        A hook failure (unwritable XDG dir, full disk) is an expected
+        environmental failure, not a contract breach: the modeled handling is a
+        logged drop — never an aborted dispatch, never a silent one.
+        """
+        if self._usage_hook is None:
+            return
+        record = UsageRecord(
+            ts=self._now(),
+            pr=PRRef.from_dict(payload["pr"]),
+            contract=self._contract,
+            provider=spec.cli,
+            model=spec.model,
+            input_tokens=usage.tokens_in if usage else None,
+            output_tokens=usage.tokens_out if usage else None,
+            duration_ms=int((self._clock() - started) * 1000),
+            outcome=outcome,
+            tokens_total=usage.tokens_total if usage else None,
+            reported_cost_usd=usage.reported_cost_usd if usage else None,
+        )
+        try:
+            self._usage_hook(record)
+        except Exception as exc:  # telemetry must never fail a dispatch
+            _logger.warning("usage hook failed (%s attempt record dropped): %s", outcome, exc)
+
+    def _try_one(self, spec: AgentSpec, payload: dict[str, Any]) -> AgentRunResult | LinkFailure:
+        """Run one provider; return its full result on a 0-exit, else a
+        :class:`LinkFailure`.
+
+        Returning the whole :class:`AgentRunResult` (not just its stdout) keeps the
+        runner's parsed ``usage`` figures reachable so the caller can thread them
+        onto the attempt's :class:`UsageRecord`."""
         try:
             result = self._runner.run(
                 spec,
@@ -376,17 +481,23 @@ class _Dispatcher:
                 cancel=self._cancel,
             )
         except AgentTimeoutError as exc:
-            return _LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}", kind="timeout")
+            return LinkFailure(spec, f"timeout: {exc.detail or exc.code.value}", kind="timeout")
         except FileNotFoundError:
-            return _LinkFailure(spec, "binary not on PATH", kind="unavailable")
+            return LinkFailure(spec, "binary not on PATH", kind="unavailable")
         except OSError as exc:
             # Present-but-unspawnable (non-executable binary, exec-format error) is
             # the same provider-unavailable trigger as a missing one — fall through.
-            return _LinkFailure(spec, f"spawn failed: {exc}", kind="unavailable")
+            return LinkFailure(spec, f"spawn failed: {exc}", kind="unavailable")
         if result.returncode != 0:
-            # _LinkFailure normalizes whitespace + caps length centrally.
-            return _LinkFailure(spec, f"exit {result.returncode}: {result.stderr}", kind="error")
-        return result.stdout
+            # LinkFailure normalizes whitespace + caps length centrally. A failed
+            # CLI can still have reported usage, so carry it onto the failure.
+            return LinkFailure(
+                spec,
+                f"exit {result.returncode}: {result.stderr}",
+                kind="error",
+                usage=result.usage,
+            )
+        return result
 
 
 def _loads_lenient(stdout: str) -> Any:
@@ -427,7 +538,7 @@ class ClusterDispatcher(_Dispatcher):
 
     _contract: ContractName = "cluster"
 
-    def cluster(self, request: ClusterInput) -> ClusterOutput:
+    def cluster(self, request: ClusterInput) -> Dispatched[ClusterOutput]:
         return self._run_chain(
             request.to_dict(), lambda s: ClusterOutput.from_dict(_loads_lenient(s))
         )
@@ -438,11 +549,16 @@ class FixDispatcher(_Dispatcher):
 
     _contract: ContractName = "fix"
 
-    def fix(self, request: FixInput) -> FixOutput:
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]:
         return self._run_chain(request.to_dict(), lambda s: FixOutput.from_dict(_loads_lenient(s)))
 
 
-def _render_failures(contract: ContractName, failures: list[_LinkFailure]) -> str:
+def _render_links(failures: list[LinkFailure]) -> str:
+    """The shared per-link rendering: ``cli:model (reason); …`` — used by both the
+    exhaustion detail and the partial-fallback summary line."""
+    return "; ".join(f"{f.spec.cli}:{f.spec.model} ({f.reason})" for f in failures)
+
+
+def _render_failures(contract: ContractName, failures: list[LinkFailure]) -> str:
     """A one-line summary of every link's rejection for the escalation detail."""
-    parts = [f"{f.spec.cli}:{f.spec.model} ({f.reason})" for f in failures]
-    return f"{contract} chain exhausted: " + "; ".join(parts)
+    return f"{contract} chain exhausted: " + _render_links(failures)

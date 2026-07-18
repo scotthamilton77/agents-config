@@ -1,9 +1,13 @@
-"""Per-invocation token-usage JSONL emitter (§5 token-usage logging).
+"""Per-attempt usage JSONL emitter (§5 token-usage logging).
 
-The CLI logs **per-contract token usage** to ``$XDG_STATE_HOME/prgroom/usage.jsonl``
-when the agent CLI emits a usage line (Claude and Codex CLIs both do). This is
-**MVP baseline-capture only** — one JSON line per invocation, no aggregation, no
-analysis — so future cost-optimization work has data to start from.
+One row per **chain-link attempt** — failures included — lands in
+``$XDG_STATE_HOME/prgroom/usage.jsonl`` via the dispatcher's ``usage_hook``
+(the production dispatcher builders wire it to :func:`append_usage`). Rows are
+appended under an exclusive ``flock`` because concurrent per-PR prgroom
+processes share the one global file. Token fields ride the CLI's own output
+when captured (claude envelope / codex trailer); absent figures stay ``None``.
+This is **MVP baseline-capture only** — no aggregation, no analysis — so future
+cost-optimization work has data to start from.
 
 The XDG state directory is resolved through :func:`prgroom.prsession.file.resolve_state_dir`,
 the single source of truth for ``$XDG_STATE_HOME/prgroom`` (shared with the file
@@ -12,6 +16,7 @@ Store), so usage data and state land in the same place under the same env rule.
 
 from __future__ import annotations
 
+import fcntl
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -81,4 +86,10 @@ def append_usage(record: UsageRecord | None) -> None:
     path = resolve_state_dir() / USAGE_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
+        # Exclusive flock on the DATA descriptor (kernel-released on process
+        # death): prgroom's per-PR locking still allows concurrent runs on
+        # different PRs, and all of them append to this one global file. The
+        # file is append-only (never os.replace'd), so locking its own fd is
+        # sound — no sidecar needed, unlike the FileStore.
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
         fh.write(json.dumps(record.to_dict()) + "\n")
