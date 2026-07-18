@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Grind PR watcher — a DOORBELL, not a verdict.
+# Grind PR watcher — an ACTIVITY DOORBELL, not a verdict.
 #
-# Polls one PR for signs that the bot reviewer has said something new, then
-# exits so the orchestrator's background-task notification fires. The
-# orchestrator MUST re-verify with direct `gh` queries before acting: the jq
-# filters below flake to empty intermittently, and an empty read is
-# indistinguishable from "nothing changed."
+# Wakes a parked lane when anything happens on its PR. It deliberately knows
+# NOTHING about approval signals, reviewer identity, or clean-pass phrasing:
+# reading verdicts belongs to the repo's PR-review skill, and a second copy of
+# that logic here would drift the first time a reviewer changes behavior.
+#
+# This script answers exactly one question: has activity appeared on this PR
+# since I armed? On a ring, the orchestrator re-engages the owning lane, and
+# the LANE consults the review skill for what actually happened.
 #
 # TEMPLATE — substitute before use:
-#   {{PR}}        PR number, e.g. 320
-#   {{HEAD_SHA}}  head commit the review is awaited for, e.g. 4cf2d8a
-#   {{REPO}}      owner/name, e.g. acme/widgets
+#   {{PR}}    PR number, e.g. 320
+#   {{REPO}}  owner/name, e.g. acme/widgets
 #
 # LAUNCH DIRECTLY via run_in_background. NEVER nest this inside a wrapper
 # command with `&` — the wrapper exits immediately, the completion
@@ -22,51 +24,40 @@
 set -uo pipefail
 
 PR="{{PR}}"
-HEAD_SHA="{{HEAD_SHA}}"
 REPO="{{REPO}}"
 
 INTERVAL_SECONDS=60
 TIMEOUT_SECONDS=1800   # 30 minutes
 
 # --- Sampling ---------------------------------------------------------------
-# Deliberately standalone rather than reusing the wait-for-pr-comments skill's
-# poller: that one diffs a CALLER-SUPPLIED baseline of review-comment count
-# only, and sources a sibling lib.sh. This watcher self-samples DUAL baselines
-# at arm time (the specific defence against a stale +1 from a prior head) and
-# detects a clean-pass naming the awaited SHA. Wiring the two together would
-# also couple this skill to the review protocol it explicitly does not use.
-#
-# One fetch per cycle, three readings off it — a poll every 60s for 30 minutes
-# is 30 API calls, not 90.
+# Baselines are sampled by THIS watcher at arm time, so a ring always means
+# "something new since you armed" — never "a signal from a previous head is
+# still sitting there." Counts only; contents are not inspected.
 fetch_pr() {
-  gh pr view "$PR" --repo "$REPO" --json reviews,comments 2>/dev/null
+  gh pr view "$PR" --repo "$REPO" --json reviews,comments,reviewThreads 2>/dev/null
 }
 
 read_counts() {
-  # stdin: PR JSON. stdout: "<reviews> <comments> <clean_pass_for_head>"
-  # The clean-pass reading requires the comment to NAME the awaited head
-  # commit — an unqualified "looks good" may predate the current push.
+  # stdin: PR JSON. stdout: "<reviews> <comments> <threads>"
   # Each array element is fully parenthesized: in jq `|` binds across `,`, so
   # bare `A | length, B | length` chains the second expression onto the first.
-  jq -r --arg sha "$HEAD_SHA" '
+  jq -r '
     [ ((.reviews // []) | length),
       ((.comments // []) | length),
-      ([ (.comments // [])[]
-         | select(.body | test("[Dd]idn.t find any major issues|[Nn]o major issues"))
-         | select(.body | contains($sha)) ] | length)
+      ((.reviewThreads // []) | length)
     ] | @tsv' 2>/dev/null | tr '\t' ' '
 }
 
-read -r BASE_REVIEWS BASE_COMMENTS _ <<<"$(fetch_pr | read_counts)"
+read -r BASE_REVIEWS BASE_COMMENTS BASE_THREADS <<<"$(fetch_pr | read_counts)"
 
 # An unreadable baseline would make every later comparison meaningless, so
 # fail loud rather than arming a watcher that can only produce noise.
-if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ]; then
+if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ] || [ -z "$BASE_THREADS" ]; then
   echo "WATCH-ERROR pr=$PR could not sample baselines (gh unavailable or PR unreadable)"
   exit 2
 fi
 
-echo "WATCH-ARMED pr=$PR head=$HEAD_SHA reviews=$BASE_REVIEWS comments=$BASE_COMMENTS"
+echo "WATCH-ARMED pr=$PR reviews=$BASE_REVIEWS comments=$BASE_COMMENTS threads=$BASE_THREADS"
 
 # --- Poll loop --------------------------------------------------------------
 elapsed=0
@@ -74,36 +65,28 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   sleep "$INTERVAL_SECONDS"
   elapsed=$((elapsed + INTERVAL_SECONDS))
 
-  read -r reviews comments clean <<<"$(fetch_pr | read_counts)"
+  read -r reviews comments threads <<<"$(fetch_pr | read_counts)"
 
   # An empty read is a flake, not a signal. Skip the round; do not treat a
   # missing value as zero — that would read as a count DECREASE and mask a
   # real increase on the following poll.
-  if [ -z "$reviews" ] || [ -z "$comments" ] || [ -z "$clean" ]; then
+  if [ -z "$reviews" ] || [ -z "$comments" ] || [ -z "$threads" ]; then
     echo "WATCH-FLAKE pr=$PR t=${elapsed}s (empty read, skipping round)"
     continue
   fi
 
-  if [ "$reviews" -gt "$BASE_REVIEWS" ]; then
-    echo "WATCH-RING pr=$PR reason=new-review reviews=$reviews (was $BASE_REVIEWS) t=${elapsed}s"
-    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json reviews,statusCheckRollup"
+  if [ "$reviews" -gt "$BASE_REVIEWS" ] \
+     || [ "$comments" -gt "$BASE_COMMENTS" ] \
+     || [ "$threads" -gt "$BASE_THREADS" ]; then
+    echo "WATCH-RING pr=$PR t=${elapsed}s reviews=$reviews/$BASE_REVIEWS comments=$comments/$BASE_COMMENTS threads=$threads/$BASE_THREADS"
+    echo "DOORBELL ONLY — no verdict implied. Re-engage the owning lane; the lane reads the verdict via the PR-review skill."
     exit 0
   fi
 
-  if [ "$clean" -gt 0 ]; then
-    echo "WATCH-RING pr=$PR reason=clean-pass-naming-head head=$HEAD_SHA t=${elapsed}s"
-    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json reviews,statusCheckRollup"
-    exit 0
-  fi
-
-  if [ "$comments" -gt "$BASE_COMMENTS" ]; then
-    echo "WATCH-RING pr=$PR reason=new-comment comments=$comments (was $BASE_COMMENTS) t=${elapsed}s"
-    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json comments"
-    exit 0
-  fi
-
-  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments"
+  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments threads=$threads"
 done
 
-echo "WATCH-TIMEOUT pr=$PR after ${TIMEOUT_SECONDS}s — no signal. Re-arm or check the PR directly."
+# Timeout means NO ACTIVITY, not "no verdict" — a reviewer can signal in ways a
+# count-based poll will not see. Re-arm, or have the lane check directly.
+echo "WATCH-TIMEOUT pr=$PR after ${TIMEOUT_SECONDS}s — no activity detected. Re-arm or have the lane check the PR directly."
 exit 1

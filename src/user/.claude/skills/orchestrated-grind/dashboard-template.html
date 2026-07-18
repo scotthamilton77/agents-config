@@ -137,7 +137,7 @@
   .badge-queued { background: rgba(110,118,129,0.12); color: var(--gray); }
   .badge-in-progress { background: rgba(47,95,214,0.12); color: var(--accent); }
   .badge-pr-open { background: rgba(124,58,237,0.12); color: var(--purple); }
-  .badge-codex-review { background: rgba(154,108,0,0.12); color: var(--yellow); }
+  .badge-in-review { background: rgba(154,108,0,0.12); color: var(--yellow); }
   .badge-merged { background: rgba(30,142,62,0.12); color: var(--green); }
   .badge-done { background: rgba(30,142,62,0.2); color: var(--green); }
   .badge-blocked { background: rgba(198,40,40,0.12); color: var(--red); }
@@ -261,7 +261,7 @@ const STATE = {
 };
 
 const KNOWN_STATUSES = [
-  "queued", "in-progress", "pr-open", "codex-review",
+  "queued", "in-progress", "pr-open", "in-review",
   "merged", "done", "blocked", "waiting-human", "standing-down"
 ];
 

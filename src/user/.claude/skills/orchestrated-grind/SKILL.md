@@ -62,8 +62,15 @@ Rules that are not negotiable:
 - **Right-size every worker.** Sonnet for implementation, haiku for mechanical
   work. Never let a worker silently inherit the session model. A dispatch with
   no model and no effort set is the violation, not a neutral default.
-- **Two to three plan tasks per worker, maximum.** Workers self-gate inline
-  (run the package's own CI target) and report in fifteen lines or fewer.
+- **Two to three plan tasks per worker, maximum.** Workers report in fifteen
+  lines or fewer.
+- **Worker output still passes the completion gate.** A worker self-gates
+  inline on what it can run itself — the package's CI target, its own review
+  and simplify pass — but it MUST NOT spawn subagents to do it, because a
+  worker cannot reliably await a child (see `orchestrating-subagents`). Any
+  gate step needing a separate agent belongs to the **dispatcher**: the worker
+  reports DONE, and the *lieutenant* gates the returned work before opening a
+  PR. Tests-passed is gate evidence, not the gate.
 
 ### Setup sequence
 
@@ -74,7 +81,7 @@ Rules that are not negotiable:
    the page in the browser **exactly once**.
 3. **Spawn the lieutenants**, one message each, carrying: the lane's queue, the
    worktree naming convention, the review protocol (§3), the post-merge leg
-   (§8), and the instruction to report `CODEX-CLEAN` rather than merging.
+   (§8), and the instruction to report **reviewed-clean** rather than merging.
 4. **Record the roster** — you will need it for the compaction handoff (§7).
 
 Brief every lieutenant with **worktree-absolute paths**. A bare or relative
@@ -106,79 +113,69 @@ any moment; a self-countermand is cheap, a mid-air collision is not.
 have scrolled out of everyone's view. Open any handoff block with a decoder key
 or re-anchor each label inline.
 
-## 3. The bot review loop
+## 3. PR review — delegated, with grind-shaped escalation
 
-The lane owns this loop end to end. **Never invoke the `wait-for-pr-comments`
-or `monitor-pr` skills in this mode** — they implement a different protocol and
-will fight this one.
+**The lane runs the repo's PR-review skill for its own PRs.** Do not
+reimplement review-bot mechanics here: verdict signals, re-review dispatch,
+clean-pass detection, thread reply-and-resolve, and per-bot quirks all belong
+to that skill and change as reviewers change. A grind that carries its own copy
+of that protocol will drift from the one the rest of the repo uses.
 
-**Reading the verdict:**
+What this skill governs is only the part the review skill cannot know about —
+who runs it, and where a verdict goes:
 
-| Signal | Meaning |
-|--------|---------|
-| `+1` reaction on the PR | Approval |
-| "Didn't find any major issues" comment | Approval |
-| `COMMENTED` review | Findings — triage them |
-| `eyes` reaction | Review **started**. Not a verdict. |
-
-**Triage every finding** into exactly one of: **FIX** (TDD — failing test
-first, then the fix), **SKIP-with-rationale** (reply explaining why, then
-resolve the thread), or **ESCALATE** to ROOT. Reply to every thread; resolve
-after disposition. A thread left silent reads as unaddressed on the next round.
-
-**Nudging.** After roughly ten minutes of silence, post one `@codex review`
-comment. Once per push — not once per ten minutes.
-
-**Do-not-relitigate nudges.** When re-requesting review after disputed rounds,
-enumerate the settled dispositions inside the comment: *"threads x, y, z are
-dispositioned SKIP because …; please do not relitigate."* This broke two
-multi-round stalemates on the first attempt in the reference run. It is the
-highest-leverage move in this section.
+- **The lane owns the loop for its own PRs**, start to finish. ROOT does not
+  run review loops; it has a switchboard to operate.
+- **Findings triage** stays the review skill's contract, with one addition: a
+  finding whose disposition would change lane scope, cross into another lane's
+  files, or need a human ruling is **ESCALATED to ROOT** rather than decided in
+  the lane.
+- **The lane reports the terminal verdict up** — reviewed-clean, or blocked and
+  why. It never merges (§4).
 
 **Stalemate rule.** A re-raise round on **unchanged code** gets one final
-disposition round, then you stop nudging and put the PR on the human's docket.
-Rounds that surface *genuine defects* never trip this rule — six consecutive
-rounds of real bugs is the reviewer earning its keep, and you keep going.
+disposition round, then the lane stops and puts the PR on the human's docket
+via ROOT. Rounds that surface *genuine defects* never trip this rule — six
+consecutive rounds of real bugs is the reviewer earning its keep, and the lane
+keeps going. Round count alone is not evidence of a loop; unchanged code under
+re-raise is.
 
 **Drain sweep.** After about four rounds of real defects in one module, the
 lane performs ONE inline proactive audit of all changed code against the defect
 *classes* found so far — boundary validation, time semantics, ordering and
 selection, subprocess trust — fixes everything in a single commit, and then
 lets the reviewer see a drained module. Scope-fence the sweep to files the PR
-already changes.
+already changes. This is a throughput tactic, not a review protocol: it exists
+because a grind cannot afford four more serial round-trips per module.
 
-**Reviewer malfunction.** If the reviewer re-flags code that is already fixed
-*at the commit its own metadata says it reviewed*:
+## 4. Merge authority
 
-1. Verify the fix independently: `git show <sha>:<file>`.
-2. Reply quoting the fixed lines, and resolve the thread.
-3. Send ONE evidence-forward nudge citing exact lines and the commit.
+**ROOT merges. Lanes never do.** A lane reports its PR reviewed-clean; the
+decision to merge is a switchboard duty, because only ROOT sees the whole board
+and the human's standing grants.
 
-A second identical re-flag is a malfunction, not a finding. Human docket. Do
-not loop.
+**Resolve the repo's merge-authorization policy through `merge-guard` — do not
+hardcode one here.** Repositories differ: `never` hands off to the human,
+`explicit` (the default) needs an in-session human instruction, and
+`rule-based` merges autonomously when its configured rule and eligibility
+predicate both hold. `merge-guard` resolves which applies, computes the live
+eligibility floor, and hands back the merge command to run — including the
+head-commit pinning that stops a push landing between verification and merge.
+Assuming a policy is how a grind either merges without authorization in a
+`never` repo or stalls every clean PR in a `rule-based` one.
 
-## 4. Merge authority — three-fact verification
+So, per PR: the lane reports reviewed-clean → ROOT invokes `merge-guard` →
+ROOT runs the command it hands back, or routes the PR to the human's docket
+when the guard says to.
 
-**Merging requires explicit human authority.** A grant sounds like *"merge PRs
-that honestly get the codex thumbs-up, use `--admin`."* Absent such a grant,
-finished PRs go on the human's docket and the grind continues around them.
+**Verify the lane's claim before invoking the guard.** "Reviewed-clean" is a
+report, and §8's standing rule applies to it like any other: confirm it
+directly. The guard checks eligibility, not whether your lieutenant was right.
 
-**Lanes report `CODEX-CLEAN`. Only ROOT merges.**
-
-Before **every** merge, ROOT verifies three facts fresh and directly — never
-from a lane report, never from a watcher line:
-
-1. **CI is SUCCESS at head.**
-2. **The reviewer approved at head** (a `+1`, or a clean-pass comment naming
-   the head commit — not a stale approval from an earlier push).
-3. **Zero unresolved review threads.**
-
-Then, and only then: `gh pr merge <N> --squash --admin`.
-
-**An honest verdict cannot be manufactured.** If the reviewer is wrong and
-still will not approve, that is the human's call, not yours. Merging a PR the
-reviewer never blessed because you personally judged the findings unfounded is
-the exact failure this section exists to prevent.
+**An honest verdict cannot be manufactured.** If the reviewer will not approve
+and you judge its findings unfounded, that is the human's call. Merging around
+a reviewer you have decided is wrong is the exact failure this section exists
+to prevent.
 
 ## 5. The bookkeeper and the dashboard
 
@@ -223,25 +220,30 @@ the grind (PR titles, review-comment excerpts), the bookkeeper MUST serialize
 it with a JSON serializer and escape `</` as `<\/` — the serialization contract
 in `references/state-schema.md`. A raw splice is a script-injection hole.
 
-## 6. Watchers — self-waking for bot verdicts
+## 6. Watchers — waking a parked lane
 
-Parked lieutenants cannot self-wake, and ROOT needs review verdicts promptly.
-ROOT arms one background poll script per awaited PR, from
+Parked lieutenants cannot self-wake, so when a lane is waiting on review
+activity ROOT arms one background poll script per awaited PR, from
 `scripts/watch-pr.sh.tmpl`.
+
+**A watcher detects PR *activity*, never a verdict.** It knows nothing about
+approval signals, reviewer identity, or clean-pass phrasing — that is the
+review skill's job (§3), and duplicating any of it here guarantees drift the
+first time a reviewer changes behavior. The watcher answers exactly one
+question: *has anything happened on this PR since I armed?*
 
 - **60-second interval, 30-minute timeout.**
 - **Launch DIRECTLY via `run_in_background`.** Never nest the watcher inside a
   wrapper command with `&`. The wrapper exits immediately, the completion
   notification fires for the *wrapper*, and the real watcher is orphaned —
   running, unwatched, and silent.
-- **Trigger on:** a review-count increase, a new issue comment, or a clean-pass
-  comment naming the awaited head SHA.
-- **Do NOT trigger on `+1` reactions alone** when a stale `+1` from a prior
-  head exists. Bake the baselines — review count and comment count at arm time
-  — into each watcher generation.
-- **Watcher output is a DOORBELL, never a verdict.** Its `jq` filters flake to
-  empty intermittently. Always re-verify with direct `gh` queries before acting
-  on a watcher line.
+- **Triggers on a count increase** in reviews, review comments, or issue
+  comments against baselines sampled at arm time. Counts, not contents.
+- **The ring is a DOORBELL.** On a ring, ROOT re-engages the owning lane and
+  the lane consults the review skill for the actual verdict. ROOT does not
+  interpret PR state itself.
+- **A timeout means "no activity," not "no verdict."** Re-arm, or have the lane
+  check directly. Reviewers can signal in ways a count-based poll will not see.
 
 ## 7. Compaction safety
 
@@ -285,16 +287,22 @@ date in its filename.
 
 **Post-merge leg, per PR** (the lieutenant's job):
 
-1. Remove the worktree; `git branch -D` the branch.
-2. Fast-forward main.
-3. Add a tracker note recording the PR number and merge SHA.
-4. Close the work item if complete, recording any endorsed descope in the
+1. Leave the worktree first — an agent must not remove the worktree its own
+   shell is anchored in. Exit it, then tear down from the main tree.
+2. Remove the worktree; `git branch -D` the branch (a squash-merge reads as
+   unmerged, so `-d` will refuse).
+3. Fast-forward main.
+4. Add a tracker note recording the PR number and merge SHA.
+5. Close the work item if complete, recording any endorsed descope in the
    close note.
-5. Check the parent epic — but **do not auto-close it**.
-6. Sync the tracker.
+6. Check the parent epic — but **do not auto-close it**.
+7. Sync the tracker.
 
-**ROOT never removes a worktree its own shell is anchored in.** Defer it and
-note it in the handoff.
+**No agent removes a worktree it occupies — and none removes a worktree
+another agent occupies.** Removing an occupied worktree leaves that agent on a
+stale inode, where writes go somewhere other than where it thinks. If teardown
+cannot be done safely from outside, defer it and record it in the handoff for a
+main-tree owner to finish.
 
 **Escalate to the human ONLY for:** merge-authority grants, reviewer
 stalemates and malfunctions, and genuine scope forks. Everything else is
@@ -309,7 +317,7 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | Excuse | Reality |
 |--------|---------|
 | "The lieutenant is idle, so it's stuck — I'll nudge it." | Bare idle means parked. Verify with `gh`/`git` before nudging. |
-| "The lane reported CI green, that's fact #1 covered." | Lane reports are not merge evidence. Re-verify all three facts yourself, every time. |
+| "The lane reported reviewed-clean, so I can merge." | A lane report is a claim, not eligibility. Verify it, then let `merge-guard` resolve authority. |
 | "The watcher fired, so the reviewer approved." | The watcher is a doorbell. Its filters flake. Re-verify directly. |
 | "The findings are clearly unfounded, I'll just merge." | An honest verdict cannot be manufactured. Human docket. |
 | "This report contradicts my order — the lane ignored me." | It almost certainly crossed in flight. Check timestamps first. |
@@ -327,7 +335,9 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - You are about to touch a branch a lane might be mid-push on.
 - You are about to spawn a named agent *from* a named agent.
 - You are dispatching a worker without setting model and effort.
-- You are invoking `wait-for-pr-comments` or `monitor-pr` during a grind.
+- You are writing review-bot mechanics into this skill instead of delegating
+  to the repo's PR-review skill (§3).
+- You are about to merge without `merge-guard` resolving the policy (§4).
 - You are re-opening the dashboard in a browser.
 - Your last three actions were implementation work. You are ROOT — you route,
   verify, and merge. Hand it to a lane.

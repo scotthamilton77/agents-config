@@ -142,7 +142,7 @@ badge and its items' badges read consistently:
 | `queued` | Not started |
 | `in-progress` | Being implemented |
 | `pr-open` | PR opened, review not yet started |
-| `codex-review` | Under bot review |
+| `in-review` | Under review |
 | `waiting-human` | On the human's docket |
 | `blocked` | Waiting on another item to land |
 | `merged` | PR merged, post-merge leg possibly outstanding |
@@ -185,7 +185,7 @@ a new status word degrades gracefully instead of breaking the board.
       "id": "lane-installer",
       "name": "Lane 2 — installer",
       "agent": "lane-installer",
-      "status": "codex-review",
+      "status": "in-review",
       "activity": "PR #320 round-3 triage (5 threads)",
       "queue": [
         {
