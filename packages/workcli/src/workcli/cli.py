@@ -21,6 +21,7 @@ from typing import NoReturn, TextIO
 from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.backend import BdBackend
 from workcli.adapters.bd.runner import BdRunner, SubprocessBdRunner
+from workcli.config import TrackLayerConfig, load_config
 from workcli.envelope import ErrorCode, JsonValue, WorkError, emit_failure, emit_success
 from workcli.lifecycle.nouns import Noun
 from workcli.render import render_human
@@ -50,6 +51,7 @@ def _add_read_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser])
     list_parser.add_argument("--parent")
     list_parser.add_argument("--type")
     list_parser.add_argument("--limit", type=int, default=None)
+    list_parser.add_argument("--track", metavar="NAME")
 
     ready_parser = subparsers.add_parser("ready", help="list ready-to-work items, unbounded")
     ready_parser.add_argument("--label")
@@ -174,6 +176,12 @@ def _build_parser() -> _EnvelopeArgumentParser:
         default="json",
         help="human rendering goes to stderr; stdout always carries the JSON envelope",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="explicit project-config.toml path; overrides the upward search",
+    )
     # `parser_class` propagates the raise-don't-exit `error()` override to
     # every subparser too -- a bad flag inside `work show --bogus` must reach
     # main()'s WorkError handling exactly like a bad top-level flag does,
@@ -268,6 +276,11 @@ def _default_read_file(path: str) -> str:
         ) from read_error
 
 
+def _default_config_loader(explicit_path: str | None) -> TrackLayerConfig:
+    """The real track-layer config resolution: upward search from cwd (track spec §3)."""
+    return load_config(Path.cwd(), explicit_path)
+
+
 def _build_backend(runner: BdRunner | None, sleep: Callable[[float], None] | None) -> BdBackend:
     return BdBackend(
         runner if runner is not None else SubprocessBdRunner(),
@@ -283,6 +296,7 @@ def main(
     err: TextIO | None = None,
     sleep: Callable[[float], None] | None = None,
     read_file: Callable[[str], str] | None = None,
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
 ) -> int:
     if out is None:
         out = sys.stdout
@@ -301,6 +315,12 @@ def main(
     # `(Backend, Namespace) -> JsonValue` signature (plan L12), so this
     # travels as an `args` attribute rather than an extra handler parameter.
     args.read_file = read_file if read_file is not None else _default_read_file
+
+    # Same args-attachment precedent as read_file: resolved once, loaded
+    # LAZILY -- only a track-layer surface calls args.load_config(), so
+    # pre-existing verbs never trigger config resolution (track spec §3).
+    resolved_config_loader = config_loader if config_loader is not None else _default_config_loader
+    args.load_config = lambda: resolved_config_loader(args.config)
 
     if args.protocol_version:
         return _finish_success({"protocol": PROTOCOL_VERSION}, out, err, args.format)

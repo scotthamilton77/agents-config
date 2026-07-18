@@ -1,0 +1,178 @@
+"""Behavioral tests for workcli.config.load_config (track spec §3, criterion 16/17)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from workcli.config import load_config
+from workcli.envelope import ErrorCode, WorkError
+
+VALID_TRACKS = """
+[tracks]
+names = ["alpha", "beta", "gamma"]
+organizing-only = ["gamma"]
+enforcement = "advisory"
+
+[operating-model]
+milestone-wip-cap = 2
+wip-exempt-milestones = ["proj-m1"]
+"""
+
+
+def _repo(tmp_path: Path, config_text: str | None = VALID_TRACKS) -> Path:
+    """A fake git repo root: .git marker + optional project-config.toml."""
+    (tmp_path / ".git").mkdir()
+    if config_text is not None:
+        (tmp_path / "project-config.toml").write_text(config_text, encoding="utf-8")
+    return tmp_path
+
+
+def test_finds_config_upward_from_repo_subdirectory(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    subdir = root / "packages" / "workcli"
+    subdir.mkdir(parents=True)
+
+    config = load_config(subdir)
+
+    assert config.names == ("alpha", "beta", "gamma")
+    assert config.organizing_only == ("gamma",)
+    assert config.enforcement == "advisory"
+    assert config.milestone_wip_cap == 2
+    assert config.wip_exempt_milestones == ("proj-m1",)
+
+
+def test_search_stops_at_git_root(tmp_path: Path) -> None:
+    # Config ABOVE the git root must not be found: the root bounds the search.
+    (tmp_path / "project-config.toml").write_text(VALID_TRACKS, encoding="utf-8")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "not-found"
+
+
+def test_outside_any_git_repo_is_not_configured(tmp_path: Path) -> None:
+    # No .git anywhere on the walk -> treated as "no config found" (spec §3),
+    # even when a project-config.toml exists in a parent dir. REGRESSION PIN:
+    # a naive walk that checks for the config file before establishing a git
+    # root adopts that unrelated parent config instead of failing safe --
+    # this test is the tripwire for that ordering bug.
+    (tmp_path / "project-config.toml").write_text(VALID_TRACKS, encoding="utf-8")
+    workdir = tmp_path / "nested"
+    workdir.mkdir()
+
+    with pytest.raises(WorkError) as exc_info:
+        load_config(workdir)
+    assert exc_info.value.detail["reason"] == "not-found"
+
+
+def test_explicit_config_flag_overrides_search(tmp_path: Path) -> None:
+    root = _repo(tmp_path)  # valid config at root...
+    elsewhere = tmp_path / "elsewhere.toml"
+    elsewhere.write_text(
+        VALID_TRACKS.replace('"alpha", "beta", "gamma"', '"delta"').replace('["gamma"]', "[]"),
+        encoding="utf-8",
+    )
+
+    config = load_config(root, explicit_path=str(elsewhere))
+    assert config.names == ("delta",)
+
+
+def test_explicit_config_flag_missing_path_is_not_configured(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root, explicit_path=str(tmp_path / "nope.toml"))
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+
+
+def test_malformed_toml_is_invalid_and_names_the_problem(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text="[tracks\nnames = not toml")
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "malformed TOML" in exc_info.value.message
+
+
+def test_non_utf8_config_is_invalid_not_a_crash(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): read_text(encoding="utf-8") raises
+    # UnicodeDecodeError on undecodable bytes -- uncaught, that would surface
+    # as E_INTERNAL instead of the track layer's own typed failure.
+    root = _repo(tmp_path, config_text=None)
+    (root / "project-config.toml").write_bytes(b"[tracks]\nnames = [\xff\xfe]\n")
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "not valid UTF-8" in exc_info.value.message
+
+
+def test_missing_tracks_table_reads_as_not_found(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[project]\nname = "x"\n')
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "not-found"
+
+
+def test_non_list_names_is_invalid(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[tracks]\nnames = "alpha"\n')
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[tracks].names" in exc_info.value.message
+
+
+def test_enforcement_omitted_defaults_to_advisory(tmp_path: Path) -> None:
+    # Criterion 4's config-layer leg: omitted key parses as advisory.
+    root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
+    assert load_config(root).enforcement == "advisory"
+
+
+def test_bogus_enforcement_value_is_invalid(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\nenforcement = "yolo"\n')
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+
+
+def test_organizing_only_outside_names_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\norganizing-only = ["beta"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+
+
+def test_operating_model_absent_yields_no_wip_cap(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
+    config = load_config(root)
+    assert config.milestone_wip_cap is None
+    assert config.wip_exempt_milestones == ()
+
+
+def test_non_table_operating_model_is_invalid(tmp_path: Path) -> None:
+    # Malformed, not omitted: must fail loud, never silently disable lint's
+    # WIP check. (Top-level key must precede the [tracks] table in TOML.)
+    root = _repo(tmp_path, config_text='operating-model = "bad"\n[tracks]\nnames = ["alpha"]\n')
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "[operating-model]" in exc_info.value.message
+
+
+def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
+    # Linked worktrees have a .git FILE, not a dir -- the search must still
+    # treat that directory as the root boundary.
+    root = tmp_path / "wt"
+    root.mkdir()
+    (root / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+    (root / "project-config.toml").write_text(VALID_TRACKS, encoding="utf-8")
+
+    assert load_config(root).names == ("alpha", "beta", "gamma")

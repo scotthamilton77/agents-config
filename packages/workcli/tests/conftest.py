@@ -8,6 +8,7 @@ from io import StringIO
 
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.cli import main
+from workcli.config import TrackLayerConfig
 from workcli.envelope import JsonValue
 
 
@@ -29,12 +30,17 @@ def fake_reader(paths: dict[str, str]) -> Callable[[str], str]:
 _NO_READS = fake_reader({})
 
 
+def _no_config_loads(_explicit_path: str | None) -> TrackLayerConfig:
+    raise AssertionError("config loader unexpectedly invoked; inject config_loader= explicitly")
+
+
 def run_cli(
     argv: Sequence[str],
     steps: Sequence[ScriptedStep],
     *,
     sleep: Callable[[float], None] | None = None,
     read_file: Callable[[str], str] | None = None,
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Invoke `main()` against a `ScriptedBdRunner`, capturing stdout/stderr.
 
@@ -58,6 +64,7 @@ def run_cli(
         err=err,
         sleep=sleep,
         read_file=read_file if read_file is not None else _NO_READS,
+        config_loader=config_loader if config_loader is not None else _no_config_loads,
     )
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()
@@ -69,6 +76,7 @@ def run_cli_with_runner(
     *,
     sleep: Callable[[float], None] | None = None,
     read_file: Callable[[str], str] | None = None,
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
 ) -> tuple[int, dict[str, JsonValue], str]:
     """Like `run_cli`, but takes a caller-built `ScriptedBdRunner`.
 
@@ -85,6 +93,7 @@ def run_cli_with_runner(
         err=err,
         sleep=sleep,
         read_file=read_file if read_file is not None else _NO_READS,
+        config_loader=config_loader if config_loader is not None else _no_config_loads,
     )
     envelope: dict[str, JsonValue] = json.loads(out.getvalue())
     return exit_code, envelope, err.getvalue()
