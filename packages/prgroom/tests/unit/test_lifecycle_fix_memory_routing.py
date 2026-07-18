@@ -20,6 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from prgroom.agent.contracts import FixInput, FixItemResult, FixOutput, MemoryEntry
+from prgroom.agent.dispatcher import Dispatched
+from prgroom.agent.subprocess_runner import AgentSpec
 from prgroom.config import PrgroomConfig
 from prgroom.lifecycle.fix import fix_pr, resolve_routed_memory
 from prgroom.prsession.enums import DispositionKind
@@ -183,7 +185,7 @@ class _SymlinkPlantingDispatcher:
         self.calls = 0
         self.requests: list[FixInput] = []
 
-    def fix(self, request: FixInput) -> FixOutput:
+    def fix(self, request: FixInput) -> Dispatched[FixOutput]:
         self.calls += 1
         self.requests.append(request)
         mem = Path(request.memory_dir)
@@ -191,7 +193,7 @@ class _SymlinkPlantingDispatcher:
         secret.write_text("TOPSECRET", encoding="utf-8")
         link = mem / "evil"  # lexically INSIDE memory_dir
         link.symlink_to(secret)
-        return FixOutput(
+        out = FixOutput(
             items=[
                 FixItemResult(
                     gh_id=self.gh_id,
@@ -202,6 +204,7 @@ class _SymlinkPlantingDispatcher:
             ],
             memory=[MemoryEntry(classification="CONTEXTUAL", path=str(link))],
         )
+        return Dispatched(output=out, winner=AgentSpec(cli="claude", model="opus[1m]"))
 
 
 def test_symlink_escape_flips_cluster_and_routes_nothing(tmp_path: Path) -> None:
@@ -222,7 +225,6 @@ def test_symlink_escape_flips_cluster_and_routes_nothing(tmp_path: Path) -> None
         config=PrgroomConfig(),
         dispatcher=dispatcher,
         sink=sink,
-        decided_by="claude opus[1m]",
         scratch_dir=tmp_path,
     )
     for item in out.items:
@@ -231,3 +233,27 @@ def test_symlink_escape_flips_cluster_and_routes_nothing(tmp_path: Path) -> None
     assert out.pending_memory == []
     assert len(sink.emitted) >= 1
     assert git.stash_calls == 1
+
+
+def test_lifecycle_stamps_the_dispatches_own_provenance(tmp_path: Path) -> None:
+    # Behavior 13: the post-return stamps (RoutedMemory here) use the dispatch's
+    # winner — a FALLBACK link, not the configured chain head. Under the old code
+    # this read a static configured-primary string.
+    fallback_winner = AgentSpec(cli="codex", model="gpt-5.6-terra")
+    a = _item("a")
+    dispatcher = FixDispatcherStub(
+        [
+            _out(
+                FixItemResult(
+                    gh_id="a",
+                    disposition=DispositionKind.FIXED,
+                    commit_shas=["s1"],
+                    recommended_gate="full",
+                ),
+                memory=[MemoryEntry(classification="CONTEXTUAL", content="why")],
+            )
+        ],
+        winner=fallback_winner,
+    )
+    out, _sink, _git = _run(_state(a), dispatcher, tmp_path, git=FakeGit(new_commits=["s1"]))
+    assert [m.decided_by for m in out.pending_memory] == ["codex gpt-5.6-terra"]

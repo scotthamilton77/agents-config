@@ -65,7 +65,6 @@ def fix_pr(
     config: PrgroomConfig,
     dispatcher: FixContract,
     sink: Sink,
-    decided_by: str,
     scratch_dir: Path,
     warn: Callable[[str], None] = default_warn,
 ) -> PRGroomingState:
@@ -94,7 +93,6 @@ def fix_pr(
             dispatcher=dispatcher,
             sink=sink,
             now=now,
-            decided_by=decided_by,
             scratch_dir=scratch_dir,
             warn=warn,
         )
@@ -112,7 +110,6 @@ def _fix_one_cluster(
     dispatcher: FixContract,
     sink: Sink,
     now: datetime,
-    decided_by: str,
     scratch_dir: Path,
     warn: Callable[[str], None],
 ) -> None:
@@ -134,13 +131,15 @@ def _fix_one_cluster(
         memory_dir=snapshot.memory_dir,
         response_outbox_dir=snapshot.response_outbox_dir,
     )
-    result = run_fix(req, dispatcher, git, now=now, decided_by=decided_by)
+    result = run_fix(req, dispatcher, git, now=now)
 
+    # Post-return stamps use the dispatch's own provenance (the winning link, or
+    # "prgroom" on both-fail) — the same authority run_fix stamped its rows with.
     routed, blocked = resolve_routed_memory(
         result.contextual_memory,
         memory_dir=snapshot.memory_dir,
         retry=state.pr_review_retries_used,
-        decided_by=decided_by,
+        decided_by=result.decided_by,
         cluster_id=cluster_id,
         warn=warn,
     )
@@ -151,7 +150,9 @@ def _fix_one_cluster(
             code=ErrorCode.CONTRACT_FIX_AUDIT_FAILED, detail=blocked, severity=Severity.BLOCK
         )
         for cluster_item in cluster_items:
-            cluster_item.disposition = failed_disposition(violation, now=now, decided_by=decided_by)
+            cluster_item.disposition = failed_disposition(
+                violation, now=now, decided_by=result.decided_by
+            )
         sink.emit(escalation_for(violation, pr=ref))
         git.stash()
         return

@@ -349,7 +349,7 @@ def test_primary_success_uses_first_provider_only() -> None:
         runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku"))
     )
     out = dispatcher.cluster(_cluster_input())
-    assert out.clusters == []
+    assert out.output.clusters == []
     assert [s.cli for s in runner.specs_tried] == ["ollama"]  # fallback never touched
 
 
@@ -524,7 +524,7 @@ def test_banner_wrapped_json_still_parses() -> None:
     runner = FakeAgentRunner([Succeeds(noisy)])
     dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
     out = dispatcher.cluster(_cluster_input())
-    assert out.clusters == []
+    assert out.output.clusters == []
 
 
 def test_stray_brace_in_banner_noise_is_skipped() -> None:
@@ -534,7 +534,7 @@ def test_stray_brace_in_banner_noise_is_skipped() -> None:
     runner = FakeAgentRunner([Succeeds(noisy)])
     dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
     out = dispatcher.cluster(_cluster_input())
-    assert out.clusters == []
+    assert out.output.clusters == []
 
 
 def test_last_json_object_wins_when_stdout_carries_several() -> None:
@@ -542,14 +542,14 @@ def test_last_json_object_wins_when_stdout_carries_several() -> None:
     runner = FakeAgentRunner([Succeeds(noisy)])
     dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
     out = dispatcher.cluster(_cluster_input())
-    assert out.clusters == []  # the LAST object is the contract output
+    assert out.output.clusters == []  # the LAST object is the contract output
 
 
 def test_fix_dispatcher_parses_fix_output() -> None:
     runner = FakeAgentRunner([Succeeds(FIX_OK)])
     dispatcher = FixDispatcher(runner=runner, chain=_chain(AgentSpec("claude", "opus[1m]")))
     out = dispatcher.fix(_fix_input())
-    assert out.items == []
+    assert out.output.items == []
 
 
 def test_fix_out_of_enum_disposition_falls_through_not_crashes() -> None:
@@ -563,7 +563,7 @@ def test_fix_out_of_enum_disposition_falls_through_not_crashes() -> None:
         chain=_chain(AgentSpec("claude", "opus[1m]"), AgentSpec("codex", "gpt-5.6-terra")),
     )
     out = dispatcher.fix(_fix_input())
-    assert out.items == []  # the second provider's good output was parsed
+    assert out.output.items == []  # the second provider's good output was parsed
     assert [s.cli for s in runner.specs_tried] == ["claude", "codex"]  # fell through
 
 
@@ -661,3 +661,100 @@ def test_fix_dispatcher_satisfies_fix_contract() -> None:
     chain = _chain(AgentSpec("claude", "opus[1m]"))
     dispatcher: FixContract = FixDispatcher(runner=runner, chain=chain)
     assert isinstance(dispatcher, FixContract)
+
+
+# ── winner provenance: the Dispatched envelope (observability spec §3) ──
+
+
+def test_fallback_success_carries_winner_and_failures() -> None:
+    # The root regression guard for decided_by misattribution: the ladder now
+    # returns WHO won and what failed on the way, not the bare parsed output.
+    fallback = AgentSpec("claude", "haiku")
+    runner = FakeAgentRunner([TimesOut(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), fallback)
+    )
+    dispatched = dispatcher.cluster(_cluster_input())
+    assert dispatched.output.clusters == []
+    assert dispatched.winner == fallback
+    assert dispatched.rung == 1
+    assert dispatched.fell_back is True
+    assert len(dispatched.failures) == 1
+    assert dispatched.failures[0].kind == "timeout"
+    assert dispatched.decided_by == "claude haiku"
+
+
+def test_partial_fallback_logs_per_link_warning_and_one_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # §5: streaming per-link WARNING at failure time (an operator should learn of
+    # the primary's timeout when it happens), plus exactly one greppable
+    # "fell back to" summary naming the winner and rung.
+    runner = FakeAgentRunner(
+        [ExitsWith(returncode=3, stderr="quota exceeded"), Succeeds(CLUSTER_OK)]
+    )
+    dispatcher = ClusterDispatcher(
+        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku"))
+    )
+    with caplog.at_level("WARNING"):
+        dispatched = dispatcher.cluster(_cluster_input())
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    link_lines = [m for m in warnings if "link ollama:gemma4 failed (error)" in m]
+    assert len(link_lines) == 1
+    assert "quota exceeded" in link_lines[0]
+    assert "cluster" in link_lines[0]
+    summaries = [m for m in warnings if "fell back to" in m]
+    assert len(summaries) == 1
+    assert "claude:haiku" in summaries[0]
+    assert "rung 1" in summaries[0]
+    assert "ollama:gemma4" in summaries[0]  # the failed-links rendering
+    assert dispatched.rung == 1
+
+
+def test_clean_primary_dispatch_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    # The no-noise guard: rung 0 emits zero log lines.
+    runner = FakeAgentRunner([Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(runner=runner, chain=_chain(AgentSpec("ollama", "gemma4")))
+    with caplog.at_level("WARNING"):
+        dispatched = dispatcher.cluster(_cluster_input())
+    assert dispatched.rung == 0
+    assert dispatched.fell_back is False
+    assert dispatched.failures == ()
+    assert not caplog.records
+
+
+def test_exhaustion_logs_per_link_but_no_summary(caplog: pytest.LogCaptureFixture) -> None:
+    # Both-fail: every link logged its own failure at failure time; the summary
+    # line belongs to success-after-fallback only (the Sink carries exhaustion).
+    runner = FakeAgentRunner([TimesOut(), ExitsWith(returncode=1, stderr="down")])
+    dispatcher = ClusterDispatcher(
+        runner=runner, chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku"))
+    )
+    with caplog.at_level("WARNING"), pytest.raises(AllProvidersFailedError) as excinfo:
+        dispatcher.cluster(_cluster_input())
+    assert excinfo.value.tier is Tier.RUNTIME_TRANSIENT
+    assert excinfo.value.code is ErrorCode.RUNTIME_AGENT_UNAVAILABLE
+    warnings = [r.message for r in caplog.records]
+    assert len([m for m in warnings if "failed (" in m]) == 2  # one per link
+    assert not [m for m in warnings if "fell back to" in m]
+
+
+def test_usage_hook_failure_is_contained_and_warned(caplog: pytest.LogCaptureFixture) -> None:
+    # Telemetry never fails a dispatch: a raising hook drops the record with a
+    # WARNING per attempt and the dispatch still resolves.
+    def bad_hook(record: UsageRecord) -> None:
+        del record
+        msg = "disk full"
+        raise OSError(msg)
+
+    runner = FakeAgentRunner([TimesOut(), Succeeds(CLUSTER_OK)])
+    dispatcher = ClusterDispatcher(
+        runner=runner,
+        chain=_chain(AgentSpec("ollama", "gemma4"), AgentSpec("claude", "haiku")),
+        usage_hook=bad_hook,
+    )
+    with caplog.at_level("WARNING"):
+        dispatched = dispatcher.cluster(_cluster_input())
+    assert dispatched.winner == AgentSpec("claude", "haiku")
+    hook_warnings = [r.message for r in caplog.records if "usage hook failed" in r.message]
+    assert len(hook_warnings) == 2  # one per dropped attempt (timeout + success)

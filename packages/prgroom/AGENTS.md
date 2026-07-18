@@ -96,6 +96,24 @@ Never invoke `prgroom run`/`push`/`reply`/`resolve` against a real PR to "try it
 out" — those verbs mutate GitHub. The gate's `prgroom --help` entry-verify is
 the only sanctioned automatic invocation.
 
+## Observability channels
+
+Every prgroom output belongs to exactly one of four channels, chosen by **who
+must do what with it** — not by severity, not by module:
+
+| Channel | Job | Writers | Reader |
+|---|---|---|---|
+| `usage.jsonl` (`append_usage`) | Durable, machine-readable, **per-attempt** dispatch telemetry: what ran, how long, what outcome | the dispatcher's `usage_hook` | post-hoc analysis; cost/routing tuning (sibling `spend.jsonl` holds per-**dispatch** cost) |
+| `EscalationSink` (`escalation.py`) | **Human-judgment events**: something a human or external watcher must eventually act on — blocker dispositions, chain exhaustion, audit violations, lifecycle gates | `agent/fix.py`, `lifecycle/escalation.py` | operator / monitor-pr / future `bd` adapter |
+| stdlib logging → stderr | **Operational diagnostics**: noteworthy but requiring no tracked action — config-key warnings, best-effort bridge failures, partial-fallback events | module-level `getLogger(__name__)`; root config in `main()` only | whoever watches the process (human or driving agent) |
+| `warn` callbacks (`lifecycle/warn.py`) | Grandfathered injected-callable variant of the logging channel, used by lifecycle verbs as a test seam | existing lifecycle code only | same as logging |
+
+Two standing rules: **stdout is reserved for contract output** (the
+`status --json` envelope and the human `status` rendering); every diagnostic
+goes to stderr. **No new channels**: a new observability need slots into one of
+the four jobs above; new code preferring a diagnostic stream uses stdlib
+logging, not a new `warn` plumbing.
+
 ## Reference
 
 Architecture: `docs/architecture/prgroom/index.md`.
