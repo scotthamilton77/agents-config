@@ -37,7 +37,7 @@ from workcli.adapters.bd.parse import (
 from workcli.adapters.bd.retry import run_with_retry
 from workcli.adapters.bd.runner import BdRunner
 from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
-from workcli.envelope import ErrorCode, JsonValue, WorkError
+from workcli.envelope import ErrorCode, JsonValue, StepProgress, WorkError, with_progress
 from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResult, UpdateFields
 
 # Decision 9's exact stderr wording (orchestrator ruling, not a golden capture
@@ -46,6 +46,19 @@ from workcli.model import CreateFields, DepListing, Item, QueryFilters, SyncResu
 # working set, are asserted to log these substrings to stderr.
 _NOTHING_TO_COMMIT_STDERR_MARKER = "nothing to commit"
 _SYNC_BEHIND_STDERR_MARKER = "cannot merge with uncommitted changes"
+
+# Speculative markers, not a golden capture -- and unlike
+# _NOTHING_TO_COMMIT_STDERR_MARKER above, live-verified as currently
+# unreachable: `bd label add`/`bd label remove` (bd 1.0.3, confirmed by
+# running both commands twice against a scratch issue) exit 0 unconditionally
+# on a repeat add/remove, with no stderr at all -- bd is already idempotent
+# here without this adapter's help. This branch stays as defense-in-depth for
+# a future bd version that starts erroring on a no-op label mutation (the
+# contract hardening spec, "Multi-step mutation partial-progress", rule 1,
+# requires the seam to absorb that outcome as success if it ever appears);
+# the exact wording is a guess until a real error is captured.
+_LABEL_ALREADY_PRESENT_STDERR_MARKER = "already has label"
+_LABEL_ABSENT_STDERR_MARKER = "does not have label"
 
 
 class BdBackend:
@@ -249,12 +262,33 @@ class BdBackend:
 
     def label_mutate(self, op: str, item_id: str, labels: Sequence[str]) -> None:
         # bd's own `label add`/`label remove` accept exactly one label per
-        # invocation -- one bd call per label (orchestrator ruling).
-        for one_label in labels:
+        # invocation -- one bd call per label (orchestrator ruling). A
+        # mid-sequence failure is wrapped with the labels already applied so
+        # far (StepProgress) UNLESS nothing applied yet (the first label
+        # failing stays a plain, unwrapped WorkError -- "absence means
+        # atomic").
+        idempotent_marker = (
+            _LABEL_ALREADY_PRESENT_STDERR_MARKER if op == "add" else _LABEL_ABSENT_STDERR_MARKER
+        )
+        applied: list[str] = []
+        for index, one_label in enumerate(labels):
             argv = ["label", op, item_id, one_label]
             result = run_with_retry(self._runner, argv, sleep=self._sleep)
-            if result.returncode != 0:
-                raise map_bd_failure(argv, result)
+            if result.returncode != 0 and idempotent_marker not in result.stderr:
+                err = map_bd_failure(argv, result)
+                if applied:
+                    err = with_progress(
+                        err,
+                        StepProgress(
+                            operation="label_mutate",
+                            steps_total=len(labels),
+                            completed=tuple(applied),
+                            failed=one_label,
+                            remaining=tuple(labels[index + 1 :]),
+                        ),
+                    )
+                raise err
+            applied.append(one_label)
 
     def labels(self, item_id: str) -> list[str]:
         argv = ["label", "list", item_id, "--json"]
@@ -289,5 +323,15 @@ class BdBackend:
         push_argv = ["dolt", "push"]
         push_result = run_with_retry(self._runner, push_argv, sleep=self._sleep)
         if push_result.returncode != 0:
-            raise map_bd_failure(push_argv, push_result)
+            err = with_progress(
+                map_bd_failure(push_argv, push_result),
+                StepProgress(
+                    operation="sync",
+                    steps_total=2,
+                    completed=("commit",),
+                    failed="push",
+                    remaining=(),
+                ),
+            )
+            raise err
         return SyncResult(synced=True, mode="push")
