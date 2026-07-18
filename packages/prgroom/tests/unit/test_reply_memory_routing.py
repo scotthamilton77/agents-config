@@ -110,6 +110,23 @@ def test_thread_hint_routes_via_graphql_and_clears() -> None:
     assert out.pending_memory == []
 
 
+def test_identical_pending_memory_posts_once_within_a_pass() -> None:
+    # Two identical target-hinted entries (same retry/source/hint/content — e.g. two
+    # fix dispatches in one retry reusing a minted cluster id) derive the SAME marker.
+    # The pre-flight snapshot can't see this pass's own first POST, so an in-pass
+    # seen set must absorb the second entry: one GraphQL reply, not two.
+    gh = RecordingGh()
+    dup = [
+        RoutedMemory(
+            content="why", retry=1, source_item="c1#0", decided_by="a", target_hint="PRRT_abc"
+        )
+        for _ in range(2)
+    ]
+    out = reply_pr(_state_with_pending(dup), gh=gh, ref=_ref())
+    assert len(gh.graphql_calls) == 1
+    assert out.pending_memory == []
+
+
 def test_thread_less_routes_via_patch_and_clears() -> None:
     gh = _RecordingGh(body="orig body")
     state = _state_with_pending(

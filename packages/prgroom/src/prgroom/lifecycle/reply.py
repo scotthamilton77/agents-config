@@ -211,15 +211,17 @@ def _route_memory(
     state: PRGroomingState, *, gh: GhClient, ref: PRRef, markers: Mapping[str, int]
 ) -> None:
     thread_less: list[RoutedMemory] = []
+    posted: set[str] = set()  # the pre-flight snapshot can't see this pass's own POSTs
     for rm in state.pending_memory:
         if rm.target_hint is not None:
             marker = memory_marker(rm)
-            if marker in markers:
-                continue  # already posted on a prior partial pass — adopt, don't re-post
+            if marker in markers or marker in posted:
+                continue  # already posted (prior partial pass, or earlier this pass)
             gh.graphql(
                 _ADD_THREAD_REPLY,
                 {"threadId": rm.target_hint, "body": with_marker(rm.content, marker)},
             )
+            posted.add(marker)
         else:
             thread_less.append(rm)
     if thread_less:
