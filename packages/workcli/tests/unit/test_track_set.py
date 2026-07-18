@@ -5,11 +5,11 @@ from __future__ import annotations
 from argparse import Namespace
 
 import pytest
-from workcli.verbs.tracks import track
 
 from tests.fake_backend import FakeBackend
 from workcli.config import TrackLayerConfig
 from workcli.envelope import ErrorCode, WorkError
+from workcli.verbs.tracks import track
 
 CONFIG = TrackLayerConfig(
     names=("alpha", "beta"),
@@ -73,3 +73,57 @@ def test_missing_bead_is_not_found() -> None:
     with pytest.raises(WorkError) as exc_info:
         track(FakeBackend(), _track_args("ghost", "alpha"))
     assert exc_info.value.code is ErrorCode.NOT_FOUND
+
+
+def _tree_backend() -> FakeBackend:
+    """root(alpha) -> child-same(alpha), child-other(beta), child-untracked;
+    child-other -> grandchild-same(alpha) [cross-track subtrees still traversed]."""
+    backend = FakeBackend()
+    backend.add("root", labels=["track:alpha"])
+    backend.add("child-same", parent="root", labels=["track:alpha"])
+    backend.add("child-other", parent="root", labels=["track:beta"])
+    backend.add("child-untracked", parent="root", labels=[])
+    backend.add("grandchild-same", parent="child-other", labels=["track:alpha"])
+    return backend
+
+
+def test_cascade_relabels_matching_and_untracked_skips_other_tracks() -> None:
+    backend = _tree_backend()
+    data = track(backend, _track_args("root", "beta", cascade=True))
+    assert _track_labels(backend, "child-same") == ["track:beta"]
+    assert _track_labels(backend, "child-untracked") == ["track:beta"]
+    assert _track_labels(backend, "grandchild-same") == ["track:beta"]
+    assert _track_labels(backend, "child-other") == ["track:beta"]  # already the target
+    assert isinstance(data, dict)
+    assert data["relabeled"] == 3
+    assert data["skipped"] == 1
+    assert data["skipped_ids"] == ["child-other"]
+
+
+def test_cascade_skips_and_reports_descendants_on_a_third_track() -> None:
+    backend = FakeBackend()
+    backend.add("root", labels=["track:alpha"])
+    backend.add("child-loyal", parent="root", labels=["track:beta"])
+    data = track(
+        backend,
+        Namespace(
+            action="set",
+            id="root",
+            name="alpha",
+            cascade=True,
+            load_config=lambda: CONFIG,
+        ),
+    )
+    # Deliberately-cross-track child is never clobbered, only reported.
+    assert _track_labels(backend, "child-loyal") == ["track:beta"]
+    assert isinstance(data, dict)
+    assert data["relabeled"] == 0
+    assert data["skipped"] == 1
+    assert data["skipped_ids"] == ["child-loyal"]
+
+
+def test_without_cascade_descendants_are_untouched() -> None:
+    backend = _tree_backend()
+    track(backend, _track_args("root", "beta"))
+    assert _track_labels(backend, "child-same") == ["track:alpha"]
+    assert _track_labels(backend, "child-untracked") == []

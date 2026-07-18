@@ -33,6 +33,30 @@ def _swap_track_label(
         backend.label_mutate("add", item_id, [target])
 
 
+def _cascade(
+    backend: Backend, root_id: str, previous: str | None, new_name: str
+) -> tuple[int, list[str]]:
+    """Relabel descendants on the root's PRE-change track (plus untracked ones);
+    skip-and-report everything else -- cross-track parenting is legal and a
+    descendant deliberately on another track is never clobbered (spec §4).
+    Whole-subtree traversal: a skipped child's own descendants are still
+    evaluated by the same one rule."""
+    relabeled = 0
+    skipped: list[str] = []
+    queue: list[str] = list(backend.get(root_id).children)
+    while queue:
+        child_id = queue.pop(0)
+        child = backend.get(child_id)
+        queue.extend(child.children)
+        child_track = derive_track(child.labels)
+        if child_track == previous or child_track is None:
+            _swap_track_label(backend, child.labels, child_id, new_name)
+            relabeled += 1
+        else:
+            skipped.append(child_id)
+    return relabeled, skipped
+
+
 def track(backend: Backend, args: Namespace) -> JsonValue:
     """Dispatch `work track ACTION`; v1 ships `set` only (argparse pins choices)."""
     config = args.load_config()
@@ -42,6 +66,8 @@ def track(backend: Backend, args: Namespace) -> JsonValue:
     _swap_track_label(backend, root.labels, args.id, args.name)
     relabeled = 0
     skipped: list[str] = []
+    if args.cascade:
+        relabeled, skipped = _cascade(backend, args.id, previous, args.name)
     return {
         "id": args.id,
         "track": args.name,
