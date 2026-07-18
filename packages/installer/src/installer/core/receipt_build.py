@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from installer.core.model import FileKind, InstallOutcome, Outcome, StagingPlan
 from installer.core.ownership import PRUNE_NAMESPACES, entry_for, route_entry_for
-from installer.core.receipt import Receipt, ReceiptEntry, dir_content_digest
+from installer.core.receipt import CliReceiptEntry, Receipt, ReceiptEntry, dir_content_digest
 
 if TYPE_CHECKING:
     from installer.plugins.base import PluginAdapter
@@ -82,6 +82,34 @@ def entries_from_route_outcomes(
     return out
 
 
+def merge_clis(
+    *,
+    prior_clis: tuple[CliReceiptEntry, ...],
+    registry_names: frozenset[str],
+    deployed: dict[str, CliReceiptEntry],
+    uninstalled_names: set[str],
+    relinquished_names: set[str],
+) -> tuple[CliReceiptEntry, ...]:
+    """Union merge over registry CLIs and prior entries (spec §7).
+
+    Registry CLI -> the new entry when this run deployed it, else the
+    retained prior entry (skip/decline/failure keep the old record).
+    Non-registry prior entry (retired) -> dropped iff its uninstall
+    completed or it was relinquished (foreign name — never ours to
+    uninstall), else retained so retirement is retried next prune."""
+    prior_by_name = {c.name: c for c in prior_clis}
+    out: list[CliReceiptEntry] = []
+    for name in sorted(registry_names | set(prior_by_name)):
+        if name in deployed:
+            out.append(deployed[name])
+        elif name in registry_names:
+            if name in prior_by_name:
+                out.append(prior_by_name[name])
+        elif name not in uninstalled_names and name not in relinquished_names:
+            out.append(prior_by_name[name])
+    return tuple(out)
+
+
 def merge_receipt(
     prior: Receipt,
     *,
@@ -89,6 +117,7 @@ def merge_receipt(
     pruned_paths: set[Path],
     relinquished_paths: set[Path],
     live_roots: set[Path],
+    clis: tuple[CliReceiptEntry, ...] | None = None,
 ) -> Receipt:
     """Mirrors-disk receipt: ``(prior - pruned - relinquished) | installed``.
 
@@ -96,7 +125,11 @@ def merge_receipt(
     partial run (e.g. ``--tools=claude``) never erases an untargeted tool's or a
     still-present plugin's recorded entries. ``installed`` wins on a path clash
     (it carries the freshly-computed sha256). ``roots`` accumulates the prior and
-    live install roots (the persisted allowlist only grows)."""
+    live install roots (the persisted allowlist only grows). ``clis`` is passed
+    by the caller as the already-computed ``merge_clis`` result; ``None``
+    preserves the prior value unchanged (the ``_run_project`` path never passes
+    it, so a project-local receipt's ``clis`` — none in practice — is
+    untouched; spec §7)."""
     by_path: dict[Path, ReceiptEntry] = {
         e.path: e
         for e in prior.entries
@@ -105,7 +138,11 @@ def merge_receipt(
     for e in installed:
         by_path[e.path] = e
     roots = tuple(sorted(set(prior.roots) | live_roots, key=str))
-    return Receipt(roots=roots, entries=tuple(by_path.values()))
+    return Receipt(
+        roots=roots,
+        entries=tuple(by_path.values()),
+        clis=prior.clis if clis is None else clis,
+    )
 
 
 def desired_staged_keys(

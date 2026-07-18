@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from installer.core.receipt import CliReceiptEntry, Receipt, canonical_bytes, compute_integrity
+from installer.core.receipt_build import merge_clis
 from installer.core.receipt_store import ReadStatus, read_receipt, write_receipt
 
 _ENTRY = CliReceiptEntry(name="workcli", binary="work", digest="sha256:ab")
@@ -78,3 +79,47 @@ def test_malformed_clis_entry_reads_corrupt(tmp_path: Path) -> None:
     raw["integrity"] = compute_integrity(coerced)
     path.write_text(json.dumps(raw))
     assert read_receipt(path).status is ReadStatus.CORRUPT
+
+
+def _e(name: str, digest: str = "sha256:aa") -> CliReceiptEntry:
+    return CliReceiptEntry(name=name, binary=name[0:4], digest=digest)
+
+
+def test_merge_clis_union_rule() -> None:
+    """
+    Given prior entries {workcli, oldtool} and registry {workcli, prgroom}
+    When this run deployed prgroom and uninstalled oldtool
+    Then the merge keeps workcli's prior entry (skip retains), adds
+    prgroom's new entry, and drops oldtool.
+
+    Pins spec §7 union merge rule (registry -> new-if-deployed else
+    retained; non-registry -> dropped iff uninstalled).
+    """
+    merged = merge_clis(
+        prior_clis=(_e("workcli"), _e("oldtool")),
+        registry_names=frozenset({"workcli", "prgroom"}),
+        deployed={"prgroom": _e("prgroom", "sha256:new")},
+        uninstalled_names={"oldtool"},
+        relinquished_names=set(),
+    )
+    assert {c.name for c in merged} == {"workcli", "prgroom"}
+    assert next(c for c in merged if c.name == "prgroom").digest == "sha256:new"
+
+
+def test_merge_clis_declined_uninstall_retained_foreign_relinquished() -> None:
+    """
+    Given a retired entry whose uninstall was declined and a foreign entry
+    When merged
+    Then the declined one is retained (retried next prune) and the
+    relinquished foreign one is dropped without uninstall.
+
+    Pins spec §7 (decline retains; foreign names relinquished — item 10).
+    """
+    merged = merge_clis(
+        prior_clis=(_e("oldtool"), _e("ruff")),
+        registry_names=frozenset({"workcli"}),
+        deployed={},
+        uninstalled_names=set(),
+        relinquished_names={"ruff"},
+    )
+    assert {c.name for c in merged} == {"oldtool"}
