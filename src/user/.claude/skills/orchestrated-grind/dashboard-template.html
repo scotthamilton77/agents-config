@@ -7,6 +7,12 @@
   write the file. State is INLINED (not fetched) so the page works from a
   file:// URL with no server.
 
+  SERIALIZATION CONTRACT — state strings carry external text (PR titles,
+  review comments). Emit the state with a real JSON serializer and then
+  escape the sequence `</` as `<\/`. A raw splice of a title containing
+  `</script>` closes this block early and executes whatever follows.
+  Python:  json.dumps(state, indent=2).replace("</", "<\\/")
+
   Open in a browser EXACTLY ONCE, when first created. Never on updates.
 
   Schema: references/state-schema.md
@@ -239,7 +245,9 @@
 <script>
 // ---------------------------------------------------------------------------
 // BOOKKEEPER: replace this object with the contents of state.json on each
-// regeneration. Schema: references/state-schema.md
+// regeneration. Serialize with a JSON serializer and escape `</` as `<\/`
+// (see the serialization contract in the file header) — never splice raw
+// text. Schema: references/state-schema.md
 // ---------------------------------------------------------------------------
 const STATE = {
   "title": "Grind — Lane Status",
@@ -257,13 +265,12 @@ const KNOWN_STATUSES = [
   "merged", "done", "blocked", "waiting-human", "standing-down"
 ];
 
+// Longest-first so "in-progress" doesn't lose to a shorter prefix match.
+const KNOWN_STATUSES_BY_LENGTH = KNOWN_STATUSES.slice().sort((a, b) => b.length - a.length);
+
 function badgeClass(status) {
   const norm = String(status || "").toLowerCase();
-  // Longest-first so "in-progress" doesn't lose to a shorter prefix match.
-  const hit = KNOWN_STATUSES
-    .slice()
-    .sort((a, b) => b.length - a.length)
-    .find(s => norm.startsWith(s));
+  const hit = KNOWN_STATUSES_BY_LENGTH.find(s => norm.startsWith(s));
   return hit ? "badge-" + hit : "badge-queued";
 }
 
@@ -274,9 +281,25 @@ function escapeHtml(s) {
 }
 
 // Explicit url wins; otherwise derive from the repo slug; otherwise no link.
+// State is machine-written but its strings carry external text (PR titles,
+// review comments), so an explicit url is scheme-checked before it reaches an
+// href — entity-escaping alone leaves a `javascript:` URL clickable.
+function safeHref(url) {
+  try {
+    const scheme = new URL(url, "https://github.com").protocol;
+    return (scheme === "https:" || scheme === "http:") ? url : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function prUrl(pr, repo) {
   if (!pr) return null;
-  if (typeof pr.url === "string" && pr.url.trim() !== "") return pr.url;
+  if (typeof pr.url === "string" && pr.url.trim() !== "") {
+    const safe = safeHref(pr.url.trim());
+    if (safe) return safe;
+    // Explicit url rejected — fall through to derivation rather than drop the link.
+  }
   if (repo) return "https://github.com/" + repo + "/pull/" + pr.number;
   return null;
 }

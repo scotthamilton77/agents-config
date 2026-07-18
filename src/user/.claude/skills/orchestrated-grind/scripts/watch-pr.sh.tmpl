@@ -28,31 +28,36 @@ REPO="{{REPO}}"
 INTERVAL_SECONDS=60
 TIMEOUT_SECONDS=1800   # 30 minutes
 
-# --- Baselines, sampled once at arm time -----------------------------------
-# Each watcher generation bakes in its own baselines. This is what keeps a
-# stale +1 from a PRIOR head out of the trigger set: we fire on a COUNT
-# INCREASE, never on the mere presence of an approving reaction.
-review_count() {
-  gh pr view "$PR" --repo "$REPO" --json reviews \
-    --jq '.reviews | length' 2>/dev/null
+# --- Sampling ---------------------------------------------------------------
+# Deliberately standalone rather than reusing the wait-for-pr-comments skill's
+# poller: that one diffs a CALLER-SUPPLIED baseline of review-comment count
+# only, and sources a sibling lib.sh. This watcher self-samples DUAL baselines
+# at arm time (the specific defence against a stale +1 from a prior head) and
+# detects a clean-pass naming the awaited SHA. Wiring the two together would
+# also couple this skill to the review protocol it explicitly does not use.
+#
+# One fetch per cycle, three readings off it — a poll every 60s for 30 minutes
+# is 30 API calls, not 90.
+fetch_pr() {
+  gh pr view "$PR" --repo "$REPO" --json reviews,comments 2>/dev/null
 }
 
-comment_count() {
-  gh pr view "$PR" --repo "$REPO" --json comments \
-    --jq '.comments | length' 2>/dev/null
+read_counts() {
+  # stdin: PR JSON. stdout: "<reviews> <comments> <clean_pass_for_head>"
+  # The clean-pass reading requires the comment to NAME the awaited head
+  # commit — an unqualified "looks good" may predate the current push.
+  # Each array element is fully parenthesized: in jq `|` binds across `,`, so
+  # bare `A | length, B | length` chains the second expression onto the first.
+  jq -r --arg sha "$HEAD_SHA" '
+    [ ((.reviews // []) | length),
+      ((.comments // []) | length),
+      ([ (.comments // [])[]
+         | select(.body | test("[Dd]idn.t find any major issues|[Nn]o major issues"))
+         | select(.body | contains($sha)) ] | length)
+    ] | @tsv' 2>/dev/null | tr '\t' ' '
 }
 
-# A clean-pass comment that NAMES the awaited head commit. Naming matters:
-# an unqualified "looks good" may predate the current push.
-clean_pass_for_head() {
-  gh pr view "$PR" --repo "$REPO" --json comments \
-    --jq --arg sha "$HEAD_SHA" \
-      '[.comments[] | select(.body | test("[Dd]idn.t find any major issues|[Nn]o major issues"))
-        | select(.body | contains($sha))] | length' 2>/dev/null
-}
-
-BASE_REVIEWS="$(review_count)"
-BASE_COMMENTS="$(comment_count)"
+read -r BASE_REVIEWS BASE_COMMENTS _ <<<"$(fetch_pr | read_counts)"
 
 # An unreadable baseline would make every later comparison meaningless, so
 # fail loud rather than arming a watcher that can only produce noise.
@@ -69,9 +74,7 @@ while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
   sleep "$INTERVAL_SECONDS"
   elapsed=$((elapsed + INTERVAL_SECONDS))
 
-  reviews="$(review_count)"
-  comments="$(comment_count)"
-  clean="$(clean_pass_for_head)"
+  read -r reviews comments clean <<<"$(fetch_pr | read_counts)"
 
   # An empty read is a flake, not a signal. Skip the round; do not treat a
   # missing value as zero — that would read as a count DECREASE and mask a

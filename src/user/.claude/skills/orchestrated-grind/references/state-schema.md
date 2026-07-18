@@ -8,6 +8,13 @@ the dashboard works from a `file://` URL with no server.
 `state.json` → re-render `dashboard.html` with the new state inlined → stop.
 Never open a browser except on first creation.
 
+**Serialization contract.** State strings carry text from outside the grind —
+PR titles, review-comment excerpts, branch names. Serialize with a real JSON
+serializer and then escape `</` as `<\/` before splicing the result into the
+template's inline `<script>` block. A title containing `</script>` otherwise
+closes the block early and whatever follows it executes on open. In Python:
+`json.dumps(state, indent=2).replace("</", "<\\/")`.
+
 ## Contents
 
 - [Top level](#top-level)
