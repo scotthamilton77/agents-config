@@ -381,24 +381,21 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     # whose committer date predates a stale reaction. Fail closed: no usable bound
     # rejects clean signals this round; review objects above are unaffected.
     # Comparison is epoch seconds (fromdateiso8601); an unparseable created_at is
-    # rejected per item.
-    #
-    # The bound/created_at comparison is ASYMMETRIC by bound source (both are
-    # second precision, so an equal-second collision is realistic):
-    #   - SINCE (ask timestamp, captured BEFORE dispatch): accept equal-second
-    #     (>=). Causality — capture precedes the ask precedes any response — makes
-    #     an equal-second signal necessarily this round's, and rejecting it would
-    #     drop Codex's one-shot clean signal (no later signal arrives).
-    #   - head-date bound (initial poll): keep strict > — an equal-second reaction
-    #     could belong to the pre-push head (the ~10s tear-down race); spec
-    #     Component 2 pins strictly-greater for this bound.
+    # rejected per item. The bound/created_at comparison is uniformly STRICT >
+    # for both bound sources. Both bounds and created_at are only second-precision,
+    # so an equal-second collision is realistic: capturing SINCE before dispatch
+    # does not establish causality for a signal already present in the same second
+    # (a stale `+1`/marker from the prior clean pass, when a fix is pushed
+    # immediately after, can have created_at == SINCE). Accepting the tie would end
+    # monitoring on a prior-head signal without reviewing the pushed fix — an
+    # unsound false-accept; rejecting it costs at most one poll timeout that hands
+    # off safely. Soundness over liveness on second-precision ties (spec Component 2
+    # pins strictly-greater for the head-date bound; the ask bound follows suit).
     if [[ -n "$BOT_REVIEWERS" ]]; then
         if [[ -n "$SINCE" ]]; then
             clean_bound_epoch=$(printf '%s' "$SINCE" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null) || clean_bound_epoch=""
-            clean_bound_inclusive=true
         else
             clean_bound_epoch=$(head_clean_bound_epoch) || clean_bound_epoch=""
-            clean_bound_inclusive=false
         fi
 
         if [[ -z "$clean_bound_epoch" ]]; then
@@ -410,8 +407,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
                 reactions='[]'
                 clean_signal_failed_endpoint="reactions"
             }
-            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
-                '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
+            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
 
             if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass reaction found (attempt ${i})" >&2
@@ -425,8 +422,8 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
                 clean_comments='[]'
                 clean_signal_failed_endpoint="${clean_signal_failed_endpoint:+$clean_signal_failed_endpoint, }issue comments"
             }
-            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" --argjson inclusive "$clean_bound_inclusive" \
-                '[.[] | (.created_at | fromdateiso8601? // -1) as $t | select(if $inclusive then $t >= $bound else $t > $bound end)]')
+            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
 
             if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
                 echo "  Clean-pass marker comment found (attempt ${i})" >&2
