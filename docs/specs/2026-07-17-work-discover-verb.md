@@ -72,7 +72,7 @@ as a leaf (`feat`) and `promote`d later, not born a `spec`/`epic`.
 |---|---|---|
 | `--noun` | yes | kind of discovered work; routes the shared noun template |
 | `--title` / `--description` | `--title` yes; `--description` no | bead title/body (triage block is appended to the body by the verb) |
-| `--anchor ID` | XOR `--orphan` | parent edge: best-fit epic under the mapped milestone (out-of-scope) or parent-of-in-flight-bead (in-scope deferral) |
+| `--anchor ID` | XOR `--orphan` | parent edge. **Out-of-scope:** best-fit epic under the mapped milestone (must be a container — §3.4). **In-scope deferral:** must equal the *parent of the resolved `--discovered-from` item* (the sibling-of-in-flight placement), enforced mechanically (§3.4); `--anchor` equal to the `--discovered-from` id itself is the close-walk-unsafe child-of-in-flight shape and is refused, and a parentless source is refused toward the out-of-scope path |
 | `--orphan` | XOR `--anchor` | the loud no-anchor-fits escalation; requires `--escalation-why` |
 | `--discovered-from ID` | yes | the current-work bead; becomes a `discovered-from` provenance edge |
 | `--scope` | yes | `out-of-scope` or `in-scope-deferred:HATCH`; drives `Lands in` derivation |
@@ -146,7 +146,7 @@ Remaining Work):
 {"protocol": "1.x", "ok": true, "error": null,
  "data": {
    "item": {"id": "agents-config-abn9.8.41", "title": "retry config drift", "track": "prgroom"},
-   "edges": {"parent": "agents-config-abn9.8", "discovered_from": "agents-config-vaac.12"},
+   "edges": {"parent": "agents-config-abn9.8", "discovered_from": "agents-config-abn9.8.12"},
    "triage": {"scope": "in-scope-deferred:blast-radius", "priority": "P1",
               "anchor": "agents-config-abn9.8"},
    "manifest_row": {"item": "retry config drift", "scope": "in-scope — deferred: blast-radius",
@@ -179,28 +179,40 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | any rationale flag (`--scope-why`, `--priority-why`, `--anchor-why`/`--escalation-why`) blank after strip or containing an embedded newline | `E_TRIAGE_INCOMPLETE` | the rationale-shape rule (§3.2): a required one-line value cannot be empty or multiline; names the offending field; creates nothing |
 | duplicate exact title | `E_DUPLICATE_TITLE` | inherited from the `create <noun>` guard; names the collision |
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
-| `--scope out-of-scope` with a non-container `--anchor` (declared-state `is_container` false: no epic/milestone type or container shape label) | `E_TRIAGE_INCOMPLETE` | out-of-scope work must anchor under an epic or milestone (canonical discovered-work contract); names the rule; creates nothing. The in-scope-deferred path keeps the soft warning (below) |
+| `--scope out-of-scope` with a non-container `--anchor` (declared-state `is_container` false: no epic/milestone type or container shape label) | `E_TRIAGE_INCOMPLETE` | out-of-scope work must anchor under an epic or milestone (canonical discovered-work contract); names the rule; creates nothing. The in-scope-deferred path enforces the sibling rule instead (below) |
+| `--scope in-scope-deferred:HATCH` with `--anchor` ≠ the *parent* of the resolved `--discovered-from` item | `E_TRIAGE_INCOMPLETE` | in-scope deferrals file as a **sibling** of the in-flight item; the anchor must equal `parent(--discovered-from)` (canonical contract). Names the sibling rule; `--anchor` equal to the `--discovered-from` id itself is the close-walk-unsafe child-of-in-flight shape, named explicitly in the message; creates nothing |
+| `--scope in-scope-deferred:HATCH` and the resolved `--discovered-from` item has **no parent** | `E_TRIAGE_INCOMPLETE` | there is no sibling anchor to derive; message directs the caller to the out-of-scope anchoring procedure (file under an epic/milestone with session/PR provenance), per the canonical contract; creates nothing |
 | `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
 | `required` track mode, underivable track (`--orphan`, or `--anchor` under a track-less parent such as a milestone), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition); a track-less parent falls through to enforcement exactly like `--orphan` |
 | create succeeds, orphan-marker note append fails (`--orphan` path) | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for marker replay |
 | create succeeds, `discovered-from` edge add fails | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for edge replay |
 
-Non-container anchor handling is **scope-dependent**, keyed on the lifecycle layer's
+Anchor validity is **scope-dependent**. Out-of-scope keys on the lifecycle layer's
 declared-state `is_container` test (a bead is a container when it carries an
 epic/milestone type or a container shape label — the same declared-state test the
-create path's placement validation uses; no structural walk of children):
+create path's placement validation uses; no structural walk of children); in-scope
+deferral keys on an exact sibling-parent identity, cheap because §4 step 2 already
+resolves `--discovered-from` before minting:
 
 - **`--scope out-of-scope`** — a non-container anchor is a **refusal**
   (`E_TRIAGE_INCOMPLETE` naming the out-of-scope-must-anchor-under-a-container rule),
   never a filing. The canonical discovered-work contract requires out-of-scope work to
   be placed under an epic or milestone; permitting a leaf/task anchor would create the
   close-walk-unsafe child-of-current-work shape.
-- **`--scope in-scope-deferred:HATCH`** — a non-container anchor is a **soft warning**
-  in `data.warnings`, never a refusal: an in-scope deferral legitimately anchors as a
-  sibling under the parent-of-in-flight work item, which may itself be a non-epic.
+- **`--scope in-scope-deferred:HATCH`** — the anchor **must equal the parent of the
+  resolved `--discovered-from` item** (the sibling-of-in-flight placement the canonical
+  contract mandates). Any other `--anchor` is a **refusal** (`E_TRIAGE_INCOMPLETE`
+  naming the sibling rule), not a soft warning: passing the `--discovered-from` id
+  itself is the close-walk-unsafe child-of-in-flight shape and is named explicitly in
+  the message, and any unrelated leaf is equally refused. If the resolved source has
+  **no parent**, there is no sibling anchor to derive — refuse and direct the caller to
+  the out-of-scope anchoring procedure (canonical contract). The parent-of-in-flight
+  legitimately may itself be a non-epic, so the in-scope branch does not apply the
+  container test — the exact-parent identity is the whole check.
 
-Only the container-vs-leaf *shape*, gated by scope, is mechanical; whether the chosen
-container is the *right* home stays judgment (§5).
+Both checks are decidable from the CLI inputs plus the pre-resolved source, so both are
+mechanical; whether the chosen out-of-scope container is the *right* home stays judgment
+(§5).
 
 ## 4. Composition with the create gate and lifecycle
 
@@ -227,7 +239,10 @@ container is the *right* home stays judgment (§5).
    Validating the source here guarantees the step-5 provenance-edge add has a live target,
    so the only edge-add failure that remains (§3.2) is a transient backend fault, never an
    unresolvable input — the create-then-discover-the-edge-is-impossible ordering the seam
-   would otherwise permit is closed.
+   would otherwise permit is closed. For an `--scope in-scope-deferred:*` filing, this
+   resolved source also drives the sibling-anchor check (§3.4): the verb reads the source's
+   parent and refuses with `E_TRIAGE_INCOMPLETE` — still before any mint — unless `--anchor`
+   equals that parent (a parentless source is refused toward the out-of-scope path).
 3. **Render the triage block** into the description, exactly the skill's canonical
    markdown. The `--scope` CLI token is parse-time input vocabulary and is **never
    rendered verbatim**: `out-of-scope` renders the first Scope line; `in-scope-deferred:<hatch>`
@@ -280,17 +295,22 @@ stay caller judgment, owned by the `triaging-discovered-work` skill:
 - **Whether fix-in-session should have applied.** If the agent chose to file rather than
   fix, the verb files; verify-checklist and the human audit whether that was right.
 - **Best-fit anchor.** The verb checks the anchor exists and, via the declared-state
-  `is_container` test, refuses a non-container anchor for an out-of-scope filing while
-  soft-warning for an in-scope deferral (§3.4); *which* epic is the right home is
-  judgment.
+  `is_container` test, refuses a non-container anchor for an out-of-scope filing; for an
+  in-scope deferral it mechanically refuses any `--anchor` that is not the parent of the
+  resolved `--discovered-from` item (the sibling rule — §3.4), a check now decidable from
+  inputs because the source is pre-resolved (§4 step 2). *Which* epic is the right
+  out-of-scope home stays judgment; the in-scope sibling anchor is fully determined, not
+  a judgment call.
 - **Priority level.** The verb enforces `P0`–`P4` form and a rationale; whether P1 vs P3 is
   correct is judgment.
 
-The test for "mechanical": could a reviewer decide the refusal from the CLI inputs alone,
-without reading the codebase or the roadmap? Missing field, unknown hatch, absent edge,
-or a non-container anchor for an out-of-scope filing (`--scope` plus the anchor's
-declared `is_container` state) — yes, mechanical. "Is this really out of scope?" or
-"is *this* the best-fit epic?" — no, prose.
+The test for "mechanical": could a reviewer decide the refusal from the CLI inputs plus
+the pre-resolved source (§4 step 2), without reading the roadmap or making a judgment
+call? Missing field, unknown hatch, absent edge, a non-container anchor for an
+out-of-scope filing (`--scope` plus the anchor's declared `is_container` state), or an
+in-scope-deferral `--anchor` that is not `parent(--discovered-from)` (an exact-identity
+comparison against the already-resolved source) — yes, mechanical. "Is this really out
+of scope?" or "is *this* the best-fit epic?" — no, prose.
 
 ## 6. Acceptance criteria
 
@@ -346,13 +366,25 @@ declared `is_container` state) — yes, mechanical. "Is this really out of scope
 16. `--scope out-of-scope` with an `--anchor` whose declared state is non-container (no
     epic/milestone type or container shape label) exits `E_TRIAGE_INCOMPLETE` naming the
     out-of-scope-must-anchor-under-a-container rule and **creates nothing** (fake records
-    no `create` call); the *same* non-container anchor under
-    `--scope in-scope-deferred:HATCH` succeeds with a `data.warnings` entry and no refusal.
+    no `create` call); the in-scope-deferred branch applies no container test — that
+    *same* non-container anchor under `--scope in-scope-deferred:HATCH` **succeeds with no
+    warning and no refusal when it is the parent of the resolved `--discovered-from`
+    item** (a non-epic parent-of-in-flight is a legitimate sibling anchor), and is refused
+    by the sibling rule otherwise (criterion 18).
 17. `work discover` against a fake whose `Capabilities` declares dep-write support false
     (`supports_dep_write=False`; `supports_dep_types=False` in the shipped code) exits
     non-zero with `E_UNSUPPORTED_CAPABILITY` **before** any triage validation or mint — the
     fake call log shows **zero** `create` calls (the registration gate refuses ahead of the
     handler, exactly as the `dep` verb does).
+18. In-scope sibling-anchor enforcement (source pre-resolved per §4 step 2). Given a resolved
+    `--discovered-from` item `S` whose parent is `P`, an `--scope in-scope-deferred:HATCH`
+    filing: (a) with `--anchor P` **succeeds**; (b) with `--anchor S` (the discovered-from id
+    itself) exits `E_TRIAGE_INCOMPLETE` whose message names the close-walk-unsafe
+    child-of-in-flight case and **creates nothing** (fake records no `create` call); (c) with
+    any other `--anchor` that is not `P` exits `E_TRIAGE_INCOMPLETE` naming the sibling rule
+    and creates nothing; (d) when `S` has **no parent**, any `--anchor` exits
+    `E_TRIAGE_INCOMPLETE` directing the caller to the out-of-scope anchoring procedure and
+    creates nothing.
 
 ## 7. Protocol impact
 
@@ -370,7 +402,7 @@ spec-authoring time; the changes are independent and additive, so any order work
   composing `create_noun`, the `discovered-from` edge, triage-block rendering, and
   manifest-row assembly; the `E_TRIAGE_INCOMPLETE` ErrorCode member; `cli.py` subparser
   and `verbs/__init__.py` registration; MINOR protocol bump — AC: acceptance criteria
-  1–12 and 14–16 pass under `make ci-workcli` (criterion 13 passes once the track-partition
+  1–12 and 14–18 pass under `make ci-workcli` (criterion 13 passes once the track-partition
   create gate has landed — verify in whichever PR lands second); behavioral tests use `run_cli_with_runner` call-log
   assertions against the `ScriptedBdRunner` fake, no live bd.
 - chore: retire the prose filing mechanics once the verb ships — repoint the
