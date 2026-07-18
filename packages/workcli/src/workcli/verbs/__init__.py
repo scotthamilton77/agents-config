@@ -25,6 +25,7 @@ from workcli.lifecycle.transitions import claim, plan, promote, release
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
 from workcli.verbs.syncing import sync
+from workcli.verbs.tracks import track
 from workcli.verbs.write import close, create_raw, note, reopen, update
 
 
@@ -33,9 +34,10 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
 
     `create_raw` reads only title/description/type/priority/parent/labels; the
     positional noun and the lifecycle flags below (`--orphan`/`--spec`/
-    `--trivial`/`--acceptance`) are silently ignored under `--raw`. `--orphan`
-    in particular changes placement intent yet never records the orphan marker,
-    so an ignored combination is a surprising no-op rather than a harmless one.
+    `--trivial`/`--acceptance`/`--track`) are silently ignored under `--raw`.
+    `--orphan` in particular changes placement intent yet never records the
+    orphan marker, so an ignored combination is a surprising no-op rather than
+    a harmless one.
     """
     offenders: list[str] = []
     if args.noun is not None:
@@ -48,6 +50,8 @@ def _raw_incompatible_flags(args: Namespace) -> list[str]:
         offenders.append("--trivial")
     if args.acceptance is not None:
         offenders.append("--acceptance")
+    if args.track is not None:
+        offenders.append("--track")
     return offenders
 
 
@@ -97,6 +101,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "dep": dep,
     "label": label,
     "sync": sync,
+    "track": track,
 }
 
 REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {

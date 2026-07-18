@@ -14,8 +14,21 @@ import json
 from tests.conftest import run_cli, run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli.adapters.bd.runner import BdResult
-from workcli.envelope import ErrorCode
+from workcli.config import TrackLayerConfig
+from workcli.envelope import ErrorCode, WorkError
 from workcli.lifecycle import ORPHAN_MARKER
+
+
+def _not_found_config_loader(_explicit_path: str | None) -> TrackLayerConfig:
+    # These tests are byte-identical to pre-track-layer behavior (criterion
+    # 17): NOT_CONFIGURED/"not-found" makes the gate a no-op. Injecting a
+    # *valid* config would issue an unscripted `bd show <parent>` between
+    # `search` and `create` and break the call log below.
+    raise WorkError(
+        ErrorCode.NOT_CONFIGURED,
+        "track layer not configured: no project-config.toml",
+        detail={"reason": "not-found"},
+    )
 
 
 def _create_result(new_id: str) -> BdResult:
@@ -63,7 +76,9 @@ def test_create_spike_with_parent_sends_search_then_one_create_call():
     )
 
     exit_code, envelope, _ = run_cli_with_runner(
-        ["create", "spike", "--title", "T", "--parent", "P"], runner
+        ["create", "spike", "--title", "T", "--parent", "P"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -96,7 +111,9 @@ def test_create_chore_with_orphan_creates_with_no_parent_and_records_orphan_note
     )
 
     exit_code, envelope, _ = run_cli_with_runner(
-        ["create", "chore", "--title", "T", "--orphan"], runner
+        ["create", "chore", "--title", "T", "--orphan"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -180,7 +197,9 @@ def test_create_feat_with_spec_evidence_adds_spec_ready_label():
     )
 
     exit_code, _, _ = run_cli_with_runner(
-        ["create", "feat", "--title", "T", "--parent", "P", "--spec", "S"], runner
+        ["create", "feat", "--title", "T", "--parent", "P", "--spec", "S"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -211,7 +230,9 @@ def test_create_feat_without_evidence_omits_spec_ready_label():
     )
 
     exit_code, _, _ = run_cli_with_runner(
-        ["create", "feat", "--title", "T", "--parent", "P"], runner
+        ["create", "feat", "--title", "T", "--parent", "P"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -242,7 +263,9 @@ def test_create_feat_with_trivial_adds_spec_ready_label():
     )
 
     exit_code, _, _ = run_cli_with_runner(
-        ["create", "feat", "--title", "T", "--parent", "P", "--trivial"], runner
+        ["create", "feat", "--title", "T", "--parent", "P", "--trivial"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -296,7 +319,9 @@ def test_create_epic_sends_one_create_with_epic_type_and_shape_label():
     )
 
     exit_code, envelope, _ = run_cli_with_runner(
-        ["create", "epic", "--title", "T", "--parent", "P"], runner
+        ["create", "epic", "--title", "T", "--parent", "P"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -341,7 +366,9 @@ def test_create_spec_mints_shape_with_creating_spec_handle_removed_last():
     )
 
     exit_code, envelope, _ = run_cli_with_runner(
-        ["create", "spec", "--title", "T", "--parent", "P"], runner
+        ["create", "spec", "--title", "T", "--parent", "P"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0
@@ -422,7 +449,9 @@ def test_create_spec_with_orphan_creates_container_with_no_parent_and_records_or
     )
 
     exit_code, envelope, _ = run_cli_with_runner(
-        ["create", "spec", "--title", "T", "--orphan"], runner
+        ["create", "spec", "--title", "T", "--orphan"],
+        runner,
+        config_loader=_not_found_config_loader,
     )
 
     assert exit_code == 0

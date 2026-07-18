@@ -83,6 +83,7 @@ def _add_write_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]
     create_parser.add_argument("--spec")
     create_parser.add_argument("--trivial", action="store_true")
     create_parser.add_argument("--acceptance")
+    create_parser.add_argument("--track", metavar="NAME")
 
     update_parser = subparsers.add_parser(
         "update", help="update title/priority/description (replace semantics only)"
@@ -156,6 +157,16 @@ def _add_relations_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentPar
     label_parser.add_argument("labels", nargs="*", metavar="LABELS")
 
 
+def _add_track_subparsers(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
+    track_parser = subparsers.add_parser(
+        "track", help="track assignment: track set ID NAME [--cascade]"
+    )
+    track_parser.add_argument("action", choices=["set"])
+    track_parser.add_argument("id", metavar="ID")
+    track_parser.add_argument("name", metavar="NAME")
+    track_parser.add_argument("--cascade", action="store_true")
+
+
 def _add_sync_subparser(subparsers: _SubParsersAction[_EnvelopeArgumentParser]) -> None:
     sync_parser = subparsers.add_parser(
         "sync", help="sync with the backend (bd: dolt commit+push, or --pull)"
@@ -191,6 +202,7 @@ def _build_parser() -> _EnvelopeArgumentParser:
     _add_write_subparsers(subparsers)
     _add_transition_subparsers(subparsers)
     _add_relations_subparsers(subparsers)
+    _add_track_subparsers(subparsers)
     _add_sync_subparser(subparsers)
     return parser
 
