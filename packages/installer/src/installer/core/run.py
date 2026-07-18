@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from installer.core.clis import MIN_UV_VERSION, cli_source_digest
+from installer.core.consent import require_consent
 from installer.core.model import Counters, InstallOutcome, Outcome, Tool
 from installer.core.prune_flow import run_prune
 from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
@@ -40,8 +42,9 @@ from installer.core.receipt_store import write_receipt
 from installer.core.sync import sync_plan, sync_routes
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
+    from installer.core.clis import CliDeployPort, CliSpec
     from installer.core.io_port import IOPort
     from installer.core.model import StagingPlan
     from installer.plugins.base import PluginAdapter
@@ -347,3 +350,220 @@ def install_plugin_routes(
         if outcomes_by_plugin is not None:
             outcomes_by_plugin[plugin.name] = plugin_outcomes if plugin_outcomes is not None else []
     return result
+
+
+@dataclass(frozen=True, slots=True)
+class CliDeployOutcome:
+    """What the CLI deploy half did. ``deployed`` holds only this run's
+    smoked-OK installs (keyed by registry name) — the merge rule retains
+    prior entries for everything else. ``any_failed`` drives _run's exit
+    code (spec §6 failure surfacing)."""
+
+    deployed: dict[str, CliReceiptEntry]
+    counters: dict[str, Counters]
+    any_failed: bool
+
+
+def deploy_clis(
+    specs: tuple[CliSpec, ...],
+    *,
+    repo_root: Path,
+    prior: Receipt,
+    deploy: CliDeployPort,
+    io: IOPort,
+    dry_run: bool = False,
+    auto_yes: bool = False,
+) -> CliDeployOutcome:
+    """The CLI deploy half (spec §6): registry order, PATH-independent
+    decision signals, consent on any unproven overwrite, reachability
+    invariant per bin dir."""
+    deployed: dict[str, CliReceiptEntry] = {}
+    counters: dict[str, Counters] = {}
+    any_failed = False
+
+    version = deploy.uv_version()
+    if version is None or version < MIN_UV_VERSION:
+        need = ".".join(str(p) for p in MIN_UV_VERSION)
+        got = ".".join(str(p) for p in version) if version else "unknown"
+        io.err(
+            f"CLI deploys need uv >= {need} (found {got}); "
+            f"upgrade uv (e.g. `brew upgrade uv`) and re-run"
+        )
+        return CliDeployOutcome(deployed={}, counters={}, any_failed=True)
+
+    prior_by_name = {c.name: c for c in prior.clis}
+    tools = deploy.tool_list()
+    reach_ok_dirs: set[Path] = set()  # memoized update-shell success per bin dir
+
+    for spec in specs:
+        target = f"cli:{spec.name}"
+        counters[target] = Counters()
+        package_dir = repo_root / spec.package_dir
+        failed, shim_present = _deploy_one(
+            spec, package_dir=package_dir, prior_entry=prior_by_name.get(spec.name),
+            tools=tools, deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
+            deployed=deployed, c=counters[target],
+        )
+        any_failed = any_failed or failed
+        # Reachability gate reuses the decision/install outcome — it never
+        # re-reads shim_path, keeping the fake's queue budget deterministic
+        # (1 decision read + 1 re-read per successful install).
+        if not dry_run and shim_present:
+            ok = _check_reachability(
+                spec.binary, deploy=deploy, io=io, auto_yes=auto_yes,
+                resolved_dirs=reach_ok_dirs,
+            )
+            any_failed = any_failed or not ok
+    return CliDeployOutcome(deployed=deployed, counters=counters, any_failed=any_failed)
+
+
+def _deploy_one(
+    spec: CliSpec,
+    *,
+    package_dir: Path,
+    prior_entry: CliReceiptEntry | None,
+    tools: Mapping[str, frozenset[str]] | None,
+    deploy: CliDeployPort,
+    io: IOPort,
+    dry_run: bool,
+    auto_yes: bool,
+    deployed: dict[str, CliReceiptEntry],
+    c: Counters,
+) -> tuple[bool, bool]:
+    """Run the §6 decision table for one CLI.
+
+    Returns (failed, shim_present_at_end); the caller's reachability gate
+    keys off the second element instead of re-reading shim_path."""
+    digest = cli_source_digest(package_dir)
+    shim = deploy.shim_path(spec.binary)
+    env_present = tools is not None and spec.name in tools
+    # Provenance: the registered env currently provides the registered
+    # binary. Unproven (tools is None) is never provenance (spec §6).
+    provenance = tools is not None and spec.binary in tools.get(spec.name, frozenset())
+    evidence = shim is not None or env_present or tools is None
+
+    def _done(failed: bool, installed: bool) -> tuple[bool, bool]:
+        return failed, (shim is not None) or installed
+
+    if prior_entry is not None:
+        if provenance or (tools is not None and not env_present and shim is None):
+            # Owned per receipt AND (live provenance, or nothing there at
+            # all — a user uninstall). Promptless paths.
+            if shim is not None and prior_entry.digest == digest:
+                if dry_run:
+                    io.info(f"cli:{spec.name}: would skip (up to date)")
+                    c.skipped += 1
+                    return _done(False, False)
+                smoke = deploy.smoke(shim, spec.smoke_args)
+                if smoke.ok:
+                    c.skipped += 1
+                    return _done(False, False)
+                io.warn(f"cli:{spec.name}: installed copy fails smoke; healing\n{smoke.output}")
+                return _done(*_install(
+                    spec, package_dir, digest, force=True, deploy=deploy, io=io,
+                    deployed=deployed, c=c, counter_attr="created",
+                ))
+            if shim is None:
+                # Heal. force only when our env is provably still there.
+                if dry_run:
+                    io.info(f"cli:{spec.name}: would reinstall (shim missing)")
+                    return _done(False, False)
+                return _done(*_install(
+                    spec, package_dir, digest, force=provenance, deploy=deploy, io=io,
+                    deployed=deployed, c=c, counter_attr="created",
+                ))
+            # shim present, digest differs -> upgrade (consent).
+            return _done(*_consented_install(
+                spec, package_dir, digest, prompt=f"Upgrade CLI '{spec.binary}' "
+                f"({spec.name})?", deploy=deploy, io=io, dry_run=dry_run,
+                auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
+                would="would upgrade",
+            ))
+        # Receipt present but provenance mismatch (foreign env/shim) ->
+        # takeover consent (spec §6 provenance precondition / item 19).
+        return _done(*_consented_install(
+            spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
+            f"(not provably {spec.name}'s)?", deploy=deploy, io=io, dry_run=dry_run,
+            auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
+            would="would take over",
+        ))
+
+    if not evidence:
+        # Fresh: non-forcing; an already-exists failure re-routes to
+        # takeover consent (spec §6 fresh row / item 18).
+        if dry_run:
+            io.info(f"cli:{spec.name}: would install")
+            return _done(False, False)
+        result = deploy.tool_install(package_dir, force=False)
+        if result.ok:
+            return _done(*_finish_install(spec, digest, deploy=deploy, io=io,
+                                          deployed=deployed, c=c, counter_attr="created"))
+        io.warn(f"cli:{spec.name}: install found existing state; asking to take over")
+        return _done(*_consented_install(
+            spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}'?",
+            deploy=deploy, io=io, dry_run=dry_run, auto_yes=auto_yes,
+            deployed=deployed, c=c, counter_attr="updated", would="would take over",
+        ))
+    return _done(*_consented_install(
+        spec, package_dir, digest, prompt=f"Take over existing '{spec.binary}' "
+        f"(manual install detected)?", deploy=deploy, io=io, dry_run=dry_run,
+        auto_yes=auto_yes, deployed=deployed, c=c, counter_attr="updated",
+        would="would take over",
+    ))
+
+
+def _consented_install(
+    spec: CliSpec, package_dir: Path, digest: str, *, prompt: str,
+    deploy: CliDeployPort, io: IOPort, dry_run: bool, auto_yes: bool,
+    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str, would: str,
+) -> tuple[bool, bool]:
+    if dry_run:
+        io.info(f"cli:{spec.name}: {would}")
+        return False, False
+    require_consent(io, dry_run=dry_run, auto_yes=auto_yes)
+    if not auto_yes and not io.confirm(prompt, default=False):
+        c.skipped += 1
+        return False, False
+    return _install(spec, package_dir, digest, force=True, deploy=deploy, io=io,
+                    deployed=deployed, c=c, counter_attr=counter_attr)
+
+
+def _install(
+    spec: CliSpec, package_dir: Path, digest: str, *, force: bool,
+    deploy: CliDeployPort, io: IOPort,
+    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
+) -> tuple[bool, bool]:
+    result = deploy.tool_install(package_dir, force=force)
+    if not result.ok:
+        io.err(f"cli:{spec.name}: install failed\n{result.output}")
+        return True, False
+    return _finish_install(spec, digest, deploy=deploy, io=io, deployed=deployed,
+                           c=c, counter_attr=counter_attr)
+
+
+def _finish_install(
+    spec: CliSpec, digest: str, *, deploy: CliDeployPort, io: IOPort,
+    deployed: dict[str, CliReceiptEntry], c: Counters, counter_attr: str,
+) -> tuple[bool, bool]:
+    shim = deploy.shim_path(spec.binary)
+    if shim is None:
+        io.err(f"cli:{spec.name}: install reported ok but produced no shim")
+        return True, False
+    smoke = deploy.smoke(shim, spec.smoke_args)
+    if not smoke.ok:
+        io.err(f"cli:{spec.name}: smoke failed\n{smoke.output}")
+        # The shim exists on disk, but the deploy FAILED — installed=False
+        # keeps the reachability gate off this CLI; the failure is already
+        # the run's signal.
+        return True, False
+    deployed[spec.name] = CliReceiptEntry(name=spec.name, binary=spec.binary, digest=digest)
+    setattr(c, counter_attr, getattr(c, counter_attr) + 1)
+    io.ok(f"cli:{spec.name}: deployed '{spec.binary}'")
+    return False, True
+
+
+def _check_reachability(
+    binary: str, *, deploy: CliDeployPort, io: IOPort, auto_yes: bool,
+    resolved_dirs: set[Path],
+) -> bool:
+    return True  # completed in Task 9 (reachability invariant)
