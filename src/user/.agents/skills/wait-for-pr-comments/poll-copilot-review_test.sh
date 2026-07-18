@@ -88,21 +88,33 @@ if [ "$1" = "api" ]; then
   shift
   path="$1"; shift
   filter=""
+  paginate=0
   while [ $# -gt 0 ]; do
-    case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
+    case "$1" in
+      --jq) filter="$2"; shift 2 ;;
+      --paginate) paginate=1; shift ;;
+      *) shift ;;
+    esac
   done
+  # page2 emulates a real `gh --paginate` stream: one JSON array per page. Only
+  # the clean-signal list endpoints set it; when --paginate is passed the stub
+  # emits page1 then page2 as separate values, exactly what `jq -s 'add // []'`
+  # aggregates. Absent a *_PAGE2 fixture, behavior is single-page (unchanged).
+  page2=""
   case "$path" in
     */issues/*/events*)    body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/reactions*)
         if [ "${FIXTURE_REACTIONS_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
         fi
-        body="${FIXTURE_REACTIONS:-[]}" ;;
+        body="${FIXTURE_REACTIONS:-[]}"
+        page2="${FIXTURE_REACTIONS_PAGE2:-}" ;;
     */issues/*/comments*)
         if [ "${FIXTURE_ISSUE_COMMENTS_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
         fi
-        body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+        body="${FIXTURE_ISSUE_COMMENTS:-[]}"
+        page2="${FIXTURE_ISSUE_COMMENTS_PAGE2:-}" ;;
     */issues/*/timeline*)
         if [ "${FIXTURE_TIMELINE_FAIL:-0}" = 1 ]; then
           echo "gh: 500 Internal Server Error" >&2; exit 1
@@ -115,7 +127,15 @@ if [ "$1" = "api" ]; then
     *)                     body='{}' ;;
   esac
   body="${body#\'}"; body="${body%\'}"
-  if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
+  if [ -n "$filter" ]; then
+    printf '%s' "$body" | jq -r "$filter"
+  else
+    printf '%s' "$body"
+    if [ "$paginate" = 1 ] && [ -n "$page2" ]; then
+      page2="${page2#\'}"; page2="${page2%\'}"
+      printf '\n%s' "$page2"
+    fi
+  fi
   exit 0
 fi
 exit 0
@@ -450,5 +470,36 @@ env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVI
   --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
 rc_healthy_timeout=$?
 assert "healthy clean-signal endpoints with no signal still time out (exit 1)" "[ \$rc_healthy_timeout -eq 1 ]"
+
+# ── Clean signals on a later page must be fetched, not missed ─────────────────
+# GitHub list endpoints paginate; a Codex `+1` or marker comment that falls on
+# page 2 is invisible to a single-page fetch, so the poll reports a spurious
+# timeout and the caller burns its silent-ask cap despite a completed clean
+# review. Both clean-signal endpoints must --paginate and aggregate all pages
+# before filtering. Uses the ask-bound path (--since-timestamp) so no head-date
+# or timeline endpoint is involved — only the clean-signal fetches page.
+
+# (k) A `+1` reaction on page 2 (page 1 empty) still completes the poll.
+FIXTURE_REACTIONS_PAGE2_CLEAN='[{"id":30,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:00:10Z"}]'
+
+out_rx_p2=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_REACTIONS_PAGE2="$FIXTURE_REACTIONS_PAGE2_CLEAN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_rx_p2=$?
+assert "a +1 reaction on page 2 completes (exit 0)" "[ \$rc_rx_p2 -eq 0 ]"
+assert "a page-2 +1 reaction reports completion_kind clean_reaction" "printf '%s' \"\$out_rx_p2\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# (l) A marker comment on page 2 (page 1 empty, no reaction) still completes.
+FIXTURE_ISSUE_COMMENTS_PAGE2_CLEAN="[{\"id\":31,\"user\":{\"login\":\"$CODEX_ID\"},\"body\":\"Codex Review: Didn't find any major issues in this PR.\",\"created_at\":\"2026-01-01T00:00:10Z\"}]"
+
+out_cc_p2=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS='[]' \
+  FIXTURE_ISSUE_COMMENTS_PAGE2="$FIXTURE_ISSUE_COMMENTS_PAGE2_CLEAN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_cc_p2=$?
+assert "a marker comment on page 2 completes (exit 0)" "[ \$rc_cc_p2 -eq 0 ]"
+assert "a page-2 marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_cc_p2\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
 
 exit $FAIL

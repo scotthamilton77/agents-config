@@ -401,8 +401,9 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         if [[ -z "$clean_bound_epoch" ]]; then
             echo "  Attempt ${i}/${MAX_ITERATIONS}: no freshness bound for clean signals, rejecting (fail closed)" >&2
         else
-            reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions" \
-                --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
+            reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions?per_page=100" --paginate \
+                | jq -s 'add // []' \
+                | jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
                 echo "Warning: reactions API failed (attempt ${i})" >&2
                 reactions='[]'
                 clean_signal_failed_endpoint="reactions"
@@ -416,8 +417,9 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
                 exit 0
             fi
 
-            clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments" \
-                --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
+            clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments?per_page=100" --paginate \
+                | jq -s 'add // []' \
+                | jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
                 echo "Warning: issue comments API failed (attempt ${i})" >&2
                 clean_comments='[]'
                 clean_signal_failed_endpoint="${clean_signal_failed_endpoint:+$clean_signal_failed_endpoint, }issue comments"
