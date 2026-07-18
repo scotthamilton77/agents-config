@@ -19,6 +19,16 @@
 # exact-identity allowlist the merge gate enforces. Omit it to keep the
 # standalone Copilot-substring default.
 #
+# Poll completion contract: this script's JSON output also completes without
+# a review object when a bot's pass is clean. When --bot-reviewers is
+# supplied, a `+1` reaction on the PR body, or an issue comment starting with
+# the clean-pass marker "Codex Review: Didn't find any major issues" — each
+# from an allowlisted identity and post-dating --since-timestamp when given —
+# also counts as completion (the standalone Copilot-substring default never
+# checks either signal). `completion_kind` distinguishes "review" /
+# "clean_reaction" / "timeout"; only "timeout" should count against a
+# caller's silent-ask budget.
+#
 # Exit codes:
 #   0 — Review found (JSON on stdout)
 #   1 — Timeout (no review within --timeout-seconds, default ~10 minutes)
@@ -26,9 +36,9 @@
 #   3 — Error (auth failure, invalid args, network issue)
 #
 # Stdout (exit 0):
-#   { "status": "copilot_review_found", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
+#   { "status": "copilot_review_found", "completion_kind": "review"|"clean_reaction", "reviews": [...], "inline_comments": [...], "human_comments": [...] }
 # Stdout (exit 1):
-#   { "status": "copilot_review_timeout" }
+#   { "status": "copilot_review_timeout", "completion_kind": "timeout" }
 # Stdout (exit 2):
 #   { "status": "copilot_not_requested" }
 # Stderr: diagnostic messages
@@ -131,12 +141,30 @@ else
 fi
 COPILOT_REVIEW_FILTER="(.user.type == \"Bot\") and (.user.login | ${COPILOT_LOGIN_FILTER})"
 
+# Clean-pass marker prefix (Component 3) — an issue comment body starting
+# with this, from an allowlisted identity, is a clean-pass completion signal
+# (checked only when --bot-reviewers is supplied; see header).
+CLEAN_PASS_MARKER="Codex Review: Didn't find any major issues"
+
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 pr_is_open() {
     local state
     state=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.state') || return 1
     [[ "$state" == "open" ]]
+}
+
+# emit_clean_reaction_found — shared stdout payload for both clean-pass
+# completion signals (a `+1` reaction and a marker comment carry no review
+# content, so both report the same empty-arrays shape).
+emit_clean_reaction_found() {
+    jq -n '{
+        status: "copilot_review_found",
+        completion_kind: "clean_reaction",
+        reviews: [],
+        inline_comments: [],
+        human_comments: []
+    }'
 }
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
@@ -216,7 +244,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     if [[ $((i % 5)) -eq 0 ]]; then
         if ! pr_is_open; then
             echo "PR #${PR} is no longer open — aborting poll" >&2
-            jq -n '{"status": "copilot_review_timeout"}'
+            jq -n '{"status": "copilot_review_timeout", "completion_kind": "timeout"}'
             exit 1
         fi
     fi
@@ -256,6 +284,7 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
             --argjson human "$human" \
             '{
                 status: "copilot_review_found",
+                completion_kind: "review",
                 reviews: $reviews,
                 inline_comments: $inline,
                 human_comments: $human
@@ -263,10 +292,46 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
         exit 0
     fi
 
+    # Clean-pass completion (poll completion contract): a bot can complete
+    # with no findings and thus no review object — a `+1` reaction on the PR
+    # body, or a clean-pass marker issue comment, either post-dating
+    # --since-timestamp when supplied. Only checked in policy mode
+    # (--bot-reviewers set); the standalone Copilot-substring default never
+    # sees either signal.
+    if [[ -n "$BOT_REVIEWERS" ]]; then
+        reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions" \
+            --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
+            echo "Warning: reactions API failed (attempt ${i})" >&2; reactions='[]';
+        }
+        if [[ -n "$SINCE" ]]; then
+            reactions=$(printf '%s' "$reactions" | jq --arg since "$SINCE" '[.[] | select(.created_at > $since)]')
+        fi
+
+        if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
+            echo "  Clean-pass reaction found (attempt ${i})" >&2
+            emit_clean_reaction_found
+            exit 0
+        fi
+
+        clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments" \
+            --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
+            echo "Warning: issue comments API failed (attempt ${i})" >&2; clean_comments='[]';
+        }
+        if [[ -n "$SINCE" ]]; then
+            clean_comments=$(printf '%s' "$clean_comments" | jq --arg since "$SINCE" '[.[] | select(.created_at > $since)]')
+        fi
+
+        if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
+            echo "  Clean-pass marker comment found (attempt ${i})" >&2
+            emit_clean_reaction_found
+            exit 0
+        fi
+    fi
+
     echo "  Attempt ${i}/${MAX_ITERATIONS}: no review yet" >&2
     [[ $i -lt $MAX_ITERATIONS ]] && sleep "$POLL_INTERVAL_SECONDS"
 done
 
 echo "Copilot review not received after ${TIMEOUT_SECONDS}s" >&2
-jq -n '{"status": "copilot_review_timeout"}'
+jq -n '{"status": "copilot_review_timeout", "completion_kind": "timeout"}'
 exit 1

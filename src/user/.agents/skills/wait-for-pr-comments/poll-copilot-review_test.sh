@@ -92,11 +92,13 @@ if [ "$1" = "api" ]; then
     case "$1" in --jq) filter="$2"; shift 2 ;; *) shift ;; esac
   done
   case "$path" in
-    */issues/*/events*)  body="${FIXTURE_EVENTS:-[]}" ;;
-    */pulls/*/reviews*)  body="${FIXTURE_REVIEWS:-[]}" ;;
-    */pulls/*/comments*) body="${FIXTURE_COMMENTS:-[]}" ;;
-    */pulls/*)           body="${FIXTURE_PR:-'{"state":"open"}'}" ;;
-    *)                   body='{}' ;;
+    */issues/*/events*)    body="${FIXTURE_EVENTS:-[]}" ;;
+    */issues/*/reactions*) body="${FIXTURE_REACTIONS:-[]}" ;;
+    */issues/*/comments*)  body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */pulls/*/reviews*)    body="${FIXTURE_REVIEWS:-[]}" ;;
+    */pulls/*/comments*)   body="${FIXTURE_COMMENTS:-[]}" ;;
+    */pulls/*)             body="${FIXTURE_PR:-'{"state":"open"}'}" ;;
+    *)                     body='{}' ;;
   esac
   body="${body#\'}"; body="${body%\'}"
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
@@ -154,5 +156,89 @@ env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVI
   "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 >/dev/null 2>&1
 rc_default=$?
 assert "default Copilot filter does NOT match the non-Copilot bot (timeout, exit 1)" "[ \$rc_default -eq 1 ]"
+
+# A findings review reports completion_kind "review".
+assert "matched review reports completion_kind review" "printf '%s' \"\$out_bot\" | jq -e '.completion_kind == \"review\"' >/dev/null"
+
+# ── Poll completion contract (Component 3): clean-pass completion ───────────
+# A clean bot pass submits no review object at all — only a `+1` reaction on
+# the PR body, or a clean-pass marker issue comment, post-dating the ask
+# (--since-timestamp). Both must be recognised as completion (exit 0,
+# completion_kind "clean_reaction"), and ONLY a true timeout may report
+# completion_kind "timeout" — that is the only outcome a caller may count as
+# a silent ask against its retry cap.
+
+CODEX_ID='chatgpt-codex-connector[bot]'
+SINCE_TS='2026-01-01T00:00:00Z'
+
+# Clean case 1: a `+1` reaction from an allowlisted identity, post-dating the ask.
+FIXTURE_REACTIONS_CLEAN='[{"id":1,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:00:10Z"}]'
+
+out_reaction=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_CLEAN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_reaction=$?
+assert "a post-dating +1 reaction completes (exit 0)" "[ \$rc_reaction -eq 0 ]"
+assert "a post-dating +1 reaction reports completion_kind clean_reaction" "printf '%s' \"\$out_reaction\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# Clean case 2: a clean-pass marker issue comment from an allowlisted identity,
+# post-dating the ask — no reaction present at all.
+FIXTURE_ISSUE_COMMENTS_CLEAN="[{\"id\":2,\"user\":{\"login\":\"$CODEX_ID\"},\"body\":\"Codex Review: Didn't find any major issues in this PR.\",\"created_at\":\"2026-01-01T00:00:10Z\"}]"
+
+out_comment=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS="$FIXTURE_ISSUE_COMMENTS_CLEAN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_comment=$?
+assert "a post-dating marker comment completes (exit 0)" "[ \$rc_comment -eq 0 ]"
+assert "a post-dating marker comment reports completion_kind clean_reaction" "printf '%s' \"\$out_comment\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# A `+1` reaction that PREDATES the ask must NOT complete (stale-cache guard,
+# same discipline as the existing review submitted_at filter) — falls through
+# to a real timeout.
+FIXTURE_REACTIONS_STALE='[{"id":3,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2025-12-31T23:59:00Z"}]'
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_STALE" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_stale_reaction=$?
+assert "a pre-dating +1 reaction does NOT complete (timeout, exit 1)" "[ \$rc_stale_reaction -eq 1 ]"
+
+# The inverse: nothing arrives at all → real timeout, completion_kind "timeout".
+out_timeout=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS='[]' FIXTURE_ISSUE_COMMENTS='[]' \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --since-timestamp "$SINCE_TS" --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_timeout=$?
+assert "no signal at all times out (exit 1)" "[ \$rc_timeout -eq 1 ]"
+assert "timeout reports completion_kind timeout" "printf '%s' \"\$out_timeout\" | jq -e '.completion_kind == \"timeout\"' >/dev/null"
+
+# Without --bot-reviewers, the clean-reaction/marker-comment checks never run
+# (Copilot never emits either signal) — a fixture that WOULD complete under
+# --bot-reviewers must still time out under the standalone Copilot default.
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_CLEAN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 >/dev/null 2>&1
+rc_no_policy=$?
+assert "clean-reaction signal is ignored without --bot-reviewers (timeout, exit 1)" "[ \$rc_no_policy -eq 1 ]"
+
+# Only "timeout" may count as a silent ask against a caller's retry cap: chain
+# the actual accounting helper the skill uses, mapping this script's exit
+# code the way SKILL.md Phase 6 does (0 -> --event none, 1 -> --event silent).
+# A clean_reaction completion (exit 0) must NOT advance the silent counter; a
+# real timeout (exit 1) must.
+map_to_polling_event() { [ "$1" -eq 0 ] && echo none || echo silent; }
+
+polling_after_clean=$("$HERE/compute-rereview-polling.sh" --prior-count 0 --prior-exhausted false \
+  --event "$(map_to_polling_event "$rc_reaction")")
+assert "clean_reaction completion does NOT increment the silent-ask counter" \
+  "[ \"\$(jq '.rereview_round_count' <<<\"\$polling_after_clean\")\" = 0 ]"
+
+polling_after_timeout=$("$HERE/compute-rereview-polling.sh" --prior-count 0 --prior-exhausted false \
+  --event "$(map_to_polling_event "$rc_timeout")")
+assert "a real timeout DOES increment the silent-ask counter" \
+  "[ \"\$(jq '.rereview_round_count' <<<\"\$polling_after_timeout\")\" = 1 ]"
 
 exit $FAIL
