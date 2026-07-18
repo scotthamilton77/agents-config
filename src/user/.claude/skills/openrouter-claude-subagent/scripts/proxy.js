@@ -1,0 +1,391 @@
+// OpenRouter SSE-repair proxy.
+//
+// Forwards Anthropic-protocol traffic to OpenRouter unmodified, with one
+// repair: an assistant response must not END on a `thinking` or
+// `redacted_thinking` block. When it does, Claude Code yields an empty
+// result with exit 0 and no stderr while still billing the tokens. The fix
+// moves the most recent text block to the end of the response.
+//
+// The repair is deliberately narrow. The evidence supports only the
+// must-not-end-on-reasoning constraint, so blocks are otherwise left in
+// upstream order: the client replays that order back on the next turn, and
+// rewriting it would corrupt the conversation record the model reads.
+
+const http = require("http");
+const https = require("https");
+const { URL } = require("url");
+
+const TARGET = { protocol: "https:", hostname: "openrouter.ai" };
+
+// Headers a proxy must own: connection-scoped hop-by-hop headers
+// (RFC 9110 §7.6.1) plus the routing headers rebuilt for the upstream hop.
+const HEADERS_REMOVE = new Set(["host", "x-forwarded-for"]);
+const HOP_BY_HOP = new Set([
+  "connection", "keep-alive", "proxy-authenticate",
+  "proxy-authorization", "te", "trailers",
+  "transfer-encoding", "upgrade",
+]);
+
+/** Anthropic-format streams announce themselves with these event names. An
+ *  OpenAI-format stream carries none of them, which is how a stream is
+ *  classified as repairable — see createSSEFixer. */
+const ANTHROPIC_EVENTS = new Set([
+  "message_start", "message_delta", "message_stop",
+  "content_block_start", "content_block_delta", "content_block_stop",
+]);
+
+/** Block types that must not be the final block in a response. */
+const REASONING_BLOCKS = new Set(["thinking", "redacted_thinking"]);
+
+/** Logs go to stderr: stdout belongs to the child `claude` process, and it
+ *  carries the JSON result that is the entire point of the exercise. */
+function defaultLog(msg) {
+  process.stderr.write(`[proxy] ${msg}\n`);
+}
+
+// ─── Header helpers ────────────────────────────────────────────────
+
+function buildProxyHeaders(original) {
+  const h = { ...original };
+  for (const key of HEADERS_REMOVE) delete h[key];
+  for (const key of HOP_BY_HOP) delete h[key];
+  return h;
+}
+
+// ─── SSE utilities ─────────────────────────────────────────────────
+
+function isSSEResponse(headers) {
+  return (headers["content-type"] || "").includes("text/event-stream");
+}
+
+function isStreamingRequest(headers) {
+  return (headers["accept"] || "").includes("text/event-stream");
+}
+
+/** Parse a raw SSE event block into { event, data }. */
+function parseSSEBlock(block) {
+  let event = "";
+  let data = null;
+  for (const line of block.split("\n")) {
+    if (line.startsWith("data:")) {
+      try { data = JSON.parse(line.slice(5).trim()); } catch { /* non-JSON payload */ }
+    } else if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    }
+  }
+  return { event, data };
+}
+
+// ─── Request-body repair ───────────────────────────────────────────
+
+/** Split user messages that mix tool_result blocks with text blocks.
+ *  When OpenRouter translates these to OpenAI format for providers like
+ *  DeepSeek, the tool response must land before the next user message or the
+ *  provider rejects the request ("insufficient tool messages following
+ *  tool_calls message"). */
+function splitMixedMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role !== "user" || !Array.isArray(msg.content)) continue;
+    const toolBlocks = msg.content.filter((b) => b?.type === "tool_result");
+    const otherBlocks = msg.content.filter((b) => b?.type !== "tool_result");
+    if (toolBlocks.length > 0 && otherBlocks.length > 0) {
+      msg.content = toolBlocks;
+      messages.splice(i + 1, 0, { role: "user", content: otherBlocks });
+    }
+  }
+  return messages;
+}
+
+// ─── SSE stream processor ──────────────────────────────────────────
+
+/**
+ * Creates handlers for processing an SSE response stream.
+ *
+ * The repair is selected by stream content, not client identity: the first
+ * recognizable event classifies the stream, an Anthropic-format stream is
+ * repaired, and anything else is passed through byte-for-byte.
+ *
+ * Repairing means buffering. Which block is last is only known at
+ * message_stop, so a repaired response is assembled in full and replayed —
+ * the client sees it at once rather than incrementally. Passthrough streams
+ * stream normally.
+ */
+function createSSEFixer(res, log = defaultLog) {
+  let buffer = "";
+  let mode = "detecting"; // detecting | repair | passthrough
+
+  const preamble = [];       // message_start and anything before the blocks
+  const tail = [];           // message_delta and friends
+  const blocks = new Map();  // index -> { type, events: [{ event, data }] }
+  const order = [];          // block indexes, in arrival order
+
+  /** Classify a stream from its first meaningful event. Checks the event name
+   *  and the payload type, since OpenAI-format streams carry bare "data:"
+   *  lines with no event name at all. */
+  function classify(raw, event, data) {
+    if (ANTHROPIC_EVENTS.has(event) || ANTHROPIC_EVENTS.has(data?.type)) return "repair";
+    // Blank lines and ":" heartbeats carry no evidence — keep looking.
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith(":")) return "detecting";
+    return "passthrough";
+  }
+
+  /** Accumulate one event into the block model. */
+  function collect(raw, event, data) {
+    // Terminators are regenerated on replay; drop the originals so a duplicate
+    // or early message_stop cannot survive into the output.
+    if (event === "message_stop" || raw.trimEnd().endsWith("[DONE]")) return;
+
+    if (event === "content_block_start") {
+      blocks.set(data?.index, {
+        type: data?.content_block?.type || "unknown",
+        events: [{ event, data }],
+      });
+      order.push(data?.index);
+      return;
+    }
+    if (event === "content_block_delta") {
+      blocks.get(data?.index)?.events.push({ event, data });
+      return;
+    }
+    // content_block_stop is regenerated per block on replay — the upstream
+    // ordering of these is precisely what is broken.
+    if (event === "content_block_stop") return;
+
+    (order.length ? tail : preamble).push({ event, data, raw });
+  }
+
+  /** Move the most recent text block to the end when the response would
+   *  otherwise finish on a reasoning block. */
+  function reorderTrailingText() {
+    if (order.length === 0) return;
+
+    const lastType = blocks.get(order[order.length - 1])?.type;
+    if (!REASONING_BLOCKS.has(lastType)) return;
+
+    for (let i = order.length - 1; i >= 0; i--) {
+      if (blocks.get(order[i])?.type !== "text") continue;
+      const [moved] = order.splice(i, 1);
+      order.push(moved);
+      log(`reordered: response ended on ${lastType}; moved trailing text block to the end`);
+      return;
+    }
+    // Nothing to promote. The response is already broken and the proxy cannot
+    // invent content, so it ships as-is with the reason recorded.
+    log(`WARNING: response ends on ${lastType} and contains no text block to promote`);
+  }
+
+  function emit(event, data, raw) {
+    if (data === null || data === undefined) {
+      if (raw) res.write(raw + "\n\n");
+      return;
+    }
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  /** Emit the assembled response, renumbering block indexes to match their new
+   *  positions — deltas reference the index, so it cannot be left stale. */
+  function replay() {
+    for (const { event, data, raw } of preamble) emit(event, data, raw);
+
+    order.forEach((originalIdx, position) => {
+      const block = blocks.get(originalIdx);
+      if (!block) return;
+      for (const { event, data } of block.events) {
+        emit(event, { ...data, index: position });
+      }
+      emit("content_block_stop", { type: "content_block_stop", index: position });
+    });
+
+    for (const { event, data, raw } of tail) emit(event, data, raw);
+    emit("message_stop", { type: "message_stop" });
+    res.write("event: data\ndata: [DONE]\n\n");
+  }
+
+  function processChunk(chunk) {
+    buffer += chunk.toString();
+    const events = buffer.split("\n\n");
+    buffer = events.pop();
+
+    for (const raw of events) {
+      const { event, data } = parseSSEBlock(raw);
+
+      if (mode === "detecting") mode = classify(raw, event, data);
+
+      if (mode !== "repair") {
+        res.write(raw + "\n\n");
+        continue;
+      }
+      collect(raw, event, data);
+    }
+  }
+
+  function finish() {
+    if (mode === "repair") {
+      reorderTrailingText();
+      replay();
+    } else if (buffer.length > 0) {
+      res.write(buffer);
+    }
+    res.end();
+  }
+
+  return { processChunk, finish };
+}
+
+// ─── HTTP proxy ────────────────────────────────────────────────────
+
+function proxyRequest(clientReq, clientRes, log) {
+  const targetUrl = new URL(clientReq.url, `${TARGET.protocol}//${TARGET.hostname}`);
+
+  // Rewrite /v1/* → /api/v1/*: OpenRouter's Anthropic-compatible endpoint
+  // lives under /api, but clients address it as a bare Anthropic base URL.
+  if (targetUrl.pathname === "/v1" || targetUrl.pathname.startsWith("/v1/")) {
+    targetUrl.pathname = "/api" + targetUrl.pathname;
+  }
+
+  const headers = buildProxyHeaders(clientReq.headers);
+  headers["host"] = TARGET.hostname;
+
+  const wantSSE = isStreamingRequest(clientReq.headers);
+  const proto = targetUrl.protocol === "https:" ? https : http;
+
+  const proxyReq = proto.request({
+    hostname: targetUrl.hostname,
+    port: targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80),
+    path: targetUrl.pathname + targetUrl.search,
+    method: clientReq.method,
+    headers,
+  }, (proxyRes) => {
+    const sse = isSSEResponse(proxyRes.headers);
+    const resHeaders = { ...proxyRes.headers };
+
+    // Hop-by-hop headers are scoped to the upstream connection; Node manages
+    // the client-side equivalents itself. Forwarding them verbatim causes
+    // double transfer-encoding and stale keep-alive negotiation.
+    for (const key of HOP_BY_HOP) delete resHeaders[key];
+
+    // The SSE fixer parses the body as text, which is only valid on an
+    // identity-encoded stream. Fall back to a byte-for-byte pipe otherwise.
+    const encoded = !["", "identity"].includes(
+      (proxyRes.headers["content-encoding"] || "").trim().toLowerCase()
+    );
+
+    if (sse) {
+      delete resHeaders["content-length"];
+      resHeaders["cache-control"] = "no-cache, no-transform";
+      resHeaders["connection"] = "keep-alive";
+      resHeaders["x-accel-buffering"] = "no";
+    }
+
+    clientRes.writeHead(proxyRes.statusCode, proxyRes.statusMessage, resHeaders);
+
+    if (sse && !encoded) {
+      // The fixer classifies the stream itself and passes through anything
+      // that isn't Anthropic-format, so it is safe to install unconditionally.
+      const fixer = createSSEFixer(clientRes, log);
+      proxyRes.on("data", fixer.processChunk);
+      proxyRes.on("end", fixer.finish);
+    } else {
+      proxyRes.pipe(clientRes);
+    }
+
+    // Surface upstream error bodies. Without this an HTTP 400 reaches the
+    // client but leaves only a status code behind, which is exactly the case
+    // worth reading when a follow-up turn is rejected.
+    if (proxyRes.statusCode >= 400) {
+      let errBody = "";
+      proxyRes.on("data", (c) => { if (errBody.length < 2048) errBody += c.toString(); });
+      proxyRes.on("end", () => {
+        log(`upstream ${proxyRes.statusCode} ${clientReq.method} ${targetUrl.pathname} — ${errBody.trim().slice(0, 1000)}`);
+      });
+    }
+
+    proxyRes.on("error", (err) => {
+      log(`upstream response error: ${err.message}`);
+      if (!clientRes.headersSent) clientRes.writeHead(502, { "Content-Type": "text/plain" });
+      clientRes.end("Bad Gateway: upstream response error");
+    });
+  });
+
+  // Buffer the request body so mixed-content user messages can be split
+  // before forwarding (see splitMixedMessages).
+  const chunks = [];
+  clientReq.on("data", (chunk) => chunks.push(chunk));
+  clientReq.on("end", () => {
+    const raw = Buffer.concat(chunks).toString();
+    let body = raw;
+    try {
+      const obj = JSON.parse(raw);
+      if (obj.messages) {
+        splitMixedMessages(obj.messages);
+        body = JSON.stringify(obj);
+      }
+    } catch { /* pass non-JSON bodies through unmodified */ }
+    proxyReq.setHeader("Content-Length", Buffer.byteLength(body));
+    proxyReq.write(body);
+    proxyReq.end();
+  });
+
+  clientReq.on("error", (err) => {
+    log(`client request error: ${err.message}`);
+    proxyReq.destroy();
+  });
+
+  proxyReq.on("error", (err) => {
+    log(`upstream request error: ${err.message}`);
+    if (!clientRes.headersSent) clientRes.writeHead(502, { "Content-Type": "text/plain" });
+    clientRes.end(`Bad Gateway: ${err.message}`);
+  });
+
+  // SSE responses have no meaningful idle deadline; everything else gets one.
+  proxyReq.setTimeout(wantSSE ? 0 : 60000, () => {
+    log("upstream request timeout");
+    proxyReq.destroy();
+  });
+}
+
+// ─── Server ────────────────────────────────────────────────────────
+
+/**
+ * Start the proxy and resolve once it is listening.
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.port] Port to bind. Defaults to 0 — the kernel
+ *   assigns an unused port atomically, which is the only collision-free
+ *   choice when concurrent sessions each start their own proxy. Picking a
+ *   random port and checking it first is a TOCTOU race.
+ * @param {string} [opts.host] Interface to bind. Loopback only by default.
+ * @param {(msg: string) => void} [opts.log] Log sink; defaults to stderr.
+ * @returns {Promise<{ port: number, close: () => Promise<void> }>}
+ */
+function start({ port = 0, host = "127.0.0.1", log = defaultLog } = {}) {
+  const server = http.createServer((req, res) => proxyRequest(req, res, log));
+
+  server.on("clientError", (err, socket) => {
+    if (err.code === "ECONNRESET" || !socket.writable) return;
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.removeListener("error", reject);
+      resolve({
+        port: server.address().port,
+        close: () => new Promise((done) => server.close(() => done())),
+      });
+    });
+  });
+}
+
+module.exports = {
+  start,
+  // Exported for tests.
+  createSSEFixer,
+  splitMixedMessages,
+  parseSSEBlock,
+  buildProxyHeaders,
+};

@@ -33,17 +33,11 @@ Claude-Code-as-harness path.
 
 ## Core Pattern
 
-The nested Claude process needs its own config directory (so it doesn't
-collide with or inherit state from the parent session's `~/.claude`), and
-three env vars that redirect Anthropic-protocol traffic to OpenRouter's
-Anthropic-compatible endpoint:
+Always launch through `scripts/run.js`. Never invoke `claude` directly
+against `openrouter.ai` — see **Why the proxy is mandatory** below.
 
 ```bash
-CLAUDE_CONFIG_DIR="$HOME/.claude_openrouter" \
-ANTHROPIC_BASE_URL="https://openrouter.ai/api" \
-ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY" \
-ANTHROPIC_API_KEY= \
-command claude \
+node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
   --model "<model_id>" \
   --effort "<low|medium|high|xhigh|max>" \
   --permission-mode dontAsk \
@@ -51,24 +45,52 @@ command claude \
   -p "<the task prompt>"
 ```
 
+Every argument is forwarded to `claude` untouched, and the child's exit code
+is propagated, so this is a drop-in substitute for a `claude` invocation.
+
+The launcher owns the whole redirect: it starts the repair proxy in-process
+on a kernel-assigned port, points `ANTHROPIC_BASE_URL` at it, sets
+`ANTHROPIC_AUTH_TOKEN` from `$OPENROUTER_API_KEY`, forces `ANTHROPIC_API_KEY`
+to empty, and gives the nested process its own `CLAUDE_CONFIG_DIR`
+(`~/.claude_openrouter`) so it neither collides with nor inherits the parent
+session's `~/.claude`. Do not set those four variables yourself — a
+half-configured redirect silently bills the wrong account.
+
 Notes on the fixed parts:
 
-- `ANTHROPIC_API_KEY=` (empty) is required — an inherited real Anthropic key
-  would otherwise take precedence over `ANTHROPIC_AUTH_TOKEN` and the call
-  would silently go to Anthropic, not OpenRouter, burning the wrong budget.
-- `command claude` (not bare `claude`) bypasses any shell alias/function
-  wrapping the parent session's own `claude` invocation.
 - `--permission-mode dontAsk` plus an explicit `--allowedTools` list is what
   makes this non-interactive. Without both, the nested process either hangs
   waiting for a permission prompt no one can answer, or (with no
   `--permission-mode` at all) silently queues every tool call and exits
   having done nothing.
 - `$OPENROUTER_API_KEY` must already be set in the environment — this skill
-  does not create or store credentials. If it's unset, stop and ask the user
-  where to find it rather than guessing at a path.
+  does not create or store credentials. If it's unset the launcher exits `78`
+  and says so; ask the user where to find the key rather than guessing.
+- Node is a hard requirement. If `node` is missing, stop and say so — do not
+  fall back to a direct `claude` invocation, which fails silently rather than
+  loudly (again, see below).
 - Before first use in a fresh environment, verify `claude --help` still
   supports `--permission-mode`, `--allowedTools`, and `-p` as documented here
   — CLI flags drift across Claude Code versions.
+
+### Why the proxy is mandatory
+
+Claude Code returns `"result": ""` — with **exit 0, empty stderr, and tokens
+billed** — whenever an assistant response ends on a `thinking` or
+`redacted_thinking` block, which OpenRouter emits routinely. The answer is
+generated and paid for; it just never reaches you. Nothing in the exit status
+or the logs tells you this happened.
+
+`scripts/proxy.js` repairs the stream by moving the trailing text block to the
+end of the response so it never terminates on reasoning. The repair is
+deliberately narrow — block order is otherwise preserved, because the client
+replays that order back upstream on the next turn.
+
+The proxy runs **in-process inside the launcher**, on a kernel-assigned port
+(`listen(0)`). That is what makes concurrent sessions safe: the kernel hands
+out distinct ports atomically, where "pick a port and check if it's free"
+races. It also means the listener dies with the launcher under any signal,
+including `SIGKILL` — an orphaned proxy squatting a port cannot happen.
 
 ## Step 1 — Tool Permissions (safety gate, always runs)
 
@@ -189,11 +211,7 @@ capability lever until the field gets confirmed and persisted.
 
 ```bash
 # Read-only research subagent on a cheap model, no confirmation needed (read-only tier)
-CLAUDE_CONFIG_DIR="$HOME/.claude_openrouter" \
-ANTHROPIC_BASE_URL="https://openrouter.ai/api" \
-ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY" \
-ANTHROPIC_API_KEY= \
-command claude \
+node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
   --model "google/gemini-3.1-flash-lite" \
   --effort low \
   --permission-mode dontAsk \
@@ -202,11 +220,7 @@ command claude \
 
 # Implementation subagent on a mid-tier coding model — Edit/Write requires
 # user confirmation first (see Step 1)
-CLAUDE_CONFIG_DIR="$HOME/.claude_openrouter" \
-ANTHROPIC_BASE_URL="https://openrouter.ai/api" \
-ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY" \
-ANTHROPIC_API_KEY= \
-command claude \
+node "${CLAUDE_SKILL_DIR}/scripts/run.js" \
   --model "moonshotai/kimi-k2.7-code" \
   --effort medium \
   --permission-mode dontAsk \
@@ -216,10 +230,13 @@ command claude \
 
 ## Common Mistakes
 
-- **Forgetting `ANTHROPIC_API_KEY=` (empty).** An inherited real key silently
-  wins over `ANTHROPIC_AUTH_TOKEN`; the call goes to Anthropic, not
-  OpenRouter, and you don't find out until the bill or the model's behavior
-  looks wrong.
+- **Invoking `claude` directly against `openrouter.ai`.** The single worst
+  mistake available here: it returns an empty `result` with exit 0 and no
+  stderr whenever the response ends on a thinking block, and bills you for the
+  answer you didn't get. Always go through `scripts/run.js`.
+- **Setting `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`
+  / `CLAUDE_CONFIG_DIR` by hand.** The launcher owns all four. Overriding one
+  either bypasses the proxy or points the run at the wrong account.
 - **Omitting `--effort`.** It's a real, confirmed CLI flag (`claude --help`)
   — leaving it unset means the harness picks its own default rather than the
   level the task actually calls for. Always set it explicitly, per Step 3.
@@ -239,6 +256,7 @@ command claude \
 - **Treating an unlisted model as safe to assume things about.** No entry in
   either the table or the registry means no verified pricing, context, or
   effort support — run the Unknown Model Workflow instead of guessing.
-- **Using bare `claude` instead of `command claude`.** If the parent shell
-  session has a `claude` alias or function (common when Claude Code is
-  itself wrapped), the alias — not the real binary — gets invoked.
+- **Wrapping the launcher in a shell to "fix" quoting.** `run.js` spawns
+  `claude` without a shell, so aliases and shell functions cannot shadow the
+  real binary and arguments need no extra escaping. Adding a shell layer only
+  reintroduces both problems.
