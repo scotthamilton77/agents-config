@@ -46,6 +46,8 @@ sequenceDiagram
     participant Plug as plugin overlay
     participant Merge as merge registry
     participant Sync as sync (via run.py)
+    participant CliDep as deploy_clis (via run.py)
+    participant Port as CliDeployPort
     participant FS as filesystem
 
     Op->>CLI: python3 scripts/install.py --tools=claude,gemini
@@ -96,8 +98,27 @@ sequenceDiagram
         Sync-->>CLI: Counters
     end
 
+    rect rgb(255, 250, 240)
+        Note over CLI,Port: Phase 3 — CLI-deploy stage (still inside the receipt lock), via run.deploy_clis
+        CLI->>CliDep: deploy_clis(CLI_PACKAGES, prior, deploy=cli_deploy)
+        CliDep->>Port: uv_version() -- MIN_UV_VERSION guard
+        loop per registry CLI (workcli, then prgroom)
+            CliDep->>Port: shim_path / tool_list (PATH-independent decision signals)
+            alt verify (digest unchanged, shim + provenance proven)
+                CliDep->>Port: smoke(shim, spec.smoke_args)
+                Note over CliDep: Counters.skipped++
+            else heal / fresh (digest changed, missing, or unproven)
+                CliDep->>Port: tool_install(package_dir, force) [consent-gated on takeover]
+                CliDep->>Port: smoke(shim, spec.smoke_args)
+                Note over CliDep: Counters.created++ or updated++
+            end
+            CliDep->>Port: which(binary) -- PATH-reachability invariant; update_shell() on miss
+        end
+        CliDep-->>CLI: CliDeployOutcome(deployed, counters, any_failed)
+    end
+
     opt --prune requested
-        CLI->>CLI: prune flow (see Sequence 4)
+        CLI->>CLI: prune flow (see Sequence 4), including prune_clis over retired CLI entries
     end
 
     CLI-->>Op: summary (created / updated / skipped / backed-up per tool), exit 0
@@ -110,6 +131,7 @@ sequenceDiagram
 - **Tool order is the detection order; tools are independent within each pass.** Each tool gets its own plan and its own sync pass — there is no cross-tool state. A failure shaping one tool's plan does not corrupt another's.
 - **Collisions happen in both base staging and overlay.** Within a single tool's plan, shared + per-tool content can collide (base staging, `staging.py`); the more common case is plugin content landing on a base asset (`overlay.py`). Both route through the same merge registry (Sequence 2), never through `Sync`.
 - **`Config` is built between the two passes, not before the loop.** `resolve_tools` / `resolve_plugins` (pure functions in `config.py`) run once, up front; the frozen `Config` dataclass itself (`home`, `tools`, `auto_yes`) is constructed after staging finishes and before the sync pass begins. `installer.toml` plays no part in any of this — its loader is parsed but unwired (see [`data-view.md`](data-view.md)).
+- **The CLI-deploy stage runs third, still inside the receipt lock, and only on the user path.** `deploy_clis` walks the closed `CLI_PACKAGES` registry (`workcli` → `work`, `prgroom` → `prgroom`) in order, deciding verify/heal/fresh per CLI from PATH-independent signals (`shim_path`, `tool_list`) rather than trusting `PATH` itself — `which` is consulted only for the reachability invariant after a successful install. A `--project` run never constructs a `CliDeployPort` and never calls `deploy_clis`/`prune_clis` — the user-space CLI deploy is entirely out of scope for project-local installs. Its outcome merges into `record_receipt` via `merge_clis` alongside the file-install/prune outcomes (see [`data-view.md`](data-view.md) §"Install receipt").
 
 ---
 
@@ -234,6 +256,8 @@ sequenceDiagram
     participant Diff as receipt_diff
     participant Hash as prune_hash
     participant Flow as run_prune
+    participant CliPrune as prune_clis
+    participant Port as CliDeployPort
     participant FS as filesystem (dest)
     participant IO as IOPort
     participant Bak as backup
@@ -270,8 +294,22 @@ sequenceDiagram
     Flow-->>Prune: PruneOutcome (counters, pruned_paths, relinquished_paths)
 
     Prune-->>Orch: PruneOutcome
+
+    Orch->>CliPrune: prune_clis(prior, registry_names=CLI_PACKAGES, retired=RETIRED_CLIS)
+    loop per prior clis entry NOT in the registry
+        alt name in RETIRED_CLIS (allowlisted)
+            CliPrune->>Port: tool_uninstall(name) [consent-gated, dry-run previews]
+            Note over CliPrune: uninstalled_names += name (also on "not installed")
+        else foreign name (tampered receipt / registry never shipped it)
+            CliPrune->>IO: warn — dropping the record without uninstalling
+            Note over CliPrune: relinquished_names += name -- NEVER uninstalled, even under --yes
+        end
+    end
+    CliPrune-->>Orch: CliPruneOutcome (uninstalled_names, relinquished_names, counters)
+
     opt not --dry-run
-        Orch->>Store: record_receipt — merge_receipt((prior - pruned - relinquished) | installed), integrity recomputed, atomic temp+replace
+        Orch->>Orch: merge_clis(prior.clis, registry_names, deployed, uninstalled_names, relinquished_names)
+        Orch->>Store: record_receipt — merge_receipt((prior - pruned - relinquished) | installed), integrity recomputed, atomic temp+replace (clis field carries the merge_clis result)
         Store->>FS: write new receipt (mirrors disk)
     end
     Orch->>Lock: release lock
@@ -287,6 +325,7 @@ sequenceDiagram
 - **Missing bootstraps; corrupt fails closed.** A *missing* receipt bootstraps empty (clean-break adoption — no migration, no legacy sweep); a *corrupt* / integrity-mismatch / unknown-`schema_version` receipt disables pruning and is left untouched, so a scoped run never overwrites the central record with a partial view.
 - **Single-writer over the whole mutation section.** An advisory `flock` (`receipt_lock`) is held across read → install → prune → write; a second concurrent run fails fast (`ReceiptLockBusy`). Locking only the receipt I/O would let a concurrent install resurrect a stale entry the lock exists to prevent.
 - **`--dry-run` writes nothing.** No deletion and no receipt write — preview only. The receipt is otherwise written on **every** non-dry-run install (not only `--prune`), so the record never goes stale; pruning the diff stays gated behind `--prune`/`--prune-only`.
+- **`prune_clis`'s uninstall authority is bounded by `CLI_PACKAGES | RETIRED_CLIS`, not the receipt.** The receipt's `integrity` digest is tamper-evidence, not authentication — a prior `clis` entry naming a tool the registry never shipped (a tampered or hand-edited receipt) is warned about and relinquished, **never uninstalled**, even under `--yes`. Only a name both absent from the live registry and present in the historical `RETIRED_CLIS` allowlist is eligible for `tool_uninstall`, and a declined or non-interactive-without-`--yes` prune retains the entry so retirement retries next run (`ConsentRequiredError`, same convention as the file-prune consent gate). `prune_clis` runs on `--prune`/`--prune-only` alongside the file prune half, unlike `deploy_clis` which runs only on the install half — so `--prune-only` retires CLIs without touching the install-half decision table.
 
 ---
 

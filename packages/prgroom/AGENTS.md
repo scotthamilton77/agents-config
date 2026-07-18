@@ -87,12 +87,16 @@ exists.
   does not apply. Don't grow it into a general-purpose Gh fake.
 - Coverage floor is 90% branch (enforced by `pytest --cov`).
 
-## Not installed by the installer
+## Installed by the installer
 
-The installer does **not** currently manage prgroom's lifecycle — an earlier
-bash `uv tool install` path was retired when `install.sh` collapsed to a stub,
-and the Python installer has not re-adopted it. To use the CLI, `uv tool
-install` it (or `uv run prgroom …`) from `packages/prgroom/` directly.
+The Python installer's CLI-deploy stage manages prgroom's lifecycle: it runs
+`uv tool install` against `packages/prgroom/`, tracks the install in the
+install receipt (digest-gated — a source change triggers a heal, a docs/test
+change does not), and retires it via `uv tool uninstall` if the registry ever
+drops it. Manual `uv tool install ./packages/prgroom` (or `uv run prgroom …`
+from `packages/prgroom/`) remains possible for a no-installer or
+specific-checkout workflow; the installer heals/upgrades receipt-owned
+installs on its next run regardless.
 
 ## Do not run grooming against a live PR automatically
 
