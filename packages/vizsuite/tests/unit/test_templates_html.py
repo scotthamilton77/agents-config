@@ -248,6 +248,10 @@ def test_render_inlines_constellation_interaction_hooks():
     assert "viz-constellation-viewport" in html
     assert "viz-constellation-reset" in html
     assert "Reset view" in html
+    # Recenter-on-resize wiring: the drill drawer narrows the viewport after
+    # mount, so the centered baseline is recomputed via a feature-guarded
+    # ResizeObserver and Reset view retargets the fresh baseline.
+    assert "ResizeObserver" in html
     # The treemap tile, the ledger row, and the constellation's file node
     # and dir tooltip all call the shared hover score-card builder — four
     # call sites, inlined into the same bundle (item 6: bundle markers).

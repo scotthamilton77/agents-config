@@ -934,7 +934,11 @@
       // "identity" here means this render's own computed centered baseline
       // (the layout's barycenter, side/2,side/2, centered in the viewport) —
       // not literal d3.zoomIdentity, which would just show the layout box's
-      // top-left corner. Reset view restores exactly this same baseline. ----
+      // top-left corner. The viewport's on-screen size DOES change when the
+      // drill drawer opens/closes (scene.css narrows #viz-root via
+      // .viz-drill-open), so the baseline is recomputed on viewport resize
+      // (see the ResizeObserver below) and Reset view restores whatever the
+      // current baseline is. ----
       var zoomTransform = d3.zoomIdentity;
       var zoomBehavior = d3
         .zoom()
@@ -946,16 +950,46 @@
             "translate(" + zoomTransform.x + "px," + zoomTransform.y + "px) scale(" + zoomTransform.k + ")";
         });
 
-      var viewportRect = viewport.getBoundingClientRect();
-      var viewportWidth = viewportRect.width || viewport.clientWidth || side;
-      var viewportHeight = viewportRect.height || viewport.clientHeight || side;
-      var baseTransform = d3.zoomIdentity.translate(
-        (viewportWidth - side) / 2,
-        (viewportHeight - side) / 2
-      );
+      // Centered baseline for the current viewport size — recomputed on resize
+      // (below) because the drill drawer narrows the viewport after mount.
+      function computeBaseTransform() {
+        var rect = viewport.getBoundingClientRect();
+        var width = rect.width || viewport.clientWidth || side;
+        var height = rect.height || viewport.clientHeight || side;
+        return d3.zoomIdentity.translate((width - side) / 2, (height - side) / 2);
+      }
+      var baseTransform = computeBaseTransform();
+
+      // True while the stage is still parked exactly on the computed baseline
+      // (no user pan/zoom since the last baseline apply). d3 assigns the target
+      // transform's numeric fields verbatim, so exact equality is reliable here.
+      function atBaseline() {
+        return (
+          zoomTransform.k === baseTransform.k &&
+          zoomTransform.x === baseTransform.x &&
+          zoomTransform.y === baseTransform.y
+        );
+      }
 
       d3.select(viewport).call(zoomBehavior).on("dblclick.zoom", null);
       d3.select(viewport).call(zoomBehavior.transform, baseTransform);
+
+      // Recenter when the viewport resizes (drill drawer open/close). If the
+      // user is still on the baseline, slide to the freshly centered baseline;
+      // if they have panned/zoomed away, leave their transform untouched but
+      // retarget Reset view to the new baseline. Feature-guarded like the
+      // setPointerCapture guard above.
+      var resizeObserver = null;
+      if (typeof ResizeObserver === "function") {
+        resizeObserver = new ResizeObserver(function () {
+          var wasBaseline = atBaseline();
+          baseTransform = computeBaseTransform();
+          if (wasBaseline) {
+            d3.select(viewport).call(zoomBehavior.transform, baseTransform);
+          }
+        });
+        resizeObserver.observe(viewport);
+      }
 
       function focusOnNode(node) {
         var rect = viewport.getBoundingClientRect();
@@ -1028,8 +1062,14 @@
       });
       applyEncoding(entries, heatScale, current.computeHeat);
 
+      var destroyContainer = makeDestroy(container);
       return {
-        destroy: makeDestroy(container),
+        destroy: function () {
+          if (resizeObserver) {
+            resizeObserver.disconnect();
+          }
+          destroyContainer();
+        },
         reencode: function (newState) {
           current = newState;
           heatScale = makeHeatColorScale();
