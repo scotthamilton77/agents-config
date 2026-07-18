@@ -29,7 +29,7 @@ Twelve verbs; each is a subcommand of `work`.
 | `work label {add,remove,list} ID [LABELS...]` | multi-label in one call |
 | `work search QUERY` | — |
 | `work sync [--pull]` | — |
-| global | `--format {json,human}` (human renders to **stderr**; stdout envelope unchanged), `--protocol-version` |
+| global | `--format {json,human}` (human renders to **stderr**; stdout envelope unchanged), `--protocol-version`, `--config PATH` (explicit `project-config.toml`; overrides the upward search — track-layer surfaces only, see below) |
 
 `epic`/`stats`/`compact`/`delete` are deliberately out of scope for v1 — no
 programmatic consumer observed; use `bd` directly for those.

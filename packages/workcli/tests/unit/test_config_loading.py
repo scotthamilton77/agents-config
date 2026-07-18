@@ -99,6 +99,19 @@ def test_malformed_toml_is_invalid_and_names_the_problem(tmp_path: Path) -> None
     assert "malformed TOML" in exc_info.value.message
 
 
+def test_non_utf8_config_is_invalid_not_a_crash(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): read_text(encoding="utf-8") raises
+    # UnicodeDecodeError on undecodable bytes -- uncaught, that would surface
+    # as E_INTERNAL instead of the track layer's own typed failure.
+    root = _repo(tmp_path, config_text=None)
+    (root / "project-config.toml").write_bytes(b"[tracks]\nnames = [\xff\xfe]\n")
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.code is ErrorCode.NOT_CONFIGURED
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "not valid UTF-8" in exc_info.value.message
+
+
 def test_missing_tracks_table_reads_as_not_found(tmp_path: Path) -> None:
     root = _repo(tmp_path, config_text='[project]\nname = "x"\n')
     with pytest.raises(WorkError) as exc_info:

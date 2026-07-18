@@ -89,6 +89,10 @@ def load_config(start_dir: Path, explicit_path: str | None = None) -> TrackLayer
         raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except OSError as read_error:
         raise _not_configured(f"cannot read {config_path}: {read_error}", "invalid") from read_error
+    except UnicodeDecodeError as decode_error:
+        raise _not_configured(
+            f"{config_path} is not valid UTF-8: {decode_error}", "invalid"
+        ) from decode_error
     except tomllib.TOMLDecodeError as parse_error:
         raise _not_configured(
             f"malformed TOML in {config_path}: {parse_error}", "invalid"

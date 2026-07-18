@@ -118,6 +118,23 @@ def test_limit_zero_is_the_unbounded_sentinel() -> None:
     assert ids == ["w-1", "w-2"]
 
 
+def test_limit_negative_is_also_unbounded() -> None:
+    # REGRESSION PIN (Codex finding): argparse accepts negative ints, and
+    # Python's items[:-1] silently drops the last element rather than
+    # erroring -- a negative --limit must mean unbounded here too, same as 0.
+    backend = FakeBackend()
+    backend.add("w-1", labels=["track:alpha"])
+    backend.add("w-2", labels=["track:alpha"])
+    args = _list_args("alpha", lambda: CONFIG)
+    args.limit = -1
+    data = list_(backend, args)
+    assert isinstance(data, dict)
+    items = data["items"]
+    assert isinstance(items, list)
+    ids = [item["id"] for item in items if isinstance(item, dict)]
+    assert ids == ["w-1", "w-2"]
+
+
 def test_config_flag_reaches_the_loader_verbatim() -> None:
     # main()'s seam threads --config through to the loader untouched;
     # list --track is the first surface that triggers a load.
