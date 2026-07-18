@@ -43,6 +43,8 @@ def _config(enforcement: str) -> TrackLayerConfig:
         enforcement=enforcement,
         milestone_wip_cap=None,
         wip_exempt_milestones=(),
+        backlog_groom_nag_days=None,
+        groom_state_bead=None,
         extraction_max_track_backlog=None,
         extraction_external_consumer_tracks=(),
         extraction_independent_release_tracks=(),
