@@ -89,7 +89,7 @@ def _dep_edge_from_raw(entry: dict[str, JsonValue], self_id: str) -> DepEdge:
         return DepEdge(
             id=str(entry["id"]),
             type=_dep_type(entry, self_id),
-            status=str(entry.get("status", "")),
+            status=_string_field(entry, "status", self_id, default=""),
         )
     # list-shape: raw edge row {issue_id, depends_on_id, type}; no status
     # for the other end is available without a second fetch. Same drift
@@ -273,8 +273,8 @@ def parse_item(raw: dict[str, JsonValue]) -> Item:
 
     return Item(
         id=item_id,
-        title=str(raw["title"]),
-        type=str(raw["issue_type"]),
+        title=_string_field(raw, "title", item_id),
+        type=_string_field(raw, "issue_type", item_id),
         status=_string_field(raw, "status", item_id),
         priority=f"P{priority_raw}",
         labels=_string_list_field(raw, "labels", item_id),

@@ -155,6 +155,67 @@ def test_explicit_null_labels_field_raises_backend_drift_not_a_raw_type_error():
     assert error.detail["field"] == "labels"
 
 
+def test_explicit_null_title_field_raises_backend_drift_not_the_literal_string_none():
+    # Codex review finding on PR #314: title/issue_type are required scalars
+    # that shared the same unguarded `str(raw["title"])` gap the null-vs-
+    # absent discipline was meant to close everywhere.
+    raw_item = {
+        "id": "x.1",
+        "title": None,
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "title"
+
+
+def test_explicit_null_issue_type_field_raises_backend_drift_not_the_literal_string_none():
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": None,
+        "status": "open",
+        "priority": 2,
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "issue_type"
+
+
+def test_explicit_null_dependency_edge_status_raises_backend_drift_not_the_literal_string_none():
+    # Codex review finding on PR #314: the show-shape dependency edge's
+    # `status` field went through an unguarded `str(entry.get("status", ""))`
+    # that coerced an explicit null to the literal string "None".
+    raw_item = {
+        "id": "x.1",
+        "title": "t",
+        "issue_type": "task",
+        "status": "open",
+        "priority": 2,
+        "dependencies": [{"id": "x.2", "dependency_type": "blocks", "status": None}],
+    }
+
+    with pytest.raises(WorkError) as exc_info:
+        parse_items(json.dumps([raw_item]))
+
+    error = exc_info.value
+    assert error.code == ErrorCode.BACKEND_DRIFT
+    assert error.detail["reason"] == "null_field"
+    assert error.detail["field"] == "status"
+
+
 def test_explicit_null_status_field_raises_backend_drift_not_the_literal_string_none():
     # bd emitting `"status": null` must never silently become the literal
     # string "None" via an unguarded `str(raw["status"])` -- same null-vs-
