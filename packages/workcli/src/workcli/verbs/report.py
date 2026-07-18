@@ -277,6 +277,11 @@ def triggers(backend: Backend, args: Namespace) -> JsonValue:
     by_id = {item.id: item for item in items}
     backlog_counts = _backlog_counts(swept, config)
     edge_counts = _cross_track_edge_counts(backend, items, by_id)
+    # Densify to every configured track (same shape as backlog_counts) so a
+    # track with zero cross-track edges reports 0, not an absent key --
+    # callers triaging a pressured-ineligible track need the actual count,
+    # not just the three-state reduction (Codex finding).
+    cross_track_edges = {name: edge_counts.get(name, 0) for name in config.names}
 
     statuses: dict[str, JsonValue] = {}
     for name in config.names:
@@ -293,12 +298,13 @@ def triggers(backend: Backend, args: Namespace) -> JsonValue:
         )
         eligible = (
             config.extraction_max_cross_track_edges is not None
-            and edge_counts.get(name, 0) <= config.extraction_max_cross_track_edges
+            and cross_track_edges[name] <= config.extraction_max_cross_track_edges
         )
         statuses[name] = _extraction_status(pressure=pressure, eligible=eligible)
 
     return {
         "backlog_counts": dict(backlog_counts.items()),
+        "cross_track_edges": dict(cross_track_edges.items()),
         "statuses": statuses,
         "review_question": _review_question(config),
     }

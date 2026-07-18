@@ -213,6 +213,35 @@ max-cross-track-edges = 3
     assert config.extraction_max_cross_track_edges == 3
 
 
+def test_external_consumer_tracks_outside_names_is_invalid(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): a typo'd track name in a declared
+    # pressure list must fail loud, not silently produce zero pressure
+    # signal -- mirrors [tracks].organizing-only's existing vocabulary check.
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        '[extraction.pressure]\nexternal-consumer-tracks = ["prgoom"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "external-consumer-tracks" in exc_info.value.message
+    assert "prgoom" in exc_info.value.message
+
+
+def test_independent_release_tracks_outside_names_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n'
+        '[extraction.pressure]\nindependent-release-tracks = ["ghost"]\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "independent-release-tracks" in exc_info.value.message
+    assert "ghost" in exc_info.value.message
+
+
 def test_non_table_extraction_is_invalid(tmp_path: Path) -> None:
     root = _repo(
         tmp_path,

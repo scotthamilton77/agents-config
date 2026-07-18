@@ -69,6 +69,18 @@ def test_backlog_counts_cover_every_configured_track() -> None:
     assert counts == {"alpha": 3, "beta": 1, "gamma": 1, "org-only": 1}
 
 
+def test_cross_track_edges_densified_to_every_configured_track() -> None:
+    # REGRESSION PIN (Codex finding): a track with zero cross-track edges
+    # must report 0, not an absent key -- callers triaging a
+    # pressured-ineligible track need the actual count, not just the
+    # three-state status reduction.
+    report = triggers(_fixture(), _args())
+    edges = report["cross_track_edges"]
+    assert isinstance(edges, dict)
+    assert set(edges) == {"alpha", "beta", "gamma", "org-only"}
+    assert edges["gamma"] == 0
+
+
 def test_organizing_only_track_excluded_from_statuses() -> None:
     report = triggers(_fixture(), _args())
     statuses = report["statuses"]

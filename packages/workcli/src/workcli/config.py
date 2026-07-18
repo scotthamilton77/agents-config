@@ -175,11 +175,25 @@ def _validate(raw: dict[str, object], path: Path) -> TrackLayerConfig:
         "[extraction.pressure].external-consumer-tracks",
         path,
     )
+    unknown_external_consumer = [name for name in external_consumer_tracks if name not in names]
+    if unknown_external_consumer:
+        raise _not_configured(
+            "[extraction.pressure].external-consumer-tracks entries not in names: "
+            f"{unknown_external_consumer} in {path}",
+            "invalid",
+        )
     independent_release_tracks = _string_tuple(
         pressure_table.get("independent-release-tracks", []),
         "[extraction.pressure].independent-release-tracks",
         path,
     )
+    unknown_independent_release = [name for name in independent_release_tracks if name not in names]
+    if unknown_independent_release:
+        raise _not_configured(
+            "[extraction.pressure].independent-release-tracks entries not in names: "
+            f"{unknown_independent_release} in {path}",
+            "invalid",
+        )
 
     eligibility = extraction_table.get("eligibility")
     if eligibility is not None and not isinstance(eligibility, dict):
