@@ -1,7 +1,5 @@
 """Tests for the CLI prune half (spec §7, item 10)."""
 
-from pathlib import Path
-
 import pytest
 
 from installer.core.clis import CommandResult, ScriptedCliDeploy
