@@ -261,6 +261,16 @@ def test_render_inlines_constellation_interaction_hooks():
     # dblclick un-pin gesture cancels the deferred dir-focus/file-drill instead
     # of firing it (which would resize the viewport mid-gesture).
     assert "dblclickWindowMs" in html
+    # Deferred activations are cancelled view-scoped, not element-scoped: every
+    # node registers its pending-timer clear into one createActivationGroup()
+    # registry that the zoom handler and destroy() flush, so a competing
+    # gesture (pan/zoom, another node's press, keyboard) or an unmount can never
+    # let a stale focus/drill fire.
+    assert "createActivationGroup" in html
+    # A drag begun on the view's own Reset-view chrome must not pan the canvas
+    # (the release-click would then reset it, undoing the pan) — the zoom filter
+    # excludes the reset button alongside the node exclusion.
+    assert ".viz-constellation-node, .viz-constellation-reset" in html
 
 
 def test_render_inlines_constellation_structural_hooks():

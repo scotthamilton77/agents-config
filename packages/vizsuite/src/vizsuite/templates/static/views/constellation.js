@@ -626,7 +626,7 @@
   // drill/focus/tooltip wiring specifics. A node outside `labeledIds` gets no
   // label element at all (not merely a hidden one) — still fully
   // identifiable via its `title`/aria-label and the hover card. ----
-  function renderNodes(stage, nodes, labeledIds, handlers) {
+  function renderNodes(stage, nodes, labeledIds, handlers, activationGroup) {
     var entries = [];
     nodes.forEach(function (node) {
       var displayPath = node.kind === "dir" ? dirDisplayPath(node.path) : node.path;
@@ -678,7 +678,11 @@
           return node.x !== node.origX || node.y !== node.origY
             ? DBLCLICK_ACTIVATION_WINDOW_MS
             : 0;
-        }
+        },
+        // Share the view's one cancellation registry, so any competing gesture
+        // (another node's press, keyboard activation, a zoom/pan, or destroy())
+        // flushes this node's still-pending deferred activation.
+        activationGroup: activationGroup
       });
       el.addEventListener("pointerenter", function (evt) {
         handlers.onHoverShow(evt, node);
@@ -710,6 +714,11 @@
     var startY = 0;
     var dragging = false;
     var active = false;
+    // Latch the first pointerdown's id so a second simultaneous pointer on the
+    // same node can't overwrite startX/startY mid-drag and teleport the node —
+    // every move/up/cancel from a non-owning pointer is ignored until the
+    // owning gesture ends.
+    var activePointerId = null;
 
     function reposition() {
       applyNodePosition(el, node);
@@ -725,6 +734,11 @@
     }
 
     el.addEventListener("pointerdown", function (evt) {
+      // A gesture already owns this node — ignore a second simultaneous pointer.
+      if (active) {
+        return;
+      }
+      activePointerId = evt.pointerId;
       startX = evt.clientX;
       startY = evt.clientY;
       dragging = false;
@@ -738,7 +752,7 @@
       }
     });
     el.addEventListener("pointermove", function (evt) {
-      if (!active) {
+      if (!active || evt.pointerId !== activePointerId) {
         return;
       }
       var dx = evt.clientX - startX;
@@ -756,9 +770,15 @@
       startY = evt.clientY;
       reposition();
     });
-    function endDrag() {
+    function endDrag(evt) {
+      // Only the owning pointer ends the gesture; a stray up/cancel from a
+      // second pointer must not release the latch mid-drag.
+      if (evt.pointerId !== activePointerId) {
+        return;
+      }
       active = false;
       dragging = false;
+      activePointerId = null;
     }
     el.addEventListener("pointerup", endDrag);
     el.addEventListener("pointercancel", endDrag);
@@ -779,18 +799,24 @@
 
   // ---- Zoom/pan gesture filter: wheel always zooms (regardless of pointer
   // target); a double-click never zooms (explicit, so a node's own
-  // double-click-to-unpin never also resets the view); any other gesture
-  // that started on a node belongs to that node's own drag, not the canvas
-  // pan — node dragging must never also pan the canvas. Otherwise mirrors
-  // d3-zoom's own documented default filter (`(!event.ctrlKey ||
-  // event.type === 'wheel') && !event.button`). ----
+  // double-click-to-unpin never also resets the view); any other gesture that
+  // started on a node — or on the view's own chrome (the Reset-view button) —
+  // belongs to that target, not the canvas pan, so node dragging and a Reset
+  // click never also pan the canvas (a pan begun on the button would be undone
+  // by the release-click's reset anyway). Otherwise mirrors d3-zoom's own
+  // documented default filter (`(!event.ctrlKey || event.type === 'wheel') &&
+  // !event.button`). ----
   function zoomFilter(event) {
     if (event.type === "dblclick") {
       return false;
     }
     if (event.type !== "wheel") {
       var target = event.target;
-      if (target && typeof target.closest === "function" && target.closest(".viz-constellation-node")) {
+      if (
+        target &&
+        typeof target.closest === "function" &&
+        target.closest(".viz-constellation-node, .viz-constellation-reset")
+      ) {
         return false;
       }
     }
@@ -967,6 +993,12 @@
       var current = state;
       var heatScale = makeHeatColorScale();
 
+      // One view-scoped registry of every node's pending deferred activation
+      // (see renderNodes' wireClickVsDragActivation). The zoom handler and
+      // destroy() below flush it, so a pan/zoom mid-window or an unmount can
+      // never let a stale focus/drill fire.
+      var activationGroup = window.vizShared.createActivationGroup();
+
       // ---- Zoom/pan (spec: scaleExtent [0.3, 6], wheel zoom + background
       // drag pans, double-click zoom disabled, transform persisted across
       // reencode — trivially true since reencode() never touches
@@ -989,6 +1021,14 @@
           zoomTransform = event.transform;
           visual.style.transform =
             "translate(" + zoomTransform.x + "px," + zoomTransform.y + "px) scale(" + zoomTransform.k + ")";
+          // A wheel-zoom or background pan is a competing gesture: drop any
+          // node's still-pending deferred activation so a stale focus/drill
+          // never fires mid-gesture.
+          activationGroup.cancelAll();
+          // The stage just moved under a possibly-stationary cursor; hide the
+          // shared hover card (pointerleave won't fire until the next pointer
+          // event), so it doesn't float orphaned over the wrong node.
+          window.vizShared.hideTooltip();
         });
 
       // Centered baseline for the current viewport size — recomputed on resize
@@ -1090,12 +1130,18 @@
       }
 
       var labeledIds = computeLabeledIds(graph.nodes);
-      var entries = renderNodes(visual, graph.nodes, labeledIds, {
-        onActivate: onActivate,
-        onHoverShow: onHoverShow,
-        onHoverMove: onHoverMove,
-        onHoverHide: onHoverHide
-      });
+      var entries = renderNodes(
+        visual,
+        graph.nodes,
+        labeledIds,
+        {
+          onActivate: onActivate,
+          onHoverShow: onHoverShow,
+          onHoverMove: onHoverMove,
+          onHoverHide: onHoverHide
+        },
+        activationGroup
+      );
       entries.forEach(function (entry) {
         wireDrag(entry, incidentByNodeId[entry.node.id] || [], function () {
           return zoomTransform.k;
@@ -1109,6 +1155,13 @@
           if (resizeObserver) {
             resizeObserver.disconnect();
           }
+          // Flush every node's still-pending deferred activation so no timer
+          // fires a focus/drill into a torn-down view.
+          activationGroup.cancelAll();
+          // Interrupt any in-flight viewport zoom transition (focusOnNode /
+          // Reset view) so it stops mutating a detached DOM / dead closure
+          // after unmount.
+          d3.select(viewport).interrupt();
           destroyContainer();
         },
         reencode: function (newState) {
