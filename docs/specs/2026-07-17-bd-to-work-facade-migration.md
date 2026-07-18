@@ -168,9 +168,13 @@ are low-risk and can land early to shrink the epic.
 
 ## 7. Acceptance criteria (mechanically checkable)
 
-1. `grep -rn 'bd ' <Class A/B/C asset paths>` returns only lines carrying a `facade-gap:`
+1. `grep -rn 'bd ' <Class A/B/C asset paths>`, **excluding test-fixture files
+   (`evals/`, `*_test.*`)**, returns only lines carrying a `facade-gap:`
    annotation (with G1/G2 verified covered, the expected count is zero; the policy
-   remains for any gap a migration child uncovers).
+   remains for any gap a migration child uncovers). Fixture prompts that deliberately
+   embed raw `bd` text — e.g. `triaging-discovered-work/evals/trigger-eval.json`'s
+   `bd list --parent` trigger case — are test **data** that exercise a skill's
+   classifier, not tracker call sites, so they are exempt and need no annotation.
 2. Every migrated call site invokes `work <verb>` and parses the `{ok,data,error}`
    envelope — no residual `--json | jq` or `--limit 0` **on a facade/bd invocation** in
    Class A/B/C (`work` verbs are unbounded by default, so the bd 50-row truncation
