@@ -511,6 +511,7 @@ def _run(
         all_tools=[t.value for t in known_tools()],
         all_plugins=list(discover(resolve_plugins_root(resolved_repo_root, os.environ))),
         clis=sorted(k for k in counters if k.startswith("cli:")),
+        any_failed=cli_outcome is not None and cli_outcome.any_failed,
         verbose=args.verbose,
         io=io,
     )
