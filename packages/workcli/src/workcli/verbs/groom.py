@@ -11,8 +11,9 @@ Persistence mechanism: the `Backend` protocol has no metadata primitive
 (`backlog_last_groomed: <iso8601>`) on the designated
 `[operating-model].groom-state-bead` -- the spec's named fallback. Notes are
 append-only (bd's `--append-notes`, same discipline as `work note`), so
-`--done` never edits an existing line; `--status` reads the LAST matching
-line, since later appends are newer.
+`--done` never edits an existing line; `--status` selects the marker with
+the latest PARSED timestamp, not the physically last line -- concurrent
+`--done` calls can append out of chronological order.
 """
 
 from __future__ import annotations
@@ -48,11 +49,27 @@ def _require_groom_state_bead(config: TrackLayerConfig) -> str:
     return config.groom_state_bead
 
 
-def _last_groomed(backend: Backend, groom_state_bead: str) -> str | None:
-    """The most recently appended `backlog_last_groomed: <ts>` note line, or
-    None when no matching line exists yet (bootstrap: never groomed)."""
+def _latest_marker(backend: Backend, groom_state_bead: str) -> tuple[str, datetime] | None:
+    """The `backlog_last_groomed: <ts>` marker with the LATEST parsed
+    timestamp, or None when no matching line exists yet (bootstrap: never
+    groomed). Selected by parsed value, not append/physical-last position:
+    concurrent `--done` calls can append out of chronological order (one
+    process computes its timestamp, stalls before `append_note`, and appends
+    after a later completion already wrote a newer one) -- trusting note
+    order in that case would regress the persisted reset time and could fire
+    the nag prematurely (Codex finding, round 4)."""
     matches = _NOTE_LINE_PATTERN.findall(backend.get(groom_state_bead).notes)
-    return matches[-1] if matches else None
+    if not matches:
+        return None
+    parsed_markers: list[tuple[str, datetime]] = []
+    for raw in matches:
+        try:
+            parsed_markers.append(
+                (raw, datetime.strptime(raw, _TIMESTAMP_FORMAT).replace(tzinfo=UTC))
+            )
+        except ValueError as parse_error:
+            raise _invalid_marker(groom_state_bead, raw, str(parse_error)) from parse_error
+    return max(parsed_markers, key=lambda marker: marker[1])
 
 
 def _invalid_marker(groom_state_bead: str, last_groomed: str, problem: str) -> WorkError:
@@ -77,9 +94,9 @@ def _done(backend: Backend, args: Namespace, groom_state_bead: str) -> JsonValue
 def _status(
     backend: Backend, args: Namespace, config: TrackLayerConfig, groom_state_bead: str
 ) -> JsonValue:
-    last_groomed = _last_groomed(backend, groom_state_bead)
+    latest = _latest_marker(backend, groom_state_bead)
     nag_days = config.backlog_groom_nag_days
-    if last_groomed is None:
+    if latest is None:
         # Never groomed = maximally overdue -- a deliberate design decision:
         # bootstrap state should nag, not silently pass, regardless of
         # whether a nag threshold is configured.
@@ -89,10 +106,7 @@ def _status(
             "nag_days": nag_days,
             "breached": True,
         }
-    try:
-        parsed = datetime.strptime(last_groomed, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
-    except ValueError as parse_error:
-        raise _invalid_marker(groom_state_bead, last_groomed, str(parse_error)) from parse_error
+    last_groomed, parsed = latest
     now = args.now()
     elapsed = now - parsed
     if elapsed < -_FUTURE_SKEW_TOLERANCE:

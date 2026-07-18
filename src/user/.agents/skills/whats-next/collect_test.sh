@@ -1063,4 +1063,24 @@ assert 'backlog_grooming_nag' not in out, f'nag must be absent on a non-object J
 " || fail "T16f: backlog_grooming_nag must be absent when work groom --status emits non-object JSON"
 pass "T16f: backlog_grooming_nag absent when work groom --status emits valid but non-object JSON"
 
+# (g) a stale/wrong `work` build emits "breached" as a truthy STRING
+# ("false") rather than a JSON boolean -> a plain truthiness check would
+# wrongly add the nag; only a literal `true` may.
+cat > "$TMP_T16/work" <<'SHIM'
+#!/usr/bin/env bash
+echo '{"protocol":"1.0","ok":true,"data":{"backlog_last_groomed":"2026-07-01T00:00:00Z","days_since":3,"nag_days":7,"breached":"false"},"error":null}'
+exit 0
+SHIM
+chmod +x "$TMP_T16/work"
+OUT_T16G="$TMP_T16/g.json"
+PATH="$TMP_T16:$PATH" python3 "$COLLECT_PY" --mode human >"$OUT_T16G" 2>"$TMP_T16/err.g"
+ec=$?
+[ "$ec" -eq 0 ] || fail "T16g: collect.py exited $ec with a stringy breached value (stderr: $(cat "$TMP_T16/err.g"))"
+python3 -c "
+import json
+out = json.load(open('$OUT_T16G'))
+assert 'backlog_grooming_nag' not in out, f'nag must be absent when breached is a truthy string, not literal true; got: {out}'
+" || fail "T16g: backlog_grooming_nag must be absent when breached is a truthy non-boolean value"
+pass "T16g: backlog_grooming_nag absent when breached is a truthy string instead of a JSON boolean"
+
 echo "All collect.py red-phase tests reached — script exits 0 only when every assertion above passes."

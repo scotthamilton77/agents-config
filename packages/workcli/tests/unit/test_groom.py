@@ -181,6 +181,26 @@ def test_status_takes_the_last_of_multiple_note_lines() -> None:
     assert result["backlog_last_groomed"] == "2026-07-17T00:00:00Z"
 
 
+def test_status_selects_newest_timestamp_not_physically_last_line() -> None:
+    # REGRESSION PIN (Codex finding, round 4): concurrent `--done` calls can
+    # append out of chronological order -- a process that computed an
+    # earlier timestamp can stall before append_note and write it AFTER a
+    # later completion already appended a newer one. Selection must be by
+    # parsed timestamp value, never by note-append position.
+    notes = "\n".join(
+        [
+            "backlog_last_groomed: 2026-07-17T00:00:00Z",  # newer, appended FIRST
+            "backlog_last_groomed: 2026-06-01T00:00:00Z",  # older, appended LAST
+        ]
+    )
+    backend = _backend(notes=notes)
+    result = groom(
+        backend,
+        _args(status=True, now=datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC)),
+    )
+    assert result["backlog_last_groomed"] == "2026-07-17T00:00:00Z"
+
+
 def test_status_ignores_non_matching_note_lines() -> None:
     backend = _backend(notes="some other note\nbacklog_last_groomed: 2026-07-17T00:00:00Z\nmore")
     result = groom(

@@ -69,10 +69,12 @@ def work_groom_status():
         # noexec mount -- which subprocess.run raises as PermissionError,
         # a plain FileNotFoundError catch would miss (Codex finding).
         return None
-    if not isinstance(envelope, dict) or not envelope.get("ok"):
+    if not isinstance(envelope, dict) or envelope.get("ok") is not True:
         # Valid JSON that isn't an envelope object (e.g. a PATH-shadowed
         # `work` emitting `[]`) must self-silence too, not crash .get() with
-        # AttributeError (Codex finding).
+        # AttributeError (Codex finding). `is not True` (not a truthiness
+        # check) so an envelope carrying "ok": "true" (a string) or any
+        # other truthy-but-wrong value doesn't slip past self-silencing.
         return None
     data = envelope.get("data")
     return data if isinstance(data, dict) else None
@@ -82,7 +84,11 @@ def backlog_grooming_nag_line(status):
     """Render the one-line nag from a `work groom --status` data dict, or
     None when not breached (or status is None -- the call failed/unavailable).
     """
-    if not status or not status.get("breached"):
+    if not status or status.get("breached") is not True:
+        # `is not True`, not a truthiness check: a stale/wrong `work` build
+        # emitting {"breached": "false"} (a truthy string) must self-silence,
+        # not add a nag because the value happened to be non-empty (Codex
+        # finding).
         return None
     days_since = status.get("days_since")
     if days_since is not None:
