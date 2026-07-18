@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Grind PR watcher — a DOORBELL, not a verdict.
+#
+# Polls one PR for signs that the bot reviewer has said something new, then
+# exits so the orchestrator's background-task notification fires. The
+# orchestrator MUST re-verify with direct `gh` queries before acting: the jq
+# filters below flake to empty intermittently, and an empty read is
+# indistinguishable from "nothing changed."
+#
+# TEMPLATE — substitute before use:
+#   {{PR}}        PR number, e.g. 320
+#   {{HEAD_SHA}}  head commit the review is awaited for, e.g. 4cf2d8a
+#   {{REPO}}      owner/name, e.g. acme/widgets
+#
+# LAUNCH DIRECTLY via run_in_background. NEVER nest this inside a wrapper
+# command with `&` — the wrapper exits immediately, the completion
+# notification fires for the wrapper, and this watcher is orphaned: still
+# running, unwatched, and silent.
+#
+#   Bash(command: "bash /path/to/watch-pr-320.sh", run_in_background: true)
+
+set -uo pipefail
+
+PR="{{PR}}"
+HEAD_SHA="{{HEAD_SHA}}"
+REPO="{{REPO}}"
+
+INTERVAL_SECONDS=60
+TIMEOUT_SECONDS=1800   # 30 minutes
+
+# --- Baselines, sampled once at arm time -----------------------------------
+# Each watcher generation bakes in its own baselines. This is what keeps a
+# stale +1 from a PRIOR head out of the trigger set: we fire on a COUNT
+# INCREASE, never on the mere presence of an approving reaction.
+review_count() {
+  gh pr view "$PR" --repo "$REPO" --json reviews \
+    --jq '.reviews | length' 2>/dev/null
+}
+
+comment_count() {
+  gh pr view "$PR" --repo "$REPO" --json comments \
+    --jq '.comments | length' 2>/dev/null
+}
+
+# A clean-pass comment that NAMES the awaited head commit. Naming matters:
+# an unqualified "looks good" may predate the current push.
+clean_pass_for_head() {
+  gh pr view "$PR" --repo "$REPO" --json comments \
+    --jq --arg sha "$HEAD_SHA" \
+      '[.comments[] | select(.body | test("[Dd]idn.t find any major issues|[Nn]o major issues"))
+        | select(.body | contains($sha))] | length' 2>/dev/null
+}
+
+BASE_REVIEWS="$(review_count)"
+BASE_COMMENTS="$(comment_count)"
+
+# An unreadable baseline would make every later comparison meaningless, so
+# fail loud rather than arming a watcher that can only produce noise.
+if [ -z "$BASE_REVIEWS" ] || [ -z "$BASE_COMMENTS" ]; then
+  echo "WATCH-ERROR pr=$PR could not sample baselines (gh unavailable or PR unreadable)"
+  exit 2
+fi
+
+echo "WATCH-ARMED pr=$PR head=$HEAD_SHA reviews=$BASE_REVIEWS comments=$BASE_COMMENTS"
+
+# --- Poll loop --------------------------------------------------------------
+elapsed=0
+while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
+  sleep "$INTERVAL_SECONDS"
+  elapsed=$((elapsed + INTERVAL_SECONDS))
+
+  reviews="$(review_count)"
+  comments="$(comment_count)"
+  clean="$(clean_pass_for_head)"
+
+  # An empty read is a flake, not a signal. Skip the round; do not treat a
+  # missing value as zero — that would read as a count DECREASE and mask a
+  # real increase on the following poll.
+  if [ -z "$reviews" ] || [ -z "$comments" ] || [ -z "$clean" ]; then
+    echo "WATCH-FLAKE pr=$PR t=${elapsed}s (empty read, skipping round)"
+    continue
+  fi
+
+  if [ "$reviews" -gt "$BASE_REVIEWS" ]; then
+    echo "WATCH-RING pr=$PR reason=new-review reviews=$reviews (was $BASE_REVIEWS) t=${elapsed}s"
+    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json reviews,statusCheckRollup"
+    exit 0
+  fi
+
+  if [ "$clean" -gt 0 ]; then
+    echo "WATCH-RING pr=$PR reason=clean-pass-naming-head head=$HEAD_SHA t=${elapsed}s"
+    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json reviews,statusCheckRollup"
+    exit 0
+  fi
+
+  if [ "$comments" -gt "$BASE_COMMENTS" ]; then
+    echo "WATCH-RING pr=$PR reason=new-comment comments=$comments (was $BASE_COMMENTS) t=${elapsed}s"
+    echo "DOORBELL ONLY — verify with: gh pr view $PR --repo $REPO --json comments"
+    exit 0
+  fi
+
+  echo "WATCH-QUIET pr=$PR t=${elapsed}s reviews=$reviews comments=$comments"
+done
+
+echo "WATCH-TIMEOUT pr=$PR after ${TIMEOUT_SECONDS}s — no signal. Re-arm or check the PR directly."
+exit 1
