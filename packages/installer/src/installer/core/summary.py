@@ -76,14 +76,17 @@ def _report_targets(
     tools: Sequence[str],
     plugins: Sequence[str],
     all_plugins: Sequence[str],
+    clis: Sequence[str] = (),
 ) -> list[str]:
     """Ordered report-target set.
 
     Active tools, then active plugins, then any ALL_* plugin that is not already
     a report target but accumulated prune activity — so a plugin pruned outside
-    the active set (AC#19) is reported once, as a real block.
+    the active set (AC#19) is reported once, as a real block. ``clis`` (the
+    cli:<name> deploy/prune targets) are appended last, unconditionally — they
+    have no ALL_* universe of their own.
     """
-    targets = [*tools, *plugins]
+    targets = [*tools, *plugins, *clis]
     seen = set(targets)
     for plugin in all_plugins:
         if plugin in seen:
@@ -101,6 +104,8 @@ def render_summary(
     plugins: Sequence[str],
     all_tools: Sequence[str],
     all_plugins: Sequence[str],
+    clis: Sequence[str] = (),
+    any_failed: bool = False,
     verbose: bool,
     io: IOPort,
 ) -> None:
@@ -109,14 +114,21 @@ def render_summary(
     ``counters`` is the merged per-target tally (a target absent from the map is
     treated as all-zero). ``tools`` / ``plugins`` are the active sets in report
     order; ``all_tools`` / ``all_plugins`` are the ALL_* universes used to emit
-    the '(not detected, skipped)' footers. ``verbose`` selects the per-tool block
-    form over the one-line quiet form.
+    the '(not detected, skipped)' footers. ``clis`` is the active cli:<name>
+    deploy/prune target set. ``any_failed`` is the CLI-deploy stage's
+    record-and-continue failure flag (spec §6/§8): a hard failure (version
+    guard, install, smoke) never touches a per-target counter, so it would
+    otherwise reach quiet mode's all-zero branch and print a false
+    'up to date' line right before the caller returns exit 1. ``verbose``
+    selects the per-tool block form over the one-line quiet form.
     """
-    targets = _report_targets(counters, tools=tools, plugins=plugins, all_plugins=all_plugins)
+    targets = _report_targets(
+        counters, tools=tools, plugins=plugins, all_plugins=all_plugins, clis=clis
+    )
     if verbose:
         _render_verbose(counters, targets, all_tools=all_tools, all_plugins=all_plugins, io=io)
     else:
-        _render_quiet(counters, targets, io=io)
+        _render_quiet(counters, targets, any_failed=any_failed, io=io)
 
 
 def _render_verbose(
@@ -159,6 +171,7 @@ def _render_quiet(
     counters: Mapping[str, Counters],
     targets: Sequence[str],
     *,
+    any_failed: bool,
     io: IOPort,
 ) -> None:
     """One-line-per-changed-target form."""
@@ -174,6 +187,13 @@ def _render_quiet(
     # One blank line before the up-to-date / Done branch, regardless of which fires.
     io.info("")
     if not lines:
+        if any_failed:
+            # A record-and-continue CLI-deploy failure (version guard, install,
+            # smoke) never touches a per-target counter, so it reaches this
+            # all-zero branch — 'up to date' would be a false success claim
+            # right before the caller returns exit 1.
+            io.err("CLI deploy failed — see errors above.")
+            return
         io.ok("All files up to date — no changes made.")
         return
     io.ok("Done.")

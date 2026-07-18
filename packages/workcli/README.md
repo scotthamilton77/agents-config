@@ -11,6 +11,11 @@ place instead of being re-discovered per consumer.
 This document is written for an engineer wiring a programmatic adapter
 against `work` — the audience is a program, not a human at a terminal.
 
+The repo installer installs `work` globally onto PATH (`uv tool install`,
+receipt-tracked, pruned on retirement); `uv run work …` from inside
+`packages/workcli/` remains the way to exercise an in-checkout, unreleased
+change.
+
 ## Verb table
 
 Twelve verbs; each is a subcommand of `work`.

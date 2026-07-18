@@ -83,8 +83,8 @@ It's simple: this project hosts "agent configuration" (and tools, helpers, etc.)
   - `codex/` - codex plugin: the Codex routing rule (Claude-only)
 - `packages/` - **Real Python packages** (standalone uv projects, each with its own `pyproject.toml`; not part of the installed config surface)
   - `installer/` - the installer engine that `scripts/install.sh` execs; CI-gated (`make ci-installer`)
-  - `prgroom/` - deterministic PR-grooming CLI that supersedes the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills; CI-gated (`make ci-prgroom`). Driven by the `monitor-pr` skill. **Not yet installed by the installer** — run via `uv tool install`/`uv run` from `packages/prgroom/`
-  - `workcli/` - the `work` facade CLI: quarantines the issue-tracker backend (bd) behind a stable JSON-envelope contract, twelve verbs over an injected `Backend` seam; CI-gated (`make ci-workcli`). Driven by the work-facade CLI contract spec (`docs/specs/2026-07-04-work-facade-cli-contract.md`)
+  - `prgroom/` - deterministic PR-grooming CLI that supersedes the `wait-for-pr-comments` and `reply-and-resolve-pr-threads` skills; CI-gated (`make ci-prgroom`). Driven by the `monitor-pr` skill. **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
+  - `workcli/` - the `work` facade CLI: quarantines the issue-tracker backend (bd) behind a stable JSON-envelope contract, twelve verbs over an injected `Backend` seam; CI-gated (`make ci-workcli`). Driven by the work-facade CLI contract spec (`docs/specs/2026-07-04-work-facade-cli-contract.md`). **Installed onto PATH by the installer** (`uv tool install`, receipt-tracked, pruned on retirement)
   - `pdlc/` - PDLC Orchestrator: the deterministic FSM engine intended to drive Objectives through the lifecycle. Early — happy-path tracer bullet only; not yet CI-gated
   - `holding-place/` - Idea pipeline + the Promote contract into the PDLC Orchestrator. Early; not yet CI-gated
 - `project-config.toml` - part of the target architecture, contains key project-level configuration for how skills, agents, rules, etc. should behave for things like validation, agent delegation, etc.

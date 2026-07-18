@@ -158,8 +158,14 @@ See [The SDLC Workflow](./sdlc-workflow.md#1-capture) for the loop.
 ## Optional: the `prgroom` CLI
 
 `prgroom` is a standalone CLI that grooms a PR deterministically (poll → cluster
-feedback → fix → push → reply → resolve). The `monitor-pr` skill drives it. It
-is **not** installed by the installer — if you want it, install it from the repo:
+feedback → fix → push → reply → resolve). The `monitor-pr` skill drives it. The
+installer deploys it onto your PATH automatically (`uv tool install`,
+receipt-tracked, pruned on retirement) as part of a normal install — no separate
+step needed.
+
+If you're running without the installer (or want to install it manually against
+a specific checkout), the fallback is the same command the installer runs under
+the hood:
 
 ```bash
 uv tool install ./packages/prgroom     # or: uv run prgroom --help

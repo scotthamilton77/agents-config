@@ -51,3 +51,6 @@ htmlcov/
 
 # vizsuite artifact output (`viz pr` writes .viz/out/*.html at cwd)
 .viz/
+
+# backlog-landscape regenerated artifacts (scripts/backlog-landscape/regenerate.sh)
+scripts/backlog-landscape/output/
