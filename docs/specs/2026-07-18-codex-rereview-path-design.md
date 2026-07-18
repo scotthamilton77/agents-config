@@ -34,10 +34,12 @@ This predicate serves a cooperative loop: the pushes it examines come from this
 repo's own agents and CI, not from untrusted contributors. It defends against
 **staleness** — reading a verdict earned by an earlier head as covering the
 current one — not against an adversary forging git metadata. Client-written
-committer dates are therefore acceptable inputs for ordinary pushes; the one git
-operation that breaks that assumption (force-push to an older existing commit)
-is covered by a server-side signal instead. False negatives hand off to a human
-and are always acceptable.
+committer dates are acceptable inputs for the common case, where an agent
+commits and pushes within seconds; the two ways a committer date diverges from
+push receipt are handled separately — force-push to an older existing commit by
+a server-side timeline signal in Component 2, and an ordinary push of a
+previously-prepared commit in the Accepted residual section. False negatives
+hand off to a human and are always acceptable.
 
 ## Observed Codex behaviour
 
@@ -154,9 +156,10 @@ It is true when **either**:
        `last_head_change = max(` the head commit's `commit.committer.date` from
        `repos/{owner}/{repo}/commits/{HEAD_OID}`, `,` the `created_at` of the
        latest `head_ref_force_pushed` event from
-       `repos/{owner}/{repo}/issues/{n}/timeline` `)` — the timeline term is
-       omitted when no such event exists, and a missing or unparseable committer
-       date yields false; **and**
+       `repos/{owner}/{repo}/issues/{n}/timeline`, fetched with `--paginate`
+       and aggregated across pages `)` — the timeline term is omitted when no
+       such event exists, a pagination failure follows the API-failure rule
+       below, and a missing or unparseable committer date yields false; **and**
     4. the pull request's head OID, re-read after the reactions fetch, still
        equals the `HEAD_OID` under evaluation (the head moved mid-check
        otherwise; yield false).
@@ -226,6 +229,20 @@ not seconds. Accepted. If it is ever observed, the remedy is a quiet-period
 conjunct: reject a `+1` younger than the observed maximum review latency unless
 the head has been stable at least that long.
 
+An ordinary push can also advance the PR to a commit **created substantially
+earlier** — an agent pushing previously-prepared local work — with no
+force-push event. A `+1` earned by the prior head then post-dates the new
+head's committer date and satisfies (b)(3), even though it predates the push.
+Two things bound this: it additionally requires Codex to be unavailable after
+the push (a push is a trigger, so within the normal lifecycle the stale `+1`
+is torn down within seconds), and on the merge-guard retry path it is closed
+outright — the retry accepts a `+1` only when its `created_at` post-dates the
+retry's **own `@codex review` ask comment**, both server-generated timestamps.
+The residual exposure is therefore the cold evaluation path times a Codex
+outage times a stale-prepared-commit push. Accepted; if observed, the remedy
+is a server-observed head timestamp (e.g. the head SHA's earliest check-suite
+`created_at`) replacing the committer-date term.
+
 Base-branch drift is likewise accepted, at parity with the existing review path:
 neither a review object nor a reaction is invalidated when the base advances and
 the effective diff changes without a head push.
@@ -254,6 +271,8 @@ payloads, asserting both `bot_clean_review_at_head` and
   neither;
 - a `+1` predating the head commit's committer date;
 - a `+1` predating a later `head_ref_force_pushed` timeline event;
+- a `head_ref_force_pushed` event on a later timeline page (pagination must
+  still surface it);
 - a `+1` from an identity outside the allowlist; a `+1` whose `user.type` is
   not `"Bot"`;
 - an `eyes` present from a different allowlisted identity than the `+1`'s;
