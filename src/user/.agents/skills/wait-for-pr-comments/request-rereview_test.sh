@@ -60,4 +60,126 @@ else
   echo "  ok: rejects unknown flag"
 fi
 
+# ── --bot-reviewers (Component 1: per-bot re-review dispatch) ───────────────
+
+assert "accepts --bot-reviewers flag" "grep -q -- '--bot-reviewers' '$SCRIPT'"
+
+# Malformed values must be rejected up front (exit 2 — this script's usage-
+# error code), not silently ignored.
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers 'not-json' 2>/dev/null
+rc_bad_bots=$?
+assert "exits 2 for non-array --bot-reviewers" "[ \$rc_bad_bots -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '[]' 2>/dev/null
+rc_empty_bots=$?
+assert "exits 2 for empty --bot-reviewers array" "[ \$rc_empty_bots -eq 2 ]"
+
+"$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["ok", 3]' 2>/dev/null
+rc_mixed_bots=$?
+assert "exits 2 for --bot-reviewers array with a non-string" "[ \$rc_mixed_bots -eq 2 ]"
+
+# --- Fake-gh shim (argv capture): logs every invocation; --add-reviewer / `gh
+# pr comment` can be made to fail via FAKE_GH_FAIL_EDIT / FAKE_GH_FAIL_COMMENT
+# so per-identity dispatch failure and the exit-code matrix can be exercised.
+FAKEBIN2="$TMP/bin2"
+mkdir -p "$FAKEBIN2"
+export FAKE_GH_LOG="$TMP/fake-gh.log"
+cat > "$FAKEBIN2/gh" <<'FAKE'
+#!/usr/bin/env bash
+# Fake gh — logs every invocation; --add-reviewer / pr comment can be made to
+# fail via FAKE_GH_FAIL_EDIT / FAKE_GH_FAIL_COMMENT env vars.
+LOG="${FAKE_GH_LOG:-/tmp/fake-gh.log}"
+echo "$@" >> "$LOG"
+for arg in "$@"; do
+  if [ "$arg" = "--add-reviewer" ] && [ "${FAKE_GH_FAIL_EDIT:-0}" = "1" ]; then
+    echo "fake-gh: simulated add-reviewer failure" >&2
+    exit 1
+  fi
+done
+if [ "$1" = "pr" ] && [ "$2" = "comment" ] && [ "${FAKE_GH_FAIL_COMMENT:-0}" = "1" ]; then
+  echo "fake-gh: simulated comment failure" >&2
+  exit 1
+fi
+exit 0
+FAKE
+chmod +x "$FAKEBIN2/gh"
+
+# Per-identity dispatch: Copilot -> remove+re-add reviewer dance.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_copilot=$?
+assert "Copilot identity exits 0" "[ \$rc_copilot -eq 0 ]"
+assert "Copilot identity dispatches --remove-reviewer @copilot" "grep -qF -- '--remove-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Copilot identity dispatches --add-reviewer @copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "Copilot identity does NOT post a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Per-identity dispatch: copilot-pull-request-reviewer[bot] (exact GH login)
+# dispatches the same mechanism as 'Copilot', case-insensitively matched.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["copilot-pull-request-reviewer[bot]"]' >/dev/null 2>&1
+rc_copilot_bot=$?
+assert "copilot-pull-request-reviewer[bot] identity exits 0" "[ \$rc_copilot_bot -eq 0 ]"
+assert "copilot-pull-request-reviewer[bot] identity dispatches the reviewer dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+
+# Per-identity dispatch: chatgpt-codex-connector[bot] -> '@codex review' issue comment.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_codex=$?
+assert "Codex identity exits 0" "[ \$rc_codex -eq 0 ]"
+assert "Codex identity posts an '@codex review' issue comment" "grep -qF -- 'pr comment 1 --repo o/r --body @codex review' '$FAKE_GH_LOG'"
+assert "Codex identity does NOT touch reviewers" "! grep -qF -- '--add-reviewer' '$FAKE_GH_LOG'"
+
+# Case-insensitive identity match (spec: mirrors poll-copilot-review.sh's convention).
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["CHATGPT-CODEX-CONNECTOR[bot]"]' >/dev/null 2>&1
+rc_codex_upper=$?
+assert "uppercase Codex identity still dispatches (case-insensitive match)" "[ \$rc_codex_upper -eq 0 ] && grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Multi-identity dispatch: both known bots asked in one call.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_multi=$?
+assert "multi-identity dispatch exits 0" "[ \$rc_multi -eq 0 ]"
+assert "multi-identity dispatch asks Copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "multi-identity dispatch asks Codex" "grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
+# Unknown identity: warns to stderr and is skipped WITHOUT aborting siblings.
+: > "$FAKE_GH_LOG"
+err_out=$(PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["some-other-bot[bot]", "Copilot"]' 2>&1 >/dev/null)
+rc_unknown_mixed=$?
+assert "unknown identity mixed with a known one still exits 0" "[ \$rc_unknown_mixed -eq 0 ]"
+assert "unknown identity warns on stderr" "printf '%s' \"\$err_out\" | grep -qiF 'some-other-bot[bot]'"
+assert "unknown identity does not abort dispatch to Copilot" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+
+# All-unknown: exit 1 (no ask succeeded), still no abort/crash.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["totally-unknown-bot"]' >/dev/null 2>&1
+rc_all_unknown=$?
+assert "all-unknown identities exit 1 (none succeeded)" "[ \$rc_all_unknown -eq 1 ]"
+
+# Exit-code matrix: a known identity whose gh call fails still counts as a
+# failed ask; when it is the ONLY identity, exit 1 (none succeeded).
+: > "$FAKE_GH_LOG"
+FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 --bot-reviewers '["Copilot"]' >/dev/null 2>&1
+rc_all_fail=$?
+assert "single failing identity exits 1 (none succeeded)" "[ \$rc_all_fail -eq 1 ]"
+
+# Exit-code matrix: one identity fails, the other succeeds -> still exit 0
+# (at least one ask succeeded).
+: > "$FAKE_GH_LOG"
+FAKE_GH_FAIL_EDIT=1 PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 \
+  --bot-reviewers '["Copilot", "chatgpt-codex-connector[bot]"]' >/dev/null 2>&1
+rc_partial=$?
+assert "one failing + one succeeding identity exits 0 (at least one succeeded)" "[ \$rc_partial -eq 0 ]"
+
+# Flag-omitted default: still performs the Copilot-only dance, unchanged.
+: > "$FAKE_GH_LOG"
+PATH="$FAKEBIN2:$PATH" "$SCRIPT" --owner o --repo r --pr 1 >/dev/null 2>&1
+rc_default=$?
+assert "omitting --bot-reviewers exits 0 (Copilot default)" "[ \$rc_default -eq 0 ]"
+assert "omitting --bot-reviewers still dispatches the Copilot dance" "grep -qF -- '--add-reviewer @copilot' '$FAKE_GH_LOG'"
+assert "omitting --bot-reviewers never posts a codex review comment" "! grep -qF 'pr comment' '$FAKE_GH_LOG'"
+
 exit $FAIL
