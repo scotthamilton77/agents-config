@@ -110,6 +110,33 @@ heavy_min_subsystems = 3
 trivial_max_loc      = 3   # SKIP ceiling; hard-capped at 20 on load
 
 # ---------------------------------------------------------------------------
+# [tracks] / [operating-model] / [extraction] — work-tracker track partition
+# Read by: workcli (work create gate, work list --track, work track set,
+#          work lint, work graph) and, when they ship, work triggers/groom.
+# Contract: docs/specs/2026-07-15-workcli-track-partition-design.md §3
+# ---------------------------------------------------------------------------
+[tracks]
+names = ["installer", "prgroom", "workcli", "pdlc-orchestrator",
+         "holding-place", "vizsuite", "skills-discipline",
+         "portability", "ops-meta"]
+organizing-only = ["skills-discipline", "portability", "ops-meta"]
+enforcement = "advisory"   # flip to "required" is agents-config-63nm3, gated on backfill
+
+[operating-model]
+milestone-wip-cap = 2
+wip-exempt-milestones = ["agents-config-uxns2"]  # PORT — bead id, never display name
+backlog-groom-nag-days = 7
+groom-state-bead = ""   # minted by the backfill migration (spec §7)
+
+[extraction.pressure]
+max-track-backlog = 100
+external-consumer-tracks = []
+independent-release-tracks = []
+
+[extraction.eligibility]
+max-cross-track-edges = 3
+
+# ---------------------------------------------------------------------------
 # [foreign-cli] — foreign-CLI binary paths and model selections
 # Read by: red-tests (Codex adversarial test review),
 #          green-loop (RALF-IT foreign-eyes iterations),
