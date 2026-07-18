@@ -8,10 +8,13 @@
   file:// URL with no server.
 
   SERIALIZATION CONTRACT — state strings carry external text (PR titles,
-  review comments). Emit the state with a real JSON serializer and then
-  escape the sequence `</` as `<\/`. A raw splice of a title containing
-  `</script>` closes this block early and executes whatever follows.
-  Python:  json.dumps(state, indent=2).replace("</", "<\\/")
+  review comments). Emit the state with a real JSON serializer, then escape
+  every `<` as the JSON escape `\u003c` before splicing it in. A raw splice
+  of a title containing `</script>` closes this block early and executes
+  whatever follows. Escaping `<` itself (rather than just `</`) also closes
+  the `<!--<script` double-escaped parser state, and JSON parses `\u003c`
+  back to `<`, so the rendered text is unchanged.
+  Python:  json.dumps(state, indent=2).replace("<", "\\u003c")
 
   Open in a browser EXACTLY ONCE, when first created. Never on updates.
 
@@ -245,9 +248,9 @@
 <script>
 // ---------------------------------------------------------------------------
 // BOOKKEEPER: replace this object with the contents of state.json on each
-// regeneration. Serialize with a JSON serializer and escape `</` as `<\/`
-// (see the serialization contract in the file header) — never splice raw
-// text. Schema: references/state-schema.md
+// regeneration. Serialize with a JSON serializer and escape every `<` as
+// `\u003c` (see the serialization contract in the file header) — never
+// splice raw text. Schema: references/state-schema.md
 // ---------------------------------------------------------------------------
 const STATE = {
   "title": "Grind — Lane Status",

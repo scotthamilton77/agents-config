@@ -10,10 +10,15 @@ Never open a browser except on first creation.
 
 **Serialization contract.** State strings carry text from outside the grind —
 PR titles, review-comment excerpts, branch names. Serialize with a real JSON
-serializer and then escape `</` as `<\/` before splicing the result into the
-template's inline `<script>` block. A title containing `</script>` otherwise
-closes the block early and whatever follows it executes on open. In Python:
-`json.dumps(state, indent=2).replace("</", "<\\/")`.
+serializer, then escape every `<` as the JSON escape `\u003c` before splicing
+the result into the template's inline `<script>` block. A title containing
+`</script>` otherwise closes the block early and whatever follows it executes
+on open. In Python:
+`json.dumps(state, indent=2).replace("<", "\\u003c")`.
+
+Escape `<` itself rather than only the `</` pair: it costs nothing, and it also
+closes the `<!--<script` double-escaped parser state, which a `</`-only rule
+leaves open. JSON parses `\u003c` back to `<`, so displayed text is unaffected.
 
 ## Contents
 

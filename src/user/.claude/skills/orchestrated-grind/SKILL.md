@@ -217,8 +217,9 @@ The rendered dashboard **inlines its state** rather than fetching it, so it
 works from a `file://` URL with no server. Do not introduce one. Because the
 state is spliced into an inline `<script>` block and carries text from outside
 the grind (PR titles, review-comment excerpts), the bookkeeper MUST serialize
-it with a JSON serializer and escape `</` as `<\/` — the serialization contract
-in `references/state-schema.md`. A raw splice is a script-injection hole.
+it with a JSON serializer and escape every `<` as `\u003c` — the serialization
+contract in `references/state-schema.md`. A raw splice is a script-injection
+hole.
 
 ## 6. Watchers — waking a parked lane
 
