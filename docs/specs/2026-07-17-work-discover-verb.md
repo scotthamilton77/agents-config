@@ -178,15 +178,28 @@ Refusal — nothing is created; the message names the missing/invalid field:
 | any rationale flag (`--scope-why`, `--priority-why`, `--anchor-why`/`--escalation-why`) blank after strip or containing an embedded newline | `E_TRIAGE_INCOMPLETE` | the rationale-shape rule (§3.2): a required one-line value cannot be empty or multiline; names the offending field; creates nothing |
 | duplicate exact title | `E_DUPLICATE_TITLE` | inherited from the `create <noun>` guard; names the collision |
 | `--anchor` id does not exist | `E_NOT_FOUND` | inherited from the create path |
+| `--scope out-of-scope` with a non-container `--anchor` (declared-state `is_container` false: no epic/milestone type or container shape label) | `E_TRIAGE_INCOMPLETE` | out-of-scope work must anchor under an epic or milestone (canonical discovered-work contract); names the rule; creates nothing. The in-scope-deferred path keeps the soft warning (below) |
 | `--discovered-from` id does not exist (deleted/invalid) | `E_NOT_FOUND` | resolved pre-mint (§4 step 2); names `--discovered-from`; creates nothing |
 | `required` track mode, `--orphan` (no parent to inherit track), no `--track` | `E_TRACK_REQUIRED` | inherited from the track gate (§4 composition) |
 | create succeeds, orphan-marker note append fails (`--orphan` path) | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for marker replay |
 | create succeeds, `discovered-from` edge add fails | `E_BACKEND_DRIFT` / underlying | `detail.created_id` set for edge replay |
 
-Non-container anchor (anchor exists but is a `task`/leaf, not epic/milestone) is a
-**soft warning** in `data.warnings`, never a refusal — whether the epic is the *right*
-container is judgment (§5), and in-scope sibling filing legitimately anchors on a
-non-epic parent.
+Non-container anchor handling is **scope-dependent**, keyed on the lifecycle layer's
+declared-state `is_container` test (a bead is a container when it carries an
+epic/milestone type or a container shape label — the same declared-state test the
+create path's placement validation uses; no structural walk of children):
+
+- **`--scope out-of-scope`** — a non-container anchor is a **refusal**
+  (`E_TRIAGE_INCOMPLETE` naming the out-of-scope-must-anchor-under-a-container rule),
+  never a filing. The canonical discovered-work contract requires out-of-scope work to
+  be placed under an epic or milestone; permitting a leaf/task anchor would create the
+  close-walk-unsafe child-of-current-work shape.
+- **`--scope in-scope-deferred:HATCH`** — a non-container anchor is a **soft warning**
+  in `data.warnings`, never a refusal: an in-scope deferral legitimately anchors as a
+  sibling under the parent-of-in-flight work item, which may itself be a non-epic.
+
+Only the container-vs-leaf *shape*, gated by scope, is mechanical; whether the chosen
+container is the *right* home stays judgment (§5).
 
 ## 4. Composition with the create gate and lifecycle
 
@@ -244,14 +257,18 @@ stay caller judgment, owned by the `triaging-discovered-work` skill:
   and enforces its *shape*, it cannot compute it.
 - **Whether fix-in-session should have applied.** If the agent chose to file rather than
   fix, the verb files; verify-checklist and the human audit whether that was right.
-- **Best-fit anchor.** The verb checks the anchor exists (and soft-warns if it is not a
-  container); *which* epic is the right home is judgment.
+- **Best-fit anchor.** The verb checks the anchor exists and, via the declared-state
+  `is_container` test, refuses a non-container anchor for an out-of-scope filing while
+  soft-warning for an in-scope deferral (§3.4); *which* epic is the right home is
+  judgment.
 - **Priority level.** The verb enforces `P0`–`P4` form and a rationale; whether P1 vs P3 is
   correct is judgment.
 
 The test for "mechanical": could a reviewer decide the refusal from the CLI inputs alone,
-without reading the codebase or the roadmap? Missing field, unknown hatch, absent edge —
-yes, mechanical. "Is this really out of scope?" — no, prose.
+without reading the codebase or the roadmap? Missing field, unknown hatch, absent edge,
+or a non-container anchor for an out-of-scope filing (`--scope` plus the anchor's
+declared `is_container` state) — yes, mechanical. "Is this really out of scope?" or
+"is *this* the best-fit epic?" — no, prose.
 
 ## 6. Acceptance criteria
 
@@ -297,6 +314,11 @@ yes, mechanical. "Is this really out of scope?" — no, prose.
     returns an error with `detail.created_id` set (marker replayable, no duplicate bead) —
     the fake call log shows exactly **one** `create` followed by the failing `append_note`,
     and the caller can re-run the marker step against the returned id.
+16. `--scope out-of-scope` with an `--anchor` whose declared state is non-container (no
+    epic/milestone type or container shape label) exits `E_TRIAGE_INCOMPLETE` naming the
+    out-of-scope-must-anchor-under-a-container rule and **creates nothing** (fake records
+    no `create` call); the *same* non-container anchor under
+    `--scope in-scope-deferred:HATCH` succeeds with a `data.warnings` entry and no refusal.
 
 ## 7. Protocol impact
 
@@ -314,7 +336,7 @@ spec-authoring time; the changes are independent and additive, so any order work
   composing `create_noun`, the `discovered-from` edge, triage-block rendering, and
   manifest-row assembly; the `E_TRIAGE_INCOMPLETE` ErrorCode member; `cli.py` subparser
   and `verbs/__init__.py` registration; MINOR protocol bump — AC: acceptance criteria
-  1–12, 14, and 15 pass under `make ci-workcli` (criterion 13 passes once the track-partition
+  1–12 and 14–16 pass under `make ci-workcli` (criterion 13 passes once the track-partition
   create gate has landed — verify in whichever PR lands second); behavioral tests use `run_cli_with_runner` call-log
   assertions against the `ScriptedBdRunner` fake, no live bd.
 - chore: retire the prose filing mechanics once the verb ships — repoint the
