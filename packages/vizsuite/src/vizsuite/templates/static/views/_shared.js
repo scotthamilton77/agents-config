@@ -432,6 +432,15 @@
   function wireClickVsDragActivation(el, options) {
     var onActivate = options.onActivate;
     var isExempt = options.isExempt;
+    // Opt-in double-click suppression (default off, so every other caller —
+    // treemap tile, ledger row, sonar — keeps activating synchronously). When
+    // set (ms), a pointer click's activation is DEFERRED by this window and
+    // cancelled if a `dblclick` lands inside it, so a double-click gesture
+    // (constellation's un-pin) does not also fire the primary activation. Only
+    // the pointer path defers — keyboard activation (Enter/Space) has no
+    // double-press gesture and must stay instant.
+    var dblclickWindowMs = options.dblclickWindowMs;
+    var pendingTimers = [];
     var startX = 0;
     var startY = 0;
     var moved = false;
@@ -475,8 +484,28 @@
       if (isExempt && isExempt(evt)) {
         return;
       }
-      onActivate();
+      if (!dblclickWindowMs) {
+        onActivate();
+        return;
+      }
+      // Defer: hold activation open for the double-click window; a `dblclick`
+      // (fired after the second pointerup) clears every pending timer, so a
+      // double-click gesture activates zero times instead of twice.
+      var timer = setTimeout(function () {
+        var idx = pendingTimers.indexOf(timer);
+        if (idx !== -1) {
+          pendingTimers.splice(idx, 1);
+        }
+        onActivate();
+      }, dblclickWindowMs);
+      pendingTimers.push(timer);
     });
+    if (dblclickWindowMs) {
+      el.addEventListener("dblclick", function () {
+        pendingTimers.forEach(clearTimeout);
+        pendingTimers.length = 0;
+      });
+    }
     // A cancelled gesture (browser-initiated, e.g. scroll takeover) must not
     // leave the helper armed for a later stray pointerup.
     el.addEventListener("pointercancel", function () {

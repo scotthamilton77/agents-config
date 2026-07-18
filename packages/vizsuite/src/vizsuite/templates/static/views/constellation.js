@@ -91,6 +91,13 @@
   // never removes its determinism (spec §4.2).
   var LAYOUT_SEED = 1337;
   var DRAG_THRESHOLD = 4; // px; same click-vs-drag threshold as wireClickVsDragActivation
+  // Double-click un-pin window (ms): a node click's activation (dir focus /
+  // file drill) is deferred by this window and cancelled when the un-pin
+  // dblclick lands, so the un-pin gesture never also opens the drill (whose
+  // viewport resize would otherwise shift the baseline mid-gesture). Scoped to
+  // constellation nodes only — every node here carries the dblclick un-pin
+  // gesture. Keyboard activation is unaffected (stays instant).
+  var DBLCLICK_ACTIVATION_WINDOW_MS = 275;
 
   // ---- Node sizing (prototype anatomy `variant_B.js`): a dir's radius grows
   // with its rolled-up load-bearing score; a satellite is always the same
@@ -655,7 +662,10 @@
       window.vizShared.wireClickVsDragActivation(el, {
         onActivate: function () {
           handlers.onActivate(node);
-        }
+        },
+        // Defer + cancel-on-dblclick so the un-pin gesture (see wireDrag's
+        // dblclick handler) does not also fire dir focus / file drill.
+        dblclickWindowMs: DBLCLICK_ACTIVATION_WINDOW_MS
       });
       el.addEventListener("pointerenter", function (evt) {
         handlers.onHoverShow(evt, node);

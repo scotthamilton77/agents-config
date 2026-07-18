@@ -256,6 +256,11 @@ def test_render_inlines_constellation_interaction_hooks():
     # and dir tooltip all call the shared hover score-card builder — four
     # call sites, inlined into the same bundle (item 6: bundle markers).
     assert html.count("window.vizShared.buildScoreCard(") == 4
+    # Un-pin does not double as a file open: constellation opts its nodes into
+    # the shared activation helper's double-click suppression window, so the
+    # dblclick un-pin gesture cancels the deferred dir-focus/file-drill instead
+    # of firing it (which would resize the viewport mid-gesture).
+    assert "dblclickWindowMs" in html
 
 
 def test_render_inlines_constellation_structural_hooks():
