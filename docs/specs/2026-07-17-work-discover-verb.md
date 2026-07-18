@@ -171,6 +171,7 @@ Refusal — nothing is created; the message names the missing/invalid field:
 
 | Condition | Code | Notes |
 |---|---|---|
+| adapter lacks dep-write support (`supports_dep_write` false; `supports_dep_types` false in shipped code) | `E_UNSUPPORTED_CAPABILITY` | registration gate (§4 step 0), refused **before** form validation, provenance resolution, or any mint; discover always writes a `discovered-from` edge, so it gates identically to the `dep` verb; creates nothing |
 | missing `--title`; neither/both of `--anchor`/`--orphan`; `--noun` not a leaf noun | `E_USAGE` | pure arg-shape; argparse or cheap check |
 | missing any of `--scope`/`--scope-why`/`--priority`/`--priority-why`/`--discovered-from` | `E_TRIAGE_INCOMPLETE` | names the missing triage field |
 | `--scope` value not `out-of-scope` / `in-scope-deferred:HATCH`; unknown `HATCH`; `--priority` not `P0`–`P4` | `E_TRIAGE_INCOMPLETE` | names field + valid vocabulary (the refusal message names the accepted `P0`–`P4` range) |
@@ -206,6 +207,18 @@ container is the *right* home stays judgment (§5).
 `work discover` is a lifecycle verb (`lifecycle/discover.py`, handler signature
 `(Backend, Namespace) -> JsonValue`, registered in `verbs/__init__.py`). Its body:
 
+0. **Gate on the dep-write capability** — because discover *always* mints a typed
+   `discovered-from` provenance edge (step 5, a dep **write**), it carries the same
+   capability precondition as the `dep` verb and MUST declare it in the
+   `REQUIRED_CAPABILITY` registration. When the adapter's `Capabilities` lacks dep-write
+   support, discover refuses with `E_UNSUPPORTED_CAPABILITY` **at the registration gate,
+   before its handler runs** — ahead of form validation, provenance resolution, and any
+   mint — exactly as `dep` does. The gated capability is the dep-write capability
+   (`supports_dep_write`; `supports_dep_types` in the shipped code until the
+   contract-hardening reshape lands, where dep reads become ungated and only typed dep
+   writes are gated). Minting first and failing on the edge would strand a created item on
+   a no-dep-write adapter; gating before the handler closes that window and matches `dep`'s
+   own pre-handler refusal.
 1. **Validate triage form** (mechanical refusals above) — *before* any bd call, mirroring
    `create <noun>`'s pre-mint duplicate guard. Bad form creates nothing.
 2. **Resolve the provenance source** — resolve `--discovered-from` against the backend via
@@ -335,6 +348,11 @@ declared `is_container` state) — yes, mechanical. "Is this really out of scope
     out-of-scope-must-anchor-under-a-container rule and **creates nothing** (fake records
     no `create` call); the *same* non-container anchor under
     `--scope in-scope-deferred:HATCH` succeeds with a `data.warnings` entry and no refusal.
+17. `work discover` against a fake whose `Capabilities` declares dep-write support false
+    (`supports_dep_write=False`; `supports_dep_types=False` in the shipped code) exits
+    non-zero with `E_UNSUPPORTED_CAPABILITY` **before** any triage validation or mint — the
+    fake call log shows **zero** `create` calls (the registration gate refuses ahead of the
+    handler, exactly as the `dep` verb does).
 
 ## 7. Protocol impact
 
