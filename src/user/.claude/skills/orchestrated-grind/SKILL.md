@@ -276,45 +276,33 @@ missing a credential — and the human grants merge authority for the session
 directly instead. That grant replaces the *authorization* the guard would have
 resolved; it does not replace the *eligibility* it would have computed.
 
-**Prefer the canonical eligibility check over a hand-rolled one.** The guard is
-more than its policy resolver; if its eligibility script still runs, run it and
-use its verdict. Reconstructing eligibility from memory is how a blocker that
-exists in the canonical check quietly goes missing from the grind's copy.
+**Run the canonical eligibility check — do not reconstruct one.** The guard is
+more than its policy resolver, so if its eligibility script still runs, run it
+and use its verdict even when the authorization half is dead.
 
-Only when nothing of the guard is operable do you verify by hand — and then
-understand what you are holding. **The list below is a floor, not the whole
-eligibility check.** A hand pass cannot faithfully reproduce the canonical one,
-so treat these as necessary, never as sufficient:
+**When nothing of the guard runs, ROOT does not merge.** The PR goes to the
+human's docket, session grant or not. This is not caution for its own sake: the
+canonical check's blocker set is larger than anyone remembers and it *grows* —
+requested-changes verdicts, in-flight reviews, pending escalations, untriaged
+feedback, blockers contributed by other tooling in the repo. Any list written
+here is a snapshot that silently rots, and a hand-rolled floor that looks
+complete is more dangerous than an honest handoff, because it authorizes a
+merge on a check nobody maintains. So the floor is not reproduced here.
 
-1. **CI green at the head commit** you are about to merge — not at an earlier one.
-2. **Reviewer approval at that same head** — an approval of a superseded head is
-   not an approval of this one.
-3. **Zero unresolved review threads.**
-4. **No active requested-changes verdict from any reviewer.** This one is
-   **sticky and not head-scoped**: a push does not clear it, and another
-   reviewer's approval does not override it. It clears only by dismissal or by
-   a later approval from *the same* reviewer. Check it separately — the other
-   three can all pass while one reviewer is still blocking.
-5. **No expected review still in flight, no pending escalation, and no
-   untriaged feedback** — the canonical check blocks on each of these, and
-   every one of them can coexist with a green 1–4. If you cannot establish all
-   three, you have not cleared the floor.
+What ROOT owes the human is a **useful docket entry**, not a verdict. Gather
+what you can establish cheaply — CI state at the head you would merge, whether
+an approval exists at *that same* head, unresolved thread count, and whether any
+reviewer has an active requested-changes verdict (sticky and not head-scoped: a
+push does not clear it, and another reviewer's approval does not override it).
+Report those as **facts you checked, not as clearance**, and name the guard as
+inoperable so the human knows the usual gate did not run.
 
-**Pin the merge to the head you checked.** Every fact above is a statement about
-one specific SHA, and a lane can push between your check and your merge. Pass
-the checked head to the merge command so the merge fails rather than silently
-retargeting — this is the race the guard's head-pinned command exists to close,
-and hand-verifying without pinning reintroduces it.
-
-Because a hand pass cannot guarantee completeness, a **wholly inoperable guard
-is itself a reason to prefer the human's docket** over merging on the session
-grant alone. Clearing 1–5 earns a merge; ambiguity on any of them is a ruling
-for the human, not a judgment call for ROOT.
-
-Any one missing and the PR goes to the human's docket, session grant or not.
-The docket is not a dead end: once there, the human may rule on that PR
-specifically, and their ruling supersedes the floor — merging despite a missing
-fact is a call they are allowed to make and ROOT is not. Record the ruling with
+The human then rules on that PR. Their ruling supersedes the floor — merging
+with the guard down is a call they are allowed to make and ROOT is not. If the
+ruling is to merge, **pin the merge to the head that was checked**, so a lane
+pushing in between fails the merge rather than silently retargeting it; that
+race is exactly what the guard's head-pinned command exists to close. Record the
+ruling with
 the merge. Likewise record in the handoff (§7) that the guard was bypassed and
 on what authority — a grant nobody wrote down is indistinguishable, later, from
 a lane that merged on its own initiative.
@@ -522,8 +510,8 @@ punished; a worker that hides a compromise costs far more than one that admits i
 | "The reviewer keeps re-flagging a fix I know I made — it's stalemated." | Check `git show <sha>:<file>` at the commit it claims it reviewed. A reviewer reading a stale head is malfunctioning, which is a different escalation. |
 | "I'll have the lane watch its own PR — it owns it." | A parked lane cannot hear its own watcher ring; the ring wakes ROOT. ROOT owns every watcher. |
 | "The watcher's been quiet, so nothing has happened." | Only if it counts reactions. A lone thumbs-up approval is invisible to a reviews-and-comments watcher. |
-| "merge-guard is broken and I have a session grant, so I can merge." | The grant replaces authorization, not eligibility. Run the canonical eligibility check if any of it still runs; hand-verify §4's floor only if none of it does, and pin the merge to the head you checked. |
-| "I checked the four facts, so I can merge." | They are a floor, not the whole eligibility check — an in-flight review, a pending escalation, or untriaged feedback blocks a merge with all four green. |
+| "merge-guard is broken and I have a session grant, so I can merge." | The grant replaces authorization, not eligibility. Run the canonical eligibility check if any of it still runs; if none of it does, ROOT does not merge — the PR goes to the human's docket. |
+| "I checked CI, approval, and threads myself — that's the floor." | It isn't. The canonical blocker set is larger than anyone remembers and grows over time. Those are facts for the docket entry, not clearance to merge. |
 | "The lane says it is fine, and re-checking would cost me context." | Verify anyway before anything irreversible, and whenever report and world disagree. Everywhere else, trust the lane. |
 | "I have context to spare, I will just review the diff myself." | You are the manager, not the reviewer. Re-running the lane's gate spends the one resource the run cannot replace. |
 | "The lane has retried this four times, it will get there." | Two rounds without progress is ROOT's cue to intervene. Unbounded retrying is the most expensive failure mode in a long run. |
@@ -545,8 +533,8 @@ punished; a worker that hides a compromise costs far more than one that admits i
 - You are writing review-bot mechanics into this skill instead of delegating
   to the repo's PR-review skill (§3).
 - You are about to merge without `merge-guard` resolving the policy (§4) — or,
-  where the guard is broken, without clearing §4's floor yourself and pinning
-  the merge to the head you checked.
+  where the guard is wholly inoperable, at all — that PR belongs on the human's
+  docket (§4).
 - You are sending a PR to the human's docket as a stalemate without having run
   the do-not-relitigate round (§3).
 - You are treating a re-flagged fix as a stalemate without having checked the
