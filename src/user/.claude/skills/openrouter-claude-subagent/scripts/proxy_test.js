@@ -371,3 +371,144 @@ test("does not mutate the input headers object", () => {
   assert.equal(original.host, "example.com");
   assert.equal(original.authorization, "Bearer xyz");
 });
+
+// ─── proxyRequest: absolute-form request-target pinning (security) ─
+//
+// `new URL(target, base)` ignores `base` entirely when `target` is itself
+// absolute (RFC 9112 §3.2.2). A client sending `GET http://elsewhere/x`
+// could hijack the pinned upstream host — and carry the OpenRouter key
+// injected downstream along with it. These tests drive `start()` over a
+// real socket, since the vulnerable code path is in request-line parsing,
+// which node:http exposes only through `req.url` on an actual connection.
+
+const net = require("node:net");
+const { start } = require("./proxy.js");
+
+/** Write a raw HTTP/1.1 request over a fresh socket and resolve with
+ *  everything received once a header block (blank line) has arrived.
+ *  Rejects on error or after `timeoutMs` so a hung proxy fails the test
+ *  instead of hanging the suite. */
+function rawRequest(port, requestLine, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(port, "127.0.0.1", () => {
+      socket.write(requestLine);
+    });
+    let data = "";
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      reject(new Error("socket timed out waiting for a response"));
+    });
+    socket.on("data", (chunk) => {
+      data += chunk.toString();
+      if (data.includes("\r\n\r\n")) {
+        socket.end();
+        resolve(data);
+      }
+    });
+    socket.on("error", reject);
+  });
+}
+
+test("refuses an absolute-form request target instead of forwarding it upstream", async () => {
+  const proxy = await start({ port: 0 });
+  try {
+    // Port 1 is a reserved TCP port nothing is listening on. If the fix
+    // regressed and the pin were bypassed, the proxy would try to dial this
+    // host:port and the request would hang or fail to connect — it could
+    // never accidentally produce a 403. Only the explicit refusal path does.
+    const response = await rawRequest(
+      proxy.port,
+      "GET http://127.0.0.1:1/steal HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+      5000,
+    );
+    assert.match(response, /^HTTP\/1\.1 403\b/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+test("does not refuse a normal origin-form request target", async () => {
+  const proxy = await start({ port: 0 });
+  try {
+    // This will fail to actually reach openrouter.ai in a test sandbox — a
+    // 502 (or any non-403 status) is an acceptable pass. Only a 403 here
+    // would indicate the pin rejects legitimate traffic too.
+    const response = await rawRequest(
+      proxy.port,
+      "GET /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n",
+      15000,
+    );
+    assert.doesNotMatch(response, /^HTTP\/1\.1 403\b/);
+  } finally {
+    await proxy.close();
+  }
+});
+
+// ─── createSSEFixer: buffered-trailing-event, duplicate/unstarted index ──
+
+test("finish() collects a trailing event left in the buffer when the stream ends without a trailing blank line", () => {
+  // No trailing "\n\n" after the last delta: it never crosses processChunk's
+  // split("\n\n") boundary and is left sitting in the internal buffer.
+  const text = [msgStart(), blockStart(0, "text"), blockDelta(0, "partial")].join("\n\n");
+  const { events } = runFixer(text);
+
+  const delta = events.find((e) => e.event === "content_block_delta" && e.data.delta.text === "partial");
+  assert.ok(delta, "the final delta, held in the buffer at end-of-stream, must still be replayed");
+});
+
+test("ignores and logs a duplicate content_block_start at an already-used index", () => {
+  const text = streamText([
+    msgStart(),
+    blockStart(0, "text"), blockDelta(0, "first"),
+    blockStart(0, "text"), blockDelta(0, "duplicate"), blockStop(0),
+    msgStop(), done(),
+  ]);
+  const { events, logs } = runFixer(text);
+
+  assert.ok(logs.some((m) => m.includes("duplicate content_block_start")));
+  const starts = events.filter((e) => e.event === "content_block_start");
+  assert.equal(starts.length, 1, "the repeated content_block_start must not replay the block twice");
+});
+
+test("drops a content_block_delta for an index that never had a content_block_start", () => {
+  const text = streamText([
+    msgStart(),
+    blockDelta(5, "orphan"),
+    msgStop(), done(),
+  ]);
+  const { events, logs } = runFixer(text);
+
+  assert.ok(logs.some((m) => m.includes("unstarted index")));
+  assert.ok(
+    !events.some((e) => e.event === "content_block_delta" && e.data?.delta?.text === "orphan"),
+    "a delta for an unstarted index must not appear in the replayed output",
+  );
+});
+
+// ─── createSSEFixer: pre-classification buffering ──────────────────
+
+test("holds a leading heartbeat rather than writing it out before the stream is classified", () => {
+  const res = fakeRes();
+  const fixer = createSSEFixer(res, () => {});
+
+  fixer.processChunk(": heartbeat\n\n");
+  assert.equal(res.writes.length, 0, "an unclassified heartbeat must not be written before classification");
+
+  fixer.processChunk(streamText([
+    msgStart(), blockStart(0, "text"), blockDelta(0, "hi"), blockStop(0), msgStop(), done(),
+  ]));
+  fixer.finish();
+
+  const events = res.output().split("\n\n").filter((s) => s.trim()).map(parseSSEBlock);
+  const delta = events.find((e) => e.event === "content_block_delta");
+  assert.equal(delta.data.delta.text, "hi");
+});
+
+test("still writes a held heartbeat through once the stream turns out to be passthrough", () => {
+  const openaiChunk = (id, content) =>
+    block(undefined, { id, object: "chat.completion.chunk", choices: [{ delta: { content } }] });
+  const text = streamText([": heartbeat", openaiChunk("c1", "hello")]);
+  const { res } = runFixer(text);
+
+  assert.equal(res.output(), text, "the held heartbeat must reach the client, not be lost");
+});

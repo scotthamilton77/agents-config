@@ -118,6 +118,7 @@ function createSSEFixer(res, log = defaultLog) {
 
   const preamble = [];       // message_start and anything before the blocks
   const tail = [];           // message_delta and friends
+  const pending = [];        // raw events seen before the stream is classified
   const blocks = new Map();  // index -> { type, events: [{ event, data }] }
   const order = [];          // block indexes, in arrival order
 
@@ -139,6 +140,13 @@ function createSSEFixer(res, log = defaultLog) {
     if (event === "message_stop" || raw.trimEnd().endsWith("[DONE]")) return;
 
     if (event === "content_block_start") {
+      // A repeated index would orphan the first block's deltas and replay the
+      // index twice. Upstream should never do it; if it does, say so rather
+      // than losing content quietly.
+      if (blocks.has(data?.index)) {
+        log(`WARNING: duplicate content_block_start at index ${data?.index} — ignoring the repeat`);
+        return;
+      }
       blocks.set(data?.index, {
         type: data?.content_block?.type || "unknown",
         events: [{ event, data }],
@@ -147,7 +155,12 @@ function createSSEFixer(res, log = defaultLog) {
       return;
     }
     if (event === "content_block_delta") {
-      blocks.get(data?.index)?.events.push({ event, data });
+      const block = blocks.get(data?.index);
+      if (!block) {
+        log(`WARNING: content_block_delta for unstarted index ${data?.index} — dropped`);
+        return;
+      }
+      block.events.push({ event, data });
       return;
     }
     // content_block_stop is regenerated per block on replay — the upstream
@@ -212,7 +225,21 @@ function createSSEFixer(res, log = defaultLog) {
     for (const raw of events) {
       const { event, data } = parseSSEBlock(raw);
 
-      if (mode === "detecting") mode = classify(raw, event, data);
+      if (mode === "detecting") {
+        mode = classify(raw, event, data);
+        if (mode === "detecting") {
+          // Blank line or ":" heartbeat. Hold it rather than writing it out:
+          // this function is either fully buffered or fully passthrough, and
+          // leaking bytes ahead of a repaired response breaks that contract.
+          pending.push(raw);
+          continue;
+        }
+        for (const held of pending) {
+          if (mode === "repair") collect(held, "", null);
+          else res.write(held + "\n\n");
+        }
+        pending.length = 0;
+      }
 
       if (mode !== "repair") {
         res.write(raw + "\n\n");
@@ -224,10 +251,21 @@ function createSSEFixer(res, log = defaultLog) {
 
   function finish() {
     if (mode === "repair") {
+      // A stream that ends without a trailing blank line leaves its final
+      // event in `buffer`. Collect it before replaying — dropping it would
+      // truncate the response silently, the exact failure this proxy exists
+      // to prevent.
+      if (buffer.trim().length > 0) {
+        const { event, data } = parseSSEBlock(buffer);
+        collect(buffer, event, data);
+      }
       reorderTrailingText();
       replay();
-    } else if (buffer.length > 0) {
-      res.write(buffer);
+    } else {
+      // Never classified (nothing but heartbeats) or plain passthrough:
+      // release anything held, then the trailing partial event.
+      for (const held of pending) res.write(held + "\n\n");
+      if (buffer.length > 0) res.write(buffer);
     }
     res.end();
   }
@@ -238,7 +276,27 @@ function createSSEFixer(res, log = defaultLog) {
 // ─── HTTP proxy ────────────────────────────────────────────────────
 
 function proxyRequest(clientReq, clientRes, log) {
-  const targetUrl = new URL(clientReq.url, `${TARGET.protocol}//${TARGET.hostname}`);
+  // The request target must not be able to choose the upstream host. In
+  // absolute-form (RFC 9112 §3.2.2) `new URL(target, base)` ignores the base
+  // entirely, so `GET http://elsewhere/x` would send this request — carrying
+  // the OpenRouter credentials injected downstream — to `elsewhere`. Any
+  // local process can reach the loopback port, and most of them do not
+  // otherwise hold the key, so refuse rather than silently re-pin.
+  const requested = new URL(clientReq.url, `${TARGET.protocol}//${TARGET.hostname}`);
+  if (requested.hostname !== TARGET.hostname) {
+    log(`refused: request target names ${requested.hostname}, not ${TARGET.hostname}`);
+    // Drain the body before replying; an unconsumed request stalls a
+    // keep-alive connection.
+    clientReq.resume();
+    clientRes.writeHead(403, { "Content-Type": "text/plain" });
+    clientRes.end("Forbidden: this proxy only forwards to " + TARGET.hostname);
+    return;
+  }
+
+  // Rebuild from the pinned target, carrying over only path and query.
+  const targetUrl = new URL(`${TARGET.protocol}//${TARGET.hostname}`);
+  targetUrl.pathname = requested.pathname;
+  targetUrl.search = requested.search;
 
   // Rewrite /v1/* → /api/v1/*: OpenRouter's Anthropic-compatible endpoint
   // lives under /api, but clients address it as a bare Anthropic base URL.
