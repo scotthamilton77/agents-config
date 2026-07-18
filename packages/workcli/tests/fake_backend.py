@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from workcli.backend import Capabilities, DepOp
+from workcli.backend import Capabilities, DepOp, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, WorkError
 from workcli.model import (
     CreateFields,
@@ -136,7 +136,9 @@ class FakeBackend:
 
     @property
     def capabilities(self) -> Capabilities:
-        return Capabilities(supports_ready=True, supports_dep_types=True, supports_sync=True)
+        return Capabilities(
+            ready=ReadySupport.NATIVE, sync=SyncSupport.NATIVE, supports_dep_write=True
+        )
 
     def get(self, item_id: str) -> Item:
         return self._snapshot(self._require(item_id), lean=False)

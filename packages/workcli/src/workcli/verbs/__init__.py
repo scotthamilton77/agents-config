@@ -2,7 +2,9 @@
 
 `VERBS` maps a verb name to its handler: `(Backend, Namespace) -> JsonValue`.
 `REQUIRED_CAPABILITY` maps a verb name to a predicate function over
-`Capabilities` that must return true for the verb to run; a verb absent
+`(Capabilities, Namespace)` that must return true for the verb to run; the
+`Namespace` lets the `dep` predicate distinguish `dep list` (always allowed)
+from `dep add`/`dep remove` (gated on `supports_dep_write`). A verb absent
 from this map has no gate (every v1 backend must
 support it unconditionally). `cli.py`'s dispatch loop checks the gate before
 ever calling the handler, so an unsupported capability never reaches verb
@@ -14,7 +16,7 @@ from __future__ import annotations
 from argparse import Namespace
 from collections.abc import Callable
 
-from workcli.backend import Backend, Capabilities
+from workcli.backend import Backend, Capabilities, ReadySupport, SyncSupport
 from workcli.envelope import ErrorCode, JsonValue, WorkError
 from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
@@ -97,16 +99,16 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "sync": sync,
 }
 
-REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities], bool]] = {
-    "ready": lambda c: c.supports_ready,
-    "sync": lambda c: c.supports_sync,
-    "dep": lambda c: c.supports_dep_types,
+REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {
+    "ready": lambda c, _a: c.ready is not ReadySupport.UNSUPPORTED,
+    "sync": lambda c, _a: c.sync is not SyncSupport.UNSUPPORTED,
+    "dep": lambda c, a: a.action == "list" or c.supports_dep_write,
 }
 
 
-def missing_capability(verb: str, capabilities: Capabilities) -> bool:
+def missing_capability(verb: str, capabilities: Capabilities, args: Namespace) -> bool:
     """True when `verb` declares a required capability `capabilities` lacks."""
     check = REQUIRED_CAPABILITY.get(verb)
     if check is None:
         return False
-    return not check(capabilities)
+    return not check(capabilities, args)
