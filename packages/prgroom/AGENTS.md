@@ -91,12 +91,14 @@ exists.
 
 The Python installer's CLI-deploy stage manages prgroom's lifecycle: it runs
 `uv tool install` against `packages/prgroom/`, tracks the install in the
-install receipt (digest-gated — a source change triggers a heal, a docs/test
-change does not), and retires it via `uv tool uninstall` if the registry ever
-drops it. Manual `uv tool install ./packages/prgroom` (or `uv run prgroom …`
-from `packages/prgroom/`) remains possible for a no-installer or
-specific-checkout workflow; the installer heals/upgrades receipt-owned
-installs on its next run regardless.
+install receipt (digest-gated — a source change prompts an upgrade, a
+docs/test change does not), and retires it via `uv tool uninstall` if the
+registry ever drops it. The upgrade is consent-gated like every other
+CLI-deploy decision: `--yes` or an interactive accept applies it; a decline or
+a non-interactive run without `--yes` leaves the older receipt-owned install
+in place rather than upgrading silently. Manual `uv tool install
+./packages/prgroom` (or `uv run prgroom …` from `packages/prgroom/`) remains
+possible for a no-installer or specific-checkout workflow.
 
 ## Do not run grooming against a live PR automatically
 
