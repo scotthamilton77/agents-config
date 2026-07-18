@@ -62,7 +62,11 @@ def _item_row(item: ReviewItem) -> JsonObj:
         "disposition": disposition,
         "replied": item.replied,
         "resolved": item.resolved,
-        "posted_reply_ids": list(item.posted_reply_ids),
+        # Projected from the shipped reply ledger (own_reply_id, one reply per
+        # item by design — reply.py records at post time, `replied` gates
+        # re-posting). The contract emits a string list so a future multi-reply
+        # storage change stays non-breaking for consumers.
+        "posted_reply_ids": [str(item.own_reply_id)] if item.own_reply_id else [],
     }
 
 

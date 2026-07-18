@@ -317,16 +317,19 @@ def test_dispositioned_item_projects_only_the_contract_triple() -> None:
     assert "abc123" not in flat
 
 
-def test_posted_reply_ids_surface_in_projection() -> None:
-    # §9.1 behavior 4 (projection half): recorded reply ids surface as strings;
-    # an item with none emits [] (fail-closed: fewer exclusions).
-    with_ids = ReviewItem(
+def test_posted_reply_ids_project_from_the_reply_ledger() -> None:
+    # §9.1 behavior 4: recorded reply ids surface as strings (the reply-ledger
+    # own_reply_id, string-coerced per the contract); an item with no recorded
+    # reply — including any pre-ledger persisted state, where own_reply_id
+    # loads as 0 — emits [] (fail-closed: fewer exclusions).
+    with_reply = ReviewItem(
         kind=ItemKind.REVIEW_SUMMARY,
         identity=Identity(gh_id="4728390343"),
         author="copilot",
         body_excerpt="x",
         seen_at=_NOW,
-        posted_reply_ids=["4875007359"],
+        replied=True,
+        own_reply_id=4875007359,
     )
     without = ReviewItem(
         kind=ItemKind.ISSUE_COMMENT,
@@ -335,6 +338,6 @@ def test_posted_reply_ids_surface_in_projection() -> None:
         body_excerpt="x",
         seen_at=_NOW,
     )
-    env = build_status(_state(items=[with_ids, without]), _SATISFIED)
+    env = build_status(_state(items=[with_reply, without]), _SATISFIED)
     assert env["items"][0]["posted_reply_ids"] == ["4875007359"]
     assert env["items"][1]["posted_reply_ids"] == []
