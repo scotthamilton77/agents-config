@@ -377,7 +377,10 @@ def _parse_codex_usage(result: AgentRunResult) -> AgentRunResult:
     ``usage=None`` — telemetry never fails a dispatch.
     """
     lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
-    for i in range(len(lines) - 1):
+    # The trailer is terminal (§3.2): scan backward so the LAST adjacent
+    # "tokens used" + integer pair wins. An earlier diagnostic occurrence must
+    # never shadow the real CLI usage trailer.
+    for i in range(len(lines) - 2, -1, -1):
         if lines[i] == "tokens used" and _CODEX_TOKENS_RE.match(lines[i + 1]):
             total = int(lines[i + 1].replace(",", ""))
             return replace(result, usage=UsageFigures(tokens_total=total))

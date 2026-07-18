@@ -765,6 +765,23 @@ def test_codex_trailer_without_comma_grouping_parses(tmp_path: Path) -> None:
     assert result.usage.tokens_total == 950
 
 
+def test_codex_usage_reads_final_trailer_not_earlier_diagnostic(tmp_path: Path) -> None:
+    # §3.2: the usage trailer is the FINAL "tokens used" pair. An earlier
+    # diagnostic "tokens used\n100" must not shadow the real CLI trailer —
+    # scan backward so the last adjacent pair wins.
+    runner = SubprocessAgentRunner(
+        spawn=lambda argv, *, stdin: FakeProcess(  # noqa: ARG005
+            returncode=0,
+            stdout="{}",
+            stderr="tokens used\n100\nreconnecting...\nretrying\ntokens used\n21,631\n",
+        ),
+        scratch_dir=tmp_path,
+    )
+    result = _run_cli(runner, "codex")
+    assert result.usage is not None
+    assert result.usage.tokens_total == 21631
+
+
 def test_claude_envelope_contract_reaches_dispatcher_parse(tmp_path: Path) -> None:
     # The §3.1 interaction trap, end-to-end: the dispatcher's lenient parse takes
     # the LAST top-level JSON object in stdout — with --output-format json that
