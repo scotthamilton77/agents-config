@@ -13,7 +13,13 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
-from installer.core.receipt import SCHEMA_VERSION, Receipt, ReceiptEntry, compute_integrity
+from installer.core.receipt import (
+    SCHEMA_VERSION,
+    CliReceiptEntry,
+    Receipt,
+    ReceiptEntry,
+    compute_integrity,
+)
 
 
 class ReadStatus(Enum):
@@ -90,13 +96,31 @@ def _entry_from_json(d: object) -> ReceiptEntry:
     )
 
 
+def _cli_entry_from_json(d: object) -> CliReceiptEntry:
+    if not isinstance(d, dict):
+        raise ValueError("cli entry is not an object")  # noqa: TRY003, TRY004  # caught -> CORRUPT
+    name, binary, digest = d.get("name"), d.get("binary"), d.get("digest")
+    # Non-string fields fail closed -> CORRUPT: a malformed entry must not
+    # drive deploy/prune decisions (spec §7).
+    if not (isinstance(name, str) and isinstance(binary, str) and isinstance(digest, str)):
+        raise ValueError(  # noqa: TRY003, TRY004  # caught -> CORRUPT; subclass not justified
+            "cli entry name/binary/digest must be strings"
+        )
+    return CliReceiptEntry(name=name, binary=binary, digest=digest)
+
+
 def to_json_obj(receipt: Receipt) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "schema_version": receipt.schema_version,
         "integrity": receipt.integrity,
         "roots": [str(r) for r in receipt.roots],
         "entries": [_entry_to_json(e) for e in receipt.entries],
     }
+    if receipt.clis:
+        out["clis"] = [
+            {"name": c.name, "binary": c.binary, "digest": c.digest} for c in receipt.clis
+        ]
+    return out
 
 
 def _receipt_from_json(data: object) -> Receipt:
@@ -114,10 +138,14 @@ def _receipt_from_json(data: object) -> Receipt:
     # to a path whose digest still matches. Validate the element type -> CORRUPT.
     if not all(isinstance(r, str) for r in roots_raw):
         raise ValueError("roots must be a list of strings")  # noqa: TRY003  # caught -> CORRUPT; subclass not justified
+    clis_raw = data.get("clis", [])
+    if not isinstance(clis_raw, list):
+        raise ValueError("clis must be a list")  # noqa: TRY003, TRY004  # caught -> CORRUPT
     return Receipt(
         schema_version=SCHEMA_VERSION,
         roots=tuple(Path(r) for r in roots_raw),
         entries=tuple(_entry_from_json(e) for e in entries_raw),
+        clis=tuple(_cli_entry_from_json(c) for c in clis_raw),
         integrity=(str(data["integrity"]) if data.get("integrity") is not None else None),
     )
 

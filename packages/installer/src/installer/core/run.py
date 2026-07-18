@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from installer.core.model import Counters, InstallOutcome, Outcome, Tool
 from installer.core.prune_flow import run_prune
 from installer.core.prune_hash import is_safe_to_prune, partition_file_orphans
-from installer.core.receipt import Receipt, ReceiptEntry
+from installer.core.receipt import CliReceiptEntry, Receipt, ReceiptEntry
 from installer.core.receipt_build import (
     desired_route_keys,
     desired_staged_keys,
@@ -204,6 +204,7 @@ def record_receipt(
     plugin_outcomes: dict[str, list[InstallOutcome]],
     pruned_paths: set[Path],
     relinquished_paths: set[Path],
+    cli_entries: tuple[CliReceiptEntry, ...] | None = None,
 ) -> None:
     """Write the receipt to mirror disk after an install+prune pass.
 
@@ -237,6 +238,7 @@ def record_receipt(
         pruned_paths=pruned_paths,
         relinquished_paths=all_relinquished,
         live_roots=live_roots,
+        clis=cli_entries,
     )
     write_receipt(receipt_path, new)
 
