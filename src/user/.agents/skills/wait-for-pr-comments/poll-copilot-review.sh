@@ -26,7 +26,9 @@
 # from an allowlisted identity — also counts as completion (the standalone
 # Copilot-substring default never checks either signal). A clean signal is
 # accepted only when it is fresh: it must post-date --since-timestamp when
-# given, else (the initial poll) the PR head commit's committer date. If that
+# given, else (the initial poll) the point the current head became HEAD —
+# max( PR head commit's committer date, latest head_ref_force_pushed timeline
+# event ), since a force-push can re-point HEAD at an older commit. If that
 # freshness bound cannot be established, clean signals are rejected that round
 # (fail closed). `completion_kind` distinguishes "review" / "clean_reaction" /
 # "timeout"; only "timeout" should count against a caller's silent-ask budget.
@@ -171,8 +173,6 @@ emit_clean_reaction_found() {
 
 # head_committer_epoch — the PR head commit's committer date as epoch seconds,
 # or empty on any failure (unfetchable head SHA, missing/unparseable date).
-# Bounds clean-signal freshness on the initial poll (no --since-timestamp); an
-# empty result makes the caller fail closed and reject clean signals that round.
 # Committer dates are GitHub-API timestamps normalized to UTC `Z`, parsed the
 # same fromdateiso8601 way as the reaction/comment created_at values.
 head_committer_epoch() {
@@ -182,6 +182,46 @@ head_committer_epoch() {
     date_iso=$(gh_api "repos/${OWNER}/${REPO}/commits/${head_sha}" --jq '.commit.committer.date') || return 0
     [[ -n "$date_iso" && "$date_iso" != "null" ]] || return 0
     printf '%s' "$date_iso" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null
+}
+
+# latest_force_push_epoch — created_at (epoch seconds) of the latest
+# head_ref_force_pushed timeline event, or empty stdout when no such event
+# exists (committer date alone then bounds freshness). Returns non-zero to
+# signal a fail-closed condition: a timeline fetch failure, or force-push
+# events present but none carrying a parseable created_at. The timeline is a
+# top-level array paginated the same `--paginate | jq -s 'add // []'` way as the
+# merge-guard reads (real `gh --paginate` streams one array per page).
+latest_force_push_epoch() {
+    local timeline count max_epoch
+    timeline=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/timeline?per_page=100" --paginate | jq -s 'add // []') || return 1
+    count=$(printf '%s' "$timeline" | jq '[.[] | select(.event == "head_ref_force_pushed")] | length') || return 1
+    [[ "$count" =~ ^[0-9]+$ ]] || return 1
+    [[ "$count" -gt 0 ]] || return 0
+    max_epoch=$(printf '%s' "$timeline" | jq -r \
+        '[.[] | select(.event == "head_ref_force_pushed") | .created_at | fromdateiso8601?] | max // empty') || return 1
+    [[ -n "$max_epoch" ]] || return 1
+    printf '%s' "$max_epoch"
+}
+
+# head_clean_bound_epoch — the clean-signal freshness bound on the initial poll
+# (no --since-timestamp): max( head commit committer date, latest
+# head_ref_force_pushed timeline event created_at ) in epoch seconds. Mirrors the
+# merge-guard clean-pass predicate's last_head_change (codex-rereview spec,
+# Component 2): a force-push can re-point HEAD at an older commit, so the committer
+# date alone under-bounds freshness and would accept a stale reaction. Empty on
+# any fail-closed condition — an unfetchable/unparseable committer date, or a
+# timeline fetch failure — so the caller rejects clean signals that round. No
+# force-push event → committer date alone (prior behavior).
+head_clean_bound_epoch() {
+    local committer_epoch force_push_epoch
+    committer_epoch=$(head_committer_epoch)
+    [[ -n "$committer_epoch" ]] || return 0
+    force_push_epoch=$(latest_force_push_epoch) || return 1
+    if [[ -n "$force_push_epoch" && "$force_push_epoch" -gt "$committer_epoch" ]]; then
+        printf '%s' "$force_push_epoch"
+    else
+        printf '%s' "$committer_epoch"
+    fi
 }
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
@@ -319,15 +359,18 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
     # head cannot terminate monitoring for a head that received no review (Codex
     # tears the reaction down when it re-reviews a new head, but not if it is
     # down or rate-limited). With --since-timestamp, SINCE is the (stricter,
-    # later) bound. Without it — the initial poll — bound by the PR head commit's
-    # committer date. Fail closed: no usable bound rejects clean signals this
-    # round; review objects above are unaffected. Comparison is epoch seconds
-    # (fromdateiso8601); an unparseable created_at is rejected per item.
+    # later) bound. Without it — the initial poll — bound by when the current head
+    # became HEAD: max( head commit committer date, latest head_ref_force_pushed
+    # timeline event ), since a force-push can re-point HEAD at an older commit
+    # whose committer date predates a stale reaction. Fail closed: no usable bound
+    # rejects clean signals this round; review objects above are unaffected.
+    # Comparison is epoch seconds (fromdateiso8601); an unparseable created_at is
+    # rejected per item.
     if [[ -n "$BOT_REVIEWERS" ]]; then
         if [[ -n "$SINCE" ]]; then
             clean_bound_epoch=$(printf '%s' "$SINCE" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null) || clean_bound_epoch=""
         else
-            clean_bound_epoch=$(head_committer_epoch) || clean_bound_epoch=""
+            clean_bound_epoch=$(head_clean_bound_epoch) || clean_bound_epoch=""
         fi
 
         if [[ -z "$clean_bound_epoch" ]]; then

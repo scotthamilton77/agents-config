@@ -95,6 +95,11 @@ if [ "$1" = "api" ]; then
     */issues/*/events*)    body="${FIXTURE_EVENTS:-[]}" ;;
     */issues/*/reactions*) body="${FIXTURE_REACTIONS:-[]}" ;;
     */issues/*/comments*)  body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
+    */issues/*/timeline*)
+        if [ "${FIXTURE_TIMELINE_FAIL:-0}" = 1 ]; then
+          echo "gh: 500 Internal Server Error" >&2; exit 1
+        fi
+        body="${FIXTURE_TIMELINE:-[]}" ;;
     */pulls/*/reviews*)    body="${FIXTURE_REVIEWS:-[]}" ;;
     */pulls/*/comments*)   body="${FIXTURE_COMMENTS:-[]}" ;;
     */commits/*)           body="${FIXTURE_COMMIT:-'{}'}" ;;
@@ -290,5 +295,52 @@ env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVI
   --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
 rc_baddate=$?
 assert "initial poll: unparseable head committer date rejects clean signals (fail closed, exit 1)" "[ \$rc_baddate -eq 1 ]"
+
+# ── Initial-poll freshness with a force-push timeline event ─────────────────
+# The bound is max( head committer date, latest head_ref_force_pushed timeline
+# event created_at ) — mirroring the merge-guard clean-pass predicate (codex-
+# rereview spec, Component 2). A force-push can re-point HEAD at an OLDER commit,
+# leaving a prior `+1` later than that commit's committer date yet still stale
+# relative to when the head actually changed. A +1 between the committer date and
+# the force-push event is stale (REJECTED); a +1 after the force-push event is a
+# real clean pass (ACCEPTED). A timeline fetch failure fails closed.
+
+FIXTURE_TIMELINE_FORCEPUSH='[{"event":"head_ref_force_pushed","created_at":"2026-01-01T00:05:00Z"}]'
+
+# (d) A +1 AFTER the committer date but BEFORE the force-push event is stale —
+#     the force-push moved the head later than that reaction.
+FIXTURE_REACTIONS_BETWEEN='[{"id":20,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:02:00Z"}]'
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_TIMELINE="$FIXTURE_TIMELINE_FORCEPUSH" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_BETWEEN" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_between=$?
+assert "initial poll: +1 between committer date and force-push event is stale (timeout, exit 1)" "[ \$rc_between -eq 1 ]"
+
+# (e) A +1 AFTER the force-push event is a real clean pass.
+FIXTURE_REACTIONS_AFTERPUSH='[{"id":21,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:10:00Z"}]'
+
+out_afterpush=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_TIMELINE="$FIXTURE_TIMELINE_FORCEPUSH" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_AFTERPUSH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_afterpush=$?
+assert "initial poll: +1 after the force-push event completes (exit 0)" "[ \$rc_afterpush -eq 0 ]"
+assert "initial poll: +1 after force-push reports completion_kind clean_reaction" "printf '%s' \"\$out_afterpush\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# (f) A timeline fetch failure fails closed — even a would-be-fresh +1 is rejected.
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_TIMELINE_FAIL=1 \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_AFTERPUSH" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_tlfail=$?
+assert "initial poll: timeline fetch failure fails closed (timeout, exit 1)" "[ \$rc_tlfail -eq 1 ]"
 
 exit $FAIL
