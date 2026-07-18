@@ -152,7 +152,10 @@ are low-risk and can land early to shrink the epic.
   an empty list.
 - **Envelope parsing.** Migrated call sites parse the JSON envelope (`{ok, data, error}`)
   and branch on `ok`/`error.code`, replacing every `--json | jq` idiom and every
-  `--limit 0` truncation workaround (facade verbs are unbounded by default).
+  `--limit 0` *on a facade/bd invocation* (the truncation workaround for bd's 50-row
+  default — facade verbs are unbounded by default). This scoping does **not** touch
+  `collect.py`'s own public `--limit N` CLI flag (max beads per rendered section,
+  `0 = show everything`), which is a rendering option, not a backend call.
 - **bd remains for humans.** Raw `bd` stays available for direct human use and for the
   stays-bd-specific teaching docs; the migration removes bd from *asset call paths* only.
 
@@ -162,7 +165,11 @@ are low-risk and can land early to shrink the epic.
    annotation (with G1/G2 verified covered, the expected count is zero; the policy
    remains for any gap a migration child uncovers).
 2. Every migrated call site invokes `work <verb>` and parses the `{ok,data,error}`
-   envelope — no residual `--json | jq` or `--limit 0` in Class A/B/C.
+   envelope — no residual `--json | jq` or `--limit 0` **on a facade/bd invocation** in
+   Class A/B/C (`work` verbs are unbounded by default, so the bd 50-row truncation
+   workaround is gone). This check explicitly exempts `collect.py`'s own public
+   `--limit N` rendering flag (top-N per section, `0 = show everything`): it is a
+   documented public option, not a backend call, and survives the migration unchanged.
 3. Every retained raw-bd call in a migrated class has a `facade-gap: <capability>`
    comment that names no bead ID and no tracker ID.
 4. `collect.py` invokes `work`; `collect_test.sh` shims `work`; `make`/test run green.
