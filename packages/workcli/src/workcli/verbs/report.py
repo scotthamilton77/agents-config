@@ -1,9 +1,12 @@
-"""`work lint` + `work graph --json` -- the repo-wide reporting verbs.
+"""`work lint` + `work graph --json` + `work triggers` -- the repo-wide
+reporting verbs.
 
-Both are defined as aggregations over tracks (track spec §4's
+All three are defined as aggregations over tracks (track spec §4's
 split-portability rule): one sweep, pure reducers, no single-DB semantics in
 the contract. Advisory in v1: lint always exits 0 (spec §9 defers CI-gating);
-violations live in the envelope, not the exit code.
+violations live in the envelope, not the exit code. `triggers` (spec §5) is
+likewise advisory-only -- it evaluates extraction pressure/eligibility and
+never edits config or splits anything.
 """
 
 from __future__ import annotations
@@ -202,3 +205,100 @@ def graph(backend: Backend, args: Namespace) -> JsonValue:
             edges.append({"from": node_item.id, "to": node_item.parent, "type": "parent-child"})
 
     return {"nodes": [_node(item) for item in (*items, *ancestors)], "edges": edges}
+
+
+def _backlog_counts(swept: list[Item], config: TrackLayerConfig) -> dict[str, int]:
+    """Every configured track name -> count of non-closed beads whose derived
+    track equals it (spec §4). Beads with zero or 2+ track labels derive to
+    `None` and count toward no track -- lint invariant 1 is the net for those."""
+    counts = dict.fromkeys(config.names, 0)
+    for item in swept:
+        track_name = derive_track(item.labels)
+        if track_name in counts:
+            counts[track_name] += 1
+    return counts
+
+
+def _cross_track_edge_counts(
+    backend: Backend, items: list[Item], by_id: dict[str, Item]
+) -> dict[str, int]:
+    """Spec §5: for every raw (non-parent-child) dep edge between two
+    non-closed beads whose tracks differ, +1 to each endpoint's track total --
+    both directions counted independently via the two endpoints of one edge.
+    A dep target outside the sweep (closed, or absent from the batch) is
+    resolved with `backend.get()`; a closed endpoint excludes the edge
+    entirely, mirroring `graph()`'s `_closed_ancestors` fetch-on-miss pattern."""
+    resolved: dict[str, Item] = {}
+    counts: dict[str, int] = {}
+    for item in items:
+        from_track = derive_track(item.labels)
+        if from_track is None:
+            continue
+        for edge in item.deps:
+            to_item = by_id.get(edge.id)
+            if to_item is None:
+                if edge.id not in resolved:
+                    resolved[edge.id] = backend.get(edge.id)
+                to_item = resolved[edge.id]
+            if to_item.status == "closed":
+                continue
+            to_track = derive_track(to_item.labels)
+            if to_track is None or to_track == from_track:
+                continue
+            counts[from_track] = counts.get(from_track, 0) + 1
+            counts[to_track] = counts.get(to_track, 0) + 1
+    return counts
+
+
+def _extraction_status(*, pressure: bool, eligible: bool) -> str:
+    if not pressure:
+        return "no-pressure"
+    return "pressured-eligible" if eligible else "pressured-ineligible"
+
+
+def _review_question(config: TrackLayerConfig) -> str:
+    external = ", ".join(config.extraction_external_consumer_tracks)
+    independent = ", ".join(config.extraction_independent_release_tracks)
+    return (
+        "Still accurate? external-consumer-tracks: "
+        f"[{external}]; independent-release-tracks: [{independent}]"
+    )
+
+
+def triggers(backend: Backend, args: Namespace) -> JsonValue:
+    """`work triggers` -- extraction pressure/eligibility per track (track
+    spec §5, criterion 13). Organizing-only tracks appear in `backlog_counts`
+    but never receive an extraction status. An unconfigured eligibility
+    ceiling (`max-cross-track-edges` omitted) can never prove eligibility --
+    a deliberate fail-safe, never a false `pressured-eligible`."""
+    config = args.load_config()
+    swept = _sweep(backend)
+    items = backend.batch_get([item.id for item in swept])  # full detail: deps
+    by_id = {item.id: item for item in items}
+    backlog_counts = _backlog_counts(swept, config)
+    edge_counts = _cross_track_edge_counts(backend, items, by_id)
+
+    statuses: dict[str, JsonValue] = {}
+    for name in config.names:
+        if name in config.organizing_only:
+            continue
+        over_backlog_cap = (
+            config.extraction_max_track_backlog is not None
+            and backlog_counts[name] > config.extraction_max_track_backlog
+        )
+        pressure = (
+            over_backlog_cap
+            or name in config.extraction_external_consumer_tracks
+            or name in config.extraction_independent_release_tracks
+        )
+        eligible = (
+            config.extraction_max_cross_track_edges is not None
+            and edge_counts.get(name, 0) <= config.extraction_max_cross_track_edges
+        )
+        statuses[name] = _extraction_status(pressure=pressure, eligible=eligible)
+
+    return {
+        "backlog_counts": dict(backlog_counts.items()),
+        "statuses": statuses,
+        "review_question": _review_question(config),
+    }
