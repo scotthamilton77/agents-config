@@ -215,13 +215,18 @@ container is the *right* home stays judgment (§5).
    so the only edge-add failure that remains (§3.2) is a transient backend fault, never an
    unresolvable input — the create-then-discover-the-edge-is-impossible ordering the seam
    would otherwise permit is closed.
-3. **Render the triage block** into the description, exactly the skill's markdown:
+3. **Render the triage block** into the description, exactly the skill's canonical
+   markdown. The `--scope` CLI token is parse-time input vocabulary and is **never
+   rendered verbatim**: `out-of-scope` renders the first Scope line; `in-scope-deferred:<hatch>`
+   maps to `in-scope — deferred: <hatch>` for the second:
    ```
    ## Triage
-   - Scope: <scope> — <scope-why>
+   - Scope: out-of-scope — <scope-why>
    - Priority: <priority> — <priority-why>
    - Anchor: <anchor-or-"none: escalated"> — <anchor-why-or-escalation-why>
    ```
+   For an in-scope deferral the Scope line instead reads
+   `Scope: in-scope — deferred: <hatch> — <scope-why>`.
 4. **Mint via the shared creation path** — build the `create <noun>` inputs
    (`--noun`, `--title`, composed `--description`, `--priority`, and `--parent <anchor>`
    or `--orphan`) and call the same `create_noun` code. discover adds **no** new minting
@@ -294,7 +299,10 @@ declared `is_container` state) — yes, mechanical. "Is this really out of scope
    `--orphan` — never a caller input.
 7. `data.remaining_work` is `true` iff `--scope` is `in-scope-deferred:*`.
 8. The rendered `## Triage` block appears in the created bead's description with the
-   Scope/Priority/Anchor lines populated from the flags.
+   Scope/Priority/Anchor lines populated from the flags: an `out-of-scope` filing renders
+   `Scope: out-of-scope — <scope-why>`, and an `in-scope-deferred:<hatch>` filing renders
+   `Scope: in-scope — deferred: <hatch> — <scope-why>` — the raw `in-scope-deferred:<hatch>`
+   CLI token never appears in the rendered block.
 9. A duplicate exact title exits `E_DUPLICATE_TITLE` (inherited) and creates nothing.
 10. A create that succeeds but whose `discovered-from` edge add fails returns an error with
     `detail.created_id` set (edge replayable, no duplicate bead).
