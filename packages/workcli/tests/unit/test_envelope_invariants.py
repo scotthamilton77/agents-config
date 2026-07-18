@@ -12,6 +12,7 @@ belong to that verb's own granular test file (`test_show_normalization.py`,
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,20 @@ from tests.conftest import run_cli_with_runner
 from tests.fakes import ScriptedBdRunner, ScriptedStep
 from workcli import PROTOCOL_VERSION
 from workcli.adapters.bd.runner import BdResult
-from workcli.envelope import ErrorCode
+from workcli.config import TrackLayerConfig
+from workcli.envelope import ErrorCode, WorkError
+
+
+def _not_found_config_loader(_explicit_path: str | None) -> TrackLayerConfig:
+    # Byte-identical to pre-track-layer behavior (criterion 17): keeps the
+    # lifecycle `create_noun` case from making an unscripted `bd show
+    # <parent>` call against this repo's own real project-config.toml.
+    raise WorkError(
+        ErrorCode.NOT_CONFIGURED,
+        "track layer not configured: no project-config.toml",
+        detail={"reason": "not-found"},
+    )
+
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -101,6 +115,7 @@ class VerbCase:
     success_steps: list[ScriptedStep]
     failure_argv: list[str]
     failure_steps: list[ScriptedStep]
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None
 
 
 VERB_CASES: list[VerbCase] = [
@@ -219,6 +234,7 @@ VERB_CASES: list[VerbCase] = [
         ],
         ["create", "feat", "--title", "Existing Feature", "--parent", "P"],
         [ScriptedStep(("search",), _search_result(_item_raw("f.9", "Existing Feature")))],
+        config_loader=_not_found_config_loader,
     ),
     VerbCase(
         "claim",
@@ -308,14 +324,18 @@ VERB_CASES: list[VerbCase] = [
 TYPED_ERROR_CODES = {str(code) for code in ErrorCode}
 
 
-def _assert_stdout_is_exactly_one_envelope(runner: ScriptedBdRunner, argv: list[str]) -> dict:
+def _assert_stdout_is_exactly_one_envelope(
+    runner: ScriptedBdRunner,
+    argv: list[str],
+    config_loader: Callable[[str | None], TrackLayerConfig] | None = None,
+) -> dict:
     from io import StringIO
 
     from workcli.cli import main
 
     out = StringIO()
     err = StringIO()
-    exit_code = main(argv, runner=runner, out=out, err=err)
+    exit_code = main(argv, runner=runner, out=out, err=err, config_loader=config_loader)
     stdout_text = out.getvalue()
     # Exactly one JSON value on stdout, nothing before or after it: a
     # trailing newline is the only thing besides the envelope permitted.
@@ -329,7 +349,9 @@ def _assert_stdout_is_exactly_one_envelope(runner: ScriptedBdRunner, argv: list[
 @pytest.mark.parametrize("case", VERB_CASES, ids=lambda c: c.verb)
 def test_success_case_yields_a_uniform_ok_envelope(case: VerbCase) -> None:
     runner = ScriptedBdRunner(steps=list(case.success_steps))
-    exit_code, envelope = _assert_stdout_is_exactly_one_envelope(runner, case.success_argv)
+    exit_code, envelope = _assert_stdout_is_exactly_one_envelope(
+        runner, case.success_argv, case.config_loader
+    )
 
     assert exit_code == 0
     assert envelope["protocol"] == PROTOCOL_VERSION
@@ -340,7 +362,9 @@ def test_success_case_yields_a_uniform_ok_envelope(case: VerbCase) -> None:
 @pytest.mark.parametrize("case", VERB_CASES, ids=lambda c: c.verb)
 def test_failure_case_yields_a_uniform_error_envelope(case: VerbCase) -> None:
     runner = ScriptedBdRunner(steps=list(case.failure_steps))
-    exit_code, envelope = _assert_stdout_is_exactly_one_envelope(runner, case.failure_argv)
+    exit_code, envelope = _assert_stdout_is_exactly_one_envelope(
+        runner, case.failure_argv, case.config_loader
+    )
 
     assert exit_code == 1
     assert envelope["protocol"] == PROTOCOL_VERSION
@@ -360,5 +384,7 @@ def test_protocol_version_data_matches_every_other_verbs_protocol_field() -> Non
 
     for case in VERB_CASES:
         runner = ScriptedBdRunner(steps=list(case.success_steps))
-        _, envelope = _assert_stdout_is_exactly_one_envelope(runner, case.success_argv)
+        _, envelope = _assert_stdout_is_exactly_one_envelope(
+            runner, case.success_argv, case.config_loader
+        )
         assert envelope["protocol"] == handshake_envelope["data"]["protocol"]
