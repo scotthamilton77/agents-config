@@ -97,6 +97,7 @@ if [ "$1" = "api" ]; then
     */issues/*/comments*)  body="${FIXTURE_ISSUE_COMMENTS:-[]}" ;;
     */pulls/*/reviews*)    body="${FIXTURE_REVIEWS:-[]}" ;;
     */pulls/*/comments*)   body="${FIXTURE_COMMENTS:-[]}" ;;
+    */commits/*)           body="${FIXTURE_COMMIT:-'{}'}" ;;
     */pulls/*)             body="${FIXTURE_PR:-'{"state":"open"}'}" ;;
     *)                     body='{}' ;;
   esac
@@ -240,5 +241,54 @@ polling_after_timeout=$("$HERE/compute-rereview-polling.sh" --prior-count 0 --pr
   --event "$(map_to_polling_event "$rc_timeout")")
 assert "a real timeout DOES increment the silent-ask counter" \
   "[ \"\$(jq '.rereview_round_count' <<<\"\$polling_after_timeout\")\" = 1 ]"
+
+# ── Initial-poll freshness (no --since-timestamp) ────────────────────────────
+# On the initial policy-mode round SINCE is empty, so clean signals must be
+# bounded by the PR head commit's committer date. A `+1`/marker earned by an
+# EARLIER head (Codex tears it down on re-review, but not if it is down or
+# rate-limited) must NOT terminate monitoring for a head that received no
+# review; a signal post-dating the head commit is a real clean pass. An
+# unfetchable/unparseable head date fails closed (rejects clean signals).
+
+HEAD_SHA='abc123def4567890'
+FIXTURE_PR_HEAD="{\"state\":\"open\",\"head\":{\"sha\":\"$HEAD_SHA\"}}"
+FIXTURE_COMMIT_HEADDATE='{"commit":{"committer":{"date":"2026-01-01T00:00:00Z"}}}'
+
+# (a) A `+1` predating the head committer date is NOT accepted on the initial
+#     poll (no --since-timestamp) — falls through to a real timeout.
+FIXTURE_REACTIONS_PREHEAD='[{"id":10,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2025-12-31T23:59:00Z"}]'
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_PREHEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_preheaddate=$?
+assert "initial poll: +1 predating head committer date does NOT complete (timeout, exit 1)" "[ \$rc_preheaddate -eq 1 ]"
+
+# (b) A `+1` post-dating the head committer date IS accepted on the initial poll
+#     (no --since-timestamp), completion_kind clean_reaction.
+FIXTURE_REACTIONS_POSTHEAD='[{"id":11,"content":"+1","user":{"login":"chatgpt-codex-connector[bot]","type":"Bot"},"created_at":"2026-01-01T00:00:10Z"}]'
+
+out_posthead=$(env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_HEADDATE" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_POSTHEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" 2>/dev/null)
+rc_posthead=$?
+assert "initial poll: +1 post-dating head committer date completes (exit 0)" "[ \$rc_posthead -eq 0 ]"
+assert "initial poll: post-dating +1 reports completion_kind clean_reaction" "printf '%s' \"\$out_posthead\" | jq -e '.completion_kind == \"clean_reaction\"' >/dev/null"
+
+# (c) An unparseable head committer date rejects clean signals on the initial
+#     poll (fail closed) — even a would-be-fresh `+1`.
+FIXTURE_COMMIT_BADDATE='{"commit":{"committer":{"date":"not-a-date"}}}'
+
+env PATH="$STUB_DIR:$PATH" FIXTURE_EVENTS="$FIXTURE_EVENTS_STARTED" FIXTURE_REVIEWS='[]' \
+  FIXTURE_PR="$FIXTURE_PR_HEAD" FIXTURE_COMMIT="$FIXTURE_COMMIT_BADDATE" \
+  FIXTURE_REACTIONS="$FIXTURE_REACTIONS_POSTHEAD" \
+  "$SCRIPT" --owner o --repo r --pr 1 --skip-request-check --timeout-seconds 1 \
+  --bot-reviewers "[\"$CODEX_ID\"]" >/dev/null 2>&1
+rc_baddate=$?
+assert "initial poll: unparseable head committer date rejects clean signals (fail closed, exit 1)" "[ \$rc_baddate -eq 1 ]"
 
 exit $FAIL

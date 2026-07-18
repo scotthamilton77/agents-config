@@ -23,11 +23,13 @@
 # a review object when a bot's pass is clean. When --bot-reviewers is
 # supplied, a `+1` reaction on the PR body, or an issue comment starting with
 # the clean-pass marker "Codex Review: Didn't find any major issues" — each
-# from an allowlisted identity and post-dating --since-timestamp when given —
-# also counts as completion (the standalone Copilot-substring default never
-# checks either signal). `completion_kind` distinguishes "review" /
-# "clean_reaction" / "timeout"; only "timeout" should count against a
-# caller's silent-ask budget.
+# from an allowlisted identity — also counts as completion (the standalone
+# Copilot-substring default never checks either signal). A clean signal is
+# accepted only when it is fresh: it must post-date --since-timestamp when
+# given, else (the initial poll) the PR head commit's committer date. If that
+# freshness bound cannot be established, clean signals are rejected that round
+# (fail closed). `completion_kind` distinguishes "review" / "clean_reaction" /
+# "timeout"; only "timeout" should count against a caller's silent-ask budget.
 #
 # Exit codes:
 #   0 — Review found (JSON on stdout)
@@ -167,6 +169,21 @@ emit_clean_reaction_found() {
     }'
 }
 
+# head_committer_epoch — the PR head commit's committer date as epoch seconds,
+# or empty on any failure (unfetchable head SHA, missing/unparseable date).
+# Bounds clean-signal freshness on the initial poll (no --since-timestamp); an
+# empty result makes the caller fail closed and reject clean signals that round.
+# Committer dates are GitHub-API timestamps normalized to UTC `Z`, parsed the
+# same fromdateiso8601 way as the reaction/comment created_at values.
+head_committer_epoch() {
+    local head_sha date_iso
+    head_sha=$(gh_api "repos/${OWNER}/${REPO}/pulls/${PR}" --jq '.head.sha') || return 0
+    [[ -n "$head_sha" && "$head_sha" != "null" ]] || return 0
+    date_iso=$(gh_api "repos/${OWNER}/${REPO}/commits/${head_sha}" --jq '.commit.committer.date') || return 0
+    [[ -n "$date_iso" && "$date_iso" != "null" ]] || return 0
+    printf '%s' "$date_iso" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null
+}
+
 # ── Pre-flight checks ────────────────────────────────────────────────────────
 
 preflight_checks
@@ -294,37 +311,53 @@ for i in $(seq 1 "$MAX_ITERATIONS"); do
 
     # Clean-pass completion (poll completion contract): a bot can complete
     # with no findings and thus no review object — a `+1` reaction on the PR
-    # body, or a clean-pass marker issue comment, either post-dating
-    # --since-timestamp when supplied. Only checked in policy mode
+    # body, or a clean-pass marker issue comment. Only checked in policy mode
     # (--bot-reviewers set); the standalone Copilot-substring default never
     # sees either signal.
+    #
+    # Clean signals need a freshness bound so a `+1`/marker earned by an EARLIER
+    # head cannot terminate monitoring for a head that received no review (Codex
+    # tears the reaction down when it re-reviews a new head, but not if it is
+    # down or rate-limited). With --since-timestamp, SINCE is the (stricter,
+    # later) bound. Without it — the initial poll — bound by the PR head commit's
+    # committer date. Fail closed: no usable bound rejects clean signals this
+    # round; review objects above are unaffected. Comparison is epoch seconds
+    # (fromdateiso8601); an unparseable created_at is rejected per item.
     if [[ -n "$BOT_REVIEWERS" ]]; then
-        reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions" \
-            --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
-            echo "Warning: reactions API failed (attempt ${i})" >&2; reactions='[]';
-        }
         if [[ -n "$SINCE" ]]; then
-            reactions=$(printf '%s' "$reactions" | jq --arg since "$SINCE" '[.[] | select(.created_at > $since)]')
+            clean_bound_epoch=$(printf '%s' "$SINCE" | jq -Rr 'fromdateiso8601? // empty' 2>/dev/null) || clean_bound_epoch=""
+        else
+            clean_bound_epoch=$(head_committer_epoch) || clean_bound_epoch=""
         fi
 
-        if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
-            echo "  Clean-pass reaction found (attempt ${i})" >&2
-            emit_clean_reaction_found
-            exit 0
-        fi
+        if [[ -z "$clean_bound_epoch" ]]; then
+            echo "  Attempt ${i}/${MAX_ITERATIONS}: no freshness bound for clean signals, rejecting (fail closed)" >&2
+        else
+            reactions=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/reactions" \
+                --jq "[.[] | select(.content == \"+1\" and (.user.login | ${COPILOT_LOGIN_FILTER}))]") || {
+                echo "Warning: reactions API failed (attempt ${i})" >&2; reactions='[]';
+            }
+            reactions=$(printf '%s' "$reactions" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
 
-        clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments" \
-            --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
-            echo "Warning: issue comments API failed (attempt ${i})" >&2; clean_comments='[]';
-        }
-        if [[ -n "$SINCE" ]]; then
-            clean_comments=$(printf '%s' "$clean_comments" | jq --arg since "$SINCE" '[.[] | select(.created_at > $since)]')
-        fi
+            if [[ "$(printf '%s' "$reactions" | jq 'length')" -gt 0 ]]; then
+                echo "  Clean-pass reaction found (attempt ${i})" >&2
+                emit_clean_reaction_found
+                exit 0
+            fi
 
-        if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
-            echo "  Clean-pass marker comment found (attempt ${i})" >&2
-            emit_clean_reaction_found
-            exit 0
+            clean_comments=$(gh_api "repos/${OWNER}/${REPO}/issues/${PR}/comments" \
+                --jq "[.[] | select((.user.login | ${COPILOT_LOGIN_FILTER}) and ((.body // \"\") | startswith(\"${CLEAN_PASS_MARKER}\")))]") || {
+                echo "Warning: issue comments API failed (attempt ${i})" >&2; clean_comments='[]';
+            }
+            clean_comments=$(printf '%s' "$clean_comments" | jq --argjson bound "$clean_bound_epoch" \
+                '[.[] | select((.created_at | fromdateiso8601? // -1) > $bound)]')
+
+            if [[ "$(printf '%s' "$clean_comments" | jq 'length')" -gt 0 ]]; then
+                echo "  Clean-pass marker comment found (attempt ${i})" >&2
+                emit_clean_reaction_found
+                exit 0
+            fi
         fi
     fi
 
