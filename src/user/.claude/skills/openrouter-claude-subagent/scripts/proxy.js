@@ -17,6 +17,14 @@ const { URL } = require("url");
 
 const TARGET = { protocol: "https:", hostname: "openrouter.ai" };
 
+/** Request bodies are buffered whole (see proxyRequest), so they need a
+ *  ceiling. Generous next to any real conversation payload. */
+const MAX_REQUEST_BODY_BYTES = 100 * 1024 * 1024;
+
+/** Idle deadline for streaming responses. Long enough to outlast any real
+ *  pause between tokens, short enough that a stalled connection is reclaimed. */
+const SSE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 // Headers a proxy must own: connection-scoped hop-by-hop headers
 // (RFC 9110 §7.6.1) plus the routing headers rebuilt for the upstream hop.
 const HEADERS_REMOVE = new Set(["host", "x-forwarded-for"]);
@@ -282,7 +290,21 @@ function proxyRequest(clientReq, clientRes, log) {
   // the OpenRouter credentials injected downstream — to `elsewhere`. Any
   // local process can reach the loopback port, and most of them do not
   // otherwise hold the key, so refuse rather than silently re-pin.
-  const requested = new URL(clientReq.url, `${TARGET.protocol}//${TARGET.hostname}`);
+  // Node's HTTP parser accepts request targets that WHATWG URL rejects (e.g.
+  // `GET http://[/x`), so this parse can throw on input the server already
+  // let through. Unguarded it kills the process — and the proxy is in-process
+  // with the launcher, so that would strand the running claude child.
+  let requested;
+  try {
+    requested = new URL(clientReq.url, `${TARGET.protocol}//${TARGET.hostname}`);
+  } catch {
+    log(`refused: unparseable request target`);
+    clientReq.resume();
+    clientRes.writeHead(400, { "Content-Type": "text/plain" });
+    clientRes.end("Bad Request: unparseable request target");
+    return;
+  }
+
   if (requested.hostname !== TARGET.hostname) {
     log(`refused: request target names ${requested.hostname}, not ${TARGET.hostname}`);
     // Drain the body before replying; an unconsumed request stalls a
@@ -369,10 +391,30 @@ function proxyRequest(clientReq, clientRes, log) {
   });
 
   // Buffer the request body so mixed-content user messages can be split
-  // before forwarding (see splitMixedMessages).
+  // before forwarding (see splitMixedMessages). Buffering is why the size is
+  // capped: without a ceiling any local sender could exhaust memory and take
+  // the launcher down with the proxy.
   const chunks = [];
-  clientReq.on("data", (chunk) => chunks.push(chunk));
+  let bodyBytes = 0;
+  let bodyTooLarge = false;
+  clientReq.on("data", (chunk) => {
+    if (bodyTooLarge) return;
+    bodyBytes += chunk.length;
+    if (bodyBytes > MAX_REQUEST_BODY_BYTES) {
+      bodyTooLarge = true;
+      log(`refused: request body exceeds ${MAX_REQUEST_BODY_BYTES} bytes`);
+      chunks.length = 0;
+      proxyReq.destroy();
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(413, { "Content-Type": "text/plain" });
+        clientRes.end("Payload Too Large");
+      }
+      return;
+    }
+    chunks.push(chunk);
+  });
   clientReq.on("end", () => {
+    if (bodyTooLarge) return;
     const raw = Buffer.concat(chunks).toString();
     let body = raw;
     try {
@@ -398,8 +440,11 @@ function proxyRequest(clientReq, clientRes, log) {
     clientRes.end(`Bad Gateway: ${err.message}`);
   });
 
-  // SSE responses have no meaningful idle deadline; everything else gets one.
-  proxyReq.setTimeout(wantSSE ? 0 : 60000, () => {
+  // Streaming responses need a far longer idle deadline than request/response
+  // traffic, but not an unlimited one: `wantSSE` comes from a client-supplied
+  // Accept header, so disabling the timeout outright would let any local
+  // sender park upstream connections and file descriptors indefinitely.
+  proxyReq.setTimeout(wantSSE ? SSE_IDLE_TIMEOUT_MS : 60000, () => {
     log("upstream request timeout");
     proxyReq.destroy();
   });
@@ -420,7 +465,19 @@ function proxyRequest(clientReq, clientRes, log) {
  * @returns {Promise<{ port: number, close: () => Promise<void> }>}
  */
 function start({ port = 0, host = "127.0.0.1", log = defaultLog } = {}) {
-  const server = http.createServer((req, res) => proxyRequest(req, res, log));
+  // The parse guard in proxyRequest covers the one throw we know about. This
+  // covers the ones we don't: because the proxy shares a process with the
+  // launcher, an unhandled throw here would kill the running claude child
+  // too. A failed request must never be able to end the session.
+  const server = http.createServer((req, res) => {
+    try {
+      proxyRequest(req, res, log);
+    } catch (err) {
+      log(`request handler error: ${err.message}`);
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Internal proxy error");
+    }
+  });
 
   server.on("clientError", (err, socket) => {
     if (err.code === "ECONNRESET" || !socket.writable) return;

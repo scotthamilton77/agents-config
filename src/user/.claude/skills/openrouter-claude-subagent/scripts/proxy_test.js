@@ -512,3 +512,90 @@ test("still writes a held heartbeat through once the stream turns out to be pass
 
   assert.equal(res.output(), text, "the held heartbeat must reach the client, not be lost");
 });
+
+// ─── proxyRequest: malformed request target survives the process ────
+//
+// Node's HTTP parser accepts absolute-form request targets that WHATWG
+// `URL` rejects outright (e.g. `GET http://[/x`). Before the try/catch guard
+// in proxyRequest, `new URL(clientReq.url, base)` threw an uncaught
+// TypeError and killed the process — and the proxy runs in-process with the
+// launcher, so that would strand the running claude child mid-session.
+// "Responds 400" and "the process is still alive" are separate claims; this
+// test asserts both, on the same proxy instance, across every malformed
+// shape known to trigger the throw.
+
+test("returns 400 for malformed request targets and the proxy survives to serve the next request", async () => {
+  const proxy = await start({ port: 0 });
+  try {
+    const malformedTargets = [
+      "GET http://[/x HTTP/1.1\r\nHost: x\r\n\r\n",
+      "GET http://:80/ HTTP/1.1\r\nHost: x\r\n\r\n",
+      "GET http://]/ HTTP/1.1\r\nHost: x\r\n\r\n",
+      "GET http://a%00b/x HTTP/1.1\r\nHost: x\r\n\r\n",
+    ];
+    for (const requestLine of malformedTargets) {
+      const response = await rawRequest(proxy.port, requestLine, 5000);
+      assert.match(response, /^HTTP\/1\.1 400\b/, `expected 400 for ${JSON.stringify(requestLine)}`);
+    }
+
+    // The point of the test: if the try/catch guard around `new URL(...)`
+    // were removed, the first malformed target above would throw
+    // uncaught and kill the process, and this final request would never
+    // get a response — the socket would hang until its own timeout fired.
+    const survived = await rawRequest(
+      proxy.port,
+      "GET /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n",
+      15000,
+    );
+    assert.match(survived, /^HTTP\/1\.1 \d{3}\b/, "proxy must still respond after malformed targets");
+  } finally {
+    await proxy.close();
+  }
+});
+
+// ─── proxyRequest: oversized request body rejected with 413 ─────────
+
+test("rejects a request body over MAX_REQUEST_BODY_BYTES with 413 instead of buffering it without limit", (t) => {
+  // MAX_REQUEST_BODY_BYTES is 100MB (proxy.js). Actually sending 100MB+ in a
+  // unit test would allocate that much memory and make the suite slow and
+  // flaky for no proportional coverage gain. There is no way to cross the
+  // cap without streaming bytes on that order — the guard is a running byte
+  // counter on clientReq's `data` event, checked against the exact constant,
+  // so a smaller body can never exercise it; asserting 413 against a body
+  // that cannot reach the cap would be a tautology dressed as a real test.
+  // Skip honestly rather than fake the coverage. The guard's wiring —
+  // `bodyBytes > MAX_REQUEST_BODY_BYTES` triggers `proxyReq.destroy()` and a
+  // 413 write, immediately on the `data` event, before `end` — is read
+  // directly from proxy.js's clientReq.on("data", ...) handler.
+  t.skip(
+    "MAX_REQUEST_BODY_BYTES is 100MB; exercising the cap for real requires " +
+    "streaming that many bytes in-process, which is impractical for a unit " +
+    "test (memory + runtime cost with no proportional coverage benefit).",
+  );
+});
+
+// ─── proxyRequest: legitimate traffic is unaffected by the new guards ──
+
+test("a normal origin-form request is not rejected by the target-pin, body-size, or malformed-target guards", async () => {
+  const proxy = await start({ port: 0 });
+  try {
+    // This will not actually reach openrouter.ai in a test sandbox, so a
+    // 200/404/502 from the real upstream attempt all count as a pass — the
+    // only thing under test is that none of the new hardening guards
+    // (400 malformed-target, 403 host-pin, 413 body-cap) misfire on
+    // legitimate, well-formed traffic.
+    const response = await rawRequest(
+      proxy.port,
+      "GET /v1/messages HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n",
+      15000,
+    );
+    const status = response.match(/^HTTP\/1\.1 (\d{3})\b/)?.[1];
+    assert.ok(status, "expected a status line in the response");
+    assert.ok(
+      !["400", "403", "413"].includes(status),
+      `legitimate traffic must not be rejected by a hardening guard, got ${status}`,
+    );
+  } finally {
+    await proxy.close();
+  }
+});
