@@ -283,3 +283,127 @@ def test_stale_receipt_foreign_provenance_requires_takeover(tmp_path: Path) -> N
     )
     assert outcome.counters["cli:workcli"].skipped == 1
     assert not any(t[0] == "tool_install" for t in deploy.transcript)
+
+
+def test_smoke_failure_after_install_fails_run_no_entry(tmp_path: Path) -> None:
+    """
+    Given a fresh install whose post-install smoke fails
+    When deploy_clis runs
+    Then any_failed is True, err carries the smoke output, and no deployed
+    entry is recorded (next run retries).
+
+    Pins spec §6 failure surfacing / item 7.
+    """
+    _pkg(tmp_path)
+    shim = tmp_path / "bin" / "work"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, shim],
+        installs=[_OK], smokes=[CommandResult(ok=False, output="kaboom")],
+    )
+    io = ScriptedIO()
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.any_failed and "workcli" not in outcome.deployed
+    assert any(e.channel == "err" and "kaboom" in e.message for e in io.transcript)
+
+
+def test_install_ok_but_no_shim_is_failure(tmp_path: Path) -> None:
+    """
+    Given an install that reports ok but produces no shim
+    When deploy_clis runs
+    Then it is a failure (err), not a silent success.
+
+    Pins spec §6 / item 7 (install-ok-but-no-shim).
+    """
+    _pkg(tmp_path)
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin", tool_list={},
+        shims=[None, None], installs=[_OK],
+    )
+    outcome = deploy_clis(
+        (_SPEC,), repo_root=tmp_path, prior=Receipt(), deploy=deploy,
+        io=ScriptedIO(), dry_run=False, auto_yes=False,
+    )
+    assert outcome.any_failed
+
+
+def test_one_broken_cli_does_not_block_the_other(tmp_path: Path) -> None:
+    """
+    Given two registry CLIs where the first reaches a genuine hard install
+    failure (receipt-owned heal whose force install fails) and the second
+    is a clean fresh install
+    When deploy_clis runs
+    Then the second still deploys and any_failed is True.
+
+    Pins spec §6/§8: record-and-continue, exit 1 at the end / item 8.
+    CLI1 path: verify (digest equal, provenance ok) -> smoke fail -> heal
+    force install FAILS -> hard failure, no consent involved. CLI2: fresh
+    success. Shim budgets: CLI1 = 1 (decision; failed install, no re-read),
+    CLI2 = 2.
+    """
+    pkg2 = tmp_path / "packages" / "prgroom"
+    (pkg2 / "src").mkdir(parents=True)
+    (pkg2 / "pyproject.toml").write_bytes(b"[project]\n")
+    spec2 = CliSpec("prgroom", "packages/prgroom", "prgroom", ("--help",))
+    prior = _prior_with_current_digest(tmp_path)  # also creates workcli pkg
+    shim1 = tmp_path / "bin" / "work"
+    shim2 = tmp_path / "bin" / "prgroom"
+    deploy = ScriptedCliDeploy(
+        uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+        tool_list={"workcli": frozenset({"work"})},
+        which_map={"work": shim1, "prgroom": shim2},
+        shims=[shim1, None, shim2],
+        installs=[CommandResult(ok=False, output="resolver exploded"), _OK],
+        smokes=[CommandResult(ok=False, output="stale"), _OK],
+    )
+    io = ScriptedIO()
+    outcome = deploy_clis(
+        (_SPEC, spec2), repo_root=tmp_path, prior=prior, deploy=deploy,
+        io=io, dry_run=False, auto_yes=False,
+    )
+    assert outcome.any_failed
+    assert "prgroom" in outcome.deployed and "workcli" not in outcome.deployed
+    assert any(e.channel == "err" and "resolver exploded" in e.message for e in io.transcript)
+
+
+def test_dry_run_previews_every_branch_without_subprocess(tmp_path: Path) -> None:
+    """
+    Given each decision-table state under --dry-run
+    When deploy_clis runs
+    Then each reports its would-X line and never calls
+    tool_install/smoke/update_shell.
+
+    Pins spec §6 dry-run / item 6 (each branch reports would-X).
+    """
+    prior_current = _prior_with_current_digest(tmp_path)
+    prior_stale = Receipt(
+        clis=(CliReceiptEntry(name="workcli", binary="work", digest="sha256:stale"),)
+    )
+    shim = tmp_path / "bin" / "work"
+    prov = {"workcli": frozenset({"work"})}
+    cases: list[tuple[Receipt, list[Path | None], object, str]] = [
+        (Receipt(), [None], {}, "would install"),
+        (prior_current, [shim], prov, "would skip"),
+        (prior_current, [None], {}, "would reinstall"),
+        (prior_stale, [shim], prov, "would upgrade"),
+        (Receipt(), [shim], {}, "would take over"),
+    ]
+    for prior, shims, tool_list, expected in cases:
+        deploy = ScriptedCliDeploy(
+            uv_version=(0, 10, 4), bin_dir=tmp_path / "bin",
+            tool_list=tool_list,  # type: ignore[arg-type]
+            shims=shims,
+        )
+        io = ScriptedIO()
+        outcome = deploy_clis(
+            (_SPEC,), repo_root=tmp_path, prior=prior, deploy=deploy,
+            io=io, dry_run=True, auto_yes=False,
+        )
+        assert not outcome.any_failed, expected
+        assert any(expected in e.message for e in io.transcript), expected
+        assert not any(
+            t[0] in ("tool_install", "smoke", "update_shell") for t in deploy.transcript
+        ), expected
