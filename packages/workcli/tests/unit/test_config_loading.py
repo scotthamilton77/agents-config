@@ -167,6 +167,84 @@ def test_non_table_operating_model_is_invalid(tmp_path: Path) -> None:
     assert "[operating-model]" in exc_info.value.message
 
 
+# -- [operating-model].backlog-groom-nag-days / .groom-state-bead (groom state, track spec §4/§6) --
+
+
+def test_groom_fields_parsed(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text="""
+[tracks]
+names = ["alpha"]
+
+[operating-model]
+backlog-groom-nag-days = 7
+groom-state-bead = "proj-groom1"
+""",
+    )
+    config = load_config(root)
+    assert config.backlog_groom_nag_days == 7
+    assert config.groom_state_bead == "proj-groom1"
+
+
+def test_groom_fields_omitted_are_none(tmp_path: Path) -> None:
+    root = _repo(tmp_path, config_text='[tracks]\nnames = ["alpha"]\n')
+    config = load_config(root)
+    assert config.backlog_groom_nag_days is None
+    assert config.groom_state_bead is None
+
+
+def test_groom_state_bead_empty_string_is_none(tmp_path: Path) -> None:
+    # This repo's own project-config.toml ships groom-state-bead = "" until
+    # the backfill migration mints the bead (spec §7) -- empty string means
+    # "not yet configured", not an error.
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = ""\n',
+    )
+    assert load_config(root).groom_state_bead is None
+
+
+def test_groom_state_bead_non_string_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text='[tracks]\nnames = ["alpha"]\n[operating-model]\ngroom-state-bead = 5\n',
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "groom-state-bead" in exc_info.value.message
+
+
+def test_backlog_groom_nag_days_bool_is_invalid(tmp_path: Path) -> None:
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\nbacklog-groom-nag-days = true\n'
+        ),
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "backlog-groom-nag-days" in exc_info.value.message
+
+
+def test_backlog_groom_nag_days_negative_is_invalid(tmp_path: Path) -> None:
+    # REGRESSION PIN (Codex finding): a negative threshold makes day 0
+    # (immediately after `work groom --done`) already breached (0 > -1),
+    # defeating the reset --done is meant to guarantee (criterion 15).
+    root = _repo(
+        tmp_path,
+        config_text=(
+            '[tracks]\nnames = ["alpha"]\n[operating-model]\nbacklog-groom-nag-days = -1\n'
+        ),
+    )
+    with pytest.raises(WorkError) as exc_info:
+        load_config(root)
+    assert exc_info.value.detail["reason"] == "invalid"
+    assert "backlog-groom-nag-days" in exc_info.value.message
+
+
 def test_git_file_marker_counts_as_root(tmp_path: Path) -> None:
     # Linked worktrees have a .git FILE, not a dir -- the search must still
     # treat that directory as the root boundary.

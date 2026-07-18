@@ -22,6 +22,7 @@ from workcli.lifecycle.create import create_noun
 from workcli.lifecycle.deliver import deliver
 from workcli.lifecycle.reconcile import reconcile
 from workcli.lifecycle.transitions import claim, plan, promote, release
+from workcli.verbs.groom import groom
 from workcli.verbs.read import list_, ready, search, show
 from workcli.verbs.relations import dep, label
 from workcli.verbs.report import graph, lint, triggers
@@ -106,6 +107,7 @@ VERBS: dict[str, Callable[[Backend, Namespace], JsonValue]] = {
     "lint": lint,
     "graph": graph,
     "triggers": triggers,
+    "groom": groom,
 }
 
 REQUIRED_CAPABILITY: dict[str, Callable[[Capabilities, Namespace], bool]] = {
