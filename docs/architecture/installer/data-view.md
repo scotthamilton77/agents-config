@@ -144,12 +144,14 @@ Structured config at `packages/installer/installer.toml`, parsed by `core/instal
 ```mermaid
 erDiagram
     Receipt ||--o{ ReceiptEntry : "entries: 0..N wholesale-authored dests"
+    Receipt ||--o{ CliReceiptEntry : "clis: 0..N installer-deployed uv tools"
 
     Receipt {
         int    schema_version  "gates forward-compatible evolution; unknown -> CORRUPT"
-        string integrity       "sha256: digest over canonical (schema_version + roots + entries); recomputed on read, mismatch -> CORRUPT"
+        string integrity       "sha256: digest over canonical (schema_version + roots + entries [+ clis when non-empty]); recomputed on read, mismatch -> CORRUPT"
         Roots  roots           "persisted install-root allowlist (prior | this run's live roots); retired-plugin root validation"
         Entry  entries         "the recorded wholesale-authored entries"
+        Cli    clis            "the recorded installer-deployed uv tools (workcli/prgroom); empty on every pre-CLI-deploy receipt"
     }
 
     ReceiptEntry {
@@ -159,12 +161,19 @@ erDiagram
         string kind    "Literal[file | dir] — top-level skill/agent dirs are one dir entry"
         string sha256  "hex digest of a file's bytes (ownership-drift gate); null for a dir entry"
     }
+
+    CliReceiptEntry {
+        string name    "registry / uv tool name (workcli, prgroom) — the diff key"
+        string binary  "console-script the tool provides (work, prgroom)"
+        string digest  "cli_source_digest(package_dir) at deploy time — gates verify/heal/fresh"
+    }
 ```
 
 - **It records only wholesale-authored entries** — namespaced `commands`/`skills`/`agents`/`rules` and plugin route dests (`~/.beads/...`). It **never** records a merge-target (`settings.json` via `JsonUnionStrategy`, the assembled `AGENTS.md`/`GEMINI.md`/`opencode.jsonc`): dropping a partial contribution must never delete the whole file. The `core/ownership.py` classifier (`is_prunable(StagedItem)`) makes this decision, keyed on the item's namespace and merge strategy.
 - **`path` is the diff key, `owner` the scope tag.** Orphan detection is `{ e ∈ prior : e.owner ∈ scope ∧ (e.owner, e.path) ∉ desired_staged_keys ∧ validate_entry(e) }`. `desired_staged_keys` is the owned dest paths in this run's staging plan (built even under `--prune-only`) plus the active plugins' currently-shipped route files.
 - **`sha256` is ownership-drift protection.** A file orphan whose on-disk bytes no longer match the recorded digest is the user's now — it is relinquished, not deleted. `dir` entries carry `sha256: null` (recursive content-drift protection is a deliberate v1 limitation, deferred).
 - **`integrity` + `roots` make the receipt a trusted deletion-authority input.** `integrity` is recomputed on read; any accidental change fails closed (prune disabled, file untouched). `roots` is the persisted allowlist used to validate a *retired* plugin's recorded root (tool and discovered-plugin roots come from live code instead). See [`sequences.md`](sequences.md) §"Sequence 4 — Prune flow" for the full lifecycle.
+- **`clis` is additive and omitted-when-empty for integrity compatibility.** `canonical_bytes` serializes the `clis` key into the integrity payload only when `receipt.clis` is non-empty, so a receipt written before this field existed — or one where the CLI-deploy stage never ran — hashes byte-identically to today's code and its persisted `integrity` still validates on read (no forced re-hash, no downgrade caveat: an OLDER installer reading a NEWER receipt with a non-empty `clis` simply ignores the unknown key via its own dict-based parser, and ignores CLIs it never shipped). Merged by `merge_clis` (`receipt_build.py`): a registry name (`workcli`/`prgroom`) keeps the run's freshly deployed entry when deployed, else its retained prior entry (skip/decline/failure); a non-registry (retired) name drops once its uninstall completes or it is relinquished as foreign, else it is retained so retirement retries next prune.
 
 ## Canonical-ownership boundaries
 

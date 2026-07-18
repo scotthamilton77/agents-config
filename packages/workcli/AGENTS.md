@@ -47,6 +47,10 @@ only), but the full gate must pass before push.
 - `uv`-managed; Python ≥ 3.11.
 - Run tools via `uv run …` from inside `packages/workcli/`, or the `make`
   targets from the repo root.
+- The repo installer also deploys `work` globally onto PATH via
+  `uv tool install` (receipt-tracked, pruned on retirement) as part of a
+  normal install; `uv run` from inside `packages/workcli/` remains the way to
+  exercise an in-checkout, unreleased change.
 - Config lives in `pyproject.toml`: ruff (line-length 100), mypy
   `strict = true`, coverage `branch = true` / `fail_under = 90`.
 - Zero runtime dependencies by design (stdlib only: argparse/json/subprocess/
